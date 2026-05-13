@@ -90,7 +90,7 @@ Go to **Settings → Secrets and variables → Actions** and add:
 
 | Secret | Required | Description |
 |--------|----------|-------------|
-| `TIP_BOT_WEBHOOK_SECRET` | Optional | HMAC secret for webhook signature verification (external webhook deployments only — **not needed for GitHub Actions**). Generate with: `openssl rand -hex 32` |
+| `TIP_BOT_WEBHOOK_SECRET` | Optional | HMAC secret for webhook signature verification (external webhook deployments only — **do not configure for GitHub Actions**). Generate with: `openssl rand -hex 32` |
 | `RUSTCHAIN_NODE_URL` | Optional | Override the default RustChain node URL |
 | `WALLET_ADDRESS` | v2 only | Your RustChain wallet address (for auto-payout) |
 | `WALLET_PRIVATE_KEY` | v2 only | Wallet private key — **never commit this** |
@@ -172,15 +172,17 @@ For auto-payout (v2), you will need:
 
 ### Webhook Signature Verification
 
-When `TIP_BOT_WEBHOOK_SECRET` is set **and** an `HTTP_X_HUB_SIGNATURE_256` header
-is present, the bot verifies the HMAC-SHA256 signature before processing. This
-prevents forged webhooks from triggering tip commands.
+When `TIP_BOT_WEBHOOK_SECRET` is set, the bot requires a valid
+`HTTP_X_HUB_SIGNATURE_256` header and verifies the HMAC-SHA256 signature before
+processing. Missing or invalid signatures abort the run. This prevents forged
+webhooks from triggering tip commands.
 
 **Important:** This is only relevant for **external webhook deployments** (e.g.,
 running the bot as a standalone server). When using **GitHub Actions**, the payload
 comes from GitHub's own infrastructure via `GITHUB_EVENT_PATH` — there is no HTTP
 signature header. **Do not set `TIP_BOT_WEBHOOK_SECRET` for GitHub Actions** as
-it is unnecessary and has no effect.
+it is unnecessary and will make action runs fail closed without a webhook
+signature header.
 
 For external webhook deployments, configure the same secret in both:
 - Environment variable: `WEBHOOK_SECRET`

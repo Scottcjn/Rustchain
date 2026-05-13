@@ -13,7 +13,7 @@ Required environment variables:
     GITHUB_TOKEN       — Auto-provided by GitHub Actions
     GITHUB_EVENT_PATH  — Auto-provided by GitHub Actions
     GITHUB_REPOSITORY  — Auto-provided by GitHub Actions
-    WEBHOOK_SECRET     — GitHub webhook HMAC secret (optional but recommended)
+    WEBHOOK_SECRET     — GitHub webhook HMAC secret for external webhooks
     RUSTCHAIN_NODE_URL — Override for the RustChain node URL (optional)
 
 Optional secrets (documented in README):
@@ -374,13 +374,12 @@ def main() -> None:
     with open(event_path) as f:
         event = json.load(f)
 
-    # Verify webhook signature if secret is configured AND a signature header
-    # is present. In GitHub Actions, the payload comes from GitHub's own
-    # infrastructure (GITHUB_EVENT_PATH) — no HTTP signature header exists.
-    # WEBHOOK_SECRET is only useful for external webhook deployments.
+    # Verify webhook signatures for external webhook deployments. GitHub Actions
+    # payloads arrive through GITHUB_EVENT_PATH and have no HTTP signature
+    # header, so do not configure WEBHOOK_SECRET for Actions runs.
     webhook_secret = os.environ.get("WEBHOOK_SECRET", "")
     sig = os.environ.get("HTTP_X_HUB_SIGNATURE_256", "")
-    if webhook_secret and sig:
+    if webhook_secret:
         raw_payload = open(event_path, "rb").read()
         if not verify_webhook_signature(raw_payload, sig):
             print("Webhook signature verification failed. Aborting.")

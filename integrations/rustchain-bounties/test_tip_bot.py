@@ -30,6 +30,7 @@ from tip_bot import (
     build_failure_comment,
     build_success_comment,
     build_unauthorized_comment,
+    main,
     parse_tip_command,
     process_event,
     validate_tip,
@@ -277,11 +278,10 @@ class TestWebhookVerification:
         with patch.dict(os.environ, {"WEBHOOK_SECRET": "mysecret"}):
             assert verify_webhook_signature(payload, None) is False
 
-    def test_no_secret_configured_allows_all(self):
+    def test_no_secret_configured_fails_closed(self):
         payload = b'{"action": "created"}'
         with patch.dict(os.environ, {}, clear=True):
-            # When WEBHOOK_SECRET is not set, verification is skipped
-            assert verify_webhook_signature(payload, None) is True
+            assert verify_webhook_signature(payload, None) is False
 
     def test_tampered_payload_rejected(self):
         original = b'{"action": "created"}'
@@ -290,6 +290,24 @@ class TestWebhookVerification:
         sig = self._sign(original, secret)
         with patch.dict(os.environ, {"WEBHOOK_SECRET": secret}):
             assert verify_webhook_signature(tampered, sig) is False
+
+    def test_main_requires_signature_when_secret_configured(self, tmp_path, capsys):
+        event_path = tmp_path / "event.json"
+        event_path.write_text('{"action": "created"}')
+
+        with patch.dict(
+            os.environ,
+            {
+                "GITHUB_EVENT_PATH": str(event_path),
+                "WEBHOOK_SECRET": "mysecret",
+            },
+            clear=True,
+        ):
+            with pytest.raises(SystemExit) as exc:
+                main()
+
+        assert exc.value.code == 1
+        assert "Webhook signature verification failed" in capsys.readouterr().out
 
 
 # ---------------------------------------------------------------------------
