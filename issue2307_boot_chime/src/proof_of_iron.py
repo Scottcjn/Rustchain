@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """
 Proof-of-Iron Attestation Protocol
 
@@ -524,11 +525,10 @@ class ProofOfIron:
             pass
     
     def _load_features(self, features_hash: str) -> Optional[FingerprintFeatures]:
-        """Load cached features with backward-compatible dual-read (JSON first, then pickle)."""
+        """Load cached features from JSON without unsafe pickle fallback."""
         try:
             import sqlite3
             import json
-            import pickle
             conn = sqlite3.connect(self.db_path)
             c = conn.cursor()
             c.execute('SELECT features FROM feature_cache WHERE hash = ?',
@@ -545,21 +545,9 @@ class ProofOfIron:
                     else:
                         data = json.loads(raw)
                 except (json.JSONDecodeError, UnicodeDecodeError):
-                    # Fallback: legacy pickle data — deserialize and migrate to JSON
-                    data = pickle.loads(raw) if isinstance(raw, bytes) else pickle.loads(raw.encode())
-                    # Re-write as JSON to gradually migrate the cache
-                    self._save_features(features_hash, FingerprintFeatures(
-                        mfcc_mean=np.array(data['mfcc_mean']),
-                        mfcc_std=np.array(data['mfcc_std']),
-                        spectral_centroid=data['spectral_centroid'],
-                        spectral_bandwidth=data['spectral_bandwidth'],
-                        spectral_rolloff=data['spectral_rolloff'],
-                        zero_crossing_rate=data['zero_crossing_rate'],
-                        chroma_mean=np.array(data['chroma_mean']),
-                        temporal_envelope=np.array(data['temporal_envelope']),
-                        peak_frequencies=data['peak_frequencies'],
-                        harmonic_structure=data['harmonic_structure'],
-                    ))
+                    # Legacy pickle cache entries are unsafe to deserialize in
+                    # the live service. Migrate them offline before loading.
+                    return None
                 
                 return FingerprintFeatures(
                     mfcc_mean=np.array(data['mfcc_mean']),

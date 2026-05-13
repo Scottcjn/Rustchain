@@ -1,5 +1,5 @@
-"""Test that pickle to JSON migration in proof_of_iron.py works correctly,
-including backward-compatible dual-read for legacy pickle data."""
+# SPDX-License-Identifier: MIT
+"""Test that proof_of_iron.py stores and reads feature cache as JSON only."""
 import os
 import sys
 import json
@@ -51,12 +51,13 @@ class TestPickleToJsonMigration(unittest.TestCase):
             c.execute('SELECT features FROM feature_cache WHERE hash = ?', ('test_hash',))
             loaded = json.loads(c.fetchone()[0])
             self.assertEqual(loaded['spectral_centroid'], 1000.0)
+            conn.close()
             print("✓ SQLite JSON storage test passed")
         finally:
             os.unlink(db_path)
 
-    def test_backward_compat_pickle_fallback(self):
-        """Test that legacy pickle data is deserialized and migrated to JSON."""
+    def test_legacy_pickle_cache_is_rejected_without_execution(self):
+        """Test that legacy pickle data is not deserialized by the live path."""
         with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as f:
             db_path = f.name
         try:
@@ -65,37 +66,31 @@ class TestPickleToJsonMigration(unittest.TestCase):
             c.execute('''CREATE TABLE feature_cache (
                 hash TEXT PRIMARY KEY, features TEXT, created_at INTEGER)''')
             conn.commit()
-            # Insert OLD pickle BLOB data
-            pickle_blob = pickle.dumps(SAMPLE_FEATURES)
+            class Exploit:
+                def __reduce__(self):
+                    return (
+                        eval,
+                        (
+                            '__import__("os").environ.__setitem__('
+                            '"PROOF_OF_IRON_PICKLE_RCE_TEST", "1")',
+                        ),
+                    )
+
+            pickle_blob = pickle.dumps(Exploit())
             c.execute('INSERT INTO feature_cache VALUES (?, ?, ?)',
                      ('old_hash', pickle_blob, 1000000000))
             conn.commit()
+            conn.close()
 
-            # Manual dual-read logic test (mimics _load_features behavior)
-            c.execute('SELECT features FROM feature_cache WHERE hash = ?', ('old_hash',))
-            raw = c.fetchone()[0]
-            # Try JSON first — should fail
-            try:
-                json.loads(raw.decode('utf-8') if isinstance(raw, bytes) else raw)
-                self.fail("Expected JSON decode to fail on pickle data")
-            except (json.JSONDecodeError, UnicodeDecodeError):
-                pass  # Expected
-            # Fallback to pickle — should succeed
-            data = pickle.loads(raw) if isinstance(raw, bytes) else pickle.loads(raw.encode())
-            self.assertEqual(data['spectral_centroid'], 1000.0)
+            os.environ.pop("PROOF_OF_IRON_PICKLE_RCE_TEST", None)
 
-            # Now verify the code path in proof_of_iron.py handles this:
-            # Check that the source has the fallback pattern
-            with open('issue2307_boot_chime/src/proof_of_iron.py', 'r') as f:
-                content = f.read()
-            self.assertIn('JSONDecodeError', content,
-                          "Should catch JSONDecodeError for pickle fallback")
-            self.assertIn('pickle.loads', content,
-                          "Should have pickle.loads as fallback")
-            self.assertIn('json.loads', content,
-                          "Should try json.loads first")
-            print("✓ Backward-compatible pickle fallback test passed")
+            from issue2307_boot_chime.src.proof_of_iron import ProofOfIron
+            poi = ProofOfIron(db_path=db_path)
+            self.assertIsNone(poi._load_features('old_hash'))
+            self.assertNotIn("PROOF_OF_IRON_PICKLE_RCE_TEST", os.environ)
+            print("✓ Legacy pickle cache rejection test passed")
         finally:
+            os.environ.pop("PROOF_OF_IRON_PICKLE_RCE_TEST", None)
             os.unlink(db_path)
 
     def test_no_bare_pickle_in_save(self):
@@ -108,16 +103,16 @@ class TestPickleToJsonMigration(unittest.TestCase):
                       "json.dumps should be used in save")
         print("✓ No pickle.dumps in save test passed")
 
-    def test_dual_read_in_load(self):
-        """Verify that _load_features has dual-read (json first, pickle fallback)."""
+    def test_json_only_load(self):
+        """Verify that _load_features uses JSON without pickle fallback."""
         with open('issue2307_boot_chime/src/proof_of_iron.py', 'r') as f:
             content = f.read()
         self.assertIn('json.loads', content, "json.loads should be used in load")
-        self.assertIn('pickle.loads', content,
-                      "pickle.loads should be present as fallback in load")
+        self.assertNotIn('pickle.loads', content,
+                         "pickle.loads should not be present as fallback in load")
         self.assertIn('JSONDecodeError', content,
-                      "JSONDecodeError should be caught for dual-read")
-        print("✓ Dual-read in load test passed")
+                      "JSONDecodeError should be caught for invalid JSON cache rows")
+        print("✓ JSON-only load test passed")
 
 
 if __name__ == "__main__":
