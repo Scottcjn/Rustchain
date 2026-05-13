@@ -5,9 +5,10 @@ Flask-based REST API for acoustic hardware attestation.
 Integrates with RustChain node for miner attestation.
 """
 
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, after_this_request
 from flask_cors import CORS
 import json
+import math
 import os
 import time
 import tempfile
@@ -36,6 +37,8 @@ MAX_AUDIO_UPLOAD_BYTES = int(
     os.getenv('BOOT_CHIME_MAX_AUDIO_BYTES', str(10 * 1024 * 1024))
 )
 ALLOWED_AUDIO_MIME_TYPES = {'audio/wav', 'audio/x-wav', 'audio/wave'}
+MIN_CAPTURE_DURATION = float(os.getenv('BOOT_CHIME_MIN_CAPTURE_DURATION', '0.1'))
+MAX_CAPTURE_DURATION = float(os.getenv('BOOT_CHIME_MAX_CAPTURE_DURATION', '30.0'))
 
 # Initialize Proof-of-Iron system
 poi_system = ProofOfIron(
@@ -100,6 +103,30 @@ def validate_audio_upload(audio_file, *, required: bool = True):
         raise AudioUploadError("invalid WAV file")
 
     return audio_file
+
+
+def get_capture_duration() -> float:
+    """Return a bounded audio capture duration from query parameters."""
+    raw_duration = request.args.get('duration')
+    if raw_duration is None:
+        duration = capture_config.duration
+    else:
+        try:
+            duration = float(raw_duration)
+        except (TypeError, ValueError):
+            raise ValueError("duration must be a number")
+
+    if (
+        not math.isfinite(duration)
+        or duration < MIN_CAPTURE_DURATION
+        or duration > MAX_CAPTURE_DURATION
+    ):
+        raise ValueError(
+            f"duration must be between {MIN_CAPTURE_DURATION:g} "
+            f"and {MAX_CAPTURE_DURATION:g} seconds"
+        )
+
+    return duration
 
 
 # ============= Health & Info =============
@@ -321,7 +348,7 @@ def capture_audio():
     Response: WAV file
     """
     try:
-        duration = request.args.get('duration', default=5.0, type=float)
+        duration = get_capture_duration()
         trigger = request.args.get('trigger', default='false').lower() == 'true'
         
         captured = audio_capture.capture(duration=duration, trigger=trigger)
@@ -330,6 +357,14 @@ def capture_audio():
         with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp:
             audio_capture.save_audio(captured, tmp.name)
             tmp_path = tmp.name
+
+        @after_this_request
+        def cleanup_temp_file(response):
+            try:
+                os.unlink(tmp_path)
+            except FileNotFoundError:
+                pass
+            return response
         
         return send_file(
             tmp_path,
@@ -338,6 +373,8 @@ def capture_audio():
             download_name=f'boot_chime_{int(time.time())}.wav'
         )
         
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
