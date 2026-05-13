@@ -57,6 +57,20 @@ def test_validate_rejects_large_upload():
     assert response.get_json()["error"] == "File too large"
 
 
+def test_validate_accepts_file_exactly_at_size_limit():
+    poa_api.app.config["TESTING"] = True
+    client = poa_api.app.test_client()
+
+    with (
+        patch.object(poa_api, "MAX_FILE_SIZE", 2),
+        patch.object(poa_api, "validate_genesis", return_value={"validated": True}),
+    ):
+        response = post_upload(client, body=b"{}", filename="genesis.json")
+
+    assert response.status_code == 200
+    assert response.get_json() == {"validated": True}
+
+
 def test_validate_deletes_temp_file_after_success():
     poa_api.app.config["TESTING"] = True
     client = poa_api.app.test_client()

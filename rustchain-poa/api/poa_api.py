@@ -34,9 +34,6 @@ def save_limited_upload(file, destination):
 
 @app.route('/validate', methods=['POST'])
 def validate():
-    if request.content_length is not None and request.content_length > MAX_FILE_SIZE:
-        return jsonify({"error": "File too large"}), 413
-
     if 'file' not in request.files:
         return jsonify({"error": "No file part in request"}), 400
 
