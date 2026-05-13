@@ -1033,6 +1033,22 @@ class RelationshipEngine:
 def create_relationship_blueprint(engine: RelationshipEngine):
     """Create a Flask blueprint for relationship API endpoints."""
     from flask import Blueprint, jsonify, request
+    import os
+    import hmac
+    from functools import wraps
+    
+    _RELATIONSHIPS_ADMIN_KEY = os.environ.get("RELATIONSHIPS_ADMIN_KEY", "")
+
+    def require_admin(fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            key = request.headers.get("X-Admin-Key", "")
+            if not _RELATIONSHIPS_ADMIN_KEY:
+                return jsonify({"error": "relationships admin key not configured on server"}), 500
+            if not hmac.compare_digest(key, _RELATIONSHIPS_ADMIN_KEY):
+                return jsonify({"error": "unauthorized"}), 403
+            return fn(*args, **kwargs)
+        return wrapper
     
     bp = Blueprint("relationships", __name__)
     
@@ -1058,6 +1074,7 @@ def create_relationship_blueprint(engine: RelationshipEngine):
         return jsonify(rel)
     
     @bp.route("/api/relationships/<agent_a>/<agent_b>/disagree", methods=["POST"])
+    @require_admin
     def disagree(agent_a: str, agent_b: str):
         data = request.json or {}
         try:
@@ -1071,6 +1088,7 @@ def create_relationship_blueprint(engine: RelationshipEngine):
             return jsonify({"error": str(e)}), 400
     
     @bp.route("/api/relationships/<agent_a>/<agent_b>/collaborate", methods=["POST"])
+    @require_admin
     def collaborate(agent_a: str, agent_b: str):
         data = request.json or {}
         try:
@@ -1084,6 +1102,7 @@ def create_relationship_blueprint(engine: RelationshipEngine):
             return jsonify({"error": str(e)}), 400
     
     @bp.route("/api/relationships/<agent_a>/<agent_b>/reconcile", methods=["POST"])
+    @require_admin
     def reconcile(agent_a: str, agent_b: str):
         data = request.json or {}
         try:
@@ -1096,6 +1115,7 @@ def create_relationship_blueprint(engine: RelationshipEngine):
             return jsonify({"error": str(e)}), 400
     
     @bp.route("/api/relationships/<agent_a>/<agent_b>/intervene", methods=["POST"])
+    @require_admin
     def admin_intervene(agent_a: str, agent_b: str):
         data = request.json or {}
         try:
