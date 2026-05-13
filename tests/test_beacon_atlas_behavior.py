@@ -285,6 +285,36 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         )
         self.assertEqual(update_response.status_code, 400)
 
+    def test_offered_contract_can_be_rejected(self):
+        """Recipient can reject an offered contract as a terminal state."""
+        contract_data = {
+            'from': 'bcn_test_from',
+            'to': 'bcn_test_to',
+            'type': 'service',
+            'amount': 25.0,
+            'term': '7d',
+        }
+
+        create_response = self.client.post(
+            '/api/contracts',
+            data=json.dumps(contract_data),
+            content_type='application/json',
+            headers={'X-Agent-Key': 'bcn_test_from'},
+        )
+        self.assertEqual(create_response.status_code, 201)
+        contract_id = json.loads(create_response.data)['id']
+
+        update_response = self.client.put(
+            f'/api/contracts/{contract_id}',
+            data=json.dumps({'state': 'rejected'}),
+            content_type='application/json',
+            headers={'X-Agent-Key': 'bcn_test_to'},
+        )
+        self.assertEqual(update_response.status_code, 200)
+
+        updated = json.loads(update_response.data)
+        self.assertEqual(updated['state'], 'rejected')
+
     def test_bounty_completion_updates_reputation(self):
         """Completing a bounty increases agent reputation."""
         # Insert test bounty
@@ -456,16 +486,17 @@ class TestBeaconAtlasDataValidation(unittest.TestCase):
 
     def test_contract_state_machine(self):
         """Contract states follow valid transitions."""
-        valid_states = {'offered', 'active', 'renewed', 'completed', 'breached', 'expired'}
+        valid_states = {'offered', 'active', 'renewed', 'completed', 'breached', 'expired', 'rejected'}
         
         # Valid state transitions
         valid_transitions = {
-            'offered': {'active', 'expired'},
+            'offered': {'active', 'rejected', 'expired'},
             'active': {'completed', 'breached', 'renewed', 'expired'},
             'renewed': {'completed', 'breached', 'expired'},
             'completed': set(),  # Terminal state
             'breached': set(),  # Terminal state
             'expired': set(),  # Terminal state
+            'rejected': set(),  # Terminal state
         }
         
         # Verify all states have transitions defined
