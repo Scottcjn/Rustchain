@@ -469,6 +469,36 @@ class TestUtxoDB(unittest.TestCase):
         self.assertEqual(len(candidates), 1)
         self.assertEqual(candidates[0]['tx_id'], 'replacement' * 6)
 
+    def test_mempool_block_candidates_drop_spent_inputs(self):
+        """Block candidates must not include txs whose inputs were confirmed.
+
+        A mempool transaction can be invalidated by a direct UTXO transfer path
+        that confirms the same input first. The stale mempool entry must not keep
+        returning to block producers until expiry.
+        """
+        self._apply_coinbase('alice', 100 * UNIT, block_height=1)
+        box = self.db.get_unspent_for_address('alice')[0]
+        tx_id = 'stale_tx' * 8
+
+        self.assertTrue(self.db.mempool_add({
+            'tx_id': tx_id,
+            'inputs': [{'box_id': box['box_id']}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT - 1000}],
+            'fee_nrtc': 1000,
+        }))
+
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': box['box_id'], 'spending_proof': 'sig'}],
+            'outputs': [{'address': 'carol', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+        }, block_height=2)
+        self.assertTrue(ok)
+
+        candidates = self.db.mempool_get_block_candidates()
+        self.assertEqual(candidates, [])
+        self.assertFalse(self.db.mempool_check_double_spend(box['box_id']))
+
     def test_mempool_nonexistent_input_rejected(self):
         tx = {
             'tx_id': 'cccc' * 16,
