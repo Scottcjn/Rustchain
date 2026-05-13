@@ -2,6 +2,7 @@ import os
 import re
 import sqlite3
 import tempfile
+from contextlib import closing
 
 import pytest
 
@@ -12,6 +13,10 @@ VALID_RTC_WALLET = "RTC019e78d600fb3131c29d7ba80aba8fe644be426e"
 VALID_EVM_WALLET = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 REGISTRATION_TOKEN = "registration-token"
 ADMIN_TOKEN = "admin-token"
+
+
+def db_connect():
+    return closing(sqlite3.connect(cr.DB_PATH))
 
 
 @pytest.fixture
@@ -25,7 +30,8 @@ def app():
     cr.init_db()
     yield cr.app
     os.close(db_fd)
-    os.unlink(db_path)
+    if os.path.exists(db_path):
+        os.unlink(db_path)
 
 
 @pytest.fixture
@@ -57,7 +63,7 @@ def registration_payload(client, **overrides):
 @pytest.fixture
 def seed_contributor(app):
     """Insert a test contributor into the database."""
-    with sqlite3.connect(cr.DB_PATH) as conn:
+    with db_connect() as conn:
         conn.execute(
             "INSERT INTO contributors (github_username, contributor_type, rtc_wallet, contribution_history, status) "
             "VALUES (?, ?, ?, ?, ?)",
@@ -69,7 +75,7 @@ def seed_contributor(app):
 class TestInitDb:
     def test_creates_table(self, app):
         """init_db should create the contributors table."""
-        with sqlite3.connect(cr.DB_PATH) as conn:
+        with db_connect() as conn:
             result = conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='contributors'"
             ).fetchone()
@@ -101,7 +107,7 @@ class TestRegisterRoute:
         """POST /register should add a new contributor."""
         response = client.post("/register", data=registration_payload(client), follow_redirects=True)
         assert response.status_code == 200
-        with sqlite3.connect(cr.DB_PATH) as conn:
+        with db_connect() as conn:
             row = conn.execute(
                 "SELECT contributor_type, status FROM contributors WHERE github_username='newuser'"
             ).fetchone()
@@ -187,7 +193,7 @@ class TestRegisterRoute:
             follow_redirects=True,
         )
         assert response.status_code == 200
-        with sqlite3.connect(cr.DB_PATH) as conn:
+        with db_connect() as conn:
             row = conn.execute(
                 "SELECT github_username FROM contributors WHERE github_username='newuser'"
             ).fetchone()
@@ -241,7 +247,7 @@ class TestApproveRoute:
         )
         response = client.get("/approve/pendinguser", follow_redirects=True)
         assert response.status_code == 403
-        with sqlite3.connect(cr.DB_PATH) as conn:
+        with db_connect() as conn:
             row = conn.execute(
                 "SELECT status FROM contributors WHERE github_username='pendinguser'"
             ).fetchone()
@@ -264,7 +270,7 @@ class TestApproveRoute:
             follow_redirects=True,
         )
         assert response.status_code == 403
-        with sqlite3.connect(cr.DB_PATH) as conn:
+        with db_connect() as conn:
             row = conn.execute(
                 "SELECT status FROM contributors WHERE github_username='pendinguser'"
             ).fetchone()
@@ -288,17 +294,36 @@ class TestApproveRoute:
             follow_redirects=True,
         )
         assert response.status_code == 200
-        with sqlite3.connect(cr.DB_PATH) as conn:
+        with db_connect() as conn:
             row = conn.execute(
                 "SELECT status FROM contributors WHERE github_username='pendinguser'"
             ).fetchone()
         assert row[0] == "approved"
 
+    def test_route_requests_release_temp_database_file(self, app, client):
+        """Route-level database handles should not block temp DB cleanup on Windows."""
+        client.post(
+            "/register",
+            data=registration_payload(client, github_username="cleanupuser"),
+            follow_redirects=True,
+        )
+        response = client.get(
+            "/approve/cleanupuser",
+            headers={"X-Admin-Token": ADMIN_TOKEN},
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+
+        cleanup_path = cr.DB_PATH
+        cr.DB_PATH = os.path.join(tempfile.gettempdir(), "unused-contributor-test.db")
+        os.unlink(cleanup_path)
+        assert not os.path.exists(cleanup_path)
+
 
 class TestDatabaseConstraints:
     def test_unique_username_constraint(self, app):
         """Inserting duplicate github_username should raise IntegrityError."""
-        with sqlite3.connect(cr.DB_PATH) as conn:
+        with db_connect() as conn:
             conn.execute(
                 "INSERT INTO contributors (github_username, contributor_type, rtc_wallet) VALUES (?, ?, ?)",
                 ("unique-test", "human", VALID_RTC_WALLET),
@@ -320,7 +345,7 @@ class TestDatabaseConstraints:
             ),
             follow_redirects=True,
         )
-        with sqlite3.connect(cr.DB_PATH) as conn:
+        with db_connect() as conn:
             row = conn.execute(
                 "SELECT status FROM contributors WHERE github_username='defaultstatus'"
             ).fetchone()

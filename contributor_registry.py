@@ -4,6 +4,7 @@ import os
 import re
 import secrets
 import sqlite3
+from contextlib import contextmanager
 
 from flask import Flask, abort, flash, redirect, request, session, url_for
 
@@ -43,6 +44,16 @@ EVM_WALLET_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
 
 app.config["CONTRIBUTOR_REGISTRATION_TOKEN"] = os.environ.get("CONTRIBUTOR_REGISTRATION_TOKEN", "")
 app.config["CONTRIBUTOR_ADMIN_TOKEN"] = os.environ.get("CONTRIBUTOR_ADMIN_TOKEN", "")
+
+
+@contextmanager
+def db_connection():
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()
 
 
 def normalize_github_username(username):
@@ -113,7 +124,7 @@ def build_contributor_view(contributor):
 
 
 def init_db():
-    with sqlite3.connect(DB_PATH) as conn:
+    with db_connection() as conn:
         conn.execute('''
             CREATE TABLE IF NOT EXISTS contributors (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -210,7 +221,7 @@ def index():
     </html>
     '''
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with db_connection() as conn:
         rows = conn.execute(
             'SELECT github_username, contributor_type, rtc_wallet, contribution_history, registration_date, status '
             'FROM contributors ORDER BY registration_date DESC'
@@ -235,7 +246,7 @@ def register():
         return redirect(url_for('index'))
 
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with db_connection() as conn:
             conn.execute(
                 'INSERT INTO contributors (github_username, contributor_type, rtc_wallet, contribution_history) VALUES (?, ?, ?, ?)',
                 (github_username, contributor_type, rtc_wallet, contribution_history)
@@ -249,7 +260,7 @@ def register():
 
 @app.route('/api/contributors')
 def api_contributors():
-    with sqlite3.connect(DB_PATH) as conn:
+    with db_connection() as conn:
         contributors = conn.execute(
             'SELECT github_username, contributor_type, rtc_wallet, registration_date, status FROM contributors ORDER BY registration_date DESC'
         ).fetchall()
@@ -275,7 +286,7 @@ def approve_contributor(username):
     except ValueError:
         abort(400)
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with db_connection() as conn:
         conn.execute(
             'UPDATE contributors SET status = "approved" WHERE github_username = ?',
             (username,)
