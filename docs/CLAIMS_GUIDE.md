@@ -444,7 +444,7 @@ Claims are settled in batches:
 3. **Maximum Batch** - 100 claims
 4. **Transaction** - Multi-output transfer to all claimants
 
-See [RIP-305](/rips/docs/RIP-0305-reward-claim-system.md) for full specification.
+See [RIP-305](../rips/docs/RIP-0305-reward-claim-system.md) for full specification.
 
 ---
 
