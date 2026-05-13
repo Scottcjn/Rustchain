@@ -373,11 +373,6 @@ class UtxoDB:
         fee = tx.get('fee_nrtc', 0)
         tx_type = tx.get('tx_type', 'transfer')
 
-    # FIX(#9273): Reject transactions with excessive outputs to prevent UTXO set bloat
-    MAX_OUTPUTS = 1000
-    if len(outputs) > MAX_OUTPUTS:
-        return abort()
-
         # FIX(#2207): Defense-in-depth guard against mining_reward type confusion.
         # The endpoint layer hardcodes tx_type='transfer', but if any code path
         # passes user-controlled tx_type, an attacker could mint unlimited coins.
@@ -437,15 +432,20 @@ class UtxoDB:
 
             output_total = sum(o['value_nrtc'] for o in outputs)
 
+            # FIX(#9273): Reject transactions with excessive outputs to prevent UTXO set bloat
+            MAX_OUTPUTS = 1000
+            if len(outputs) > MAX_OUTPUTS and tx_type not in MINTING_TX_TYPES:
+                return abort()
+
             # Every output must carry a strictly positive value.
             # Without this, a negative-value output lowers output_total,
             # letting an attacker create more value than the inputs hold.
             for o in outputs:
                 if not isinstance(o['value_nrtc'], int) or o['value_nrtc'] <= 0:
                     return abort()
-            # FIX(#9273): Reject dust outputs below DUST_THRESHOLD to prevent UTXO set bloat
-            if o['value_nrtc'] < DUST_THRESHOLD:
-                return abort()
+                # FIX(#9273): Reject dust outputs to prevent UTXO set bloat
+                if o['value_nrtc'] < DUST_THRESHOLD and tx_type not in MINTING_TX_TYPES:
+                    return abort()
 
             # Cap minting (coinbase) output to prevent unbounded fund creation.
             # Without this, any caller that passes tx_type='mining_reward'
