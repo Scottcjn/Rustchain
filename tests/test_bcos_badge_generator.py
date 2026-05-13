@@ -28,6 +28,7 @@ from tools.bcos_badge_generator import (
     get_badge_stats,
     record_badge_generation,
     increment_download_count,
+    load_secret_key,
 )
 
 
@@ -52,6 +53,19 @@ class TestBadgeConfig(unittest.TestCase):
         self.assertEqual(BADGE_CONFIG['tiers']['L0']['min_score'], 40)
         self.assertEqual(BADGE_CONFIG['tiers']['L1']['min_score'], 60)
         self.assertEqual(BADGE_CONFIG['tiers']['L2']['min_score'], 80)
+
+    def test_secret_key_loads_from_environment(self):
+        """Test secret key loader prefers configured environment value."""
+        with patch.dict(os.environ, {'BADGE_SECRET_KEY': 'configured-secret'}, clear=False):
+            self.assertEqual(load_secret_key(), 'configured-secret')
+
+    def test_secret_key_fallback_is_not_hardcoded(self):
+        """Test secret key fallback no longer uses the public development key."""
+        with patch.dict(os.environ, {'BADGE_SECRET_KEY': ''}, clear=False):
+            secret = load_secret_key()
+
+        self.assertNotEqual(secret, 'bcos-badge-generator-dev-key')
+        self.assertRegex(secret, r'^[0-9a-f]{64}$')
 
 
 class TestBadgeSVGGeneration(unittest.TestCase):
