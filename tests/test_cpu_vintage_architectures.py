@@ -227,6 +227,18 @@ class TestDetectVintageArchitecture:
         result = cpu_arch.detect_vintage_architecture("RISC-V RV64GCV vector board")
         assert result == ("riscv", "riscv_vector", 2021, 1.0)
 
+    def test_riscv_linux_isa_suffixes(self):
+        """Linux isa strings may append extension groups with underscores"""
+        assert cpu_arch.detect_vintage_architecture(
+            "isa : rv64imafdc_zicsr_zifencei"
+        ) == ("riscv", "riscv_rv64gc", 2015, 1.4)
+        assert cpu_arch.detect_vintage_architecture(
+            "isa : rv64gcv_zicsr_zifencei"
+        ) == ("riscv", "riscv_vector", 2021, 1.0)
+        assert cpu_arch.detect_vintage_architecture(
+            "isa : rv32imac_zicsr_zifencei"
+        ) == ("riscv", "riscv_rv32im", 2014, 1.5)
+
     # ── Edge cases ────────────────────────────────────────────────────
 
     def test_empty_string_returns_none(self):

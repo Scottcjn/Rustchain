@@ -62,6 +62,27 @@ def test_vector_extension_is_modern_marker():
     )
 
 
+def test_detects_linux_isa_suffixes():
+    assert cpu_detect.detect_cpu_architecture("isa : rv64imafdc_zicsr_zifencei") == (
+        "riscv",
+        "rv64gc",
+        2015,
+        False,
+    )
+    assert cpu_detect.detect_cpu_architecture("isa : rv64gcv_zicsr_zifencei") == (
+        "riscv",
+        "rvv_modern",
+        2021,
+        False,
+    )
+    assert cpu_detect.detect_cpu_architecture("isa : rv32imac_zicsr_zifencei") == (
+        "riscv",
+        "rv32im",
+        2014,
+        False,
+    )
+
+
 def test_riscv_multiplier_uses_profile_weight():
     info = cpu_detect.calculate_antiquity_multiplier(
         "RV32IMAC embedded board",

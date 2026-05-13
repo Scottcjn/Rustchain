@@ -543,9 +543,9 @@ RISC_V_ARCHITECTURES = {
     "rv32im": {
         "years": (2014, 2024),
         "patterns": [
-            r"\bRV32I\b",
-            r"\bRV32IM\b",
-            r"\bRV32IMA?C?\b",
+            r"\bRV32I(?=$|[^A-Z0-9])",
+            r"\bRV32IM(?=$|[^A-Z0-9])",
+            r"\bRV32IMA?C?(?=$|[^A-Z0-9])",
             r"\briscv32\b",
             r"\brisc-v 32\b",
         ],
@@ -555,8 +555,8 @@ RISC_V_ARCHITECTURES = {
     "rv64gc": {
         "years": (2015, 2024),
         "patterns": [
-            r"\bRV64GC\b",
-            r"\bRV64IMAFDC\b",
+            r"\bRV64GC(?=$|[^A-Z0-9])",
+            r"\bRV64IMAFDC(?=$|[^A-Z0-9])",
             r"\briscv64\b",
             r"\brisc-v 64\b",
         ],
@@ -568,8 +568,8 @@ RISC_V_ARCHITECTURES = {
         "patterns": [
             r"\bRVV\b",
             r"RISC-V.*vector",
-            r"\bRV64GCV\b",
-            r"\bRV32.*V\b",
+            r"\bRV64GCV(?=$|[^A-Z0-9])",
+            r"\bRV32[A-Z]*V(?=$|[^A-Z0-9])",
         ],
         "base_multiplier": 1.0,
         "description": "RISC-V with vector extension (modern RVV)"
