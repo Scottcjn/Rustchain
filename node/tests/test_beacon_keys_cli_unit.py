@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 import argparse
 import json
 import time
