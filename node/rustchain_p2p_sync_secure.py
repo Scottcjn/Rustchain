@@ -38,9 +38,6 @@ def address_from_pubkey(public_key_hex: str) -> str:
 
 
 
-# Trusted peer IPs - bypass auth for known nodes
-TRUSTED_PEER_IPS = {"50.28.86.131", "50.28.86.153", "127.0.0.1"}
-
 # ============================================================================
 # SECURITY: AUTHENTICATION & AUTHORIZATION
 # ============================================================================
@@ -473,9 +470,9 @@ class SecureBlockSync:
                 if not self.peer_manager.rate_limiter.check_rate_limit(peer_url, '/p2p/blocks'):
                     continue
 
-                # Generate auth signature
-                message = f"get_blocks:{peer_url}"
-                signature, timestamp = self.peer_manager.auth_manager.generate_signature(message)
+                # Sign the canonical request payload. GET /p2p/blocks carries no
+                # request body, so legitimate peers must sign the empty string.
+                signature, timestamp = self.peer_manager.auth_manager.generate_signature("")
 
                 # Request blocks with authentication
                 response = requests.get(
@@ -568,11 +565,6 @@ def create_p2p_auth_middleware(auth_manager: P2PAuthManager):
     def require_peer_auth(f: Callable) -> Callable:
         @wraps(f)
         def decorated(*args, **kwargs):
-            # Skip auth for trusted peers
-            peer_ip = request.remote_addr
-            if peer_ip in TRUSTED_PEER_IPS:
-                return f(*args, **kwargs)
-                
             signature = request.headers.get('X-Peer-Signature')
             timestamp = request.headers.get('X-Peer-Timestamp')
 
