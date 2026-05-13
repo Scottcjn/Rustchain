@@ -443,9 +443,9 @@ class UtxoDB:
             for o in outputs:
                 if not isinstance(o['value_nrtc'], int) or o['value_nrtc'] <= 0:
                     return abort()
-                    # FIX(#9273): Reject dust outputs below DUST_THRESHOLD to prevent UTXO set bloat
-                    if o['value_nrtc'] < DUST_THRESHOLD:
-                        return abort()
+            # FIX(#9273): Reject dust outputs below DUST_THRESHOLD to prevent UTXO set bloat
+            if o['value_nrtc'] < DUST_THRESHOLD:
+                return abort()
 
             # Cap minting (coinbase) output to prevent unbounded fund creation.
             # Without this, any caller that passes tx_type='mining_reward'
