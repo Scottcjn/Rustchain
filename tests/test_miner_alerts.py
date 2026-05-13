@@ -240,19 +240,32 @@ def test_fetch_helpers_parse_success_and_errors(miner_alerts_module, monkeypatch
     def fake_get(url, **kwargs):
         calls.append((url, kwargs))
         if url.endswith("/api/miners"):
-            return FakeResponse([{"miner": "miner-a"}])
-        return FakeResponse({"balance_rtc": "3.5"})
+            return FakeResponse(
+                {
+                    "miners": [{"miner_id": "miner-a", "online": True}],
+                    "pagination": {"total": 1},
+                }
+            )
+        return FakeResponse(
+            {
+                "amount_i64": 350000000,
+                "amount_rtc": "3.5",
+                "miner_id": "miner-a",
+            }
+        )
 
     monkeypatch.setattr(miner_alerts_module, "RUSTCHAIN_API", "https://node.example")
     monkeypatch.setattr(miner_alerts_module, "VERIFY_SSL", True)
     monkeypatch.setattr(miner_alerts_module.requests, "get", fake_get)
 
-    assert miner_alerts_module.fetch_miners() == [{"miner": "miner-a"}]
+    assert miner_alerts_module.fetch_miners() == [
+        {"miner_id": "miner-a", "online": True}
+    ]
     assert miner_alerts_module.fetch_balance("miner-a") == 3.5
     assert calls == [
         ("https://node.example/api/miners", {"verify": True, "timeout": 15}),
         (
-            "https://node.example/balance",
+            "https://node.example/wallet/balance",
             {"params": {"miner_id": "miner-a"}, "verify": True, "timeout": 10},
         ),
     ]
@@ -267,7 +280,7 @@ def test_fetch_helpers_parse_success_and_errors(miner_alerts_module, monkeypatch
     monkeypatch.setattr(
         miner_alerts_module.requests,
         "get",
-        lambda *_args, **_kwargs: FakeResponse({"miners": []}),
+        lambda *_args, **_kwargs: FakeResponse({"pagination": {"total": 0}}),
     )
     assert miner_alerts_module.fetch_miners() == []
 
