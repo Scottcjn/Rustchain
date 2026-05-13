@@ -39,6 +39,10 @@ DUST_THRESHOLD = 1_000      # nanoRTC below which change is absorbed into fee
 MAX_OUTPUTS_PER_TX = 100    # Bound UTXO fan-out to prevent set-bloat DoS
 MAX_COINBASE_OUTPUT_NRTC = 150 * 144 * UNIT  # Max minting output per block (1.5 RTC)
 MAX_POOL_SIZE = 10_000
+
+# Anti-UTXO-bloat: maximum outputs per transaction
+# Without this, a single tx creates unlimited outputs, bloating the UTXO set.
+MAX_OUTPUTS = 1_000
 MAX_TX_AGE_SECONDS = 3_600  # 1 hour mempool expiry
 P2PK_PREFIX = b'\x00\x08'   # Pay-to-Public-Key proposition prefix
 
@@ -493,6 +497,9 @@ class UtxoDB:
             # Result: inputs spent, no outputs created → funds destroyed
             if not outputs and tx_type not in MINTING_TX_TYPES:
                 return abort()
+            # FIX(#9273): Reject transactions with too many outputs (UTXO bloat)
+            if len(outputs) > MAX_OUTPUTS:
+                return abort()
 
             if len(outputs) > MAX_OUTPUTS_PER_TX:
                 return abort()
@@ -507,6 +514,9 @@ class UtxoDB:
                     or not isinstance(val, int)
                     or val < DUST_THRESHOLD
                 ):
+                    return abort()
+                # FIX(#9273): Reject dust outputs below DUST_THRESHOLD
+                if o['value_nrtc'] < DUST_THRESHOLD:
                     return abort()
 
             output_total = sum(o['value_nrtc'] for o in outputs)
