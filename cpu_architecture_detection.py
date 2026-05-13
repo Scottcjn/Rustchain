@@ -16,7 +16,7 @@ Sources:
 """
 
 import re
-from typing import Tuple, Optional, Dict
+from typing import List, Tuple, Optional, Dict
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -489,8 +489,158 @@ APPLE_SILICON = {
 
 
 # =============================================================================
+# RISC-V (open ISA, exotic miner diversity)
+# =============================================================================
+
+RISC_V_EXTENSIONS = {
+    idx: chr(ord("a") + idx)
+    for idx in range(26)
+}
+
+RISC_V_ARCHITECTURES = {
+    "sifive_u74": {
+        "years": (2020, 2023),
+        "patterns": [
+            r"SiFive.*U7[4]",
+            r"Freedom U7[4]0",
+            r"FU7[4]0",
+            r"sifive,u7[4]",
+        ],
+        "base_multiplier": 1.4,
+        "description": "RISC-V SiFive U74/FU740"
+    },
+    "starfive_jh7110": {
+        "years": (2022, 2024),
+        "patterns": [
+            r"StarFive.*JH7110",
+            r"JH7110",
+            r"starfive,jh7110",
+        ],
+        "base_multiplier": 1.35,
+        "description": "RISC-V StarFive JH7110"
+    },
+    "allwinner_d1_c906": {
+        "years": (2021, 2023),
+        "patterns": [
+            r"Allwinner.*D1",
+            r"\bD1s?\b.*RISC-V",
+            r"T-?Head.*C906",
+            r"Xuantie C906",
+        ],
+        "base_multiplier": 1.4,
+        "description": "RISC-V Allwinner D1 / T-Head C906"
+    },
+    "thead_c910": {
+        "years": (2020, 2024),
+        "patterns": [
+            r"T-?Head.*C910",
+            r"Xuantie C910",
+            r"Alibaba.*C910",
+        ],
+        "base_multiplier": 1.25,
+        "description": "RISC-V T-Head C910"
+    },
+    "rv32im": {
+        "years": (2014, 2024),
+        "patterns": [
+            r"\bRV32I\b",
+            r"\bRV32IM\b",
+            r"\bRV32IMA?C?\b",
+            r"\briscv32\b",
+            r"\brisc-v 32\b",
+        ],
+        "base_multiplier": 1.5,
+        "description": "RISC-V RV32I/RV32IM"
+    },
+    "rv64gc": {
+        "years": (2015, 2024),
+        "patterns": [
+            r"\bRV64GC\b",
+            r"\bRV64IMAFDC\b",
+            r"\briscv64\b",
+            r"\brisc-v 64\b",
+        ],
+        "base_multiplier": 1.4,
+        "description": "RISC-V RV64GC"
+    },
+    "rvv_modern": {
+        "years": (2021, 2025),
+        "patterns": [
+            r"\bRVV\b",
+            r"RISC-V.*vector",
+            r"\bRV64GCV\b",
+            r"\bRV32.*V\b",
+        ],
+        "base_multiplier": 1.0,
+        "description": "RISC-V with vector extension (modern RVV)"
+    },
+    "generic": {
+        "years": (2014, 2025),
+        "patterns": [
+            r"\bRISC-V\b",
+            r"\briscv\b",
+        ],
+        "base_multiplier": 1.3,
+        "description": "Generic RISC-V"
+    },
+}
+
+
+# =============================================================================
 # DETECTION FUNCTIONS
 # =============================================================================
+
+def riscv_extensions_from_misa(misa_value: int, xlen: Optional[int] = None) -> Tuple[Optional[int], List[str]]:
+    """Decode RISC-V misa CSR extension bits from collected fingerprint text."""
+    if misa_value < 0:
+        return (xlen, [])
+
+    if xlen is None:
+        if misa_value >= (1 << 62):
+            xlen = 64
+        elif misa_value >= (1 << 30):
+            xlen = 32
+
+    extensions = [
+        letter
+        for bit, letter in RISC_V_EXTENSIONS.items()
+        if misa_value & (1 << bit)
+    ]
+    return (xlen, extensions)
+
+
+def _riscv_profile_from_extensions(xlen: Optional[int], extensions: List[str]) -> str:
+    ext_set = set(extensions)
+    if "v" in ext_set:
+        return "rvv_modern"
+    if xlen == 32:
+        return "rv32im"
+    if xlen == 64 and {"i", "m", "a", "f", "d", "c"}.issubset(ext_set):
+        return "rv64gc"
+    if xlen == 64:
+        return "rv64gc"
+    return "generic"
+
+
+def detect_riscv_architecture(brand_string: str) -> Optional[Tuple[str, str, int, bool]]:
+    """Detect RISC-V profiles from vendor markers, extension strings, or misa CSR text."""
+    misa_match = re.search(r"\bmisa\s*[:=]\s*(0x[0-9a-fA-F]+|\d+)", brand_string)
+    if misa_match:
+        misa_value = int(misa_match.group(1), 0)
+        xlen_match = re.search(r"\b(?:xlen|rv)\s*[:=\- ]?\s*(32|64)\b", brand_string, re.IGNORECASE)
+        xlen = int(xlen_match.group(1)) if xlen_match else None
+        detected_xlen, extensions = riscv_extensions_from_misa(misa_value, xlen=xlen)
+        arch_name = _riscv_profile_from_extensions(detected_xlen, extensions)
+        arch_info = RISC_V_ARCHITECTURES[arch_name]
+        return ("riscv", arch_name, arch_info["years"][0], False)
+
+    for arch_name, arch_info in RISC_V_ARCHITECTURES.items():
+        for pattern in arch_info["patterns"]:
+            if re.search(pattern, brand_string, re.IGNORECASE):
+                return ("riscv", arch_name, arch_info["years"][0], False)
+
+    return None
+
 
 def detect_cpu_architecture(brand_string: str) -> Tuple[str, str, int, bool]:
     """
@@ -504,8 +654,13 @@ def detect_cpu_architecture(brand_string: str) -> Tuple[str, str, int, bool]:
         "AMD Ryzen 5 8645HS" → ("amd", "zen4", 2022, False)
         "Apple M1" → ("apple", "m1", 2020, False)
         "PowerPC G4" → ("powerpc", "g4", 2001, False)
+        "SiFive U74 RV64GC" → ("riscv", "sifive_u74", 2020, False)
     """
     brand_string = brand_string.strip()
+
+    riscv_result = detect_riscv_architecture(brand_string)
+    if riscv_result is not None:
+        return riscv_result
 
     # Check PowerPC first (most distinctive)
     for arch_name, arch_info in POWERPC_ARCHITECTURES.items():
@@ -603,6 +758,8 @@ def calculate_antiquity_multiplier(
         base_multiplier = INTEL_GENERATIONS[architecture]["base_multiplier"]
     elif vendor == "amd":
         base_multiplier = AMD_GENERATIONS[architecture]["base_multiplier"]
+    elif vendor == "riscv":
+        base_multiplier = RISC_V_ARCHITECTURES[architecture]["base_multiplier"]
 
     # Apply time decay for vintage hardware (>5 years old)
     # Decay formula: aged = 1.0 + (base - 1.0) * (1 - 0.15 * years_since_genesis)
@@ -636,6 +793,8 @@ def calculate_antiquity_multiplier(
         generation_name = INTEL_GENERATIONS[architecture]["description"]
     elif vendor == "amd":
         generation_name = AMD_GENERATIONS[architecture]["description"]
+    elif vendor == "riscv":
+        generation_name = RISC_V_ARCHITECTURES[architecture]["description"]
     else:
         generation_name = "Unknown CPU"
 

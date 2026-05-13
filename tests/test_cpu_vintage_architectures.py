@@ -207,6 +207,26 @@ class TestDetectVintageArchitecture:
         result = cpu_arch.detect_vintage_architecture("UltraSPARC T1")
         assert result == ("sparc", "sparc_v9", 1995, 2.3)
 
+    def test_riscv_sifive_u74(self):
+        """RISC-V SiFive U74 board marker"""
+        result = cpu_arch.detect_vintage_architecture("SiFive Freedom U740 RV64GC")
+        assert result == ("sifive", "sifive_u74", 2020, 1.4)
+
+    def test_riscv_starfive_jh7110(self):
+        """RISC-V StarFive JH7110 board marker"""
+        result = cpu_arch.detect_vintage_architecture("StarFive JH7110 riscv64 board")
+        assert result == ("starfive", "starfive_jh7110", 2022, 1.35)
+
+    def test_riscv_rv32_profile(self):
+        """RISC-V RV32IM profile gets the 32-bit exotic weight"""
+        result = cpu_arch.detect_vintage_architecture("RV32IMAC embedded board")
+        assert result == ("riscv", "riscv_rv32im", 2014, 1.5)
+
+    def test_riscv_vector_modern_marker(self):
+        """RISC-V vector extension is recognized as a modernity marker"""
+        result = cpu_arch.detect_vintage_architecture("RISC-V RV64GCV vector board")
+        assert result == ("riscv", "riscv_vector", 2021, 1.0)
+
     # ── Edge cases ────────────────────────────────────────────────────
 
     def test_empty_string_returns_none(self):
@@ -283,6 +303,11 @@ class TestGetVintageDescription:
         """HP PA-RISC description"""
         result = cpu_arch.get_vintage_description("pa_risc_1.0")
         assert "PA-RISC" in result or "PA-RISC" in cpu_arch.get_vintage_description("pa_risc_1.0")
+
+    def test_riscv_description(self):
+        """RISC-V description"""
+        result = cpu_arch.get_vintage_description("sifive_u74")
+        assert "RISC-V" in result
 
     def test_unknown_architecture_returns_fallback(self):
         """Unknown architecture returns a fallback string (not exception)"""

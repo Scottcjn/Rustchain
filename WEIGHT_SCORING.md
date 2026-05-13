@@ -58,6 +58,17 @@ Rewards are based on **rarity + preservation value**, not just age.
 | armv7 | 0.0005x | 32-bit ARM |
 | Raspberry Pi | 0.0005x | $35 computer |
 
+### RISC-V (Exotic - Diversity, Not Age)
+| Architecture / Marker | Multiplier | Notes |
+|-------------|-----------|-------|
+| RV32I / RV32IM | 1.5x | 32-bit embedded RISC-V is uncommon and useful for network diversity |
+| RV64GC / RV64IMAFDC | 1.4x | Common 64-bit Linux-capable RISC-V profile |
+| SiFive U74 / FU740 | 1.4x | HiFive Unmatched / VisionFive-class cores |
+| Allwinner D1 / T-Head C906 | 1.4x | Early low-cost RISC-V SBC profile |
+| StarFive JH7110 | 1.35x | VisionFive 2 SoC |
+| T-Head C910 | 1.25x | Modern high-performance RISC-V |
+| RVV / Vector extension present | 1.0x | Vector extension is treated as a modernity marker |
+
 ### Apple Silicon (Special)
 | Architecture | Multiplier | Notes |
 |-------------|-----------|-------|
@@ -75,3 +86,5 @@ Rewards are based on **rarity + preservation value**, not just age.
 3. **VMs get nothing** - Fingerprint detection catches VMs/emulators. They get 0x multiplier (no rewards).
 
 4. **Preservation incentive** - Running a 386 or 68000 Mac is hard. Rewarding vintage hardware encourages preservation.
+
+5. **RISC-V is diversity-positive but modern** - RISC-V boards improve architecture diversity, but most real hardware is 2020s-era. They receive modest exotic multipliers, and RVV-capable systems are scored as modern.

@@ -118,9 +118,19 @@
 ### 🌐 1.4-1.5x - EXOTIC (RISC-V)
 | CPU | Year | Pattern | Systems |
 |-----|------|---------|---------|
+| **RISC-V RV32I/RV32IM** | 2014+ | `RV32I`, `RV32IM`, `riscv32` | 32-bit embedded RISC-V |
 | **RISC-V (SiFive U74)** | 2020 | `SiFive.*U74`, `sifive,u74` | VisionFive 2, HiFive Unmatched |
+| **RISC-V (Allwinner D1 / C906)** | 2021 | `Allwinner.*D1`, `T-Head.*C906`, `Xuantie C906` | Nezha, MangoPi, Lichee RV |
 | **RISC-V (StarFive JH7110)** | 2022 | `JH7110`, `StarFive.*JH7110` | VisionFive 2 SoC |
+| **RISC-V (T-Head C910)** | 2020 | `T-Head.*C910`, `Xuantie C910` | Alibaba/Xuantie boards |
 | **RISC-V (generic)** | 2014+ | `riscv`, `riscv64`, `riscv32`, `RISC-V` | Open-source ISA |
+| **RISC-V RVV modern marker** | 2021+ | `RVV`, `RV64GCV`, `RISC-V.*vector` | Treat as modern, 1.0x |
+
+Detection notes:
+
+- Captured fingerprints may include `misa=0x...`; decode the low extension bits and use `xlen=32` or `xlen=64` when available.
+- RV32I/RV32IM receives the highest RISC-V score because it is the rarest practical profile.
+- RVV/vector-capable systems are valuable, but the vector extension is a modernity marker rather than an antiquity marker.
 
 ---
 

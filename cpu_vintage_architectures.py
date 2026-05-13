@@ -16,6 +16,7 @@ Research Sources:
 - DEC Alpha: https://en.wikipedia.org/wiki/DEC_Alpha
 - Sun SPARC: https://en.wikipedia.org/wiki/SPARC
 - MIPS: https://en.wikipedia.org/wiki/MIPS_architecture
+- RISC-V: https://riscv.org/technical/specifications/
 - PA-RISC: https://en.wikipedia.org/wiki/PA-RISC
 - PowerPC Amiga: https://en.wikipedia.org/wiki/AmigaOne
 """
@@ -545,6 +546,93 @@ RISC_WORKSTATIONS = {
         ],
         "base_multiplier": 2.4,
         "description": "MIPS R10000 series (SGI Origin/Octane)"
+    },
+
+    # RISC-V (2010+) - exotic/open ISA, modern but diversity-positive
+    "sifive_u74": {
+        "years": (2020, 2023),
+        "patterns": [
+            r"SiFive.*U7[4]",
+            r"Freedom U7[4]0",
+            r"FU7[4]0",
+            r"sifive,u7[4]",
+        ],
+        "base_multiplier": 1.4,
+        "description": "RISC-V SiFive U74/FU740 (HiFive Unmatched, VisionFive-class)"
+    },
+    "starfive_jh7110": {
+        "years": (2022, 2024),
+        "patterns": [
+            r"StarFive.*JH7110",
+            r"JH7110",
+            r"starfive,jh7110",
+        ],
+        "base_multiplier": 1.35,
+        "description": "RISC-V StarFive JH7110 (VisionFive 2)"
+    },
+    "allwinner_d1_c906": {
+        "years": (2021, 2023),
+        "patterns": [
+            r"Allwinner.*D1",
+            r"\bD1s?\b.*RISC-V",
+            r"T-?Head.*C906",
+            r"Xuantie C906",
+        ],
+        "base_multiplier": 1.4,
+        "description": "RISC-V Allwinner D1 / T-Head C906"
+    },
+    "thead_c910": {
+        "years": (2020, 2024),
+        "patterns": [
+            r"T-?Head.*C910",
+            r"Xuantie C910",
+            r"Alibaba.*C910",
+        ],
+        "base_multiplier": 1.25,
+        "description": "RISC-V T-Head C910 (modern high-performance RISC-V)"
+    },
+    "riscv_rv32im": {
+        "years": (2014, 2024),
+        "patterns": [
+            r"\bRV32I\b",
+            r"\bRV32IM\b",
+            r"\bRV32IMA?C?\b",
+            r"\briscv32\b",
+            r"\brisc-v 32\b",
+        ],
+        "base_multiplier": 1.5,
+        "description": "RISC-V RV32I/RV32IM (32-bit embedded RISC-V)"
+    },
+    "riscv_rv64gc": {
+        "years": (2015, 2024),
+        "patterns": [
+            r"\bRV64GC\b",
+            r"\bRV64IMAFDC\b",
+            r"\briscv64\b",
+            r"\brisc-v 64\b",
+        ],
+        "base_multiplier": 1.4,
+        "description": "RISC-V RV64GC (64-bit general-purpose RISC-V)"
+    },
+    "riscv_vector": {
+        "years": (2021, 2025),
+        "patterns": [
+            r"\bRVV\b",
+            r"RISC-V.*vector",
+            r"\bRV64GCV\b",
+            r"\bRV32.*V\b",
+        ],
+        "base_multiplier": 1.0,
+        "description": "RISC-V with vector extension (modern RVV marker)"
+    },
+    "riscv_generic": {
+        "years": (2014, 2025),
+        "patterns": [
+            r"\bRISC-V\b",
+            r"\briscv\b",
+        ],
+        "base_multiplier": 1.3,
+        "description": "Generic RISC-V board"
     },
 
     # HP PA-RISC (1986-2008)
