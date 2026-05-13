@@ -21,6 +21,22 @@ from urllib.parse import urlparse, parse_qs
 import threading
 
 
+RPC_ALLOWED_METHODS = frozenset({
+    "getStats",
+    "getBlock",
+    "getBlockByHash",
+    "getWallet",
+    "getBalance",
+    "getMiningStatus",
+    "getAntiquityScore",
+    "getProposals",
+    "getProposal",
+    "getNodeInfo",
+    "getPeers",
+    "getEntropyProfile",
+})
+
+
 # =============================================================================
 # API Response
 # =============================================================================
@@ -325,7 +341,13 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
         # JSON-RPC endpoint
         if path == "/rpc":
             method = params.get("method", "")
+            if method not in RPC_ALLOWED_METHODS:
+                return ApiResponse(success=False, error=f"Method not allowed: {method}")
+
             rpc_params = params.get("params", {})
+            if not isinstance(rpc_params, dict):
+                return ApiResponse(success=False, error="RPC params must be an object")
+
             return self.api.rpc.call(method, rpc_params)
 
         return ApiResponse(success=False, error=f"Unknown endpoint: {path}")
