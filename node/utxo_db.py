@@ -333,6 +333,26 @@ class UtxoDB:
         finally:
             conn.close()
 
+    def _data_inputs_are_unspent(self, conn: sqlite3.Connection,
+                                 data_inputs: list) -> bool:
+        """Validate read-only UTXO references before accepting a tx."""
+        if not isinstance(data_inputs, list):
+            return False
+
+        for box_id in data_inputs:
+            if not isinstance(box_id, str) or not box_id.strip():
+                return False
+
+            row = conn.execute(
+                """SELECT spent_at FROM utxo_boxes
+                   WHERE box_id = ? AND spent_at IS NULL""",
+                (box_id,),
+            ).fetchone()
+            if not row:
+                return False
+
+        return True
+
     # -- transaction application ---------------------------------------------
 
     def apply_transaction(self, tx: dict, block_height: int,
@@ -372,6 +392,7 @@ class UtxoDB:
         outputs = tx.get('outputs', [])
         fee = tx.get('fee_nrtc', 0)
         tx_type = tx.get('tx_type', 'transfer')
+        data_inputs = tx.get('data_inputs', [])
 
         # FIX(#2207): Defense-in-depth guard against mining_reward type confusion.
         # The endpoint layer hardcodes tx_type='transfer', but if any code path
@@ -416,6 +437,12 @@ class UtxoDB:
                     return abort()
                 input_total += row['value_nrtc']
 
+            # Read-only data inputs must still reference existing unspent
+            # boxes.  Otherwise nodes can record unverifiable script context
+            # in tx history or admit invalid block candidates.
+            if not self._data_inputs_are_unspent(conn, data_inputs):
+                return abort()
+
             # -- conservation check ------------------------------------------
             # Only authorized minting transaction types may have empty inputs.
             # All other transactions must consume at least one input box.
@@ -459,7 +486,7 @@ class UtxoDB:
             tx_identity = {
                 'tx_type': tx_type,
                 'inputs': sorted(i['box_id'] for i in inputs),
-                'data_inputs': sorted(tx.get('data_inputs', [])),
+                'data_inputs': sorted(data_inputs),
                 'outputs': [
                     {
                         'address': out['address'],
@@ -540,7 +567,7 @@ class UtxoDB:
                                  'value_nrtc': r['value_nrtc'],
                                  'owner': r['owner_address']}
                                 for r in output_records]),
-                    json.dumps(tx.get('data_inputs', [])),
+                    json.dumps(data_inputs),
                     fee,
                     ts,
                     block_height,
@@ -688,6 +715,7 @@ class UtxoDB:
 
             inputs = tx.get('inputs', [])
             tx_type = tx.get('tx_type', 'transfer')
+            data_inputs = tx.get('data_inputs', [])
             now = int(time.time())
 
             # Public mempool admission must never accept minting transactions.
@@ -700,6 +728,9 @@ class UtxoDB:
                 return False
 
             if not inputs:
+                return False
+
+            if not isinstance(data_inputs, list):
                 return False
 
             conn.execute("BEGIN IMMEDIATE")
@@ -725,6 +756,11 @@ class UtxoDB:
                     if manage_tx:
                         conn.execute("ROLLBACK")
                     return False
+
+            if not self._data_inputs_are_unspent(conn, data_inputs):
+                if manage_tx:
+                    conn.execute("ROLLBACK")
+                return False
 
             # -- conservation-of-value check ---------------------------------
             # Prevent mempool admission of transactions that would fail
