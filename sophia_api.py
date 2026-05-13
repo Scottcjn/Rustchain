@@ -11,6 +11,8 @@ Endpoints:
 """
 
 from flask import Flask, request, jsonify
+import hmac
+import os
 
 from sophia_core import SophiaCoreInspector, VERDICTS
 from sophia_db import (
@@ -21,6 +23,18 @@ from sophia_db import (
 
 app = Flask(__name__)
 inspector = SophiaCoreInspector()
+
+_SOPHIA_ADMIN_KEY = os.environ.get("SOPHIA_ADMIN_KEY", "")
+
+
+def _require_admin():
+    """Return 401 error if admin key is not provided/valid."""
+    if not _SOPHIA_ADMIN_KEY:
+        return jsonify({"error": "Admin key not configured"}), 503
+    auth_key = request.headers.get("X-Admin-Key", "")
+    if not hmac.compare_digest(auth_key, _SOPHIA_ADMIN_KEY):
+        return jsonify({"error": "Unauthorized"}), 401
+    return None
 
 
 @app.before_request
@@ -34,6 +48,9 @@ def _ensure_db():
 @app.route("/sophia/inspect", methods=["POST"])
 def inspect_fingerprint():
     """Submit a hardware fingerprint for Sophia inspection."""
+    auth_error = _require_admin()
+    if auth_error:
+        return auth_error
     data = request.get_json(force=True)
 
     miner_id = data.get("miner_id")
