@@ -611,6 +611,60 @@ class TestAPIEndpoints(unittest.TestCase):
         self.assertFalse(data['ok'])
         self.assertEqual(data['error'], 'unauthorized')
         self.assertEqual(data['message'], 'ADMIN_KEY not configured')
+
+    def test_mutating_subresources_fail_closed_without_admin_key(self):
+        """All passport subresource writes require configured admin auth."""
+        os.environ['ADMIN_KEY'] = 'expected-admin-key'
+        self.client.post(
+            '/api/machine-passport',
+            headers={'X-Admin-Key': 'expected-admin-key'},
+            json={
+                'name': 'Subresource Auth Test',
+                'owner_miner_id': 'miner_owner',
+                'machine_id': 'subresource_auth_test',
+            },
+        )
+        os.environ.pop('ADMIN_KEY', None)
+
+        requests = [
+            (
+                '/api/machine-passport/subresource_auth_test/repair-log',
+                {
+                    'repair_type': 'unauthorized_repair',
+                    'description': 'should not be recorded',
+                },
+            ),
+            (
+                '/api/machine-passport/subresource_auth_test/attestations',
+                {'epoch': 1},
+            ),
+            (
+                '/api/machine-passport/subresource_auth_test/benchmarks',
+                {'compute_score': 123.4},
+            ),
+            (
+                '/api/machine-passport/subresource_auth_test/lineage',
+                {'event_type': 'transfer', 'to_owner': 'attacker_owner'},
+            ),
+        ]
+
+        for path, payload in requests:
+            with self.subTest(path=path):
+                resp = self.client.post(path, json=payload)
+                data = json.loads(resp.data)
+                self.assertEqual(resp.status_code, 401)
+                self.assertFalse(data['ok'])
+                self.assertEqual(data['error'], 'unauthorized')
+                self.assertEqual(data['message'], 'ADMIN_KEY not configured')
+
+        full_passport = json.loads(
+            self.client.get('/api/machine-passport/subresource_auth_test').data
+        )['passport']
+        self.assertEqual(full_passport['passport']['owner_miner_id'], 'miner_owner')
+        self.assertEqual(full_passport['repair_log'], [])
+        self.assertEqual(full_passport['attestation_history'], [])
+        self.assertEqual(full_passport['benchmark_signatures'], [])
+        self.assertEqual(full_passport['lineage_notes'], [])
     
     def test_get_nonexistent_passport(self):
         """Test getting a nonexistent passport."""

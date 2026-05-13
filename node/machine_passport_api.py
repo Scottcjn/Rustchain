@@ -353,6 +353,10 @@ def add_repair_entry(machine_id: str):
         "notes": "Machine now stable at 1.2V"
     }
     """
+    auth_error = require_admin()
+    if auth_error is not None:
+        return auth_error
+
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
     
@@ -395,6 +399,10 @@ def add_attestation(machine_id: str):
     
     Typically called automatically during mining attestation.
     """
+    auth_error = require_admin()
+    if auth_error is not None:
+        return auth_error
+
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
     
@@ -441,6 +449,10 @@ def add_benchmark(machine_id: str):
         "entropy_throughput": 500.0
     }
     """
+    auth_error = require_admin()
+    if auth_error is not None:
+        return auth_error
+
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
     
@@ -486,6 +498,10 @@ def add_lineage_note(machine_id: str):
         "tx_hash": "0x..."  # Optional blockchain transaction
     }
     """
+    auth_error = require_admin()
+    if auth_error is not None:
+        return auth_error
+
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
     
