@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 import unittest
 from pathlib import Path
 
