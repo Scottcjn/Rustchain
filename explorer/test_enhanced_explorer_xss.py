@@ -6,7 +6,7 @@ from pathlib import Path
 
 class TestEnhancedExplorerXss(unittest.TestCase):
     def setUp(self):
-        self.html = Path("enhanced-explorer.html").read_text()
+        self.html = Path(__file__).with_name("enhanced-explorer.html").read_text()
 
     def test_transaction_identity_fields_are_escaped(self):
         self.assertIn("${esc(tx.hash || tx.tx_hash || 'N/A')}", self.html)
