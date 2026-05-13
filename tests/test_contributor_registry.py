@@ -247,6 +247,29 @@ class TestApproveRoute:
             ).fetchone()
         assert row[0] == "pending"
 
+    def test_approve_rejects_admin_token_in_query_string(self, client):
+        """GET /approve/<username> should not accept admin secrets in URLs."""
+        client.post(
+            "/register",
+            data=registration_payload(
+                client,
+                github_username="pendinguser",
+                contributor_type="bot",
+                contribution_history="",
+            ),
+            follow_redirects=True,
+        )
+        response = client.get(
+            f"/approve/pendinguser?admin_token={ADMIN_TOKEN}",
+            follow_redirects=True,
+        )
+        assert response.status_code == 403
+        with sqlite3.connect(cr.DB_PATH) as conn:
+            row = conn.execute(
+                "SELECT status FROM contributors WHERE github_username='pendinguser'"
+            ).fetchone()
+        assert row[0] == "pending"
+
     def test_approve_pending_contributor(self, client):
         """GET /approve/<username> with admin token should set status to approved."""
         client.post(

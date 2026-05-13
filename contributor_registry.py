@@ -96,7 +96,7 @@ def validate_registration_token(token):
 
 def require_admin_token():
     configured_token = app.config.get("CONTRIBUTOR_ADMIN_TOKEN", "")
-    supplied_token = request.headers.get("X-Admin-Token", "") or request.args.get("admin_token", "")
+    supplied_token = request.headers.get("X-Admin-Token", "")
     if not configured_token or not supplied_token or not secrets.compare_digest(configured_token, supplied_token):
         abort(403)
 
