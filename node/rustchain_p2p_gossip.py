@@ -355,6 +355,7 @@ class GossipLayer:
         self.attestation_crdt = LWWRegister()
         self.balance_crdt = PNCounter()
         self.epoch_crdt = GSet()
+        self._epoch_votes: Dict[Tuple[int, str], Dict[str, str]] = {}
 
         # Phase F (#2256): per-peer Ed25519 identity, dual-mode signing.
         # Only loaded/generated when needed by the current signing mode;
@@ -389,6 +390,17 @@ class GossipLayer:
                     )
                 """)
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_p2p_seen_ts ON p2p_seen_messages(ts)")
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS p2p_epoch_votes (
+                        epoch INTEGER NOT NULL,
+                        proposal_hash TEXT NOT NULL,
+                        voter TEXT NOT NULL,
+                        vote TEXT NOT NULL,
+                        ts INTEGER NOT NULL,
+                        PRIMARY KEY (epoch, proposal_hash, voter)
+                    )
+                """)
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_p2p_epoch_votes_epoch ON p2p_epoch_votes(epoch)")
                 conn.commit()
 
                 # Load attestations
@@ -411,8 +423,17 @@ class GossipLayer:
                 for (epoch,) in rows:
                     self.epoch_crdt.add(epoch)
 
+                rows = conn.execute("""
+                    SELECT epoch, proposal_hash, voter, vote
+                    FROM p2p_epoch_votes
+                """).fetchall()
+                for epoch, proposal_hash, voter, vote in rows:
+                    key = (epoch, proposal_hash)
+                    self._epoch_votes.setdefault(key, {})[voter] = vote
+
                 logger.info(f"Loaded {len(self.attestation_crdt.data)} attestations, "
-                           f"{len(self.epoch_crdt.items)} settled epochs")
+                           f"{len(self.epoch_crdt.items)} settled epochs, "
+                           f"{sum(len(votes) for votes in self._epoch_votes.values())} epoch votes")
         except Exception as e:
             logger.error(f"Failed to load state from DB: {e}")
 
@@ -455,7 +476,7 @@ class GossipLayer:
         mode = self._signing_mode
 
         from p2p_identity import unpack_signature, verify_ed25519
-        hmac_sig, ed25519_sig = unpack_signature(signature)
+        hmac_sig, ed25519_sig, _key_version = unpack_signature(signature)
 
         # "strict" mode: only Ed25519 accepted. HMAC-only sigs are rejected
         # even if valid (flag-day enforcement).
@@ -500,8 +521,10 @@ class GossipLayer:
     def create_message(self, msg_type: MessageType, payload: Dict, ttl: int = GOSSIP_TTL) -> GossipMessage:
         """Create a new gossip message"""
         # Generate msg_id first for signature binding (Issue #2272)
+        # Issue #2268: Use cryptographically secure random nonce instead of predictable time.time()
         temp_content = f"{msg_type.value}:{self.node_id}:{json.dumps(payload, sort_keys=True)}"
-        msg_id = hashlib.sha256(f"{temp_content}:{time.time()}".encode()).hexdigest()[:24]
+        secure_nonce = secrets.token_hex(16)  # 128-bit cryptographically secure random value
+        msg_id = hashlib.sha256(f"{temp_content}:{secure_nonce}".encode()).hexdigest()[:24]
         
         content = self._signed_content(msg_type.value, self.node_id, msg_id, ttl, payload)
         sig, ts = self._sign_message(content)
@@ -536,7 +559,7 @@ class GossipLayer:
         mode = self._signing_mode
 
         from p2p_identity import unpack_signature, verify_ed25519
-        hmac_sig, ed25519_sig = unpack_signature(msg.signature)
+        hmac_sig, ed25519_sig, _key_version = unpack_signature(msg.signature)
 
         # 1) Try Ed25519 if available AND peer is registered.
         if ed25519_sig and self._peer_registry is not None:
@@ -603,14 +626,20 @@ class GossipLayer:
         # Record as seen (Issue #2271: Persistent storage)
         try:
             with sqlite3.connect(self.db_path) as conn:
-                conn.execute("INSERT OR IGNORE INTO p2p_seen_messages (msg_id, ts) VALUES (?, ?)", 
-                             (msg.msg_id, int(time.time())))
+                now = int(time.time())
+                conn.execute("INSERT OR IGNORE INTO p2p_seen_messages (msg_id, ts) VALUES (?, ?)",
+                             (msg.msg_id, now))
+                if conn.execute("SELECT changes()").fetchone()[0] == 0:
+                    return {"status": "duplicate"}
                 # Prune old messages (> 1 hour)
-                conn.execute("DELETE FROM p2p_seen_messages WHERE ts < ?", (int(time.time()) - 3600,))
+                conn.execute("DELETE FROM p2p_seen_messages WHERE ts < ?", (now - 3600,))
                 conn.commit()
         except Exception as e:
             logger.error(f"P2P save seen DB error: {e}")
-            self.seen_messages.add(msg.msg_id)
+            with self.lock:
+                if self.seen_messages.contains(msg.msg_id):
+                    return {"status": "duplicate"}
+                self.seen_messages.add(msg.msg_id)
 
         # TTLCache handles automatic eviction (TTL + LRU)
 
@@ -872,8 +901,6 @@ class GossipLayer:
             return {"status": "error", "reason": "voter_identity_mismatch"}
 
         # Phase C: index by (epoch, proposal_hash) — not just epoch.
-        if not hasattr(self, '_epoch_votes'):
-            self._epoch_votes: Dict[Tuple[int, str], Dict[str, str]] = {}
         key = (epoch, proposal_hash)
         if key not in self._epoch_votes:
             self._epoch_votes[key] = {}
@@ -885,6 +912,27 @@ class GossipLayer:
                 f"duplicate vote from {voter} ignored"
             )
             return {"status": "duplicate", "epoch": epoch, "voter": voter}
+
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO p2p_epoch_votes
+                    (epoch, proposal_hash, voter, vote, ts)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (epoch, proposal_hash, voter, vote, int(time.time())),
+                )
+                if conn.execute("SELECT changes()").fetchone()[0] == 0:
+                    logger.warning(
+                        f"Epoch {epoch} proposal {proposal_hash[:12]}: "
+                        f"persisted duplicate vote from {voter} ignored"
+                    )
+                    return {"status": "duplicate", "epoch": epoch, "voter": voter}
+                conn.commit()
+        except Exception as e:
+            logger.error(f"Failed to persist epoch vote from {voter}: {e}")
+            return {"status": "error", "reason": "vote_persist_failed"}
 
         self._epoch_votes[key][voter] = vote
 
@@ -937,8 +985,10 @@ class GossipLayer:
         # Uses the Phase A signed-content shape (msg_type:sender_id:payload)
         # so verify_message() on the requester side accepts it.
         payload = {"state": state_data}
+        # Issue #2268: Use cryptographically secure random nonce instead of predictable time.time()
+        state_nonce = secrets.token_hex(16)
         state_msg_id = hashlib.sha256(
-            f"STATE:{self.node_id}:{json.dumps(payload, sort_keys=True)}:{time.time()}".encode()
+            f"STATE:{self.node_id}:{json.dumps(payload, sort_keys=True)}:{state_nonce}".encode()
         ).hexdigest()[:24]
         
         content = self._signed_content(MessageType.STATE.value, self.node_id, state_msg_id, 0, payload)
@@ -1060,6 +1110,7 @@ class GossipLayer:
             resp = requests.post(
                 f"{peer_url}/p2p/gossip",
                 json=msg.to_dict(),
+                headers={"X-P2P-Key": P2P_SECRET},
                 timeout=30,
                 verify=TLS_VERIFY
             )
@@ -1311,6 +1362,13 @@ def register_p2p_endpoints(app, p2p_node: RustChainP2PNode):
                     del _gossip_rate[ip]
             return True
 
+    def _require_p2p_read_auth():
+        """Require the shared P2P secret for sensitive read-only sync endpoints."""
+        provided = request.headers.get("X-P2P-Key", "")
+        if not provided or not hmac.compare_digest(provided, P2P_SECRET):
+            return jsonify({"error": "unauthorized", "message": "valid X-P2P-Key required"}), 401
+        return None
+
     @app.route('/p2p/gossip', methods=['POST'])
     def receive_gossip():
         """Receive and process gossip message"""
@@ -1326,16 +1384,25 @@ def register_p2p_endpoints(app, p2p_node: RustChainP2PNode):
     @app.route('/p2p/state', methods=['GET'])
     def get_state():
         """Get full CRDT state for sync"""
+        auth_error = _require_p2p_read_auth()
+        if auth_error:
+            return auth_error
         return jsonify(p2p_node.get_full_state())
 
     @app.route('/p2p/attestation_state', methods=['GET'])
     def get_attestation_state():
         """Get attestation timestamps for efficient sync"""
+        auth_error = _require_p2p_read_auth()
+        if auth_error:
+            return auth_error
         return jsonify(p2p_node.get_attestation_state())
 
     @app.route('/p2p/peers', methods=['GET'])
     def get_peers():
         """Get list of known peers"""
+        auth_error = _require_p2p_read_auth()
+        if auth_error:
+            return auth_error
         return jsonify({
             "node_id": p2p_node.node_id,
             "peers": list(p2p_node.peers.keys())

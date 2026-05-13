@@ -10,12 +10,21 @@ Deployable at rustchain.org/passport/<machine_id>
 import json
 import os
 from datetime import datetime
+from typing import Any, Dict
 
 from flask import Flask, render_template, jsonify, request, Response
 from passport_ledger import MachinePassport, PassportLedger, RepairEntry, BenchmarkSignature
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 ledger = PassportLedger(data_dir=os.environ.get("PASSPORT_DATA_DIR", "/tmp/passport-ledger"))
+
+
+def get_json_object() -> Dict[str, Any]:
+    """Return the request JSON body when it is an object."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        raise ValueError("JSON object required")
+    return data
 
 
 # ── Web Routes ────────────────────────────────────────────────────
@@ -69,8 +78,12 @@ def api_get(machine_id):
 @app.route("/api/passport", methods=["POST"])
 def api_create():
     """Create or update a machine passport."""
-    data = request.get_json()
-    if not data or "machine_id" not in data:
+    try:
+        data = get_json_object()
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    if "machine_id" not in data:
         return jsonify({"error": "machine_id required"}), 400
 
     # Check if exists (update) or new (create)
@@ -100,8 +113,12 @@ def api_add_repair(machine_id):
     if not p:
         return jsonify({"error": "Passport not found"}), 404
 
-    data = request.get_json()
-    if not data or "date" not in data or "description" not in data:
+    try:
+        data = get_json_object()
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    if "date" not in data or "description" not in data:
         return jsonify({"error": "date and description required"}), 400
 
     p.add_repair(**{k: v for k, v in data.items() if k in RepairEntry.__dataclass_fields__})
@@ -116,7 +133,11 @@ def api_add_benchmark(machine_id):
     if not p:
         return jsonify({"error": "Passport not found"}), 404
 
-    data = request.get_json() or {}
+    try:
+        data = get_json_object()
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
     sig = BenchmarkSignature(**{k: v for k, v in data.items() if k in BenchmarkSignature.__dataclass_fields__})
     p.add_benchmark(sig)
     ledger.save(p)

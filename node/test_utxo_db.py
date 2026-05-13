@@ -124,6 +124,61 @@ class TestUtxoDB(unittest.TestCase):
         self.assertEqual(self.db.get_balance('bob'), 90 * UNIT)
         self.assertEqual(self.db.get_balance('alice'), 9 * UNIT)
 
+    def test_transfer_tx_id_commits_to_outputs(self):
+        """Different transfer outputs must not share the same tx_id.
+
+        Previously transfer tx_id was derived from inputs + timestamp only.
+        Two nodes could apply materially different transactions with the same
+        input and timestamp, record the same tx_id, but produce different UTXO
+        sets and state roots.
+        """
+        def apply_variant(recipient: str) -> tuple:
+            tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+            tmp.close()
+            db = UtxoDB(tmp.name)
+            try:
+                db.init_tables()
+                ok = db.apply_transaction({
+                    'tx_type': 'mining_reward',
+                    'inputs': [],
+                    'outputs': [{'address': 'alice',
+                                 'value_nrtc': 100 * UNIT}],
+                    'fee_nrtc': 0,
+                    'timestamp': 1234567890,
+                    '_allow_minting': True,
+                }, block_height=1)
+                self.assertTrue(ok)
+
+                box = db.get_unspent_for_address('alice')[0]
+                ok = db.apply_transaction({
+                    'tx_type': 'transfer',
+                    'inputs': [{'box_id': box['box_id'],
+                                'spending_proof': 'sig'}],
+                    'outputs': [{'address': recipient,
+                                 'value_nrtc': 100 * UNIT}],
+                    'fee_nrtc': 0,
+                    'timestamp': 2222222222,
+                }, block_height=10)
+                self.assertTrue(ok)
+
+                conn = db._conn()
+                try:
+                    row = conn.execute(
+                        """SELECT tx_id FROM utxo_transactions
+                           WHERE tx_type = 'transfer'"""
+                    ).fetchone()
+                    return row['tx_id'], db.compute_state_root()
+                finally:
+                    conn.close()
+            finally:
+                os.unlink(tmp.name)
+
+        bob_tx_id, bob_root = apply_variant('bob')
+        eve_tx_id, eve_root = apply_variant('eve')
+
+        self.assertNotEqual(bob_root, eve_root)
+        self.assertNotEqual(bob_tx_id, eve_tx_id)
+
     def test_fee_exceeds_conservation(self):
         """Outputs + fee > inputs should fail."""
         self._apply_coinbase('alice', 100 * UNIT)
@@ -150,6 +205,29 @@ class TestUtxoDB(unittest.TestCase):
                          'spending_proof': 'sig'}],
             'outputs': [{'address': 'bob', 'value_nrtc': 1100 * UNIT}],
             'fee_nrtc': -1000 * UNIT,  # negative fee bypasses conservation
+        }, block_height=10)
+
+        self.assertFalse(ok)
+        # Balances unchanged
+        self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
+        self.assertEqual(self.db.get_balance('bob'), 0)
+
+    def test_fractional_fee_rejected(self):
+        """fee_nrtc must be an integer nanoRTC amount.
+
+        A fractional fee can pass conservation by pairing it with a one-nanoRTC
+        output reduction, but SQLite stores the fee in an INTEGER column and
+        truncates it. That silently destroys value without recording the fee.
+        """
+        self._apply_coinbase('alice', 100 * UNIT)
+        alice_boxes = self.db.get_unspent_for_address('alice')
+
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': alice_boxes[0]['box_id'],
+                         'spending_proof': 'sig'}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT - 1}],
+            'fee_nrtc': 0.5,
         }, block_height=10)
 
         self.assertFalse(ok)
@@ -358,6 +436,39 @@ class TestUtxoDB(unittest.TestCase):
         # Highest fee first
         self.assertEqual(candidates[0]['tx_id'], 'high' * 16)
 
+    def test_mempool_block_candidates_ignore_expired_transactions(self):
+        self._apply_coinbase('alice', 100 * UNIT, block_height=1)
+        box = self.db.get_unspent_for_address('alice')[0]
+        tx_id = 'expired' * 8
+
+        self.assertTrue(self.db.mempool_add({
+            'tx_id': tx_id,
+            'inputs': [{'box_id': box['box_id']}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT - 1000}],
+            'fee_nrtc': 1000,
+        }))
+
+        conn = self.db._conn()
+        try:
+            conn.execute(
+                "UPDATE utxo_mempool SET expires_at = ? WHERE tx_id = ?",
+                (int(time.time()) - 1, tx_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        self.assertTrue(self.db.mempool_add({
+            'tx_id': 'replacement' * 6,
+            'inputs': [{'box_id': box['box_id']}],
+            'outputs': [{'address': 'carol', 'value_nrtc': 100 * UNIT - 2000}],
+            'fee_nrtc': 2000,
+        }))
+
+        candidates = self.db.mempool_get_block_candidates()
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0]['tx_id'], 'replacement' * 6)
+
     def test_mempool_nonexistent_input_rejected(self):
         tx = {
             'tx_id': 'cccc' * 16,
@@ -530,6 +641,29 @@ class TestUtxoDB(unittest.TestCase):
             'inputs': [{'box_id': boxes[0]['box_id']}],
             'outputs': [{'address': 'bob', 'value_nrtc': 50 * UNIT}],
             'fee_nrtc': -50 * UNIT,
+        }
+        ok = self.db.mempool_add(tx)
+        self.assertFalse(ok)
+        # Box should NOT be locked
+        self.assertFalse(
+            self.db.mempool_check_double_spend(boxes[0]['box_id'])
+        )
+
+    def test_mempool_rejects_fractional_fee(self):
+        """Mempool must reject non-integer fee_nrtc values.
+
+        Otherwise a transaction can lock inputs with fee accounting that will
+        diverge when persisted to SQLite's INTEGER fee column.
+        """
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        tx = {
+            'tx_id': 'ffee' * 16,
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': boxes[0]['box_id']}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT - 1}],
+            'fee_nrtc': 0.5,
         }
         ok = self.db.mempool_add(tx)
         self.assertFalse(ok)

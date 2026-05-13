@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: MIT -->
 # Issue #2296: Red Team Attestation Replay Cross-Node Attack
 
 ## Executive Summary
@@ -377,5 +378,5 @@ Same as RustChain main project.
 
 - [RustChain Bounties](https://github.com/Scottcjn/rustchain-bounties)
 - [Issue #2296](https://github.com/Scottcjn/rustchain-bounties/issues/2296)
-- [RIP-306: Sophia Attestation Inspector](../../../rips/docs/RIP-0306-sophia-attestation-inspector.md)
-- [Attestation Flow Documentation](../../../docs/attestation-flow.md)
+- [RIP-306: Sophia Attestation Inspector](../../rips/docs/RIP-0306-sophia-attestation-inspector.md)
+- [Attestation Flow Documentation](../../docs/attestation-flow.md)

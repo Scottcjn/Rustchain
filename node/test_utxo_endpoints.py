@@ -10,10 +10,14 @@ import os
 import tempfile
 import time
 import unittest
+from decimal import Decimal
 
 from flask import Flask
 
-from utxo_db import UtxoDB, UNIT
+import utxo_endpoints
+from utxo_db import (
+    UtxoDB, UNIT, address_to_proposition, compute_box_id,
+)
 from utxo_endpoints import register_utxo_blueprint
 
 
@@ -69,7 +73,23 @@ class TestUtxoEndpoints(unittest.TestCase):
             'inputs': [],
             'outputs': [{'address': address, 'value_nrtc': value_nrtc}],
             'timestamp': int(time.time()),
+            '_allow_minting': True,
         }, block_height=height)
+
+    def _seed_existing_box(self, address, value_nrtc, height=1):
+        tx_id = '22' * 32
+        prop = address_to_proposition(address)
+        box_id = compute_box_id(value_nrtc, prop, height, tx_id, 0)
+        self.utxo_db.add_box({
+            'box_id': box_id,
+            'value_nrtc': value_nrtc,
+            'proposition': prop,
+            'owner_address': address,
+            'creation_height': height,
+            'transaction_id': tx_id,
+            'output_index': 0,
+        })
+        return box_id
 
     # -- read endpoints ------------------------------------------------------
 
@@ -254,6 +274,94 @@ class TestUtxoEndpoints(unittest.TestCase):
         self.assertEqual(bob_bal, 10_000_000,
                          f"Expected 10_000_000 nanoRTC, got {bob_bal} "
                          f"(float truncation bug)")
+
+    def test_transfer_rejects_decimal_amount_not_preserved_by_signed_float(self):
+        """The signed float amount must match the ledger nanoRTC amount.
+
+        Decimal parsing is exact, but the legacy signed payload serializes
+        amount as a JSON float. These two inputs produce the same signed float
+        while differing by 5 nanoRTC in ledger math.
+        """
+        base_amount = Decimal('1000000000.0')
+        mutated_amount = Decimal('1000000000.00000005')
+        self.assertEqual(float(base_amount), float(mutated_amount))
+
+        sender = 'RTC_test_aabbccdd'
+        recipient = 'bob'
+        self._seed_existing_box(sender, int(mutated_amount * UNIT))
+
+        signed_message = json.dumps({
+            'from': sender,
+            'to': recipient,
+            'amount': float(base_amount),
+            'fee': 0.0,
+            'memo': '',
+            'nonce': 424242,
+        }, sort_keys=True, separators=(',', ':')).encode()
+
+        old_verify = utxo_endpoints._verify_sig_fn
+
+        def verify_base_amount(pubkey_hex, message, sig_hex):
+            return sig_hex == 'valid-for-base' and message == signed_message
+
+        try:
+            utxo_endpoints._verify_sig_fn = verify_base_amount
+            r = self.client.post('/utxo/transfer', json={
+                'from_address': sender,
+                'to_address': recipient,
+                'amount_rtc': str(mutated_amount),
+                'fee_rtc': '0',
+                'public_key': 'aabbccdd' * 8,
+                'signature': 'valid-for-base',
+                'nonce': 424242,
+            })
+        finally:
+            utxo_endpoints._verify_sig_fn = old_verify
+
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('signed payload', r.get_json()['error'])
+        self.assertEqual(self.utxo_db.get_balance(recipient), 0)
+
+    def test_legacy_signature_rejects_nonzero_fee(self):
+        """Legacy signatures omit fee_rtc, so they cannot authorize fees."""
+        sender = 'RTC_test_aabbccdd'
+        recipient = 'bob'
+        self._seed_coinbase(sender, 100 * UNIT)
+
+        signed_message = json.dumps({
+            'from': sender,
+            'to': recipient,
+            'amount': 10.0,
+            'memo': '',
+            'nonce': 515151,
+        }, sort_keys=True, separators=(',', ':')).encode()
+
+        old_verify = utxo_endpoints._verify_sig_fn
+
+        def verify_legacy_only(pubkey_hex, message, sig_hex):
+            return sig_hex == 'legacy-sig' and message == signed_message
+
+        try:
+            utxo_endpoints._verify_sig_fn = verify_legacy_only
+            r = self.client.post('/utxo/transfer', json={
+                'from_address': sender,
+                'to_address': recipient,
+                'amount_rtc': 10.0,
+                'fee_rtc': 1.0,
+                'public_key': 'aabbccdd' * 8,
+                'signature': 'legacy-sig',
+                'nonce': 515151,
+            })
+        finally:
+            utxo_endpoints._verify_sig_fn = old_verify
+
+        self.assertEqual(r.status_code, 401)
+        self.assertEqual(
+            r.get_json()['code'],
+            'LEGACY_SIGNATURE_FEE_UNBOUND',
+        )
+        self.assertEqual(self.utxo_db.get_balance(sender), 100 * UNIT)
+        self.assertEqual(self.utxo_db.get_balance(recipient), 0)
 
 
 if __name__ == '__main__':

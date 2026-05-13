@@ -10,6 +10,7 @@ and stores them in a durable inbox for bigger Sophia/Elyan agents.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 import sqlite3
@@ -226,7 +227,7 @@ def _is_authorized(req) -> bool:
     required_bearers = _bearer_tokens()
 
     provided_admin = (req.headers.get("X-Admin-Key") or req.headers.get("X-API-Key") or "").strip()
-    if required_admin and provided_admin and provided_admin == required_admin:
+    if required_admin and provided_admin and hmac.compare_digest(provided_admin, required_admin):
         return True
 
     auth_header = (req.headers.get("Authorization") or "").strip()

@@ -72,6 +72,30 @@ def _parse_rtc_amount(raw) -> Decimal:
         raise ValueError(f"amount exceeds maximum ({_MAX_RTC_AMOUNT})")
     return amount
 
+
+def _decimal_to_nrtc(amount: Decimal, field_name: str) -> int:
+    """Convert an RTC Decimal to nanoRTC without silently truncating."""
+    nrtc = amount * UNIT
+    integral = nrtc.to_integral_value()
+    if nrtc != integral:
+        raise ValueError(f"{field_name} supports at most 8 decimal places")
+    return int(integral)
+
+
+def _ensure_signed_float_preserves_nrtc(amount: Decimal, nrtc: int,
+                                        field_name: str) -> None:
+    """
+    The current wallet signature format serializes amounts as JSON numbers.
+    Reject Decimal spellings that collapse to a different float value than the
+    exact nanoRTC amount later applied to the ledger.
+    """
+    signed_amount = Decimal(str(float(amount)))
+    signed_nrtc = signed_amount * UNIT
+    if signed_nrtc != signed_nrtc.to_integral_value() or int(signed_nrtc) != nrtc:
+        raise ValueError(
+            f"{field_name} cannot be represented safely in signed payload"
+        )
+
 # Account-model balances store amount_i64 at 6 decimals (micro-RTC).
 # This MUST match the multiplier used in rustchain_v2_integrated_v2.2.1_rip200.py
 # (e.g. line 2370: amount_i64 = int(amount_decimal * Decimal(1000000))).
@@ -347,6 +371,14 @@ def utxo_transfer():
     if amount_rtc <= 0:
         return jsonify({'error': 'Amount must be positive'}), 400
 
+    try:
+        amount_nrtc = _decimal_to_nrtc(amount_rtc, 'amount_rtc')
+        fee_nrtc = _decimal_to_nrtc(fee_rtc, 'fee_rtc')
+        _ensure_signed_float_preserves_nrtc(amount_rtc, amount_nrtc, 'amount_rtc')
+        _ensure_signed_float_preserves_nrtc(fee_rtc, fee_nrtc, 'fee_rtc')
+    except ValueError as e:
+        return jsonify({'error': f'Invalid amount: {e}'}), 400
+
     # Verify pubkey → address
     expected_addr = _addr_from_pk_fn(public_key)
     if from_address != expected_addr:
@@ -389,6 +421,11 @@ def utxo_transfer():
     if _verify_sig_fn(public_key, message_v2, signature):
         pass  # New client — fee is signed, MITM-resistant
     elif _verify_sig_fn(public_key, message_legacy, signature):
+        if fee_nrtc != 0:
+            return jsonify({
+                'error': 'Legacy signature format cannot authorize nonzero fee',
+                'code': 'LEGACY_SIGNATURE_FEE_UNBOUND',
+            }), 401
         logging.warning(
             "[UTXO/SIG] DEPRECATED: signature without fee accepted for %s... "
             "Upgrade client to include fee in signed message.",
@@ -402,8 +439,6 @@ def utxo_transfer():
     # FIX(#2867 M2): Decimal arithmetic preserves precision through quantization.
     # int(Decimal) truncates toward zero (no float-binary noise like 0.29 →
     # 28999999.999... → 28999999 lost-rtc bug).
-    amount_nrtc = int(amount_rtc * UNIT)
-    fee_nrtc = int(fee_rtc * UNIT)
     target_nrtc = amount_nrtc + fee_nrtc
 
     # Select UTXOs

@@ -32,6 +32,20 @@ from bottube_feed import (
 feed_bp = Blueprint("bottube_feed", __name__, url_prefix="/api/feed")
 
 
+def _get_base_url() -> str:
+    """Return the public base URL without trusting arbitrary forwarded hosts."""
+    configured_base_url = current_app.config.get("BOTTUBE_PUBLIC_BASE_URL")
+    if configured_base_url:
+        return str(configured_base_url).rstrip("/")
+
+    forwarded_host = request.headers.get("X-Forwarded-Host", "").strip()
+    trusted_hosts = current_app.config.get("TRUSTED_FORWARD_HOSTS") or []
+    if forwarded_host and forwarded_host in trusted_hosts:
+        return f"https://{forwarded_host}"
+
+    return request.host_url.rstrip("/")
+
+
 def _get_db_connection():
     """Get database connection from Flask app config."""
     db_path = current_app.config.get("DB_PATH")
@@ -218,9 +232,7 @@ def rss_feed():
         videos, next_cursor = _fetch_videos(limit=limit, agent=agent, cursor=cursor)
         
         # Get base URL
-        base_url = request.host_url.rstrip("/")
-        if request.headers.get("X-Forwarded-Host"):
-            base_url = f"https://{request.headers['X-Forwarded-Host']}"
+        base_url = _get_base_url()
         
         # Build RSS feed
         feed_title = "BoTTube Videos"
@@ -274,9 +286,7 @@ def atom_feed():
         videos, next_cursor = _fetch_videos(limit=limit, agent=agent, cursor=cursor)
         
         # Get base URL
-        base_url = request.host_url.rstrip("/")
-        if request.headers.get("X-Forwarded-Host"):
-            base_url = f"https://{request.headers['X-Forwarded-Host']}"
+        base_url = _get_base_url()
         
         # Build Atom feed
         feed_title = "BoTTube Videos"
@@ -341,9 +351,7 @@ def feed_index():
     videos, next_cursor = _fetch_videos(limit=limit, agent=agent, cursor=cursor)
     
     # Get base URL
-    base_url = request.host_url.rstrip("/")
-    if request.headers.get("X-Forwarded-Host"):
-        base_url = f"https://{request.headers['X-Forwarded-Host']}"
+    base_url = _get_base_url()
     
     # Auto-detect format
     if "application/rss+xml" in accept_header:

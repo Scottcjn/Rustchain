@@ -3,16 +3,25 @@ import platform
 import json
 from datetime import datetime
 
+
+def _run_hardware_query(args):
+    return subprocess.check_output(
+        args,
+        stderr=subprocess.DEVNULL,
+        timeout=10,
+    ).decode().splitlines()
+
+
 def get_bios_date():
     try:
         if platform.system() == "Windows":
-            output = subprocess.check_output("wmic bios get releasedate", shell=True).decode().splitlines()
+            output = _run_hardware_query(["wmic", "bios", "get", "releasedate"])
             for line in output:
-                if line.strip().isdigit() and len(line.strip()) >= 8:
-                    date_str = line.strip()
+                date_str = line.strip()
+                if len(date_str) >= 8 and date_str[:8].isdigit():
                     return datetime.strptime(date_str[:8], "%Y%m%d")
         elif platform.system() == "Linux":
-            output = subprocess.check_output("dmidecode -t bios", shell=True, stderr=subprocess.DEVNULL).decode().splitlines()
+            output = _run_hardware_query(["dmidecode", "-t", "bios"])
             for line in output:
                 if "Release Date" in line:
                     date_str = line.split(":")[1].strip()

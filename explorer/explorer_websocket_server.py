@@ -12,7 +12,7 @@ Features:
 - Nginx proxy compatible
 
 Standalone usage:
-    python3 explorer_websocket_server.py --port 8080 --node https://50.28.86.131
+    python3 explorer_websocket_server.py --port 8080 --node https://rustchain.org
 
 Integration:
     from explorer_websocket_server import socketio, app, start_explorer_poller
@@ -27,10 +27,16 @@ import os
 import json
 import time
 import threading
-import ssl
 import urllib.request
+import sys
 from flask import Flask, Blueprint, jsonify, request
 from datetime import datetime
+
+try:
+    from node.tls_config import get_ssl_context
+except ModuleNotFoundError:
+    sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+    from node.tls_config import get_ssl_context
 
 try:
     from flask_socketio import SocketIO, emit, join_room, leave_room
@@ -41,14 +47,14 @@ except ImportError:
 
 # ─── Configuration ─────────────────────────────────────────────────────────── #
 EXPLORER_PORT = int(os.environ.get('EXPLORER_PORT', 8080))
-NODE_URL = os.environ.get('RUSTCHAIN_NODE_URL', os.environ.get('RUSTCHAIN_API_BASE', 'https://50.28.86.131'))
+NODE_URL = os.environ.get('RUSTCHAIN_NODE_URL', os.environ.get('RUSTCHAIN_API_BASE', 'https://rustchain.org'))
 API_TIMEOUT = float(os.environ.get('API_TIMEOUT', '8'))
 POLL_INTERVAL = float(os.environ.get('POLL_INTERVAL', '5'))  # seconds between polls
 HEARTBEAT_S = 30  # ping/pong interval for connection health
 MAX_QUEUE = 100  # max buffered events per client (backpressure)
 
 # SSL context for HTTPS node connections
-CTX = ssl._create_unverified_context()
+CTX = get_ssl_context()
 
 # ─── Explorer State ─────────────────────────────────────────────────────────── #
 class ExplorerState:
@@ -224,6 +230,22 @@ class ExplorerState:
 
 # Global state instance
 state = ExplorerState()
+
+
+def parse_limit_arg(default: int, max_value: int):
+    raw_value = request.args.get("limit")
+    if raw_value is None:
+        return default, None
+
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        return None, "limit_must_be_integer"
+
+    if value < 1:
+        return None, "limit_must_be_positive"
+
+    return min(value, max_value), None
 
 
 # ─── API Fetching ──────────────────────────────────────────────────────────── #
@@ -459,7 +481,10 @@ def metrics_endpoint():
 @app.route("/api/explorer/blocks")
 def get_blocks():
     """Get recent blocks."""
-    limit = request.args.get("limit", 50, type=int)
+    limit, error = parse_limit_arg(50, 100)
+    if error:
+        return jsonify({"error": error}), 400
+
     with state._lock:
         return jsonify(state.blocks[:limit])
 

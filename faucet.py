@@ -305,12 +305,19 @@ def drip():
     Response:
         {"ok": true, "amount": 0.5, "next_available": "2026-03-08T12:00:00Z"}
     """
-    data = request.get_json()
-    
-    if not data or 'wallet' not in data:
+    data = request.get_json(silent=True)
+
+    if not isinstance(data, dict):
+        return jsonify({'ok': False, 'error': 'Invalid JSON body'}), 400
+
+    if 'wallet' not in data:
         return jsonify({'ok': False, 'error': 'Wallet address required'}), 400
-    
-    wallet = data['wallet'].strip()
+
+    wallet_value = data['wallet']
+    if not isinstance(wallet_value, str):
+        return jsonify({'ok': False, 'error': 'Invalid wallet address'}), 400
+
+    wallet = wallet_value.strip()
     
     # Basic wallet validation (should start with 0x and be reasonably long)
     if not wallet.startswith('0x') or len(wallet) < 10:

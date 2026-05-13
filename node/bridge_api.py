@@ -16,7 +16,9 @@ Endpoints:
 
 import sqlite3
 import time
+import hmac
 import hashlib
+import logging
 import os
 from typing import Optional, Tuple, Dict, Any
 from decimal import Decimal
@@ -54,6 +56,7 @@ BRIDGE_DEFAULT_CONFIRMATIONS = int(os.environ.get("RC_BRIDGE_DEFAULT_CONFIRMATIO
 BRIDGE_LOCK_EXPIRY_SECONDS = int(os.environ.get("RC_BRIDGE_LOCK_EXPIRY_SECONDS", "604800"))  # 7 days
 BRIDGE_MIN_AMOUNT_RTC = float(os.environ.get("RC_BRIDGE_MIN_AMOUNT_RTC", "1.0"))
 BRIDGE_UNIT = 1000000  # Micro-units per RTC
+logger = logging.getLogger(__name__)
 
 
 # =============================================================================
@@ -384,11 +387,11 @@ def create_bridge_transfer(
             "amount_rtc": request.amount_rtc
         }
         
-    except sqlite3.Error as e:
+    except sqlite3.Error:
         db_conn.rollback()
+        logger.exception("Failed to create bridge transfer")
         return False, {
-            "error": "Database error",
-            "details": str(e)
+            "error": "Database error"
         }
 
 
@@ -567,11 +570,11 @@ def void_bridge_transfer(
             "lock_released": True
         }
         
-    except sqlite3.Error as e:
+    except sqlite3.Error:
         db_conn.rollback()
+        logger.exception("Failed to void bridge transfer")
         return False, {
-            "error": "Database error",
-            "details": str(e)
+            "error": "Database error"
         }
 
 
@@ -642,11 +645,11 @@ def update_external_confirmation(
             "required_confirmations": req_conf
         }
         
-    except sqlite3.Error as e:
+    except sqlite3.Error:
         db_conn.rollback()
+        logger.exception("Failed to update bridge external confirmation")
         return False, {
-            "error": "Database error",
-            "details": str(e)
+            "error": "Database error"
         }
 
 
@@ -679,7 +682,15 @@ def register_bridge_routes(app):
         
         # Check admin initiation (bypasses balance check)
         admin_key = request.headers.get("X-Admin-Key", "")
-        admin_initiated = admin_key == os.environ.get("RC_ADMIN_KEY", "")
+        expected_admin_key = os.environ.get("RC_ADMIN_KEY", "")
+        admin_initiated = bool(expected_admin_key) and hmac.compare_digest(admin_key, expected_admin_key)
+        if data["direction"] == "deposit":
+            # Deposits create balance locks by source_address; require operator
+            # authorization until a wallet-owner signature flow exists.
+            if not expected_admin_key:
+                return jsonify({"error": "RC_ADMIN_KEY not configured"}), 503
+            if not admin_initiated:
+                return jsonify({"error": "unauthorized"}), 401
         
         # Create bridge transfer
         req = BridgeTransferRequest(
@@ -758,8 +769,9 @@ def register_bridge_routes(app):
     def void_bridge():
         """Admin: Void a bridge transfer."""
         admin_key = request.headers.get("X-Admin-Key", "")
-        if admin_key != os.environ.get("RC_ADMIN_KEY", ""):
-            return jsonify({"error": "Unauthorized - admin key required"}), 401
+        expected_key = os.environ.get("RC_ADMIN_KEY", "")
+        if not admin_key or not expected_key or not hmac.compare_digest(admin_key, expected_key):
+            return jsonify({"error": "unauthorized"}), 401
         
         data = request.get_json(silent=True)
         if not data:
@@ -785,10 +797,11 @@ def register_bridge_routes(app):
     @app.route('/api/bridge/update-external', methods=['POST'])
     def update_external():
         """Update external confirmation data (for bridge service callbacks)."""
-        # Optional: require API key for callbacks
         api_key = request.headers.get("X-API-Key", "")
         expected_key = os.environ.get("RC_BRIDGE_API_KEY", "")
-        if expected_key and api_key != expected_key:
+        if not expected_key:
+            return jsonify({"error": "Bridge API key not configured"}), 503
+        if not hmac.compare_digest(api_key, expected_key):
             return jsonify({"error": "Unauthorized"}), 401
         
         data = request.get_json(silent=True)

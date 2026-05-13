@@ -137,6 +137,12 @@ function ts(v){ if(!v) return '—'; try { return new Date(v*1000).toISOString()
 function fallbackArt(){
   return '    _____________\n   / ___________ \\\n  | |  MACHINE  | |\n  | |___________| |\n  |  ___________  |\n  | |           | |\n  |_|___________|_|';
 }
+function esc(s){ return String(s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function safeInt(v){ const n=Number.parseInt(v,10); return Number.isFinite(n)?n:0; }
+function safeScore(v){
+  const n=Number(v);
+  return Number.isFinite(n)?String(n):esc(v||'—');
+}
 (async()=>{
   const id=q('id')||q('machine');
   if(!id){ document.getElementById('status').innerHTML='<span class="err">Missing machine id. Use ?id=&lt;fingerprint_hash&gt;.</span>'; return; }
@@ -166,7 +172,7 @@ function fallbackArt(){
 
   const t=data.attestation_timeline_30d||[];
   document.getElementById('timelineCard').style.display='block';
-  document.getElementById('timeline').innerHTML=t.length?t.map(x=>`<tr><td>${x.date||'—'}</td><td>${x.attestations??x.samples??0}</td><td>${x.rust_score??m.rust_score??'—'}</td></tr>`).join(''):'<tr><td colspan="3">No recent attestation activity</td></tr>';
+  document.getElementById('timeline').innerHTML=t.length?t.map(x=>`<tr><td>${esc(x.date||'—')}</td><td>${safeInt(x.attestations??x.samples??0)}</td><td>${safeScore(x.rust_score??m.rust_score??'—')}</td></tr>`).join(''):'<tr><td colspan="3">No recent attestation activity</td></tr>';
 
   const r=data.reward_participation||{};
   document.getElementById('rewardCard').style.display='block';

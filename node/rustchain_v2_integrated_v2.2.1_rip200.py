@@ -8,6 +8,7 @@ import ipaddress
 from urllib.parse import urlparse
 from flask import Flask, request, jsonify, g, send_from_directory, send_file, abort, render_template_string, redirect
 import json
+from decimal import Decimal, ROUND_HALF_UP
 from beacon_anchor import init_beacon_table, store_envelope, compute_beacon_digest, get_recent_envelopes, VALID_KINDS
 try:
     # Deployment compatibility: production may run this file as a single script.
@@ -68,6 +69,15 @@ except Exception as _e:
 # Ed25519 signature verification
 TESTNET_ALLOW_INLINE_PUBKEY = False  # PRODUCTION: Disabled
 TESTNET_ALLOW_MOCK_SIG = False  # PRODUCTION: Disabled
+_MOCK_SIG_ALLOWED_ENVS = {"test", "testing", "dev", "development", "local", "testnet"}
+
+
+def enforce_mock_signature_runtime_guard():
+    runtime_env = (os.environ.get("RC_RUNTIME_ENV") or os.environ.get("RUSTCHAIN_ENV") or "production").strip().lower()
+    if TESTNET_ALLOW_MOCK_SIG and runtime_env not in _MOCK_SIG_ALLOWED_ENVS:
+        raise RuntimeError(
+            "TESTNET_ALLOW_MOCK_SIG must not be enabled outside test/dev runtimes"
+        )
 
 try:
     from nacl.signing import VerifyKey
@@ -270,6 +280,13 @@ def _validate_attestation_payload_shape(data):
         if field_name in data and data[field_name] is not None and not isinstance(data[field_name], str):
             return _attest_field_error("INVALID_MINER", f"Field '{field_name}' must be a non-empty string")
 
+    for field_name, code in (
+        ("signature", "INVALID_SIGNATURE_TYPE"),
+        ("public_key", "INVALID_PUBLIC_KEY_TYPE"),
+    ):
+        if field_name in data and data[field_name] is not None and not isinstance(data[field_name], str):
+            return _attest_field_error(code, f"Field '{field_name}' must be a string")
+
     miner = _attest_valid_miner(data.get("miner")) or _attest_valid_miner(data.get("miner_id"))
     if not miner and not (_attest_text(data.get("miner")) or _attest_text(data.get("miner_id"))):
         return _attest_field_error(
@@ -370,6 +387,15 @@ def attest_ensure_tables(conn):
         """
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_used_nonces_expires_at ON used_nonces(expires_at)")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS attest_challenge_rate_limit (
+            client_ip TEXT PRIMARY KEY,
+            window_start INTEGER NOT NULL,
+            request_count INTEGER NOT NULL
+        )
+        """
+    )
 
 
 def attest_cleanup_expired(conn, now_ts: Optional[int] = None):
@@ -926,7 +952,7 @@ OPENAPI = {
                     {
                         "name": "miner_pk",
                         "in": "path",
-                        "required": true,
+                        "required": True,
                         "schema": {"type": "string"},
                         "description": "Miner public key (hex)"
                     }
@@ -957,7 +983,7 @@ OPENAPI = {
                     {
                         "name": "address",
                         "in": "query",
-                        "required": true,
+                        "required": True,
                         "schema": {"type": "string"},
                         "description": "Wallet address (RTC...)"
                     }
@@ -1002,6 +1028,8 @@ PER_EPOCH_RTC = 1.5  # Total RTC distributed per epoch across all miners
 PER_BLOCK_RTC = PER_EPOCH_RTC / EPOCH_SLOTS  # ~0.0104 RTC per block
 TOTAL_SUPPLY_RTC = 8_388_608  # Exactly 2**23 — pure binary, immutable
 TOTAL_SUPPLY_URTC = int(TOTAL_SUPPLY_RTC * 1_000_000)  # 8,388,608,000,000 uRTC
+ACCOUNT_UNIT = 1_000_000  # balances.amount_i64 uses micro-RTC.
+UTXO_UNIT = 100_000_000   # UTXO values use nano-RTC.
 ENFORCE = False  # Start with enforcement off
 CHAIN_ID = "rustchain-mainnet-v2"
 MIN_WITHDRAWAL = 0.1  # RTC
@@ -1011,6 +1039,56 @@ MAX_DAILY_WITHDRAWAL = 1000.0  # RTC
 GOVERNANCE_ACTIVE_SECONDS = 7 * 24 * 60 * 60
 GOVERNANCE_MIN_PROPOSER_BALANCE_RTC = 10.0
 GOVERNANCE_ACTIVE_MINER_WINDOW_SECONDS = 3600
+
+EPOCH_WEIGHT_SCALE = 1_000_000_000
+MAX_EPOCH_WEIGHT = 10_000
+MAX_EPOCH_WEIGHT_UNITS = MAX_EPOCH_WEIGHT * EPOCH_WEIGHT_SCALE
+MIN_FAILED_FINGERPRINT_WEIGHT_UNITS = 1
+
+
+def epoch_weight_to_units(weight) -> int:
+    """Convert a display weight to fixed-point integer units."""
+    try:
+        value = Decimal(str(weight))
+    except Exception:
+        return 0
+    if value <= 0:
+        return 0
+    units = int((value * Decimal(EPOCH_WEIGHT_SCALE)).to_integral_value(rounding=ROUND_HALF_UP))
+    return max(0, units)
+
+
+def epoch_weight_units_to_display(weight_units: int) -> float:
+    """Convert fixed-point weight units to a display/API weight."""
+    return float(Decimal(int(weight_units)) / Decimal(EPOCH_WEIGHT_SCALE))
+
+
+def normalize_epoch_weight_units(raw_weight) -> int:
+    """Read either new INTEGER weights or legacy REAL weights deterministically."""
+    if isinstance(raw_weight, int):
+        return max(0, raw_weight)
+    return epoch_weight_to_units(raw_weight)
+
+
+def ensure_epoch_enroll_integer_weights(conn: sqlite3.Connection):
+    """Migrate legacy REAL epoch weights to fixed-point INTEGER storage."""
+    columns = conn.execute("PRAGMA table_info(epoch_enroll)").fetchall()
+    weight_column = next((col for col in columns if col[1] == "weight"), None)
+    if not weight_column:
+        return
+    if str(weight_column[2]).upper() == "INTEGER":
+        return
+
+    rows = conn.execute("SELECT epoch, miner_pk, weight FROM epoch_enroll").fetchall()
+    conn.execute("ALTER TABLE epoch_enroll RENAME TO epoch_enroll_legacy_real")
+    conn.execute(
+        "CREATE TABLE epoch_enroll (epoch INTEGER, miner_pk TEXT, weight INTEGER, PRIMARY KEY (epoch, miner_pk))"
+    )
+    conn.executemany(
+        "INSERT OR REPLACE INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)",
+        [(epoch, miner_pk, epoch_weight_to_units(weight)) for epoch, miner_pk, weight in rows],
+    )
+    conn.execute("DROP TABLE epoch_enroll_legacy_real")
 
 
 # Prometheus metrics
@@ -1087,7 +1165,8 @@ def init_db():
 
         # Epoch tables
         c.execute("CREATE TABLE IF NOT EXISTS epoch_state (epoch INTEGER PRIMARY KEY, accepted_blocks INTEGER DEFAULT 0, finalized INTEGER DEFAULT 0)")
-        c.execute("CREATE TABLE IF NOT EXISTS epoch_enroll (epoch INTEGER, miner_pk TEXT, weight REAL, PRIMARY KEY (epoch, miner_pk))")
+        c.execute("CREATE TABLE IF NOT EXISTS epoch_enroll (epoch INTEGER, miner_pk TEXT, weight INTEGER, PRIMARY KEY (epoch, miner_pk))")
+        ensure_epoch_enroll_integer_weights(c)
         c.execute("CREATE TABLE IF NOT EXISTS balances (miner_pk TEXT PRIMARY KEY, balance_rtc REAL DEFAULT 0)")
         ensure_fingerprint_history_table(c)
         ensure_epoch_fingerprint_rotation_table(c)
@@ -2581,6 +2660,60 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
 # -- IP Rate Limiting for Attestations (SQLite-backed, gunicorn-safe) --
 ATTEST_IP_LIMIT = 15      # Max unique miners per IP per hour
 ATTEST_IP_WINDOW = 3600  # 1 hour window
+ATTEST_CHALLENGE_IP_LIMIT = int(os.environ.get("ATTEST_CHALLENGE_IP_LIMIT", "10"))
+ATTEST_CHALLENGE_IP_WINDOW = int(os.environ.get("ATTEST_CHALLENGE_IP_WINDOW", "60"))
+
+
+def check_challenge_rate_limit(client_ip):
+    """Rate limit challenge issuance before allocating a nonce row."""
+    now = int(time.time())
+    window = max(1, int(ATTEST_CHALLENGE_IP_WINDOW))
+    limit = max(1, int(ATTEST_CHALLENGE_IP_LIMIT))
+    window_start = now - (now % window)
+    cutoff = now - window
+
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        attest_ensure_tables(conn)
+        conn.execute(
+            "DELETE FROM attest_challenge_rate_limit WHERE window_start < ?",
+            (cutoff,),
+        )
+        row = conn.execute(
+            """
+            SELECT window_start, request_count
+            FROM attest_challenge_rate_limit
+            WHERE client_ip = ?
+            """,
+            (client_ip,),
+        ).fetchone()
+        if row and int(row[0]) == window_start:
+            count = int(row[1]) + 1
+            conn.execute(
+                """
+                UPDATE attest_challenge_rate_limit
+                SET request_count = ?
+                WHERE client_ip = ?
+                """,
+                (count, client_ip),
+            )
+        else:
+            count = 1
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO attest_challenge_rate_limit
+                    (client_ip, window_start, request_count)
+                VALUES (?, ?, ?)
+                """,
+                (client_ip, window_start, count),
+            )
+        conn.commit()
+
+    if count > limit:
+        print(f"[RATE_LIMIT] challenge IP {client_ip} has {count} requests in {window}s (limit {limit})")
+        return False, f"challenge_rate_limit:{count}_requests_from_same_ip"
+    return True, "ok"
+
 
 def check_ip_rate_limit(client_ip, miner_id):
     """Rate limit attestations per source IP using SQLite (shared across workers)."""
@@ -2756,9 +2889,10 @@ def current_slot():
 
 def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
     """Finalize epoch and distribute rewards with security hardening"""
+    from contextlib import closing
     from decimal import Decimal, ROUND_DOWN
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with closing(sqlite3.connect(DB_PATH)) as conn:
         c = conn.cursor()
 
         # REPLAY PROTECTION: Check if epoch already settled
@@ -2770,10 +2904,11 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
             return
 
         # Get all enrolled miners
-        miners = c.execute(
+        raw_miners = c.execute(
             "SELECT miner_pk, weight FROM epoch_enroll WHERE epoch = ?",
             (epoch,)
         ).fetchall()
+        miners = [(pk, normalize_epoch_weight_units(weight)) for pk, weight in raw_miners]
 
         if not miners:
             return
@@ -2789,8 +2924,6 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
         # PRECISION: Use Decimal for exact financial calculations
         total_reward = Decimal(str(per_block_rtc)) * Decimal(EPOCH_SLOTS)
 
-        # WEIGHT VALIDATION: Cap maximum weight to prevent drain attacks
-        MAX_WEIGHT = 10000
         # Filter out miners with 0 weight (VM/emulator detected)
         valid_miners = [(pk, w) for pk, w in miners if w > 0]
         zero_weight_miners = [pk for pk, w in miners if w == 0]
@@ -2819,9 +2952,12 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
         # Adjust weights based on active fingerprint checks
         adjusted_miners = []
         for pk, weight in miners:
-            if weight > MAX_WEIGHT:
-                print(f"[SECURITY] Capping weight {weight} for miner {pk} to {MAX_WEIGHT}")
-                weight = MAX_WEIGHT
+            if weight > MAX_EPOCH_WEIGHT_UNITS:
+                print(
+                    f"[SECURITY] Capping weight {epoch_weight_units_to_display(weight)} "
+                    f"for miner {pk} to {MAX_EPOCH_WEIGHT}"
+                )
+                weight = MAX_EPOCH_WEIGHT_UNITS
 
             # RIP-309: zero out weight if any active check failed
             if weight > 0:
@@ -2859,27 +2995,37 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
             # Distribute rewards with precision
             for pk, weight in miners:
                 # Use Decimal arithmetic to avoid float precision loss
-                amount_decimal = total_reward * Decimal(weight) / Decimal(total_weight)
-                amount_i64 = int(amount_decimal * Decimal(100000000))
+                amount_decimal = Decimal(0) if Decimal(total_weight) == 0 else total_reward * Decimal(weight) / Decimal(total_weight)
+                amount_i64 = int(amount_decimal * Decimal(ACCOUNT_UNIT))
+                amount_nrtc = int(amount_decimal * Decimal(UTXO_UNIT))
 
-                # OVERFLOW PROTECTION: Ensure amount_i64 fits in signed 64-bit int
-                if amount_i64 >= 2**63:
+                # OVERFLOW PROTECTION: Ensure stored reward units fit in signed 64-bit int
+                if amount_i64 >= 2**63 or amount_nrtc >= 2**63:
                     raise ValueError(f"Reward overflow for miner {pk}: {amount_i64}")
 
                 c.execute(
-                    "UPDATE balances SET amount_i64 = amount_i64 + ?, balance_rtc = (amount_i64 + ?) / 100000000.0 WHERE miner_id = ?",
+                    "UPDATE balances SET amount_i64 = amount_i64 + ?, balance_rtc = (amount_i64 + ?) / 1000000.0 WHERE miner_id = ?",
                     (amount_i64, amount_i64, pk)
                 )
 
-                # Sync to UTXO layer (Atomic Dual-Write)
-                from utxo_db import UtxoDB
-                utxo_tx = {
-                    "tx_type": "mining_reward",
-                    "inputs": [],
-                    "outputs": [{"address": pk, "value_nrtc": amount_i64}],
-                    "_allow_minting": True
-                }
-                UtxoDB().apply_transaction(utxo_tx, epoch * 144, conn=conn)
+                # Sync to UTXO layer only when the dual-write feature is enabled.
+                # A rejected UTXO write must abort the surrounding account-model
+                # settlement or the two ledgers diverge while the epoch is marked
+                # settled.
+                if UTXO_DUAL_WRITE:
+                    utxo_tx = {
+                        "tx_type": "mining_reward",
+                        "inputs": [],
+                        "outputs": [{"address": pk, "value_nrtc": amount_nrtc}],
+                        "_allow_minting": True
+                    }
+                    utxo_ok = UtxoDB(DB_PATH).apply_transaction(
+                        utxo_tx, epoch * 144, conn=conn
+                    )
+                    if not utxo_ok:
+                        raise RuntimeError(
+                            f"UTXO reward settlement failed for {pk[:20]}..."
+                        )
                 # Update metrics with decimal value for accuracy
                 balance_gauge.labels(miner_pk=pk).set(float(amount_decimal))
 
@@ -2977,6 +3123,17 @@ def get_challenge():
     Deployments with multiple attestation backends should keep submit traffic
     sticky to the issuing node or share the nonce store across nodes.
     """
+    client_ip = get_client_ip()
+    rate_ok, rate_reason = check_challenge_rate_limit(client_ip)
+    if not rate_ok:
+        return jsonify({
+            "ok": False,
+            "error": "rate_limited",
+            "message": "Too many attestation challenge requests from this IP address",
+            "code": "CHALLENGE_RATE_LIMIT",
+            "reason": rate_reason,
+        }), 429
+
     nonce = secrets.token_hex(32)
     expires = int(time.time()) + 300  # 5 minutes
 
@@ -3451,9 +3608,10 @@ def _submit_attestation_impl():
                 fingerprint if isinstance(fingerprint, dict) else {},
             )
             if not fingerprint_passed:
-                enroll_weight = 0.000000001
+                enroll_weight_units = MIN_FAILED_FINGERPRINT_WEIGHT_UNITS
             else:
-                enroll_weight = hw_weight * rotation_eval["active_ratio"]
+                enroll_weight_units = epoch_weight_to_units(hw_weight * rotation_eval["active_ratio"])
+            enroll_weight = epoch_weight_units_to_display(enroll_weight_units)
             enroll_conn.execute(
                 "INSERT OR IGNORE INTO balances (miner_pk, balance_rtc) VALUES (?, 0)",
                 (miner,)
@@ -3464,7 +3622,7 @@ def _submit_attestation_impl():
             # "attestation overwrite causes prior-epoch reward loss".
             enroll_conn.execute(
                 "INSERT OR IGNORE INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)",
-                (epoch, miner, enroll_weight)
+                (epoch, miner, enroll_weight_units)
             )
             enroll_conn.execute(
                 "INSERT OR REPLACE INTO miner_header_keys (miner_id, pubkey_hex) VALUES (?, ?)",
@@ -3671,10 +3829,12 @@ def enroll_epoch():
             data.get('fingerprint') if isinstance(data.get('fingerprint'), dict) else {},
         )
         if fingerprint_failed:
-            weight = 0.000000001  # 9 zeros - technically earns, but ~1 billionth of real hardware
+            weight_units = MIN_FAILED_FINGERPRINT_WEIGHT_UNITS
+            weight = epoch_weight_units_to_display(weight_units)
             print(f"[ENROLL] Miner {miner_pk[:16]}... fingerprint FAILED - VM weight: {weight}")
         else:
-            weight = hw_weight * rotation_eval['active_ratio']
+            weight_units = epoch_weight_to_units(hw_weight * rotation_eval['active_ratio'])
+            weight = epoch_weight_units_to_display(weight_units)
 
         # Ensure miner has balance entry
         c.execute(
@@ -3692,7 +3852,7 @@ def enroll_epoch():
         # or default device data.
         c.execute(
             "INSERT OR IGNORE INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)",
-            (epoch, miner_pk, weight)
+            (epoch, miner_pk, weight_units)
         )
 
         # FIX: Register pubkey in miner_header_keys for block submission
@@ -3742,13 +3902,19 @@ def vrf_is_selected(miner_pk: str, slot: int) -> bool:
         if not row:
             return False  # Not enrolled
 
-        weight = row[0]
+        weight = normalize_epoch_weight_units(row[0])
+        if weight <= 0:
+            return False
 
         # Get all enrolled miners for this epoch
-        all_miners = c.execute(
+        raw_miners = c.execute(
             "SELECT miner_pk, weight FROM epoch_enroll WHERE epoch = ?",
             (epoch,)
         ).fetchall()
+        all_miners = [
+            (pk, normalize_epoch_weight_units(stored_weight))
+            for pk, stored_weight in raw_miners
+        ]
 
     if not all_miners:
         return False
@@ -3761,11 +3927,13 @@ def vrf_is_selected(miner_pk: str, slot: int) -> bool:
     # Convert first 8 bytes to int for randomness
     rand_val = int.from_bytes(hash_val[:8], 'big')
 
-    # Calculate cumulative weights
+    # Calculate cumulative fixed-point weights
     total_weight = sum(w for _, w in all_miners)
-    threshold = (rand_val % int(total_weight * 1000000)) / 100000000.0
+    if total_weight <= 0:
+        return False
+    threshold = rand_val % total_weight
 
-    cumulative = 0.0
+    cumulative = 0
     for pk, w in all_miners:
         cumulative += w
         if pk == miner_pk and cumulative >= threshold:
@@ -3929,7 +4097,7 @@ def ingest_signed_header():
                         (slot,)
                     ).fetchone()
                     prev_block_hash = hashlib.sha256((prev_msg[0] if prev_msg else str(slot)).encode()).digest() if prev_msg else b""
-                    finalize_epoch(current_epoch, PER_EPOCH_RTC, prev_block_hash)
+                    finalize_epoch(current_epoch, PER_BLOCK_RTC, prev_block_hash)
                     print(f"[EPOCH] Auto-settled epoch {current_epoch} after {blocks_in_epoch} blocks")
                 except Exception as e:
                     print(f"[EPOCH] Settlement failed for epoch {current_epoch}: {e}")
@@ -4539,7 +4707,7 @@ def register_withdrawal_key():
     # SECURITY: prevent unauthenticated key overwrite (withdrawal takeover).
     # First-time registration is allowed. Rotation requires admin key.
     admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    is_admin = admin_key == os.environ.get("RC_ADMIN_KEY", "")
+    is_admin = hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", ""))
 
     now = int(time.time())
     with sqlite3.connect(DB_PATH) as c:
@@ -5375,7 +5543,7 @@ def bounty_multiplier():
             ("founder_community",)
         ).fetchone()
         total_paid_urtc = row[0] if row else 0
-        total_paid_rtc = total_paid_urtc / 100000000.0
+        total_paid_rtc = total_paid_urtc / ACCOUNT_UNIT
 
         # Current balance
         bal_row = c.execute(
@@ -5429,7 +5597,7 @@ def api_nodes():
     def _is_admin() -> bool:
         need = os.environ.get("RC_ADMIN_KEY", "")
         got = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-        return bool(need and got and need == got)
+        return bool(need and got and hmac.compare_digest(need, got))
 
     def _should_redact_url(u: str) -> bool:
         try:
@@ -5576,6 +5744,275 @@ def api_miners():
             "offset": offset,
             "count": len(miners)
         }
+    })
+
+
+def _explorer_int_arg(name, default, minimum, maximum):
+    """Parse bounded integer query args for public explorer endpoints."""
+    raw = request.args.get(name, str(default))
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None, jsonify({"ok": False, "error": f"{name} must be an integer"}), 400
+    return max(minimum, min(value, maximum)), None, None
+
+
+def _sqlite_table_columns(conn, table_name):
+    try:
+        rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+    except sqlite3.Error:
+        return set()
+    return {row[1] for row in rows}
+
+
+def _json_object_or_none(raw):
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _explorer_amount_rtc(amount_i64):
+    return int(amount_i64) / int(globals().get("UNIT", 1_000_000))
+
+
+EXPLORER_TRANSACTIONS_MAX_OFFSET = 10_000
+
+
+@app.route("/api/blocks", methods=["GET"])
+def api_explorer_blocks():
+    """Return recent blocks for explorer clients."""
+    limit, error_response, status = _explorer_int_arg("limit", 50, 1, 200)
+    if error_response is not None:
+        return error_response, status
+    offset, error_response, status = _explorer_int_arg("offset", 0, 0, 1_000_000)
+    if error_response is not None:
+        return error_response, status
+
+    with sqlite3.connect(DB_PATH) as db:
+        db.row_factory = sqlite3.Row
+        columns = _sqlite_table_columns(db, "blocks")
+        if not columns:
+            return jsonify({"ok": True, "blocks": [], "count": 0, "total": 0})
+
+        hash_col = "block_hash" if "block_hash" in columns else "hash" if "hash" in columns else None
+        if "height" not in columns or not hash_col:
+            return jsonify({"ok": True, "blocks": [], "count": 0, "total": 0})
+
+        select_columns = ["height", f"{hash_col} AS block_hash"]
+        for optional in (
+            "prev_hash",
+            "timestamp",
+            "merkle_root",
+            "state_root",
+            "attestations_hash",
+            "producer",
+            "tx_count",
+            "attestation_count",
+            "created_at",
+            "body_json",
+            "data",
+        ):
+            if optional in columns:
+                select_columns.append(optional)
+
+        total = db.execute("SELECT COUNT(*) FROM blocks").fetchone()[0]
+        rows = db.execute(
+            f"""
+            SELECT {", ".join(select_columns)}
+            FROM blocks
+            ORDER BY height DESC
+            LIMIT ? OFFSET ?
+            """,
+            (limit, offset),
+        ).fetchall()
+
+    blocks = []
+    for row in rows:
+        block = {
+            "height": int(row["height"]),
+            "hash": row["block_hash"],
+            "block_hash": row["block_hash"],
+        }
+        for field in (
+            "prev_hash",
+            "timestamp",
+            "merkle_root",
+            "state_root",
+            "attestations_hash",
+            "producer",
+            "created_at",
+        ):
+            if field in row.keys():
+                block[field] = row[field]
+        for field in ("tx_count", "attestation_count"):
+            if field in row.keys() and row[field] is not None:
+                block[field] = int(row[field])
+        if "body_json" in row.keys():
+            body = _json_object_or_none(row["body_json"])
+            if body is not None:
+                block["body"] = body
+        elif "data" in row.keys():
+            body = _json_object_or_none(row["data"])
+            if body is not None:
+                block["body"] = body
+        blocks.append(block)
+
+    return jsonify({"ok": True, "blocks": blocks, "count": len(blocks), "total": total})
+
+
+def _pending_ledger_explorer_transactions(db, limit):
+    columns = _sqlite_table_columns(db, "pending_ledger")
+    required = {"from_miner", "to_miner", "amount_i64"}
+    if not required.issubset(columns) or not ({"ts", "created_at"} & columns):
+        return []
+
+    if "created_at" in columns and "ts" in columns:
+        created_expr = "COALESCE(created_at, ts)"
+    elif "created_at" in columns:
+        created_expr = "created_at"
+    else:
+        created_expr = "ts"
+    select_columns = [
+        "from_miner",
+        "to_miner",
+        "amount_i64",
+        f"{created_expr} AS timestamp",
+    ]
+    for optional in ("epoch", "status", "tx_hash", "confirmed_at"):
+        if optional in columns:
+            select_columns.append(optional)
+
+    rows = db.execute(
+        f"""
+        SELECT {", ".join(select_columns)}
+        FROM pending_ledger
+        ORDER BY timestamp DESC{", id DESC" if "id" in columns else ""}
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+
+    transactions = []
+    for row in rows:
+        tx = {
+            "source": "pending_ledger",
+            "tx_hash": row["tx_hash"] if "tx_hash" in row.keys() else None,
+            "from": row["from_miner"],
+            "to": row["to_miner"],
+            "amount_i64": int(row["amount_i64"]),
+            "amount_rtc": _explorer_amount_rtc(row["amount_i64"]),
+            "timestamp": int(row["timestamp"] or 0),
+            "status": row["status"] if "status" in row.keys() else "pending",
+        }
+        if "epoch" in row.keys():
+            tx["epoch"] = int(row["epoch"]) if row["epoch"] is not None else None
+        if "confirmed_at" in row.keys() and row["confirmed_at"]:
+            tx["confirmed_at"] = int(row["confirmed_at"])
+        transactions.append(tx)
+    return transactions
+
+
+def _ledger_explorer_transactions(db, limit):
+    columns = _sqlite_table_columns(db, "ledger")
+    if {"from_miner", "to_miner", "amount_i64", "ts"}.issubset(columns):
+        rows = db.execute(
+            """
+            SELECT from_miner, to_miner, amount_i64, ts
+            FROM ledger
+            ORDER BY ts DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [
+            {
+                "source": "ledger",
+                "tx_hash": None,
+                "from": row["from_miner"],
+                "to": row["to_miner"],
+                "amount_i64": int(row["amount_i64"]),
+                "amount_rtc": _explorer_amount_rtc(row["amount_i64"]),
+                "timestamp": int(row["ts"] or 0),
+                "status": "confirmed",
+            }
+            for row in rows
+        ]
+
+    if not {"miner_id", "delta_i64", "ts"}.issubset(columns):
+        return []
+
+    select_columns = ["miner_id", "delta_i64", "ts"]
+    for optional in ("epoch", "reason"):
+        if optional in columns:
+            select_columns.append(optional)
+
+    rows = db.execute(
+        f"""
+        SELECT {", ".join(select_columns)}
+        FROM ledger
+        ORDER BY ts DESC, rowid DESC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+    transactions = []
+    for row in rows:
+        amount_i64 = int(row["delta_i64"])
+        reason = str(row["reason"] or "") if "reason" in row.keys() else ""
+        counterparty = None
+        tx_hash = None
+        if reason.startswith("transfer_in:") or reason.startswith("transfer_out:"):
+            parts = reason.split(":")
+            counterparty = parts[1] if len(parts) > 1 else None
+            tx_hash = parts[2] if len(parts) > 2 else None
+        tx = {
+            "source": "ledger",
+            "tx_hash": tx_hash,
+            "miner_id": row["miner_id"],
+            "counterparty": counterparty,
+            "amount_i64": abs(amount_i64),
+            "amount_rtc": _explorer_amount_rtc(abs(amount_i64)),
+            "direction": "received" if amount_i64 >= 0 else "sent",
+            "timestamp": int(row["ts"] or 0),
+            "status": "confirmed",
+        }
+        if "epoch" in row.keys():
+            tx["epoch"] = int(row["epoch"]) if row["epoch"] is not None else None
+        transactions.append(tx)
+    return transactions
+
+
+@app.route("/api/transactions", methods=["GET"])
+def api_explorer_transactions():
+    """Return recent ledger transactions for explorer clients."""
+    limit, error_response, status = _explorer_int_arg("limit", 50, 1, 200)
+    if error_response is not None:
+        return error_response, status
+    offset, error_response, status = _explorer_int_arg(
+        "offset", 0, 0, EXPLORER_TRANSACTIONS_MAX_OFFSET
+    )
+    if error_response is not None:
+        return error_response, status
+
+    with sqlite3.connect(DB_PATH) as db:
+        db.row_factory = sqlite3.Row
+        fetch_limit = limit + offset
+        transactions = (
+            _pending_ledger_explorer_transactions(db, fetch_limit)
+            + _ledger_explorer_transactions(db, fetch_limit)
+        )
+
+    transactions.sort(key=lambda tx: tx.get("timestamp", 0), reverse=True)
+    page = transactions[offset:offset + limit]
+    return jsonify({
+        "ok": True,
+        "transactions": page,
+        "count": len(page),
+        "total": len(transactions),
     })
 
 
@@ -6054,7 +6491,7 @@ def ops_readiness():
     """Single PASS/FAIL aggregator for all go/no-go checks"""
     # SECURITY FIX 2026-02-15: Only show detailed checks to admin
     admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    is_admin = admin_key == ADMIN_KEY
+    is_admin = hmac.compare_digest(admin_key, ADMIN_KEY or "")
     out = {"ok": True, "checks": []}
 
     # Health check
@@ -6681,7 +7118,7 @@ def confirm_pending():
                 # Execute the actual transfer
                 c.execute("INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)", (to_m,))
                 c.execute("UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ?", (amount, from_m))
-                c.execute("UPDATE balances SET amount_i64 = amount_i64 + ?, balance_rtc = (amount_i64 + ?) / 100000000.0 WHERE miner_id = ?", (amount, amount, to_m))
+                c.execute("UPDATE balances SET amount_i64 = amount_i64 + ?, balance_rtc = (amount_i64 + ?) / 1000000.0 WHERE miner_id = ?", (amount, amount, to_m))
                 
                 # Log to IMMUTABLE ledger (the real chain!)
                 c.execute("""
@@ -6819,7 +7256,7 @@ def wallet_transfer_OLD():
 
         c.execute("INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)", (to_miner,))
         c.execute("UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ?", (amount_i64, from_miner))
-        c.execute("UPDATE balances SET amount_i64 = amount_i64 + ?, balance_rtc = (amount_i64 + ?) / 100000000.0 WHERE miner_id = ?", (amount_i64, amount_i64, to_miner))
+        c.execute("UPDATE balances SET amount_i64 = amount_i64 + ?, balance_rtc = (amount_i64 + ?) / 1000000.0 WHERE miner_id = ?", (amount_i64, amount_i64, to_miner))
 
         sender_new = c.execute("SELECT amount_i64 FROM balances WHERE miner_id = ?", (from_miner,)).fetchone()[0]
         recipient_new = c.execute("SELECT amount_i64 FROM balances WHERE miner_id = ?", (to_miner,)).fetchone()[0]
@@ -7518,6 +7955,8 @@ def beacon_envelopes_list():
     return jsonify({"ok": True, "count": len(envelopes), "envelopes": envelopes})
 
 if __name__ == "__main__":
+    enforce_mock_signature_runtime_guard()
+
     # CRITICAL: SR25519 library is REQUIRED for production
     if not SR25519_AVAILABLE:
         print("=" * 70, file=sys.stderr)

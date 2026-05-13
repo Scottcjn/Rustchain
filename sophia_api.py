@@ -23,6 +23,25 @@ app = Flask(__name__)
 inspector = SophiaCoreInspector()
 
 
+def positive_int_query_arg(name, default, max_value=None):
+    raw_value = request.args.get(name)
+    if raw_value is None:
+        return default, None
+
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        return None, f"{name} must be an integer"
+
+    if value < 1:
+        return None, f"{name} must be positive"
+
+    if max_value is not None:
+        value = min(value, max_value)
+
+    return value, None
+
+
 @app.before_request
 def _ensure_db():
     """Lazily init DB on first request."""
@@ -34,7 +53,9 @@ def _ensure_db():
 @app.route("/sophia/inspect", methods=["POST"])
 def inspect_fingerprint():
     """Submit a hardware fingerprint for Sophia inspection."""
-    data = request.get_json(force=True)
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "JSON body must be an object"}), 400
 
     miner_id = data.get("miner_id")
     fingerprint = data.get("fingerprint")
@@ -68,9 +89,13 @@ def miner_status(miner_id):
 @app.route("/sophia/history", methods=["GET"])
 def inspection_history():
     """Get paginated inspection history."""
-    page = request.args.get("page", 1, type=int)
-    per_page = request.args.get("per_page", 25, type=int)
-    per_page = min(per_page, 100)  # cap
+    page, error = positive_int_query_arg("page", 1)
+    if error:
+        return jsonify({"error": error}), 400
+
+    per_page, error = positive_int_query_arg("per_page", 25, max_value=100)
+    if error:
+        return jsonify({"error": error}), 400
 
     conn = get_connection()
     try:

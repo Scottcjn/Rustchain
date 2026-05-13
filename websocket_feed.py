@@ -9,7 +9,7 @@ Integration (add to your Flask app):
     start_event_poller()
 
 Standalone:
-    python3 websocket_feed.py --port 5001 --node https://50.28.86.131
+    python3 websocket_feed.py --port 5001 --node https://rustchain.org
 
 Connect with:
     wscat -c ws://localhost:5001/ws/feed
@@ -22,10 +22,10 @@ Wallet: noxventures_rtc
 import time
 import threading
 import json
-import ssl
 import os
 import urllib.request
 from flask import Blueprint
+from node.tls_config import get_ssl_context
 
 try:
     from flask_socketio import SocketIO, emit, disconnect, join_room, leave_room
@@ -41,12 +41,12 @@ except ImportError:
         HAVE_WS = False
 
 # ─── Config ─────────────────────────────────────────────────────────────────── #
-NODE_URL     = os.environ.get("RUSTCHAIN_NODE_URL", "https://50.28.86.131")
+NODE_URL     = os.environ.get("RUSTCHAIN_NODE_URL", "https://rustchain.org")
 POLL_INTERVAL = int(os.environ.get("WS_POLL_INTERVAL", "5"))   # seconds between polls
 HEARTBEAT_S  = 30    # ping/pong interval
 MAX_QUEUE    = 100   # max buffered events per client (backpressure)
 
-CTX = ssl._create_unverified_context()
+CTX = get_ssl_context()
 
 # ─── Event Bus ──────────────────────────────────────────────────────────────── #
 class EventBus:

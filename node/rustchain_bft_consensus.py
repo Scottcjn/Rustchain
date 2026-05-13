@@ -27,7 +27,7 @@ import threading
 import time
 from dataclasses import dataclass, asdict
 from enum import Enum
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, Iterable, List, Optional, Set, Tuple
 import requests
 
 # Configure logging
@@ -1016,6 +1016,15 @@ def create_bft_routes(app, bft: BFTConsensus):
     """Add BFT consensus routes to Flask app"""
     from flask import request, jsonify
 
+    def _json_object():
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return None, ({'error': 'JSON object required'}, 400)
+        return data, None
+
+    def _missing_fields(data: Dict, required: Iterable[str]) -> List[str]:
+        return [field for field in required if field not in data]
+
     @app.route('/bft/status', methods=['GET'])
     def bft_status():
         """Get BFT consensus status"""
@@ -1025,7 +1034,19 @@ def create_bft_routes(app, bft: BFTConsensus):
     def bft_receive_message():
         """Receive consensus message from peer"""
         try:
-            msg_data = request.get_json()
+            msg_data, error = _json_object()
+            if error:
+                return jsonify(error[0]), error[1]
+
+            msg_type = msg_data.get('msg_type')
+            valid_types = {
+                MessageType.PRE_PREPARE.value,
+                MessageType.PREPARE.value,
+                MessageType.COMMIT.value,
+            }
+            if msg_type not in valid_types:
+                return jsonify({'error': 'invalid msg_type'}), 400
+
             bft.receive_message(msg_data)
             return jsonify({'status': 'ok'})
         except Exception as e:
@@ -1036,7 +1057,17 @@ def create_bft_routes(app, bft: BFTConsensus):
     def bft_view_change():
         """Receive view change message"""
         try:
-            msg_data = request.get_json()
+            msg_data, error = _json_object()
+            if error:
+                return jsonify(error[0]), error[1]
+
+            missing = _missing_fields(
+                msg_data,
+                ('view', 'epoch', 'node_id', 'signature', 'timestamp'),
+            )
+            if missing:
+                return jsonify({'error': f"missing required fields: {', '.join(missing)}"}), 400
+
             bft.handle_view_change(msg_data)
             return jsonify({'status': 'ok'})
         except Exception as e:

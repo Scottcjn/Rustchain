@@ -153,6 +153,17 @@ class TestReservationFlow:
         assert cr.status_code == 200
         assert cr.json["status"] == "completed"
 
+    def test_complete_rejects_non_object_json(self, app):
+        r = app.post("/relic/reserve", json={
+            "agent_id": "agent_bad_complete", "machine_id": "riscv-hifive",
+            "duration_hours": 1, "rtc_amount": 10.0,
+        })
+        assert r.status_code == 201
+
+        cr = app.post(f"/relic/complete/{r.json['session_id']}", json=["not", "object"])
+        assert cr.status_code == 400
+        assert cr.json["error"] == "JSON object required"
+
     def test_status_endpoint(self, app):
         r = app.post("/relic/reserve", json={
             "agent_id": "agent_stat", "machine_id": "g4-quicksilver",
@@ -169,6 +180,11 @@ class TestReservationFlow:
             "machine_id": "g3-beige", "duration_hours": 1, "rtc_amount": 4.0,
         })
         assert resp.status_code == 400
+
+    def test_reserve_rejects_non_object_json(self, app):
+        resp = app.post("/relic/reserve", json=["not", "object"])
+        assert resp.status_code == 400
+        assert resp.json["error"] == "JSON object required"
 
     def test_unknown_machine_returns_404(self, app):
         resp = app.post("/relic/reserve", json={

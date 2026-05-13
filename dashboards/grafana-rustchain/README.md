@@ -2,7 +2,7 @@
 
 A comprehensive Grafana dashboard for monitoring RustChain network metrics, including node health, miner activity, epoch statistics, and hardware distribution.
 
-![Dashboard Preview](./screenshot.png)
+[Open the Grafana dashboard JSON](./rustchain-network-dashboard.json)
 
 ## Overview
 

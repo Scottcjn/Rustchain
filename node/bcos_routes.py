@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import io
 import json
+import hmac
 import os
 import sqlite3
 import time
@@ -50,6 +51,36 @@ _DB_PATH = None
 
 def _get_admin_key():
     return os.environ.get("RC_ADMIN_KEY", "")
+
+
+def _parse_trust_score(raw_score) -> int:
+    """Validate BCOS trust scores before they are stored or rendered."""
+    if isinstance(raw_score, bool):
+        raise ValueError("trust_score must be a number")
+
+    try:
+        score = int(raw_score)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("trust_score must be a number") from exc
+
+    if not (0 <= score <= 100):
+        raise ValueError("trust_score must be between 0 and 100")
+
+    return score
+
+
+def _parse_bounded_int_arg(name: str, default: int, maximum: int):
+    """Parse a bounded integer query arg for public BCOS endpoints."""
+    raw = request.args.get(name, str(default))
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None, jsonify({"error": "invalid_pagination", "message": f"{name} must be an integer"}), 400
+
+    if value < 0:
+        return None, jsonify({"error": "invalid_pagination", "message": f"{name} must be non-negative"}), 400
+
+    return min(value, maximum), None, None
 
 
 def _verify_commitment(report_json_str: str, claimed_commitment: str) -> bool:
@@ -169,7 +200,7 @@ def bcos_attest():
     - Valid Ed25519 signature in the report
     """
     admin_key = request.headers.get("X-Admin-Key", "")
-    is_admin = admin_key and admin_key == _get_admin_key()
+    is_admin = admin_key and hmac.compare_digest(admin_key, _get_admin_key() or "")
 
     data = request.get_json(silent=True)
     if not data:
@@ -182,7 +213,7 @@ def bcos_attest():
     repo = report.get("repo_name", report.get("repo", ""))
     commit_sha = report.get("commit_sha", "")
     tier = report.get("tier", "L1")
-    trust_score = report.get("trust_score", 0)
+    raw_trust_score = report.get("trust_score", 0)
     reviewer = report.get("reviewer", "")
     signature = data.get("signature", report.get("signature", ""))
     signer_pubkey = data.get("signer_pubkey", report.get("signer_pubkey", ""))
@@ -192,6 +223,11 @@ def bcos_attest():
         return jsonify({"error": "cert_id and commitment required"}), 400
     if not repo:
         return jsonify({"error": "repo_name or repo required"}), 400
+    try:
+        trust_score = _parse_trust_score(raw_trust_score)
+    except ValueError as e:
+        return jsonify({"error": "invalid_trust_score", "message": str(e)}), 400
+    report["trust_score"] = trust_score
 
     # Auth: admin key OR valid Ed25519 signature
     sig_valid = False
@@ -247,7 +283,9 @@ def bcos_attest():
     except sqlite3.IntegrityError:
         return jsonify({"error": f"Certificate {cert_id} already exists"}), 409
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        import logging
+        logging.exception("bcos_handler failed")
+        return jsonify({"error": "internal_error"}), 500
 
 
 @bcos_bp.route("/bcos/verify/<cert_id>", methods=["GET"])
@@ -305,7 +343,9 @@ def bcos_verify(cert_id):
             "pdf_url": f"https://50.28.86.131/bcos/cert/{cert_id}.pdf",
         })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        import logging
+        logging.exception("bcos_handler failed")
+        return jsonify({"error": "internal_error"}), 500
 
 
 @bcos_bp.route("/bcos/cert/<cert_id>.pdf", methods=["GET"])
@@ -345,7 +385,9 @@ def bcos_certificate_pdf(cert_id):
             download_name=f"{cert_id}.pdf",
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        import logging
+        logging.exception("bcos_handler failed")
+        return jsonify({"error": "internal_error"}), 500
 
 
 @bcos_bp.route("/bcos/badge/<cert_id>.svg", methods=["GET"])
@@ -381,8 +423,12 @@ def bcos_badge_svg(cert_id):
 def bcos_directory():
     """List all BCOS-certified repos with latest attestation."""
     tier_filter = request.args.get("tier", "").upper()
-    limit = min(int(request.args.get("limit", 100)), 500)
-    offset = int(request.args.get("offset", 0))
+    limit, error_response, status = _parse_bounded_int_arg("limit", 100, 500)
+    if error_response is not None:
+        return error_response, status
+    offset, error_response, status = _parse_bounded_int_arg("offset", 0, 10_000)
+    if error_response is not None:
+        return error_response, status
 
     try:
         with sqlite3.connect(_DB_PATH) as conn:
@@ -430,7 +476,9 @@ def bcos_directory():
             "certificates": certs,
         })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        import logging
+        logging.exception("bcos_handler failed")
+        return jsonify({"error": "internal_error"}), 500
 
 
 # ── Registration ──────────────────────────────────────────────────

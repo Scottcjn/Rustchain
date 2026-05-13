@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation, ROUND_DOWN
 from typing import Any, Dict, Optional, Tuple
+
+
+MICRO_RTC = Decimal("1000000")
 
 
 @dataclass(frozen=True)
@@ -18,14 +21,18 @@ def _as_dict(payload: Any) -> Tuple[Optional[Dict[str, Any]], str]:
     return payload, ""
 
 
-def _safe_float(v: Any) -> Tuple[Optional[float], str]:
+def _safe_decimal(v: Any) -> Tuple[Optional[Decimal], str]:
     try:
-        f = float(v)
-    except (TypeError, ValueError):
+        amount = Decimal(str(v))
+    except (InvalidOperation, TypeError, ValueError):
         return None, "amount_not_number"
-    if not math.isfinite(f):
+    if not amount.is_finite():
         return None, "amount_not_finite"
-    return f, ""
+    return amount, ""
+
+
+def _amount_i64(amount_rtc: Decimal) -> int:
+    return int((amount_rtc * MICRO_RTC).to_integral_value(rounding=ROUND_DOWN))
 
 
 def validate_wallet_transfer_admin(payload: Any) -> PreflightResult:
@@ -36,7 +43,7 @@ def validate_wallet_transfer_admin(payload: Any) -> PreflightResult:
 
     from_miner = data.get("from_miner")
     to_miner = data.get("to_miner")
-    amount_rtc, aerr = _safe_float(data.get("amount_rtc", 0))
+    amount_rtc, aerr = _safe_decimal(data.get("amount_rtc", 0))
 
     if not from_miner or not to_miner:
         return PreflightResult(ok=False, error="missing_from_or_to", details={})
@@ -44,12 +51,12 @@ def validate_wallet_transfer_admin(payload: Any) -> PreflightResult:
         return PreflightResult(ok=False, error=aerr, details={})
     if amount_rtc is None or amount_rtc <= 0:
         return PreflightResult(ok=False, error="amount_must_be_positive", details={})
-    amount_i64 = int(amount_rtc * 1_000_000)
+    amount_i64 = _amount_i64(amount_rtc)
     if amount_i64 <= 0:
         return PreflightResult(
             ok=False,
             error="amount_too_small_after_quantization",
-            details={"amount_rtc": amount_rtc, "min_rtc": 0.000001},
+            details={"amount_rtc": float(amount_rtc), "min_rtc": 0.000001},
         )
 
     return PreflightResult(
@@ -58,7 +65,7 @@ def validate_wallet_transfer_admin(payload: Any) -> PreflightResult:
         details={
             "from_miner": str(from_miner),
             "to_miner": str(to_miner),
-            "amount_rtc": amount_rtc,
+            "amount_rtc": float(amount_rtc),
             "amount_i64": amount_i64,
         },
     )
@@ -77,17 +84,17 @@ def validate_wallet_transfer_signed(payload: Any) -> PreflightResult:
 
     from_address = str(data.get("from_address", "")).strip()
     to_address = str(data.get("to_address", "")).strip()
-    amount_rtc, aerr = _safe_float(data.get("amount_rtc", 0))
+    amount_rtc, aerr = _safe_decimal(data.get("amount_rtc", 0))
     if aerr:
         return PreflightResult(ok=False, error=aerr, details={})
     if amount_rtc is None or amount_rtc <= 0:
         return PreflightResult(ok=False, error="amount_must_be_positive", details={})
-    amount_i64 = int(amount_rtc * 1_000_000)
+    amount_i64 = _amount_i64(amount_rtc)
     if amount_i64 <= 0:
         return PreflightResult(
             ok=False,
             error="amount_too_small_after_quantization",
-            details={"amount_rtc": amount_rtc, "min_rtc": 0.000001},
+            details={"amount_rtc": float(amount_rtc), "min_rtc": 0.000001},
         )
 
     if not (from_address.startswith("RTC") and len(from_address) == 43):
@@ -110,9 +117,8 @@ def validate_wallet_transfer_signed(payload: Any) -> PreflightResult:
         details={
             "from_address": from_address,
             "to_address": to_address,
-            "amount_rtc": amount_rtc,
+            "amount_rtc": float(amount_rtc),
             "amount_i64": amount_i64,
             "nonce": nonce_int,
         },
     )
-

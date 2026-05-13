@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: MIT -->
 # wRTC Solana Bridge Dashboard
 
 **Bounty:** #2303  
@@ -10,7 +11,7 @@
 
 Real-time monitoring dashboard for the wRTC (Wrapped RustChain Token) Solana Bridge. Tracks wrap/unwrap transactions, locked RTC, wRTC circulating supply, bridge fees, and provides comprehensive health monitoring with 30-second auto-refresh.
 
-![Dashboard Preview](./screenshot.png)
+[Open the dashboard](./index.html)
 
 ---
 

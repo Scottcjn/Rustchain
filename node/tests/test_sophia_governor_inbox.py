@@ -1,5 +1,7 @@
+import gc
 import os
 import tempfile
+import time
 
 import pytest
 from flask import Flask
@@ -8,6 +10,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
+import sophia_governor_inbox
 from sophia_governor_inbox import (
     get_governor_inbox_entry,
     get_governor_inbox_status,
@@ -24,7 +27,13 @@ def tmp_db():
         db_path = handle.name
     init_sophia_governor_inbox_schema(db_path)
     yield db_path
-    os.unlink(db_path)
+    for _ in range(5):
+        try:
+            os.unlink(db_path)
+            break
+        except PermissionError:
+            gc.collect()
+            time.sleep(0.05)
 
 
 @pytest.fixture
@@ -98,6 +107,36 @@ def test_ingest_helper_persists_and_deduplicates(tmp_db):
 def test_ingest_endpoint_requires_admin(client):
     response = client.post("/api/sophia/governor/ingest", json=_sample_envelope())
     assert response.status_code == 401
+
+
+def test_admin_auth_uses_constant_time_compare(client, monkeypatch):
+    """Admin-gated inbox endpoints compare configured keys with hmac.compare_digest."""
+    calls = []
+
+    def spy_compare_digest(provided, expected):
+        calls.append((provided, expected))
+        return provided == expected
+
+    monkeypatch.setattr(sophia_governor_inbox.hmac, "compare_digest", spy_compare_digest)
+
+    denied = client.post(
+        "/api/sophia/governor/ingest",
+        headers={"X-Admin-Key": "wrong-admin"},
+        json=_sample_envelope(),
+    )
+    assert denied.status_code == 401
+
+    accepted = client.post(
+        "/api/sophia/governor/ingest",
+        headers={"X-API-Key": "test-admin"},
+        json=_sample_envelope(),
+    )
+    assert accepted.status_code == 202
+
+    assert calls == [
+        ("wrong-admin", "test-admin"),
+        ("test-admin", "test-admin"),
+    ]
 
 
 def test_ingest_and_list_endpoints(client):

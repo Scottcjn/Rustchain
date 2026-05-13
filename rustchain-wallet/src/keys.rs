@@ -207,7 +207,7 @@ mod tests {
         let addr = keypair.rtc_address();
         assert!(addr.starts_with("RTC"));
         assert_eq!(addr.len(), 43); // "RTC" + 40 hex chars
-        // Verify the hex portion is valid
+                                    // Verify the hex portion is valid
         assert!(addr[3..].chars().all(|c| c.is_ascii_hexdigit()));
     }
 

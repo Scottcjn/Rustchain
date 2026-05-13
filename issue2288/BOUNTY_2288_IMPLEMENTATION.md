@@ -651,7 +651,7 @@ if __name__ == "__main__":
 
 ## 📄 License
 
-Apache 2.0 - See [LICENSE](../../LICENSE) for details.
+Apache 2.0 - See [LICENSE](../LICENSE) for details.
 
 ---
 

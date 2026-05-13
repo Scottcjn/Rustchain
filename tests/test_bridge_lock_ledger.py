@@ -23,6 +23,7 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 from dataclasses import dataclass
 from typing import Optional, Tuple, Dict, Any, List
+from flask import Flask
 
 # Add node directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "node"))
@@ -39,7 +40,7 @@ def get_bridge_api(db_path: str):
     
     # Read the source code
     source_path = str(Path(__file__).parent.parent / "node" / "bridge_api.py")
-    with open(source_path, 'r') as f:
+    with open(source_path, 'r', encoding='utf-8') as f:
         source = f.read()
     
     # Create module
@@ -58,7 +59,7 @@ def get_lock_ledger(db_path: str):
     
     # Read the source code
     source_path = str(Path(__file__).parent.parent / "node" / "lock_ledger.py")
-    with open(source_path, 'r') as f:
+    with open(source_path, 'r', encoding='utf-8') as f:
         source = f.read()
     
     # Create module
@@ -170,6 +171,12 @@ def funded_miner(setup_test_db):
     conn.commit()
     conn.close()
     return "RTC_test_miner"
+
+
+def assert_generic_database_error(result):
+    assert result == {"error": "Database error"}
+    assert "details" not in result
+    assert "no such table" not in str(result).lower()
 
 
 # =============================================================================
@@ -415,6 +422,112 @@ class TestBridgeTransferCreation:
         
         conn.close()
 
+    def test_database_errors_do_not_leak_details(self, setup_test_db):
+        """DB failures should not expose SQLite schema details to callers."""
+        bridge_api = setup_test_db["bridge_api"]
+        conn = sqlite3.connect(":memory:")
+
+        req = bridge_api.BridgeTransferRequest(
+            direction="withdraw",
+            source_chain="solana",
+            dest_chain="rustchain",
+            source_address="4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXqXq",
+            dest_address="RTC_dest123",
+            amount_rtc=5.0
+        )
+
+        success, result = bridge_api.create_bridge_transfer(conn, req)
+
+        assert success is False
+        assert_generic_database_error(result)
+
+        conn.close()
+
+
+class TestBridgeInitiateAuth:
+    """Test route-level authorization for bridge initiation."""
+
+    def _client(self, bridge_api, db_path):
+        bridge_api.DB_PATH = db_path
+        app = Flask(__name__)
+        bridge_api.register_bridge_routes(app)
+        return app.test_client()
+
+    def _deposit_payload(self, source_address):
+        return {
+            "direction": "deposit",
+            "source_chain": "rustchain",
+            "dest_chain": "solana",
+            "source_address": source_address,
+            "dest_address": "4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXqXq",
+            "amount_rtc": 10.0,
+        }
+
+    def _bridge_row_counts(self, db_path):
+        conn = sqlite3.connect(db_path)
+        try:
+            bridge_count = conn.execute(
+                "SELECT COUNT(*) FROM bridge_transfers"
+            ).fetchone()[0]
+            lock_count = conn.execute(
+                "SELECT COUNT(*) FROM lock_ledger"
+            ).fetchone()[0]
+            return bridge_count, lock_count
+        finally:
+            conn.close()
+
+    def test_deposit_requires_admin_key_before_creating_transfer(
+        self, setup_test_db, funded_miner, monkeypatch
+    ):
+        """Unauthenticated deposit initiation must not lock another address."""
+        bridge_api = setup_test_db["bridge_api"]
+        client = self._client(bridge_api, setup_test_db["db_path"])
+        monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin-key")
+
+        response = client.post(
+            "/api/bridge/initiate",
+            json=self._deposit_payload(funded_miner),
+        )
+
+        assert response.status_code == 401
+        assert response.get_json()["error"] == "unauthorized"
+        assert self._bridge_row_counts(setup_test_db["db_path"]) == (0, 0)
+
+    def test_deposit_accepts_valid_admin_key(
+        self, setup_test_db, funded_miner, monkeypatch
+    ):
+        """Configured admin key still allows bridge deposit initiation."""
+        bridge_api = setup_test_db["bridge_api"]
+        client = self._client(bridge_api, setup_test_db["db_path"])
+        monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin-key")
+
+        response = client.post(
+            "/api/bridge/initiate",
+            headers={"X-Admin-Key": "expected-admin-key"},
+            json=self._deposit_payload(funded_miner),
+        )
+
+        assert response.status_code == 200
+        assert response.get_json()["ok"] is True
+        assert self._bridge_row_counts(setup_test_db["db_path"]) == (1, 1)
+
+    def test_deposit_fails_closed_when_admin_key_unconfigured(
+        self, setup_test_db, funded_miner, monkeypatch
+    ):
+        """Bridge initiation must not become public when RC_ADMIN_KEY is unset."""
+        bridge_api = setup_test_db["bridge_api"]
+        client = self._client(bridge_api, setup_test_db["db_path"])
+        monkeypatch.delenv("RC_ADMIN_KEY", raising=False)
+
+        response = client.post(
+            "/api/bridge/initiate",
+            json=self._deposit_payload(funded_miner),
+        )
+
+        assert response.status_code == 503
+        assert response.get_json()["error"] == "RC_ADMIN_KEY not configured"
+        assert self._bridge_row_counts(setup_test_db["db_path"]) == (0, 0)
+
 
 # =============================================================================
 # Bridge Status Query Tests
@@ -489,6 +602,24 @@ class TestLockLedger:
         assert result["lock_id"] > 0
         assert result["amount_rtc"] == 10.0
         
+        conn.close()
+
+    def test_database_errors_do_not_leak_details(self, setup_test_db):
+        """DB failures should not expose SQLite schema details to callers."""
+        lock_ledger = setup_test_db["lock_ledger"]
+        conn = sqlite3.connect(":memory:")
+
+        success, result = lock_ledger.create_lock(
+            conn,
+            miner_id="RTC_test_miner",
+            amount_i64=10 * 1000000,
+            lock_type="bridge_deposit",
+            unlock_at=int(time.time()) + 3600
+        )
+
+        assert success is False
+        assert_generic_database_error(result)
+
         conn.close()
     
     def test_release_lock(self, setup_test_db, funded_miner):
@@ -662,7 +793,7 @@ class TestIntegration:
         assert locks[0].status == "released"
         
         conn.close()
-    
+
     def test_void_releases_lock(self, setup_test_db, funded_miner):
         """Test that voiding a transfer releases the lock."""
         bridge_api = setup_test_db["bridge_api"]
@@ -693,6 +824,68 @@ class TestIntegration:
         assert locks[0].status == "released"
         
         conn.close()
+
+
+class TestBridgeCallbackAuth:
+    """Test bridge service callback authentication."""
+
+    def _client(self, bridge_api):
+        app = Flask(__name__)
+        bridge_api.register_bridge_routes(app)
+        return app.test_client()
+
+    def test_update_external_fails_closed_when_api_key_unconfigured(
+        self, setup_test_db, monkeypatch
+    ):
+        bridge_api = setup_test_db["bridge_api"]
+        client = self._client(bridge_api)
+        monkeypatch.delenv("RC_BRIDGE_API_KEY", raising=False)
+
+        response = client.post(
+            "/api/bridge/update-external",
+            json={"tx_hash": "bridge_tx", "external_tx_hash": "external_tx"},
+        )
+
+        assert response.status_code == 503
+        assert response.get_json()["error"] == "Bridge API key not configured"
+
+    def test_update_external_uses_constant_time_api_key_compare(
+        self, setup_test_db, monkeypatch
+    ):
+        bridge_api = setup_test_db["bridge_api"]
+        client = self._client(bridge_api)
+        monkeypatch.setenv("RC_BRIDGE_API_KEY", "expected-key")
+        calls = []
+
+        def fake_compare(provided, expected):
+            calls.append((provided, expected))
+            return False
+
+        monkeypatch.setattr(bridge_api.hmac, "compare_digest", fake_compare)
+
+        response = client.post(
+            "/api/bridge/update-external",
+            headers={"X-API-Key": "wrong-key"},
+            json={"tx_hash": "bridge_tx", "external_tx_hash": "external_tx"},
+        )
+
+        assert response.status_code == 401
+        assert calls == [("wrong-key", "expected-key")]
+
+    def test_update_external_accepts_configured_api_key_before_payload_validation(
+        self, setup_test_db, monkeypatch
+    ):
+        bridge_api = setup_test_db["bridge_api"]
+        client = self._client(bridge_api)
+        monkeypatch.setenv("RC_BRIDGE_API_KEY", "expected-key")
+
+        response = client.post(
+            "/api/bridge/update-external",
+            headers={"X-API-Key": "expected-key"},
+        )
+
+        assert response.status_code == 400
+        assert response.get_json()["error"] == "Request body required"
 
 
 if __name__ == "__main__":

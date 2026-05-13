@@ -52,6 +52,7 @@ DEFAULT_NODE_URL = os.getenv("RUSTCHAIN_NODE", "http://localhost:5000")
 DEFAULT_POLL_INTERVAL = int(os.getenv("WEBHOOK_POLL_INTERVAL", "10"))
 DEFAULT_LARGE_TX_THRESHOLD = float(os.getenv("LARGE_TX_THRESHOLD", "100.0"))
 DEFAULT_DB_PATH = os.getenv("WEBHOOK_DB", "webhooks.db")
+MAX_ADMIN_BODY_BYTES = 1024 * 1024
 MAX_RETRIES = 5
 INITIAL_BACKOFF = 1.0  # seconds
 BACKOFF_MULTIPLIER = 2.0
@@ -75,6 +76,9 @@ _BLOCKED_NETWORKS = [
     ipaddress.ip_network("172.16.0.0/12"),      # RFC 1918
     ipaddress.ip_network("192.168.0.0/16"),     # RFC 1918
     ipaddress.ip_network("169.254.0.0/16"),     # Link-local / cloud metadata
+    ipaddress.ip_network("224.0.0.0/4"),        # IPv4 multicast
+    ipaddress.ip_network("240.0.0.0/4"),        # IPv4 reserved / future use
+    ipaddress.ip_network("255.255.255.255/32"), # IPv4 limited broadcast
     ipaddress.ip_network("0.0.0.0/8"),          # "This" network
     ipaddress.ip_network("100.64.0.0/10"),      # CGNAT
     ipaddress.ip_network("192.0.0.0/24"),       # IETF protocol assignments
@@ -83,6 +87,7 @@ _BLOCKED_NETWORKS = [
     ipaddress.ip_network("203.0.113.0/24"),     # TEST-NET-3 (documentation)
     ipaddress.ip_network("fc00::/7"),           # IPv6 unique-local
     ipaddress.ip_network("fe80::/10"),          # IPv6 link-local
+    ipaddress.ip_network("ff00::/8"),           # IPv6 multicast
 ]
 
 
@@ -260,6 +265,12 @@ def _sign_payload(payload_bytes: bytes, secret: str) -> str:
 
 def deliver_webhook(sub: Subscriber, event: WebhookEvent, store: SubscriberStore):
     """POST the event payload to the subscriber URL with retry + backoff."""
+    validation_error = validate_webhook_url(sub.url)
+    if validation_error:
+        log.warning("Skipping webhook delivery to %s: %s", sub.url, validation_error)
+        store.log_delivery(sub.id, event.event_type, "", None, 0, validation_error)
+        return
+
     payload = json.dumps({
         "event": event.event_type,
         "timestamp": event.timestamp,
@@ -347,7 +358,11 @@ class RustChainPoller:
         tip = self._get("/headers/tip")
         if not tip or tip.get("slot") is None:
             return
-        slot = int(tip["slot"])
+        try:
+            slot = int(tip["slot"])
+        except (TypeError, ValueError):
+            log.debug("Ignoring tip with invalid slot value: %r", tip.get("slot"))
+            return
         if self._prev_tip_slot is not None and slot > self._prev_tip_slot:
             dispatch_event(WebhookEvent(
                 event_type="new_block",
@@ -383,7 +398,7 @@ class RustChainPoller:
 
     def _check_miners(self):
         miners_data = self._get("/api/miners")
-        if not miners_data or not isinstance(miners_data, list):
+        if miners_data is None or not isinstance(miners_data, list):
             return
         current_miners = {m["miner"] for m in miners_data if "miner" in m}
 
@@ -415,7 +430,7 @@ class RustChainPoller:
 
     def _check_large_tx(self):
         balances_data = self._get("/api/balances")
-        if not balances_data or not isinstance(balances_data, list):
+        if balances_data is None or not isinstance(balances_data, list):
             return
 
         current_balances: Dict[str, float] = {}
@@ -493,7 +508,12 @@ class WebhookAdminHandler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def _read_body(self) -> dict:
-        length = int(self.headers.get("Content-Length", 0))
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except ValueError as exc:
+            raise ValueError("invalid Content-Length") from exc
+        if length > MAX_ADMIN_BODY_BYTES:
+            raise ValueError("request body too large")
         if length == 0:
             return {}
         raw = self.rfile.read(length)
@@ -542,6 +562,10 @@ class WebhookAdminHandler(BaseHTTPRequestHandler):
     def _handle_subscribe(self):
         try:
             body = self._read_body()
+        except ValueError as exc:
+            status = 413 if "too large" in str(exc) else 400
+            self._send_json(status, {"error": str(exc)})
+            return
         except json.JSONDecodeError:
             self._send_json(400, {"error": "invalid JSON"})
             return
@@ -584,6 +608,10 @@ class WebhookAdminHandler(BaseHTTPRequestHandler):
     def _handle_unsubscribe(self):
         try:
             body = self._read_body()
+        except ValueError as exc:
+            status = 413 if "too large" in str(exc) else 400
+            self._send_json(status, {"error": str(exc)})
+            return
         except json.JSONDecodeError:
             self._send_json(400, {"error": "invalid JSON"})
             return

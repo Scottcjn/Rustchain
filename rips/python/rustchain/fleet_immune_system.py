@@ -989,6 +989,21 @@ def register_fleet_endpoints(app, DB_PATH):
     """Register Flask endpoints for fleet immune system admin."""
     from flask import request, jsonify
 
+    def parse_positive_limit(default: int = 10, max_value: int = 1000) -> int:
+        raw_value = request.args.get('limit')
+        if raw_value is None:
+            return default
+
+        try:
+            limit = int(raw_value)
+        except ValueError:
+            raise ValueError("limit must be an integer") from None
+
+        if limit < 1:
+            raise ValueError("limit must be positive")
+
+        return min(limit, max_value)
+
     @app.route('/admin/fleet/report', methods=['GET'])
     def fleet_report():
         import os, hmac
@@ -1019,7 +1034,10 @@ def register_fleet_endpoints(app, DB_PATH):
             return jsonify({"error": "Unauthorized"}), 401
 
         miner = request.args.get('miner')
-        limit = request.args.get('limit', 10, type=int)
+        try:
+            limit = parse_positive_limit()
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
 
         with sqlite3.connect(DB_PATH) as db:
             if miner:

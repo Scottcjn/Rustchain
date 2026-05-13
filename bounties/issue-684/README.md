@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: MIT -->
 # RIP-302 Agent-to-Agent Transaction Test Challenge
 
 > **Bounty #684**: Reproducible Agent-to-Agent transaction test challenge artifacts for Beacon + Grazer + RIP-302
@@ -206,7 +207,7 @@ To submit for bounty #684:
 
 ## 📚 Documentation
 
-- [RIP-302 Specification](./docs/RIP-302-agent-to-agent-test-challenge.md) - Full technical specification
+- [RIP-302 Specification](../../rips/docs/RIP-302-agent-to-agent-test-challenge.md) - Full technical specification
 - [Evidence Schema](#-evidence-schema) - Evidence format documentation
 - [CI/CD Guide](#-ci-integration) - Automated validation guide
 

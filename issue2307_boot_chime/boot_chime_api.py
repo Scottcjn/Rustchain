@@ -51,6 +51,18 @@ audio_capture = BootChimeCapture(config=capture_config)
 fingerprint_extractor = AcousticFingerprint()
 
 
+class JsonBodyError(ValueError):
+    """Raised when a JSON endpoint receives a non-object body."""
+
+
+def get_json_object() -> Dict[str, Any]:
+    """Return the request JSON body when it is an object."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        raise JsonBodyError("JSON object required")
+    return data
+
+
 # ============= Health & Info =============
 
 @app.route('/health', methods=['GET'])
@@ -102,7 +114,7 @@ def issue_challenge():
         }
     """
     try:
-        data = request.get_json() or {}
+        data = get_json_object()
         miner_id = data.get('miner_id')
         
         if not miner_id:
@@ -118,6 +130,8 @@ def issue_challenge():
             'ttl_seconds': challenge.expires_at - challenge.issued_at
         })
         
+    except JsonBodyError as e:
+        return jsonify({'error': str(e)}), 400
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -300,7 +314,7 @@ def revoke_attestation():
         { "success": true, "message": "..." }
     """
     try:
-        data = request.get_json() or {}
+        data = get_json_object()
         miner_id = data.get('miner_id')
         reason = data.get('reason', '')
         
@@ -314,6 +328,8 @@ def revoke_attestation():
         else:
             return jsonify({'error': 'Miner not found'}), 404
             
+    except JsonBodyError as e:
+        return jsonify({'error': str(e)}), 400
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

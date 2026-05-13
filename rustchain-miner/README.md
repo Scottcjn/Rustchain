@@ -97,7 +97,9 @@ rustchain-miner --help
 
 ### Dry-Run Mode
 
-Test your setup without attesting or mining:
+Test your setup without attesting or mining. `--dry-run` runs the miner's
+preflight checks, prints the detected hardware fingerprint information, and then
+exits without submitting attestations or starting actual mining.
 
 ```bash
 ./target/release/rustchain-miner --dry-run --verbose

@@ -393,7 +393,20 @@
       const path = sharePath(minerId);
       const full = window.location.origin + path;
       state.shareUrl = full;
-      el("shareRow").innerHTML = "Share link: <a href=\"" + full + "\" class=\"mono\">" + full + "</a>";
+      const row = el("shareRow");
+      row.textContent = "Share link: ";
+      const link = document.createElement("a");
+      link.href = full;
+      link.className = "mono";
+      link.textContent = full;
+      row.appendChild(link);
+    }
+
+    function appendTextCell(row, text, className) {
+      const cell = row.insertCell();
+      if (className) cell.className = className;
+      cell.textContent = text;
+      return cell;
     }
 
     async function getJson(url) {
@@ -636,12 +649,15 @@
 
       for (const m of fleet) {
         const tr = document.createElement("tr");
-        tr.innerHTML =
-          "<td>" + m.machine + "</td>" +
-          "<td>" + m.arch + "</td>" +
-          "<td class=\"mono\">" + (Number.isFinite(Number(m.last)) ? fmtTs(Number(m.last)) : "-") + "</td>" +
-          "<td>" + fmtNum(m.score, 2) + "</td>" +
-          "<td>" + (m.badge || "-") + "</td>";
+        appendTextCell(tr, m.machine);
+        appendTextCell(tr, m.arch);
+        appendTextCell(
+          tr,
+          Number.isFinite(Number(m.last)) ? fmtTs(Number(m.last)) : "-",
+          "mono"
+        );
+        appendTextCell(tr, fmtNum(m.score, 2));
+        appendTextCell(tr, m.badge || "-");
         tbody.appendChild(tr);
       }
     }

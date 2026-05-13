@@ -4,7 +4,7 @@ Bounty #754: Agent Reputation Score — On-Chain Trust for Agent Economy
 
 Integration:
     from agent_reputation import reputation_bp, ReputationEngine
-    engine = ReputationEngine(db_path="rustchain.db", node_url="https://50.28.86.131")
+    engine = ReputationEngine(db_path="rustchain.db", node_url="https://rustchain.org")
     engine.start_cache_refresh()
     app.register_blueprint(reputation_bp)
 
@@ -21,17 +21,17 @@ import threading
 import sqlite3
 import os
 import json
-import ssl
 import urllib.request
 from flask import Blueprint, jsonify, request
+from node.tls_config import get_ssl_context
 
 # ─── Config ─────────────────────────────────────────────────────────────────── #
 DB_PATH       = os.environ.get("RUSTCHAIN_DB_PATH", "rustchain.db")
-NODE_URL      = os.environ.get("RUSTCHAIN_NODE_URL", "https://50.28.86.131")
+NODE_URL      = os.environ.get("RUSTCHAIN_NODE_URL", "https://rustchain.org")
 CACHE_TTL_S   = 3600       # Refresh reputation cache every epoch (~1hr)
 DECAY_DAYS    = 30         # Lose 1 point per 30 days inactive
 
-CTX = ssl._create_unverified_context()
+CTX = get_ssl_context()
 
 # ─── Reputation Levels ───────────────────────────────────────────────────────── #
 LEVELS = [
@@ -50,6 +50,7 @@ MAX_JOB_VALUE = {
 
 CAN_POST_JOBS       = {"trusted", "veteran"}
 CAN_POST_HIGH_VALUE = {"veteran"}
+HIGH_VALUE_THRESHOLD = 50  # RTC — jobs above this require veteran level
 
 
 def score_to_level(score):
@@ -330,23 +331,33 @@ def check_eligibility():
     Returns whether an agent is eligible to claim a job of given value.
     """
     agent_id  = request.args.get("agent_id", "").strip()
-    job_value = float(request.args.get("job_value", 0))
-
     if not agent_id:
         return jsonify({"error": "agent_id required"}), 400
 
+    try:
+        job_value = float(request.args.get("job_value", 0))
+    except (ValueError, TypeError):
+        return jsonify({"error": "job_value must be a number"}), 400
+
     rep = _engine.get(agent_id)
     max_val = rep["max_job_value_rtc"]
+    level = rep["level"]
     eligible = job_value <= max_val
+
+    # High-value job gate: jobs above HIGH_VALUE_THRESHOLD require veteran level
+    if eligible and job_value > HIGH_VALUE_THRESHOLD:
+        if level not in CAN_POST_HIGH_VALUE:
+            eligible = False
 
     return jsonify({
         "agent_id": agent_id,
         "job_value_rtc": job_value,
         "eligible": eligible,
         "reputation_score": rep["reputation_score"],
-        "level": rep["level"],
+        "level": level,
+        "can_post_high_value": level in CAN_POST_HIGH_VALUE,
         "max_job_value_rtc": max_val,
-        "reason": None if eligible else f"{rep['level']} level agents can only claim jobs up to {max_val} RTC",
+        "reason": None if eligible else f"{level} level agents cannot claim high-value jobs (>{HIGH_VALUE_THRESHOLD} RTC)",
     })
 
 
@@ -356,7 +367,10 @@ def leaderboard():
     GET /agent/reputation/leaderboard?limit=20
     Returns top agents by reputation (from cache).
     """
-    limit = min(int(request.args.get("limit", 20)), 100)
+    try:
+        limit = min(int(request.args.get("limit", 20)), 100)
+    except (ValueError, TypeError):
+        return jsonify({"error": "limit must be an integer"}), 400
     with _engine._lock:
         entries = [(w, d["reputation_score"]) for w, (d, _) in _engine._cache.items()]
     entries.sort(key=lambda x: x[1], reverse=True)

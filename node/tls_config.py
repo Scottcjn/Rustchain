@@ -53,3 +53,24 @@ def get_async_tls_verify():
     the same str/bool types as requests.
     """
     return get_tls_verify()
+
+
+def get_ssl_context():
+    """Return an SSL context for urllib/websocket clients.
+
+    Uses the same pinned certificate convention as requests clients.
+    Set RUSTCHAIN_TLS_VERIFY=false only for local development with
+    self-signed endpoints that cannot be verified.
+    """
+    import ssl
+
+    tls_verify_env = os.environ.get("RUSTCHAIN_TLS_VERIFY", "true").strip().lower()
+    ca_bundle = os.environ.get("RUSTCHAIN_CA_BUNDLE", "").strip()
+
+    if tls_verify_env in ("false", "0", "no"):
+        return ssl._create_unverified_context()
+    if ca_bundle:
+        return ssl.create_default_context(cafile=ca_bundle)
+    if os.path.exists(_CERT_PATH):
+        return ssl.create_default_context(cafile=_CERT_PATH)
+    return ssl.create_default_context()

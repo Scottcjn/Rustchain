@@ -392,3 +392,44 @@ def test_abstain_vote(client, active_miner, tmp_db):
     res = client.get(f"/api/governance/results/{pid}")
     data = res.get_json()
     assert data["votes_abstain"] > 0
+
+
+def test_founder_veto_uses_constant_time_admin_key_compare(client, tmp_db, monkeypatch):
+    """Founder veto checks the admin key through hmac.compare_digest."""
+    monkeypatch.setenv("RUSTCHAIN_ADMIN_KEY", "founder-secret")
+    calls = []
+
+    def spy_compare_digest(provided, expected):
+        calls.append((provided, expected))
+        return provided == expected
+
+    monkeypatch.setattr(sys.modules["governance"].hmac, "compare_digest", spy_compare_digest)
+
+    now = int(time.time())
+    with sqlite3.connect(tmp_db) as conn:
+        cursor = conn.execute(
+            """INSERT INTO governance_proposals
+               (title, description, proposal_type, proposed_by, created_at, expires_at, status)
+               VALUES (?,?,?,?,?,?,?)""",
+            ("Veto auth test", "Exercise founder veto admin key validation.",
+             "emergency", "alice", now, now + VOTING_WINDOW_SECONDS, STATUS_ACTIVE),
+        )
+        pid = cursor.lastrowid
+
+    denied = client.post(f"/api/governance/veto/{pid}", json={
+        "admin_key": "wrong-secret",
+        "reason": "invalid key should be rejected",
+    })
+    assert denied.status_code == 403
+
+    accepted = client.post(f"/api/governance/veto/{pid}", json={
+        "admin_key": "founder-secret",
+        "reason": "valid key should be accepted",
+    })
+    assert accepted.status_code == 200
+    assert accepted.get_json()["status"] == STATUS_VETOED
+
+    assert calls == [
+        ("wrong-secret", "founder-secret"),
+        ("founder-secret", "founder-secret"),
+    ]

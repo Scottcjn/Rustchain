@@ -152,7 +152,7 @@
     function extractCertId(input) {
       input = input.trim();
       // Direct cert ID
-      if (/^BCOS-/i.test(input)) return input;
+      if (/^BCOS-[a-zA-Z0-9]+$/i.test(input)) return input;
       // URL with cert id
       const m = input.match(/BCOS-[a-zA-Z0-9]+/i);
       if (m) return m[0];
@@ -202,8 +202,23 @@
       // HTML
       const html = `<a href="${verifyUrl}"><img src="${badgeUrl}" alt="BCOS Certified" /></a>`;
 
-      document.getElementById('preview').innerHTML =
-        `<a href="${verifyUrl}" target="_blank"><img src="${badgeUrl}" alt="BCOS Badge" onerror="this.alt='[badge loading — verify API may be offline]'" /></a>`;
+      const preview = document.getElementById('preview');
+      preview.textContent = '';
+
+      const previewLink = document.createElement('a');
+      previewLink.href = verifyUrl;
+      previewLink.target = '_blank';
+      previewLink.rel = 'noopener';
+
+      const previewImage = document.createElement('img');
+      previewImage.src = badgeUrl;
+      previewImage.alt = 'BCOS Badge';
+      previewImage.onerror = () => {
+        previewImage.alt = '[badge loading - verify API may be offline]';
+      };
+
+      previewLink.appendChild(previewImage);
+      preview.appendChild(previewLink);
 
       setCode('code-md', md);
       setCode('code-html', html);

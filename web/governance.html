@@ -49,6 +49,15 @@
 <script>
 const out = document.getElementById('out');
 function show(v){ out.textContent = JSON.stringify(v, null, 2); }
+function escapeHtml(value){
+  const div = document.createElement('div');
+  div.textContent = String(value ?? '');
+  return div.innerHTML;
+}
+function safeNumber(value, fallback=0){
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
 
 async function api(path, method='GET', body=null){
   const res = await fetch(path, {
@@ -89,10 +98,10 @@ async function loadProposals(){
   for (const p of (data.proposals || [])) {
     const div = document.createElement('div');
     div.className = 'card';
-    div.innerHTML = `<b>#${p.id} ${p.title}</b><br>
-      <span class="muted">${p.proposer_wallet} • ${p.status}</span><br>
-      ${p.description}<br>
-      yes=${(p.yes_weight||0).toFixed(4)} no=${(p.no_weight||0).toFixed(4)}`;
+    div.innerHTML = `<b>#${safeNumber(p.id)} ${escapeHtml(p.title)}</b><br>
+      <span class="muted">${escapeHtml(p.proposer_wallet)} • ${escapeHtml(p.status)}</span><br>
+      ${escapeHtml(p.description)}<br>
+      yes=${safeNumber(p.yes_weight).toFixed(4)} no=${safeNumber(p.no_weight).toFixed(4)}`;
     list.appendChild(div);
   }
 }

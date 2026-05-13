@@ -24,7 +24,7 @@ This Homebrew formula provides a production-safe, minimal installation method fo
 
 ```bash
 # Add the RustChain bounties tap
-brew tap rustchain-bounties/rustchain-bounties
+brew tap Scottcjn/rustchain-bounties
 
 # Install the BCOS engine
 brew install bcos
@@ -226,7 +226,7 @@ cat bcos_report.json
 brew uninstall bcos
 
 # Remove tap (optional)
-brew untap rustchain-bounties/rustchain-bounties
+brew untap Scottcjn/rustchain-bounties
 
 # Clean up residual files (optional)
 rm -f ~/Library/LaunchAgents/homebrew.mxcl.bcos.plist
@@ -273,15 +273,15 @@ rm -rf /tmp/bcos-*
 
    ```bash
    # Download the release archive and compute SHA256
-   curl -sSL "https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.5.0.tar.gz" | sha256sum
+   curl -sSL "https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.4.0.tar.gz" | sha256sum
    ```
 
    Update the `sha256` field in `bcos.rb` with the computed value.
 
 2. **Version Pinning**: For production, pin to a specific version (already done in formula):
    ```ruby
-   url "https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.5.0.tar.gz"
-   version "2.5.0"
+   url "https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.4.0.tar.gz"
+   version "2.4.0"
    ```
 
 3. **CI/CD Integration**: Use in GitHub Actions for automated BCOS certification:
@@ -340,17 +340,17 @@ The SHA256 checksum ensures the integrity of the downloaded archive. To obtain i
 
 1. **Using curl and sha256sum** (Linux/macOS with coreutils):
    ```bash
-   curl -sSL "https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.5.0.tar.gz" | sha256sum
+   curl -sSL "https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.4.0.tar.gz" | sha256sum
    ```
 
 2. **Using shasum** (macOS default):
    ```bash
-   curl -sSL "https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.5.0.tar.gz" | shasum -a 256
+   curl -sSL "https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.4.0.tar.gz" | shasum -a 256
    ```
 
 3. **Using wget** (alternative):
    ```bash
-   wget -qO- "https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.5.0.tar.gz" | sha256sum
+   wget -qO- "https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.4.0.tar.gz" | sha256sum
    ```
 
 Copy the resulting hash (64-character hex string) into the `sha256` field of `bcos.rb`.
@@ -421,7 +421,7 @@ jobs:
 - [Homebrew Formula Cookbook](https://docs.brew.sh/Formula-Cookbook)
 - [RustChain Repository](https://github.com/Scottcjn/Rustchain)
 - [BCOS Documentation](../BCOS.md)
-- [Issue #2293](https://github.com/rustchain-bounties/rustchain-bounties/issues/2293)
+- [Issue #2293](https://github.com/Scottcjn/rustchain-bounties/issues/2293)
 
 ---
 

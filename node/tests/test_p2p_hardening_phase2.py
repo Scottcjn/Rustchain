@@ -81,6 +81,31 @@ def test_phase_a_old_payload_voter_spoof_still_blocked():
     assert result.get("reason") == "voter_identity_mismatch"
 
 
+def test_p2p_dedup_insert_race_returns_duplicate():
+    """A concurrent handler winning the insert after precheck must stop processing."""
+    target = _mk_layer("node1", {"node2": "http://n2"})
+    sender = _mk_layer("node2", db_path=target.db_path)
+    sender.broadcast = lambda *args, **kwargs: None
+
+    msg = sender.create_message(mod.MessageType.PING, {"ping": 1})
+    original_verify = target.verify_message
+
+    def racing_verify(message):
+        verified = original_verify(message)
+        with sqlite3.connect(target.db_path) as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO p2p_seen_messages (msg_id, ts) VALUES (?, ?)",
+                (message.msg_id, int(time.time())),
+            )
+        return verified
+
+    target.verify_message = racing_verify
+
+    result = target.handle_message(msg)
+    assert result["status"] == "duplicate"
+    assert "pong" not in result
+
+
 # Phase B regression
 def test_phase_b_rr_delegate_gate_rejects_non_leader():
     """Phase B: only the scheduled RR-delegate can propose for an epoch."""
@@ -127,6 +152,32 @@ def test_phase_c_mixed_proposals_dont_aggregate_to_quorum():
     assert (9, "B") in target._epoch_votes
     assert len(target._epoch_votes[(9, "A")]) == 2
     assert len(target._epoch_votes[(9, "B")]) == 1
+
+
+def test_epoch_votes_survive_restart_and_reject_retransmit():
+    """Persisted votes prevent restart from accepting a fresh duplicate vote."""
+    peers = {"node2": "http://n2", "node3": "http://n3", "node4": "http://n4"}
+    target = _mk_layer("node1", peers)
+    voter = _mk_layer("node2", db_path=target.db_path)
+    voter.broadcast = lambda *args, **kwargs: None
+
+    first = voter.create_message(
+        mod.MessageType.EPOCH_VOTE,
+        {"epoch": 12, "proposal_hash": "persisted-proposal", "vote": "accept"},
+    )
+    assert target.handle_message(first)["status"] == "ok"
+
+    restarted = _mk_layer("node1", peers, db_path=target.db_path)
+    key = (12, "persisted-proposal")
+    assert restarted._epoch_votes[key] == {"node2": "accept"}
+
+    retransmit = voter.create_message(
+        mod.MessageType.EPOCH_VOTE,
+        {"epoch": 12, "proposal_hash": "persisted-proposal", "vote": "accept"},
+    )
+    result = restarted.handle_message(retransmit)
+    assert result["status"] == "duplicate"
+    assert restarted._epoch_votes[key] == {"node2": "accept"}
 
 
 # Phase E regression

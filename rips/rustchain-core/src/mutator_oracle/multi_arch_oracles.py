@@ -52,6 +52,7 @@ import hashlib
 import struct
 import secrets
 import time
+from datetime import datetime
 
 class CPUArchitecture(Enum):
     """Supported CPU architectures for oracle nodes"""
@@ -99,7 +100,11 @@ class CPUArchitecture(Enum):
             return 1.0  # 1x - AMX mutator capability
 
         # Standard age-based tiers for rare architectures
-        age = 2025 - self.release_year
+        # Calculate age using current year to ensure calculations remain accurate
+        current_year = datetime.now().year
+        age = current_year - self.release_year
+
+        # Age-based multipliers for rare architectures
         if age >= 40: return 3.5   # Ancient (68k 1979, MIPS 1985)
         if age >= 32: return 3.0   # Sacred (Alpha 1992, SPARC 1987)
         if age >= 20: return 2.5   # Vintage (G3, G4, G5, x86-64)

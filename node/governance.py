@@ -24,6 +24,7 @@ Date: 2026-03-07
 """
 
 import hashlib
+import hmac
 import json
 import logging
 import sqlite3
@@ -553,7 +554,7 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
         # Admin key is validated via environment variable (not hardcoded)
         import os
         expected_key = os.environ.get("RUSTCHAIN_ADMIN_KEY", "")
-        if not expected_key or admin_key != expected_key:
+        if not expected_key or not hmac.compare_digest(admin_key, expected_key):
             return jsonify({"error": "invalid admin_key"}), 403
 
         try:

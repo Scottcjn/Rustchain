@@ -367,6 +367,12 @@
         let supplyChart = null;
         let refreshInterval = null;
 
+        function escapeHtml(value) {
+            const el = document.createElement('div');
+            el.textContent = String(value ?? '');
+            return el.innerHTML;
+        }
+
         async function getBalance(minerId) {
             try {
                 const response = await fetch(`${BALANCE_API_URL}?miner_id=${encodeURIComponent(minerId)}`);
@@ -476,9 +482,9 @@
                 whaleAlert.classList.add('active');
                 whaleList.innerHTML = whales.map(w => `
                     <li>
-                        <strong>${w.id}</strong><br>
+                        <strong>${escapeHtml(w.id)}</strong><br>
                         Balance: ${formatNumber(w.balance)} (${(w.balance / TOTAL_SUPPLY * 100).toFixed(2)}%)
-                        ${w.founder ? '<span class="badge-founder">' + w.founderLabel + '</span>' : ''}
+                        ${w.founder ? '<span class="badge-founder">' + escapeHtml(w.founderLabel) + '</span>' : ''}
                     </li>
                 `).join('');
             } else {
@@ -494,8 +500,8 @@
                     <tr class="${w.founder ? 'founder' : ''} ${isWhale ? 'whale-row' : ''}">
                         <td>${i + 1}</td>
                         <td>
-                            ${w.id}
-                            ${w.founder ? '<span class="badge badge-founder">' + w.founderLabel + '</span>' : ''}
+                            ${escapeHtml(w.id)}
+                            ${w.founder ? '<span class="badge badge-founder">' + escapeHtml(w.founderLabel) + '</span>' : ''}
                             ${isWhale ? '<span class="badge badge-whale">WHALE</span>' : ''}
                         </td>
                         <td>${formatNumber(w.balance)}</td>

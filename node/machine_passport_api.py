@@ -11,6 +11,7 @@ Issue: #2309
 import os
 import json
 import time
+import hmac
 from typing import Optional
 from flask import Blueprint, request, jsonify, render_template_string
 
@@ -38,6 +39,20 @@ def get_ledger() -> MachinePassportLedger:
     if _ledger is None:
         _ledger = MachinePassportLedger(PASSPORT_DB_PATH)
     return _ledger
+
+
+def get_optional_json_object():
+    """Return an optional JSON object body or an error response."""
+    data = request.get_json(silent=True)
+    if data is None:
+        return {}, None
+    if not isinstance(data, dict):
+        return None, (jsonify({
+            'ok': False,
+            'error': 'invalid_request',
+            'message': 'JSON object required',
+        }), 400)
+    return data, None
 
 
 # === Public Read Endpoints ===
@@ -188,7 +203,7 @@ def create_passport():
     admin_key = request.headers.get('X-Admin-Key', '') or request.headers.get('X-API-Key', '')
     expected_admin_key = os.environ.get('ADMIN_KEY', '')
     
-    if expected_admin_key and admin_key != expected_admin_key:
+    if expected_admin_key and not hmac.compare_digest(admin_key, expected_admin_key):
         return jsonify({
             'ok': False,
             'error': 'unauthorized',
@@ -270,8 +285,8 @@ def create_passport():
 def update_passport(machine_id: str):
     """
     Update a machine passport.
-    
-    Requires admin authentication or owner verification.
+
+    Requires admin authentication when ADMIN_KEY is configured.
     """
     admin_key = request.headers.get('X-Admin-Key', '') or request.headers.get('X-API-Key', '')
     expected_admin_key = os.environ.get('ADMIN_KEY', '')
@@ -282,17 +297,12 @@ def update_passport(machine_id: str):
     if not passport:
         return jsonify({'ok': False, 'error': 'passport_not_found'}), 404
     
-    # Check authorization
-    if expected_admin_key:
-        if admin_key != expected_admin_key:
-            # Allow owner to update their own passport
-            data = request.get_json()
-            if data and data.get('owner_miner_id') != passport.owner_miner_id:
-                return jsonify({
-                    'ok': False,
-                    'error': 'unauthorized',
-                    'message': 'Admin key required or must be owner',
-                }), 401
+    if expected_admin_key and not hmac.compare_digest(admin_key, expected_admin_key):
+        return jsonify({
+            'ok': False,
+            'error': 'unauthorized',
+            'message': 'Admin key required',
+        }), 401
     
     data = request.get_json()
     if not data:
@@ -378,7 +388,9 @@ def add_attestation(machine_id: str):
     if not passport:
         return jsonify({'ok': False, 'error': 'passport_not_found'}), 404
     
-    data = request.get_json() or {}
+    data, error = get_optional_json_object()
+    if error:
+        return error
     
     success, msg = ledger.add_attestation(
         machine_id=machine_id,
@@ -422,7 +434,9 @@ def add_benchmark(machine_id: str):
     if not passport:
         return jsonify({'ok': False, 'error': 'passport_not_found'}), 404
     
-    data = request.get_json() or {}
+    data, error = get_optional_json_object()
+    if error:
+        return error
     
     success, msg = ledger.add_benchmark(
         machine_id=machine_id,

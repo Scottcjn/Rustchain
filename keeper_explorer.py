@@ -16,6 +16,7 @@ import os
 import sys
 import json
 import time
+import hashlib
 import sqlite3
 import requests
 from flask import Flask, request, jsonify, render_template_string, send_from_directory
@@ -82,8 +83,15 @@ def proxy_api(path):
 @app.route('/api/faucet/drip', methods=['POST'])
 def faucet_drip():
     """Integrated faucet dispenser."""
-    data = request.json or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"success": False, "error": "JSON object required"}), 400
+
     address = data.get('address')
+    if not isinstance(address, str):
+        return jsonify({"success": False, "error": "Wallet address required"}), 400
+
+    address = address.strip()
     ip = request.remote_addr
     
     if not address:

@@ -18,6 +18,43 @@ logger = logging.getLogger(__name__)
 
 DB_PATH = os.environ.get("RUSTCHAIN_DB", "rustchain.db")
 
+PAYOUT_LEDGER_COLUMNS = [
+    ("id", "TEXT"),
+    ("bounty_id", "TEXT NOT NULL DEFAULT ''"),
+    ("bounty_title", "TEXT"),
+    ("contributor", "TEXT NOT NULL DEFAULT ''"),
+    ("wallet_address", "TEXT"),
+    ("amount_rtc", "REAL NOT NULL DEFAULT 0"),
+    ("status", "TEXT NOT NULL DEFAULT 'queued'"),
+    ("pr_url", "TEXT"),
+    ("tx_hash", "TEXT"),
+    ("notes", "TEXT"),
+    ("created_at", "INTEGER NOT NULL DEFAULT 0"),
+    ("updated_at", "INTEGER NOT NULL DEFAULT 0"),
+]
+
+
+def _get_columns():
+    return [name for name, _definition in PAYOUT_LEDGER_COLUMNS]
+
+
+def _select_columns_sql():
+    return ", ".join(_get_columns())
+
+
+def _migrate_payout_ledger_schema(conn):
+    """Add missing columns for nodes with older payout_ledger tables."""
+    existing = {
+        row[1] for row in conn.execute("PRAGMA table_info(payout_ledger)").fetchall()
+    }
+    for name, definition in PAYOUT_LEDGER_COLUMNS:
+        if name in existing:
+            continue
+        if name == "id":
+            raise RuntimeError("payout_ledger table is missing required primary key column: id")
+        conn.execute(f"ALTER TABLE payout_ledger ADD COLUMN {name} {definition}")
+        logger.info("Added payout_ledger.%s column", name)
+
 # ── Schema ──────────────────────────────────────────────────────
 def init_payout_ledger_tables():
     """Create the payout_ledger table if it does not exist."""
@@ -38,6 +75,7 @@ def init_payout_ledger_tables():
                 updated_at      INTEGER NOT NULL
             )
         """)
+        _migrate_payout_ledger_schema(c)
         c.execute("""
             CREATE INDEX IF NOT EXISTS idx_ledger_status
             ON payout_ledger(status)
@@ -56,18 +94,10 @@ def _row_to_dict(row, columns):
     return dict(zip(columns, row))
 
 
-def _get_columns():
-    return [
-        "id", "bounty_id", "bounty_title", "contributor",
-        "wallet_address", "amount_rtc", "status", "pr_url",
-        "tx_hash", "notes", "created_at", "updated_at",
-    ]
-
-
 def ledger_list(status=None, contributor=None, limit=100):
     """List payout records, optionally filtered."""
     with sqlite3.connect(DB_PATH) as conn:
-        sql = "SELECT * FROM payout_ledger WHERE 1=1"
+        sql = f"SELECT {_select_columns_sql()} FROM payout_ledger WHERE 1=1"
         params = []
         if status:
             sql += " AND status = ?"
@@ -86,7 +116,7 @@ def ledger_get(record_id):
     """Get a single payout record by ID."""
     with sqlite3.connect(DB_PATH) as conn:
         row = conn.execute(
-            "SELECT * FROM payout_ledger WHERE id = ?", (record_id,)
+            f"SELECT {_select_columns_sql()} FROM payout_ledger WHERE id = ?", (record_id,)
         ).fetchone()
     if row:
         return _row_to_dict(row, _get_columns())

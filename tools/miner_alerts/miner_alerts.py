@@ -225,7 +225,13 @@ class AlertDB:
             cur.execute("""
                 INSERT INTO miner_state (miner_id, last_attest, balance_rtc, is_online, last_checked)
                 VALUES (?, ?, ?, ?, ?)
-            """, (miner_id, last_attest or 0, balance_rtc or 0, is_online or 1, now))
+            """, (
+                miner_id,
+                last_attest if last_attest is not None else 0,
+                balance_rtc if balance_rtc is not None else 0,
+                is_online if is_online is not None else 1,
+                now,
+            ))
         else:
             updates = ["last_checked = ?"]
             params = [now]
@@ -527,8 +533,14 @@ def monitor_loop(db: AlertDB):
 
             # Fetch current miner data
             all_miners = fetch_miners()
-            active_miner_ids = set(m["miner"] for m in all_miners)
-            miner_data = {m["miner"]: m for m in all_miners}
+            miner_data = {}
+            for miner in all_miners:
+                miner_id = miner.get("miner") or miner.get("miner_id")
+                if not miner_id:
+                    logger.warning("Skipping miner entry without miner id: %s", miner)
+                    continue
+                miner_data[miner_id] = miner
+            active_miner_ids = set(miner_data)
 
             for miner_id in monitored_miners:
                 prev_state = db.get_miner_state(miner_id)

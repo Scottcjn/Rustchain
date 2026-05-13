@@ -10,6 +10,7 @@ Features:
 """
 
 import logging
+import os
 import time
 import threading
 
@@ -23,13 +24,54 @@ from sophia_db import (
 logger = logging.getLogger("sophia_scheduler")
 
 DEFAULT_INTERVAL_HOURS = 24
+DEFAULT_MAX_TASKS_PER_MINUTE = 10
+
+
+class TokenBucketRateLimiter:
+    """Thread-safe token bucket for scheduler task throughput."""
+
+    def __init__(self, rate, per=60, time_fn=None, sleep_fn=None):
+        if rate <= 0:
+            raise ValueError("rate must be positive")
+        if per <= 0:
+            raise ValueError("per must be positive")
+
+        self.rate = float(rate)
+        self.per = float(per)
+        self.capacity = float(rate)
+        self.tokens = float(rate)
+        self.time_fn = time.monotonic if time_fn is None else time_fn
+        self.sleep_fn = time.sleep if sleep_fn is None else sleep_fn
+        self.last_check = self.time_fn()
+        self.lock = threading.Lock()
+
+    def _refill(self, now):
+        elapsed = max(0.0, now - self.last_check)
+        self.tokens = min(
+            self.capacity,
+            self.tokens + elapsed * (self.rate / self.per),
+        )
+        self.last_check = now
+
+    def acquire(self):
+        """Block until one task token is available."""
+        while True:
+            with self.lock:
+                self._refill(self.time_fn())
+                if self.tokens >= 1.0:
+                    self.tokens -= 1.0
+                    return
+                wait_seconds = (1.0 - self.tokens) / (self.rate / self.per)
+
+            self.sleep_fn(wait_seconds)
 
 
 class SophiaScheduler:
     """Periodic batch inspector with anomaly re-inspection."""
 
     def __init__(self, db_path=None, interval_hours=DEFAULT_INTERVAL_HOURS,
-                 ollama_endpoints=None, fingerprint_fetcher=None):
+                 ollama_endpoints=None, fingerprint_fetcher=None,
+                 max_tasks_per_minute=None, rate_limiter=None):
         """
         Args:
             db_path: SQLite database path
@@ -37,9 +79,21 @@ class SophiaScheduler:
             ollama_endpoints: Ollama failover chain (defaults to OLLAMA_FAILOVER_CHAIN)
             fingerprint_fetcher: callable(miner_id) -> fingerprint dict.
                 Must be provided for real operation; can be None for testing.
+            max_tasks_per_minute: global task throttle. Defaults to
+                SOPHIA_MAX_TASKS_PER_MINUTE or 10.
+            rate_limiter: optional test hook implementing acquire().
         """
         self.db_path = db_path or DB_PATH
         self.interval_seconds = interval_hours * 3600
+        if max_tasks_per_minute is None:
+            max_tasks_per_minute = int(os.getenv(
+                "SOPHIA_MAX_TASKS_PER_MINUTE",
+                str(DEFAULT_MAX_TASKS_PER_MINUTE),
+            ))
+        self.rate_limiter = rate_limiter or TokenBucketRateLimiter(
+            max_tasks_per_minute,
+            per=60,
+        )
         self.inspector = SophiaCoreInspector(
             db_path=self.db_path,
             ollama_endpoints=list(OLLAMA_FAILOVER_CHAIN) if ollama_endpoints is None else ollama_endpoints,
@@ -54,6 +108,10 @@ class SophiaScheduler:
             raise RuntimeError("No fingerprint_fetcher configured")
         return self.fingerprint_fetcher(miner_id)
 
+    def _acquire_task_slot(self):
+        """Throttle each inspection task before it reaches downstream services."""
+        self.rate_limiter.acquire()
+
     def run_batch(self):
         """Run a full batch inspection of all known miners."""
         logger.info("Starting batch inspection run")
@@ -66,6 +124,7 @@ class SophiaScheduler:
         results = []
         for miner_id in miner_ids:
             try:
+                self._acquire_task_slot()
                 fp = self._fetch_fingerprint(miner_id)
                 result = self.inspector.inspect(
                     miner_id, fp, inspection_type="batch"
@@ -109,6 +168,7 @@ class SophiaScheduler:
         results = []
         for miner_id in reinspect_ids:
             try:
+                self._acquire_task_slot()
                 fp = self._fetch_fingerprint(miner_id)
                 result = self.inspector.inspect(
                     miner_id, fp, inspection_type="anomaly"

@@ -1,8 +1,9 @@
+<!-- SPDX-License-Identifier: MIT -->
 # RIP-305: wRTC ERC-20 on Base L2
 
 ## Overview
 
-Wrapped RTC (wRTC) ERC-20 token implementing [RIP-305](../docs/RIP-305-cross-chain-airdrop.md) for the Base L2 network.
+Wrapped RTC (wRTC) ERC-20 token implementing [RIP-305](../../docs/RIP-305-cross-chain-airdrop.md) for the Base L2 network.
 
 ## Contract: WrappedRTC.sol
 
@@ -73,4 +74,3 @@ PRIVATE_KEY=0x... BASESCAN_API_KEY=... npx hardhat run scripts/deploy.js --netwo
 - [ ] Deployed to Base Sepolia (pending testnet ETH)
 - [ ] Verified on BaseScan
 - [ ] Deployed to Base Mainnet
-

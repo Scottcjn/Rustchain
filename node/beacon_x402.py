@@ -7,14 +7,13 @@ Usage in beacon_chat.py:
     beacon_x402.init_app(app, get_db)
 """
 
-import json
+import hmac
 import logging
 import os
 import sqlite3
 import time
 
-from flask import g, jsonify, request
-from functools import wraps
+from flask import jsonify, request
 
 log = logging.getLogger("beacon.x402")
 
@@ -126,20 +125,25 @@ def _check_x402_payment(price_str, action_name):
             }
         }, 402)
 
-    # Log payment
-    try:
-        db = g.get("db")
-        if db:
-            db.execute(
-                "INSERT INTO x402_beacon_payments (payer_address, action, amount_usdc, created_at) "
-                "VALUES (?, ?, ?, ?)",
-                ("unknown", action_name, price_str, time.time()),
-            )
-            db.commit()
-    except Exception as e:
-        log.debug(f"Payment logging failed: {e}")
-
-    return True, None
+    log.warning(
+        "Rejected unverified x402 payment header for action=%s price=%s",
+        action_name,
+        price_str,
+    )
+    return False, _cors_json({
+        "error": "Payment verification unavailable",
+        "message": "Beacon x402 payments must fail closed until a verifier is configured.",
+        "x402": {
+            "version": "1",
+            "network": X402_NETWORK,
+            "facilitator": FACILITATOR_URL,
+            "payTo": BEACON_TREASURY,
+            "maxAmountRequired": price_str,
+            "asset": USDC_BASE,
+            "resource": request.url,
+            "description": f"Beacon Atlas: {action_name}",
+        }
+    }, 503)
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +180,7 @@ def init_app(app, get_db_func):
         expected = os.environ.get("BEACON_ADMIN_KEY", "")
         if not expected:
             return _cors_json({"error": "Admin key not configured"}, 503)
-        if admin_key != expected:
+        if not hmac.compare_digest(admin_key, expected):
             return _cors_json({"error": "Unauthorized — admin key required"}, 401)
 
         data = request.get_json(silent=True) or {}

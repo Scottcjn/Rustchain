@@ -193,17 +193,37 @@ class TestFeedRoutes(unittest.TestCase):
             self.assertIn("id", item)
             self.assertIn("title", item)
 
-    def test_forwarded_host_header(self):
-        """Test feed respects X-Forwarded-Host header."""
+    def test_forwarded_host_header_ignored_by_default(self):
+        """Untrusted X-Forwarded-Host values must not poison feed links."""
         response = self.client.get(
             "/api/feed/rss",
-            headers={"X-Forwarded-Host": "custom-domain.com"}
+            headers={"X-Forwarded-Host": "attacker.example"}
         )
         
         self.assertEqual(response.status_code, 200)
         data = response.data.decode("utf-8")
-        # Should use the forwarded host in feed links
-        self.assertIn("custom-domain.com", data)
+        self.assertNotIn("attacker.example", data)
+
+    def test_configured_public_base_url_used_for_feed_links(self):
+        """Deployments can set an explicit public feed base URL."""
+        self.app.config["BOTTUBE_PUBLIC_BASE_URL"] = "https://feeds.example/"
+        response = self.client.get("/api/feed/rss")
+
+        self.assertEqual(response.status_code, 200)
+        data = response.data.decode("utf-8")
+        self.assertIn("https://feeds.example", data)
+
+    def test_forwarded_host_requires_trusted_allowlist(self):
+        """Forwarded host is only honored when explicitly allowlisted."""
+        self.app.config["TRUSTED_FORWARD_HOSTS"] = ["feeds.example"]
+        response = self.client.get(
+            "/api/feed/rss",
+            headers={"X-Forwarded-Host": "feeds.example"}
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.data.decode("utf-8")
+        self.assertIn("https://feeds.example", data)
 
 
 class TestFeedRoutesWithDatabase(unittest.TestCase):

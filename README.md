@@ -260,8 +260,8 @@ curl -sk https://rustchain.org/epoch           # Current epoch
 # One-line install — auto-detects your platform
 curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash
 
-# Dry-run: test hardware fingerprint without mining
-rustchain-miner --dry-run
+# Dry-run: preview installer actions without installing or mining
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --dry-run
 ```
 
 Works on Linux (x86_64, ppc64le, aarch64, mips, sparc, m68k, riscv64, ia64, s390x), macOS (Intel, Apple Silicon, PowerPC), IBM POWER8, and Windows. If it runs Python, it can mine.
@@ -287,6 +287,19 @@ tail -f ~/.rustchain/miner.log
 ```
 
 **New to RustChain?** Read the [step-by-step Beginner Quickstart](docs/QUICKSTART.md) — covers everything from install to your first RTC, with every command explained.
+
+---
+
+## Local Development
+
+Developers can build and run RustChain locally from a fresh checkout:
+
+1. Install prerequisites and run Python/Rust checks with the [Build Guide](docs/BUILD.md).
+2. Start a single-node local devnet with [Local Devnet](docs/DEVNET.md).
+3. Create a development wallet and simulate a transfer with the [CLI Wallet Walkthrough](docs/CLI.md).
+
+These guides keep local state in `.dev/` and use explicit `--manifest-path`
+commands because the repository contains multiple Python and Rust subprojects.
 
 ---
 
