@@ -81,6 +81,12 @@ SUPPORTED_PAIRS = {
 log = logging.getLogger("otc_bridge")
 logging.basicConfig(level=logging.INFO)
 
+GENERIC_INTERNAL_ERROR = "Internal server error"
+
+
+def log_internal_error(context):
+    log.exception("%s failed", context)
+
 app = Flask(__name__, static_folder="static")
 
 
@@ -387,8 +393,8 @@ def rtc_create_escrow_job(poster_wallet, amount_rtc, title, description):
         else:
             return {"ok": False, "error": r.json().get("error", "Unknown error")}
     except Exception:
-        log.exception("Escrow job creation failed")
-        return {"ok": False, "error": "escrow_create_failed"}
+        log_internal_error("Escrow job creation")
+        return {"ok": False, "error": GENERIC_INTERNAL_ERROR}
 
 
 def rtc_release_escrow(job_id, poster_wallet):
