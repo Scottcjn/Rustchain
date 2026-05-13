@@ -36,6 +36,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 UNIT = 100_000_000          # 1 RTC = 100,000,000 nanoRTC (8 decimals)
 DUST_THRESHOLD = 1_000      # nanoRTC below which change is absorbed into fee
+MAX_OUTPUTS_PER_TX = 100    # Bound UTXO fan-out to prevent set-bloat DoS
 MAX_COINBASE_OUTPUT_NRTC = 150 * 144 * UNIT  # Max minting output per block (1.5 RTC)
 MAX_POOL_SIZE = 10_000
 MAX_TX_AGE_SECONDS = 3_600  # 1 hour mempool expiry
@@ -430,14 +431,21 @@ class UtxoDB:
             if not outputs and tx_type not in MINTING_TX_TYPES:
                 return abort()
 
-            output_total = sum(o['value_nrtc'] for o in outputs)
+            if len(outputs) > MAX_OUTPUTS_PER_TX:
+                return abort()
 
-            # Every output must carry a strictly positive value.
-            # Without this, a negative-value output lowers output_total,
-            # letting an attacker create more value than the inputs hold.
+            # Every output must be above the dust floor. Without this, a
+            # transaction can split one UTXO into thousands of 1-nanoRTC
+            # boxes and permanently bloat the UTXO set.
             for o in outputs:
-                if not isinstance(o['value_nrtc'], int) or o['value_nrtc'] <= 0:
+                val = o.get('value_nrtc')
+                if (
+                    not isinstance(val, int)
+                    or val < DUST_THRESHOLD
+                ):
                     return abort()
+
+            output_total = sum(o['value_nrtc'] for o in outputs)
 
             # Cap minting (coinbase) output to prevent unbounded fund creation.
             # Without this, any caller that passes tx_type='mining_reward'
@@ -745,6 +753,10 @@ class UtxoDB:
                 if manage_tx:
                         conn.execute("ROLLBACK")
                 return False
+            if len(outputs) > MAX_OUTPUTS_PER_TX:
+                if manage_tx:
+                        conn.execute("ROLLBACK")
+                return False
 
             input_total = 0
             for inp in inputs:
@@ -757,13 +769,13 @@ class UtxoDB:
 
             outputs = tx.get('outputs', [])
 
-            # FIX(#2179): Mirror apply_transaction() output validation.
-            # Reject outputs with missing, non-int, zero, or negative value_nrtc.
-            # Without this, unmineable transactions enter the mempool and lock
-            # UTXOs until expiry (DoS vector).
+            # Mirror apply_transaction() output validation. Reject outputs with
+            # missing, non-int, or below-dust value_nrtc. Without this,
+            # unmineable transactions enter the mempool and lock UTXOs until
+            # expiry (DoS vector).
             for o in outputs:
                 val = o.get('value_nrtc')
-                if not isinstance(val, int) or val <= 0:
+                if not isinstance(val, int) or val < DUST_THRESHOLD:
                     if manage_tx:
                         conn.execute("ROLLBACK")
                     return False

@@ -14,6 +14,7 @@ import unittest
 from utxo_db import (
     UtxoDB, coin_select, compute_box_id, address_to_proposition,
     proposition_to_address, UNIT, DUST_THRESHOLD, MAX_COINBASE_OUTPUT_NRTC,
+    MAX_OUTPUTS_PER_TX,
 )
 
 
@@ -724,6 +725,49 @@ class TestUtxoDB(unittest.TestCase):
         ok = self.db.mempool_add(tx)
         self.assertFalse(ok)
 
+    def test_mempool_rejects_below_dust_output(self):
+        """Mempool must not lock inputs with outputs below the dust floor."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        tx = {
+            'tx_id': 'dust' * 16,
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': boxes[0]['box_id']}],
+            'outputs': [
+                {'address': 'bob',
+                 'value_nrtc': 100 * UNIT - (DUST_THRESHOLD - 1)},
+                {'address': 'dust', 'value_nrtc': DUST_THRESHOLD - 1},
+            ],
+            'fee_nrtc': 0,
+        }
+        ok = self.db.mempool_add(tx)
+        self.assertFalse(ok)
+        self.assertFalse(
+            self.db.mempool_check_double_spend(boxes[0]['box_id'])
+        )
+
+    def test_mempool_rejects_excessive_output_count(self):
+        """Mempool must reject transactions that fan out too many UTXOs."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        tx = {
+            'tx_id': 'many' * 16,
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': boxes[0]['box_id']}],
+            'outputs': [
+                {'address': f'dust_{idx}', 'value_nrtc': DUST_THRESHOLD}
+                for idx in range(MAX_OUTPUTS_PER_TX + 1)
+            ],
+            'fee_nrtc': 0,
+        }
+        ok = self.db.mempool_add(tx)
+        self.assertFalse(ok)
+        self.assertFalse(
+            self.db.mempool_check_double_spend(boxes[0]['box_id'])
+        )
+
     # -- bounty #2819: negative / zero value outputs -------------------------
 
     def test_negative_value_output_rejected(self):
@@ -769,6 +813,48 @@ class TestUtxoDB(unittest.TestCase):
         }, block_height=10)
 
         self.assertFalse(ok)
+
+    def test_below_dust_output_rejected(self):
+        """Outputs below DUST_THRESHOLD must not create persistent dust UTXOs."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': boxes[0]['box_id'],
+                         'spending_proof': 'sig'}],
+            'outputs': [
+                {'address': 'bob',
+                 'value_nrtc': 100 * UNIT - (DUST_THRESHOLD - 1)},
+                {'address': 'dust', 'value_nrtc': DUST_THRESHOLD - 1},
+            ],
+            'fee_nrtc': 0,
+        }, block_height=10)
+
+        self.assertFalse(ok)
+        self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
+        self.assertEqual(self.db.get_balance('bob'), 0)
+        self.assertEqual(self.db.get_balance('dust'), 0)
+
+    def test_excessive_output_count_rejected(self):
+        """Transactions cannot create more than MAX_OUTPUTS_PER_TX boxes."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': boxes[0]['box_id'],
+                         'spending_proof': 'sig'}],
+            'outputs': [
+                {'address': f'dust_{idx}', 'value_nrtc': DUST_THRESHOLD}
+                for idx in range(MAX_OUTPUTS_PER_TX + 1)
+            ],
+            'fee_nrtc': 0,
+        }, block_height=10)
+
+        self.assertFalse(ok)
+        self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
+        self.assertEqual(self.db.count_unspent(), 1)
 
     def test_float_value_nrtc_rejected(self):
         """value_nrtc must be an integer; floats cause silent truncation."""
