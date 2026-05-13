@@ -1,3 +1,8 @@
+"""Unit tests for JSON data processing helpers.
+
+SPDX-License-Identifier: Apache-2.0
+"""
+
 import pytest
 
 from src.utils.data_processing import parse_json_input
