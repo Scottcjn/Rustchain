@@ -7,6 +7,7 @@ See: node/rustchain_v2_integrated_v2.2.1_rip200.py for DB conventions.
 Statuses: queued → pending → confirmed | voided
 """
 import os
+import hmac
 import time
 import sqlite3
 import uuid
@@ -54,6 +55,29 @@ def _migrate_payout_ledger_schema(conn):
             raise RuntimeError("payout_ledger table is missing required primary key column: id")
         conn.execute(f"ALTER TABLE payout_ledger ADD COLUMN {name} {definition}")
         logger.info("Added payout_ledger.%s column", name)
+
+
+def _configured_admin_key():
+    """Return the admin key used to protect payout-ledger financial data."""
+    return (
+        os.environ.get("PAYOUT_LEDGER_ADMIN_KEY", "").strip()
+        or os.environ.get("PAYOUT_ADMIN_KEY", "").strip()
+        or os.environ.get("RC_ADMIN_KEY", "").strip()
+    )
+
+
+def _require_admin():
+    expected = _configured_admin_key()
+    if not expected:
+        return jsonify({"error": "admin key not configured"}), 503
+    provided = (
+        request.headers.get("X-Admin-Key", "")
+        or request.headers.get("X-API-Key", "")
+    ).strip()
+    if not provided or not hmac.compare_digest(provided, expected):
+        return jsonify({"error": "unauthorized"}), 401
+    return None
+
 
 # ── Schema ──────────────────────────────────────────────────────
 def init_payout_ledger_tables():
@@ -173,6 +197,9 @@ def register_ledger_routes(app):
 
     @app.route("/ledger")
     def ledger_page():
+        admin_error = _require_admin()
+        if admin_error:
+            return admin_error
         init_payout_ledger_tables()
         status_filter = request.args.get("status")
         records = ledger_list(status=status_filter)
@@ -181,6 +208,9 @@ def register_ledger_routes(app):
 
     @app.route("/api/ledger", methods=["GET"])
     def api_ledger_list():
+        admin_error = _require_admin()
+        if admin_error:
+            return admin_error
         init_payout_ledger_tables()
         status = request.args.get("status")
         contributor = request.args.get("contributor")
@@ -189,6 +219,9 @@ def register_ledger_routes(app):
 
     @app.route("/api/ledger/<record_id>", methods=["GET"])
     def api_ledger_get(record_id):
+        admin_error = _require_admin()
+        if admin_error:
+            return admin_error
         init_payout_ledger_tables()
         record = ledger_get(record_id)
         if not record:
@@ -197,6 +230,9 @@ def register_ledger_routes(app):
 
     @app.route("/api/ledger", methods=["POST"])
     def api_ledger_create():
+        admin_error = _require_admin()
+        if admin_error:
+            return admin_error
         init_payout_ledger_tables()
         data = request.get_json(force=True)
         required = ["bounty_id", "contributor", "amount_rtc"]
@@ -216,6 +252,9 @@ def register_ledger_routes(app):
 
     @app.route("/api/ledger/<record_id>/status", methods=["PATCH"])
     def api_ledger_update(record_id):
+        admin_error = _require_admin()
+        if admin_error:
+            return admin_error
         init_payout_ledger_tables()
         data = request.get_json(force=True)
         new_status = data.get("status")
@@ -233,6 +272,9 @@ def register_ledger_routes(app):
 
     @app.route("/api/ledger/summary", methods=["GET"])
     def api_ledger_summary():
+        admin_error = _require_admin()
+        if admin_error:
+            return admin_error
         init_payout_ledger_tables()
         return jsonify(ledger_summary())
 
