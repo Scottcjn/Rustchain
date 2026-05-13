@@ -84,8 +84,13 @@ curl -X POST http://localhost:5580/api/orders \
 ```bash
 curl -X POST http://localhost:5580/api/orders/otc_abc123/match \
   -H "Content-Type: application/json" \
-  -d '{"wallet":"buyer-wallet","eth_address":"0x..."}'
+  -d '{"wallet":"RTC...","eth_address":"0x...","wallet_auth":{"public_key":"<ed25519-public-key-hex>","signature":"<signature-hex>","timestamp":1760000000}}'
 ```
+
+`match` and `cancel` require `wallet_auth` for the wallet performing the action.
+Sign this canonical JSON payload with the wallet's Ed25519 key:
+`{"action":"match_order","order_id":"otc_abc123","timestamp":1760000000,"wallet":"RTC..."}`
+Use `"cancel_order"` for cancellations. The timestamp must be within 5 minutes.
 
 ## HTLC Contract (Base)
 

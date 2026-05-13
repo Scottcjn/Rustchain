@@ -24,6 +24,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import secrets
 import sqlite3
 import time
@@ -33,6 +34,13 @@ from functools import wraps
 import requests
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
+
+try:
+    from cryptography.exceptions import InvalidSignature
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+except ImportError:  # pragma: no cover - only used in stripped-down deployments
+    InvalidSignature = None
+    Ed25519PublicKey = None
 
 # ---------------------------------------------------------------------------
 # Config
@@ -62,6 +70,8 @@ MAX_ORDER_RTC = 100000              # Maximum 100k RTC
 RATE_LIMIT_WINDOW = 60              # 1 minute
 RATE_LIMIT_MAX = 10                 # 10 requests per minute per IP
 RTC_REFERENCE_RATE = 0.10           # $0.10 USD reference
+WALLET_AUTH_MAX_AGE_SECONDS = 300
+RTC_WALLET_RE = re.compile(r"^RTC[0-9a-fA-F]{40}$")
 
 SUPPORTED_PAIRS = {
     "RTC/ETH": {"quote": "ETH", "decimals": 18},
@@ -164,6 +174,60 @@ def generate_trade_id(order_id, taker):
 
 def hash_ip(ip):
     return hashlib.sha256(f"otc_salt_{ip}".encode()).hexdigest()[:16]
+
+
+def address_from_public_key(public_key_hex):
+    """Derive the canonical RTC wallet address from a hex Ed25519 public key."""
+    public_key_bytes = bytes.fromhex(public_key_hex)
+    return f"RTC{hashlib.sha256(public_key_bytes).hexdigest()[:40]}"
+
+
+def canonical_wallet_auth_message(action, order_id, wallet, timestamp):
+    payload = {
+        "action": action,
+        "order_id": order_id,
+        "timestamp": int(timestamp),
+        "wallet": wallet,
+    }
+    return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def require_wallet_signature(data, action, order_id, wallet):
+    """Verify the caller controls the RTC wallet used for a sensitive order action."""
+    if Ed25519PublicKey is None:
+        return "wallet_signature_verification_unavailable"
+    if not RTC_WALLET_RE.fullmatch(wallet):
+        return "wallet_must_be_native_rtc_address"
+
+    auth = data.get("wallet_auth")
+    if not isinstance(auth, dict):
+        return "wallet_auth_required"
+
+    public_key = str(auth.get("public_key", "")).strip()
+    signature = str(auth.get("signature", "")).strip()
+    timestamp_raw = auth.get("timestamp")
+    if not public_key or not signature or timestamp_raw is None:
+        return "wallet_auth_public_key_signature_timestamp_required"
+
+    try:
+        timestamp = int(timestamp_raw)
+        now = int(time.time())
+        if abs(now - timestamp) > WALLET_AUTH_MAX_AGE_SECONDS:
+            return "wallet_auth_timestamp_expired"
+        if address_from_public_key(public_key).lower() != wallet.lower():
+            return "wallet_auth_public_key_does_not_match_wallet"
+
+        verify_key = Ed25519PublicKey.from_public_bytes(bytes.fromhex(public_key))
+        verify_key.verify(
+            bytes.fromhex(signature),
+            canonical_wallet_auth_message(action, order_id, wallet, timestamp),
+        )
+    except (ValueError, TypeError):
+        return "wallet_auth_invalid_encoding"
+    except InvalidSignature:
+        return "wallet_auth_invalid_signature"
+
+    return None
 
 
 def get_client_ip():
@@ -551,6 +615,9 @@ def match_order(order_id):
 
     if not taker_wallet:
         return jsonify({"error": "wallet required"}), 400
+    auth_error = require_wallet_signature(data, "match_order", order_id, taker_wallet)
+    if auth_error:
+        return jsonify({"error": auth_error}), 401
 
     conn = get_db()
     try:
@@ -779,6 +846,9 @@ def cancel_order(order_id):
 
     if not wallet:
         return jsonify({"error": "wallet required"}), 400
+    auth_error = require_wallet_signature(data, "cancel_order", order_id, wallet)
+    if auth_error:
+        return jsonify({"error": auth_error}), 401
 
     conn = get_db()
     try:
