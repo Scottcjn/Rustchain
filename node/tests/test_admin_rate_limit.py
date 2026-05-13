@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MIT
 import importlib.util
+import gc
 import os
 import sys
 import tempfile
@@ -30,6 +31,14 @@ def _load_integrated_module():
     return mod
 
 
+def _cleanup_tempdir(tempdir):
+    gc.collect()
+    try:
+        tempdir.cleanup()
+    except OSError:
+        pass
+
+
 class TestAdminRateLimit(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -55,7 +64,7 @@ class TestAdminRateLimit(unittest.TestCase):
             os.environ.pop("RUSTCHAIN_DB_PATH", None)
         else:
             os.environ["RUSTCHAIN_DB_PATH"] = cls._prev_db_path
-        cls._tmp.cleanup()
+        _cleanup_tempdir(cls._tmp)
 
     def setUp(self):
         self.mod.ADMIN_RATE_LIMIT_MAX = 2

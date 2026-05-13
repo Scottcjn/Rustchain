@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MIT
 import importlib.util
+import gc
 import os
 import sqlite3
 import sys
@@ -30,6 +31,14 @@ def _load_integrated_module():
     return mod
 
 
+def _cleanup_tempdir(tempdir):
+    gc.collect()
+    try:
+        tempdir.cleanup()
+    except OSError:
+        pass
+
+
 class TestAttestChallengeRateLimit(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -53,7 +62,7 @@ class TestAttestChallengeRateLimit(unittest.TestCase):
             os.environ.pop("RUSTCHAIN_DB_PATH", None)
         else:
             os.environ["RUSTCHAIN_DB_PATH"] = cls._prev_db_path
-        cls._tmp.cleanup()
+        _cleanup_tempdir(cls._tmp)
 
     def _load_module(self, module_name: str, db_name: str):
         db_path = str(Path(self._tmp.name) / db_name)
