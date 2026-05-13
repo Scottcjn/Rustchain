@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 from payout_preflight import (
     validate_wallet_transfer_admin,
     validate_wallet_transfer_signed,
