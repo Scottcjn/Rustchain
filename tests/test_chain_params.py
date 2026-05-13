@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """
 Consensus math regression checks for chain parameters.
 """
@@ -44,7 +45,7 @@ class TestChainParams(unittest.TestCase):
             self.chain_params.calculate_block_reward(-210000)
 
     def test_calculate_block_reward_matches_base_reward_at_genesis(self):
-        """height=0 remains one-half of halving schedule unchanged."""
+        """height=0 remains at the configured base reward."""
         self.assertEqual(
             self.chain_params.calculate_block_reward(0),
             self.chain_params.BLOCK_REWARD,
