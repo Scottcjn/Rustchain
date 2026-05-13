@@ -203,7 +203,14 @@ def create_passport():
     admin_key = request.headers.get('X-Admin-Key', '') or request.headers.get('X-API-Key', '')
     expected_admin_key = os.environ.get('ADMIN_KEY', '')
     
-    if expected_admin_key and not hmac.compare_digest(admin_key, expected_admin_key):
+    if not expected_admin_key:
+        return jsonify({
+            'ok': False,
+            'error': 'unauthorized',
+            'message': 'ADMIN_KEY not configured',
+        }), 401
+    
+    if not hmac.compare_digest(admin_key, expected_admin_key):
         return jsonify({
             'ok': False,
             'error': 'unauthorized',
@@ -297,7 +304,14 @@ def update_passport(machine_id: str):
     if not passport:
         return jsonify({'ok': False, 'error': 'passport_not_found'}), 404
     
-    if expected_admin_key and not hmac.compare_digest(admin_key, expected_admin_key):
+    if not expected_admin_key:
+        return jsonify({
+            'ok': False,
+            'error': 'unauthorized',
+            'message': 'ADMIN_KEY not configured',
+        }), 401
+    
+    if not hmac.compare_digest(admin_key, expected_admin_key):
         return jsonify({
             'ok': False,
             'error': 'unauthorized',

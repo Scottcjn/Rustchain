@@ -23,9 +23,11 @@ Usage:
 
 from __future__ import annotations
 
+import os
+from functools import wraps
 from typing import Any, Dict, List, Optional
 
-from flask import Blueprint, jsonify, request, current_app
+from flask import Blueprint, jsonify, request, current_app, abort
 
 from memory_store import AgentMemoryStore
 from memory_engine import AgentMemoryEngine, MemoryContext
@@ -33,6 +35,19 @@ from memory_engine import AgentMemoryEngine, MemoryContext
 
 # Create blueprint for memory routes
 memory_bp = Blueprint("agent_memory", __name__, url_prefix="/api/memory")
+
+ADMIN_KEY = os.environ.get("ADMIN_KEY")
+
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not ADMIN_KEY:
+            abort(403, description="Admin key not configured")
+        req_key = request.headers.get("X-Admin-Key") or request.args.get("admin_key")
+        if req_key != ADMIN_KEY:
+            abort(401)
+        return f(*args, **kwargs)
+    return decorated_function
 
 
 def _get_engine() -> AgentMemoryEngine:
@@ -480,6 +495,7 @@ def get_stats() -> tuple:
 
 
 @memory_bp.route("/clear", methods=["DELETE"])
+@admin_required
 def clear_memory() -> tuple:
     """
     Clear all memory for an agent.
