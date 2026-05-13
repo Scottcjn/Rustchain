@@ -1033,8 +1033,32 @@ class RelationshipEngine:
 def create_relationship_blueprint(engine: RelationshipEngine):
     """Create a Flask blueprint for relationship API endpoints."""
     from flask import Blueprint, jsonify, request
+    import hmac
     
     bp = Blueprint("relationships", __name__)
+
+    def _required_mutation_admin_key() -> str:
+        """Return the configured admin key for relationship mutation routes."""
+        return (
+            os.environ.get("RELATIONSHIPS_ADMIN_KEY")
+            or os.environ.get("RC_ADMIN_KEY")
+            or ""
+        ).strip()
+
+    def _require_mutation_admin():
+        required_key = _required_mutation_admin_key()
+        if not required_key:
+            return jsonify({"error": "Relationship mutation admin key is not configured"}), 401
+
+        provided_key = (
+            request.headers.get("X-Admin-Key")
+            or request.headers.get("X-API-Key")
+            or ""
+        ).strip()
+        if not provided_key or not hmac.compare_digest(provided_key, required_key):
+            return jsonify({"error": "Unauthorized relationship mutation"}), 401
+
+        return None
     
     @bp.route("/api/relationships", methods=["GET"])
     def list_relationships():
@@ -1059,7 +1083,11 @@ def create_relationship_blueprint(engine: RelationshipEngine):
     
     @bp.route("/api/relationships/<agent_a>/<agent_b>/disagree", methods=["POST"])
     def disagree(agent_a: str, agent_b: str):
-        data = request.json or {}
+        auth_error = _require_mutation_admin()
+        if auth_error:
+            return auth_error
+
+        data = request.get_json(silent=True) or {}
         try:
             result = engine.record_disagreement(
                 agent_a, agent_b,
@@ -1072,7 +1100,11 @@ def create_relationship_blueprint(engine: RelationshipEngine):
     
     @bp.route("/api/relationships/<agent_a>/<agent_b>/collaborate", methods=["POST"])
     def collaborate(agent_a: str, agent_b: str):
-        data = request.json or {}
+        auth_error = _require_mutation_admin()
+        if auth_error:
+            return auth_error
+
+        data = request.get_json(silent=True) or {}
         try:
             result = engine.record_collaboration(
                 agent_a, agent_b,
@@ -1085,7 +1117,11 @@ def create_relationship_blueprint(engine: RelationshipEngine):
     
     @bp.route("/api/relationships/<agent_a>/<agent_b>/reconcile", methods=["POST"])
     def reconcile(agent_a: str, agent_b: str):
-        data = request.json or {}
+        auth_error = _require_mutation_admin()
+        if auth_error:
+            return auth_error
+
+        data = request.get_json(silent=True) or {}
         try:
             result = engine.record_reconciliation(
                 agent_a, agent_b,
