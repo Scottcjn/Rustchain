@@ -25,6 +25,7 @@ API Endpoints:
 from __future__ import annotations
 
 import argparse
+import hmac
 import hashlib
 import json
 import os
@@ -53,6 +54,7 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max upload
 
 # Database path
 DATABASE = 'bcos_badges.db'
+ADMIN_KEY_ENV = 'BCOS_ADMIN_KEY'
 
 # ── Badge Configuration ──────────────────────────────────────────────
 
@@ -222,6 +224,26 @@ def get_badge_stats() -> Dict:
 
 
 # ── Badge SVG Generation ──────────────────────────────────────────────
+
+
+def require_admin_key():
+    """Require an admin key before issuing trust-bearing BCOS badges."""
+    expected_key = os.environ.get(ADMIN_KEY_ENV, '').strip()
+    if not expected_key:
+        return jsonify({
+            'success': False,
+            'error': f'{ADMIN_KEY_ENV} is not configured',
+        }), 503
+
+    provided_key = (
+        request.headers.get('X-Admin-Key')
+        or request.headers.get('X-API-Key')
+        or ''
+    ).strip()
+    if not provided_key or not hmac.compare_digest(provided_key, expected_key):
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 401
+
+    return None
 
 
 def generate_badge_svg(
@@ -786,6 +808,18 @@ MAIN_TEMPLATE = '''
                 </div>
 
                 <div class="form-group">
+                    <label for="adminKey">Admin Key *</label>
+                    <input
+                        type="password"
+                        id="adminKey"
+                        name="adminKey"
+                        placeholder="BCOS_ADMIN_KEY"
+                        required
+                    />
+                    <div class="hint">Required to issue trust-bearing badges; sent as X-Admin-Key.</div>
+                </div>
+
+                <div class="form-group">
                     <label for="certId">Certificate ID (optional)</label>
                     <input
                         type="text"
@@ -983,7 +1017,10 @@ MAIN_TEMPLATE = '''
 
             fetch('/api/badge/generate', {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'},
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Admin-Key': document.getElementById('adminKey').value,
+                },
                 body: JSON.stringify(formData),
             })
             .then(r => r.json())
@@ -1060,6 +1097,10 @@ def index():
 @app.route('/api/badge/generate', methods=['POST'])
 def generate_badge():
     """Generate a BCOS badge."""
+    auth_error = require_admin_key()
+    if auth_error:
+        return auth_error
+
     data = request.get_json()
 
     repo_name = data.get('repo_name', '').strip()
