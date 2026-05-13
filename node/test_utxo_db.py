@@ -721,6 +721,23 @@ class TestUtxoDB(unittest.TestCase):
         self.assertFalse(ok)
         self.assertEqual(self.db.get_balance('attacker'), 0)
 
+    def test_user_supplied_mining_reward_rejected_before_opening_db(self):
+        """Unauthorized mining rewards should not leak an owned DB handle."""
+
+        class NoOpenUtxoDB(UtxoDB):
+            def _conn(self):
+                raise AssertionError("apply_transaction opened the DB")
+
+        db = NoOpenUtxoDB(self.tmp.name)
+        ok = db.apply_transaction({
+            'tx_type': 'mining_reward',
+            'inputs': [],
+            'outputs': [{'address': 'attacker', 'value_nrtc': 1 * UNIT}],
+            'fee_nrtc': 0,
+            'timestamp': int(time.time()),
+        }, block_height=10)
+        self.assertFalse(ok)
+
     def test_mempool_empty_inputs_rejected_for_transfer(self):
         """Mempool must also reject non-minting txs with empty inputs."""
         tx = {

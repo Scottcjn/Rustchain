@@ -391,12 +391,6 @@ class UtxoDB:
 
         Returns True on success, False on validation failure.
         """
-        own = conn is None
-        if own:
-            conn = self._conn()
-
-        manage_tx = own or not conn.in_transaction
-
         ts = tx.get('timestamp', int(time.time()))
         # NOTE(issue #2085): spending_proof is present on each input dict but
         # is intentionally ignored by this layer.  It is stored for
@@ -416,6 +410,12 @@ class UtxoDB:
         MINTING_TX_TYPES = {'mining_reward'}
         if tx_type in MINTING_TX_TYPES and not tx.get('_allow_minting'):
             return False
+
+        own = conn is None
+        if own:
+            conn = self._conn()
+
+        manage_tx = own or not conn.in_transaction
 
         try:
             if manage_tx:
