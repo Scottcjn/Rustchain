@@ -69,7 +69,7 @@ python miner_alerts.py test-sms +15551234567
                                     +------------------+
   RustChain Node                    |  Alert System    |
   /api/miners  ──────────────────── | monitor loop     |
-  /balance     ──────────────────── | (polls every 2m) |
+  /wallet/balance ───────────────── | (polls every 2m) |
                                     +--------+---------+
                                              |
                                     +--------+---------+
@@ -89,7 +89,7 @@ python miner_alerts.py test-sms +15551234567
 
 ## How It Works
 
-1. **Poll**: Every `POLL_INTERVAL` seconds, fetch `/api/miners` and `/balance` for all subscribed miners
+1. **Poll**: Every `POLL_INTERVAL` seconds, fetch `/api/miners` and `/wallet/balance` for all subscribed miners
 2. **Compare**: Diff current state against stored state in SQLite
 3. **Detect**: Identify offline transitions, balance changes, attestation drops
 4. **Alert**: Send notifications via email/SMS to all subscribers
