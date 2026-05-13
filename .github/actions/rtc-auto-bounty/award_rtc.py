@@ -235,10 +235,20 @@ def post_pr_comment(repo: str, pr_number: str, body: str, token: str) -> bool:
 
 
 def check_already_awarded(comments: list) -> bool:
-    """Check if any existing comment contains the award marker."""
+    """Check if any existing comment contains a successful award marker."""
     for c in comments:
-        if _AWARD_MARKER in (c.get("body") or ""):
-            return True
+        body = c.get("body") or ""
+        if _AWARD_MARKER not in body:
+            continue
+
+        marker_tail = body[body.find(_AWARD_MARKER):].lower()
+        marker_end = marker_tail.find("-->")
+        if marker_end != -1:
+            marker_tail = marker_tail[:marker_end]
+
+        if "(dry-run)" in marker_tail or ":failed" in marker_tail:
+            continue
+        return True
     return False
 
 

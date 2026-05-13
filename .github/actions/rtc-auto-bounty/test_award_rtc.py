@@ -143,6 +143,18 @@ class TestCheckAlreadyAwarded(unittest.TestCase):
         ]
         self.assertTrue(check_already_awarded(comments))
 
+    def test_dry_run_marker_does_not_block_real_award(self):
+        comments = [{"body": f"<!-- {_AWARD_MARKER} (dry-run) -->"}]
+        self.assertFalse(check_already_awarded(comments))
+
+    def test_failed_marker_does_not_block_retry(self):
+        comments = [{"body": f"<!-- {_AWARD_MARKER}:FAILED -->"}]
+        self.assertFalse(check_already_awarded(comments))
+
+    def test_failed_text_outside_marker_does_not_hide_success_marker(self):
+        comments = [{"body": f"failed before marker\n<!-- {_AWARD_MARKER} tx=xyz -->"}]
+        self.assertTrue(check_already_awarded(comments))
+
 
 # ---------------------------------------------------------------------------
 # Config tests
@@ -284,6 +296,44 @@ class TestMainFlow(unittest.TestCase):
             with patch("award_rtc.fetch_pr_comments", return_value=comments):
                 rc = main()
         self.assertEqual(rc, 0)
+
+    def test_retry_after_dry_run_marker(self):
+        from award_rtc import main
+        comments = [{"body": f"<!-- {_AWARD_MARKER} (dry-run) -->"}]
+        transfer_result = {
+            "ok": True,
+            "pending_id": 102,
+            "tx_hash": "tx_after_dry_run",
+        }
+        with self._env():
+            with patch("award_rtc.fetch_pr_comments", return_value=comments):
+                with patch(
+                    "award_rtc.transfer_rtc",
+                    return_value=(True, transfer_result),
+                ) as mock_tx:
+                    with patch("award_rtc.post_pr_comment", return_value=True):
+                        rc = main()
+        self.assertEqual(rc, 0)
+        mock_tx.assert_called_once()
+
+    def test_retry_after_failed_marker(self):
+        from award_rtc import main
+        comments = [{"body": f"<!-- {_AWARD_MARKER}:FAILED -->"}]
+        transfer_result = {
+            "ok": True,
+            "pending_id": 103,
+            "tx_hash": "tx_after_failed",
+        }
+        with self._env():
+            with patch("award_rtc.fetch_pr_comments", return_value=comments):
+                with patch(
+                    "award_rtc.transfer_rtc",
+                    return_value=(True, transfer_result),
+                ) as mock_tx:
+                    with patch("award_rtc.post_pr_comment", return_value=True):
+                        rc = main()
+        self.assertEqual(rc, 0)
+        mock_tx.assert_called_once()
 
     def test_dry_run_mode(self):
         from award_rtc import main
