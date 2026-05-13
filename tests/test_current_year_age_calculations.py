@@ -1,6 +1,8 @@
 import importlib.util
 import os
 import sys
+# SPDX-License-Identifier: MIT
+
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import mock_open, patch
