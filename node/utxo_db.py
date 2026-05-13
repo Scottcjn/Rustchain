@@ -333,16 +333,30 @@ class UtxoDB:
         finally:
             conn.close()
 
+    def _normalize_data_inputs(self, data_inputs: list) -> Optional[List[str]]:
+        """Return validated read-only UTXO box IDs, or None on invalid input."""
+        if not isinstance(data_inputs, list):
+            return None
+
+        normalized = []
+        for box_id in data_inputs:
+            if not isinstance(box_id, str) or not box_id.strip():
+                return None
+            normalized.append(box_id)
+
+        if len(normalized) != len(set(normalized)):
+            return None
+
+        return normalized
+
     def _data_inputs_are_unspent(self, conn: sqlite3.Connection,
                                  data_inputs: list) -> bool:
         """Validate read-only UTXO references before accepting a tx."""
-        if not isinstance(data_inputs, list):
+        normalized = self._normalize_data_inputs(data_inputs)
+        if normalized is None:
             return False
 
-        for box_id in data_inputs:
-            if not isinstance(box_id, str) or not box_id.strip():
-                return False
-
+        for box_id in normalized:
             row = conn.execute(
                 """SELECT spent_at FROM utxo_boxes
                    WHERE box_id = ? AND spent_at IS NULL""",
@@ -421,6 +435,11 @@ class UtxoDB:
             # today, but only accidentally.  Defense in depth.
             input_box_ids = [i['box_id'] for i in inputs]
             if len(input_box_ids) != len(set(input_box_ids)):
+                return abort()
+            data_inputs = self._normalize_data_inputs(data_inputs)
+            if data_inputs is None:
+                return abort()
+            if set(input_box_ids) & set(data_inputs):
                 return abort()
 
             # -- validate inputs exist and are unspent -----------------------
@@ -730,7 +749,11 @@ class UtxoDB:
             if not inputs:
                 return False
 
-            if not isinstance(data_inputs, list):
+            data_inputs = self._normalize_data_inputs(data_inputs)
+            if data_inputs is None:
+                return False
+            input_box_ids = [i['box_id'] for i in inputs]
+            if set(input_box_ids) & set(data_inputs):
                 return False
 
             conn.execute("BEGIN IMMEDIATE")

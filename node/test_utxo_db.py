@@ -363,6 +363,24 @@ class TestUtxoDB(unittest.TestCase):
         self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
         self.assertEqual(self.db.get_balance('bob'), 0)
 
+    def test_data_input_cannot_overlap_spend_input(self):
+        """A read-only data input cannot be consumed by the same tx."""
+        self._apply_coinbase('alice', 100 * UNIT, block_height=1)
+        alice_box = self.db.get_unspent_for_address('alice')[0]
+
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': alice_box['box_id'], 'spending_proof': 'sig'}],
+            'data_inputs': [alice_box['box_id']],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+        }, block_height=10)
+
+        self.assertFalse(ok)
+        self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
+        self.assertEqual(self.db.get_balance('bob'), 0)
+        self.assertIsNone(self.db.get_box(alice_box['box_id'])['spent_at'])
+
     # -- state root ----------------------------------------------------------
 
     def test_empty_state_root(self):
@@ -563,6 +581,22 @@ class TestUtxoDB(unittest.TestCase):
             'tx_id': 'data' * 16,
             'inputs': [{'box_id': box['box_id']}],
             'data_inputs': ['deadbeef' * 8],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+        }
+        ok = self.db.mempool_add(tx)
+        self.assertFalse(ok)
+        self.assertFalse(self.db.mempool_check_double_spend(box['box_id']))
+
+    def test_mempool_rejects_data_input_overlap_without_locking_input(self):
+        """Mempool rejects txs that consume their read-only context."""
+        self._apply_coinbase('alice', 100 * UNIT, block_height=1)
+        box = self.db.get_unspent_for_address('alice')[0]
+
+        tx = {
+            'tx_id': 'overlap' * 8,
+            'inputs': [{'box_id': box['box_id']}],
+            'data_inputs': [box['box_id']],
             'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
             'fee_nrtc': 0,
         }
