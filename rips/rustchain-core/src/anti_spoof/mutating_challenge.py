@@ -263,6 +263,7 @@ class MutatingResponse:
     proof_hash: bytes
 
     timestamp_ms: int
+    hardware_entropy: bytes = b''
     signature: bytes = b''
 
     def compute_proof(self, challenge: MutatingChallenge, hardware_entropy: bytes) -> bytes:
@@ -270,6 +271,8 @@ class MutatingResponse:
         Compute proof hash using mutated parameters.
 
         This must be done in real-time with actual hardware entropy.
+        The responder must include the same entropy bytes in hardware_entropy
+        so validators can recompute and verify the proof.
         """
         data = (
             challenge.challenge_id.encode() +
@@ -404,9 +407,22 @@ class MutatingChallengeNetwork:
             confidence -= 20.0
 
         # 5. Verify proof hash (must have correct round count)
-        # In production, we'd recompute and verify
+        proof_ok = False
+        if not response.proof_hash:
+            failures.append("Missing proof hash")
+            confidence -= 50.0
+        else:
+            expected_proof = response.compute_proof(
+                challenge,
+                response.hardware_entropy
+            )
+            if secrets.compare_digest(response.proof_hash, expected_proof):
+                proof_ok = True
+            else:
+                failures.append("Proof hash mismatch")
+                confidence -= 50.0
 
-        valid = confidence >= 50.0
+        valid = confidence >= 50.0 and proof_ok
 
         # Record result
         self.round_robin.results_this_round[challenge.target] = valid
@@ -529,7 +545,12 @@ def demo_mutating_challenges():
                     challenge.mutation_params.serial_type
                 ) or "UNKNOWN",
                 proof_hash=b'',
+                hardware_entropy=f"{challenge.target}:{block_hash.hex()}".encode(),
                 timestamp_ms=int(time.time() * 1000)
+            )
+            response.proof_hash = response.compute_proof(
+                challenge,
+                response.hardware_entropy
             )
 
             valid, confidence, failures = network.validate_response(response)
