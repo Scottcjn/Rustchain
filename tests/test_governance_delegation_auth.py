@@ -31,22 +31,37 @@ def test_delegate_voting_power_rejects_legacy_unauthenticated_call():
     assert engine.delegations == {}
 
 
-def test_delegate_voting_power_rejects_mismatched_caller_wallet():
+def test_delegate_voting_power_rejects_mismatched_authenticated_wallet():
     proposals = load_governance_module()
     engine = proposals.GovernanceEngine()
 
-    with pytest.raises(ValueError, match="caller_wallet must match from_wallet"):
+    with pytest.raises(ValueError, match="authenticated_wallet must match from_wallet"):
         engine.delegate_voting_power(
             "RTC1Victim",
             "RTC1Attacker",
             1.0,
-            caller_wallet="RTC1Attacker",
+            authenticated_wallet="RTC1Attacker",
         )
 
     assert engine.delegations == {}
 
 
-def test_delegate_voting_power_accepts_owner_caller_wallet():
+def test_delegate_voting_power_rejects_self_supplied_caller_wallet_keyword():
+    proposals = load_governance_module()
+    engine = proposals.GovernanceEngine()
+
+    with pytest.raises(TypeError):
+        engine.delegate_voting_power(
+            "RTC1Victim",
+            "RTC1Attacker",
+            1.0,
+            caller_wallet="RTC1Victim",
+        )
+
+    assert engine.delegations == {}
+
+
+def test_delegate_voting_power_accepts_owner_authenticated_wallet():
     proposals = load_governance_module()
     engine = proposals.GovernanceEngine()
 
@@ -54,7 +69,7 @@ def test_delegate_voting_power_accepts_owner_caller_wallet():
         "RTC1Owner",
         "RTC1Delegate",
         0.5,
-        caller_wallet="RTC1Owner",
+        authenticated_wallet="RTC1Owner",
         duration_days=7,
     )
 

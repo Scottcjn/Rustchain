@@ -400,12 +400,19 @@ class GovernanceEngine:
         from_wallet: str,
         to_wallet: str,
         weight: float,
-        caller_wallet: str,
+        *,
+        authenticated_wallet: str,
         duration_days: Optional[int] = None,
     ) -> Delegation:
-        """Delegate voting power to another wallet (RIP-0006)."""
-        if caller_wallet != from_wallet:
-            raise ValueError("caller_wallet must match from_wallet")
+        """
+        Delegate voting power to another wallet (RIP-0006).
+
+        ``authenticated_wallet`` must come from a trusted wallet/session/signature
+        verification layer. Do not populate it directly from user-controlled
+        request fields.
+        """
+        if authenticated_wallet != from_wallet:
+            raise ValueError("authenticated_wallet must match from_wallet")
 
         if weight < 0 or weight > 1:
             raise ValueError("Delegation weight must be between 0 and 1")
