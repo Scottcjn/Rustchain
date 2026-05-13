@@ -54,12 +54,13 @@ class TestPayoutLedgerMigration(unittest.TestCase):
                 row[1] for row in conn.execute("PRAGMA table_info(payout_ledger)")
             }
 
-        self.assertEqual(columns, set(payout_ledger._get_columns()))
+        self.assertTrue(set(payout_ledger._get_columns()).issubset(columns))
         row = payout_ledger.ledger_get("old-1")
         self.assertEqual(row["id"], "old-1")
         self.assertEqual(row["bounty_id"], "bounty-1")
         self.assertEqual(row["contributor"], "alice")
-        self.assertEqual(row["amount_rtc"], 3.5)
+        self.assertEqual(row["amount_micro_rtc"], 3500000)
+        self.assertEqual(row["amount_rtc"], "3.5")
         self.assertEqual(row["status"], "pending")
         self.assertEqual(row["created_at"], 100)
         self.assertEqual(row["updated_at"], 200)
@@ -85,9 +86,40 @@ class TestPayoutLedgerMigration(unittest.TestCase):
         self.assertEqual(row["bounty_id"], "bounty-2")
         self.assertEqual(row["bounty_title"], "Schema fix")
         self.assertEqual(row["contributor"], "bob")
+        self.assertEqual(row["amount_micro_rtc"], 4250000)
+        self.assertEqual(row["amount_rtc"], "4.25")
         self.assertEqual(row["wallet_address"], "RTC-private")
         self.assertEqual(row["pr_url"], "https://example.test/pr/1")
         self.assertEqual(row["notes"], "created after migration")
+
+    def test_new_writes_store_integer_micro_rtc_and_sum_exactly(self):
+        payout_ledger.init_payout_ledger_tables()
+        first = payout_ledger.ledger_create("bounty-1", "alice", "0.1")
+        second = payout_ledger.ledger_create("bounty-2", "bob", "0.2")
+
+        with sqlite3.connect(self.db_path) as conn:
+            columns = {
+                row[1]: row[2] for row in conn.execute("PRAGMA table_info(payout_ledger)")
+            }
+            self.assertEqual(columns["amount_micro_rtc"].upper(), "INTEGER")
+            self.assertNotIn("amount_rtc", columns)
+            total_micro = conn.execute(
+                "SELECT SUM(amount_micro_rtc) FROM payout_ledger"
+            ).fetchone()[0]
+
+        self.assertEqual(total_micro, 300000)
+        self.assertEqual(payout_ledger.ledger_get(first)["amount_rtc"], "0.1")
+        self.assertEqual(payout_ledger.ledger_get(second)["amount_rtc"], "0.2")
+        self.assertEqual(
+            payout_ledger.ledger_summary()["queued"],
+            {"count": 2, "total_micro_rtc": 300000, "total_rtc": "0.3"},
+        )
+
+    def test_amount_rtc_rejects_more_than_micro_precision(self):
+        payout_ledger.init_payout_ledger_tables()
+
+        with self.assertRaises(ValueError):
+            payout_ledger.ledger_create("bounty-1", "alice", "0.0000001")
 
 
 if __name__ == "__main__":
