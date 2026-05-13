@@ -11,6 +11,7 @@ Run with:
 import sys
 import time
 import unittest
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -324,6 +325,20 @@ class TestAtomFeedBuilder(unittest.TestCase):
         xml = self.builder.build()
         self.assertIn("media:content", xml)
         self.assertIn("video.mp4", xml)
+
+    def test_thumbnail_xml_is_well_formed(self):
+        """Test Atom thumbnail XML keeps the URL attribute closed."""
+        self.builder.add_entry(
+            title="Test",
+            entry_id="urn:test:1",
+            link="https://example.com/1",
+            summary="Test",
+            thumbnail_url="https://example.com/thumb.jpg"
+        )
+        xml = self.builder.build()
+
+        self.assertIn('<media:thumbnail url="https://example.com/thumb.jpg"/>', xml)
+        ET.fromstring(xml)
 
 
 class TestConvenienceFunctions(unittest.TestCase):
