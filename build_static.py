@@ -356,7 +356,7 @@ def generate_index_html(projects):
     
     return html_content
 
-def generate_project_card(project, index=0):
+def generate_project_card(project, index):
     """Generate HTML for a single project card"""
     categories_html = ''.join(
         f'<span class="category-tag">{category}</span>' 
@@ -533,6 +533,4 @@ def build_static_site():
     print(f"Build complete! Generated {len(projects) + 1} HTML files in dist/")
 
 if __name__ == '__main__':
-    # Make projects available globally for the template
-    projects = load_projects()
     build_static_site()

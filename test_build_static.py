@@ -2,6 +2,8 @@
 
 import json
 
+import pytest
+
 import build_static
 
 
@@ -23,12 +25,17 @@ def test_generate_project_card_can_render_a_single_project_without_global_state(
         "review_note": "Reviewed for BCOS metadata.",
     }
 
-    html = build_static.generate_project_card(project)
+    html = build_static.generate_project_card(project, index=0)
 
     assert 'data-project-index="0"' in html
     assert "Example Chain" in html
     assert "Reviewed for BCOS metadata." in html
     assert "BCOS-L0-green" in html
+
+
+def test_generate_project_card_requires_explicit_index():
+    with pytest.raises(TypeError):
+        build_static.generate_project_card({"name": "Example Chain"})
 
 
 def test_load_projects_reads_projects_array(tmp_path, monkeypatch):
