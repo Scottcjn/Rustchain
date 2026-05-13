@@ -1,25 +1,19 @@
 # SPDX-License-Identifier: MIT
-# SPDX-License-Identifier: MIT
 
 import sqlite3
-import os
 from datetime import datetime
 
 DB_PATH = 'contributors.db'
 
 def init_contributor_database():
-    """Initialize the contributors database with proper schema"""
-    
-    # Remove existing database if it exists
-    if os.path.exists(DB_PATH):
-        os.remove(DB_PATH)
-    
+    """Initialize or migrate the contributors database without deleting data."""
+
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
         
         # Create contributors table
         cursor.execute('''
-        CREATE TABLE contributors (
+        CREATE TABLE IF NOT EXISTS contributors (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             github_username TEXT UNIQUE NOT NULL,
             contributor_type TEXT NOT NULL CHECK (contributor_type IN ('human', 'bot', 'agent')),
@@ -33,13 +27,13 @@ def init_contributor_database():
         ''')
         
         # Create index for faster lookups
-        cursor.execute('CREATE INDEX idx_github_username ON contributors(github_username)')
-        cursor.execute('CREATE INDEX idx_payment_status ON contributors(payment_status)')
-        cursor.execute('CREATE INDEX idx_registration_date ON contributors(registration_date)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_github_username ON contributors(github_username)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_payment_status ON contributors(payment_status)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_registration_date ON contributors(registration_date)')
         
         # Create contributions tracking table
         cursor.execute('''
-        CREATE TABLE contributions (
+        CREATE TABLE IF NOT EXISTS contributions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             contributor_id INTEGER NOT NULL,
             repo_name TEXT NOT NULL,
@@ -55,7 +49,7 @@ def init_contributor_database():
         
         # Create payment history table
         cursor.execute('''
-        CREATE TABLE payment_history (
+        CREATE TABLE IF NOT EXISTS payment_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             contributor_id INTEGER NOT NULL,
             amount REAL NOT NULL,
