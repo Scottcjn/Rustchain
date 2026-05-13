@@ -8,6 +8,21 @@ from datetime import datetime
 
 app = Flask(__name__)
 
+ADMIN_KEY = os.environ.get("ADMIN_KEY")
+
+def admin_required(f):
+    from functools import wraps
+    from flask import abort
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not ADMIN_KEY:
+            abort(403, description="Admin key not configured")
+        req_key = request.headers.get("X-Admin-Key") or request.args.get("admin_key")
+        if req_key != ADMIN_KEY:
+            abort(401)
+        return f(*args, **kwargs)
+    return decorated_function
+
 # Security fix: load secret_key from environment variable.
 # If unset, fall back to a cryptographically random key (warns on first start).
 # If set to the known placeholder, refuse to run (prevents accidental deployment
@@ -138,8 +153,12 @@ def index():
 def register():
     github_username = request.form['github_username']
     contributor_type = request.form['contributor_type']
-    rtc_wallet = request.form['rtc_wallet']
+    rtc_wallet = request.form['rtc_wallet'].strip()
     contribution_history = request.form.get('contribution_history', '')
+    
+    if not (rtc_wallet.startswith('0x') or rtc_wallet.startswith('RTC')) or len(rtc_wallet) < 10:
+        flash("Error: Invalid wallet format. Must start with 0x or RTC.")
+        return redirect(url_for('index'))
     
     try:
         with sqlite3.connect(DB_PATH) as conn:
@@ -166,7 +185,7 @@ def api_contributors():
             {
                 'github_username': c[0],
                 'type': c[1],
-                'wallet': c[2],
+                'wallet': c[2][:6] + '...' + c[2][-4:] if len(c[2]) > 10 else '***',
                 'registered': c[3],
                 'status': c[4]
             }
@@ -175,6 +194,7 @@ def api_contributors():
     }
 
 @app.route('/approve/<username>')
+@admin_required
 def approve_contributor(username):
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(

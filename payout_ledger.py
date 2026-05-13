@@ -12,9 +12,23 @@ import sqlite3
 import uuid
 import json
 import logging
-from flask import request, jsonify, render_template_string
+from flask import request, jsonify, render_template_string, abort
+from functools import wraps
 
 logger = logging.getLogger(__name__)
+
+ADMIN_KEY = os.environ.get("ADMIN_KEY")
+
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not ADMIN_KEY:
+            abort(403, description="Admin key not configured")
+        req_key = request.headers.get("X-Admin-Key") or request.args.get("admin_key")
+        if req_key != ADMIN_KEY:
+            abort(401)
+        return f(*args, **kwargs)
+    return decorated_function
 
 DB_PATH = os.environ.get("RUSTCHAIN_DB", "rustchain.db")
 
@@ -196,6 +210,7 @@ def register_ledger_routes(app):
         return jsonify(record)
 
     @app.route("/api/ledger", methods=["POST"])
+    @admin_required
     def api_ledger_create():
         init_payout_ledger_tables()
         data = request.get_json(force=True)
@@ -215,6 +230,7 @@ def register_ledger_routes(app):
         return jsonify({"id": record_id, "status": "queued"}), 201
 
     @app.route("/api/ledger/<record_id>/status", methods=["PATCH"])
+    @admin_required
     def api_ledger_update(record_id):
         init_payout_ledger_tables()
         data = request.get_json(force=True)
