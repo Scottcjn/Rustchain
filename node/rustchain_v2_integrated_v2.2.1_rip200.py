@@ -2075,6 +2075,122 @@ def auto_induct_to_hall(miner: str, device: dict):
     except Exception as e:
         print(f"[HALL] Auto-induct error: {e}")
 
+def _table_columns(conn: sqlite3.Connection, table_name: str) -> set:
+    return {row[1] for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()}
+
+
+def _welcome_bonus_epoch() -> int:
+    try:
+        return slot_to_epoch(current_slot())
+    except Exception:
+        return 0
+
+
+def _welcome_bonus_already_paid(conn: sqlite3.Connection, miner: str, ledger_cols: set) -> bool:
+    if {"to_miner", "memo"}.issubset(ledger_cols):
+        row = conn.execute(
+            "SELECT COUNT(*) FROM ledger WHERE to_miner = ? AND memo LIKE '%welcome%'",
+            (miner,),
+        ).fetchone()
+        return bool(row and row[0])
+
+    if {"miner_id", "delta_i64", "reason"}.issubset(ledger_cols):
+        row = conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM ledger
+            WHERE miner_id = ?
+              AND delta_i64 > 0
+              AND reason LIKE 'welcome_bonus:%'
+            """,
+            (miner,),
+        ).fetchone()
+        return bool(row and row[0])
+
+    raise RuntimeError("unsupported ledger schema for welcome bonus")
+
+
+def _insert_account_balance_if_missing(conn: sqlite3.Connection, miner: str, balance_cols: set):
+    if "balance_rtc" in balance_cols:
+        conn.execute(
+            "INSERT OR IGNORE INTO balances (miner_id, amount_i64, balance_rtc) VALUES (?, 0, 0)",
+            (miner,),
+        )
+    else:
+        conn.execute(
+            "INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)",
+            (miner,),
+        )
+
+
+def _update_account_balance(conn: sqlite3.Connection, miner: str, delta_i64: int, balance_cols: set):
+    if "balance_rtc" in balance_cols:
+        conn.execute(
+            """
+            UPDATE balances
+            SET amount_i64 = amount_i64 + ?,
+                balance_rtc = (amount_i64 + ?) / 1000000.0
+            WHERE miner_id = ?
+            """,
+            (delta_i64, delta_i64, miner),
+        )
+    else:
+        conn.execute(
+            "UPDATE balances SET amount_i64 = amount_i64 + ? WHERE miner_id = ?",
+            (delta_i64, miner),
+        )
+
+
+def _write_welcome_bonus(
+    conn: sqlite3.Connection,
+    miner: str,
+    bonus_i64: int,
+    ledger_cols: set,
+    balance_cols: set,
+):
+    reason = f"welcome_bonus:{WELCOME_BONUS_RTC}_rtc"
+    now = int(time.time())
+
+    if (
+        {"miner_id", "amount_i64"}.issubset(balance_cols)
+        and {"miner_id", "delta_i64", "reason"}.issubset(ledger_cols)
+    ):
+        _insert_account_balance_if_missing(conn, miner, balance_cols)
+        _update_account_balance(conn, WELCOME_BONUS_SOURCE, -bonus_i64, balance_cols)
+        _update_account_balance(conn, miner, bonus_i64, balance_cols)
+        epoch = _welcome_bonus_epoch()
+        conn.execute(
+            "INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason) VALUES (?, ?, ?, ?, ?)",
+            (now, epoch, WELCOME_BONUS_SOURCE, -bonus_i64, reason),
+        )
+        conn.execute(
+            "INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason) VALUES (?, ?, ?, ?, ?)",
+            (now, epoch, miner, bonus_i64, reason),
+        )
+        return
+
+    if {"from_miner", "to_miner", "memo"}.issubset(ledger_cols):
+        conn.execute(
+            "UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ?",
+            (bonus_i64, WELCOME_BONUS_SOURCE),
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)",
+            (miner,),
+        )
+        conn.execute(
+            "UPDATE balances SET amount_i64 = amount_i64 + ? WHERE miner_id = ?",
+            (bonus_i64, miner),
+        )
+        conn.execute(
+            "INSERT INTO ledger (from_miner, to_miner, amount_i64, memo, ts) VALUES (?, ?, ?, ?, ?)",
+            (WELCOME_BONUS_SOURCE, miner, bonus_i64, reason, now),
+        )
+        return
+
+    raise RuntimeError("unsupported welcome bonus balance/ledger schema")
+
+
 def _check_welcome_bonus(miner: str):
     """Award welcome bonus on first-ever attestation. Funded from founder_community."""
     try:
@@ -2085,29 +2201,14 @@ def _check_welcome_bonus(miner: str):
             ).fetchone()[0]
             
             if history_count <= 1:  # First attestation (just recorded)
+                ledger_cols = _table_columns(conn, "ledger")
+                balance_cols = _table_columns(conn, "balances")
                 # Check if welcome bonus already paid
-                already_paid = conn.execute(
-                    "SELECT COUNT(*) FROM ledger WHERE to_miner = ? AND memo LIKE '%welcome%'", (miner,)
-                ).fetchone()[0]
+                already_paid = _welcome_bonus_already_paid(conn, miner, ledger_cols)
                 
-                if already_paid == 0:
+                if not already_paid:
                     bonus_i64 = int(WELCOME_BONUS_RTC * 1_000_000)
-                    # Transfer from founder_community
-                    conn.execute(
-                        "UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ?",
-                        (bonus_i64, WELCOME_BONUS_SOURCE)
-                    )
-                    conn.execute(
-                        "INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)", (miner,)
-                    )
-                    conn.execute(
-                        "UPDATE balances SET amount_i64 = amount_i64 + ? WHERE miner_id = ?",
-                        (bonus_i64, miner)
-                    )
-                    conn.execute(
-                        "INSERT INTO ledger (from_miner, to_miner, amount_i64, memo, ts) VALUES (?, ?, ?, ?, ?)",
-                        (WELCOME_BONUS_SOURCE, miner, bonus_i64, f"welcome_bonus:{WELCOME_BONUS_RTC}_rtc", int(time.time()))
-                    )
+                    _write_welcome_bonus(conn, miner, bonus_i64, ledger_cols, balance_cols)
                     conn.commit()
                     print(f"[WELCOME] {miner} received {WELCOME_BONUS_RTC} RTC welcome bonus!")
     except Exception as e:
