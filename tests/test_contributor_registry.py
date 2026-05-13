@@ -1,11 +1,17 @@
-import pytest
-import sqlite3
 import os
+import re
+import sqlite3
 import tempfile
-from unittest.mock import patch, MagicMock
+
+import pytest
 
 # Module under test
 import contributor_registry as cr
+
+VALID_RTC_WALLET = "RTC019e78d600fb3131c29d7ba80aba8fe644be426e"
+VALID_EVM_WALLET = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+REGISTRATION_TOKEN = "registration-token"
+ADMIN_TOKEN = "admin-token"
 
 
 @pytest.fixture
@@ -14,6 +20,8 @@ def app():
     db_fd, db_path = tempfile.mkstemp(suffix=".db")
     cr.DB_PATH = db_path
     cr.app.config["TESTING"] = True
+    cr.app.config["CONTRIBUTOR_REGISTRATION_TOKEN"] = REGISTRATION_TOKEN
+    cr.app.config["CONTRIBUTOR_ADMIN_TOKEN"] = ADMIN_TOKEN
     cr.init_db()
     yield cr.app
     os.close(db_fd)
@@ -26,6 +34,26 @@ def client(app):
     return app.test_client()
 
 
+def csrf_token(client):
+    response = client.get("/")
+    match = re.search(rb'name="csrf_token" value="([^"]+)"', response.data)
+    assert match is not None
+    return match.group(1).decode()
+
+
+def registration_payload(client, **overrides):
+    payload = {
+        "csrf_token": csrf_token(client),
+        "registration_token": REGISTRATION_TOKEN,
+        "github_username": "newuser",
+        "contributor_type": "agent",
+        "rtc_wallet": VALID_RTC_WALLET,
+        "contribution_history": "Mining and staking",
+    }
+    payload.update(overrides)
+    return payload
+
+
 @pytest.fixture
 def seed_contributor(app):
     """Insert a test contributor into the database."""
@@ -33,7 +61,7 @@ def seed_contributor(app):
         conn.execute(
             "INSERT INTO contributors (github_username, contributor_type, rtc_wallet, contribution_history, status) "
             "VALUES (?, ?, ?, ?, ?)",
-            ("testuser", "human", "RTC019e78d600fb3131c29d7ba80aba8fe644be426e", "PR reviews and bug reports", "approved"),
+            ("testuser", "human", VALID_RTC_WALLET, "PR reviews and bug reports", "approved"),
         )
         conn.commit()
 
@@ -64,18 +92,14 @@ class TestIndexRoute:
         """GET / should list registered contributors."""
         response = client.get("/")
         assert b"testuser" in response.data
-        assert b"RTC019e78d600fb3131c29d7ba80aba8fe644be426e" in response.data
+        assert b"RTC019...426e" in response.data
+        assert VALID_RTC_WALLET.encode() not in response.data
 
 
 class TestRegisterRoute:
     def test_register_new_contributor(self, client):
         """POST /register should add a new contributor."""
-        response = client.post("/register", data={
-            "github_username": "newuser",
-            "contributor_type": "agent",
-            "rtc_wallet": "RTC0abc123",
-            "contribution_history": "Mining and staking",
-        }, follow_redirects=True)
+        response = client.post("/register", data=registration_payload(client), follow_redirects=True)
         assert response.status_code == 200
         with sqlite3.connect(cr.DB_PATH) as conn:
             row = conn.execute(
@@ -87,14 +111,87 @@ class TestRegisterRoute:
 
     def test_register_duplicate_username(self, client, seed_contributor):
         """POST /register with existing username should flash error."""
-        response = client.post("/register", data={
-            "github_username": "testuser",
-            "contributor_type": "human",
-            "rtc_wallet": "RTC0dup",
-            "contribution_history": "",
-        }, follow_redirects=True)
+        response = client.post(
+            "/register",
+            data=registration_payload(
+                client,
+                github_username="testuser",
+                contributor_type="human",
+                rtc_wallet=VALID_EVM_WALLET,
+                contribution_history="",
+            ),
+            follow_redirects=True,
+        )
         assert response.status_code == 200
         assert b"already registered" in response.data
+
+    def test_register_rejects_missing_csrf_token(self, client):
+        """POST /register should reject form submissions without CSRF."""
+        payload = registration_payload(client)
+        payload.pop("csrf_token")
+        response = client.post("/register", data=payload)
+        assert response.status_code == 400
+
+    def test_register_rejects_missing_registration_token(self, client):
+        """POST /register should reject requests without the configured token."""
+        response = client.post(
+            "/register",
+            data=registration_payload(client, registration_token=""),
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+        assert b"Invalid contributor registration token" in response.data
+
+    def test_register_rejects_unconfigured_registration_token(self, app, client):
+        """Deployments without a registration token should fail closed."""
+        app.config["CONTRIBUTOR_REGISTRATION_TOKEN"] = ""
+        response = client.post("/register", data=registration_payload(client), follow_redirects=True)
+        assert response.status_code == 200
+        assert b"registration is closed" in response.data
+
+    def test_register_rejects_invalid_github_username(self, client):
+        """POST /register should reject invalid GitHub username syntax."""
+        response = client.post(
+            "/register",
+            data=registration_payload(client, github_username="-not-valid"),
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+        assert b"valid GitHub username" in response.data
+
+    def test_register_rejects_invalid_contributor_type(self, client):
+        """POST /register should reject contributor types outside the allowlist."""
+        response = client.post(
+            "/register",
+            data=registration_payload(client, contributor_type="miner"),
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+        assert b"valid contributor type" in response.data
+
+    def test_register_rejects_invalid_wallet(self, client):
+        """POST /register should reject malformed wallet strings."""
+        response = client.post(
+            "/register",
+            data=registration_payload(client, rtc_wallet="RTC0abc123"),
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+        assert b"valid RTC or EVM wallet address" in response.data
+
+    def test_register_accepts_leading_at_username(self, client):
+        """POST /register should normalize common @username input."""
+        response = client.post(
+            "/register",
+            data=registration_payload(client, github_username="@newuser"),
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+        with sqlite3.connect(cr.DB_PATH) as conn:
+            row = conn.execute(
+                "SELECT github_username FROM contributors WHERE github_username='newuser'"
+            ).fetchone()
+        assert row is not None
 
 
 class TestApiContributors:
@@ -120,17 +217,53 @@ class TestApiContributors:
         for field in ("github_username", "type", "wallet", "registered", "status"):
             assert field in contrib
 
+    def test_api_redacts_wallets(self, client, seed_contributor):
+        """The public API should not expose full wallet addresses."""
+        response = client.get("/api/contributors")
+        data = response.get_json()
+        contrib = data["contributors"][0]
+        assert contrib["wallet"] == "RTC019...426e"
+        assert contrib["wallet"] != VALID_RTC_WALLET
+
 
 class TestApproveRoute:
-    def test_approve_pending_contributor(self, client):
-        """GET /approve/<username> should set status to approved."""
-        client.post("/register", data={
-            "github_username": "pendinguser",
-            "contributor_type": "bot",
-            "rtc_wallet": "RTC0pending",
-            "contribution_history": "",
-        }, follow_redirects=True)
+    def test_approve_rejects_missing_admin_token(self, client):
+        """GET /approve/<username> should require an admin token."""
+        client.post(
+            "/register",
+            data=registration_payload(
+                client,
+                github_username="pendinguser",
+                contributor_type="bot",
+                contribution_history="",
+            ),
+            follow_redirects=True,
+        )
         response = client.get("/approve/pendinguser", follow_redirects=True)
+        assert response.status_code == 403
+        with sqlite3.connect(cr.DB_PATH) as conn:
+            row = conn.execute(
+                "SELECT status FROM contributors WHERE github_username='pendinguser'"
+            ).fetchone()
+        assert row[0] == "pending"
+
+    def test_approve_pending_contributor(self, client):
+        """GET /approve/<username> with admin token should set status to approved."""
+        client.post(
+            "/register",
+            data=registration_payload(
+                client,
+                github_username="pendinguser",
+                contributor_type="bot",
+                contribution_history="",
+            ),
+            follow_redirects=True,
+        )
+        response = client.get(
+            "/approve/pendinguser",
+            headers={"X-Admin-Token": ADMIN_TOKEN},
+            follow_redirects=True,
+        )
         assert response.status_code == 200
         with sqlite3.connect(cr.DB_PATH) as conn:
             row = conn.execute(
@@ -145,24 +278,27 @@ class TestDatabaseConstraints:
         with sqlite3.connect(cr.DB_PATH) as conn:
             conn.execute(
                 "INSERT INTO contributors (github_username, contributor_type, rtc_wallet) VALUES (?, ?, ?)",
-                ("unique_test", "human", "RTC0unique"),
+                ("unique-test", "human", VALID_RTC_WALLET),
             )
             with pytest.raises(sqlite3.IntegrityError):
                 conn.execute(
                     "INSERT INTO contributors (github_username, contributor_type, rtc_wallet) VALUES (?, ?, ?)",
-                    ("unique_test", "agent", "RTC0dup2"),
+                    ("unique-test", "agent", VALID_EVM_WALLET),
                 )
 
     def test_default_status_is_pending(self, client):
         """New registrations should have status=pending by default."""
-        client.post("/register", data={
-            "github_username": "defaultstatus",
-            "contributor_type": "human",
-            "rtc_wallet": "RTC0default",
-        }, follow_redirects=True)
+        client.post(
+            "/register",
+            data=registration_payload(
+                client,
+                github_username="defaultstatus",
+                contributor_type="human",
+            ),
+            follow_redirects=True,
+        )
         with sqlite3.connect(cr.DB_PATH) as conn:
             row = conn.execute(
                 "SELECT status FROM contributors WHERE github_username='defaultstatus'"
             ).fetchone()
         assert row[0] == "pending"
-
