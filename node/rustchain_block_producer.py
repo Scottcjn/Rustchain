@@ -17,8 +17,15 @@ import time
 import threading
 import logging
 import json
+import os
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
+
+try:
+    import redis
+except ImportError:  # pragma: no cover - Redis is optional for local nodes/tests.
+    redis = None
 
 from rustchain_crypto import (
     CanonicalBlockHeader,
@@ -45,6 +52,8 @@ GENESIS_TIMESTAMP = 1764706927  # Production chain launch (Dec 2, 2025)
 BLOCK_TIME = 600  # 10 minutes (600 seconds)
 MAX_TXS_PER_BLOCK = 1000
 ATTESTATION_TTL = 600  # 10 minutes
+MAX_BATCH_BLOCKS = 100
+BLOCK_BATCH_CACHE_TTL_SECONDS = 30
 
 
 # =============================================================================
@@ -567,6 +576,94 @@ class BlockValidator:
 # API ROUTES
 # =============================================================================
 
+def _utc_timestamp() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _block_cache_client(app):
+    client = app.config.get("BLOCK_BATCH_REDIS")
+    if client is not None:
+        return client
+    if redis is None:
+        return None
+
+    redis_url = (
+        app.config.get("BLOCK_BATCH_REDIS_URL")
+        or os.getenv("RUSTCHAIN_BLOCK_BATCH_REDIS_URL")
+        or os.getenv("REDIS_URL")
+    )
+    if not redis_url:
+        return None
+
+    try:
+        client = redis.Redis.from_url(redis_url, decode_responses=True)
+    except Exception as exc:
+        logger.warning("Block batch Redis cache unavailable: %s", exc)
+        return None
+    app.config["BLOCK_BATCH_REDIS"] = client
+    return client
+
+
+def _cache_key(identifier_type: str, identifier) -> str:
+    return f"rustchain:block:{identifier_type}:{identifier}"
+
+
+def _cache_get_block(cache, identifier_type: str, identifier) -> Optional[Dict]:
+    if cache is None:
+        return None
+    try:
+        cached = cache.get(_cache_key(identifier_type, identifier))
+        if not cached:
+            return None
+        parsed = json.loads(cached)
+        return parsed if isinstance(parsed, dict) else None
+    except Exception as exc:
+        logger.debug("Block batch cache read failed: %s", exc)
+        return None
+
+
+def _cache_set_block(cache, block: Dict):
+    if cache is None:
+        return
+    encoded = json.dumps(block, sort_keys=True)
+    for identifier_type, identifier in (
+        ("height", block.get("height")),
+        ("hash", block.get("block_hash")),
+    ):
+        if identifier is None:
+            continue
+        try:
+            cache.setex(
+                _cache_key(identifier_type, identifier),
+                BLOCK_BATCH_CACHE_TTL_SECONDS,
+                encoded,
+            )
+        except Exception as exc:
+            logger.debug("Block batch cache write failed: %s", exc)
+
+
+def _row_to_block(row: sqlite3.Row) -> Dict:
+    block = dict(row)
+    if block.get("body_json"):
+        try:
+            block["body"] = json.loads(block["body_json"])
+        except (TypeError, ValueError):
+            pass
+    return block
+
+
+def _normalize_block_identifier(raw):
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, int):
+        return ("height", raw) if raw >= 0 else None
+    if isinstance(raw, str):
+        identifier = raw.strip()
+        if identifier:
+            return ("hash", identifier)
+    return None
+
+
 def create_block_api_routes(app, producer: BlockProducer, validator: BlockValidator):
     """Create Flask routes for block API"""
     from flask import request, jsonify
@@ -604,6 +701,99 @@ def create_block_api_routes(app, producer: BlockProducer, validator: BlockValida
             if row:
                 return jsonify(dict(row))
             return jsonify({"error": "Block not found"}), 404
+
+    @app.route('/v1/blocks/batch', methods=['POST'])
+    @app.route('/api/blocks/batch', methods=['POST'])
+    def get_blocks_batch():
+        """Get multiple blocks by height or hash in one request."""
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return jsonify({"ok": False, "error": "JSON object body required"}), 400
+
+        requested = payload.get("blocks")
+        if not isinstance(requested, list):
+            return jsonify({"ok": False, "error": "blocks must be an array"}), 400
+        if len(requested) > MAX_BATCH_BLOCKS:
+            return jsonify({
+                "ok": False,
+                "error": f"blocks cannot contain more than {MAX_BATCH_BLOCKS} entries",
+            }), 400
+
+        normalized = [_normalize_block_identifier(item) for item in requested]
+        if any(item is None for item in normalized):
+            return jsonify({
+                "ok": False,
+                "error": "blocks entries must be non-negative integer heights or non-empty hash strings",
+            }), 400
+        if not normalized:
+            return jsonify({"ok": True, "blocks": [], "count": 0, "missing": [], "timestamp": _utc_timestamp()})
+
+        cache = _block_cache_client(app)
+        found_by_key = {}
+        height_misses = []
+        hash_misses = []
+
+        for identifier_type, identifier in normalized:
+            cached = _cache_get_block(cache, identifier_type, identifier)
+            if cached is not None:
+                found_by_key[(identifier_type, identifier)] = cached
+            elif identifier_type == "height":
+                height_misses.append(identifier)
+            else:
+                hash_misses.append(identifier)
+
+        with sqlite3.connect(producer.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            if height_misses:
+                placeholders = ", ".join("?" for _ in height_misses)
+                try:
+                    rows = cursor.execute(
+                        f"SELECT * FROM blocks WHERE height IN ({placeholders})",
+                        height_misses,
+                    ).fetchall()
+                except sqlite3.Error as exc:
+                    logger.debug("Block batch height lookup failed: %s", exc)
+                    rows = []
+                for row in rows:
+                    block = _row_to_block(row)
+                    found_by_key[("height", block["height"])] = block
+                    found_by_key[("hash", block["block_hash"])] = block
+                    _cache_set_block(cache, block)
+
+            if hash_misses:
+                placeholders = ", ".join("?" for _ in hash_misses)
+                try:
+                    rows = cursor.execute(
+                        f"SELECT * FROM blocks WHERE block_hash IN ({placeholders})",
+                        hash_misses,
+                    ).fetchall()
+                except sqlite3.Error as exc:
+                    logger.debug("Block batch hash lookup failed: %s", exc)
+                    rows = []
+                for row in rows:
+                    block = _row_to_block(row)
+                    found_by_key[("height", block["height"])] = block
+                    found_by_key[("hash", block["block_hash"])] = block
+                    _cache_set_block(cache, block)
+
+        blocks = []
+        missing = []
+        for identifier_type, identifier in normalized:
+            block = found_by_key.get((identifier_type, identifier))
+            if block is None:
+                missing.append(identifier)
+                continue
+            blocks.append(block)
+
+        return jsonify({
+            "ok": True,
+            "blocks": blocks,
+            "count": len(blocks),
+            "missing": missing,
+            "timestamp": _utc_timestamp(),
+        })
 
     @app.route('/block/slot', methods=['GET'])
     def get_current_slot():
