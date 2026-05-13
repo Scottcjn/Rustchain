@@ -11,9 +11,27 @@
 
 use crate::core_types::{WalletAddress, TokenAmount, Block, BlockHash, Transaction};
 use crate::proof_of_antiquity::ValidatedProof;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sha2::{Sha256, Digest};
 use std::collections::HashMap;
+
+// Serde helper for arrays larger than 32 elements
+// (serde only implements Serialize/Deserialize for [T; 0..=32])
+mod big_array_impl {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    pub fn serialize<S: Serializer, const N: usize>(data: &[u8; N], serializer: S) -> Result<S::Ok, S::Error> {
+        { let vec: Vec<u8> = data.to_vec(); vec.serialize(serializer) }
+    }
+    pub fn deserialize<'de, D: Deserializer<'de>, const N: usize>(deserializer: D) -> Result<[u8; N], D::Error> {
+        let vec: Vec<u8> = Vec::<u8>::deserialize(deserializer)?;
+        if vec.len() != N {
+            return Err(serde::de::Error::custom(format!("expected {} bytes, got {}", N, vec.len())));
+        }
+        let mut arr = [0u8; N];
+        arr.copy_from_slice(&vec);
+        Ok(arr)
+    }
+}
 
 // =============================================================================
 // UTXO Model (Ergo-Compatible)
@@ -97,7 +115,7 @@ impl Box {
         // Simplified: create a P2PK-like proposition
         // In real implementation, this would be proper ErgoTree encoding
         let mut tree = vec![0x00, 0x08]; // Header for P2PK
-        tree.extend(wallet.address.as_bytes());
+        tree.extend(wallet.0.as_bytes());
         tree
     }
 }
@@ -118,8 +136,8 @@ pub enum RegisterValue {
     Long(i64),
     /// Byte array
     ByteArray(Vec<u8>),
-    /// Group element (for sigma protocols)
-    GroupElement([u8; 33]),
+    /// Group element (for sigma protocols) - stored as variable-length bytes
+    GroupElement(Vec<u8>),
     /// Collection of values
     Collection(Vec<RegisterValue>),
 }
@@ -323,9 +341,9 @@ impl ErgoTransaction {
             vec![TransactionInput {
                 box_id: [0u8; 32], // Genesis/mining input
                 spending_proof: SpendingProof::AntiquityProof {
-                    hardware_hash: proof.hardware.generate_hardware_hash(),
+                    hardware_hash: hex::encode(proof.hardware.generate_hardware_hash()),
                     antiquity_score: proof.antiquity_score,
-                    entropy_hash: proof.anti_emulation_hash.clone(),
+                    entropy_hash: hex::encode(proof.anti_emulation_hash),
                 },
                 extension: HashMap::new(),
             }],
@@ -343,18 +361,19 @@ impl ErgoTransaction {
 pub enum SigmaProposition {
     /// Prove knowledge of discrete log
     ProveDLog {
-        /// Public key (group element)
+        /// Public key (group element, 33 bytes)
+        #[serde(with = "big_array_impl")]
         public_key: [u8; 33],
     },
     /// Prove knowledge of Diffie-Hellman tuple
     ProveDHTuple {
-        /// Generator g
+        #[serde(with = "big_array_impl")]
         g: [u8; 33],
-        /// Generator h
+        #[serde(with = "big_array_impl")]
         h: [u8; 33],
-        /// u = g^x
+        #[serde(with = "big_array_impl")]
         u: [u8; 33],
-        /// v = h^x
+        #[serde(with = "big_array_impl")]
         v: [u8; 33],
     },
     /// AND composition
@@ -528,7 +547,7 @@ impl ErgoCompatible for crate::core_types::BlockMiner {
     fn to_ergo_box(&self, height: u64) -> Box {
         Box {
             box_id: [0u8; 32],
-            value: self.reward.to_rtc() as u64 * 1_000_000_000, // nanoRTC
+            value: TokenAmount(self.reward).to_rtc() as u64 * 1_000_000_000, // nanoRTC
             ergo_tree: Box::wallet_to_ergo_tree(&self.wallet),
             creation_height: height,
             tokens: Vec::new(),

@@ -107,6 +107,12 @@ impl WalletAddress {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct BlockHash(pub [u8; 32]);
 
+impl AsRef<[u8]> for BlockHash {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
 impl BlockHash {
     pub fn from_bytes(bytes: [u8; 32]) -> Self {
         BlockHash(bytes)
@@ -172,8 +178,10 @@ pub struct MiningProof {
 /// Hardware information for mining
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HardwareInfo {
-    /// Model name
+    /// Model name (also accessible as cpu_model for Ergo bridge compat)
     pub model: String,
+    /// CPU model alias (mirrors model field for cross-chain compatibility)
+    pub cpu_model: String,
     /// Generation/family
     pub generation: String,
     /// Age in years
@@ -190,8 +198,10 @@ impl HardwareInfo {
     /// Create new hardware info with automatic tier calculation
     pub fn new(model: String, generation: String, age_years: u32) -> Self {
         let tier = HardwareTier::from_age(age_years);
+        let cpu_model = model.clone();
         HardwareInfo {
             model,
+            cpu_model,
             generation,
             age_years,
             tier,
@@ -204,6 +214,23 @@ impl HardwareInfo {
     pub fn with_founder_bonus(mut self) -> Self {
         self.multiplier *= 1.1;
         self
+    }
+
+    /// Generate a deterministic hash from hardware characteristics
+    /// Used for anti-emulation verification and duplicate hardware detection
+    pub fn generate_hardware_hash(&self) -> [u8; 32] {
+        let mut hasher = Sha256::new();
+        hasher.update(self.model.as_bytes());
+        hasher.update(self.generation.as_bytes());
+        hasher.update(self.age_years.to_le_bytes());
+        hasher.update(format!("{:?}", self.tier).as_bytes());
+        if let Some(ref c) = self.characteristics {
+            hasher.update(c.unique_id.as_bytes());
+        }
+        let result = hasher.finalize();
+        let mut hash = [0u8; 32];
+        hash.copy_from_slice(&result);
+        hash
     }
 }
 
@@ -239,6 +266,8 @@ pub struct BlockMiner {
     pub multiplier: f64,
     /// Reward earned (in smallest unit)
     pub reward: u64,
+    /// Antiquity score of the miner at block time
+pub antiquity_score: f64,
 }
 
 /// Token amount in smallest unit (8 decimals like Satoshi)

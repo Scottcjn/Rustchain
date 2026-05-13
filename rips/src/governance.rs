@@ -506,7 +506,7 @@ impl GovernanceEngine {
         }
 
         // Calculate voting weight (token + reputation weighted)
-        let reputation = self.reputations.get(&voter.address);
+        let reputation = self.reputations.get(&voter.0);
         let rep_bonus = reputation.map(|r| r.score / 100.0).unwrap_or(0.5);
         let base_weight = (token_balance as f64 * (1.0 + rep_bonus * 0.2)) as u64;
 
@@ -659,7 +659,7 @@ impl GovernanceEngine {
             expires_at,
         };
 
-        let key = to_wallet.address.clone();
+        let key = to_wallet.0.clone();
         self.delegations.entry(key.clone()).or_insert_with(Vec::new).push(delegation);
 
         Ok(self.delegations.get(&key).unwrap().last().unwrap())
@@ -668,7 +668,7 @@ impl GovernanceEngine {
     /// Get total delegated voting weight for a wallet
     fn get_delegated_weight(&self, wallet: &WalletAddress, current_time: u64) -> u64 {
         self.delegations
-            .get(&wallet.address)
+            .get(&wallet.0)
             .map(|delegations| {
                 delegations
                     .iter()
@@ -682,7 +682,7 @@ impl GovernanceEngine {
     /// Update wallet reputation
     fn update_reputation(&mut self, wallet: &WalletAddress, activity_type: &str) {
         let rep = self.reputations
-            .entry(wallet.address.clone())
+            .entry(wallet.0.clone())
             .or_insert_with(|| NodeReputation::new(wallet.clone()));
         rep.record_participation(activity_type);
     }
@@ -729,7 +729,7 @@ impl GovernanceEngine {
 
         for vote in &proposal.votes {
             let voted_with_sophia = vote.support == sophia_supported;
-            if let Some(rep) = self.reputations.get_mut(&vote.voter.address) {
+            if let Some(rep) = self.reputations.get_mut(&vote.voter.0) {
                 rep.update_alignment(voted_with_sophia);
             }
         }
