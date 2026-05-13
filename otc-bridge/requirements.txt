@@ -1,4 +1,5 @@
 flask>=3.0
 flask-cors>=6.0.2
 requests>=2.31
+cryptography>=46.0.7
 gunicorn>=21.2
