@@ -260,6 +260,8 @@ class TestMainFlow(unittest.TestCase):
 
     def _env(self, **overrides):
         """Set up environment for main()."""
+        output_file = tempfile.NamedTemporaryFile(delete=False)
+        output_file.close()
         env = {
             "INPUT_RTC_AMOUNT": "75",
             "INPUT_RTC_VPS_HOST": "1.2.3.4",
@@ -277,7 +279,7 @@ class TestMainFlow(unittest.TestCase):
             "PR_BODY": "wallet: RTCcontributor123\n",
             "PR_HEAD_SHA": "abc123",
             "PR_TITLE": "Test PR",
-            "GITHUB_OUTPUT": "/dev/null",
+            "GITHUB_OUTPUT": output_file.name,
         }
         env.update(overrides)
         return patch.dict(os.environ, env, clear=True)
