@@ -899,17 +899,59 @@ class UtxoDB:
     def mempool_get_block_candidates(self, max_count: int = 100) -> List[dict]:
         """Get highest-fee transactions from mempool for block inclusion."""
         self.mempool_clear_expired()
+        if max_count <= 0:
+            return []
         conn = self._conn()
         try:
             now = int(time.time())
             rows = conn.execute(
-                """SELECT tx_data_json FROM utxo_mempool
+                """SELECT tx_id, tx_data_json FROM utxo_mempool
                    WHERE expires_at > ?
                    ORDER BY fee_nrtc DESC
-                   LIMIT ?""",
-                (now, max_count),
+                """,
+                (now,),
             ).fetchall()
-            return [json.loads(r['tx_data_json']) for r in rows]
+            candidates = []
+            stale_tx_ids = []
+
+            for row in rows:
+                tx_id = row['tx_id']
+                try:
+                    tx = json.loads(row['tx_data_json'])
+                    input_ids = [inp['box_id'] for inp in tx.get('inputs', [])]
+                except Exception:
+                    stale_tx_ids.append(tx_id)
+                    continue
+
+                if not input_ids:
+                    stale_tx_ids.append(tx_id)
+                    continue
+
+                placeholders = ",".join("?" for _ in input_ids)
+                unspent_count = conn.execute(
+                    f"""SELECT COUNT(*) AS n FROM utxo_boxes
+                        WHERE box_id IN ({placeholders}) AND spent_at IS NULL""",
+                    input_ids,
+                ).fetchone()['n']
+                if unspent_count != len(set(input_ids)):
+                    stale_tx_ids.append(tx_id)
+                    continue
+
+                candidates.append(tx)
+                if len(candidates) >= max_count:
+                    break
+
+            for tx_id in stale_tx_ids:
+                conn.execute(
+                    "DELETE FROM utxo_mempool_inputs WHERE tx_id = ?", (tx_id,)
+                )
+                conn.execute(
+                    "DELETE FROM utxo_mempool WHERE tx_id = ?", (tx_id,)
+                )
+            if stale_tx_ids:
+                conn.commit()
+
+            return candidates
         finally:
             conn.close()
 
