@@ -436,7 +436,9 @@ class UtxoDB:
             # Without this, a negative-value output lowers output_total,
             # letting an attacker create more value than the inputs hold.
             for o in outputs:
-                if not isinstance(o['value_nrtc'], int) or o['value_nrtc'] <= 0:
+                # Fix #5183: Explicitly reject bool before isinstance(int) check
+                # isinstance(True, int) returns True in Python, allowing bool values
+                if isinstance(o['value_nrtc'], bool) or not isinstance(o['value_nrtc'], int) or o['value_nrtc'] <= 0:
                     return abort()
 
             # Cap minting (coinbase) output to prevent unbounded fund creation.
@@ -449,7 +451,10 @@ class UtxoDB:
                 return abort()
             if fee < 0:
                 return abort()
-            if inputs and (output_total + fee) > input_total:
+            # Fix #5181: Enforce strict conservation law
+            # Previous check only rejected output+fee > input, but allowed output+fee < input,
+            # permanently destroying the difference. Now require exact equality.
+            if inputs and (output_total + fee) != input_total:
                 return abort()
 
             # -- compute output box IDs and build tx_id ----------------------
@@ -763,13 +768,18 @@ class UtxoDB:
             # UTXOs until expiry (DoS vector).
             for o in outputs:
                 val = o.get('value_nrtc')
-                if not isinstance(val, int) or val <= 0:
+                # Fix #5183: Explicitly reject bool before isinstance(int) check
+                if isinstance(val, bool) or not isinstance(val, int) or val <= 0:
                     if manage_tx:
                         conn.execute("ROLLBACK")
                     return False
 
             output_total = sum(o['value_nrtc'] for o in outputs)
-            if input_total > 0 and (output_total + fee) > input_total:
+            # Fix #5182: Align conservation check gating with apply_transaction()
+            # Previous: if input_total > 0 (skips check for all-zero-value inputs)
+            # Now: if inputs (matches apply_transaction, catches zero-value UTXO lock DoS)
+            # Fix #5181: Enforce strict conservation (use != instead of >)
+            if inputs and (output_total + fee) != input_total:
                 if manage_tx:
                         conn.execute("ROLLBACK")
                 return False
