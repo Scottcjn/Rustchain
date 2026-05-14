@@ -7,7 +7,7 @@ from pathlib import Path
 def load_explorer_api():
     if "flask_cors" not in sys.modules:
         flask_cors = types.ModuleType("flask_cors")
-        flask_cors.CORS = lambda app: app
+        flask_cors.CORS = lambda app, *args, **kwargs: app
         sys.modules["flask_cors"] = flask_cors
 
     module_path = Path(__file__).resolve().parents[1] / "tools" / "explorer-api" / "api.py"

@@ -4357,7 +4357,7 @@ def _wallet_review_ui_authorized(req):
     if is_admin(req):
         return True
     need = os.environ.get("RC_ADMIN_KEY", "")
-    got = str(req.form.get("admin_key") or "").strip()
+    got = str(req.form.get("admin_key") or req.args.get("admin_key") or "").strip()
     return bool(need and got and hmac.compare_digest(need, got))
 
 
