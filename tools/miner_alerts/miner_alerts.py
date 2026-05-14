@@ -482,7 +482,11 @@ def fetch_miners() -> List[dict]:
         )
         resp.raise_for_status()
         data = resp.json()
-        return data if isinstance(data, list) else []
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict) and isinstance(data.get("miners"), list):
+            return data["miners"]
+        return []
     except Exception as e:
         logger.error(f"Failed to fetch miners: {e}")
         return []
@@ -492,16 +496,23 @@ def fetch_balance(miner_id: str) -> Optional[float]:
     """Fetch balance for a miner."""
     try:
         resp = requests.get(
-            f"{RUSTCHAIN_API}/balance",
+            f"{RUSTCHAIN_API}/wallet/balance",
             params={"miner_id": miner_id},
             verify=VERIFY_SSL,
             timeout=10,
         )
         if resp.status_code == 404:
-            return None
+            resp = requests.get(
+                f"{RUSTCHAIN_API}/balance/{miner_id}",
+                verify=VERIFY_SSL,
+                timeout=10,
+            )
+            if resp.status_code == 404:
+                return None
         resp.raise_for_status()
         data = resp.json()
-        return float(data.get("balance", data.get("balance_rtc", 0)))
+        amount = data.get("amount_rtc", data.get("balance_rtc", data.get("balance", 0)))
+        return float(amount)
     except Exception as e:
         logger.error(f"Failed to fetch balance for {miner_id}: {e}")
         return None
