@@ -33,7 +33,7 @@ info:
   version: 2.2.1-rip200
   contact:
     name: RustChain Development
-    url: https://github.com/rustchain-bounties/rustchain-bounties
+    url: https://github.com/Scottcjn/rustchain-bounties
   license:
     name: MIT
     url: https://opensource.org/licenses/MIT
