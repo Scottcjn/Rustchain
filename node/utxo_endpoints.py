@@ -351,9 +351,11 @@ def utxo_transfer():
     4. Apply atomically
     5. If dual_write: also update account model
     """
-    data = request.get_json()
-    if not data:
+    data = request.get_json(silent=True)
+    if data is None or data == {}:
         return jsonify({'error': 'JSON body required'}), 400
+    if not isinstance(data, dict):
+        return jsonify({'error': 'JSON object body required'}), 400
 
     from_address = (data.get('from_address') or '').strip()
     to_address = (data.get('to_address') or '').strip()

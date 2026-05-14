@@ -206,6 +206,12 @@ class TestUtxoEndpoints(unittest.TestCase):
         })
         self.assertEqual(r.status_code, 400)
 
+    def test_transfer_rejects_non_object_json_body(self):
+        for payload in ([{'from_address': 'alice'}], ['bad'], 'bad'):
+            r = self.client.post('/utxo/transfer', json=payload)
+            self.assertEqual(r.status_code, 400)
+            self.assertEqual(r.get_json()['error'], 'JSON object body required')
+
     def test_transfer_zero_amount(self):
         r = self.client.post('/utxo/transfer', json={
             'from_address': 'RTC_test_aabbccdd',
