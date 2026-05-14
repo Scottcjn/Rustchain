@@ -360,6 +360,6 @@ The achievement bridge runs alongside the mining relay. Both use the same Pico s
 - [Hardware Fingerprinting](hardware-fingerprinting.md) -- deep dive into the 6+1 fingerprint checks
 - [Vintage Mining Explained](VINTAGE_MINING_EXPLAINED.md) -- why we mine on old hardware
 - [Boudreaux Computing Principles](Boudreaux_COMPUTING_PRINCIPLES.md) -- the philosophy behind Proof of Antiquity
-- [Legend of Elya N64 Repository](https://github.com/Scottcjn/legend-of-elya-n64/mining/)
+- [Legend of Elya N64 Repository](https://github.com/Scottcjn/legend-of-elya-n64/tree/main/mining)
 - [RustChain Arcade Achievement Bridge](https://github.com/Scottcjn/rustchain-arcade)
 - [RustChain Explorer](https://rustchain.org/explorer) -- see your miner live on the network
