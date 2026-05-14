@@ -22,6 +22,7 @@ API Endpoints:
 """
 
 import os
+import re
 import sys
 import json
 import sqlite3
@@ -447,9 +448,12 @@ class RateLimiter:
 # Validator
 # =============================================================================
 
+RTC_WALLET_RE = re.compile(r'^RTC[0-9a-fA-F]{40}$')
+
+
 class FaucetValidator:
     """Request validation with blocklist/allowlist support."""
-    
+
     def __init__(self, config: Dict[str, Any], logger: logging.Logger):
         self.config = config
         self.logger = logger
@@ -489,7 +493,13 @@ class FaucetValidator:
         
         if len(wallet) > max_len:
             return False, f"Wallet address too long (max {max_len} characters)"
-        
+
+        # Tightened format validation for native RTC wallets: RTC + 40 hex chars.
+        # Mirrors the legacy faucet fix in commit 541c784 so malformed values like
+        # "RTCzzzzzzzzzz" or "RTC1234567890" cannot pass as distinct wallet identities.
+        if wallet.startswith('RTC') and not RTC_WALLET_RE.fullmatch(wallet):
+            return False, "Invalid RTC wallet format (expected 'RTC' + 40 hex chars)"
+
         # Check blocklist
         if wallet.lower() in self.blocklist:
             return False, "Wallet address is blocklisted"
