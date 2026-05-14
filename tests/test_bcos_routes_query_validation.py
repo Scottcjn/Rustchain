@@ -117,3 +117,40 @@ def test_bcos_attest_stores_numeric_trust_score(bcos_client):
     verify_response = bcos_client.get("/bcos/verify/cert-good-score")
     assert verify_response.status_code == 200
     assert verify_response.get_json()["trust_score"] == 81
+
+
+def test_bcos_public_urls_default_to_certificate_valid_host(bcos_client):
+    verify_response = bcos_client.get("/bcos/verify/cert-1")
+    assert verify_response.status_code == 200
+    verify_body = verify_response.get_json()
+    assert verify_body["badge_url"] == "https://rustchain.org/bcos/badge/cert-1.svg"
+    assert verify_body["pdf_url"] == "https://rustchain.org/bcos/cert/cert-1.pdf"
+
+    directory_response = bcos_client.get("/bcos/directory")
+    assert directory_response.status_code == 200
+    cert = directory_response.get_json()["certificates"][0]
+    assert cert["verify_url"] == "https://rustchain.org/bcos/verify/cert-1"
+    assert cert["badge_url"] == "https://rustchain.org/bcos/badge/cert-1.svg"
+
+
+def test_bcos_attest_uses_configured_public_url(monkeypatch, bcos_client):
+    monkeypatch.setenv("RC_ADMIN_KEY", "test-admin")
+    monkeypatch.setenv("RUSTCHAIN_BCOS_PUBLIC_BASE_URL", "https://bcos.example/")
+
+    response = bcos_client.post(
+        "/bcos/attest",
+        headers={"X-Admin-Key": "test-admin"},
+        json={
+            "cert_id": "cert-custom-host",
+            "commitment": "commitment",
+            "repo": "Scottcjn/Rustchain",
+            "commit_sha": "abcdef1234567890",
+            "tier": "L1",
+            "trust_score": 82,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["verify_url"] == "https://bcos.example/bcos/verify/cert-custom-host"
+    assert body["badge_url"] == "https://bcos.example/bcos/badge/cert-custom-host.svg"
