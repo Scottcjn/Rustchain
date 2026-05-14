@@ -571,6 +571,53 @@ class TestProperties:
         assert valid is False
         assert error == "nonce_belongs_to_different_miner"
 
+    def test_store_preserves_first_active_nonce_owner(self, test_db):
+        """Storing an already-active nonce must not replace its first owner."""
+        nonce = "nonce_first_owner_invariant"
+
+        with patch('cross_node_replay_defense.NODE_ID', "node-original"):
+            first_result = store_used_cross_node_nonce(test_db, nonce, "miner_original")
+
+        with patch('cross_node_replay_defense.NODE_ID', "node-replay"):
+            second_result = store_used_cross_node_nonce(test_db, nonce, "miner_replay")
+
+        row = test_db.execute(
+            """
+            SELECT miner_id, node_id
+            FROM cross_node_nonces
+            WHERE nonce = ?
+            """,
+            (nonce,),
+        ).fetchone()
+
+        assert first_result is True
+        assert second_result is False
+        assert row == ("miner_original", "node-original")
+
+    def test_store_can_reuse_nonce_after_expiration(self, test_db):
+        """Expired records are cleaned before a fresh nonce owner is stored."""
+        nonce = "nonce_expired_then_reused"
+        past_time = 1700000000
+        future_time = past_time + CROSS_NODE_NONCE_TTL + 100
+
+        with patch('cross_node_replay_defense.NODE_ID', "node-old"):
+            store_used_cross_node_nonce(test_db, nonce, "miner_old", now_ts=past_time)
+
+        with patch('cross_node_replay_defense.NODE_ID', "node-new"):
+            result = store_used_cross_node_nonce(test_db, nonce, "miner_new", now_ts=future_time)
+
+        row = test_db.execute(
+            """
+            SELECT miner_id, node_id
+            FROM cross_node_nonces
+            WHERE nonce = ?
+            """,
+            (nonce,),
+        ).fetchone()
+
+        assert result is True
+        assert row == ("miner_new", "node-new")
+
 
 # =============================================================================
 # Regression Tests

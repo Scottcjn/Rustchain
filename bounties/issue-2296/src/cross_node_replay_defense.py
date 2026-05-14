@@ -302,14 +302,21 @@ def store_used_cross_node_nonce(
     expires_at = now_ts + CROSS_NODE_NONCE_TTL
     
     try:
-        conn.execute(
+        cleanup_expired_nonces(conn, now_ts)
+
+        cursor = conn.execute(
             """
-            INSERT OR REPLACE INTO cross_node_nonces 
+            INSERT OR IGNORE INTO cross_node_nonces
             (nonce, miner_id, node_id, first_seen, expires_at, attestation_hash, synced_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (nonce, miner_id, NODE_ID, now_ts, expires_at, attestation_hash, now_ts)
         )
+        if cursor.rowcount == 0:
+            conn.commit()
+            log.warning(f"Nonce {nonce[:16]}... already tracked; preserving original owner")
+            return False
+
         conn.commit()
         
         log.debug(f"Stored nonce {nonce[:16]}... for miner {miner_id}")
