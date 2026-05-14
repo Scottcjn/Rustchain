@@ -637,12 +637,84 @@ def auto_release_expired_locks(
 def register_lock_ledger_routes(app):
     """Register lock ledger API routes with Flask app."""
     from flask import request, jsonify
+
+    def _field_type_error(field: str, expected: str):
+        return (
+            jsonify(
+                {
+                    "error": "invalid_field_type",
+                    "field": field,
+                    "expected": expected,
+                }
+            ),
+            400,
+        )
+
+    def _json_object_body():
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict) or not data:
+            return None, (jsonify({"error": "Request body required"}), 400)
+        return data, None
+
+    def _integer_field(data: Dict[str, Any], field: str):
+        value = data.get(field)
+        if value is None:
+            return None, None
+        if isinstance(value, bool):
+            return None, _field_type_error(field, "integer")
+        if isinstance(value, int):
+            return value, None
+        if isinstance(value, str):
+            try:
+                return int(value.strip()), None
+            except ValueError:
+                return None, _field_type_error(field, "integer")
+        return None, _field_type_error(field, "integer")
+
+    def _optional_string_field(
+        data: Dict[str, Any],
+        field: str,
+        default: Optional[str] = None,
+    ):
+        value = data.get(field, default)
+        if value is None:
+            return None, None
+        if not isinstance(value, str):
+            return None, _field_type_error(field, "string")
+        return value.strip(), None
+
+    def _integer_query_arg(
+        name: str,
+        default: int,
+        minimum: Optional[int] = None,
+    ):
+        raw = request.args.get(name)
+        if raw is None:
+            value = default
+        else:
+            try:
+                value = int(raw)
+            except (TypeError, ValueError):
+                return None, jsonify({
+                    "error": "invalid_query_param",
+                    "field": name,
+                    "expected": "integer",
+                }), 400
+        if minimum is not None and value < minimum:
+            return None, jsonify({
+                "error": "invalid_query_param",
+                "field": name,
+                "expected": f"integer >= {minimum}",
+            }), 400
+        return value, None, None
     
     @app.route('/api/lock/miner/<miner_id>', methods=['GET'])
     def get_miner_locks(miner_id: str):
         """Get locks for a specific miner."""
         status = request.args.get("status")
-        limit = int(request.args.get("limit", 100))
+        limit, error_response, status_code = _integer_query_arg("limit", 100, minimum=1)
+        if error_response:
+            return error_response, status_code
         
         conn = sqlite3.connect(DB_PATH)
         try:
@@ -702,10 +774,12 @@ def register_lock_ledger_routes(app):
     @app.route('/api/lock/pending-unlock', methods=['GET'])
     def get_pending_unlocks():
         """Get locks ready to be released."""
-        before = request.args.get("before")
-        limit = int(request.args.get("limit", 100))
-        
-        before_ts = int(before) if before else None
+        before_ts, error_response, status_code = _integer_query_arg("before", None)
+        if error_response:
+            return error_response, status_code
+        limit, error_response, status_code = _integer_query_arg("limit", 100, minimum=1)
+        if error_response:
+            return error_response, status_code
         
         conn = sqlite3.connect(DB_PATH)
         try:
@@ -739,12 +813,16 @@ def register_lock_ledger_routes(app):
         if not hmac.compare_digest(admin_key, expected_key):
             return jsonify({"error": "Unauthorized - admin key required"}), 401
         
-        data = request.get_json(silent=True)
-        if not data:
-            return jsonify({"error": "Request body required"}), 400
+        data, error_response = _json_object_body()
+        if error_response:
+            return error_response
         
-        lock_id = data.get("lock_id")
-        release_tx_hash = data.get("release_tx_hash")
+        lock_id, error_response = _integer_field(data, "lock_id")
+        if error_response:
+            return error_response
+        release_tx_hash, error_response = _optional_string_field(data, "release_tx_hash")
+        if error_response:
+            return error_response
         
         if not lock_id:
             return jsonify({"error": "lock_id required"}), 400
@@ -773,12 +851,16 @@ def register_lock_ledger_routes(app):
         if not hmac.compare_digest(admin_key, expected_key):
             return jsonify({"error": "Unauthorized - admin key required"}), 401
         
-        data = request.get_json(silent=True)
-        if not data:
-            return jsonify({"error": "Request body required"}), 400
+        data, error_response = _json_object_body()
+        if error_response:
+            return error_response
         
-        lock_id = data.get("lock_id")
-        reason = data.get("reason", "admin_forfeit")
+        lock_id, error_response = _integer_field(data, "lock_id")
+        if error_response:
+            return error_response
+        reason, error_response = _optional_string_field(data, "reason", "admin_forfeit")
+        if error_response:
+            return error_response
         
         if not lock_id:
             return jsonify({"error": "lock_id required"}), 400
@@ -807,7 +889,9 @@ def register_lock_ledger_routes(app):
             return jsonify({"error": "RC_WORKER_KEY not configured — worker endpoints disabled"}), 503
         if not hmac.compare_digest(worker_key, expected_worker):
             return jsonify({"error": "Unauthorized"}), 401
-        batch_size = int(request.args.get("batch_size", 100))
+        batch_size, error_response, status_code = _integer_query_arg("batch_size", 100, minimum=1)
+        if error_response:
+            return error_response, status_code
         
         conn = sqlite3.connect(DB_PATH)
         try:
