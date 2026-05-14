@@ -292,7 +292,7 @@ class LocalMiner:
             "machine": platform.machine(),
             "hostname": socket.gethostname(),
             "family": "x86",
-            "arch": "modern",  # Less than 10 years old
+            "arch": machine or "modern",  # Use platform.machine() as primary source
             "serial": get_linux_serial()  # Hardware serial for v2 binding
         }
 
