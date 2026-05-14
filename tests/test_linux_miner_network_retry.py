@@ -55,6 +55,30 @@ def test_mine_exits_nonzero_when_bootstrap_unreachable(monkeypatch):
     assert miner.mine() == 1
 
 
+def test_linux_miner_banner_is_not_hardcoded_to_one_machine(monkeypatch, capsys):
+    miner_mod = load_linux_miner()
+    monkeypatch.setattr(miner_mod, "FINGERPRINT_AVAILABLE", False)
+    monkeypatch.setattr(miner_mod, "get_linux_serial", lambda: "test-serial")
+
+    miner_mod.LocalMiner(wallet="RTC-test-wallet")
+
+    output = capsys.readouterr().out
+    assert "RustChain Linux Miner" in output
+    assert "HP Victus" not in output
+    assert "Ryzen 5 8645HS" not in output
+
+
+def test_linux_miner_id_uses_detected_arch_not_ryzen5(monkeypatch):
+    miner_mod = load_linux_miner()
+    miner = object.__new__(miner_mod.LocalMiner)
+    miner.hw_info = {
+        "arch": "aarch64",
+        "hostname": "ARM Board 01",
+    }
+
+    assert miner._miner_id() == "aarch64-arm-board-01"
+
+
 def test_attest_returns_false_after_challenge_retries(monkeypatch, capsys):
     miner_mod = load_linux_miner()
     monkeypatch.setattr(miner_mod, "FINGERPRINT_AVAILABLE", False)
