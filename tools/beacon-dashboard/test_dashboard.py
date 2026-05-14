@@ -31,6 +31,8 @@ from dashboard_helpers import (
     export_json,
     format_age,
     format_timestamp,
+    _extract_amount,
+    _extract_transport,
     parse_filter,
     truncate,
 )
@@ -71,6 +73,33 @@ def _sample_envelopes():
         _make_envelope("bcn_dave", "accord", "websocket", now),
         _make_envelope("bcn_eve", "pushback", "discord", now, amount=75.0),
     ]
+
+
+# ── envelope extraction tests ────────────────────────────────────────
+
+class TestEnvelopeExtraction(unittest.TestCase):
+    def test_extract_transport_normalizes_unknown_explicit_transport(self):
+        envelope = {"transport": "matrix", "agent_id": "discord_agent_1"}
+
+        self.assertEqual(_extract_transport(envelope), "other")
+
+    def test_extract_transport_falls_back_to_agent_id_heuristics(self):
+        self.assertEqual(_extract_transport({"agent_id": "TG_bridge"}), "telegram")
+        self.assertEqual(_extract_transport({"agent_id": "unknown_agent"}), "beacon")
+
+    def test_extract_amount_skips_invalid_aliases_until_valid_value(self):
+        envelope = {"amount": "bad", "reward_rtc": "12.5"}
+
+        self.assertEqual(_extract_amount(envelope), 12.5)
+
+    def test_extract_amount_returns_zero_for_missing_or_invalid_values(self):
+        self.assertEqual(_extract_amount({}), 0.0)
+        self.assertEqual(
+            _extract_amount(
+                {"amount": "bad", "reward_rtc": None, "rtc_amount": object()}
+            ),
+            0.0,
+        )
 
 
 # ── parse_filter tests ───────────────────────────────────────────────
