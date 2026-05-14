@@ -190,11 +190,11 @@ class TestEligibilityChecks(unittest.TestCase):
         self.assertFalse(result.eligible)
         self.assertIn("Already claimed", result.reason)
 
-    def test_same_github_cannot_claim_with_different_wallet(self):
-        """A GitHub account cannot bypass claim limits by changing wallets."""
+    def test_duplicate_github_with_different_wallet_rejected(self):
+        """A GitHub account cannot claim again with a different wallet."""
         success, _, _ = self.airdrop.claim_airdrop(
             github_username="testuser",
-            wallet_address="RTC1111111111111111111111111111111111111111",
+            wallet_address="RTC1234567890123456789012345678901234567890",
             chain="base",
             tier="contributor",
             skip_antisybil=True,
@@ -203,7 +203,7 @@ class TestEligibilityChecks(unittest.TestCase):
 
         result = self.airdrop.check_eligibility(
             github_username="testuser",
-            wallet_address="RTC2222222222222222222222222222222222222222",
+            wallet_address="RTC2234567890123456789012345678901234567890",
             chain="base",
             skip_antisybil=True,
         )
@@ -211,12 +211,11 @@ class TestEligibilityChecks(unittest.TestCase):
         self.assertFalse(result.eligible)
         self.assertIn("Already claimed", result.reason)
 
-    def test_same_wallet_cannot_claim_with_different_github(self):
-        """A wallet cannot bypass claim limits by changing GitHub accounts."""
-        wallet = "RTC3333333333333333333333333333333333333333"
+    def test_duplicate_github_with_different_case_rejected(self):
+        """GitHub identity comparisons are case-insensitive."""
         success, _, _ = self.airdrop.claim_airdrop(
-            github_username="firstuser",
-            wallet_address=wallet,
+            github_username="TestUser",
+            wallet_address="RTC1234567890123456789012345678901234567890",
             chain="base",
             tier="contributor",
             skip_antisybil=True,
@@ -224,8 +223,29 @@ class TestEligibilityChecks(unittest.TestCase):
         self.assertTrue(success)
 
         result = self.airdrop.check_eligibility(
-            github_username="seconduser",
-            wallet_address=wallet,
+            github_username="testuser",
+            wallet_address="RTC2234567890123456789012345678901234567890",
+            chain="base",
+            skip_antisybil=True,
+        )
+
+        self.assertFalse(result.eligible)
+        self.assertIn("Already claimed", result.reason)
+
+    def test_duplicate_wallet_with_different_github_rejected(self):
+        """A wallet cannot claim again with a different GitHub account."""
+        success, _, _ = self.airdrop.claim_airdrop(
+            github_username="testuser",
+            wallet_address="RTC1234567890123456789012345678901234567890",
+            chain="base",
+            tier="contributor",
+            skip_antisybil=True,
+        )
+        self.assertTrue(success)
+
+        result = self.airdrop.check_eligibility(
+            github_username="otheruser",
+            wallet_address="RTC1234567890123456789012345678901234567890",
             chain="base",
             skip_antisybil=True,
         )
@@ -305,6 +325,76 @@ class TestClaimProcessing(unittest.TestCase):
         # Should fail because tier name is invalid
         self.assertFalse(success)
         self.assertIn("Invalid tier", message)
+
+    def test_claim_rejects_reused_github_with_different_wallet(self):
+        """Claim creation enforces one claim per GitHub account."""
+        success, _, _ = self.airdrop.claim_airdrop(
+            github_username="testuser",
+            wallet_address="RTC1234567890123456789012345678901234567890",
+            chain="base",
+            tier="contributor",
+            skip_antisybil=True,
+        )
+        self.assertTrue(success)
+
+        success, message, claim = self.airdrop.claim_airdrop(
+            github_username="testuser",
+            wallet_address="RTC2234567890123456789012345678901234567890",
+            chain="base",
+            tier="contributor",
+            skip_antisybil=True,
+        )
+
+        self.assertFalse(success)
+        self.assertIsNone(claim)
+        self.assertIn("GitHub account or wallet", message)
+
+    def test_claim_rejects_reused_github_with_different_case(self):
+        """Claim creation canonicalizes GitHub account casing."""
+        success, _, first_claim = self.airdrop.claim_airdrop(
+            github_username="TestUser",
+            wallet_address="RTC1234567890123456789012345678901234567890",
+            chain="base",
+            tier="contributor",
+            skip_antisybil=True,
+        )
+        self.assertTrue(success)
+        self.assertEqual(first_claim.github_username, "testuser")
+
+        success, message, claim = self.airdrop.claim_airdrop(
+            github_username="testuser",
+            wallet_address="RTC2234567890123456789012345678901234567890",
+            chain="base",
+            tier="contributor",
+            skip_antisybil=True,
+        )
+
+        self.assertFalse(success)
+        self.assertIsNone(claim)
+        self.assertIn("GitHub account or wallet", message)
+
+    def test_claim_rejects_reused_wallet_with_different_github(self):
+        """Claim creation enforces one claim per wallet."""
+        success, _, _ = self.airdrop.claim_airdrop(
+            github_username="testuser",
+            wallet_address="RTC1234567890123456789012345678901234567890",
+            chain="base",
+            tier="contributor",
+            skip_antisybil=True,
+        )
+        self.assertTrue(success)
+
+        success, message, claim = self.airdrop.claim_airdrop(
+            github_username="otheruser",
+            wallet_address="RTC1234567890123456789012345678901234567890",
+            chain="base",
+            tier="contributor",
+            skip_antisybil=True,
+        )
+
+        self.assertFalse(success)
+        self.assertIsNone(claim)
+        self.assertIn("GitHub account or wallet", message)
 
 
 class TestBridgeOperations(unittest.TestCase):

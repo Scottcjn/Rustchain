@@ -295,6 +295,10 @@ class AirdropV2:
     # Eligibility Checks
     # ========================================================================
 
+    @staticmethod
+    def _normalize_github_username(github_username: str) -> str:
+        return (github_username or "").strip().casefold()
+
     def check_eligibility(
         self,
         github_username: str,
@@ -316,6 +320,7 @@ class AirdropV2:
         Returns:
             EligibilityResult with tier and reward info
         """
+        github_username = self._normalize_github_username(github_username)
         chain_lower = chain.lower()
         if chain_lower not in ["solana", "base"]:
             return EligibilityResult(
@@ -329,7 +334,7 @@ class AirdropV2:
         if self._has_claimed(github_username, wallet_address, chain_lower):
             return EligibilityResult(
                 eligible=False,
-                reason="Already claimed airdrop for this wallet/github pair",
+                reason="Already claimed airdrop for this GitHub account or wallet",
                 checks={"already_claimed": True},
             )
 
@@ -661,15 +666,17 @@ class AirdropV2:
         self, github_username: str, wallet_address: str, chain: str
     ) -> bool:
         """Check if a GitHub account or wallet already claimed an airdrop."""
+        github_username = self._normalize_github_username(github_username)
         conn = self._get_conn()
         cursor = conn.cursor()
         cursor.execute(
             """
             SELECT 1 FROM airdrop_claims
-            WHERE (github_username = ? OR wallet_address = ?)
+            WHERE chain = ?
+            AND (github_username = ? OR wallet_address = ?)
             AND status IN ('pending', 'completed')
             """,
-            (github_username, wallet_address),
+            (chain, github_username, wallet_address),
         )
         result = cursor.fetchone() is not None
         self._close_conn(conn)
@@ -755,7 +762,11 @@ class AirdropV2:
         Returns:
             (success, message, claim_record)
         """
+        github_username = self._normalize_github_username(github_username)
         chain_lower = chain.lower()
+
+        if self._has_claimed(github_username, wallet_address, chain_lower):
+            return False, "Claim already exists for this GitHub account or wallet", None
 
         # When skip_antisybil is True (testing), use provided tier directly
         if skip_antisybil:
@@ -1088,6 +1099,7 @@ class AirdropV2:
         self, github_username: str
     ) -> List[ClaimRecord]:
         """Get all claims for a GitHub user."""
+        github_username = self._normalize_github_username(github_username)
         conn = self._get_conn()
         cursor = conn.cursor()
         cursor.execute(
