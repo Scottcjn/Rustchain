@@ -72,7 +72,8 @@ DEFAULT_CONFIG = {
         }
     },
     'validation': {
-        'required_prefix': '0x',
+        'allowed_prefixes': ['RTC', '0x'],
+        'required_prefix': None,
         'min_length': 10,
         'max_length': 66,
         'require_checksum': False,
@@ -357,10 +358,16 @@ class FaucetValidator:
         
         wallet = wallet.strip()
         
-        # Check prefix
-        required_prefix = self.validation_config.get('required_prefix', '0x')
-        if required_prefix and not wallet.startswith(required_prefix):
-            return False, f"Wallet must start with '{required_prefix}'"
+        # Check prefix. Native RustChain wallets use RTC..., while older
+        # faucet deployments may still accept EVM-style 0x... addresses.
+        allowed_prefixes = self.validation_config.get('allowed_prefixes')
+        if allowed_prefixes is None:
+            required_prefix = self.validation_config.get('required_prefix')
+            allowed_prefixes = [required_prefix] if required_prefix else []
+
+        if allowed_prefixes and not any(wallet.startswith(prefix) for prefix in allowed_prefixes):
+            prefixes = "', '".join(allowed_prefixes)
+            return False, f"Wallet must start with one of: '{prefixes}'"
         
         # Check length
         min_len = self.validation_config.get('min_length', 10)

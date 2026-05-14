@@ -64,7 +64,7 @@ rate_limit:
 
 # Wallet validation
 validation:
-  required_prefix: "0x"
+  allowed_prefixes: ["RTC", "0x"]
   min_length: 10
   max_length: 66
   blocklist: []
@@ -98,7 +98,7 @@ distribution:
 #### Validation
 | Option | Default | Description |
 |--------|---------|-------------|
-| `required_prefix` | `0x` | Required wallet prefix |
+| `allowed_prefixes` | `["RTC", "0x"]` | Accepted wallet prefixes |
 | `min_length` | `10` | Minimum wallet length |
 | `max_length` | `66` | Maximum wallet length |
 | `blocklist` | `[]` | Blocked wallet addresses |
