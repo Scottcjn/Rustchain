@@ -8,7 +8,7 @@ from pathlib import Path
 def load_otc_bridge(tmp_path):
     if "flask_cors" not in sys.modules:
         flask_cors = types.ModuleType("flask_cors")
-        flask_cors.CORS = lambda app: app
+        flask_cors.CORS = lambda app, *args, **kwargs: app
         sys.modules["flask_cors"] = flask_cors
 
     db_path = tmp_path / "otc_bridge.db"
@@ -34,6 +34,26 @@ def test_orders_rejects_malformed_pagination(tmp_path):
     assert limit_response.get_json() == {"error": "limit_must_be_integer"}
     assert offset_response.status_code == 400
     assert offset_response.get_json() == {"error": "offset_must_be_integer"}
+
+
+def test_otc_bridge_cors_uses_trusted_origin_allowlist(tmp_path, monkeypatch):
+    monkeypatch.delenv("OTC_CORS_ORIGINS", raising=False)
+    otc_bridge = load_otc_bridge(tmp_path)
+
+    assert "*" not in otc_bridge.OTC_CORS_ORIGINS
+    assert "https://bottube.ai" in otc_bridge.OTC_CORS_ORIGINS
+    assert "https://rustchain.org" in otc_bridge.OTC_CORS_ORIGINS
+
+
+def test_otc_bridge_cors_rejects_wildcard_origin(tmp_path):
+    otc_bridge = load_otc_bridge(tmp_path)
+
+    try:
+        otc_bridge.parse_cors_origins("https://rustchain.org,*")
+    except ValueError as exc:
+        assert "must not include '*'" in str(exc)
+    else:
+        raise AssertionError("wildcard CORS origin should be rejected")
 
 
 def test_orders_rejects_out_of_range_pagination(tmp_path):
