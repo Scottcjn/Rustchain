@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+import io
 import importlib.util
 import sys
 import types
@@ -28,6 +30,12 @@ class ProofOfIronStub:
     def revoke_attestation(self, miner_id, reason):
         self.revoked = (miner_id, reason)
         return True
+
+    def capture_and_enroll(self, miner_id, audio_file):
+        raise AssertionError("invalid uploads should be rejected before enrollment")
+
+    def submit_proof(self, proof, audio_data):
+        raise AssertionError("invalid uploads should be rejected before proof submission")
 
 
 def install_dependency_stubs(monkeypatch):
@@ -104,3 +112,47 @@ def test_revoke_accepts_valid_json_body(client, api_module):
     assert response.status_code == 200
     assert api_module.poi_system.revoked == ("miner-1", "retired")
     assert response.get_json() == {"success": True, "message": "Attestation revoked"}
+
+
+@pytest.mark.parametrize("path", ("/api/v1/submit", "/api/v1/enroll", "/api/v1/analyze"))
+def test_audio_upload_endpoints_reject_non_wav_mime_type(client, path):
+    data = {"audio": (io.BytesIO(b"not a wav"), "proof.txt", "text/plain")}
+    if path == "/api/v1/submit":
+        data.update(
+            {
+                "miner_id": "miner-1",
+                "challenge_id": "challenge-1",
+                "timestamp": "123",
+            }
+        )
+    elif path == "/api/v1/enroll":
+        data["miner_id"] = "miner-1"
+
+    response = client.post(path, data=data, content_type="multipart/form-data")
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "only WAV files accepted"}
+
+
+def test_audio_upload_rejects_invalid_wav_magic(client):
+    response = client.post(
+        "/api/v1/analyze",
+        data={"audio": (io.BytesIO(b"RIFFxxxxNOPE"), "proof.wav", "audio/wav")},
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "invalid WAV file"}
+
+
+def test_audio_upload_rejects_files_larger_than_configured_limit(client, api_module):
+    api_module.MAX_AUDIO_UPLOAD_BYTES = 8
+
+    response = client.post(
+        "/api/v1/analyze",
+        data={"audio": (io.BytesIO(b"RIFFxxxxWAVE"), "proof.wav", "audio/wav")},
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 413
+    assert response.get_json() == {"error": "file too large"}
