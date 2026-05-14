@@ -482,6 +482,20 @@ class TestFlaskApp(unittest.TestCase):
         data = json.loads(response.data)
         self.assertTrue(data['ok'])
 
+    def test_metrics_endpoint_uses_configured_database_path(self):
+        """Test metrics endpoint reads the configured faucet database."""
+        self.config['monitoring']['metrics_enabled'] = True
+        app = create_app(self.config)
+        client = app.test_client()
+
+        response = client.get('/metrics')
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn('faucet_drips_total 0', body)
+        self.assertIn('faucet_amount_total 0', body)
+        self.assertEqual(response.content_type, 'text/plain')
+
     def test_drip_missing_wallet(self):
         """Test drip request without wallet."""
         response = self.client.post('/faucet/drip',
