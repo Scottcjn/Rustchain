@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+
 """
 RustChain v2 - Integrated Server
 Includes RIP-0005 (Epoch Rewards), RIP-0008 (Withdrawals), RIP-0009 (Finality)
@@ -2004,11 +2006,16 @@ def record_macs(miner: str, macs: list):
         conn.commit()
 
 
-def calculate_rust_score_inline(mfg_year, arch, attestations, machine_id):
+def _current_utc_year():
+    return time.gmtime().tm_year
+
+
+def calculate_rust_score_inline(mfg_year, arch, attestations, machine_id, current_year=None):
     """Calculate rust score for a machine."""
     score = 0
+    current_year = current_year if current_year is not None else _current_utc_year()
     if mfg_year:
-        score += (2025 - mfg_year) * 10  # age bonus
+        score += max(0, current_year - int(mfg_year)) * 10  # age bonus
     score += attestations * 0.001  # attestation bonus
     if machine_id <= 100:
         score += 50  # early adopter
