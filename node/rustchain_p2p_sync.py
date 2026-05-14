@@ -405,11 +405,15 @@ class HealthChecker:
 
 def add_p2p_endpoints(app, peer_manager, block_sync, tx_gossip):
     """Add P2P endpoints to Flask app"""
+    from flask import jsonify, request
 
     @app.route('/p2p/announce', methods=['POST'])
     def announce_peer():
         """Endpoint for peer nodes to announce themselves"""
-        data = request.get_json()
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({"ok": False, "error": "JSON object required"}), 400
+
         peer_url = data.get('peer_url')
 
         if peer_url:
