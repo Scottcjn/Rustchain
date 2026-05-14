@@ -141,6 +141,15 @@ def _reserve_transfer_nonce(conn: sqlite3.Connection, from_address: str, nonce) 
     return conn.execute("SELECT changes()").fetchone()[0] == 1
 
 
+def _missing_transfer_nonce(nonce) -> bool:
+    return (
+        nonce is None
+        or isinstance(nonce, bool)
+        or not isinstance(nonce, (int, str))
+        or (isinstance(nonce, str) and nonce.strip() == '')
+    )
+
+
 def register_utxo_blueprint(app, utxo_db: UtxoDB, db_path: str,
                             verify_sig_fn, addr_from_pk_fn,
                             current_slot_fn, dual_write: bool = False):
@@ -361,7 +370,10 @@ def utxo_transfer():
 
     # --- validation ---------------------------------------------------------
 
-    if not all([from_address, to_address, public_key, signature, nonce]):
+    if (
+        not all([from_address, to_address, public_key, signature])
+        or _missing_transfer_nonce(nonce)
+    ):
         return jsonify({
             'error': 'Missing required fields',
             'required': ['from_address', 'to_address', 'public_key',
