@@ -20,7 +20,7 @@ def client(monkeypatch):
     monkeypatch.delenv("SCOTT_NOTIFICATION_SERVICE_TOKEN", raising=False)
     review_service.DB_PATH = db_path
     review_service.SCOTT_NOTIFICATION_QUEUE_URL = ""
-    review_service.SCOTT_NOTIFICATION_SERVICE_TOKEN = "elya2025"
+    review_service.SCOTT_NOTIFICATION_SERVICE_TOKEN = ""
     review_service.app.config["TESTING"] = True
     try:
         yield review_service.app.test_client()
@@ -300,3 +300,28 @@ def test_scott_notification_queue_relay_endpoint(client, monkeypatch):
     assert body["notification"]["notification_id"] == "SN-RELAY0001"
     assert captured["url"] == "http://100.121.203.9:18790/scott-notifications/queue"
     assert captured["headers"]["Authorization"] == "Bearer relay-token"
+
+
+def test_scott_notification_queue_requires_configured_token(client, monkeypatch):
+    calls = []
+
+    def fake_post(*args, **kwargs):
+        calls.append((args, kwargs))
+        raise AssertionError("notification relay should not send without a token")
+
+    monkeypatch.setattr(review_service, "requests", SimpleNamespace(post=fake_post))
+    review_service.SCOTT_NOTIFICATION_QUEUE_URL = "http://100.121.203.9:18790/scott-notifications/queue"
+    review_service.SCOTT_NOTIFICATION_SERVICE_TOKEN = ""
+
+    response = client.post(
+        "/api/sophia/governor/scott-notifications/queue",
+        headers={"X-Admin-Key": "test-admin"},
+        json={
+            "title": "RustChain inbox 7 needs review",
+            "summary": "pending_transfer came in at high risk.",
+        },
+    )
+
+    assert response.status_code == 503
+    assert response.get_json()["error"] == "scott_notification_token_not_configured"
+    assert calls == []
