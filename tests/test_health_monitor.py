@@ -21,7 +21,12 @@ from node_health_monitor import (
     NodeStatus,
     NetworkHealth,
     DEFAULT_NODES,
+    DIM,
+    GREEN,
+    RESET,
     SLOW_THRESHOLD_MS,
+    YELLOW,
+    _color_ms,
 )
 
 
@@ -237,6 +242,21 @@ class TestGetNetworkHealth(unittest.TestCase):
         self.assertEqual(health.total_miners, 0)
         self.assertTrue(health.consensus_ok)  # vacuously true — no epochs to compare
         self.assertTrue(any("ALL NODES OFFLINE" in a for a in health.alerts))
+
+
+class TestColorMs(unittest.TestCase):
+    def test_none_renders_dim_placeholder(self):
+        self.assertEqual(_color_ms(None), f"{DIM}     —{RESET}")
+
+    def test_threshold_boundary_stays_green(self):
+        self.assertEqual(
+            _color_ms(SLOW_THRESHOLD_MS),
+            f"{GREEN}{SLOW_THRESHOLD_MS:>7.1f}ms{RESET}",
+        )
+
+    def test_above_threshold_renders_yellow(self):
+        slow_ms = SLOW_THRESHOLD_MS + 0.1
+        self.assertEqual(_color_ms(slow_ms), f"{YELLOW}{slow_ms:>7.1f}ms{RESET}")
 
 
 if __name__ == "__main__":
