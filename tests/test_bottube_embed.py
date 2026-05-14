@@ -191,6 +191,30 @@ class TestOEmbedEndpoint(unittest.TestCase):
         data = response.get_json()
         self.assertIn("error", data)
 
+    def test_oembed_rejects_untrusted_host(self):
+        """Test oEmbed rejects non-BoTTube hosts with valid-looking paths."""
+        response = self.client.get("/oembed?url=https://example.com/watch/demo-001")
+        self.assertEqual(response.status_code, 400)
+        data = response.get_json()
+        self.assertIn("error", data)
+
+    def test_oembed_accepts_www_bottube_host(self):
+        """Test oEmbed accepts the www BoTTube host."""
+        response = self.client.get("/oembed?url=https://www.bottube.ai/watch/demo-001")
+        data = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("html", data)
+
+    def test_oembed_rejects_spoofed_request_host(self):
+        """Test request Host header cannot extend trusted oEmbed hosts."""
+        response = self.client.get(
+            "/oembed?url=https://evil.test/watch/demo-001",
+            headers={"Host": "evil.test"},
+        )
+        self.assertEqual(response.status_code, 400)
+        data = response.get_json()
+        self.assertIn("error", data)
+
     def test_oembed_nonexistent_video(self):
         """Test oEmbed returns 404 for non-existent video."""
         response = self.client.get("/oembed?url=https://bottube.ai/watch/nonexistent")
