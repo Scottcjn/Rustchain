@@ -14,6 +14,7 @@ import unittest
 from utxo_db import (
     UtxoDB, coin_select, compute_box_id, address_to_proposition,
     proposition_to_address, UNIT, DUST_THRESHOLD, MAX_COINBASE_OUTPUT_NRTC,
+    MAX_OUTPUTS_PER_TX,
 )
 
 
@@ -723,6 +724,44 @@ class TestUtxoDB(unittest.TestCase):
         }
         ok = self.db.mempool_add(tx)
         self.assertFalse(ok)
+
+    def test_apply_transaction_rejects_too_many_outputs(self):
+        """output_index is encoded in two bytes, so larger txs must fail cleanly."""
+        self._apply_coinbase('alice', 100_000)
+        box = self.db.get_unspent_for_address('alice')[0]
+
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': box['box_id'], 'spending_proof': 'sig'}],
+            'outputs': [
+                {'address': f'user{i}', 'value_nrtc': 1}
+                for i in range(MAX_OUTPUTS_PER_TX + 1)
+            ],
+            'fee_nrtc': 100_000 - (MAX_OUTPUTS_PER_TX + 1),
+        }, block_height=10)
+
+        self.assertFalse(ok)
+        self.assertEqual(self.db.get_balance('alice'), 100_000)
+
+    def test_mempool_rejects_too_many_outputs(self):
+        """Mempool must not admit txs that apply_transaction cannot encode."""
+        self._apply_coinbase('alice', 100_000)
+        box = self.db.get_unspent_for_address('alice')[0]
+
+        tx = {
+            'tx_id': 'outs' * 16,
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': box['box_id']}],
+            'outputs': [
+                {'address': f'user{i}', 'value_nrtc': 1}
+                for i in range(MAX_OUTPUTS_PER_TX + 1)
+            ],
+            'fee_nrtc': 100_000 - (MAX_OUTPUTS_PER_TX + 1),
+        }
+
+        self.assertFalse(self.db.mempool_add(tx))
+        self.assertFalse(self.db.mempool_check_double_spend(box['box_id']))
+        self.assertEqual(self.db.mempool_get_block_candidates(), [])
 
     # -- bounty #2819: negative / zero value outputs -------------------------
 

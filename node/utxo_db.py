@@ -39,6 +39,7 @@ DUST_THRESHOLD = 1_000      # nanoRTC below which change is absorbed into fee
 MAX_COINBASE_OUTPUT_NRTC = 150 * 144 * UNIT  # Max minting output per block (1.5 RTC)
 MAX_POOL_SIZE = 10_000
 MAX_TX_AGE_SECONDS = 3_600  # 1 hour mempool expiry
+MAX_OUTPUTS_PER_TX = 1 << 16  # output_index is encoded as unsigned 2 bytes
 P2PK_PREFIX = b'\x00\x08'   # Pay-to-Public-Key proposition prefix
 
 
@@ -379,8 +380,6 @@ class UtxoDB:
         # Only the epoch settlement system should create mining_reward transactions.
         # Require _allow_minting=True (internal flag) to permit mining_reward.
         MINTING_TX_TYPES = {'mining_reward'}
-        if tx_type in MINTING_TX_TYPES and not tx.get('_allow_minting'):
-            return False
 
         try:
             if manage_tx:
@@ -390,6 +389,15 @@ class UtxoDB:
                 if manage_tx:
                     conn.execute("ROLLBACK")
                 return False
+
+            if tx_type in MINTING_TX_TYPES and not tx.get('_allow_minting'):
+                return abort()
+
+            # output_index is serialized into two bytes in compute_box_id().
+            # Reject oversized transactions before box ID assignment so an
+            # otherwise valid-looking candidate cannot crash block production.
+            if len(outputs) > MAX_OUTPUTS_PER_TX:
+                return abort()
 
             # -- reject duplicate input box_ids --------------------------------
             # Keyed on box_id alone (the PK of the UTXO being consumed).
@@ -741,6 +749,11 @@ class UtxoDB:
 
             # MEDIUM FIX: Reject empty outputs to prevent DoS
             outputs = tx.get('outputs', [])
+            if len(outputs) > MAX_OUTPUTS_PER_TX:
+                if manage_tx:
+                    conn.execute("ROLLBACK")
+                return False
+
             if not outputs and tx_type not in MINTING_TX_TYPES:
                 if manage_tx:
                         conn.execute("ROLLBACK")
