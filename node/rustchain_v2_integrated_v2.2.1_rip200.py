@@ -1469,7 +1469,14 @@ def _fingerprint_checks_map(fingerprint: dict) -> dict:
     if not isinstance(fingerprint, dict):
         return {}
     checks = fingerprint.get("checks", {})
-    return checks if isinstance(checks, dict) else {}
+    if not isinstance(checks, dict):
+        return {}
+    checks = dict(checks)
+    if "simd_bias" not in checks and "simd_identity" in checks:
+        checks["simd_bias"] = checks["simd_identity"]
+    if "simd_identity" not in checks and "simd_bias" in checks:
+        checks["simd_identity"] = checks["simd_bias"]
+    return checks
 
 
 def _fingerprint_check_data(fingerprint: dict, check_name: str) -> dict:
