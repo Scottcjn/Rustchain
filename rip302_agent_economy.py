@@ -648,8 +648,14 @@ def register_agent_economy(app: Flask, db_path: str):
             c.execute("""
                 UPDATE agent_jobs
                 SET status = 'disputed', rejection_reason = ?
-                WHERE job_id = ?
-            """, (reason[:500], job_id))
+                WHERE job_id = ? AND status = ?
+            """, (reason[:500], job_id, STATUS_DELIVERED))
+            if c.rowcount == 0:
+                conn.rollback()
+                return jsonify({
+                    "error": "Job state changed under concurrent request — please retry",
+                    "code": "STATE_RACE",
+                }), 409
 
             _update_reputation(c, j["worker_wallet"], "jobs_disputed")
             _log_job_action(c, job_id, "disputed", poster, reason[:200])
