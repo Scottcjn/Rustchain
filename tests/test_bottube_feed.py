@@ -11,6 +11,7 @@ Run with:
 import sys
 import time
 import unittest
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -324,6 +325,25 @@ class TestAtomFeedBuilder(unittest.TestCase):
         xml = self.builder.build()
         self.assertIn("media:content", xml)
         self.assertIn("video.mp4", xml)
+
+    def test_thumbnail_feed_is_well_formed_xml(self):
+        """Test Atom feed with thumbnail parses as XML."""
+        self.builder.add_entry(
+            title="Test",
+            entry_id="urn:test:1",
+            link="https://example.com/1",
+            summary="Test",
+            thumbnail_url="https://example.com/thumb.jpg"
+        )
+
+        xml = self.builder.build()
+        root = ET.fromstring(xml)
+        thumbnail = root.find(
+            ".//{http://search.yahoo.com/mrss/}thumbnail"
+        )
+
+        self.assertIsNotNone(thumbnail)
+        self.assertEqual(thumbnail.attrib["url"], "https://example.com/thumb.jpg")
 
 
 class TestConvenienceFunctions(unittest.TestCase):
