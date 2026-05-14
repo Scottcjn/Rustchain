@@ -11,6 +11,7 @@ Tests cover:
 - Database persistence
 """
 import json
+import gc
 import os
 import sqlite3
 import tempfile
@@ -30,7 +31,13 @@ from airdrop_v2 import (
     AIRDROP_SCHEMA,
     TOTAL_SOLANA_ALLOCATION,
     TOTAL_BASE_ALLOCATION,
+    init_airdrop_routes,
 )
+
+try:
+    from flask import Flask
+except ImportError:
+    Flask = None
 
 
 class TestEligibilityTier(unittest.TestCase):
@@ -405,6 +412,129 @@ class TestBridgeOperations(unittest.TestCase):
         updated_lock = self.airdrop.get_lock(lock.lock_id)
         self.assertEqual(updated_lock.status, "released")
         self.assertEqual(updated_lock.dest_tx, "base_tx_signature_abcdef")
+
+
+@unittest.skipIf(Flask is None, "Flask is not installed")
+class TestAirdropRoutes(unittest.TestCase):
+    """Test Flask route request validation."""
+
+    def setUp(self):
+        """Create a test app and temp database."""
+        self.temp_db = tempfile.NamedTemporaryFile(delete=False, suffix=".db")
+        self.temp_db.close()
+        self.airdrop = AirdropV2(db_path=self.temp_db.name)
+        self.app = Flask(__name__)
+        self.app.config["TESTING"] = True
+        init_airdrop_routes(self.app, self.airdrop, self.temp_db.name)
+        self.client = self.app.test_client()
+
+    def tearDown(self):
+        """Clean up temp database."""
+        self.client = None
+        self.app = None
+        self.airdrop = None
+        gc.collect()
+        os.unlink(self.temp_db.name)
+
+    def test_write_routes_reject_non_object_json(self):
+        """Write routes should reject JSON arrays instead of raising."""
+        routes = [
+            ("/api/airdrop/eligibility", {}),
+            ("/api/airdrop/claim", {}),
+            ("/api/bridge/lock", {}),
+            ("/api/bridge/lock/test-lock/confirm", {"X-Admin-Key": "test-admin"}),
+            ("/api/bridge/lock/test-lock/release", {"X-Admin-Key": "test-admin"}),
+        ]
+
+        with patch.dict(os.environ, {"RC_ADMIN_KEY": "test-admin"}):
+            for route, headers in routes:
+                with self.subTest(route=route):
+                    response = self.client.post(
+                        route,
+                        json=["not", "an", "object"],
+                        headers=headers,
+                    )
+
+                    self.assertEqual(response.status_code, 400)
+                    self.assertEqual(response.get_json()["error"], "invalid_json")
+
+    def test_write_routes_reject_non_string_fields(self):
+        """Text fields should be strings before they are stripped."""
+        cases = [
+            (
+                "/api/airdrop/eligibility",
+                {
+                    "github_username": {"name": "octo"},
+                    "wallet_address": "RTC1234567890123456789012345678901234567890",
+                    "chain": "base",
+                },
+                "github_username",
+                {},
+            ),
+            (
+                "/api/airdrop/claim",
+                {
+                    "github_username": "octo",
+                    "wallet_address": "RTC1234567890123456789012345678901234567890",
+                    "chain": "base",
+                    "tier": ["builder"],
+                },
+                "tier",
+                {},
+            ),
+            (
+                "/api/bridge/lock",
+                {
+                    "from_address": "RTC1234567890123456789012345678901234567890",
+                    "to_address": {"address": "0x1234567890123456789012345678901234567890"},
+                    "from_chain": "rustchain",
+                    "to_chain": "base",
+                    "amount_wrtc": "1.5",
+                },
+                "to_address",
+                {},
+            ),
+            (
+                "/api/bridge/lock/test-lock/confirm",
+                {"source_tx": {"tx": "abc"}},
+                "source_tx",
+                {"X-Admin-Key": "test-admin"},
+            ),
+            (
+                "/api/bridge/lock/test-lock/release",
+                {"dest_tx": ["abc"]},
+                "dest_tx",
+                {"X-Admin-Key": "test-admin"},
+            ),
+        ]
+
+        with patch.dict(os.environ, {"RC_ADMIN_KEY": "test-admin"}):
+            for route, body, field, headers in cases:
+                with self.subTest(route=route, field=field):
+                    response = self.client.post(route, json=body, headers=headers)
+                    payload = response.get_json()
+
+                    self.assertEqual(response.status_code, 400)
+                    self.assertEqual(payload["error"], "invalid_field_type")
+                    self.assertEqual(payload["field"], field)
+
+    def test_bridge_lock_rejects_invalid_amount_type(self):
+        """Bridge amount conversion errors should be handled as 400s."""
+        for amount in ({"value": "1.5"}, True, False):
+            with self.subTest(amount=amount):
+                response = self.client.post(
+                    "/api/bridge/lock",
+                    json={
+                        "from_address": "RTC1234567890123456789012345678901234567890",
+                        "to_address": "0x1234567890123456789012345678901234567890",
+                        "from_chain": "rustchain",
+                        "to_chain": "base",
+                        "amount_wrtc": amount,
+                    },
+                )
+
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.get_json()["error"], "invalid_amount")
 
 
 class TestAllocationTracking(unittest.TestCase):
