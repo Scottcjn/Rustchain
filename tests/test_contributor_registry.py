@@ -1,6 +1,7 @@
 import pytest
 import sqlite3
 import os
+import importlib
 import tempfile
 from unittest.mock import patch, MagicMock
 
@@ -166,3 +167,19 @@ class TestDatabaseConstraints:
             ).fetchone()
         assert row[0] == "pending"
 
+
+class TestSecretKeyConfiguration:
+    def test_known_placeholder_secret_fails_closed(self, monkeypatch):
+        """The known compromised placeholder must not be accepted as a Flask secret."""
+        original_secret = os.environ.get("CONTRIBUTOR_SECRET_KEY")
+
+        try:
+            monkeypatch.setenv("CONTRIBUTOR_SECRET_KEY", "rustchain_contributor_secret_2024")
+            with pytest.raises(ValueError, match="known placeholder"):
+                importlib.reload(cr)
+        finally:
+            if original_secret is None:
+                monkeypatch.delenv("CONTRIBUTOR_SECRET_KEY", raising=False)
+            else:
+                monkeypatch.setenv("CONTRIBUTOR_SECRET_KEY", original_secret)
+            importlib.reload(cr)
