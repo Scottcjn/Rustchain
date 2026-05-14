@@ -6,7 +6,7 @@ Manages bounty discovery, claims, and automated payments.
 
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 
 

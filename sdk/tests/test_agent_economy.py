@@ -539,6 +539,36 @@ class TestBountyClient(unittest.TestCase):
         self.assertTrue(expired_bounty.is_expired)
         self.assertFalse(active_bounty.is_expired)
 
+    def test_create_bounty_sets_deadline_and_payload(self):
+        """Test creating a bounty includes a computed deadline"""
+        self.mock_client._request.return_value = {"bounty_id": "bounty_new"}
+
+        bounty = self.bounties.create_bounty(
+            title="Fix SDK bug",
+            description="Repair bounty creation",
+            reward=12.5,
+            tier=BountyTier.MINOR,
+            requirements=["regression test"],
+            tags=["sdk"],
+            deadline_days=7,
+        )
+
+        self.assertEqual(bounty.bounty_id, "bounty_new")
+        self.assertEqual(bounty.issuer, "bounty-hunter")
+        self.assertEqual(bounty.tier, BountyTier.MINOR)
+        self.assertEqual(bounty.reward, 12.5)
+        self.assertIsNotNone(bounty.deadline)
+
+        self.mock_client._request.assert_called_once()
+        _, _, kwargs = self.mock_client._request.mock_calls[0]
+        payload = kwargs["json_payload"]
+        self.assertEqual(payload["issuer_id"], "bounty-hunter")
+        self.assertEqual(payload["title"], "Fix SDK bug")
+        self.assertEqual(payload["tier"], "minor")
+        self.assertEqual(payload["requirements"], ["regression test"])
+        self.assertEqual(payload["tags"], ["sdk"])
+        self.assertIn("deadline", payload)
+
 
 class TestIntegration(unittest.TestCase):
     """Integration tests mocking HTTP requests"""
