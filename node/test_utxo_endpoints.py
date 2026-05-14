@@ -206,6 +206,40 @@ class TestUtxoEndpoints(unittest.TestCase):
         })
         self.assertEqual(r.status_code, 400)
 
+    def test_transfer_rejects_non_object_json(self):
+        r = self.client.post('/utxo/transfer', json=['from_address'])
+
+        self.assertEqual(r.status_code, 400)
+        data = r.get_json()
+        self.assertEqual(data['error'], 'JSON body required')
+
+    def test_transfer_rejects_non_string_fields(self):
+        base_payload = {
+            'from_address': 'RTC_test_aabbccdd',
+            'to_address': 'bob',
+            'amount_rtc': 10.0,
+            'public_key': 'aabbccdd' * 8,
+            'signature': 'sig' * 22,
+            'nonce': 123,
+        }
+
+        for field, value in (
+            ('from_address', ['RTC_test_aabbccdd']),
+            ('to_address', {'address': 'bob'}),
+            ('public_key', ['aabbccdd' * 8]),
+            ('signature', {'sig': 'abc'}),
+            ('memo', ['note']),
+        ):
+            with self.subTest(field=field):
+                payload = dict(base_payload)
+                payload[field] = value
+
+                r = self.client.post('/utxo/transfer', json=payload)
+
+                self.assertEqual(r.status_code, 400)
+                data = r.get_json()
+                self.assertEqual(data['error'], f'{field} must be a string')
+
     def test_transfer_zero_amount(self):
         r = self.client.post('/utxo/transfer', json={
             'from_address': 'RTC_test_aabbccdd',

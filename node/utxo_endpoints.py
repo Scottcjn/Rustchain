@@ -96,6 +96,23 @@ def _ensure_signed_float_preserves_nrtc(amount: Decimal, nrtc: int,
             f"{field_name} cannot be represented safely in signed payload"
         )
 
+
+def _json_object_body():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return None, (jsonify({'error': 'JSON body required'}), 400)
+    return data, None
+
+
+def _json_string_field(data, field_name, default=''):
+    value = data.get(field_name, default)
+    if value is None:
+        return ''
+    if not isinstance(value, str):
+        raise ValueError(f'{field_name} must be a string')
+    return value.strip()
+
+
 # Account-model balances store amount_i64 at 6 decimals (micro-RTC).
 # This MUST match the multiplier used in rustchain_v2_integrated_v2.2.1_rip200.py
 # (e.g. line 2370: amount_i64 = int(amount_decimal * Decimal(1000000))).
@@ -351,16 +368,19 @@ def utxo_transfer():
     4. Apply atomically
     5. If dual_write: also update account model
     """
-    data = request.get_json()
-    if not data:
-        return jsonify({'error': 'JSON body required'}), 400
+    data, error_response = _json_object_body()
+    if error_response:
+        return error_response
 
-    from_address = (data.get('from_address') or '').strip()
-    to_address = (data.get('to_address') or '').strip()
-    public_key = (data.get('public_key') or '').strip()
-    signature = (data.get('signature') or '').strip()
+    try:
+        from_address = _json_string_field(data, 'from_address')
+        to_address = _json_string_field(data, 'to_address')
+        public_key = _json_string_field(data, 'public_key')
+        signature = _json_string_field(data, 'signature')
+        memo = _json_string_field(data, 'memo')
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
     nonce = data.get('nonce')
-    memo = data.get('memo', '')
     # FIX(#2867 M2): exact Decimal parsing with bounds check (was float()).
     try:
         amount_rtc = _parse_rtc_amount(data.get('amount_rtc', 0))
