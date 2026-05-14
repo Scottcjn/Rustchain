@@ -1,6 +1,8 @@
+import gc
 import os
 import sqlite3
 import tempfile
+import time
 import types
 
 import pytest
@@ -10,6 +12,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
+import sophia_governor
 from sophia_governor import (
     ROUTE_IMMEDIATE_PHONE_HOME,
     ROUTE_LOCAL_ONLY,
@@ -37,7 +40,13 @@ def tmp_db():
         db_path = handle.name
     init_sophia_governor_schema(db_path)
     yield db_path
-    os.unlink(db_path)
+    for _ in range(5):
+        try:
+            os.unlink(db_path)
+            break
+        except PermissionError:
+            gc.collect()
+            time.sleep(0.05)
 
 
 @pytest.fixture
@@ -175,6 +184,43 @@ def test_governor_endpoints_require_admin_for_manual_review(client):
         },
     )
     assert response.status_code == 401
+
+
+def test_governor_admin_auth_uses_constant_time_compare(client, monkeypatch):
+    """Admin-gated governor endpoints compare configured keys with hmac.compare_digest."""
+    calls = []
+
+    def spy_compare_digest(provided, expected):
+        calls.append((provided, expected))
+        return provided == expected
+
+    monkeypatch.setattr(sophia_governor.hmac, "compare_digest", spy_compare_digest)
+
+    denied = client.post(
+        "/sophia/governor/review",
+        headers={"X-Admin-Key": "wrong-admin"},
+        json={
+            "event_type": "pending_transfer",
+            "payload": {"amount_rtc": 50},
+        },
+    )
+    assert denied.status_code == 401
+
+    accepted = client.post(
+        "/sophia/governor/review",
+        headers={"X-API-Key": "test-admin"},
+        json={
+            "event_type": "pending_transfer",
+            "source": "pytest.manual",
+            "payload": {"amount_rtc": 50},
+        },
+    )
+    assert accepted.status_code == 200
+
+    assert calls == [
+        ("wrong-admin", "test-admin"),
+        ("test-admin", "test-admin"),
+    ]
 
 
 def test_governor_endpoints_report_status_and_recent(client):
