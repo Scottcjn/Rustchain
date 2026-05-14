@@ -2,6 +2,8 @@
 *founder*
 *premine*
 *genesis*
+!tests/**/*genesis*.py
+!test_*genesis*.py
 *private*key*
 *secret*
 *.env
