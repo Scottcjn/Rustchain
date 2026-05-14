@@ -4360,6 +4360,7 @@ def _get_or_create_admin_session(req):
     sid = req.values.get("session_id", "")
     if sid and sid in _ADMIN_SESSIONS:
         _ADMIN_SESSIONS[sid] = now  # refresh TTL
+        req._admin_session_id = sid  # type: ignore
         return True
     # Check header auth
     if is_admin(req):
@@ -4377,10 +4378,15 @@ def _wallet_review_ui_authorized(req):
         # Store session_id on request for template rendering
         req._admin_session_id = sid  # type: ignore
         return True
-    # Legacy fallback: admin_key via POST body only (not URL query params)
+    # Legacy fallback: accept admin_key from POST bodies and GET query params.
     need = os.environ.get("RC_ADMIN_KEY", "")
-    got = str(req.form.get("admin_key") or "").strip()
-    return bool(need and got and hmac.compare_digest(need, got))
+    got = str(req.values.get("admin_key") or "").strip()
+    if need and got and hmac.compare_digest(need, got):
+        sid = secrets.token_hex(16)
+        _ADMIN_SESSIONS[sid] = time.time()
+        req._admin_session_id = sid  # type: ignore
+        return True
+    return False
 
 
 def get_wallet_review_counts():
@@ -4587,7 +4593,7 @@ def admin_operator_ui():
     if not _wallet_review_ui_authorized(request):
         return jsonify({"ok": False, "error": "forbidden"}), 403
 
-    admin_key = str(request.values.get("admin_key") or "").strip()
+    sid = getattr(request, '_admin_session_id', '')
     counts = get_wallet_review_counts()
     return render_template_string(
         """
@@ -4639,7 +4645,7 @@ def admin_operator_ui():
 </body>
 </html>
         """,
-        admin_key=admin_key,
+        sid=sid,
         counts=counts,
     )
 
@@ -4700,6 +4706,7 @@ def admin_wallet_review_holds_ui():
                             (new_status, reviewer_note, coach_note or row["coach_note"], now, hold_id),
                         )
                         conn.commit()
+        parts = []
         query = ""
         if active_status:
             parts.append(f"status={active_status}")
@@ -4848,7 +4855,7 @@ def admin_wallet_review_holds_ui():
         """,
         entries=entries,
         active_status=active_status,
-        admin_key=admin_key,
+        sid=sid,
         statuses=["needs_review", "held", "escalated", "blocked", "released", "dismissed"],
     )
 

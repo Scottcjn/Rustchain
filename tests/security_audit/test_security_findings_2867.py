@@ -17,6 +17,7 @@ import json
 import threading
 import sqlite3
 import tempfile
+import inspect
 
 _node_dir = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                             '..', '..', 'node'))
@@ -49,28 +50,18 @@ def test_mempool_add_manage_tx_undefined():
     """
     from utxo_db import UtxoDB
 
-    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                           '..', '..', 'node', 'utxo_db.py')) as f:
-        lines = f.readlines()
-
     # apply_transaction defines manage_tx based on conn ownership
-    found_define = False
-    for i, line in enumerate(lines[350:400], 351):
-        if 'manage_tx = ' in line and 'own' in line:
-            found_define = True
-            break
+    apply_transaction_source = inspect.getsource(UtxoDB.apply_transaction)
+    found_define = 'manage_tx = own or not conn.in_transaction' in apply_transaction_source
 
     # mempool_add MUST now define manage_tx (#2812 fix)
-    in_mempool_add = False
-    mempool_refs = []
-    mempool_define = False
-    for i, line in enumerate(lines[647:790], 648):
-        if 'def mempool_add' in line:
-            in_mempool_add = True
-        if in_mempool_add and line.strip().startswith('manage_tx = '):
-            mempool_define = True
-        if in_mempool_add and 'manage_tx' in line:
-            mempool_refs.append((i, line.strip()))
+    mempool_source = inspect.getsource(UtxoDB.mempool_add)
+    mempool_refs = [
+        line.strip()
+        for line in mempool_source.splitlines()
+        if 'manage_tx' in line
+    ]
+    mempool_define = any(line.startswith('manage_tx = ') for line in mempool_refs)
 
     assert found_define, "apply_transaction should define manage_tx"
     assert mempool_define, \
@@ -95,7 +86,6 @@ def test_mempool_add_manage_tx_undefined():
 
     print(f"[FINDING 1] PASS: #2812 fix in place — mempool_add defines manage_tx")
     print(f"  {len(mempool_refs)} references in mempool_add (≥7 ROLLBACK paths intact)")
-    return True
 
 
 # ============================================================

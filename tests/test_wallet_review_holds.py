@@ -234,6 +234,12 @@ def test_wallet_review_ui_lists_entries_and_accepts_query_admin_key(client):
     assert "RustChain Wallet Review Holds" in html
     assert "review-miner" in html
     assert "retry from the intended box" in html
+    sid = html.split("session_id=", 1)[1].split('"', 1)[0].split("&", 1)[0]
+
+    follow_response = test_client.get(f"/admin/wallet-review-holds/ui?session_id={sid}")
+
+    assert follow_response.status_code == 200
+    assert f"session_id={sid}" in follow_response.get_data(as_text=True)
 
 
 def test_admin_operator_ui_links_to_wallet_review_surface(client):

@@ -661,7 +661,7 @@ def update_contract(contract_id):
                     'error': 'Only the recipient (to_agent) can accept this contract'
                 }), 403
         if current_state == 'offered' and new_state == 'rejected':
-            if agent_key != to_agent:
+            if caller_agent != to_agent:
                 return jsonify({
                     'error': 'Only the recipient (to_agent) can reject this contract'
                 }), 403

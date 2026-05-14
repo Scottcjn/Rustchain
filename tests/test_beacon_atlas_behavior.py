@@ -116,7 +116,7 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
     def _signed_headers(cls, agent_id, method, path, body):
         body_bytes = body.encode('utf-8') if isinstance(body, str) else body
         timestamp = str(int(time.time()))
-        nonce = hashlib.blake2b(f"{agent_id}:{timestamp}:{body}".encode(), digest_size=16).hexdigest()
+        nonce = hashlib.blake2b(f"{agent_id}:{time.time_ns()}:{body}".encode(), digest_size=16).hexdigest()
         body_hash = hashlib.sha256(body_bytes or b'').hexdigest()
         message = '\n'.join([
             method.upper(),
@@ -371,20 +371,27 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
             'term': '7d'
         }
 
+        create_body = json.dumps(contract_data)
         create_response = self.client.post(
             '/api/contracts',
-            data=json.dumps(contract_data),
+            data=create_body,
             content_type='application/json',
-            headers={'X-Agent-Key': 'bcn_test_from'},
+            headers=self._signed_headers('bcn_test_from', 'POST', '/api/contracts', create_body),
         )
         self.assertEqual(create_response.status_code, 201)
         contract_id = json.loads(create_response.data)['id']
 
+        reject_body = json.dumps({'state': 'rejected'})
         reject_response = self.client.put(
             f'/api/contracts/{contract_id}',
-            data=json.dumps({'state': 'rejected'}),
+            data=reject_body,
             content_type='application/json',
-            headers={'X-Agent-Key': 'bcn_test_to'},
+            headers=self._signed_headers(
+                'bcn_test_to',
+                'PUT',
+                f'/api/contracts/{contract_id}',
+                reject_body,
+            ),
         )
         self.assertEqual(reject_response.status_code, 200)
         self.assertEqual(json.loads(reject_response.data)['state'], 'rejected')
@@ -394,11 +401,17 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         self.assertEqual(contracts[0]['state'], 'rejected')
 
         for terminal_attempt in ('active', 'expired', 'completed'):
+            update_body = json.dumps({'state': terminal_attempt})
             update_response = self.client.put(
                 f'/api/contracts/{contract_id}',
-                data=json.dumps({'state': terminal_attempt}),
+                data=update_body,
                 content_type='application/json',
-                headers={'X-Agent-Key': 'bcn_test_to'},
+                headers=self._signed_headers(
+                    'bcn_test_to',
+                    'PUT',
+                    f'/api/contracts/{contract_id}',
+                    update_body,
+                ),
             )
             self.assertEqual(update_response.status_code, 400)
 
@@ -412,20 +425,27 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
             'term': '7d'
         }
 
+        create_body = json.dumps(contract_data)
         create_response = self.client.post(
             '/api/contracts',
-            data=json.dumps(contract_data),
+            data=create_body,
             content_type='application/json',
-            headers={'X-Agent-Key': 'bcn_test_from'},
+            headers=self._signed_headers('bcn_test_from', 'POST', '/api/contracts', create_body),
         )
         self.assertEqual(create_response.status_code, 201)
         contract_id = json.loads(create_response.data)['id']
 
+        reject_body = json.dumps({'state': 'rejected'})
         reject_response = self.client.put(
             f'/api/contracts/{contract_id}',
-            data=json.dumps({'state': 'rejected'}),
+            data=reject_body,
             content_type='application/json',
-            headers={'X-Agent-Key': 'bcn_test_from'},
+            headers=self._signed_headers(
+                'bcn_test_from',
+                'PUT',
+                f'/api/contracts/{contract_id}',
+                reject_body,
+            ),
         )
         self.assertEqual(reject_response.status_code, 403)
 
