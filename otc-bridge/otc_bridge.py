@@ -73,7 +73,23 @@ log = logging.getLogger("otc_bridge")
 logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__, static_folder="static")
-CORS(app)
+
+DEFAULT_OTC_CORS_ORIGINS = ("https://bottube.ai", "https://rustchain.org")
+
+
+def parse_cors_origins(raw_origins):
+    if raw_origins is None:
+        return list(DEFAULT_OTC_CORS_ORIGINS)
+
+    raw_items = [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
+    origins = [origin for origin in raw_items if origin != "*"]
+    if len(origins) != len(raw_items):
+        log.warning("Ignoring wildcard CORS origin for OTC bridge")
+    return origins or list(DEFAULT_OTC_CORS_ORIGINS)
+
+
+OTC_CORS_ORIGINS = parse_cors_origins(os.environ.get("OTC_CORS_ORIGINS"))
+CORS(app, origins=OTC_CORS_ORIGINS)
 
 
 # ---------------------------------------------------------------------------

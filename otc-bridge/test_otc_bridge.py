@@ -3,28 +3,38 @@ Tests for RustChain OTC Bridge
 """
 import json
 import os
+import sqlite3
 import tempfile
 import time
 import unittest
 from unittest.mock import patch, MagicMock
 
-# Set test DB before importing
+# Set an initial test DB before importing, then replace it per test.
 _fd, TEST_DB = tempfile.mkstemp(suffix=".db")
 os.close(_fd)
 os.environ["OTC_DB_PATH"] = TEST_DB
 
+import otc_bridge
 from otc_bridge import app, init_db
 
 
 class OTCBridgeTestCase(unittest.TestCase):
     def setUp(self):
+        global TEST_DB
+        _fd, TEST_DB = tempfile.mkstemp(suffix=".db")
+        os.close(_fd)
+        otc_bridge.DB_PATH = TEST_DB
         self.app = app.test_client()
         self.app.testing = True
         init_db()
 
     def tearDown(self):
+        self.app = None
         if os.path.exists(TEST_DB):
-            os.remove(TEST_DB)
+            try:
+                os.remove(TEST_DB)
+            except PermissionError:
+                pass
 
     # ---------------------------------------------------------------
     # Order Creation
@@ -288,9 +298,15 @@ class OTCBridgeTestCase(unittest.TestCase):
         # Confirm settlement
         with patch("requests.post") as mock_post:
             mock_post.return_value = MagicMock(ok=True, text='{"ok":true}')
+            with sqlite3.connect(TEST_DB) as conn:
+                secret = conn.execute(
+                    "SELECT htlc_secret FROM orders WHERE order_id = ?",
+                    (order_id,),
+                ).fetchone()[0]
             r3 = self.app.post(f"/api/orders/{order_id}/confirm", json={
                 "wallet": "buyer1",
                 "quote_tx": "0xabc123def456",
+                "secret": secret,
             })
             data = r3.get_json()
             self.assertTrue(data["ok"])
@@ -353,6 +369,14 @@ class OTCBridgeTestCase(unittest.TestCase):
         r = self.app.get("/")
         self.assertEqual(r.status_code, 200)
         self.assertIn(b"RustChain OTC Bridge", r.data)
+
+    def test_cors_rejects_untrusted_origin(self):
+        r = self.app.get("/api/stats", headers={"Origin": "https://evil.example"})
+        self.assertNotEqual(r.headers.get("Access-Control-Allow-Origin"), "https://evil.example")
+
+    def test_cors_allows_configured_origin(self):
+        r = self.app.get("/api/stats", headers={"Origin": "https://rustchain.org"})
+        self.assertEqual(r.headers.get("Access-Control-Allow-Origin"), "https://rustchain.org")
 
 
 if __name__ == "__main__":
