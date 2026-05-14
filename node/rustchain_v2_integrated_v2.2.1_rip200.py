@@ -6860,8 +6860,15 @@ def send_sophiacheck_alert(alert_type, message, data):
 def wallet_transfer_v2():
     """Transfer RTC between miner wallets - NOW WITH 2-PHASE COMMIT"""
     # SECURITY: Require admin key for internal transfers
-    admin_key = request.headers.get("X-Admin-Key", "")
-    if not hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", "")):
+    required_admin_key = os.environ.get("RC_ADMIN_KEY", "")
+    if not required_admin_key:
+        return jsonify({
+            "error": "RC_ADMIN_KEY not configured",
+            "message": "Internal wallet transfers are disabled until RC_ADMIN_KEY is set"
+        }), 503
+
+    admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
+    if not admin_key or not hmac.compare_digest(admin_key, required_admin_key):
         return jsonify({
             "error": "Unauthorized - admin key required",
             "hint": "Use /wallet/transfer/signed for user transfers"
