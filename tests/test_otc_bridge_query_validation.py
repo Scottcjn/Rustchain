@@ -162,7 +162,7 @@ def test_mutating_order_errors_do_not_leak_exception_details(tmp_path, monkeypat
             "price_per_rtc": 1,
         }),
         ("/api/orders/otc_test/match", {"wallet": "taker-wallet"}),
-        ("/api/orders/otc_test/confirm", {"wallet": "buyer-wallet"}),
+        ("/api/orders/otc_test/confirm", {"wallet": "buyer-wallet", "quote_tx": "0xdeadbeef"}),
         ("/api/orders/otc_test/cancel", {"wallet": "maker-wallet"}),
     ]
 
