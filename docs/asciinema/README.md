@@ -11,7 +11,7 @@ This directory contains terminal recordings for RustChain documentation.
 
 ## Format
 
-Files use the [asciinema cast v2 format](https://github.com/asciinema/asciinema/blob/develop/doc/asciicast-v2.md) - a JSON-based text format that records:
+Files use the [asciinema cast v2 format](https://docs.asciinema.org/manual/asciicast/v2/) - a JSON-based text format that records:
 - Terminal output
 - Timing information
 - Escape sequences for colors and formatting
