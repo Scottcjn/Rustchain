@@ -757,6 +757,58 @@ class TestLockLedger:
         assert len(locks) == 3
         
         conn.close()
+
+    def test_miner_locks_rejects_non_integer_limit(self, setup_test_db):
+        """Miner lock list pagination returns 400 for malformed limits."""
+        lock_ledger = setup_test_db["lock_ledger"]
+        app = Flask(__name__)
+        lock_ledger.register_lock_ledger_routes(app)
+        client = app.test_client()
+
+        resp = client.get("/api/lock/miner/RTC_test_miner?limit=abc")
+
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "limit must be an integer"
+
+    def test_pending_unlocks_rejects_negative_limit(self, setup_test_db):
+        """Pending unlock pagination rejects negative limits."""
+        lock_ledger = setup_test_db["lock_ledger"]
+        app = Flask(__name__)
+        lock_ledger.register_lock_ledger_routes(app)
+        client = app.test_client()
+
+        resp = client.get("/api/lock/pending-unlock?limit=-1")
+
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "limit must be non-negative"
+
+    def test_pending_unlocks_rejects_non_integer_before(self, setup_test_db):
+        """Pending unlock filters reject malformed before timestamps."""
+        lock_ledger = setup_test_db["lock_ledger"]
+        app = Flask(__name__)
+        lock_ledger.register_lock_ledger_routes(app)
+        client = app.test_client()
+
+        resp = client.get("/api/lock/pending-unlock?before=soon")
+
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "before must be an integer"
+
+    def test_auto_release_rejects_non_integer_batch_size(self, setup_test_db, monkeypatch):
+        """Worker auto-release rejects malformed batch sizes after auth."""
+        lock_ledger = setup_test_db["lock_ledger"]
+        monkeypatch.setenv("RC_WORKER_KEY", "worker-secret")
+        app = Flask(__name__)
+        lock_ledger.register_lock_ledger_routes(app)
+        client = app.test_client()
+
+        resp = client.post(
+            "/api/lock/auto-release?batch_size=abc",
+            headers={"X-Worker-Key": "worker-secret"},
+        )
+
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "batch_size must be an integer"
     
     def test_get_miner_locked_balance(self, setup_test_db, funded_miner):
         """Test getting miner's total locked balance."""
