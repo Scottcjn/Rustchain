@@ -89,7 +89,7 @@ run_cmd mkdir -p "$INSTALL_DIR"
 verify_sum() {
     [ "$SKIP_CHECKSUM" = true ] && return 0
     local file=$1; local expected=$2
-    local actual=$(sha256sum "$file" 2>/dev/null | cut -d' ' -f1 || shasum -a 256 "$file" 2>/dev/null | cut -d' ' -f1)
+    local actual=$( (sha256sum "$file" 2>/dev/null || shasum -a 256 "$file" 2>/dev/null) | cut -d' ' -f1)
     if [ "$actual" = "$expected" ]; then return 0; else echo -e "${RED}[!] Checksum fail: $file${NC}"; return 1; fi
 }
 
