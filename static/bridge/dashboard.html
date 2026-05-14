@@ -1067,12 +1067,12 @@
 
             body.innerHTML = filtered.map(tx => `
                 <tr>
-                    <td><span class="tx-id">${tx.lock_id.substring(0, 16)}...</span></td>
-                    <td><span class="tx-type ${tx.type}">${tx.type.toUpperCase()}</span></td>
-                    <td>${tx.sender_wallet}</td>
+                    <td><span class="tx-id">${escapeHtml(String(tx.lock_id || '').substring(0, 16))}...</span></td>
+                    <td><span class="tx-type ${safeCssToken(tx.type)}">${escapeHtml(String(tx.type || '').toUpperCase())}</span></td>
+                    <td>${escapeHtml(tx.sender_wallet)}</td>
                     <td><span class="tx-amount">${formatNumber(tx.amount_rtc)} ${tx.type === 'wrap' ? 'RTC' : 'wRTC'}</span></td>
-                    <td><span class="chain-badge ${tx.target_chain}">${tx.target_chain.toUpperCase()}</span></td>
-                    <td><span class="tx-state ${tx.state}">${tx.state.toUpperCase()}</span></td>
+                    <td><span class="chain-badge ${safeCssToken(tx.target_chain)}">${escapeHtml(String(tx.target_chain || '').toUpperCase())}</span></td>
+                    <td><span class="tx-state ${safeCssToken(tx.state)}">${escapeHtml(String(tx.state || '').toUpperCase())}</span></td>
                     <td>${formatTime(tx.created_at || tx.timestamp)}</td>
                 </tr>
             `).join('');
@@ -1087,6 +1087,20 @@
         }
 
         // 鈹€鈹€鈹€ Utility Functions 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, char => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            }[char]));
+        }
+
+        function safeCssToken(value) {
+            return String(value ?? '').toLowerCase().replace(/[^a-z0-9_-]/g, '-') || 'unknown';
+        }
+
         function formatNumber(num) {
             return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(num || 0);
         }
