@@ -2005,11 +2005,16 @@ def record_macs(miner: str, macs: list):
         conn.commit()
 
 
+def _current_utc_year():
+    """Return the current UTC year for age-based scoring."""
+    return time.gmtime().tm_year
+
+
 def calculate_rust_score_inline(mfg_year, arch, attestations, machine_id):
     """Calculate rust score for a machine."""
     score = 0
     if mfg_year:
-        score += (2025 - mfg_year) * 10  # age bonus
+        score += (_current_utc_year() - mfg_year) * 10  # age bonus
     score += attestations * 0.001  # attestation bonus
     if machine_id <= 100:
         score += 50  # early adopter
