@@ -7,6 +7,7 @@ import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+ADMIN_KEY = "test-admin-key"
 
 
 class ChallengeStub:
@@ -65,6 +66,8 @@ def install_dependency_stubs(monkeypatch):
 
 @pytest.fixture
 def api_module(monkeypatch):
+    monkeypatch.setenv("BOOT_CHIME_ADMIN_KEY", ADMIN_KEY)
+    monkeypatch.delenv("RC_ADMIN_KEY", raising=False)
     install_dependency_stubs(monkeypatch)
     module_path = REPO_ROOT / "issue2307_boot_chime" / "boot_chime_api.py"
     spec = importlib.util.spec_from_file_location("boot_chime_api_under_test", module_path)
@@ -79,16 +82,66 @@ def client(api_module):
     return api_module.app.test_client()
 
 
+def admin_headers():
+    return {"X-Admin-Key": ADMIN_KEY}
+
+
+@pytest.mark.parametrize(
+    "path, kwargs",
+    (
+        ("/api/v1/challenge", {"json": {"miner_id": "miner-1"}}),
+        ("/api/v1/submit", {"data": {"miner_id": "miner-1", "challenge_id": "c1", "timestamp": "100"}}),
+        ("/api/v1/enroll", {"data": {"miner_id": "miner-1"}}),
+        ("/api/v1/capture", {}),
+        ("/api/v1/revoke", {"json": {"miner_id": "miner-1"}}),
+    ),
+)
+def test_mutating_endpoints_require_admin_key(client, path, kwargs):
+    response = client.post(path, **kwargs)
+
+    assert response.status_code == 401
+    assert response.get_json() == {"error": "unauthorized"}
+
+
+def test_mutating_endpoints_fail_closed_without_configured_admin_key(client, monkeypatch):
+    monkeypatch.delenv("BOOT_CHIME_ADMIN_KEY", raising=False)
+    monkeypatch.delenv("RC_ADMIN_KEY", raising=False)
+
+    response = client.post(
+        "/api/v1/revoke",
+        headers=admin_headers(),
+        json={"miner_id": "miner-1"},
+    )
+
+    assert response.status_code == 503
+    assert response.get_json() == {"error": "BOOT_CHIME_ADMIN_KEY or RC_ADMIN_KEY not configured"}
+
+
+def test_authorization_bearer_admin_key_is_accepted(client, api_module):
+    response = client.post(
+        "/api/v1/challenge",
+        headers={"Authorization": f"Bearer {ADMIN_KEY}"},
+        json={"miner_id": "miner-1"},
+    )
+
+    assert response.status_code == 200
+    assert api_module.poi_system.issued_for == "miner-1"
+
+
 @pytest.mark.parametrize("path", ("/api/v1/challenge", "/api/v1/revoke"))
 def test_json_endpoints_reject_non_object_bodies(client, path):
-    response = client.post(path, json=["not", "object"])
+    response = client.post(path, headers=admin_headers(), json=["not", "object"])
 
     assert response.status_code == 400
     assert response.get_json() == {"error": "JSON object required"}
 
 
 def test_challenge_accepts_valid_json_body(client, api_module):
-    response = client.post("/api/v1/challenge", json={"miner_id": "miner-1"})
+    response = client.post(
+        "/api/v1/challenge",
+        headers=admin_headers(),
+        json={"miner_id": "miner-1"},
+    )
 
     assert response.status_code == 200
     assert api_module.poi_system.issued_for == "miner-1"
@@ -98,6 +151,7 @@ def test_challenge_accepts_valid_json_body(client, api_module):
 def test_revoke_accepts_valid_json_body(client, api_module):
     response = client.post(
         "/api/v1/revoke",
+        headers=admin_headers(),
         json={"miner_id": "miner-1", "reason": "retired"},
     )
 
