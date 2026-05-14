@@ -65,6 +65,8 @@ pub struct ValidatedProof {
     pub multiplier: f64,
     pub anti_emulation_hash: [u8; 32],
     pub validated_at: u64,
+    /// Antiquity score derived from hardware age and multiplier
+    pub antiquity_score: f64,
 }
 
 /// Anti-emulation verification system
@@ -188,6 +190,7 @@ pub fn submit_proof(&mut self, proof: MiningProof) -> Result<SubmitResult, Proof
 
         // Cap multiplier at Ancient tier maximum
         let capped_multiplier = proof.hardware.multiplier.min(3.5);
+        let antiquity_score = proof.hardware.age_years as f64 * proof.hardware.multiplier;
 
         // Create validated proof
         let validated = ValidatedProof {
@@ -196,6 +199,7 @@ pub fn submit_proof(&mut self, proof: MiningProof) -> Result<SubmitResult, Proof
             multiplier: capped_multiplier,
             anti_emulation_hash: proof.anti_emulation_hash,
             validated_at: current_timestamp(),
+            antiquity_score,
         };
 
         self.pending_proofs.push(validated);
@@ -249,15 +253,16 @@ pub fn submit_proof(&mut self, proof: MiningProof) -> Result<SubmitResult, Proof
         let mut total_distributed = 0u64;
 
         for proof in &self.pending_proofs {
-            let share = proof.multiplier / total_multipliers;
+            let share = proof.hardware.multiplier / total_multipliers;
             let reward = (BLOCK_REWARD.0 as f64 * share) as u64;
             total_distributed += reward;
 
             miners.push(BlockMiner {
                 wallet: proof.wallet.clone(),
                 hardware: proof.hardware.model.clone(),
-                multiplier: proof.multiplier,
+                multiplier: proof.hardware.multiplier,
                 reward,
+                antiquity_score: proof.antiquity_score,
             });
         }
 

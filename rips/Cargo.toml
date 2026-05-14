@@ -35,22 +35,6 @@ full = ["network"]
 name = "rustchain"
 path = "src/lib.rs"
 
-[[bin]]
-name = "rustchain-node"
-path = "src/bin/node.rs"
-required-features = ["network"]
-
-[[bin]]
-name = "rustchain-miner"
-path = "src/bin/miner.rs"
-
-[dev-dependencies]
-criterion = "0.8"
-
-[[bench]]
-name = "entropy_bench"
-harness = false
-
 [profile.release]
 opt-level = 3
 lto = true
