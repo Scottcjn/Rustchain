@@ -130,6 +130,12 @@ class MessageType(Enum):
 # Data Structures
 # =============================================================================
 
+MAX_MESSAGE_BYTES = 128 * 1024
+MAX_PAYLOAD_BYTES = 64 * 1024
+MAX_CLOCK_SKEW_SECONDS = 300
+MAX_NONCE = 0xFFFFFFFF
+
+
 @dataclass
 class PeerId:
     """Unique peer identifier"""
@@ -196,13 +202,56 @@ class Message:
     @classmethod
     def from_bytes(cls, data: bytes, sender: PeerId) -> 'Message':
         """Deserialize message from bytes"""
-        parsed = json.loads(data.decode())
+        if not isinstance(data, (bytes, bytearray)):
+            raise ValueError("invalid message encoding: expected bytes")
+
+        if len(data) > MAX_MESSAGE_BYTES:
+            raise ValueError("invalid message size")
+
+        try:
+            parsed = json.loads(data.decode("utf-8"))
+        except UnicodeDecodeError as exc:
+            raise ValueError("invalid message encoding") from exc
+        except json.JSONDecodeError as exc:
+            raise ValueError("invalid message json") from exc
+
+        if not isinstance(parsed, dict):
+            raise ValueError("invalid message: expected object")
+
+        required_fields = ("type", "payload", "timestamp", "nonce")
+        for field_name in required_fields:
+            if field_name not in parsed:
+                raise ValueError(f"missing required field: {field_name}")
+
+        msg_type_name = parsed["type"]
+        if not isinstance(msg_type_name, str) or msg_type_name not in MessageType.__members__:
+            raise ValueError("invalid message type")
+
+        payload = parsed["payload"]
+        if not isinstance(payload, dict):
+            raise ValueError("invalid payload")
+        if len(json.dumps(payload).encode("utf-8")) > MAX_PAYLOAD_BYTES:
+            raise ValueError("invalid payload size")
+
+        timestamp = parsed["timestamp"]
+        now = int(time.time())
+        if not isinstance(timestamp, int) or isinstance(timestamp, bool):
+            raise ValueError("invalid timestamp")
+        if timestamp <= 0 or abs(now - timestamp) > MAX_CLOCK_SKEW_SECONDS:
+            raise ValueError("invalid timestamp")
+
+        nonce = parsed["nonce"]
+        if not isinstance(nonce, int) or isinstance(nonce, bool):
+            raise ValueError("invalid nonce")
+        if nonce <= 0 or nonce > MAX_NONCE:
+            raise ValueError("invalid nonce")
+
         return cls(
-            msg_type=MessageType[parsed["type"]],
+            msg_type=MessageType[msg_type_name],
             sender=sender,
-            payload=parsed["payload"],
-            timestamp=parsed["timestamp"],
-            nonce=parsed["nonce"],
+            payload=payload,
+            timestamp=timestamp,
+            nonce=nonce,
         )
 
     def compute_hash(self) -> str:
