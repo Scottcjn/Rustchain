@@ -1060,6 +1060,13 @@ def index():
 @app.route('/api/badge/generate', methods=['POST'])
 def generate_badge():
     """Generate a BCOS badge."""
+    # Authentication: require admin key
+    admin_key = os.environ.get("BCOS_ADMIN_KEY", "")
+    if not admin_key:
+        return jsonify({"error": "BCOS admin key not configured"}), 500
+    if request.headers.get("X-Admin-Key", "") != admin_key:
+        return jsonify({"error": "unauthorized"}), 403
+    
     data = request.get_json()
 
     repo_name = data.get('repo_name', '').strip()
