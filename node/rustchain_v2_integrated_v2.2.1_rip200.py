@@ -6422,9 +6422,22 @@ def send_sophiacheck_alert(alert_type, message, data):
 @app.route('/wallet/transfer', methods=['POST'])
 def wallet_transfer_v2():
     """Transfer RTC between miner wallets - NOW WITH 2-PHASE COMMIT"""
-    # SECURITY: Require admin key for internal transfers
+    # SECURITY: Require admin key for internal transfers.
+    # FIX (#5120): Reject if RC_ADMIN_KEY is not set — empty default allowed
+    # unauthenticated transfers via hmac.compare_digest("", "").
+    admin_key_env = os.environ.get("RC_ADMIN_KEY")
+    if not admin_key_env:
+        logging.error(
+            "[WALLET/TRANSFER] REJECTED: RC_ADMIN_KEY is not set — "
+            "endpoint disabled for safety (set env var to enable)"
+        )
+        return jsonify({
+            "error": "Admin transfer endpoint disabled — RC_ADMIN_KEY not configured",
+            "hint": "Set the RC_ADMIN_KEY environment variable or use /wallet/transfer/signed"
+        }), 503
+
     admin_key = request.headers.get("X-Admin-Key", "")
-    if not hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", "")):
+    if not hmac.compare_digest(admin_key, admin_key_env):
         return jsonify({
             "error": "Unauthorized - admin key required",
             "hint": "Use /wallet/transfer/signed for user transfers"
