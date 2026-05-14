@@ -2,6 +2,7 @@
 # Author: @createkr (RayBot AI)
 # BCOS-Tier: L1
 import hashlib
+import hmac
 import math
 import secrets
 import sqlite3
@@ -154,7 +155,9 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
                 return jsonify({"error": "actor_wallet must be escrow participant"}), 403
             if actor_wallet != job["from_wallet"]:
                 return jsonify({"error": "only payer can release escrow"}), 403
-            if _hash_job_secret(escrow_secret) != (job["escrow_secret_hash"] or ""):
+            # Security fix: use hmac.compare_digest() to prevent timing
+            # side-channel attacks that could leak the escrow secret hash.
+            if not hmac.compare_digest(_hash_job_secret(escrow_secret), job["escrow_secret_hash"] or ""):
                 return jsonify({"error": "invalid escrow_secret"}), 403
 
             # Atomic state transition first to prevent races/double-processing.
@@ -198,7 +201,9 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
                 return jsonify({"error": "actor_wallet must be escrow participant"}), 403
             if actor_wallet != job["to_wallet"]:
                 return jsonify({"error": "only provider can request refund"}), 403
-            if _hash_job_secret(escrow_secret) != (job["escrow_secret_hash"] or ""):
+            # Security fix: use hmac.compare_digest() to prevent timing
+            # side-channel attacks that could leak the escrow secret hash.
+            if not hmac.compare_digest(_hash_job_secret(escrow_secret), job["escrow_secret_hash"] or ""):
                 return jsonify({"error": "invalid escrow_secret"}), 403
 
             # Atomic state transition first to prevent races/double-processing.
