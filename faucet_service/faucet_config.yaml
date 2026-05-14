@@ -34,8 +34,11 @@ rate_limit:
 
 # Wallet validation settings
 validation:
-  # Require wallet address to start with prefix
-  required_prefix: "0x"
+  # Accepted wallet address prefixes. Native RustChain wallets use RTC...,
+  # while older faucet deployments may still accept EVM-style 0x... addresses.
+  allowed_prefixes:
+    - "RTC"
+    - "0x"
   
   # Minimum wallet length (including prefix)
   min_length: 10

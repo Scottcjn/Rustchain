@@ -102,8 +102,14 @@ class TestFaucetValidator(unittest.TestCase):
         self.validator = FaucetValidator(self.config, self.logger)
     
     def test_valid_wallet(self):
-        """Test valid wallet address."""
+        """Test valid legacy EVM-style wallet address."""
         valid, error = self.validator.validate_wallet('0x9683744B6b94F2b0966aBDb8C6BdD9805d207c6E')
+        self.assertTrue(valid)
+        self.assertIsNone(error)
+
+    def test_valid_native_rtc_wallet(self):
+        """Test valid native RTC wallet address."""
+        valid, error = self.validator.validate_wallet('RTCa3f82d9c1e4b07f5a2d6c8e9b0f1d3e2a4c5b7f8')
         self.assertTrue(valid)
         self.assertIsNone(error)
     

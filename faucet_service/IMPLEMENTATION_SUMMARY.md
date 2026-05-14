@@ -156,7 +156,7 @@ rate_limit:
 
 # Validation
 validation:
-  required_prefix: "0x"
+  allowed_prefixes: ["RTC", "0x"]
   min_length: 10
   max_length: 66
   blocklist: []
