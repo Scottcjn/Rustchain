@@ -20,6 +20,7 @@ Features:
 """
 
 import argparse
+import asyncio
 import json
 import logging
 import smtplib
@@ -223,8 +224,6 @@ class DigestGenerator:
 
     async def _fetch_all_data(self) -> Tuple[Dict, Dict, List, List]:
         """Fetch all data in parallel."""
-        import asyncio
-
         health_task = self.rustchain_client.health()
         epoch_task = self.rustchain_client.epoch()
         miners_task = self.rustchain_client.miners()
