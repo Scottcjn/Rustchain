@@ -310,14 +310,17 @@ def create_bridge_transfer(
         unlock_at = now + (6 * 600)  # 6 slots = 1 hour
     
     try:
-        # For deposits, check balance and create lock
+        # FIX(#5236): Acquire IMMEDIATE transaction before balance check to
+        # prevent TOCTOU race between check_miner_balance() and the INSERT.
         if request.direction == "deposit" and not admin_initiated:
+            cursor.execute("BEGIN IMMEDIATE")
             has_balance, available, pending = check_miner_balance(
                 db_conn, 
                 request.source_address, 
                 amount_i64
             )
             if not has_balance:
+                db_conn.rollback()
                 return False, {
                     "error": "Insufficient available balance",
                     "available_rtc": available / BRIDGE_UNIT,
