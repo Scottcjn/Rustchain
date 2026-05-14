@@ -298,7 +298,8 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
         try:
             params = json.loads(body) if body else {}
         except json.JSONDecodeError:
-            params = {}
+            self._send_response(ApiResponse(success=False, error="Invalid JSON body"))
+            return
 
         parsed = urlparse(self.path)
         csrf_error = self._csrf_error(parsed.path, params)
