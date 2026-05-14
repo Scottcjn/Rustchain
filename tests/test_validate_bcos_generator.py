@@ -73,6 +73,15 @@ def test_file_checks_report_existing_and_minimum_size(tmp_path, capsys):
     assert "File size" in output
 
 
+def test_file_size_reports_missing_and_too_small_files(tmp_path):
+    module = load_module()
+    small_path = write_html(tmp_path, "abc", name="small.html")
+
+    assert module.check_file_size(str(tmp_path / "missing.html")) is False
+    assert module.check_file_size(str(small_path), min_size=4) is False
+    assert module.check_file_size(str(small_path), min_size=3) is True
+
+
 def test_html_structure_and_required_components_pass_for_valid_page(tmp_path):
     module = load_module()
     path = write_html(tmp_path)
@@ -105,6 +114,15 @@ def test_javascript_and_css_syntax_checks_detect_balance(tmp_path):
     assert module.check_css_syntax(str(invalid_path)) is False
 
 
+def test_javascript_and_css_checks_require_blocks(tmp_path):
+    module = load_module()
+    no_script = write_html(tmp_path, "<html><style>.badge { color: green; }</style></html>", name="no_script.html")
+    no_style = write_html(tmp_path, "<html><script>function demo() { return true; }</script></html>", name="no_style.html")
+
+    assert module.check_javascript_syntax(str(no_script)) is False
+    assert module.check_css_syntax(str(no_style)) is False
+
+
 def test_embed_and_terminal_aesthetic_checks(tmp_path):
     module = load_module()
     valid_path = write_html(tmp_path)
@@ -119,3 +137,20 @@ def test_embed_and_terminal_aesthetic_checks(tmp_path):
     assert module.check_terminal_aesthetic(str(valid_path)) is True
     assert module.check_embed_format(str(plain_path)) is False
     assert module.check_terminal_aesthetic(str(plain_path)) is False
+
+
+def test_embed_format_requires_both_markdown_and_html_forms(tmp_path):
+    module = load_module()
+    markdown_only = write_html(
+        tmp_path,
+        "[![BCOS](https://example.test/badge.svg)](https://example.test/verify)",
+        name="markdown_only.html",
+    )
+    html_only = write_html(
+        tmp_path,
+        '<img src="badge.svg" alt="BCOS L1">',
+        name="html_only.html",
+    )
+
+    assert module.check_embed_format(str(markdown_only)) is False
+    assert module.check_embed_format(str(html_only)) is False
