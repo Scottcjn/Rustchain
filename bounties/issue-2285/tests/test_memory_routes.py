@@ -15,6 +15,7 @@ import sys
 import unittest
 from pathlib import Path
 from typing import Any, Dict
+from unittest.mock import patch
 
 # Add src directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -527,9 +528,11 @@ class MemoryRoutesTestCase(unittest.TestCase):
                 content_type="application/json"
             )
 
-        response = self.client.delete(
-            "/api/memory/clear?agent_id=test-agent"
-        )
+        with patch.dict("os.environ", {"MEMORY_ADMIN_KEY": "test-admin"}, clear=False):
+            response = self.client.delete(
+                "/api/memory/clear?agent_id=test-agent",
+                headers={"X-Admin-Key": "test-admin"},
+            )
 
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
@@ -542,6 +545,45 @@ class MemoryRoutesTestCase(unittest.TestCase):
         )
         recent_data = recent_response.get_json()
         self.assertEqual(len(recent_data["recalls"]), 0)
+
+    def test_clear_memory_requires_admin_key(self) -> None:
+        """Test clearing agent memory requires admin authentication."""
+        self.client.post(
+            "/api/memory/record",
+            json={
+                "agent_id": "test-agent",
+                "content_id": "video-unauthorized"
+            },
+            content_type="application/json"
+        )
+
+        for headers in ({}, {"X-Admin-Key": "wrong-admin"}):
+            with self.subTest(headers=headers):
+                with patch.dict("os.environ", {"MEMORY_ADMIN_KEY": "test-admin"}, clear=False):
+                    response = self.client.delete(
+                        "/api/memory/clear?agent_id=test-agent",
+                        headers=headers,
+                    )
+
+                self.assertEqual(response.status_code, 401)
+                self.assertEqual(response.get_json()["error"], "unauthorized")
+
+                recent_response = self.client.get(
+                    "/api/memory/recent?agent_id=test-agent"
+                )
+                recent_data = recent_response.get_json()
+                self.assertEqual(len(recent_data["recalls"]), 1)
+
+    def test_clear_memory_denies_when_admin_key_unconfigured(self) -> None:
+        """Test clear endpoint fails closed when MEMORY_ADMIN_KEY is absent."""
+        with patch.dict("os.environ", {}, clear=True):
+            response = self.client.delete(
+                "/api/memory/clear?agent_id=test-agent",
+                headers={"X-Admin-Key": "test-admin"},
+            )
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.get_json()["error"], "unauthorized")
 
     def test_record_with_importance(self) -> None:
         """Test recording content with importance score."""
