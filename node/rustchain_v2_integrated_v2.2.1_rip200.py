@@ -3640,9 +3640,45 @@ def enroll_epoch():
             "code": "INCOMPLETE_SIGNATURE",
         }), 400
     else:
-        # No signature — backward compatibility path (warn-only)
+        # No signature — check if miner has an attestation record.
+        # If so, require signed enrollment to prevent impersonation
+        # (attacker could enroll as the miner without proving key ownership).
+        # Unsigned enrollment is only allowed for legacy miners with no
+        # attestation history.
+        has_attestation = False
+        try:
+            with sqlite3.connect(DB_PATH) as lk_conn:
+                row = lk_conn.execute(
+                    "SELECT 1 FROM miner_attest_recent WHERE miner = ?",
+                    (miner_pk,),
+                ).fetchone()
+                has_attestation = row is not None
+        except Exception:
+            pass  # Table may not exist yet
+
+        if has_attestation:
+            # Miner has attested — must use signed enrollment
+            logging.warning(
+                "[ENROLL/SIG] UNSIGNED enrollment rejected for %s... "
+                "(miner has attestation record — signed enrollment required)",
+                miner_pk[:20],
+            )
+            return jsonify({
+                "ok": False,
+                "error": "unsigned_enrollment_rejected",
+                "message": (
+                    "This miner has a recorded attestation. Signed enrollment is required "
+                    "to prove key ownership. Include 'signature' and 'public_key' in the "
+                    "enrollment request, signed with the attestation signing key over "
+                    "the payload '{miner_pubkey}|{miner_id}|{epoch}'."
+                ),
+                "code": "UNSIGNED_ENROLLMENT_REJECTED",
+            }), 400
+
+        # No attestation record — allow legacy unsigned enrollment
         logging.warning(
-            "[ENROLL/SIG] UNSIGNED enrollment accepted for %s... (upgrade miner to signed flow)",
+            "[ENROLL/SIG] UNSIGNED enrollment accepted for %s... "
+            "(no attestation record — legacy path; upgrade miner to signed flow)",
             miner_pk[:20],
         )
 

@@ -254,14 +254,20 @@ class TestEnrollSignatureVerification(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertEqual(body["code"], "INVALID_ENROLLMENT_SIGNATURE")
 
-    def test_unsigned_enrollment_accepted_backward_compat(self):
-        """Unsigned enrollment requests should still be accepted (backward compatibility)."""
-        mod, db_path = self._load_module("rustchain_enroll_unsigned", "enroll_unsigned.db")
+    def test_unsigned_enrollment_rejected_after_attestation(self):
+        """Unsigned enrollment must be rejected when miner has an attestation record.
 
-        miner = "RTC_UNSIGNED_MINER"
+        This is the fix for issue #5125: previously unsigned enrollment was accepted
+        for all miners (warn-only), allowing anyone to impersonate an attested miner
+        by enrolling without proving key ownership. The fix requires signed enrollment
+        once a miner has attested.
+        """
+        mod, db_path = self._load_module("rustchain_enroll_signed_required", "enroll_signed_required.db")
+
+        miner = "RTC_SIGNED_REQUIRED_MINER"
         miner_id = "miner_005"
 
-        # Attest without signature (legacy path)
+        # Attest (creates miner_attest_recent record)
         nonce = self._get_challenge(mod)
         payload = {
             "miner": miner,
@@ -274,7 +280,7 @@ class TestEnrollSignatureVerification(unittest.TestCase):
         status, body = self._submit_attestation(mod, payload)
         self.assertEqual(status, 200)
 
-        # Enroll without signature
+        # Enroll without signature — should be rejected
         payload = {
             "miner_pubkey": miner,
             "miner_id": miner_id,
@@ -282,9 +288,33 @@ class TestEnrollSignatureVerification(unittest.TestCase):
         }
         status, body = self._enroll(mod, payload)
 
-        # Should succeed — backward compatibility
-        self.assertEqual(status, 200)
-        self.assertTrue(body["ok"])
+        # Must be rejected — miner has attestation record
+        self.assertEqual(status, 400)
+        self.assertEqual(body["code"], "UNSIGNED_ENROLLMENT_REJECTED")
+
+    def test_unsigned_enrollment_legacy_rejected_by_attestation_requirement(self):
+        """Miners with NO attestation are rejected by check_enrollment_requirements.
+
+        This is expected: ENROLL_REQUIRE_TICKET blocks non-attested miners before
+        the unsigned/signature check is even reached. The legacy unsigned path
+        only exists as defense-in-depth code but is unreachable in production.
+        """
+        mod, db_path = self._load_module("rustchain_enroll_legacy", "enroll_legacy.db")
+
+        miner = "RTC_LEGACY_MINER"
+        miner_id = "miner_legacy_001"
+
+        # Do NOT attest — go straight to enrollment
+        payload = {
+            "miner_pubkey": miner,
+            "miner_id": miner_id,
+            "device": {"family": "x86_64", "arch": "default"},
+        }
+        status, body = self._enroll(mod, payload)
+
+        # Rejected by check_enrollment_requirements (no recent attestation)
+        self.assertEqual(status, 412)
+        self.assertEqual(body["error"], "no_recent_attestation")
 
     @unittest.skipUnless(HAVE_NACL, "pynacl not installed")
     def test_enrollment_with_incomplete_signature_rejected(self):
