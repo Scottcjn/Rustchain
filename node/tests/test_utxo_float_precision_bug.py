@@ -1,57 +1,44 @@
-"""
-PoC Test: UTXO Transfer Float Precision Bug
-=============================================
-Finding: utxo_endpoints.py uses `float(data.get('amount_rtc', 0))` before
-converting to nanoRTC. This causes systematic precision loss for common
-decimal amounts like 0.1, 0.3, 123.456, etc.
+# SPDX-License-Identifier: MIT
+"""Regression coverage for exact RTC-to-nanoRTC conversion.
 
-Severity: High
-Target: utxo_endpoints.py::utxo_transfer()
+Issue #4671 identified that the old endpoint conversion path effectively did
+``int(float(amount_rtc) * UNIT)``. Very small valid amounts such as 3 nanoRTC
+could then truncate to 2 nanoRTC. The production parser/converter must preserve
+the exact integer nanoRTC value.
 """
 
-UNIT = 100_000_000  # 1 RTC = 100,000,000 nanoRTC
+import pytest
+
+from utxo_db import UNIT
+from utxo_endpoints import _decimal_to_nrtc, _parse_rtc_amount
 
 
-def current_buggy_conversion(amount_rtc):
-    """Replica of current code path in utxo_endpoints.py"""
+def old_float_conversion(amount_rtc):
+    """Replica of the historical bug for documentation."""
     amount = float(amount_rtc)
     return int(amount * UNIT)
 
 
-def test_float_precision_loss():
-    """Demonstrate precision loss for amounts that are not exactly
-    representable in IEEE-754 double precision."""
+@pytest.mark.parametrize(
+    ("amount_rtc", "expected_nrtc"),
+    [
+        ("0.1", 10_000_000),
+        ("0.3", 30_000_000),
+        ("0.00000003", 3),
+        ("0.00000006", 6),
+        ("0.00000012", 12),
+        ("0.00000029", 29),
+        ("0.00000058", 58),
+        ("0.00000105", 105),
+        (0.00000003, 3),
+    ],
+)
+def test_decimal_conversion_preserves_nanortc(amount_rtc, expected_nrtc):
+    amount = _parse_rtc_amount(amount_rtc)
 
-    test_cases = [
-        # (amount_rtc, expected_nrtc) — values known to trigger IEEE-754 precision loss
-        (0.1,     10_000_000),       # safe baseline
-        (0.3,     30_000_000),       # safe baseline
-        (0.000_000_03, 3),           # 3 nanoRTC  -> float gives 2
-        (0.000_000_06, 6),           # 6 nanoRTC  -> float gives 5
-        (0.000_000_12, 12),          # 12 nanoRTC -> float gives 11
-        (0.000_000_29, 29),          # 29 nanoRTC -> float gives 28
-        (0.000_000_58, 58),          # 58 nanoRTC -> float gives 57
-        (0.000_001_05, 105),         # 105 nanoRTC -> float gives 104
-    ]
-
-    failures = []
-    for amount_rtc, expected_nrtc in test_cases:
-        actual = current_buggy_conversion(amount_rtc)
-        diff = expected_nrtc - actual
-        status = "PASS" if diff == 0 else "FAIL"
-        print(f"  amount_rtc={amount_rtc:>12} -> expected={expected_nrtc:>16} actual={actual:>16} diff={diff:>6} [{status}]")
-        if diff != 0:
-            failures.append((amount_rtc, expected_nrtc, actual, diff))
-
-    print()
-    if failures:
-        print(f"❌ PRECISION LOSS CONFIRMED on {len(failures)} test cases.")
-        for amount_rtc, expected, actual, diff in failures:
-            print(f"   - {amount_rtc} RTC loses {diff} nanoRTC (expected {expected}, got {actual})")
-        assert False, f"Float precision bug reproduced on {len(failures)} cases."
-    else:
-        print("✅ No precision loss detected.")
+    assert _decimal_to_nrtc(amount, "amount_rtc") == expected_nrtc
 
 
-if __name__ == "__main__":
-    test_float_precision_loss()
+def test_old_float_conversion_would_undercount_three_nanortc():
+    assert old_float_conversion(0.00000003) == 2
+    assert _decimal_to_nrtc(_parse_rtc_amount("0.00000003"), "amount_rtc") == 3

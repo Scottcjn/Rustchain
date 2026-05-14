@@ -275,6 +275,27 @@ class TestUtxoEndpoints(unittest.TestCase):
                          f"Expected 10_000_000 nanoRTC, got {bob_bal} "
                          f"(float truncation bug)")
 
+    def test_transfer_preserves_three_nanortc_amount(self):
+        """Issue #4671: 0.00000003 RTC must transfer exactly 3 nanoRTC."""
+        sender = 'RTC_test_aabbccdd'
+        recipient = 'bob'
+        self._seed_coinbase(sender, UNIT)
+
+        r = self.client.post('/utxo/transfer', json={
+            'from_address': sender,
+            'to_address': recipient,
+            'amount_rtc': 0.00000003,
+            'public_key': 'aabbccdd' * 8,
+            'signature': 'sig' * 22,
+            'nonce': int(time.time() * 1000),
+        })
+        data = r.get_json()
+
+        self.assertEqual(r.status_code, 200, data)
+        self.assertTrue(data['ok'])
+        self.assertEqual(self.utxo_db.get_balance(recipient), 3)
+        self.assertEqual(self.utxo_db.get_balance(sender), UNIT - 3)
+
     def test_transfer_rejects_decimal_amount_not_preserved_by_signed_float(self):
         """The signed float amount must match the ledger nanoRTC amount.
 
