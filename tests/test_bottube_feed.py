@@ -11,7 +11,10 @@ Run with:
 import sys
 import time
 import unittest
-import xml.etree.ElementTree as ET
+try:
+    import defusedxml.ElementTree as ET
+except ImportError:
+    import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -337,7 +340,7 @@ class TestAtomFeedBuilder(unittest.TestCase):
         )
         xml = self.builder.build()
         self.assertIn('<media:thumbnail url="https://example.com/thumb.jpg"/>', xml)
-        ET.fromstring(xml)
+        ET.fromstring(xml)  # nosec B314 - test parses own output
 
 
 class TestConvenienceFunctions(unittest.TestCase):
