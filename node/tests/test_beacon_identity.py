@@ -41,7 +41,7 @@ def init_db(db_path):
         "BEACON_KEY_TTL": "86400",  # 1 day for predictable TTL tests
     }):
         import importlib
-        import beacon_identity as bi
+        from node import beacon_identity as bi
         importlib.reload(bi)
         bi.init_identity_tables(db_path)
         return bi
