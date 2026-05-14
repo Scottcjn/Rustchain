@@ -24,7 +24,7 @@ import json
 import time
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
-from flask import Blueprint, request, Response, jsonify, render_template_string
+from flask import Blueprint, request, Response, jsonify, render_template_string, current_app
 
 
 # Create blueprint for embed routes
@@ -789,10 +789,12 @@ def _get_related_videos(video_id: str, limit: int = 5) -> List[Dict[str, Any]]:
 
 
 def _get_base_url() -> str:
-    """Get the base URL from request."""
+    """Get the base URL from request, trusting only configured proxy hosts."""
     base_url = request.host_url.rstrip("/")
-    if request.headers.get("X-Forwarded-Host"):
-        base_url = f"https://{request.headers['X-Forwarded-Host']}"
+    forwarded_host = request.headers.get("X-Forwarded-Host", "").strip()
+    trusted_hosts = current_app.config.get("TRUSTED_FORWARD_HOSTS") or []
+    if forwarded_host and forwarded_host in trusted_hosts:
+        base_url = f"https://{forwarded_host}"
     return base_url
 
 
