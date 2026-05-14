@@ -550,6 +550,16 @@ def _after(resp):
         log.info(json.dumps(rec, separators=(",", ":")))
     except Exception:
         pass
+    # Defense-in-depth headers for both API and lightweight HTML responses.
+    resp.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https:; "
+        "frame-ancestors 'none'; object-src 'none'; base-uri 'self'",
+    )
+    resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("X-Frame-Options", "DENY")
     resp.headers["X-Request-Id"] = getattr(g, "request_id", "-")
     return resp
 
