@@ -30,6 +30,7 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import sqlite3
 import subprocess
 import sys
@@ -47,9 +48,15 @@ except ImportError:
     print("Flask not installed. Install with: pip install flask", file=sys.stderr)
     sys.exit(1)
 
+def load_secret_key() -> str:
+    """Load Flask secret key from env, or generate an ephemeral fallback."""
+    configured = os.environ.get('BADGE_SECRET_KEY', '').strip()
+    return configured or secrets.token_hex(32)
+
+
 # Initialize Flask app
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'bcos-badge-generator-dev-key'
+app.config['SECRET_KEY'] = load_secret_key()
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max upload
 
 # Database path
