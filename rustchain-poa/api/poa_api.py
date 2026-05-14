@@ -1,10 +1,36 @@
-from flask import Flask, request, jsonify
-from validator.validate_genesis import validate_genesis
-import tempfile
+# SPDX-License-Identifier: MIT
+
 import os
-import json
+import tempfile
+from pathlib import Path
+
+from flask import Flask, jsonify, request
+from validator.validate_genesis import validate_genesis
 
 app = Flask(__name__)
+MAX_FILE_SIZE = int(os.environ.get("POA_API_MAX_FILE_SIZE", 10 * 1024 * 1024))
+MAX_UPLOAD_CHUNK_SIZE = 64 * 1024
+JSON_MIME_TYPES = {"", "application/json", "application/octet-stream", "text/json"}
+
+
+def is_json_upload(file):
+    return Path(file.filename or "").suffix.lower() == ".json" and (file.mimetype or "") in JSON_MIME_TYPES
+
+
+def save_limited_upload(file, destination):
+    total_size = 0
+    with open(destination, "wb") as output:
+        while True:
+            chunk = file.stream.read(MAX_UPLOAD_CHUNK_SIZE)
+            if not chunk:
+                break
+
+            total_size += len(chunk)
+            if total_size > MAX_FILE_SIZE:
+                raise ValueError("File too large")
+
+            output.write(chunk)
+
 
 @app.route('/validate', methods=['POST'])
 def validate():
@@ -15,17 +41,25 @@ def validate():
     if file.filename == '':
         return jsonify({"error": "No selected file"}), 400
 
-    # Save the file temporarily
+    if not is_json_upload(file):
+        return jsonify({"error": "Only JSON files accepted"}), 400
+
+    tmp_path = None
     with tempfile.NamedTemporaryFile(delete=False, suffix='.json') as tmp:
-        file.save(tmp.name)
         tmp_path = tmp.name
 
     try:
+        save_limited_upload(file, tmp_path)
         result = validate_genesis(tmp_path)
-        os.remove(tmp_path)
         return jsonify(result)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 413
+    except Exception:
+        app.logger.exception("PoA genesis validation failed")
+        return jsonify({"error": "Validation failed"}), 500
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.remove(tmp_path)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
