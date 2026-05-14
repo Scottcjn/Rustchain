@@ -130,10 +130,22 @@ def create_badge():
     if not isinstance(data, dict):
         return jsonify({"success": False, "error": "Invalid JSON payload"}), 400
     
-    username = data.get('username', '').strip()
-    wallet = data.get('wallet', '').strip()
+    # Validate field types before calling .strip()
+    username_raw = data.get('username', '')
+    wallet_raw = data.get('wallet', '')
+    custom_message_raw = data.get('custom_message', '')
+    
+    if not isinstance(username_raw, str):
+        return jsonify({'success': False, 'error': 'Username must be a string'}), 400
+    if not isinstance(wallet_raw, str):
+        return jsonify({'success': False, 'error': 'Wallet must be a string'}), 400
+    if not isinstance(custom_message_raw, str):
+        return jsonify({'success': False, 'error': 'Custom message must be a string'}), 400
+    
+    username = username_raw.strip()
+    wallet = wallet_raw.strip()
     badge_type = data.get('badge_type', 'contributor')
-    custom_message = data.get('custom_message', '').strip()
+    custom_message = custom_message_raw.strip()
     
     if not username:
         return jsonify({'success': False, 'error': 'Username required'})

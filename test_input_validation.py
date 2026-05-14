@@ -100,6 +100,38 @@ def test_faucet_rejects_null_json():
         assert resp.status_code == 400
 
 
+def test_faucet_rejects_null_wallet():
+    """#4348: /faucet/drip rejects {wallet: null}"""
+    from faucet import app as faucet_app
+
+    faucet_app.config["TESTING"] = True
+    with faucet_app.test_client() as client:
+        resp = client.post(
+            "/faucet/drip",
+            data='{"wallet": null}',
+            content_type="application/json",
+        )
+        assert resp.status_code == 400
+        data = json.loads(resp.data)
+        assert "error" in data
+
+
+def test_faucet_rejects_integer_wallet():
+    """#4348: /faucet/drip rejects {wallet: 123}"""
+    from faucet import app as faucet_app
+
+    faucet_app.config["TESTING"] = True
+    with faucet_app.test_client() as client:
+        resp = client.post(
+            "/faucet/drip",
+            data='{"wallet": 123}',
+            content_type="application/json",
+        )
+        assert resp.status_code == 400
+        data = json.loads(resp.data)
+        assert "error" in data
+
+
 # ─── Profile badge tests (#4346) ────────────────────────────
 
 def test_badge_rejects_null_json():
@@ -146,3 +178,91 @@ def test_beacon_module_imports():
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+def test_faucet_rejects_null_wallet():
+    """#4348: /faucet/drip rejects {wallet: null}"""
+    from faucet import app as faucet_app
+
+    faucet_app.config["TESTING"] = True
+    with faucet_app.test_client() as client:
+        resp = client.post(
+            "/faucet/drip",
+            data='{"wallet": null}',
+            content_type="application/json",
+        )
+        assert resp.status_code == 400
+        data = json.loads(resp.data)
+        assert "error" in data
+
+
+def test_faucet_rejects_integer_wallet():
+    """#4348: /faucet/drip rejects {wallet: 123}"""
+    from faucet import app as faucet_app
+
+    faucet_app.config["TESTING"] = True
+    with faucet_app.test_client() as client:
+        resp = client.post(
+            "/faucet/drip",
+            data='{"wallet": 123}',
+            content_type="application/json",
+        )
+        assert resp.status_code == 400
+        data = json.loads(resp.data)
+        assert "error" in data
+
+
+def test_badge_rejects_null_username():
+    """#4346: /api/badge/create rejects {username: null}"""
+    from profile_badge_generator import app as badge_app
+
+    badge_app.config["TESTING"] = True
+    with badge_app.test_client() as client:
+        resp = client.post(
+            "/api/badge/create",
+            data='{"username": null}',
+            content_type="application/json",
+        )
+        assert resp.status_code == 400
+
+
+def test_badge_rejects_integer_username():
+    """#4346: /api/badge/create rejects {username: 123}"""
+    from profile_badge_generator import app as badge_app
+
+    badge_app.config["TESTING"] = True
+    with badge_app.test_client() as client:
+        resp = client.post(
+            "/api/badge/create",
+            data='{"username": 123}',
+            content_type="application/json",
+        )
+        assert resp.status_code == 400
+
+
+def test_badge_rejects_null_wallet():
+    """#4346: /api/badge/create rejects {username:'u', wallet: null}"""
+    from profile_badge_generator import app as badge_app
+
+    badge_app.config["TESTING"] = True
+    with badge_app.test_client() as client:
+        resp = client.post(
+            "/api/badge/create",
+            data='{"username": "testuser", "wallet": null}',
+            content_type="application/json",
+        )
+        assert resp.status_code == 400
+
+
+def test_badge_rejects_null_custom_message():
+    """#4346: /api/badge/create rejects {username:'u', custom_message: null}"""
+    from profile_badge_generator import app as badge_app
+
+    badge_app.config["TESTING"] = True
+    with badge_app.test_client() as client:
+        resp = client.post(
+            "/api/badge/create",
+            data='{"username": "testuser", "custom_message": null}',
+            content_type="application/json",
+        )
+        assert resp.status_code == 400

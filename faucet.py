@@ -313,7 +313,12 @@ def drip():
     if not data or 'wallet' not in data:
         return jsonify({'ok': False, 'error': 'Wallet address required'}), 400
     
-    wallet = data['wallet'].strip()
+    # Validate wallet is a string before calling .strip()
+    wallet_raw = data['wallet']
+    if not isinstance(wallet_raw, str):
+        return jsonify({'ok': False, 'error': 'Wallet must be a string'}), 400
+    
+    wallet = wallet_raw.strip()
     
     # Basic wallet validation (should start with 0x and be reasonably long)
     if not wallet.startswith('0x') or len(wallet) < 10:
