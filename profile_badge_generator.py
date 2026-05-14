@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 from flask import Flask, request, jsonify, render_template_string
+import html as html_utils
 import sqlite3
 import json
 import urllib.parse
@@ -109,7 +110,12 @@ def badge_generator():
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    document.getElementById('badgePreview').innerHTML = data.preview_html;
+                    const badgePreview = document.getElementById('badgePreview');
+                    badgePreview.replaceChildren();
+                    const previewImage = document.createElement('img');
+                    previewImage.src = data.shield_url;
+                    previewImage.alt = data.alt_text || 'RustChain Badge';
+                    badgePreview.appendChild(previewImage);
                     document.getElementById('markdownCode').textContent = data.markdown;
                     document.getElementById('htmlCode').textContent = data.html;
                     document.getElementById('result').style.display = 'block';
@@ -123,15 +129,33 @@ def badge_generator():
     '''
     return render_template_string(html)
 
+
+def text_field(data, name, default=''):
+    value = data.get(name, default)
+    if value is None:
+        return ''
+    return str(value).strip()
+
+
+def escape_markdown_alt(text):
+    return (
+        text.replace('\\', '\\\\')
+        .replace('[', '\\[')
+        .replace(']', '\\]')
+        .replace('\n', ' ')
+        .replace('\r', ' ')
+    )
+
 @app.route('/api/badge/create', methods=['POST'])
 def create_badge():
     init_badge_db()
-    data = request.get_json()
+    raw_data = request.get_json(silent=True) or {}
+    data = raw_data if isinstance(raw_data, dict) else {}
     
-    username = data.get('username', '').strip()
-    wallet = data.get('wallet', '').strip()
-    badge_type = data.get('badge_type', 'contributor')
-    custom_message = data.get('custom_message', '').strip()
+    username = text_field(data, 'username')
+    wallet = text_field(data, 'wallet')
+    badge_type = text_field(data, 'badge_type', 'contributor')
+    custom_message = text_field(data, 'custom_message')
     
     if not username:
         return jsonify({'success': False, 'error': 'Username required'})
@@ -146,12 +170,17 @@ def create_badge():
     color = badge_colors.get(badge_type, 'blue')
     label = custom_message if custom_message else badge_type.replace('-', ' ').title()
     
-    shield_url = f"https://img.shields.io/badge/RustChain-{urllib.parse.quote(label)}-{color}"
+    shield_url = f"https://img.shields.io/badge/RustChain-{urllib.parse.quote(label, safe='')}-{color}"
     repo_url = "https://github.com/Scottcjn/Rustchain"
+    alt_text = f"RustChain {label}"
+    html_alt_text = html_utils.escape(alt_text, quote=True)
+    html_shield_url = html_utils.escape(shield_url, quote=True)
+    html_repo_url = html_utils.escape(repo_url, quote=True)
+    markdown_alt_text = escape_markdown_alt(alt_text)
     
-    markdown = f"[![RustChain {label}]({shield_url})]({repo_url})"
-    html = f'<a href="{repo_url}"><img src="{shield_url}" alt="RustChain {label}"></a>'
-    preview_html = f'<img src="{shield_url}" alt="RustChain {label}">'
+    markdown = f"[![{markdown_alt_text}]({shield_url})]({repo_url})"
+    html = f'<a href="{html_repo_url}"><img src="{html_shield_url}" alt="{html_alt_text}"></a>'
+    preview_html = f'<img src="{html_shield_url}" alt="{html_alt_text}">'
     
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
@@ -167,7 +196,8 @@ def create_badge():
         'markdown': markdown,
         'html': html,
         'preview_html': preview_html,
-        'shield_url': shield_url
+        'shield_url': shield_url,
+        'alt_text': alt_text
     })
 
 @app.route('/api/badge/stats')
