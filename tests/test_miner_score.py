@@ -73,3 +73,43 @@ def test_score_handles_empty_or_failed_api_payload(monkeypatch, capsys):
     miner_score.score()
 
     assert capsys.readouterr().out == ""
+
+
+def test_api_uses_configured_node_timeout_and_ssl_context(monkeypatch):
+    calls = []
+    contexts = []
+
+    class DummyContext:
+        check_hostname = True
+        verify_mode = None
+
+    class DummyResponse:
+        def read(self):
+            return b'{"miners": []}'
+
+    def fake_context():
+        context = DummyContext()
+        contexts.append(context)
+        return context
+
+    def fake_urlopen(*args, **kwargs):
+        calls.append((args, kwargs))
+        return DummyResponse()
+
+    monkeypatch.setattr(miner_score, "NODE", "https://node.example")
+    monkeypatch.setattr(miner_score.ssl, "create_default_context", fake_context)
+    monkeypatch.setattr(miner_score.urllib.request, "urlopen", fake_urlopen)
+
+    assert miner_score.api("/api/miners") == {"miners": []}
+    assert calls == [(("https://node.example/api/miners",), {"timeout": 10, "context": contexts[0]})]
+    assert contexts[0].check_hostname is False
+    assert contexts[0].verify_mode == miner_score.ssl.CERT_NONE
+
+
+def test_api_returns_empty_dict_on_request_error(monkeypatch):
+    def failing_urlopen(*_args, **_kwargs):
+        raise OSError("offline")
+
+    monkeypatch.setattr(miner_score.urllib.request, "urlopen", failing_urlopen)
+
+    assert miner_score.api("/api/miners") == {}
