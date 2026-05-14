@@ -21,6 +21,7 @@ License: MIT
 """
 
 import hashlib
+import hmac
 import json
 import logging
 import os
@@ -504,8 +505,12 @@ def create_order():
             }), 400
         escrow_job_id = escrow_result["job_id"]
 
-    # Generate HTLC secret (seller generates, buyer reveals on match)
-    htlc_secret, htlc_hash = generate_htlc_secret()
+    # The RTC seller owns the release preimage. For a sell order the maker is
+    # the seller, so generate and return it at creation. For a buy order the
+    # seller is not known until match time, so defer preimage generation.
+    htlc_secret, htlc_hash = (None, None)
+    if side == "sell":
+        htlc_secret, htlc_hash = generate_htlc_secret()
 
     conn = get_db()
     try:
@@ -548,11 +553,15 @@ def create_order():
             "expires_at": now + ttl,
             "expires_in_hours": round(ttl / 3600, 1),
         }
+        if htlc_hash:
+            response["htlc_hash"] = htlc_hash
+        if htlc_secret:
+            # Returned only once to the RTC seller; public order reads hide it until completion.
+            response["htlc_secret"] = htlc_secret
         if escrow_job_id:
             response["escrow_job_id"] = escrow_job_id
             response["escrow_status"] = "locked"
         if side == "sell":
-            response["htlc_hash"] = htlc_hash
             response["message"] = f"Sell order created. {amount_rtc} RTC locked in escrow. HTLC hash published for buyer verification."
         else:
             response["message"] = f"Buy order created. Waiting for a seller to match."
@@ -714,15 +723,23 @@ def match_order(order_id):
                     "details": escrow_result.get("error")
                 }), 400
             escrow_job_id = escrow_result["job_id"]
+            htlc_secret, htlc_hash = generate_htlc_secret()
+        else:
+            htlc_secret, htlc_hash = order["htlc_secret"], order["htlc_hash"]
 
         # Update order
         c.execute("""
             UPDATE orders
             SET status = 'matched', taker_wallet = ?, taker_eth_address = ?,
-                matched_at = ?, escrow_job_id = COALESCE(?, escrow_job_id)
+                matched_at = ?, escrow_job_id = COALESCE(?, escrow_job_id),
+                htlc_hash = COALESCE(?, htlc_hash),
+                htlc_secret = COALESCE(?, htlc_secret)
             WHERE order_id = ? AND status = 'open'
         """, (taker_wallet, taker_eth_address, now,
-              escrow_job_id if order["side"] == "buy" else None, order_id))
+              escrow_job_id if order["side"] == "buy" else None,
+              htlc_hash if order["side"] == "buy" else None,
+              htlc_secret if order["side"] == "buy" else None,
+              order_id))
 
         if c.execute("SELECT changes()").fetchone()[0] == 0:
             return jsonify({"error": "Order was matched by someone else"}), 409
@@ -740,8 +757,11 @@ def match_order(order_id):
             "total_quote": order["total_quote"],
             "maker_wallet": order["maker_wallet"],
             "taker_wallet": taker_wallet,
-            "htlc_hash": order["htlc_hash"],
+            "htlc_hash": htlc_hash,
         }
+        if order["side"] == "buy":
+            # Returned only once to the matching RTC seller.
+            response["htlc_secret"] = htlc_secret
 
         quote_currency = order["pair"].split("/")[1]
         if order["side"] == "sell":
@@ -749,7 +769,7 @@ def match_order(order_id):
                 "step": "Send quote currency to complete the swap",
                 "amount": order["total_quote"],
                 "currency": quote_currency,
-                "htlc_hash": order["htlc_hash"],
+                "htlc_hash": htlc_hash,
                 "note": f"Send {order['total_quote']} {quote_currency} to the seller's address. Once confirmed, the seller reveals the HTLC secret and RTC is released from escrow."
             }
         else:
@@ -757,7 +777,8 @@ def match_order(order_id):
                 "step": "RTC is locked in escrow. Buyer sends quote currency.",
                 "amount": order["total_quote"],
                 "currency": quote_currency,
-                "note": f"Buyer must send {order['total_quote']} {quote_currency}. Once confirmed, RTC escrow releases to buyer."
+                "htlc_hash": htlc_hash,
+                "note": f"Buyer must send {order['total_quote']} {quote_currency}. The matching seller confirms by revealing the HTLC secret, then RTC escrow releases to buyer."
             }
 
         return jsonify(response)
@@ -780,6 +801,8 @@ def confirm_order(order_id):
 
     if not wallet:
         return jsonify({"error": "wallet required"}), 400
+    if not quote_tx:
+        return jsonify({"error": "quote_tx required"}), 400
 
     conn = get_db()
     try:
@@ -793,18 +816,24 @@ def confirm_order(order_id):
         if order["status"] != "matched":
             return jsonify({"error": f"Order must be matched to confirm (current: {order['status']})"}), 409
 
-        # Either party can confirm
-        if wallet not in (order["maker_wallet"], order["taker_wallet"]):
-            return jsonify({"error": "Only maker or taker can confirm"}), 403
+        # Only the RTC seller owns the preimage and can confirm settlement.
+        seller_wallet = order["maker_wallet"] if order["side"] == "sell" else order["taker_wallet"]
+        if wallet != seller_wallet:
+            return jsonify({"error": "Only the RTC seller can confirm settlement"}), 403
 
         # Verify HTLC preimage before releasing escrow
         if not secret:
             return jsonify({"error": "HTLC secret (preimage) required to confirm settlement"}), 400
+        if not order["htlc_hash"]:
+            return jsonify({"error": "HTLC hash unavailable for matched order"}), 409
 
         # Validate the provided secret matches the stored hash
-        computed_hash = hashlib.sha256(bytes.fromhex(secret)).hexdigest()
-        if computed_hash != order["htlc_hash"]:
-            return jsonify({"error": "Invalid HTLC secret (preimage hash mismatch)"}), 400
+        try:
+            computed_hash = hashlib.sha256(bytes.fromhex(secret)).hexdigest()
+        except ValueError:
+            return jsonify({"error": "Invalid HTLC secret format"}), 400
+        if not hmac.compare_digest(computed_hash, order["htlc_hash"]):
+            return jsonify({"error": "Invalid HTLC secret"}), 400
 
         now = int(time.time())
 
