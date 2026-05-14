@@ -6739,7 +6739,7 @@ def attest_debug():
     """Debug endpoint: show miner's enrollment eligibility"""
     # SECURITY FIX 2026-02-15: Require admin key - exposes internal config + MAC hashes
     if not ADMIN_KEY:
-        return jsonify({"error": "RC_ADMIN_KEY not configured"}), 503
+        return jsonify({"error": "Admin key not configured"}), 503
     admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
     if not hmac.compare_digest(admin_key, ADMIN_KEY):
         return jsonify({"error": "Unauthorized - admin key required"}), 401

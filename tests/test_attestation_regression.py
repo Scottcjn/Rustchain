@@ -193,7 +193,7 @@ def test_attest_debug_fails_closed_when_admin_key_unset(test_client, monkeypatch
     response = test_client.post("/ops/attest/debug", json={"miner": "test-miner"})
 
     assert response.status_code == 503
-    assert response.get_json()["error"] == "RC_ADMIN_KEY not configured"
+    assert response.get_json()["error"] == "Admin key not configured"
 
 
 # ---------------------------------------------------------------------------
