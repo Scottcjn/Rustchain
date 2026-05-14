@@ -7,30 +7,76 @@ Allows G4 to connect via different port
 from flask import Flask, request, jsonify
 import requests
 import json
+import logging
 
 app = Flask(__name__)
+logger = logging.getLogger(__name__)
 
 # Local server on same machine
 LOCAL_SERVER = "http://localhost:8088"
 
+ALLOWED_PROXY_ROUTES = {
+    ("GET", "stats"),
+    ("GET", "miners"),
+    ("GET", "wallet/balance"),
+    ("POST", "register"),
+    ("POST", "mine"),
+}
+
+
+def _normalize_proxy_path(path):
+    """Normalize and reject path traversal before proxying."""
+    normalized = (path or "").strip().strip("/")
+    if not normalized or "\\" in normalized:
+        return None
+    parts = [part for part in normalized.split("/") if part]
+    if any(part in {".", ".."} for part in parts):
+        return None
+    return "/".join(parts)
+
+
+def _is_allowed_proxy_route(method, path):
+    """Return True only for explicitly supported public proxy routes."""
+    return (method.upper(), path) in ALLOWED_PROXY_ROUTES
+
+
+def _build_upstream_url(path):
+    """Map proxy paths to the upstream route namespace."""
+    if path == "wallet/balance":
+        return f"{LOCAL_SERVER}/{path}"
+    return f"{LOCAL_SERVER}/api/{path}"
+
+
 @app.route('/api/<path:path>', methods=['GET', 'POST'])
 def proxy(path):
-    """Forward all API requests to local server"""
-    url = f"{LOCAL_SERVER}/api/{path}"
+    """Forward only explicitly allowlisted public API requests."""
+    normalized_path = _normalize_proxy_path(path)
+    if not normalized_path or not _is_allowed_proxy_route(request.method, normalized_path):
+        return jsonify({'error': 'Proxy path not allowed'}), 403
+
+    url = _build_upstream_url(normalized_path)
 
     try:
         if request.method == 'POST':
+            payload = request.get_json(silent=True)
+            if payload is None:
+                return jsonify({'error': 'JSON object required'}), 400
+
             # Forward POST requests with JSON data
             headers = {'Content-Type': 'application/json'}
             response = requests.post(
                 url,
-                json=request.json,
+                json=payload,
                 headers=headers,
                 timeout=10
             )
         else:
             # Forward GET requests
-            response = requests.get(url, timeout=10)
+            response = requests.get(
+                url,
+                params=request.args,
+                timeout=10
+            )
 
         # Return the response from local server
         # Safely handle non-JSON responses from upstream
@@ -48,7 +94,8 @@ def proxy(path):
     except requests.exceptions.Timeout:
         return jsonify({'error': 'Local server timeout'}), 504
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        logger.warning("Local proxy request failed for %s %s: %s", request.method, normalized_path, e)
+        return jsonify({'error': 'Local server proxy error'}), 502
 
 @app.route('/status')
 def status():
