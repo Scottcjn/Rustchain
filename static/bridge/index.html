@@ -125,6 +125,26 @@
 </div>
 
 <script>
+    function escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, char => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;'
+        })[char]);
+    }
+
+    function safeClassToken(value, allowed, fallback) {
+        const token = String(value ?? '').toLowerCase();
+        return allowed.includes(token) ? token : fallback;
+    }
+
+    function safeNumber(value, fallback = 0) {
+        const number = Number(value);
+        return Number.isFinite(number) ? number : fallback;
+    }
+
     async function refresh() {
         try {
             const resp = await fetch('bridge_status.json');
@@ -148,12 +168,15 @@
             body.innerHTML = '';
             data.recent_transactions.forEach(tx => {
                 const row = document.createElement('tr');
+                const lockId = escapeHtml(String(tx.lock_id ?? '').substring(0, 12));
+                const targetChain = safeClassToken(tx.target_chain, ['solana', 'base'], 'solana');
+                const state = safeClassToken(tx.state, ['complete', 'pending', 'confirmed', 'requested'], 'pending');
                 row.innerHTML = `
-                    <td style="font-family:monospace; color:#888">${tx.lock_id.substring(0,12)}...</td>
-                    <td>${tx.sender_wallet}</td>
-                    <td style="color:white; font-weight:bold">${tx.amount_rtc}</td>
-                    <td><span style="color:var(--solana)">${tx.target_chain.toUpperCase()}</span></td>
-                    <td><span class="state-tag ${tx.state}">${tx.state.toUpperCase()}</span></td>
+                    <td style="font-family:monospace; color:#888">${lockId}...</td>
+                    <td>${escapeHtml(tx.sender_wallet)}</td>
+                    <td style="color:white; font-weight:bold">${escapeHtml(safeNumber(tx.amount_rtc))}</td>
+                    <td><span style="color:var(--solana)">${escapeHtml(targetChain.toUpperCase())}</span></td>
+                    <td><span class="state-tag ${state}">${escapeHtml(state.toUpperCase())}</span></td>
                 `;
                 body.appendChild(row);
             });

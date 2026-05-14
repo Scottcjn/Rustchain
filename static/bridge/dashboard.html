@@ -1067,12 +1067,12 @@
 
             body.innerHTML = filtered.map(tx => `
                 <tr>
-                    <td><span class="tx-id">${tx.lock_id.substring(0, 16)}...</span></td>
-                    <td><span class="tx-type ${tx.type}">${tx.type.toUpperCase()}</span></td>
-                    <td>${tx.sender_wallet}</td>
-                    <td><span class="tx-amount">${formatNumber(tx.amount_rtc)} ${tx.type === 'wrap' ? 'RTC' : 'wRTC'}</span></td>
-                    <td><span class="chain-badge ${tx.target_chain}">${tx.target_chain.toUpperCase()}</span></td>
-                    <td><span class="tx-state ${tx.state}">${tx.state.toUpperCase()}</span></td>
+                    <td><span class="tx-id">${escapeHtml(String(tx.lock_id ?? '').substring(0, 16))}...</span></td>
+                    <td><span class="tx-type ${safeClassToken(tx.type, ['wrap', 'unwrap'], 'wrap')}">${escapeHtml(safeClassToken(tx.type, ['wrap', 'unwrap'], 'wrap').toUpperCase())}</span></td>
+                    <td>${escapeHtml(tx.sender_wallet)}</td>
+                    <td><span class="tx-amount">${escapeHtml(formatNumber(tx.amount_rtc))} ${safeClassToken(tx.type, ['wrap', 'unwrap'], 'wrap') === 'wrap' ? 'RTC' : 'wRTC'}</span></td>
+                    <td><span class="chain-badge ${safeClassToken(tx.target_chain, ['solana', 'base'], 'solana')}">${escapeHtml(safeClassToken(tx.target_chain, ['solana', 'base'], 'solana').toUpperCase())}</span></td>
+                    <td><span class="tx-state ${safeClassToken(tx.state, ['complete', 'pending', 'confirmed', 'requested'], 'pending')}">${escapeHtml(safeClassToken(tx.state, ['complete', 'pending', 'confirmed', 'requested'], 'pending').toUpperCase())}</span></td>
                     <td>${formatTime(tx.created_at || tx.timestamp)}</td>
                 </tr>
             `).join('');
@@ -1087,6 +1087,21 @@
         }
 
         // 鈹€鈹€鈹€ Utility Functions 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, char => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            })[char]);
+        }
+
+        function safeClassToken(value, allowed, fallback) {
+            const token = String(value ?? '').toLowerCase();
+            return allowed.includes(token) ? token : fallback;
+        }
+
         function formatNumber(num) {
             return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(num || 0);
         }
