@@ -189,6 +189,21 @@ DASHBOARD_HTML = """
         .sys-stat .value { font-size: 1.8em; font-weight: bold; }
     </style>
     <script>
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, ch => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;',
+            }[ch]));
+        }
+
+        function safeToken(value, allowed, fallback = 'unknown') {
+            const token = String(value ?? '').toLowerCase();
+            return allowed.includes(token) ? token : fallback;
+        }
+
         function updateDashboard() {
             fetch('/api/stats')
                 .then(r => r.json())
@@ -210,27 +225,32 @@ DASHBOARD_HTML = """
 
                     // Update miners table
                     const minersTable = document.getElementById('miners-tbody');
-                    minersTable.innerHTML = data.active_miners.map(m => `
-                        <tr>
-                            <td class="mono">${m.wallet_short}...</td>
-                            <td><span class="badge badge-${m.arch}">${m.arch.toUpperCase()}</span></td>
-                            <td><strong>${m.weight}x</strong></td>
-                            <td class="green">${m.balance.toFixed(6)} RTC</td>
-                            <td class="mono">${m.last_seen}</td>
-                            <td class="blue">${m.age_on_network || 'New'}</td>
-                            <td><span class="badge badge-active pulse">ACTIVE</span></td>
-                        </tr>
-                    `).join('');
+                    const archTokens = ['active', 'classic', 'retro', 'ancient', 'modern'];
+                    minersTable.innerHTML = data.active_miners.map(m => {
+                        const archToken = safeToken(m.arch, archTokens, 'modern');
+                        const balance = Number(m.balance || 0).toFixed(6);
+                        return `
+                            <tr>
+                                <td class="mono">${escapeHtml(m.wallet_short)}...</td>
+                                <td><span class="badge badge-${archToken}">${escapeHtml(m.arch || 'unknown').toUpperCase()}</span></td>
+                                <td><strong>${escapeHtml(m.weight)}x</strong></td>
+                                <td class="green">${balance} RTC</td>
+                                <td class="mono">${escapeHtml(m.last_seen)}</td>
+                                <td class="blue">${escapeHtml(m.age_on_network || 'New')}</td>
+                                <td><span class="badge badge-active pulse">ACTIVE</span></td>
+                            </tr>
+                        `;
+                    }).join('');
 
                     // Update recent blocks
                     const blocksTable = document.getElementById('blocks-tbody');
                     blocksTable.innerHTML = data.recent_blocks.map(b => `
                         <tr>
-                            <td><strong>${b.height}</strong></td>
-                            <td class="mono">${b.hash_short}...</td>
-                            <td>${b.timestamp}</td>
-                            <td><span class="badge">${b.miners_count} miners</span></td>
-                            <td class="green">${b.reward} RTC</td>
+                            <td><strong>${escapeHtml(b.height)}</strong></td>
+                            <td class="mono">${escapeHtml(b.hash_short)}...</td>
+                            <td>${escapeHtml(b.timestamp)}</td>
+                            <td><span class="badge">${escapeHtml(b.miners_count)} miners</span></td>
+                            <td class="green">${escapeHtml(b.reward)} RTC</td>
                         </tr>
                     `).join('');
 
@@ -242,29 +262,31 @@ DASHBOARD_HTML = """
             const wallet = document.getElementById('wallet-search').value.trim();
             if (!wallet) return;
 
-            fetch(`/api/wallet/${wallet}`)
+            fetch(`/api/wallet/${encodeURIComponent(wallet)}`)
                 .then(r => r.json())
                 .then(data => {
                     const resultDiv = document.getElementById('search-result');
                     if (data.found) {
+                        const tierToken = safeToken(data.tier, ['classic', 'retro', 'ancient', 'modern'], 'modern');
                         resultDiv.innerHTML = `
                             <h3>✅ Wallet Found</h3>
-                            <p><strong>Address:</strong> <span class="mono">${data.wallet}</span></p>
-                            <p><strong>Balance:</strong> <span class="green">${data.balance} RTC</span></p>
-                            <p><strong>Weight:</strong> ${data.weight}x (${data.tier})</p>
-                            <p><strong>Age on Network:</strong> ${data.age_on_network || 'Unknown'}</p>
+                            <p><strong>Address:</strong> <span class="mono">${escapeHtml(data.wallet)}</span></p>
+                            <p><strong>Balance:</strong> <span class="green">${escapeHtml(data.balance)} RTC</span></p>
+                            <p><strong>Weight:</strong> ${escapeHtml(data.weight)}x (<span class="badge badge-${tierToken}">${escapeHtml(data.tier)}</span>)</p>
+                            <p><strong>Age on Network:</strong> ${escapeHtml(data.age_on_network || 'Unknown')}</p>
                             <p><strong>Status:</strong> ${data.enrolled ? '✅ Enrolled in current epoch' : '⏸️ Not currently enrolled'}</p>
-                            <p><strong>Last Seen:</strong> ${data.last_seen || 'Never'}</p>
+                            <p><strong>Last Seen:</strong> ${escapeHtml(data.last_seen || 'Never')}</p>
                         `;
                     } else {
                         resultDiv.innerHTML = `
                             <h3>❌ Wallet Not Found</h3>
-                            <p>No miner found with address: <span class="mono">${wallet}</span></p>
+                            <p>No miner found with address: <span class="mono">${escapeHtml(wallet)}</span></p>
                         `;
                     }
                     resultDiv.style.display = 'block';
                 })
                 .catch(err => {
+                    err = escapeHtml(err.message || err);
                     document.getElementById('search-result').innerHTML = `<h3>❌ Error</h3><p>${err}</p>`;
                     document.getElementById('search-result').style.display = 'block';
                 });

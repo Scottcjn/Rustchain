@@ -103,6 +103,16 @@ let soundEnabled = false;
 let minerHistory = [];
 const socket = io({ reconnection: true, reconnectionDelay: 2000, reconnectionAttempts: Infinity });
 
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  })[ch]);
+}
+
 // Connection status
 socket.on('connect', () => {
   document.getElementById('conn-dot').className = 'conn-dot connected';
@@ -148,11 +158,11 @@ function updateEpoch(d) {
 function addBlockFeed(block) {
   const feed = document.getElementById('block-feed');
   if (feed.querySelector('.empty')) feed.innerHTML = '';
-  const hash = block.hash ? block.hash.substring(0, 16) + '...' : '—';
+  const hash = block.hash ? escapeHtml(String(block.hash).substring(0, 16)) + '...' : '—';
   const item = document.createElement('div');
   item.className = 'feed-item new';
   item.innerHTML = `<span class="time">${new Date().toLocaleTimeString()}</span> · 
-    Epoch ${block.epoch||'?'} · <span class="hash">${hash}</span>`;
+    Epoch ${escapeHtml(block.epoch || '?')} · <span class="hash">${hash}</span>`;
   feed.insertBefore(item, feed.firstChild);
   if (feed.children.length > 50) feed.removeChild(feed.lastChild);
   setTimeout(() => item.classList.remove('new'), 2000);
@@ -171,9 +181,9 @@ function updateMiners(d) {
     const grid = document.getElementById('miner-grid');
     grid.innerHTML = d.miners.slice(0, 12).map(m => `
       <div class="miner-card">
-        <div class="miner-id">${m.miner_id || m.id || '?'}</div>
-        <div class="miner-hw">${m.hardware || m.architecture || '?'}</div>
-        <div class="miner-multi">${m.multiplier || 1.0}x</div>
+        <div class="miner-id">${escapeHtml(m.miner_id || m.miner || m.id || '?')}</div>
+        <div class="miner-hw">${escapeHtml(m.hardware || m.device_arch || m.architecture || '?')}</div>
+        <div class="miner-multi">${escapeHtml(m.multiplier || 1.0)}x</div>
       </div>
     `).join('');
   }
@@ -186,7 +196,7 @@ function updateAttestations(list) {
     const item = document.createElement('div');
     item.className = 'feed-item new';
     item.innerHTML = `<span class="time">${new Date().toLocaleTimeString()}</span> · 
-      ${a.miner_id} · ${a.hardware} · <span class="miner-multi">${a.multiplier}x</span>`;
+      ${escapeHtml(a.miner_id || a.miner || '?')} · ${escapeHtml(a.hardware || a.device_arch || '?')} · <span class="miner-multi">${escapeHtml(a.multiplier || 1.0)}x</span>`;
     feed.insertBefore(item, feed.firstChild);
     if (feed.children.length > 50) feed.removeChild(feed.lastChild);
     setTimeout(() => item.classList.remove('new'), 2000);

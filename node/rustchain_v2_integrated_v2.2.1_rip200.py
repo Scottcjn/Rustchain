@@ -533,6 +533,23 @@ def get_client_ip():
     """Trusted client IP for rate limits and accounting surfaces."""
     return client_ip_from_request(request)
 
+
+SECURITY_HEADERS = {
+    "Content-Security-Policy": (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' data: https://fonts.gstatic.com; "
+        "img-src 'self' data: https://img.shields.io; "
+        "connect-src 'self' https://raw.githubusercontent.com"
+    ),
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+}
+
+
 @app.after_request
 def _after(resp):
     try:
@@ -547,10 +564,13 @@ def _after(resp):
             "ip": get_client_ip(),
             "dur_ms": int(dur * 1000),
         }
-        log.info(json.dumps(rec, separators=(",", ":")))
+        app.logger.info(json.dumps(rec, separators=(",", ":")))
     except Exception:
         pass
     resp.headers["X-Request-Id"] = getattr(g, "request_id", "-")
+    for header, value in SECURITY_HEADERS.items():
+        if header not in resp.headers:
+            resp.headers[header] = value
     return resp
 
 
@@ -1967,6 +1987,7 @@ def derive_verified_device(device: dict, fingerprint: dict, fingerprint_passed: 
 ENROLL_REQUIRE_TICKET = os.getenv("ENROLL_REQUIRE_TICKET", "1") == "1"
 ENROLL_TICKET_TTL_S = int(os.getenv("ENROLL_TICKET_TTL_S", "600"))
 ENROLL_REQUIRE_MAC = os.getenv("ENROLL_REQUIRE_MAC", "1") == "1"
+ENROLL_ALLOW_UNSIGNED_LEGACY = os.getenv("ENROLL_ALLOW_UNSIGNED_LEGACY", "0") == "1"
 MAC_MAX_UNIQUE_PER_DAY = int(os.getenv("MAC_MAX_UNIQUE_PER_DAY", "3"))
 PRIVACY_PEPPER = os.getenv("PRIVACY_PEPPER", "rustchain_poa_v2")
 
@@ -2004,11 +2025,16 @@ def record_macs(miner: str, macs: list):
         conn.commit()
 
 
+def _current_utc_year():
+    """Return the current UTC year for age-based scoring."""
+    return time.gmtime().tm_year
+
+
 def calculate_rust_score_inline(mfg_year, arch, attestations, machine_id):
     """Calculate rust score for a machine."""
     score = 0
     if mfg_year:
-        score += (2025 - mfg_year) * 10  # age bonus
+        score += (_current_utc_year() - mfg_year) * 10  # age bonus
     score += attestations * 0.001  # attestation bonus
     if machine_id <= 100:
         score += 50  # early adopter
@@ -2075,6 +2101,122 @@ def auto_induct_to_hall(miner: str, device: dict):
     except Exception as e:
         print(f"[HALL] Auto-induct error: {e}")
 
+def _table_columns(conn: sqlite3.Connection, table_name: str) -> set:
+    return {row[1] for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()}
+
+
+def _welcome_bonus_epoch() -> int:
+    try:
+        return slot_to_epoch(current_slot())
+    except Exception:
+        return 0
+
+
+def _welcome_bonus_already_paid(conn: sqlite3.Connection, miner: str, ledger_cols: set) -> bool:
+    if {"to_miner", "memo"}.issubset(ledger_cols):
+        row = conn.execute(
+            "SELECT COUNT(*) FROM ledger WHERE to_miner = ? AND memo LIKE '%welcome%'",
+            (miner,),
+        ).fetchone()
+        return bool(row and row[0])
+
+    if {"miner_id", "delta_i64", "reason"}.issubset(ledger_cols):
+        row = conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM ledger
+            WHERE miner_id = ?
+              AND delta_i64 > 0
+              AND reason LIKE 'welcome_bonus:%'
+            """,
+            (miner,),
+        ).fetchone()
+        return bool(row and row[0])
+
+    raise RuntimeError("unsupported ledger schema for welcome bonus")
+
+
+def _insert_account_balance_if_missing(conn: sqlite3.Connection, miner: str, balance_cols: set):
+    if "balance_rtc" in balance_cols:
+        conn.execute(
+            "INSERT OR IGNORE INTO balances (miner_id, amount_i64, balance_rtc) VALUES (?, 0, 0)",
+            (miner,),
+        )
+    else:
+        conn.execute(
+            "INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)",
+            (miner,),
+        )
+
+
+def _update_account_balance(conn: sqlite3.Connection, miner: str, delta_i64: int, balance_cols: set):
+    if "balance_rtc" in balance_cols:
+        conn.execute(
+            """
+            UPDATE balances
+            SET amount_i64 = amount_i64 + ?,
+                balance_rtc = (amount_i64 + ?) / 1000000.0
+            WHERE miner_id = ?
+            """,
+            (delta_i64, delta_i64, miner),
+        )
+    else:
+        conn.execute(
+            "UPDATE balances SET amount_i64 = amount_i64 + ? WHERE miner_id = ?",
+            (delta_i64, miner),
+        )
+
+
+def _write_welcome_bonus(
+    conn: sqlite3.Connection,
+    miner: str,
+    bonus_i64: int,
+    ledger_cols: set,
+    balance_cols: set,
+):
+    reason = f"welcome_bonus:{WELCOME_BONUS_RTC}_rtc"
+    now = int(time.time())
+
+    if (
+        {"miner_id", "amount_i64"}.issubset(balance_cols)
+        and {"miner_id", "delta_i64", "reason"}.issubset(ledger_cols)
+    ):
+        _insert_account_balance_if_missing(conn, miner, balance_cols)
+        _update_account_balance(conn, WELCOME_BONUS_SOURCE, -bonus_i64, balance_cols)
+        _update_account_balance(conn, miner, bonus_i64, balance_cols)
+        epoch = _welcome_bonus_epoch()
+        conn.execute(
+            "INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason) VALUES (?, ?, ?, ?, ?)",
+            (now, epoch, WELCOME_BONUS_SOURCE, -bonus_i64, reason),
+        )
+        conn.execute(
+            "INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason) VALUES (?, ?, ?, ?, ?)",
+            (now, epoch, miner, bonus_i64, reason),
+        )
+        return
+
+    if {"from_miner", "to_miner", "memo"}.issubset(ledger_cols):
+        conn.execute(
+            "UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ?",
+            (bonus_i64, WELCOME_BONUS_SOURCE),
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)",
+            (miner,),
+        )
+        conn.execute(
+            "UPDATE balances SET amount_i64 = amount_i64 + ? WHERE miner_id = ?",
+            (bonus_i64, miner),
+        )
+        conn.execute(
+            "INSERT INTO ledger (from_miner, to_miner, amount_i64, memo, ts) VALUES (?, ?, ?, ?, ?)",
+            (WELCOME_BONUS_SOURCE, miner, bonus_i64, reason, now),
+        )
+        return
+
+    raise RuntimeError("unsupported welcome bonus balance/ledger schema")
+
+
 def _check_welcome_bonus(miner: str):
     """Award welcome bonus on first-ever attestation. Funded from founder_community."""
     try:
@@ -2085,29 +2227,14 @@ def _check_welcome_bonus(miner: str):
             ).fetchone()[0]
             
             if history_count <= 1:  # First attestation (just recorded)
+                ledger_cols = _table_columns(conn, "ledger")
+                balance_cols = _table_columns(conn, "balances")
                 # Check if welcome bonus already paid
-                already_paid = conn.execute(
-                    "SELECT COUNT(*) FROM ledger WHERE to_miner = ? AND memo LIKE '%welcome%'", (miner,)
-                ).fetchone()[0]
+                already_paid = _welcome_bonus_already_paid(conn, miner, ledger_cols)
                 
-                if already_paid == 0:
+                if not already_paid:
                     bonus_i64 = int(WELCOME_BONUS_RTC * 1_000_000)
-                    # Transfer from founder_community
-                    conn.execute(
-                        "UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ?",
-                        (bonus_i64, WELCOME_BONUS_SOURCE)
-                    )
-                    conn.execute(
-                        "INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)", (miner,)
-                    )
-                    conn.execute(
-                        "UPDATE balances SET amount_i64 = amount_i64 + ? WHERE miner_id = ?",
-                        (bonus_i64, miner)
-                    )
-                    conn.execute(
-                        "INSERT INTO ledger (from_miner, to_miner, amount_i64, memo, ts) VALUES (?, ?, ?, ?, ?)",
-                        (WELCOME_BONUS_SOURCE, miner, bonus_i64, f"welcome_bonus:{WELCOME_BONUS_RTC}_rtc", int(time.time()))
-                    )
+                    _write_welcome_bonus(conn, miner, bonus_i64, ledger_cols, balance_cols)
                     conn.commit()
                     print(f"[WELCOME] {miner} received {WELCOME_BONUS_RTC} RTC welcome bonus!")
     except Exception as e:
@@ -3708,7 +3835,9 @@ def get_epoch():
 @app.route('/epoch/enroll', methods=['POST'])
 def enroll_epoch():
     """Enroll in current epoch"""
-    data = request.get_json()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid JSON body"}), 400
 
     # Extract client IP (handle nginx proxy)
     client_ip = get_client_ip()
@@ -3726,8 +3855,8 @@ def enroll_epoch():
     # verifies the enrollment signature against it.  This proves the enrollment
     # caller is the same entity that performed the attestation, closing the
     # unauthorized-enrollment / miner_id-hijack vector.
-    # Backward-compatible: unsigned requests are still accepted (warn-only) to
-    # allow legacy miners to continue working while operators upgrade.
+    # Unsigned enrollment is rejected by default. Operators running private
+    # legacy migrations can temporarily set ENROLL_ALLOW_UNSIGNED_LEGACY=1.
     sig_hex = (data.get('signature') or '').strip().lower()
     pubkey_hex = (data.get('public_key') or '').strip().lower()
     epoch = slot_to_epoch(current_slot())
@@ -3770,22 +3899,38 @@ def enroll_epoch():
                         "code": "INVALID_ENROLLMENT_SIGNATURE",
                     }), 400
             else:
-                # No stored signing pubkey — accept with warning (legacy attestation)
+                if not ENROLL_ALLOW_UNSIGNED_LEGACY:
+                    logging.warning(
+                        "[ENROLL/SIG] REJECTED: no stored attestation signing "
+                        "pubkey for %s...",
+                        miner_pk[:20],
+                    )
+                    return jsonify({
+                        "ok": False,
+                        "error": "enrollment_signing_key_required",
+                        "message": (
+                            "No attestation signing key is stored for this miner. "
+                            "Re-attest with signature/public_key before enrolling."
+                        ),
+                        "code": "ENROLLMENT_SIGNING_KEY_REQUIRED",
+                    }), 412
+
+                # No stored signing pubkey — legacy private-node escape hatch.
                 logging.warning(
                     "[ENROLL/SIG] No stored signing pubkey for %s... "
-                    "(legacy attestation — accepting unsigned path)",
+                    "(legacy attestation — accepting unverified path)",
                     miner_pk[:20],
                 )
         else:
             # pynacl not available but signature provided — fail-closed.
             print("[ENROLL/SIG] REJECTED: pynacl not installed — cannot verify "
-                  "enrollment signature (install pynacl or submit unsigned)")
+                  "enrollment signature")
             return jsonify({
                 "ok": False,
                 "error": "ed25519_unavailable",
                 "message": (
                     "Ed25519 signature was provided but pynacl is not installed "
-                    "on the node. Install pynacl or submit an unsigned enrollment."
+                    "on the node. Install pynacl to verify signed enrollment."
                 ),
                 "code": "ED25519_UNAVAILABLE",
             }), 503
@@ -3798,9 +3943,26 @@ def enroll_epoch():
             "code": "INCOMPLETE_SIGNATURE",
         }), 400
     else:
-        # No signature — backward compatibility path (warn-only)
+        if not ENROLL_ALLOW_UNSIGNED_LEGACY:
+            logging.warning(
+                "[ENROLL/SIG] REJECTED unsigned enrollment for %s...",
+                miner_pk[:20],
+            )
+            return jsonify({
+                "ok": False,
+                "error": "signed_enrollment_required",
+                "message": (
+                    "Epoch enrollment requires signature/public_key ownership "
+                    "proof. Re-attest with a signing key and submit a signed "
+                    "enrollment request."
+                ),
+                "code": "SIGNED_ENROLLMENT_REQUIRED",
+            }), 401
+
+        # No signature — legacy private-node escape hatch.
         logging.warning(
-            "[ENROLL/SIG] UNSIGNED enrollment accepted for %s... (upgrade miner to signed flow)",
+            "[ENROLL/SIG] UNSIGNED enrollment accepted for %s... "
+            "(ENROLL_ALLOW_UNSIGNED_LEGACY=1; upgrade miner to signed flow)",
             miner_pk[:20],
         )
 
@@ -4068,6 +4230,23 @@ def ingest_signed_header():
     except Exception:
         slot = int(time.time())
 
+    # SECURITY: Reject headers with slots too far in the future.
+    # Without this check, a malicious miner could submit a header with an
+    # extremely high slot value (e.g., 999999999), causing the node to
+    # attempt epoch settlement for a non-existent future epoch. This could
+    # corrupt chain state, trigger reward distribution with no enrolled miners,
+    # or cause database inconsistencies.
+    # Allow ±10 slots (~100 minutes) tolerance for network/clock drift.
+    expected_slot = current_slot()
+    if slot > expected_slot + 10:
+        return jsonify({
+            "ok": False,
+            "error": "slot_too_far_in_future",
+            "message": "Header slot is too far ahead of current chain slot",
+            "submitted_slot": slot,
+            "current_slot": expected_slot,
+        }), 400
+
     # Update tip + metrics
     with sqlite3.connect(DB_PATH) as db:
         db.execute("INSERT OR REPLACE INTO headers(slot, miner_id, message_hex, signature_hex, pubkey_hex, ts) VALUES(?,?,?,?,?,strftime('%s','now'))",
@@ -4178,7 +4357,7 @@ def _wallet_review_ui_authorized(req):
     if is_admin(req):
         return True
     need = os.environ.get("RC_ADMIN_KEY", "")
-    got = str(req.values.get("admin_key") or "").strip()
+    got = str(req.form.get("admin_key") or "").strip()
     return bool(need and got and hmac.compare_digest(need, got))
 
 
@@ -4707,7 +4886,11 @@ def register_withdrawal_key():
     # SECURITY: prevent unauthenticated key overwrite (withdrawal takeover).
     # First-time registration is allowed. Rotation requires admin key.
     admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    is_admin = hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", ""))
+    admin_key_env = os.environ.get("RC_ADMIN_KEY", "")
+    # Fail-closed: if env is unset/empty, never treat the request as admin
+    # (prevents hmac.compare_digest("", "") returning True from authenticating
+    # an unauthenticated key-rotation request).
+    is_admin = bool(admin_key_env) and bool(admin_key) and hmac.compare_digest(admin_key, admin_key_env)
 
     now = int(time.time())
     with sqlite3.connect(DB_PATH) as c:
@@ -4740,18 +4923,28 @@ def request_withdrawal():
     """Request RTC withdrawal"""
     withdrawal_requests.inc()
 
-    data = request.get_json()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid JSON body"}), 400
 
     # Extract client IP (handle nginx proxy)
     client_ip = get_client_ip()
     miner_pk = data.get('miner_pk')
-    amount = float(data.get('amount', 0))
     destination = data.get('destination')
     signature = data.get('signature')
     nonce = data.get('nonce')
 
     if not all([miner_pk, destination, signature, nonce]):
         return jsonify({"error": "Missing required fields"}), 400
+
+    # SECURITY: Validate amount is a number (CVE-style float injection)
+    raw_amount = data.get('amount', 0)
+    try:
+        amount = float(raw_amount)
+    except (TypeError, ValueError):
+        return jsonify({"error": "amount must be a number", "received": str(type(raw_amount).__name__)}), 400
+    if amount < 0:
+        return jsonify({"error": "amount must be positive"}), 400
 
     if amount < MIN_WITHDRAWAL:
         return jsonify({"error": f"Minimum withdrawal is {MIN_WITHDRAWAL} RTC"}), 400
@@ -6287,7 +6480,9 @@ def add_oui_deny():
     """Add OUI to denylist"""
     if not is_admin(request):
         return jsonify({"ok": False, "error": "forbidden"}), 403
-    data = request.get_json()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid JSON body"}), 400
 
     # Extract client IP (handle nginx proxy)
     client_ip = get_client_ip()
@@ -6312,7 +6507,9 @@ def remove_oui_deny():
     """Remove OUI from denylist"""
     if not is_admin(request):
         return jsonify({"ok": False, "error": "forbidden"}), 403
-    data = request.get_json()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid JSON body"}), 400
 
     # Extract client IP (handle nginx proxy)
     client_ip = get_client_ip()
@@ -6374,9 +6571,13 @@ def attest_debug():
     """Debug endpoint: show miner's enrollment eligibility"""
     # SECURITY FIX 2026-02-15: Require admin key - exposes internal config + MAC hashes
     admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    if not hmac.compare_digest(admin_key, ADMIN_KEY or ""):
+    if not ADMIN_KEY:
+        return jsonify({"error": "Admin key not configured"}), 503
+    if not hmac.compare_digest(admin_key, ADMIN_KEY):
         return jsonify({"error": "Unauthorized - admin key required"}), 401
-    data = request.get_json()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid JSON body"}), 400
 
     # Extract client IP (handle nginx proxy)
     client_ip = get_client_ip()
@@ -6393,6 +6594,7 @@ def attest_debug():
             "ENROLL_REQUIRE_TICKET": ENROLL_REQUIRE_TICKET,
             "ENROLL_TICKET_TTL_S": ENROLL_TICKET_TTL_S,
             "ENROLL_REQUIRE_MAC": ENROLL_REQUIRE_MAC,
+            "ENROLL_ALLOW_UNSIGNED_LEGACY": ENROLL_ALLOW_UNSIGNED_LEGACY,
             "MAC_MAX_UNIQUE_PER_DAY": MAC_MAX_UNIQUE_PER_DAY
         }
     }
@@ -6586,8 +6788,11 @@ def metrics():
 def api_rewards_settle():
     """Settle rewards for a specific epoch (admin/cron callable)"""
     # SECURITY: settling rewards mutates chain state; require admin key.
+    admin_key_env = os.environ.get("RC_ADMIN_KEY", "")
+    if not admin_key_env:
+        return jsonify({"ok": False, "reason": "admin_key_unset", "code": "ADMIN_KEY_UNSET"}), 503
     admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    if not hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", "")):
+    if not hmac.compare_digest(admin_key, admin_key_env):
         return jsonify({"ok": False, "reason": "admin_required"}), 401
 
     body = request.get_json(force=True, silent=True) or {}
@@ -6859,9 +7064,20 @@ def send_sophiacheck_alert(alert_type, message, data):
 @app.route('/wallet/transfer', methods=['POST'])
 def wallet_transfer_v2():
     """Transfer RTC between miner wallets - NOW WITH 2-PHASE COMMIT"""
-    # SECURITY: Require admin key for internal transfers
+    # SECURITY: Require admin key for internal transfers.
+    # FAIL-CLOSED (cherry-pick from #5174): if RC_ADMIN_KEY is unset/empty,
+    # `hmac.compare_digest("", "")` returns True and the endpoint would be
+    # unauthenticated. Reject with 503 before reaching the comparison so
+    # the bug cannot resurface if module-level startup checks are bypassed.
+    admin_key_env = os.environ.get("RC_ADMIN_KEY", "")
+    if not admin_key_env:
+        return jsonify({
+            "error": "RC_ADMIN_KEY not configured on server",
+            "code": "ADMIN_KEY_UNSET",
+            "hint": "Set the RC_ADMIN_KEY environment variable or use /wallet/transfer/signed"
+        }), 503
     admin_key = request.headers.get("X-Admin-Key", "")
-    if not hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", "")):
+    if not hmac.compare_digest(admin_key, admin_key_env):
         return jsonify({
             "error": "Unauthorized - admin key required",
             "hint": "Use /wallet/transfer/signed for user transfers"
@@ -6890,6 +7106,10 @@ def wallet_transfer_v2():
     conn = sqlite3.connect(DB_PATH)
     try:
         c = conn.cursor()
+        
+        # SECURITY: Acquire write lock BEFORE reading balance to prevent
+        # concurrent transfers from both passing the balance check.
+        c.execute("BEGIN IMMEDIATE")
         
         # Check sender balance
         row = c.execute("SELECT amount_i64 FROM balances WHERE miner_id = ?", (from_miner,)).fetchone()
@@ -6959,8 +7179,11 @@ def wallet_transfer_v2():
 @app.route('/pending/list', methods=['GET'])
 def list_pending():
     """List all pending transfers"""
+    admin_key_env = os.environ.get("RC_ADMIN_KEY", "")
+    if not admin_key_env:
+        return jsonify({"error": "RC_ADMIN_KEY not configured on server", "code": "ADMIN_KEY_UNSET"}), 503
     admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    if not hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", "")):
+    if not hmac.compare_digest(admin_key, admin_key_env):
         return jsonify({"error": "Unauthorized"}), 401
 
     status_filter = request.args.get('status', 'pending')
@@ -7002,11 +7225,16 @@ def list_pending():
 @app.route('/pending/void', methods=['POST'])
 def void_pending():
     """Admin: Void a pending transfer before confirmation"""
+    admin_key_env = os.environ.get("RC_ADMIN_KEY", "")
+    if not admin_key_env:
+        return jsonify({"error": "RC_ADMIN_KEY not configured on server", "code": "ADMIN_KEY_UNSET"}), 503
     admin_key = request.headers.get("X-Admin-Key", "")
-    if not hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", "")):
+    if not hmac.compare_digest(admin_key, admin_key_env):
         return jsonify({"error": "Unauthorized"}), 401
     
-    data = request.get_json()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid JSON body"}), 400
     pending_id = data.get('pending_id')
     tx_hash = data.get('tx_hash')
     reason = data.get('reason', 'admin_void')
@@ -7076,8 +7304,11 @@ def void_pending():
 @app.route('/pending/confirm', methods=['POST'])
 def confirm_pending():
     """Worker: Confirm pending transfers that have passed the delay period"""
+    admin_key_env = os.environ.get("RC_ADMIN_KEY", "")
+    if not admin_key_env:
+        return jsonify({"error": "RC_ADMIN_KEY not configured on server", "code": "ADMIN_KEY_UNSET"}), 503
     admin_key = request.headers.get("X-Admin-Key", "")
-    if not hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", "")):
+    if not hmac.compare_digest(admin_key, admin_key_env):
         return jsonify({"error": "Unauthorized"}), 401
     
     now = int(time.time())
@@ -7166,8 +7397,11 @@ def confirm_pending():
 @app.route('/pending/integrity', methods=['GET'])
 def check_integrity():
     """Check balance integrity: sum of ledger should match balances"""
+    admin_key_env = os.environ.get("RC_ADMIN_KEY", "")
+    if not admin_key_env:
+        return jsonify({"error": "RC_ADMIN_KEY not configured on server", "code": "ADMIN_KEY_UNSET"}), 503
     admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    if not hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", "")):
+    if not hmac.compare_digest(admin_key, admin_key_env):
         return jsonify({"error": "Unauthorized"}), 401
 
     with sqlite3.connect(DB_PATH) as db:
@@ -7221,11 +7455,16 @@ def check_integrity():
 @app.route('/wallet/transfer_OLD_DISABLED', methods=['POST'])
 def wallet_transfer_OLD():
     # SECURITY FIX: Require admin key for internal transfers
+    admin_key_env = os.environ.get("RC_ADMIN_KEY", "")
+    if not admin_key_env:
+        return jsonify({"error": "RC_ADMIN_KEY not configured on server", "code": "ADMIN_KEY_UNSET"}), 503
     admin_key = request.headers.get("X-Admin-Key", "")
-    if not hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", "")):
+    if not hmac.compare_digest(admin_key, admin_key_env):
         return jsonify({"error": "Unauthorized - admin key required", "hint": "Use /wallet/transfer/signed for user transfers"}), 401
     """Transfer RTC between miner wallets"""
-    data = request.get_json()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid JSON body"}), 400
 
     # Extract client IP (handle nginx proxy)
     client_ip = get_client_ip()
@@ -7277,8 +7516,11 @@ def wallet_transfer_OLD():
 def api_wallet_ledger():
     """Get transaction ledger (optionally filtered by miner)"""
     # SECURITY: ledger entries include transfer reasons + wallet identifiers; require admin key.
+    admin_key_env = os.environ.get("RC_ADMIN_KEY", "")
+    if not admin_key_env:
+        return jsonify({"ok": False, "reason": "admin_key_unset", "code": "ADMIN_KEY_UNSET"}), 503
     admin_key = request.headers.get("X-Admin-Key", "")
-    if not hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", "")):
+    if not hmac.compare_digest(admin_key, admin_key_env):
         return jsonify({"ok": False, "reason": "admin_required"}), 401
 
     miner_id = request.args.get("miner_id", "").strip()
@@ -7323,8 +7565,11 @@ def api_wallet_ledger():
 def api_wallet_balances_all():
     """Get all miner balances"""
     # SECURITY: exporting all balances is sensitive; require admin key.
+    admin_key_env = os.environ.get("RC_ADMIN_KEY", "")
+    if not admin_key_env:
+        return jsonify({"ok": False, "reason": "admin_key_unset", "code": "ADMIN_KEY_UNSET"}), 503
     admin_key = request.headers.get("X-Admin-Key", "")
-    if not hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", "")):
+    if not hmac.compare_digest(admin_key, admin_key_env):
         return jsonify({"ok": False, "reason": "admin_required"}), 401
 
     with sqlite3.connect(DB_PATH) as db:

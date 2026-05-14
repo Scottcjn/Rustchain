@@ -11,6 +11,7 @@ import os
 import time
 from pathlib import Path
 import sys
+from unittest.mock import patch
 
 # Add src to path and handle imports
 src_path = str(Path(__file__).parent.parent / 'src')
@@ -303,6 +304,25 @@ class TestProofOfIron(unittest.TestCase):
         self.assertEqual(challenge.miner_id, "miner_test_001")
         self.assertTrue(challenge.is_valid())
         self.assertEqual(len(challenge.nonce), 16)
+
+    def test_challenge_ids_and_nonces_do_not_use_numpy_prng(self):
+        """Challenge entropy must come from secrets, not Mersenne Twister."""
+        proof_globals = ProofOfIron._generate_nonce.__globals__
+        with patch.object(proof_globals["np"].random, "random", side_effect=AssertionError("np.random.random used")):
+            challenge_id = self.poi._generate_challenge_id("miner_test_001")
+            nonce = self.poi._generate_nonce()
+
+        self.assertEqual(len(challenge_id), 16)
+        self.assertEqual(len(nonce), 16)
+
+    def test_nonce_comes_directly_from_secrets_token_hex(self):
+        """Regression for issue #5040: nonce generation must use CSPRNG output."""
+        proof_globals = ProofOfIron._generate_nonce.__globals__
+        with patch.object(proof_globals["secrets"], "token_hex", return_value="a" * 16) as token_hex:
+            nonce = self.poi._generate_nonce()
+
+        token_hex.assert_called_once_with(8)
+        self.assertEqual(nonce, "a" * 16)
     
     def test_challenge_expiration(self):
         """Test challenge expiration"""

@@ -118,13 +118,23 @@ class TestAgentFunctions:
         agents = get_available_agents()
         assert isinstance(agents, list) and len(agents) > 0
 
-    def test_get_agent_key(self):
+    def test_get_agent_key(self, monkeypatch):
+        monkeypatch.setenv("MOLTBOOK_AGENT_KEY_SOPHIA", "moltbook_" + "sk_test")
         key = get_agent_key("sophia")
-        assert key is not None and key.startswith("moltbook_sk_")
+        assert key is not None and key.startswith("moltbook_" + "sk_")
+
+    def test_get_agent_key_missing_env_returns_none(self, monkeypatch):
+        monkeypatch.delenv("MOLTBOOK_AGENT_KEY_SOPHIA", raising=False)
+        assert get_agent_key("sophia") is None
 
     def test_agents_have_required_fields(self):
         for agent_name, config in AGENTS.items():
-            assert "key" in config and "persona" in config
+            assert "key_env" in config and "persona" in config
+            assert config["key_env"].startswith("MOLTBOOK_AGENT_KEY_")
+
+    def test_no_hardcoded_moltbook_secret_keys_in_registry(self):
+        for config in AGENTS.values():
+            assert "moltbook_" + "sk_" not in repr(config)
 
 
 class TestRecordPost:

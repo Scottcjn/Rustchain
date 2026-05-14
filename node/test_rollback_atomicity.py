@@ -14,6 +14,7 @@ import shutil
 import sqlite3
 import sys
 import tempfile
+import threading
 import unittest
 
 # Add parent directory to path for imports
@@ -25,7 +26,7 @@ from utxo_genesis_migration import (
     check_existing_genesis,
     GENESIS_HEIGHT,
 )
-from utxo_db import UtxoDB, UNIT
+from utxo_db import UtxoDB, UNIT, address_to_proposition
 
 
 class TestRollbackAtomicity(unittest.TestCase):
@@ -68,6 +69,61 @@ class TestRollbackAtomicity(unittest.TestCase):
                 os.unlink(path)
         if os.path.exists(self.tmpdir):
             shutil.rmtree(self.tmpdir)
+
+    def _insert_non_genesis_height_zero_box(self):
+        """Insert a confirmed height-0 transfer box that is not genesis."""
+        UtxoDB(self.db_path).init_tables()
+        tx_id = "1" * 64
+        box_id = "2" * 64
+        owner = "sentinel_wallet"
+
+        conn = UtxoDB(self.db_path)._conn()
+        try:
+            conn.execute(
+                """INSERT INTO utxo_transactions
+                   (tx_id, tx_type, inputs_json, outputs_json,
+                    data_inputs_json, fee_nrtc, timestamp,
+                    block_height, status)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                (
+                    tx_id,
+                    "transfer",
+                    "[]",
+                    '[{"box_id":"%s","value_nrtc":1000,"owner":"%s"}]' % (
+                        box_id,
+                        owner,
+                    ),
+                    "[]",
+                    0,
+                    1,
+                    GENESIS_HEIGHT,
+                    "confirmed",
+                ),
+            )
+            conn.execute(
+                """INSERT INTO utxo_boxes
+                   (box_id, value_nrtc, proposition, owner_address,
+                    creation_height, transaction_id, output_index,
+                    tokens_json, registers_json, created_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    box_id,
+                    1000,
+                    address_to_proposition(owner),
+                    owner,
+                    GENESIS_HEIGHT,
+                    tx_id,
+                    0,
+                    "[]",
+                    "{}",
+                    1,
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        return box_id
 
     def test_01_migrate_creates_genesis(self):
         """Verify migration creates genesis boxes."""
@@ -184,6 +240,102 @@ class TestRollbackAtomicity(unittest.TestCase):
         try:
             mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
             self.assertIn(mode, ["wal", "WAL"], "WAL mode not active after rollback")
+        finally:
+            conn.close()
+
+    def test_07_height_zero_transfer_is_not_genesis(self):
+        """Verify height-0 non-genesis boxes do not block or get rolled back."""
+        box_id = self._insert_non_genesis_height_zero_box()
+
+        self.assertFalse(check_existing_genesis(UtxoDB(self.db_path)))
+
+        deleted = rollback_genesis(self.db_path)
+        self.assertEqual(deleted, 0)
+
+        conn = UtxoDB(self.db_path)._conn()
+        try:
+            box_count = conn.execute(
+                "SELECT COUNT(*) FROM utxo_boxes WHERE box_id = ?",
+                (box_id,),
+            ).fetchone()[0]
+            transfer_count = conn.execute(
+                "SELECT COUNT(*) FROM utxo_transactions WHERE tx_type = 'transfer'",
+            ).fetchone()[0]
+
+            self.assertEqual(box_count, 1)
+            self.assertEqual(transfer_count, 1)
+        finally:
+            conn.close()
+
+    def test_08_concurrent_migrations_serialize_cleanly(self):
+        """Verify concurrent migration attempts cannot both create genesis."""
+        barrier = threading.Barrier(2)
+        lock = threading.Lock()
+        results = []
+        errors = []
+
+        def run_migration():
+            try:
+                barrier.wait()
+                result = migrate(self.db_path, dry_run=False)
+                with lock:
+                    results.append(result)
+            except Exception as exc:
+                with lock:
+                    errors.append(exc)
+
+        threads = [
+            threading.Thread(target=run_migration),
+            threading.Thread(target=run_migration),
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        self.assertEqual(errors, [])
+        successes = [r for r in results if 'error' not in r]
+        duplicates = [
+            r for r in results
+            if r.get('error') == 'genesis_already_exists'
+        ]
+        self.assertEqual(len(successes), 1)
+        self.assertEqual(len(duplicates), 1)
+
+        conn = UtxoDB(self.db_path)._conn()
+        try:
+            tx_count = conn.execute(
+                "SELECT COUNT(*) FROM utxo_transactions WHERE tx_type = 'genesis'",
+            ).fetchone()[0]
+            box_count = conn.execute(
+                "SELECT COUNT(*) FROM utxo_boxes WHERE creation_height = ?",
+                (GENESIS_HEIGHT,),
+            ).fetchone()[0]
+
+            self.assertEqual(tx_count, 3)
+            self.assertEqual(box_count, 3)
+        finally:
+            conn.close()
+
+    def test_09_migrate_rejects_existing_non_genesis_utxo_state(self):
+        """Verify migration fails before writing when UTXO state exists."""
+        box_id = self._insert_non_genesis_height_zero_box()
+
+        result = migrate(self.db_path, dry_run=False)
+        self.assertEqual(result['error'], 'utxo_state_already_exists')
+
+        conn = UtxoDB(self.db_path)._conn()
+        try:
+            box_count = conn.execute(
+                "SELECT COUNT(*) FROM utxo_boxes WHERE box_id = ?",
+                (box_id,),
+            ).fetchone()[0]
+            genesis_count = conn.execute(
+                "SELECT COUNT(*) FROM utxo_transactions WHERE tx_type = 'genesis'",
+            ).fetchone()[0]
+
+            self.assertEqual(box_count, 1)
+            self.assertEqual(genesis_count, 0)
         finally:
             conn.close()
 

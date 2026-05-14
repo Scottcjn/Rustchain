@@ -27,6 +27,9 @@ import uuid
 import json
 import os
 import logging
+import hashlib
+import hmac
+import secrets
 from functools import wraps
 
 logger = logging.getLogger("gpu_render_protocol")
@@ -46,6 +49,7 @@ CREATE TABLE IF NOT EXISTS render_escrow (
     status TEXT DEFAULT 'locked' CHECK(status IN ('locked', 'released', 'refunded')),
     created_at INTEGER NOT NULL,
     released_at INTEGER,
+    escrow_secret_hash TEXT,
     metadata TEXT  -- JSON blob for job-specific params
 );
 
@@ -114,9 +118,34 @@ class GPURenderProtocol:
     def _init_db(self):
         conn = self._get_conn()
         conn.executescript(SCHEMA_SQL)
+        self._ensure_escrow_secret_column(conn)
         conn.commit()
         conn.close()
         logger.info("GPU Render Protocol DB initialized at %s", self.db_path)
+
+    def _ensure_escrow_secret_column(self, conn):
+        """Add escrow secret storage for databases created before this guard."""
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(render_escrow)").fetchall()}
+        if "escrow_secret_hash" not in cols:
+            conn.execute("ALTER TABLE render_escrow ADD COLUMN escrow_secret_hash TEXT")
+
+    @staticmethod
+    def _hash_escrow_secret(secret: str) -> str:
+        return hashlib.sha256((secret or "").encode("utf-8")).hexdigest()
+
+    def _authorize_escrow_action(self, row, actor_wallet: str, escrow_secret: str, required_wallet: str):
+        if not actor_wallet or not escrow_secret:
+            return {"error": "actor_wallet and escrow_secret are required"}
+        if actor_wallet not in {row["from_wallet"], row["to_wallet"]}:
+            return {"error": "actor_wallet must be escrow participant"}
+        if actor_wallet != required_wallet:
+            return {"error": "actor_wallet is not allowed for this escrow action"}
+        expected_hash = row["escrow_secret_hash"]
+        if not expected_hash:
+            return {"error": "escrow_secret missing for existing escrow"}
+        if not hmac.compare_digest(self._hash_escrow_secret(escrow_secret), expected_hash):
+            return {"error": "invalid escrow_secret"}
+        return None
 
     # -------------------------------------------------------------------
     # GPU Attestation
@@ -234,15 +263,17 @@ class GPURenderProtocol:
             return {"error": "from_wallet and to_wallet must differ"}
 
         job_id = f"{job_type}-{uuid.uuid4().hex[:12]}"
+        escrow_secret = secrets.token_hex(16)
         conn = self._get_conn()
         try:
             conn.execute(
                 """INSERT INTO render_escrow
                    (job_id, job_type, from_wallet, to_wallet, amount_rtc,
-                    status, created_at, metadata)
-                   VALUES (?,?,?,?,?,'locked',?,?)""",
+                    status, created_at, escrow_secret_hash, metadata)
+                   VALUES (?,?,?,?,?,'locked',?,?,?)""",
                 (job_id, job_type, from_wallet, to_wallet, amount_rtc,
-                 int(time.time()), json.dumps(metadata or {})),
+                 int(time.time()), self._hash_escrow_secret(escrow_secret),
+                 json.dumps(metadata or {})),
             )
             conn.commit()
             return {
@@ -252,11 +283,12 @@ class GPURenderProtocol:
                 "amount_rtc": amount_rtc,
                 "from_wallet": from_wallet,
                 "to_wallet": to_wallet,
+                "escrow_secret": escrow_secret,
             }
         finally:
             conn.close()
 
-    def release_escrow(self, job_id: str) -> dict:
+    def release_escrow(self, job_id: str, actor_wallet: str = "", escrow_secret: str = "") -> dict:
         """Release escrowed RTC to the GPU provider on job completion."""
         conn = self._get_conn()
         try:
@@ -267,6 +299,14 @@ class GPURenderProtocol:
                 return {"error": "Job not found"}
             if row["status"] != "locked":
                 return {"error": f"Job already {row['status']}"}
+            auth_error = self._authorize_escrow_action(
+                row,
+                actor_wallet=actor_wallet,
+                escrow_secret=escrow_secret,
+                required_wallet=row["from_wallet"],
+            )
+            if auth_error:
+                return auth_error
 
             now = int(time.time())
             conn.execute(
@@ -284,7 +324,7 @@ class GPURenderProtocol:
         finally:
             conn.close()
 
-    def refund_escrow(self, job_id: str) -> dict:
+    def refund_escrow(self, job_id: str, actor_wallet: str = "", escrow_secret: str = "") -> dict:
         """Refund escrowed RTC to the requester on job failure."""
         conn = self._get_conn()
         try:
@@ -295,6 +335,14 @@ class GPURenderProtocol:
                 return {"error": "Job not found"}
             if row["status"] != "locked":
                 return {"error": f"Job already {row['status']}"}
+            auth_error = self._authorize_escrow_action(
+                row,
+                actor_wallet=actor_wallet,
+                escrow_secret=escrow_secret,
+                required_wallet=row["to_wallet"],
+            )
+            if auth_error:
+                return auth_error
 
             now = int(time.time())
             conn.execute(
@@ -456,7 +504,11 @@ def register_routes(app):
     def release_escrow():
         from flask import request, jsonify
         data = request.get_json(force=True)
-        result = protocol.release_escrow(data.get("job_id", ""))
+        result = protocol.release_escrow(
+            data.get("job_id", ""),
+            actor_wallet=data.get("actor_wallet", ""),
+            escrow_secret=data.get("escrow_secret", ""),
+        )
         status_code = 200 if "error" not in result else 400
         return jsonify(result), status_code
 
@@ -464,7 +516,11 @@ def register_routes(app):
     def refund_escrow():
         from flask import request, jsonify
         data = request.get_json(force=True)
-        result = protocol.refund_escrow(data.get("job_id", ""))
+        result = protocol.refund_escrow(
+            data.get("job_id", ""),
+            actor_wallet=data.get("actor_wallet", ""),
+            escrow_secret=data.get("escrow_secret", ""),
+        )
         status_code = 200 if "error" not in result else 400
         return jsonify(result), status_code
 

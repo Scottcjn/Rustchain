@@ -142,6 +142,16 @@ def validate_bridge_request(data: Optional[Dict]) -> ValidationResult:
         return ValidationResult(ok=False, error=f"Invalid dest_chain: {dest_chain}")
     if source_chain == dest_chain:
         return ValidationResult(ok=False, error="Source and destination chains must be different")
+    if direction == "deposit":
+        if source_chain != "rustchain":
+            return ValidationResult(ok=False, error="Deposit source_chain must be rustchain")
+        if dest_chain == "rustchain":
+            return ValidationResult(ok=False, error="Deposit dest_chain must be external")
+    if direction == "withdraw":
+        if source_chain == "rustchain":
+            return ValidationResult(ok=False, error="Withdraw source_chain must be external")
+        if dest_chain != "rustchain":
+            return ValidationResult(ok=False, error="Withdraw dest_chain must be rustchain")
     
     # Validate addresses
     source_address = data.get("source_address", "")

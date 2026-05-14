@@ -5,6 +5,7 @@ Production Anti-Spoof System with Fair Distribution
 Issue #2295: Added WebSocket real-time feed for Block Explorer
 """
 import os, time, json, secrets, hashlib, sqlite3
+from decimal import Decimal, ROUND_HALF_UP
 from flask import Flask, request, jsonify
 from datetime import datetime
 
@@ -31,6 +32,48 @@ LAST_EPOCH = None
 
 # Database setup
 DB_PATH = "./rustchain_v2.db"
+RTC_MICRO_UNITS = 1_000_000
+
+def _rtc_to_micro(amount_rtc):
+    """Convert public RTC values to canonical integer micro-RTC units."""
+    return int(
+        (Decimal(str(amount_rtc)) * RTC_MICRO_UNITS).to_integral_value(
+            rounding=ROUND_HALF_UP
+        )
+    )
+
+def _micro_to_rtc(amount_micro):
+    """Convert canonical micro-RTC values back to public RTC units."""
+    return int(amount_micro) / RTC_MICRO_UNITS
+
+def _ensure_balance_micro_schema(conn):
+    """Keep balances canonical in integer micro-RTC units."""
+    columns = conn.execute("PRAGMA table_info(balances)").fetchall()
+    if not columns:
+        conn.execute(
+            "CREATE TABLE balances (miner_pk TEXT PRIMARY KEY, balance_rtc INTEGER DEFAULT 0)"
+        )
+        return
+
+    by_name = {row[1]: row for row in columns}
+    balance_column = by_name.get("balance_rtc")
+    if balance_column and "INT" in (balance_column[2] or "").upper():
+        return
+
+    conn.execute("ALTER TABLE balances RENAME TO balances_legacy_real")
+    conn.execute(
+        "CREATE TABLE balances (miner_pk TEXT PRIMARY KEY, balance_rtc INTEGER DEFAULT 0)"
+    )
+    if "miner_pk" in by_name and balance_column:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO balances(miner_pk, balance_rtc)
+            SELECT miner_pk, CAST(ROUND(COALESCE(balance_rtc, 0) * ?) AS INTEGER)
+            FROM balances_legacy_real
+            """,
+            (RTC_MICRO_UNITS,),
+        )
+    conn.execute("DROP TABLE balances_legacy_real")
 
 def init_db():
     """Initialize database with epoch tables"""
@@ -41,8 +84,10 @@ def init_db():
 
         # New epoch tables
         c.execute("CREATE TABLE IF NOT EXISTS epoch_state (epoch INTEGER PRIMARY KEY, accepted_blocks INTEGER DEFAULT 0, finalized INTEGER DEFAULT 0)")
+        # `weight` is a non-financial pro-rata multiplier; balances are financial
+        # and stay in integer micro-RTC units.
         c.execute("CREATE TABLE IF NOT EXISTS epoch_enroll (epoch INTEGER, miner_pk TEXT, weight REAL, PRIMARY KEY (epoch, miner_pk))")
-        c.execute("CREATE TABLE IF NOT EXISTS balances (miner_pk TEXT PRIMARY KEY, balance_rtc REAL DEFAULT 0)")
+        _ensure_balance_micro_schema(c)
 
 # Hardware multipliers
 HARDWARE_WEIGHTS = {
@@ -99,8 +144,9 @@ def finalize_epoch(epoch, per_block_rtc):
             for pk, w in miners:
                 amt = total_reward * (w / sum_w)
                 c.execute("INSERT OR IGNORE INTO balances(miner_pk, balance_rtc) VALUES (?,0)", (pk,))
-                c.execute("UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk=?", (amt, pk))
-                payouts.append((pk, amt))
+                amount_micro = _rtc_to_micro(amt)
+                c.execute("UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk=?", (amount_micro, pk))
+                payouts.append((pk, _micro_to_rtc(amount_micro)))
 
         c.execute("UPDATE epoch_state SET finalized=1 WHERE epoch=?", (epoch,))
         return {"ok": True, "blocks": blocks, "total_reward": total_reward, "sum_w": sum_w, "payouts": payouts}
@@ -109,7 +155,7 @@ def get_balance(miner_pk):
     """Get miner balance"""
     with sqlite3.connect(DB_PATH) as c:
         row = c.execute("SELECT balance_rtc FROM balances WHERE miner_pk=?", (miner_pk,)).fetchone()
-        return float(row[0]) if row else 0.0
+        return _micro_to_rtc(row[0]) if row else 0.0
 
 def get_hardware_weight(device):
     """Get hardware multiplier from device info"""

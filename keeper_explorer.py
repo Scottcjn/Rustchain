@@ -12,12 +12,14 @@ Features:
 - Retro CRT UI with Scanlines
 """
 
-import os
-import sys
-import json
-import time
 import hashlib
+import json
+import os
+import re
+import secrets
 import sqlite3
+import sys
+import time
 import requests
 from flask import Flask, request, jsonify, render_template_string, send_from_directory
 from flask_cors import CORS
@@ -27,6 +29,7 @@ from datetime import datetime
 NODE_API = os.environ.get("RUSTCHAIN_NODE_API", "http://localhost:8000")
 FAUCET_DB = "faucet_service/faucet.db"
 PORT = 8095
+WALLET_ADDRESS_RE = re.compile(r"^[A-Za-z0-9._:-]{3,128}$")
 
 app = Flask(__name__)
 CORS(app)
@@ -58,6 +61,32 @@ def check_rate_limit(address, ip):
     count = c.fetchone()[0]
     conn.close()
     return count == 0
+
+
+def record_faucet_claim(address, ip, amount):
+    """Atomically rate-limit and record a faucet claim."""
+    timestamp = int(time.time())
+    one_day_ago = timestamp - 86400
+
+    conn = sqlite3.connect(FAUCET_DB, timeout=10)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        count = conn.execute(
+            "SELECT COUNT(*) FROM faucet_claims WHERE (address = ? OR ip_address = ?) AND timestamp > ?",
+            (address, ip, one_day_ago),
+        ).fetchone()[0]
+        if count:
+            conn.rollback()
+            return False, None
+
+        conn.execute(
+            "INSERT INTO faucet_claims (address, ip_address, timestamp, amount) VALUES (?, ?, ?, ?)",
+            (address, ip, timestamp, amount),
+        )
+        conn.commit()
+        return True, timestamp
+    finally:
+        conn.close()
 
 # --- Routes ---
 
@@ -96,26 +125,21 @@ def faucet_drip():
     
     if not address:
         return jsonify({"success": False, "error": "Wallet address required"}), 400
-        
-    if not check_rate_limit(address, ip):
-        return jsonify({"success": False, "error": "Rate limit exceeded (1 drip per 24h)"}), 429
+    if not WALLET_ADDRESS_RE.fullmatch(address):
+        return jsonify({"success": False, "error": "Invalid wallet address"}), 400
         
     # In a real scenario, this would call the node's transfer API
     # For the bounty/demo, we log the success
-    timestamp = int(time.time())
     amount = 0.5 # 0.5 test RTC
-    
-    conn = sqlite3.connect(FAUCET_DB)
-    c = conn.cursor()
-    c.execute("INSERT INTO faucet_claims (address, ip_address, timestamp, amount) VALUES (?, ?, ?, ?)",
-              (address, ip, timestamp, amount))
-    conn.commit()
-    conn.close()
+    allowed, timestamp = record_faucet_claim(address, ip, amount)
+    if not allowed:
+        return jsonify({"success": False, "error": "Rate limit exceeded (1 drip per 24h)"}), 429
+    tx_hash = hashlib.sha256(f"{address}:{ip}:{timestamp}:{secrets.token_hex(16)}".encode()).hexdigest()
     
     return jsonify({
         "success": True, 
         "message": f"Drip successful! {amount} RTC sent to {address}",
-        "tx_hash": hashlib.sha256(str(time.time()).encode()).hexdigest() # Mock hash
+        "tx_hash": tx_hash
     })
 
 # --- Fossil-punk UI Template ---

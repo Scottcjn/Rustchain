@@ -7,6 +7,7 @@ verifiable hardware proofs.
 
 import hashlib
 import json
+import secrets
 import time
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, asdict
@@ -376,12 +377,12 @@ class ProofOfIron:
     
     def _generate_challenge_id(self, miner_id: str) -> str:
         """Generate unique challenge ID"""
-        data = f"{miner_id}:{time.time()}:{np.random.random()}"
+        data = f"{miner_id}:{time.time()}:{secrets.token_hex(16)}"
         return hashlib.sha256(data.encode()).hexdigest()[:16]
     
     def _generate_nonce(self) -> str:
-        """Generate random nonce"""
-        return hashlib.sha256(str(np.random.random()).encode()).hexdigest()[:16]
+        """Generate cryptographically secure challenge nonce"""
+        return secrets.token_hex(8)
     
     def _generate_device_id(self, miner_id: str, signature: str) -> str:
         """Generate unique device ID"""
@@ -524,55 +525,49 @@ class ProofOfIron:
             pass
     
     def _load_features(self, features_hash: str) -> Optional[FingerprintFeatures]:
-        """Load cached features with backward-compatible dual-read (JSON first, then pickle)."""
+        """Load cached features. JSON only — no pickle fallback.
+
+        pickle fallback removed: poisoned legacy BLOBs in feature_cache were
+        an RCE primitive (vuln-tick 2026-05-14T14:10Z). Any row that does not
+        decode as JSON is treated as a cache miss; callers must rebuild the
+        entry via re-enrollment (capture_and_enroll), which now writes JSON
+        unconditionally. Legacy pickle rows should be removed offline with a
+        one-shot migration tool, not deserialized at runtime.
+        """
         try:
             import sqlite3
-            import json
-            import pickle
             conn = sqlite3.connect(self.db_path)
             c = conn.cursor()
             c.execute('SELECT features FROM feature_cache WHERE hash = ?',
                      (features_hash,))
             row = c.fetchone()
             conn.close()
-            
-            if row:
-                raw = row[0]
-                # Try JSON first (new format)
-                try:
-                    if isinstance(raw, bytes):
-                        data = json.loads(raw.decode('utf-8'))
-                    else:
-                        data = json.loads(raw)
-                except (json.JSONDecodeError, UnicodeDecodeError):
-                    # Fallback: legacy pickle data — deserialize and migrate to JSON
-                    data = pickle.loads(raw) if isinstance(raw, bytes) else pickle.loads(raw.encode())
-                    # Re-write as JSON to gradually migrate the cache
-                    self._save_features(features_hash, FingerprintFeatures(
-                        mfcc_mean=np.array(data['mfcc_mean']),
-                        mfcc_std=np.array(data['mfcc_std']),
-                        spectral_centroid=data['spectral_centroid'],
-                        spectral_bandwidth=data['spectral_bandwidth'],
-                        spectral_rolloff=data['spectral_rolloff'],
-                        zero_crossing_rate=data['zero_crossing_rate'],
-                        chroma_mean=np.array(data['chroma_mean']),
-                        temporal_envelope=np.array(data['temporal_envelope']),
-                        peak_frequencies=data['peak_frequencies'],
-                        harmonic_structure=data['harmonic_structure'],
-                    ))
-                
-                return FingerprintFeatures(
-                    mfcc_mean=np.array(data['mfcc_mean']),
-                    mfcc_std=np.array(data['mfcc_std']),
-                    spectral_centroid=data['spectral_centroid'],
-                    spectral_bandwidth=data['spectral_bandwidth'],
-                    spectral_rolloff=data['spectral_rolloff'],
-                    zero_crossing_rate=data['zero_crossing_rate'],
-                    chroma_mean=np.array(data['chroma_mean']),
-                    temporal_envelope=np.array(data['temporal_envelope']),
-                    peak_frequencies=data['peak_frequencies'],
-                    harmonic_structure=data['harmonic_structure'],
-                )
-        except:
-            pass
-        return None
+
+            if not row:
+                return None
+
+            raw = row[0]
+            try:
+                if isinstance(raw, bytes):
+                    data = json.loads(raw.decode('utf-8'))
+                else:
+                    data = json.loads(raw)
+            except (json.JSONDecodeError, UnicodeDecodeError, TypeError, ValueError):
+                # Not JSON (likely a legacy pickle BLOB). Treat as cache miss.
+                return None
+
+            return FingerprintFeatures(
+                mfcc_mean=np.array(data['mfcc_mean']),
+                mfcc_std=np.array(data['mfcc_std']),
+                spectral_centroid=data['spectral_centroid'],
+                spectral_bandwidth=data['spectral_bandwidth'],
+                spectral_rolloff=data['spectral_rolloff'],
+                zero_crossing_rate=data['zero_crossing_rate'],
+                chroma_mean=np.array(data['chroma_mean']),
+                temporal_envelope=np.array(data['temporal_envelope']),
+                peak_frequencies=data['peak_frequencies'],
+                harmonic_structure=data['harmonic_structure'],
+            )
+        except (KeyError, TypeError):
+            # Malformed cache row — treat as cache miss.
+            return None

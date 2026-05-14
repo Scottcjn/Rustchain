@@ -82,6 +82,14 @@ def payload(nonce=1733420000000, amount_rtc=10.0):
     }
 
 
+def nonce_count(db_path):
+    conn = sqlite3.connect(db_path)
+    try:
+        return conn.execute("SELECT COUNT(*) FROM transfer_nonces").fetchone()[0]
+    finally:
+        conn.close()
+
+
 def test_utxo_transfer_rejects_duplicate_nonce():
     client, utxo_db, db_path = build_client()
     try:
@@ -99,10 +107,7 @@ def test_utxo_transfer_rejects_duplicate_nonce():
 
         assert utxo_db.get_balance("bob") == 10 * UNIT
 
-        with sqlite3.connect(db_path) as conn:
-            nonce_count = conn.execute("SELECT COUNT(*) FROM transfer_nonces").fetchone()[0]
-
-        assert nonce_count == 1
+        assert nonce_count(db_path) == 1
     finally:
         os.unlink(db_path)
 
@@ -117,18 +122,14 @@ def test_utxo_transfer_failed_attempt_does_not_burn_nonce():
         assert rejected.status_code == 400
         assert rejected.get_json()["error"] == "Insufficient UTXO balance"
 
-        with sqlite3.connect(db_path) as conn:
-            nonce_count = conn.execute("SELECT COUNT(*) FROM transfer_nonces").fetchone()[0]
-        assert nonce_count == 0
+        assert nonce_count(db_path) == 0
 
         seed_coinbase(utxo_db, "RTC_test_aabbccdd", 20 * UNIT, height=2)
         accepted = client.post("/utxo/transfer", json=req)
         assert accepted.status_code == 200
         assert accepted.get_json()["ok"] is True
 
-        with sqlite3.connect(db_path) as conn:
-            nonce_count = conn.execute("SELECT COUNT(*) FROM transfer_nonces").fetchone()[0]
-        assert nonce_count == 1
+        assert nonce_count(db_path) == 1
         assert utxo_db.get_balance("bob") == 10 * UNIT
     finally:
         os.unlink(db_path)

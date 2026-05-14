@@ -500,8 +500,8 @@ class TestAPIEndpoints(unittest.TestCase):
         self.assertTrue(data['ok'])
         self.assertEqual(data['count'], 0)
     
-    def test_create_passport(self):
-        """Test creating a passport via API."""
+    def test_create_passport_fails_closed_without_admin_key(self):
+        """Passport creation is disabled when ADMIN_KEY is not configured."""
         passport_data = {
             'name': 'API Test',
             'owner_miner_id': 'miner_api',
@@ -512,26 +512,47 @@ class TestAPIEndpoints(unittest.TestCase):
         resp = self.client.post(
             '/api/machine-passport',
             json=passport_data,
-            # No admin key needed if ADMIN_KEY env var not set
         )
         data = json.loads(resp.data)
 
-        # Should succeed (no admin key required if ADMIN_KEY not set)
+        self.assertEqual(resp.status_code, 401)
+        self.assertFalse(data['ok'])
+        self.assertEqual(data['error'], 'unauthorized')
+        self.assertEqual(data['message'], 'ADMIN_KEY not configured')
+
+    def test_create_passport_accepts_valid_admin_key(self):
+        """Configured admin key authorizes passport creation."""
+        os.environ['ADMIN_KEY'] = 'expected-admin-key'
+        passport_data = {
+            'name': 'API Test',
+            'owner_miner_id': 'miner_api',
+            'architecture': 'TestArch',
+            'machine_id': 'api_test_001',  # Required field
+        }
+
+        resp = self.client.post(
+            '/api/machine-passport',
+            headers={'X-Admin-Key': 'expected-admin-key'},
+            json=passport_data,
+        )
+        data = json.loads(resp.data)
+
         self.assertEqual(resp.status_code, 201)
         self.assertTrue(data['ok'])
         self.assertIn('machine_id', data)
 
     def test_update_passport_rejects_owner_claim_without_admin_key(self):
         """Client-supplied owner_miner_id is not proof of ownership."""
+        os.environ['ADMIN_KEY'] = 'expected-admin-key'
         self.client.post(
             '/api/machine-passport',
+            headers={'X-Admin-Key': 'expected-admin-key'},
             json={
                 'name': 'Owner Claim Test',
                 'owner_miner_id': 'miner_owner',
                 'machine_id': 'owner_claim_test',
             },
         )
-        os.environ['ADMIN_KEY'] = 'expected-admin-key'
 
         with patch('hmac.compare_digest', return_value=False) as compare_digest:
             resp = self.client.put(
@@ -547,7 +568,7 @@ class TestAPIEndpoints(unittest.TestCase):
         self.assertEqual(resp.status_code, 401)
         self.assertFalse(data['ok'])
         self.assertEqual(data['error'], 'unauthorized')
-        compare_digest.assert_called_once_with('wrong-admin-key', 'expected-admin-key')
+        compare_digest.assert_called_once_with(b'wrong-admin-key', b'expected-admin-key')
 
         get_resp = self.client.get('/api/machine-passport/owner_claim_test')
         passport = json.loads(get_resp.data)['passport']['passport']
@@ -555,15 +576,16 @@ class TestAPIEndpoints(unittest.TestCase):
 
     def test_update_passport_accepts_valid_admin_key(self):
         """Configured admin key still authorizes passport updates."""
+        os.environ['ADMIN_KEY'] = 'expected-admin-key'
         self.client.post(
             '/api/machine-passport',
+            headers={'X-Admin-Key': 'expected-admin-key'},
             json={
                 'name': 'Admin Update Test',
                 'owner_miner_id': 'miner_owner',
                 'machine_id': 'admin_update_test',
             },
         )
-        os.environ['ADMIN_KEY'] = 'expected-admin-key'
 
         with patch('hmac.compare_digest', return_value=True) as compare_digest:
             resp = self.client.put(
@@ -575,7 +597,74 @@ class TestAPIEndpoints(unittest.TestCase):
         data = json.loads(resp.data)
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(data['ok'])
-        compare_digest.assert_called_once_with('expected-admin-key', 'expected-admin-key')
+        compare_digest.assert_called_once_with(b'expected-admin-key', b'expected-admin-key')
+
+    def test_update_passport_fails_closed_without_admin_key(self):
+        """Passport updates fail closed before resource lookup when ADMIN_KEY is missing."""
+        resp = self.client.put(
+            '/api/machine-passport/admin_update_test',
+            json={'name': 'Unauthorized Rename'},
+        )
+
+        data = json.loads(resp.data)
+        self.assertEqual(resp.status_code, 401)
+        self.assertFalse(data['ok'])
+        self.assertEqual(data['error'], 'unauthorized')
+        self.assertEqual(data['message'], 'ADMIN_KEY not configured')
+
+    def test_mutating_subresources_fail_closed_without_admin_key(self):
+        """All passport subresource writes require configured admin auth."""
+        os.environ['ADMIN_KEY'] = 'expected-admin-key'
+        self.client.post(
+            '/api/machine-passport',
+            headers={'X-Admin-Key': 'expected-admin-key'},
+            json={
+                'name': 'Subresource Auth Test',
+                'owner_miner_id': 'miner_owner',
+                'machine_id': 'subresource_auth_test',
+            },
+        )
+        os.environ.pop('ADMIN_KEY', None)
+
+        requests = [
+            (
+                '/api/machine-passport/subresource_auth_test/repair-log',
+                {
+                    'repair_type': 'unauthorized_repair',
+                    'description': 'should not be recorded',
+                },
+            ),
+            (
+                '/api/machine-passport/subresource_auth_test/attestations',
+                {'epoch': 1},
+            ),
+            (
+                '/api/machine-passport/subresource_auth_test/benchmarks',
+                {'compute_score': 123.4},
+            ),
+            (
+                '/api/machine-passport/subresource_auth_test/lineage',
+                {'event_type': 'transfer', 'to_owner': 'attacker_owner'},
+            ),
+        ]
+
+        for path, payload in requests:
+            with self.subTest(path=path):
+                resp = self.client.post(path, json=payload)
+                data = json.loads(resp.data)
+                self.assertEqual(resp.status_code, 401)
+                self.assertFalse(data['ok'])
+                self.assertEqual(data['error'], 'unauthorized')
+                self.assertEqual(data['message'], 'ADMIN_KEY not configured')
+
+        full_passport = json.loads(
+            self.client.get('/api/machine-passport/subresource_auth_test').data
+        )['passport']
+        self.assertEqual(full_passport['passport']['owner_miner_id'], 'miner_owner')
+        self.assertEqual(full_passport['repair_log'], [])
+        self.assertEqual(full_passport['attestation_history'], [])
+        self.assertEqual(full_passport['benchmark_signatures'], [])
+        self.assertEqual(full_passport['lineage_notes'], [])
     
     def test_get_nonexistent_passport(self):
         """Test getting a nonexistent passport."""
