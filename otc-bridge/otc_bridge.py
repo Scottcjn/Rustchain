@@ -233,6 +233,12 @@ def non_negative_int_arg(name, default):
     return value, None
 
 
+def internal_error_response(operation):
+    """Log internal exception details without exposing them to clients."""
+    log.exception("%s failed", operation)
+    return jsonify({"error": "Internal server error"}), 500
+
+
 # ---------------------------------------------------------------------------
 # Rate Limiting
 # ---------------------------------------------------------------------------
@@ -314,8 +320,9 @@ def rtc_create_escrow_job(poster_wallet, amount_rtc, title, description):
             return {"ok": True, "job_id": data.get("job_id")}
         else:
             return {"ok": False, "error": r.json().get("error", "Unknown error")}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
+    except Exception:
+        log.exception("Escrow job creation failed")
+        return {"ok": False, "error": "escrow_create_failed"}
 
 
 def rtc_release_escrow(job_id, poster_wallet):
@@ -463,12 +470,12 @@ def create_order():
 
         return jsonify(response), 201
 
-    except Exception as e:
+    except Exception:
         conn.rollback()
         # If we created an escrow job but DB insert failed, cancel it
         if escrow_job_id:
             rtc_cancel_escrow(escrow_job_id, maker_wallet)
-        return jsonify({"error": str(e)}), 500
+        return internal_error_response("Order creation")
     finally:
         conn.close()
 
@@ -666,9 +673,9 @@ def match_order(order_id):
 
         return jsonify(response)
 
-    except Exception as e:
+    except Exception:
         conn.rollback()
-        return jsonify({"error": str(e)}), 500
+        return internal_error_response("Order match")
     finally:
         conn.close()
 
@@ -783,10 +790,9 @@ def confirm_order(order_id):
             "message": f"Trade completed. {order['amount_rtc']} RTC released to {rtc_recipient}. HTLC secret verified and revealed."
         })
 
-    except Exception as e:
+    except Exception:
         conn.rollback()
-        log.error(f"Confirm error: {e}")
-        return jsonify({"error": str(e)}), 500
+        return internal_error_response("Order confirmation")
     finally:
         conn.close()
 
@@ -828,9 +834,9 @@ def cancel_order(order_id):
             "status": "cancelled",
             "message": "Order cancelled. Escrow refunded."
         })
-    except Exception as e:
+    except Exception:
         conn.rollback()
-        return jsonify({"error": str(e)}), 500
+        return internal_error_response("Order cancellation")
     finally:
         conn.close()
 
