@@ -16,7 +16,7 @@ import os
 import sys
 import json
 import time
-import hashlib
+import hashlib, secrets
 import sqlite3
 import requests
 from flask import Flask, request, jsonify, render_template_string, send_from_directory
@@ -97,6 +97,12 @@ def faucet_drip():
     if not address:
         return jsonify({"success": False, "error": "Wallet address required"}), 400
         
+    # Wallet format validation: must start with 0x (EVM) or RTC prefix
+    if not (address.startswith("0x") or address.startswith("RTC") or address.startswith("rtc")):
+        return jsonify({"success": False, "error": "Invalid wallet format: must start with 0x or RTC"}), 400
+    if len(address) < 10 or len(address) > 128:
+        return jsonify({"success": False, "error": "Invalid wallet length"}), 400
+        
     if not check_rate_limit(address, ip):
         return jsonify({"success": False, "error": "Rate limit exceeded (1 drip per 24h)"}), 429
         
@@ -106,16 +112,32 @@ def faucet_drip():
     amount = 0.5 # 0.5 test RTC
     
     conn = sqlite3.connect(FAUCET_DB)
+    conn.isolation_level = None  # autocommit off — manual transaction control
     c = conn.cursor()
-    c.execute("INSERT INTO faucet_claims (address, ip_address, timestamp, amount) VALUES (?, ?, ?, ?)",
-              (address, ip, timestamp, amount))
-    conn.commit()
-    conn.close()
+    try:
+        c.execute("BEGIN IMMEDIATE")
+        # Re-check rate limit inside the same transaction
+        one_day_ago = int(time.time()) - 86400
+        c.execute("SELECT COUNT(*) FROM faucet_claims WHERE (address = ? OR ip_address = ?) AND timestamp > ?",
+                  (address, ip, one_day_ago))
+        count = c.fetchone()[0]
+        if count > 0:
+            conn.rollback()
+            return jsonify({"success": False, "error": "Rate limit exceeded (1 drip per 24h)"}), 429
+        
+        c.execute("INSERT INTO faucet_claims (address, ip_address, timestamp, amount) VALUES (?, ?, ?, ?)",
+                  (address, ip, timestamp, amount))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
     
     return jsonify({
         "success": True, 
         "message": f"Drip successful! {amount} RTC sent to {address}",
-        "tx_hash": hashlib.sha256(str(time.time()).encode()).hexdigest() # Mock hash
+        "tx_hash": secrets.token_hex(32)  # Cryptographically random, unpredictable
     })
 
 # --- Fossil-punk UI Template ---
