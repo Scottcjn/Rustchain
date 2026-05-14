@@ -266,3 +266,77 @@ def test_badge_rejects_null_custom_message():
             content_type="application/json",
         )
         assert resp.status_code == 400
+
+
+def test_faucet_rejects_boolean_wallet():
+    """#4348: /faucet/drip rejects {wallet: true}"""
+    from faucet import app as faucet_app
+
+    faucet_app.config["TESTING"] = True
+    with faucet_app.test_client() as client:
+        resp = client.post(
+            "/faucet/drip",
+            data='{"wallet": true}',
+            content_type="application/json",
+        )
+        assert resp.status_code == 400
+        data = json.loads(resp.data)
+        assert "error" in data
+
+
+def test_faucet_rejects_array_wallet():
+    """#4348: /faucet/drip rejects {wallet: []}"""
+    from faucet import app as faucet_app
+
+    faucet_app.config["TESTING"] = True
+    with faucet_app.test_client() as client:
+        resp = client.post(
+            "/faucet/drip",
+            data='{"wallet": []}',
+            content_type="application/json",
+        )
+        assert resp.status_code == 400
+        data = json.loads(resp.data)
+        assert "error" in data
+
+
+def test_badge_rejects_boolean_username():
+    """#4346: /api/badge/create rejects {username: false}"""
+    from profile_badge_generator import app as badge_app
+
+    badge_app.config["TESTING"] = True
+    with badge_app.test_client() as client:
+        resp = client.post(
+            "/api/badge/create",
+            data='{"username": false}',
+            content_type="application/json",
+        )
+        assert resp.status_code == 400
+
+
+def test_badge_rejects_array_wallet():
+    """#4346: /api/badge/create rejects {username:"u", wallet: []}"""
+    from profile_badge_generator import app as badge_app
+
+    badge_app.config["TESTING"] = True
+    with badge_app.test_client() as client:
+        resp = client.post(
+            "/api/badge/create",
+            data='{"username": "testuser", "wallet": []}',
+            content_type="application/json",
+        )
+        assert resp.status_code == 400
+
+
+def test_badge_rejects_dict_custom_message():
+    """#4346: /api/badge/create rejects {username:"u", custom_message: {}}"""
+    from profile_badge_generator import app as badge_app
+
+    badge_app.config["TESTING"] = True
+    with badge_app.test_client() as client:
+        resp = client.post(
+            "/api/badge/create",
+            data='{"username": "testuser", "custom_message": {}}',
+            content_type="application/json",
+        )
+        assert resp.status_code == 400
