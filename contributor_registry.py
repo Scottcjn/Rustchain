@@ -2,6 +2,7 @@
 
 from flask import Flask, request, redirect, url_for, flash
 import sqlite3
+import hmac
 import os
 import secrets
 from datetime import datetime
@@ -12,17 +13,17 @@ app = Flask(__name__)
 # If unset, fall back to a cryptographically random key (warns on first start).
 # If set to the known placeholder, refuse to run (prevents accidental deployment
 # with the compromised default secret).
-SECRET_KEY = os.environ.get('CONTRIBUTOR_SECRET_KEY', '')
+SECRET_KEY=os.env...EY', '')
 if not SECRET_KEY:
     import warnings
-    SECRET_KEY = secrets.token_hex(32)
+    SECRET_KEY=secret...(32)
     warnings.warn(
         "CONTRIBUTOR_SECRET_KEY not set. "
         "Using a random key — sessions will NOT persist across restarts. "
         "Set the environment variable before deployment.",
         UserWarning
     )
-elif SECRET_KEY == 'rustchain_contributor_secret_2024':
+elif SECRET_KEY=*** 'rustchain_contributor_secret_2024':
     raise ValueError(
         "CONTRIBUTOR_SECRET_KEY is set to the known placeholder value. "
         "Please set a new, secure secret before deployment."
@@ -172,16 +173,31 @@ def api_contributors():
         ]
     }
 
-@app.route('/approve/<username>')
+@app.route('/approve/<username>', methods=['POST'])
 def approve_contributor(username):
+    """Approve a pending contributor. Requires CONTRIBUTOR_ADMIN_KEY via X-Admin-Key header.
+    
+    SECURITY FIX for Issue #4722:
+    - Changed from GET to POST to prevent CSRF
+    - Added CONTRIBUTOR_ADMIN_KEY env var check
+    - Uses X-Admin-Key / X-API-Key header auth (not URL params)
+    - hmac.compare_digest for constant-time comparison
+    - Fail-closed when admin key not configured
+    """
+    admin_key_env = os.environ.get("CONTRIBUTOR_ADMIN_KEY", "")
+    if not admin_key_env:
+        return {"error": "CONTRIBUTOR_ADMIN_KEY not configured on server"}, 503
+    provided = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
+    if not provided or not hmac.compare_digest(provided, admin_key_env):
+        return {"error": "Forbidden: invalid or missing admin key"}, 403
+
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
             'UPDATE contributors SET status = "approved" WHERE github_username = ?',
             (username,)
         )
         conn.commit()
-    flash(f'Approved @{username} for 5 RTC bounty!')
-    return redirect(url_for('index'))
+    return {"ok": True, "approved": username}
 
 if __name__ == '__main__':
     if not os.path.exists(DB_PATH):
