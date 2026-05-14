@@ -73,3 +73,25 @@ def test_preflight_reports_failures_when_dependencies_are_missing(capsys):
     assert "[FAIL] Disk > 1GB free" in output
     assert "[FAIL] Node reachable" in output
     assert "Fix issues above first." in output
+
+
+def test_preflight_calls_health_endpoint_with_timeout_and_context():
+    module = load_module()
+    urlopen_calls = []
+
+    def fake_urlopen(*args, **kwargs):
+        urlopen_calls.append((args, kwargs))
+        return object()
+
+    with (
+        patch.object(module.shutil, "which", return_value="/usr/local/bin/clawrtc"),
+        patch.object(module.os.path, "exists", return_value=True),
+        patch.object(module.shutil, "disk_usage", return_value=SimpleNamespace(free=2_000_000_000)),
+        patch.object(module.urllib.request, "urlopen", side_effect=fake_urlopen),
+    ):
+        module.preflight()
+
+    args, kwargs = urlopen_calls[0]
+    assert args == ("https://rustchain.org/health",)
+    assert kwargs["timeout"] == 5
+    assert kwargs["context"] is not None
