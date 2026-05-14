@@ -5,7 +5,7 @@ edition = "2021"
 authors = ["Flamekeeper Scott <scott@rustchain.net>", "Sophia Elya"]
 description = "RustChain Core - Proof of Antiquity blockchain that rewards vintage hardware preservation"
 license = "MIT"
-repository = "https://github.com/rustchain/rustchain-core"
+repository = "https://github.com/Scottcjn/Rustchain"
 keywords = ["blockchain", "vintage", "hardware", "proof-of-antiquity", "crypto"]
 categories = ["cryptography", "hardware-support"]
 
