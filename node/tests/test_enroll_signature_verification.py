@@ -221,6 +221,33 @@ class TestEnrollSignatureVerification(unittest.TestCase):
         self.assertTrue(body["ok"])
         self.assertEqual(body["miner_pk"], miner)
 
+        with sqlite3.connect(db_path) as conn:
+            row = conn.execute(
+                "SELECT pubkey_hex FROM miner_header_keys WHERE miner_id = ?",
+                (miner_id,),
+            ).fetchone()
+
+        self.assertIsNotNone(row)
+        self.assertEqual(row[0], pubkey_hex)
+
+    @unittest.skipUnless(HAVE_NACL, "pynacl not installed")
+    def test_auto_enroll_registers_attestation_pubkey(self):
+        """Signed attestation auto-enroll must register the Ed25519 pubkey, not wallet text."""
+        mod, db_path = self._load_module("rustchain_auto_enroll_pubkey", "auto_enroll_pubkey.db")
+
+        miner = "RTC_AUTO_ENROLL_MINER"
+        miner_id = "miner_auto_001"
+        _, pubkey_hex = self._attest_and_get_signing_key(mod, miner, miner_id)
+
+        with sqlite3.connect(db_path) as conn:
+            row = conn.execute(
+                "SELECT pubkey_hex FROM miner_header_keys WHERE miner_id = ?",
+                (miner_id,),
+            ).fetchone()
+
+        self.assertIsNotNone(row)
+        self.assertEqual(row[0], pubkey_hex)
+
     @unittest.skipUnless(HAVE_NACL, "pynacl not installed")
     def test_enrollment_with_wrong_key_rejected(self):
         """Enrollment signed with a different keypair than the attestation must be rejected."""

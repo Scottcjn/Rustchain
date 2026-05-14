@@ -192,6 +192,7 @@ def _attest_mapping(value):
 
 
 _ATTEST_MINER_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+_ED25519_PUBKEY_HEX_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 
 
 def _attest_text(value):
@@ -208,6 +209,14 @@ def _attest_valid_miner(value):
     text = _attest_text(value)
     if text and _ATTEST_MINER_RE.fullmatch(text):
         return text
+    return None
+
+
+def _valid_ed25519_pubkey_hex(value):
+    """Return normalized Ed25519 public key hex or None."""
+    text = _attest_text(value)
+    if text and _ED25519_PUBKEY_HEX_RE.fullmatch(text):
+        return text.lower()
     return None
 
 
@@ -3727,10 +3736,12 @@ def _submit_attestation_impl():
                 "INSERT OR IGNORE INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)",
                 (epoch, miner, enroll_weight_units)
             )
-            enroll_conn.execute(
-                "INSERT OR REPLACE INTO miner_header_keys (miner_id, pubkey_hex) VALUES (?, ?)",
-                (miner_id, miner)
-            )
+            header_pubkey = _valid_ed25519_pubkey_hex(pubkey_hex) or _valid_ed25519_pubkey_hex(miner)
+            if header_pubkey:
+                enroll_conn.execute(
+                    "INSERT OR REPLACE INTO miner_header_keys (miner_id, pubkey_hex) VALUES (?, ?)",
+                    (miner_id, header_pubkey)
+                )
             enroll_conn.commit()
 
         # Issue #19 temporal consistency only sets a review flag (no hard-fail).
@@ -3993,11 +4004,13 @@ def enroll_epoch():
             (epoch, miner_pk, weight_units)
         )
 
-        # FIX: Register pubkey in miner_header_keys for block submission
-        c.execute(
-            "INSERT OR REPLACE INTO miner_header_keys (miner_id, pubkey_hex) VALUES (?, ?)",
-            (miner_id, miner_pk)
-        )
+        # Register a real Ed25519 pubkey for block-header verification when available.
+        header_pubkey = _valid_ed25519_pubkey_hex(pubkey_hex) or _valid_ed25519_pubkey_hex(miner_pk)
+        if header_pubkey:
+            c.execute(
+                "INSERT OR REPLACE INTO miner_header_keys (miner_id, pubkey_hex) VALUES (?, ?)",
+                (miner_id, header_pubkey)
+            )
 
     app.logger.info(
         f"[RIP-309] epoch={epoch} miner={miner_pk[:20]}... nonce={rotation_eval['measurement_nonce'][:16]} "
