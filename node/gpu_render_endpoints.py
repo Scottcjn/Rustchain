@@ -2,6 +2,7 @@
 # Author: @createkr (RayBot AI)
 # BCOS-Tier: L1
 import hashlib
+import hmac
 import math
 import secrets
 import sqlite3
@@ -29,6 +30,14 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
 
     def _hash_job_secret(secret):
         return hashlib.sha256((secret or "").encode("utf-8")).hexdigest()
+
+    def _require_admin_key():
+        if not admin_key:
+            return jsonify({"error": "Admin key not configured"}), 503
+        provided = request.headers.get("X-Admin-Key") or request.headers.get("X-API-Key") or ""
+        if not hmac.compare_digest(provided, admin_key):
+            return jsonify({"error": "Unauthorized - admin key required"}), 401
+        return None
 
     def _ensure_escrow_secret_column(db):
         """Best-effort migration for older DBs."""
@@ -87,6 +96,10 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
     # 2. Escrow: Lock funds for a job
     @app.route("/api/gpu/escrow", methods=["POST"])
     def gpu_escrow():
+        auth_error = _require_admin_key()
+        if auth_error:
+            return auth_error
+
         data = request.get_json(silent=True) or {}
         job_id = data.get("job_id") or f"job_{secrets.token_hex(8)}"
         job_type = data.get("job_type")  # render, tts, stt, llm
@@ -134,6 +147,10 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
     # 3. Release: Job finished successfully (payer authorizes provider payout)
     @app.route("/api/gpu/release", methods=["POST"])
     def gpu_release():
+        auth_error = _require_admin_key()
+        if auth_error:
+            return auth_error
+
         data = request.get_json(silent=True) or {}
         job_id = data.get("job_id")
         actor_wallet = data.get("actor_wallet")
@@ -178,6 +195,10 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
     # 4. Refund: Job failed (provider authorizes refund to payer)
     @app.route("/api/gpu/refund", methods=["POST"])
     def gpu_refund():
+        auth_error = _require_admin_key()
+        if auth_error:
+            return auth_error
+
         data = request.get_json(silent=True) or {}
         job_id = data.get("job_id")
         actor_wallet = data.get("actor_wallet")
