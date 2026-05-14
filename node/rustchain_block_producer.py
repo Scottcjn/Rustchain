@@ -664,6 +664,13 @@ def _normalize_block_identifier(raw):
     return None
 
 
+def _blocks_table_missing(exc: sqlite3.Error) -> bool:
+    return (
+        isinstance(exc, sqlite3.OperationalError)
+        and "no such table: blocks" in str(exc).lower()
+    )
+
+
 def create_block_api_routes(app, producer: BlockProducer, validator: BlockValidator):
     """Create Flask routes for block API"""
     from flask import request, jsonify
@@ -754,8 +761,12 @@ def create_block_api_routes(app, producer: BlockProducer, validator: BlockValida
                         height_misses,
                     ).fetchall()
                 except sqlite3.Error as exc:
-                    logger.debug("Block batch height lookup failed: %s", exc)
-                    rows = []
+                    if _blocks_table_missing(exc):
+                        logger.debug("Block batch height lookup skipped: %s", exc)
+                        rows = []
+                    else:
+                        logger.exception("Block batch height lookup failed")
+                        return jsonify({"ok": False, "error": "Block database unavailable"}), 500
                 for row in rows:
                     block = _row_to_block(row)
                     found_by_key[("height", block["height"])] = block
@@ -770,8 +781,12 @@ def create_block_api_routes(app, producer: BlockProducer, validator: BlockValida
                         hash_misses,
                     ).fetchall()
                 except sqlite3.Error as exc:
-                    logger.debug("Block batch hash lookup failed: %s", exc)
-                    rows = []
+                    if _blocks_table_missing(exc):
+                        logger.debug("Block batch hash lookup skipped: %s", exc)
+                        rows = []
+                    else:
+                        logger.exception("Block batch hash lookup failed")
+                        return jsonify({"ok": False, "error": "Block database unavailable"}), 500
                 for row in rows:
                     block = _row_to_block(row)
                     found_by_key[("height", block["height"])] = block

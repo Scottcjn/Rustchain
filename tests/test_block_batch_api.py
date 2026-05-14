@@ -162,6 +162,36 @@ def test_batch_blocks_treats_missing_table_as_missing_blocks(tmp_path):
     assert body["missing"] == [1, "hash1"]
 
 
+def test_batch_blocks_surfaces_non_missing_table_database_errors(tmp_path, monkeypatch):
+    class LockedCursor:
+        def execute(self, *args, **kwargs):
+            raise sqlite3.OperationalError("database is locked")
+
+    class LockedConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def cursor(self):
+            return LockedCursor()
+
+    monkeypatch.setattr(
+        block_producer.sqlite3,
+        "connect",
+        lambda db_path: LockedConnection(),
+    )
+    client, _ = _client(tmp_path)
+
+    response = client.post("/v1/blocks/batch", json={"blocks": [1]})
+
+    assert response.status_code == 500
+    body = response.get_json()
+    assert body["ok"] is False
+    assert body["error"] == "Block database unavailable"
+
+
 def test_batch_blocks_reads_from_configured_cache(tmp_path):
     cache = DummyCache()
     client, db_path = _client(tmp_path, cache)
