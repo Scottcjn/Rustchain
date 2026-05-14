@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 import importlib.util
 import sys
 import types
