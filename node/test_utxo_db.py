@@ -6,6 +6,7 @@ Run:  python3 -m pytest test_utxo_db.py -v
   or: python3 test_utxo_db.py
 """
 
+import json
 import os
 import tempfile
 import time
@@ -288,6 +289,98 @@ class TestUtxoDB(unittest.TestCase):
         }, block_height=10)
         self.assertFalse(ok)
 
+    def test_unspent_data_input_is_read_only(self):
+        """A valid data input may be referenced without being consumed."""
+        self._apply_coinbase('alice', 100 * UNIT, block_height=1)
+        self._apply_coinbase('oracle', 5 * UNIT, block_height=2)
+        alice_box = self.db.get_unspent_for_address('alice')[0]
+        oracle_box = self.db.get_unspent_for_address('oracle')[0]
+
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': alice_box['box_id'], 'spending_proof': 'sig'}],
+            'data_inputs': [oracle_box['box_id']],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+        }, block_height=10)
+
+        self.assertTrue(ok)
+        self.assertEqual(self.db.get_balance('oracle'), 5 * UNIT)
+        self.assertIsNone(self.db.get_box(oracle_box['box_id'])['spent_at'])
+
+        conn = self.db._conn()
+        try:
+            row = conn.execute(
+                """SELECT data_inputs_json FROM utxo_transactions
+                   WHERE tx_type = 'transfer'"""
+            ).fetchone()
+            self.assertEqual(json.loads(row['data_inputs_json']),
+                             [oracle_box['box_id']])
+        finally:
+            conn.close()
+
+    def test_nonexistent_data_input_rejected(self):
+        """Read-only data inputs must point to real unspent boxes."""
+        self._apply_coinbase('alice', 100 * UNIT, block_height=1)
+        alice_box = self.db.get_unspent_for_address('alice')[0]
+
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': alice_box['box_id'], 'spending_proof': 'sig'}],
+            'data_inputs': ['deadbeef' * 8],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+        }, block_height=10)
+
+        self.assertFalse(ok)
+        self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
+        self.assertEqual(self.db.get_balance('bob'), 0)
+
+    def test_spent_data_input_rejected(self):
+        """Spent boxes cannot be used as read-only transaction context."""
+        self._apply_coinbase('alice', 100 * UNIT, block_height=1)
+        self._apply_coinbase('oracle', 5 * UNIT, block_height=2)
+        alice_box = self.db.get_unspent_for_address('alice')[0]
+        oracle_box = self.db.get_unspent_for_address('oracle')[0]
+
+        self.assertTrue(self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': oracle_box['box_id'],
+                        'spending_proof': 'sig'}],
+            'outputs': [{'address': 'sink', 'value_nrtc': 5 * UNIT}],
+            'fee_nrtc': 0,
+        }, block_height=9))
+
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': alice_box['box_id'], 'spending_proof': 'sig'}],
+            'data_inputs': [oracle_box['box_id']],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+        }, block_height=10)
+
+        self.assertFalse(ok)
+        self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
+        self.assertEqual(self.db.get_balance('bob'), 0)
+
+    def test_data_input_cannot_overlap_spend_input(self):
+        """A read-only data input cannot be consumed by the same tx."""
+        self._apply_coinbase('alice', 100 * UNIT, block_height=1)
+        alice_box = self.db.get_unspent_for_address('alice')[0]
+
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': alice_box['box_id'], 'spending_proof': 'sig'}],
+            'data_inputs': [alice_box['box_id']],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+        }, block_height=10)
+
+        self.assertFalse(ok)
+        self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
+        self.assertEqual(self.db.get_balance('bob'), 0)
+        self.assertIsNone(self.db.get_box(alice_box['box_id'])['spent_at'])
+
     # -- state root ----------------------------------------------------------
 
     def test_empty_state_root(self):
@@ -479,6 +572,38 @@ class TestUtxoDB(unittest.TestCase):
         ok = self.db.mempool_add(tx)
         self.assertFalse(ok)
 
+    def test_mempool_rejects_nonexistent_data_input_without_locking_input(self):
+        """Invalid data inputs must not leave spend inputs pinned in mempool."""
+        self._apply_coinbase('alice', 100 * UNIT, block_height=1)
+        box = self.db.get_unspent_for_address('alice')[0]
+
+        tx = {
+            'tx_id': 'data' * 16,
+            'inputs': [{'box_id': box['box_id']}],
+            'data_inputs': ['deadbeef' * 8],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+        }
+        ok = self.db.mempool_add(tx)
+        self.assertFalse(ok)
+        self.assertFalse(self.db.mempool_check_double_spend(box['box_id']))
+
+    def test_mempool_rejects_data_input_overlap_without_locking_input(self):
+        """Mempool rejects txs that consume their read-only context."""
+        self._apply_coinbase('alice', 100 * UNIT, block_height=1)
+        box = self.db.get_unspent_for_address('alice')[0]
+
+        tx = {
+            'tx_id': 'overlap' * 8,
+            'inputs': [{'box_id': box['box_id']}],
+            'data_inputs': [box['box_id']],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+        }
+        ok = self.db.mempool_add(tx)
+        self.assertFalse(ok)
+        self.assertFalse(self.db.mempool_check_double_spend(box['box_id']))
+
     # -- proposition encoding ------------------------------------------------
 
     def test_proposition_roundtrip(self):
@@ -595,6 +720,23 @@ class TestUtxoDB(unittest.TestCase):
         }, block_height=10)
         self.assertFalse(ok)
         self.assertEqual(self.db.get_balance('attacker'), 0)
+
+    def test_user_supplied_mining_reward_rejected_before_opening_db(self):
+        """Unauthorized mining rewards should not leak an owned DB handle."""
+
+        class NoOpenUtxoDB(UtxoDB):
+            def _conn(self):
+                raise AssertionError("apply_transaction opened the DB")
+
+        db = NoOpenUtxoDB(self.tmp.name)
+        ok = db.apply_transaction({
+            'tx_type': 'mining_reward',
+            'inputs': [],
+            'outputs': [{'address': 'attacker', 'value_nrtc': 1 * UNIT}],
+            'fee_nrtc': 0,
+            'timestamp': int(time.time()),
+        }, block_height=10)
+        self.assertFalse(ok)
 
     def test_mempool_empty_inputs_rejected_for_transfer(self):
         """Mempool must also reject non-minting txs with empty inputs."""
