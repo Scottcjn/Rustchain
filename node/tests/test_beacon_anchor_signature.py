@@ -278,6 +278,44 @@ class BeaconAnchorSignatureTests(unittest.TestCase):
         finally:
             os.unlink(db_path)
 
+    def test_mark_anchored_handles_empty_and_partial_id_lists(self):
+        db_path = _make_temp_db()
+        try:
+            beacon_anchor.init_beacon_table(db_path)
+            target_envelope, _ = _build_signed_envelope(extra_fields={"nonce": "target-nonce"})
+            pending_envelope, _ = _build_signed_envelope(extra_fields={"nonce": "pending-nonce"})
+
+            target = beacon_anchor.store_envelope(target_envelope, db_path)
+            pending = beacon_anchor.store_envelope(pending_envelope, db_path)
+            self.assertTrue(target["ok"])
+            self.assertTrue(pending["ok"])
+
+            beacon_anchor.mark_anchored([], db_path)
+            with sqlite3.connect(db_path) as conn:
+                rows = dict(
+                    conn.execute(
+                        "SELECT id, anchored FROM beacon_envelopes ORDER BY id ASC"
+                    ).fetchall()
+                )
+            self.assertEqual(rows[target["id"]], 0)
+            self.assertEqual(rows[pending["id"]], 0)
+
+            beacon_anchor.mark_anchored([target["id"], pending["id"] + 999], db_path)
+            with sqlite3.connect(db_path) as conn:
+                rows = dict(
+                    conn.execute(
+                        "SELECT id, anchored FROM beacon_envelopes ORDER BY id ASC"
+                    ).fetchall()
+                )
+
+            self.assertEqual(rows[target["id"]], 1)
+            self.assertEqual(rows[pending["id"]], 0)
+            digest = beacon_anchor.compute_beacon_digest(db_path)
+            self.assertEqual(digest["ids"], [pending["id"]])
+            self.assertEqual(digest["count"], 1)
+        finally:
+            os.unlink(db_path)
+
 
 if __name__ == "__main__":
     unittest.main()
