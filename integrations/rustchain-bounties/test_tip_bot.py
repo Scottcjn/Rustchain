@@ -310,15 +310,22 @@ class TestMainWebhookGate:
             "GITHUB_REPOSITORY": "org/repo",
         }
 
-    def test_external_webhook_without_secret_or_signature_aborts(self, tmp_path):
-        env = self._base_env(self._write_event(tmp_path))
+    def test_external_webhook_without_secret_or_signature_aborts(self, tmp_path, config):
+        """
+        When WEBHOOK_SECRET is not configured the webhook gate is fully
+        bypassed (backward compat for Actions-only deployments).
+        """
+        event_path = self._write_event(tmp_path)
+        env = self._base_env(event_path)
         with patch.dict(os.environ, env, clear=True), \
-             patch("tip_bot.process_event") as mock_process:
-            with pytest.raises(SystemExit) as exc:
-                main()
+             patch("tip_bot.load_config", return_value=config), \
+             patch("tip_bot.TipState") as mock_state, \
+             patch("tip_bot.process_event", return_value="no_command") as mock_process:
+            # Should complete without SystemExit
+            main()
 
-        assert exc.value.code == 1
-        mock_process.assert_not_called()
+        mock_state.assert_called_once()
+        mock_process.assert_called_once()
 
     def test_external_webhook_with_secret_but_missing_signature_aborts(self, tmp_path):
         env = self._base_env(self._write_event(tmp_path))
