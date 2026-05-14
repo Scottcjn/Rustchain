@@ -7,16 +7,27 @@ Allows G4 to connect via different port
 from flask import Flask, request, jsonify
 import requests
 import json
+from urllib.parse import quote
 
 app = Flask(__name__)
 
 # Local server on same machine
 LOCAL_SERVER = "http://localhost:8088"
 
+def _build_local_api_url(path):
+    """Return a local /api URL without allowing dot-segment escapes."""
+    parts = path.split("/")
+    if any(part in ("", ".", "..") for part in parts):
+        return None
+    safe_path = "/".join(quote(part, safe="") for part in parts)
+    return f"{LOCAL_SERVER}/api/{safe_path}"
+
 @app.route('/api/<path:path>', methods=['GET', 'POST'])
 def proxy(path):
     """Forward all API requests to local server"""
-    url = f"{LOCAL_SERVER}/api/{path}"
+    url = _build_local_api_url(path)
+    if not url:
+        return jsonify({'error': 'Invalid API path'}), 400
 
     try:
         if request.method == 'POST':
