@@ -119,7 +119,7 @@ This allows testing wallet functionality without a running blockchain node.
 
 The wallet expects the following RustChain node API endpoints:
 
-- `GET /api/balance/{address}` - Get account balance
+- `GET /wallet/balance?miner_id={address}` - Get account balance
 - `POST /api/transaction` - Submit transaction
 
 ## Error Handling

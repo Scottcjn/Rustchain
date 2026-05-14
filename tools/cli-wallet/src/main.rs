@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 use anyhow::{anyhow, Result};
+use base58::{FromBase58, ToBase58};
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -78,8 +79,9 @@ struct Transaction {
 
 #[derive(Serialize, Deserialize, Debug)]
 struct BalanceResponse {
-    address: String,
-    balance: u64,
+    amount_rtc: Option<f64>,
+    balance_rtc: Option<f64>,
+    balance: Option<f64>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -91,8 +93,8 @@ struct TransactionResponse {
 
 impl Wallet {
     fn new() -> Result<Self> {
-        use secp256k1::{Secp256k1, SecretKey};
-        use rand::rngs::OsRng;
+        use secp256k1::rand::rngs::OsRng;
+        use secp256k1::Secp256k1;
         
         let secp = Secp256k1::new();
         let mut rng = OsRng;
@@ -106,7 +108,7 @@ impl Wallet {
         let mut hasher = Sha256::new();
         hasher.update(&public_key_bytes);
         let hash = hasher.finalize();
-        let address = format!("RTC{}", base58::encode(&hash[0..20]));
+        let address = format!("RTC{}", hash[0..20].to_base58());
         
         Ok(Wallet {
             address,
@@ -152,27 +154,31 @@ fn validate_address(address: &str) -> bool {
     }
     
     let addr_part = &address[3..];
-    base58::decode(addr_part).is_ok() && addr_part.len() >= 25
+    addr_part.from_base58().is_ok() && addr_part.len() >= 25
 }
 
-async fn get_balance(node_url: &str, address: &str) -> Result<u64> {
+async fn get_balance(node_url: &str, address: &str) -> Result<f64> {
     let client = reqwest::Client::new();
-    let url = format!("{}/api/balance/{}", node_url, address);
+    let url = format!("{}/wallet/balance", node_url);
     
-    match client.get(&url).send().await {
+    match client.get(&url).query(&[("miner_id", address)]).send().await {
         Ok(response) => {
             if response.status().is_success() {
                 let balance_response: BalanceResponse = response.json().await?;
-                Ok(balance_response.balance)
+                Ok(balance_response
+                    .amount_rtc
+                    .or(balance_response.balance_rtc)
+                    .or(balance_response.balance)
+                    .unwrap_or(0.0))
             } else {
                 // If API doesn't exist, return mock balance
                 println!("Note: Using mock balance (node API not available)");
-                Ok(1000) // Mock balance
+                Ok(1000.0) // Mock balance
             }
         }
         Err(_) => {
             println!("Note: Using mock balance (node not reachable)");
-            Ok(1000) // Mock balance when node is not available
+            Ok(1000.0) // Mock balance when node is not available
         }
     }
 }
@@ -257,7 +263,7 @@ async fn main() -> Result<()> {
             
             // Check balance first
             let balance = get_balance(node, &wallet_data.address).await?;
-            if balance < *amount {
+            if balance < *amount as f64 {
                 return Err(anyhow!(
                     "Insufficient balance. Available: {} RTC, Required: {} RTC",
                     balance,
