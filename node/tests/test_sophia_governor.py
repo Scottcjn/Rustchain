@@ -1,3 +1,4 @@
+import gc
 import os
 import sqlite3
 import tempfile
@@ -37,6 +38,7 @@ def tmp_db():
         db_path = handle.name
     init_sophia_governor_schema(db_path)
     yield db_path
+    gc.collect()
     os.unlink(db_path)
 
 
@@ -175,6 +177,31 @@ def test_governor_endpoints_require_admin_for_manual_review(client):
         },
     )
     assert response.status_code == 401
+
+
+def test_governor_recent_rejects_invalid_limit(client):
+    response = client.get("/sophia/governor/recent?limit=not-an-int")
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "invalid_limit"
+
+
+def test_governor_recent_rejects_non_positive_limit(client):
+    response = client.get("/sophia/governor/recent?limit=0")
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "invalid_limit"
+
+
+def test_governor_review_rejects_non_object_json(client):
+    response = client.post(
+        "/sophia/governor/review",
+        headers={"X-Admin-Key": "test-admin"},
+        json=["not", "an", "object"],
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "invalid_json"
 
 
 def test_governor_endpoints_report_status_and_recent(client):
