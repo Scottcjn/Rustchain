@@ -456,7 +456,7 @@ if __name__ == "__main__":
         tier = HardwareTier.from_release_year(year)
 
         print(f"📟 {model} ({year})")
-        print(f"   Age: {CURRENT_YEAR - year} years")
+        print(f"   Age: {current_year - year} years")
         print(f"   Uptime: {uptime} days")
         print(f"   Tier: {tier.value.upper()} ({tier.multiplier}x)")
         print(f"   Antiquity Score: {as_score:.2f}")
