@@ -103,3 +103,26 @@ def test_detect_gpu_and_display_matches_all_known_relic_terms(tmp_path, monkeypa
         "badge_xga_rebel",
         "badge_vga_ancestor",
     ]
+
+
+def test_detect_gpu_and_display_invokes_lspci_without_touching_hardware(tmp_path, monkeypatch):
+    module = load_module()
+    calls = []
+    monkeypatch.chdir(tmp_path)
+
+    def fake_check_output(*args, **kwargs):
+        calls.append((args, kwargs))
+        return b"matrox powervr"
+
+    with (
+        patch.object(module.subprocess, "check_output", side_effect=fake_check_output),
+        patch.object(module, "datetime", FixedDateTime),
+    ):
+        module.detect_gpu_and_display()
+
+    assert calls == [((["lspci"],), {"stderr": module.subprocess.DEVNULL})]
+    payload = json.loads((tmp_path / "unlocked_badges.json").read_text(encoding="utf-8"))
+    assert [entry["badge_id"] for entry in payload["badges"]] == [
+        "badge_matrox_ghost",
+        "badge_powertile_prophet",
+    ]
