@@ -497,7 +497,7 @@ def update_contract(contract_id):
         if not new_state:
             return jsonify({'error': 'Missing state field'}), 400
         
-        valid_states = {'offered', 'active', 'renewed', 'completed', 'breached', 'expired'}
+        valid_states = {'offered', 'active', 'renewed', 'completed', 'breached', 'expired', 'rejected'}
         if new_state not in valid_states:
             return jsonify({'error': f'Invalid state: {new_state}'}), 400
         
@@ -509,6 +509,7 @@ def update_contract(contract_id):
             'completed': set(),  # terminal state
             'breached': set(),   # terminal state
             'expired': set(),    # terminal state
+            'rejected': set(),   # terminal state
         }
         
         db = get_db()
@@ -544,11 +545,16 @@ def update_contract(contract_id):
                 'error': 'Unauthorized — caller is not a party to this contract'
             }), 403
         
-        # Additional: only to_agent can accept (offered -> active)
+        # Only to_agent can accept or reject an offered contract
         if current_state == 'offered' and new_state == 'active':
             if agent_key != to_agent:
                 return jsonify({
                     'error': 'Only the recipient (to_agent) can accept this contract'
+                }), 403
+        if current_state == 'offered' and new_state == 'rejected':
+            if agent_key != to_agent:
+                return jsonify({
+                    'error': 'Only the recipient (to_agent) can reject this contract'
                 }), 403
         
         # Only from_agent can mark as breached
