@@ -47,10 +47,15 @@ bcos_bp = Blueprint("bcos", __name__)
 
 # Module-level ref to DB_PATH, set by register_bcos_routes
 _DB_PATH = None
+BCOS_PUBLIC_BASE_URL = os.environ.get("BCOS_PUBLIC_BASE_URL", "https://rustchain.org").rstrip("/")
 
 
 def _get_admin_key():
     return os.environ.get("RC_ADMIN_KEY", "")
+
+
+def _bcos_url(path: str) -> str:
+    return f"{BCOS_PUBLIC_BASE_URL}{path}"
 
 
 def _parse_trust_score(raw_score) -> int:
@@ -277,8 +282,8 @@ def bcos_attest():
             "tier": tier,
             "trust_score": trust_score,
             "anchored_epoch": epoch,
-            "verify_url": f"https://rustchain.org/bcos/verify/{cert_id}",
-            "badge_url": f"https://50.28.86.131/bcos/badge/{cert_id}.svg",
+            "verify_url": _bcos_url(f"/bcos/verify/{cert_id}"),
+            "badge_url": _bcos_url(f"/bcos/badge/{cert_id}.svg"),
         })
     except sqlite3.IntegrityError:
         return jsonify({"error": f"Certificate {cert_id} already exists"}), 409
@@ -339,8 +344,8 @@ def bcos_verify(cert_id):
             "score_breakdown": report.get("score_breakdown", {}),
             "checks": report.get("checks", {}),
             "engine_version": report.get("engine_version", "unknown"),
-            "badge_url": f"https://50.28.86.131/bcos/badge/{cert_id}.svg",
-            "pdf_url": f"https://50.28.86.131/bcos/cert/{cert_id}.pdf",
+            "badge_url": _bcos_url(f"/bcos/badge/{cert_id}.svg"),
+            "pdf_url": _bcos_url(f"/bcos/cert/{cert_id}.pdf"),
         })
     except Exception as e:
         import logging
@@ -464,8 +469,8 @@ def bcos_directory():
                 "reviewer": row["reviewer"],
                 "anchored_epoch": row["anchored_epoch"],
                 "created_at": row["created_at"],
-                "verify_url": f"https://rustchain.org/bcos/verify/{row['cert_id']}",
-                "badge_url": f"https://50.28.86.131/bcos/badge/{row['cert_id']}.svg",
+                "verify_url": _bcos_url(f"/bcos/verify/{row['cert_id']}"),
+                "badge_url": _bcos_url(f"/bcos/badge/{row['cert_id']}.svg"),
             })
 
         return jsonify({
