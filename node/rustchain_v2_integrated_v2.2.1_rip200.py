@@ -533,6 +533,57 @@ def get_client_ip():
     """Trusted client IP for rate limits and accounting surfaces."""
     return client_ip_from_request(request)
 
+
+_CSP_INLINE_SCRIPT_PREFIXES = (
+    "/dashboard",
+    "/explorer",
+    "/governance",
+    "/hall-of-fame",
+)
+
+
+def _response_is_html(resp) -> bool:
+    """Whether this response is browser-rendered HTML."""
+    mimetype = (getattr(resp, "mimetype", "") or "").lower()
+    if mimetype:
+        return mimetype == "text/html"
+    content_type = (resp.headers.get("Content-Type") or "").lower()
+    return content_type.startswith("text/html")
+
+
+def _path_needs_inline_script_csp(path: str) -> bool:
+    """Allow legacy inline-script UIs to opt into a narrower exception."""
+    normalized = str(path or "")
+    for prefix in _CSP_INLINE_SCRIPT_PREFIXES:
+        if normalized == prefix or normalized.startswith(prefix + "/"):
+            return True
+    return False
+
+
+def _build_content_security_policy(resp) -> str:
+    """Return a safer default CSP with narrow route-specific exceptions."""
+    directives = [
+        "default-src 'self'",
+        "script-src 'self'",
+        "base-uri 'self'",
+        "frame-ancestors 'none'",
+        "object-src 'none'",
+    ]
+    if _response_is_html(resp):
+        directives.extend(
+            [
+                "style-src 'self' 'unsafe-inline'",
+                "img-src 'self' data: https:",
+                "font-src 'self' data:",
+                "connect-src 'self' https://rustchain.org",
+                "form-action 'self'",
+            ]
+        )
+        if _path_needs_inline_script_csp(request.path):
+            directives[1] = "script-src 'self' 'unsafe-inline'"
+    return "; ".join(directives)
+
+
 @app.after_request
 def _after(resp):
     try:
@@ -550,12 +601,9 @@ def _after(resp):
         log.info(json.dumps(rec, separators=(",", ":")))
     except Exception:
         pass
-    # Defense-in-depth headers for both API and lightweight HTML responses.
-    resp.headers.setdefault(
-        "Content-Security-Policy",
-        "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https:; "
-        "frame-ancestors 'none'; object-src 'none'; base-uri 'self'",
-    )
+    # Apply a strict baseline CSP globally and only allow inline scripts on
+    # legacy HTML routes that still embed them.
+    resp.headers.setdefault("Content-Security-Policy", _build_content_security_policy(resp))
     resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")

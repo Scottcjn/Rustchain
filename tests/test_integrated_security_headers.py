@@ -40,6 +40,26 @@ def test_health_response_includes_security_headers():
     assert response.headers["Strict-Transport-Security"] == "max-age=31536000; includeSubDomains"
 
     csp = response.headers["Content-Security-Policy"]
+    assert "default-src 'self'" in csp
+    assert "script-src 'self'" in csp
     assert "frame-ancestors 'none'" in csp
     assert "object-src 'none'" in csp
     assert "base-uri 'self'" in csp
+    assert "unsafe-inline" not in csp
+    assert "unsafe-eval" not in csp
+    assert "https:" not in csp
+
+
+def test_explorer_html_keeps_narrow_inline_script_exception():
+    integrated_node = _load_integrated_node()
+    client = integrated_node.app.test_client()
+
+    response = client.get("/explorer")
+
+    assert response.status_code == 200
+
+    csp = response.headers["Content-Security-Policy"]
+    assert "default-src 'self'" in csp
+    assert "script-src 'self' 'unsafe-inline'" in csp
+    assert "unsafe-eval" not in csp
+    assert "script-src https:" not in csp
