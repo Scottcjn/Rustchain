@@ -1,6 +1,7 @@
 # Development dependencies for RustChain
 # For node development:
 flask>=2.0.0
+flask-cors>=6.0.2
 # For miner and SDK:
 requests>=2.25.0
 # For wallet CLI (Ed25519 + AES-GCM):
@@ -9,5 +10,9 @@ cryptography>=46.0.7
 PyNaCl>=1.6.2
 # For wallet CLI (BIP39 seed phrases):
 mnemonic>=0.21
+# For issue 2310 package validation:
+numpy>=2.4.0
+# For faucet service wallet validation:
+pycryptodome>=3.23.0
 # For running tests:
 pytest>=7.4.4
