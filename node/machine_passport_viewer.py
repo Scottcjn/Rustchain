@@ -1,5 +1,5 @@
-# SPDX-License-Identifier: MIT
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """
 Machine Passport Web Viewer
 

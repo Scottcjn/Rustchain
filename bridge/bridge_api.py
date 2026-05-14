@@ -474,7 +474,7 @@ def get_ledger():
         offset = int(offset_raw)
     except (ValueError, TypeError):
         return jsonify({"error": "Invalid pagination parameter: limit and offset must be integers"}), 400
-    
+
     # Enforce bounds
     if limit < 1:
         return jsonify({"error": "Invalid pagination parameter: limit must be >= 1"}), 400

@@ -1,5 +1,5 @@
-# SPDX-License-Identifier: MIT
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """
 RustChain v2 - Integrated Server
 Includes RIP-0005 (Epoch Rewards), RIP-0008 (Withdrawals), RIP-0009 (Finality)

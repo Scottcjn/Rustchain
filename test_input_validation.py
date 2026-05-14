@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """
 Regression tests for input validation hardening — PR #4361
 Tests use actual Flask app fixtures from each module.

@@ -1,5 +1,5 @@
-# SPDX-License-Identifier: MIT
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """
 Beacon Atlas API - Flask routes for 3D visualization backend
 Provides endpoints for agents, contracts, bounties, reputation, and chat.

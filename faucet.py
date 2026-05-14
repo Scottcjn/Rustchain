@@ -1,5 +1,5 @@
-# SPDX-License-Identifier: MIT
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """
 RustChain Testnet Faucet
 A simple Flask web application that dispenses test RTC tokens.
