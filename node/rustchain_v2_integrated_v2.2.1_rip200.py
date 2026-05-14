@@ -5687,7 +5687,13 @@ def get_balance(miner_pk):
         else:
             # Legacy schema: balances(miner_pk, balance_rtc)
             row = cur.execute("SELECT COALESCE(balance_rtc, 0.0) FROM balances WHERE miner_pk = ?", (miner_pk,)).fetchone()
-    return jsonify(miners)
+            balance_rtc = float(row[0]) if row else 0.0
+            balance_i64 = int(round(balance_rtc * ACCOUNT_UNIT))
+    return jsonify({
+        "miner_pk": miner_pk,
+        "balance_rtc": balance_i64 / ACCOUNT_UNIT,
+        "amount_i64": balance_i64,
+    })
 def get_stats():
     """Get system statistics"""
     epoch = slot_to_epoch(current_slot())
