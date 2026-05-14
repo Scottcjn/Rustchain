@@ -305,7 +305,7 @@ rustup target add riscv64gc-unknown-linux-gnu
 - [RISC-V Specification](https://riscv.org/specifications/)
 - [Cross-rs Documentation](https://github.com/cross-rs/cross)
 - [Rust RISC-V Support](https://rust-lang.github.io/rustup-components-history/riscv64gc-unknown-linux-gnu.html)
-- [VisionFive 2 Documentation](https://wiki.starfivetech.com/en/visionfive2)
+- [VisionFive 2 Quick Start Guide](https://doc-en.rvspace.org/VisionFive2/Quick_Start_Guide/)
 - [HiFive Unmatched Guide](https://www.sifive.com/boards/hifive-unmatched)
 
 ## 🤝 Contributing
