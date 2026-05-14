@@ -18,6 +18,20 @@ def app(tmp_path, monkeypatch):
     return app
 
 
+@pytest.mark.parametrize(
+    ("github_username", "account_age_days", "expected_limit"),
+    [
+        (None, None, 0.5),
+        ("", None, 0.5),
+        ("alice", None, 1.0),
+        ("alice", 364, 1.0),
+        ("alice", 365, 2.0),
+    ],
+)
+def test_limit_for_identity_tiers(github_username, account_age_days, expected_limit):
+    assert faucet._limit_for_identity(github_username, account_age_days) == expected_limit
+
+
 def test_faucet_page(app):
     c = app.test_client()
     r = c.get("/faucet")
