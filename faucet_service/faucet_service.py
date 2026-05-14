@@ -72,7 +72,7 @@ DEFAULT_CONFIG = {
         }
     },
     'validation': {
-        'required_prefix': '0x',
+        'required_prefix': ['0x', 'RTC'],
         'min_length': 10,
         'max_length': 66,
         'require_checksum': False,
@@ -470,9 +470,15 @@ class FaucetValidator:
         wallet = wallet.strip()
         
         # Check prefix
-        required_prefix = self.validation_config.get('required_prefix', '0x')
-        if required_prefix and not wallet.startswith(required_prefix):
-            return False, f"Wallet must start with '{required_prefix}'"
+        required_prefix = self.validation_config.get('required_prefix', ['0x', 'RTC'])
+        if isinstance(required_prefix, str):
+            accepted_prefixes = [required_prefix]
+        else:
+            accepted_prefixes = list(required_prefix or [])
+
+        if accepted_prefixes and not any(wallet.startswith(prefix) for prefix in accepted_prefixes):
+            joined_prefixes = "', '".join(accepted_prefixes)
+            return False, f"Wallet must start with one of '{joined_prefixes}'"
         
         # Check length
         min_len = self.validation_config.get('min_length', 10)
@@ -634,7 +640,7 @@ def register_routes(app: Flask, config: Dict, logger: logging.Logger,
         Handle drip requests.
         
         Request body:
-            {"wallet": "0x..."}
+            {"wallet": "0x..."} or {"wallet": "RTC..."}
         
         Response:
             {"ok": true, "amount": 0.5, "wallet": "...", "next_available": "..."}
@@ -1004,7 +1010,7 @@ HTML_TEMPLATE = """
                 <div class="form-group">
                     <label for="wallet">Your RTC Wallet Address</label>
                     <input type="text" id="wallet" name="wallet" 
-                           placeholder="0xYourWalletAddress" required>
+                           placeholder="RTCe4fbe4c9085b8b2ed3f1228504de66799025f6ce" required>
                 </div>
                 <button type="submit" id="submitBtn">Request Test RTC</button>
             </form>
