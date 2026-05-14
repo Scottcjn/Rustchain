@@ -359,18 +359,21 @@ def add_repair_entry(machine_id: str):
 
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
-    
+
     if not passport:
         return jsonify({'ok': False, 'error': 'passport_not_found'}), 404
-    
-    data = request.get_json()
-    if not data or 'repair_type' not in data or 'description' not in data:
+
+    data, error = get_optional_json_object()
+    if error:
+        return error
+
+    if 'repair_type' not in data or 'description' not in data:
         return jsonify({
             'ok': False,
             'error': 'missing_field',
             'message': "Fields 'repair_type' and 'description' are required",
         }), 400
-    
+
     success, msg = ledger.add_repair_entry(
         machine_id=machine_id,
         repair_date=data.get('repair_date', int(time.time())),
@@ -504,18 +507,21 @@ def add_lineage_note(machine_id: str):
 
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
-    
+
     if not passport:
         return jsonify({'ok': False, 'error': 'passport_not_found'}), 404
-    
-    data = request.get_json()
-    if not data or 'event_type' not in data:
+
+    data, error = get_optional_json_object()
+    if error:
+        return error
+
+    if 'event_type' not in data:
         return jsonify({
             'ok': False,
             'error': 'missing_field',
             'message': "Field 'event_type' is required",
         }), 400
-    
+
     success, msg = ledger.add_lineage_note(
         machine_id=machine_id,
         lineage_ts=data.get('lineage_ts', int(time.time())),
