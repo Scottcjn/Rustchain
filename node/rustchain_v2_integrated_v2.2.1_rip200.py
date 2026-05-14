@@ -4352,10 +4352,37 @@ def ensure_wallet_review_tables(conn):
     conn.execute("CREATE INDEX IF NOT EXISTS idx_wallet_review_status ON wallet_review_holds(status, created_at DESC)")
 
 
-def _wallet_review_ui_authorized(req):
-    """Allow the HTML admin review page to use either header auth or an explicit form/query key."""
-    if is_admin(req):
+_ADMIN_SESSIONS: dict = {}
+_ADMIN_SESSION_TTL = 3600
+
+def _get_or_create_admin_session(req):
+    now = time.time()
+    # Clean expired
+    expired = [k for k, v in _ADMIN_SESSIONS.items() if now - v > 3600]
+    for k in expired:
+        _ADMIN_SESSIONS.pop(k, None)
+    # Check existing session
+    sid = req.values.get("session_id", "")
+    if sid and sid in _ADMIN_SESSIONS:
+        _ADMIN_SESSIONS[sid] = now  # refresh TTL
         return True
+    # Check header auth
+    if is_admin(req):
+        sid = secrets.token_hex(16)
+        _ADMIN_SESSIONS[sid] = now
+        return sid
+    return False
+
+def _wallet_review_ui_authorized(req):
+    """Allow the HTML admin review page to use header auth or session token."""
+    sid = _get_or_create_admin_session(req)
+    if sid is True:
+        return True
+    if sid:
+        # Store session_id on request for template rendering
+        req._admin_session_id = sid  # type: ignore
+        return True
+    # Legacy fallback: admin_key via POST body only (not URL query params)
     need = os.environ.get("RC_ADMIN_KEY", "")
     got = str(req.form.get("admin_key") or "").strip()
     return bool(need and got and hmac.compare_digest(need, got))
@@ -4602,7 +4629,7 @@ def admin_operator_ui():
   <div class="panel">
     <h2>Review And Moderation</h2>
     <ul>
-      <li><a href="/admin/wallet-review-holds/ui{% if admin_key %}?admin_key={{ admin_key|urlencode }}{% endif %}">Wallet Review Holds UI</a> — create holds, coach miners, release, dismiss, escalate, or block.</li>
+      <li><a href="/admin/wallet-review-holds/ui?session_id={{ sid }}">Wallet Review Holds UI</a> — create holds, coach miners, release, dismiss, escalate, or block.</li>
     </ul>
   </div>
   <div class="panel">
@@ -4628,7 +4655,8 @@ def admin_wallet_review_holds_ui():
     if not _wallet_review_ui_authorized(request):
         return jsonify({"ok": False, "error": "forbidden"}), 403
 
-    admin_key = str(request.values.get("admin_key") or "").strip()
+    # session_id used for navigation links (no admin key in URLs)
+    sid = getattr(request, '_admin_session_id', '') or secrets.token_hex(16)
     active_status = str(request.values.get("status") or "").strip().lower()
 
     if request.method == 'POST':
@@ -4678,12 +4706,11 @@ def admin_wallet_review_holds_ui():
                         )
                         conn.commit()
         query = ""
-        if active_status or admin_key:
-            parts = []
-            if active_status:
-                parts.append(f"status={active_status}")
-            if admin_key:
-                parts.append(f"admin_key={admin_key}")
+        if active_status:
+            parts.append(f"status={active_status}")
+        if sid:
+            parts.append(f"session_id={sid}")
+        if parts:
             query = "?" + "&".join(parts)
         return redirect(f"/admin/wallet-review-holds/ui{query}", code=303)
 
@@ -4740,20 +4767,20 @@ def admin_wallet_review_holds_ui():
   </style>
 </head>
 <body>
-  <nav><a href="/admin/ui{% if admin_key %}?admin_key={{ admin_key|urlencode }}{% endif %}">admin index</a></nav>
+  <nav><a href="/admin/ui?session_id={{ sid }}">admin index</a></nav>
   <h1>RustChain Wallet Review Holds</h1>
   <p class="meta">Use this page to create review holds, coach miners, and release or escalate wallets without touching the legacy hard-block list.</p>
   <div class="filters">
-    <a href="/admin/wallet-review-holds/ui{% if admin_key %}?admin_key={{ admin_key|urlencode }}{% endif %}">all</a>
+    <a href="/admin/wallet-review-holds/ui?session_id={{ sid }}">all</a>
     {% for status_value in statuses %}
-    <a href="/admin/wallet-review-holds/ui?status={{ status_value }}{% if admin_key %}&admin_key={{ admin_key|urlencode }}{% endif %}">{{ status_value }}</a>
+    <a href="/admin/wallet-review-holds/ui?session_id={{ sid }}&status={{ status_value }}">{{ status_value }}</a>
     {% endfor %}
   </div>
   <div class="panel">
     <h2>Create Hold</h2>
     <form method="post" action="/admin/wallet-review-holds/ui">
       <input type="hidden" name="form_action" value="create">
-      <input type="hidden" name="admin_key" value="{{ admin_key }}">
+      <input type="hidden" name="session_id" value="{{ sid }}">
       <input type="hidden" name="status" value="{{ active_status }}">
       <div class="grid">
         <label>Wallet<input name="wallet" placeholder="RTC... or miner id" required></label>
@@ -4799,7 +4826,7 @@ def admin_wallet_review_holds_ui():
             <form method="post" action="/admin/wallet-review-holds/ui" style="margin-top:10px">
               <input type="hidden" name="form_action" value="resolve">
               <input type="hidden" name="hold_id" value="{{ entry.id }}">
-              <input type="hidden" name="admin_key" value="{{ admin_key }}">
+              <input type="hidden" name="session_id" value="{{ sid }}">
               <input type="hidden" name="status" value="{{ active_status }}">
               <label>Action
                 <select name="review_action">
