@@ -377,6 +377,39 @@ class TestLegacyMode_ProofNotRequired:
 
 
 # =============================================================================
+# Admin Authentication Tests
+# =============================================================================
+
+class TestAdminAuthentication:
+    """Tests for bridge admin endpoint authentication."""
+
+    def test_admin_key_uses_constant_time_compare(self, monkeypatch):
+        """Admin-gated endpoints compare configured keys with hmac.compare_digest."""
+        import bridge_api
+
+        app = Flask(__name__)
+        bridge_api.register_bridge_routes(app)
+        app.config["TESTING"] = True
+        calls = []
+
+        def fake_compare(provided, expected):
+            calls.append((provided, expected))
+            return False
+
+        monkeypatch.setattr(bridge_api.hmac, "compare_digest", fake_compare)
+
+        with app.test_client() as c:
+            resp = c.post(
+                "/bridge/release",
+                json={"lock_id": "missing-lock", "release_tx": "release-tx"},
+                headers={"X-Admin-Key": "wrong-admin-key"},
+            )
+
+        assert resp.status_code == 403
+        assert calls == [("wrong-admin-key", "test-admin-key-12345")]
+
+
+# =============================================================================
 # Integration Tests - Full Flow with Valid Proof
 # =============================================================================
 
