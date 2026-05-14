@@ -99,6 +99,18 @@ def _verify_miner_signature(miner_id: str, action: str, data: dict) -> bool:
         return False
 
 
+def _require_admin_key():
+    expected_key = os.environ.get("RC_ADMIN_KEY", "")
+    if not expected_key:
+        return jsonify({"error": "RC_ADMIN_KEY not configured - admin endpoints disabled"}), 503
+
+    provided_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
+    if not hmac.compare_digest(provided_key, expected_key):
+        return jsonify({"error": "Unauthorized - admin key required"}), 401
+
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
