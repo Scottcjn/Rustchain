@@ -325,6 +325,20 @@ class TestAtomFeedBuilder(unittest.TestCase):
         self.assertIn("media:content", xml)
         self.assertIn("video.mp4", xml)
 
+    def test_thumbnail_xml_is_well_formed(self):
+        """Test Atom media thumbnail extension is valid XML."""
+        self.builder.add_entry(
+            title="Test",
+            entry_id="urn:test:1",
+            link="https://example.com/1",
+            summary="Test",
+            thumbnail_url="https://example.com/thumb.jpg"
+        )
+        xml = self.builder.build()
+
+        self.assertIn('<media:thumbnail url="https://example.com/thumb.jpg"/>', xml)
+        self.assertNotIn('<media:thumbnail url="https://example.com/thumb.jpg/>', xml)
+
 
 class TestConvenienceFunctions(unittest.TestCase):
     """Test convenience functions."""
