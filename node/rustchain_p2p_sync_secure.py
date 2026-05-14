@@ -36,11 +36,6 @@ def address_from_pubkey(public_key_hex: str) -> str:
     pubkey_hash = hashlib.sha256(bytes.fromhex(public_key_hex)).hexdigest()[:40]
     return f"RTC{pubkey_hash}"
 
-
-
-# Trusted peer IPs - bypass auth for known nodes
-TRUSTED_PEER_IPS = {"50.28.86.131", "50.28.86.153", "127.0.0.1"}
-
 # ============================================================================
 # SECURITY: AUTHENTICATION & AUTHORIZATION
 # ============================================================================
@@ -568,11 +563,6 @@ def create_p2p_auth_middleware(auth_manager: P2PAuthManager):
     def require_peer_auth(f: Callable) -> Callable:
         @wraps(f)
         def decorated(*args, **kwargs):
-            # Skip auth for trusted peers
-            peer_ip = request.remote_addr
-            if peer_ip in TRUSTED_PEER_IPS:
-                return f(*args, **kwargs)
-                
             signature = request.headers.get('X-Peer-Signature')
             timestamp = request.headers.get('X-Peer-Timestamp')
 
