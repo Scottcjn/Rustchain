@@ -144,7 +144,7 @@ class LocalMiner:
 
         self.serial = get_linux_serial()
         print("="*70)
-        print("RustChain Local Linux Miner")
+        print(f"RustChain Local Miner - {platform.uname().system} {platform.uname().machine}")
         print("RIP-PoA Hardware Fingerprint + Serial Binding v2.0")
         if self.warthog:
             print("+ Warthog Dual-Mining Sidecar ACTIVE")
@@ -203,7 +203,7 @@ class LocalMiner:
             self.fingerprint_data = {"error": str(e), "all_passed": False}
 
     def _gen_wallet(self):
-        data = f"linux-miner-{platform.machine()}-{uuid.uuid4().hex}-{time.time()}"
+        data = f"{platform.node()}-{uuid.uuid4().hex}-{time.time()}"
         return hashlib.sha256(data.encode()).hexdigest()[:38] + "RTC"
 
     def _miner_id(self):
@@ -389,7 +389,7 @@ class LocalMiner:
         # Submit attestation with fingerprint data
         attestation = {
             "miner": self.wallet,
-            "miner_id": self._miner_id(),
+            "miner_id": f"{self.hw_info.get('arch', platform.machine())}-{self.hw_info['hostname']}",
             "nonce": nonce,
             "report": {
                 "nonce": nonce,
@@ -481,7 +481,7 @@ class LocalMiner:
 
         payload = {
             "miner_pubkey": self.wallet,
-            "miner_id": self._miner_id(),
+            "miner_id": f"{self.hw_info.get('arch', platform.machine())}-{self.hw_info['hostname']}",
             "device": {
                 "family": self.hw_info["family"],
                 "arch": self.hw_info["arch"]
