@@ -35,6 +35,11 @@ contract_store = []
 chat_sessions = {}
 
 
+def _coinbase_addresses_match(left, right):
+    """Compare optional EVM-style payment addresses without case sensitivity."""
+    return (left or '').strip().casefold() == (right or '').strip().casefold()
+
+
 def get_db():
     """Get database connection for current request context."""
     if 'db' not in g:
@@ -371,7 +376,7 @@ def beacon_join():
         # Check if agent already exists
         db = get_db()
         existing = db.execute(
-            "SELECT pubkey_hex FROM relay_agents WHERE agent_id = ?",
+            "SELECT pubkey_hex, coinbase_address FROM relay_agents WHERE agent_id = ?",
             (agent_id,)
         ).fetchone()
 
@@ -385,16 +390,23 @@ def beacon_join():
                     'error': 'Cannot change pubkey_hex for existing agent — '
                              'public key is immutable after registration'
                 }), 403
+            if coinbase_address and not _coinbase_addresses_match(
+                coinbase_address,
+                existing['coinbase_address'],
+            ):
+                return jsonify({
+                    'error': 'Cannot change coinbase_address for existing agent — '
+                             'payment address is immutable after registration'
+                }), 403
 
             # Update mutable fields only
             db.execute("""
                 UPDATE relay_agents
                 SET name = COALESCE(?, name),
-                    coinbase_address = COALESCE(?, coinbase_address),
                     status = 'active',
                     updated_at = ?
                 WHERE agent_id = ?
-            """, (name, coinbase_address, now, agent_id))
+            """, (name, now, agent_id))
         else:
             # New agent — insert with pubkey_hex
             db.execute("""
