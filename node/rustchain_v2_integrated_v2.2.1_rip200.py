@@ -4926,13 +4926,21 @@ def request_withdrawal():
     # Extract client IP (handle nginx proxy)
     client_ip = get_client_ip()
     miner_pk = data.get('miner_pk')
-    amount = float(data.get('amount', 0))
     destination = data.get('destination')
     signature = data.get('signature')
     nonce = data.get('nonce')
 
     if not all([miner_pk, destination, signature, nonce]):
         return jsonify({"error": "Missing required fields"}), 400
+
+    # SECURITY: Validate amount is a number (CVE-style float injection)
+    raw_amount = data.get('amount', 0)
+    try:
+        amount = float(raw_amount)
+    except (TypeError, ValueError):
+        return jsonify({"error": "amount must be a number", "received": str(type(raw_amount).__name__)}), 400
+    if amount < 0:
+        return jsonify({"error": "amount must be positive"}), 400
 
     if amount < MIN_WITHDRAWAL:
         return jsonify({"error": f"Minimum withdrawal is {MIN_WITHDRAWAL} RTC"}), 400
