@@ -11,7 +11,7 @@ import os
 
 # Add tools to path for importing cli module
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'tools', 'cli'))
-from rustchain_cli import fetch_api, get_node_url
+from rustchain_cli import fetch_api, get_node_url, wallet_balance_endpoint
 
 
 class TestWalletBalanceEndpoint:
@@ -31,6 +31,16 @@ class TestWalletBalanceEndpoint:
         assert "/wallet/balance" in expected_url
         assert "miner_id=" in expected_url
         assert test_address in expected_url
+
+    def test_cli_balance_command_endpoint(self):
+        """Verify the top-level balance command uses the live wallet endpoint."""
+        test_miner_id = "miner id/with spaces"
+
+        endpoint = wallet_balance_endpoint(test_miner_id)
+
+        assert endpoint == "/wallet/balance?miner_id=miner%20id%2Fwith%20spaces"
+        assert not endpoint.startswith("/balance/")
+        assert not endpoint.startswith("/api/balance")
 
     def test_balance_response_parsing(self):
         """Test that balance response is correctly parsed."""

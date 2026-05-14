@@ -35,6 +35,7 @@ import os
 import sys
 import hashlib
 from datetime import datetime, timedelta
+from urllib.parse import quote
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 
@@ -46,6 +47,12 @@ __version__ = "0.2.0"
 def get_node_url():
     """Get node URL from env var or default."""
     return os.environ.get("RUSTCHAIN_NODE", DEFAULT_NODE)
+
+
+def wallet_balance_endpoint(miner_id):
+    """Return the live wallet balance endpoint for a miner ID."""
+    return f"/wallet/balance?miner_id={quote(miner_id, safe='')}"
+
 
 def fetch_api(endpoint):
     """Fetch data from RustChain API."""
@@ -157,14 +164,14 @@ def cmd_balance(args):
             print("Error: Please provide a miner ID or use --all", file=sys.stderr)
             sys.exit(1)
         
-        data = fetch_api(f"/balance/{args.miner_id}")
+        data = fetch_api(wallet_balance_endpoint(args.miner_id))
         
         if args.json:
             print(json.dumps(data, indent=2))
             return
         
         print(f"Balance for {args.miner_id}")
-        print(f"RTC: {data.get('balance_rtc', data.get('balance', 'N/A'))}")
+        print(f"RTC: {data.get('amount_rtc', data.get('balance_rtc', data.get('balance', 'N/A')))}")
 
 def cmd_epoch(args):
     """Show epoch information."""
@@ -302,7 +309,7 @@ def cmd_wallet(args):
                 print("Error: Please provide a wallet address or set RUSTCHAIN_WALLET", file=sys.stderr)
                 sys.exit(1)
         
-        data = fetch_api(f"/wallet/balance?miner_id={args.address}")
+        data = fetch_api(wallet_balance_endpoint(args.address))
         
         if use_json:
             print(json.dumps(data, indent=2))

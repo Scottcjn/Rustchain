@@ -223,7 +223,7 @@ echo "✓ All Agent Economy CLI commands working (write commands in --dry-run mo
 - `/health` - Node health check
 - `/epoch` - Current epoch information
 - `/api/miners` - List of active miners
-- `/balance/<miner_id>` - Wallet balance
+- `/wallet/balance?miner_id=<miner_id>` - Wallet balance
 - `/api/hall_of_fame` - Hall of Fame leaderboard
 - `/api/fee_pool` - Fee pool statistics
 
