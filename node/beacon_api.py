@@ -11,9 +11,15 @@ import sqlite3
 from datetime import datetime
 from flask import Blueprint, jsonify, request, g
 
+try:
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+except Exception:  # pragma: no cover
+    Ed25519PublicKey = None
+
 beacon_api = Blueprint('beacon_api', __name__)
 
 DB_PATH = 'rustchain_v2.db'
+BEACON_AUTH_WINDOW_SECONDS = 300
 
 # In-memory cache for bounties (synced from GitHub)
 bounty_cache = {
@@ -123,6 +129,15 @@ def init_beacon_tables(db_path=DB_PATH):
             )
         """)
 
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS beacon_agent_nonces (
+                agent_id TEXT NOT NULL,
+                nonce TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                PRIMARY KEY (agent_id, nonce)
+            )
+        """)
+
         # Create indexes
         conn.execute("CREATE INDEX IF NOT EXISTS idx_contracts_from ON beacon_contracts(from_agent)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_contracts_to ON beacon_contracts(to_agent)")
@@ -130,8 +145,97 @@ def init_beacon_tables(db_path=DB_PATH):
         conn.execute("CREATE INDEX IF NOT EXISTS idx_bounties_state ON beacon_bounties(state)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_agent ON beacon_chat(agent_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_relay_agents_status ON relay_agents(status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_beacon_agent_nonces_created ON beacon_agent_nonces(created_at)")
 
         conn.commit()
+
+
+def _clean_pubkey_hex(pubkey_hex):
+    pubkey_clean = str(pubkey_hex or '').strip()
+    if pubkey_clean.startswith(('0x', '0X')):
+        pubkey_clean = pubkey_clean[2:]
+    return pubkey_clean
+
+
+def _canonical_agent_request(agent_id, timestamp, nonce, body_bytes):
+    body_hash = hashlib.sha256(body_bytes or b'').hexdigest()
+    return '\n'.join([
+        request.method.upper(),
+        request.path,
+        body_hash,
+        str(timestamp),
+        str(nonce),
+        str(agent_id),
+    ]).encode('utf-8')
+
+
+def _verify_agent_signature(pubkey_hex, signature_hex, message):
+    if Ed25519PublicKey is None:
+        return False
+    try:
+        pubkey = Ed25519PublicKey.from_public_bytes(bytes.fromhex(_clean_pubkey_hex(pubkey_hex)))
+        pubkey.verify(bytes.fromhex(str(signature_hex or '').strip()), message)
+        return True
+    except Exception:
+        return False
+
+
+def _authenticate_contract_agent(db, allowed_agents, body_bytes):
+    allowed = {str(agent) for agent in allowed_agents if agent}
+
+    if os.environ.get('BEACON_ALLOW_LEGACY_AGENT_KEY') == '1':
+        legacy_key = request.headers.get('X-Agent-Key', '')
+        if legacy_key in allowed:
+            return legacy_key, None
+
+    agent_id = request.headers.get('X-Agent-Id', '')
+    timestamp_raw = request.headers.get('X-Agent-Timestamp', '')
+    nonce = request.headers.get('X-Agent-Nonce', '')
+    signature = request.headers.get('X-Agent-Signature', '')
+
+    if not all([agent_id, timestamp_raw, nonce, signature]):
+        return None, (jsonify({
+            'error': 'Missing Beacon signature headers: X-Agent-Id, X-Agent-Timestamp, X-Agent-Nonce, X-Agent-Signature'
+        }), 401)
+
+    if agent_id not in allowed:
+        return None, (jsonify({'error': 'Unauthorized — caller is not an allowed contract party'}), 403)
+
+    try:
+        timestamp = int(timestamp_raw)
+    except (TypeError, ValueError):
+        return None, (jsonify({'error': 'Invalid X-Agent-Timestamp'}), 400)
+
+    now = int(time.time())
+    if abs(now - timestamp) > BEACON_AUTH_WINDOW_SECONDS:
+        return None, (jsonify({'error': 'Stale Beacon signature timestamp'}), 401)
+
+    if not isinstance(nonce, str) or not nonce.strip() or len(nonce) > 128:
+        return None, (jsonify({'error': 'Invalid X-Agent-Nonce'}), 400)
+
+    row = db.execute(
+        "SELECT pubkey_hex FROM relay_agents WHERE agent_id = ?",
+        (agent_id,)
+    ).fetchone()
+    if not row:
+        return None, (jsonify({'error': f'agent not found: {agent_id}'}), 400)
+
+    message = _canonical_agent_request(agent_id, timestamp, nonce, body_bytes)
+    if not _verify_agent_signature(row['pubkey_hex'], signature, message):
+        return None, (jsonify({'error': 'Invalid Beacon agent signature'}), 401)
+
+    cutoff = now - BEACON_AUTH_WINDOW_SECONDS
+    db.execute("DELETE FROM beacon_agent_nonces WHERE created_at < ?", (cutoff,))
+    try:
+        db.execute(
+            "INSERT INTO beacon_agent_nonces (agent_id, nonce, created_at) VALUES (?, ?, ?)",
+            (agent_id, nonce, now)
+        )
+        db.commit()
+    except sqlite3.IntegrityError:
+        return None, (jsonify({'error': 'Replay detected for Beacon agent nonce'}), 401)
+
+    return agent_id, None
 
 
 # ============================================================
@@ -415,11 +519,14 @@ def get_contracts():
 def create_contract():
     """Create a new contract between agents.
     
-    Requires X-Agent-Key header to authenticate the contract creator (from_agent).
+    Requires Beacon Ed25519 signature headers to authenticate the contract creator.
     Validates that the from_agent exists in the relay_agents table.
     """
     try:
-        data = request.get_json()
+        body_bytes = request.get_data(cache=True)
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({'error': 'Invalid or missing JSON body'}), 400
         
         # Validate required fields
         required = ['from', 'to', 'type', 'amount', 'term']
@@ -428,16 +535,6 @@ def create_contract():
                 return jsonify({'error': f'Missing field: {field}'}), 400
         
         from_agent = data['from']
-        
-        # Authentication: require X-Agent-Key header matching from_agent
-        agent_key = request.headers.get('X-Agent-Key', '')
-        if not agent_key:
-            return jsonify({'error': 'Missing X-Agent-Key header — authentication required'}), 401
-        
-        if agent_key != from_agent:
-            return jsonify({
-                'error': 'Unauthorized — X-Agent-Key does not match from_agent'
-            }), 403
         
         # Verify from_agent exists in relay_agents table
         db = get_db()
@@ -449,6 +546,10 @@ def create_contract():
             return jsonify({
                 'error': f'from_agent not found: {from_agent}'
             }), 400
+
+        _, auth_error = _authenticate_contract_agent(db, [from_agent], body_bytes)
+        if auth_error:
+            return auth_error
         
         # Generate contract ID
         contract_id = f"ctr_{int(time.time())}_{hashlib.blake2b(str(time.time()).encode(), digest_size=4).hexdigest()}"
@@ -487,11 +588,14 @@ def create_contract():
 def update_contract(contract_id):
     """Update contract state (accept, complete, breach).
     
-    Requires X-Agent-Key header to verify caller is a party to the contract.
+    Requires Beacon Ed25519 signature headers to verify caller is a party to the contract.
     Validates state transitions to prevent invalid jumps.
     """
     try:
-        data = request.get_json()
+        body_bytes = request.get_data(cache=True)
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({'error': 'Invalid or missing JSON body'}), 400
         new_state = data.get('state')
         
         if not new_state:
@@ -531,23 +635,16 @@ def update_contract(contract_id):
                 'error': f'Invalid state transition: {current_state} -> {new_state}'
             }), 400
         
-        # Verify caller is a party to the contract
-        agent_key = request.headers.get('X-Agent-Key', '')
-        if not agent_key:
-            return jsonify({'error': 'Missing X-Agent-Key header — authentication required'}), 401
-        
         from_agent = contract['from_agent']
         to_agent = contract['to_agent'] if 'to_agent' in contract.keys() else ''
-        
-        # Caller must be either the from_agent or to_agent
-        if agent_key != from_agent and agent_key != to_agent:
-            return jsonify({
-                'error': 'Unauthorized — caller is not a party to this contract'
-            }), 403
+
+        caller_agent, auth_error = _authenticate_contract_agent(db, [from_agent, to_agent], body_bytes)
+        if auth_error:
+            return auth_error
         
         # Only to_agent can accept or reject an offered contract
         if current_state == 'offered' and new_state == 'active':
-            if agent_key != to_agent:
+            if caller_agent != to_agent:
                 return jsonify({
                     'error': 'Only the recipient (to_agent) can accept this contract'
                 }), 403
@@ -559,7 +656,7 @@ def update_contract(contract_id):
         
         # Only from_agent can mark as breached
         if new_state == 'breached':
-            if agent_key != from_agent:
+            if caller_agent != from_agent:
                 return jsonify({
                     'error': 'Only the contract creator (from_agent) can mark as breached'
                 }), 403

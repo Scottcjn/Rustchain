@@ -12,6 +12,10 @@ import tempfile
 import sqlite3
 import gc
 from unittest.mock import Mock, patch
+import hashlib
+
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -57,6 +61,15 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         init_beacon_tables(cls.test_db_path)
         
         cls.client = cls.app.test_client()
+        cls.agent_keys = {
+            agent_id: Ed25519PrivateKey.generate()
+            for agent_id in [
+                'bcn_alice_test',
+                'bcn_bob_test',
+                'bcn_test_from',
+                'bcn_test_to',
+            ]
+        }
 
     @classmethod
     def tearDownClass(cls):
@@ -83,13 +96,43 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 [
-                    ('bcn_alice_test', '0x' + '11' * 32, 'Alice Test', 'active', now, now),
-                    ('bcn_bob_test', '0x' + '22' * 32, 'Bob Test', 'active', now, now),
-                    ('bcn_test_from', '0x' + '33' * 32, 'From Test', 'active', now, now),
-                    ('bcn_test_to', '0x' + '44' * 32, 'To Test', 'active', now, now),
+                    (agent_id, self._pubkey_hex(agent_id), name, 'active', now, now)
+                    for agent_id, name in [
+                        ('bcn_alice_test', 'Alice Test'),
+                        ('bcn_bob_test', 'Bob Test'),
+                        ('bcn_test_from', 'From Test'),
+                        ('bcn_test_to', 'To Test'),
+                    ]
                 ],
             )
             conn.commit()
+
+    @classmethod
+    def _pubkey_hex(cls, agent_id):
+        pubkey = cls.agent_keys[agent_id].public_key()
+        return pubkey.public_bytes(Encoding.Raw, PublicFormat.Raw).hex()
+
+    @classmethod
+    def _signed_headers(cls, agent_id, method, path, body):
+        body_bytes = body.encode('utf-8') if isinstance(body, str) else body
+        timestamp = str(int(time.time()))
+        nonce = hashlib.blake2b(f"{agent_id}:{timestamp}:{body}".encode(), digest_size=16).hexdigest()
+        body_hash = hashlib.sha256(body_bytes or b'').hexdigest()
+        message = '\n'.join([
+            method.upper(),
+            path,
+            body_hash,
+            timestamp,
+            nonce,
+            agent_id,
+        ]).encode('utf-8')
+        signature = cls.agent_keys[agent_id].sign(message).hex()
+        return {
+            'X-Agent-Id': agent_id,
+            'X-Agent-Timestamp': timestamp,
+            'X-Agent-Nonce': nonce,
+            'X-Agent-Signature': signature,
+        }
 
     def test_health_endpoint_returns_ok(self):
         """Health check endpoint returns status ok."""
@@ -112,11 +155,12 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
             'term': '30d'
         }
         
+        create_body = json.dumps(contract_data)
         create_response = self.client.post(
             '/api/contracts',
-            data=json.dumps(contract_data),
+            data=create_body,
             content_type='application/json',
-            headers={'X-Agent-Key': 'bcn_alice_test'},
+            headers=self._signed_headers('bcn_alice_test', 'POST', '/api/contracts', create_body),
         )
         self.assertEqual(create_response.status_code, 201)
         
@@ -136,11 +180,17 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         self.assertEqual(contracts[0]['id'], contract_id)
         
         # Update contract state to active
+        update_body = json.dumps({'state': 'active'})
         update_response = self.client.put(
             f'/api/contracts/{contract_id}',
-            data=json.dumps({'state': 'active'}),
+            data=update_body,
             content_type='application/json',
-            headers={'X-Agent-Key': 'bcn_bob_test'},
+            headers=self._signed_headers(
+                'bcn_bob_test',
+                'PUT',
+                f'/api/contracts/{contract_id}',
+                update_body,
+            ),
         )
         self.assertEqual(update_response.status_code, 200)
         
@@ -148,6 +198,25 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         list_response2 = self.client.get('/api/contracts')
         contracts2 = json.loads(list_response2.data)
         self.assertEqual(contracts2[0]['state'], 'active')
+
+    def test_public_agent_id_bearer_rejected_for_contract_create(self):
+        """A public agent ID in X-Agent-Key is not enough to create contracts."""
+        contract_data = {
+            'from': 'bcn_alice_test',
+            'to': 'bcn_bob_test',
+            'type': 'rent',
+            'amount': 100.0,
+            'term': '30d'
+        }
+
+        response = self.client.post(
+            '/api/contracts',
+            data=json.dumps(contract_data),
+            content_type='application/json',
+            headers={'X-Agent-Key': 'bcn_alice_test'},
+        )
+
+        self.assertEqual(response.status_code, 401)
 
     def test_contract_validation_rejects_invalid(self):
         """Contract creation rejects invalid/missing fields."""
@@ -268,20 +337,27 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
             'term': '7d'
         }
         
+        create_body = json.dumps(contract_data)
         create_response = self.client.post(
             '/api/contracts',
-            data=json.dumps(contract_data),
+            data=create_body,
             content_type='application/json',
-            headers={'X-Agent-Key': 'bcn_test_from'},
+            headers=self._signed_headers('bcn_test_from', 'POST', '/api/contracts', create_body),
         )
         contract_id = json.loads(create_response.data)['id']
         
         # Try invalid state
+        update_body = json.dumps({'state': 'invalid_state'})
         update_response = self.client.put(
             f'/api/contracts/{contract_id}',
-            data=json.dumps({'state': 'invalid_state'}),
+            data=update_body,
             content_type='application/json',
-            headers={'X-Agent-Key': 'bcn_test_from'},
+            headers=self._signed_headers(
+                'bcn_test_from',
+                'PUT',
+                f'/api/contracts/{contract_id}',
+                update_body,
+            ),
         )
         self.assertEqual(update_response.status_code, 400)
 
