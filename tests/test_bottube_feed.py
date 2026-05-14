@@ -337,7 +337,7 @@ class TestAtomFeedBuilder(unittest.TestCase):
         )
         xml = self.builder.build()
         self.assertIn('<media:thumbnail url="https://example.com/thumb.jpg"/>', xml)
-        ET.fromstring(xml)
+        ET.fromstring(xml)  # nosec B314 - parsing locally generated test XML.
 
 
 class TestConvenienceFunctions(unittest.TestCase):
