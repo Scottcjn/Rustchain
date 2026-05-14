@@ -19,7 +19,7 @@ This document provides step-by-step instructions for reproducing the smoke test 
 
 ```powershell
 # 1. Download the release bundle
-Invoke-WebRequest -Uri "https://github.com/Scottcjn/Rustchain/releases/download/v1.6.0/rustchain_windows_miner_release.zip" -OutFile "$env:TEMP\miner.zip"
+Invoke-WebRequest -Uri "https://github.com/Scottcjn/Rustchain/releases/download/win-miner-2026-02/rustchain_windows_miner_release.zip" -OutFile "$env:TEMP\miner.zip"
 
 # 2. Extract
 Expand-Archive -Path "$env:TEMP\miner.zip" -DestinationPath "$env:TEMP\miner_test"
