@@ -12,6 +12,7 @@ Features:
 import sqlite3
 import time
 import os
+import re
 from datetime import datetime, timedelta
 from flask import Flask, request, jsonify, render_template_string
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -19,6 +20,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 DATABASE = 'faucet.db'
+RTC_WALLET_RE = re.compile(r'^RTC[0-9a-fA-F]{40}$')
 
 # Rate limiting settings (per 24 hours)
 MAX_DRIP_AMOUNT = 0.5  # RTC
@@ -110,6 +112,13 @@ def record_drip(wallet, ip_address, amount):
     ''', (wallet, ip_address, amount))
     conn.commit()
     conn.close()
+
+
+def is_valid_wallet_address(wallet):
+    """Accept legacy Ethereum-style wallets and native RTC wallets."""
+    return (wallet.startswith('0x') and len(wallet) >= 10) or bool(
+        RTC_WALLET_RE.fullmatch(wallet)
+    )
 
 
 # HTML Template
@@ -319,8 +328,8 @@ def drip():
 
     wallet = wallet_value.strip()
     
-    # Basic wallet validation (should start with 0x and be reasonably long)
-    if not wallet.startswith('0x') or len(wallet) < 10:
+    # Basic wallet validation (accept Ethereum-style and native RTC wallets)
+    if not is_valid_wallet_address(wallet):
         return jsonify({'ok': False, 'error': 'Invalid wallet address'}), 400
     
     ip = get_client_ip()
