@@ -21,6 +21,10 @@ from urllib.parse import urlparse, parse_qs
 import threading
 
 
+JSON_BODY_OBJECT_ERROR = "JSON body must be an object"
+RPC_PARAMS_OBJECT_ERROR = "RPC params must be an object"
+
+
 # =============================================================================
 # API Response
 # =============================================================================
@@ -65,6 +69,8 @@ class RpcRegistry:
         handler = self.methods.get(name)
         if not handler:
             return ApiResponse(success=False, error=f"Method not found: {name}")
+        if not isinstance(params, dict):
+            return ApiResponse(success=False, error=RPC_PARAMS_OBJECT_ERROR)
 
         try:
             result = handler(params)
@@ -279,8 +285,11 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
         response = self._route_request(parsed.path, params)
         self._send_response(response)
 
-    def _route_request(self, path: str, params: Dict[str, Any]) -> ApiResponse:
+    def _route_request(self, path: str, params: Any) -> ApiResponse:
         """Route request to appropriate handler"""
+        if not isinstance(params, dict):
+            return ApiResponse(success=False, error=JSON_BODY_OBJECT_ERROR)
+
         # REST endpoints
         routes = {
             "/api/stats": ("getStats", {}),
@@ -326,6 +335,8 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
         if path == "/rpc":
             method = params.get("method", "")
             rpc_params = params.get("params", {})
+            if not isinstance(rpc_params, dict):
+                return ApiResponse(success=False, error=RPC_PARAMS_OBJECT_ERROR)
             return self.api.rpc.call(method, rpc_params)
 
         return ApiResponse(success=False, error=f"Unknown endpoint: {path}")
