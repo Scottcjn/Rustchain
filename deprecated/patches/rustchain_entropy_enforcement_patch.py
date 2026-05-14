@@ -24,7 +24,7 @@ MIN_ENTROPY_SCORE = 0.15  # Phase 1: Start low
 MIN_ENTROPY_WARNING = 0.20  # Warn if below this
 MIN_ENTROPY_STRICT = 0.30  # Phase 2: Future strict enforcement
 
-PATCH_INSTRUCTIONS = """
+PATCH_INSTRUCTIONS = r'''
 ================================================================================
 RUSTCHAIN ENTROPY ENFORCEMENT PATCH
 ================================================================================
@@ -143,7 +143,7 @@ In the final success response of submit_attestation(), add entropy data:
     })
 
 ================================================================================
-"""
+'''
 
 
 def check_prerequisites(node_path="/root/rustchain"):
