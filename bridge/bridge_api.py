@@ -160,13 +160,17 @@ def _verify_receipt_signature(sender: str, amount_base: int, target_chain: str, 
 
 
 def _require_admin(fn):
-    """Decorator: require X-Admin-Key header."""
+    """Decorator: require X-Admin-Key header.
+
+    Security fix: use hmac.compare_digest() instead of != to prevent
+    timing side-channel attacks that could leak the admin key byte-by-byte.
+    """
     @wraps(fn)
     def wrapper(*args, **kwargs):
         key = request.headers.get("X-Admin-Key", "")
         if not BRIDGE_ADMIN_KEY:
             return jsonify({"error": "admin key not configured on server"}), 500
-        if key != BRIDGE_ADMIN_KEY:
+        if not hmac.compare_digest(key, BRIDGE_ADMIN_KEY):
             return jsonify({"error": "unauthorized"}), 403
         return fn(*args, **kwargs)
     return wrapper
