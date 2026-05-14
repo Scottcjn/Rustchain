@@ -426,12 +426,10 @@ class UtxoDB:
         # Only the epoch settlement system should create mining_reward transactions.
         # Require _allow_minting=True (internal flag) to permit mining_reward.
         MINTING_TX_TYPES = {'mining_reward'}
-        if tx_type in MINTING_TX_TYPES and not tx.get('_allow_minting'):
-            if own:
-                conn.close()
-            return False
-
         own = conn is None
+        if tx_type in MINTING_TX_TYPES and not tx.get('_allow_minting'):
+            # conn is None (own=True) at this point — nothing to close
+            return False
         if own:
             conn = self._conn()
 
@@ -505,7 +503,8 @@ class UtxoDB:
             for o in outputs:
                 val = o.get('value_nrtc')
                 if (
-                    not isinstance(val, int)
+                    isinstance(val, bool)
+                    or not isinstance(val, int)
                     or val < DUST_THRESHOLD
                 ):
                     return abort()
@@ -853,7 +852,7 @@ class UtxoDB:
             # expiry (DoS vector).
             for o in outputs:
                 val = o.get('value_nrtc')
-                if not isinstance(val, int) or val < DUST_THRESHOLD:
+                if isinstance(val, bool) or not isinstance(val, int) or val < DUST_THRESHOLD:
                     if manage_tx:
                         conn.execute("ROLLBACK")
                     return False
