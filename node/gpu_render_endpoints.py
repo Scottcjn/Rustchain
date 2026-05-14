@@ -13,6 +13,32 @@ from flask import jsonify, request
 def register_gpu_render_endpoints(app, db_path, admin_key):
     """Registers decentralized GPU render payment and attestation endpoints."""
 
+    def _field_type_error(field, expected):
+        return (
+            jsonify(
+                {
+                    "error": "invalid_field_type",
+                    "field": field,
+                    "expected": expected,
+                }
+            ),
+            400,
+        )
+
+    def _json_object_body():
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return None, (jsonify({"error": "invalid_json"}), 400)
+        return data, None
+
+    def _string_field(data, field, default=""):
+        value = data.get(field, default)
+        if value is None:
+            value = default
+        if not isinstance(value, str):
+            return None, _field_type_error(field, "string")
+        return value, None
+
     def get_db():
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
@@ -43,8 +69,12 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
     # 1. GPU Node Attestation (Extension)
     @app.route("/api/gpu/attest", methods=["POST"])
     def gpu_attest():
-        data = request.get_json(silent=True) or {}
-        miner_id = data.get("miner_id")
+        data, error_response = _json_object_body()
+        if error_response:
+            return error_response
+        miner_id, error_response = _string_field(data, "miner_id")
+        if error_response:
+            return error_response
         if not miner_id:
             return jsonify({"error": "miner_id required"}), 400
 
@@ -87,11 +117,25 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
     # 2. Escrow: Lock funds for a job
     @app.route("/api/gpu/escrow", methods=["POST"])
     def gpu_escrow():
-        data = request.get_json(silent=True) or {}
-        job_id = data.get("job_id") or f"job_{secrets.token_hex(8)}"
-        job_type = data.get("job_type")  # render, tts, stt, llm
-        from_wallet = data.get("from_wallet")
-        to_wallet = data.get("to_wallet")
+        data, error_response = _json_object_body()
+        if error_response:
+            return error_response
+        job_id, error_response = _string_field(
+            data,
+            "job_id",
+            f"job_{secrets.token_hex(8)}",
+        )
+        if error_response:
+            return error_response
+        job_type, error_response = _string_field(data, "job_type")  # render, tts, stt, llm
+        if error_response:
+            return error_response
+        from_wallet, error_response = _string_field(data, "from_wallet")
+        if error_response:
+            return error_response
+        to_wallet, error_response = _string_field(data, "to_wallet")
+        if error_response:
+            return error_response
         amount = _parse_positive_amount(data.get("amount_rtc"))
 
         if not all([job_type, from_wallet, to_wallet]):
@@ -99,7 +143,13 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
         if amount is None:
             return jsonify({"error": "amount_rtc must be a finite number > 0"}), 400
 
-        escrow_secret = data.get("escrow_secret") or secrets.token_hex(16)
+        escrow_secret, error_response = _string_field(
+            data,
+            "escrow_secret",
+            secrets.token_hex(16),
+        )
+        if error_response:
+            return error_response
 
         db = get_db()
         try:
@@ -134,10 +184,18 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
     # 3. Release: Job finished successfully (payer authorizes provider payout)
     @app.route("/api/gpu/release", methods=["POST"])
     def gpu_release():
-        data = request.get_json(silent=True) or {}
-        job_id = data.get("job_id")
-        actor_wallet = data.get("actor_wallet")
-        escrow_secret = data.get("escrow_secret")
+        data, error_response = _json_object_body()
+        if error_response:
+            return error_response
+        job_id, error_response = _string_field(data, "job_id")
+        if error_response:
+            return error_response
+        actor_wallet, error_response = _string_field(data, "actor_wallet")
+        if error_response:
+            return error_response
+        escrow_secret, error_response = _string_field(data, "escrow_secret")
+        if error_response:
+            return error_response
 
         if not all([job_id, actor_wallet, escrow_secret]):
             return jsonify({"error": "job_id, actor_wallet, escrow_secret are required"}), 400
@@ -178,10 +236,18 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
     # 4. Refund: Job failed (provider authorizes refund to payer)
     @app.route("/api/gpu/refund", methods=["POST"])
     def gpu_refund():
-        data = request.get_json(silent=True) or {}
-        job_id = data.get("job_id")
-        actor_wallet = data.get("actor_wallet")
-        escrow_secret = data.get("escrow_secret")
+        data, error_response = _json_object_body()
+        if error_response:
+            return error_response
+        job_id, error_response = _string_field(data, "job_id")
+        if error_response:
+            return error_response
+        actor_wallet, error_response = _string_field(data, "actor_wallet")
+        if error_response:
+            return error_response
+        escrow_secret, error_response = _string_field(data, "escrow_secret")
+        if error_response:
+            return error_response
 
         if not all([job_id, actor_wallet, escrow_secret]):
             return jsonify({"error": "job_id, actor_wallet, escrow_secret are required"}), 400
