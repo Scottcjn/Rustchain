@@ -4,6 +4,7 @@
 # BCOS-Tier: L1
 import os
 import logging
+from urllib.parse import quote
 import requests
 from dotenv import load_dotenv
 from telegram import Update
@@ -48,6 +49,11 @@ def get_price_data():
         logger.error(f"Error fetching price data: {e}")
         return None
 
+def _markdown_link_url(url):
+    """Escape untrusted URLs before embedding them in Markdown links."""
+    return quote(str(url or ""), safe=":/?#[]@!$&'()*+,;=").replace(")", "%29")
+
+
 def format_price_message(data):
     """Format the price data into a nice Telegram message."""
     return (
@@ -58,7 +64,7 @@ def format_price_message(data):
         f"⏱ *1h Change:* `{data['h1_change']}%`\n\n"
         f"💧 *Liquidity:* `${data['liquidity_usd']:,.0f}`\n"
         f"📊 *24h Volume:* `${data['volume_h24']:,.0f}`\n\n"
-        f"🔗 [View on DexScreener]({data['url']})"
+        f"🔗 [View on DexScreener]({_markdown_link_url(data['url'])})"
     )
 
 async def price_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
