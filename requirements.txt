@@ -9,5 +9,7 @@ cryptography>=46.0.7
 PyNaCl>=1.6.2
 # For wallet CLI (BIP39 seed phrases):
 mnemonic>=0.21
+# For EIP-55 Ethereum address checksum validation (faucet_service):
+pycryptodome>=3.20.0
 # For running tests:
 pytest>=7.4.4
