@@ -8,7 +8,7 @@ import os
 import hashlib
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'bcos-directory-dev-key'
+app.config['SECRET_KEY'] = os.environ.get('BCOS_DIRECTORY_SECRET_KEY') or os.urandom(32).hex()
 
 DATABASE = 'bcos_directory.db'
 
