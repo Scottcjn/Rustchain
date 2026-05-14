@@ -7894,7 +7894,7 @@ def resolve_bcn_wallet(bcn_id: str) -> dict:
             return {"found": False, "error": "beacon_id_not_registered"}
         
         if row["status"] != "active":
-            return {"found": False, "error": f"beacon_agent_status:{row[status]}"}
+            return {"found": False, "error": f"beacon_agent_status:{row['status']}"}
         
         pubkey_hex = row["pubkey_hex"]
         rtc_addr = address_from_pubkey(pubkey_hex)
