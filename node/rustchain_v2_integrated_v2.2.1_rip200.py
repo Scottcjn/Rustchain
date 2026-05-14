@@ -4867,7 +4867,11 @@ def register_withdrawal_key():
     # SECURITY: prevent unauthenticated key overwrite (withdrawal takeover).
     # First-time registration is allowed. Rotation requires admin key.
     admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    is_admin = hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", ""))
+    admin_key_env = os.environ.get("RC_ADMIN_KEY", "")
+    # Fail-closed: if env is unset/empty, never treat the request as admin
+    # (prevents hmac.compare_digest("", "") returning True from authenticating
+    # an unauthenticated key-rotation request).
+    is_admin = bool(admin_key_env) and bool(admin_key) and hmac.compare_digest(admin_key, admin_key_env)
 
     now = int(time.time())
     with sqlite3.connect(DB_PATH) as c:
@@ -6749,8 +6753,11 @@ def metrics():
 def api_rewards_settle():
     """Settle rewards for a specific epoch (admin/cron callable)"""
     # SECURITY: settling rewards mutates chain state; require admin key.
+    admin_key_env = os.environ.get("RC_ADMIN_KEY", "")
+    if not admin_key_env:
+        return jsonify({"ok": False, "reason": "admin_key_unset", "code": "ADMIN_KEY_UNSET"}), 503
     admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    if not hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", "")):
+    if not hmac.compare_digest(admin_key, admin_key_env):
         return jsonify({"ok": False, "reason": "admin_required"}), 401
 
     body = request.get_json(force=True, silent=True) or {}
@@ -7022,9 +7029,20 @@ def send_sophiacheck_alert(alert_type, message, data):
 @app.route('/wallet/transfer', methods=['POST'])
 def wallet_transfer_v2():
     """Transfer RTC between miner wallets - NOW WITH 2-PHASE COMMIT"""
-    # SECURITY: Require admin key for internal transfers
+    # SECURITY: Require admin key for internal transfers.
+    # FAIL-CLOSED (cherry-pick from #5174): if RC_ADMIN_KEY is unset/empty,
+    # `hmac.compare_digest("", "")` returns True and the endpoint would be
+    # unauthenticated. Reject with 503 before reaching the comparison so
+    # the bug cannot resurface if module-level startup checks are bypassed.
+    admin_key_env = os.environ.get("RC_ADMIN_KEY", "")
+    if not admin_key_env:
+        return jsonify({
+            "error": "RC_ADMIN_KEY not configured on server",
+            "code": "ADMIN_KEY_UNSET",
+            "hint": "Set the RC_ADMIN_KEY environment variable or use /wallet/transfer/signed"
+        }), 503
     admin_key = request.headers.get("X-Admin-Key", "")
-    if not hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", "")):
+    if not hmac.compare_digest(admin_key, admin_key_env):
         return jsonify({
             "error": "Unauthorized - admin key required",
             "hint": "Use /wallet/transfer/signed for user transfers"
@@ -7122,8 +7140,11 @@ def wallet_transfer_v2():
 @app.route('/pending/list', methods=['GET'])
 def list_pending():
     """List all pending transfers"""
+    admin_key_env = os.environ.get("RC_ADMIN_KEY", "")
+    if not admin_key_env:
+        return jsonify({"error": "RC_ADMIN_KEY not configured on server", "code": "ADMIN_KEY_UNSET"}), 503
     admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    if not hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", "")):
+    if not hmac.compare_digest(admin_key, admin_key_env):
         return jsonify({"error": "Unauthorized"}), 401
 
     status_filter = request.args.get('status', 'pending')
@@ -7165,8 +7186,11 @@ def list_pending():
 @app.route('/pending/void', methods=['POST'])
 def void_pending():
     """Admin: Void a pending transfer before confirmation"""
+    admin_key_env = os.environ.get("RC_ADMIN_KEY", "")
+    if not admin_key_env:
+        return jsonify({"error": "RC_ADMIN_KEY not configured on server", "code": "ADMIN_KEY_UNSET"}), 503
     admin_key = request.headers.get("X-Admin-Key", "")
-    if not hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", "")):
+    if not hmac.compare_digest(admin_key, admin_key_env):
         return jsonify({"error": "Unauthorized"}), 401
     
     data = request.get_json()
@@ -7239,8 +7263,11 @@ def void_pending():
 @app.route('/pending/confirm', methods=['POST'])
 def confirm_pending():
     """Worker: Confirm pending transfers that have passed the delay period"""
+    admin_key_env = os.environ.get("RC_ADMIN_KEY", "")
+    if not admin_key_env:
+        return jsonify({"error": "RC_ADMIN_KEY not configured on server", "code": "ADMIN_KEY_UNSET"}), 503
     admin_key = request.headers.get("X-Admin-Key", "")
-    if not hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", "")):
+    if not hmac.compare_digest(admin_key, admin_key_env):
         return jsonify({"error": "Unauthorized"}), 401
     
     now = int(time.time())
@@ -7329,8 +7356,11 @@ def confirm_pending():
 @app.route('/pending/integrity', methods=['GET'])
 def check_integrity():
     """Check balance integrity: sum of ledger should match balances"""
+    admin_key_env = os.environ.get("RC_ADMIN_KEY", "")
+    if not admin_key_env:
+        return jsonify({"error": "RC_ADMIN_KEY not configured on server", "code": "ADMIN_KEY_UNSET"}), 503
     admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    if not hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", "")):
+    if not hmac.compare_digest(admin_key, admin_key_env):
         return jsonify({"error": "Unauthorized"}), 401
 
     with sqlite3.connect(DB_PATH) as db:
@@ -7384,8 +7414,11 @@ def check_integrity():
 @app.route('/wallet/transfer_OLD_DISABLED', methods=['POST'])
 def wallet_transfer_OLD():
     # SECURITY FIX: Require admin key for internal transfers
+    admin_key_env = os.environ.get("RC_ADMIN_KEY", "")
+    if not admin_key_env:
+        return jsonify({"error": "RC_ADMIN_KEY not configured on server", "code": "ADMIN_KEY_UNSET"}), 503
     admin_key = request.headers.get("X-Admin-Key", "")
-    if not hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", "")):
+    if not hmac.compare_digest(admin_key, admin_key_env):
         return jsonify({"error": "Unauthorized - admin key required", "hint": "Use /wallet/transfer/signed for user transfers"}), 401
     """Transfer RTC between miner wallets"""
     data = request.get_json()
@@ -7440,8 +7473,11 @@ def wallet_transfer_OLD():
 def api_wallet_ledger():
     """Get transaction ledger (optionally filtered by miner)"""
     # SECURITY: ledger entries include transfer reasons + wallet identifiers; require admin key.
+    admin_key_env = os.environ.get("RC_ADMIN_KEY", "")
+    if not admin_key_env:
+        return jsonify({"ok": False, "reason": "admin_key_unset", "code": "ADMIN_KEY_UNSET"}), 503
     admin_key = request.headers.get("X-Admin-Key", "")
-    if not hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", "")):
+    if not hmac.compare_digest(admin_key, admin_key_env):
         return jsonify({"ok": False, "reason": "admin_required"}), 401
 
     miner_id = request.args.get("miner_id", "").strip()
@@ -7486,8 +7522,11 @@ def api_wallet_ledger():
 def api_wallet_balances_all():
     """Get all miner balances"""
     # SECURITY: exporting all balances is sensitive; require admin key.
+    admin_key_env = os.environ.get("RC_ADMIN_KEY", "")
+    if not admin_key_env:
+        return jsonify({"ok": False, "reason": "admin_key_unset", "code": "ADMIN_KEY_UNSET"}), 503
     admin_key = request.headers.get("X-Admin-Key", "")
-    if not hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", "")):
+    if not hmac.compare_digest(admin_key, admin_key_env):
         return jsonify({"ok": False, "reason": "admin_required"}), 401
 
     with sqlite3.connect(DB_PATH) as db:
