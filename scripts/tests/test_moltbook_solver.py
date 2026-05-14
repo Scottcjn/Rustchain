@@ -14,6 +14,7 @@ import tempfile
 scripts_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(scripts_dir))
 
+import moltbook_solver
 from moltbook_solver import (
     degarble,
     extract_numbers,
@@ -114,17 +115,35 @@ class TestContentHash:
 class TestAgentFunctions:
     """Tests for agent functions."""
 
-    def test_get_available_agents(self):
-        agents = get_available_agents()
-        assert isinstance(agents, list) and len(agents) > 0
+    def test_get_available_agents_requires_configured_keys(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(moltbook_solver, "STATE_DB", tmp_path / "state.db")
+        for config in AGENTS.values():
+            monkeypatch.delenv(config["key_env"], raising=False)
 
-    def test_get_agent_key(self):
+        assert get_available_agents() == []
+
+        monkeypatch.setenv(AGENTS["sophia"]["key_env"], "test-token-sophia")
+        agents = get_available_agents()
+        assert agents == ["sophia"]
+
+    def test_get_agent_key_reads_environment(self, monkeypatch):
+        monkeypatch.setenv(AGENTS["sophia"]["key_env"], "test-token-sophia")
         key = get_agent_key("sophia")
-        assert key is not None and key.startswith("moltbook_sk_")
+        assert key == "test-token-sophia"
+
+    def test_get_agent_key_missing_env_returns_none(self, monkeypatch):
+        monkeypatch.delenv(AGENTS["sophia"]["key_env"], raising=False)
+        assert get_agent_key("sophia") is None
 
     def test_agents_have_required_fields(self):
         for agent_name, config in AGENTS.items():
-            assert "key" in config and "persona" in config
+            assert "key_env" in config and "persona" in config
+
+    def test_no_committed_moltbook_agent_tokens(self):
+        source = (scripts_dir / "moltbook_solver.py").read_text()
+        secret_prefix = "moltbook_" + "sk_"
+        assert "moltbook" in source
+        assert secret_prefix not in source
 
 
 class TestRecordPost:
