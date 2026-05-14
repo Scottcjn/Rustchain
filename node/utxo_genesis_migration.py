@@ -33,6 +33,20 @@ ACCOUNT_UNIT = 1_000_000  # Account-model amount_i64 is micro-RTC.
 ACCOUNT_TO_UTXO_SCALE = UNIT // ACCOUNT_UNIT
 
 
+def _is_locked_error(exc: Exception) -> bool:
+    return isinstance(exc, sqlite3.OperationalError) and "locked" in str(exc).lower()
+
+
+def _retry_locked(operation, attempts: int = 50, delay_seconds: float = 0.1):
+    for attempt in range(attempts):
+        try:
+            return operation()
+        except sqlite3.OperationalError as exc:
+            if not _is_locked_error(exc) or attempt == attempts - 1:
+                raise
+            time.sleep(delay_seconds)
+
+
 def compute_genesis_tx_id(miner_id: str) -> str:
     """Deterministic transaction ID for a genesis box."""
     return hashlib.sha256(
@@ -40,13 +54,15 @@ def compute_genesis_tx_id(miner_id: str) -> str:
     ).hexdigest()
 
 
-def load_account_balances(db_path: str) -> list:
+def load_account_balances(db_path: str, conn=None) -> list:
     """
     Load non-zero balances from the account model.
     Returns sorted list of (miner_id, amount_nrtc) tuples.
     """
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
+    own = conn is None
+    if own:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
     try:
         rows = conn.execute(
             """SELECT miner_id, amount_i64
@@ -70,20 +86,46 @@ def load_account_balances(db_path: str) -> list:
         ).fetchall()
         return [(r['miner_id'], int(r['amount_nrtc'])) for r in rows]
     finally:
-        conn.close()
+        if own:
+            conn.close()
 
 
-def check_existing_genesis(utxo_db: UtxoDB) -> bool:
-    """Check if genesis boxes already exist."""
-    conn = utxo_db._conn()
+def check_existing_genesis(utxo_db: UtxoDB, conn=None) -> bool:
+    """Check if genesis migration transactions already exist."""
+    own = conn is None
+    if own:
+        conn = utxo_db._conn()
     try:
         row = conn.execute(
-            "SELECT COUNT(*) AS n FROM utxo_boxes WHERE creation_height = ?",
-            (GENESIS_HEIGHT,),
+            "SELECT COUNT(*) AS n FROM utxo_transactions WHERE tx_type = 'genesis'",
         ).fetchone()
         return row['n'] > 0
     finally:
-        conn.close()
+        if own:
+            conn.close()
+
+
+def check_existing_non_genesis_utxo_state(utxo_db: UtxoDB, conn=None) -> bool:
+    """Check whether the UTXO tables already contain non-genesis state."""
+    own = conn is None
+    if own:
+        conn = utxo_db._conn()
+    try:
+        box_row = conn.execute(
+            """SELECT COUNT(*) AS n
+               FROM utxo_boxes AS b
+               LEFT JOIN utxo_transactions AS t ON t.tx_id = b.transaction_id
+               WHERE COALESCE(t.tx_type, '') <> 'genesis'"""
+        ).fetchone()
+        tx_row = conn.execute(
+            """SELECT COUNT(*) AS n
+               FROM utxo_transactions
+               WHERE tx_type <> 'genesis'"""
+        ).fetchone()
+        return (box_row['n'] + tx_row['n']) > 0
+    finally:
+        if own:
+            conn.close()
 
 
 def migrate(db_path: str, dry_run: bool = False) -> dict:
@@ -94,39 +136,53 @@ def migrate(db_path: str, dry_run: bool = False) -> dict:
         wallets_migrated, total_nrtc, state_root, boxes_created
     """
     utxo_db = UtxoDB(db_path)
-    utxo_db.init_tables()
-
-    # Safety check
-    if check_existing_genesis(utxo_db):
-        print("ERROR: Genesis boxes already exist. Aborting.")
-        print("To re-run, first delete genesis boxes:")
-        print(f"  DELETE FROM utxo_boxes WHERE creation_height = {GENESIS_HEIGHT};")
-        return {'error': 'genesis_already_exists'}
-
-    # Load balances
-    balances = load_account_balances(db_path)
-    if not balances:
-        print("WARNING: No non-zero balances found.")
-        return {'error': 'no_balances'}
-
-    total_account = sum(amt for _, amt in balances)
-
-    print(f"Found {len(balances)} wallets with non-zero balance")
-    print(f"Total account balance: {total_account} nrtc ({total_account / UNIT:.6f} RTC)")
-    print()
 
     if dry_run:
+        _retry_locked(utxo_db.init_tables)
         print("=== DRY RUN — computing what would be created ===")
         print()
 
     # Create genesis boxes
-    conn = utxo_db._conn()
+    conn = None
     now = int(time.time())
     boxes_created = 0
 
     try:
         if not dry_run:
+            conn = _retry_locked(utxo_db._conn)
             conn.execute("BEGIN IMMEDIATE")
+            utxo_db.init_tables(conn=conn)
+
+        # For real migrations, this check runs under the same write
+        # transaction that will insert the genesis boxes.
+        if check_existing_genesis(utxo_db, conn=conn):
+            if not dry_run:
+                conn.execute("ROLLBACK")
+            print("ERROR: Genesis boxes already exist. Aborting.")
+            print("To re-run, use rollback_genesis() first.")
+            return {'error': 'genesis_already_exists'}
+
+        if check_existing_non_genesis_utxo_state(utxo_db, conn=conn):
+            if not dry_run:
+                conn.execute("ROLLBACK")
+            print("ERROR: Non-genesis UTXO state already exists. Aborting.")
+            print("Run migration only on an empty UTXO set.")
+            return {'error': 'utxo_state_already_exists'}
+
+        # Non-dry-run migrations load balances on the transaction connection
+        # so the migrated snapshot is consistent with the acquired lock.
+        balances = load_account_balances(db_path, conn=conn)
+        if not balances:
+            if not dry_run:
+                conn.execute("ROLLBACK")
+            print("WARNING: No non-zero balances found.")
+            return {'error': 'no_balances'}
+
+        total_account = sum(amt for _, amt in balances)
+
+        print(f"Found {len(balances)} wallets with non-zero balance")
+        print(f"Total account balance: {total_account} nrtc ({total_account / UNIT:.6f} RTC)")
+        print()
 
         for miner_id, amount_nrtc in balances:
             tx_id = compute_genesis_tx_id(miner_id)
@@ -179,7 +235,7 @@ def migrate(db_path: str, dry_run: bool = False) -> dict:
             conn.execute("COMMIT")
 
     except Exception as e:
-        if not dry_run:
+        if not dry_run and conn is not None:
             try:
                 conn.execute("ROLLBACK")
             except Exception:
@@ -187,7 +243,8 @@ def migrate(db_path: str, dry_run: bool = False) -> dict:
         print(f"ERROR: Migration failed: {e}")
         raise
     finally:
-        conn.close()
+        if conn is not None:
+            conn.close()
 
     # Compute and verify state root
     state_root = utxo_db.compute_state_root()
@@ -237,14 +294,18 @@ def rollback_genesis(db_path: str) -> int:
     deletion state is possible. Idempotent: safe to call when no
     genesis data exists (returns 0).
     """
-    conn = sqlite3.connect(db_path, timeout=30)
+    utxo_db = UtxoDB(db_path)
+    conn = utxo_db._conn()
     try:
         conn.execute("BEGIN IMMEDIATE")
 
-        # Delete genesis boxes first (child table)
+        # Delete only boxes produced by genesis transactions. A non-genesis
+        # box can legitimately have creation_height=0.
         deleted = conn.execute(
-            "DELETE FROM utxo_boxes WHERE creation_height = ?",
-            (GENESIS_HEIGHT,),
+            """DELETE FROM utxo_boxes
+               WHERE transaction_id IN (
+                   SELECT tx_id FROM utxo_transactions WHERE tx_type = 'genesis'
+               )""",
         ).rowcount
 
         # Delete genesis transactions (parent table)
