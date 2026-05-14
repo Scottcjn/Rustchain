@@ -238,6 +238,26 @@ def enroll_miner():
         audio_file = None
         if 'audio' in request.files:
             audio = request.files['audio']
+
+            # FIX (#5108): Validate uploaded audio file
+            filename = audio.filename or ''
+            if not filename.lower().endswith(('.wav', '.mp3', '.flac', '.ogg')):
+                return jsonify({
+                    'error': 'Invalid file type',
+                    'allowed': ['.wav', '.mp3', '.flac', '.ogg'],
+                    'received': filename.rsplit('.', 1)[-1] if '.' in filename else 'no extension'
+                }), 400
+
+            audio.seek(0, 2)
+            file_size = audio.tell()
+            audio.seek(0)
+            if file_size > 10 * 1024 * 1024:
+                return jsonify({
+                    'error': 'File too large',
+                    'max_bytes': 10 * 1024 * 1024,
+                    'actual_bytes': file_size
+                }), 400
+
             with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp:
                 audio.save(tmp)
                 audio_file = tmp.name
@@ -265,6 +285,17 @@ def capture_audio():
     """
     try:
         duration = request.args.get('duration', default=5.0, type=float)
+
+        # FIX (#5107): Validate duration to prevent DoS via memory/disk exhaustion.
+        if duration <= 0:
+            return jsonify({'error': 'Duration must be positive'}), 400
+        if duration > 30.0:
+            return jsonify({
+                'error': 'Duration too long',
+                'max_seconds': 30.0,
+                'requested': duration
+            }), 400
+
         trigger = request.args.get('trigger', default='false').lower() == 'true'
         
         captured = audio_capture.capture(duration=duration, trigger=trigger)
