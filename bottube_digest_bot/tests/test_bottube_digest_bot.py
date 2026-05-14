@@ -316,6 +316,18 @@ class TestIntegration(unittest.TestCase):
         self.assertEqual(generator.config, self.config)
         self.assertIsNotNone(generator.rustchain_client)
         self.assertIsNotNone(generator.bottube_client)
+        asyncio.run(generator.close())
+
+    def test_format_uptime_edges(self):
+        """Test uptime formatting boundaries."""
+        generator = DigestGenerator(self.config)
+
+        self.assertEqual(generator._format_uptime(0), "N/A")
+        self.assertEqual(generator._format_uptime(3599), "59m")
+        self.assertEqual(generator._format_uptime(3600), "1h 0m")
+        self.assertEqual(generator._format_uptime(90061), "1d 1h 1m")
+
+        asyncio.run(generator.close())
 
     def test_formatter_chain(self):
         """Test formatting chain for all channels."""
