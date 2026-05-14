@@ -26,6 +26,7 @@ if os.path.exists("/tmp/bridge_test_727.db"):
 
 # Import after env setup
 sys.path.insert(0, os.path.dirname(__file__))
+import bridge_api
 from bridge_api import Flask, register_bridge_routes, STATE_REQUESTED, STATE_CONFIRMED
 
 
@@ -620,6 +621,24 @@ class TestReleaseEndpoint:
             "release_tx": "0xabc",
         })
         assert resp.status_code == 403
+
+    def test_release_uses_constant_time_admin_key_compare(self, client, monkeypatch):
+        calls = []
+
+        def fake_compare(provided, expected):
+            calls.append((provided, expected))
+            return False
+
+        monkeypatch.setattr(bridge_api.hmac, "compare_digest", fake_compare)
+
+        resp = client.post(
+            "/bridge/release",
+            json={"lock_id": "lock_fake", "release_tx": "0xabc"},
+            headers={"X-Admin-Key": "wrong-key"},
+        )
+
+        assert resp.status_code == 403
+        assert calls == [("wrong-key", "test-admin-key-12345")]
 
     def test_release_requires_confirmed_lock(self, client):
         # Create lock without proof (legacy mode test)
