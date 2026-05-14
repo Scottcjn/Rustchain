@@ -36,13 +36,12 @@ from typing import Any, Dict, List, Optional, Tuple
 
 UNIT = 100_000_000          # 1 RTC = 100,000,000 nanoRTC (8 decimals)
 DUST_THRESHOLD = 1_000      # nanoRTC below which change is absorbed into fee
-MAX_OUTPUTS_PER_TX = 100    # Bound UTXO fan-out to prevent set-bloat DoS
 MAX_COINBASE_OUTPUT_NRTC = 150 * 144 * UNIT  # Max minting output per block (1.5 RTC)
 MAX_POOL_SIZE = 10_000
 
 # Anti-UTXO-bloat: maximum outputs per transaction
 # Without this, a single tx creates unlimited outputs, bloating the UTXO set.
-MAX_OUTPUTS = 1_000
+MAX_OUTPUTS = 100
 MAX_TX_AGE_SECONDS = 3_600  # 1 hour mempool expiry
 P2PK_PREFIX = b'\x00\x08'   # Pay-to-Public-Key proposition prefix
 
@@ -424,15 +423,17 @@ class UtxoDB:
         tx_type = tx.get('tx_type', 'transfer')
         data_inputs = tx.get('data_inputs', [])
 
+        own = conn is None
+
         # FIX(#2207): Defense-in-depth guard against mining_reward type confusion.
         # The endpoint layer hardcodes tx_type='transfer', but if any code path
         # passes user-controlled tx_type, an attacker could mint unlimited coins.
         # Only the epoch settlement system should create mining_reward transactions.
         # Require _allow_minting=True (internal flag) to permit mining_reward.
         MINTING_TX_TYPES = {'mining_reward'}
-        own = conn is None
         if tx_type in MINTING_TX_TYPES and not tx.get('_allow_minting'):
-            # conn is None (own=True) at this point — nothing to close
+            if conn:
+                conn.close()
             return False
         if own:
             conn = self._conn()
@@ -499,9 +500,6 @@ class UtxoDB:
                 return abort()
             # FIX(#9273): Reject transactions with too many outputs (UTXO bloat)
             if len(outputs) > MAX_OUTPUTS:
-                return abort()
-
-            if len(outputs) > MAX_OUTPUTS_PER_TX:
                 return abort()
 
             # Every output must be above the dust floor. Without this, a
@@ -840,7 +838,8 @@ class UtxoDB:
                 if manage_tx:
                         conn.execute("ROLLBACK")
                 return False
-            if len(outputs) > MAX_OUTPUTS_PER_TX:
+            # FIX(#9273): Reject transactions with too many outputs (UTXO bloat).
+            if len(outputs) > MAX_OUTPUTS:
                 if manage_tx:
                         conn.execute("ROLLBACK")
                 return False
@@ -855,12 +854,6 @@ class UtxoDB:
                     input_total += row['value_nrtc']
 
             outputs = tx.get('outputs', [])
-
-            # FIX(#9273): Reject transactions with too many outputs (UTXO bloat).
-            if len(outputs) > MAX_OUTPUTS:
-                if manage_tx:
-                    conn.execute("ROLLBACK")
-                return False
 
             # FIX(#2179): Mirror apply_transaction() output validation.
             # Reject outputs with missing, non-int, zero, or negative value_nrtc.

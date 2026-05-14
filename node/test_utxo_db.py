@@ -973,7 +973,7 @@ class TestUtxoDB(unittest.TestCase):
             'inputs': [{'box_id': boxes[0]['box_id']}],
             'outputs': [
                 {'address': f'dust_{idx}', 'value_nrtc': DUST_THRESHOLD}
-                for idx in range(MAX_OUTPUTS_PER_TX + 1)
+                for idx in range(MAX_OUTPUTS + 1)
             ],
             'fee_nrtc': 0,
         }
@@ -1052,7 +1052,7 @@ class TestUtxoDB(unittest.TestCase):
         self.assertEqual(self.db.get_balance('dust'), 0)
 
     def test_excessive_output_count_rejected(self):
-        """Transactions cannot create more than MAX_OUTPUTS_PER_TX boxes."""
+        """Transactions cannot create more than MAX_OUTPUTS boxes."""
         self._apply_coinbase('alice', 100 * UNIT)
         boxes = self.db.get_unspent_for_address('alice')
 
@@ -1062,7 +1062,7 @@ class TestUtxoDB(unittest.TestCase):
                          'spending_proof': 'sig'}],
             'outputs': [
                 {'address': f'dust_{idx}', 'value_nrtc': DUST_THRESHOLD}
-                for idx in range(MAX_OUTPUTS_PER_TX + 1)
+                for idx in range(MAX_OUTPUTS + 1)
             ],
             'fee_nrtc': 0,
         }, block_height=10)
