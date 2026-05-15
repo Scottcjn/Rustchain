@@ -52,8 +52,6 @@ FOUNDER_WALLETS = [
 # Consensus Parameters
 # =============================================================================
 
-CURRENT_YEAR: int = 2025
-
 # Antiquity Score parameters
 AS_MAX: float = 100.0  # Maximum for reward capping
 AS_MIN: float = 1.0    # Minimum to participate
