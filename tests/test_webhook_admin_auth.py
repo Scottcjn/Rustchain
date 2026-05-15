@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MIT
+"""Regression tests for webhook admin API authentication."""
 
 import json
 import sys
@@ -10,27 +11,23 @@ from http.server import HTTPServer
 from pathlib import Path
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO_ROOT / "tools" / "webhooks"))
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tools" / "webhooks"))
 
-import webhook_server
+import webhook_server  # noqa: E402
 
 
 @contextmanager
 def webhook_admin_server(tmp_path, admin_key):
-    store = webhook_server.SubscriberStore(str(tmp_path / "webhooks.db"))
+    handler = type("TestWebhookAdminHandler", (webhook_server.WebhookAdminHandler,), {})
+    handler.store = webhook_server.SubscriberStore(str(tmp_path / "webhooks.db"))
+    handler.ADMIN_API_KEY = admin_key
 
-    class TestWebhookAdminHandler(webhook_server.WebhookAdminHandler):
-        pass
-
-    TestWebhookAdminHandler.store = store
-    TestWebhookAdminHandler.ADMIN_API_KEY = admin_key
-
-    server = HTTPServer(("127.0.0.1", 0), TestWebhookAdminHandler)
+    server = HTTPServer(("127.0.0.1", 0), handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        yield f"http://127.0.0.1:{server.server_port}", store
+        yield f"http://127.0.0.1:{server.server_port}", handler.store
     finally:
         server.shutdown()
         thread.join(timeout=5)
@@ -38,68 +35,102 @@ def webhook_admin_server(tmp_path, admin_key):
 
 
 def request_json(base_url, method, path, body=None, headers=None):
-    data = None if body is None else json.dumps(body).encode()
-    req = urllib.request.Request(
-        base_url + path,
-        data=data,
-        method=method,
-        headers={
-            "Content-Type": "application/json",
-            **(headers or {}),
-        },
-    )
+    data = None
+    if body is not None:
+        data = json.dumps(body).encode("utf-8")
+
+    req = urllib.request.Request(f"{base_url}{path}", data=data, method=method)
+    if body is not None:
+        req.add_header("Content-Type", "application/json")
+    for key, value in (headers or {}).items():
+        req.add_header(key, value)
+
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     try:
         with opener.open(req, timeout=5) as response:
-            payload = json.loads(response.read().decode())
-            return response.status, payload
+            payload = response.read().decode("utf-8")
+            return response.status, json.loads(payload)
     except urllib.error.HTTPError as exc:
-        payload = json.loads(exc.read().decode())
-        return exc.code, payload
+        payload = exc.read().decode("utf-8")
+        return exc.code, json.loads(payload)
 
 
-def test_webhook_admin_fails_closed_when_key_unconfigured(tmp_path):
+def test_management_fails_closed_when_admin_key_is_unset(tmp_path):
     with webhook_admin_server(tmp_path, admin_key="") as (base_url, store):
-        status, payload = request_json(
+        status, body = request_json(
             base_url,
             "POST",
             "/webhooks/subscribe",
-            {"id": "sub-1", "url": "https://hooks.example/event"},
+            body={"id": "attacker", "url": "https://example.com/hook"},
         )
 
         assert status == 503
-        assert payload == {"error": "WEBHOOK_ADMIN_API_KEY not configured"}
+        assert body["error"] == "WEBHOOK_ADMIN_API_KEY not configured"
         assert store.list_all() == []
 
 
-def test_webhook_health_remains_public_when_key_unconfigured(tmp_path):
+def test_health_remains_public_when_admin_key_is_unset(tmp_path):
     with webhook_admin_server(tmp_path, admin_key="") as (base_url, _store):
-        status, payload = request_json(base_url, "GET", "/health")
+        status, body = request_json(base_url, "GET", "/health")
 
         assert status == 200
-        assert payload == {"status": "ok"}
+        assert body == {"status": "ok"}
 
 
-def test_webhook_admin_requires_configured_key(tmp_path, monkeypatch):
+def test_management_rejects_missing_or_wrong_key(tmp_path):
+    with webhook_admin_server(tmp_path, admin_key="expected-key") as (base_url, _store):
+        missing_status, missing_body = request_json(base_url, "GET", "/webhooks")
+        wrong_status, wrong_body = request_json(
+            base_url,
+            "GET",
+            "/webhooks",
+            headers={"X-Admin-API-Key": "wrong-key"},
+        )
+
+        assert missing_status == 401
+        assert missing_body["error"] == "invalid or missing API key"
+        assert wrong_status == 401
+        assert wrong_body["error"] == "invalid or missing API key"
+
+
+def test_management_rejects_non_ascii_admin_key_header(tmp_path):
+    with webhook_admin_server(tmp_path, admin_key="expected-key") as (base_url, _store):
+        status, body = request_json(
+            base_url,
+            "GET",
+            "/webhooks",
+            headers={"X-Admin-API-Key": "e\u00e9"},
+        )
+
+        assert status == 401
+        assert body["error"] == "invalid or missing API key"
+
+
+def test_management_accepts_valid_admin_key(tmp_path):
+    with webhook_admin_server(tmp_path, admin_key="expected-key") as (base_url, _store):
+        status, body = request_json(
+            base_url,
+            "GET",
+            "/webhooks",
+            headers={"X-Admin-API-Key": "expected-key"},
+        )
+
+        assert status == 200
+        assert body == {"subscribers": []}
+
+
+def test_management_accepts_authenticated_subscribe(tmp_path, monkeypatch):
     monkeypatch.setattr(webhook_server, "validate_webhook_url", lambda _url: None)
 
-    with webhook_admin_server(tmp_path, admin_key="expected-admin") as (base_url, store):
-        status, payload = request_json(
+    with webhook_admin_server(tmp_path, admin_key="expected-key") as (base_url, store):
+        status, body = request_json(
             base_url,
             "POST",
             "/webhooks/subscribe",
-            {"id": "sub-1", "url": "https://hooks.example/event"},
+            body={"id": "sub-1", "url": "https://hooks.example/event"},
+            headers={"X-Admin-API-Key": "expected-key"},
         )
-        assert status == 401
-        assert payload == {"error": "invalid or missing API key"}
 
-        status, payload = request_json(
-            base_url,
-            "POST",
-            "/webhooks/subscribe",
-            {"id": "sub-1", "url": "https://hooks.example/event"},
-            headers={"X-Admin-API-Key": "expected-admin"},
-        )
         assert status == 201
-        assert payload["message"] == "subscribed"
+        assert body["message"] == "subscribed"
         assert [sub.id for sub in store.list_all()] == ["sub-1"]
