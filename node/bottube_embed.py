@@ -901,6 +901,10 @@ def oembed():
     except (ValueError, TypeError):
         maxwidth = 854
         maxheight = 480
+    if maxwidth < 1:
+        maxwidth = 854
+    if maxheight < 1:
+        maxheight = 480
     
     # Maintain 16:9 aspect ratio
     width = min(maxwidth, 854)
