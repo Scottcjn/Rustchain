@@ -90,3 +90,64 @@ def test_render_payload_includes_top_miners_rewards_and_architecture(monkeypatch
     assert "alice-miner" in fields["Top Miners"]
     assert "winner-miner-id" in fields["Top Earners (current epoch)"]
     assert "- G4: 1 (50.0%)" in fields["Architecture Distribution"]
+
+
+def test_render_payload_handles_missing_rewards_and_empty_distribution(monkeypatch):
+    monkeypatch.setattr(
+        discord_leaderboard_bot,
+        "rewards_for_epoch",
+        lambda session, base, epoch, timeout: [],
+    )
+
+    payload = discord_leaderboard_bot.render_payload(
+        object(),
+        "https://node",
+        1,
+        [],
+        {"epoch": -1},
+        {"ok": False, "uptime_s": 0},
+        top_n=5,
+        title_prefix="Daily leaderboard",
+    )
+
+    assert "Epoch: -1" in payload["content"]
+    fields = {field["name"]: field["value"] for field in payload["embeds"][0]["fields"]}
+    assert fields["Top Miners"].startswith("```text\nRank  Miner")
+    assert fields["Top Earners (current epoch)"] == "No reward rows available for current epoch."
+    assert fields["Architecture Distribution"] == "No data"
+
+
+def test_collect_data_skips_rows_without_miner_and_fetches_wallet_balances(monkeypatch):
+    calls = []
+
+    def fake_get_json(session, url, timeout):
+        calls.append(url)
+        if url.endswith("/api/miners"):
+            return [
+                {"miner": "miner-b", "device_family": "x86", "antiquity_multiplier": 1.25},
+                {"device_arch": "ARM"},
+                {"miner_id": "miner-a", "device_arch": "ARM64", "antiquity_multiplier": 2},
+            ]
+        if url.endswith("/epoch"):
+            return {"epoch": 99}
+        if url.endswith("/health"):
+            return {"ok": True, "uptime_s": 321}
+        if "miner_id=miner-b" in url:
+            return {"amount_rtc": "3.5"}
+        if "miner_id=miner-a" in url:
+            return {"amount_rtc": 7}
+        raise AssertionError(f"unexpected url: {url}")
+
+    monkeypatch.setattr(discord_leaderboard_bot, "get_json", fake_get_json)
+
+    rows, epoch, health = discord_leaderboard_bot.collect_data(object(), "https://node", 10)
+
+    assert rows == [
+        {"miner": "miner-a", "balance_rtc": 7.0, "arch": "ARM64", "multiplier": 2.0},
+        {"miner": "miner-b", "balance_rtc": 3.5, "arch": "x86", "multiplier": 1.25},
+    ]
+    assert epoch == {"epoch": 99}
+    assert health == {"ok": True, "uptime_s": 321}
+    assert any(url.endswith("/api/miners") for url in calls)
+    assert any("wallet/balance?miner_id=miner-a" in url for url in calls)
+    assert any("wallet/balance?miner_id=miner-b" in url for url in calls)
