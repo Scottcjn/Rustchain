@@ -5337,20 +5337,38 @@ def _rotation_message(epoch:int, threshold:int, members_json:str)->bytes:
     h = hashlib.sha256(members_json.encode()).hexdigest()
     return f"ROTATE|{epoch}|{threshold}|{h}".encode()
 
+
+def _gov_rotation_json_body():
+    b = request.get_json(silent=True)
+    if not isinstance(b, dict):
+        return None, (jsonify({"ok": False, "reason": "json_object_required"}), 400)
+    return b, None
+
+
 @app.route('/gov/rotate/stage', methods=['POST'])
 @admin_required
 def gov_rotate_stage():
     """Stage governance rotation (admin only) - returns canonical message to sign"""
-    b = request.get_json() or {}
-    if not b:
-        return jsonify({"ok": False, "reason": "invalid_json"}), 400
-    epoch = int(b.get("epoch_effective") or -1)
+    b, error = _gov_rotation_json_body()
+    if error:
+        return error
+    try:
+        epoch = int(b.get("epoch_effective", -1))
+        thr = int(b.get("threshold", 3))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "reason": "bad_args"}), 400
     members = b.get("members") or []
-    thr = int(b.get("threshold") or 3)
-    if epoch < 0 or not members:
+    if epoch < 0 or not isinstance(members, list) or not members:
         return jsonify({"ok": False, "reason": "epoch_or_members_missing"}), 400
 
-    members = _canon_members(members)
+    try:
+        members = _canon_members(members)
+    except (KeyError, TypeError, ValueError):
+        return jsonify({"ok": False, "reason": "bad_members"}), 400
+    if thr < 1:
+        return jsonify({"ok": False, "reason": "invalid_threshold"}), 400
+    if thr > len(members):
+        return jsonify({"ok": False, "reason": "threshold_exceeds_members"}), 400
     members_json = json.dumps(members, separators=(',',':'))
 
     with sqlite3.connect(DB_PATH) as c:
@@ -5393,11 +5411,14 @@ def gov_rotate_message(epoch:int):
 @app.route('/gov/rotate/approve', methods=['POST'])
 def gov_rotate_approve():
     """Submit governance rotation approval signature"""
-    b = request.get_json() or {}
-    if not b:
-        return jsonify({"ok": False, "reason": "invalid_json"}), 400
-    epoch = int(b.get("epoch_effective") or -1)
-    signer_id = int(b.get("signer_id") or -1)
+    b, error = _gov_rotation_json_body()
+    if error:
+        return error
+    try:
+        epoch = int(b.get("epoch_effective", -1))
+        signer_id = int(b.get("signer_id", -1))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "reason": "bad_args"}), 400
     sig_hex = str(b.get("sig_hex") or "")
 
     if epoch < 0 or signer_id < 0 or not sig_hex:
@@ -5445,10 +5466,13 @@ def gov_rotate_approve():
 @app.route('/gov/rotate/commit', methods=['POST'])
 def gov_rotate_commit():
     """Commit governance rotation (requires threshold approvals)"""
-    b = request.get_json() or {}
-    if not b:
-        return jsonify({"ok": False, "reason": "invalid_json"}), 400
-    epoch = int(b.get("epoch_effective") or -1)
+    b, error = _gov_rotation_json_body()
+    if error:
+        return error
+    try:
+        epoch = int(b.get("epoch_effective", -1))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "reason": "bad_args"}), 400
     if epoch < 0:
         return jsonify({"ok": False, "reason": "epoch_missing"}), 400
 
