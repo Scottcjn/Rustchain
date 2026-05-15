@@ -11,7 +11,7 @@ categories = ["cryptography", "hardware-support"]
 
 [dependencies]
 # Cryptography
-sha2 = "0.10"
+sha2 = "0.11"
 hex = "0.4"
 rand = "0.10"
 rand_chacha = "0.10"
