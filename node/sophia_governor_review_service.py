@@ -154,6 +154,22 @@ def _is_authorized(req) -> bool:
     return False
 
 
+def _parse_route_limit(
+    value: Any,
+    default: int = 25,
+    max_limit: int = 200,
+) -> tuple[int | None, dict[str, str] | None]:
+    if value is None:
+        return default, None
+    try:
+        limit = int(value)
+    except (TypeError, ValueError):
+        return None, {"error": "invalid_limit"}
+    if limit < 1:
+        return None, {"error": "invalid_limit"}
+    return min(limit, max_limit), None
+
+
 def _relay_scott_notification(payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
     if requests is None:
         return 503, {"status": "error", "error": "requests_unavailable"}
@@ -621,7 +637,10 @@ def backfill_missing():
     if not _is_authorized(request):
         return jsonify({"error": "Unauthorized -- admin key or bearer required"}), 401
     data = request.get_json(silent=True) or {}
-    limit = data.get("limit", 25) if isinstance(data, dict) else 25
+    raw_limit = data.get("limit") if isinstance(data, dict) else None
+    limit, error = _parse_route_limit(raw_limit)
+    if error:
+        return jsonify(error), 400
     results = backfill_missing_reviews(limit=limit)
     return jsonify({"ok": True, "updated": results, "count": len(results)})
 
@@ -632,7 +651,10 @@ def normalize_existing():
     if not _is_authorized(request):
         return jsonify({"error": "Unauthorized -- admin key or bearer required"}), 401
     data = request.get_json(silent=True) or {}
-    limit = data.get("limit", 25) if isinstance(data, dict) else 25
+    raw_limit = data.get("limit") if isinstance(data, dict) else None
+    limit, error = _parse_route_limit(raw_limit)
+    if error:
+        return jsonify(error), 400
     results = normalize_existing_reviews(limit=limit)
     return jsonify({"ok": True, "updated": results, "count": len(results)})
 
