@@ -3,6 +3,7 @@ import sqlite3
 import sys
 import types
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -74,3 +75,57 @@ def test_faucet_drip_records_valid_address(tmp_path, monkeypatch):
             "SELECT address, amount FROM faucet_claims"
         ).fetchone()
     assert row == ("rtc-test-wallet", 0.5)
+
+
+def test_proxy_blocks_unlisted_internal_paths(tmp_path, monkeypatch):
+    keeper = load_keeper_explorer(tmp_path, monkeypatch)
+    get = Mock()
+    monkeypatch.setattr(keeper.requests, "get", get)
+
+    response = keeper.app.test_client().get("/api/proxy/wallet/transfer")
+
+    assert response.status_code == 403
+    assert response.get_json() == {"error": "Proxy path not allowed"}
+    get.assert_not_called()
+
+
+def test_proxy_allows_read_only_paths_and_strips_internal_headers(tmp_path, monkeypatch):
+    keeper = load_keeper_explorer(tmp_path, monkeypatch)
+    upstream = types.SimpleNamespace(
+        content=b'{"height": 7}',
+        status_code=200,
+        headers={
+            "Content-Type": "application/json",
+            "Server": "internal-node",
+            "X-Powered-By": "Flask",
+        },
+    )
+    get = Mock(return_value=upstream)
+    monkeypatch.setattr(keeper.requests, "get", get)
+
+    response = keeper.app.test_client().get("/api/proxy/headers/tip?limit=1")
+
+    assert response.status_code == 200
+    assert response.data == b'{"height": 7}'
+    assert response.headers["Content-Type"] == "application/json"
+    assert "Server" not in response.headers
+    assert "X-Powered-By" not in response.headers
+    get.assert_called_once_with(
+        "http://localhost:8000/headers/tip",
+        params={"limit": ["1"]},
+        timeout=5,
+    )
+
+
+def test_proxy_returns_generic_error_for_node_failures(tmp_path, monkeypatch):
+    keeper = load_keeper_explorer(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        keeper.requests,
+        "get",
+        Mock(side_effect=keeper.requests.RequestException("localhost:8000 refused")),
+    )
+
+    response = keeper.app.test_client().get("/api/proxy/epoch")
+
+    assert response.status_code == 502
+    assert response.get_json() == {"error": "Node connection error"}
