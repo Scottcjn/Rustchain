@@ -924,6 +924,20 @@ def get_mood_engine() -> MoodEngine:
     return MoodEngine(db_path=db_path)
 
 
+def _get_json_object(allow_empty: bool = False):
+    data = request.get_json(silent=True)
+    has_body = bool(request.get_data(cache=True))
+    if data is None:
+        if allow_empty and not has_body:
+            return {}, None
+        if not has_body:
+            return None, (jsonify({"error": "Request body required"}), 400)
+        return None, (jsonify({"error": "JSON object required"}), 400)
+    if not isinstance(data, dict):
+        return None, (jsonify({"error": "JSON object required"}), 400)
+    return data, None
+
+
 @mood_bp.route("/<agent_name>/mood", methods=["GET"])
 def get_agent_mood_endpoint(agent_name: str):
     """
@@ -964,10 +978,9 @@ def record_mood_signal(agent_name: str):
     """
     try:
         engine = get_mood_engine()
-        data = request.get_json()
-
-        if not data:
-            return jsonify({"error": "Request body required"}), 400
+        data, error = _get_json_object()
+        if error:
+            return error
 
         signal_type = data.get("signal_type")
         value = data.get("value", {})
@@ -995,10 +1008,9 @@ def generate_mood_title(agent_name: str):
     """
     try:
         engine = get_mood_engine()
-        data = request.get_json()
-
-        if not data:
-            return jsonify({"error": "Request body required"}), 400
+        data, error = _get_json_object()
+        if error:
+            return error
 
         topic = data.get("topic", "New Video")
         title = engine.generate_title(agent_name, topic)
@@ -1026,7 +1038,9 @@ def generate_mood_comment(agent_name: str):
     """
     try:
         engine = get_mood_engine()
-        data = request.get_json() or {}
+        data, error = _get_json_object(allow_empty=True)
+        if error:
+            return error
         base_comment = data.get("base_comment", "")
 
         comment = engine.generate_comment(agent_name, base_comment)
