@@ -202,6 +202,24 @@ def test_update_status_endpoint(client):
     assert updated_body["entry"]["recommended_resolution"]["resolution_type"] == "watch"
 
 
+def test_update_status_rejects_non_object_json(client):
+    ingest = client.post(
+        "/api/sophia/governor/ingest",
+        headers={"X-Admin-Key": "test-admin"},
+        json=_sample_envelope(),
+    )
+    inbox_id = ingest.get_json()["inbox"]["inbox_id"]
+
+    response = client.post(
+        f"/api/sophia/governor/inbox/{inbox_id}/status",
+        headers={"X-Admin-Key": "test-admin"},
+        json=["not", "an", "object"],
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "JSON object required"
+
+
 def test_status_helper_reports_totals(tmp_db):
     ingest_governor_envelope(_sample_envelope(), db_path=tmp_db)
     status = get_governor_inbox_status(tmp_db)
@@ -387,6 +405,24 @@ def test_manual_forward_endpoint_records_attempt(client, monkeypatch):
     assert len(body["entry"]["forward_attempts"]) == 1
     assert body["result"]["scott_notification"]["status"] == "queued"
     assert body["result"]["scott_notification"]["notification_id"] == "SN-GOV-REVIEW-1"
+
+
+def test_manual_forward_rejects_non_object_json(client):
+    ingest = client.post(
+        "/api/sophia/governor/ingest",
+        headers={"X-Admin-Key": "test-admin"},
+        json=_sample_envelope(),
+    )
+    inbox_id = ingest.get_json()["inbox"]["inbox_id"]
+
+    response = client.post(
+        f"/api/sophia/governor/inbox/{inbox_id}/forward",
+        headers={"X-Admin-Key": "test-admin"},
+        json=["not", "an", "object"],
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "JSON object required"
 
 
 def test_auto_forward_on_ingest_uses_configured_targets(client, monkeypatch):

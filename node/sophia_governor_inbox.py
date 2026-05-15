@@ -1099,6 +1099,14 @@ def register_sophia_governor_inbox_endpoints(app, db_path: str | None = None) ->
     db = db_path or DB_PATH
     init_sophia_governor_inbox_schema(db)
 
+    def _json_object_body():
+        data = request.get_json(silent=True)
+        if data is None:
+            return {}, None
+        if not isinstance(data, dict):
+            return None, (jsonify({"error": "JSON object required"}), 400)
+        return data, None
+
     @app.route("/api/sophia/governor/bridge/status", methods=["GET"])
     def sophia_governor_bridge_status():
         return jsonify(get_governor_inbox_status(db))
@@ -1164,7 +1172,9 @@ def register_sophia_governor_inbox_endpoints(app, db_path: str | None = None) ->
         if not _is_authorized(request):
             return jsonify({"error": "Unauthorized -- admin key or bearer required"}), 401
 
-        data = request.get_json(silent=True) or {}
+        data, error = _json_object_body()
+        if error:
+            return error
         try:
             updated = update_governor_inbox_entry(
                 inbox_id,
@@ -1186,7 +1196,9 @@ def register_sophia_governor_inbox_endpoints(app, db_path: str | None = None) ->
         if not _is_authorized(request):
             return jsonify({"error": "Unauthorized -- admin key or bearer required"}), 401
 
-        data = request.get_json(silent=True) or {}
+        data, error = _json_object_body()
+        if error:
+            return error
         targets = data.get("targets")
         if targets is not None and not isinstance(targets, list):
             return jsonify({"error": "targets must be a list of URLs"}), 400
