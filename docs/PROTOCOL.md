@@ -1,232 +1,311 @@
 # RustChain Protocol Specification
 
-## 1. Overview
-
-**RustChain** is a Proof-of-Antiquity blockchain that validates and rewards vintage hardware. Unlike traditional Proof-of-Work, RustChain uses **RIP-200** (RustChain Iterative Protocol), a Proof-of-Antiquity consensus where miners prove physical hardware ownership to earn **RTC** tokens.
-
-**Core Principle**: 1 CPU = 1 Vote, weighted by hardware antiquity.
-
-## 2. Consensus: RIP-200
-
-### 2.1 Attestation Flow
-
-```mermaid
-sequenceDiagram
-    participant M as Miner (G4/G5)
-    participant C as Client Script
-    participant N as Attestation Node
-    participant E as Ergo Chain
-
-    M->>C: Start mining session
-    C->>C: Run 6 hardware checks
-    C->>N: POST /attest/submit (fingerprint + signature)
-    N->>N: Validate against known profiles
-    alt Valid Hardware
-        N->>N: Enroll in current Epoch
-        N-->>C: {enrolled: true, multiplier: 2.5}
-    else VM/Emulator Detected
-        N-->>C: {error: "VM_DETECTED"}
-    end
-    
-    Note over N: End of Epoch (every 144 slots)
-    N->>N: Calculate reward distribution
-    N->>E: Anchor settlement hash
-    N->>M: Credit RTC to wallet
-```
-
-### 2.2 Epoch Lifecycle
-
-```mermaid
-graph LR
-    A[Epoch Start] --> B[Miners Submit Attestations]
-    B --> C[Fingerprints Validated]
-    C --> D[Miners Enrolled]
-    D --> E{Slot 144?}
-    E -->|No| B
-    E -->|Yes| F[Settlement]
-    F --> G[Distribute Epoch Pot]
-    G --> H[Anchor to Ergo]
-    H --> A
-```
-
-## 3. Hardware Fingerprinting
-
-Six checks must pass for valid attestation:
-
-| # | Check | Purpose | VM Detection |
-|---|-------|---------|--------------|
-| 1 | **Clock Skew** | Crystal oscillator imperfections | VMs use host clock (too perfect) |
-| 2 | **Cache Timing** | L1/L2 latency curves | Emulators flatten cache hierarchy |
-| 3 | **SIMD Identity** | AltiVec/SSE/NEON biases | Different timing in emulation |
-| 4 | **Thermal Entropy** | CPU temp under load | VMs report static temps |
-| 5 | **Instruction Jitter** | Opcode execution variance | Real silicon has nanosecond jitter |
-| 6 | **Behavioral Heuristics** | Hypervisor signatures | Detects VMware, QEMU, etc. |
-
-### 3.1 Fingerprint Structure
-
-```json
-{
-  "miner_id": "abc123RTC",
-  "timestamp": 1770112912,
-  "fingerprint": {
-    "clock_skew": {
-      "drift_ppm": 12.5,
-      "jitter_ns": 847
-    },
-    "cache_timing": {
-      "l1_latency_ns": 4,
-      "l2_latency_ns": 12,
-      "l3_latency_ns": 42
-    },
-    "simd_identity": {
-      "instruction_set": "AltiVec",
-      "pipeline_bias": 0.73
-    },
-    "thermal_entropy": {
-      "idle_temp": 38.2,
-      "load_temp": 67.8,
-      "variance": 4.2
-    },
-    "instruction_jitter": {
-      "mean_ns": 2.3,
-      "stddev_ns": 0.8
-    },
-    "behavioral_heuristics": {
-      "cpuid_clean": true,
-      "mac_oui_valid": true,
-      "no_hypervisor": true
-    }
-  },
-  "signature": "Ed25519_base64..."
-}
-```
-
-## 4. Token Economics
-
-### 4.1 Supply
-
-| Metric | Value |
-|--------|-------|
-| Total Supply | 8,000,000 RTC |
-| Premine | 75,000 RTC (dev/bounties) |
-| Epoch Pot | 1.5 RTC / epoch |
-| Epoch Duration | ~24 hours (144 slots) |
-
-### 4.2 Antiquity Multipliers
-
-```mermaid
-graph TD
-    subgraph Vintage ["Vintage (2.0x - 2.5x)"]
-        G4[PowerPC G4 - 2.5x]
-        G5[PowerPC G5 - 2.0x]
-        G3[PowerPC G3 - 1.8x]
-    end
-    
-    subgraph Retro ["Retro (1.3x - 1.5x)"]
-        P4[Pentium 4 - 1.5x]
-        C2[Core 2 - 1.3x]
-    end
-    
-    subgraph Modern ["Modern (1.0x - 1.2x)"]
-        M1[Apple M1 - 1.2x]
-        RZ[Ryzen - 1.0x]
-    end
-```
-
-### 4.3 Time Decay Formula
-
-Vintage hardware (>5 years) experiences 15% annual decay:
-
-```
-decay_factor = 1.0 - (0.15 × (age - 5) / 5)
-final_multiplier = 1.0 + (vintage_bonus × decay_factor)
-```
-
-**Example**: G4 (base 2.5x, 24 years old)
-- Vintage bonus: 1.5 (2.5 - 1.0)
-- Decay: 1.0 - (0.15 × 19/5) = 0.43
-- Final: 1.0 + (1.5 × 0.43) = **1.645x**
-
-### 4.4 Loyalty Bonus
-
-Modern hardware earns +15%/year uptime (capped at +50%):
-
-```
-loyalty_bonus = min(0.5, uptime_years × 0.15)
-final = base + loyalty_bonus
-```
-
-## 5. Network Architecture
-
-### 5.1 Node Topology
-
-```mermaid
-graph TB
-    subgraph Miners
-        M1[G4 Miner]
-        M2[G5 Miner]
-        M3[x86 Miner]
-    end
-    
-    subgraph Network
-        AN[Attestation Node<br>50.28.86.131]
-        EA[Ergo Anchor Node<br>50.28.86.153]
-    end
-    
-    subgraph External
-        ERGO[Ergo Blockchain]
-    end
-    
-    M1 -->|Attestation| AN
-    M2 -->|Attestation| AN
-    M3 -->|Attestation| AN
-    AN -->|Settlement Hash| EA
-    EA -->|Anchor| ERGO
-```
-
-### 5.2 Ergo Anchoring
-
-Each epoch settlement is written to Ergo blockchain:
-- Hash stored in box registers R4-R9
-- Provides immutable timestamp
-- External existence proof
-
-## 6. Reward Distribution
-
-At epoch end, the pot (1.5 RTC) is split by weight:
-
-```
-miner_reward = epoch_pot × (miner_multiplier / total_weight)
-```
-
-**Example** (2 miners):
-- G4 miner: 2.5x weight
-- x86 miner: 1.0x weight
-- Total weight: 3.5
-
-G4 receives: 1.5 × (2.5/3.5) = **1.07 RTC**
-x86 receives: 1.5 × (1.0/3.5) = **0.43 RTC**
-
-## 7. Security Considerations
-
-### 7.1 Anti-Emulation
-The 6-check fingerprint system targets known VM/emulator weaknesses:
-- Clock virtualization artifacts
-- Simplified cache models
-- Missing thermal sensors
-- Deterministic execution (no jitter)
-
-### 7.2 Sybil Resistance
-- Hardware-bound identity prevents account multiplication
-- Physical device required for each "vote"
-- Antiquity bias makes attack economically unfeasible
-
-### 7.3 Key Management
-- Ed25519 signatures for all transactions
-- Miner ID derived from public key
-- No private key recovery mechanism
+> **Scope:** This document describes the live RustChain protocol at a developer level: RIP-200 consensus, attestation, epoch settlement, hardware fingerprinting, network roles, and the public API surface.
+>
+> **Related docs:**
+> - [API Reference](./API.md)
+> - [Glossary](./GLOSSARY.md)
+> - [Tokenomics](./tokenomics_v1.md)
+> - [Hardware Fingerprinting](./hardware-fingerprinting.md)
 
 ---
 
-*Protocol version: RIP-200 v2.2.1*
-*See [API.md](./API.md) for endpoint documentation.*
+## 1. Overview
+
+RustChain is a **Proof-of-Antiquity** network. It rewards *real physical hardware* rather than synthetic compute, and it deliberately favors older or rarer machines that are harder to fake in software.
+
+The protocol is built around three core ideas:
+
+- **1 CPU = 1 vote** for baseline participation
+- **Hardware antiquity** changes reward weight
+- **Attestation** proves the machine is real enough to participate
+
+Current implementation notes:
+
+- The node is a Python/Flask application with a SQLite-backed state layer.
+- Miners and utility scripts perform hardware fingerprinting and submit attestation data.
+- Settlement proofs are anchored externally for auditability.
+
+---
+
+## 2. RIP-200 Consensus
+
+RIP-200 is the RustChain consensus and settlement flow. It is not traditional PoW and not a typical PoS design.
+
+### 2.1 High-level lifecycle
+
+```mermaid
+sequenceDiagram
+    participant Miner as Miner
+    participant Node as Attestation Node
+    participant Epoch as Epoch Ledger
+    participant Ergo as External Anchor
+
+    Miner->>Node: Request attestation / health / epoch info
+    Miner->>Miner: Collect hardware signals + fingerprint checks
+    Miner->>Node: Submit signed attestation payload
+    Node->>Node: Validate payload shape, identity, and fingerprints
+    Node-->>Miner: Accepted / rejected
+    Node->>Epoch: Enroll eligible miner for current epoch
+
+    Note over Node,Epoch: Epoch closes
+    Node->>Node: Compute reward weights and settle balances
+    Node->>Ergo: Anchor settlement hash / proof
+    Miner->>Node: Query balance / history / explorer
+```
+
+### 2.2 Epoch settlement
+
+At the end of an epoch, the protocol computes an eligible weight for each miner and allocates the epoch pot proportionally.
+
+Conceptually:
+
+```text
+reward_i = epoch_pot × (weight_i / sum(weight_all_eligible_miners))
+```
+
+Where `weight_i` is influenced by:
+
+- validated hardware presence
+- antiquity multiplier
+- fingerprint confidence / anti-emulation checks
+- any additional policy knobs exposed by the node
+
+---
+
+## 3. Attestation flow
+
+Attestation is the main trust primitive. The node does not rely on self-reported claims alone; it expects hardware-derived evidence.
+
+### 3.1 What the miner sends
+
+The miner payload is expected to carry a structured report containing some combination of:
+
+- miner identifier
+- timestamp / nonce / challenge context
+- hardware identity fields
+- fingerprint results
+- optional signed proof material
+
+Typical data classes include:
+
+- `miner` / `miner_id`
+- `device` (`family`, `arch`, `model`, `cpu`, `cores`, etc.)
+- `signals` (host- or machine-specific metadata)
+- `fingerprint` (check results)
+- `signature` / public-key material where required
+
+### 3.2 What the node validates
+
+The validation pipeline generally checks:
+
+1. request shape and required fields
+2. miner identity formatting
+3. timestamp / nonce / challenge consistency
+4. hardware signal sanity
+5. anti-abuse or rate-limit constraints
+6. fingerprint pass/fail status
+7. eligibility for enrollment in the epoch ledger
+
+### 3.3 Simplified request model
+
+```json
+{
+  "miner_id": "RTC_example",
+  "device": {
+    "family": "PowerPC",
+    "arch": "G4",
+    "model": "PowerBook5,4"
+  },
+  "fingerprint": {
+    "clock_drift": true,
+    "cache_timing": true,
+    "simd_identity": true,
+    "thermal_entropy": true,
+    "instruction_jitter": true,
+    "anti_emulation": true
+  }
+}
+```
+
+---
+
+## 4. Hardware fingerprinting
+
+RustChain’s anti-spoofing model relies on hardware behavior that is difficult to reproduce accurately in a VM or emulator.
+
+### 4.1 The six core checks
+
+1. **Clock drift / oscillator variance**
+2. **Cache timing characteristics**
+3. **SIMD identity and timing**
+4. **Thermal entropy / load response**
+5. **Instruction-path jitter**
+6. **Anti-emulation heuristics**
+
+### 4.2 Why these checks matter
+
+- VMs tend to have cleaner, more deterministic timing than physical machines.
+- Emulators often flatten cache and thermal behavior.
+- Real hardware shows small imperfections caused by silicon, aging, and heat.
+- The goal is not perfect certainty; the goal is to make spoofing expensive and brittle.
+
+### 4.3 Behavioral model
+
+RustChain treats a machine as more trustworthy when multiple signals agree:
+
+- claimed architecture matches measured behavior
+- timing distributions look physical, not synthetic
+- the machine does not expose hypervisor artifacts
+- repeat observations remain consistent over time
+
+---
+
+## 5. Token economics and rewards
+
+RTC is the native token used for rewards and settlement.
+
+Key economic ideas:
+
+- epoch rewards are distributed to eligible miners
+- the final share depends on validated weight
+- older and rarer hardware can receive higher multipliers
+- reward accounting is visible via wallet and explorer APIs
+
+For exact supply, emission, and distribution policy, see:
+
+- [Tokenomics](./tokenomics_v1.md)
+- [API Reference](./API.md) for live balance and epoch endpoints
+
+This protocol spec focuses on mechanics rather than duplicating every tokenomics constant.
+
+---
+
+## 6. Network architecture
+
+```mermaid
+graph TD
+    Miner1[Miner] --> Node[Attestation Node]
+    Miner2[Miner] --> Node
+    Miner3[Miner] --> Node
+
+    Node --> Ledger[(Epoch / Pending Ledger)]
+    Node --> Explorer[Explorer / Public API]
+    Node --> Anchor[Ergo Anchor]
+```
+
+### 6.1 Components
+
+- **Miners**: collect hardware data and submit attestations
+- **Attestation node**: validates miners, tracks epoch state, exposes APIs
+- **Ledger**: stores pending and settled reward state
+- **Explorer/API**: public visibility into miners, epochs, balances, and health
+- **External anchor**: immutable proof / settlement anchor
+
+### 6.2 Operator model
+
+The public network is designed to be inspectable via HTTPS endpoints, while some operator routes are intentionally restricted.
+
+---
+
+## 7. Public API reference
+
+The exhaustive endpoint reference lives in [API.md](./API.md). This section highlights the core public calls that are most relevant to protocol understanding.
+
+### 7.1 Health
+
+```bash
+curl -sk https://rustchain.org/health | jq .
+```
+
+Returns node health, version, uptime, database status, and related status fields.
+
+### 7.2 Epoch state
+
+```bash
+curl -sk https://rustchain.org/epoch | jq .
+```
+
+Returns the current epoch number, slot, epoch pot, enrolled miner count, and supply-related metadata.
+
+### 7.3 Active miners
+
+```bash
+curl -sk https://rustchain.org/api/miners | jq .
+```
+
+Returns the live miner list, including device family, architecture, multiplier, and recent attestation info.
+
+### 7.4 Wallet balance
+
+```bash
+curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_MINER_ID" | jq .
+```
+
+Returns the current RTC balance for the provided miner or wallet identifier.
+
+### 7.5 Wallet history
+
+```bash
+curl -sk "https://rustchain.org/wallet/history?miner_id=YOUR_MINER_ID&limit=10" | jq .
+```
+
+Returns recent transfers and wallet-scoped ledger activity.
+
+### 7.6 API navigation
+
+If you need the full list of request/response shapes, use:
+
+- [API.md](./API.md)
+- [docs/postman/README.md](./postman/README.md)
+- [docs/api/openapi.yaml](./api/openapi.yaml)
+
+---
+
+## 8. Security model
+
+### 8.1 Anti-emulation
+
+RustChain expects VMs and emulators to fail at least one of the hardware checks or to produce low-confidence behavior. This protects reward fairness.
+
+### 8.2 Sybil resistance
+
+The network’s identity model is hardware-bound rather than purely account-bound, which makes large-scale fake miner creation more expensive.
+
+### 8.3 Settlement integrity
+
+Reward settlement is tracked in ledger state and anchored externally to make reward history harder to tamper with.
+
+### 8.4 Key handling
+
+- Transaction signing uses Ed25519-style key material in the wallet tooling.
+- Private keys must remain offline and permission-restricted.
+- Wallet backups are operationally sensitive and should be treated as secrets.
+
+---
+
+## 9. Glossary
+
+- **RIP-200**: RustChain’s consensus and attestation protocol family.
+- **Proof of Antiquity**: Reward model that favors real, older, rarer hardware.
+- **Attestation**: A signed or structured hardware proof submitted to the node.
+- **Epoch**: Reward accounting window.
+- **Antiquity multiplier**: Reward factor based on hardware class and age.
+- **Pending ledger**: Intermediate settlement state before final confirmation.
+- **Ergo anchoring**: External proof mechanism used to preserve settlement integrity.
+- **Anti-emulation**: Detection logic that discourages VMs and synthetic hardware.
+
+---
+
+## 10. Implementation notes
+
+If you are extending the protocol or writing a client:
+
+- prefer the live API docs over hard-coded assumptions
+- use `curl -sk` when testing against the public node if TLS verification is expected to fail locally
+- validate device-family and architecture fields before comparing rewards
+- keep documentation aligned with `API.md`, `tokenomics_v1.md`, and the live explorer
+
+---
+
+*Protocol documentation maintained as part of the RustChain docs set.*
