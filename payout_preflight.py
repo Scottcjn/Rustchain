@@ -83,7 +83,7 @@ def validate_wallet_transfer_signed(payload: Any) -> PreflightResult:
         return PreflightResult(ok=False, error=err, details={})
 
     required = ["from_address", "to_address", "amount_rtc", "nonce", "signature", "public_key"]
-    missing = [k for k in required if not data.get(k)]
+    missing = [k for k in required if k not in data or data.get(k) in (None, "")]
     if missing:
         return PreflightResult(ok=False, error="missing_required_fields", details={"missing": missing})
 

@@ -7,7 +7,7 @@ from decimal import Decimal
 import sys
 import os
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from payout_preflight import (
     _as_dict,
@@ -233,7 +233,7 @@ class TestValidateWalletTransferSigned:
                 result = validate_wallet_transfer_signed({
                               "from_address": self._make_address("a"),
                 })
-                       assert result.ok is False
+                assert result.ok is False
                 assert result.error == "missing_required_fields"
 
       def test_invalid_from_address_format(self):
@@ -262,7 +262,7 @@ class TestValidateWalletTransferSigned:
                 assert result.error == "nonce_must_be_gt_zero"
 
       def test_zero_nonce_rejected(self):
-                payload = self._valid_nonce_rejected(nonce=0)
+                payload = self._valid_payload(nonce=0)
                 result = validate_wallet_transfer_signed(payload)
                 assert result.ok is False
                 assert result.error == "nonce_must_be_gt_zero"
