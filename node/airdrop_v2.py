@@ -844,15 +844,19 @@ class AirdropV2:
                 ),
             )
 
-            # Update allocation
+            # Update allocation atomically to prevent TOCTOU race
             cursor.execute(
                 """
                 UPDATE airdrop_allocation
                 SET claimed_uwrtc = claimed_uwrtc + ?, updated_at = ?
-                WHERE chain = ?
+                WHERE chain = ? AND (total_uwrtc - claimed_uwrtc) >= ?
                 """,
-                (claim.amount_uwrtc, claim.timestamp, chain_lower),
+                (claim.amount_uwrtc, claim.timestamp, chain_lower, claim.amount_uwrtc),
             )
+
+            if cursor.rowcount == 0:
+                conn.rollback()
+                return False, "Airdrop allocation exhausted or concurrent claim conflict", None
 
             conn.commit()
             logger.info(
