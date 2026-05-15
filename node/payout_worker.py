@@ -174,6 +174,42 @@ class PayoutWorker:
             self.stats['failed'] += 1
             return False
 
+    def recover_orphans(self):
+        """Recover withdrawals stuck in processing state (e.g. from a crash during execute_withdrawal)."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute("BEGIN IMMEDIATE")
+                rows = conn.execute("""
+                    SELECT withdrawal_id, miner_pk, amount, fee
+                    FROM withdrawals
+                    WHERE status = 'processing'
+                """).fetchall()
+
+                for row in rows:
+                    withdrawal_id, miner_pk, amount, fee = row
+                    total_refund = amount + (fee or 0)
+
+                    logger.warning(f"Recovering orphaned withdrawal {withdrawal_id} (refunding {total_refund} to {miner_pk})")
+
+                    # Refund the balance
+                    conn.execute(
+                        "UPDATE accounts SET balance = balance + ? WHERE public_key = ?",
+                        (total_refund, miner_pk)
+                    )
+
+                    # Mark as failed
+                    conn.execute(
+                        "UPDATE withdrawals SET status = 'failed', error_msg = 'Orphaned processing state recovered' WHERE withdrawal_id = ?",
+                        (withdrawal_id,)
+                    )
+                conn.execute("COMMIT")
+                
+                if rows:
+                    logger.info(f"Recovered {len(rows)} orphaned withdrawals.")
+                    
+        except Exception as e:
+            logger.error(f"Failed to recover orphans: {e}")
+
     def process_batch(self) -> int:
         """Process a batch of withdrawals"""
         withdrawals = self.get_pending_withdrawals()
@@ -203,6 +239,9 @@ class PayoutWorker:
 
         while True:
             try:
+                # Recover orphans before processing new batches to prevent stranded funds
+                self.recover_orphans()
+
                 # Process batch
                 processed = self.process_batch()
 
