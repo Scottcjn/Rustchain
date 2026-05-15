@@ -5,6 +5,7 @@ Includes RIP-0005 (Epoch Rewards), RIP-0008 (Withdrawals), RIP-0009 (Finality)
 """
 import os, time, json, secrets, hashlib, hmac, sqlite3, base64, struct, uuid, glob, logging, sys, binascii, math, re, statistics
 import ipaddress
+from threading import Lock
 from urllib.parse import urlparse
 from flask import Flask, request, jsonify, g, send_from_directory, send_file, abort, render_template_string, redirect, Response
 import json
@@ -184,6 +185,86 @@ MUSEUM_DIR = os.path.join(REPO_ROOT, "web", "museum")
 HOF_DIR = os.path.join(REPO_ROOT, "web", "hall-of-fame")
 DASHBOARD_DIR = os.path.join(REPO_ROOT, "tools", "miner_dashboard")
 EXPLORER_DIR = os.path.join(REPO_ROOT, "tools", "explorer")
+
+ADMIN_RATE_LIMIT_MAX = int(os.environ.get("RC_ADMIN_RATE_LIMIT_MAX", "12"))
+ADMIN_RATE_LIMIT_WINDOW = int(os.environ.get("RC_ADMIN_RATE_LIMIT_WINDOW_SECONDS", "60"))
+_ADMIN_RATE_LIMIT_BUCKETS = {}
+_ADMIN_RATE_LIMIT_LOCK = Lock()
+_ADMIN_RATE_LIMIT_PREFIXES = (
+    "/admin/",
+    "/gov/rotate/",
+    "/pending/",
+)
+_ADMIN_RATE_LIMIT_PATHS = {
+    "/api/balances",
+    "/api/bridge/void",
+    "/api/lock/forfeit",
+    "/api/lock/release",
+    "/genesis/export",
+    "/miner/headerkey",
+    "/ops/attest/debug",
+    "/rewards/settle",
+    "/wallet/balances/all",
+    "/wallet/ledger",
+    "/wallet/link-coinbase",
+    "/wallet/transfer",
+    "/wallet/transfer_OLD_DISABLED",
+    "/withdraw/register",
+}
+
+
+def _admin_rate_limit_bucket_path(path: str) -> Optional[str]:
+    if path in _ADMIN_RATE_LIMIT_PATHS:
+        return path
+    if path.startswith("/api/miner/") and path.endswith("/attestations"):
+        return "/api/miner/:miner_id/attestations"
+    if path.startswith("/api/bridge/lock/"):
+        if path.endswith("/confirm"):
+            return "/api/bridge/lock/:lock_id/confirm"
+        if path.endswith("/release"):
+            return "/api/bridge/lock/:lock_id/release"
+    if path.startswith("/withdraw/history/"):
+        return "/withdraw/history/:miner_pk"
+    for prefix in _ADMIN_RATE_LIMIT_PREFIXES:
+        if path.startswith(prefix):
+            return f"{prefix.rstrip('/')}/*"
+    return None
+
+
+def _is_admin_rate_limited_path(path: str) -> bool:
+    return _admin_rate_limit_bucket_path(path) is not None
+
+
+def _check_admin_rate_limit(client_ip: str, route_key: str, now_ts: Optional[int] = None):
+    """Bound repeated admin endpoint attempts per client IP and route."""
+    if ADMIN_RATE_LIMIT_MAX <= 0:
+        return True, 0
+    now_ts = int(time.time()) if now_ts is None else int(now_ts)
+    window = max(1, ADMIN_RATE_LIMIT_WINDOW)
+    cutoff = now_ts - window
+    key = (client_ip or "unknown", route_key)
+    with _ADMIN_RATE_LIMIT_LOCK:
+        attempts = [ts for ts in _ADMIN_RATE_LIMIT_BUCKETS.get(key, []) if ts > cutoff]
+        if len(attempts) >= ADMIN_RATE_LIMIT_MAX:
+            _ADMIN_RATE_LIMIT_BUCKETS[key] = attempts
+            retry_after = max(1, window - (now_ts - attempts[0]))
+            return False, retry_after
+        attempts.append(now_ts)
+        _ADMIN_RATE_LIMIT_BUCKETS[key] = attempts
+        return True, 0
+
+
+def _admin_rate_limit_response(retry_after: int):
+    response = jsonify({
+        "ok": False,
+        "error": "rate_limited",
+        "code": "ADMIN_RATE_LIMIT",
+        "limit": ADMIN_RATE_LIMIT_MAX,
+        "window_seconds": ADMIN_RATE_LIMIT_WINDOW,
+    })
+    response.status_code = 429
+    response.headers["Retry-After"] = str(retry_after)
+    return response
 
 
 def _attest_mapping(value):
@@ -497,6 +578,11 @@ except Exception as e:
 def _start_timer():
     g._ts = time.time()
     g.request_id = request.headers.get("X-Request-Id") or uuid.uuid4().hex
+    rate_limit_path = _admin_rate_limit_bucket_path(request.path)
+    if rate_limit_path:
+        allowed, retry_after = _check_admin_rate_limit(get_client_ip(), rate_limit_path)
+        if not allowed:
+            return _admin_rate_limit_response(retry_after)
 
 def _normalize_client_ip(raw_value) -> str:
     """Normalize a peer/header IP string down to the first address token."""
