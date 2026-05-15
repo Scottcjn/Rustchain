@@ -506,7 +506,31 @@ class TestFlaskApp(unittest.TestCase):
         data = json.loads(response.data)
         self.assertFalse(data['ok'])
         self.assertEqual(data['error'], 'Wallet address required')
-    
+
+    def test_drip_rejects_non_object_json(self):
+        """Test drip request rejects non-object JSON."""
+        response = self.client.post('/faucet/drip',
+                                    json=['wallet'],
+                                    content_type='application/json')
+
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.data)
+        self.assertFalse(data['ok'])
+        self.assertEqual(data['error'], 'Wallet address required')
+
+    def test_drip_rejects_non_string_wallet(self):
+        """Test drip request rejects structured wallet values."""
+        for wallet in (['0x9683744B6b94F2b0966aBDb8C6BdD9805d207c6E'], {'address': '0xabc'}, 123):
+            with self.subTest(wallet=wallet):
+                response = self.client.post('/faucet/drip',
+                                            json={'wallet': wallet},
+                                            content_type='application/json')
+
+                self.assertEqual(response.status_code, 400)
+                data = json.loads(response.data)
+                self.assertFalse(data['ok'])
+                self.assertEqual(data['error'], 'Wallet address required')
+
     def test_drip_invalid_wallet(self):
         """Test drip request with invalid wallet."""
         response = self.client.post('/faucet/drip',

@@ -659,11 +659,16 @@ def register_routes(app: Flask, config: Dict, logger: logging.Logger,
         
         # Parse request
         data = request.get_json(silent=True)
-        if not data or 'wallet' not in data:
+        if not isinstance(data, dict) or 'wallet' not in data:
             logger.warning(f"Invalid request from {request.remote_addr}: missing wallet")
             return jsonify({'ok': False, 'error': 'Wallet address required'}), 400
         
-        wallet = data['wallet'].strip()
+        wallet_value = data['wallet']
+        if not isinstance(wallet_value, str) or not wallet_value.strip():
+            logger.warning(f"Invalid request from {request.remote_addr}: invalid wallet type")
+            return jsonify({'ok': False, 'error': 'Wallet address required'}), 400
+
+        wallet = wallet_value.strip()
         ip = get_client_ip(request)
         
         logger.info(f"Drip request: wallet={wallet}, ip={ip}")
