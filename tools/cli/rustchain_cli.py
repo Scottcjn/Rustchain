@@ -43,6 +43,11 @@ DEFAULT_NODE = "https://rustchain.org"
 TIMEOUT = 10
 __version__ = "0.2.0"
 
+
+class RustChainAPIError(Exception):
+    """Raised when the CLI cannot fetch or decode node API data."""
+
+
 def get_node_url():
     """Get node URL from env var or default."""
     return os.environ.get("RUSTCHAIN_NODE", DEFAULT_NODE)
@@ -55,14 +60,11 @@ def fetch_api(endpoint):
         with urlopen(req, timeout=TIMEOUT) as response:
             return json.loads(response.read().decode())
     except HTTPError as e:
-        print(f"Error: API returned {e.code}", file=sys.stderr)
-        sys.exit(1)
+        raise RustChainAPIError(f"API returned {e.code}") from e
     except URLError as e:
-        print(f"Error: Cannot connect to node: {e.reason}", file=sys.stderr)
-        sys.exit(1)
+        raise RustChainAPIError(f"Cannot connect to node: {e.reason}") from e
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
+        raise RustChainAPIError(str(e)) from e
 
 def format_table(headers, rows):
     """Format data as a simple table."""
@@ -775,7 +777,12 @@ def main():
     if args.node:
         os.environ["RUSTCHAIN_NODE"] = args.node
 
-    result = args.func(args)
+    try:
+        result = args.func(args)
+    except RustChainAPIError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
     if result is not None:
         sys.exit(result)
 
