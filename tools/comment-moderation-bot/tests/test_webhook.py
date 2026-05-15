@@ -429,3 +429,110 @@ class TestWebhookProcessing:
         )
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_webhook_rejects_non_object_json(
+        self, app: TestClient, mock_config: MagicMock
+    ) -> None:
+        """Test webhook with valid JSON that is not an object."""
+        body = json.dumps(["not", "an", "object"]).encode()
+        signature = generate_signature(body, mock_config.github_app.webhook_secret.get_secret_value())
+
+        response = app.post(
+            "/webhook",
+            content=body,
+            headers={
+                "X-GitHub-Event": "issue_comment",
+                "X-GitHub-Delivery": "test-delivery-id",
+                "X-Hub-Signature-256": signature,
+            },
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.json()["detail"] == "Webhook payload must be a JSON object"
+
+    @pytest.mark.parametrize(
+        ("field_path", "expected_detail"),
+        [
+            (("repository",), "payload.repository must be a JSON object"),
+            (("comment",), "payload.comment must be a JSON object"),
+            (("comment", "user"), "payload.comment.user must be a JSON object"),
+            (("issue",), "payload.issue must be a JSON object"),
+            (("installation",), "payload.installation must be a JSON object"),
+        ],
+    )
+    def test_webhook_rejects_malformed_nested_objects(
+        self,
+        app: TestClient,
+        sample_webhook_payload: dict,
+        mock_config: MagicMock,
+        field_path: tuple[str, ...],
+        expected_detail: str,
+    ) -> None:
+        """Test webhook with signed payloads containing non-object nested sections."""
+        target = sample_webhook_payload
+        for field in field_path[:-1]:
+            target = target[field]
+        target[field_path[-1]] = "not-an-object"
+
+        body = json.dumps(sample_webhook_payload).encode()
+        signature = generate_signature(body, mock_config.github_app.webhook_secret.get_secret_value())
+
+        response = app.post(
+            "/webhook",
+            content=body,
+            headers={
+                "X-GitHub-Event": "issue_comment",
+                "X-GitHub-Delivery": "test-delivery-id",
+                "X-Hub-Signature-256": signature,
+            },
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.json()["detail"] == expected_detail
+
+    @pytest.mark.parametrize(
+        ("mutate_payload", "expected_detail"),
+        [
+            (
+                lambda payload: payload["comment"].pop("user"),
+                "Missing comment user login",
+            ),
+            (
+                lambda payload: payload["comment"]["user"].pop("login"),
+                "Missing comment user login",
+            ),
+            (
+                lambda payload: payload["comment"].pop("body"),
+                "Missing comment id or body",
+            ),
+            (
+                lambda payload: payload["issue"].pop("number"),
+                "Missing issue number",
+            ),
+        ],
+    )
+    def test_webhook_rejects_missing_required_nested_fields(
+        self,
+        app: TestClient,
+        sample_webhook_payload: dict,
+        mock_config: MagicMock,
+        mutate_payload,
+        expected_detail: str,
+    ) -> None:
+        """Test signed issue_comment payloads with missing nested required fields."""
+        mutate_payload(sample_webhook_payload)
+        body = json.dumps(sample_webhook_payload).encode()
+        signature = generate_signature(body, mock_config.github_app.webhook_secret.get_secret_value())
+
+        response = app.post(
+            "/webhook",
+            content=body,
+            headers={
+                "X-GitHub-Event": "issue_comment",
+                "X-GitHub-Delivery": "test-delivery-id",
+                "X-Hub-Signature-256": signature,
+            },
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.json()["detail"] == expected_detail

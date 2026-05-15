@@ -21,6 +21,13 @@ from .moderation_service import ModerationService
 logger = logging.getLogger(__name__)
 
 
+def _payload_object(payload: dict[str, Any], field: str, parent: str = "payload") -> dict[str, Any]:
+    value = payload.get(field, {})
+    if isinstance(value, dict):
+        return value
+    raise ValueError(f"{parent}.{field} must be a JSON object")
+
+
 def create_app(config: Optional[BotConfig] = None) -> FastAPI:
     """
     Create and configure the FastAPI application.
@@ -163,20 +170,45 @@ def register_routes(app: FastAPI, config: BotConfig) -> None:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid JSON payload",
             )
+        if not isinstance(payload, dict):
+            audit_logger.log_error(
+                error_type="invalid_payload",
+                message="Webhook payload must be a JSON object",
+                delivery_id=x_github_delivery,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Webhook payload must be a JSON object",
+            )
+
+        try:
+            repository = _payload_object(payload, "repository")
+            comment = _payload_object(payload, "comment")
+            issue = _payload_object(payload, "issue")
+            installation = _payload_object(payload, "installation")
+            comment_user = _payload_object(comment, "user", parent="payload.comment")
+        except ValueError as e:
+            audit_logger.log_error(
+                error_type="invalid_payload",
+                message=str(e),
+                delivery_id=x_github_delivery,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e),
+            )
 
         # Log webhook receipt
-        repo = payload.get("repository", {}).get("full_name", "unknown")
+        repo = repository.get("full_name", "unknown")
         audit_logger.log_webhook_event(
             event_type=x_github_event,
             delivery_id=x_github_delivery,
             repo=repo,
             action=payload.get("action", "unknown"),
             payload_summary={
-                "comment_id": payload.get("comment", {}).get("id"),
-                "issue_number": payload.get("issue", {}).get("number"),
-                "author": payload.get("comment", {})
-                .get("user", {})
-                .get("login"),
+                "comment_id": comment.get("id"),
+                "issue_number": issue.get("number"),
+                "author": comment_user.get("login"),
             },
         )
 
@@ -209,16 +241,18 @@ def register_routes(app: FastAPI, config: BotConfig) -> None:
 
         # Extract required data
         try:
-            comment = payload.get("comment", {})
-            issue = payload.get("issue", {})
-            installation = payload.get("installation", {})
-
             if not comment or not issue:
                 raise ValueError("Missing comment or issue data")
 
             installation_id = installation.get("id")
             if not installation_id:
                 raise ValueError("Missing installation ID")
+            if "id" not in comment or "body" not in comment:
+                raise ValueError("Missing comment id or body")
+            if not comment_user.get("login"):
+                raise ValueError("Missing comment user login")
+            if "number" not in issue:
+                raise ValueError("Missing issue number")
 
         except Exception as e:
             audit_logger.log_error(
