@@ -15,7 +15,7 @@ import unittest
 from utxo_db import (
     UtxoDB, coin_select, compute_box_id, address_to_proposition,
     proposition_to_address, UNIT, DUST_THRESHOLD, MAX_COINBASE_OUTPUT_NRTC,
-    MAX_OUTPUTS_PER_TX,
+    MAX_OUTPUTS,
 )
 
 
@@ -635,6 +635,49 @@ class TestUtxoDB(unittest.TestCase):
         self.assertFalse(ok)
         self.assertFalse(self.db.mempool_check_double_spend(box['box_id']))
 
+    # -- fix(#9273): mempool output validation ------------------------------
+
+    def test_mempool_rejects_too_many_outputs(self):
+        """mempool_add must reject transactions with > MAX_OUTPUTS outputs.
+
+        This mirrors the apply_transaction MAX_OUTPUTS check in the mempool
+        admission path, preventing UTXO-bloat txs from locking inputs in the
+        mempool until expiry (DoS vector).
+        """
+        self._apply_coinbase('alice', 100 * UNIT)
+        box = self.db.get_unspent_for_address('alice')[0]
+
+        outputs = [
+            {'address': 'bob', 'value_nrtc': 2 * DUST_THRESHOLD}
+            for _ in range(MAX_OUTPUTS + 5)
+        ]
+        ok = self.db.mempool_add({
+            'tx_id': 'bloat' * 16,
+            'inputs': [{'box_id': box['box_id']}],
+            'outputs': outputs,
+            'fee_nrtc': 0,
+        })
+        self.assertFalse(ok, 'mempool_add should reject > MAX_OUTPUTS outputs')
+        self.assertEqual(self.db.mempool_get_block_candidates(), [])
+
+    def test_mempool_rejects_dust_outputs(self):
+        """mempool_add must reject outputs below DUST_THRESHOLD.
+
+        This mirrors the apply_transaction DUST_THRESHOLD check in the mempool
+        admission path, preventing dust outputs from occupying block space.
+        """
+        self._apply_coinbase('alice', 100 * UNIT)
+        box = self.db.get_unspent_for_address('alice')[0]
+
+        ok = self.db.mempool_add({
+            'tx_id': 'dusty' * 16,
+            'inputs': [{'box_id': box['box_id']}],
+            'outputs': [{'address': 'bob', 'value_nrtc': DUST_THRESHOLD // 2}],
+            'fee_nrtc': 0,
+        })
+        self.assertFalse(ok, 'mempool_add should reject outputs below DUST_THRESHOLD')
+        self.assertEqual(self.db.mempool_get_block_candidates(), [])
+
     # -- proposition encoding ------------------------------------------------
 
     def test_proposition_roundtrip(self):
@@ -949,7 +992,7 @@ class TestUtxoDB(unittest.TestCase):
             'inputs': [{'box_id': boxes[0]['box_id']}],
             'outputs': [
                 {'address': f'dust_{idx}', 'value_nrtc': DUST_THRESHOLD}
-                for idx in range(MAX_OUTPUTS_PER_TX + 1)
+                for idx in range(MAX_OUTPUTS + 1)
             ],
             'fee_nrtc': 0,
         }
@@ -1028,7 +1071,7 @@ class TestUtxoDB(unittest.TestCase):
         self.assertEqual(self.db.get_balance('dust'), 0)
 
     def test_excessive_output_count_rejected(self):
-        """Transactions cannot create more than MAX_OUTPUTS_PER_TX boxes."""
+        """Transactions cannot create more than MAX_OUTPUTS boxes."""
         self._apply_coinbase('alice', 100 * UNIT)
         boxes = self.db.get_unspent_for_address('alice')
 
@@ -1038,7 +1081,7 @@ class TestUtxoDB(unittest.TestCase):
                          'spending_proof': 'sig'}],
             'outputs': [
                 {'address': f'dust_{idx}', 'value_nrtc': DUST_THRESHOLD}
-                for idx in range(MAX_OUTPUTS_PER_TX + 1)
+                for idx in range(MAX_OUTPUTS + 1)
             ],
             'fee_nrtc': 0,
         }, block_height=10)
