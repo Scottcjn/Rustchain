@@ -47,7 +47,7 @@ zeroize = { version = "1.7", features = ["derive"] }
 secrecy = "0.10"
 
 # Key derivation
-hmac = "0.12"
+hmac = "0.13"
 pbkdf2 = "0.12"
 
 # Random number generation
