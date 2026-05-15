@@ -1078,10 +1078,19 @@ def create_bft_routes(app, bft: BFTConsensus):
     def bft_propose():
         """Manually trigger epoch proposal (admin)"""
         try:
-            data = request.get_json()
+            data = request.get_json(silent=True)
+            if not isinstance(data, dict):
+                return jsonify({'error': 'JSON object required'}), 400
             epoch = data.get('epoch')
             miners = data.get('miners', [])
             distribution = data.get('distribution', {})
+
+            if epoch is None:
+                return jsonify({'error': 'Missing epoch field'}), 400
+            if not isinstance(miners, list):
+                return jsonify({'error': 'miners must be a list'}), 400
+            if not isinstance(distribution, dict):
+                return jsonify({'error': 'distribution must be an object'}), 400
 
             msg = bft.propose_epoch_settlement(epoch, miners, distribution)
             if msg:
