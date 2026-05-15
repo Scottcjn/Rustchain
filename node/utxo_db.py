@@ -385,6 +385,30 @@ class UtxoDB:
 
         return True
 
+    def _output_metadata_is_valid(self, output: Any) -> bool:
+        """Validate optional JSON text fields before DB persistence."""
+        if not isinstance(output, dict):
+            return False
+
+        metadata_shapes = (
+            ('tokens_json', list),
+            ('registers_json', dict),
+        )
+        for field, expected_type in metadata_shapes:
+            if field not in output:
+                continue
+            raw = output[field]
+            if not isinstance(raw, str):
+                return False
+            try:
+                parsed = json.loads(raw)
+            except (TypeError, json.JSONDecodeError):
+                return False
+            if not isinstance(parsed, expected_type):
+                return False
+
+        return True
+
     # -- transaction application ---------------------------------------------
 
     def apply_transaction(self, tx: dict, block_height: int,
@@ -501,6 +525,8 @@ class UtxoDB:
             # transaction can split one UTXO into thousands of 1-nanoRTC
             # boxes and permanently bloat the UTXO set.
             for o in outputs:
+                if not self._output_metadata_is_valid(o):
+                    return abort()
                 val = o.get('value_nrtc')
                 if (
                     isinstance(val, bool)
@@ -851,6 +877,10 @@ class UtxoDB:
             # unmineable transactions enter the mempool and lock UTXOs until
             # expiry (DoS vector).
             for o in outputs:
+                if not self._output_metadata_is_valid(o):
+                    if manage_tx:
+                        conn.execute("ROLLBACK")
+                    return False
                 val = o.get('value_nrtc')
                 if isinstance(val, bool) or not isinstance(val, int) or val < DUST_THRESHOLD:
                     if manage_tx:

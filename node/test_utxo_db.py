@@ -940,6 +940,85 @@ class TestUtxoDB(unittest.TestCase):
             self.db.mempool_check_double_spend(boxes[0]['box_id'])
         )
 
+    def test_mempool_rejects_non_string_output_metadata(self):
+        """Mempool must reject metadata that cannot persist to SQLite text.
+
+        A dict-valued tokens_json is JSON-serializable, so the old mempool
+        admission path accepted it and locked the input. Block production then
+        failed when apply_transaction tried to bind the dict into SQLite.
+        """
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        tx = {
+            'tx_id': 'meta' * 16,
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': boxes[0]['box_id']}],
+            'outputs': [{
+                'address': 'bob',
+                'value_nrtc': 50 * UNIT,
+                'tokens_json': {'TOKEN': 1},
+            }],
+            'fee_nrtc': 0,
+        }
+        ok = self.db.mempool_add(tx)
+        self.assertFalse(ok)
+        self.assertFalse(
+            self.db.mempool_check_double_spend(boxes[0]['box_id'])
+        )
+        self.assertEqual(self.db.mempool_get_block_candidates(), [])
+
+    def test_mempool_rejects_malformed_output_metadata_json(self):
+        """Mempool must reject malformed or wrong-shaped metadata JSON."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        bad_outputs = [
+            {'address': 'bob', 'value_nrtc': 50 * UNIT,
+             'tokens_json': 'not-json'},
+            {'address': 'bob', 'value_nrtc': 50 * UNIT,
+             'tokens_json': '{}'},
+            {'address': 'bob', 'value_nrtc': 50 * UNIT,
+             'registers_json': '[]'},
+        ]
+
+        for idx, output in enumerate(bad_outputs):
+            tx = {
+                'tx_id': f'bad{idx}' * 16,
+                'tx_type': 'transfer',
+                'inputs': [{'box_id': boxes[0]['box_id']}],
+                'outputs': [output],
+                'fee_nrtc': 0,
+            }
+            ok = self.db.mempool_add(tx)
+            self.assertFalse(ok, output)
+
+        self.assertFalse(
+            self.db.mempool_check_double_spend(boxes[0]['box_id'])
+        )
+        self.assertEqual(self.db.mempool_get_block_candidates(), [])
+
+    def test_apply_transaction_rejects_invalid_output_metadata(self):
+        """Direct application must fail closed on invalid output metadata."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': boxes[0]['box_id'],
+                         'spending_proof': 'sig'}],
+            'outputs': [{
+                'address': 'bob',
+                'value_nrtc': 50 * UNIT,
+                'registers_json': {'R4': 1},
+            }],
+            'fee_nrtc': 0,
+        }, block_height=10)
+
+        self.assertFalse(ok)
+        self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
+        self.assertEqual(self.db.get_balance('bob'), 0)
+
     # -- bounty #2819: negative / zero value outputs -------------------------
 
     def test_negative_value_output_rejected(self):
