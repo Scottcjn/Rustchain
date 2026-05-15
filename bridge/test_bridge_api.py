@@ -614,6 +614,69 @@ class TestLockEndpoint:
         assert "tx_hash is required" in resp.get_json()["error"]
 
 
+class TestBridgeRequestValidation:
+    def test_lock_rejects_non_object_json(self, client):
+        resp = client.post("/bridge/lock", json=["sender_wallet"])
+
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "JSON object body is required"
+
+    def test_lock_rejects_non_string_fields(self, client):
+        resp = client.post("/bridge/lock", json={
+            "sender_wallet": ["test-miner"],
+            "amount": 10.0,
+            "target_chain": "base",
+            "target_wallet": "0x4215a73199d56b7e9c71575bec1632cd1d36908f",
+            "tx_hash": "rtc-lock-bad-sender-type",
+        })
+
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "sender_wallet must be a string"
+
+    def test_lock_rejects_non_string_receipt_signature(self, client):
+        resp = client.post("/bridge/lock", json={
+            "sender_wallet": "test-miner",
+            "amount": 10.0,
+            "target_chain": "base",
+            "target_wallet": "0x4215a73199d56b7e9c71575bec1632cd1d36908f",
+            "tx_hash": "rtc-lock-bad-sig-type",
+            "receipt_signature": {"sig": "bad"},
+        })
+
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "receipt_signature must be a string"
+
+    def test_confirm_rejects_non_object_json(self, client):
+        resp = client.post(
+            "/bridge/confirm",
+            json=["lock_id"],
+            headers={"X-Admin-Key": "test-admin-key-12345"},
+        )
+
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "JSON object body is required"
+
+    def test_confirm_rejects_non_string_notes(self, client):
+        resp = client.post(
+            "/bridge/confirm",
+            json={"lock_id": "lock_fake", "proof_ref": "manual:proof", "notes": {"admin": "note"}},
+            headers={"X-Admin-Key": "test-admin-key-12345"},
+        )
+
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "notes must be a string"
+
+    def test_release_rejects_non_string_fields(self, client):
+        resp = client.post(
+            "/bridge/release",
+            json={"lock_id": "lock_fake", "release_tx": ["0xabc"]},
+            headers={"X-Admin-Key": "test-admin-key-12345"},
+        )
+
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "release_tx must be a string"
+
+
 class TestReleaseEndpoint:
     def test_release_requires_admin_key(self, client):
         resp = client.post("/bridge/release", json={
