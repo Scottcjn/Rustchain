@@ -92,7 +92,7 @@ run_cmd mkdir -p "$INSTALL_DIR"
 verify_sum() {
     [ "$SKIP_CHECKSUM" = true ] && return 0
     local file=$1; local expected=$2
-    local actual=$(sha256sum "$file" 2>/dev/null | cut -d' ' -f1 || shasum -a 256 "$file" 2>/dev/null | cut -d' ' -f1)
+    local actual=$( (sha256sum "$file" 2>/dev/null || shasum -a 256 "$file" 2>/dev/null) | cut -d' ' -f1)
     if [ "$actual" = "$expected" ]; then return 0; else echo -e "${RED}[!] Checksum fail: $file${NC}"; return 1; fi
 }
 
@@ -103,7 +103,7 @@ download_miner() {
         cd "$INSTALL_DIR"
     fi
     case "$PLATFORM" in
-        macos) FILE="macos/rustchain_mac_miner_v2.4.py" ;;
+        macos) FILE="macos/rustchain_mac_miner_v2.5.py" ;;
         rpi|linux) FILE="linux/rustchain_linux_miner.py" ;;
         *) FILE="linux/rustchain_linux_miner.py" ;;
     esac
