@@ -25,6 +25,7 @@ import json
 import os
 import sqlite3
 import sys
+import tempfile
 import time
 import uuid
 from pathlib import Path
@@ -46,6 +47,7 @@ from cross_node_replay_defense import (
     get_cross_node_nonce_stats,
     get_replay_attack_report,
     NonceCleanupService,
+    create_defense_middleware,
     CROSS_NODE_NONCE_TTL,
     NODE_ID,
 )
@@ -514,6 +516,42 @@ class TestCleanupService:
             # Should stop without error
             service.stop()
             assert service.running is False
+
+
+# =============================================================================
+# Tests: Flask Middleware Payload Validation
+# =============================================================================
+
+class TestDefenseMiddlewarePayloadValidation:
+    """Tests for request-shape handling in the Flask middleware."""
+
+    def test_attestation_middleware_rejects_non_object_json(self):
+        """Non-object JSON must not bypass nonce validation middleware."""
+        from flask import Flask, jsonify
+
+        fd, db_path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        try:
+            app = Flask(__name__)
+            app.config["TESTING"] = True
+
+            middleware = create_defense_middleware(db_path=db_path)
+            middleware.init_app(app)
+
+            @app.route("/attest/submit", methods=["POST"])
+            def attest_submit():
+                return jsonify({"ok": True})
+
+            response = app.test_client().post("/attest/submit", json=[])
+
+            assert response.status_code == 400
+            assert response.get_json() == {
+                "ok": False,
+                "error": "JSON object required",
+                "code": "INVALID_ATTESTATION_PAYLOAD",
+            }
+        finally:
+            os.unlink(db_path)
 
 
 # =============================================================================
