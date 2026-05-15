@@ -34,6 +34,52 @@ _CERT_PATH = os.path.expanduser("~/.rustchain/node_cert.pem")
 TLS_VERIFY = _CERT_PATH if os.path.exists(_CERT_PATH) else True
 
 
+def _safe_float(value, default=0.0):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _coefficient_of_variation(mean_value, stdev_value):
+    mean = _safe_float(mean_value)
+    if mean <= 0:
+        return 0.0
+    return _safe_float(stdev_value) / mean
+
+
+def _add_hardware_binding_entropy_aliases(results):
+    """Add field aliases consumed by the node's hardware_binding_v2 profile extractor."""
+    clock = results.get("clock_drift", {}).get("data", {})
+    cache = results.get("cache_timing", {}).get("data", {})
+    thermal = results.get("thermal_drift", {}).get("data", {})
+    jitter = results.get("instruction_jitter", {}).get("data", {})
+
+    if "L1" not in cache and "l1_ns" in cache:
+        cache["L1"] = cache["l1_ns"]
+    if "L2" not in cache and "l2_ns" in cache:
+        cache["L2"] = cache["l2_ns"]
+    if "ratio" not in thermal and "drift_ratio" in thermal:
+        thermal["ratio"] = thermal["drift_ratio"]
+    if "cv" not in jitter:
+        cvs = [
+            _coefficient_of_variation(jitter.get("int_avg_ns"), jitter.get("int_stdev")),
+            _coefficient_of_variation(jitter.get("fp_avg_ns"), jitter.get("fp_stdev")),
+            _coefficient_of_variation(jitter.get("branch_avg_ns"), jitter.get("branch_stdev")),
+        ]
+        nonzero_cvs = [cv for cv in cvs if cv > 0]
+        if nonzero_cvs:
+            jitter["cv"] = round(sum(nonzero_cvs) / len(nonzero_cvs), 6)
+
+    return {
+        "clock_cv": _safe_float(clock.get("cv")),
+        "cache_l1": _safe_float(cache.get("L1")),
+        "cache_l2": _safe_float(cache.get("L2")),
+        "thermal_ratio": _safe_float(thermal.get("ratio")),
+        "jitter_cv": _safe_float(jitter.get("cv")),
+    }
+
+
 def _parse_lscpu_model(output):
     for line in output.splitlines():
         key, _, value = line.partition(":")
@@ -62,6 +108,55 @@ def _miner_id_from_hw(hw_info):
     arch = _safe_id_part(hw_info.get("arch") or hw_info.get("machine") or "linux")
     hostname = _safe_id_part(hw_info.get("hostname") or socket.gethostname())
     return f"{arch}-{hostname}"
+
+
+VIRTUAL_IFACE_PREFIXES = (
+    "br-",
+    "cni",
+    "docker",
+    "flannel",
+    "lo",
+    "tap",
+    "tailscale",
+    "tun",
+    "veth",
+    "virbr",
+    "vnet",
+    "wg",
+)
+
+
+def _is_virtual_iface(name):
+    base_name = name.split("@", 1)[0].lower()
+    return any(base_name == prefix or base_name.startswith(prefix) for prefix in VIRTUAL_IFACE_PREFIXES)
+
+
+def _parse_ip_link_macs(output):
+    physical = []
+    active = []
+    current_iface = None
+    current_flags = set()
+    for line in output.splitlines():
+        header = re.search(
+            r"^\d+:\s+([^:]+):\s+<([^>]*)>",
+            line,
+            re.IGNORECASE,
+        )
+        if header:
+            current_iface, flags = header.groups()
+            current_flags = {flag.strip().upper() for flag in flags.split(",")}
+
+        mac_match = re.search(r"\blink/ether\s+([0-9a-f:]{17})", line, re.IGNORECASE)
+        if not mac_match or not current_iface:
+            continue
+        mac = mac_match.group(1).lower()
+        if mac == "00:00:00:00:00:00" or _is_virtual_iface(current_iface):
+            continue
+        physical.append(mac)
+        if "LOWER_UP" in current_flags:
+            active.append(mac)
+
+    return active or physical
 
 
 def _request_with_network_retry(method, url, action, retries=NETWORK_RETRY_ATTEMPTS,
@@ -190,7 +285,12 @@ class LocalMiner:
         try:
             passed, results = validate_all_checks()
             self.fingerprint_passed = passed
-            self.fingerprint_data = {"checks": results, "all_passed": passed}
+            entropy_profile = _add_hardware_binding_entropy_aliases(results)
+            self.fingerprint_data = {
+                "checks": results,
+                "all_passed": passed,
+                "data": entropy_profile,
+            }
             if passed:
                 print("[FINGERPRINT] All checks PASSED - eligible for full rewards")
             else:
@@ -227,13 +327,8 @@ class LocalMiner:
                 stderr=subprocess.DEVNULL,
                 text=True,
                 timeout=5,
-            ).stdout.splitlines()
-            for line in output:
-                m = re.search(r"link/(?:ether|loopback)\s+([0-9a-f:]{17})", line, re.IGNORECASE)
-                if m:
-                    mac = m.group(1).lower()
-                    if mac != "00:00:00:00:00:00":
-                        macs.append(mac)
+            ).stdout
+            macs.extend(_parse_ip_link_macs(output))
         except Exception:
             pass
 
