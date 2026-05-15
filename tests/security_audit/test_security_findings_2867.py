@@ -53,18 +53,36 @@ def test_mempool_add_manage_tx_undefined():
                            '..', '..', 'node', 'utxo_db.py')) as f:
         lines = f.readlines()
 
-    # apply_transaction defines manage_tx based on conn ownership
+    # apply_transaction defines manage_tx based on conn ownership. Search the
+    # function body instead of relying on brittle line-number windows.
+    apply_start = next(
+        i for i, line in enumerate(lines)
+        if line.lstrip().startswith('def apply_transaction')
+    )
+    apply_end = next(
+        i for i, line in enumerate(lines[apply_start + 1:], apply_start + 1)
+        if line.startswith('    def ')
+    )
     found_define = False
-    for i, line in enumerate(lines[350:400], 351):
+    for line in lines[apply_start:apply_end]:
         if 'manage_tx = ' in line and 'own' in line:
             found_define = True
             break
 
     # mempool_add MUST now define manage_tx (#2812 fix)
+    mempool_start = next(
+        i for i, line in enumerate(lines)
+        if line.lstrip().startswith('def mempool_add')
+    )
+    mempool_end = next(
+        (i for i, line in enumerate(lines[mempool_start + 1:], mempool_start + 1)
+         if line.startswith('    def ')),
+        len(lines),
+    )
     in_mempool_add = False
     mempool_refs = []
     mempool_define = False
-    for i, line in enumerate(lines[647:790], 648):
+    for i, line in enumerate(lines[mempool_start:mempool_end], mempool_start + 1):
         if 'def mempool_add' in line:
             in_mempool_add = True
         if in_mempool_add and line.strip().startswith('manage_tx = '):

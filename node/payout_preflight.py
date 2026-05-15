@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
 from typing import Any, Dict, Optional, Tuple
@@ -41,6 +42,10 @@ def _safe_decimal(v: Any) -> Tuple[Optional[Decimal], str]:
 
 def _amount_i64(amount_rtc: Decimal) -> int:
     return int((amount_rtc * MICRO_RTC).to_integral_value(rounding=ROUND_DOWN))
+
+
+def _is_missing_required(data: Dict[str, Any], key: str) -> bool:
+    return key not in data or data.get(key) is None or data.get(key) == ""
 
 
 def validate_wallet_transfer_admin(payload: Any) -> PreflightResult:
@@ -86,7 +91,7 @@ def validate_wallet_transfer_signed(payload: Any) -> PreflightResult:
         return PreflightResult(ok=False, error=err, details={})
 
     required = ["from_address", "to_address", "amount_rtc", "nonce", "signature"]
-    missing = [k for k in required if not data.get(k)]
+    missing = [k for k in required if _is_missing_required(data, k)]
     if missing:
         return PreflightResult(ok=False, error="missing_required_fields", details={"missing": missing})
 
@@ -111,7 +116,7 @@ def validate_wallet_transfer_signed(payload: Any) -> PreflightResult:
         return PreflightResult(ok=False, error="invalid_to_address_format", details={})
     if from_address == to_address:
         return PreflightResult(ok=False, error="from_to_must_differ", details={})
-    if _is_rtc_address(from_address) and not data.get("public_key"):
+    if _is_rtc_address(from_address) and _is_missing_required(data, "public_key"):
         return PreflightResult(ok=False, error="missing_required_fields", details={"missing": ["public_key"]})
 
     try:
@@ -120,6 +125,10 @@ def validate_wallet_transfer_signed(payload: Any) -> PreflightResult:
         return PreflightResult(ok=False, error="nonce_not_int", details={})
     if nonce_int <= 0:
         return PreflightResult(ok=False, error="nonce_must_be_gt_zero", details={})
+
+    chain_id = str(data.get("chain_id", "")).strip()
+    if chain_id and not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", chain_id):
+        return PreflightResult(ok=False, error="invalid_chain_id_format", details={})
 
     return PreflightResult(
         ok=True,
@@ -130,5 +139,6 @@ def validate_wallet_transfer_signed(payload: Any) -> PreflightResult:
             "amount_rtc": float(amount_rtc),
             "amount_i64": amount_i64,
             "nonce": nonce_int,
+            "chain_id": chain_id or None,
         },
     )
