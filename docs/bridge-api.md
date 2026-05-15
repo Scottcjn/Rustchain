@@ -567,5 +567,5 @@ status = check_bridge_status("abc123def456...")
 ## Related Documentation
 
 - [RIP-0305 Specification](../rips/docs/RIP-0305-bridge-lock-ledger.md)
-- [Bridge Integration Guide](../bridge/README.md)
-- [Lock Ledger Architecture](../rips/docs/RIP-0305-bridge-lock-ledger.md#12-lock-ledger-table)
+- [Bridge Integration Guide](../contracts/erc20/docs/BRIDGE_INTEGRATION.md)
+- [Lock Ledger Architecture](../rips/docs/RIP-0305-bridge-lock-ledger.md)
