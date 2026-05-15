@@ -845,6 +845,25 @@ class TestUtxoDB(unittest.TestCase):
             self.db.mempool_check_double_spend(boxes[0]['box_id'])
         )
 
+    def test_mempool_rejects_invalid_tx_type(self):
+        """Mempool must not admit txs with non-persistable tx_type values."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        tx = {
+            'tx_id': 'badt' * 16,
+            'tx_type': None,
+            'inputs': [{'box_id': boxes[0]['box_id']}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 99 * UNIT}],
+            'fee_nrtc': 1 * UNIT,
+        }
+        ok = self.db.mempool_add(tx)
+        self.assertFalse(ok)
+        self.assertEqual(self.db.mempool_get_block_candidates(), [])
+        self.assertFalse(
+            self.db.mempool_check_double_spend(boxes[0]['box_id'])
+        )
+
     def test_mempool_accepts_valid_tx(self):
         """Mempool should accept a well-formed tx with valid conservation."""
         self._apply_coinbase('alice', 100 * UNIT)
@@ -1043,6 +1062,23 @@ class TestUtxoDB(unittest.TestCase):
             'fee_nrtc': 0,
         }, block_height=10)
         self.assertFalse(ok)
+
+    def test_invalid_tx_type_rejected(self):
+        """tx_type must be a non-empty string before transaction history write."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        ok = self.db.apply_transaction({
+            'tx_type': None,
+            'inputs': [{'box_id': boxes[0]['box_id'],
+                         'spending_proof': 'sig'}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 99 * UNIT}],
+            'fee_nrtc': 1 * UNIT,
+        }, block_height=10)
+
+        self.assertFalse(ok)
+        self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
+        self.assertEqual(self.db.get_balance('bob'), 0)
 
 
 class TestCoinSelect(unittest.TestCase):
