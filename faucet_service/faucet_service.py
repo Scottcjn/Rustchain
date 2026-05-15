@@ -25,6 +25,7 @@ import os
 import re
 import sys
 import json
+import requests
 import sqlite3
 import logging
 from datetime import datetime, timedelta
@@ -698,9 +699,35 @@ def register_routes(app: Flask, config: Dict, logger: logging.Logger,
             tx_hash = None
             logger.info(f"Mock drip: {amount} RTC to {wallet}")
         else:
-            # TODO: Implement actual token transfer
-            tx_hash = None
-            logger.info(f"Real drip: {amount} RTC to {wallet}")
+            # Implement actual token transfer via RustChain API
+            try:
+                node_url = config.get('distribution', {}).get('node_url', 'http://50.28.86.131')
+                faucet_secret = os.environ.get('ARCHESTRA_FAUCET_SECRET') # Security: load from env
+                
+                if not faucet_secret:
+                    logger.error("ARCHESTRA_FAUCET_SECRET not set, cannot perform real drip")
+                    return jsonify({'ok': False, 'error': 'Faucet configuration error'}), 500
+                
+                response = requests.post(
+                    f"{node_url}/v1/transfer",
+                    json={
+                        "to": wallet,
+                        "amount": amount,
+                        "secret": faucet_secret
+                    },
+                    timeout=10
+                )
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    tx_hash = result.get('tx_hash')
+                    logger.info(f"Real drip success: {amount} RTC to {wallet}, tx={tx_hash}")
+                else:
+                    logger.error(f"Real drip failed: {response.text}")
+                    return jsonify({'ok': False, 'error': 'Transfer failed on node'}), 502
+            except Exception as e:
+                logger.error(f"Real drip exception: {str(e)}")
+                return jsonify({'ok': False, 'error': 'Internal transfer error'}), 500
         
         # Calculate next available time
         window_seconds = config.get('rate_limit', {}).get('window_seconds', 86400)
