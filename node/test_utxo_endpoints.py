@@ -391,5 +391,126 @@ class TestUtxoEndpoints(unittest.TestCase):
         self.assertEqual(self.utxo_db.get_balance(recipient), 0)
 
 
+class TestUtxoDualWrite(unittest.TestCase):
+
+    def setUp(self):
+        self.tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+        self.tmp.close()
+        self.db_path = self.tmp.name
+
+        import sqlite3
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("CREATE TABLE IF NOT EXISTS balances (miner_id TEXT PRIMARY KEY, amount_i64 INTEGER DEFAULT 0)")
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS ledger (ts INTEGER, epoch INTEGER, miner_id TEXT, delta_i64 INTEGER, reason TEXT)"
+        )
+        conn.commit()
+        conn.close()
+
+        self.utxo_db = UtxoDB(self.db_path)
+        self.utxo_db.init_tables()
+
+        self.app = Flask(__name__)
+        self.app.config['TESTING'] = True
+        register_utxo_blueprint(
+            self.app, self.utxo_db, self.db_path,
+            verify_sig_fn=mock_verify_sig,
+            addr_from_pk_fn=mock_addr_from_pk,
+            current_slot_fn=mock_current_slot,
+            dual_write=True,
+        )
+        self.client = self.app.test_client()
+
+    def tearDown(self):
+        os.unlink(self.db_path)
+
+    def _seed_sender(self, address, rtc_amount=100):
+        self.utxo_db.apply_transaction({
+            'tx_type': 'mining_reward',
+            'inputs': [],
+            'outputs': [{'address': address, 'value_nrtc': rtc_amount * UNIT}],
+            'timestamp': int(time.time()),
+            '_allow_minting': True,
+        }, block_height=1)
+
+        import sqlite3
+        conn = sqlite3.connect(self.db_path)
+        conn.execute(
+            "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?)",
+            (address, rtc_amount * utxo_endpoints.ACCOUNT_UNIT),
+        )
+        conn.commit()
+        conn.close()
+
+    def _account_balance(self, address):
+        import sqlite3
+        conn = sqlite3.connect(self.db_path)
+        try:
+            row = conn.execute(
+                "SELECT amount_i64 FROM balances WHERE miner_id = ?",
+                (address,),
+            ).fetchone()
+            return row[0] if row else 0
+        finally:
+            conn.close()
+
+    def test_dual_write_debits_fee_from_sender_shadow_balance(self):
+        """dual_write must mirror UTXO fees in the account model.
+
+        Before the fix, the UTXO transaction spent amount + fee, but the
+        shadow account model only debited amount. A 90 RTC transfer with a
+        1 RTC fee left the sender at 10 RTC in balances while their UTXO
+        balance was 9 RTC, letting the legacy model retain spendable value.
+        """
+        sender = 'RTC_test_aabbccdd'
+        recipient = 'bob'
+        self._seed_sender(sender, rtc_amount=100)
+
+        r = self.client.post('/utxo/transfer', json={
+            'from_address': sender,
+            'to_address': recipient,
+            'amount_rtc': 90.0,
+            'fee_rtc': 1.0,
+            'public_key': 'aabbccdd' * 8,
+            'signature': 'sig' * 22,
+            'nonce': int(time.time() * 1000),
+        })
+
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(self.utxo_db.get_balance(sender), 9 * UNIT)
+        self.assertEqual(self.utxo_db.get_balance(recipient), 90 * UNIT)
+        self.assertEqual(
+            self._account_balance(sender),
+            9 * utxo_endpoints.ACCOUNT_UNIT,
+        )
+        self.assertEqual(
+            self._account_balance(recipient),
+            90 * utxo_endpoints.ACCOUNT_UNIT,
+        )
+
+    def test_dual_write_rejects_sub_micro_amounts(self):
+        """dual_write cannot safely mirror nanoRTC values below 1 microRTC."""
+        sender = 'RTC_test_aabbccdd'
+        self._seed_sender(sender, rtc_amount=100)
+
+        r = self.client.post('/utxo/transfer', json={
+            'from_address': sender,
+            'to_address': 'bob',
+            'amount_rtc': '0.00000001',
+            'fee_rtc': 0,
+            'public_key': 'aabbccdd' * 8,
+            'signature': 'sig' * 22,
+            'nonce': int(time.time() * 1000),
+        })
+
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('dual-write', r.get_json()['error'])
+        self.assertEqual(self.utxo_db.get_balance('bob'), 0)
+        self.assertEqual(
+            self._account_balance(sender),
+            100 * utxo_endpoints.ACCOUNT_UNIT,
+        )
+
+
 if __name__ == '__main__':
     unittest.main()
