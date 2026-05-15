@@ -4736,6 +4736,7 @@ def admin_wallet_review_holds_ui():
         }
         for r in rows
     ]
+    admin_key = str(request.values.get("admin_key") or "").strip()
     return render_template_string(
         """
 <!doctype html>

@@ -28,6 +28,10 @@ def proxy(path):
     url = _build_local_api_url(path)
     if not url:
         return jsonify({'error': 'Invalid API path'}), 400
+    query_params = request.args.to_dict(flat=False)
+    request_kwargs = {"timeout": 10}
+    if query_params:
+        request_kwargs["params"] = query_params
 
     try:
         if request.method == 'POST':
@@ -37,11 +41,11 @@ def proxy(path):
                 url,
                 json=request.json,
                 headers=headers,
-                timeout=10
+                **request_kwargs
             )
         else:
             # Forward GET requests
-            response = requests.get(url, timeout=10)
+            response = requests.get(url, **request_kwargs)
 
         # Return the response from local server
         # Safely handle non-JSON responses from upstream

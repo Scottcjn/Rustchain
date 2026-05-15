@@ -3,6 +3,9 @@
 flask>=2.0.0
 # For miner and SDK:
 requests>=2.25.0
+aiohttp>=3.9.0
+# For faucet service:
+flask-cors>=4.0.0
 # For wallet CLI (Ed25519 + AES-GCM):
 cryptography>=46.0.7
 # For node / Beacon Ed25519 verification:
@@ -13,3 +16,6 @@ mnemonic>=0.21
 pycryptodome>=3.20.0
 # For running tests:
 pytest>=7.4.4
+# For benchmark report tests:
+matplotlib>=3.8.0
+seaborn>=0.13.0

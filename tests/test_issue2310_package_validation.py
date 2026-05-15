@@ -10,9 +10,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_issue2310_package_imports_from_parent_path():
+    package_path = REPO_ROOT / "bounties" / "issue-2310"
     code = (
         "import sys; "
-        "sys.path.insert(0, r'bounties\\issue-2310'); "
+        f"sys.path.insert(0, {str(package_path)!r}); "
         "import src; "
         "print(src.CRTPatternGenerator.__name__)"
     )
@@ -32,9 +33,10 @@ def test_issue2310_package_imports_from_parent_path():
 def test_issue2310_validator_runs_with_cp1252_stdout():
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "cp1252"
+    validator_path = REPO_ROOT / "bounties" / "issue-2310" / "validate_bounty_2310.py"
 
     result = subprocess.run(
-        [sys.executable, "bounties\\issue-2310\\validate_bounty_2310.py"],
+        [sys.executable, str(validator_path)],
         cwd=REPO_ROOT,
         env=env,
         text=True,
