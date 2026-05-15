@@ -100,6 +100,7 @@ def _ensure_signed_float_preserves_nrtc(amount: Decimal, nrtc: int,
 # This MUST match the multiplier used in rustchain_v2_integrated_v2.2.1_rip200.py
 # (e.g. line 2370: amount_i64 = int(amount_decimal * Decimal(1000000))).
 ACCOUNT_UNIT = 1_000_000  # 1 RTC = 1,000,000 uRTC (6 decimals)
+LEGACY_SIGNATURE_CUTOFF_TS = 1782864000  # 2026-07-01T00:00:00Z
 
 utxo_bp = Blueprint('utxo', __name__, url_prefix='/utxo')
 
@@ -439,6 +440,11 @@ def utxo_transfer():
             return jsonify({
                 'error': 'Legacy signature format cannot authorize nonzero fee',
                 'code': 'LEGACY_SIGNATURE_FEE_UNBOUND',
+            }), 401
+        if int(time.time()) >= LEGACY_SIGNATURE_CUTOFF_TS:
+            return jsonify({
+                'error': 'Legacy signature format expired. Upgrade client to sign fee_rtc.',
+                'code': 'LEGACY_SIGNATURE_EXPIRED',
             }), 401
         logging.warning(
             "[UTXO/SIG] DEPRECATED: signature without fee accepted for %s... "
