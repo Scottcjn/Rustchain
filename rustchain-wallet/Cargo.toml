@@ -48,7 +48,7 @@ secrecy = "0.10"
 
 # Key derivation
 hmac = "0.13"
-pbkdf2 = "0.12"
+pbkdf2 = "0.13"
 
 # Random number generation
 rand = "0.10"
