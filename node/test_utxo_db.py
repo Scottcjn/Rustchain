@@ -845,6 +845,29 @@ class TestUtxoDB(unittest.TestCase):
             self.db.mempool_check_double_spend(boxes[0]['box_id'])
         )
 
+    def test_mempool_rejects_output_missing_address(self):
+        """Mempool must reject outputs that apply_transaction() cannot mine.
+
+        Without this guard a transaction with a positive value but no address
+        is admitted, locks the input box, and later raises KeyError("address")
+        when block production tries to apply the candidate.
+        """
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        tx = {
+            'tx_id': 'noad' * 16,
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': boxes[0]['box_id']}],
+            'outputs': [{'value_nrtc': 50 * UNIT}],
+            'fee_nrtc': 0,
+        }
+        ok = self.db.mempool_add(tx)
+        self.assertFalse(ok)
+        self.assertFalse(
+            self.db.mempool_check_double_spend(boxes[0]['box_id'])
+        )
+
     def test_mempool_accepts_valid_tx(self):
         """Mempool should accept a well-formed tx with valid conservation."""
         self._apply_coinbase('alice', 100 * UNIT)

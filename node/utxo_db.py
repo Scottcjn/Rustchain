@@ -851,6 +851,10 @@ class UtxoDB:
             # unmineable transactions enter the mempool and lock UTXOs until
             # expiry (DoS vector).
             for o in outputs:
+                if not isinstance(o.get('address'), str):
+                    if manage_tx:
+                        conn.execute("ROLLBACK")
+                    return False
                 val = o.get('value_nrtc')
                 if isinstance(val, bool) or not isinstance(val, int) or val < DUST_THRESHOLD:
                     if manage_tx:
