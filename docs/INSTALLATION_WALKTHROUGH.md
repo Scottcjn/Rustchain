@@ -158,8 +158,7 @@ Add to your README.md:
 ```markdown
 ## Installation
 
-See the [Installation Walkthrough](INSTALLATION_WALKTHROUGH.md) for a 
-visual guide with asciinema recordings.
+See the [Installation Walkthrough](docs/INSTALLATION_WALKTHROUGH.md) for a visual guide with asciinema recordings.
 
 Quick preview:
 ![Installation Preview](docs/asciinema/miner_install.gif)
