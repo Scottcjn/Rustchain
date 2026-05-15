@@ -697,7 +697,13 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
     def submit_transaction():
         """Submit a signed transaction"""
         try:
-            data = request.get_json()
+            data = request.get_json(silent=True)
+
+            if data is None:
+                return jsonify({"error": "No JSON data provided"}), 400
+
+            if not isinstance(data, dict):
+                return jsonify({"error": "JSON object required"}), 400
 
             if not data:
                 return jsonify({"error": "No JSON data provided"}), 400
