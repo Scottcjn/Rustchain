@@ -1046,6 +1046,15 @@ def create_relationship_blueprint(engine: RelationshipEngine):
             or ""
         ).strip()
 
+    def _constant_time_key_match(provided_key: str, required_key: str) -> bool:
+        try:
+            return hmac.compare_digest(
+                provided_key.encode("utf-8"),
+                required_key.encode("utf-8"),
+            )
+        except UnicodeError:
+            return False
+
     def _require_mutation_admin():
         required_key = _required_mutation_admin_key()
         if not required_key:
@@ -1056,7 +1065,7 @@ def create_relationship_blueprint(engine: RelationshipEngine):
             or request.headers.get("X-API-Key")
             or ""
         ).strip()
-        if not provided_key or not hmac.compare_digest(provided_key, required_key):
+        if not provided_key or not _constant_time_key_match(provided_key, required_key):
             return jsonify({"error": "Unauthorized relationship mutation"}), 401
 
         return None

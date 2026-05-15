@@ -58,7 +58,10 @@ def test_intervention_fails_closed_when_admin_key_unconfigured(tmp_path, monkeyp
     assert _intervention_count(engine) == 0
 
 
-@pytest.mark.parametrize("headers", [{}, {"X-Admin-Key": "wrong-admin-key"}])
+@pytest.mark.parametrize(
+    "headers",
+    [{}, {"X-Admin-Key": "wrong-admin-key"}, {"X-Admin-Key": "\u00e9"}],
+)
 def test_intervention_requires_valid_admin_key(tmp_path, monkeypatch, headers):
     client, engine = _make_client(tmp_path)
     _create_rivalry(engine)
