@@ -1,7 +1,0 @@
-M-series hums low
-Silicon dreams in the dark
-Mining while I sleep
-
-archetype: apple_silicon
-hardware: Apple M-series Mac (Hermes Agent node)
-wallet: RTC13889ce0a21bf19b4656e3beb6b87ee606b45d71
