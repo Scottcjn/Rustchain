@@ -215,9 +215,13 @@ def bcos_attest():
     data = request.get_json(silent=True)
     if not data:
         return jsonify({"error": "JSON body required"}), 400
+    if not isinstance(data, dict):
+        return jsonify({"error": "JSON object required"}), 400
 
     # Extract fields from report or from wrapper
     report = data.get("report", data)
+    if not isinstance(report, dict):
+        return jsonify({"error": "report must be an object"}), 400
     cert_id = report.get("cert_id")
     commitment = report.get("commitment")
     repo = report.get("repo_name", report.get("repo", ""))
