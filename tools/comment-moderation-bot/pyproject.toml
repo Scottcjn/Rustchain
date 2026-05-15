@@ -44,8 +44,8 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/rustchain/comment-moderation-bot"
-Repository = "https://github.com/rustchain/comment-moderation-bot"
+Homepage = "https://github.com/Scottcjn/Rustchain/tree/main/tools/comment-moderation-bot"
+Repository = "https://github.com/Scottcjn/Rustchain/tree/main/tools/comment-moderation-bot"
 
 [tool.setuptools.packages.find]
 where = ["src"]

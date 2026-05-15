@@ -329,7 +329,7 @@ def generate_video(miner: MinerData, epoch: dict, output_path: str, duration: fl
             draw.rectangle([0, HEIGHT - 80, WIDTH, HEIGHT], fill=(0, 0, 0))
             draw.rectangle([0, HEIGHT - 82, WIDTH, HEIGHT - 80], fill=style["accent"])
             draw.text((WIDTH // 2 - 200, HEIGHT - 65), "Start mining at", fill=(150, 150, 160), font=small_font)
-            draw.text((WIDTH // 2 - 200, HEIGHT - 40), "github.com/rustchain-hq/miner", fill=style["accent"], font=mono_lg)
+            draw.text((WIDTH // 2 - 200, HEIGHT - 40), "github.com/Scottcjn/Rustchain", fill=style["accent"], font=mono_lg)
 
         # Save frame
         frame_path = f"{FRAMES_DIR}/frame_{frame_num:05d}.png"
@@ -468,7 +468,7 @@ async def upload_all_videos(generated: list[tuple[str, MinerData]], epoch: dict)
             f"Epoch Pot: {epoch['epoch_pot']} RTC\n"
             f"Enrolled Miners: {epoch['enrolled_miners']}\n\n"
             f"RustChain uses Proof of Antiquity — vintage hardware earns more!\n"
-            f"Start mining: github.com/rustchain-hq/miner\n\n"
+            f"Start mining: github.com/Scottcjn/Rustchain\n\n"
             f"#RustChain #Mining #ProofOfAntiquity #Crypto #{miner.hardware_type.replace(' ', '')} #RTC"
         )
         tags = f"rustchain, mining, {miner.hardware_type.lower().replace(' ', '-')}, crypto, blockchain, vintage, proof of antiquity"
