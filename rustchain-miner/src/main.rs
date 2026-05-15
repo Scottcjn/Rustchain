@@ -3,10 +3,11 @@
 //! Production-ready Rust miner with hardware attestation and RIP-PoA support.
 
 use clap::Parser;
+use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
-use rustchain_miner::{Config, Miner};
+use rustchain_miner::{export_state, import_state, Config, Miner};
 
 /// RustChain Miner - Production-ready CLI with hardware attestation
 #[derive(Parser, Debug)]
@@ -24,7 +25,12 @@ struct Args {
     miner_id: Option<String>,
 
     /// Node URL
-    #[arg(short = 'n', long = "node", env = "RUSTCHAIN_NODE_URL", default_value = "https://50.28.86.131")]
+    #[arg(
+        short = 'n',
+        long = "node",
+        env = "RUSTCHAIN_NODE_URL",
+        default_value = "https://50.28.86.131"
+    )]
     node: String,
 
     /// HTTP proxy URL for legacy systems
@@ -40,12 +46,44 @@ struct Args {
     verbose: bool,
 
     /// Block time in seconds
-    #[arg(long = "block-time", env = "RUSTCHAIN_BLOCK_TIME", default_value = "600")]
+    #[arg(
+        long = "block-time",
+        env = "RUSTCHAIN_BLOCK_TIME",
+        default_value = "600"
+    )]
     block_time: u64,
 
     /// Attestation TTL in seconds
-    #[arg(long = "attestation-ttl", env = "RUSTCHAIN_ATTESTATION_TTL", default_value = "580")]
+    #[arg(
+        long = "attestation-ttl",
+        env = "RUSTCHAIN_ATTESTATION_TTL",
+        default_value = "580"
+    )]
     attestation_ttl: u64,
+
+    /// Export local miner state to a portable JSON backup and exit
+    #[arg(
+        long = "export-state",
+        conflicts_with = "import_state",
+        requires = "output"
+    )]
+    export_state: bool,
+
+    /// Backup file to write when using --export-state
+    #[arg(long = "output", value_name = "FILE")]
+    output: Option<PathBuf>,
+
+    /// Import miner state from a JSON backup before starting
+    #[arg(
+        long = "import-state",
+        conflicts_with = "export_state",
+        requires = "input"
+    )]
+    import_state: bool,
+
+    /// Backup file to read when using --import-state
+    #[arg(long = "input", value_name = "FILE")]
+    input: Option<PathBuf>,
 }
 
 #[cfg(unix)]
@@ -94,6 +132,34 @@ async fn main() -> anyhow::Result<()> {
     config.verbose = args.verbose;
     config.block_time_secs = args.block_time;
     config.attestation_ttl_secs = args.attestation_ttl;
+
+    if args.import_state {
+        let input = args
+            .input
+            .as_ref()
+            .expect("--input is required by clap when --import-state is set");
+        let backup = import_state(input)?;
+        backup.apply_to_config(&mut config)?;
+        println!(
+            "Imported miner state for miner_id={} wallet={}",
+            backup.miner_id, backup.wallet
+        );
+    }
+
+    if args.export_state {
+        let output = args
+            .output
+            .as_ref()
+            .expect("--output is required by clap when --export-state is set");
+        let backup = export_state(output, &config)?;
+        println!(
+            "Exported miner state for miner_id={} wallet={} to {}",
+            backup.miner_id,
+            backup.wallet,
+            output.display()
+        );
+        return Ok(());
+    }
 
     // Create miner (async)
     let miner = Miner::new(config).await?;

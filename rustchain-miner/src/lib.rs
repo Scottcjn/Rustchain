@@ -26,6 +26,7 @@ pub mod hardware;
 pub mod transport;
 pub mod attestation;
 pub mod miner;
+pub mod state_backup;
 
 #[cfg(test)]
 mod arch_tests;
@@ -36,3 +37,4 @@ pub use hardware::HardwareInfo;
 pub use transport::NodeTransport;
 pub use attestation::AttestationReport;
 pub use miner::Miner;
+pub use state_backup::{export_state, import_state, MinerStateBackup};
