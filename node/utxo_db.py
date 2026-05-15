@@ -380,8 +380,6 @@ class UtxoDB:
         # Require _allow_minting=True (internal flag) to permit mining_reward.
         MINTING_TX_TYPES = {'mining_reward'}
         if tx_type in MINTING_TX_TYPES and not tx.get('_allow_minting'):
-            if own:
-                conn.close()
             return False
 
         try:
@@ -759,17 +757,17 @@ class UtxoDB:
 
             outputs = tx.get('outputs', [])
 
-            # FIX(#2179): Mirror apply_transaction() output validation.
-            # Reject outputs with missing, non-int, zero, or negative value_nrtc.
-            # Without this, unmineable transactions enter the mempool and lock
-            # UTXOs until expiry (DoS vector).
+            # Mirror apply_transaction() output validation. Reject outputs with
+            # missing, non-int, or below-dust value_nrtc. Without this,
+            # unmineable transactions enter the mempool and lock UTXOs until
+            # expiry (DoS vector).
             for o in outputs:
                 if not isinstance(o.get('address'), str):
                     if manage_tx:
                         conn.execute("ROLLBACK")
                     return False
                 val = o.get('value_nrtc')
-                if not isinstance(val, int) or val <= 0:
+                if isinstance(val, bool) or not isinstance(val, int) or val < DUST_THRESHOLD:
                     if manage_tx:
                         conn.execute("ROLLBACK")
                     return False

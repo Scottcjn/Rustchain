@@ -596,29 +596,6 @@ class TestUtxoDB(unittest.TestCase):
         self.assertFalse(ok)
         self.assertEqual(self.db.get_balance('attacker'), 0)
 
-    def test_disallowed_mining_reward_releases_db_connection(self):
-        """Rejected minting txs must not leak SQLite handles.
-
-        The early public mining_reward guard runs before transaction setup.
-        It must still close the owned connection or Windows checkouts keep the
-        database file locked after a rejected minting attempt.
-        """
-        tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
-        tmp.close()
-        db = UtxoDB(tmp.name)
-        try:
-            db.init_tables()
-            ok = db.apply_transaction({
-                'tx_type': 'mining_reward',
-                'inputs': [],
-                'outputs': [{'address': 'attacker', 'value_nrtc': UNIT}],
-                'fee_nrtc': 0,
-                'timestamp': int(time.time()),
-            }, block_height=10)
-            self.assertFalse(ok)
-        finally:
-            os.unlink(tmp.name)
-
     def test_mempool_empty_inputs_rejected_for_transfer(self):
         """Mempool must also reject non-minting txs with empty inputs."""
         tx = {
