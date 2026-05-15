@@ -5,6 +5,8 @@ wRTC Price Ticker Bot for Telegram
 Posts current wRTC/SOL price from Raydium DEX.
 """
 
+import argparse
+import json
 import os
 import time
 from typing import Dict, Optional
@@ -50,8 +52,9 @@ class PriceFetcher:
             response.raise_for_status()
             data = response.json()
 
-            if "pairs" in data and len(data["pairs"]) > 0:
-                pair = data["pairs"][0]
+            pairs = data.get("pairs") or []
+            if len(pairs) > 0:
+                pair = pairs[0]
                 price_usd = float(pair.get("priceUsd", 0))
                 liquidity = float(pair.get("liquidity", {}).get("usd", 0))
                 change_24h = float(pair.get("priceChange", {}).get("h24", 0))
@@ -62,6 +65,7 @@ class PriceFetcher:
                     "change_24h": change_24h,
                     "liquidity": liquidity,
                     "sol_price_usd": price_usd / pair.get("priceNative", 1) if pair.get("priceNative") else 0,
+                    "source": "dexscreener",
                 }
         except Exception as e:
             print(f"[DexScreener API] Error: {e}")
@@ -82,6 +86,7 @@ class PriceFetcher:
                     "price_sol": 0,
                     "change_24h": 0,
                     "liquidity": 0,
+                    "source": "jupiter",
                 }
 
         if price_data:
@@ -179,6 +184,7 @@ def format_price_message(price_data: Dict) -> str:
     price_sol = price_data.get("price_sol", 0)
     change_24h = price_data.get("change_24h", 0)
     liquidity = price_data.get("liquidity", 0)
+    source = price_data.get("source", "unknown")
 
     # Format change percentage
     change_emoji = "📈" if change_24h >= 0 else "📉"
@@ -196,6 +202,7 @@ def format_price_message(price_data: Dict) -> str:
 
 📊 **24h Change:** {change_str}
 💧 **Liquidity:** `{liquidity_str}`
+🛰️ **Source:** `{source}`
 
 🔗 [Swap on Raydium](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X)
 📊 [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb)
@@ -206,42 +213,93 @@ def format_price_message(price_data: Dict) -> str:
     return message
 
 
+def format_status_summary(price_data: Dict) -> str:
+    """Format a compact one-line status summary for CLI watch mode."""
+    price_usd = price_data.get("price_usd", 0)
+    change_24h = price_data.get("change_24h", 0)
+    liquidity = price_data.get("liquidity", 0)
+    source = price_data.get("source", "unknown")
+    change_sign = "+" if change_24h >= 0 else ""
+    liquidity_str = f"${liquidity:,.0f}" if liquidity > 0 else "N/A"
+    return (
+        f"wRTC ${price_usd:.6f} | 24h {change_sign}{change_24h:.2f}% | "
+        f"liq {liquidity_str} | source {source}"
+    )
+
+
+def price_payload(price_data: Dict, alert: Optional[str] = None) -> Dict:
+    """Build a machine-readable payload for JSON output."""
+    return {
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "price_data": price_data,
+        "alert": alert,
+    }
+
+
 def main():
     """Main bot function"""
-    # Get bot token from environment
+    parser = argparse.ArgumentParser(description="wRTC price bot")
+    parser.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+    parser.add_argument("--watch", action="store_true", help="poll repeatedly and print status updates")
+    parser.add_argument("--interval", type=int, default=300, help="watch interval in seconds")
+    parser.add_argument("--threshold", type=float, default=10.0, help="alert threshold percentage for watch mode")
+    parser.add_argument("--max-iterations", type=int, default=0, help="stop after N watch iterations (0 = forever)")
+    args = parser.parse_args()
+
+    # Bot token is only needed for Telegram send commands; local status mode does not require it.
     bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
     if not bot_token:
-        print("Error: TELEGRAM_BOT_TOKEN environment variable not set")
-        print("Set it with: export TELEGRAM_BOT_TOKEN='your_bot_token'")
+        print("⚠️  TELEGRAM_BOT_TOKEN not set; Telegram send features are disabled.")
+
+    fetcher = PriceFetcher()
+
+    if args.watch:
+        print("🤖 wRTC Price Bot watch mode started")
+        print(f"📊 Tracking wRTC mint: {PriceFetcher.WRTC_MINT}")
+        print(f"⏱️  Interval: {args.interval}s | Threshold: {args.threshold:.1f}%")
+        iterations = 0
+        while True:
+            price_data = fetcher.get_price()
+            if price_data:
+                alert = fetcher.check_price_alert(args.threshold)
+                print(format_status_summary(price_data))
+                if alert:
+                    print(alert)
+                if args.json:
+                    print(json.dumps(price_payload(price_data, alert), ensure_ascii=False))
+            else:
+                print("❌ Failed to fetch price")
+            iterations += 1
+            if args.max_iterations and iterations >= args.max_iterations:
+                break
+            time.sleep(args.interval)
         return
 
-    # Initialize components
-    fetcher = PriceFetcher()
-    bot = TelegramBot(bot_token)
+    price_data = fetcher.get_price()
+    if not price_data:
+        print("❌ Failed to fetch price")
+        print("Please check your internet connection and API availability")
+        return
+
+    if args.json:
+        print(json.dumps(price_payload(price_data), ensure_ascii=False))
+        return
 
     print("🤖 wRTC Price Bot started")
     print(f"📊 Fetching price for wRTC: {PriceFetcher.WRTC_MINT}")
     print()
-
-    # Test price fetch
-    print("Fetching current price...")
-    price_data = fetcher.get_price()
-
-    if price_data:
-        print("✅ Price fetched successfully!")
-        print(f"   Price (USD): ${price_data.get('price_usd', 0):.6f}")
-        print(f"   Price (SOL): {price_data.get('price_sol', 0):.8f}")
-        print(f"   24h Change: {price_data.get('change_24h', 0):+.2f}%")
-        print(f"   Liquidity: ${price_data.get('liquidity', 0):,.0f}")
-        print()
-        print("✅ Bot is ready to receive /price commands!")
-        print("   Send /price to your bot to get current price")
-        print()
-        print("Example message format:")
-        print(format_price_message(price_data))
-    else:
-        print("❌ Failed to fetch price")
-        print("Please check your internet connection and API availability")
+    print("✅ Price fetched successfully!")
+    print(f"   Price (USD): ${price_data.get('price_usd', 0):.6f}")
+    print(f"   Price (SOL): {price_data.get('price_sol', 0):.8f}")
+    print(f"   24h Change: {price_data.get('change_24h', 0):+.2f}%")
+    print(f"   Liquidity: ${price_data.get('liquidity', 0):,.0f}")
+    print(f"   Source: {price_data.get('source', 'unknown')}")
+    print()
+    print("✅ Bot is ready to receive /price commands!")
+    print("   Send /price to your bot to get current price")
+    print()
+    print("Example message format:")
+    print(format_price_message(price_data))
 
 
 if __name__ == "__main__":
