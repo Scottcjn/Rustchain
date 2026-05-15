@@ -125,7 +125,7 @@ scp target/riscv64gc-unknown-linux-gnu/release/rustchain-miner root@visionfive2:
 
 # 2. Configure environment
 echo "RUSTCHAIN_WALLET=your_wallet_address" >> ~/.bashrc
-echo "RUSTCHAIN_NODE_URL=https://50.28.86.131" >> ~/.bashrc
+echo "RUSTCHAIN_NODE_URL=https://rustchain.org" >> ~/.bashrc
 source ~/.bashrc
 
 # 3. Run miner
@@ -153,7 +153,7 @@ Type=simple
 User=miner
 WorkingDirectory=/opt/rustchain
 Environment=RUSTCHAIN_WALLET=your_wallet_address
-Environment=RUSTCHAIN_NODE_URL=https://50.28.86.131
+Environment=RUSTCHAIN_NODE_URL=https://rustchain.org
 ExecStart=/opt/rustchain/rustchain-miner
 Restart=always
 RestartSec=10
