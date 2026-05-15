@@ -329,7 +329,7 @@ def beacon_join():
 
     try:
         data = request.get_json(silent=True)
-        if not data:
+        if not isinstance(data, dict):
             return jsonify({'error': 'Invalid or missing JSON body'}), 400
 
         # Validate required fields
@@ -340,6 +340,10 @@ def beacon_join():
             return jsonify({'error': 'Missing required field: agent_id'}), 400
         if not pubkey_hex:
             return jsonify({'error': 'Missing required field: pubkey_hex'}), 400
+        if not isinstance(agent_id, str):
+            return jsonify({'error': 'Invalid agent_id: must be a string'}), 400
+        if not isinstance(pubkey_hex, str):
+            return jsonify({'error': 'Invalid pubkey_hex: must be a string'}), 400
 
         # Validate pubkey_hex format (must be valid hex string, optionally with 0x prefix)
         pubkey_clean = pubkey_hex.strip()
@@ -358,6 +362,10 @@ def beacon_join():
         # Optional fields
         name = data.get('name')
         coinbase_address = data.get('coinbase_address')
+        if name is not None and not isinstance(name, str):
+            return jsonify({'error': 'Invalid name: must be a string'}), 400
+        if coinbase_address is not None and not isinstance(coinbase_address, str):
+            return jsonify({'error': 'Invalid coinbase_address: must be a string'}), 400
         
         # Validate coinbase_address if provided (should be 0x-prefixed, 40 hex chars)
         if coinbase_address:
