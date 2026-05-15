@@ -467,10 +467,12 @@ def get_ledger():
     chain_filter  = request.args.get("chain", "").strip() or None
     sender_filter = request.args.get("sender", "").strip() or None
     try:
-        limit  = min(int(request.args.get("limit", 50)), 200)
-        offset = max(int(request.args.get("offset", 0)), 0)
-    except ValueError:
-        limit, offset = 50, 0
+        limit  = int(request.args.get("limit", 50))
+        offset = int(request.args.get("offset", 0))
+    except (TypeError, ValueError):
+        return jsonify({"error": "limit and offset must be integers"}), 400
+    limit = max(1, min(limit, 200))
+    offset = max(offset, 0)
 
     where_clauses, params = [], []
     if state_filter:
