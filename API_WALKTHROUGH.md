@@ -130,7 +130,7 @@ print(response.json())
 
 ## Reference
 
-- **Node:** `https://50.28.86.131`
+- **Node base URL:** `https://50.28.86.131`
 - **Explorer:** `https://50.28.86.131/explorer`
 - **Health:** `https://50.28.86.131/health`
 
