@@ -48,6 +48,21 @@ def test_github_user_drip_success(app):
     assert data["amount"] == 1.0
 
 
+@pytest.mark.parametrize("body", ["[]", '"wallet"', "42"])
+def test_drip_rejects_non_object_json(app, body):
+    c = app.test_client()
+    r = c.post("/faucet/drip", data=body, content_type="application/json")
+    assert r.status_code == 400
+    assert r.get_json() == {"ok": False, "error": "json_object_required"}
+
+
+def test_drip_accepts_form_payload(app):
+    c = app.test_client()
+    r = c.post("/faucet/drip", data={"wallet": "form_wallet"})
+    assert r.status_code == 200
+    assert r.get_json()["ok"] is True
+
+
 def test_ip_only_limit(app):
     c = app.test_client()
     h = {"X-Forwarded-For": "1.2.3.4"}
