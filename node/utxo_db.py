@@ -367,6 +367,18 @@ class UtxoDB:
 
         return normalized
 
+    def _normalize_tx_type(self, tx: dict) -> Optional[str]:
+        """Return a valid transaction type, defaulting only when absent."""
+        if 'tx_type' not in tx:
+            return 'transfer'
+        tx_type = tx.get('tx_type')
+        if not isinstance(tx_type, str):
+            return None
+        tx_type = tx_type.strip()
+        if not tx_type:
+            return None
+        return tx_type
+
     def _data_inputs_are_unspent(self, conn: sqlite3.Connection,
                                  data_inputs: list) -> bool:
         """Validate read-only UTXO references before accepting a tx."""
@@ -417,7 +429,9 @@ class UtxoDB:
         inputs = tx.get('inputs', [])
         outputs = tx.get('outputs', [])
         fee = tx.get('fee_nrtc', 0)
-        tx_type = tx.get('tx_type', 'transfer')
+        tx_type = self._normalize_tx_type(tx)
+        if tx_type is None:
+            return False
         data_inputs = tx.get('data_inputs', [])
 
         # FIX(#2207): Defense-in-depth guard against mining_reward type confusion.
@@ -759,7 +773,9 @@ class UtxoDB:
                 return False
 
             inputs = tx.get('inputs', [])
-            tx_type = tx.get('tx_type', 'transfer')
+            tx_type = self._normalize_tx_type(tx)
+            if tx_type is None:
+                return False
             data_inputs = tx.get('data_inputs', [])
             now = int(time.time())
 
