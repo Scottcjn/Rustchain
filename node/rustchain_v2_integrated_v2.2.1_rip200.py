@@ -5036,114 +5036,136 @@ def request_withdrawal():
     if amount < MIN_WITHDRAWAL:
         return jsonify({"error": f"Minimum withdrawal is {MIN_WITHDRAWAL} RTC"}), 400
 
-    with sqlite3.connect(DB_PATH) as c:
-        # CRITICAL: Check nonce reuse FIRST (replay protection)
-        nonce_row = c.execute(
-            "SELECT used_at FROM withdrawal_nonces WHERE miner_pk = ? AND nonce = ?",
-            (miner_pk, nonce)
-        ).fetchone()
-
-        if nonce_row:
-            withdrawal_failed.inc()
-            return jsonify({
-                "error": "Nonce already used (replay protection)",
-                "used_at": nonce_row[0]
-            }), 400
-
-        # Check balance
-        row = c.execute("SELECT balance_rtc FROM balances WHERE miner_pk = ?", (miner_pk,)).fetchone()
-        balance = row[0] if row else 0.0
-        total_needed = amount + WITHDRAWAL_FEE
-
-        if balance < total_needed:
-            withdrawal_failed.inc()
-            return jsonify({"error": "Insufficient balance", "balance": balance}), 400
-
-        # Check daily limit
-        today = datetime.now().strftime("%Y-%m-%d")
-        limit_row = c.execute(
-            "SELECT total_withdrawn FROM withdrawal_limits WHERE miner_pk = ? AND date = ?",
-            (miner_pk, today)
-        ).fetchone()
-
-        daily_total = limit_row[0] if limit_row else 0.0
-        if daily_total + amount > MAX_DAILY_WITHDRAWAL:
-            withdrawal_failed.inc()
-            return jsonify({"error": f"Daily limit exceeded"}), 400
-
-        # Verify signature
-        row = c.execute("SELECT pubkey_sr25519 FROM miner_keys WHERE miner_pk = ?", (miner_pk,)).fetchone()
-        if not row:
-            return jsonify({"error": "Miner not registered"}), 404
-
-        pubkey_hex = row[0]
-        message = f"{miner_pk}:{destination}:{amount}:{nonce}".encode()
-
-        # Try base64 first, then hex
+    with sqlite3.connect(DB_PATH, timeout=10) as c:
         try:
+            c.execute("BEGIN IMMEDIATE")
+
+            def rollback_json(payload, status):
+                c.rollback()
+                return jsonify(payload), status
+
+            # CRITICAL: Check nonce reuse FIRST (replay protection)
+            nonce_row = c.execute(
+                "SELECT used_at FROM withdrawal_nonces WHERE miner_pk = ? AND nonce = ?",
+                (miner_pk, nonce)
+            ).fetchone()
+
+            if nonce_row:
+                withdrawal_failed.inc()
+                return rollback_json({
+                    "error": "Nonce already used (replay protection)",
+                    "used_at": nonce_row[0]
+                }, 400)
+
+            # Check balance
+            row = c.execute("SELECT balance_rtc FROM balances WHERE miner_pk = ?", (miner_pk,)).fetchone()
+            balance = row[0] if row else 0.0
+            total_needed = amount + WITHDRAWAL_FEE
+
+            if balance < total_needed:
+                withdrawal_failed.inc()
+                return rollback_json({"error": "Insufficient balance", "balance": balance}, 400)
+
+            # Check daily limit
+            today = datetime.now().strftime("%Y-%m-%d")
+            limit_row = c.execute(
+                "SELECT total_withdrawn FROM withdrawal_limits WHERE miner_pk = ? AND date = ?",
+                (miner_pk, today)
+            ).fetchone()
+
+            daily_total = limit_row[0] if limit_row else 0.0
+            if daily_total + amount > MAX_DAILY_WITHDRAWAL:
+                withdrawal_failed.inc()
+                return rollback_json({"error": f"Daily limit exceeded"}, 400)
+
+            # Verify signature
+            row = c.execute("SELECT pubkey_sr25519 FROM miner_keys WHERE miner_pk = ?", (miner_pk,)).fetchone()
+            if not row:
+                return rollback_json({"error": "Miner not registered"}, 404)
+
+            pubkey_hex = row[0]
+            message = f"{miner_pk}:{destination}:{amount}:{nonce}".encode()
+
+            # Try base64 first, then hex
             try:
-                sig_bytes = base64.b64decode(signature)
-            except:
-                sig_bytes = bytes.fromhex(signature)
+                try:
+                    sig_bytes = base64.b64decode(signature)
+                except:
+                    sig_bytes = bytes.fromhex(signature)
 
-            pubkey_bytes = bytes.fromhex(pubkey_hex)
+                pubkey_bytes = bytes.fromhex(pubkey_hex)
 
-            if len(sig_bytes) != 64:
+                if len(sig_bytes) != 64:
+                    withdrawal_failed.inc()
+                    return rollback_json({"error": "Invalid signature length"}, 400)
+
+                if not verify_sr25519_signature(message, sig_bytes, pubkey_bytes):
+                    withdrawal_failed.inc()
+                    return rollback_json({"error": "Invalid signature"}, 401)
+            except Exception as e:
                 withdrawal_failed.inc()
-                return jsonify({"error": "Invalid signature length"}), 400
+                logging.warning(f"Withdrawal signature error for {miner_pk}: {e}")
+                return rollback_json({"error": "Signature verification failed"}, 400)
 
-            if not verify_sr25519_signature(message, sig_bytes, pubkey_bytes):
+            # Create withdrawal
+            withdrawal_id = f"WD_{int(time.time() * 1000000)}_{secrets.token_hex(8)}"
+
+            # ATOMIC TRANSACTION: Record nonce FIRST to prevent replay
+            c.execute("""
+                INSERT INTO withdrawal_nonces (miner_pk, nonce, used_at)
+                VALUES (?, ?, ?)
+            """, (miner_pk, nonce, int(time.time())))
+
+            # Deduct balance only if the row still has enough funds inside this transaction.
+            debit = c.execute(
+                "UPDATE balances SET balance_rtc = balance_rtc - ? WHERE miner_pk = ? AND balance_rtc >= ?",
+                (total_needed, miner_pk, total_needed)
+            )
+            if debit.rowcount != 1:
                 withdrawal_failed.inc()
-                return jsonify({"error": "Invalid signature"}), 401
-        except Exception as e:
-            withdrawal_failed.inc()
-            logging.warning(f"Withdrawal signature error for {miner_pk}: {e}")
-            return jsonify({"error": "Signature verification failed"}), 400
+                latest = c.execute(
+                    "SELECT balance_rtc FROM balances WHERE miner_pk = ?",
+                    (miner_pk,)
+                ).fetchone()
+                latest_balance = latest[0] if latest else 0.0
+                return rollback_json({"error": "Insufficient balance", "balance": latest_balance}, 400)
 
-        # Create withdrawal
-        withdrawal_id = f"WD_{int(time.time() * 1000000)}_{secrets.token_hex(8)}"
+            # RIP-301: Route fee to mining pool (founder_community) instead of burning
+            fee_urtc = int(WITHDRAWAL_FEE * UNIT)
+            fee_rtc = WITHDRAWAL_FEE
+            # Ensure founder_community row exists before crediting
+            c.execute("INSERT OR IGNORE INTO balances (miner_pk, balance_rtc) VALUES (?, 0)",
+                      ("founder_community",))
+            c.execute(
+                "UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk = ?",
+                (fee_rtc, "founder_community")
+            )
+            c.execute(
+                """INSERT INTO fee_events (source, source_id, miner_pk, fee_rtc, fee_urtc, destination, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                ("withdrawal", withdrawal_id, miner_pk, WITHDRAWAL_FEE, fee_urtc, "founder_community", int(time.time()))
+            )
 
-        # ATOMIC TRANSACTION: Record nonce FIRST to prevent replay
-        c.execute("""
-            INSERT INTO withdrawal_nonces (miner_pk, nonce, used_at)
-            VALUES (?, ?, ?)
-        """, (miner_pk, nonce, int(time.time())))
+            # Create withdrawal record
+            c.execute("""
+                INSERT INTO withdrawals (
+                    withdrawal_id, miner_pk, amount, fee, destination,
+                    signature, status, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)
+            """, (withdrawal_id, miner_pk, amount, WITHDRAWAL_FEE, destination, signature, int(time.time())))
 
-        # Deduct balance
-        c.execute("UPDATE balances SET balance_rtc = balance_rtc - ? WHERE miner_pk = ?",
-                  (total_needed, miner_pk))
+            # Update daily limit
+            c.execute("""
+                INSERT INTO withdrawal_limits (miner_pk, date, total_withdrawn)
+                VALUES (?, ?, ?)
+                ON CONFLICT(miner_pk, date) DO UPDATE SET
+                total_withdrawn = total_withdrawn + ?
+            """, (miner_pk, today, amount, amount))
 
-        # RIP-301: Route fee to mining pool (founder_community) instead of burning
-        fee_urtc = int(WITHDRAWAL_FEE * UNIT)
-        fee_rtc = WITHDRAWAL_FEE
-        # Ensure founder_community row exists before crediting
-        c.execute("INSERT OR IGNORE INTO balances (miner_pk, balance_rtc) VALUES (?, 0)",
-                  ("founder_community",))
-        c.execute(
-            "UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk = ?",
-            (fee_rtc, "founder_community")
-        )
-        c.execute(
-            """INSERT INTO fee_events (source, source_id, miner_pk, fee_rtc, fee_urtc, destination, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            ("withdrawal", withdrawal_id, miner_pk, WITHDRAWAL_FEE, fee_urtc, "founder_community", int(time.time()))
-        )
-
-        # Create withdrawal record
-        c.execute("""
-            INSERT INTO withdrawals (
-                withdrawal_id, miner_pk, amount, fee, destination,
-                signature, status, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)
-        """, (withdrawal_id, miner_pk, amount, WITHDRAWAL_FEE, destination, signature, int(time.time())))
-
-        # Update daily limit
-        c.execute("""
-            INSERT INTO withdrawal_limits (miner_pk, date, total_withdrawn)
-            VALUES (?, ?, ?)
-            ON CONFLICT(miner_pk, date) DO UPDATE SET
-            total_withdrawn = total_withdrawn + ?
-        """, (miner_pk, today, amount, amount))
+            c.commit()
+        except Exception:
+            c.rollback()
+            raise
 
         balance_gauge.labels(miner_pk=miner_pk).set(balance - total_needed)
         withdrawal_queue_size.inc()
