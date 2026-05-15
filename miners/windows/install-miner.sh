@@ -93,6 +93,7 @@ verify_sum() {
 
 download_miner() {
     cd "$INSTALL_DIR"
+    FINGERPRINT_FILE="linux/fingerprint_checks.py"
     case "$PLATFORM" in
         macos) FILE="macos/rustchain_mac_miner_v2.4.py" ;;
         rpi|linux) FILE="linux/rustchain_linux_miner.py" ;;
@@ -101,11 +102,18 @@ download_miner() {
     
     echo -e "${CYAN}[*] Downloading miner...${NC}"
     run_cmd curl -sSL "$REPO_BASE/$FILE" -o rustchain_miner.py
-    run_cmd curl -sSL "$REPO_BASE/linux/fingerprint_checks.py" -o fingerprint_checks.py
+    run_cmd curl -sSL "$REPO_BASE/$FINGERPRINT_FILE" -o fingerprint_checks.py
     
     if [ "$SKIP_CHECKSUM" != true ] && [ "$DRY_RUN" != true ]; then
-        curl -sSL "$CHECKSUM_URL" -o sums 2>/dev/null || true
-        [ -f sums ] && { SUM=$(grep "$(basename $FILE)" sums | awk '{print $1}'); [ -n "$SUM" ] && verify_sum "rustchain_miner.py" "$SUM"; rm sums; }
+        curl -sSL "$CHECKSUM_URL" -o sums
+        for artifact in "$FILE:rustchain_miner.py" "$FINGERPRINT_FILE:fingerprint_checks.py"; do
+            manifest_path="${artifact%%:*}"
+            local_path="${artifact#*:}"
+            SUM=$(awk -v path="$manifest_path" '$2 == path { print $1; exit }' sums)
+            [ -n "$SUM" ] || { echo -e "${RED}[!] Missing checksum for: $manifest_path${NC}"; rm -f sums; exit 1; }
+            verify_sum "$local_path" "$SUM"
+        done
+        rm sums
     fi
 }
 
