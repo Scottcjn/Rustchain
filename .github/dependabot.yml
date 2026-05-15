@@ -46,3 +46,45 @@ updates:
     labels:
       - "ci/cd"
       - "github-actions"
+
+  - package-ecosystem: "cargo"
+    directories:
+      - "/rustchain-wallet"
+      - "/rips"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "Scottcjn"
+    assignees:
+      - "Scottcjn"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "rust"
+
+  - package-ecosystem: "npm"
+    directories:
+      - "/solana"
+      - "/onboard"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 3
+    reviewers:
+      - "Scottcjn"
+    assignees:
+      - "Scottcjn"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "javascript"
