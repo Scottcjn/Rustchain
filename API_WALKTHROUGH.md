@@ -67,12 +67,14 @@ POST /wallet/transfer/signed
 
 ```json
 {
-  "from": "sender_wallet_id",
-  "to": "recipient_wallet_id",
-  "amount": 10,
-  "fee": 0.001,
-  "signature": "hex_encoded_signature",
-  "timestamp": 1234567890
+  "from_address": "RTCaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "to_address": "RTCbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "amount_rtc": 1.5,
+  "nonce": 12345,
+  "memo": "",
+  "public_key": "ed25519_public_key_hex",
+  "signature": "ed25519_signature_hex",
+  "chain_id": "rustchain-mainnet-v2"
 }
 ```
 
@@ -80,20 +82,22 @@ POST /wallet/transfer/signed
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `from` | string | Sender's RustChain wallet ID |
-| `to` | string | Recipient's RustChain wallet ID |
-| `amount` | integer | Amount in RTC (smallest unit) |
-| `fee` | float | Transaction fee |
-| `signature` | hex string | Ed25519 signature of the transfer payload |
-| `timestamp` | integer | Unix timestamp for replay protection |
+| `from_address` | string | Sender's `RTC...` address |
+| `to_address` | string | Recipient's `RTC...` address |
+| `amount_rtc` | number | Amount to transfer in RTC |
+| `nonce` | integer | Unique nonce for replay protection |
+| `memo` | string | Optional memo included in the signed payload |
+| `public_key` | hex string | Sender Ed25519 public key |
+| `signature` | hex string | Ed25519 signature over the canonical transfer payload |
+| `chain_id` | string | Chain identifier, usually `rustchain-mainnet-v2` |
 
 ### Important Notes
 
-1. **Wallet IDs are NOT external addresses** - RustChain uses its own wallet system (e.g., `Ivan-houzhiwen`), not Ethereum or Solana addresses.
+1. **Use RustChain addresses** - Signed transfers use `RTC...` wallet addresses, not miner IDs like `Ivan-houzhiwen` and not Ethereum or Solana addresses.
 
 2. **TLS certificates** - RustChain nodes use self-signed certificates. For production use, place the node's certificate at `~/.rustchain/node_cert.pem` and the `requests` library will automatically use it (default `verify=True`). For local testing with a self-signed certificate that is not pinned, you may temporarily set `verify=False` but be aware of MITM risks. The recommended pattern is to use the shared `tls_config` module from the RustChain codebase: `from node.tls_config import get_tls_session; session = get_tls_session()`.
 
-3. **Amount is in smallest unit** - 1 RTC = 1,000,000 smallest units.
+3. **Amount is human-readable RTC** - `amount_rtc` is the RTC amount, not the micro-RTC integer balance field.
 
 ---
 
@@ -112,12 +116,14 @@ print(f"Balance: {response.json()['amount_rtc']} RTC")
 
 # Transfer (requires signature)
 transfer_data = {
-    "from": "sender_wallet",
-    "to": "recipient_wallet",
-    "amount": 1000000,  # 1 RTC
-    "fee": 1000,
-    "signature": "...",
-    "timestamp": 1234567890
+    "from_address": "RTCaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "to_address": "RTCbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "amount_rtc": 1.0,
+    "nonce": 12345,
+    "memo": "",
+    "public_key": "ed25519_public_key_hex",
+    "signature": "ed25519_signature_hex",
+    "chain_id": "rustchain-mainnet-v2",
 }
 response = requests.post(
     "https://50.28.86.131/wallet/transfer/signed",
@@ -125,6 +131,8 @@ response = requests.post(
 )
 print(response.json())
 ```
+
+See `docs/API.md` for the full canonical signing rules.
 
 ---
 
