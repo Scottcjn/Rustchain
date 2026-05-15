@@ -13,7 +13,7 @@ import sqlite3
 import time
 import os
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from flask import Flask, request, jsonify, render_template_string
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -81,9 +81,9 @@ def can_drip(identifier, is_wallet=False):
         return True
     
     last_drip = datetime.fromisoformat(last_time.replace('Z', '+00:00'))
-    now = datetime.now(last_drip.tzinfo)
+    now = datetime.now(timezone.utc)
     hours_since = (now - last_drip).total_seconds() / 3600
-    
+
     return hours_since >= RATE_LIMIT_HOURS
 
 
@@ -95,7 +95,7 @@ def get_next_available(identifier, is_wallet=False):
     
     last_drip = datetime.fromisoformat(last_time.replace('Z', '+00:00'))
     next_available = last_drip + timedelta(hours=RATE_LIMIT_HOURS)
-    now = datetime.now(last_drip.tzinfo)
+    now = datetime.now(timezone.utc)
     
     if next_available > now:
         return next_available.isoformat()
@@ -112,6 +112,66 @@ def record_drip(wallet, ip_address, amount):
     ''', (wallet, ip_address, amount))
     conn.commit()
     conn.close()
+
+
+def try_record_drip(wallet, ip_address, amount):
+    """Atomically check rate limits and record a drip request.
+
+    Uses BEGIN IMMEDIATE to prevent TOCTOU race conditions.
+    Returns (success, error_message, next_available).
+    """
+    conn = sqlite3.connect(DATABASE)
+    try:
+        conn.execute('BEGIN IMMEDIATE')
+        c = conn.cursor()
+
+        # Check IP rate limit
+        c.execute('''
+            SELECT timestamp FROM drip_requests
+            WHERE ip_address = ?
+            ORDER BY timestamp DESC
+            LIMIT 1
+        ''', (ip_address,))
+        row = c.fetchone()
+        if row:
+            last_drip = datetime.fromisoformat(row[0].replace('Z', '+00:00'))
+            now = datetime.now(timezone.utc)
+            hours_since = (now - last_drip).total_seconds() / 3600
+            if hours_since < RATE_LIMIT_HOURS:
+                next_available = last_drip + timedelta(hours=RATE_LIMIT_HOURS)
+                conn.rollback()
+                return (False, 'IP rate limit exceeded', next_available.isoformat())
+
+        # Check wallet rate limit
+        c.execute('''
+            SELECT timestamp FROM drip_requests
+            WHERE wallet = ?
+            ORDER BY timestamp DESC
+            LIMIT 1
+        ''', (wallet,))
+        row = c.fetchone()
+        if row:
+            last_drip = datetime.fromisoformat(row[0].replace('Z', '+00:00'))
+            now = datetime.now(timezone.utc)
+            hours_since = (now - last_drip).total_seconds() / 3600
+            if hours_since < RATE_LIMIT_HOURS:
+                next_available = last_drip + timedelta(hours=RATE_LIMIT_HOURS)
+                conn.rollback()
+                return (False, 'Wallet rate limit exceeded', next_available.isoformat())
+
+        # Record the drip
+        c.execute('''
+            INSERT INTO drip_requests (wallet, ip_address, amount)
+            VALUES (?, ?, ?)
+        ''', (wallet, ip_address, amount))
+        conn.commit()
+        return (True, None, None)
+
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def is_valid_wallet_address(wallet):
@@ -334,33 +394,21 @@ def drip():
     
     ip = get_client_ip()
 
-    # Check rate limit for IP
-    if not can_drip(ip):
-        next_available = get_next_available(ip)
+    amount = MAX_DRIP_AMOUNT
+    success, error, next_available = try_record_drip(wallet, ip, amount)
+
+    if not success:
         return jsonify({
             'ok': False,
-            'error': 'IP rate limit exceeded',
+            'error': error,
             'next_available': next_available
         }), 429
 
-    # Check rate limit for Wallet
-    if not can_drip(wallet, is_wallet=True):
-        next_available = get_next_available(wallet, is_wallet=True)
-        return jsonify({
-            'ok': False,
-            'error': 'Wallet rate limit exceeded',
-            'next_available': next_available
-        }), 429
-    # Record the drip (in production, this would actually transfer tokens)
-    # For now, we simulate the drip
-    amount = MAX_DRIP_AMOUNT
-    record_drip(wallet, ip, amount)
-    
     return jsonify({
         'ok': True,
         'amount': amount,
         'wallet': wallet,
-        'next_available': (datetime.now() + timedelta(hours=RATE_LIMIT_HOURS)).isoformat()
+        'next_available': (datetime.now(timezone.utc) + timedelta(hours=RATE_LIMIT_HOURS)).isoformat()
     })
 
 
