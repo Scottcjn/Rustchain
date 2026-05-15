@@ -232,12 +232,18 @@ def get_epoch():
 @app.post("/epoch/enroll")
 def epoch_enroll():
     """Enroll miner in current epoch"""
-    data = request.get_json(force=True) or {}
+    data, error = _json_object_body()
+    if error:
+        return error
 
     miner_pk = data.get("miner_pubkey", "")
-    weights = data.get("weights", {}) or {}
-    device = data.get("device", {}) or {}
+    weights = data.get("weights", {})
+    device = data.get("device", {})
     ticket_id = data.get("ticket_id", "")
+    if not isinstance(weights, dict):
+        return jsonify({"ok": False, "reason": "invalid_weights"}), 400
+    if not isinstance(device, dict):
+        return jsonify({"ok": False, "reason": "invalid_device"}), 400
 
     if not miner_pk or not ticket_id:
         return jsonify({"ok": False, "reason": "missing_params"}), 400
@@ -276,15 +282,25 @@ def balance(miner_pk):
         "balance_rtc": bal
     })
 
+
+def _json_object_body():
+    data = request.get_json(force=True, silent=True)
+    if not isinstance(data, dict):
+        return None, (jsonify({"error": "json_object_required"}), 400)
+    return data, None
+
+
 @app.post("/api/register")
 def api_register():
     """Register node with hardware fingerprint"""
-    data = request.get_json(force=True)
+    data, error = _json_object_body()
+    if error:
+        return error
 
     system_id = data.get("system_id")
     fingerprint = data.get("fingerprint", {})
 
-    if not system_id or not fingerprint:
+    if not system_id or not isinstance(fingerprint, dict) or not fingerprint:
         return jsonify({"error": "missing_data"}), 400
 
     # Check blacklist
@@ -318,8 +334,12 @@ def attest_challenge():
 @app.post("/attest/submit")
 def attest_submit():
     """Submit Silicon Ticket attestation"""
-    data = request.get_json(force=True)
+    data, error = _json_object_body()
+    if error:
+        return error
     report = data.get("report", {})
+    if not isinstance(report, dict):
+        return jsonify({"error": "invalid_report"}), 400
 
     # Basic validation
     if not report.get("commitment"):
@@ -328,6 +348,8 @@ def attest_submit():
     # Create ticket
     ticket_id = secrets.token_hex(8)
     device = report.get("device", {})
+    if not isinstance(device, dict):
+        return jsonify({"error": "invalid_device"}), 400
     hw_weight = get_hardware_weight(device)
     ticket = {
         "ticket_id": ticket_id,
@@ -362,9 +384,15 @@ def api_submit_block():
     """Submit block with VRF proof and Silicon Ticket"""
     global LAST_HASH_B3, LAST_EPOCH
 
-    data = request.get_json(force=True)
+    data, error = _json_object_body()
+    if error:
+        return error
     header = data.get("header", {})
     ext = data.get("header_ext", {})
+    if not isinstance(header, dict):
+        return jsonify({"error": "invalid_header"}), 400
+    if not isinstance(ext, dict):
+        return jsonify({"error": "invalid_header_ext"}), 400
 
     # Check previous hash
     if header.get("prev_hash_b3") != LAST_HASH_B3:
