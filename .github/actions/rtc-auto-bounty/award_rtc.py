@@ -95,8 +95,8 @@ class Config:
 
     def __init__(self) -> None:
         self.rtc_amount: float = _env_float("INPUT_RTC_AMOUNT", 50.0)
-        self.vps_host: str = _env("INPUT_RTC_VPS_HOST")
-        self.admin_key: str = _env("INPUT_RTC_ADMIN_KEY")
+        self.vps_host: str = _env("INPUT_RTC_VPS_HOST").strip()
+        self.admin_key: str = _env("INPUT_RTC_ADMIN_KEY").strip()
         self.from_wallet: str = _env("INPUT_FROM_WALLET", "founder_community")
         self.dry_run: bool = _env_bool("INPUT_DRY_RUN")
         self.post_comment: bool = _env_bool("INPUT_POST_COMMENT", True)
