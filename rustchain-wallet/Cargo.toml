@@ -52,7 +52,7 @@ pbkdf2 = "0.12"
 
 # Random number generation
 rand = "0.10"
-getrandom = "0.2"
+getrandom = "0.4"
 
 # Filesystem
 dirs = "5.0"
