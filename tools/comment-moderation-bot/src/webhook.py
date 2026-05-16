@@ -201,7 +201,7 @@ def register_routes(app: FastAPI, config: BotConfig) -> None:
             )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=str(e),
+                detail="Internal server error",
             )
 
         # Log webhook receipt
@@ -263,7 +263,7 @@ def register_routes(app: FastAPI, config: BotConfig) -> None:
             )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=str(e),
+                detail="Internal server error",
             )
 
         # Process the comment
@@ -301,7 +301,7 @@ def register_routes(app: FastAPI, config: BotConfig) -> None:
             )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=str(e),
+                detail="Internal server error",
             )
 
     @app.get("/stats")
