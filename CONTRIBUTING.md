@@ -121,7 +121,7 @@ For package-specific work, use the closest local manifest or test folder:
 | Node Health | `https://rustchain.org/health` |
 | Active Miners | `https://rustchain.org/api/miners` |
 | Current Epoch | `https://rustchain.org/epoch` |
-| Block Explorer | `https://rustchain.org/explorer` |
+| Block Explorer | `https://rustchain.org/explorer/` |
 | wRTC Bridge | `https://bottube.ai/bridge` |
 
 ## RTC Payout Process

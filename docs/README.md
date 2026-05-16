@@ -26,7 +26,7 @@
 ## Live Network
 
 - **Primary Node**: `https://rustchain.org`
-- **Explorer**: `https://rustchain.org/explorer`
+- **Explorer**: `https://rustchain.org/explorer/`
 - **Health Check**: `curl -sk https://rustchain.org/health`
 - **Network Status Page**: `docs/network-status.html` (GitHub Pages-hostable status dashboard)
 
