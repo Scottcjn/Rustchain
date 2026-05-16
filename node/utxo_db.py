@@ -43,6 +43,7 @@ MAX_POOL_SIZE = 10_000
 # Without this, a single tx creates unlimited outputs, bloating the UTXO set.
 MAX_OUTPUTS = 100
 MAX_TX_AGE_SECONDS = 3_600  # 1 hour mempool expiry
+SQLITE_INT64_MAX = 2**63 - 1
 P2PK_PREFIX = b'\x00\x08'   # Pay-to-Public-Key proposition prefix
 
 
@@ -425,6 +426,8 @@ class UtxoDB:
         Returns True on success, False on validation failure.
         """
         ts = tx.get('timestamp', int(time.time()))
+        if type(ts) is not int or ts < 0 or ts > SQLITE_INT64_MAX:
+            return False
         # NOTE(issue #2085): spending_proof is present on each input dict but
         # is intentionally ignored by this layer.  It is stored for
         # on-chain auditability, but cryptographic verification is the sole
