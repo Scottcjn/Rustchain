@@ -54,6 +54,17 @@ def test_set_agent_wallet_rejects_non_string_coinbase_address(client):
     assert response.get_json()["error"] == "coinbase_address must be a string"
 
 
+def test_set_agent_wallet_rejects_non_hex_base_address(client):
+    response = client.post(
+        "/api/agents/agent-1/wallet",
+        json={"coinbase_address": "0xZZ34567890123456789012345678901234567890"},
+        headers={"X-Admin-Key": "test-admin-key"},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "Invalid Base address"
+
+
 def test_set_agent_wallet_preserves_valid_address(client):
     response = client.post(
         "/api/agents/agent-1/wallet",
