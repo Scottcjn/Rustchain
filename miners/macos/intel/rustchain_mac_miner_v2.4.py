@@ -16,6 +16,7 @@ import subprocess
 import requests
 import statistics
 import re
+import signal
 from datetime import datetime
 
 # Import fingerprint checks
@@ -237,12 +238,19 @@ class MacMiner:
         self.shares_submitted = 0
         self.shares_accepted = 0
         self.last_entropy = {}
+        self.shutdown_requested = False
 
         self._print_banner()
 
         # Run initial fingerprint check
         if FINGERPRINT_AVAILABLE:
             self._run_fingerprint_checks()
+
+    def request_shutdown(self, signum=None, frame=None):
+        """Request a graceful miner shutdown from SIGTERM/SIGINT."""
+        if not self.shutdown_requested:
+            print("\n\nShutting down miner...")
+        self.shutdown_requested = True
 
     def _run_fingerprint_checks(self):
         """Run hardware fingerprint checks for RIP-PoA"""
@@ -443,13 +451,16 @@ class MacMiner:
         print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Starting miner...")
 
         # Initial attestation
-        while not self.attest():
+        while not self.shutdown_requested and not self.attest():
             print("  Retrying attestation in 30 seconds...")
             time.sleep(30)
+        if self.shutdown_requested:
+            print("Miner stopped gracefully.")
+            return
 
         last_slot = 0
 
-        while True:
+        while not self.shutdown_requested:
             try:
                 # Re-attest if needed
                 if time.time() > self.attestation_valid_until:
@@ -484,11 +495,12 @@ class MacMiner:
                 time.sleep(LOTTERY_CHECK_INTERVAL)
 
             except KeyboardInterrupt:
-                print("\n\nShutting down miner...")
+                self.request_shutdown()
                 break
             except Exception as e:
                 print(f"[{datetime.now().strftime('%H:%M:%S')}] Error: {e}")
                 time.sleep(30)
+        print(f"Miner stopped gracefully. Submitted: {self.shares_submitted} | Accepted: {self.shares_accepted}")
 
 
 if __name__ == "__main__":
@@ -504,4 +516,6 @@ if __name__ == "__main__":
         NODE_URL = args.node
 
     miner = MacMiner(miner_id=args.miner_id, wallet=args.wallet)
+    signal.signal(signal.SIGTERM, miner.request_shutdown)
+    signal.signal(signal.SIGINT, miner.request_shutdown)
     miner.run()

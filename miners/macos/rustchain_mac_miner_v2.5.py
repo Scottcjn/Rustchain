@@ -22,6 +22,7 @@ import subprocess
 import statistics
 import re
 import socket
+import signal
 from datetime import datetime
 
 # Color helper stubs (no-op if terminal doesn't support ANSI)
@@ -377,6 +378,7 @@ class MacMiner:
         self.shares_submitted = 0
         self.shares_accepted = 0
         self.last_entropy = {}
+        self.shutdown_requested = False
         self._last_system_time = time.monotonic()
 
         self._print_banner()
@@ -384,6 +386,12 @@ class MacMiner:
         # Run initial fingerprint check
         if FINGERPRINT_AVAILABLE:
             self._run_fingerprint_checks()
+
+    def request_shutdown(self, signum=None, frame=None):
+        """Request a graceful miner shutdown from SIGTERM/SIGINT."""
+        if not self.shutdown_requested:
+            print("\n\nShutting down miner...")
+        self.shutdown_requested = True
 
     def _run_fingerprint_checks(self):
         """Run hardware fingerprint checks for RIP-PoA."""
@@ -596,14 +604,17 @@ class MacMiner:
         print("\n[{}] Starting miner...".format(ts))
 
         # Initial attestation
-        while not self.attest():
+        while not self.shutdown_requested and not self.attest():
             print("  Retrying attestation in 30 seconds...")
             time.sleep(30)
+        if self.shutdown_requested:
+            print("Miner stopped gracefully.")
+            return
 
         last_slot = 0
         status_counter = 0
 
-        while True:
+        while not self.shutdown_requested:
             try:
                 # Detect sleep/wake — force re-attest
                 if self._detect_sleep_wake():
@@ -649,12 +660,15 @@ class MacMiner:
                 time.sleep(LOTTERY_CHECK_INTERVAL)
 
             except KeyboardInterrupt:
-                print("\n\nShutting down miner...")
+                self.request_shutdown()
                 break
             except Exception as e:
                 ts = datetime.now().strftime('%H:%M:%S')
                 print("[{}] Error: {}".format(ts, e))
                 time.sleep(30)
+        print("Miner stopped gracefully. Submitted: {} | Accepted: {}".format(
+            self.shares_submitted, self.shares_accepted
+        ))
 
 
 if __name__ == "__main__":
@@ -681,4 +695,6 @@ if __name__ == "__main__":
         node_url=node,
         proxy_url=proxy,
     )
+    signal.signal(signal.SIGTERM, miner.request_shutdown)
+    signal.signal(signal.SIGINT, miner.request_shutdown)
     miner.run()
