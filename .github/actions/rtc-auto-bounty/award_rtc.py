@@ -36,8 +36,10 @@ import os
 import re
 import sys
 import textwrap
+import time
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
+
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
@@ -46,7 +48,7 @@ from urllib.error import HTTPError, URLError
 # ---------------------------------------------------------------------------
 
 GITHUB_API = "https://api.github.com"
-VPS_PORT = 8099
+VPS_PORT = int(os.getenv("INPUT_RTC_VPS_PORT", os.getenv("RTC_VPS_PORT", "8099")))
 
 # Wallet directive patterns in the PR body.
 # Accepted forms:
@@ -264,6 +266,7 @@ def transfer_rtc(
     to_wallet: str,
     amount: float,
     memo: str,
+    retries: int = 3,
 ) -> Tuple[bool, Dict[str, Any]]:
     """
     Call the RustChain ``POST /wallet/transfer`` admin endpoint.
@@ -286,19 +289,29 @@ def transfer_rtc(
         },
         method="POST",
     )
-    try:
-        resp = urlopen(req, timeout=30)
-        result = json.loads(resp.read().decode())
-        return result.get("ok", False), result
-    except HTTPError as e:
-        body = e.read().decode(errors="replace")
+
+    for attempt in range(retries):
         try:
-            result = json.loads(body)
-        except (json.JSONDecodeError, ValueError):
-            result = {"error": body}
-        return False, result
-    except URLError as e:
-        return False, {"error": f"Connection failed: {e.reason}"}
+            resp = urlopen(req, timeout=30)
+            result = json.loads(resp.read().decode())
+            return result.get("ok", False), result
+        except HTTPError as e:
+            body = e.read().decode(errors="replace")
+            if e.code in {502, 503, 504} and attempt < retries - 1:
+                time.sleep(2 ** attempt)
+                continue
+            try:
+                result = json.loads(body)
+            except (json.JSONDecodeError, ValueError):
+                result = {"error": body}
+            return False, result
+        except URLError as e:
+            if attempt < retries - 1:
+                time.sleep(2 ** attempt)
+                continue
+            return False, {"error": f"Connection failed: {e.reason}"}
+
+    return False, {"error": "Transfer failed after retries"}
 
 
 # ---------------------------------------------------------------------------

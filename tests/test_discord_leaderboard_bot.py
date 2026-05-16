@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: MIT
+import argparse
 import importlib.util
 from pathlib import Path
 
+import pytest
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "tools" / "discord_leaderboard_bot.py"
 spec = importlib.util.spec_from_file_location("discord_leaderboard_bot", MODULE_PATH)
@@ -151,3 +153,137 @@ def test_collect_data_skips_rows_without_miner_and_fetches_wallet_balances(monke
     assert any(url.endswith("/api/miners") for url in calls)
     assert any("wallet/balance?miner_id=miner-a" in url for url in calls)
     assert any("wallet/balance?miner_id=miner-b" in url for url in calls)
+
+
+def test_fmt_rtc_edge_cases():
+    assert discord_leaderboard_bot.fmt_rtc(0) == "0.000000"
+    assert discord_leaderboard_bot.fmt_rtc(-1.5) == "-1.500000"
+    assert discord_leaderboard_bot.fmt_rtc(1e6) == "1000000.000000"
+    assert discord_leaderboard_bot.fmt_rtc(1.0 / 3.0) == "0.333333"
+
+
+def test_short_id_edge_cases():
+    assert discord_leaderboard_bot.short_id("", keep=10) == ""
+    assert discord_leaderboard_bot.short_id("exactly-10", keep=10) == "exactly-10"
+    assert discord_leaderboard_bot.short_id("exactly-10!", keep=10) == "exactly-10..."
+    assert discord_leaderboard_bot.short_id("abc", keep=0) == "..."
+    assert discord_leaderboard_bot.short_id("abc", keep=5) == "abc"
+
+
+def test_build_leaderboard_lines_empty_rows():
+    table = discord_leaderboard_bot.build_leaderboard_lines([], top_n=10)
+    assert "Rank  Miner" in table
+    assert "----  ----------------" in table
+
+
+def test_build_leaderboard_lines_missing_arch_key():
+    rows = [{"miner": "m1", "balance_rtc": 1.0}]
+    table = discord_leaderboard_bot.build_leaderboard_lines(rows, top_n=10)
+    assert "unknown" in table
+
+
+def test_architecture_distribution_empty_list():
+    assert discord_leaderboard_bot.architecture_distribution([]) == []
+
+
+def test_rewards_for_epoch_handles_missing_rewards_key(monkeypatch):
+    def fake_get_json(session, url, timeout):
+        return {}
+
+    monkeypatch.setattr(discord_leaderboard_bot, "get_json", fake_get_json)
+    assert discord_leaderboard_bot.rewards_for_epoch(object(), "https://node", 7, 1) == []
+
+
+def test_rewards_for_epoch_handles_missing_item_fields(monkeypatch):
+    def fake_get_json(session, url, timeout):
+        return {"rewards": [{}, {"miner_id": "m1"}, {"share_rtc": "2.5"}]}
+
+    monkeypatch.setattr(discord_leaderboard_bot, "get_json", fake_get_json)
+    rewards = discord_leaderboard_bot.rewards_for_epoch(object(), "https://node", 7, 1)
+    assert len(rewards) == 3
+    assert rewards[0] == {"miner": "unknown", "share_rtc": 2.5}
+    assert rewards[1] == {"miner": "unknown", "share_rtc": 0.0}
+    assert rewards[2] == {"miner": "m1", "share_rtc": 0.0}
+
+
+def test_post_discord(monkeypatch):
+    calls = []
+
+    class FakeResponse:
+        ok = True
+
+        def raise_for_status(self):
+            pass
+
+    class FakeSession:
+        def post(self, url, json, timeout):
+            calls.append((url, json, timeout))
+            return FakeResponse()
+
+    discord_leaderboard_bot.post_discord(FakeSession(), "https://hook", {"key": "val"}, 5.0)
+    assert calls[0][0] == "https://hook"
+    assert calls[0][1] == {"key": "val"}
+    assert calls[0][2] == 5.0
+
+
+def test_post_discord_raises_on_http_error(monkeypatch):
+    class FakeResponse:
+        ok = False
+
+        def raise_for_status(self):
+            raise RuntimeError("400 Client Error")
+
+    class FakeSession:
+        def post(self, url, json, timeout):
+            return FakeResponse()
+
+    with pytest.raises(RuntimeError, match="400 Client Error"):
+        discord_leaderboard_bot.post_discord(FakeSession(), "https://hook", {}, 1.0)
+
+
+def test_run_once_dry_run(monkeypatch):
+    monkeypatch.setattr(
+        discord_leaderboard_bot,
+        "collect_data",
+        lambda session, base, timeout: (
+            [{"miner": "a", "balance_rtc": 1.0, "arch": "G5", "multiplier": 1.0}],
+            {"epoch": 5},
+            {"ok": True, "uptime_s": 100},
+        ),
+    )
+
+    import argparse
+    args = argparse.Namespace(
+        node="https://node",
+        timeout=10.0,
+        top_n=5,
+        title_prefix="Test",
+        webhook_url="",
+        dry_run=True,
+    )
+
+    discord_leaderboard_bot.run_once(args)
+
+
+def test_run_once_raises_without_webhook(monkeypatch):
+    monkeypatch.setattr(
+        discord_leaderboard_bot,
+        "collect_data",
+        lambda session, base, timeout: (
+            [],
+            {"epoch": 0},
+            {"ok": True, "uptime_s": 0},
+        ),
+    )
+
+    args = argparse.Namespace(
+        node="https://node",
+        timeout=10.0,
+        top_n=5,
+        title_prefix="Test",
+        webhook_url="",
+        dry_run=False,
+    )
+
+    with pytest.raises(RuntimeError, match="Missing webhook URL"):
+        discord_leaderboard_bot.run_once(args)

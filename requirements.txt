@@ -7,6 +7,10 @@ requests>=2.25.0
 cryptography>=46.0.7
 # For node / Beacon Ed25519 verification:
 PyNaCl>=1.6.2
+# For async HTTP clients used by agents and tests:
+aiohttp>=3.10.11
+# For Flask-based services that enable CORS in tests/CI:
+Flask-Cors>=5.0.0
 # For wallet CLI (BIP39 seed phrases):
 mnemonic>=0.21
 # For EIP-55 Ethereum address checksum validation (faucet_service):

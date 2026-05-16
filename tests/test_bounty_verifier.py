@@ -410,6 +410,47 @@ class TestBountyVerifier:
         
         assert len(urls) == 2
         assert "https://github.com/user" in urls
+
+    def test_hostname_allowlist_matches_exact_host_and_subdomain(self):
+        verifier = BountyVerifier(Config(url_check=MagicMock(allowed_domains=["github.com"])))
+
+        assert verifier._hostname_matches_allowlist("github.com") is True
+        assert verifier._hostname_matches_allowlist("www.github.com") is True
+        assert verifier._hostname_matches_allowlist("github.com.evil.example") is False
+        assert verifier._hostname_matches_allowlist("evilgithub.com") is False
+
+    def test_verify_url_liveness_rejects_redirect_to_off_allowlist_host(self):
+        url_check = MagicMock(enabled=True, timeout=5, require_https=True, allowed_domains=["github.com"])
+        verifier = BountyVerifier(Config(url_check=url_check))
+
+        response = MagicMock()
+        response.status = 200
+        response.geturl.return_value = "https://evil.example/landing"
+        response.__enter__.return_value = response
+        response.__exit__.return_value = False
+
+        with patch("tools.bounty_verifier.verifier.urlopen", return_value=response):
+            checks = verifier.verify_url_liveness(["https://github.com/Scottcjn/rustchain"])
+
+        assert len(checks) == 1
+        assert checks[0].status == VerificationStatus.FAILED
+        assert "Redirect target not in allowlist" in checks[0].message
+
+    def test_verify_url_liveness_allows_clean_allowed_host(self):
+        url_check = MagicMock(enabled=True, timeout=5, require_https=True, allowed_domains=["github.com"])
+        verifier = BountyVerifier(Config(url_check=url_check))
+
+        response = MagicMock()
+        response.status = 200
+        response.geturl.return_value = "https://github.com/Scottcjn/rustchain"
+        response.__enter__.return_value = response
+        response.__exit__.return_value = False
+
+        with patch("tools.bounty_verifier.verifier.urlopen", return_value=response):
+            checks = verifier.verify_url_liveness(["https://github.com/Scottcjn/rustchain"])
+
+        assert len(checks) == 1
+        assert checks[0].status == VerificationStatus.PASSED
     
     def test_parse_claim_comment(self, sample_claim_comment):
         """Test parsing claim comment."""
