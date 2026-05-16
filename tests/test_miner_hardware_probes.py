@@ -72,6 +72,30 @@ def test_linux_miner_collects_darwin_hardware_with_sysctl(monkeypatch):
     assert hw["memory_gb"] == 16
 
 
+def test_linux_miner_darwin_hardware_falls_back_when_sysctl_missing(monkeypatch):
+    miner = load_module(Path("miners/linux/rustchain_linux_miner.py"), "rustchain_linux_miner_darwin_fallback_hw")
+    instance = object.__new__(miner.LocalMiner)
+    command_output = {
+        ("sysctl", "-n", "machdep.cpu.brand_string"): None,
+        ("sysctl", "-n", "hw.ncpu"): "",
+        ("sysctl", "-n", "hw.memsize"): "",
+    }
+
+    monkeypatch.setattr(miner.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(miner.platform, "machine", lambda: "arm64")
+    monkeypatch.setattr(miner.socket, "gethostname", lambda: "macbook.local")
+    monkeypatch.setattr(miner.os, "cpu_count", lambda: 8)
+    monkeypatch.setattr(miner, "get_linux_serial", lambda: None)
+    monkeypatch.setattr(miner.LocalMiner, "_get_mac_addresses", lambda self: ["aa:bb:cc:dd:ee:ff"])
+    monkeypatch.setattr(miner.LocalMiner, "_run_cmd", lambda self, args: command_output.get(tuple(args), ""))
+
+    hw = instance._get_hw_info()
+
+    assert hw["cpu"] == "Unknown"
+    assert hw["cores"] == 8
+    assert hw["memory_gb"] == 32
+
+
 def test_power8_miner_run_cmd_uses_argument_list_without_shell(monkeypatch):
     miner = load_module(Path("miners/power8/rustchain_power8_miner.py"), "rustchain_power8_miner_run_cmd")
     instance = object.__new__(miner.LocalMiner)

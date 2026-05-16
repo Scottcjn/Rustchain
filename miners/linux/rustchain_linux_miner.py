@@ -346,7 +346,7 @@ class LocalMiner:
 
         # Get CPU
         if system == "Darwin":
-            cpu = self._run_cmd(["sysctl", "-n", "machdep.cpu.brand_string"]).strip()
+            cpu = (self._run_cmd(["sysctl", "-n", "machdep.cpu.brand_string"]) or "").strip()
         else:
             cpu = _parse_lscpu_model(self._run_cmd(["lscpu"]))
         hw["cpu"] = cpu or "Unknown"
