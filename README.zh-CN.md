@@ -8,7 +8,7 @@
 **所有硬件都会变老。这只是时间问题。**
 
 [![CI](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml/badge.svg)](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/Scottcjn/Rustchain?style=flat&color=gold)](https://github.com/Scottcjn/Rustchain/stargazers)
 [![Nodes](https://img.shields.io/badge/Nodes-5%20Active-brightgreen)](https://rustchain.org/explorer/)
 [![DePIN](https://img.shields.io/badge/DePIN-Vintage%20Hardware-8B4513)](https://rustchain.org)
@@ -273,7 +273,7 @@ clawrtc mine --wallet=你的钱包地址
 
 ## 许可证
 
-MIT License - 查看 [LICENSE](LICENSE) 了解详情。
+Apache License 2.0 - 查看 [LICENSE](LICENSE) 了解详情。
 
 ---
 

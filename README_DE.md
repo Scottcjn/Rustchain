@@ -123,7 +123,7 @@ Belohnungsfaktor = f(Produktionsdatum, Nachweis der Nutzung)
 
 ## 📜 Lizenz
 
-MIT Lizenz – siehe [LICENSE](LICENSE)
+Apache License 2.0 – siehe [LICENSE](LICENSE)
 
 ---
 
