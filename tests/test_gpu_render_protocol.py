@@ -3,8 +3,11 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from flask import Flask
+from node import gpu_render_protocol
 from node.gpu_render_protocol import GPURenderProtocol
 
 
@@ -13,6 +16,10 @@ class TestGPURenderProtocol(unittest.TestCase):
         self.tmp = tempfile.mkdtemp()
         self.db = os.path.join(self.tmp, "test_gpu.db")
         self.proto = GPURenderProtocol(db_path=self.db)
+
+    def refund_secret_pair(self):
+        secret = "provider-refund-secret"
+        return secret, GPURenderProtocol._hash_escrow_secret(secret)
 
     def test_attest_gpu(self):
         result = self.proto.attest_gpu("miner-1", {
@@ -76,10 +83,17 @@ class TestGPURenderProtocol(unittest.TestCase):
         self.assertIn("error", double)
 
     def test_escrow_refund(self):
-        result = self.proto.create_escrow("tts", "wallet-a", "wallet-b", 5.0)
+        refund_secret, refund_secret_hash = self.refund_secret_pair()
+        result = self.proto.create_escrow(
+            "tts",
+            "wallet-a",
+            "wallet-b",
+            5.0,
+            refund_secret_hash=refund_secret_hash,
+        )
         job_id = result["job_id"]
 
-        refund = self.proto.refund_escrow(job_id, "wallet-b", result["escrow_secret"])
+        refund = self.proto.refund_escrow(job_id, "wallet-b", refund_secret)
         self.assertEqual(refund["status"], "refunded")
 
     def test_release_requires_payer_and_secret(self):
@@ -99,20 +113,132 @@ class TestGPURenderProtocol(unittest.TestCase):
         self.assertEqual(status["status"], "locked")
 
     def test_refund_requires_provider_and_secret(self):
-        result = self.proto.create_escrow("tts", "wallet-a", "wallet-b", 5.0)
+        refund_secret, refund_secret_hash = self.refund_secret_pair()
+        result = self.proto.create_escrow(
+            "tts",
+            "wallet-a",
+            "wallet-b",
+            5.0,
+            refund_secret_hash=refund_secret_hash,
+        )
         job_id = result["job_id"]
 
-        wrong_actor = self.proto.refund_escrow(job_id, "wallet-a", result["escrow_secret"])
+        wrong_actor = self.proto.refund_escrow(job_id, "wallet-a", refund_secret)
         self.assertIn("error", wrong_actor)
 
-        outsider = self.proto.refund_escrow(job_id, "wallet-c", result["escrow_secret"])
+        outsider = self.proto.refund_escrow(job_id, "wallet-c", refund_secret)
         self.assertIn("error", outsider)
 
-        wrong_secret = self.proto.refund_escrow(job_id, "wallet-b", "wrong-secret")
+        wrong_secret = self.proto.refund_escrow(job_id, "wallet-b", result["escrow_secret"])
         self.assertIn("error", wrong_secret)
 
         status = self.proto.get_escrow(job_id)
         self.assertEqual(status["status"], "locked")
+
+        refunded = self.proto.refund_escrow(job_id, "wallet-b", refund_secret)
+        self.assertEqual(refunded["status"], "refunded")
+
+    def test_refund_requires_configured_provider_secret(self):
+        result = self.proto.create_escrow("tts", "wallet-a", "wallet-b", 5.0)
+
+        refund = self.proto.refund_escrow(
+            result["job_id"],
+            "wallet-b",
+            result["escrow_secret"],
+        )
+
+        self.assertEqual(refund["error"], "provider refund secret not configured")
+        self.assertEqual(self.proto.get_escrow(result["job_id"])["status"], "locked")
+
+    def test_creator_release_secret_cannot_refund_as_provider(self):
+        refund_secret, refund_secret_hash = self.refund_secret_pair()
+        result = self.proto.create_escrow(
+            "render",
+            "payer",
+            "provider",
+            10.0,
+            refund_secret_hash=refund_secret_hash,
+        )
+
+        refund = self.proto.refund_escrow(
+            result["job_id"],
+            "provider",
+            result["escrow_secret"],
+        )
+
+        self.assertIn("error", refund)
+        self.assertEqual(refund["error"], "invalid escrow_secret")
+        self.assertEqual(self.proto.get_escrow(result["job_id"])["status"], "locked")
+
+    def test_get_escrow_does_not_expose_secret_hashes(self):
+        _, refund_secret_hash = self.refund_secret_pair()
+        result = self.proto.create_escrow(
+            "render",
+            "payer",
+            "provider",
+            10.0,
+            refund_secret_hash=refund_secret_hash,
+        )
+
+        status = self.proto.get_escrow(result["job_id"])
+
+        self.assertNotIn("escrow_secret_hash", status)
+        self.assertNotIn("release_secret_hash", status)
+        self.assertNotIn("refund_secret_hash", status)
+
+    def test_release_route_rejects_bare_job_id(self):
+        result = self.proto.create_escrow("render", "payer", "provider", 10.0)
+        app = Flask(__name__)
+
+        with patch.object(gpu_render_protocol, "GPURenderProtocol", return_value=self.proto):
+            gpu_render_protocol.register_routes(app)
+
+        client = app.test_client()
+        response = client.post("/render/release", json={"job_id": result["job_id"]})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("error", response.get_json())
+        self.assertEqual(self.proto.get_escrow(result["job_id"])["status"], "locked")
+
+    def test_refund_route_rejects_creator_release_secret_as_provider(self):
+        provider_secret, provider_secret_hash = self.refund_secret_pair()
+        result = self.proto.create_escrow(
+            "render",
+            "payer",
+            "provider",
+            10.0,
+            refund_secret_hash=provider_secret_hash,
+        )
+        app = Flask(__name__)
+
+        with patch.object(gpu_render_protocol, "GPURenderProtocol", return_value=self.proto):
+            gpu_render_protocol.register_routes(app)
+
+        client = app.test_client()
+        spoofed = client.post(
+            "/render/refund",
+            json={
+                "job_id": result["job_id"],
+                "actor_wallet": "provider",
+                "escrow_secret": result["escrow_secret"],
+            },
+        )
+
+        self.assertEqual(spoofed.status_code, 400)
+        self.assertEqual(spoofed.get_json()["error"], "invalid escrow_secret")
+        self.assertEqual(self.proto.get_escrow(result["job_id"])["status"], "locked")
+
+        valid = client.post(
+            "/render/refund",
+            json={
+                "job_id": result["job_id"],
+                "actor_wallet": "provider",
+                "escrow_secret": provider_secret,
+            },
+        )
+
+        self.assertEqual(valid.status_code, 200)
+        self.assertEqual(valid.get_json()["status"], "refunded")
 
     def test_escrow_invalid_type(self):
         result = self.proto.create_escrow("invalid", "a", "b", 1.0)
