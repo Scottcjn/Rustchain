@@ -13,7 +13,7 @@
 [![Nodes](https://img.shields.io/badge/Nodes-5%20Active-brightgreen)](https://rustchain.org/explorer/)
 [![DePIN](https://img.shields.io/badge/DePIN-Vintage%20Hardware-8B4513)](https://rustchain.org)
 [![Proof of Antiquity](https://img.shields.io/badge/Consensus-Proof%20of%20Antiquity-DAA520)](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf)
-[![DOI](https://zenodo.org/badge/doi/10.5281/zenodo.19442753.svg)](https://doi.org/10.5281/zenodo.19442753)
+[![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.19442753-blue)](https://doi.org/10.5281/zenodo.19442753)
 
 A PowerBook G4 from 2003 earns **2.5x** more than a modern Threadripper.
 A Power Mac G5 earns **2.0x**. A 486 with rusty serial ports earns the most respect of all.
@@ -391,11 +391,11 @@ Every contribution earns RTC tokens. Browse [open bounties](https://github.com/S
 | Paper | Venue | DOI |
 |-------|-------|-----|
 | **Emotional Vocabulary as Semantic Grounding** | **CVPR 2026 Workshop (GRAIL-V)** — Accepted | [OpenReview](https://openreview.net/forum?id=pXjE6Tqp70) |
-| **One CPU, One Vote** | Preprint | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18623592.svg)](https://doi.org/10.5281/zenodo.18623592) |
-| **Non-Bijunctive Permutation Collapse** | Preprint | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18623920.svg)](https://doi.org/10.5281/zenodo.18623920) |
-| **PSE Hardware Entropy** | Preprint | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18623922.svg)](https://doi.org/10.5281/zenodo.18623922) |
-| **RAM Coffers** | Preprint | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18321905.svg)](https://doi.org/10.5281/zenodo.18321905) |
-| **RPI: Resonant Permutation Inference** | Preprint | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.19271983.svg)](https://doi.org/10.5281/zenodo.19271983) |
+| **One CPU, One Vote** | Preprint | [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18623592-blue)](https://doi.org/10.5281/zenodo.18623592) |
+| **Non-Bijunctive Permutation Collapse** | Preprint | [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18623920-blue)](https://doi.org/10.5281/zenodo.18623920) |
+| **PSE Hardware Entropy** | Preprint | [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18623922-blue)](https://doi.org/10.5281/zenodo.18623922) |
+| **RAM Coffers** | Preprint | [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18321905-blue)](https://doi.org/10.5281/zenodo.18321905) |
+| **RPI: Resonant Permutation Inference** | Preprint | [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.19271983-blue)](https://doi.org/10.5281/zenodo.19271983) |
 
 ---
 
