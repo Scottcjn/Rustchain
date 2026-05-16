@@ -29,7 +29,7 @@ import json
 import logging
 import sqlite3
 import time
-from typing import Optional
+from typing import Any, Optional
 from flask import Blueprint, request, jsonify
 
 log = logging.getLogger("rip0002_governance")
@@ -47,7 +47,10 @@ def _verify_miner_signature(miner_id: str, action: str, data: dict) -> bool:
 
     The signed payload is: f"{action}:{miner_id}:{timestamp}"
     """
-    signature_hex = data.get("signature", "").strip()
+    signature_value = data.get("signature", "")
+    if not isinstance(signature_value, str):
+        return False
+    signature_hex = signature_value.strip()
     timestamp = data.get("timestamp")
 
     if not signature_hex or not timestamp:
@@ -193,6 +196,21 @@ def _is_within_founder_veto_period() -> bool:
     return (time.time() - GENESIS_TIMESTAMP) < FOUNDER_VETO_DURATION
 
 
+def _parse_non_negative_int_arg(name: str, default: int, max_value: Optional[int] = None):
+    raw_value = request.args.get(name)
+    if raw_value is None:
+        return default, None
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        return None, (jsonify({"error": f"{name} must be an integer"}), 400)
+    if value < 0:
+        return None, (jsonify({"error": f"{name} must be non-negative"}), 400)
+    if max_value is not None:
+        value = min(value, max_value)
+    return value, None
+
+
 def _settle_expired_proposals(db_path: str):
     """Settle any proposals whose voting window has closed."""
     now = int(time.time())
@@ -253,6 +271,48 @@ def _sophia_evaluate(proposal: dict) -> str:
     return "\n".join(analysis_lines)
 
 
+def _field_type_error(field: str, expected: str):
+    return jsonify({
+        "error": "invalid_field_type",
+        "field": field,
+        "expected": expected,
+    }), 400
+
+
+def _json_object_body():
+    data = request.get_json(silent=True)
+    if data is None:
+        return {}, None
+    if not isinstance(data, dict):
+        return None, (jsonify({"error": "invalid_json"}), 400)
+    return data, None
+
+
+def _string_field(data: dict[str, Any], field: str, default: str = ""):
+    value = data.get(field, default)
+    if value is None:
+        value = default
+    if not isinstance(value, str):
+        return None, _field_type_error(field, "string")
+    return value.strip(), None
+
+
+def _integer_field(data: dict[str, Any], field: str):
+    value = data.get(field)
+    if value is None:
+        return None, None
+    if isinstance(value, bool):
+        return None, _field_type_error(field, "integer")
+    if isinstance(value, int):
+        return value, None
+    if isinstance(value, str):
+        try:
+            return int(value.strip()), None
+        except ValueError:
+            return None, _field_type_error(field, "integer")
+    return None, _field_type_error(field, "integer")
+
+
 # ---------------------------------------------------------------------------
 # Flask Blueprint
 # ---------------------------------------------------------------------------
@@ -264,13 +324,26 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
     @bp.route("/api/governance/propose", methods=["POST"])
     def create_proposal():
         _settle_expired_proposals(db_path)
-        data = request.get_json(silent=True) or {}
+        data, error_response = _json_object_body()
+        if error_response:
+            return error_response
 
-        miner_id = data.get("miner_id", "").strip()
-        title = data.get("title", "").strip()
-        description = data.get("description", "").strip()
-        proposal_type = data.get("proposal_type", "").strip()
-        parameter_key = data.get("parameter_key", "").strip() or None
+        miner_id, error_response = _string_field(data, "miner_id")
+        if error_response:
+            return error_response
+        title, error_response = _string_field(data, "title")
+        if error_response:
+            return error_response
+        description, error_response = _string_field(data, "description")
+        if error_response:
+            return error_response
+        proposal_type, error_response = _string_field(data, "proposal_type")
+        if error_response:
+            return error_response
+        parameter_key, error_response = _string_field(data, "parameter_key")
+        if error_response:
+            return error_response
+        parameter_key = parameter_key or None
         parameter_value = str(data.get("parameter_value", "")).strip() or None
 
         # Validation
@@ -343,8 +416,12 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
     def list_proposals():
         _settle_expired_proposals(db_path)
         status_filter = request.args.get("status")
-        limit = min(int(request.args.get("limit", 50)), 200)
-        offset = int(request.args.get("offset", 0))
+        limit, error_response = _parse_non_negative_int_arg("limit", 50, max_value=200)
+        if error_response:
+            return error_response
+        offset, error_response = _parse_non_negative_int_arg("offset", 0)
+        if error_response:
+            return error_response
 
         try:
             with sqlite3.connect(db_path) as conn:
@@ -401,11 +478,20 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
     @bp.route("/api/governance/vote", methods=["POST"])
     def cast_vote():
         _settle_expired_proposals(db_path)
-        data = request.get_json(silent=True) or {}
+        data, error_response = _json_object_body()
+        if error_response:
+            return error_response
 
-        miner_id = data.get("miner_id", "").strip()
-        proposal_id = data.get("proposal_id")
-        vote_choice = data.get("vote", "").strip().lower()
+        miner_id, error_response = _string_field(data, "miner_id")
+        if error_response:
+            return error_response
+        proposal_id, error_response = _integer_field(data, "proposal_id")
+        if error_response:
+            return error_response
+        vote_choice, error_response = _string_field(data, "vote")
+        if error_response:
+            return error_response
+        vote_choice = vote_choice.lower()
 
         if not miner_id:
             return jsonify({"error": "miner_id required"}), 400
@@ -547,9 +633,15 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
         if not _is_within_founder_veto_period():
             return jsonify({"error": "Founder veto period has expired"}), 403
 
-        data = request.get_json(silent=True) or {}
-        admin_key = data.get("admin_key", "").strip()
-        reason = data.get("reason", "Security-critical change").strip()
+        data, error_response = _json_object_body()
+        if error_response:
+            return error_response
+        admin_key, error_response = _string_field(data, "admin_key")
+        if error_response:
+            return error_response
+        reason, error_response = _string_field(data, "reason", "Security-critical change")
+        if error_response:
+            return error_response
 
         # Admin key is validated via environment variable (not hardcoded)
         import os

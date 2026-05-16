@@ -30,9 +30,7 @@ Add any of these to your `README.md`:
 ## Category Badges
 
 ```markdown
-![Docs Bounties](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Scottcjn/Rustchain/main/.github/badges/category_docs.json)
-![Bug Bounties](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Scottcjn/Rustchain/main/.github/badges/category_bugs.json)
-![Outreach](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Scottcjn/Rustchain/main/.github/badges/category_outreach.json)
+![Feature Bounties](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Scottcjn/Rustchain/main/.github/badges/category_feature.json)
 ```
 
 ## Per-Hunter Badge

@@ -1,4 +1,5 @@
 import math
+import threading
 
 import pytest
 from flask import Flask
@@ -9,6 +10,11 @@ import agent_reputation
 class StubReputationEngine:
     def __init__(self, levels):
         self._levels = levels
+        self._lock = threading.Lock()
+        self._cache = {
+            "veteran-agent": ({"reputation_score": 90}, 0),
+            "trusted-agent": ({"reputation_score": 60}, 0),
+        }
 
     def get(self, agent_id):
         level, score, max_value = self._levels[agent_id]
@@ -72,3 +78,25 @@ def test_veteran_agent_can_claim_high_value_jobs(reputation_client):
     assert payload["eligible"] is True
     assert payload["can_post_high_value"] is True
     assert payload["reason"] is None
+
+
+@pytest.mark.parametrize("job_value", ["-1", "nan", "inf", "-inf"])
+def test_check_eligibility_rejects_invalid_job_values(reputation_client, job_value):
+    response = reputation_client.get(
+        "/agent/reputation/check-eligibility",
+        query_string={"agent_id": "trusted-agent", "job_value": job_value},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "job_value must be a finite non-negative number"
+
+
+@pytest.mark.parametrize("limit", ["0", "-1"])
+def test_leaderboard_rejects_non_positive_limits(reputation_client, limit):
+    response = reputation_client.get(
+        "/agent/reputation/leaderboard",
+        query_string={"limit": limit},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "limit must be between 1 and 100"

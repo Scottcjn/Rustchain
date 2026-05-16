@@ -79,7 +79,10 @@ setup_python() {
         fi
     fi
     V=$(python3 -c "import sys; print(sys.version_info.minor)")
-    [ "$V" -lt 8 ] && { echo -e "${RED}[!] Python 3.8+ required (Found 3.$V)${NC}"; exit 1; }
+    if [ "$V" -lt 8 ]; then
+        echo -e "${RED}[!] Python 3.8+ required (Found 3.$V)${NC}"
+        exit 1
+    fi
 }
 
 setup_python
@@ -89,14 +92,18 @@ run_cmd mkdir -p "$INSTALL_DIR"
 verify_sum() {
     [ "$SKIP_CHECKSUM" = true ] && return 0
     local file=$1; local expected=$2
-    local actual=$(sha256sum "$file" 2>/dev/null | cut -d' ' -f1 || shasum -a 256 "$file" 2>/dev/null | cut -d' ' -f1)
+    local actual=$( (sha256sum "$file" 2>/dev/null || shasum -a 256 "$file" 2>/dev/null) | cut -d' ' -f1)
     if [ "$actual" = "$expected" ]; then return 0; else echo -e "${RED}[!] Checksum fail: $file${NC}"; return 1; fi
 }
 
 download_miner() {
-    cd "$INSTALL_DIR"
+    if [ "$DRY_RUN" = true ]; then
+        echo -e "${CYAN}[DRY-RUN]${NC} Would run: cd $INSTALL_DIR"
+    else
+        cd "$INSTALL_DIR"
+    fi
     case "$PLATFORM" in
-        macos) FILE="macos/rustchain_mac_miner_v2.4.py" ;;
+        macos) FILE="macos/rustchain_mac_miner_v2.5.py" ;;
         rpi|linux) FILE="linux/rustchain_linux_miner.py" ;;
         *) FILE="linux/rustchain_linux_miner.py" ;;
     esac

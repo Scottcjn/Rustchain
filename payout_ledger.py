@@ -7,16 +7,19 @@ See: node/rustchain_v2_integrated_v2.2.1_rip200.py for DB conventions.
 Statuses: queued → pending → confirmed | voided
 """
 import os
+import hmac
 import time
 import sqlite3
 import uuid
 import json
 import logging
+from decimal import Decimal, InvalidOperation
 from flask import request, jsonify, render_template_string
 
 logger = logging.getLogger(__name__)
 
 DB_PATH = os.environ.get("RUSTCHAIN_DB", "rustchain.db")
+MICRO_RTC_PER_RTC = Decimal("1000000")
 
 PAYOUT_LEDGER_COLUMNS = [
     ("id", "TEXT"),
@@ -24,7 +27,7 @@ PAYOUT_LEDGER_COLUMNS = [
     ("bounty_title", "TEXT"),
     ("contributor", "TEXT NOT NULL DEFAULT ''"),
     ("wallet_address", "TEXT"),
-    ("amount_rtc", "REAL NOT NULL DEFAULT 0"),
+    ("amount_micro_rtc", "INTEGER NOT NULL DEFAULT 0"),
     ("status", "TEXT NOT NULL DEFAULT 'queued'"),
     ("pr_url", "TEXT"),
     ("tx_hash", "TEXT"),
@@ -42,6 +45,30 @@ def _select_columns_sql():
     return ", ".join(_get_columns())
 
 
+def _rtc_to_micro(amount_rtc) -> int:
+    """Convert RTC input to integer micro-RTC without float arithmetic."""
+    try:
+        value = Decimal(str(amount_rtc))
+    except (InvalidOperation, ValueError) as exc:
+        raise ValueError("amount_rtc must be a decimal value") from exc
+
+    if not value.is_finite() or value < 0:
+        raise ValueError("amount_rtc must be a non-negative finite decimal value")
+
+    micro = value * MICRO_RTC_PER_RTC
+    if micro != micro.to_integral_value():
+        raise ValueError("amount_rtc supports up to 6 decimal places")
+
+    return int(micro)
+
+
+def _micro_to_rtc_text(amount_micro_rtc) -> str:
+    """Format integer micro-RTC as exact user-facing RTC text."""
+    value = Decimal(int(amount_micro_rtc)) / MICRO_RTC_PER_RTC
+    text = format(value.quantize(Decimal("0.000001")), "f").rstrip("0").rstrip(".")
+    return text or "0"
+
+
 def _migrate_payout_ledger_schema(conn):
     """Add missing columns for nodes with older payout_ledger tables."""
     existing = {
@@ -55,6 +82,21 @@ def _migrate_payout_ledger_schema(conn):
         conn.execute(f"ALTER TABLE payout_ledger ADD COLUMN {name} {definition}")
         logger.info("Added payout_ledger.%s column", name)
 
+    refreshed = {
+        row[1] for row in conn.execute("PRAGMA table_info(payout_ledger)").fetchall()
+    }
+    if "amount_rtc" in refreshed and "amount_micro_rtc" in refreshed:
+        rows = conn.execute("""
+            SELECT id, amount_rtc
+            FROM payout_ledger
+            WHERE amount_micro_rtc = 0 AND COALESCE(amount_rtc, 0) != 0
+        """).fetchall()
+        for record_id, amount_rtc in rows:
+            conn.execute(
+                "UPDATE payout_ledger SET amount_micro_rtc = ? WHERE id = ?",
+                (_rtc_to_micro(amount_rtc), record_id),
+            )
+
 # ── Schema ──────────────────────────────────────────────────────
 def init_payout_ledger_tables():
     """Create the payout_ledger table if it does not exist."""
@@ -66,7 +108,7 @@ def init_payout_ledger_tables():
                 bounty_title    TEXT,
                 contributor     TEXT NOT NULL,
                 wallet_address  TEXT,
-                amount_rtc      REAL NOT NULL DEFAULT 0,
+                amount_micro_rtc INTEGER NOT NULL DEFAULT 0,
                 status          TEXT NOT NULL DEFAULT 'queued',
                 pr_url          TEXT,
                 tx_hash         TEXT,
@@ -91,7 +133,9 @@ def init_payout_ledger_tables():
 # ── Database helpers ────────────────────────────────────────────
 def _row_to_dict(row, columns):
     """Convert a sqlite3 row tuple to a dict."""
-    return dict(zip(columns, row))
+    record = dict(zip(columns, row))
+    record["amount_rtc"] = _micro_to_rtc_text(record.get("amount_micro_rtc", 0))
+    return record
 
 
 def ledger_list(status=None, contributor=None, limit=100):
@@ -128,17 +172,18 @@ def ledger_create(bounty_id, contributor, amount_rtc,
     """Create a new payout record (status = queued)."""
     record_id = str(uuid.uuid4())
     now = int(time.time())
+    amount_micro_rtc = _rtc_to_micro(amount_rtc)
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
             "INSERT INTO payout_ledger"
             " (id, bounty_id, bounty_title, contributor, wallet_address,"
-            "  amount_rtc, status, pr_url, tx_hash, notes, created_at, updated_at)"
+            "  amount_micro_rtc, status, pr_url, tx_hash, notes, created_at, updated_at)"
             " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             (record_id, bounty_id, bounty_title, contributor, wallet_address,
-             amount_rtc, "queued", pr_url, "", notes, now, now),
+             amount_micro_rtc, "queued", pr_url, "", notes, now, now),
         )
         conn.commit()
-    logger.info("Ledger record created: %s  bounty=%s  rtc=%.2f", record_id, bounty_id, amount_rtc)
+    logger.info("Ledger record created: %s  bounty=%s  rtc=%s", record_id, bounty_id, _micro_to_rtc_text(amount_micro_rtc))
     return record_id
 
 
@@ -161,10 +206,30 @@ def ledger_summary():
     """Aggregate stats by status."""
     with sqlite3.connect(DB_PATH) as conn:
         rows = conn.execute(
-            "SELECT status, COUNT(*), COALESCE(SUM(amount_rtc),0)"
+            "SELECT status, COUNT(*), COALESCE(SUM(amount_micro_rtc),0)"
             " FROM payout_ledger GROUP BY status"
         ).fetchall()
-    return {r[0]: {"count": r[1], "total_rtc": r[2]} for r in rows}
+    return {
+        r[0]: {
+            "count": r[1],
+            "total_micro_rtc": int(r[2]),
+            "total_rtc": _micro_to_rtc_text(r[2]),
+        }
+        for r in rows
+    }
+
+
+def _require_admin_key():
+    """Return an error response unless X-Admin-Key matches RC_ADMIN_KEY."""
+    expected_key = os.environ.get("RC_ADMIN_KEY", "")
+    if not expected_key:
+        return jsonify({"error": "RC_ADMIN_KEY not configured"}), 503
+
+    provided_key = request.headers.get("X-Admin-Key", "")
+    if not provided_key or not hmac.compare_digest(provided_key, expected_key):
+        return jsonify({"error": "unauthorized"}), 401
+
+    return None
 
 
 # ── Flask route registration ───────────────────────────────────
@@ -173,6 +238,9 @@ def register_ledger_routes(app):
 
     @app.route("/ledger")
     def ledger_page():
+        auth_error = _require_admin_key()
+        if auth_error:
+            return auth_error
         init_payout_ledger_tables()
         status_filter = request.args.get("status")
         records = ledger_list(status=status_filter)
@@ -181,6 +249,9 @@ def register_ledger_routes(app):
 
     @app.route("/api/ledger", methods=["GET"])
     def api_ledger_list():
+        auth_error = _require_admin_key()
+        if auth_error:
+            return auth_error
         init_payout_ledger_tables()
         status = request.args.get("status")
         contributor = request.args.get("contributor")
@@ -189,6 +260,9 @@ def register_ledger_routes(app):
 
     @app.route("/api/ledger/<record_id>", methods=["GET"])
     def api_ledger_get(record_id):
+        auth_error = _require_admin_key()
+        if auth_error:
+            return auth_error
         init_payout_ledger_tables()
         record = ledger_get(record_id)
         if not record:
@@ -197,25 +271,34 @@ def register_ledger_routes(app):
 
     @app.route("/api/ledger", methods=["POST"])
     def api_ledger_create():
+        auth_error = _require_admin_key()
+        if auth_error:
+            return auth_error
         init_payout_ledger_tables()
         data = request.get_json(force=True)
         required = ["bounty_id", "contributor", "amount_rtc"]
         for field in required:
             if field not in data:
                 return jsonify({"error": f"missing {field}"}), 400
-        record_id = ledger_create(
-            bounty_id=data["bounty_id"],
-            contributor=data["contributor"],
-            amount_rtc=float(data["amount_rtc"]),
-            bounty_title=data.get("bounty_title", ""),
-            wallet_address=data.get("wallet_address", ""),
-            pr_url=data.get("pr_url", ""),
-            notes=data.get("notes", ""),
-        )
+        try:
+            record_id = ledger_create(
+                bounty_id=data["bounty_id"],
+                contributor=data["contributor"],
+                amount_rtc=data["amount_rtc"],
+                bounty_title=data.get("bounty_title", ""),
+                wallet_address=data.get("wallet_address", ""),
+                pr_url=data.get("pr_url", ""),
+                notes=data.get("notes", ""),
+            )
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
         return jsonify({"id": record_id, "status": "queued"}), 201
 
     @app.route("/api/ledger/<record_id>/status", methods=["PATCH"])
     def api_ledger_update(record_id):
+        auth_error = _require_admin_key()
+        if auth_error:
+            return auth_error
         init_payout_ledger_tables()
         data = request.get_json(force=True)
         new_status = data.get("status")
@@ -233,6 +316,9 @@ def register_ledger_routes(app):
 
     @app.route("/api/ledger/summary", methods=["GET"])
     def api_ledger_summary():
+        auth_error = _require_admin_key()
+        if auth_error:
+            return auth_error
         init_payout_ledger_tables()
         return jsonify(ledger_summary())
 
@@ -269,7 +355,7 @@ LEDGER_HTML = """<!DOCTYPE html>
   {% for st, info in summary.items() %}
   <div class="summary-card">
     <h3>{{ st }}</h3>
-    <div class="val">{{ info.count }} &middot; {{ "%.1f"|format(info.total_rtc) }} RTC</div>
+    <div class="val">{{ info.count }} &middot; {{ info.total_rtc }} RTC</div>
   </div>
   {% endfor %}
 </div>
@@ -286,7 +372,7 @@ LEDGER_HTML = """<!DOCTYPE html>
 <tr>
   <td>{{ r.bounty_id|e }} {{ r.bounty_title|e }}</td>
   <td>{{ r.contributor|e }}</td>
-  <td>{{ "%.1f"|format(r.amount_rtc) }}</td>
+  <td>{{ r.amount_rtc }}</td>
   <td class="status-{{ r.status|e }}">{{ r.status|e }}</td>
   <td>{% if r.pr_url %}<a href="{{ r.pr_url|e }}" target="_blank">PR</a>{% endif %}</td>
   <td>{{ r.tx_hash[:12]|e if r.tx_hash else '' }}</td>

@@ -18,6 +18,20 @@ def app(tmp_path, monkeypatch):
     return app
 
 
+@pytest.mark.parametrize(
+    ("github_username", "account_age_days", "expected_limit"),
+    [
+        (None, None, 0.5),
+        ("", None, 0.5),
+        ("alice", None, 1.0),
+        ("alice", 364, 1.0),
+        ("alice", 365, 2.0),
+    ],
+)
+def test_limit_for_identity_tiers(github_username, account_age_days, expected_limit):
+    assert faucet._limit_for_identity(github_username, account_age_days) == expected_limit
+
+
 def test_faucet_page(app):
     c = app.test_client()
     r = c.get("/faucet")
@@ -32,6 +46,21 @@ def test_github_user_drip_success(app):
     data = r.get_json()
     assert data["ok"] is True
     assert data["amount"] == 1.0
+
+
+@pytest.mark.parametrize("body", ["[]", '"wallet"', "42"])
+def test_drip_rejects_non_object_json(app, body):
+    c = app.test_client()
+    r = c.post("/faucet/drip", data=body, content_type="application/json")
+    assert r.status_code == 400
+    assert r.get_json() == {"ok": False, "error": "json_object_required"}
+
+
+def test_drip_accepts_form_payload(app):
+    c = app.test_client()
+    r = c.post("/faucet/drip", data={"wallet": "form_wallet"})
+    assert r.status_code == 200
+    assert r.get_json()["ok"] is True
 
 
 def test_ip_only_limit(app):

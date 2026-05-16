@@ -533,6 +533,30 @@
     let currentTab = 'buy';
     let currentPair = 'RTC/USDC';
     let matchingOrderId = null;
+    let openOrdersById = new Map();
+
+    function escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, ch => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;'
+        }[ch]));
+    }
+
+    function safeSide(value) {
+        return value === 'sell' ? 'sell' : 'buy';
+    }
+
+    function safeNumber(value, fallback = 0) {
+        const number = Number(value);
+        return Number.isFinite(number) ? number : fallback;
+    }
+
+    function formatNumber(value, decimals) {
+        return safeNumber(value).toFixed(decimals);
+    }
 
     // Toast notifications
     function toast(msg, type = 'success') {
@@ -666,24 +690,30 @@
 
             // Asks (reversed so lowest is at bottom, near spread)
             asksEl.innerHTML = [...data.asks].reverse().map(a => {
-                const pct = (a.total_rtc / maxTotal * 100).toFixed(0);
+                const price = safeNumber(a.price);
+                const totalRtc = safeNumber(a.total_rtc);
+                const orderCount = safeNumber(a.order_count);
+                const pct = (totalRtc / maxTotal * 100).toFixed(0);
                 return `<tr class="ask-row">
-                    <td>${a.price.toFixed(decimals)}</td>
-                    <td>${a.total_rtc.toFixed(2)}</td>
-                    <td>${(a.price * a.total_rtc).toFixed(decimals)}</td>
-                    <td>${a.order_count}</td>
+                    <td>${formatNumber(price, decimals)}</td>
+                    <td>${formatNumber(totalRtc, 2)}</td>
+                    <td>${formatNumber(price * totalRtc, decimals)}</td>
+                    <td>${formatNumber(orderCount, 0)}</td>
                     <div class="depth-bar" style="width:${pct}%"></div>
                 </tr>`;
             }).join('');
 
             // Bids
             bidsEl.innerHTML = data.bids.map(b => {
-                const pct = (b.total_rtc / maxTotal * 100).toFixed(0);
+                const price = safeNumber(b.price);
+                const totalRtc = safeNumber(b.total_rtc);
+                const orderCount = safeNumber(b.order_count);
+                const pct = (totalRtc / maxTotal * 100).toFixed(0);
                 return `<tr class="bid-row">
-                    <td>${b.price.toFixed(decimals)}</td>
-                    <td>${b.total_rtc.toFixed(2)}</td>
-                    <td>${(b.price * b.total_rtc).toFixed(decimals)}</td>
-                    <td>${b.order_count}</td>
+                    <td>${formatNumber(price, decimals)}</td>
+                    <td>${formatNumber(totalRtc, 2)}</td>
+                    <td>${formatNumber(price * totalRtc, decimals)}</td>
+                    <td>${formatNumber(orderCount, 0)}</td>
                     <div class="depth-bar" style="width:${pct}%"></div>
                 </tr>`;
             }).join('');
@@ -727,21 +757,31 @@
             }
 
             const quote = pair.split('/')[1];
+            openOrdersById = new Map();
             el.innerHTML = data.orders.map(o => {
+                const orderId = String(o.order_id ?? '');
+                openOrdersById.set(orderId, o);
                 const age = timeSince(o.created_at);
                 const escrowed = o.escrow_job_id ? '<span class="escrow-badge">Escrowed</span>' : '';
+                const side = safeSide(o.side);
+                const amount = safeNumber(o.amount_rtc);
+                const price = safeNumber(o.price_per_rtc);
+                const total = safeNumber(o.total_quote);
                 return `<div class="order-item">
-                    <span class="order-side ${o.side}">${o.side}</span>
+                    <span class="order-side ${side}">${escapeHtml(side)}</span>
                     <div class="order-info">
-                        <div class="order-amount">${o.amount_rtc} RTC @ ${o.price_per_rtc} ${quote}</div>
-                        <div class="order-price">Total: ${o.total_quote.toFixed(4)} ${quote} ${escrowed}</div>
-                        <div class="order-wallet">${o.maker_wallet} &bull; ${age}</div>
+                        <div class="order-amount">${formatNumber(amount, 2)} RTC @ ${formatNumber(price, 4)} ${escapeHtml(quote)}</div>
+                        <div class="order-price">Total: ${formatNumber(total, 4)} ${escapeHtml(quote)} ${escrowed}</div>
+                        <div class="order-wallet">${escapeHtml(o.maker_wallet)} &bull; ${escapeHtml(age)}</div>
                     </div>
                     <div class="order-actions">
-                        <button class="btn-sm btn-match" onclick="openMatch('${o.order_id}', '${o.side}', ${o.amount_rtc}, ${o.price_per_rtc}, '${quote}', '${o.maker_wallet}')">Match</button>
+                        <button class="btn-sm btn-match" data-order-id="${escapeHtml(orderId)}">Match</button>
                     </div>
                 </div>`;
             }).join('');
+            el.querySelectorAll('.btn-match[data-order-id]').forEach(btn => {
+                btn.addEventListener('click', () => openMatchFromOrder(btn.dataset.orderId));
+            });
         } catch (e) {
             console.error('Orders load failed:', e);
         }
@@ -761,15 +801,16 @@
             }
 
             el.innerHTML = data.trades.map(t => {
-                const quote = t.pair.split('/')[1];
+                const quote = String(t.pair || '').split('/')[1] || 'USDC';
                 const time = new Date(t.completed_at * 1000).toLocaleTimeString();
-                const sideColor = t.side === 'buy' ? 'var(--green)' : 'var(--red)';
+                const side = safeSide(t.side);
+                const sideColor = side === 'buy' ? 'var(--green)' : 'var(--red)';
                 return `<tr>
-                    <td>${time}</td>
-                    <td style="color:${sideColor}; text-transform:uppercase; font-weight:600;">${t.side}</td>
-                    <td>${t.price_per_rtc.toFixed(4)}</td>
-                    <td>${t.amount_rtc.toFixed(2)}</td>
-                    <td>${t.total_quote.toFixed(4)} ${quote}</td>
+                    <td>${escapeHtml(time)}</td>
+                    <td style="color:${sideColor}; text-transform:uppercase; font-weight:600;">${escapeHtml(side)}</td>
+                    <td>${formatNumber(t.price_per_rtc, 4)}</td>
+                    <td>${formatNumber(t.amount_rtc, 2)}</td>
+                    <td>${formatNumber(t.total_quote, 4)} ${escapeHtml(quote)}</td>
                 </tr>`;
             }).join('');
         } catch (e) {
@@ -778,14 +819,29 @@
     }
 
     // Match modal
+    function openMatchFromOrder(orderId) {
+        const order = openOrdersById.get(String(orderId));
+        if (!order) return;
+        const quote = document.getElementById('pair-select').value.split('/')[1];
+        openMatch(
+            order.order_id,
+            order.side,
+            safeNumber(order.amount_rtc),
+            safeNumber(order.price_per_rtc),
+            quote,
+            order.maker_wallet
+        );
+    }
+
     function openMatch(orderId, side, amount, price, quote, maker) {
         matchingOrderId = orderId;
-        const action = side === 'sell' ? 'buy' : 'sell';
+        const normalizedSide = safeSide(side);
+        const action = normalizedSide === 'sell' ? 'buy' : 'sell';
         document.getElementById('match-details').innerHTML =
-            `You will <strong>${action}</strong> <strong>${amount} RTC</strong> at ` +
-            `<strong>${price} ${quote}/RTC</strong> (total: ${(amount * price).toFixed(4)} ${quote}).<br/>` +
-            `Counterparty: ${maker}` +
-            (side === 'buy' ? '<br/><em style="color:var(--gold);">Your RTC will be locked in escrow.</em>' : '');
+            `You will <strong>${escapeHtml(action)}</strong> <strong>${formatNumber(amount, 2)} RTC</strong> at ` +
+            `<strong>${formatNumber(price, 4)} ${escapeHtml(quote)}/RTC</strong> (total: ${formatNumber(amount * price, 4)} ${escapeHtml(quote)}).<br/>` +
+            `Counterparty: ${escapeHtml(maker)}` +
+            (normalizedSide === 'buy' ? '<br/><em style="color:var(--gold);">Your RTC will be locked in escrow.</em>' : '');
 
         const btn = document.getElementById('match-btn');
         btn.className = `btn btn-${action === 'buy' ? 'buy' : 'sell'}`;

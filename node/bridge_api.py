@@ -142,6 +142,16 @@ def validate_bridge_request(data: Optional[Dict]) -> ValidationResult:
         return ValidationResult(ok=False, error=f"Invalid dest_chain: {dest_chain}")
     if source_chain == dest_chain:
         return ValidationResult(ok=False, error="Source and destination chains must be different")
+    if direction == "deposit":
+        if source_chain != "rustchain":
+            return ValidationResult(ok=False, error="Deposit source_chain must be rustchain")
+        if dest_chain == "rustchain":
+            return ValidationResult(ok=False, error="Deposit dest_chain must be external")
+    if direction == "withdraw":
+        if source_chain == "rustchain":
+            return ValidationResult(ok=False, error="Withdraw source_chain must be external")
+        if dest_chain != "rustchain":
+            return ValidationResult(ok=False, error="Withdraw dest_chain must be rustchain")
     
     # Validate addresses
     source_address = data.get("source_address", "")
@@ -300,14 +310,17 @@ def create_bridge_transfer(
         unlock_at = now + (6 * 600)  # 6 slots = 1 hour
     
     try:
-        # For deposits, check balance and create lock
+        # FIX(#5236): Acquire IMMEDIATE transaction before balance check to
+        # prevent TOCTOU race between check_miner_balance() and the INSERT.
         if request.direction == "deposit" and not admin_initiated:
+            cursor.execute("BEGIN IMMEDIATE")
             has_balance, available, pending = check_miner_balance(
                 db_conn, 
                 request.source_address, 
                 amount_i64
             )
             if not has_balance:
+                db_conn.rollback()
                 return False, {
                     "error": "Insufficient available balance",
                     "available_rtc": available / BRIDGE_UNIT,
@@ -511,6 +524,20 @@ def list_bridge_transfers(
         }
         for r in rows
     ]
+
+
+def _parse_non_negative_int_arg(value: Optional[str], name: str, default: int, max_value: Optional[int] = None):
+    if value is None or value == "":
+        return default, None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None, f"{name} must be an integer"
+    if parsed < 0:
+        return None, f"{name} must be non-negative"
+    if max_value is not None:
+        parsed = min(parsed, max_value)
+    return parsed, None
 
 
 def void_bridge_transfer(
@@ -744,7 +771,9 @@ def register_bridge_routes(app):
         source = request.args.get("source_address")
         dest = request.args.get("dest_address")
         direction = request.args.get("direction")
-        limit = int(request.args.get("limit", 100))
+        limit, error = _parse_non_negative_int_arg(request.args.get("limit"), "limit", 100, max_value=500)
+        if error:
+            return jsonify({"error": error}), 400
         
         conn = sqlite3.connect(DB_PATH)
         try:

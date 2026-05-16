@@ -95,8 +95,8 @@ class Config:
 
     def __init__(self) -> None:
         self.rtc_amount: float = _env_float("INPUT_RTC_AMOUNT", 50.0)
-        self.vps_host: str = _env("INPUT_RTC_VPS_HOST")
-        self.admin_key: str = _env("INPUT_RTC_ADMIN_KEY")
+        self.vps_host: str = _env("INPUT_RTC_VPS_HOST").strip()
+        self.admin_key: str = _env("INPUT_RTC_ADMIN_KEY").strip()
         self.from_wallet: str = _env("INPUT_FROM_WALLET", "founder_community")
         self.dry_run: bool = _env_bool("INPUT_DRY_RUN")
         self.post_comment: bool = _env_bool("INPUT_POST_COMMENT", True)
@@ -235,10 +235,20 @@ def post_pr_comment(repo: str, pr_number: str, body: str, token: str) -> bool:
 
 
 def check_already_awarded(comments: list) -> bool:
-    """Check if any existing comment contains the award marker."""
+    """Check if any existing comment contains a successful award marker."""
     for c in comments:
-        if _AWARD_MARKER in (c.get("body") or ""):
-            return True
+        body = c.get("body") or ""
+        if _AWARD_MARKER not in body:
+            continue
+
+        marker_tail = body[body.find(_AWARD_MARKER):].lower()
+        marker_end = marker_tail.find("-->")
+        if marker_end != -1:
+            marker_tail = marker_tail[:marker_end]
+
+        if "(dry-run)" in marker_tail or ":failed" in marker_tail:
+            continue
+        return True
     return False
 
 

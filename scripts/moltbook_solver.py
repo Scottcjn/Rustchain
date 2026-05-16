@@ -36,12 +36,12 @@ log = logging.getLogger("moltbook_solver")
 # ─── Agent Registry ──────────────────────────────────────────────────────────
 
 AGENTS = {
-    "sophia":          {"key": "moltbook_sk_nuTK8FxFHuUtknLGrXUJKxcgBsTJ0zP7",  "persona": "warm_tech"},
-    "boris":           {"key": "moltbook_sk_mACTltXU55x6s1mYqDuWkeEcuDQ9feMB",  "persona": "soviet_enthusiast"},
-    "janitor":         {"key": "moltbook_sk_yWpLPPIp1MxWAlbgiCEdamHodyClGg08",  "persona": "sysadmin"},
-    "bottube":         {"key": "moltbook_sk_CJgvb5ecA9ZnutcmmaFy2Scm_X4SQgcz",  "persona": "platform_bot"},
-    "msgoogletoggle":  {"key": "moltbook_sk_-zuaZPUGMVoC_tdQJA-YaLVlj-VnUMdw",  "persona": "gracious_socialite"},
-    "oneo":            {"key": "moltbook_sk_BeO3rZoBKuleNwSX3sZeBNQRYhOBK436",  "persona": "minimalist"},
+    "sophia":          {"key_env": "MOLTBOOK_AGENT_KEY_SOPHIA",          "persona": "warm_tech"},
+    "boris":           {"key_env": "MOLTBOOK_AGENT_KEY_BORIS",           "persona": "soviet_enthusiast"},
+    "janitor":         {"key_env": "MOLTBOOK_AGENT_KEY_JANITOR",         "persona": "sysadmin"},
+    "bottube":         {"key_env": "MOLTBOOK_AGENT_KEY_BOTTUBE",         "persona": "platform_bot"},
+    "msgoogletoggle":  {"key_env": "MOLTBOOK_AGENT_KEY_MSGOOGLETOGGLE",  "persona": "gracious_socialite"},
+    "oneo":            {"key_env": "MOLTBOOK_AGENT_KEY_ONEO",            "persona": "minimalist"},
 }
 
 # Gemini for LLM solving
@@ -128,8 +128,11 @@ def get_available_agents() -> List[str]:
 
 
 def get_agent_key(agent: str) -> Optional[str]:
-    """Get API key for an agent."""
-    return AGENTS.get(agent, {}).get("key")
+    """Get API key for an agent from the process environment."""
+    key_env = AGENTS.get(agent, {}).get("key_env")
+    if not key_env:
+        return None
+    return os.environ.get(key_env) or None
 
 
 # ─── Content Uniqueness ─────────────────────────────────────────────────────

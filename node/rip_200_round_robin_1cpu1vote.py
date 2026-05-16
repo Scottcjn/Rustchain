@@ -1,6 +1,3 @@
-import json
-import random
-import hashlib
 #!/usr/bin/env python3
 """
 RIP-200: Round-Robin Consensus (1 CPU = 1 Vote)
@@ -17,7 +14,9 @@ Key Changes:
 """
 
 import hashlib
+import json
 import logging
+import random
 import sqlite3
 import time
 from typing import List, Tuple, Dict
@@ -548,6 +547,8 @@ def calculate_epoch_rewards_time_aged(
         # Schema compatibility: detect whether fingerprint_checks_json column exists
         cols = cursor.execute("PRAGMA table_info(miner_attest_recent)").fetchall()
         has_checks_col = any(col[1] == 'fingerprint_checks_json' for col in cols)
+        has_warthog_col = any(col[1] == 'warthog_bonus' for col in cols)
+        wart_sql = ", COALESCE(warthog_bonus, 1.0) " if has_warthog_col else ", 1.0 "
 
         # Primary source: epoch_enroll (per-epoch snapshot, matches finalize_epoch).
         try:
@@ -568,20 +569,24 @@ def calculate_epoch_rewards_time_aged(
             )
             for miner_pk, enrolled_weight in enrolled:
                 arch_row = cursor.execute(
-                    "SELECT device_arch, COALESCE(fingerprint_passed, 1)" + check_sql +
-                    "FROM miner_attest_recent WHERE miner = ? LIMIT 1",
+                    "SELECT device_arch, COALESCE(fingerprint_passed, 1)"
+                    + check_sql
+                    + wart_sql
+                    + "FROM miner_attest_recent WHERE miner = ? LIMIT 1",
                     (miner_pk,)
                 ).fetchone()
                 if arch_row:
                     device_arch = arch_row[0] or "unknown"
                     fp = arch_row[1]
                     checks_json = arch_row[2] or '{}' if has_checks_col else '{}'
+                    warthog_bonus = arch_row[3]
                 else:
                     # No attestation record — treat as unknown arch, fingerprint ok.
                     device_arch = "unknown"
                     fp = 1
                     checks_json = '{}'
-                epoch_miners.append((miner_pk, device_arch, fp, enrolled_weight, checks_json))
+                    warthog_bonus = 1.0
+                epoch_miners.append((miner_pk, device_arch, fp, enrolled_weight, checks_json, warthog_bonus))
         else:
             # SECURITY FIX #2159: Fallback for epochs without enrollment
             # records.  This path is vulnerable to the stale-attestation
@@ -593,19 +598,22 @@ def calculate_epoch_rewards_time_aged(
                 "miner_attest_recent time-window query (may drop miners "
                 "if settlement is delayed)", epoch
             )
+            bonus_expr = "COALESCE(warthog_bonus, 1.0)" if has_warthog_col else "1.0"
             if has_checks_col:
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT DISTINCT miner, device_arch, COALESCE(fingerprint_passed, 1) as fp,
                            NULL as enrolled_weight,
-                           COALESCE(fingerprint_checks_json, '{}') as checks_json
+                           COALESCE(fingerprint_checks_json, '{{}}') as checks_json,
+                           {bonus_expr} as warthog_bonus
                     FROM miner_attest_recent
                     WHERE ts_ok >= ? AND ts_ok <= ?
                 """, (epoch_start_ts - ATTESTATION_TTL, epoch_end_ts))
             else:
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT DISTINCT miner, device_arch, COALESCE(fingerprint_passed, 1) as fp,
                            NULL as enrolled_weight,
-                           '{}' as checks_json
+                           '{{}}' as checks_json,
+                           {bonus_expr} as warthog_bonus
                     FROM miner_attest_recent
                     WHERE ts_ok >= ? AND ts_ok <= ?
                 """, (epoch_start_ts - ATTESTATION_TTL, epoch_end_ts))
@@ -623,6 +631,7 @@ def calculate_epoch_rewards_time_aged(
         fingerprint_ok = row[2] if len(row) > 2 else 1
         enrolled_weight = row[3] if len(row) > 3 else None
         checks_json = row[4] if len(row) > 4 else '{}'
+        warthog_bonus = row[5] if len(row) > 5 else 1.0
 
         # RIP-309: Only active checks count toward reward weight.
         # Inactive checks still run and log, but their pass/fail does not affect reward.
@@ -648,12 +657,8 @@ def calculate_epoch_rewards_time_aged(
         # Double-gated: fingerprint must pass (weight>0) AND fingerprint_ok==1
         if weight > 0 and fingerprint_ok == 1:
             try:
-                wart_row = cursor.execute(
-                    "SELECT warthog_bonus FROM miner_attest_recent WHERE miner=?",
-                    (miner_id,)
-                ).fetchone()
-                if wart_row and wart_row[0] and wart_row[0] > 1.0:
-                    weight *= wart_row[0]
+                if warthog_bonus and warthog_bonus > 1.0:
+                    weight *= warthog_bonus
             except Exception:
                 pass  # Column may not exist on older schemas
 

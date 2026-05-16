@@ -242,11 +242,15 @@ def get_dashboard_transactions():
     }
     """
     tx_type = request.args.get("type", "all").lower()
+    if tx_type not in ("all", "wrap", "unwrap"):
+        return jsonify({"error": "type must be one of: all, wrap, unwrap"}), 400
+
     state_filter = request.args.get("state", "").strip() or None
     try:
-        limit = min(int(request.args.get("limit", 50)), 200)
-    except ValueError:
-        limit = 50
+        limit = int(request.args.get("limit", 50))
+    except (TypeError, ValueError):
+        return jsonify({"error": "limit must be an integer"}), 400
+    limit = max(1, min(limit, 200))
 
     now = int(time.time())
     day_ago = now - 86400
@@ -259,6 +263,12 @@ def get_dashboard_transactions():
         if state_filter:
             where_clauses.append("state = ?")
             params.append(state_filter)
+        if tx_type == "wrap":
+            where_clauses.append("target_chain = ?")
+            params.append("solana")
+        elif tx_type == "unwrap":
+            where_clauses.append("target_chain = ?")
+            params.append("base")
 
         # Calculate 24h volume
         volume_row = conn.execute(

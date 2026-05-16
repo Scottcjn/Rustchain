@@ -8,7 +8,7 @@ Visual guides for installing RustChain and completing your first attestation.
 
 Watch the complete installation process from cloning to running:
 
-![Miner Installation](asciinema/miner_install.cast)
+[Watch the miner installation recording](asciinema/miner_install.cast)
 
 **What you'll see:**
 1. Cloning the RustChain repository
@@ -21,7 +21,7 @@ Watch the complete installation process from cloning to running:
 
 See how to complete your first hardware attestation and start mining:
 
-![First Attestation](asciinema/first_attestation.cast)
+[Watch the first attestation recording](asciinema/first_attestation.cast)
 
 **What you'll see:**
 1. Starting the RustChain miner
@@ -158,8 +158,7 @@ Add to your README.md:
 ```markdown
 ## Installation
 
-See the [Installation Walkthrough](INSTALLATION_WALKTHROUGH.md) for a 
-visual guide with asciinema recordings.
+See the [Installation Walkthrough](docs/INSTALLATION_WALKTHROUGH.md) for a visual guide with asciinema recordings.
 
 Quick preview:
 ![Installation Preview](docs/asciinema/miner_install.gif)

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """
 Tests for wRTC Bridge Dashboard
 Run: python -m pytest tools/wrtc-bridge-dashboard/test_bridge_dashboard.py -v
@@ -14,7 +15,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 class TestHTMLStructure(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        with open(os.path.join(HERE, "index.html")) as f:
+        with open(os.path.join(HERE, "index.html"), encoding="utf-8") as f:
             cls.html = f.read()
 
     def test_has_title(self):
@@ -54,7 +55,7 @@ class TestHTMLStructure(unittest.TestCase):
 class TestJSStructure(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        with open(os.path.join(HERE, "bridge_dashboard.js")) as f:
+        with open(os.path.join(HERE, "bridge_dashboard.js"), encoding="utf-8") as f:
             cls.js = f.read()
 
     def test_rustchain_api(self):
@@ -121,7 +122,7 @@ class TestStaticDeploy(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(HERE, "package.json")))
 
     def test_valid_html(self):
-        with open(os.path.join(HERE, "index.html")) as f:
+        with open(os.path.join(HERE, "index.html"), encoding="utf-8") as f:
             html = f.read()
         self.assertIn("<!DOCTYPE html>", html)
         self.assertIn("</html>", html)

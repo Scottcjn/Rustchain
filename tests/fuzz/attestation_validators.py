@@ -131,6 +131,16 @@ def _validate_attestation_payload_shape(data: Any):
             return _attest_field_error(
                 "INVALID_MINER", f"Field '{field_name}' must be a non-empty string"
             )
+        if (
+            field_name in data
+            and _attest_text(data[field_name])
+            and not _attest_valid_miner(data[field_name])
+        ):
+            return _attest_field_error(
+                "INVALID_MINER",
+                "Fields 'miner' and 'miner_id' must use only letters, numbers, '.', '_', ':' or '-' "
+                "and be at most 128 characters",
+            )
 
     for field_name, code in (
         ("signature", "INVALID_SIGNATURE_TYPE"),

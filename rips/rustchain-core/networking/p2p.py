@@ -14,7 +14,10 @@ Security Features:
 
 import hashlib
 import json
+import os
 import socket
+import ssl
+import struct
 import time
 import threading
 import queue
@@ -30,6 +33,64 @@ from ..config.chain_params import (
     PEER_TIMEOUT_SECONDS,
     SYNC_BATCH_SIZE,
 )
+
+
+P2P_TLS_CERT_ENV = "RC_P2P_TLS_CERT"
+P2P_TLS_KEY_ENV = "RC_P2P_TLS_KEY"
+P2P_TLS_CA_ENV = "RC_P2P_TLS_CA"
+P2P_REQUIRE_MTLS_ENV = "RC_P2P_REQUIRE_MTLS"
+WIRE_MESSAGE_MAX_BYTES = 4 * 1024 * 1024
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() not in {"0", "false", "no", "off"}
+
+
+@dataclass(frozen=True)
+class MTLSConfig:
+    """mTLS material required before P2P traffic can be enabled."""
+
+    certfile: str
+    keyfile: str
+    cafile: str
+
+    @classmethod
+    def from_env(cls) -> "MTLSConfig":
+        return cls(
+            certfile=os.environ.get(P2P_TLS_CERT_ENV, "").strip(),
+            keyfile=os.environ.get(P2P_TLS_KEY_ENV, "").strip(),
+            cafile=os.environ.get(P2P_TLS_CA_ENV, "").strip(),
+        )
+
+    def missing_values(self) -> List[str]:
+        missing = []
+        if not self.certfile:
+            missing.append(P2P_TLS_CERT_ENV)
+        if not self.keyfile:
+            missing.append(P2P_TLS_KEY_ENV)
+        if not self.cafile:
+            missing.append(P2P_TLS_CA_ENV)
+        return missing
+
+    def missing_files(self) -> List[str]:
+        files = [self.certfile, self.keyfile, self.cafile]
+        return [path for path in files if path and not os.path.exists(path)]
+
+    def build_server_context(self) -> ssl.SSLContext:
+        context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH, cafile=self.cafile)
+        context.load_cert_chain(certfile=self.certfile, keyfile=self.keyfile)
+        context.verify_mode = ssl.CERT_REQUIRED
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
+        return context
+
+    def build_client_context(self) -> ssl.SSLContext:
+        context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cafile=self.cafile)
+        context.load_cert_chain(certfile=self.certfile, keyfile=self.keyfile)
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
+        return context
 
 
 # =============================================================================
@@ -68,6 +129,12 @@ class MessageType(Enum):
 # =============================================================================
 # Data Structures
 # =============================================================================
+
+MAX_MESSAGE_BYTES = 128 * 1024
+MAX_PAYLOAD_BYTES = 64 * 1024
+MAX_CLOCK_SKEW_SECONDS = 300
+MAX_NONCE = 0xFFFFFFFF
+
 
 @dataclass
 class PeerId:
@@ -135,13 +202,56 @@ class Message:
     @classmethod
     def from_bytes(cls, data: bytes, sender: PeerId) -> 'Message':
         """Deserialize message from bytes"""
-        parsed = json.loads(data.decode())
+        if not isinstance(data, (bytes, bytearray)):
+            raise ValueError("invalid message encoding: expected bytes")
+
+        if len(data) > MAX_MESSAGE_BYTES:
+            raise ValueError("invalid message size")
+
+        try:
+            parsed = json.loads(data.decode("utf-8"))
+        except UnicodeDecodeError as exc:
+            raise ValueError("invalid message encoding") from exc
+        except json.JSONDecodeError as exc:
+            raise ValueError("invalid message json") from exc
+
+        if not isinstance(parsed, dict):
+            raise ValueError("invalid message: expected object")
+
+        required_fields = ("type", "payload", "timestamp", "nonce")
+        for field_name in required_fields:
+            if field_name not in parsed:
+                raise ValueError(f"missing required field: {field_name}")
+
+        msg_type_name = parsed["type"]
+        if not isinstance(msg_type_name, str) or msg_type_name not in MessageType.__members__:
+            raise ValueError("invalid message type")
+
+        payload = parsed["payload"]
+        if not isinstance(payload, dict):
+            raise ValueError("invalid payload")
+        if len(json.dumps(payload).encode("utf-8")) > MAX_PAYLOAD_BYTES:
+            raise ValueError("invalid payload size")
+
+        timestamp = parsed["timestamp"]
+        now = int(time.time())
+        if not isinstance(timestamp, int) or isinstance(timestamp, bool):
+            raise ValueError("invalid timestamp")
+        if timestamp <= 0 or abs(now - timestamp) > MAX_CLOCK_SKEW_SECONDS:
+            raise ValueError("invalid timestamp")
+
+        nonce = parsed["nonce"]
+        if not isinstance(nonce, int) or isinstance(nonce, bool):
+            raise ValueError("invalid nonce")
+        if nonce <= 0 or nonce > MAX_NONCE:
+            raise ValueError("invalid nonce")
+
         return cls(
-            msg_type=MessageType[parsed["type"]],
+            msg_type=MessageType[msg_type_name],
             sender=sender,
-            payload=parsed["payload"],
-            timestamp=parsed["timestamp"],
-            nonce=parsed["nonce"],
+            payload=payload,
+            timestamp=timestamp,
+            nonce=nonce,
         )
 
     def compute_hash(self) -> str:
@@ -331,10 +441,23 @@ class NetworkManager:
         listen_port: int = DEFAULT_PORT,
         chain_id: int = 2718,
         validator_id: str = "",
+        mtls_config: Optional[MTLSConfig] = None,
+        require_mtls: Optional[bool] = None,
+        auto_send: bool = True,
     ):
         self.listen_port = listen_port
         self.chain_id = chain_id
         self.validator_id = validator_id
+        self.require_mtls = (
+            _env_bool(P2P_REQUIRE_MTLS_ENV, True)
+            if require_mtls is None else require_mtls
+        )
+        self.mtls_config = mtls_config or MTLSConfig.from_env()
+        self._server_ssl_context: Optional[ssl.SSLContext] = None
+        self._client_ssl_context: Optional[ssl.SSLContext] = None
+        self.auto_send = auto_send
+        self._server_socket: Optional[socket.socket] = None
+        self._listener_thread: Optional[threading.Thread] = None
 
         self.peer_manager = PeerManager()
         self.message_handler = MessageHandler()
@@ -349,6 +472,121 @@ class NetworkManager:
 
         # Register default handlers
         self._register_default_handlers()
+
+    def _ensure_mtls_ready(self):
+        """Fail closed instead of silently starting a plaintext P2P node."""
+        if not self.require_mtls:
+            return
+
+        missing_values = self.mtls_config.missing_values()
+        if missing_values:
+            required = ", ".join(missing_values)
+            raise RuntimeError(
+                "P2P mTLS is required. Set "
+                f"{required}, or explicitly pass require_mtls=False for local tests."
+            )
+
+        missing_files = self.mtls_config.missing_files()
+        if missing_files:
+            missing = ", ".join(missing_files)
+            raise RuntimeError(f"P2P mTLS file(s) not found: {missing}")
+
+        if self._server_ssl_context is None:
+            self._server_ssl_context = self.mtls_config.build_server_context()
+        if self._client_ssl_context is None:
+            self._client_ssl_context = self.mtls_config.build_client_context()
+
+    def _wrap_client_socket(self, raw_sock: socket.socket, peer_id: PeerId) -> socket.socket:
+        if not self.require_mtls:
+            return raw_sock
+        self._ensure_mtls_ready()
+        return self._client_ssl_context.wrap_socket(raw_sock, server_hostname=peer_id.address)
+
+    def _wrap_server_socket(self, raw_sock: socket.socket) -> socket.socket:
+        if not self.require_mtls:
+            return raw_sock
+        self._ensure_mtls_ready()
+        return self._server_ssl_context.wrap_socket(raw_sock, server_side=True)
+
+    def _send_wire_message(self, peer_id: PeerId, message: Message, timeout: float = 5.0) -> bool:
+        payload = message.to_bytes()
+        frame = struct.pack("!I", len(payload)) + payload
+        raw_sock = socket.create_connection((peer_id.address, peer_id.port), timeout=timeout)
+        try:
+            with self._wrap_client_socket(raw_sock, peer_id) as tls_sock:
+                tls_sock.sendall(frame)
+        finally:
+            if not getattr(raw_sock, "_closed", False):
+                raw_sock.close()
+        return True
+
+    @staticmethod
+    def _recv_exact(sock: socket.socket, size: int) -> bytes:
+        chunks = []
+        remaining = size
+        while remaining:
+            chunk = sock.recv(remaining)
+            if not chunk:
+                raise ConnectionError("P2P peer closed connection while reading frame")
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        return b"".join(chunks)
+
+    def receive_message_from_socket(self, raw_sock: socket.socket, address) -> bool:
+        """Receive one length-prefixed message from a TLS-authenticated peer socket."""
+        peer_id = PeerId(address=address[0], port=address[1])
+        with self._wrap_server_socket(raw_sock) as tls_sock:
+            size = struct.unpack("!I", self._recv_exact(tls_sock, 4))[0]
+            if size <= 0 or size > WIRE_MESSAGE_MAX_BYTES:
+                raise ValueError("invalid P2P message frame size")
+            payload = self._recv_exact(tls_sock, size)
+
+        return self.message_handler.handle_message(Message.from_bytes(payload, peer_id))
+
+    def _open_listener_socket(self) -> socket.socket:
+        server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            server_sock.bind(("0.0.0.0", self.listen_port))
+            server_sock.listen()
+        except Exception:
+            server_sock.close()
+            raise
+        return server_sock
+
+    def _handle_peer_socket(self, raw_sock: socket.socket, address):
+        try:
+            self.receive_message_from_socket(raw_sock, address)
+        except Exception as e:
+            print(f"P2P peer socket error from {address}: {e}")
+        finally:
+            if not getattr(raw_sock, "_closed", False):
+                raw_sock.close()
+
+    def _accept_loop(self):
+        while self.running and self._server_socket is not None:
+            try:
+                raw_sock, address = self._server_socket.accept()
+            except OSError:
+                if self.running:
+                    print("P2P listener socket closed unexpectedly")
+                break
+
+            thread = threading.Thread(
+                target=self._handle_peer_socket,
+                args=(raw_sock, address),
+                daemon=True,
+            )
+            thread.start()
+
+    def flush_outbound_once(self) -> bool:
+        """Send one queued outbound message through the configured transport."""
+        try:
+            peer_id, message = self.outbound_queue.get_nowait()
+        except queue.Empty:
+            return False
+
+        return self._send_wire_message(peer_id, message)
 
     def _register_default_handlers(self):
         """Register default message handlers"""
@@ -411,6 +649,8 @@ class NetworkManager:
 
     def connect_to_peer(self, peer_id: PeerId) -> bool:
         """Initiate connection to a peer"""
+        self._ensure_mtls_ready()
+
         # Send HELLO message
         self.send_message(peer_id, MessageType.HELLO, {
             "version": PROTOCOL_VERSION,
@@ -429,7 +669,11 @@ class NetworkManager:
             payload=payload,
         )
 
+        if self.auto_send:
+            return self._send_wire_message(peer_id, message)
+
         self.outbound_queue.put((peer_id, message))
+        return True
 
     def broadcast(self, msg_type: MessageType, payload: Dict[str, Any]):
         """Broadcast a message to all peers"""
@@ -454,7 +698,11 @@ class NetworkManager:
 
     def start(self):
         """Start the network manager"""
+        self._ensure_mtls_ready()
         self.running = True
+        self._server_socket = self._open_listener_socket()
+        self._listener_thread = threading.Thread(target=self._accept_loop, daemon=True)
+        self._listener_thread.start()
         print(f"Network started on port {self.listen_port}")
 
         # Start peer cleanup thread
@@ -464,6 +712,9 @@ class NetworkManager:
     def stop(self):
         """Stop the network manager"""
         self.running = False
+        if self._server_socket is not None:
+            self._server_socket.close()
+            self._server_socket = None
         print("Network stopped")
 
     def _cleanup_loop(self):

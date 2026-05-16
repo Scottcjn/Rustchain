@@ -26,6 +26,7 @@ if os.path.exists("/tmp/bridge_test_727.db"):
 
 # Import after env setup
 sys.path.insert(0, os.path.dirname(__file__))
+import bridge_api
 from bridge_api import Flask, register_bridge_routes, STATE_REQUESTED, STATE_CONFIRMED
 
 
@@ -377,6 +378,39 @@ class TestLegacyMode_ProofNotRequired:
 
 
 # =============================================================================
+# Admin Authentication Tests
+# =============================================================================
+
+class TestAdminAuthentication:
+    """Tests for bridge admin endpoint authentication."""
+
+    def test_admin_key_uses_constant_time_compare(self, monkeypatch):
+        """Admin-gated endpoints compare configured keys with hmac.compare_digest."""
+        import bridge_api
+
+        app = Flask(__name__)
+        bridge_api.register_bridge_routes(app)
+        app.config["TESTING"] = True
+        calls = []
+
+        def fake_compare(provided, expected):
+            calls.append((provided, expected))
+            return False
+
+        monkeypatch.setattr(bridge_api.hmac, "compare_digest", fake_compare)
+
+        with app.test_client() as c:
+            resp = c.post(
+                "/bridge/release",
+                json={"lock_id": "missing-lock", "release_tx": "release-tx"},
+                headers={"X-Admin-Key": "wrong-admin-key"},
+            )
+
+        assert resp.status_code == 403
+        assert calls == [("wrong-admin-key", "test-admin-key-12345")]
+
+
+# =============================================================================
 # Integration Tests - Full Flow with Valid Proof
 # =============================================================================
 
@@ -580,6 +614,69 @@ class TestLockEndpoint:
         assert "tx_hash is required" in resp.get_json()["error"]
 
 
+class TestBridgeRequestValidation:
+    def test_lock_rejects_non_object_json(self, client):
+        resp = client.post("/bridge/lock", json=["sender_wallet"])
+
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "JSON object body is required"
+
+    def test_lock_rejects_non_string_fields(self, client):
+        resp = client.post("/bridge/lock", json={
+            "sender_wallet": ["test-miner"],
+            "amount": 10.0,
+            "target_chain": "base",
+            "target_wallet": "0x4215a73199d56b7e9c71575bec1632cd1d36908f",
+            "tx_hash": "rtc-lock-bad-sender-type",
+        })
+
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "sender_wallet must be a string"
+
+    def test_lock_rejects_non_string_receipt_signature(self, client):
+        resp = client.post("/bridge/lock", json={
+            "sender_wallet": "test-miner",
+            "amount": 10.0,
+            "target_chain": "base",
+            "target_wallet": "0x4215a73199d56b7e9c71575bec1632cd1d36908f",
+            "tx_hash": "rtc-lock-bad-sig-type",
+            "receipt_signature": {"sig": "bad"},
+        })
+
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "receipt_signature must be a string"
+
+    def test_confirm_rejects_non_object_json(self, client):
+        resp = client.post(
+            "/bridge/confirm",
+            json=["lock_id"],
+            headers={"X-Admin-Key": "test-admin-key-12345"},
+        )
+
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "JSON object body is required"
+
+    def test_confirm_rejects_non_string_notes(self, client):
+        resp = client.post(
+            "/bridge/confirm",
+            json={"lock_id": "lock_fake", "proof_ref": "manual:proof", "notes": {"admin": "note"}},
+            headers={"X-Admin-Key": "test-admin-key-12345"},
+        )
+
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "notes must be a string"
+
+    def test_release_rejects_non_string_fields(self, client):
+        resp = client.post(
+            "/bridge/release",
+            json={"lock_id": "lock_fake", "release_tx": ["0xabc"]},
+            headers={"X-Admin-Key": "test-admin-key-12345"},
+        )
+
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "release_tx must be a string"
+
+
 class TestReleaseEndpoint:
     def test_release_requires_admin_key(self, client):
         resp = client.post("/bridge/release", json={
@@ -587,6 +684,24 @@ class TestReleaseEndpoint:
             "release_tx": "0xabc",
         })
         assert resp.status_code == 403
+
+    def test_release_uses_constant_time_admin_key_compare(self, client, monkeypatch):
+        calls = []
+
+        def fake_compare(provided, expected):
+            calls.append((provided, expected))
+            return False
+
+        monkeypatch.setattr(bridge_api.hmac, "compare_digest", fake_compare)
+
+        resp = client.post(
+            "/bridge/release",
+            json={"lock_id": "lock_fake", "release_tx": "0xabc"},
+            headers={"X-Admin-Key": "wrong-key"},
+        )
+
+        assert resp.status_code == 403
+        assert calls == [("wrong-key", "test-admin-key-12345")]
 
     def test_release_requires_confirmed_lock(self, client):
         # Create lock without proof (legacy mode test)
@@ -706,6 +821,41 @@ class TestLedgerEndpoint:
         data = resp.get_json()
         for lock in data["locks"]:
             assert lock["state"] == "confirmed"
+
+    def test_ledger_rejects_malformed_pagination(self, client):
+        resp = client.get("/bridge/ledger?limit=abc")
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "limit and offset must be integers"
+
+        resp = client.get("/bridge/ledger?offset=abc")
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "limit and offset must be integers"
+
+    def test_ledger_clamps_negative_limit_and_offset(self, client):
+        tx_hash = f"rtc-lock-ledger-limit-{int(time.time())}"
+        payload = {
+            "sender_wallet": "ledger-limit-wallet",
+            "amount": 100.0,
+            "target_chain": "solana",
+            "target_wallet": "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+            "tx_hash": tx_hash,
+            "receipt_signature": _receipt_signature(
+                "ledger-limit-wallet",
+                100.0,
+                "solana",
+                "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+                tx_hash,
+            ),
+        }
+        resp_create = client.post("/bridge/lock", json=payload)
+        assert resp_create.status_code == 201
+
+        resp = client.get("/bridge/ledger?limit=-1&offset=-10")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["limit"] == 1
+        assert data["offset"] == 0
+        assert len(data["locks"]) <= 1
 
 
 class TestStatsEndpoint:

@@ -42,9 +42,9 @@ A lightweight browser extension that displays RTC (RustChain Token) balance for 
 
 The extension supports various endpoint formats:
 
-- `https://api.rustchain.io/balance` - Wallet ID appended automatically
-- `https://api.rustchain.io/balance/{walletId}` - Include wallet ID in URL
-- `https://api.rustchain.io/balance?address={walletId}` - Query parameter format
+- `https://rustchain.org/wallet/balance` - Wallet ID appended automatically as a query parameter
+- `https://rustchain.org/wallet/balance?miner_id={walletId}` - Miner ID query parameter format
+- `https://rustchain.org/wallet/balance?address={walletId}` - Address query parameter format
 
 The extension will automatically adapt to your endpoint format.
 

@@ -2,12 +2,14 @@
 # For node development:
 flask>=2.0.0
 # For miner and SDK:
-requests>=2.25.0
+requests>=2.34.2
 # For wallet CLI (Ed25519 + AES-GCM):
 cryptography>=46.0.7
 # For node / Beacon Ed25519 verification:
 PyNaCl>=1.6.2
 # For wallet CLI (BIP39 seed phrases):
 mnemonic>=0.21
+# For EIP-55 Ethereum address checksum validation (faucet_service):
+pycryptodome>=3.20.0
 # For running tests:
 pytest>=7.4.4

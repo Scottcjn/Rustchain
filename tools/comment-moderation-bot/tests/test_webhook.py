@@ -429,3 +429,58 @@ class TestWebhookProcessing:
         )
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_webhook_rejects_non_object_json(
+        self, app: TestClient, mock_config: MagicMock
+    ) -> None:
+        """Test webhook with valid JSON that is not an object."""
+        body = json.dumps(["not", "an", "object"]).encode()
+        signature = generate_signature(body, mock_config.github_app.webhook_secret.get_secret_value())
+
+        response = app.post(
+            "/webhook",
+            content=body,
+            headers={
+                "X-GitHub-Event": "issue_comment",
+                "X-GitHub-Delivery": "test-delivery-id",
+                "X-Hub-Signature-256": signature,
+            },
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.json()["detail"] == "Webhook payload must be a JSON object"
+
+    @pytest.mark.parametrize(
+        ("field", "expected_detail"),
+        [
+            ("repository", "repository must be a JSON object"),
+            ("comment", "comment must be a JSON object"),
+            ("issue", "issue must be a JSON object"),
+            ("installation", "installation must be a JSON object"),
+        ],
+    )
+    def test_webhook_rejects_non_object_nested_payload_fields(
+        self,
+        app: TestClient,
+        sample_webhook_payload: dict,
+        mock_config: MagicMock,
+        field: str,
+        expected_detail: str,
+    ) -> None:
+        """Test webhook with malformed nested payload objects."""
+        sample_webhook_payload[field] = "not-an-object"
+        body = json.dumps(sample_webhook_payload).encode()
+        signature = generate_signature(body, mock_config.github_app.webhook_secret.get_secret_value())
+
+        response = app.post(
+            "/webhook",
+            content=body,
+            headers={
+                "X-GitHub-Event": "issue_comment",
+                "X-GitHub-Delivery": "test-delivery-id",
+                "X-Hub-Signature-256": signature,
+            },
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.json()["detail"] == expected_detail

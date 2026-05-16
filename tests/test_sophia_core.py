@@ -34,7 +34,7 @@ from sophia_db import (
 )
 from sophia_core import (
     SophiaCoreInspector, VERDICTS, _build_analysis_prompt,
-    _rule_based_fallback, _parse_ollama_response, MODEL,
+    _rule_based_fallback, _parse_ollama_response, _query_ollama, MODEL,
 )
 
 
@@ -375,24 +375,28 @@ class TestOllamaFailover(unittest.TestCase):
     @patch("sophia_core.requests.post")
     def test_ollama_failover_to_second(self, mock_post):
         """First endpoint fails, second works."""
-        fail_resp = MagicMock()
-        fail_resp.raise_for_status.side_effect = Exception("connection refused")
-
         ok_resp = MagicMock()
         ok_resp.status_code = 200
         ok_resp.json.return_value = {
             "response": "VERDICT: CAUTIOUS\nCONFIDENCE: 0.6\nREASONING: hmm"
         }
 
-        mock_post.side_effect = [Exception("refused"), ok_resp]
+        mock_post.side_effect = [
+            Exception("refused"),
+            Exception("refused"),
+            Exception("refused"),
+            ok_resp,
+        ]
 
         inspector = SophiaCoreInspector(
             db_path=self.db_path,
             ollama_endpoints=["http://bad:11434", "http://good:11434"],
         )
-        result = inspector.inspect("miner_f", _good_fingerprint())
+        with patch("sophia_core.time.sleep") as mock_sleep:
+            result = inspector.inspect("miner_f", _good_fingerprint())
         self.assertEqual(result["verdict"], "CAUTIOUS")
-        self.assertEqual(mock_post.call_count, 2)
+        self.assertEqual(mock_post.call_count, 4)
+        self.assertEqual(mock_sleep.call_count, 2)
 
     @patch("sophia_core.requests.post")
     def test_ollama_all_fail_uses_fallback(self, mock_post):
@@ -403,9 +407,43 @@ class TestOllamaFailover(unittest.TestCase):
             db_path=self.db_path,
             ollama_endpoints=["http://a:11434", "http://b:11434"],
         )
-        result = inspector.inspect("miner_fb", _good_fingerprint())
+        with patch("sophia_core.time.sleep") as mock_sleep:
+            result = inspector.inspect("miner_fb", _good_fingerprint())
         self.assertEqual(result["model_used"], "rule-based-fallback-v1")
         self.assertIn(result["verdict"], VERDICTS)
+        self.assertEqual(mock_post.call_count, 6)
+        self.assertEqual(mock_sleep.call_count, 4)
+
+    @patch("sophia_core.requests.post")
+    def test_query_ollama_retries_endpoint_before_failing(self, mock_post):
+        """One endpoint is retried with exponential backoff before failover."""
+        mock_post.side_effect = Exception("temporary outage")
+
+        with patch("sophia_core.time.sleep") as mock_sleep:
+            with self.assertRaisesRegex(Exception, "temporary outage"):
+                _query_ollama("prompt", "http://down:11434")
+
+        self.assertEqual(mock_post.call_count, 3)
+        mock_sleep.assert_any_call(0.5)
+        mock_sleep.assert_any_call(1.0)
+        self.assertEqual(mock_sleep.call_count, 2)
+
+    @patch("sophia_core.requests.post")
+    def test_query_ollama_can_recover_on_retry(self, mock_post):
+        """A transient endpoint failure can recover before failover."""
+        ok_resp = MagicMock()
+        ok_resp.status_code = 200
+        ok_resp.json.return_value = {
+            "response": "VERDICT: APPROVED\nCONFIDENCE: 0.8\nREASONING: retry recovered"
+        }
+        mock_post.side_effect = [Exception("temporary outage"), ok_resp]
+
+        with patch("sophia_core.time.sleep") as mock_sleep:
+            result = _query_ollama("prompt", "http://flaky:11434")
+
+        self.assertEqual(result["verdict"], "APPROVED")
+        self.assertEqual(mock_post.call_count, 2)
+        mock_sleep.assert_called_once_with(0.5)
 
     @patch("sophia_core.requests.post")
     def test_cautious_queued_for_review(self, mock_post):

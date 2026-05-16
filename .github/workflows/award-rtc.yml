@@ -5,7 +5,9 @@ on:
     types: [closed]
 
 permissions:
-  pull-requests: write
+  contents: read
+  issues: write
+  pull-requests: read
 
 jobs:
   award-rtc:
@@ -16,12 +18,11 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Award RTC to Contributor
-        uses: BossChaos/rtc-award-action@main
+        uses: ./.github/actions/rtc-auto-bounty
         with:
-          wallet_file: '.rtc-wallet'
-          amount: '5'
-          api_url: 'https://bulbous-bouffant.metalseed.net/transfer'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Store wallet as secret: Settings > Secrets > RTC_WALLET_JSON
-          # The action will read from the secret instead of a file
+          rtc-amount: '5'
+          rtc-vps-host: ${{ secrets.RTC_VPS_HOST }}
+          rtc-admin-key: ${{ secrets.RTC_ADMIN_KEY }}
+          from-wallet: 'founder_community'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repo-path: ${{ github.workspace }}

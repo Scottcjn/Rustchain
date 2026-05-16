@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 import importlib.util
 from pathlib import Path
 from unittest.mock import patch
@@ -21,12 +22,12 @@ class FixedDateTime:
 
 
 def test_detect_legacy_os_badges_detects_multiple_matching_environments():
-    directory_listing = "System Folder\nFinder\nwin.ini\nprogman.exe\n"
+    directory_listing = ["System Folder", "Finder", "win.ini", "progman.exe"]
 
     with patch.object(
-        os_detector.subprocess,
-        "check_output",
-        return_value=directory_listing.encode(),
+        os_detector.os,
+        "listdir",
+        return_value=directory_listing,
     ), patch.object(os_detector, "datetime", FixedDateTime):
         result = os_detector.detect_legacy_os_badges()
 
@@ -43,8 +44,8 @@ def test_detect_legacy_os_badges_detects_multiple_matching_environments():
 
 def test_detect_legacy_os_badges_returns_empty_list_when_directory_probe_fails():
     with patch.object(
-        os_detector.subprocess,
-        "check_output",
+        os_detector.os,
+        "listdir",
         side_effect=OSError("dir unavailable"),
     ):
         result = os_detector.detect_legacy_os_badges()

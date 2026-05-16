@@ -270,7 +270,7 @@ Create `~/.rustchain/config.json`:
 #### Step 6: Download Fingerprint Module
 
 ```bash
-curl -sSL "https://raw.githubusercontent.com/Scottcjn/Rustchain/main/fingerprint_checks.py" \
+curl -sSL "https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/linux/fingerprint_checks.py" \
   -o fingerprint_checks.py
 ```
 

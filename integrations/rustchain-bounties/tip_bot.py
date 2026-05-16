@@ -371,17 +371,24 @@ def main() -> None:
         print("No event payload found. Running in test mode — exiting.")
         sys.exit(0)
 
-    with open(event_path) as f:
-        event = json.load(f)
+    with open(event_path, "rb") as f:
+        raw_payload = f.read()
+    event = json.loads(raw_payload.decode("utf-8"))
 
-    # Verify webhook signature if secret is configured AND a signature header
-    # is present. In GitHub Actions, the payload comes from GitHub's own
-    # infrastructure (GITHUB_EVENT_PATH) — no HTTP signature header exists.
-    # WEBHOOK_SECRET is only useful for external webhook deployments.
+    # GitHub Actions supplies GITHUB_EVENT_PATH from GitHub infrastructure and
+    # does not include an HTTP signature header. Any non-Actions deployment is
+    # treated as an external webhook and must fail closed unless both the shared
+    # secret and signature header are present and valid.
     webhook_secret = os.environ.get("WEBHOOK_SECRET", "")
     sig = os.environ.get("HTTP_X_HUB_SIGNATURE_256", "")
-    if webhook_secret and sig:
-        raw_payload = open(event_path, "rb").read()
+    running_in_actions = os.environ.get("GITHUB_ACTIONS", "").lower() == "true"
+    if not running_in_actions or webhook_secret or sig:
+        if not webhook_secret:
+            print("WEBHOOK_SECRET must be set for external webhook payloads. Aborting.")
+            sys.exit(1)
+        if not sig:
+            print("Webhook signature header missing. Aborting.")
+            sys.exit(1)
         if not verify_webhook_signature(raw_payload, sig):
             print("Webhook signature verification failed. Aborting.")
             sys.exit(1)

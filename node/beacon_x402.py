@@ -97,6 +97,22 @@ def _cors_json(data, status=200):
     return resp, status
 
 
+def _json_object_body():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return None, _cors_json({"error": "JSON object body is required"}, 400)
+    return data, None
+
+
+def _json_string_field(data, field_name, default=""):
+    value = data.get(field_name, default)
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise ValueError(f"{field_name} must be a string")
+    return value.strip()
+
+
 # ---------------------------------------------------------------------------
 # x402 payment check
 # ---------------------------------------------------------------------------
@@ -183,8 +199,13 @@ def init_app(app, get_db_func):
         if not hmac.compare_digest(admin_key, expected):
             return _cors_json({"error": "Unauthorized — admin key required"}, 401)
 
-        data = request.get_json(silent=True) or {}
-        address = data.get("coinbase_address", "").strip()
+        data, error_response = _json_object_body()
+        if error_response:
+            return error_response
+        try:
+            address = _json_string_field(data, "coinbase_address")
+        except ValueError as exc:
+            return _cors_json({"error": str(exc)}, 400)
         if not address or not address.startswith("0x") or len(address) != 42:
             return _cors_json({"error": "Invalid Base address"}, 400)
 

@@ -1,11 +1,20 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
 from typing import Any, Dict, Optional, Tuple
 
 
 MICRO_RTC = Decimal("1000000")
+
+
+def _is_rtc_address(value: str) -> bool:
+    return value.startswith("RTC") and len(value) == 43
+
+
+def _is_bcn_address(value: str) -> bool:
+    return value.startswith("bcn_") and len(value) >= 8
 
 
 @dataclass(frozen=True)
@@ -77,8 +86,8 @@ def validate_wallet_transfer_signed(payload: Any) -> PreflightResult:
     if err:
         return PreflightResult(ok=False, error=err, details={})
 
-    required = ["from_address", "to_address", "amount_rtc", "nonce", "signature", "public_key"]
-    missing = [k for k in required if not data.get(k)]
+    required = ["from_address", "to_address", "amount_rtc", "nonce", "signature"]
+    missing = [k for k in required if k not in data or data.get(k) in (None, "")]
     if missing:
         return PreflightResult(ok=False, error="missing_required_fields", details={"missing": missing})
 
@@ -97,12 +106,14 @@ def validate_wallet_transfer_signed(payload: Any) -> PreflightResult:
             details={"amount_rtc": float(amount_rtc), "min_rtc": 0.000001},
         )
 
-    if not (from_address.startswith("RTC") and len(from_address) == 43):
+    if not (_is_rtc_address(from_address) or _is_bcn_address(from_address)):
         return PreflightResult(ok=False, error="invalid_from_address_format", details={})
-    if not (to_address.startswith("RTC") and len(to_address) == 43):
+    if not (_is_rtc_address(to_address) or _is_bcn_address(to_address)):
         return PreflightResult(ok=False, error="invalid_to_address_format", details={})
     if from_address == to_address:
         return PreflightResult(ok=False, error="from_to_must_differ", details={})
+    if _is_rtc_address(from_address) and not data.get("public_key"):
+        return PreflightResult(ok=False, error="missing_required_fields", details={"missing": ["public_key"]})
 
     try:
         nonce_int = int(str(data.get("nonce")))
@@ -110,6 +121,10 @@ def validate_wallet_transfer_signed(payload: Any) -> PreflightResult:
         return PreflightResult(ok=False, error="nonce_not_int", details={})
     if nonce_int <= 0:
         return PreflightResult(ok=False, error="nonce_must_be_gt_zero", details={})
+
+    chain_id = str(data.get("chain_id", "")).strip()
+    if chain_id and not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", chain_id):
+        return PreflightResult(ok=False, error="invalid_chain_id_format", details={})
 
     return PreflightResult(
         ok=True,
@@ -120,5 +135,6 @@ def validate_wallet_transfer_signed(payload: Any) -> PreflightResult:
             "amount_rtc": float(amount_rtc),
             "amount_i64": amount_i64,
             "nonce": nonce_int,
+            "chain_id": chain_id or None,
         },
     )

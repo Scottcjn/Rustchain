@@ -202,6 +202,24 @@ def test_update_status_endpoint(client):
     assert updated_body["entry"]["recommended_resolution"]["resolution_type"] == "watch"
 
 
+def test_update_status_rejects_non_object_json(client):
+    ingest = client.post(
+        "/api/sophia/governor/ingest",
+        headers={"X-Admin-Key": "test-admin"},
+        json=_sample_envelope(),
+    )
+    inbox_id = ingest.get_json()["inbox"]["inbox_id"]
+
+    response = client.post(
+        f"/api/sophia/governor/inbox/{inbox_id}/status",
+        headers={"X-Admin-Key": "test-admin"},
+        json=["not", "an", "object"],
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "JSON object required"
+
+
 def test_status_helper_reports_totals(tmp_db):
     ingest_governor_envelope(_sample_envelope(), db_path=tmp_db)
     status = get_governor_inbox_status(tmp_db)
@@ -260,6 +278,7 @@ def test_ingest_can_queue_scott_notification(client, monkeypatch):
         return DummyResponse()
 
     monkeypatch.setenv("SOPHIA_GOVERNOR_SCOTT_NOTIFY_QUEUE_URL", "https://example.com/scott-notifications/queue")
+    monkeypatch.setenv("SOPHIA_GOVERNOR_SCOTT_NOTIFY_BEARER", "relay-token")
     monkeypatch.setattr(
         "sophia_governor_inbox.requests",
         type("DummyRequests", (), {"post": staticmethod(fake_post)}),
@@ -276,8 +295,39 @@ def test_ingest_can_queue_scott_notification(client, monkeypatch):
     assert body["scott_notification"]["status"] == "queued"
     assert body["scott_notification"]["notification_id"] == "SN-GOV-INBOX-1"
     assert calls[0]["url"] == "https://example.com/scott-notifications/queue"
+    assert calls[0]["headers"]["Authorization"] == "Bearer relay-token"
     assert calls[0]["json"]["related_type"] == "rustchain_governor_inbox"
     assert calls[0]["json"]["related_id"] == str(body["inbox"]["inbox_id"])
+
+
+def test_ingest_does_not_queue_scott_notification_without_token(client, monkeypatch):
+    calls = []
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        calls.append({"url": url, "json": json, "headers": headers, "timeout": timeout})
+        raise AssertionError("notification queue should not be called without a bearer token")
+
+    monkeypatch.setenv("SOPHIA_GOVERNOR_SCOTT_NOTIFY_QUEUE_URL", "https://example.com/scott-notifications/queue")
+    monkeypatch.setattr(
+        "sophia_governor_inbox.requests",
+        type("DummyRequests", (), {"post": staticmethod(fake_post)}),
+        raising=False,
+    )
+
+    response = client.post(
+        "/api/sophia/governor/ingest",
+        headers={"X-Admin-Key": "test-admin"},
+        json=_sample_envelope(),
+    )
+
+    assert response.status_code == 202
+    body = response.get_json()
+    assert body["scott_notification"] == {
+        "status": "not_configured",
+        "phase": "ingest",
+        "error": "scott_notification_token_not_configured",
+    }
+    assert calls == []
 
 
 def test_manual_forward_endpoint_records_attempt(client, monkeypatch):
@@ -322,6 +372,7 @@ def test_manual_forward_endpoint_records_attempt(client, monkeypatch):
 
     monkeypatch.setenv("SOPHIA_GOVERNOR_INBOX_FORWARD_TARGETS", "https://example.com/sophia/review")
     monkeypatch.setenv("SOPHIA_GOVERNOR_SCOTT_NOTIFY_QUEUE_URL", "https://example.com/scott-notifications/queue")
+    monkeypatch.setenv("SOPHIA_GOVERNOR_SCOTT_NOTIFY_BEARER", "relay-token")
     monkeypatch.setattr(
         "sophia_governor_inbox.requests",
         type("DummyRequests", (), {"post": staticmethod(fake_post)}),
@@ -354,6 +405,24 @@ def test_manual_forward_endpoint_records_attempt(client, monkeypatch):
     assert len(body["entry"]["forward_attempts"]) == 1
     assert body["result"]["scott_notification"]["status"] == "queued"
     assert body["result"]["scott_notification"]["notification_id"] == "SN-GOV-REVIEW-1"
+
+
+def test_manual_forward_rejects_non_object_json(client):
+    ingest = client.post(
+        "/api/sophia/governor/ingest",
+        headers={"X-Admin-Key": "test-admin"},
+        json=_sample_envelope(),
+    )
+    inbox_id = ingest.get_json()["inbox"]["inbox_id"]
+
+    response = client.post(
+        f"/api/sophia/governor/inbox/{inbox_id}/forward",
+        headers={"X-Admin-Key": "test-admin"},
+        json=["not", "an", "object"],
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "JSON object required"
 
 
 def test_auto_forward_on_ingest_uses_configured_targets(client, monkeypatch):

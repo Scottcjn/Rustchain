@@ -3,12 +3,12 @@
 
 import os
 import time
-import json
 import sqlite3
 import requests
 from flask import Flask, Response
 from threading import Thread
 import logging
+from math import isfinite
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -16,12 +16,16 @@ logger = logging.getLogger(__name__)
 
 # Configuration from environment
 NODE_URL = os.getenv('RUSTCHAIN_NODE_URL', 'http://localhost:8080')
+EXPORTER_HOST = os.getenv(
+    'PROMETHEUS_EXPORTER_HOST',
+    '0.0.0.0' if os.getenv('RUSTCHAIN_AUTH') else '127.0.0.1'
+)
 EXPORTER_PORT = int(os.getenv('PROMETHEUS_EXPORTER_PORT', '9100'))
 SCRAPE_INTERVAL = int(os.getenv('SCRAPE_INTERVAL', '15'))
 DB_PATH = os.getenv('DB_PATH', 'rustchain.db')
 
 # Metrics storage
-metrics_data = {
+METRIC_DEFAULTS = {
     'node_up': 0,
     'current_epoch': 0,
     'epoch_progress': 0.0,
@@ -34,6 +38,44 @@ metrics_data = {
     'difficulty': 0.0,
     'last_scrape_timestamp': 0
 }
+
+INTEGER_METRICS = {
+    'node_up',
+    'current_epoch',
+    'total_miners',
+    'active_miners',
+    'chain_height',
+    'total_transactions',
+    'pending_transactions',
+    'last_scrape_timestamp',
+}
+
+# Metrics storage
+metrics_data = dict(METRIC_DEFAULTS)
+
+def coerce_metric_value(name, value):
+    """Return a finite numeric metric value, or the metric's safe default."""
+    default = METRIC_DEFAULTS[name]
+    try:
+        numeric_value = float(value)
+    except (TypeError, ValueError):
+        return default
+
+    if not isfinite(numeric_value):
+        return default
+
+    if name in INTEGER_METRICS:
+        return int(numeric_value)
+    return numeric_value
+
+def update_metrics_from_source(source):
+    """Apply only known numeric metrics from a scraped API/database payload."""
+    if not isinstance(source, dict):
+        return
+
+    for name in METRIC_DEFAULTS:
+        if name in source:
+            metrics_data[name] = coerce_metric_value(name, source[name])
 
 def fetch_node_api_data():
     """Fetch data from RustChain node API"""
@@ -105,13 +147,14 @@ def scrape_metrics():
             api_data = fetch_node_api_data()
             if api_data:
                 metrics_data['node_up'] = 1
-                metrics_data.update(api_data)
+                update_metrics_from_source(api_data)
+                metrics_data['node_up'] = 1
             else:
                 metrics_data['node_up'] = 0
                 # Fallback to database
                 db_data = fetch_db_metrics()
                 if db_data:
-                    metrics_data.update(db_data)
+                    update_metrics_from_source(db_data)
             
             metrics_data['last_scrape_timestamp'] = int(time.time())
             logger.info(f"Metrics updated: node_up={metrics_data['node_up']}, epoch={metrics_data['current_epoch']}")
@@ -180,11 +223,11 @@ def health_check():
 
 if __name__ == '__main__':
     logger.info(f"Starting Prometheus exporter for RustChain node at {NODE_URL}")
-    logger.info(f"Metrics will be available at http://localhost:{EXPORTER_PORT}/metrics")
+    logger.info(f"Metrics will be available at http://{EXPORTER_HOST}:{EXPORTER_PORT}/metrics")
     
     # Start metrics scraping in background thread
     scraper_thread = Thread(target=scrape_metrics, daemon=True)
     scraper_thread.start()
     
     # Run Flask app
-    app.run(host='0.0.0.0', port=EXPORTER_PORT, debug=False)
+    app.run(host=EXPORTER_HOST, port=EXPORTER_PORT, debug=False)

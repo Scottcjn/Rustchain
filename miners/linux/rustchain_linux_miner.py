@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-RustChain Local x86 Miner - Modern Ryzen
+RustChain Local Miner
 With RIP-PoA Hardware Fingerprint Attestation + Serial Binding v2.0
 """
 import warnings
@@ -51,6 +51,17 @@ def _parse_free_memory_gb(output):
             except ValueError:
                 return None
     return None
+
+
+def _safe_id_part(value):
+    slug = re.sub(r"[^a-zA-Z0-9_.:-]+", "-", str(value or "").strip().lower()).strip("-")
+    return slug or "unknown"
+
+
+def _miner_id_from_hw(hw_info):
+    arch = _safe_id_part(hw_info.get("arch") or hw_info.get("machine") or "linux")
+    hostname = _safe_id_part(hw_info.get("hostname") or socket.gethostname())
+    return f"{arch}-{hostname}"
 
 
 def _request_with_network_retry(method, url, action, retries=NETWORK_RETRY_ATTEMPTS,
@@ -133,7 +144,7 @@ class LocalMiner:
 
         self.serial = get_linux_serial()
         print("="*70)
-        print("RustChain Local Miner - HP Victus Ryzen 5 8645HS")
+        print("RustChain Local Linux Miner")
         print("RIP-PoA Hardware Fingerprint + Serial Binding v2.0")
         if self.warthog:
             print("+ Warthog Dual-Mining Sidecar ACTIVE")
@@ -192,8 +203,11 @@ class LocalMiner:
             self.fingerprint_data = {"error": str(e), "all_passed": False}
 
     def _gen_wallet(self):
-        data = f"ryzen5-{uuid.uuid4().hex}-{time.time()}"
+        data = f"linux-miner-{platform.machine()}-{uuid.uuid4().hex}-{time.time()}"
         return hashlib.sha256(data.encode()).hexdigest()[:38] + "RTC"
+
+    def _miner_id(self):
+        return _miner_id_from_hw(self.hw_info)
 
     def _run_cmd(self, args):
         try:
@@ -375,7 +389,7 @@ class LocalMiner:
         # Submit attestation with fingerprint data
         attestation = {
             "miner": self.wallet,
-            "miner_id": f"ryzen5-{self.hw_info['hostname']}",
+            "miner_id": self._miner_id(),
             "nonce": nonce,
             "report": {
                 "nonce": nonce,
@@ -467,7 +481,7 @@ class LocalMiner:
 
         payload = {
             "miner_pubkey": self.wallet,
-            "miner_id": f"ryzen5-{self.hw_info['hostname']}",
+            "miner_id": self._miner_id(),
             "device": {
                 "family": self.hw_info["family"],
                 "arch": self.hw_info["arch"]

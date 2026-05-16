@@ -199,7 +199,7 @@ is running.
 
 You can also see the full network, all miners, and your rewards at:
 
-**https://rustchain.org/explorer**
+[https://rustchain.org/explorer](https://rustchain.org/explorer)
 
 ---
 
@@ -248,7 +248,7 @@ Mining is passive income. For bigger payouts, contribute code.
 
 ### Browse Open Bounties
 
-**https://github.com/Scottcjn/rustchain-bounties/issues**
+[https://github.com/Scottcjn/rustchain-bounties/issues](https://github.com/Scottcjn/rustchain-bounties/issues)
 
 Every issue tagged with a bounty has an RTC reward listed. Rewards range from 1 RTC
 (typo fix) to 200 RTC (security vulnerability).
@@ -280,7 +280,7 @@ Even fixing a single typo in the README earns RTC.
 
 See all miners, blocks, and balances at:
 
-**https://rustchain.org/explorer**
+[https://rustchain.org/explorer](https://rustchain.org/explorer)
 
 ### API Endpoints (for the curious)
 

@@ -120,6 +120,7 @@
 |-----|------|---------|---------|
 | **RISC-V (SiFive U74)** | 2020 | `SiFive.*U74`, `sifive,u74` | VisionFive 2, HiFive Unmatched |
 | **RISC-V (StarFive JH7110)** | 2022 | `JH7110`, `StarFive.*JH7110` | VisionFive 2 SoC |
+| **RISC-V (Allwinner D1 / C906)** | 2021 | `Allwinner.*D1`, `sun20i-d1`, `T-Head.*C906` | Nezha, MangoPi, early RISC-V SBCs |
 | **RISC-V (generic)** | 2014+ | `riscv`, `riscv64`, `riscv32`, `RISC-V` | Open-source ISA |
 
 ---

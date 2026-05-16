@@ -110,10 +110,8 @@ def test_genesis_migration_race():
         if count > len(test_balances):
             print("🔴 CRITICAL BUG DETECTED: Genesis boxes duplicated!")
             print(f"   Duplication factor: {count / len(test_balances):.2f}x")
-            return False
-        else:
-            print("✅ PASS: Genesis migration is atomic")
-            return True
+            raise AssertionError("Genesis boxes duplicated")
+        print("✅ PASS: Genesis migration is atomic")
             
     finally:
         # Cleanup
@@ -138,7 +136,7 @@ def test_genesis_migration_rollback():
                 amount_i64 INTEGER NOT NULL
             )
         """)
-        conn.execute("INSERT INTO balances VALUES ('miner_001', 100_000_000)")
+        conn.execute("INSERT INTO balances VALUES (?, ?)", ("miner_001", 100_000_000))
         conn.commit()
         conn.close()
         
@@ -159,10 +157,8 @@ def test_genesis_migration_rollback():
         
         if count != 0:
             print("🔴 BUG: Rollback incomplete!")
-            return False
-        else:
-            print("✅ PASS: Rollback is complete")
-            return True
+            raise AssertionError("Rollback left genesis boxes behind")
+        print("✅ PASS: Rollback is complete")
             
     finally:
         if os.path.exists(db_path):
@@ -175,19 +171,15 @@ if __name__ == '__main__':
     print("=" * 60)
     
     # Test 1: Race condition
-    result1 = test_genesis_migration_race()
+    test_genesis_migration_race()
     
     print("\n" + "=" * 60)
     print("Testing Genesis Migration Rollback")
     print("=" * 60)
     
     # Test 2: Rollback
-    result2 = test_genesis_migration_rollback()
+    test_genesis_migration_rollback()
     
     print("\n" + "=" * 60)
-    if result1 and result2:
-        print("✅ ALL TESTS PASSED")
-        sys.exit(0)
-    else:
-        print("🔴 SOME TESTS FAILED")
-        sys.exit(1)
+    print("✅ ALL TESTS PASSED")
+    sys.exit(0)

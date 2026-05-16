@@ -148,7 +148,9 @@ def check_placeholders(data: Dict[str, Any], filename: str) -> List[str]:
     def check_value(value: str, path: str):
         if not isinstance(value, str):
             return
-        # 检查是否有未闭合的占位符
+        # Keep this validation intentionally lightweight: translation files may
+        # contain many languages and locale-specific punctuation, so this only
+        # catches broken brace pairs without trying to parse Python format specs.
         if '{' in value and '}' not in value:
             issues.append(f"{filename}: {path} - 未闭合的占位符")
         if '}' in value and '{' not in value:

@@ -522,14 +522,22 @@ class WebhookAdminHandler(BaseHTTPRequestHandler):
     # FIX(#2867 M3): Authenticate admin API requests
     def _check_api_key(self) -> bool:
         if not self.ADMIN_API_KEY:
-            return True  # No key configured — allow (development mode)
+            self._send_json(503, {"error": "WEBHOOK_ADMIN_API_KEY not configured"})
+            return False
         provided = self.headers.get("X-Admin-API-Key", "")
-        if not hmac.compare_digest(provided, self.ADMIN_API_KEY):
+        if not hmac.compare_digest(
+            provided.encode("utf-8"),
+            self.ADMIN_API_KEY.encode("utf-8"),
+        ):
             self._send_json(401, {"error": "invalid or missing API key"})
             return False
         return True
 
     def do_GET(self):
+        if self.path == "/health":
+            self._send_json(200, {"status": "ok"})
+            return
+
         if not self._check_api_key():
             return
         if self.path == "/webhooks":
@@ -544,8 +552,6 @@ class WebhookAdminHandler(BaseHTTPRequestHandler):
                     for s in subs
                 ],
             })
-        elif self.path == "/health":
-            self._send_json(200, {"status": "ok"})
         else:
             self._send_json(404, {"error": "not found"})
 

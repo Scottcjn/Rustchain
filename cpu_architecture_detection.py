@@ -13,6 +13,7 @@ Sources:
 - AMD CPU Timeline: https://en.wikipedia.org/wiki/List_of_AMD_CPU_microarchitectures
 - Intel Xeon Generations: https://en.wikipedia.org/wiki/List_of_Intel_Xeon_processors
 - AMD EPYC History: https://en.wikipedia.org/wiki/Epyc
+- RISC-V ISA: https://en.wikipedia.org/wiki/RISC-V
 """
 
 import re
@@ -27,7 +28,7 @@ CURRENT_YEAR = datetime.now().year
 class CPUInfo:
     """Detected CPU information"""
     brand_string: str
-    vendor: str  # "intel" or "amd"
+    vendor: str  # "intel", "amd", "riscv", "apple", or "powerpc"
     architecture: str  # e.g., "sandy_bridge", "zen2", "pentium4"
     microarch_year: int  # Year the microarchitecture was released
     model_year: int  # Estimated year this specific model was released
@@ -489,6 +490,79 @@ APPLE_SILICON = {
 
 
 # =============================================================================
+# RISC-V ARCHITECTURES
+# =============================================================================
+
+RISC_V_ARCHITECTURES = {
+    "riscv_sifive_u74": {
+        "years": (2020, 2022),
+        "patterns": [
+            r"SiFive.*U74",
+            r"sifive,u74",
+            r"HiFive Unmatched",
+        ],
+        "base_multiplier": 1.5,
+        "description": "RISC-V SiFive U74"
+    },
+    "riscv_starfive_jh7110": {
+        "years": (2022, 2024),
+        "patterns": [
+            r"StarFive.*JH7110",
+            r"JH7110",
+            r"VisionFive\s*2",
+        ],
+        "base_multiplier": 1.4,
+        "description": "RISC-V StarFive JH7110"
+    },
+    "riscv_allwinner_d1": {
+        "years": (2021, 2022),
+        "patterns": [
+            r"Allwinner.*D1",
+            r"sun20i[-_ ]?d1",
+            r"T-Head.*C906",
+            r"\bC906\b",
+        ],
+        "base_multiplier": 1.4,
+        "description": "RISC-V Allwinner D1 / T-Head C906"
+    },
+    "rv32im": {
+        "years": (2014, 2020),
+        "patterns": [
+            r"\bmisa\s*:\s*rv32im",
+            r"\brv32im\b",
+            r"\brv32ima\b",
+            r"\brv32imac\b",
+        ],
+        "base_multiplier": 1.4,
+        "description": "RISC-V RV32IM/IMA/IMAC"
+    },
+    "rv64gcv": {
+        "years": (2021, 2025),
+        "patterns": [
+            r"\brv64gcv\b",
+            r"\brv64[imafdc]*v[imafdcv]*\b",
+            r"\bmisa\s*:\s*rv64[imafdc]*v[imafdcv]*\b",
+        ],
+        "base_multiplier": 1.2,
+        "description": "RISC-V RV64 with vector extension"
+    },
+    "rv64gc": {
+        "years": (2015, 2025),
+        "patterns": [
+            r"\bmisa\s*:\s*rv64gc",
+            r"\brv64gc\b",
+            r"\brv64imafdc\b",
+            r"\briscv64\b",
+            r"\bRISC-V\b",
+            r"\brvtest\b",
+        ],
+        "base_multiplier": 1.4,
+        "description": "RISC-V RV64GC / generic 64-bit"
+    },
+}
+
+
+# =============================================================================
 # DETECTION FUNCTIONS
 # =============================================================================
 
@@ -506,6 +580,13 @@ def detect_cpu_architecture(brand_string: str) -> Tuple[str, str, int, bool]:
         "PowerPC G4" → ("powerpc", "g4", 2001, False)
     """
     brand_string = brand_string.strip()
+
+    # Check RISC-V before generic vendor fallbacks. RISC-V often appears as ISA
+    # strings from /proc/cpuinfo (rv64gc/rv32imac) rather than CPU brand names.
+    for arch_name, arch_info in RISC_V_ARCHITECTURES.items():
+        for pattern in arch_info["patterns"]:
+            if re.search(pattern, brand_string, re.IGNORECASE):
+                return ("riscv", arch_name, arch_info["years"][0], False)
 
     # Check PowerPC first (most distinctive)
     for arch_name, arch_info in POWERPC_ARCHITECTURES.items():
@@ -603,6 +684,8 @@ def calculate_antiquity_multiplier(
         base_multiplier = INTEL_GENERATIONS[architecture]["base_multiplier"]
     elif vendor == "amd":
         base_multiplier = AMD_GENERATIONS[architecture]["base_multiplier"]
+    elif vendor == "riscv":
+        base_multiplier = RISC_V_ARCHITECTURES[architecture]["base_multiplier"]
 
     # Apply time decay for vintage hardware (>5 years old)
     # Decay formula: aged = 1.0 + (base - 1.0) * (1 - 0.15 * years_since_genesis)
@@ -636,6 +719,8 @@ def calculate_antiquity_multiplier(
         generation_name = INTEL_GENERATIONS[architecture]["description"]
     elif vendor == "amd":
         generation_name = AMD_GENERATIONS[architecture]["description"]
+    elif vendor == "riscv":
+        generation_name = RISC_V_ARCHITECTURES[architecture]["description"]
     else:
         generation_name = "Unknown CPU"
 

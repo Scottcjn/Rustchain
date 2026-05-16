@@ -33,6 +33,8 @@ from dashboard_helpers import (
     format_timestamp,
     parse_filter,
     truncate,
+    _extract_amount,
+    _extract_transport,
 )
 
 
@@ -71,6 +73,25 @@ def _sample_envelopes():
         _make_envelope("bcn_dave", "accord", "websocket", now),
         _make_envelope("bcn_eve", "pushback", "discord", now, amount=75.0),
     ]
+
+
+# ── envelope extraction tests ────────────────────────────────────────
+
+class TestEnvelopeExtraction(unittest.TestCase):
+    def test_extract_transport_normalizes_known_unknown_and_agent_fallbacks(self):
+        self.assertEqual(_extract_transport({"transport": "DISCORD"}), "discord")
+        self.assertEqual(_extract_transport({"transport": "matrix"}), "other")
+        self.assertEqual(_extract_transport({"agent_id": "tg_miner_1"}), "telegram")
+        self.assertEqual(_extract_transport({"agent_id": "ws_agent"}), "websocket")
+        self.assertEqual(_extract_transport({"agent_id": "plain_agent"}), "beacon")
+
+    def test_extract_amount_skips_invalid_values_and_uses_fallback_keys(self):
+        self.assertEqual(
+            _extract_amount({"amount": "bad", "reward_rtc": "12.5"}),
+            12.5,
+        )
+        self.assertEqual(_extract_amount({"amount": None, "tip_amount": "7"}), 7.0)
+        self.assertEqual(_extract_amount({"amount": object()}), 0.0)
 
 
 # ── parse_filter tests ───────────────────────────────────────────────

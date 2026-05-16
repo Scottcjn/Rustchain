@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """
 RIP-PoA Hardware Fingerprint Validation - POWER8 Optimized
 ===========================================================
@@ -18,7 +19,7 @@ import random
 import statistics
 import subprocess
 import time
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Tuple
 
 
 def check_clock_drift(samples: int = 200) -> Tuple[bool, Dict]:
@@ -169,7 +170,7 @@ def check_simd_identity() -> Tuple[bool, Dict]:
     if not flags and ("ppc" in arch or "power" in arch):
         try:
             result = subprocess.run(
-                ["grep", "-i", "vsx\|altivec\|dfp", "/proc/cpuinfo"],
+                ["grep", "-i", r"vsx\|altivec\|dfp", "/proc/cpuinfo"],
                 capture_output=True, text=True, timeout=5
             )
             if result.stdout:

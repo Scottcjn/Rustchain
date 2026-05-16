@@ -18,6 +18,14 @@ import statistics
 import re
 from datetime import datetime
 
+try:
+    from color_logs import error, info, success, warning
+except ImportError:
+    def info(msg): return msg
+    def warning(msg): return msg
+    def success(msg): return msg
+    def error(msg): return msg
+
 # Import fingerprint checks
 try:
     from fingerprint_checks import validate_all_checks

@@ -170,6 +170,17 @@ class TestOEmbedEndpoint(unittest.TestCase):
         data = response.get_json()
         self.assertLessEqual(data["height"], 360)
 
+    def test_oembed_rejects_non_positive_dimensions(self):
+        """Test that non-positive dimensions do not produce invalid iframe sizes."""
+        response = self.client.get(
+            "/oembed?url=https://bottube.ai/watch/demo-001&maxwidth=-1&maxheight=0"
+        )
+        data = response.get_json()
+        self.assertGreater(data["width"], 0)
+        self.assertGreater(data["height"], 0)
+        self.assertNotIn('width="-', data["html"])
+        self.assertNotIn('height="0"', data["html"])
+
     def test_oembed_thumbnail(self):
         """Test that oEmbed includes thumbnail URL."""
         response = self.client.get("/oembed?url=https://bottube.ai/watch/demo-001")
@@ -216,6 +227,34 @@ class TestOEmbedEndpoint(unittest.TestCase):
         data = response.get_json()
         self.assertEqual(response.status_code, 200)
         self.assertIn("html", data)
+
+    def test_oembed_ignores_untrusted_forwarded_host(self):
+        """Untrusted forwarded hosts must not poison generated embed URLs."""
+        response = self.client.get(
+            "/oembed?url=https://bottube.ai/watch/demo-001",
+            headers={"X-Forwarded-Host": "evil.example"},
+            base_url="https://bottube.ai",
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("https://bottube.ai/embed/demo-001", data["html"])
+        self.assertNotIn("evil.example", data["html"])
+        self.assertNotIn("evil.example", data["thumbnail_url"])
+
+    def test_oembed_allows_trusted_forwarded_host(self):
+        """Trusted forwarded hosts remain supported for proxy deployments."""
+        self.app.config["TRUSTED_FORWARD_HOSTS"] = ["embed.bottube.ai"]
+
+        response = self.client.get(
+            "/oembed?url=https://bottube.ai/watch/demo-001",
+            headers={"X-Forwarded-Host": "embed.bottube.ai"},
+            base_url="https://internal.example",
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("https://embed.bottube.ai/embed/demo-001", data["html"])
 
 
 class TestWatchPage(unittest.TestCase):
