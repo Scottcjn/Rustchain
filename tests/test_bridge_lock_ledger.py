@@ -785,6 +785,16 @@ class TestLockLedgerRoutes:
         lock_ledger.register_lock_ledger_routes(app)
         return app.test_client()
 
+    def _insert_locked_lock(self, db_path, miner_id, lock_id=1):
+        now = int(time.time())
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(
+                """INSERT INTO lock_ledger
+                   (id, miner_id, amount_i64, lock_type, locked_at, unlock_at, status, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (lock_id, miner_id, 5 * 1000000, "bridge_deposit", now - 3600, now + 3600, "locked", now - 3600),
+            )
+
     def test_miner_locks_rejects_malformed_limit(self, setup_test_db, funded_miner):
         lock_ledger = setup_test_db["lock_ledger"]
         client = self._client(lock_ledger, setup_test_db["db_path"])
@@ -893,17 +903,42 @@ class TestLockLedgerRoutes:
         assert response.status_code == 400
         assert response.get_json() == {"error": "lock_id must be an integer"}
 
+    @pytest.mark.parametrize("path", ["/api/lock/release", "/api/lock/forfeit"])
+    @pytest.mark.parametrize("lock_id", [0, -1])
+    def test_admin_write_routes_reject_non_positive_lock_id(self, setup_test_db, monkeypatch, path, lock_id):
+        lock_ledger = setup_test_db["lock_ledger"]
+        client = self._client(lock_ledger, setup_test_db["db_path"])
+        monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
+
+        response = client.post(
+            path,
+            headers={"X-Admin-Key": "expected-admin"},
+            json={"lock_id": lock_id},
+        )
+
+        assert response.status_code == 400
+        assert response.get_json() == {"error": "lock_id must be positive"}
+
+    @pytest.mark.parametrize("path", ["/api/lock/release", "/api/lock/forfeit"])
+    @pytest.mark.parametrize("lock_id", [True, False])
+    def test_admin_write_routes_reject_boolean_lock_id(self, setup_test_db, monkeypatch, path, lock_id):
+        lock_ledger = setup_test_db["lock_ledger"]
+        client = self._client(lock_ledger, setup_test_db["db_path"])
+        monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
+
+        response = client.post(
+            path,
+            headers={"X-Admin-Key": "expected-admin"},
+            json={"lock_id": lock_id},
+        )
+
+        assert response.status_code == 400
+        assert response.get_json() == {"error": "lock_id must be an integer"}
+
     def test_release_route_rejects_structured_tx_hash(self, setup_test_db, funded_miner, monkeypatch):
         lock_ledger = setup_test_db["lock_ledger"]
         db_path = setup_test_db["db_path"]
-        now = int(time.time())
-        with sqlite3.connect(db_path) as conn:
-            conn.execute(
-                """INSERT INTO lock_ledger
-                   (id, miner_id, amount_i64, lock_type, locked_at, unlock_at, status, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (1, funded_miner, 5 * 1000000, "bridge_deposit", now - 3600, now - 60, "locked", now - 3600),
-            )
+        self._insert_locked_lock(db_path, funded_miner)
         client = self._client(lock_ledger, db_path)
         monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
 
@@ -916,17 +951,29 @@ class TestLockLedgerRoutes:
         assert response.status_code == 400
         assert response.get_json() == {"error": "release_tx_hash must be a string"}
 
+    def test_release_route_treats_whitespace_tx_hash_as_empty(self, setup_test_db, funded_miner, monkeypatch):
+        lock_ledger = setup_test_db["lock_ledger"]
+        db_path = setup_test_db["db_path"]
+        self._insert_locked_lock(db_path, funded_miner)
+        client = self._client(lock_ledger, db_path)
+        monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
+
+        response = client.post(
+            "/api/lock/release",
+            headers={"X-Admin-Key": "expected-admin"},
+            json={"lock_id": 1, "release_tx_hash": "   "},
+        )
+
+        assert response.status_code == 200
+        assert response.get_json()["release_tx_hash"] is None
+        with sqlite3.connect(db_path) as conn:
+            stored = conn.execute("SELECT release_tx_hash FROM lock_ledger WHERE id = 1").fetchone()[0]
+        assert stored is None
+
     def test_forfeit_route_rejects_structured_reason(self, setup_test_db, funded_miner, monkeypatch):
         lock_ledger = setup_test_db["lock_ledger"]
         db_path = setup_test_db["db_path"]
-        now = int(time.time())
-        with sqlite3.connect(db_path) as conn:
-            conn.execute(
-                """INSERT INTO lock_ledger
-                   (id, miner_id, amount_i64, lock_type, locked_at, unlock_at, status, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (1, funded_miner, 5 * 1000000, "bridge_deposit", now - 3600, now - 60, "locked", now - 3600),
-            )
+        self._insert_locked_lock(db_path, funded_miner)
         client = self._client(lock_ledger, db_path)
         monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
 
@@ -938,6 +985,22 @@ class TestLockLedgerRoutes:
 
         assert response.status_code == 400
         assert response.get_json() == {"error": "reason must be a string"}
+
+    def test_forfeit_route_treats_whitespace_reason_as_default(self, setup_test_db, funded_miner, monkeypatch):
+        lock_ledger = setup_test_db["lock_ledger"]
+        db_path = setup_test_db["db_path"]
+        self._insert_locked_lock(db_path, funded_miner)
+        client = self._client(lock_ledger, db_path)
+        monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
+
+        response = client.post(
+            "/api/lock/forfeit",
+            headers={"X-Admin-Key": "expected-admin"},
+            json={"lock_id": 1, "reason": "   "},
+        )
+
+        assert response.status_code == 200
+        assert response.get_json()["reason"] == "admin_forfeit"
 
 
 # =============================================================================

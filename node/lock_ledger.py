@@ -669,15 +669,20 @@ def register_lock_ledger_routes(app):
             return None, (jsonify({"error": "lock_id required"}), 400)
         if isinstance(raw, bool) or not isinstance(raw, int):
             return None, (jsonify({"error": "lock_id must be an integer"}), 400)
+        if raw <= 0:
+            return None, (jsonify({"error": "lock_id must be positive"}), 400)
         return raw, None
 
     def parse_optional_string(data, name: str, default: Optional[str] = None):
         raw = data.get(name, default)
-        if raw is None or raw == "":
+        if raw is None:
             return default, None
         if not isinstance(raw, str):
             return None, (jsonify({"error": f"{name} must be a string"}), 400)
-        return raw, None
+        value = raw.strip()
+        if value == "":
+            return default, None
+        return value, None
     
     @app.route('/api/lock/miner/<miner_id>', methods=['GET'])
     def get_miner_locks(miner_id: str):
