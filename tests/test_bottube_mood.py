@@ -634,6 +634,58 @@ class TestMoodBlueprintJsonValidation(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("generated_comment", response.get_json())
 
+    def test_mood_routes_hide_internal_exception_details(self):
+        sensitive_error = (
+            "sqlite3.OperationalError: no such table: agent_mood_history "
+            "at /srv/rustchain/private/mood.db token=super-secret"
+        )
+
+        class FailingMoodEngine:
+            def _fail(self, *args, **kwargs):
+                raise RuntimeError(sensitive_error)
+
+            get_agent_mood = _fail
+            get_mood_statistics = _fail
+            record_signal = _fail
+            generate_title = _fail
+            generate_comment = _fail
+            get_post_probability = _fail
+            should_post_now = _fail
+
+        requests_to_check = [
+            ("get", "/api/v1/agents/test-agent/mood", {}),
+            (
+                "post",
+                "/api/v1/agents/test-agent/mood/signal",
+                {"json": {"signal_type": "video_views", "value": {"views": 1}}},
+            ),
+            (
+                "post",
+                "/api/v1/agents/test-agent/mood/title",
+                {"json": {"topic": "Internal Error Demo"}},
+            ),
+            (
+                "post",
+                "/api/v1/agents/test-agent/mood/comment",
+                {"json": {"base_comment": "hello"}},
+            ),
+            ("get", "/api/v1/agents/test-agent/mood/post-probability", {}),
+            ("get", "/api/v1/agents/test-agent/mood/statistics", {}),
+        ]
+
+        with patch("bottube_mood_engine.get_mood_engine", return_value=FailingMoodEngine()):
+            for method, endpoint, kwargs in requests_to_check:
+                with self.subTest(endpoint=endpoint):
+                    response = getattr(self.client, method)(endpoint, **kwargs)
+
+                    self.assertEqual(response.status_code, 500)
+                    body = response.get_json()
+                    self.assertEqual(body["error"], "Mood service unavailable")
+                    serialized_body = json.dumps(body)
+                    self.assertNotIn("agent_mood_history", serialized_body)
+                    self.assertNotIn("/srv/rustchain/private", serialized_body)
+                    self.assertNotIn("super-secret", serialized_body)
+
 
 def run_demo():
     """Run demonstration of mood system."""
