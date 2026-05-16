@@ -1142,7 +1142,10 @@ def register_sophia_governor_inbox_endpoints(app, db_path: str | None = None) ->
         if not _is_authorized(request):
             return jsonify({"error": "Unauthorized -- admin key or bearer required"}), 401
 
-        limit = request.args.get("limit", 20, type=int)
+        try:
+            limit = int(request.args.get("limit", 20))
+        except (ValueError, TypeError):
+            return jsonify({"error": "limit must be an integer"}), 400
         status = request.args.get("status")
         risk_level = request.args.get("risk_level")
         try:
