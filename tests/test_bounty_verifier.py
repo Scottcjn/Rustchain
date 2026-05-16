@@ -410,6 +410,48 @@ class TestBountyVerifier:
         
         assert len(urls) == 2
         assert "https://github.com/user" in urls
+
+    def test_verify_url_liveness_rejects_suffix_impersonation(self, sample_config):
+        """Allowlist matching should not accept github.com.evil.example."""
+        sample_config.url_check.enabled = True
+        sample_config.url_check.allowed_domains = ["github.com"]
+        verifier = BountyVerifier(sample_config)
+
+        checks = verifier.verify_url_liveness([
+            "https://github.com.evil.example/proof",
+        ])
+
+        assert len(checks) == 1
+        assert checks[0].status == VerificationStatus.FAILED
+        assert "Domain not in allowlist" in checks[0].message
+
+    def test_verify_url_liveness_rejects_off_allowlist_redirect(self, sample_config):
+        """An allowlisted URL that redirects away should fail verification."""
+        sample_config.url_check.enabled = True
+        sample_config.url_check.allowed_domains = ["github.com"]
+        verifier = BountyVerifier(sample_config)
+
+        class FakeResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def geturl(self):
+                return "https://evil.example/proof"
+
+        fake_opener = MagicMock()
+        fake_opener.open.return_value = FakeResponse()
+
+        with patch("tools.bounty_verifier.verifier.build_opener", return_value=fake_opener):
+            checks = verifier.verify_url_liveness(["https://github.com/user/proof"])
+
+        assert len(checks) == 1
+        assert checks[0].status == VerificationStatus.FAILED
+        assert "Redirect target domain not in allowlist" in checks[0].message
     
     def test_parse_claim_comment(self, sample_claim_comment):
         """Test parsing claim comment."""
@@ -666,3 +708,4 @@ class TestIntegration:
         result = verifier.verify_claim(sample_claim_comment)
         
         assert result.overall_status == VerificationStatus.FAILED
+
