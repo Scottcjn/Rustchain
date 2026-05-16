@@ -209,6 +209,8 @@ bash install-miner.sh --wallet YOUR_WALLET_NAME
 bash install-miner.sh --dry-run --wallet YOUR_WALLET_NAME
 ```
 
+注意：`install-miner.sh --dry-run` 是 Linux/macOS/WSL 预览路径。原生 Windows 用户应使用 Windows 矿工说明，或在 WSL 中运行该 dry-run，避免遇到不支持平台的报错。
+
 ## 💰 悬赏板
 
 通过为 RustChain 生态系统做贡献来赚取 **RTC**！
