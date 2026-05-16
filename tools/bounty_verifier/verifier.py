@@ -7,7 +7,8 @@ import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.error import URLError
-from urllib.request import Request, urlopen
+from urllib.parse import urlparse
+from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
 from .config import Config
 from .github_client import GitHubClient, RateLimitExceeded
@@ -120,6 +121,44 @@ class BountyVerifier:
     def _extract_urls(self, text: str) -> List[str]:
         """Extract URLs from text."""
         return re.findall(self.URL_PATTERN, text)
+
+    def _url_host_allowed(self, url: str) -> bool:
+        """Return True when *url* is on an allowed host or subdomain."""
+        allowed_domains = self.config.url_check.allowed_domains
+        if not allowed_domains:
+            return True
+
+        host = (urlparse(url).hostname or "").rstrip(".").lower()
+        if not host:
+            return False
+
+        for domain in allowed_domains:
+            allowed = domain.lower().lstrip(".").rstrip(".")
+            if host == allowed or host.endswith(f".{allowed}"):
+                return True
+        return False
+
+    def _url_host(self, url: str) -> str:
+        """Return the parsed URL host for diagnostics."""
+        return urlparse(url).netloc or url
+
+    def _open_url_with_redirect_allowlist(self, req: Request, timeout: int):
+        """Open a URL while rejecting redirects outside the allowlist."""
+        if not self.config.url_check.allowed_domains:
+            return urlopen(req, timeout=timeout)
+
+        verifier = self
+
+        class AllowlistRedirectHandler(HTTPRedirectHandler):
+            def redirect_request(self, req, fp, code, msg, headers, newurl):
+                if not verifier._url_host_allowed(newurl):
+                    raise UrlLivenessError(
+                        "Redirect target domain not in allowlist: "
+                        f"{verifier._url_host(newurl)}"
+                    )
+                return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+        return build_opener(AllowlistRedirectHandler).open(req, timeout=timeout)
     
     def parse_claim_comment(self, comment: ClaimComment) -> ClaimComment:
         """Parse a claim comment to extract relevant data."""
@@ -311,17 +350,14 @@ class BountyVerifier:
                     ))
                     continue
                 
-                # Check domain allowlist
-                from urllib.parse import urlparse
-                parsed = urlparse(url)
-                if self.config.url_check.allowed_domains:
-                    if not any(d in parsed.netloc for d in self.config.url_check.allowed_domains):
-                        checks.append(VerificationCheck(
-                            name=f"URL: {url[:50]}",
-                            status=VerificationStatus.FAILED,
-                            message=f"Domain not in allowlist: {parsed.netloc}",
-                        ))
-                        continue
+                # Check domain allowlist with exact host/subdomain matching.
+                if self.config.url_check.allowed_domains and not self._url_host_allowed(url):
+                    checks.append(VerificationCheck(
+                        name=f"URL: {url[:50]}",
+                        status=VerificationStatus.FAILED,
+                        message=f"Domain not in allowlist: {self._url_host(url)}",
+                    ))
+                    continue
                 
                 # Check liveness
                 req = Request(
@@ -330,7 +366,22 @@ class BountyVerifier:
                     method="HEAD",
                 )
                 
-                with urlopen(req, timeout=self.config.url_check.timeout) as resp:
+                with self._open_url_with_redirect_allowlist(
+                    req,
+                    timeout=self.config.url_check.timeout,
+                ) as resp:
+                    final_url = resp.geturl()
+                    if not self._url_host_allowed(final_url):
+                        checks.append(VerificationCheck(
+                            name=f"URL: {url[:50]}",
+                            status=VerificationStatus.FAILED,
+                            message=(
+                                "Redirect target domain not in allowlist: "
+                                f"{self._url_host(final_url)}"
+                            ),
+                        ))
+                        continue
+
                     if resp.status < 400:
                         checks.append(VerificationCheck(
                             name=f"URL: {url[:50]}",
@@ -344,6 +395,12 @@ class BountyVerifier:
                             message=f"URL returned status {resp.status}",
                         ))
                         
+            except UrlLivenessError as e:
+                checks.append(VerificationCheck(
+                    name=f"URL: {url[:50]}",
+                    status=VerificationStatus.FAILED,
+                    message=str(e),
+                ))
             except URLError as e:
                 checks.append(VerificationCheck(
                     name=f"URL: {url[:50]}",
@@ -564,3 +621,4 @@ class BountyVerifier:
         if response:
             return response.get("html_url")
         return None
+
