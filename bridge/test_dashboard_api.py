@@ -216,6 +216,23 @@ class TestLiveBridgeHealth:
         assert result["analytics"]["avg_settlement_time_s"] == 30.0
         assert result["analytics"]["failed_tx_breakdown"] == {"solana_timeout": 1}
 
+    def test_live_bridge_health_stale_active_sample_is_offline(self, tmp_path):
+        health_log = tmp_path / "bridge_health.jsonl"
+        health_log.write_text(
+            json.dumps({
+                "ts": 1000,
+                "bridge_status": "ACTIVE",
+                "pending_txs": 0,
+                "solana_slot_diff": 0,
+            }) + "\n",
+            encoding="utf-8",
+        )
+
+        result = build_live_bridge_health(str(health_log), now=1400)
+
+        assert result["bridge_status"] == "OFFLINE"
+        assert result["last_event_ts"] == 1000
+
     def test_live_bridge_endpoint_rejects_bad_limit(self, client):
         response = client.get('/bridge/dashboard/live?limit=abc')
 

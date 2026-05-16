@@ -450,11 +450,11 @@ def _bridge_alerts(events: list, pending_txs: int, solana_slot_diff: int, now: i
 
 
 def _derive_bridge_status(latest: dict, latest_ts: int, alerts: list, now: int) -> str:
+    if latest_ts is None or now - latest_ts > 300:
+        return "OFFLINE"
     explicit = str(latest.get("bridge_status", latest.get("status", ""))).upper()
     if explicit in {"ACTIVE", "DEGRADED", "OFFLINE"}:
         return explicit
-    if latest_ts is None or now - latest_ts > 300:
-        return "OFFLINE"
     if alerts:
         return "DEGRADED"
     return "ACTIVE"
