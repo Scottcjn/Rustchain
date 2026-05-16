@@ -65,3 +65,14 @@ def test_graph_edges_and_heads_are_stable():
         {"source": "b", "target": "c"},
     ]
     assert [node["id"] for node in graph["nodes"]] == ["a", "b", "c"]
+
+
+def test_graph_suppresses_edges_to_missing_windowed_parents():
+    graph = build_fork_choice_graph([
+        {"hash": "child", "parent_hash": "missing-parent", "height": 10},
+    ])
+
+    assert graph["nodes"][0]["id"] == "child"
+    assert graph["nodes"][0]["parent"] == "missing-parent"
+    assert graph["edges"] == []
+    assert graph["heads"] == ["child"]

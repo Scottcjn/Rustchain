@@ -122,7 +122,7 @@ def build_fork_choice_graph(blocks: Iterable[Dict]) -> Dict:
             "is_head": block in heads,
             "is_canonical": block.block_hash in canonical_hashes,
         })
-        if block.parent_hash:
+        if block.parent_hash in by_hash:
             edges.append({"source": block.parent_hash, "target": block.block_hash})
 
     fork_points = [block_hash for block_hash, child_hashes in children.items() if len(child_hashes) > 1]
