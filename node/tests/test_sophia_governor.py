@@ -250,6 +250,36 @@ def test_governor_endpoints_report_status_and_recent(client):
     assert len(recent_body["events"]) >= 1
 
 
+@pytest.mark.parametrize(
+    ("limit", "message"),
+    [
+        ("abc", "limit must be an integer"),
+        ("10.5", "limit must be an integer"),
+        ("0", "limit must be >= 1"),
+        ("-1", "limit must be >= 1"),
+    ],
+)
+def test_governor_recent_rejects_invalid_limit(client, limit, message):
+    response = client.get(f"/sophia/governor/recent?limit={limit}")
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": message}
+
+
+def test_governor_recent_caps_oversized_limit(tmp_db):
+    for index in range(55):
+        review_rustchain_event(
+            event_type="node_health",
+            source=f"pytest.{index}",
+            payload={"status": "ok"},
+            db_path=tmp_db,
+        )
+
+    recent = get_recent_governor_events(tmp_db, limit=500)
+
+    assert len(recent) == 50
+
+
 def test_governor_status_helpers(tmp_db):
     review_rustchain_event(
         event_type="attestation_verdict",
