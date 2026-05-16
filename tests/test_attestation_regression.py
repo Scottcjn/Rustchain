@@ -186,6 +186,16 @@ def test_client(monkeypatch):
             pass
 
 
+def test_attest_debug_fails_closed_when_admin_key_unset(test_client, monkeypatch):
+    """/ops/attest/debug must not allow no-header requests when RC_ADMIN_KEY is unset."""
+    monkeypatch.setattr(integrated_node, "ADMIN_KEY", None)
+
+    response = test_client.post("/ops/attest/debug", json={"miner": "test-miner"})
+
+    assert response.status_code == 503
+    assert response.get_json()["error"] == "Admin key not configured"
+
+
 # ---------------------------------------------------------------------------
 # Baseline Payload
 # ---------------------------------------------------------------------------
