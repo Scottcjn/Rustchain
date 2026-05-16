@@ -8,13 +8,14 @@ cryptography>=46.0.7
 # For node / Beacon Ed25519 verification:
 PyNaCl>=1.6.2
 # For async SDK and agent economy client tests:
-aiohttp>=3.9.0
+aiohttp>=3.10.11
 # For Flask apps imported by the test suite:
-flask-cors>=6.0.2
+Flask-Cors>=6.0.2
 # For faucet service YAML config loading:
 PyYAML>=6.0.3
 # For benchmark and visualizer tests:
-matplotlib>=3.7
+matplotlib>=3.9.2
+# Needed when tests import benchmarks/pse/analyze_results.py.
 seaborn>=0.12
 # For wallet CLI (BIP39 seed phrases):
 mnemonic>=0.21
