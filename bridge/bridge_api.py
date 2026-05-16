@@ -132,6 +132,19 @@ def _amount_from_base(amount_int: int) -> float:
     return amount_int / (10 ** RTC_DECIMALS)
 
 
+def _is_valid_evm_address(addr: str) -> bool:
+    """Check if addr is a valid 0x-prefixed EVM address (40 hex chars after 0x)."""
+    if not addr or not addr.startswith("0x"):
+        return False
+    if len(addr) != 42:
+        return False
+    try:
+        int(addr[2:], 16)
+        return True
+    except ValueError:
+        return False
+
+
 def _generate_lock_id(sender: str, amount: int, target_chain: str, ts: int) -> str:
     """Deterministic lock ID from key fields."""
     raw = f"{sender}:{amount}:{target_chain}:{ts}:{uuid.uuid4()}"
@@ -255,8 +268,8 @@ def lock_rtc():
         return jsonify({"error": f"maximum lock amount is {MAX_LOCK_AMOUNT} RTC"}), 400
 
     # Validate target wallet format
-    if target_chain == CHAIN_BASE and not target_wallet.startswith("0x"):
-        return jsonify({"error": "Base wallet must be a 0x EVM address"}), 400
+    if target_chain == CHAIN_BASE and not _is_valid_evm_address(target_wallet):
+        return jsonify({"error": "Base wallet must be a valid 0x EVM address (0x + 40 hex chars)"}), 400
     if target_chain == CHAIN_SOLANA and len(target_wallet) < 32:
         return jsonify({"error": "Solana wallet must be a valid base58 address"}), 400
 
