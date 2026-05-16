@@ -13,6 +13,7 @@ Admin-controlled Phase 1 (upgrade to trustless lock in Phase 2)
 
 import os
 import json
+import math
 import sqlite3
 import hashlib
 import hmac
@@ -239,6 +240,8 @@ def lock_rtc():
     try:
         amount_float = float(data.get("amount", 0))
     except (TypeError, ValueError):
+        return jsonify({"error": "invalid amount"}), 400
+    if not math.isfinite(amount_float):
         return jsonify({"error": "invalid amount"}), 400
 
     if not sender:
