@@ -26,6 +26,12 @@
 
 ---
 
+## 文档导航
+
+- [中文 API 快速参考](./API.md)
+- [英文 API Reference](../API.md)
+- [英文文档索引](../README.md)
+
 ## 🪙 Solana 上的 wRTC
 
 RustChain 代币（RTC）现已通过 BoTTube 桥接在 Solana 上以 **wRTC** 形式提供：
