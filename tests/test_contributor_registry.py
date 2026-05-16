@@ -39,6 +39,12 @@ def seed_contributor(app):
         conn.commit()
 
 
+def csrf_token_for(client):
+    client.get("/")
+    with client.session_transaction() as sess:
+        return sess["_csrf_token"]
+
+
 class TestInitDb:
     def test_creates_table(self, app):
         """init_db should create the contributors table."""
@@ -60,18 +66,21 @@ class TestIndexRoute:
         """GET / should return 200."""
         response = client.get("/")
         assert response.status_code == 200
+        assert b"csrf_token" in response.data
 
     def test_index_shows_contributors(self, client, seed_contributor):
         """GET / should list registered contributors."""
         response = client.get("/")
         assert b"testuser" in response.data
-        assert b"RTC019e78d600fb3131c29d7ba80aba8fe644be426e" in response.data
+        assert b"RTC019...426e" in response.data
+        assert b"RTC019e78d600fb3131c29d7ba80aba8fe644be426e" not in response.data
 
 
 class TestRegisterRoute:
     def test_register_new_contributor(self, client):
         """POST /register should add a new contributor."""
         response = client.post("/register", data={
+            "csrf_token": csrf_token_for(client),
             "github_username": "newuser",
             "contributor_type": "agent",
             "rtc_wallet": "RTC0abc123",
@@ -89,13 +98,42 @@ class TestRegisterRoute:
     def test_register_duplicate_username(self, client, seed_contributor):
         """POST /register with existing username should flash error."""
         response = client.post("/register", data={
+            "csrf_token": csrf_token_for(client),
             "github_username": "testuser",
             "contributor_type": "human",
-            "rtc_wallet": "RTC0dup",
+            "rtc_wallet": "RTC0dup123",
             "contribution_history": "",
         }, follow_redirects=True)
         assert response.status_code == 200
         assert b"already registered" in response.data
+
+    def test_register_rejects_invalid_username(self, client):
+        response = client.post("/register", data={
+            "csrf_token": csrf_token_for(client),
+            "github_username": "bad username",
+            "contributor_type": "human",
+            "rtc_wallet": "RTC0abc123",
+        }, follow_redirects=True)
+        assert response.status_code == 200
+        assert b"Invalid GitHub username" in response.data
+
+    def test_register_rejects_invalid_wallet(self, client):
+        response = client.post("/register", data={
+            "csrf_token": csrf_token_for(client),
+            "github_username": "walletuser",
+            "contributor_type": "human",
+            "rtc_wallet": "not-a-wallet",
+        }, follow_redirects=True)
+        assert response.status_code == 200
+        assert b"Invalid RTC wallet" in response.data
+
+    def test_register_rejects_missing_csrf(self, client):
+        response = client.post("/register", data={
+            "github_username": "nocsrf",
+            "contributor_type": "human",
+            "rtc_wallet": "RTC0abc123",
+        })
+        assert response.status_code == 400
 
 
 class TestApiContributors:
@@ -120,24 +158,40 @@ class TestApiContributors:
         contrib = data["contributors"][0]
         for field in ("github_username", "type", "wallet", "registered", "status"):
             assert field in contrib
+        assert contrib["wallet"] == "RTC019...426e"
 
 
 class TestApproveRoute:
     def test_approve_pending_contributor(self, client):
-        """GET /approve/<username> should set status to approved."""
+        """POST /approve/<username> should set status to approved."""
         client.post("/register", data={
+            "csrf_token": csrf_token_for(client),
             "github_username": "pendinguser",
             "contributor_type": "bot",
             "rtc_wallet": "RTC0pending",
             "contribution_history": "",
         }, follow_redirects=True)
-        response = client.get("/approve/pendinguser", follow_redirects=True)
+        response = client.post(
+            "/approve/pendinguser",
+            data={"csrf_token": csrf_token_for(client)},
+            follow_redirects=True,
+        )
         assert response.status_code == 200
         with sqlite3.connect(cr.DB_PATH) as conn:
             row = conn.execute(
                 "SELECT status FROM contributors WHERE github_username='pendinguser'"
             ).fetchone()
         assert row[0] == "approved"
+
+    def test_approve_rejects_missing_csrf(self, client):
+        client.post("/register", data={
+            "csrf_token": csrf_token_for(client),
+            "github_username": "approvecsrf",
+            "contributor_type": "human",
+            "rtc_wallet": "RTC0approve",
+        }, follow_redirects=True)
+        response = client.post("/approve/approvecsrf")
+        assert response.status_code == 400
 
 
 class TestDatabaseConstraints:
@@ -157,6 +211,7 @@ class TestDatabaseConstraints:
     def test_default_status_is_pending(self, client):
         """New registrations should have status=pending by default."""
         client.post("/register", data={
+            "csrf_token": csrf_token_for(client),
             "github_username": "defaultstatus",
             "contributor_type": "human",
             "rtc_wallet": "RTC0default",

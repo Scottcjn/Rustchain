@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: MIT
 
-from flask import Flask, request, redirect, url_for, flash
+from flask import Flask, request, redirect, url_for, flash, session, abort
 import sqlite3
 import os
 import secrets
-from datetime import datetime
+import re
 
 app = Flask(__name__)
 
@@ -32,6 +32,43 @@ app.secret_key = SECRET_KEY
 
 DB_PATH = 'contributors.db'
 
+GITHUB_USERNAME_RE = re.compile(r'^(?!-)(?!.*--)[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$')
+RTC_WALLET_RE = re.compile(r'^(?:RTC|0x)[A-Za-z0-9]{6,128}$')
+ALLOWED_CONTRIBUTOR_TYPES = {'human', 'bot', 'agent'}
+
+
+def _get_csrf_token():
+    token = session.get('_csrf_token')
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session['_csrf_token'] = token
+    return token
+
+
+def _validate_csrf():
+    submitted = request.form.get('csrf_token', '')
+    token = session.get('_csrf_token')
+    if not submitted or not token or submitted != token:
+        abort(400, description='Invalid CSRF token')
+
+
+def _mask_wallet(wallet: str) -> str:
+    if len(wallet) <= 10:
+        return wallet
+    return f"{wallet[:6]}...{wallet[-4:]}"
+
+
+def _is_valid_github_username(username: str) -> bool:
+    return bool(username and GITHUB_USERNAME_RE.fullmatch(username))
+
+
+def _is_valid_wallet(wallet: str) -> bool:
+    return bool(wallet and RTC_WALLET_RE.fullmatch(wallet))
+
+
+app.jinja_env.globals['csrf_token'] = _get_csrf_token
+
+
 def init_db():
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute('''
@@ -46,6 +83,7 @@ def init_db():
             )
         ''')
         conn.commit()
+
 
 @app.route('/')
 def index():
@@ -74,6 +112,7 @@ def index():
         
         <h2>Register as Contributor</h2>
         <form method="POST" action="/register">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="form-group">
                 <label for="github_username">GitHub Username:</label>
                 <input type="text" id="github_username" name="github_username" required>
@@ -123,22 +162,48 @@ def index():
     </body>
     </html>
     '''
-    
+
     with sqlite3.connect(DB_PATH) as conn:
-        contributors = conn.execute(
-            'SELECT * FROM contributors ORDER BY registration_date DESC'
-        ).fetchall()
-    
+        contributors = [
+            (
+                row[0],
+                row[1],
+                row[2],
+                _mask_wallet(row[3]),
+                row[4],
+                row[5],
+                row[6],
+            )
+            for row in conn.execute(
+                'SELECT * FROM contributors ORDER BY registration_date DESC'
+            ).fetchall()
+        ]
+
     from flask import render_template_string
     return render_template_string(html, contributors=contributors)
 
+
 @app.route('/register', methods=['POST'])
 def register():
-    github_username = request.form['github_username']
-    contributor_type = request.form['contributor_type']
-    rtc_wallet = request.form['rtc_wallet']
-    contribution_history = request.form.get('contribution_history', '')
-    
+    _validate_csrf()
+
+    github_username = request.form.get('github_username', '').strip()
+    contributor_type = request.form.get('contributor_type', '').strip().lower()
+    rtc_wallet = request.form.get('rtc_wallet', '').strip()
+    contribution_history = request.form.get('contribution_history', '').strip()
+
+    if not _is_valid_github_username(github_username):
+        flash('Error: Invalid GitHub username format.')
+        return redirect(url_for('index'))
+
+    if contributor_type not in ALLOWED_CONTRIBUTOR_TYPES:
+        flash('Error: Invalid contributor type.')
+        return redirect(url_for('index'))
+
+    if not _is_valid_wallet(rtc_wallet):
+        flash('Error: Invalid RTC wallet format.')
+        return redirect(url_for('index'))
+
     try:
         with sqlite3.connect(DB_PATH) as conn:
             conn.execute(
@@ -149,8 +214,9 @@ def register():
         flash(f'Successfully registered @{github_username}! Pending approval for 5 RTC bounty.')
     except sqlite3.IntegrityError:
         flash(f'Error: @{github_username} is already registered!')
-    
+
     return redirect(url_for('index'))
+
 
 @app.route('/api/contributors')
 def api_contributors():
@@ -158,13 +224,13 @@ def api_contributors():
         contributors = conn.execute(
             'SELECT github_username, contributor_type, rtc_wallet, registration_date, status FROM contributors ORDER BY registration_date DESC'
         ).fetchall()
-    
+
     return {
         'contributors': [
             {
                 'github_username': c[0],
                 'type': c[1],
-                'wallet': c[2],
+                'wallet': _mask_wallet(c[2]),
                 'registered': c[3],
                 'status': c[4]
             }
@@ -172,8 +238,10 @@ def api_contributors():
         ]
     }
 
-@app.route('/approve/<username>')
+
+@app.route('/approve/<username>', methods=['POST'])
 def approve_contributor(username):
+    _validate_csrf()
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
             'UPDATE contributors SET status = "approved" WHERE github_username = ?',
@@ -182,6 +250,7 @@ def approve_contributor(username):
         conn.commit()
     flash(f'Approved @{username} for 5 RTC bounty!')
     return redirect(url_for('index'))
+
 
 if __name__ == '__main__':
     if not os.path.exists(DB_PATH):
