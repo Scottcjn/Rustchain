@@ -740,6 +740,32 @@ class TestUtxoDB(unittest.TestCase):
         self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
         self.assertEqual(self.db.get_balance('attacker'), 0)
 
+    def test_malformed_spend_inputs_rejected_without_exception(self):
+        """Bad spend input shapes must fail validation, not raise errors."""
+        self._apply_coinbase('alice', 100 * UNIT)
+
+        malformed_inputs = [
+            None,
+            'not-a-list',
+            [{'spending_proof': 'sig'}],
+            [{'box_id': '', 'spending_proof': 'sig'}],
+            [{'box_id': '   ', 'spending_proof': 'sig'}],
+            ['not-a-dict'],
+        ]
+
+        for inputs in malformed_inputs:
+            with self.subTest(inputs=inputs):
+                ok = self.db.apply_transaction({
+                    'tx_type': 'transfer',
+                    'inputs': inputs,
+                    'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+                    'fee_nrtc': 0,
+                }, block_height=10)
+
+                self.assertFalse(ok)
+                self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
+                self.assertEqual(self.db.get_balance('bob'), 0)
+
     def test_self_transfer(self):
         """Self-transfer (from == to) must work correctly."""
         self._apply_coinbase('alice', 100 * UNIT)
@@ -823,6 +849,35 @@ class TestUtxoDB(unittest.TestCase):
         }
         ok = self.db.mempool_add(tx)
         self.assertFalse(ok)
+
+    def test_mempool_rejects_malformed_spend_inputs_without_locking(self):
+        """Mempool must reject malformed inputs before claiming any UTXO."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        box = self.db.get_unspent_for_address('alice')[0]
+
+        malformed_inputs = [
+            None,
+            'not-a-list',
+            [{'spending_proof': 'sig'}],
+            [{'box_id': '', 'spending_proof': 'sig'}],
+            [{'box_id': '   ', 'spending_proof': 'sig'}],
+            ['not-a-dict'],
+            [{'box_id': box['box_id']}, {'box_id': box['box_id']}],
+        ]
+
+        for index, inputs in enumerate(malformed_inputs):
+            with self.subTest(inputs=inputs):
+                ok = self.db.mempool_add({
+                    'tx_id': f'badinput{index:02d}' * 4,
+                    'tx_type': 'transfer',
+                    'inputs': inputs,
+                    'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+                    'fee_nrtc': 0,
+                })
+
+                self.assertFalse(ok)
+                self.assertFalse(self.db.mempool_check_double_spend(box['box_id']))
+                self.assertEqual(self.db.mempool_get_block_candidates(), [])
 
     # -- mempool conservation-of-value (DoS prevention) ----------------------
 

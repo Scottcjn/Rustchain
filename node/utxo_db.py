@@ -370,6 +370,26 @@ class UtxoDB:
 
         return normalized
 
+    def _normalize_spend_inputs(self, inputs: list) -> Optional[List[dict]]:
+        """Return validated spend inputs, or None on invalid input."""
+        if not isinstance(inputs, list):
+            return None
+
+        normalized = []
+        seen = set()
+        for inp in inputs:
+            if not isinstance(inp, dict):
+                return None
+            box_id = inp.get('box_id')
+            if not isinstance(box_id, str) or not box_id.strip():
+                return None
+            if box_id in seen:
+                return None
+            seen.add(box_id)
+            normalized.append(inp)
+
+        return normalized
+
     def _normalize_tx_type(self, tx: dict) -> Optional[str]:
         """Return a valid transaction type, defaulting only when absent."""
         if 'tx_type' not in tx:
@@ -470,9 +490,10 @@ class UtxoDB:
             # Without this, the same box_id counted twice inflates
             # input_total.  The spend-phase rowcount check catches it
             # today, but only accidentally.  Defense in depth.
-            input_box_ids = [i['box_id'] for i in inputs]
-            if len(input_box_ids) != len(set(input_box_ids)):
+            inputs = self._normalize_spend_inputs(inputs)
+            if inputs is None:
                 return abort()
+            input_box_ids = [i['box_id'] for i in inputs]
             data_inputs = self._normalize_data_inputs(data_inputs)
             if data_inputs is None:
                 return abort()
@@ -796,7 +817,8 @@ class UtxoDB:
             if tx_type in MINTING_TX_TYPES:
                 return False
 
-            if not inputs:
+            inputs = self._normalize_spend_inputs(inputs)
+            if inputs is None or not inputs:
                 return False
 
             data_inputs = self._normalize_data_inputs(data_inputs)
