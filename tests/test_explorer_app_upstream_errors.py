@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 import importlib.util
 from pathlib import Path
 
