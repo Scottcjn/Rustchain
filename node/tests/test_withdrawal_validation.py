@@ -56,16 +56,21 @@ def load_integrated_node():
     os.environ["RUSTCHAIN_DB_PATH"] = os.path.join(_IMPORT_TMP.name, "import.db")
     os.environ["RC_ADMIN_KEY"] = "0" * 32
 
-    import prometheus_client
-
-    previous_metrics = (
-        prometheus_client.Counter,
-        prometheus_client.Gauge,
-        prometheus_client.Histogram,
-    )
-    prometheus_client.Counter = NoopMetric
-    prometheus_client.Gauge = NoopMetric
-    prometheus_client.Histogram = NoopMetric
+    prometheus_client = None
+    previous_metrics = None
+    try:
+        import prometheus_client
+    except ImportError:
+        pass
+    else:
+        previous_metrics = (
+            prometheus_client.Counter,
+            prometheus_client.Gauge,
+            prometheus_client.Histogram,
+        )
+        prometheus_client.Counter = NoopMetric
+        prometheus_client.Gauge = NoopMetric
+        prometheus_client.Histogram = NoopMetric
     try:
         spec = importlib.util.spec_from_file_location("rustchain_withdrawal_validation_test", MODULE_PATH)
         module = importlib.util.module_from_spec(spec)
@@ -74,11 +79,12 @@ def load_integrated_node():
         _INTEGRATED_NODE = module
         return _INTEGRATED_NODE
     finally:
-        (
-            prometheus_client.Counter,
-            prometheus_client.Gauge,
-            prometheus_client.Histogram,
-        ) = previous_metrics
+        if prometheus_client is not None:
+            (
+                prometheus_client.Counter,
+                prometheus_client.Gauge,
+                prometheus_client.Histogram,
+            ) = previous_metrics
         if previous_db_path is None:
             os.environ.pop("RUSTCHAIN_DB_PATH", None)
         else:
