@@ -35,9 +35,8 @@ def governor_env(monkeypatch):
 
 
 @pytest.fixture
-def tmp_db():
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as handle:
-        db_path = handle.name
+def tmp_db(tmp_path):
+    db_path = str(tmp_path / "governor.db")
     init_sophia_governor_schema(db_path)
     yield db_path
     for _ in range(5):
@@ -206,7 +205,18 @@ def test_governor_admin_auth_uses_constant_time_compare(client, monkeypatch):
     )
     assert denied.status_code == 401
 
-    accepted = client.post(
+    accepted_admin_header = client.post(
+        "/sophia/governor/review",
+        headers={"X-Admin-Key": "test-admin"},
+        json={
+            "event_type": "governance_proposal",
+            "source": "pytest.admin",
+            "payload": {"title": "routine review"},
+        },
+    )
+    assert accepted_admin_header.status_code == 200
+
+    accepted_api_header = client.post(
         "/sophia/governor/review",
         headers={"X-API-Key": "test-admin"},
         json={
@@ -215,10 +225,11 @@ def test_governor_admin_auth_uses_constant_time_compare(client, monkeypatch):
             "payload": {"amount_rtc": 50},
         },
     )
-    assert accepted.status_code == 200
+    assert accepted_api_header.status_code == 200
 
     assert calls == [
         ("wrong-admin", "test-admin"),
+        ("test-admin", "test-admin"),
         ("test-admin", "test-admin"),
     ]
 
