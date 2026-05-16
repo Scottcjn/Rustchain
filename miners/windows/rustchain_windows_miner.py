@@ -617,7 +617,8 @@ def run_headless(wallet_address: str, node_url: str) -> int:
         elif t == "error":
             print(f"[error] {evt.get('message')}", file=sys.stderr, flush=True)
         elif evt.get("message"):
-            print(f"[{t}] {evt.get('message')}", flush=True)
+            event_type = t or "event"
+            print(f"[{event_type}] {evt.get('message')}", flush=True)
 
     print("RustChain Windows miner: headless mode", flush=True)
     print(f"node={miner.node_url} miner_id={miner.miner_id}", flush=True)

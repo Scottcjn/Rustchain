@@ -13,6 +13,8 @@ def _load_windows_miner():
         "rustchain_windows_miner_under_test",
         MINER_SCRIPT,
     )
+    assert spec is not None
+    assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -108,3 +110,39 @@ def test_headless_runner_prints_lifecycle_messages(monkeypatch, capsys):
     output = capsys.readouterr()
     assert "[attest] Attestation successful" in output.out
     assert "[enroll] Epoch enrollment successful" in output.out
+
+
+def test_headless_runner_uses_default_event_label(monkeypatch, capsys):
+    module = _load_windows_miner()
+
+    class FakeWallet:
+        wallet_data = {"address": "wallet-from-config"}
+
+        def save_wallet(self, wallet_data=None):
+            if wallet_data:
+                self.wallet_data = wallet_data
+
+    class FakeMiner:
+        node_url = "http://node-from-init"
+        miner_id = "windows_test"
+
+        def __init__(self, wallet_address):
+            self.wallet_address = wallet_address
+
+        def start_mining(self, callback):
+            callback({"message": "Lifecycle message without type"})
+
+        def stop_mining(self):
+            pass
+
+    def stop_loop(_seconds):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(module, "RustChainWallet", FakeWallet)
+    monkeypatch.setattr(module, "RustChainMiner", FakeMiner)
+    monkeypatch.setattr(module.time, "sleep", stop_loop)
+
+    assert module.run_headless("wallet-from-args", "http://node-from-args") == 0
+
+    output = capsys.readouterr()
+    assert "[event] Lifecycle message without type" in output.out
