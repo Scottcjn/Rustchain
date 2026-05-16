@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 const DECIMALS = 6n;
 const TOKEN_SCALE = 10n ** DECIMALS;
 const MAX_UINT256 = (1n << 256n) - 1n;

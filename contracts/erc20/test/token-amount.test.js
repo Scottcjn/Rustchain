@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 const { expect } = require("chai");
 const {
   MAX_UINT256,
