@@ -74,3 +74,19 @@ def test_faucet_drip_records_valid_address(tmp_path, monkeypatch):
             "SELECT address, amount FROM faucet_claims"
         ).fetchone()
     assert row == ("rtc-test-wallet", 0.5)
+
+
+def test_proxy_api_hides_upstream_connection_details(tmp_path, monkeypatch):
+    keeper = load_keeper_explorer(tmp_path, monkeypatch)
+    internal_detail = "http://10.0.0.5:8000/private/admin from /srv/rustchain/node.py"
+
+    def fail_request(*args, **kwargs):
+        raise RuntimeError(internal_detail)
+
+    monkeypatch.setattr(keeper.requests, "get", fail_request)
+
+    response = keeper.app.test_client().get("/api/proxy/blocks/latest")
+
+    assert response.status_code == 502
+    assert response.get_json() == {"error": "Node connection failed"}
+    assert internal_detail not in response.get_data(as_text=True)
