@@ -2,6 +2,7 @@
 
 import sqlite3
 
+import pytest
 from flask import Flask
 
 from node.gpu_render_endpoints import register_gpu_render_endpoints
@@ -137,3 +138,66 @@ def test_gpu_admin_endpoints_fail_closed_without_configured_key(tmp_path):
     assert response.status_code == 503
     assert response.get_json() == {"error": "Admin key not configured"}
     assert _balance(db_path, "victim") == 25.0
+
+
+@pytest.mark.parametrize(
+    ("path", "headers"),
+    [
+        ("/api/gpu/attest", {}),
+        ("/api/gpu/escrow", {"X-Admin-Key": ADMIN_KEY}),
+        ("/api/gpu/release", {"X-Admin-Key": ADMIN_KEY}),
+        ("/api/gpu/refund", {"X-Admin-Key": ADMIN_KEY}),
+    ],
+)
+def test_gpu_routes_reject_non_object_json(tmp_path, path, headers):
+    db_path = tmp_path / "gpu.db"
+    _init_db(db_path)
+    client = _create_app(db_path).test_client()
+
+    response = client.post(path, headers=headers, json=[{"unexpected": "array"}])
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "JSON object required"}
+
+
+def test_gpu_escrow_rejects_structured_string_fields(tmp_path):
+    db_path = tmp_path / "gpu.db"
+    _init_db(db_path)
+    client = _create_app(db_path).test_client()
+
+    payload = _escrow_payload()
+    payload["job_id"] = {"structured": "job"}
+
+    response = client.post(
+        "/api/gpu/escrow",
+        json=payload,
+        headers={"X-Admin-Key": ADMIN_KEY},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "job_id must be a string"}
+    assert _balance(db_path, "victim") == 25.0
+
+
+def test_gpu_release_rejects_structured_escrow_secret(tmp_path):
+    db_path = tmp_path / "gpu.db"
+    _init_db(db_path)
+    client = _create_app(db_path).test_client()
+
+    created = client.post(
+        "/api/gpu/escrow",
+        json=_escrow_payload(),
+        headers={"X-Admin-Key": ADMIN_KEY},
+    )
+    assert created.status_code == 200
+
+    response = client.post(
+        "/api/gpu/release",
+        json={"job_id": "job-1", "actor_wallet": "victim", "escrow_secret": ["not", "text"]},
+        headers={"X-Admin-Key": ADMIN_KEY},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "escrow_secret must be a string"}
+    assert _balance(db_path, "victim") == 20.0
+    assert _balance(db_path, "attacker") == 0.0
