@@ -6,9 +6,9 @@ Visual guides for installing RustChain and completing your first attestation.
 
 ### Miner Installation (45 seconds)
 
-Watch the complete installation process from cloning to running:
+The recording workflow is documented in the asciinema guide:
 
-[Watch the miner installation recording](asciinema/miner_install.cast)
+[Open the miner installation recording guide](asciinema/README.md)
 
 **What you'll see:**
 1. Cloning the RustChain repository
@@ -19,9 +19,9 @@ Watch the complete installation process from cloning to running:
 
 ### First Attestation (52 seconds)
 
-See how to complete your first hardware attestation and start mining:
+The attestation recording workflow is documented in the asciinema guide:
 
-[Watch the first attestation recording](asciinema/first_attestation.cast)
+[Open the first attestation recording guide](asciinema/README.md)
 
 **What you'll see:**
 1. Starting the RustChain miner
