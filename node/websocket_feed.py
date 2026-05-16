@@ -209,6 +209,10 @@ class WebSocketFeed:
                 self.metrics['active_connections'] = max(0, self.metrics['active_connections'] - 1)
             
             client_id = request.sid if request else 'unknown'
+            if client_id != 'unknown':
+                removed = self.remove_json_rpc_subscriptions(client_id)
+                if removed:
+                    logger.info(f"[WebSocket] Removed {removed} JSON-RPC subscription(s) for {client_id}")
             logger.info(f"[WebSocket] Client disconnected: {client_id}")
 
         @self.socketio.on('ping')
@@ -364,10 +368,22 @@ class WebSocketFeed:
             return self._json_rpc_error(None, -32600, "Invalid Request")
 
         request_id = message.get('id')
-        if message.get('method') != 'eth_subscribe':
+        method = message.get('method')
+        params = message.get('params') or []
+
+        if method == 'eth_unsubscribe':
+            if not isinstance(params, list) or not params:
+                return self._json_rpc_error(request_id, -32602, "Expected subscription id")
+            removed = self.remove_json_rpc_subscription(params[0], client_id=client_id)
+            return {
+                'jsonrpc': JSON_RPC_VERSION,
+                'id': request_id,
+                'result': removed
+            }
+
+        if method != 'eth_subscribe':
             return self._json_rpc_error(request_id, -32601, "Method not found")
 
-        params = message.get('params') or []
         if not isinstance(params, list) or not params or params[0] != MINING_STATS_SUBSCRIPTION:
             return self._json_rpc_error(request_id, -32602, "Expected params ['mining_stats', options]")
 
@@ -387,6 +403,29 @@ class WebSocketFeed:
                 'created_at': time.time()
             }
         return subscription_id
+
+    def remove_json_rpc_subscription(self, subscription_id: str, client_id: Optional[str] = None) -> bool:
+        """Remove one JSON-RPC subscription if it belongs to the caller."""
+        with self._lock:
+            subscription = self.json_rpc_subscriptions.get(subscription_id)
+            if not subscription:
+                return False
+            if client_id is not None and subscription.get('client_id') != client_id:
+                return False
+            del self.json_rpc_subscriptions[subscription_id]
+            return True
+
+    def remove_json_rpc_subscriptions(self, client_id: str) -> int:
+        """Remove all JSON-RPC subscriptions owned by a disconnected client."""
+        with self._lock:
+            stale_ids = [
+                subscription_id
+                for subscription_id, subscription in self.json_rpc_subscriptions.items()
+                if subscription.get('client_id') == client_id
+            ]
+            for subscription_id in stale_ids:
+                del self.json_rpc_subscriptions[subscription_id]
+            return len(stale_ids)
 
     def build_mining_stats_notification(self, subscription_id: str, stats: Optional[Dict] = None) -> Dict:
         """Build an Ethereum-style eth_subscription notification."""

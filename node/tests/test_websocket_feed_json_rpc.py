@@ -73,3 +73,55 @@ def test_json_rpc_rejects_unknown_subscription():
 
     assert response["id"] == 3
     assert response["error"]["code"] == -32602
+class FakeSocketIO:
+    def __init__(self):
+        self.emitted = []
+
+    def emit(self, event, payload, **kwargs):
+        self.emitted.append((event, payload, kwargs))
+
+
+def test_disconnect_cleanup_removes_stale_subscription_before_broadcast():
+    feed = WebSocketFeed()
+    response = feed.handle_json_rpc_message(
+        {"jsonrpc": "2.0", "id": 4, "method": "eth_subscribe", "params": ["mining_stats", {}]},
+        client_id="client-1",
+    )
+    subscription_id = response["result"]
+
+    assert subscription_id in feed.json_rpc_subscriptions
+    assert feed.remove_json_rpc_subscriptions("client-1") == 1
+    assert subscription_id not in feed.json_rpc_subscriptions
+
+    fake_socketio = FakeSocketIO()
+    feed.socketio = fake_socketio
+    feed.broadcast_mining_stats()
+
+    assert [event for event, _, _ in fake_socketio.emitted] == ["mining_stats"]
+
+
+def test_eth_unsubscribe_removes_only_callers_subscription():
+    feed = WebSocketFeed()
+    own = feed.handle_json_rpc_message(
+        {"jsonrpc": "2.0", "id": 5, "method": "eth_subscribe", "params": ["mining_stats", {}]},
+        client_id="client-1",
+    )["result"]
+    other = feed.handle_json_rpc_message(
+        {"jsonrpc": "2.0", "id": 6, "method": "eth_subscribe", "params": ["mining_stats", {}]},
+        client_id="client-2",
+    )["result"]
+
+    rejected = feed.handle_json_rpc_message(
+        {"jsonrpc": "2.0", "id": 7, "method": "eth_unsubscribe", "params": [other]},
+        client_id="client-1",
+    )
+    removed = feed.handle_json_rpc_message(
+        {"jsonrpc": "2.0", "id": 8, "method": "eth_unsubscribe", "params": [own]},
+        client_id="client-1",
+    )
+
+    assert rejected["result"] is False
+    assert removed["result"] is True
+    assert own not in feed.json_rpc_subscriptions
+    assert other in feed.json_rpc_subscriptions
+
