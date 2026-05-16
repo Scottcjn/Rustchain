@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from flask import Flask
 from bridge.bridge_api import register_bridge_routes, init_bridge_db, get_db, _amount_to_base, STATE_COMPLETE
-from bridge.dashboard_api import register_dashboard_routes
+from bridge.dashboard_api import build_live_bridge_health, register_dashboard_routes
 
 
 @pytest.fixture
@@ -185,6 +185,60 @@ class TestBridgeHealth:
         
         now = int(time.time())
         assert abs(data['last_checked'] - now) < 5  # Within 5 seconds
+
+
+class TestLiveBridgeHealth:
+    """Test bridge health JSONL aggregation for real-time dashboard data."""
+
+    def test_live_bridge_health_missing_log_is_offline(self, tmp_path):
+        result = build_live_bridge_health(str(tmp_path / "missing.jsonl"), now=1000)
+
+        assert result["bridge_status"] == "OFFLINE"
+        assert result["alerts"][0]["type"] == "no_health_events"
+        assert result["sample_count"] == 0
+
+    def test_live_bridge_health_aggregates_status_alerts_and_analytics(self, tmp_path):
+        health_log = tmp_path / "bridge_health.jsonl"
+        events = [
+            {"ts": 1000, "bridge_status": "ACTIVE", "pending_txs": 10, "solana_slot_diff": 100, "settlement_time_s": 20},
+            {"ts": 1300, "bridge_status": "ACTIVE", "pending_txs": 55, "solana_slot_diff": 120, "settlement_time_s": 40},
+            {"ts": 1700, "bridge_status": "DEGRADED", "pending_txs": 60, "solana_slot_diff": 1200, "failed_reason": "solana_timeout"},
+        ]
+        health_log.write_text("\n".join(json.dumps(event) for event in events), encoding="utf-8")
+
+        result = build_live_bridge_health(str(health_log), now=1800)
+
+        assert result["bridge_status"] == "DEGRADED"
+        assert result["pending_txs"] == 60
+        assert result["solana_slot_diff"] == 1200
+        assert {alert["type"] for alert in result["alerts"]} == {"pending_txs_high", "solana_slot_lag"}
+        assert result["analytics"]["uptime_24h_pct"] == 66.67
+        assert result["analytics"]["avg_settlement_time_s"] == 30.0
+        assert result["analytics"]["failed_tx_breakdown"] == {"solana_timeout": 1}
+
+    def test_live_bridge_health_stale_active_sample_is_offline(self, tmp_path):
+        health_log = tmp_path / "bridge_health.jsonl"
+        health_log.write_text(
+            json.dumps({
+                "ts": 1000,
+                "bridge_status": "ACTIVE",
+                "pending_txs": 0,
+                "solana_slot_diff": 0,
+            }) + "\n",
+            encoding="utf-8",
+        )
+
+        result = build_live_bridge_health(str(health_log), now=1400)
+
+        assert result["bridge_status"] == "OFFLINE"
+        assert result["last_event_ts"] == 1000
+
+    def test_live_bridge_endpoint_rejects_bad_limit(self, client):
+        response = client.get('/bridge/dashboard/live?limit=abc')
+
+        assert response.status_code == 400
+        data = json.loads(response.data)
+        assert data["error"] == "limit must be an integer"
 
 
 class TestDashboardTransactions:

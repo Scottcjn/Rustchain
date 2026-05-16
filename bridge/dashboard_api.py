@@ -22,6 +22,7 @@ from bridge.bridge_api import get_db, _amount_from_base, STATE_COMPLETE
 
 # ─── Config ──────────────────────────────────────────────────────────────────
 DASHBOARD_DB_PATH = os.environ.get("DASHBOARD_DB_PATH", "bridge_ledger.db")
+BRIDGE_HEALTH_LOG_PATH = os.environ.get("BRIDGE_HEALTH_LOG_PATH", "data/bridge_health.jsonl")
 SOLANA_RPC_URL = os.environ.get(
     "SOLANA_RPC_URL",
     "https://api.mainnet-beta.solana.com"
@@ -223,6 +224,31 @@ def get_bridge_health():
     })
 
 
+@dashboard_bp.route("/live", methods=["GET"])
+def get_live_bridge_health():
+    """
+    Get live bridge operations data from structured bridge health logs.
+
+    Returns:
+    {
+        "bridge_status": "ACTIVE" | "DEGRADED" | "OFFLINE",
+        "pending_txs": int,
+        "last_finalized_height": int,
+        "solana_slot_diff": int,
+        "alerts": [...],
+        "analytics": {...}
+    }
+    """
+    limit = request.args.get("limit", 500)
+    try:
+        limit = int(limit)
+    except (TypeError, ValueError):
+        return jsonify({"error": "limit must be an integer"}), 400
+    limit = max(1, min(limit, 5000))
+
+    return jsonify(build_live_bridge_health(BRIDGE_HEALTH_LOG_PATH, limit=limit))
+
+
 @dashboard_bp.route("/transactions", methods=["GET"])
 def get_dashboard_transactions():
     """
@@ -324,6 +350,165 @@ def get_dashboard_transactions():
         "unwrap_count": unwrap_count,
         "total_volume_24h": round(total_volume_24h, 2),
     })
+
+
+# ─── Live Bridge Health Aggregation ───────────────────────────────────────────
+
+def build_live_bridge_health(path: str, limit: int = 500, now: int = None) -> dict:
+    """Aggregate bridge health JSONL into dashboard status, alerts, and analytics."""
+    now = int(time.time()) if now is None else int(now)
+    events = _read_bridge_health_events(path, limit=limit)
+    if not events:
+        return {
+            "bridge_status": "OFFLINE",
+            "pending_txs": 0,
+            "last_finalized_height": 0,
+            "solana_slot_diff": 0,
+            "alerts": [{"type": "no_health_events", "severity": "critical"}],
+            "analytics": {
+                "uptime_24h_pct": 0.0,
+                "uptime_7d_pct": 0.0,
+                "avg_settlement_time_s": 0.0,
+                "failed_tx_breakdown": {},
+            },
+            "last_event_ts": None,
+            "sample_count": 0,
+        }
+
+    latest = events[-1]
+    pending_txs = _to_int(latest.get("pending_txs", latest.get("pending_transactions", 0)))
+    last_finalized_height = _to_int(latest.get("last_finalized_height", latest.get("height", 0)))
+    solana_slot_diff = _to_int(latest.get("solana_slot_diff", latest.get("slot_diff", 0)))
+    latest_ts = _event_ts(latest)
+    alerts = _bridge_alerts(events, pending_txs, solana_slot_diff, now)
+    bridge_status = _derive_bridge_status(latest, latest_ts, alerts, now)
+
+    return {
+        "bridge_status": bridge_status,
+        "pending_txs": pending_txs,
+        "last_finalized_height": last_finalized_height,
+        "solana_slot_diff": solana_slot_diff,
+        "alerts": alerts,
+        "analytics": {
+            "uptime_24h_pct": _uptime_pct(events, now - 86400),
+            "uptime_7d_pct": _uptime_pct(events, now - 604800),
+            "avg_settlement_time_s": _avg_settlement_time(events),
+            "failed_tx_breakdown": _failed_tx_breakdown(events),
+        },
+        "last_event_ts": latest_ts,
+        "sample_count": len(events),
+    }
+
+
+def _read_bridge_health_events(path: str, limit: int = 500) -> list:
+    events = []
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(event, dict):
+                    events.append(event)
+    except FileNotFoundError:
+        return []
+
+    return events[-limit:]
+
+
+def _bridge_alerts(events: list, pending_txs: int, solana_slot_diff: int, now: int) -> list:
+    alerts = []
+    pending_streak_start = None
+    for event in reversed(events):
+        if _to_int(event.get("pending_txs", event.get("pending_transactions", 0))) > 50:
+            pending_streak_start = _event_ts(event)
+        else:
+            break
+
+    if pending_txs > 50 and pending_streak_start and now - pending_streak_start >= 300:
+        alerts.append({
+            "type": "pending_txs_high",
+            "severity": "warning",
+            "value": pending_txs,
+            "threshold": 50,
+            "duration_s": now - pending_streak_start,
+        })
+
+    if solana_slot_diff > 1000:
+        alerts.append({
+            "type": "solana_slot_lag",
+            "severity": "critical",
+            "value": solana_slot_diff,
+            "threshold": 1000,
+        })
+
+    return alerts
+
+
+def _derive_bridge_status(latest: dict, latest_ts: int, alerts: list, now: int) -> str:
+    if latest_ts is None or now - latest_ts > 300:
+        return "OFFLINE"
+    explicit = str(latest.get("bridge_status", latest.get("status", ""))).upper()
+    if explicit in {"ACTIVE", "DEGRADED", "OFFLINE"}:
+        return explicit
+    if alerts:
+        return "DEGRADED"
+    return "ACTIVE"
+
+
+def _uptime_pct(events: list, since_ts: int) -> float:
+    window = [event for event in events if (_event_ts(event) or 0) >= since_ts]
+    if not window:
+        return 0.0
+    active = sum(1 for event in window if str(event.get("bridge_status", event.get("status", "ACTIVE"))).upper() == "ACTIVE")
+    return round(active / len(window) * 100, 2)
+
+
+def _avg_settlement_time(events: list) -> float:
+    values = [
+        _to_float(event.get("settlement_time_s", event.get("settlement_seconds")))
+        for event in events
+        if event.get("settlement_time_s", event.get("settlement_seconds")) is not None
+    ]
+    if not values:
+        return 0.0
+    return round(sum(values) / len(values), 2)
+
+
+def _failed_tx_breakdown(events: list) -> dict:
+    breakdown = {}
+    for event in events:
+        reason = event.get("failed_reason") or event.get("reason_code")
+        if not reason:
+            continue
+        breakdown[str(reason)] = breakdown.get(str(reason), 0) + 1
+    return breakdown
+
+
+def _event_ts(event: dict):
+    ts = event.get("ts", event.get("timestamp", event.get("time")))
+    try:
+        return int(ts)
+    except (TypeError, ValueError):
+        return None
+
+
+def _to_int(value, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _to_float(value, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 
 @dashboard_bp.route("/price", methods=["GET"])
