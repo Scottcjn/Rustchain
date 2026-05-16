@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 #!/usr/bin/env python3
 """Regression tests for P2P handshake parameter negotiation."""
 
