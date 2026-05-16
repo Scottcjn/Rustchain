@@ -340,7 +340,7 @@ Epoch: 10 minutes  |  Pool: 1.5 RTC/epoch  |  Split by antiquity weight
 
 G4 Mac (2.5x):     0.30 RTC  ████████████████████
 G5 Mac (2.0x):     0.24 RTC  ████████████████
-Modern PC (0.8x):  0.10 RTC  ██████
+Modern PC (1.0x):  0.12 RTC  ████████
 ```
 
 ### Anti-VM Enforcement
