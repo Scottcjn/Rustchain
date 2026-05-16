@@ -6,6 +6,7 @@ Uses respx for HTTP mocking.
 import pytest
 import respx
 import httpx
+import json
 from rustchain_sdk.client import RustChainClient
 from rustchain_sdk.exceptions import ConnectionError, APIError
 
@@ -161,7 +162,7 @@ class TestRustChainClientTransfer:
     @respx.mock
     async def test_transfer_signed_success(self):
         """transfer_signed returns tx result."""
-        route = respx.post("https://50.28.86.131/transfer").mock(
+        route = respx.post("https://50.28.86.131/wallet/transfer/signed").mock(
             return_value=httpx.Response(200, json={
                 "tx_hash": "0xabc123",
                 "status": "confirmed",
@@ -175,21 +176,33 @@ class TestRustChainClientTransfer:
                 fee=1,
                 signature="sighex",
                 timestamp=1700000000,
+                public_key="pubhex",
+                memo="sdk test",
             )
         assert result["tx_hash"] == "0xabc123"
         assert result["status"] == "confirmed"
+        assert route.calls[0].request.url.path == "/wallet/transfer/signed"
+        assert json.loads(route.calls[0].request.content) == {
+            "from_address": "RTCfrom",
+            "to_address": "RTCto",
+            "amount_rtc": 100,
+            "nonce": 1700000000,
+            "signature": "sighex",
+            "public_key": "pubhex",
+            "memo": "sdk test",
+        }
 
     @pytest.mark.asyncio
     @respx.mock
     async def test_transfer_signed_raises_on_api_error(self):
         """API error raises APIError with status code."""
-        route = respx.post("https://50.28.86.131/transfer").mock(
+        route = respx.post("https://50.28.86.131/wallet/transfer/signed").mock(
             return_value=httpx.Response(400, json={"message": "Invalid signature"})
         )
         async with RustChainClient() as client:
             with pytest.raises(APIError) as exc_info:
                 await client.transfer_signed(
-                    "RTCfrom", "RTCto", 100, 0, "bad", 0
+                    "RTCfrom", "RTCto", 100, 0, "bad", 0, public_key="pubhex"
                 )
             assert exc_info.value.status_code == 400
 

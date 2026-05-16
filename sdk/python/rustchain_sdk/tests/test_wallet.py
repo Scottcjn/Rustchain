@@ -104,29 +104,32 @@ class TestRustChainWalletTransfer:
         wallet = RustChainWallet.create(strength=128)
         transfer = wallet.sign_transfer("RTCrecipient123", 1000, fee=5)
         assert isinstance(transfer, dict)
-        assert "from" in transfer
-        assert "to" in transfer
-        assert "amount" in transfer
+        assert "from_address" in transfer
+        assert "to_address" in transfer
+        assert "amount_rtc" in transfer
         assert "fee" in transfer
-        assert "timestamp" in transfer
+        assert "nonce" in transfer
         assert "signature" in transfer
+        assert "public_key" in transfer
 
     def test_sign_transfer_amount_and_fee(self):
         """Transfer contains correct amount and fee."""
         wallet = RustChainWallet.create(strength=128)
         transfer = wallet.sign_transfer("RTCrecipient123", 500, fee=10)
-        assert transfer["amount"] == 500
+        assert transfer["amount_rtc"] == 500
         assert transfer["fee"] == 10
-        assert transfer["to"] == "RTCrecipient123"
+        assert transfer["to_address"] == "RTCrecipient123"
+        assert transfer["from_address"] == wallet.address
+        assert transfer["public_key"] == wallet.public_key_hex
 
-    def test_sign_transfer_timestamp_is_recent(self):
-        """Transfer timestamp is a recent unix timestamp."""
+    def test_sign_transfer_nonce_is_recent(self):
+        """Transfer nonce is a recent unix millisecond timestamp."""
         import time
         wallet = RustChainWallet.create(strength=128)
-        before = int(time.time())
+        before = int(time.time() * 1000)
         transfer = wallet.sign_transfer("RTCrecipient123", 500, fee=0)
-        after = int(time.time())
-        assert before <= transfer["timestamp"] <= after
+        after = int(time.time() * 1000)
+        assert before <= transfer["nonce"] <= after
 
 
 class TestRustChainWalletExportImport:
