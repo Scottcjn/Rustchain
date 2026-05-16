@@ -3,7 +3,7 @@
 # 🧱 RustChain: 古董证明区块链
 
 [![CI](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml/badge.svg)](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/Scottcjn/Rustchain?style=flat&color=gold)](https://github.com/Scottcjn/Rustchain/stargazers)
 [![Contributors](https://img.shields.io/github/contributors/Scottcjn/Rustchain?color=brightgreen)](https://github.com/Scottcjn/Rustchain/graphs/contributors)
 [![Last Commit](https://img.shields.io/github/last-commit/Scottcjn/Rustchain?color=blue)](https://github.com/Scottcjn/Rustchain/commits/main)
@@ -426,7 +426,7 @@ https://github.com/Scottcjn/Rustchain
 
 ## 📜 许可证
 
-MIT 许可证 - 可自由使用，但请保留版权声明和署名。
+Apache License 2.0 - 可自由使用，但请遵守 Apache License 2.0 条款并保留版权声明和署名。
 
 ---
 
