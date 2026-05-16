@@ -53,6 +53,20 @@ def _parse_free_memory_gb(output):
     return None
 
 
+def _parse_int_output(output):
+    try:
+        return int(str(output).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_memory_bytes_to_gb(output):
+    memory_bytes = _parse_int_output(output)
+    if memory_bytes is None or memory_bytes <= 0:
+        return None
+    return max(1, round(memory_bytes / (1024 ** 3)))
+
+
 def _safe_id_part(value):
     slug = re.sub(r"[^a-zA-Z0-9_.:-]+", "-", str(value or "").strip().lower()).strip("-")
     return slug or "unknown"
@@ -286,9 +300,10 @@ class LocalMiner:
 
     def _get_hw_info(self):
         """Collect hardware info"""
+        system = platform.system()
         machine = platform.machine().lower()
         hw = {
-            "platform": platform.system(),
+            "platform": system,
             "machine": platform.machine(),
             "hostname": socket.gethostname(),
             "family": "x86",
@@ -330,15 +345,24 @@ class LocalMiner:
             hw["arch"] = machine
 
         # Get CPU
-        cpu = _parse_lscpu_model(self._run_cmd(["lscpu"]))
+        if system == "Darwin":
+            cpu = self._run_cmd(["sysctl", "-n", "machdep.cpu.brand_string"]).strip()
+        else:
+            cpu = _parse_lscpu_model(self._run_cmd(["lscpu"]))
         hw["cpu"] = cpu or "Unknown"
 
         # Get cores
-        cores = self._run_cmd(["nproc"])
-        hw["cores"] = int(cores) if cores else 6
+        if system == "Darwin":
+            cores = _parse_int_output(self._run_cmd(["sysctl", "-n", "hw.ncpu"]))
+        else:
+            cores = _parse_int_output(self._run_cmd(["nproc"]))
+        hw["cores"] = cores or os.cpu_count() or 1
 
         # Get memory
-        mem = _parse_free_memory_gb(self._run_cmd(["free", "-g"]))
+        if system == "Darwin":
+            mem = _parse_memory_bytes_to_gb(self._run_cmd(["sysctl", "-n", "hw.memsize"]))
+        else:
+            mem = _parse_free_memory_gb(self._run_cmd(["free", "-g"]))
         hw["memory_gb"] = mem if mem is not None else 32
 
         # Get MACs (ensures PoA signal uses real hardware data)
