@@ -37,6 +37,9 @@ The Linux miner auto-detects your hardware via `platform.machine()` and reports 
 # Linux
 python3 rustchain_linux_miner.py
 
+# Linux dry run: print hardware fingerprint/preflight details without mining
+python3 rustchain_linux_miner.py --dry-run --wallet YOUR_WALLET_ID
+
 # macOS
 python3 rustchain_mac_miner_v2.4.py
 
