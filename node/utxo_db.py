@@ -382,6 +382,51 @@ class UtxoDB:
             return None
         return tx_type
 
+    def _normalize_outputs(self, outputs: Any) -> Optional[List[dict]]:
+        """Return outputs that are safe for both mempool and persistence."""
+        if not isinstance(outputs, list):
+            return None
+
+        normalized = []
+        for out in outputs:
+            if not isinstance(out, dict):
+                return None
+
+            address = out.get('address')
+            if not isinstance(address, str) or not address.strip():
+                return None
+
+            val = out.get('value_nrtc')
+            if (
+                isinstance(val, bool)
+                or not isinstance(val, int)
+                or val < DUST_THRESHOLD
+            ):
+                return None
+
+            tokens_json = out.get('tokens_json', '[]')
+            registers_json = out.get('registers_json', '{}')
+            if not isinstance(tokens_json, str):
+                return None
+            if not isinstance(registers_json, str):
+                return None
+            try:
+                tokens = json.loads(tokens_json)
+                registers = json.loads(registers_json)
+            except (TypeError, json.JSONDecodeError):
+                return None
+            if not isinstance(tokens, list):
+                return None
+            if not isinstance(registers, dict):
+                return None
+
+            record = dict(out)
+            record['tokens_json'] = tokens_json
+            record['registers_json'] = registers_json
+            normalized.append(record)
+
+        return normalized
+
     def _data_inputs_are_unspent(self, conn: sqlite3.Connection,
                                  data_inputs: list) -> bool:
         """Validate read-only UTXO references before accepting a tx."""
@@ -448,6 +493,9 @@ class UtxoDB:
         if tx_type in MINTING_TX_TYPES and not tx.get('_allow_minting'):
             if conn:
                 conn.close()
+            return False
+        outputs = self._normalize_outputs(outputs)
+        if outputs is None:
             return False
         if own:
             conn = self._conn()
@@ -516,21 +564,9 @@ class UtxoDB:
             if len(outputs) > MAX_OUTPUTS:
                 return abort()
 
-            # Every output must be above the dust floor. Without this, a
-            # transaction can split one UTXO into thousands of 1-nanoRTC
-            # boxes and permanently bloat the UTXO set.
-            for o in outputs:
-                val = o.get('value_nrtc')
-                if (
-                    isinstance(val, bool)
-                    or not isinstance(val, int)
-                    or val < DUST_THRESHOLD
-                ):
-                    return abort()
-                # FIX(#9273): Reject dust outputs below DUST_THRESHOLD
-                if o['value_nrtc'] < DUST_THRESHOLD:
-                    return abort()
-
+            # Output shape, dust, and metadata checks are shared with
+            # mempool_add() so block candidates cannot drift from the
+            # transaction application rules.
             output_total = sum(o['value_nrtc'] for o in outputs)
 
             # Cap minting (coinbase) output to prevent unbounded fund creation.
@@ -850,6 +886,11 @@ class UtxoDB:
 
             # MEDIUM FIX: Reject empty outputs to prevent DoS
             outputs = tx.get('outputs', [])
+            outputs = self._normalize_outputs(outputs)
+            if outputs is None:
+                if manage_tx:
+                        conn.execute("ROLLBACK")
+                return False
             if not outputs and tx_type not in MINTING_TX_TYPES:
                 if manage_tx:
                         conn.execute("ROLLBACK")
@@ -868,24 +909,6 @@ class UtxoDB:
                 ).fetchone()
                 if row:
                     input_total += row['value_nrtc']
-
-            outputs = tx.get('outputs', [])
-
-            # FIX(#2179): Mirror apply_transaction() output validation.
-            # Reject outputs with missing, non-int, zero, or negative value_nrtc.
-            # Without this, unmineable transactions enter the mempool and lock
-            # UTXOs until expiry (DoS vector).
-            for o in outputs:
-                val = o.get('value_nrtc')
-                if isinstance(val, bool) or not isinstance(val, int) or val < DUST_THRESHOLD:
-                    if manage_tx:
-                        conn.execute("ROLLBACK")
-                    return False
-                # FIX(#9273): Reject dust outputs below DUST_THRESHOLD.
-                if val < DUST_THRESHOLD:
-                    if manage_tx:
-                        conn.execute("ROLLBACK")
-                    return False
 
             output_total = sum(o['value_nrtc'] for o in outputs)
             if input_total > 0 and (output_total + fee) > input_total:
