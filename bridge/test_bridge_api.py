@@ -12,17 +12,28 @@ import sys
 import time
 import hmac
 import hashlib
+import tempfile
 import pytest
 
-# Use a temp DB for testing
-os.environ["BRIDGE_DB_PATH"] = "/tmp/bridge_test_727.db"
+def _test_db_path(name):
+    return os.path.join(tempfile.gettempdir(), f"{name}_{os.getpid()}.db")
+
+
+def _remove_test_db(path):
+    if os.path.exists(path):
+        os.remove(path)
+
+
+# Use a platform-neutral temp DB for testing
+BRIDGE_TEST_DB_PATH = _test_db_path("bridge_test_727")
+
+os.environ["BRIDGE_DB_PATH"] = BRIDGE_TEST_DB_PATH
 os.environ["BRIDGE_ADMIN_KEY"] = "test-admin-key-12345"
 os.environ["BRIDGE_RECEIPT_SECRET"] = "test-bridge-receipt-secret-727"
 os.environ["BRIDGE_REQUIRE_PROOF"] = "true"  # Issue #727: require proof
 
 # Remove any stale test DB
-if os.path.exists("/tmp/bridge_test_727.db"):
-    os.remove("/tmp/bridge_test_727.db")
+_remove_test_db(BRIDGE_TEST_DB_PATH)
 
 # Import after env setup
 sys.path.insert(0, os.path.dirname(__file__))
@@ -344,10 +355,10 @@ class TestLegacyMode_ProofNotRequired:
     def test_legacy_mode_lock_without_proof_accepted(self):
         """When BRIDGE_REQUIRE_PROOF=false, locks without proof go to requested state."""
         # Create a new app with legacy mode - must reimport to pick up new env
+        legacy_db_path = _test_db_path("bridge_test_legacy_727")
         os.environ["BRIDGE_REQUIRE_PROOF"] = "false"
-        os.environ["BRIDGE_DB_PATH"] = "/tmp/bridge_test_legacy_727.db"
-        if os.path.exists("/tmp/bridge_test_legacy_727.db"):
-            os.remove("/tmp/bridge_test_legacy_727.db")
+        os.environ["BRIDGE_DB_PATH"] = legacy_db_path
+        _remove_test_db(legacy_db_path)
         
         # Force reimport to pick up new env vars
         import importlib
@@ -373,7 +384,7 @@ class TestLegacyMode_ProofNotRequired:
         
         # Restore test env and reload
         os.environ["BRIDGE_REQUIRE_PROOF"] = "true"
-        os.environ["BRIDGE_DB_PATH"] = "/tmp/bridge_test_727.db"
+        os.environ["BRIDGE_DB_PATH"] = BRIDGE_TEST_DB_PATH
         importlib.reload(bridge_api)
 
 
@@ -705,10 +716,10 @@ class TestReleaseEndpoint:
 
     def test_release_requires_confirmed_lock(self, client):
         # Create lock without proof (legacy mode test)
+        temp_db_path = _test_db_path("bridge_test_temp_727")
         os.environ["BRIDGE_REQUIRE_PROOF"] = "false"
-        os.environ["BRIDGE_DB_PATH"] = "/tmp/bridge_test_temp_727.db"
-        if os.path.exists("/tmp/bridge_test_temp_727.db"):
-            os.remove("/tmp/bridge_test_temp_727.db")
+        os.environ["BRIDGE_DB_PATH"] = temp_db_path
+        _remove_test_db(temp_db_path)
         
         import importlib
         import bridge_api
@@ -739,7 +750,7 @@ class TestReleaseEndpoint:
         
         # Restore
         os.environ["BRIDGE_REQUIRE_PROOF"] = "true"
-        os.environ["BRIDGE_DB_PATH"] = "/tmp/bridge_test_727.db"
+        os.environ["BRIDGE_DB_PATH"] = BRIDGE_TEST_DB_PATH
         importlib.reload(bridge_api)
 
     def test_full_lock_confirm_release_cycle(self, client):
