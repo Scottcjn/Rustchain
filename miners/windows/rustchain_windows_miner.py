@@ -246,6 +246,12 @@ class RustChainMiner:
         """Stop mining"""
         self.mining = False
 
+    def _emit_lifecycle(self, callback, event_type, message, **extra):
+        if callback:
+            event = {"type": event_type, "message": message}
+            event.update(extra)
+            callback(event)
+
     def _mine_loop(self, callback):
         """Main mining loop"""
         while self.mining:
@@ -283,12 +289,24 @@ class RustChainMiner:
                 if callback:
                     callback({"type": "error", "message": "Attestation failed"})
                 return False
+            self._emit_lifecycle(
+                callback,
+                "attest",
+                "Attestation successful",
+                valid_until=int(self.attestation_valid_until),
+            )
 
         if (now - self.last_enroll) > 3600 or not self.enrolled:
             if not self.enroll():
                 if callback:
                     callback({"type": "error", "message": "Epoch enrollment failed"})
                 return False
+            self._emit_lifecycle(
+                callback,
+                "enroll",
+                "Epoch enrollment successful",
+                last_enroll=int(self.last_enroll),
+            )
 
         return True
 
@@ -598,6 +616,8 @@ def run_headless(wallet_address: str, node_url: str) -> int:
             )
         elif t == "error":
             print(f"[error] {evt.get('message')}", file=sys.stderr, flush=True)
+        elif evt.get("message"):
+            print(f"[{t}] {evt.get('message')}", flush=True)
 
     print("RustChain Windows miner: headless mode", flush=True)
     print(f"node={miner.node_url} miner_id={miner.miner_id}", flush=True)
