@@ -36,7 +36,15 @@ def require_sophia_admin():
         or request.headers.get("X-API-Key")
         or ""
     ).strip()
-    if not hmac.compare_digest(provided_key, expected_key):
+    try:
+        authorized = hmac.compare_digest(
+            provided_key.encode("utf-8"),
+            expected_key.encode("utf-8"),
+        )
+    except UnicodeError:
+        authorized = False
+
+    if not authorized:
         return jsonify({"error": "Unauthorized"}), 401
 
     return None

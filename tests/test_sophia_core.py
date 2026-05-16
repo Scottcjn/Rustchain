@@ -579,6 +579,26 @@ class TestSophiaAPI(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_inspect_rejects_non_ascii_admin_key_before_storing(self):
+        with patch.dict(os.environ, {"SOPHIA_ADMIN_KEY": self.admin_key}, clear=False):
+            resp = self.client.post(
+                "/sophia/inspect",
+                json={
+                    "miner_id": "unicode_guard_miner",
+                    "fingerprint": _good_fingerprint(),
+                },
+                headers={"X-Admin-Key": "\u00e9"},
+            )
+
+        self.assertEqual(resp.status_code, 401)
+        self.assertEqual(resp.get_json()["error"], "Unauthorized")
+
+        conn = get_connection()
+        try:
+            self.assertIsNone(get_latest_inspection(conn, "unicode_guard_miner"))
+        finally:
+            conn.close()
+
     def test_inspect_missing_miner_id(self):
         resp = self._post_inspection({
             "fingerprint": _good_fingerprint(),
