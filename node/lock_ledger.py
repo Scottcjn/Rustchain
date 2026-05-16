@@ -656,6 +656,28 @@ def register_lock_ledger_routes(app):
         except (TypeError, ValueError):
             return None, (jsonify({"error": f"{name} must be an integer"}), 400)
         return max(minimum, min(value, maximum)), None
+
+    def parse_json_object_body():
+        data = request.get_json(silent=True)
+        if data is not None and not isinstance(data, dict):
+            return None, (jsonify({"error": "JSON object required"}), 400)
+        return data, None
+
+    def parse_lock_id(data):
+        raw = data.get("lock_id")
+        if raw is None:
+            return None, (jsonify({"error": "lock_id required"}), 400)
+        if isinstance(raw, bool) or not isinstance(raw, int):
+            return None, (jsonify({"error": "lock_id must be an integer"}), 400)
+        return raw, None
+
+    def parse_optional_string(data, name: str, default: Optional[str] = None):
+        raw = data.get(name, default)
+        if raw is None or raw == "":
+            return default, None
+        if not isinstance(raw, str):
+            return None, (jsonify({"error": f"{name} must be a string"}), 400)
+        return raw, None
     
     @app.route('/api/lock/miner/<miner_id>', methods=['GET'])
     def get_miner_locks(miner_id: str):
@@ -762,15 +784,18 @@ def register_lock_ledger_routes(app):
         if not hmac.compare_digest(admin_key, expected_key):
             return jsonify({"error": "Unauthorized - admin key required"}), 401
         
-        data = request.get_json(silent=True)
+        data, error_response = parse_json_object_body()
+        if error_response is not None:
+            return error_response
         if not data:
             return jsonify({"error": "Request body required"}), 400
         
-        lock_id = data.get("lock_id")
-        release_tx_hash = data.get("release_tx_hash")
-        
-        if not lock_id:
-            return jsonify({"error": "lock_id required"}), 400
+        lock_id, error_response = parse_lock_id(data)
+        if error_response is not None:
+            return error_response
+        release_tx_hash, error_response = parse_optional_string(data, "release_tx_hash")
+        if error_response is not None:
+            return error_response
         
         conn = sqlite3.connect(DB_PATH)
         try:
@@ -796,15 +821,18 @@ def register_lock_ledger_routes(app):
         if not hmac.compare_digest(admin_key, expected_key):
             return jsonify({"error": "Unauthorized - admin key required"}), 401
         
-        data = request.get_json(silent=True)
+        data, error_response = parse_json_object_body()
+        if error_response is not None:
+            return error_response
         if not data:
             return jsonify({"error": "Request body required"}), 400
         
-        lock_id = data.get("lock_id")
-        reason = data.get("reason", "admin_forfeit")
-        
-        if not lock_id:
-            return jsonify({"error": "lock_id required"}), 400
+        lock_id, error_response = parse_lock_id(data)
+        if error_response is not None:
+            return error_response
+        reason, error_response = parse_optional_string(data, "reason", "admin_forfeit")
+        if error_response is not None:
+            return error_response
         
         conn = sqlite3.connect(DB_PATH)
         try:
