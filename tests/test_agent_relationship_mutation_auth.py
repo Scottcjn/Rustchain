@@ -11,6 +11,10 @@ MUTATING_ENDPOINTS = (
     ("/api/relationships/alice/bob/reconcile", {"description": "postmortem"}),
 )
 
+ALL_MUTATING_ENDPOINTS = MUTATING_ENDPOINTS + (
+    ("/api/relationships/alice/bob/intervene", {"reason": "moderation reset"}),
+)
+
 
 def _build_client(tmp_path):
     engine = RelationshipEngine(db_path=str(tmp_path / "relationships.db"))
@@ -78,3 +82,20 @@ def test_relationship_mutations_accept_legacy_api_key_header(monkeypatch, tmp_pa
     relationship = engine.get_relationship("alice", "bob")
     assert relationship is not None
     assert relationship["collaboration_count"] == 1
+
+
+def test_relationship_mutations_reject_non_object_json(monkeypatch, tmp_path):
+    monkeypatch.setenv("RELATIONSHIPS_ADMIN_KEY", "relationship-admin-secret")
+    monkeypatch.delenv("RC_ADMIN_KEY", raising=False)
+    client, engine = _build_client(tmp_path)
+
+    for path, _payload in ALL_MUTATING_ENDPOINTS:
+        response = client.post(
+            path,
+            headers={"X-Admin-Key": "relationship-admin-secret"},
+            json=["not", "an", "object"],
+        )
+
+        assert response.status_code == 400
+        assert response.get_json()["error"] == "JSON object expected"
+        assert engine.get_relationship("alice", "bob") is None
