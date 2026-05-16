@@ -20,6 +20,9 @@ def verify_webhook_signature(payload_bytes: bytes, signature_header: Optional[st
     """
     secret = os.environ.get("WEBHOOK_SECRET", "")
     if not secret:
+        # Default-deny: without a configured secret, all webhook requests are rejected
+        import logging as _log_auth
+        _log_auth.warning("Webhook secret not configured — rejecting signature verification")
         return False
 
     if not signature_header:

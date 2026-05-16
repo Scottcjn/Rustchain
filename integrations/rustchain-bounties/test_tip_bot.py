@@ -278,9 +278,10 @@ class TestWebhookVerification:
         with patch.dict(os.environ, {"WEBHOOK_SECRET": "mysecret"}):
             assert verify_webhook_signature(payload, None) is False
 
-    def test_no_secret_configured_rejects_unsigned_payload(self):
+    def test_no_secret_configured_rejects_all(self):
         payload = b'{"action": "created"}'
         with patch.dict(os.environ, {}, clear=True):
+            # When WEBHOOK_SECRET is not set, all webhooks are rejected (default-deny)
             assert verify_webhook_signature(payload, None) is False
 
     def test_tampered_payload_rejected(self):
