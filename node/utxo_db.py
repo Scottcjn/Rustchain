@@ -955,7 +955,7 @@ class UtxoDB:
             rows = conn.execute(
                 """SELECT tx_id, tx_data_json FROM utxo_mempool
                    WHERE expires_at > ?
-                   ORDER BY fee_nrtc DESC
+                   ORDER BY fee_nrtc DESC, submitted_at ASC, tx_id ASC
                 """,
                 (now,),
             ).fetchall()
