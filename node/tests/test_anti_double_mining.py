@@ -16,6 +16,7 @@ import time
 import json
 import os
 import sys
+import tempfile
 import unittest
 from typing import Dict, List
 
@@ -29,8 +30,12 @@ from anti_double_mining import (
     select_representative_miner,
     get_epoch_miner_groups,
     calculate_anti_double_mining_rewards,
-    setup_test_scenario
+    setup_test_scenario,
+    GENESIS_TIMESTAMP
 )
+
+def _test_db_path(name: str) -> str:
+    return os.path.join(tempfile.gettempdir(), f"{name}_{os.getpid()}.db")
 
 
 class TestMachineIdentity(unittest.TestCase):
@@ -120,7 +125,7 @@ class TestDuplicateDetection(unittest.TestCase):
     
     def setUp(self):
         """Create test database."""
-        self.test_db = "/tmp/test_1449_duplicate_detection.db"
+        self.test_db = _test_db_path("test_1449_duplicate_detection")
         if os.path.exists(self.test_db):
             os.remove(self.test_db)
         
@@ -153,10 +158,17 @@ class TestDuplicateDetection(unittest.TestCase):
                 profile_json TEXT NOT NULL
             )
         """)
+
+        self.conn.execute("""
+            CREATE TABLE epoch_enroll (
+                epoch INTEGER NOT NULL,
+                miner_pk TEXT NOT NULL
+            )
+        """)
     
     def test_detect_same_machine_multiple_miners(self):
         """Should detect same machine running multiple miner IDs."""
-        epoch_start_ts = 1728000000
+        epoch_start_ts = GENESIS_TIMESTAMP
         current_ts = int(time.time())
         
         # Same fingerprint for 3 miners
@@ -191,7 +203,7 @@ class TestDuplicateDetection(unittest.TestCase):
     
     def test_no_duplicates_distinct_machines(self):
         """Should not report duplicates for distinct machines."""
-        epoch_start_ts = 1728000000
+        epoch_start_ts = GENESIS_TIMESTAMP
         current_ts = int(time.time())
         
         # Different fingerprints for 3 miners
@@ -229,7 +241,7 @@ class TestRepresentativeSelection(unittest.TestCase):
     
     def setUp(self):
         """Create test database."""
-        self.test_db = "/tmp/test_1449_representive.db"
+        self.test_db = _test_db_path("test_1449_representive")
         if os.path.exists(self.test_db):
             os.remove(self.test_db)
         
@@ -313,7 +325,7 @@ class TestAntiDoubleMiningRewards(unittest.TestCase):
     
     def setUp(self):
         """Setup test scenario."""
-        self.test_db = "/tmp/test_1449_rewards.db"
+        self.test_db = _test_db_path("test_1449_rewards")
         setup_test_scenario(self.test_db)
     
     def tearDown(self):
@@ -374,7 +386,7 @@ class TestIdempotency(unittest.TestCase):
     
     def setUp(self):
         """Setup test scenario."""
-        self.test_db = "/tmp/test_1449_idempotent.db"
+        self.test_db = _test_db_path("test_1449_idempotent")
         setup_test_scenario(self.test_db)
     
     def tearDown(self):
@@ -426,7 +438,7 @@ class TestEdgeCases(unittest.TestCase):
     
     def setUp(self):
         """Create test database."""
-        self.test_db = "/tmp/test_1449_edge.db"
+        self.test_db = _test_db_path("test_1449_edge")
         if os.path.exists(self.test_db):
             os.remove(self.test_db)
         
@@ -458,6 +470,13 @@ class TestEdgeCases(unittest.TestCase):
                 miner TEXT NOT NULL,
                 ts INTEGER NOT NULL,
                 profile_json TEXT NOT NULL
+            )
+        """)
+
+        self.conn.execute("""
+            CREATE TABLE epoch_enroll (
+                epoch INTEGER NOT NULL,
+                miner_pk TEXT NOT NULL
             )
         """)
         
@@ -498,7 +517,7 @@ class TestEdgeCases(unittest.TestCase):
     
     def test_fingerprint_failure_zero_weight(self):
         """Miners with failed fingerprint should get zero weight."""
-        epoch_start_ts = 1728000000
+        epoch_start_ts = GENESIS_TIMESTAMP
         
         # One miner with fingerprint_passed=0
         self.conn.execute("""
@@ -518,7 +537,7 @@ class TestEdgeCases(unittest.TestCase):
     
     def test_missing_fingerprint_profile(self):
         """Missing fingerprint profile should be handled gracefully."""
-        epoch_start_ts = 1728000000
+        epoch_start_ts = GENESIS_TIMESTAMP
         
         # Miner with no fingerprint history
         self.conn.execute("""
