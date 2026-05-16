@@ -468,9 +468,9 @@ class SecureBlockSync:
                 if not self.peer_manager.rate_limiter.check_rate_limit(peer_url, '/p2p/blocks'):
                     continue
 
-                # Generate auth signature
-                message = f"get_blocks:{peer_url}"
-                signature, timestamp = self.peer_manager.auth_manager.generate_signature(message)
+                # Sign the canonical request payload. GET /p2p/blocks carries no
+                # request body, so legitimate peers must sign the empty string.
+                signature, timestamp = self.peer_manager.auth_manager.generate_signature("")
 
                 # Request blocks with authentication
                 response = requests.get(
