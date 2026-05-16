@@ -2,6 +2,8 @@
 Tests for RustChainWallet.
 """
 
+import json
+
 import pytest
 from rustchain_sdk.wallet import RustChainWallet
 
@@ -108,6 +110,7 @@ class TestRustChainWalletTransfer:
         assert "to_address" in transfer
         assert "amount_rtc" in transfer
         assert "fee" in transfer
+        assert "fee_rtc" in transfer
         assert "nonce" in transfer
         assert "signature" in transfer
         assert "public_key" in transfer
@@ -118,9 +121,38 @@ class TestRustChainWalletTransfer:
         transfer = wallet.sign_transfer("RTCrecipient123", 500, fee=10)
         assert transfer["amount_rtc"] == 500
         assert transfer["fee"] == 10
+        assert transfer["fee_rtc"] == 10
         assert transfer["to_address"] == "RTCrecipient123"
         assert transfer["from_address"] == wallet.address
         assert transfer["public_key"] == wallet.public_key_hex
+
+    def test_sign_transfer_signs_fee_in_canonical_message(self, monkeypatch):
+        """The transfer signature binds the requested fee."""
+        wallet = RustChainWallet.create(strength=128)
+        captured = {}
+
+        def fake_sign(message):
+            captured["message"] = message
+            return b"\x01" * 64
+
+        monkeypatch.setattr(wallet, "sign", fake_sign)
+        transfer = wallet.sign_transfer(
+            "RTCrecipient123",
+            500,
+            fee=10,
+            nonce=1700000000,
+        )
+
+        assert json.loads(captured["message"]) == {
+            "amount": 500.0,
+            "fee": 10.0,
+            "from": wallet.address,
+            "memo": "",
+            "nonce": "1700000000",
+            "to": "RTCrecipient123",
+        }
+        assert transfer["fee_rtc"] == 10.0
+        assert transfer["signature"] == (b"\x01" * 64).hex()
 
     def test_sign_transfer_nonce_is_recent(self):
         """Transfer nonce is a recent unix millisecond timestamp."""

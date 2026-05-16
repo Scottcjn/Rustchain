@@ -9,6 +9,7 @@ import httpx
 import json
 from rustchain_sdk.client import RustChainClient
 from rustchain_sdk.exceptions import ConnectionError, APIError
+from rustchain_sdk.wallet import RustChainWallet
 
 
 class TestRustChainClientInit:
@@ -186,11 +187,36 @@ class TestRustChainClientTransfer:
             "from_address": "RTCfrom",
             "to_address": "RTCto",
             "amount_rtc": 100,
+            "fee_rtc": 1,
             "nonce": 1700000000,
             "signature": "sighex",
             "public_key": "pubhex",
             "memo": "sdk test",
         }
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_wallet_transfer_with_wallet_sends_fee_rtc(self):
+        """wallet_transfer_with_wallet preserves a caller-supplied fee."""
+        route = respx.post("https://50.28.86.131/wallet/transfer/signed").mock(
+            return_value=httpx.Response(200, json={
+                "tx_hash": "0xabc123",
+                "status": "confirmed",
+            })
+        )
+        wallet = RustChainWallet.create(strength=128)
+        async with RustChainClient() as client:
+            await client.wallet_transfer_with_wallet(
+                wallet,
+                to_address="RTCrecipient123",
+                amount=2.5,
+                fee=1,
+            )
+
+        payload = json.loads(route.calls[0].request.content)
+        assert payload["fee_rtc"] == 1.0
+        assert payload["amount_rtc"] == 2.5
+        assert route.calls[0].request.url.path == "/wallet/transfer/signed"
 
     @pytest.mark.asyncio
     @respx.mock

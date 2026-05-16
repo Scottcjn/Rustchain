@@ -354,7 +354,7 @@ class RustChainWallet:
         self,
         to_address: str,
         amount: float,
-        fee: int = 0,
+        fee: float = 0,
         memo: str = "",
         chain_id: Optional[str] = None,
         nonce: Optional[int] = None,
@@ -365,7 +365,7 @@ class RustChainWallet:
         Args:
             to_address: Recipient wallet address.
             amount: Amount to transfer in RTC.
-            fee: Transaction fee retained for backwards-compatible callers.
+            fee: Transaction fee in RTC.
             memo: Optional transfer memo.
             chain_id: Optional chain/network id.
             nonce: Optional caller-supplied nonce. Defaults to current unix ms.
@@ -376,10 +376,13 @@ class RustChainWallet:
         import time
 
         nonce_value = int(nonce if nonce is not None else time.time_ns() // 1_000_000)
+        amount_for_sig = float(amount)
+        fee_for_sig = float(fee)
         tx_data = {
             "from": self._address,
             "to": to_address,
-            "amount": amount,
+            "amount": amount_for_sig,
+            "fee": fee_for_sig,
             "memo": memo,
             "nonce": str(nonce_value),
         }
@@ -391,8 +394,9 @@ class RustChainWallet:
         return {
             "from_address": self._address,
             "to_address": to_address,
-            "amount_rtc": amount,
-            "fee": fee,
+            "amount_rtc": amount_for_sig,
+            "fee": fee_for_sig,
+            "fee_rtc": fee_for_sig,
             "nonce": nonce_value,
             "signature": signature.hex(),
             "public_key": self.public_key_hex,

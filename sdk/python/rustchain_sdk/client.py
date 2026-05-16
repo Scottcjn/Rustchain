@@ -337,7 +337,7 @@ class RustChainClient:
         wallet,
         to_address: str,
         amount: float,
-        fee: int = 0,
+        fee: float = 0,
     ) -> Dict[str, Any]:
         """
         Build and submit a signed transfer using a RustChainWallet.
@@ -346,7 +346,7 @@ class RustChainClient:
             wallet: A RustChainWallet instance.
             to_address: Recipient wallet address.
             amount: Amount to transfer in RTC.
-            fee: Transaction fee retained for backwards-compatible callers.
+            fee: Transaction fee in RTC.
 
         Returns:
             Transaction result dict.
@@ -356,7 +356,7 @@ class RustChainClient:
             from_address=transfer["from_address"],
             to_address=transfer["to_address"],
             amount=transfer["amount_rtc"],
-            fee=transfer["fee"],
+            fee=transfer["fee_rtc"],
             signature=transfer["signature"],
             timestamp=transfer["nonce"],
             public_key=transfer["public_key"],
@@ -373,7 +373,7 @@ class RustChainClient:
         from_address: str,
         to_address: str,
         amount: float,
-        fee: int,
+        fee: float,
         signature: str,
         timestamp: int,
         public_key: str = "",
@@ -387,7 +387,7 @@ class RustChainClient:
             from_address: Sender wallet address.
             to_address: Recipient wallet address.
             amount: Amount in RTC.
-            fee: Transaction fee retained for backwards-compatible callers.
+            fee: Transaction fee in RTC.
             signature: Hex-encoded Ed25519 signature.
             timestamp: Unique transfer nonce.
             public_key: Sender public key matching from_address.
@@ -401,6 +401,7 @@ class RustChainClient:
             "from_address": from_address,
             "to_address": to_address,
             "amount_rtc": amount,
+            "fee_rtc": fee,
             "nonce": timestamp,
             "signature": signature,
             "public_key": public_key,
