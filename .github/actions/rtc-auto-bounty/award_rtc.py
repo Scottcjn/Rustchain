@@ -35,6 +35,7 @@ import json
 import os
 import re
 import sys
+import time
 import textwrap
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
@@ -264,6 +265,8 @@ def transfer_rtc(
     to_wallet: str,
     amount: float,
     memo: str,
+    max_attempts: int = 3,
+    retry_delay: float = 2.0,
 ) -> Tuple[bool, Dict[str, Any]]:
     """
     Call the RustChain ``POST /wallet/transfer`` admin endpoint.
@@ -286,19 +289,31 @@ def transfer_rtc(
         },
         method="POST",
     )
-    try:
-        resp = urlopen(req, timeout=30)
-        result = json.loads(resp.read().decode())
-        return result.get("ok", False), result
-    except HTTPError as e:
-        body = e.read().decode(errors="replace")
+    attempts = max(1, int(max_attempts))
+    for attempt in range(1, attempts + 1):
         try:
-            result = json.loads(body)
-        except (json.JSONDecodeError, ValueError):
-            result = {"error": body}
-        return False, result
-    except URLError as e:
-        return False, {"error": f"Connection failed: {e.reason}"}
+            resp = urlopen(req, timeout=30)
+            result = json.loads(resp.read().decode())
+            return result.get("ok", False), result
+        except HTTPError as e:
+            body = e.read().decode(errors="replace")
+            try:
+                result = json.loads(body)
+            except (json.JSONDecodeError, ValueError):
+                result = {"error": body}
+            return False, result
+        except URLError as e:
+            if attempt >= attempts:
+                return False, {
+                    "error": f"Connection failed after {attempts} attempts: {e.reason}"
+                }
+            log_warning(
+                f"Transfer connection attempt {attempt}/{attempts} failed: {e.reason}; retrying."
+            )
+            if retry_delay > 0:
+                time.sleep(retry_delay)
+
+    return False, {"error": "Connection failed"}
 
 
 # ---------------------------------------------------------------------------
