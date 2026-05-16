@@ -152,8 +152,8 @@ def get_bridge_health():
             conn.execute("SELECT 1").fetchone()
         health["rustchain"] = True
         details["rustchain"] = "Database accessible"
-    except Exception as e:
-        details["rustchain"] = f"Database error: {str(e)}"
+    except Exception:
+        details["rustchain"] = "Database error: unavailable"
 
     # Check Solana RPC (sync version)
     try:
@@ -173,8 +173,8 @@ def get_bridge_health():
                 details["solana_rpc"] = "RPC responsive"
             else:
                 details["solana_rpc"] = "RPC returned unexpected response"
-    except Exception as e:
-        details["solana_rpc"] = f"RPC error: {str(e)}"
+    except Exception:
+        details["solana_rpc"] = "RPC error: unavailable"
 
     # Bridge API is healthy if we got here
     health["bridge_api"] = True
@@ -200,8 +200,8 @@ def get_bridge_health():
                     details["wrtc_mint"] = "Mint account exists"
                 else:
                     details["wrtc_mint"] = "Mint account not found"
-        except Exception as e:
-            details["wrtc_mint"] = f"Mint check error: {str(e)}"
+        except Exception:
+            details["wrtc_mint"] = "Mint check error: unavailable"
     else:
         health["wrtc_mint"] = True  # Skip if not configured
         details["wrtc_mint"] = "Mint address not configured"
