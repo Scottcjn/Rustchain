@@ -27,7 +27,7 @@ MINER_ARTIFACTS = {
     },
     "Windows": {
         "url": "https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/windows/rustchain_windows_miner.py",
-        "sha256": "51fe431cbee3c5b81218a738c221d45e675dafa5d67f9aff716d4ea11f304662",
+        "sha256": "230f6405a03b4e455a3e2a9097d4796acec82237512a1e56e11d9855060cf5da",
     },
 }
 
