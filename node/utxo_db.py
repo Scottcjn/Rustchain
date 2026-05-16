@@ -382,6 +382,15 @@ class UtxoDB:
             return None
         return tx_type
 
+    def _normalize_timestamp(self, tx: dict) -> Optional[int]:
+        """Return a persistable transaction timestamp, or None when invalid."""
+        if 'timestamp' not in tx:
+            return int(time.time())
+        timestamp = tx.get('timestamp')
+        if isinstance(timestamp, bool) or not isinstance(timestamp, int):
+            return None
+        return timestamp
+
     def _data_inputs_are_unspent(self, conn: sqlite3.Connection,
                                  data_inputs: list) -> bool:
         """Validate read-only UTXO references before accepting a tx."""
@@ -424,7 +433,9 @@ class UtxoDB:
 
         Returns True on success, False on validation failure.
         """
-        ts = tx.get('timestamp', int(time.time()))
+        ts = self._normalize_timestamp(tx)
+        if ts is None:
+            return False
         # NOTE(issue #2085): spending_proof is present on each input dict but
         # is intentionally ignored by this layer.  It is stored for
         # on-chain auditability, but cryptographic verification is the sole
@@ -786,6 +797,8 @@ class UtxoDB:
                 return False
             data_inputs = tx.get('data_inputs', [])
             now = int(time.time())
+            if self._normalize_timestamp(tx) is None:
+                return False
 
             # Public mempool admission must never accept minting transactions.
             # Coinbase/mining rewards are internally constructed during block

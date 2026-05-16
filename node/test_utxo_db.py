@@ -907,6 +907,28 @@ class TestUtxoDB(unittest.TestCase):
             self.db.mempool_check_double_spend(boxes[0]['box_id'])
         )
 
+    def test_mempool_rejects_non_integer_timestamp(self):
+        """Mempool must not admit txs that apply_transaction() cannot persist."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        for idx, timestamp in enumerate(({'bad': 'timestamp'}, True)):
+            with self.subTest(timestamp=timestamp):
+                tx = {
+                    'tx_id': f'badt{idx}' * 16,
+                    'tx_type': 'transfer',
+                    'inputs': [{'box_id': boxes[0]['box_id']}],
+                    'outputs': [{'address': 'bob', 'value_nrtc': 99 * UNIT}],
+                    'fee_nrtc': 1 * UNIT,
+                    'timestamp': timestamp,
+                }
+                ok = self.db.mempool_add(tx)
+                self.assertFalse(ok)
+                self.assertEqual(self.db.mempool_get_block_candidates(), [])
+                self.assertFalse(
+                    self.db.mempool_check_double_spend(boxes[0]['box_id'])
+                )
+
     def test_mempool_accepts_valid_tx(self):
         """Mempool should accept a well-formed tx with valid conservation."""
         self._apply_coinbase('alice', 100 * UNIT)
@@ -1122,6 +1144,26 @@ class TestUtxoDB(unittest.TestCase):
         self.assertFalse(ok)
         self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
         self.assertEqual(self.db.get_balance('bob'), 0)
+
+    def test_non_integer_timestamp_rejected(self):
+        """timestamp must be an integer before writing transaction history."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        for timestamp in ({'bad': 'timestamp'}, True):
+            with self.subTest(timestamp=timestamp):
+                ok = self.db.apply_transaction({
+                    'tx_type': 'transfer',
+                    'inputs': [{'box_id': boxes[0]['box_id'],
+                                 'spending_proof': 'sig'}],
+                    'outputs': [{'address': 'bob', 'value_nrtc': 99 * UNIT}],
+                    'fee_nrtc': 1 * UNIT,
+                    'timestamp': timestamp,
+                }, block_height=10)
+
+                self.assertFalse(ok)
+                self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
+                self.assertEqual(self.db.get_balance('bob'), 0)
 
 
 class TestCoinSelect(unittest.TestCase):
