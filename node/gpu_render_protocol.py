@@ -29,10 +29,23 @@ import os
 import logging
 import hashlib
 import hmac
+import math
 import secrets
 from functools import wraps
 
 logger = logging.getLogger("gpu_render_protocol")
+
+
+def _coerce_finite_number(value, field_name: str):
+    if isinstance(value, bool):
+        return None, {"error": f"{field_name} must be a finite number"}
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None, {"error": f"{field_name} must be a finite number"}
+    if not math.isfinite(number):
+        return None, {"error": f"{field_name} must be a finite number"}
+    return number, None
 
 # ---------------------------------------------------------------------------
 # Database schema
@@ -257,6 +270,9 @@ class GPURenderProtocol:
         valid_types = ("render", "tts", "stt", "llm")
         if job_type not in valid_types:
             return {"error": f"job_type must be one of {valid_types}"}
+        amount_rtc, amount_error = _coerce_finite_number(amount_rtc, "amount_rtc")
+        if amount_error:
+            return amount_error
         if amount_rtc <= 0:
             return {"error": "amount_rtc must be positive"}
         if from_wallet == to_wallet:
@@ -430,6 +446,9 @@ class GPURenderProtocol:
 
     def detect_price_manipulation(self, job_type: str, proposed_price: float) -> dict:
         """Check if a proposed price deviates significantly from market rates."""
+        proposed_price, price_error = _coerce_finite_number(proposed_price, "price")
+        if price_error:
+            return price_error
         rates = self.get_fair_market_rates(job_type)
         if "error" in rates or job_type not in rates.get("rates", {}):
             return {"manipulated": False, "reason": "insufficient data"}
@@ -546,7 +565,8 @@ def register_routes(app):
             data.get("job_type", "render"),
             data.get("price", 0),
         )
-        return jsonify(result)
+        status_code = 200 if "error" not in result else 400
+        return jsonify(result), status_code
 
     logger.info("GPU Render Protocol routes registered")
     return protocol

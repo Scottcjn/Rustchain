@@ -5,6 +5,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from node import gpu_render_protocol
 from node.gpu_render_protocol import GPURenderProtocol
 
 
@@ -13,6 +14,19 @@ class TestGPURenderProtocol(unittest.TestCase):
         self.tmp = tempfile.mkdtemp()
         self.db = os.path.join(self.tmp, "test_gpu.db")
         self.proto = GPURenderProtocol(db_path=self.db)
+
+    def route_client(self):
+        from flask import Flask
+
+        original_protocol = gpu_render_protocol.GPURenderProtocol
+        try:
+            gpu_render_protocol.GPURenderProtocol = lambda: self.proto
+            app = Flask(__name__)
+            app.config["TESTING"] = True
+            gpu_render_protocol.register_routes(app)
+            return app.test_client()
+        finally:
+            gpu_render_protocol.GPURenderProtocol = original_protocol
 
     def test_attest_gpu(self):
         result = self.proto.attest_gpu("miner-1", {
@@ -121,6 +135,36 @@ class TestGPURenderProtocol(unittest.TestCase):
     def test_escrow_negative_amount(self):
         result = self.proto.create_escrow("llm", "a", "b", -1.0)
         self.assertIn("error", result)
+
+    def test_escrow_route_rejects_boolean_amount(self):
+        client = self.route_client()
+
+        response = client.post("/render/escrow", json={
+            "job_type": "render",
+            "from_wallet": "wallet-a",
+            "to_wallet": "wallet-b",
+            "amount_rtc": True,
+        })
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.get_json(),
+            {"error": "amount_rtc must be a finite number"},
+        )
+
+    def test_pricing_check_rejects_boolean_price(self):
+        client = self.route_client()
+
+        response = client.post("/render/pricing/check", json={
+            "job_type": "render",
+            "price": True,
+        })
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.get_json(),
+            {"error": "price must be a finite number"},
+        )
 
     def test_escrow_same_wallet(self):
         result = self.proto.create_escrow("render", "same", "same", 1.0)
