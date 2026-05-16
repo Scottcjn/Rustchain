@@ -668,7 +668,11 @@ if __name__ == "__main__":
     parser.add_argument("--wart-pool", help="Warthog mining pool API URL")
     parser.add_argument("--bzminer-path", help="Path to BzMiner binary")
     parser.add_argument("--manage-bzminer", action="store_true", help="Auto-start/stop BzMiner")
-    parser.add_argument("--dry-run", action="store_true", help="Run preflight checks only; do not start mining")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Run preflight checks only; print hardware fingerprint info; do not start mining",
+    )
     parser.add_argument("--verbose", action="store_true", help="Enable verbose output showing API endpoints, headers, and response details")
     parser.add_argument("--show-payload", action="store_true", help="Show request payload in dry-run mode")
     args = parser.parse_args()
