@@ -43,7 +43,22 @@ MAX_POOL_SIZE = 10_000
 # Without this, a single tx creates unlimited outputs, bloating the UTXO set.
 MAX_OUTPUTS = 100
 MAX_TX_AGE_SECONDS = 3_600  # 1 hour mempool expiry
+MAX_SQLITE_INT64 = 2**63 - 1
 P2PK_PREFIX = b'\x00\x08'   # Pay-to-Public-Key proposition prefix
+
+
+# ---------------------------------------------------------------------------
+# Numeric validation
+# ---------------------------------------------------------------------------
+
+def _is_nonnegative_int64(value: Any) -> bool:
+    """Return True only for real ints that SQLite can persist as INTEGER."""
+    return type(value) is int and 0 <= value <= MAX_SQLITE_INT64
+
+
+def _is_positive_int64(value: Any) -> bool:
+    """Return True only for positive int64 amounts."""
+    return type(value) is int and 0 < value <= MAX_SQLITE_INT64
 
 
 # ---------------------------------------------------------------------------
@@ -424,7 +439,14 @@ class UtxoDB:
 
         Returns True on success, False on validation failure.
         """
+        own = conn is None
+
         ts = tx.get('timestamp', int(time.time()))
+        if not _is_nonnegative_int64(ts):
+            return False
+        if not _is_nonnegative_int64(block_height):
+            return False
+
         # NOTE(issue #2085): spending_proof is present on each input dict but
         # is intentionally ignored by this layer.  It is stored for
         # on-chain auditability, but cryptographic verification is the sole
@@ -520,15 +542,8 @@ class UtxoDB:
             # transaction can split one UTXO into thousands of 1-nanoRTC
             # boxes and permanently bloat the UTXO set.
             for o in outputs:
-                val = o.get('value_nrtc')
-                if (
-                    isinstance(val, bool)
-                    or not isinstance(val, int)
-                    or val < DUST_THRESHOLD
-                ):
-                    return abort()
-                # FIX(#9273): Reject dust outputs below DUST_THRESHOLD
-                if o['value_nrtc'] < DUST_THRESHOLD:
+                val = o.get('value_nrtc') if isinstance(o, dict) else None
+                if not _is_positive_int64(val) or val < DUST_THRESHOLD:
                     return abort()
 
             output_total = sum(o['value_nrtc'] for o in outputs)
@@ -539,9 +554,7 @@ class UtxoDB:
             if tx_type in MINTING_TX_TYPES and output_total > MAX_COINBASE_OUTPUT_NRTC:
                 return abort()
 
-            if type(fee) is not int:
-                return abort()
-            if fee < 0:
+            if not _is_nonnegative_int64(fee):
                 return abort()
             if inputs and (output_total + fee) > input_total:
                 return abort()
@@ -839,11 +852,7 @@ class UtxoDB:
             # Prevent mempool admission of transactions that would fail
             # apply_transaction(), locking UTXOs until expiry (DoS vector).
             fee = tx.get('fee_nrtc', 0)
-            if type(fee) is not int:
-                if manage_tx:
-                        conn.execute("ROLLBACK")
-                return False
-            if fee < 0:
+            if not _is_nonnegative_int64(fee):
                 if manage_tx:
                         conn.execute("ROLLBACK")
                 return False
@@ -876,13 +885,8 @@ class UtxoDB:
             # Without this, unmineable transactions enter the mempool and lock
             # UTXOs until expiry (DoS vector).
             for o in outputs:
-                val = o.get('value_nrtc')
-                if isinstance(val, bool) or not isinstance(val, int) or val < DUST_THRESHOLD:
-                    if manage_tx:
-                        conn.execute("ROLLBACK")
-                    return False
-                # FIX(#9273): Reject dust outputs below DUST_THRESHOLD.
-                if val < DUST_THRESHOLD:
+                val = o.get('value_nrtc') if isinstance(o, dict) else None
+                if not _is_positive_int64(val) or val < DUST_THRESHOLD:
                     if manage_tx:
                         conn.execute("ROLLBACK")
                     return False

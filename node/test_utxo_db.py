@@ -15,7 +15,7 @@ import unittest
 from utxo_db import (
     UtxoDB, coin_select, compute_box_id, address_to_proposition,
     proposition_to_address, UNIT, DUST_THRESHOLD, MAX_COINBASE_OUTPUT_NRTC,
-    MAX_OUTPUTS,
+    MAX_OUTPUTS, MAX_SQLITE_INT64,
 )
 
 
@@ -234,6 +234,59 @@ class TestUtxoDB(unittest.TestCase):
 
         self.assertFalse(ok)
         # Balances unchanged
+        self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
+        self.assertEqual(self.db.get_balance('bob'), 0)
+
+    def test_timestamp_above_sqlite_int64_rejected(self):
+        """Oversized timestamps must reject cleanly before SQLite persistence."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        alice_boxes = self.db.get_unspent_for_address('alice')
+        opened = []
+        original_conn = self.db._conn
+
+        def tracking_conn():
+            opened.append(True)
+            return original_conn()
+
+        self.db._conn = tracking_conn
+
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': alice_boxes[0]['box_id'],
+                         'spending_proof': 'sig'}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+            'timestamp': MAX_SQLITE_INT64 + 1,
+        }, block_height=10)
+
+        self.assertFalse(ok)
+        self.assertFalse(opened)
+        self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
+        self.assertEqual(self.db.get_balance('bob'), 0)
+
+    def test_negative_block_height_rejected(self):
+        """Invalid block heights must not reach box-id serialization."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        alice_boxes = self.db.get_unspent_for_address('alice')
+        opened = []
+        original_conn = self.db._conn
+
+        def tracking_conn():
+            opened.append(True)
+            return original_conn()
+
+        self.db._conn = tracking_conn
+
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': alice_boxes[0]['box_id'],
+                         'spending_proof': 'sig'}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+        }, block_height=-1)
+
+        self.assertFalse(ok)
+        self.assertFalse(opened)
         self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
         self.assertEqual(self.db.get_balance('bob'), 0)
 
