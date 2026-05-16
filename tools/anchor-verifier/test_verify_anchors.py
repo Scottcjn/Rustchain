@@ -10,6 +10,7 @@ import json
 import os
 import sqlite3
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -27,6 +28,9 @@ from verify_anchors import (
     R5_PREFIX,
     print_results,
 )
+
+def _test_db_path(name: str) -> str:
+    return os.path.join(tempfile.gettempdir(), f"{name}_{os.getpid()}.db")
 
 
 # ── Blake2b256 Tests ─────────────────────────────────────────────
@@ -153,7 +157,7 @@ class TestErgoClient(unittest.TestCase):
 
 class TestDatabaseReader(unittest.TestCase):
     def setUp(self):
-        self.db_path = "/tmp/test_anchors.db"
+        self.db_path = _test_db_path("test_anchors")
         conn = sqlite3.connect(self.db_path)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS ergo_anchors (
@@ -199,7 +203,7 @@ class TestDatabaseReader(unittest.TestCase):
         self.assertEqual(heights, sorted(heights, reverse=True))
 
     def test_read_nonexistent_db(self):
-        anchors = read_anchors("/tmp/nonexistent_db.db")
+        anchors = read_anchors(_test_db_path("nonexistent_db"))
         self.assertEqual(anchors, [])
 
     def test_anchor_fields(self):
@@ -213,14 +217,14 @@ class TestDatabaseReader(unittest.TestCase):
 
 class TestAttestationReader(unittest.TestCase):
     def setUp(self):
-        self.db_path = "/tmp/test_attestations.db"
+        self.db_path = _test_db_path("test_attestations")
 
     def tearDown(self):
         if os.path.exists(self.db_path):
             os.remove(self.db_path)
 
     def test_read_attestations_nonexistent_db(self):
-        rows = read_attestations_for_epoch("/tmp/nonexistent_attestations.db", 100)
+        rows = read_attestations_for_epoch(_test_db_path("nonexistent_attestations"), 100)
 
         self.assertEqual(rows, [])
 
@@ -262,7 +266,7 @@ class TestAttestationReader(unittest.TestCase):
 
 class TestAnchorVerifier(unittest.TestCase):
     def setUp(self):
-        self.db_path = "/tmp/test_verify.db"
+        self.db_path = _test_db_path("test_verify")
         conn = sqlite3.connect(self.db_path)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS ergo_anchors (
