@@ -1948,7 +1948,7 @@ def derive_verified_device(device: dict, fingerprint: dict, fingerprint_passed: 
         # If CPU brand contains PowerPC/IBM/POWER identifiers, trust the claim
         ppc_brands = {"powerpc", "power8", "power9", "ibm power", "altivec", "970", "7450", "g3", "g4", "g5"}
         brand_matches = _has_any_token(cpu_brand, ppc_brands)
-        
+
         if brand_matches:
             # CPU brand confirms PowerPC — determine specific arch
             ppc_arch = arch.upper() if arch.lower() in ("g3", "g4", "g5", "power8", "power9") else "default"
@@ -7234,10 +7234,6 @@ def send_sophiacheck_alert(alert_type, message, data):
 def wallet_transfer_v2():
     """Transfer RTC between miner wallets - NOW WITH 2-PHASE COMMIT"""
     # SECURITY: Require admin key for internal transfers.
-    # FAIL-CLOSED (cherry-pick from #5174): if RC_ADMIN_KEY is unset/empty,
-    # `hmac.compare_digest("", "")` returns True and the endpoint would be
-    # unauthenticated. Reject with 503 before reaching the comparison so
-    # the bug cannot resurface if module-level startup checks are bypassed.
     admin_key_env = os.environ.get("RC_ADMIN_KEY", "")
     if not admin_key_env:
         return jsonify({
@@ -7245,7 +7241,7 @@ def wallet_transfer_v2():
             "code": "ADMIN_KEY_UNSET",
             "hint": "Set the RC_ADMIN_KEY environment variable or use /wallet/transfer/signed"
         }), 503
-    admin_key = request.headers.get("X-Admin-Key", "")
+    admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
     if not hmac.compare_digest(admin_key, admin_key_env):
         return jsonify({
             "error": "Unauthorized - admin key required",
@@ -7279,7 +7275,7 @@ def wallet_transfer_v2():
         # SECURITY: Acquire write lock BEFORE reading balance to prevent
         # concurrent transfers from both passing the balance check.
         c.execute("BEGIN IMMEDIATE")
-        
+
         # Check sender balance
         row = c.execute("SELECT amount_i64 FROM balances WHERE miner_id = ?", (from_miner,)).fetchone()
         sender_balance = row[0] if row else 0
