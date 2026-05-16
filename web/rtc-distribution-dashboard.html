@@ -1,0 +1,804 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>RTC Distribution Dashboard</title>
+    <meta name="description" content="Live RTC wallet distribution dashboard with top holders, founder split, Gini coefficient, Lorenz curve, and local historical snapshots.">
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #142033;
+        --muted: #5d687d;
+        --line: #d7e0ed;
+        --panel: #ffffff;
+        --surface: #f3f6fa;
+        --accent: #0f766e;
+        --accent-2: #c2410c;
+        --founder: #d97706;
+        --community: #2563eb;
+        --zero: #94a3b8;
+        --good: #16803c;
+        --warn: #b45309;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: Arial, Helvetica, sans-serif;
+        color: var(--ink);
+        background: var(--surface);
+        line-height: 1.55;
+      }
+
+      a {
+        color: var(--accent);
+      }
+
+      header {
+        background: #ffffff;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .shell {
+        width: min(1180px, calc(100% - 32px));
+        margin: 0 auto;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 14px 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 700;
+      }
+
+      .mark {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        background: linear-gradient(135deg, var(--accent), #0b4f6c);
+      }
+
+      .status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 28px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--zero);
+      }
+
+      .dot.live {
+        background: var(--good);
+      }
+
+      .dot.error {
+        background: #dc2626;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1.6fr) minmax(280px, 0.8fr);
+        gap: 28px;
+        padding: 34px 0 30px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(32px, 5vw, 56px);
+        line-height: 1.05;
+        letter-spacing: 0;
+      }
+
+      .lede {
+        max-width: 720px;
+        margin: 16px 0 0;
+        color: var(--muted);
+        font-size: 18px;
+      }
+
+      .source-box {
+        align-self: end;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 16px;
+        background: var(--panel);
+      }
+
+      .source-box h2,
+      .panel h2 {
+        margin: 0 0 12px;
+        font-size: 18px;
+        line-height: 1.25;
+      }
+
+      .source-list {
+        display: grid;
+        gap: 7px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      main {
+        padding: 24px 0 56px;
+      }
+
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+
+      .metric {
+        min-height: 116px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        padding: 16px;
+      }
+
+      .metric .label {
+        display: block;
+        color: var(--muted);
+        font-size: 13px;
+        text-transform: uppercase;
+      }
+
+      .metric .value {
+        display: block;
+        margin-top: 10px;
+        font-size: clamp(24px, 4vw, 34px);
+        font-weight: 700;
+        line-height: 1.05;
+        overflow-wrap: anywhere;
+      }
+
+      .metric .hint {
+        display: block;
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+        gap: 16px;
+      }
+
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        padding: 18px;
+      }
+
+      .panel + .panel {
+        margin-top: 16px;
+      }
+
+      .chart-wrap {
+        min-height: 300px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfcfe;
+        padding: 14px;
+      }
+
+      svg {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+
+      .split {
+        display: grid;
+        grid-template-columns: 180px minmax(0, 1fr);
+        align-items: center;
+        gap: 18px;
+      }
+
+      .donut {
+        width: 180px;
+        aspect-ratio: 1;
+        border-radius: 50%;
+        background: conic-gradient(var(--founder) 0deg, var(--founder) 0deg, var(--community) 0deg, var(--community) 360deg);
+        position: relative;
+        border: 1px solid var(--line);
+      }
+
+      .donut::after {
+        content: "";
+        position: absolute;
+        inset: 42px;
+        border-radius: 50%;
+        background: var(--panel);
+        border: 1px solid var(--line);
+      }
+
+      .legend {
+        display: grid;
+        gap: 10px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .legend li {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 8px;
+      }
+
+      .swatch {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 2px;
+        margin-right: 7px;
+      }
+
+      .swatch.founder {
+        background: var(--founder);
+      }
+
+      .swatch.community {
+        background: var(--community);
+      }
+
+      .swatch.zero {
+        background: var(--zero);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+
+      th,
+      td {
+        padding: 10px 8px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--muted);
+        font-size: 12px;
+        text-transform: uppercase;
+        background: #f8fafc;
+      }
+
+      td.num,
+      th.num {
+        text-align: right;
+      }
+
+      .wallet {
+        max-width: 360px;
+        overflow-wrap: anywhere;
+        font-family: Consolas, "Courier New", monospace;
+      }
+
+      .badge {
+        display: inline-block;
+        margin-left: 6px;
+        border-radius: 999px;
+        padding: 2px 7px;
+        background: #eef2f7;
+        color: var(--muted);
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 12px;
+      }
+
+      .badge.founder {
+        background: #fff2d8;
+        color: #92400e;
+      }
+
+      .bars {
+        display: grid;
+        gap: 12px;
+      }
+
+      .bar-row {
+        display: grid;
+        grid-template-columns: 96px minmax(0, 1fr) 64px;
+        align-items: center;
+        gap: 10px;
+        font-size: 14px;
+      }
+
+      .bar-track {
+        height: 18px;
+        border-radius: 999px;
+        background: #e8eef7;
+        overflow: hidden;
+      }
+
+      .bar-fill {
+        height: 100%;
+        width: 0%;
+        background: linear-gradient(90deg, var(--accent), var(--community));
+      }
+
+      .flow {
+        display: grid;
+        gap: 12px;
+      }
+
+      .flow-row {
+        display: grid;
+        grid-template-columns: 150px minmax(0, 1fr) 120px;
+        align-items: center;
+        gap: 10px;
+        font-size: 14px;
+      }
+
+      .timeline {
+        display: grid;
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .notice {
+        margin-top: 14px;
+        padding: 12px;
+        border-radius: 8px;
+        background: #fff7ed;
+        color: #7c2d12;
+        border: 1px solid #fed7aa;
+        font-size: 14px;
+      }
+
+      footer {
+        padding: 26px 0 40px;
+        color: var(--muted);
+        border-top: 1px solid var(--line);
+        background: #ffffff;
+        font-size: 14px;
+      }
+
+      @media (max-width: 940px) {
+        .hero,
+        .grid {
+          grid-template-columns: 1fr;
+        }
+
+        .metrics {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 640px) {
+        .topbar,
+        .split,
+        .flow-row,
+        .bar-row {
+          grid-template-columns: 1fr;
+          display: grid;
+          align-items: start;
+        }
+
+        .metrics {
+          grid-template-columns: 1fr;
+        }
+
+        .donut {
+          width: min(220px, 100%);
+        }
+
+        th:nth-child(3),
+        td:nth-child(3) {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="shell">
+        <div class="topbar">
+          <div class="brand">
+            <span class="mark" aria-hidden="true"></span>
+            <span>RTC Distribution Dashboard</span>
+          </div>
+          <div class="status" aria-live="polite">
+            <span id="status-dot" class="dot"></span>
+            <span id="status-text">Loading live data</span>
+          </div>
+        </div>
+        <section class="hero">
+          <div>
+            <h1>Live RTC wallet concentration and holder split.</h1>
+            <p class="lede">
+              This dashboard ranks public RTC wallets, separates known founder
+              reserves from community balances, calculates Gini concentration,
+              draws a Lorenz curve, and stores browser-local snapshots so the
+              same page can show daily movement over time.
+            </p>
+          </div>
+          <aside class="source-box">
+            <h2>Data Sources</h2>
+            <ul class="source-list">
+              <li><a href="https://rustchain.org/api/miners">/api/miners</a></li>
+              <li><a href="https://rustchain.org/wallet/balance?miner_id=power8-s824-sophia">/wallet/balance</a></li>
+              <li><a href="https://rustchain.org/epoch">/epoch</a></li>
+              <li>Founder wallet IDs from public tokenomics docs</li>
+            </ul>
+          </aside>
+        </section>
+      </div>
+    </header>
+
+    <main class="shell">
+      <section class="metrics" aria-label="Key RTC distribution metrics">
+        <div class="metric">
+          <span class="label">Visible circulating balance</span>
+          <span id="metric-circulating" class="value">--</span>
+          <span id="metric-minted" class="hint">Waiting for API</span>
+        </div>
+        <div class="metric">
+          <span class="label">Public wallets tracked</span>
+          <span id="metric-wallets" class="value">--</span>
+          <span id="metric-active" class="hint">Active miners plus founder wallets</span>
+        </div>
+        <div class="metric">
+          <span class="label">Gini coefficient</span>
+          <span id="metric-gini" class="value">--</span>
+          <span class="hint">0 equal, 1 concentrated</span>
+        </div>
+        <div class="metric">
+          <span class="label">Top 10 concentration</span>
+          <span id="metric-top10" class="value">--</span>
+          <span class="hint">Share of visible circulating balance</span>
+        </div>
+      </section>
+
+      <section class="grid">
+        <div>
+          <section class="panel">
+            <h2>Lorenz Curve</h2>
+            <div class="chart-wrap">
+              <svg id="lorenz" viewBox="0 0 640 360" role="img" aria-label="Lorenz curve for RTC wallet balances"></svg>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h2>Top Holders</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th>Rank</th>
+                  <th>Wallet</th>
+                  <th class="num">% visible</th>
+                  <th class="num">Balance RTC</th>
+                </tr>
+              </thead>
+              <tbody id="holders-body">
+                <tr>
+                  <td colspan="4">Loading holders...</td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+        </div>
+
+        <div>
+          <section class="panel">
+            <h2>Founder vs Community</h2>
+            <div class="split">
+              <div id="split-donut" class="donut" aria-hidden="true"></div>
+              <ul class="legend">
+                <li><span><span class="swatch founder"></span>Founder reserves</span><strong id="founder-total">--</strong></li>
+                <li><span><span class="swatch community"></span>Community wallets</span><strong id="community-total">--</strong></li>
+                <li><span><span class="swatch zero"></span>Unminted / untracked</span><strong id="unminted-total">--</strong></li>
+              </ul>
+            </div>
+            <p class="notice">
+              Public endpoints expose active miners and individual balance
+              lookups. The admin-only all-balances endpoint is intentionally
+              protected, so this page tracks the discoverable public set plus
+              the documented founder wallets.
+            </p>
+          </section>
+
+          <section class="panel">
+            <h2>Balance Buckets</h2>
+            <div id="bucket-bars" class="bars"></div>
+          </section>
+
+          <section class="panel">
+            <h2>Mining vs Bounty Flow</h2>
+            <div id="flow-bars" class="flow"></div>
+            <p id="epoch-note" class="notice">Loading epoch data...</p>
+          </section>
+
+          <section class="panel">
+            <h2>Historical Snapshots</h2>
+            <ul id="snapshot-list" class="timeline">
+              <li>No local snapshots yet.</li>
+            </ul>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="shell">
+        Built for RustChain bounty #168. Total supply uses the public
+        2^23 value: 8,388,608 RTC.
+      </div>
+    </footer>
+
+    <script>
+      const API_BASE = "https://rustchain.org";
+      const TOTAL_SUPPLY = 8388608;
+      const SNAPSHOT_KEY = "rtc-distribution-dashboard-snapshots-v1";
+      const FOUNDER_WALLETS = {
+        founder_community: "Community Fund",
+        founder_dev_fund: "Development Fund",
+        founder_team_bounty: "Team & Bounties",
+        founder_founders: "Founders Pool"
+      };
+
+      const $ = (id) => document.getElementById(id);
+
+      function formatRtc(value, digits = 2) {
+        return Number(value || 0).toLocaleString(undefined, {
+          minimumFractionDigits: digits,
+          maximumFractionDigits: digits
+        });
+      }
+
+      function percent(value, total, digits = 1) {
+        if (!total) return "0.0%";
+        return `${((value / total) * 100).toFixed(digits)}%`;
+      }
+
+      function setStatus(kind, text) {
+        const dot = $("status-dot");
+        dot.className = `dot ${kind}`;
+        $("status-text").textContent = text;
+      }
+
+      async function fetchJson(path) {
+        const response = await fetch(`${API_BASE}${path}`, { cache: "no-store" });
+        if (!response.ok) throw new Error(`${path} returned ${response.status}`);
+        return response.json();
+      }
+
+      async function getMinerIds() {
+        const data = await fetchJson("/api/miners");
+        const list = Array.isArray(data) ? data : data.miners || [];
+        const ids = list.map((item) => item.miner).filter(Boolean);
+        return [...new Set([...ids, ...Object.keys(FOUNDER_WALLETS)])];
+      }
+
+      async function getBalance(id) {
+        const query = encodeURIComponent(id);
+        const data = await fetchJson(`/wallet/balance?miner_id=${query}`);
+        return Number(data.amount_rtc || 0);
+      }
+
+      function gini(values) {
+        const sorted = values.filter((v) => v >= 0).sort((a, b) => a - b);
+        const n = sorted.length;
+        const total = sorted.reduce((sum, value) => sum + value, 0);
+        if (!n || !total) return 0;
+        const weighted = sorted.reduce((sum, value, index) => sum + (index + 1) * value, 0);
+        return (2 * weighted) / (n * total) - (n + 1) / n;
+      }
+
+      function lorenzPoints(values) {
+        const sorted = values.filter((v) => v >= 0).sort((a, b) => a - b);
+        const total = sorted.reduce((sum, value) => sum + value, 0);
+        if (!sorted.length || !total) return [[0, 0], [1, 1]];
+        const points = [[0, 0]];
+        let cumulative = 0;
+        sorted.forEach((value, index) => {
+          cumulative += value;
+          points.push([(index + 1) / sorted.length, cumulative / total]);
+        });
+        return points;
+      }
+
+      function drawLorenz(wallets) {
+        const svg = $("lorenz");
+        const pad = 42;
+        const width = 640;
+        const height = 360;
+        const plotW = width - pad * 2;
+        const plotH = height - pad * 2;
+        const points = lorenzPoints(wallets.map((wallet) => wallet.balance));
+        const toXY = ([x, y]) => [pad + x * plotW, height - pad - y * plotH];
+        const curve = points.map((point) => toXY(point).join(",")).join(" ");
+        const equality = `${pad},${height - pad} ${width - pad},${pad}`;
+        svg.innerHTML = `
+          <rect x="0" y="0" width="${width}" height="${height}" rx="8" fill="#fbfcfe"></rect>
+          <line x1="${pad}" y1="${height - pad}" x2="${width - pad}" y2="${height - pad}" stroke="#9aa7b8"></line>
+          <line x1="${pad}" y1="${pad}" x2="${pad}" y2="${height - pad}" stroke="#9aa7b8"></line>
+          <polyline points="${equality}" fill="none" stroke="#cbd5e1" stroke-width="2" stroke-dasharray="6 6"></polyline>
+          <polyline points="${curve}" fill="none" stroke="#0f766e" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"></polyline>
+          <text x="${pad}" y="${height - 10}" fill="#5d687d" font-size="13">0% wallets</text>
+          <text x="${width - pad - 72}" y="${height - 10}" fill="#5d687d" font-size="13">100% wallets</text>
+          <text x="12" y="${pad + 4}" fill="#5d687d" font-size="13">100% RTC</text>
+          <text x="${width - pad - 142}" y="${pad + 18}" fill="#5d687d" font-size="13">perfect equality</text>
+          <text x="${width - pad - 116}" y="${height - pad - 16}" fill="#0f766e" font-size="13">live curve</text>
+        `;
+      }
+
+      function updateMetrics(wallets, epoch) {
+        const total = wallets.reduce((sum, wallet) => sum + wallet.balance, 0);
+        const positive = wallets.filter((wallet) => wallet.balance > 0);
+        const founder = wallets.filter((wallet) => wallet.founder).reduce((sum, wallet) => sum + wallet.balance, 0);
+        const community = total - founder;
+        const top10 = wallets.slice(0, 10).reduce((sum, wallet) => sum + wallet.balance, 0);
+        const unminted = Math.max(TOTAL_SUPPLY - total, 0);
+        const founderDegrees = total ? Math.min(360, (founder / total) * 360) : 0;
+
+        $("metric-circulating").textContent = formatRtc(total);
+        $("metric-minted").textContent = `${percent(total, TOTAL_SUPPLY, 3)} of fixed supply`;
+        $("metric-wallets").textContent = positive.length.toLocaleString();
+        $("metric-active").textContent = `${wallets.length} public wallet IDs queried`;
+        $("metric-gini").textContent = gini(positive.map((wallet) => wallet.balance)).toFixed(4);
+        $("metric-top10").textContent = percent(top10, total, 1);
+        $("founder-total").textContent = `${formatRtc(founder)} RTC`;
+        $("community-total").textContent = `${formatRtc(community)} RTC`;
+        $("unminted-total").textContent = `${formatRtc(unminted)} RTC`;
+        $("split-donut").style.background = `conic-gradient(var(--founder) 0deg ${founderDegrees}deg, var(--community) ${founderDegrees}deg 360deg)`;
+
+        if (epoch) {
+          $("epoch-note").textContent = `Current epoch ${epoch.epoch}, slot ${epoch.slot}. Public epoch pot is ${formatRtc(epoch.epoch_pot || 0, 3)} RTC, which is the live mining emission baseline for new rewards. Bounty outflow is represented by founder team/community reserves and visible community balances because the public ledger export is protected.`;
+        }
+      }
+
+      function updateHolders(wallets) {
+        const total = wallets.reduce((sum, wallet) => sum + wallet.balance, 0);
+        $("holders-body").innerHTML = wallets.slice(0, 20).map((wallet, index) => `
+          <tr>
+            <td>${index + 1}</td>
+            <td class="wallet">${wallet.id}${wallet.founder ? `<span class="badge founder">${wallet.label}</span>` : ""}</td>
+            <td class="num">${percent(wallet.balance, total, 2)}</td>
+            <td class="num">${formatRtc(wallet.balance, 6)}</td>
+          </tr>
+        `).join("");
+      }
+
+      function updateBuckets(wallets) {
+        const buckets = [
+          { label: "0", test: (v) => v === 0 },
+          { label: "< 1", test: (v) => v > 0 && v < 1 },
+          { label: "1-10", test: (v) => v >= 1 && v < 10 },
+          { label: "10-100", test: (v) => v >= 10 && v < 100 },
+          { label: "100-1k", test: (v) => v >= 100 && v < 1000 },
+          { label: "> 1k", test: (v) => v >= 1000 }
+        ].map((bucket) => ({
+          label: bucket.label,
+          count: wallets.filter((wallet) => bucket.test(wallet.balance)).length
+        }));
+
+        const max = Math.max(1, ...buckets.map((bucket) => bucket.count));
+        $("bucket-bars").innerHTML = buckets.map((bucket) => `
+          <div class="bar-row">
+            <span>${bucket.label} RTC</span>
+            <span class="bar-track"><span class="bar-fill" style="width:${(bucket.count / max) * 100}%"></span></span>
+            <strong>${bucket.count}</strong>
+          </div>
+        `).join("");
+      }
+
+      function updateFlow(wallets, epoch) {
+        const founderTeam = wallets.find((wallet) => wallet.id === "founder_team_bounty")?.balance || 0;
+        const founderCommunity = wallets.find((wallet) => wallet.id === "founder_community")?.balance || 0;
+        const visibleCommunity = wallets
+          .filter((wallet) => !wallet.founder)
+          .reduce((sum, wallet) => sum + wallet.balance, 0);
+        const epochPotAnnualized = (epoch?.epoch_pot || 0) * 365;
+        const rows = [
+          { label: "Visible community", value: visibleCommunity, unit: "RTC" },
+          { label: "Team bounty reserve", value: founderTeam, unit: "RTC" },
+          { label: "Community reserve", value: founderCommunity, unit: "RTC" },
+          { label: "Mining run rate", value: epochPotAnnualized, unit: "RTC/year" }
+        ];
+        const max = Math.max(1, ...rows.map((row) => row.value));
+        $("flow-bars").innerHTML = rows.map((row) => `
+          <div class="flow-row">
+            <span>${row.label}</span>
+            <span class="bar-track"><span class="bar-fill" style="width:${(row.value / max) * 100}%"></span></span>
+            <strong>${formatRtc(row.value, row.unit.includes("year") ? 1 : 2)} ${row.unit}</strong>
+          </div>
+        `).join("");
+      }
+
+      function saveSnapshot(wallets) {
+        const total = wallets.reduce((sum, wallet) => sum + wallet.balance, 0);
+        const founder = wallets.filter((wallet) => wallet.founder).reduce((sum, wallet) => sum + wallet.balance, 0);
+        const today = new Date().toISOString().slice(0, 10);
+        const current = {
+          date: today,
+          total,
+          founder,
+          community: total - founder,
+          wallets: wallets.filter((wallet) => wallet.balance > 0).length,
+          gini: gini(wallets.filter((wallet) => wallet.balance > 0).map((wallet) => wallet.balance))
+        };
+        const stored = JSON.parse(localStorage.getItem(SNAPSHOT_KEY) || "[]");
+        const withoutToday = stored.filter((snapshot) => snapshot.date !== today);
+        const next = [...withoutToday, current].slice(-30);
+        localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(next));
+        return next;
+      }
+
+      function updateSnapshots(snapshots) {
+        $("snapshot-list").innerHTML = snapshots.slice().reverse().map((snapshot) => `
+          <li>${snapshot.date}: ${formatRtc(snapshot.total)} RTC visible, ${snapshot.wallets} funded wallets, Gini ${snapshot.gini.toFixed(4)}</li>
+        `).join("");
+      }
+
+      async function loadDashboard() {
+        try {
+          setStatus("", "Querying RustChain APIs");
+          const [ids, epoch] = await Promise.all([
+            getMinerIds(),
+            fetchJson("/epoch").catch(() => null)
+          ]);
+
+          const wallets = await Promise.all(ids.map(async (id) => ({
+            id,
+            balance: await getBalance(id),
+            founder: Boolean(FOUNDER_WALLETS[id]),
+            label: FOUNDER_WALLETS[id] || ""
+          })));
+
+          wallets.sort((a, b) => b.balance - a.balance);
+          updateMetrics(wallets, epoch);
+          drawLorenz(wallets.filter((wallet) => wallet.balance > 0));
+          updateHolders(wallets);
+          updateBuckets(wallets);
+          updateFlow(wallets, epoch);
+          updateSnapshots(saveSnapshot(wallets));
+          setStatus("live", `Live at ${new Date().toLocaleTimeString()}`);
+        } catch (error) {
+          console.error(error);
+          setStatus("error", error.message || "Unable to load live data");
+          $("holders-body").innerHTML = `<tr><td colspan="4">Unable to load live data: ${error.message}</td></tr>`;
+        }
+      }
+
+      loadDashboard();
+      setInterval(loadDashboard, 300000);
+    </script>
+  </body>
+</html>
