@@ -37,6 +37,17 @@ except ImportError:
 
 
 COINBASE_MIGRATION = "ALTER TABLE balances ADD COLUMN coinbase_address TEXT DEFAULT NULL"
+EVM_HEX_CHARS = set("0123456789abcdefABCDEF")
+
+
+def _is_base_evm_address(value):
+    """Return True for canonical Base/EVM addresses: 0x plus 40 hex chars."""
+    return (
+        isinstance(value, str)
+        and len(value) == 42
+        and value.startswith("0x")
+        and all(ch in EVM_HEX_CHARS for ch in value[2:])
+    )
 
 
 def _run_migration(db_path):
@@ -104,7 +115,7 @@ def init_app(app, db_path):
 
         if not miner_id:
             return jsonify({"error": "miner_id is required"}), 400
-        if not coinbase_address or not coinbase_address.startswith("0x") or len(coinbase_address) != 42:
+        if not _is_base_evm_address(coinbase_address):
             return jsonify({"error": "Invalid Base address (must be 0x + 40 hex chars)"}), 400
 
         conn = sqlite3.connect(db_path)

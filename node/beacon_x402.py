@@ -58,6 +58,17 @@ CREATE TABLE IF NOT EXISTS beacon_wallets (
 RELAY_MIGRATION_SQL = [
     "ALTER TABLE relay_agents ADD COLUMN coinbase_address TEXT DEFAULT NULL",
 ]
+EVM_HEX_CHARS = set("0123456789abcdefABCDEF")
+
+
+def _is_base_evm_address(value):
+    """Return True for canonical Base/EVM addresses: 0x plus 40 hex chars."""
+    return (
+        isinstance(value, str)
+        and len(value) == 42
+        and value.startswith("0x")
+        and all(ch in EVM_HEX_CHARS for ch in value[2:])
+    )
 
 
 def _run_migrations(db_path):
@@ -206,7 +217,7 @@ def init_app(app, get_db_func):
             address = _json_string_field(data, "coinbase_address")
         except ValueError as exc:
             return _cors_json({"error": str(exc)}, 400)
-        if not address or not address.startswith("0x") or len(address) != 42:
+        if not _is_base_evm_address(address):
             return _cors_json({"error": "Invalid Base address"}, 400)
 
         db = get_db_func()

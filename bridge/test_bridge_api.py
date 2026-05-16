@@ -598,6 +598,36 @@ class TestLockEndpoint:
         })
         assert resp.status_code == 400
 
+    def test_lock_rejects_short_base_wallet(self, client):
+        bad_wallet = "0x1234"
+        resp = client.post("/bridge/lock", json={
+            "sender_wallet": "test-miner",
+            "amount": 10.0,
+            "target_chain": "base",
+            "target_wallet": bad_wallet,
+            "tx_hash": "rtc-lock-short-base-wallet",
+            "receipt_signature": _receipt_signature(
+                "test-miner", 10.0, "base", bad_wallet, "rtc-lock-short-base-wallet"
+            ),
+        })
+        assert resp.status_code == 400
+        assert "40 hex chars" in resp.get_json()["error"]
+
+    def test_lock_rejects_non_hex_base_wallet(self, client):
+        bad_wallet = "0x" + ("g" * 40)
+        resp = client.post("/bridge/lock", json={
+            "sender_wallet": "test-miner",
+            "amount": 10.0,
+            "target_chain": "base",
+            "target_wallet": bad_wallet,
+            "tx_hash": "rtc-lock-non-hex-base-wallet",
+            "receipt_signature": _receipt_signature(
+                "test-miner", 10.0, "base", bad_wallet, "rtc-lock-non-hex-base-wallet"
+            ),
+        })
+        assert resp.status_code == 400
+        assert "40 hex chars" in resp.get_json()["error"]
+
     def test_lock_requires_tx_hash(self, client):
         resp = client.post("/bridge/lock", json={
             "sender_wallet": "test-miner",
