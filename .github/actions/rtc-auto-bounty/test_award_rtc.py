@@ -26,6 +26,7 @@ from award_rtc import (
     resolve_wallet_from_pr_body,
     resolve_wallet_from_file,
     check_already_awarded,
+    transfer_rtc,
     set_output,
     _AWARD_MARKER,
 )
@@ -248,6 +249,45 @@ class TestSetOutput(unittest.TestCase):
             self.assertIn("amount=50.0", content)
         finally:
             os.unlink(output_file)
+
+
+# ---------------------------------------------------------------------------
+# Transfer API tests
+# ---------------------------------------------------------------------------
+
+
+class TestTransferRtc(unittest.TestCase):
+    """Test RTC transfer API behavior."""
+
+    def test_retries_transient_connection_failure_before_success(self):
+        attempts = []
+
+        class FakeResponse:
+            def read(self):
+                return b'{"ok": true, "tx_hash": "tx_retry"}'
+
+        def fake_urlopen(req, timeout):
+            attempts.append((req.full_url, timeout))
+            if len(attempts) == 1:
+                from urllib.error import URLError
+                raise URLError(ConnectionRefusedError(111, "Connection refused"))
+            return FakeResponse()
+
+        with patch("award_rtc.urlopen", side_effect=fake_urlopen):
+            ok, result = transfer_rtc(
+                "1.2.3.4",
+                "admin-key",
+                "founder",
+                "recipient",
+                5,
+                "retry memo",
+                max_attempts=2,
+                retry_delay=0,
+            )
+
+        self.assertTrue(ok)
+        self.assertEqual(result["tx_hash"], "tx_retry")
+        self.assertEqual(len(attempts), 2)
 
 
 # ---------------------------------------------------------------------------
