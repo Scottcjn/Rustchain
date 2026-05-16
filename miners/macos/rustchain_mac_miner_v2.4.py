@@ -293,6 +293,15 @@ class MacMiner:
             print("\n\nShutting down miner...")
         self.shutdown_requested = True
 
+    def sleep_until_shutdown(self, seconds, interval=1.0):
+        """Sleep in short checkpoints so signal-driven shutdown returns promptly."""
+        deadline = time.monotonic() + seconds
+        while not self.shutdown_requested:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return
+            time.sleep(min(interval, remaining))
+
     def _run_fingerprint_checks(self):
         """Run hardware fingerprint checks for RIP-PoA"""
         print(info("\n[FINGERPRINT] Running hardware fingerprint checks..."))
@@ -494,7 +503,7 @@ class MacMiner:
         # Initial attestation
         while not self.shutdown_requested and not self.attest():
             print("  Retrying attestation in 30 seconds...")
-            time.sleep(30)
+            self.sleep_until_shutdown(30)
         if self.shutdown_requested:
             print("Miner stopped gracefully.")
             return
@@ -533,14 +542,14 @@ class MacMiner:
                           f"Submitted: {self.shares_submitted} | "
                           f"Accepted: {self.shares_accepted}")
 
-                time.sleep(LOTTERY_CHECK_INTERVAL)
+                self.sleep_until_shutdown(LOTTERY_CHECK_INTERVAL)
 
             except KeyboardInterrupt:
                 self.request_shutdown()
                 break
             except Exception as e:
                 print(f"[{datetime.now().strftime('%H:%M:%S')}] Error: {e}")
-                time.sleep(30)
+                self.sleep_until_shutdown(30)
         print(f"Miner stopped gracefully. Submitted: {self.shares_submitted} | Accepted: {self.shares_accepted}")
 
 
