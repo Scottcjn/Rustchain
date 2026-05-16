@@ -7,8 +7,22 @@ import json
 import os
 import hashlib
 
+def _get_persistent_secret_key(env_var: str, path: str = ".flask_directory_key") -> str:
+    """Persist Flask secret key across restarts."""
+    key = os.environ.get(env_var, "").strip()
+    if key:
+        return key
+    if os.path.exists(path):
+        with open(path) as f:
+            return f.read().strip()
+    key = os.urandom(32).hex()
+    with open(path, "w") as f:
+        f.write(key)
+    os.chmod(path, 0o600)
+    return key
+
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.environ.get('BCOS_DIRECTORY_SECRET_KEY') or os.urandom(32).hex()
+app.config['SECRET_KEY'] = _get_persistent_secret_key('BCOS_DIRECTORY_SECRET_KEY')
 
 DATABASE = 'bcos_directory.db'
 

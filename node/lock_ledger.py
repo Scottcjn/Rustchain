@@ -259,7 +259,7 @@ def release_lock(
     # Check if unlock time has passed (unless properly authorized admin override).
     # SECURITY FIX: string comparison "admin" was trivially bypassable by any caller.
     # Now requires the released_by to match a configured admin public key.
-    authorized_admin_key = os.environ.get("RC_ADMIN_PUBKEY", "")
+    authorized_admin_key = os.environ.get("RC_ADMIN_KEY", "")
     is_admin_authorized = bool(authorized_admin_key and released_by == authorized_admin_key)
 
     if now < unlock_at and not is_admin_authorized:
@@ -756,7 +756,7 @@ def register_lock_ledger_routes(app):
         try:
             success, result = release_lock(
                 conn, lock_id, 
-                released_by="admin",
+                released_by=os.environ.get("RC_ADMIN_KEY", "admin"),
                 release_tx_hash=release_tx_hash
             )
             if success:
