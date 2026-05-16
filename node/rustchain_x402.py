@@ -54,6 +54,17 @@ def _run_migration(db_path):
     conn.close()
 
 
+def _is_valid_evm_address(addr: str) -> bool:
+    """Check if addr is a valid 0x-prefixed EVM address."""
+    if not addr or not addr.startswith("0x") or len(addr) != 42:
+        return False
+    try:
+        int(addr[2:], 16)
+        return True
+    except ValueError:
+        return False
+
+
 def _json_object_body():
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
@@ -104,7 +115,7 @@ def init_app(app, db_path):
 
         if not miner_id:
             return jsonify({"error": "miner_id is required"}), 400
-        if not coinbase_address or not coinbase_address.startswith("0x") or len(coinbase_address) != 42:
+        if not _is_valid_evm_address(coinbase_address):
             return jsonify({"error": "Invalid Base address (must be 0x + 40 hex chars)"}), 400
 
         conn = sqlite3.connect(db_path)

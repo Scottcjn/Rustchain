@@ -207,7 +207,10 @@ def init_app(app, get_db_func):
         except ValueError as exc:
             return _cors_json({"error": str(exc)}, 400)
         if not address or not address.startswith("0x") or len(address) != 42:
-            return _cors_json({"error": "Invalid Base address"}, 400)
+            try:
+                int(address[2:], 16)
+            except ValueError:
+                return _cors_json({"error": "Invalid Base address (must be 0x + 40 hex chars)"}, 400)
 
         db = get_db_func()
         db.execute(
