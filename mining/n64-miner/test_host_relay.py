@@ -15,8 +15,23 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from host_relay import (
     N64Relay, crc8, ATTEST_MAGIC, PKT_TYPE_ATTEST, PKT_TYPE_EPOCH_ACK,
-    DEVICE_ARCH, DEVICE_FAMILY
+    PKT_TYPE_REATTEST, DEVICE_ARCH, DEVICE_FAMILY
 )
+
+
+class CapturingRelay(N64Relay):
+    def __init__(self):
+        super().__init__(
+            port=None,
+            node_url="https://rustchain.org",
+            wallet="RTC_TEST_WALLET",
+            demo=False
+        )
+        self.sent_frames = []
+
+    def send_frame(self, data: bytes) -> bool:
+        self.sent_frames.append(data)
+        return True
 
 
 class TestCRC8(unittest.TestCase):
@@ -92,6 +107,32 @@ class TestN64RelayDemo(unittest.TestCase):
         bad_data = struct.pack("<I", 0xDEADBEEF) + b"\x00" * 100
         result = self.relay.parse_attestation(bad_data)
         self.assertIsNone(result)
+        self.assertEqual(self.relay.corrupt_attestations, 0)
+        self.assertEqual(self.relay.health_events, [])
+
+    def test_parse_detects_erased_save_data(self):
+        relay = CapturingRelay()
+        relay.current_epoch = 42
+        result = relay.parse_attestation(struct.pack("<I", 0xFFFFFFFF) + b"\x00" * 100)
+
+        self.assertIsNone(result)
+        self.assertEqual(relay.corrupt_attestations, 1)
+        self.assertEqual(relay.health_events[0]["type"], "miner_attestation_corrupt")
+        self.assertEqual(relay.health_events[0]["magic"], "0xFFFFFFFF")
+        self.assertEqual(relay.health_events[0]["block_height"], 42)
+        self.assertEqual(len(relay.sent_frames), 1)
+        self.assertEqual(struct.unpack_from("<I", relay.sent_frames[0], 0)[0], ATTEST_MAGIC)
+        self.assertEqual(relay.sent_frames[0][5], PKT_TYPE_REATTEST)
+        self.assertEqual(struct.unpack_from("<I", relay.sent_frames[0], 8)[0], 42)
+
+    def test_parse_detects_zeroed_save_data(self):
+        relay = CapturingRelay()
+        result = relay.parse_attestation(b"\x00" * 104)
+
+        self.assertIsNone(result)
+        self.assertEqual(relay.corrupt_attestations, 1)
+        self.assertEqual(relay.health_events[0]["magic"], "0x00000000")
+        self.assertEqual(len(relay.sent_frames), 1)
 
     def test_parse_rejects_short(self):
         result = self.relay.parse_attestation(b"\x00\x01\x02")
@@ -119,6 +160,15 @@ class TestAttestationProtocol(unittest.TestCase):
     def test_packet_types(self):
         self.assertEqual(PKT_TYPE_ATTEST, 0)
         self.assertEqual(PKT_TYPE_EPOCH_ACK, 3)
+        self.assertEqual(PKT_TYPE_REATTEST, 4)
+
+    def test_n64_firmware_handles_reattest_request(self):
+        source_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "n64_miner.c")
+        with open(source_path, encoding="utf-8") as fh:
+            source = fh.read()
+
+        self.assertIn("ack.header.type == PKT_TYPE_REATTEST", source)
+        self.assertIn("return miner_attest(ctx);", source)
 
     def test_device_constants(self):
         self.assertEqual(DEVICE_ARCH, "mips_r4300")
