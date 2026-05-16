@@ -1,13 +1,22 @@
 from flask import Flask, render_template, jsonify
 import requests
 import json
+import logging
 from datetime import datetime
 
 app = Flask(__name__)
+logger = logging.getLogger(__name__)
 
 # Configuration
 API_BASE_URL = "http://localhost:8000"
 MINERS_ENDPOINT = f"{API_BASE_URL}/api/miners"
+
+
+def upstream_unavailable_response(include_miners=False):
+    body = {'error': 'Upstream node unavailable'}
+    if include_miners:
+        body['miners'] = []
+    return jsonify(body), 500
 
 @app.route('/')
 def dashboard():
@@ -49,8 +58,9 @@ def get_miners():
             return jsonify(miners_data)
         else:
             return jsonify({'error': 'Failed to fetch miners data', 'miners': []}), 500
-    except requests.exceptions.RequestException as e:
-        return jsonify({'error': f'Connection error: {str(e)}', 'miners': []}), 500
+    except requests.exceptions.RequestException:
+        logger.exception("Unable to fetch miners from upstream RustChain node")
+        return upstream_unavailable_response(include_miners=True)
 
 @app.route('/api/network/stats')
 def get_network_stats():
@@ -80,8 +90,9 @@ def get_network_stats():
             return jsonify(stats)
         else:
             return jsonify({'error': 'Failed to fetch network stats'}), 500
-    except requests.exceptions.RequestException as e:
-        return jsonify({'error': f'Connection error: {str(e)}'}), 500
+    except requests.exceptions.RequestException:
+        logger.exception("Unable to fetch network stats from upstream RustChain node")
+        return upstream_unavailable_response()
 
 @app.route('/miner/<miner_id>')
 def miner_detail(miner_id):
@@ -122,8 +133,9 @@ def get_miner_detail(miner_id):
                 return jsonify({'error': 'Miner not found'}), 404
         else:
             return jsonify({'error': 'Failed to fetch miner data'}), 500
-    except requests.exceptions.RequestException as e:
-        return jsonify({'error': f'Connection error: {str(e)}'}), 500
+    except requests.exceptions.RequestException:
+        logger.exception("Unable to fetch miner detail from upstream RustChain node")
+        return upstream_unavailable_response()
 
 @app.errorhandler(404)
 def not_found(error):
