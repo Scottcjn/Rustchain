@@ -115,6 +115,84 @@ MESSAGE_EXPIRY = 300  # 5 minutes
 MAX_INV_BATCH = 1000
 DB_PATH = os.environ.get("RUSTCHAIN_DB", "/root/rustchain/rustchain_v2.db")
 
+
+def _positive_int(value: Any, default: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
+P2P_PROTOCOL_VERSION = _positive_int(os.environ.get("RC_P2P_PROTOCOL_VERSION"), 1)
+P2P_K_BUCKET_SIZE = _positive_int(os.environ.get("RC_P2P_K_BUCKET_SIZE"), 20)
+P2P_PING_INTERVAL = _positive_int(os.environ.get("RC_P2P_PING_INTERVAL"), SYNC_INTERVAL)
+P2P_HANDSHAKE_TIMEOUT = _positive_int(os.environ.get("RC_P2P_HANDSHAKE_TIMEOUT"), 10)
+_HANDSHAKE_FIELDS = (
+    "protocol_version",
+    "k_bucket_size",
+    "ping_interval",
+    "timeout",
+)
+
+
+def local_handshake_params() -> Dict[str, int]:
+    """Return the local P2P compatibility parameters advertised to peers."""
+    return {
+        "protocol_version": P2P_PROTOCOL_VERSION,
+        "k_bucket_size": P2P_K_BUCKET_SIZE,
+        "ping_interval": P2P_PING_INTERVAL,
+        "timeout": P2P_HANDSHAKE_TIMEOUT,
+    }
+
+
+def _normalise_handshake_params(
+    params: Optional[Dict],
+    defaults: Dict[str, int],
+) -> Dict[str, int]:
+    params = params if isinstance(params, dict) else {}
+    return {
+        field: _positive_int(params.get(field), defaults[field])
+        for field in _HANDSHAKE_FIELDS
+    }
+
+
+def negotiate_handshake_params(local: Dict, remote: Optional[Dict]) -> Dict[str, int]:
+    """Choose compatible P2P parameters for a local/remote handshake pair."""
+    local_values = _normalise_handshake_params(local, local_handshake_params())
+    remote_values = _normalise_handshake_params(remote, local_values)
+    return {
+        "protocol_version": min(
+            local_values["protocol_version"],
+            remote_values["protocol_version"],
+        ),
+        "k_bucket_size": min(
+            local_values["k_bucket_size"],
+            remote_values["k_bucket_size"],
+        ),
+        "ping_interval": min(
+            local_values["ping_interval"],
+            remote_values["ping_interval"],
+        ),
+        "timeout": max(local_values["timeout"], remote_values["timeout"]),
+    }
+
+
+def handshake_mismatches(
+    local: Dict,
+    remote: Optional[Dict],
+) -> Dict[str, Dict[str, int]]:
+    """Return advertised handshake fields where local and remote disagree."""
+    if not isinstance(remote, dict):
+        return {}
+    local_values = _normalise_handshake_params(local, local_handshake_params())
+    remote_values = _normalise_handshake_params(remote, local_values)
+    return {
+        field: {"local": local_values[field], "remote": remote_values[field]}
+        for field in _HANDSHAKE_FIELDS
+        if field in remote and local_values[field] != remote_values[field]
+    }
+
 # TLS verification: defaults to True (secure).
 # Set RUSTCHAIN_TLS_VERIFY=false only for local development with self-signed certs.
 # Prefer RUSTCHAIN_CA_BUNDLE to point at a pinned CA/cert file instead of disabling.
@@ -540,6 +618,13 @@ class GossipLayer:
         )
         return msg
 
+    def create_ping(self) -> GossipMessage:
+        """Create a ping that advertises local P2P handshake parameters."""
+        return self.create_message(MessageType.PING, {
+            "node_id": self.node_id,
+            "handshake": local_handshake_params(),
+        })
+
     def verify_message(self, msg: GossipMessage) -> bool:
         """Verify message signature and freshness.
 
@@ -672,11 +757,29 @@ class GossipLayer:
 
     def _handle_ping(self, msg: GossipMessage) -> Dict:
         """Respond to ping with pong"""
-        pong = self.create_message(MessageType.PONG, {
+        local_handshake = local_handshake_params()
+        remote_handshake = msg.payload.get("handshake")
+        agreed_handshake = negotiate_handshake_params(local_handshake, remote_handshake)
+        mismatches = handshake_mismatches(local_handshake, remote_handshake)
+        if mismatches:
+            logger.info(
+                "P2P handshake with %s negotiated %s; mismatches=%s",
+                msg.sender_id,
+                agreed_handshake,
+                mismatches,
+            )
+
+        pong_payload = {
             "node_id": self.node_id,
             "attestation_count": len(self.attestation_crdt.data),
-            "settled_epochs": len(self.epoch_crdt.items)
-        })
+            "settled_epochs": len(self.epoch_crdt.items),
+            "handshake": local_handshake,
+            "agreed_handshake": agreed_handshake,
+        }
+        if mismatches:
+            pong_payload["handshake_mismatches"] = mismatches
+
+        pong = self.create_message(MessageType.PONG, pong_payload)
         return {"status": "ok", "pong": pong.to_dict()}
 
     def _handle_inv_attestation(self, msg: GossipMessage) -> Dict:
