@@ -32,3 +32,10 @@ def test_windows_miner_setup_verifies_miner_before_run_instructions():
     assert 'if /I not "!ACTUAL_MINER_SHA256!"=="%MINER_SHA256%"' in text
     assert 'del /f /q "%MINER_SCRIPT%"' in text
     assert "Miner script SHA-256 mismatch." in text
+
+
+def test_windows_miner_setup_echo_inside_if_block_has_no_unescaped_closing_parenthesis():
+    text = _setup_text()
+
+    assert "Keeping existing miner script:" in text
+    assert "Keeping existing miner script (%MINER_SCRIPT%)." not in text

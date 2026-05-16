@@ -43,7 +43,7 @@ echo Installing miner dependencies...
 python -m pip install -r "%REQUIREMENTS%"
 
 if exist "%MINER_SCRIPT%" (
-    echo Keeping existing miner script (%MINER_SCRIPT%).
+    echo Keeping existing miner script: %MINER_SCRIPT%
 ) else (
     echo Downloading the latest miner script...
     powershell -Command "Invoke-WebRequest -UseBasicParsing -Uri '%MINER_URL%' -OutFile '%MINER_SCRIPT%'"
