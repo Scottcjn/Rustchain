@@ -106,8 +106,8 @@ def proxy_api(path):
             
         resp = requests.get(url, timeout=5)
         return (resp.content, resp.status_code, resp.headers.items())
-    except Exception as e:
-        return jsonify({"error": f"Node Connection Error: {str(e)}"}), 502
+    except Exception:
+        return jsonify({"error": "Node Connection Error: unavailable"}), 502
 
 @app.route('/api/faucet/drip', methods=['POST'])
 def faucet_drip():
