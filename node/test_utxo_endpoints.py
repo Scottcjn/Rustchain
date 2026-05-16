@@ -212,6 +212,34 @@ class TestUtxoEndpoints(unittest.TestCase):
             self.assertEqual(r.status_code, 400)
             self.assertEqual(r.get_json()['error'], 'JSON object body required')
 
+    def test_transfer_rejects_non_string_fields(self):
+        """Malformed scalar fields must fail as 400s, not server errors."""
+        base = {
+            'from_address': 'RTC_test_aabbccdd',
+            'to_address': 'bob',
+            'amount_rtc': 1.0,
+            'public_key': 'aabbccdd' * 8,
+            'signature': 'sig' * 22,
+            'nonce': 123,
+        }
+        cases = [
+            ('from_address', {'nested': 'sender'}),
+            ('to_address', ['bob']),
+            ('public_key', {'key': 'aabb'}),
+            ('signature', ['sig']),
+        ]
+
+        for field, value in cases:
+            with self.subTest(field=field):
+                payload = dict(base)
+                payload[field] = value
+                r = self.client.post('/utxo/transfer', json=payload)
+                self.assertEqual(r.status_code, 400)
+                self.assertEqual(
+                    r.get_json()['error'],
+                    'Transfer fields must be strings',
+                )
+
     def test_transfer_zero_amount(self):
         r = self.client.post('/utxo/transfer', json={
             'from_address': 'RTC_test_aabbccdd',

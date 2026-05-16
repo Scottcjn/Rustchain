@@ -151,6 +151,15 @@ def _missing_transfer_nonce(nonce) -> bool:
     )
 
 
+def _optional_stripped_field(data: dict, field: str) -> str | None:
+    value = data.get(field, '')
+    if value is None:
+        return ''
+    if not isinstance(value, str):
+        return None
+    return value.strip()
+
+
 def register_utxo_blueprint(app, utxo_db: UtxoDB, db_path: str,
                             verify_sig_fn, addr_from_pk_fn,
                             current_slot_fn, dual_write: bool = False):
@@ -358,10 +367,12 @@ def utxo_transfer():
     if not isinstance(data, dict):
         return jsonify({'error': 'JSON object body required'}), 400
 
-    from_address = (data.get('from_address') or '').strip()
-    to_address = (data.get('to_address') or '').strip()
-    public_key = (data.get('public_key') or '').strip()
-    signature = (data.get('signature') or '').strip()
+    from_address = _optional_stripped_field(data, 'from_address')
+    to_address = _optional_stripped_field(data, 'to_address')
+    public_key = _optional_stripped_field(data, 'public_key')
+    signature = _optional_stripped_field(data, 'signature')
+    if None in (from_address, to_address, public_key, signature):
+        return jsonify({'error': 'Transfer fields must be strings'}), 400
     nonce = data.get('nonce')
     memo = data.get('memo', '')
     if not isinstance(memo, str):
