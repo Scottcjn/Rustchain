@@ -1,0 +1,21 @@
+{
+  "machine_name": "kekehanshujun Huawei KLV-WX9",
+  "model": "HUAWEI KLV-WX9 laptop",
+  "model_identifier": "KLV-WX9",
+  "year_manufactured": 2019,
+  "architecture": "x86_64 (Intel Core i5-8265U)",
+  "cpu_cores": "4 cores, 8 threads",
+  "memory_gb": 8,
+  "power_draw_watts": 25,
+  "usage": [
+    "RustChain CLI and wallet testing",
+    "GitHub bounty automation",
+    "BoTTube and Beacon Atlas validation",
+    "Windows compatibility checks"
+  ],
+  "description": "Repurposed HUAWEI KLV-WX9 Windows laptop with an Intel Core i5-8265U CPU. It is used for RustChain bounty work, wallet and CLI testing, BoTTube validation, and Beacon Atlas registration checks. Keeping this low-power laptop in active development use extends its service life instead of replacing it with a new machine.",
+  "wallet_name": "kekehanshujun",
+  "wallet_address": "RTC02811ff5e2bb4bb4b95eee44c5429cd9525496e7",
+  "contributor": "kekehanshujun",
+  "added_date": "2026-05-16"
+}
