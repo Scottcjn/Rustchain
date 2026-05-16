@@ -4,3 +4,7 @@ pytest>=7.4.4
 PyNaCl>=1.6.2
 # Needed by test_wallet_cli_39 (imports from tools/rustchain_wallet_cli.py)
 cryptography>=46.0.7
+# Needed by CI test collection for SDK, faucet, and visualization tests
+aiohttp>=3.9.0
+flask-cors>=6.0.2
+matplotlib>=3.7
