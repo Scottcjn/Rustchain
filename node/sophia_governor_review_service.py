@@ -622,7 +622,11 @@ def health():
 def recent():
     if not _is_authorized(request):
         return jsonify({"error": "Unauthorized -- admin key or bearer required"}), 401
-    limit = request.args.get("limit", 10, type=int)
+    limit_raw = request.args.get("limit", "10")
+    try:
+        limit = int(limit_raw)
+    except (ValueError, TypeError):
+        return jsonify({"error": "limit must be a valid integer"}), 400
     return jsonify({"ok": True, "reviews": _recent_reviews(limit=limit)})
 
 
