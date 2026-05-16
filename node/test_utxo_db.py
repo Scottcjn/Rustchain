@@ -1002,6 +1002,94 @@ class TestUtxoDB(unittest.TestCase):
             self.db.mempool_check_double_spend(boxes[0]['box_id'])
         )
 
+    def test_mempool_rejects_unpersistable_outputs_without_locking_input(self):
+        """Mempool output validation must mirror block application.
+
+        These payloads are JSON-serializable enough to store in utxo_mempool,
+        but would fail later in apply_transaction() while computing
+        propositions or binding TEXT metadata columns. Rejecting them at
+        admission prevents unmineable candidates from locking inputs until
+        expiry.
+        """
+        cases = [
+            {'value_nrtc': 100 * UNIT - 1000},
+            {'address': None, 'value_nrtc': 100 * UNIT - 1000},
+            {'address': '', 'value_nrtc': 100 * UNIT - 1000},
+            {
+                'address': 'bob',
+                'value_nrtc': 100 * UNIT - 1000,
+                'tokens_json': {'TOKEN': 1},
+            },
+            {
+                'address': 'bob',
+                'value_nrtc': 100 * UNIT - 1000,
+                'registers_json': [],
+            },
+            {
+                'address': 'bob',
+                'value_nrtc': 100 * UNIT - 1000,
+                'tokens_json': '{}',
+            },
+            {
+                'address': 'bob',
+                'value_nrtc': 100 * UNIT - 1000,
+                'registers_json': '[]',
+            },
+        ]
+
+        for idx, output in enumerate(cases):
+            with self.subTest(output=output):
+                db = UtxoDB(self.tmp.name)
+                self.assertTrue(db.apply_transaction({
+                    'tx_type': 'mining_reward',
+                    'inputs': [],
+                    'outputs': [
+                        {'address': f'alice_{idx}', 'value_nrtc': 100 * UNIT}
+                    ],
+                    'fee_nrtc': 0,
+                    'timestamp': int(time.time()) + idx,
+                    '_allow_minting': True,
+                }, block_height=idx + 1))
+                box = db.get_unspent_for_address(f'alice_{idx}')[0]
+
+                ok = db.mempool_add({
+                    'tx_id': f'badout{idx}' * 8,
+                    'tx_type': 'transfer',
+                    'inputs': [{'box_id': box['box_id']}],
+                    'outputs': [output],
+                    'fee_nrtc': 1000,
+                })
+
+                self.assertFalse(ok)
+                self.assertEqual(db.mempool_get_block_candidates(), [])
+                self.assertFalse(db.mempool_check_double_spend(box['box_id']))
+
+    def test_apply_transaction_rejects_unpersistable_outputs(self):
+        """Direct apply must fail closed before mutating balances."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        cases = [
+            {'value_nrtc': 100 * UNIT},
+            {'address': None, 'value_nrtc': 100 * UNIT},
+            {'address': 'bob', 'value_nrtc': 100 * UNIT, 'tokens_json': '{}'},
+            {'address': 'bob', 'value_nrtc': 100 * UNIT, 'registers_json': '[]'},
+        ]
+
+        for output in cases:
+            with self.subTest(output=output):
+                ok = self.db.apply_transaction({
+                    'tx_type': 'transfer',
+                    'inputs': [{'box_id': boxes[0]['box_id'],
+                                 'spending_proof': 'sig'}],
+                    'outputs': [output],
+                    'fee_nrtc': 0,
+                }, block_height=10)
+
+                self.assertFalse(ok)
+                self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
+                self.assertEqual(self.db.get_balance('bob'), 0)
+
     # -- bounty #2819: negative / zero value outputs -------------------------
 
     def test_negative_value_output_rejected(self):
