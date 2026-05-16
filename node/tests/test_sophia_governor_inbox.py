@@ -169,6 +169,17 @@ def test_ingest_and_list_endpoints(client):
     assert detail_body["entry"]["remote_instance"] == "node-1"
 
 
+@pytest.mark.parametrize("limit", ["abc", "10.5"])
+def test_inbox_list_rejects_malformed_limit(client, limit):
+    response = client.get(
+        f"/api/sophia/governor/inbox?limit={limit}",
+        headers={"X-Admin-Key": "test-admin"},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "limit must be an integer"
+
+
 def test_update_status_endpoint(client):
     ingest = client.post(
         "/api/sophia/governor/ingest",

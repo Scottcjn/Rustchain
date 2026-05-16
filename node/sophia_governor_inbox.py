@@ -248,6 +248,16 @@ def _coerce_int(value: Any) -> int | None:
         return None
 
 
+def _normalize_limit(value: Any, default: int = 20, maximum: int = 200) -> int:
+    if value is None or value == "":
+        return default
+    try:
+        limit = int(value)
+    except (TypeError, ValueError):
+        raise ValueError("limit must be an integer")
+    return max(1, min(limit, maximum))
+
+
 def _normalize_envelope(envelope: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(envelope, dict):
         raise ValueError("envelope_must_be_object")
@@ -840,7 +850,7 @@ def list_governor_inbox_entries(
 ) -> list[dict[str, Any]]:
     db = db_path or DB_PATH
     init_sophia_governor_inbox_schema(db)
-    limit = max(1, min(int(limit), 200))
+    limit = _normalize_limit(limit)
 
     clauses = []
     params: list[Any] = []
@@ -1142,7 +1152,7 @@ def register_sophia_governor_inbox_endpoints(app, db_path: str | None = None) ->
         if not _is_authorized(request):
             return jsonify({"error": "Unauthorized -- admin key or bearer required"}), 401
 
-        limit = request.args.get("limit", 20, type=int)
+        limit = request.args.get("limit")
         status = request.args.get("status")
         risk_level = request.args.get("risk_level")
         try:
