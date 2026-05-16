@@ -355,6 +355,13 @@ class TestAddressValidation:
         valid, msg = bridge_api.validate_chain_address_format("base", "742d35Cc6634C0532925a3b844Bc9e7595f0bEb0")
         assert valid is False
 
+    def test_invalid_base_address_non_hex(self, setup_test_db):
+        """Test Base address with non-hex characters."""
+        bridge_api = setup_test_db["bridge_api"]
+        valid, msg = bridge_api.validate_chain_address_format("base", "0xZZ2d35Cc6634C0532925a3b844Bc9e7595f0bEb0")
+        assert valid is False
+        assert "hex" in msg.lower()
+
 
 # =============================================================================
 # Bridge Transfer Creation Tests
