@@ -573,6 +573,19 @@ class TestLockEndpoint:
         })
         assert resp.status_code == 400
 
+    @pytest.mark.parametrize("amount", ["NaN", "Infinity", "-Infinity"])
+    def test_lock_rejects_non_finite_amount(self, client, amount):
+        resp = client.post("/bridge/lock", json={
+            "sender_wallet": "test-miner",
+            "amount": amount,
+            "target_chain": "solana",
+            "target_wallet": "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+            "tx_hash": f"rtc-lock-non-finite-{amount}",
+        })
+
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "invalid amount"
+
     def test_lock_missing_sender(self, client):
         resp = client.post("/bridge/lock", json={
             "amount": 10.0,
