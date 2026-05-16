@@ -8,3 +8,4 @@ cryptography>=46.0.7
 aiohttp>=3.9.0
 flask-cors>=6.0.2
 matplotlib>=3.7
+seaborn>=0.13
