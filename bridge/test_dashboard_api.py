@@ -17,13 +17,40 @@ import json
 import time
 import sys
 import os
+import urllib.request
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from flask import Flask
+from bridge import dashboard_api
 from bridge.bridge_api import register_bridge_routes, init_bridge_db, get_db, _amount_to_base, STATE_COMPLETE
 from bridge.dashboard_api import register_dashboard_routes
+
+
+class FailingContextManager:
+    def __init__(self, error):
+        self.error = error
+
+    def __enter__(self):
+        raise self.error
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+class JsonResponse:
+    def __init__(self, payload):
+        self.payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def read(self):
+        return json.dumps(self.payload).encode("utf-8")
 
 
 @pytest.fixture
@@ -185,6 +212,73 @@ class TestBridgeHealth:
         
         now = int(time.time())
         assert abs(data['last_checked'] - now) < 5  # Within 5 seconds
+
+    def test_health_redacts_database_error_details(self, client, monkeypatch):
+        """Test database exceptions are logged but not exposed to clients."""
+        secret = "C:/srv/rustchain/private/bridge.db"
+
+        monkeypatch.setattr(
+            dashboard_api,
+            "get_db",
+            lambda: FailingContextManager(RuntimeError(secret)),
+        )
+        monkeypatch.setattr(dashboard_api, "WRTC_MINT_ADDRESS", "")
+        monkeypatch.setattr(
+            urllib.request,
+            "urlopen",
+            lambda *args, **kwargs: JsonResponse({"result": "ok"}),
+        )
+
+        response = client.get('/bridge/dashboard/health')
+        data = json.loads(response.data)
+
+        assert response.status_code == 200
+        assert data["components"]["rustchain"] is False
+        assert data["details"]["rustchain"] == "Database unavailable"
+        assert secret not in response.get_data(as_text=True)
+
+    def test_health_redacts_solana_rpc_error_details(self, client, monkeypatch):
+        """Test Solana RPC exceptions do not leak private endpoints."""
+        secret = "https://private-rpc.example/internal-token"
+
+        def fail_urlopen(*args, **kwargs):
+            raise RuntimeError(secret)
+
+        monkeypatch.setattr(dashboard_api, "WRTC_MINT_ADDRESS", "")
+        monkeypatch.setattr(urllib.request, "urlopen", fail_urlopen)
+
+        response = client.get('/bridge/dashboard/health')
+        data = json.loads(response.data)
+
+        assert response.status_code == 200
+        assert data["components"]["solana_rpc"] is False
+        assert data["details"]["solana_rpc"] == "RPC unavailable"
+        assert secret not in response.get_data(as_text=True)
+
+    def test_health_redacts_wrtc_mint_error_details(self, client, monkeypatch):
+        """Test mint lookup exceptions do not leak raw account/RPC details."""
+        secret = "mint lookup failed for private-account-123"
+        responses = iter([
+            JsonResponse({"result": "ok"}),
+            RuntimeError(secret),
+        ])
+
+        def urlopen_side_effect(*args, **kwargs):
+            response = next(responses)
+            if isinstance(response, Exception):
+                raise response
+            return response
+
+        monkeypatch.setattr(dashboard_api, "WRTC_MINT_ADDRESS", "wrtc-mint-test")
+        monkeypatch.setattr(urllib.request, "urlopen", urlopen_side_effect)
+
+        response = client.get('/bridge/dashboard/health')
+        data = json.loads(response.data)
+
+        assert response.status_code == 200
+        assert data["components"]["wrtc_mint"] is False
+        assert data["details"]["wrtc_mint"] == "Mint check unavailable"
+        assert secret not in response.get_data(as_text=True)
 
 
 class TestDashboardTransactions:
