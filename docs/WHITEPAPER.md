@@ -888,6 +888,6 @@ Response: {"epoch": 62, "slot": 8928, "next_settlement": 1707000000}
 
 ---
 
-*Copyright © 2025-2026 Scott Johnson / Elyan Labs. Released under MIT License.*
+*Copyright © 2025-2026 Scott Johnson / Elyan Labs. Released under Apache License 2.0.*
 
 *RustChain — Making vintage hardware valuable again.*
