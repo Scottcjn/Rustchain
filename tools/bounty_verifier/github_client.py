@@ -178,12 +178,12 @@ class GitHubClient:
         
         # Check following status
         try:
-            _, headers = self._request(
+            self._request(
                 "GET",
                 f"/users/{follower}/following/{target}"
             )
-            # 204 No Content means following, 404 means not following
-            is_following = headers.get("status", "").startswith("204")
+            # 204 No Content means following (successful return), 404 raises HTTPError
+            is_following = True
         except HTTPError as e:
             if e.code == 404:
                 is_following = False

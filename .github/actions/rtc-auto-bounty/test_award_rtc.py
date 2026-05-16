@@ -27,6 +27,7 @@ from award_rtc import (
     resolve_wallet_from_file,
     check_already_awarded,
     set_output,
+    transfer_rtc,
     _AWARD_MARKER,
 )
 
@@ -156,9 +157,25 @@ class TestCheckAlreadyAwarded(unittest.TestCase):
         self.assertTrue(check_already_awarded(comments))
 
 
-# ---------------------------------------------------------------------------
-# Config tests
-# ---------------------------------------------------------------------------
+class TestTransferRtc(unittest.TestCase):
+    """Test the RustChain transfer helper's retry behavior."""
+
+    def test_retries_after_connection_refused(self):
+        from urllib.error import URLError
+
+        fake_response = MagicMock()
+        fake_response.read.return_value = json.dumps({"ok": True, "pending_id": 7}).encode()
+
+        with patch("award_rtc.urlopen", side_effect=[URLError(ConnectionRefusedError(111, "Connection refused")), fake_response]) as mock_urlopen:
+            with patch("award_rtc.time.sleep") as mock_sleep:
+                ok, result = transfer_rtc("1.2.3.4", "secret", "from_wallet", "to_wallet", 12.5, "memo")
+
+        self.assertTrue(ok)
+        self.assertEqual(result.get("pending_id"), 7)
+        self.assertEqual(mock_urlopen.call_count, 2)
+        mock_sleep.assert_called_once_with(1)
+
+
 
 
 class TestConfig(unittest.TestCase):
