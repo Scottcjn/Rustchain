@@ -1,5 +1,6 @@
 import importlib.util
 import sqlite3
+import subprocess
 import sys
 import types
 from pathlib import Path
@@ -74,3 +75,15 @@ def test_faucet_drip_records_valid_address(tmp_path, monkeypatch):
             "SELECT address, amount FROM faucet_claims"
         ).fetchone()
     assert row == ("rtc-test-wallet", 0.5)
+
+
+def test_keeper_explorer_py_compile_is_strict_syntaxwarning_clean():
+    result = subprocess.run(
+        [sys.executable, "-W", "error::SyntaxWarning", "-m", "py_compile", "keeper_explorer.py"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr

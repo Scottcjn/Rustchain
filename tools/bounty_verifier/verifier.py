@@ -2,11 +2,13 @@
 Main bounty verification logic.
 """
 
+import json
 import logging
 import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.error import URLError
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from .config import Config
@@ -120,7 +122,24 @@ class BountyVerifier:
     def _extract_urls(self, text: str) -> List[str]:
         """Extract URLs from text."""
         return re.findall(self.URL_PATTERN, text)
-    
+
+    def _hostname_matches_allowlist(self, hostname: str) -> bool:
+        """Return True when a hostname is an exact allowed host or subdomain.
+
+        We avoid loose substring matching so that `notgithub.com` does not pass
+        for `github.com`, while still allowing harmless subdomains like
+        `www.github.com`.
+        """
+        host = (hostname or "").lower().rstrip(".")
+        if not host:
+            return False
+
+        for allowed in self.config.url_check.allowed_domains:
+            allowed_host = allowed.lower().rstrip(".")
+            if host == allowed_host or host.endswith(f".{allowed_host}"):
+                return True
+        return False
+
     def parse_claim_comment(self, comment: ClaimComment) -> ClaimComment:
         """Parse a claim comment to extract relevant data."""
         # Extract wallet
@@ -277,7 +296,7 @@ class BountyVerifier:
             
             with urlopen(req, timeout=self.config.rustchain.wallet_check_timeout) as resp:
                 data = resp.read()
-                result = data.json() if hasattr(data, 'json') else __import__('json').loads(data.decode())
+                result = json.loads(data.decode())
                 
                 if isinstance(result, dict):
                     return float(result.get("amount_i64", 0) / 1e6)  # Convert from micro units
@@ -311,27 +330,34 @@ class BountyVerifier:
                     ))
                     continue
                 
-                # Check domain allowlist
-                from urllib.parse import urlparse
                 parsed = urlparse(url)
                 if self.config.url_check.allowed_domains:
-                    if not any(d in parsed.netloc for d in self.config.url_check.allowed_domains):
+                    if not self._hostname_matches_allowlist(parsed.hostname or ""):
                         checks.append(VerificationCheck(
                             name=f"URL: {url[:50]}",
                             status=VerificationStatus.FAILED,
                             message=f"Domain not in allowlist: {parsed.netloc}",
                         ))
                         continue
-                
-                # Check liveness
+
+                # Check liveness. We keep the HEAD request simple, but validate the
+                # final redirected hostname as well so a whitelisted URL cannot
+                # bounce to an off-allowlist destination.
                 req = Request(
                     url,
                     headers={"User-Agent": "rustchain-bounty-verifier/1.0.0"},
                     method="HEAD",
                 )
-                
+
                 with urlopen(req, timeout=self.config.url_check.timeout) as resp:
-                    if resp.status < 400:
+                    final_parsed = urlparse(resp.geturl())
+                    if self.config.url_check.allowed_domains and not self._hostname_matches_allowlist(final_parsed.hostname or ""):
+                        checks.append(VerificationCheck(
+                            name=f"URL: {url[:50]}",
+                            status=VerificationStatus.FAILED,
+                            message=f"Redirect target not in allowlist: {final_parsed.netloc}",
+                        ))
+                    elif resp.status < 400:
                         checks.append(VerificationCheck(
                             name=f"URL: {url[:50]}",
                             status=VerificationStatus.PASSED,

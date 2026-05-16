@@ -32,7 +32,9 @@ import requests
 # ---------------------------------------------------------------------------
 
 GITHUB_API = "https://api.github.com"
-VPS_PORT = 8088
+# Current RustChain nodes expose the transfer API on 8099.
+# Keep the port configurable so deployments can override it if needed.
+VPS_PORT = int(os.getenv("RTC_VPS_PORT", "8099"))
 FROM_WALLET = "founder_community"
 
 # Payment directive pattern — matches both bold and plain variants:
@@ -94,7 +96,7 @@ def post_comment(repo: str, pr_number: str, body: str) -> None:
 
 
 def transfer_rtc(vps_host: str, admin_key: str, to_wallet: str,
-                 amount: float, memo: str) -> dict:
+                 amount: float, memo: str, retries: int = 3) -> dict:
     """Call the RustChain VPS transfer endpoint."""
     url = f"http://{vps_host}:{VPS_PORT}/wallet/transfer"
     payload = {
@@ -107,9 +109,25 @@ def transfer_rtc(vps_host: str, admin_key: str, to_wallet: str,
         "Content-Type": "application/json",
         "X-Admin-Key": admin_key,
     }
-    resp = requests.post(url, headers=headers, json=payload, timeout=30)
-    resp.raise_for_status()
-    return resp.json()
+
+    for attempt in range(retries):
+        try:
+            resp = requests.post(url, headers=headers, json=payload, timeout=30)
+            resp.raise_for_status()
+            return resp.json()
+        except requests.exceptions.HTTPError as e:
+            status = getattr(e.response, "status_code", None)
+            if status in {502, 503, 504} and attempt < retries - 1:
+                time.sleep(2 ** attempt)
+                continue
+            return {"ok": False, "error": f"VPS returned error: {status} — {getattr(e.response, 'text', '')}"}
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+            if attempt < retries - 1:
+                time.sleep(2 ** attempt)
+                continue
+            return {"ok": False, "error": f"Connection failed: {e}"}
+
+    return {"ok": False, "error": "Transfer failed after retries"}
 
 
 # ---------------------------------------------------------------------------
