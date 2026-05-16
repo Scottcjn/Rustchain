@@ -135,3 +135,57 @@ def test_otc_bridge_no_longer_returns_raw_exception_strings():
 
     assert 'return jsonify({"error": str(e)}), 500' not in source
     assert 'return {"ok": False, "error": str(e)}' not in source
+
+
+class ExplodingConnection:
+    def cursor(self):
+        raise RuntimeError("sensitive sqlite path /var/lib/rustchain/otc_bridge.db")
+
+    def rollback(self):
+        pass
+
+    def close(self):
+        pass
+
+
+def test_mutating_order_errors_do_not_leak_exception_details(tmp_path, monkeypatch):
+    otc_bridge = load_otc_bridge(tmp_path)
+    monkeypatch.setattr(otc_bridge, "check_rate_limit", lambda _ip: True)
+    monkeypatch.setattr(otc_bridge, "get_db", lambda: ExplodingConnection())
+
+    cases = [
+        ("/api/orders", {
+            "side": "buy",
+            "pair": "RTC/USDC",
+            "wallet": "buyer-wallet",
+            "amount_rtc": 1,
+            "price_per_rtc": 1,
+        }),
+        ("/api/orders/otc_test/match", {"wallet": "taker-wallet"}),
+        ("/api/orders/otc_test/confirm", {"wallet": "buyer-wallet", "quote_tx": "0xdeadbeef"}),
+        ("/api/orders/otc_test/cancel", {"wallet": "maker-wallet"}),
+    ]
+
+    with otc_bridge.app.test_client() as client:
+        for path, body in cases:
+            response = client.post(path, json=body)
+            assert response.status_code == 500
+            assert response.get_json() == {"error": otc_bridge.GENERIC_INTERNAL_ERROR}
+
+
+def test_escrow_helper_returns_generic_error_on_exception(tmp_path, monkeypatch):
+    otc_bridge = load_otc_bridge(tmp_path)
+
+    def raise_sensitive_error(*_args, **_kwargs):
+        raise RuntimeError("upstream token leaked from /etc/otc.env")
+
+    monkeypatch.setattr(otc_bridge.requests, "post", raise_sensitive_error)
+
+    result = otc_bridge.rtc_create_escrow_job(
+        poster_wallet="seller-wallet",
+        amount_rtc=1,
+        title="test escrow",
+        description="test",
+    )
+
+    assert result == {"ok": False, "error": otc_bridge.GENERIC_INTERNAL_ERROR}
