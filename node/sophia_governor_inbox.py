@@ -251,6 +251,8 @@ def _coerce_int(value: Any) -> int | None:
 def _normalize_limit(value: Any, default: int = 20, maximum: int = 200) -> int:
     if value is None or value == "":
         return default
+    if isinstance(value, bool) or isinstance(value, float):
+        raise ValueError("limit must be an integer")
     try:
         limit = int(value)
     except (TypeError, ValueError):
