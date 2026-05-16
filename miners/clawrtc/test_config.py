@@ -41,7 +41,8 @@ def sample_config():
 class TestGetConfigPath:
     def test_default_path(self):
         path = get_config_path()
-        assert str(path).endswith(".clawrtc/config.json")
+        assert path.name == "config.json"
+        assert path.parent.name == ".clawrtc"
 
     def test_custom_path(self):
         path = get_config_path("/tmp/custom.json")
