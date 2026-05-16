@@ -1,0 +1,20 @@
+{
+  "bottube_api_base": "https://bottube.ai",
+  "rustchain_node_url": "https://50.28.86.131",
+  "rustchain_from_wallet": "founder_team_bounty",
+  "admin_key_env": "RTC_ADMIN_KEY",
+  "bottube_api_key_env": "BOTTUBE_API_KEY",
+  "state_file": "bottube_bridge_state.json",
+  "dry_run": true,
+  "poll_interval_seconds": 300,
+  "min_video_length_seconds": 6,
+  "max_rewards_per_creator_per_day": 3,
+  "max_rewards_per_wallet_per_day": 3,
+  "upload_reward_rtc": 0.25,
+  "view_milestone_reward_rtc": 0.5,
+  "subscriber_milestone_reward_rtc": 1.0,
+  "minimum_tip_rtc": 0.001,
+  "view_milestones": [100, 1000, 10000],
+  "subscriber_milestones": [10, 100, 1000],
+  "max_items_per_poll": 50
+}
