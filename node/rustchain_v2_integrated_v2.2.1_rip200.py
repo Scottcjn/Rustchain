@@ -549,20 +549,54 @@ def get_client_ip():
     return client_ip_from_request(request)
 
 
-SECURITY_HEADERS = {
-    "Content-Security-Policy": (
-        "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline'; "
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-        "font-src 'self' data: https://fonts.gstatic.com; "
-        "img-src 'self' data: https://img.shields.io; "
-        "connect-src 'self' https://raw.githubusercontent.com"
-    ),
-    "Referrer-Policy": "strict-origin-when-cross-origin",
-    "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
-    "X-Content-Type-Options": "nosniff",
-    "X-Frame-Options": "DENY",
-}
+_CSP_INLINE_SCRIPT_PREFIXES = (
+    "/dashboard",
+    "/explorer",
+    "/governance",
+    "/hall-of-fame",
+)
+
+
+def _response_is_html(resp) -> bool:
+    """Whether this response is browser-rendered HTML."""
+    mimetype = (getattr(resp, "mimetype", "") or "").lower()
+    if mimetype:
+        return mimetype == "text/html"
+    content_type = (resp.headers.get("Content-Type") or "").lower()
+    return content_type.startswith("text/html")
+
+
+def _path_needs_inline_script_csp(path: str) -> bool:
+    """Allow legacy inline-script UIs to opt into a narrower exception."""
+    normalized = str(path or "")
+    for prefix in _CSP_INLINE_SCRIPT_PREFIXES:
+        if normalized == prefix or normalized.startswith(prefix + "/"):
+            return True
+    return False
+
+
+def _build_content_security_policy(resp) -> str:
+    """Return a safer default CSP with narrow route-specific exceptions."""
+    directives = [
+        "default-src 'self'",
+        "script-src 'self'",
+        "base-uri 'self'",
+        "frame-ancestors 'none'",
+        "object-src 'none'",
+    ]
+    if _response_is_html(resp):
+        directives.extend(
+            [
+                "style-src 'self' 'unsafe-inline'",
+                "img-src 'self' data: https:",
+                "font-src 'self' data:",
+                "connect-src 'self' https://rustchain.org",
+                "form-action 'self'",
+            ]
+        )
+        if _path_needs_inline_script_csp(request.path):
+            directives[1] = "script-src 'self' 'unsafe-inline'"
+    return "; ".join(directives)
 
 
 @app.after_request
@@ -582,10 +616,14 @@ def _after(resp):
         app.logger.info(json.dumps(rec, separators=(",", ":")))
     except Exception:
         pass
+    # Apply a strict baseline CSP globally and only allow inline scripts on
+    # legacy HTML routes that still embed them.
+    resp.headers.setdefault("Content-Security-Policy", _build_content_security_policy(resp))
+    resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("X-Frame-Options", "DENY")
     resp.headers["X-Request-Id"] = getattr(g, "request_id", "-")
-    for header, value in SECURITY_HEADERS.items():
-        if header not in resp.headers:
-            resp.headers[header] = value
     return resp
 
 
@@ -7279,7 +7317,7 @@ def wallet_transfer_v2():
         # SECURITY: Acquire write lock BEFORE reading balance to prevent
         # concurrent transfers from both passing the balance check.
         c.execute("BEGIN IMMEDIATE")
-        
+
         # Check sender balance
         row = c.execute("SELECT amount_i64 FROM balances WHERE miner_id = ?", (from_miner,)).fetchone()
         sender_balance = row[0] if row else 0
