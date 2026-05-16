@@ -26,7 +26,13 @@ from decimal import Decimal, InvalidOperation
 
 from flask import Blueprint, request, jsonify
 
-from utxo_db import UtxoDB, coin_select, address_to_proposition, UNIT
+from utxo_db import (
+    DUST_THRESHOLD,
+    UtxoDB,
+    address_to_proposition,
+    coin_select,
+    UNIT,
+)
 
 # FIX(#2867 M2): Reject inputs that would overflow int64 (signed) or
 # represent absurd amounts. Total RTC supply is bounded; cap at 2^53 RTC
@@ -80,6 +86,11 @@ def _decimal_to_nrtc(amount: Decimal, field_name: str) -> int:
     if nrtc != integral:
         raise ValueError(f"{field_name} supports at most 8 decimal places")
     return int(integral)
+
+
+def _nrtc_to_rtc_float(amount_nrtc: int) -> float:
+    """Convert exact nanoRTC integer amounts to JSON-compatible RTC floats."""
+    return float(Decimal(amount_nrtc) / Decimal(UNIT))
 
 
 def _ensure_signed_float_preserves_nrtc(amount: Decimal, nrtc: int,
@@ -396,6 +407,13 @@ def utxo_transfer():
     except ValueError as e:
         return jsonify({'error': f'Invalid amount: {e}'}), 400
 
+    if amount_nrtc < DUST_THRESHOLD:
+        return jsonify({
+            'error': 'Amount below dust threshold',
+            'amount_nrtc': amount_nrtc,
+            'dust_threshold_nrtc': DUST_THRESHOLD,
+        }), 400
+
     # Verify pubkey → address
     expected_addr = _addr_from_pk_fn(public_key)
     if from_address != expected_addr:
@@ -481,6 +499,11 @@ def utxo_transfer():
     outputs = [{'address': to_address, 'value_nrtc': amount_nrtc}]
     if change_nrtc > 0:
         outputs.append({'address': from_address, 'value_nrtc': change_nrtc})
+    selected_total_nrtc = sum(u['value_nrtc'] for u in selected)
+    absorbed_fee_nrtc = selected_total_nrtc - amount_nrtc - fee_nrtc - change_nrtc
+    if absorbed_fee_nrtc < 0:
+        return jsonify({'error': 'UTXO coin selection underfunded transaction'}), 500
+    effective_fee_nrtc = fee_nrtc + absorbed_fee_nrtc
 
     # Build and apply UTXO transaction
     block_height = _current_slot_fn()
@@ -489,7 +512,7 @@ def utxo_transfer():
         'inputs': [{'box_id': u['box_id'], 'spending_proof': signature}
                    for u in selected],
         'outputs': outputs,
-        'fee_nrtc': fee_nrtc,
+        'fee_nrtc': effective_fee_nrtc,
         'timestamp': int(time.time()),
     }
 
@@ -580,7 +603,12 @@ def utxo_transfer():
         'to_address': to_address,
         # FIX(#2867 M2 follow-up): Decimal isn't JSON-serializable; cast to float.
         'amount_rtc': float(amount_rtc),
-        'fee_rtc': float(fee_rtc),
+        'fee_nrtc': effective_fee_nrtc,
+        'fee_rtc': _nrtc_to_rtc_float(effective_fee_nrtc),
+        'requested_fee_nrtc': fee_nrtc,
+        'requested_fee_rtc': _nrtc_to_rtc_float(fee_nrtc),
+        'absorbed_fee_nrtc': absorbed_fee_nrtc,
+        'absorbed_fee_rtc': _nrtc_to_rtc_float(absorbed_fee_nrtc),
         'inputs_consumed': len(selected),
         'outputs_created': len(outputs),
         'change_nrtc': change_nrtc,

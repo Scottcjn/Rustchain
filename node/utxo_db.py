@@ -543,7 +543,7 @@ class UtxoDB:
                 return abort()
             if fee < 0:
                 return abort()
-            if inputs and (output_total + fee) > input_total:
+            if inputs and (output_total + fee) != input_total:
                 return abort()
 
             # -- compute output box IDs and build tx_id ----------------------
@@ -888,7 +888,7 @@ class UtxoDB:
                     return False
 
             output_total = sum(o['value_nrtc'] for o in outputs)
-            if input_total > 0 and (output_total + fee) > input_total:
+            if inputs and (output_total + fee) != input_total:
                 if manage_tx:
                         conn.execute("ROLLBACK")
                 return False

@@ -196,6 +196,48 @@ class TestUtxoDB(unittest.TestCase):
 
         self.assertFalse(ok)
 
+    def test_unrecorded_surplus_rejected(self):
+        """Outputs + fee < inputs should fail instead of burning value."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        alice_boxes = self.db.get_unspent_for_address('alice')
+
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': alice_boxes[0]['box_id'],
+                         'spending_proof': 'sig'}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 90 * UNIT}],
+            'fee_nrtc': 0,
+        }, block_height=10)
+
+        self.assertFalse(ok)
+        self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
+        self.assertEqual(self.db.get_balance('bob'), 0)
+
+    def test_dust_absorption_must_be_recorded_as_fee(self):
+        """Sub-dust change stays valid when callers include it in fee_nrtc."""
+        self._apply_coinbase('alice', 100 * UNIT + 500)
+        alice_boxes = self.db.get_unspent_for_address('alice')
+        selected, change = coin_select(alice_boxes, 100 * UNIT)
+        absorbed_fee = (
+            sum(box['value_nrtc'] for box in selected)
+            - 100 * UNIT
+            - change
+        )
+
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': box['box_id'], 'spending_proof': 'sig'}
+                       for box in selected],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': absorbed_fee,
+        }, block_height=10)
+
+        self.assertTrue(ok)
+        self.assertEqual(change, 0)
+        self.assertEqual(absorbed_fee, 500)
+        self.assertEqual(self.db.get_balance('alice'), 0)
+        self.assertEqual(self.db.get_balance('bob'), 100 * UNIT)
+
     def test_negative_fee_rejected(self):
         """Negative fee should fail — allows minting via weakened conservation."""
         self._apply_coinbase('alice', 100 * UNIT)
@@ -958,6 +1000,24 @@ class TestUtxoDB(unittest.TestCase):
         }
         ok = self.db.mempool_add(tx)
         self.assertFalse(ok)
+
+    def test_mempool_rejects_unrecorded_surplus(self):
+        """Mempool must reject tx where outputs + fee < inputs."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        tx = {
+            'tx_id': 'burn' * 16,
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': boxes[0]['box_id']}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 90 * UNIT}],
+            'fee_nrtc': 0,
+        }
+        ok = self.db.mempool_add(tx)
+        self.assertFalse(ok)
+        self.assertFalse(
+            self.db.mempool_check_double_spend(boxes[0]['box_id'])
+        )
 
     def test_mempool_rejects_below_dust_output(self):
         """Mempool must not lock inputs with outputs below the dust floor."""
