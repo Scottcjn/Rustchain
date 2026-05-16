@@ -139,32 +139,73 @@ class TestGPURenderProtocol(unittest.TestCase):
     def test_escrow_route_rejects_boolean_amount(self):
         client = self.route_client()
 
-        response = client.post("/render/escrow", json={
-            "job_type": "render",
-            "from_wallet": "wallet-a",
-            "to_wallet": "wallet-b",
-            "amount_rtc": True,
-        })
+        for amount in (True, False):
+            with self.subTest(amount=amount):
+                response = client.post("/render/escrow", json={
+                    "job_type": "render",
+                    "from_wallet": "wallet-a",
+                    "to_wallet": "wallet-b",
+                    "amount_rtc": amount,
+                })
 
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(
-            response.get_json(),
-            {"error": "amount_rtc must be a finite number"},
-        )
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(
+                    response.get_json(),
+                    {"error": "amount_rtc must be a finite number"},
+                )
+
+    def test_escrow_route_rejects_non_object_json(self):
+        client = self.route_client()
+
+        for payload in ([{"amount_rtc": True}], "not-an-object"):
+            with self.subTest(payload=payload):
+                response = client.post("/render/escrow", json=payload)
+
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.get_json(), {"error": "JSON object required"})
 
     def test_pricing_check_rejects_boolean_price(self):
         client = self.route_client()
 
+        for price in (True, False):
+            with self.subTest(price=price):
+                response = client.post("/render/pricing/check", json={
+                    "job_type": "render",
+                    "price": price,
+                })
+
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(
+                    response.get_json(),
+                    {"error": "price must be a finite number"},
+                )
+
+    def test_pricing_check_rejects_non_object_json(self):
+        client = self.route_client()
+
+        for payload in ([{"price": True}], "not-an-object"):
+            with self.subTest(payload=payload):
+                response = client.post("/render/pricing/check", json=payload)
+
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.get_json(), {"error": "JSON object required"})
+
+    def test_pricing_check_rejects_unknown_job_type_with_active_gpu(self):
+        self.proto.attest_gpu("miner-1", {
+            "gpu_model": "RTX 4090",
+            "vram_gb": 24,
+            "device_arch": "nvidia_gpu",
+            "price_render_minute": 0.5,
+        })
+        client = self.route_client()
+
         response = client.post("/render/pricing/check", json={
-            "job_type": "render",
-            "price": True,
+            "job_type": "bad-type",
+            "price": 1.0,
         })
 
         self.assertEqual(response.status_code, 400)
-        self.assertEqual(
-            response.get_json(),
-            {"error": "price must be a finite number"},
-        )
+        self.assertIn("job_type must be one of", response.get_json()["error"])
 
     def test_escrow_same_wallet(self):
         result = self.proto.create_escrow("render", "same", "same", 1.0)
