@@ -67,6 +67,7 @@ class TestMempoolZeroValueOutputBug(unittest.TestCase):
             'outputs': [{'address': 'alice', 'value_nrtc': 100 * UNIT}],
             'fee_nrtc': 0,
             'timestamp': int(time.time()),
+            '_allow_minting': True,
         }, block_height=1)
 
         boxes = self.db.get_unspent_for_address('alice')
@@ -95,6 +96,7 @@ class TestMempoolZeroValueOutputBug(unittest.TestCase):
             'outputs': [{'address': 'alice', 'value_nrtc': 100 * UNIT}],
             'fee_nrtc': 0,
             'timestamp': int(time.time()),
+            '_allow_minting': True,
         }, block_height=1)
 
         boxes = self.db.get_unspent_for_address('alice')
@@ -143,6 +145,7 @@ class TestMempoolDuplicateTxIdInputClaimBug(unittest.TestCase):
             'outputs': [{'address': 'alice', 'value_nrtc': 100 * UNIT}],
             'fee_nrtc': 0,
             'timestamp': int(time.time()),
+            '_allow_minting': True,
         }, block_height=1)
 
         boxes = self.db.get_unspent_for_address('alice')
@@ -206,6 +209,7 @@ class TestMempoolCallerProvidedTxIdCollision(unittest.TestCase):
             'outputs': [{'address': 'alice', 'value_nrtc': 100 * UNIT}],
             'fee_nrtc': 0,
             'timestamp': int(time.time()),
+            '_allow_minting': True,
         }, block_height=1)
 
         boxes = self.db.get_unspent_for_address('alice')
