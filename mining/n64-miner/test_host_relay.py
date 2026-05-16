@@ -162,6 +162,14 @@ class TestAttestationProtocol(unittest.TestCase):
         self.assertEqual(PKT_TYPE_EPOCH_ACK, 3)
         self.assertEqual(PKT_TYPE_REATTEST, 4)
 
+    def test_n64_firmware_handles_reattest_request(self):
+        source_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "n64_miner.c")
+        with open(source_path, encoding="utf-8") as fh:
+            source = fh.read()
+
+        self.assertIn("ack.header.type == PKT_TYPE_REATTEST", source)
+        self.assertIn("return miner_attest(ctx);", source)
+
     def test_device_constants(self):
         self.assertEqual(DEVICE_ARCH, "mips_r4300")
         self.assertEqual(DEVICE_FAMILY, "N64")
