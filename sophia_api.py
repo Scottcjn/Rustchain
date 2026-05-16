@@ -10,6 +10,9 @@ Endpoints:
   GET  /sophia/explorer/<miner_id> -- explorer-friendly verdict with emoji
 """
 
+import hmac
+import os
+
 from flask import Flask, request, jsonify
 
 from sophia_core import SophiaCoreInspector, VERDICTS
@@ -21,6 +24,22 @@ from sophia_db import (
 
 app = Flask(__name__)
 inspector = SophiaCoreInspector()
+
+
+def require_sophia_admin():
+    expected_key = os.getenv("SOPHIA_ADMIN_KEY", "").strip()
+    if not expected_key:
+        return jsonify({"error": "SOPHIA_ADMIN_KEY not configured"}), 503
+
+    provided_key = (
+        request.headers.get("X-Admin-Key")
+        or request.headers.get("X-API-Key")
+        or ""
+    ).strip()
+    if not hmac.compare_digest(provided_key, expected_key):
+        return jsonify({"error": "Unauthorized"}), 401
+
+    return None
 
 
 def positive_int_query_arg(name, default, max_value=None):
@@ -53,6 +72,10 @@ def _ensure_db():
 @app.route("/sophia/inspect", methods=["POST"])
 def inspect_fingerprint():
     """Submit a hardware fingerprint for Sophia inspection."""
+    auth_error = require_sophia_admin()
+    if auth_error:
+        return auth_error
+
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({"error": "JSON body must be an object"}), 400
