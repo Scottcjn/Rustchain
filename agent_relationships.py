@@ -1098,6 +1098,8 @@ def create_relationship_blueprint(engine: RelationshipEngine):
             return auth_error
 
         data = request.get_json(silent=True) or {}
+        if not isinstance(data, dict):
+            return jsonify({"error": "expected JSON object, got array"}), 400
         try:
             result = engine.record_disagreement(
                 agent_a, agent_b,
@@ -1115,6 +1117,8 @@ def create_relationship_blueprint(engine: RelationshipEngine):
             return auth_error
 
         data = request.get_json(silent=True) or {}
+        if not isinstance(data, dict):
+            return jsonify({"error": "expected JSON object, got array"}), 400
         try:
             result = engine.record_collaboration(
                 agent_a, agent_b,
@@ -1132,6 +1136,8 @@ def create_relationship_blueprint(engine: RelationshipEngine):
             return auth_error
 
         data = request.get_json(silent=True) or {}
+        if not isinstance(data, dict):
+            return jsonify({"error": "expected JSON object, got array"}), 400
         try:
             result = engine.record_reconciliation(
                 agent_a, agent_b,

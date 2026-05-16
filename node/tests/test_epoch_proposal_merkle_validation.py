@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: MIT
+import os
+# Set test HMAC secret before importing the module under test.
+os.environ.setdefault("RC_P2P_SECRET", "test-secret-for-pytest-collection")
+
 """
 Test: P2P epoch proposal merkle self-validation flaw
 
