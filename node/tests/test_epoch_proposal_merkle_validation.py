@@ -30,6 +30,9 @@ import hmac
 import hashlib
 from unittest.mock import patch
 
+TEST_P2P_SECRET = "test_hmac_secret_for_unit_tests_only_32chars"
+os.environ.setdefault("RC_P2P_SECRET", TEST_P2P_SECRET)
+
 # Add node directory to path
 NODE_DIR = os.path.join(os.path.dirname(__file__), '..', 'node')
 sys.path.insert(0, NODE_DIR)
@@ -43,7 +46,7 @@ class TestEpochProposalMerkleValidation(unittest.TestCase):
     def setUp(self):
         self.db_fd, self.db_path = tempfile.mkstemp(suffix='.db')
         self._init_db()
-        self.secret = "test_hmac_secret_for_unit_tests_only_32chars"
+        self.secret = TEST_P2P_SECRET
         self._patch_secret()
         # Peers: node2, node3. Self: node1.
         # Sorted nodes: [node1, node2, node3]. node1 leads epochs 0,3,6,9...
