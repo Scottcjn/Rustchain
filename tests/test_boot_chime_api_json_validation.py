@@ -38,6 +38,20 @@ class ProofOfIronStub:
         raise AssertionError("invalid uploads should be rejected before proof submission")
 
 
+class BootChimeCaptureStub:
+    def __init__(self, *args, **kwargs):
+        self.calls = []
+        self.saved_paths = []
+
+    def capture(self, duration=None, trigger=False):
+        self.calls.append((duration, trigger))
+        return object()
+
+    def save_audio(self, captured, path):
+        self.saved_paths.append(path)
+        Path(path).write_bytes(b"RIFF\x00\x00\x00\x00WAVE")
+
+
 def install_dependency_stubs(monkeypatch):
     flask_cors = types.ModuleType("flask_cors")
     flask_cors.CORS = lambda app: app
@@ -55,8 +69,8 @@ def install_dependency_stubs(monkeypatch):
     )
     boot_chime_capture.BootChimeCapture = type(
         "BootChimeCapture",
-        (),
-        {"__init__": lambda self, *args, **kwargs: None},
+        (BootChimeCaptureStub,),
+        {},
     )
     monkeypatch.setitem(sys.modules, "boot_chime_capture", boot_chime_capture)
 
@@ -156,3 +170,22 @@ def test_audio_upload_rejects_files_larger_than_configured_limit(client, api_mod
 
     assert response.status_code == 413
     assert response.get_json() == {"error": "file too large"}
+
+
+@pytest.mark.parametrize("duration", ("0", "-1", "30.01", "inf", "not-a-number"))
+def test_capture_rejects_out_of_range_duration(client, api_module, duration):
+    response = client.post(f"/api/v1/capture?duration={duration}")
+
+    assert response.status_code == 400
+    assert response.get_json()["error"].startswith("duration must")
+    assert api_module.audio_capture.calls == []
+
+
+def test_capture_accepts_bounded_duration(client, api_module):
+    response = client.post("/api/v1/capture?duration=30&trigger=true")
+
+    assert response.status_code == 200
+    assert response.mimetype == "audio/wav"
+    assert api_module.audio_capture.calls == [(30.0, True)]
+    assert api_module.audio_capture.saved_paths
+    assert not Path(api_module.audio_capture.saved_paths[-1]).exists()
