@@ -646,6 +646,19 @@ class TestBridgeRequestValidation:
         assert resp.status_code == 400
         assert resp.get_json()["error"] == "receipt_signature must be a string"
 
+    @pytest.mark.parametrize("amount", ["NaN", "Infinity", "-Infinity"])
+    def test_lock_rejects_non_finite_amount(self, client, amount):
+        resp = client.post("/bridge/lock", json={
+            "sender_wallet": "test-miner",
+            "amount": amount,
+            "target_chain": "solana",
+            "target_wallet": "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+            "tx_hash": f"rtc-lock-{amount.lower()}-amount",
+        })
+
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "invalid amount"
+
     def test_confirm_rejects_non_object_json(self, client):
         resp = client.post(
             "/bridge/confirm",

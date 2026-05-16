@@ -16,6 +16,7 @@ import json
 import sqlite3
 import hashlib
 import hmac
+import math
 import time
 import threading
 import uuid
@@ -239,6 +240,8 @@ def lock_rtc():
     try:
         amount_float = float(data.get("amount", 0))
     except (TypeError, ValueError):
+        return jsonify({"error": "invalid amount"}), 400
+    if not math.isfinite(amount_float):
         return jsonify({"error": "invalid amount"}), 400
 
     if not sender:
