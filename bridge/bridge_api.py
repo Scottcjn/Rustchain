@@ -34,6 +34,7 @@ BRIDGE_REQUIRE_PROOF = os.environ.get("BRIDGE_REQUIRE_PROOF", "true").lower() ==
 CHAIN_SOLANA = "solana"
 CHAIN_BASE = "base"
 SUPPORTED_CHAINS = {CHAIN_SOLANA, CHAIN_BASE}
+EVM_HEX_CHARS = set("0123456789abcdefABCDEF")
 
 # RTC decimal precision
 RTC_DECIMALS = 6
@@ -194,6 +195,16 @@ def _clean_string_field(data, field_name, *, optional=False, lower=False):
     return value
 
 
+def _is_base_evm_address(value: str) -> bool:
+    """Return True for canonical Base/EVM addresses: 0x plus 40 hex chars."""
+    return (
+        isinstance(value, str)
+        and len(value) == 42
+        and value.startswith("0x")
+        and all(ch in EVM_HEX_CHARS for ch in value[2:])
+    )
+
+
 # ─── Blueprint ────────────────────────────────────────────────────────────────
 bridge_bp = Blueprint("bridge", __name__, url_prefix="/bridge")
 
@@ -255,8 +266,8 @@ def lock_rtc():
         return jsonify({"error": f"maximum lock amount is {MAX_LOCK_AMOUNT} RTC"}), 400
 
     # Validate target wallet format
-    if target_chain == CHAIN_BASE and not target_wallet.startswith("0x"):
-        return jsonify({"error": "Base wallet must be a 0x EVM address"}), 400
+    if target_chain == CHAIN_BASE and not _is_base_evm_address(target_wallet):
+        return jsonify({"error": "Base wallet must be a 0x EVM address with 40 hex chars"}), 400
     if target_chain == CHAIN_SOLANA and len(target_wallet) < 32:
         return jsonify({"error": "Solana wallet must be a valid base58 address"}), 400
 
