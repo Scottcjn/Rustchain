@@ -509,11 +509,7 @@ class TestFlaskIntegration(unittest.TestCase):
             'cert_id': 'BCOS-abc" onerror="alert(1)',
         }
 
-        response = self.client.post(
-            '/api/badge/generate',
-            json=payload,
-            content_type='application/json',
-        )
+        response = self.post_generate_badge(payload)
 
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.data)
@@ -527,15 +523,13 @@ class TestFlaskIntegration(unittest.TestCase):
 
         for cert_id in invalid_ids:
             with self.subTest(cert_id=cert_id):
-                response = self.client.post(
-                    '/api/badge/generate',
-                    json={
+                response = self.post_generate_badge(
+                    {
                         'repo_name': 'test/repo',
                         'tier': 'L1',
                         'trust_score': 75,
                         'cert_id': cert_id,
-                    },
-                    content_type='application/json',
+                    }
                 )
 
                 self.assertEqual(response.status_code, 200)
@@ -546,15 +540,13 @@ class TestFlaskIntegration(unittest.TestCase):
 
     def test_generate_badge_accepts_safe_custom_cert_id(self):
         """Safe custom cert IDs remain supported."""
-        response = self.client.post(
-            '/api/badge/generate',
-            json={
+        response = self.post_generate_badge(
+            {
                 'repo_name': 'test/repo',
                 'tier': 'L1',
                 'trust_score': 75,
                 'cert_id': 'BCOS-safe_ID-123',
-            },
-            content_type='application/json',
+            }
         )
 
         self.assertEqual(response.status_code, 200)

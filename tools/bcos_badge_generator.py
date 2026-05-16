@@ -102,7 +102,14 @@ CERT_ID_PATTERN = re.compile(r'^BCOS-[A-Za-z0-9_-]{1,64}$')
 
 
 def is_valid_cert_id(cert_id: object) -> bool:
-    """Return True for cert IDs that are safe to store and embed in badge URLs."""
+    """Return True for safe custom BCOS certificate IDs.
+
+    Rules:
+    - Must be a string.
+    - Must start with ``BCOS-``.
+    - May contain only ASCII letters, numbers, underscores, and hyphens after the prefix.
+    - The suffix must be 1 to 64 characters long.
+    """
     if not isinstance(cert_id, str):
         return False
     return bool(CERT_ID_PATTERN.fullmatch(cert_id))
