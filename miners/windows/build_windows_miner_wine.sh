@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -40,6 +40,14 @@ DIST_DIR="$ROOT_DIR/dist"
 rm -rf "$DIST_DIR"
 
 echo "Building rustchain_windows_miner.exe with PyInstaller..."
-wine "$PYTHON_EXE" -m PyInstaller --noconfirm --onefile --name rustchain_windows_miner "$SCRIPT_WIN" >/tmp/wine_pyinstaller.log
+wine "$PYTHON_EXE" -m PyInstaller \
+  --noconfirm \
+  --onefile \
+  --name rustchain_windows_miner \
+  --collect-submodules tkinter \
+  --hidden-import tkinter \
+  --hidden-import tkinter.ttk \
+  --hidden-import tkinter.scrolledtext \
+  "$SCRIPT_WIN" >/tmp/wine_pyinstaller.log
 
 echo "Build finished; executable located at $DIST_DIR/rustchain_windows_miner.exe"
