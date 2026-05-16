@@ -387,6 +387,39 @@ mod tests {
     }
 
     #[test]
+    fn test_transaction_builder_rejects_invalid_inputs() {
+        let err = TransactionBuilder::new()
+            .to("recipient".to_string())
+            .amount(1000)
+            .build()
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            WalletError::Transaction(ref message) if message == "Sender address not set"
+        ));
+
+        let err = TransactionBuilder::new()
+            .from("sender".to_string())
+            .amount(1000)
+            .build()
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            WalletError::Transaction(ref message) if message == "Recipient address not set"
+        ));
+
+        let err = TransactionBuilder::new()
+            .from("sender".to_string())
+            .to("recipient".to_string())
+            .build()
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            WalletError::Transaction(ref message) if message == "Amount must be greater than 0"
+        ));
+    }
+
+    #[test]
     fn test_transaction_hash() {
         let tx = Transaction::new("from".to_string(), "to".to_string(), 1000, 100, 1);
 

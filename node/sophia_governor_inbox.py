@@ -554,15 +554,19 @@ def _scott_notification_queue_url() -> str:
     )
 
 
+def _scott_notification_bearer() -> str:
+    return (
+        os.getenv("SOPHIA_GOVERNOR_SCOTT_NOTIFY_BEARER", "").strip()
+        or os.getenv("SCOTT_NOTIFICATION_SERVICE_TOKEN", "").strip()
+    )
+
+
 def _scott_notification_headers() -> dict[str, str]:
     headers = {
         "Content-Type": "application/json",
         "X-Sophia-Inbox": "sophia-governor-inbox",
     }
-    bearer = (
-        os.getenv("SOPHIA_GOVERNOR_SCOTT_NOTIFY_BEARER", "").strip()
-        or os.getenv("SCOTT_NOTIFICATION_SERVICE_TOKEN", "elya2025").strip()
-    )
+    bearer = _scott_notification_bearer()
     if bearer:
         headers["Authorization"] = f"Bearer {bearer}"
     return headers
@@ -681,6 +685,12 @@ def _queue_scott_notification_for_entry(
     queue_url = _scott_notification_queue_url()
     if not queue_url:
         return {"status": "not_configured", "phase": phase}
+    if not _scott_notification_bearer():
+        return {
+            "status": "not_configured",
+            "phase": phase,
+            "error": "scott_notification_token_not_configured",
+        }
 
     sent_column = _phase_notify_column(phase)
     if entry.get(sent_column):
@@ -957,7 +967,8 @@ def get_governor_inbox_status(db_path: str | None = None) -> dict[str, Any]:
         "review_relay": _review_relay_status(),
         "scott_notifications": {
             "queue_url": _scott_notification_queue_url(),
-            "configured": bool(_scott_notification_queue_url()),
+            "configured": bool(_scott_notification_queue_url() and _scott_notification_bearer()),
+            "token_configured": bool(_scott_notification_bearer()),
         },
         "totals": {
             "entries": int(total),
@@ -1088,6 +1099,14 @@ def register_sophia_governor_inbox_endpoints(app, db_path: str | None = None) ->
     db = db_path or DB_PATH
     init_sophia_governor_inbox_schema(db)
 
+    def _json_object_body():
+        data = request.get_json(silent=True)
+        if data is None:
+            return {}, None
+        if not isinstance(data, dict):
+            return None, (jsonify({"error": "JSON object required"}), 400)
+        return data, None
+
     @app.route("/api/sophia/governor/bridge/status", methods=["GET"])
     def sophia_governor_bridge_status():
         return jsonify(get_governor_inbox_status(db))
@@ -1153,7 +1172,9 @@ def register_sophia_governor_inbox_endpoints(app, db_path: str | None = None) ->
         if not _is_authorized(request):
             return jsonify({"error": "Unauthorized -- admin key or bearer required"}), 401
 
-        data = request.get_json(silent=True) or {}
+        data, error = _json_object_body()
+        if error:
+            return error
         try:
             updated = update_governor_inbox_entry(
                 inbox_id,
@@ -1175,7 +1196,9 @@ def register_sophia_governor_inbox_endpoints(app, db_path: str | None = None) ->
         if not _is_authorized(request):
             return jsonify({"error": "Unauthorized -- admin key or bearer required"}), 401
 
-        data = request.get_json(silent=True) or {}
+        data, error = _json_object_body()
+        if error:
+            return error
         targets = data.get("targets")
         if targets is not None and not isinstance(targets, list):
             return jsonify({"error": "targets must be a list of URLs"}), 400

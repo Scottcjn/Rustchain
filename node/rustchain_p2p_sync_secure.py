@@ -36,8 +36,6 @@ def address_from_pubkey(public_key_hex: str) -> str:
     pubkey_hash = hashlib.sha256(bytes.fromhex(public_key_hex)).hexdigest()[:40]
     return f"RTC{pubkey_hash}"
 
-
-
 # ============================================================================
 # SECURITY: AUTHENTICATION & AUTHORIZATION
 # ============================================================================

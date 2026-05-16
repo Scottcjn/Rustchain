@@ -3,28 +3,87 @@ Tests for RustChain OTC Bridge
 """
 import json
 import os
+import sqlite3
 import tempfile
 import time
 import unittest
 from unittest.mock import patch, MagicMock
 
-# Set test DB before importing
+# Set an initial test DB before importing, then replace it per test.
 _fd, TEST_DB = tempfile.mkstemp(suffix=".db")
 os.close(_fd)
 os.environ["OTC_DB_PATH"] = TEST_DB
 
+import otc_bridge
 from otc_bridge import app, init_db
 
 
 class OTCBridgeTestCase(unittest.TestCase):
     def setUp(self):
+        global TEST_DB
+        _fd, TEST_DB = tempfile.mkstemp(suffix=".db")
+        os.close(_fd)
+        otc_bridge.DB_PATH = TEST_DB
         self.app = app.test_client()
         self.app.testing = True
         init_db()
 
     def tearDown(self):
+        self.app = None
         if os.path.exists(TEST_DB):
-            os.remove(TEST_DB)
+            try:
+                os.remove(TEST_DB)
+            except PermissionError:
+                pass
+
+    def create_legacy_money_schema(self):
+        """Create the pre-migration schema with REAL NOT NULL money columns."""
+        with sqlite3.connect(TEST_DB) as conn:
+            c = conn.cursor()
+            c.execute("DROP TABLE IF EXISTS orders")
+            c.execute("DROP TABLE IF EXISTS trades")
+            c.execute("DROP TABLE IF EXISTS rate_limits")
+            c.execute("""
+                CREATE TABLE orders (
+                    order_id TEXT PRIMARY KEY,
+                    side TEXT NOT NULL CHECK(side IN ('buy', 'sell')),
+                    pair TEXT NOT NULL,
+                    maker_wallet TEXT NOT NULL,
+                    amount_rtc REAL NOT NULL,
+                    price_per_rtc REAL NOT NULL,
+                    total_quote REAL NOT NULL,
+                    status TEXT DEFAULT 'open',
+                    escrow_job_id TEXT,
+                    htlc_hash TEXT,
+                    htlc_secret TEXT,
+                    taker_wallet TEXT,
+                    taker_eth_address TEXT,
+                    maker_eth_address TEXT,
+                    settlement_tx TEXT,
+                    created_at INTEGER NOT NULL,
+                    matched_at INTEGER,
+                    confirmed_at INTEGER,
+                    expires_at INTEGER NOT NULL,
+                    ip_hash TEXT
+                )
+            """)
+            c.execute("""
+                CREATE TABLE trades (
+                    trade_id TEXT PRIMARY KEY,
+                    order_id TEXT NOT NULL,
+                    pair TEXT NOT NULL,
+                    side TEXT NOT NULL,
+                    maker_wallet TEXT NOT NULL,
+                    taker_wallet TEXT NOT NULL,
+                    amount_rtc REAL NOT NULL,
+                    price_per_rtc REAL NOT NULL,
+                    total_quote REAL NOT NULL,
+                    rtc_tx TEXT,
+                    quote_tx TEXT,
+                    completed_at INTEGER NOT NULL
+                )
+            """)
+            conn.commit()
 
     # ---------------------------------------------------------------
     # Order Creation
@@ -47,6 +106,103 @@ class OTCBridgeTestCase(unittest.TestCase):
         self.assertAlmostEqual(data["total_quote"], 10.0)
         self.assertEqual(data["status"], "open")
         self.assertIn("otc_", data["order_id"])
+
+    def test_create_order_stores_scaled_integer_money_fields(self):
+        """OTC money values are stored as integer scaled units, not SQLite REAL."""
+        r = self.app.post("/api/orders", json={
+            "side": "buy",
+            "pair": "RTC/USDC",
+            "wallet": "precision-buyer",
+            "amount_rtc": "0.3",
+            "price_per_rtc": "0.1",
+        })
+        data = r.get_json()
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["amount_micro_rtc"], 300000)
+        self.assertEqual(data["price_per_rtc_nano_quote"], 100000000)
+        self.assertEqual(data["total_quote_nano"], 30000000)
+
+        with sqlite3.connect(TEST_DB) as conn:
+            conn.row_factory = sqlite3.Row
+            columns = {row["name"]: row["type"] for row in conn.execute("PRAGMA table_info(orders)")}
+            self.assertNotIn("amount_rtc", columns)
+            self.assertNotIn("price_per_rtc", columns)
+            self.assertNotIn("total_quote", columns)
+
+            row = conn.execute(
+                "SELECT amount_micro_rtc, price_per_rtc_nano_quote, total_quote_nano FROM orders WHERE order_id = ?",
+                (data["order_id"],),
+            ).fetchone()
+            self.assertEqual(row["amount_micro_rtc"], 300000)
+            self.assertEqual(row["price_per_rtc_nano_quote"], 100000000)
+            self.assertEqual(row["total_quote_nano"], 30000000)
+
+    @patch("requests.post")
+    @patch("otc_bridge.rtc_get_balance", return_value=500.0)
+    @patch("otc_bridge.rtc_create_escrow_job", return_value={"ok": True, "job_id": "job_legacy"})
+    def test_legacy_money_schema_accepts_new_orders_and_trades(self, mock_escrow, mock_balance, mock_post):
+        """Migrated legacy tables still accept inserts despite old REAL NOT NULL columns."""
+        self.create_legacy_money_schema()
+        init_db()
+        mock_post.return_value = MagicMock(ok=True, text='{"ok":true}')
+
+        r1 = self.app.post("/api/orders", json={
+            "side": "buy",
+            "pair": "RTC/USDC",
+            "wallet": "legacy-buyer",
+            "amount_rtc": "0.3",
+            "price_per_rtc": "0.1",
+        })
+        data = r1.get_json()
+        self.assertEqual(r1.status_code, 201)
+        self.assertTrue(data["ok"])
+        order_id = data["order_id"]
+
+        r2 = self.app.post(f"/api/orders/{order_id}/match", json={
+            "wallet": "legacy-seller",
+        })
+        self.assertEqual(r2.status_code, 200)
+        self.assertTrue(r2.get_json()["ok"])
+
+        with sqlite3.connect(TEST_DB) as conn:
+            secret = conn.execute(
+                "SELECT htlc_secret FROM orders WHERE order_id = ?",
+                (order_id,),
+            ).fetchone()[0]
+
+        r3 = self.app.post(f"/api/orders/{order_id}/confirm", json={
+            "wallet": "legacy-buyer",
+            "quote_tx": "0xlegacy",
+            "secret": secret,
+        })
+        self.assertEqual(r3.status_code, 200)
+        self.assertTrue(r3.get_json()["ok"])
+
+        with sqlite3.connect(TEST_DB) as conn:
+            conn.row_factory = sqlite3.Row
+            order = conn.execute(
+                "SELECT amount_rtc, price_per_rtc, total_quote, amount_micro_rtc, "
+                "price_per_rtc_nano_quote, total_quote_nano FROM orders WHERE order_id = ?",
+                (order_id,),
+            ).fetchone()
+            self.assertEqual(order["amount_rtc"], 0.3)
+            self.assertEqual(order["price_per_rtc"], 0.1)
+            self.assertEqual(order["total_quote"], 0.03)
+            self.assertEqual(order["amount_micro_rtc"], 300000)
+            self.assertEqual(order["price_per_rtc_nano_quote"], 100000000)
+            self.assertEqual(order["total_quote_nano"], 30000000)
+
+            trade = conn.execute(
+                "SELECT amount_rtc, price_per_rtc, total_quote, amount_micro_rtc, "
+                "price_per_rtc_nano_quote, total_quote_nano FROM trades WHERE order_id = ?",
+                (order_id,),
+            ).fetchone()
+            self.assertEqual(trade["amount_rtc"], 0.3)
+            self.assertEqual(trade["price_per_rtc"], 0.1)
+            self.assertEqual(trade["total_quote"], 0.03)
+            self.assertEqual(trade["amount_micro_rtc"], 300000)
+            self.assertEqual(trade["price_per_rtc_nano_quote"], 100000000)
+            self.assertEqual(trade["total_quote_nano"], 30000000)
 
     @patch("otc_bridge.rtc_get_balance", return_value=500.0)
     @patch("otc_bridge.rtc_create_escrow_job", return_value={"ok": True, "job_id": "job_test123"})
@@ -179,6 +335,24 @@ class OTCBridgeTestCase(unittest.TestCase):
         # Bids sorted by price descending
         self.assertGreaterEqual(data["bids"][0]["price"], data["bids"][1]["price"])
 
+    def test_orderbook_keeps_distinct_scaled_prices(self):
+        """Prices that rounded together at 4 decimals stay distinct internally."""
+        self.app.post("/api/orders", json={
+            "side": "buy", "pair": "RTC/USDC",
+            "wallet": "buyer-precision-1", "amount_rtc": 1, "price_per_rtc": "0.100001",
+        })
+        self.app.post("/api/orders", json={
+            "side": "buy", "pair": "RTC/USDC",
+            "wallet": "buyer-precision-2", "amount_rtc": 1, "price_per_rtc": "0.100002",
+        })
+
+        r = self.app.get("/api/orderbook?pair=RTC/USDC")
+        data = r.get_json()
+        self.assertTrue(data["ok"])
+        self.assertEqual(len(data["bids"]), 2)
+        self.assertEqual(data["bids"][0]["price"], 0.100002)
+        self.assertEqual(data["bids"][1]["price"], 0.100001)
+
     # ---------------------------------------------------------------
     # Order Matching
     # ---------------------------------------------------------------
@@ -288,9 +462,15 @@ class OTCBridgeTestCase(unittest.TestCase):
         # Confirm settlement
         with patch("requests.post") as mock_post:
             mock_post.return_value = MagicMock(ok=True, text='{"ok":true}')
+            with sqlite3.connect(TEST_DB) as conn:
+                secret = conn.execute(
+                    "SELECT htlc_secret FROM orders WHERE order_id = ?",
+                    (order_id,),
+                ).fetchone()[0]
             r3 = self.app.post(f"/api/orders/{order_id}/confirm", json={
                 "wallet": "buyer1",
                 "quote_tx": "0xabc123def456",
+                "secret": secret,
             })
             data = r3.get_json()
             self.assertTrue(data["ok"])

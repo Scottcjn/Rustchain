@@ -52,8 +52,6 @@ FOUNDER_WALLETS = [
 # Consensus Parameters
 # =============================================================================
 
-CURRENT_YEAR: int = 2025
-
 # Antiquity Score parameters
 AS_MAX: float = 100.0  # Maximum for reward capping
 AS_MIN: float = 1.0    # Minimum to participate
@@ -144,6 +142,9 @@ def get_multiplier_for_tier(tier: str) -> float:
 
 def calculate_block_reward(height: int) -> Decimal:
     """Calculate block reward at a given height"""
+    if height < 0:
+        raise ValueError(f"Block height cannot be negative: {height}")
+
     halvings = height // HALVING_INTERVAL_BLOCKS
     if halvings >= HALVING_COUNT:
         # Tail emission after 4 halvings

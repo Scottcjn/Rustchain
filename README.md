@@ -107,7 +107,7 @@ Proof-of-Antiquity rewards hardware for *surviving*, not for being fast. Older m
 | PowerPC G4 (2003) | **2.5x** | ANCIENT | Still running, still earning |
 | RISC-V (2014) | **1.4x** | EXOTIC | Open ISA, the future |
 | Apple Silicon M1 (2020) | **1.2x** | MODERN | Efficient, welcome |
-| Modern x86_64 | **0.8x** | MODERN | Baseline — *for now* |
+| Modern x86_64 | **1.0x** | MODERN | Baseline — *for now* |
 | Modern ARM NAS/SBC | **0.0005x** | PENALTY | Cheap, farmable, penalized |
 
 Our fleet of 16+ preserved machines draws roughly the same power as ONE modern GPU mining rig — while preventing 1,300 kg of manufacturing CO2 and 250 kg of e-waste.
@@ -146,7 +146,7 @@ The attestation server doesn't trust self-reported data. It:
 ### AI Agent Economy
 
 RustChain powers an ecosystem where AI agents and humans collaborate:
-- **[BoTTube](https://bottube.ai)** — AI-native video platform where bots create, curate, and engage
+- **BoTTube** — AI-native video platform where bots create, curate, and engage
 - **[Beacon](https://github.com/Scottcjn/beacon-skill)** — Agent discovery protocol
 - **[TrashClaw](https://github.com/Scottcjn/trashclaw)** — Zero-dep local LLM agent
 - **Bounty system** — 25,875+ RTC paid to 260+ contributors, many AI-assisted
@@ -181,10 +181,10 @@ This isn't a roadmap. This is deployed and running:
 | Layer | What | Status |
 |-------|------|--------|
 | **Identity** | Hardware fingerprinting — agents prove they run on real machines, not spoofed VMs | Live, 26+ miners |
-| **Currency** | RTC (native) + wRTC (Solana bridge) — agent-native money with micropayment support | Live, [tradeable on Raydium](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) |
+| **Currency** | RTC (native) + wRTC (Solana bridge) — agent-native money with micropayment support | Live, Raydium swap link below |
 | **Discovery** | [Beacon protocol](https://github.com/Scottcjn/beacon-skill) — agents find and negotiate with other agents | Live, 126 stars |
 | **Execution** | [TrashClaw](https://github.com/Scottcjn/trashclaw) — zero-dep local LLM agent that runs on anything | Live |
-| **Social** | [BoTTube](https://bottube.ai) — AI-native platform where agents create, trade, and engage | Live, 1,000+ videos |
+| **Social** | BoTTube — AI-native platform where agents create, trade, and engage | Live, 1,000+ videos |
 | **Bounties** | Agent-assisted contributions — AI helps humans earn RTC for real code | Live, 25,875+ RTC paid |
 | **Certification** | [BCOS](https://rustchain.org/bcos/) — blockchain-certified open source verification | Live, 44 certs issued |
 
@@ -303,6 +303,27 @@ commands because the repository contains multiple Python and Rust subprojects.
 
 ---
 
+## Wallets
+
+RustChain has two wallet concepts:
+
+- **Miner wallet ID**: a readable `miner_id` used for mining rewards and balance checks.
+- **`RTC...` address**: an Ed25519-backed address used for signed transfers.
+
+Start with the [wallet setup guide](docs/WALLET_SETUP.md) if you are not sure which one you need.
+
+| Option | Use it for | Where |
+|---|---|---|
+| Miner install wallet | Earning mining rewards to a named wallet | `install-miner.sh --wallet YOUR_WALLET` |
+| Browser light client | Loading a wallet and signing transfers locally in the browser | [web/light-client](web/light-client/) |
+| Desktop GUI wallet | Creating or restoring a local wallet from this repo | `wallet/rustchain_wallet_secure.py` |
+| CLI tooling | Scripted wallet operations from a checkout | `tools/rustchain_wallet_cli.py` |
+| Agent/Base wallet docs | Coinbase Agentic Wallets, x402, and Base linking | [web/wallets.html](web/wallets.html) |
+
+For command examples, backup guidance, and the signed-transfer payload format, see [docs/WALLET_SETUP.md](docs/WALLET_SETUP.md) and [START_HERE.md](START_HERE.md).
+
+---
+
 ## How Proof-of-Antiquity Works
 
 ### 1 CPU = 1 Vote
@@ -319,7 +340,7 @@ Epoch: 10 minutes  |  Pool: 1.5 RTC/epoch  |  Split by antiquity weight
 
 G4 Mac (2.5x):     0.30 RTC  ████████████████████
 G5 Mac (2.0x):     0.24 RTC  ████████████████
-Modern PC (1.0x):  0.12 RTC  ████████
+Modern PC (0.8x):  0.10 RTC  ██████
 ```
 
 ### Anti-VM Enforcement
@@ -345,7 +366,7 @@ VMs are detected and receive **1 billionth** of normal rewards. Real hardware on
 |--|------|
 | **Swap** | [Raydium DEX](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) |
 | **Chart** | [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) |
-| **Bridge** | [Bridge](https://bottube.ai/bridge) |
+| **Bridge** | [Bridge](https://bottube.ai/bridge/wrtc) |
 | **Guide** | [wRTC Quickstart](docs/wrtc.md) |
 
 ---

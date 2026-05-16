@@ -25,13 +25,13 @@ def print_header(text):
     print(f"{BLUE}{'=' * 60}{RESET}\n")
 
 def print_success(text):
-    print(f"{GREEN}✅ {text}{RESET}")
+    print(f"{GREEN}[OK] {text}{RESET}")
 
 def print_error(text):
-    print(f"{RED}❌ {text}{RESET}")
+    print(f"{RED}[ERROR] {text}{RESET}")
 
 def print_info(text):
-    print(f"{YELLOW}ℹ️  {text}{RESET}")
+    print(f"{YELLOW}[INFO] {text}{RESET}")
 
 def check_file_exists(filepath, description):
     """Check if a file exists"""
@@ -48,7 +48,7 @@ def check_file_content(filepath, patterns, description):
         print_error(f"{description} missing: {filepath}")
         return False
     
-    with open(filepath, 'r') as f:
+    with open(filepath, 'r', encoding='utf-8') as f:
         content = f.read()
     
     all_found = True
@@ -66,7 +66,7 @@ def count_lines(filepath):
     """Count lines in a file"""
     if not os.path.exists(filepath):
         return 0
-    with open(filepath, 'r') as f:
+    with open(filepath, 'r', encoding='utf-8') as f:
         return sum(1 for _ in f)
 
 def get_file_hash(filepath):
@@ -242,7 +242,7 @@ def validate_tests():
         'pytest'
     ]
     
-    with open(test_file, 'r') as f:
+    with open(test_file, 'r', encoding='utf-8') as f:
         content = f.read()
     
     all_valid = True
@@ -271,7 +271,7 @@ def validate_evidence():
         print_error("Evidence file missing: proof.json")
         return False
     
-    with open(proof_file, 'r') as f:
+    with open(proof_file, 'r', encoding='utf-8') as f:
         proof = json.load(f)
     
     required_fields = [
@@ -306,7 +306,7 @@ def validate_requirements():
     base_dir = Path(__file__).parent / 'evidence'
     proof_file = base_dir / 'proof.json'
     
-    with open(proof_file, 'r') as f:
+    with open(proof_file, 'r', encoding='utf-8') as f:
         proof = json.load(f)
     
     req_verify = proof.get('requirements_verification', {})
@@ -404,10 +404,10 @@ def main():
     print(f"  Total source lines: {total_lines}")
     
     if passed == total:
-        print(f"\n{GREEN}✅ VALIDATION PASSED - Implementation is complete!{RESET}\n")
+        print(f"\n{GREEN}[OK] VALIDATION PASSED - Implementation is complete!{RESET}\n")
         return 0
     else:
-        print(f"\n{RED}❌ VALIDATION FAILED - {total - passed} checks failed{RESET}\n")
+        print(f"\n{RED}[ERROR] VALIDATION FAILED - {total - passed} checks failed{RESET}\n")
         return 1
 
 if __name__ == '__main__':

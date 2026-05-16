@@ -21,6 +21,7 @@ The webhook system polls the RustChain node API, detects state changes, and disp
 ### 1. Start the dispatcher
 
 ```bash
+export WEBHOOK_ADMIN_API_KEY="local-dev-admin-key"
 python webhook_server.py --node http://localhost:5000 --port 9800
 ```
 
@@ -35,6 +36,7 @@ python webhook_client.py --port 9801
 ```bash
 curl -X POST http://localhost:9800/webhooks/subscribe \
   -H "Content-Type: application/json" \
+  -H "X-Admin-API-Key: $WEBHOOK_ADMIN_API_KEY" \
   -d '{
     "url": "http://localhost:9801/hook",
     "events": ["new_block", "miner_joined", "miner_left"]
@@ -42,6 +44,9 @@ curl -X POST http://localhost:9800/webhooks/subscribe \
 ```
 
 ## Dispatcher API
+
+Management routes require `WEBHOOK_ADMIN_API_KEY` on the dispatcher and the matching
+`X-Admin-API-Key` request header. `/health` is the only public dispatcher route.
 
 ### Subscribe
 

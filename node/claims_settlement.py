@@ -306,27 +306,51 @@ def update_claims_failed(
     return updated
 
 
-def generate_batch_id() -> str:
+def generate_batch_id(db_path: str) -> str:
     """
-    Generate unique batch identifier using UUID to prevent TOCTOU race conditions.
-    
-    Previous /tmp file-based approach had TOCTOU vulnerability with concurrent
-    processes reading/writing the same batch counter file.
-    
-    Format: batch_YYYY_MM_DD_<uuid8>
+    Generate a unique settlement batch identifier.
+
+    The settlement database owns the per-day sequence so concurrent settlement
+    workers serialize on SQLite instead of racing through a process-local or
+    filesystem counter.
+
+    Format: batch_YYYY_MM_DD_NNN
     """
     now = datetime.now(timezone.utc)
-    timestamp = now.strftime("%Y_%m_%d")
-    
-    # Use UUID-based batch ID to eliminate race conditions from /tmp file locking
+    batch_day = now.strftime("%Y_%m_%d")
+
+    conn = sqlite3.connect(db_path, timeout=30, isolation_level=None)
     try:
-        import uuid
-        unique_suffix = uuid.uuid4().hex[:8]
-        return f"batch_{timestamp}_{unique_suffix}"
-    except Exception:
-        # Fallback: use microsecond timestamp
-        micro = now.strftime("%H%M%S%f")
-        return f"batch_{timestamp}_{micro}"
+        conn.execute("PRAGMA busy_timeout = 30000")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS settlement_batch_sequence (
+                batch_day TEXT PRIMARY KEY,
+                sequence INTEGER NOT NULL
+            )
+        """)
+
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            conn.execute("""
+                INSERT INTO settlement_batch_sequence (batch_day, sequence)
+                VALUES (?, 1)
+                ON CONFLICT(batch_day) DO UPDATE
+                SET sequence = sequence + 1
+            """, (batch_day,))
+            row = conn.execute("""
+                SELECT sequence FROM settlement_batch_sequence
+                WHERE batch_day = ?
+            """, (batch_day,)).fetchone()
+            if row is None:
+                raise SettlementError("failed to read settlement batch sequence")
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+    finally:
+        conn.close()
+
+    return f"batch_{batch_day}_{row[0]:03d}"
 
 
 def process_claims_batch(
@@ -433,7 +457,7 @@ def process_claims_batch(
         return result
     
     # Generate batch ID
-    batch_id = generate_batch_id()
+    batch_id = generate_batch_id(db_path)
     result["batch_id"] = batch_id
     
     # Construct transaction

@@ -6,9 +6,40 @@ import sqlite3
 import json
 import os
 import hashlib
+import secrets
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'bcos-directory-dev-key'
+
+
+def load_secret_key() -> str:
+    """Load the Flask secret key without falling back to a public constant."""
+    configured = os.environ.get('BCOS_DIRECTORY_SECRET_KEY', '').strip()
+    if configured:
+        return configured
+    return secrets.token_hex(32)
+
+
+def debug_enabled() -> bool:
+    """Enable Flask debug mode only by explicit local operator opt-in."""
+    return os.environ.get('BCOS_DIRECTORY_DEBUG', '').strip().lower() in {
+        '1', 'true', 'yes', 'on'
+    }
+
+
+def server_host() -> str:
+    """Default to loopback so the dev server is not exposed accidentally."""
+    return os.environ.get('BCOS_DIRECTORY_HOST', '127.0.0.1').strip() or '127.0.0.1'
+
+
+def server_port() -> int:
+    raw = os.environ.get('BCOS_DIRECTORY_PORT', '5000').strip()
+    try:
+        return int(raw)
+    except ValueError:
+        return 5000
+
+
+app.config['SECRET_KEY'] = load_secret_key()
 
 DATABASE = 'bcos_directory.db'
 
@@ -482,4 +513,4 @@ def serve_dist(filename):
 if __name__ == '__main__':
     init_db()
     load_projects_from_json()
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=debug_enabled(), host=server_host(), port=server_port())

@@ -18,6 +18,7 @@ import time
 import unittest
 from datetime import datetime, timezone, timedelta
 from unittest.mock import Mock, patch, MagicMock
+from flask import Flask
 
 # Import airdrop module
 from airdrop_v2 import (
@@ -30,7 +31,11 @@ from airdrop_v2 import (
     AIRDROP_SCHEMA,
     TOTAL_SOLANA_ALLOCATION,
     TOTAL_BASE_ALLOCATION,
+    init_airdrop_routes,
 )
+
+ADMIN_KEY = "test-admin-key"
+ADMIN_HEADERS = {"X-Admin-Key": ADMIN_KEY}
 
 
 class TestEligibilityTier(unittest.TestCase):
@@ -190,11 +195,11 @@ class TestEligibilityChecks(unittest.TestCase):
         self.assertFalse(result.eligible)
         self.assertIn("Already claimed", result.reason)
 
-    def test_same_github_cannot_claim_with_different_wallet(self):
-        """A GitHub account cannot bypass claim limits by changing wallets."""
+    def test_duplicate_github_with_different_wallet_rejected(self):
+        """A GitHub account cannot claim again with a different wallet."""
         success, _, _ = self.airdrop.claim_airdrop(
             github_username="testuser",
-            wallet_address="RTC1111111111111111111111111111111111111111",
+            wallet_address="RTC1234567890123456789012345678901234567890",
             chain="base",
             tier="contributor",
             skip_antisybil=True,
@@ -203,7 +208,7 @@ class TestEligibilityChecks(unittest.TestCase):
 
         result = self.airdrop.check_eligibility(
             github_username="testuser",
-            wallet_address="RTC2222222222222222222222222222222222222222",
+            wallet_address="RTC2234567890123456789012345678901234567890",
             chain="base",
             skip_antisybil=True,
         )
@@ -211,12 +216,11 @@ class TestEligibilityChecks(unittest.TestCase):
         self.assertFalse(result.eligible)
         self.assertIn("Already claimed", result.reason)
 
-    def test_same_wallet_cannot_claim_with_different_github(self):
-        """A wallet cannot bypass claim limits by changing GitHub accounts."""
-        wallet = "RTC3333333333333333333333333333333333333333"
+    def test_duplicate_github_with_different_case_rejected(self):
+        """GitHub identity comparisons are case-insensitive."""
         success, _, _ = self.airdrop.claim_airdrop(
-            github_username="firstuser",
-            wallet_address=wallet,
+            github_username="TestUser",
+            wallet_address="RTC1234567890123456789012345678901234567890",
             chain="base",
             tier="contributor",
             skip_antisybil=True,
@@ -224,8 +228,29 @@ class TestEligibilityChecks(unittest.TestCase):
         self.assertTrue(success)
 
         result = self.airdrop.check_eligibility(
-            github_username="seconduser",
-            wallet_address=wallet,
+            github_username="testuser",
+            wallet_address="RTC2234567890123456789012345678901234567890",
+            chain="base",
+            skip_antisybil=True,
+        )
+
+        self.assertFalse(result.eligible)
+        self.assertIn("Already claimed", result.reason)
+
+    def test_duplicate_wallet_with_different_github_rejected(self):
+        """A wallet cannot claim again with a different GitHub account."""
+        success, _, _ = self.airdrop.claim_airdrop(
+            github_username="testuser",
+            wallet_address="RTC1234567890123456789012345678901234567890",
+            chain="base",
+            tier="contributor",
+            skip_antisybil=True,
+        )
+        self.assertTrue(success)
+
+        result = self.airdrop.check_eligibility(
+            github_username="otheruser",
+            wallet_address="RTC1234567890123456789012345678901234567890",
             chain="base",
             skip_antisybil=True,
         )
@@ -305,6 +330,76 @@ class TestClaimProcessing(unittest.TestCase):
         # Should fail because tier name is invalid
         self.assertFalse(success)
         self.assertIn("Invalid tier", message)
+
+    def test_claim_rejects_reused_github_with_different_wallet(self):
+        """Claim creation enforces one claim per GitHub account."""
+        success, _, _ = self.airdrop.claim_airdrop(
+            github_username="testuser",
+            wallet_address="RTC1234567890123456789012345678901234567890",
+            chain="base",
+            tier="contributor",
+            skip_antisybil=True,
+        )
+        self.assertTrue(success)
+
+        success, message, claim = self.airdrop.claim_airdrop(
+            github_username="testuser",
+            wallet_address="RTC2234567890123456789012345678901234567890",
+            chain="base",
+            tier="contributor",
+            skip_antisybil=True,
+        )
+
+        self.assertFalse(success)
+        self.assertIsNone(claim)
+        self.assertIn("GitHub account or wallet", message)
+
+    def test_claim_rejects_reused_github_with_different_case(self):
+        """Claim creation canonicalizes GitHub account casing."""
+        success, _, first_claim = self.airdrop.claim_airdrop(
+            github_username="TestUser",
+            wallet_address="RTC1234567890123456789012345678901234567890",
+            chain="base",
+            tier="contributor",
+            skip_antisybil=True,
+        )
+        self.assertTrue(success)
+        self.assertEqual(first_claim.github_username, "testuser")
+
+        success, message, claim = self.airdrop.claim_airdrop(
+            github_username="testuser",
+            wallet_address="RTC2234567890123456789012345678901234567890",
+            chain="base",
+            tier="contributor",
+            skip_antisybil=True,
+        )
+
+        self.assertFalse(success)
+        self.assertIsNone(claim)
+        self.assertIn("GitHub account or wallet", message)
+
+    def test_claim_rejects_reused_wallet_with_different_github(self):
+        """Claim creation enforces one claim per wallet."""
+        success, _, _ = self.airdrop.claim_airdrop(
+            github_username="testuser",
+            wallet_address="RTC1234567890123456789012345678901234567890",
+            chain="base",
+            tier="contributor",
+            skip_antisybil=True,
+        )
+        self.assertTrue(success)
+
+        success, message, claim = self.airdrop.claim_airdrop(
+            github_username="otheruser",
+            wallet_address="RTC1234567890123456789012345678901234567890",
+            chain="base",
+            tier="contributor",
+            skip_antisybil=True,
+        )
+
+        self.assertFalse(success)
+        self.assertIsNone(claim)
+        self.assertIn("GitHub account or wallet", message)
 
 
 class TestBridgeOperations(unittest.TestCase):
@@ -464,6 +559,104 @@ class TestAllocationTracking(unittest.TestCase):
 
         self.assertFalse(success)
         self.assertIn("exhausted", message)
+
+
+class TestAirdropBridgeRoutes(unittest.TestCase):
+    """Test Flask bridge route authorization."""
+
+    def setUp(self):
+        self.temp_db = tempfile.NamedTemporaryFile(delete=False, suffix=".db")
+        self.temp_db.close()
+        self.airdrop = AirdropV2(db_path=self.temp_db.name)
+        self.previous_admin_key = os.environ.get("RC_ADMIN_KEY")
+        os.environ["RC_ADMIN_KEY"] = ADMIN_KEY
+        app = Flask(__name__)
+        app.config["TESTING"] = True
+        init_airdrop_routes(app, self.airdrop, self.temp_db.name)
+        self.client = app.test_client()
+
+    def tearDown(self):
+        if self.previous_admin_key is None:
+            os.environ.pop("RC_ADMIN_KEY", None)
+        else:
+            os.environ["RC_ADMIN_KEY"] = self.previous_admin_key
+        os.unlink(self.temp_db.name)
+
+    def _create_lock(self):
+        response = self.client.post(
+            "/api/bridge/lock",
+            json={
+                "from_address": "RTC1234567890123456789012345678901234567890",
+                "to_address": "0x1234567890123456789012345678901234567890",
+                "from_chain": "rustchain",
+                "to_chain": "base",
+                "amount_wrtc": 100,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        return response.get_json()["lock"]["lock_id"]
+
+    def test_confirm_route_requires_admin_key(self):
+        lock_id = self._create_lock()
+
+        response = self.client.post(
+            f"/api/bridge/lock/{lock_id}/confirm",
+            json={"source_tx": "attacker-source-tx"},
+        )
+
+        self.assertEqual(response.status_code, 401)
+        lock = self.airdrop.get_lock(lock_id)
+        self.assertEqual(lock.status, "pending")
+        self.assertIsNone(lock.source_tx)
+
+    def test_release_route_requires_admin_key(self):
+        lock_id = self._create_lock()
+        success, _ = self.airdrop.confirm_bridge_lock(lock_id, "operator-source-tx")
+        self.assertTrue(success)
+
+        response = self.client.post(
+            f"/api/bridge/lock/{lock_id}/release",
+            json={"dest_tx": "attacker-dest-tx"},
+        )
+
+        self.assertEqual(response.status_code, 401)
+        lock = self.airdrop.get_lock(lock_id)
+        self.assertEqual(lock.status, "locked")
+        self.assertIsNone(lock.dest_tx)
+
+    def test_confirm_and_release_accept_admin_key(self):
+        lock_id = self._create_lock()
+
+        confirm = self.client.post(
+            f"/api/bridge/lock/{lock_id}/confirm",
+            headers=ADMIN_HEADERS,
+            json={"source_tx": "operator-source-tx"},
+        )
+        self.assertEqual(confirm.status_code, 200)
+
+        release = self.client.post(
+            f"/api/bridge/lock/{lock_id}/release",
+            headers=ADMIN_HEADERS,
+            json={"dest_tx": "operator-dest-tx"},
+        )
+        self.assertEqual(release.status_code, 200)
+
+        lock = self.airdrop.get_lock(lock_id)
+        self.assertEqual(lock.status, "released")
+        self.assertEqual(lock.source_tx, "operator-source-tx")
+        self.assertEqual(lock.dest_tx, "operator-dest-tx")
+
+    def test_confirm_route_fails_closed_without_admin_key(self):
+        lock_id = self._create_lock()
+        os.environ.pop("RC_ADMIN_KEY", None)
+
+        response = self.client.post(
+            f"/api/bridge/lock/{lock_id}/confirm",
+            headers=ADMIN_HEADERS,
+            json={"source_tx": "operator-source-tx"},
+        )
+
+        self.assertEqual(response.status_code, 503)
 
 
 class TestStatistics(unittest.TestCase):

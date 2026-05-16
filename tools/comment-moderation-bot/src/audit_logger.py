@@ -6,7 +6,6 @@ Provides JSONL-based audit logging for moderation actions.
 
 import json
 import logging
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -49,8 +48,9 @@ class AuditLogger:
         self._logger.setLevel(self.log_level)
         self._logger.handlers = []  # Clear existing handlers
 
-        # File handler for JSONL output
-        file_handler = logging.FileHandler(log_file, encoding="utf-8")
+        # File handler for JSONL output. This opens the file only while
+        # writing each record so test temp directories are not locked on Windows.
+        file_handler = JSONLFileHandler(log_file)
         file_handler.setLevel(self.log_level)
 
         # Custom formatter for JSONL
@@ -240,3 +240,25 @@ class JSONLFormatter(logging.Formatter):
         }
 
         return json.dumps(data, ensure_ascii=False)
+
+
+class JSONLFileHandler(logging.Handler):
+    """Write JSONL records without keeping the log file open."""
+
+    terminator = "\n"
+
+    def __init__(self, filename: Path, encoding: str = "utf-8"):
+        super().__init__()
+        self.filename = Path(filename)
+        self.encoding = encoding
+
+    def emit(self, record: logging.LogRecord) -> None:
+        """Append a formatted record to the JSONL log file."""
+        try:
+            message = self.format(record)
+            self.filename.parent.mkdir(parents=True, exist_ok=True)
+            with self.filename.open("a", encoding=self.encoding) as log_file:
+                log_file.write(message)
+                log_file.write(self.terminator)
+        except Exception:
+            self.handleError(record)

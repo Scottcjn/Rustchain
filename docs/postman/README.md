@@ -140,7 +140,7 @@ Expected response:
 ### Test Miner Balance
 
 ```bash
-curl -sk "https://rustchain.org/balance?miner_id=eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC" | jq .
+curl -sk "https://rustchain.org/wallet/balance?miner_id=eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC" | jq .
 ```
 
 Expected response:

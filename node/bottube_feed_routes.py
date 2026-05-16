@@ -68,13 +68,15 @@ def _fetch_videos(
     Fetch videos from database or mock data.
     
     Args:
-        limit: Maximum number of videos
+        limit: Maximum number of videos (must be >= 1)
         agent: Filter by agent ID
         cursor: Pagination cursor (not implemented in mock)
         
     Returns:
         Tuple of (videos list, next cursor or None)
     """
+    if limit < 1:
+        raise ValueError(f"limit must be >= 1, got {limit}")
     # Try to fetch from database
     conn = _get_db_connection()
     
@@ -224,7 +226,7 @@ def rss_feed():
     """
     try:
         # Parse parameters
-        limit = min(int(request.args.get("limit", 20)), 100)
+        limit = max(1, min(int(request.args.get("limit", 20)), 100))
         agent = request.args.get("agent")
         cursor = request.args.get("cursor")
         
@@ -278,7 +280,7 @@ def atom_feed():
     """
     try:
         # Parse parameters
-        limit = min(int(request.args.get("limit", 20)), 100)
+        limit = max(1, min(int(request.args.get("limit", 20)), 100))
         agent = request.args.get("agent")
         cursor = request.args.get("cursor")
         
@@ -340,7 +342,7 @@ def feed_index():
     
     # Parse parameters
     try:
-        limit = min(int(request.args.get("limit", 20)), 100)
+        limit = max(1, min(int(request.args.get("limit", 20)), 100))
     except ValueError:
         return jsonify({"error": "Invalid limit parameter"}), 400
     

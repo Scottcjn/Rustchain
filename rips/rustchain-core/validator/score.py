@@ -80,6 +80,8 @@ HARDWARE_DATABASE: Dict[str, Dict[str, Any]] = {
     "Apple M3": {"year": 2023, "family": "arm", "arch": "Apple Silicon"},
 }
 
+MIN_VALID_RELEASE_YEAR = 1970
+
 
 # =============================================================================
 # Hardware Validation
@@ -127,6 +129,17 @@ def validate_hardware_claim(model: str, claimed_year: int) -> Tuple[bool, str]:
     Returns:
         (valid, message) tuple
     """
+    if (
+        not isinstance(claimed_year, int)
+        or isinstance(claimed_year, bool)
+        or claimed_year < MIN_VALID_RELEASE_YEAR
+        or claimed_year > CURRENT_YEAR
+    ):
+        return (
+            False,
+            f"Invalid release year {claimed_year}; expected {MIN_VALID_RELEASE_YEAR}-{CURRENT_YEAR}",
+        )
+
     # Check if model is in database
     for known_model, info in HARDWARE_DATABASE.items():
         if known_model.lower() in model.lower():
@@ -137,8 +150,8 @@ def validate_hardware_claim(model: str, claimed_year: int) -> Tuple[bool, str]:
             else:
                 return False, f"Year mismatch: claimed {claimed_year}, actual {actual_year}"
 
-    # Unknown hardware - allow with warning
-    return True, f"Unknown hardware: {model} - accepting claimed year {claimed_year}"
+    # Unknown hardware cannot earn high antiquity from a self-reported year.
+    return False, f"Unknown hardware: {model} - cannot validate claimed year {claimed_year}"
 
 
 # =============================================================================
@@ -156,6 +169,21 @@ def calculate_antiquity_score(release_year: int, uptime_days: int) -> float:
     - Node reliability (uptime)
     - NOT computational speed
     """
+    if (
+        not isinstance(release_year, int)
+        or isinstance(release_year, bool)
+        or release_year < MIN_VALID_RELEASE_YEAR
+        or release_year > CURRENT_YEAR
+    ):
+        return 0.0
+
+    if (
+        not isinstance(uptime_days, int)
+        or isinstance(uptime_days, bool)
+        or uptime_days < 0
+    ):
+        return 0.0
+
     age = max(0, CURRENT_YEAR - release_year)
     uptime_factor = math.log10(uptime_days + 1)
     return age * uptime_factor

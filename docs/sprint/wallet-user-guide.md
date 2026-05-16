@@ -154,10 +154,14 @@ For programmatic use:
 curl -X POST https://rustchain.org/wallet/transfer/signed \
   -H "Content-Type: application/json" \
   -d '{
-    "from": "RTCa3f82...",
-    "to":   "RTCb9e71...",
-    "amount": 10.5,
-    "signature": "<signed-payload>"
+    "from_address": "RTCa3f82d9c1e4b07f5a2d6c8e9b0f1d3e2a4c5b7f8",
+    "to_address": "RTCb9e71c3d2f5a4e8b0c6d1f9a2e4b7c8d3f5a6e2",
+    "amount_rtc": 10.5,
+    "nonce": 12345,
+    "memo": "",
+    "public_key": "<ed25519-public-key-hex>",
+    "signature": "<ed25519-signature-hex>",
+    "chain_id": "rustchain-mainnet-v2"
   }'
 ```
 

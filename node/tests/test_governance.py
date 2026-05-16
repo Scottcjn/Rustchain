@@ -9,6 +9,7 @@ Run with:
 Author: NOX Ventures
 """
 
+import gc
 import pytest
 import sqlite3
 import tempfile
@@ -40,7 +41,8 @@ def tmp_db():
     init_governance_tables(db_path)
 
     # Seed schema that governance references (miners, attestations)
-    with sqlite3.connect(db_path) as conn:
+    conn = sqlite3.connect(db_path)
+    try:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS miners (
                 wallet_name TEXT PRIMARY KEY,
@@ -52,8 +54,11 @@ def tmp_db():
                 timestamp INTEGER NOT NULL
             );
         """)
+    finally:
+        conn.close()
 
     yield db_path
+    gc.collect()
     os.unlink(db_path)
 
 
@@ -160,6 +165,73 @@ def test_create_proposal_missing_parameter_key(client, active_miner):
     assert res.status_code == 400
 
 
+def test_governance_write_routes_reject_non_object_json(client):
+    """Governance write routes reject JSON arrays before field access."""
+    propose = client.post("/api/governance/propose", json=["not", "an", "object"])
+    assert propose.status_code == 400
+    assert propose.get_json() == {"error": "invalid_json"}
+
+    vote = client.post("/api/governance/vote", json=["not", "an", "object"])
+    assert vote.status_code == 400
+    assert vote.get_json() == {"error": "invalid_json"}
+
+    veto = client.post("/api/governance/veto/1", json=["not", "an", "object"])
+    assert veto.status_code == 400
+    assert veto.get_json() == {"error": "invalid_json"}
+
+
+def test_governance_write_routes_reject_malformed_field_types(client, active_miner):
+    """Governance write routes reject malformed fields without server errors."""
+    propose = client.post("/api/governance/propose", json={
+        "miner_id": active_miner,
+        "title": ["not", "a", "string"],
+        "description": "Malformed title should be rejected.",
+        "proposal_type": "feature_activation",
+    })
+    assert propose.status_code == 400
+    assert propose.get_json() == {
+        "error": "invalid_field_type",
+        "field": "title",
+        "expected": "string",
+    }
+
+    vote = client.post("/api/governance/vote", json={
+        "miner_id": active_miner,
+        "proposal_id": {"not": "an integer"},
+        "vote": "for",
+    })
+    assert vote.status_code == 400
+    assert vote.get_json() == {
+        "error": "invalid_field_type",
+        "field": "proposal_id",
+        "expected": "integer",
+    }
+
+    veto = client.post("/api/governance/veto/1", json={
+        "admin_key": ["not", "a", "string"],
+        "reason": "Malformed admin key should be rejected.",
+    })
+    assert veto.status_code == 400
+    assert veto.get_json() == {
+        "error": "invalid_field_type",
+        "field": "admin_key",
+        "expected": "string",
+    }
+
+
+def test_governance_signature_field_type_returns_unauthorized(client, active_miner):
+    """Malformed signature fields fail authentication instead of crashing."""
+    res = client.post("/api/governance/propose", json={
+        "miner_id": active_miner,
+        "title": "Malformed signature",
+        "description": "Signature is the wrong JSON type.",
+        "proposal_type": "feature_activation",
+        "signature": {"not": "a string"},
+        "timestamp": int(time.time()),
+    })
+    assert res.status_code == 401
+
+
 # ---------------------------------------------------------------------------
 # Scenario 2: Voting
 # ---------------------------------------------------------------------------
@@ -260,6 +332,22 @@ def test_list_proposals_empty(client):
     data = res.get_json()
     assert data["proposals"] == []
     assert data["count"] == 0
+
+
+def test_list_proposals_rejects_non_integer_limit(client):
+    """Malformed pagination returns a client error instead of a 500."""
+    res = client.get("/api/governance/proposals?limit=abc")
+
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "limit must be an integer"
+
+
+def test_list_proposals_rejects_negative_offset(client):
+    """Negative offsets are invalid for proposal pagination."""
+    res = client.get("/api/governance/proposals?offset=-1")
+
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "offset must be non-negative"
 
 
 def test_list_proposals_with_filter(client, active_miner, tmp_db):

@@ -166,10 +166,32 @@ def _require_admin(fn):
         key = request.headers.get("X-Admin-Key", "")
         if not BRIDGE_ADMIN_KEY:
             return jsonify({"error": "admin key not configured on server"}), 500
-        if key != BRIDGE_ADMIN_KEY:
+        if not hmac.compare_digest(key, BRIDGE_ADMIN_KEY):
             return jsonify({"error": "unauthorized"}), 403
         return fn(*args, **kwargs)
     return wrapper
+
+
+def _json_object_body():
+    """Return the parsed JSON body only when it is an object."""
+    data = request.get_json(force=True, silent=True)
+    if not isinstance(data, dict):
+        return None, (jsonify({"error": "JSON object body is required"}), 400)
+    return data, None
+
+
+def _clean_string_field(data, field_name, *, optional=False, lower=False):
+    value = data.get(field_name)
+    if value is None:
+        return None if optional else ""
+    if not isinstance(value, str):
+        raise ValueError(f"{field_name} must be a string")
+    value = value.strip()
+    if lower:
+        value = value.lower()
+    if optional and not value:
+        return None
+    return value
 
 
 # ─── Blueprint ────────────────────────────────────────────────────────────────
@@ -200,15 +222,19 @@ def lock_rtc():
       - Rejects requests with invalid proof signatures
       - Validates proof before accepting lock into ledger
     """
-    data = request.get_json(force=True, silent=True) or {}
+    data, error_response = _json_object_body()
+    if error_response:
+        return error_response
 
     # ── Validate inputs ──
-    sender = data.get("sender_wallet", "").strip()
-    target_chain = data.get("target_chain", "").lower().strip()
-    target_wallet = data.get("target_wallet", "").strip()
-    tx_hash = data.get("tx_hash", "").strip() or None
-    receipt_signature_raw = data.get("receipt_signature")
-    receipt_signature = receipt_signature_raw.strip().lower() if receipt_signature_raw else None
+    try:
+        sender = _clean_string_field(data, "sender_wallet")
+        target_chain = _clean_string_field(data, "target_chain", lower=True)
+        target_wallet = _clean_string_field(data, "target_wallet")
+        tx_hash = _clean_string_field(data, "tx_hash", optional=True)
+        receipt_signature = _clean_string_field(data, "receipt_signature", optional=True, lower=True)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
     try:
         amount_float = float(data.get("amount", 0))
@@ -344,10 +370,15 @@ def lock_rtc():
 @_require_admin
 def confirm_lock():
     """Admin: confirm a requested lock after reviewing proof."""
-    data = request.get_json(force=True, silent=True) or {}
-    lock_id = data.get("lock_id", "").strip()
-    proof_ref = data.get("proof_ref", "").strip()
-    notes = data.get("notes", "").strip() or None
+    data, error_response = _json_object_body()
+    if error_response:
+        return error_response
+    try:
+        lock_id = _clean_string_field(data, "lock_id")
+        proof_ref = _clean_string_field(data, "proof_ref")
+        notes = _clean_string_field(data, "notes", optional=True)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
     if not lock_id:
         return jsonify({"error": "lock_id is required"}), 400
@@ -405,10 +436,15 @@ def release_wrtc():
 
     Returns success/error.
     """
-    data = request.get_json(force=True, silent=True) or {}
-    lock_id = data.get("lock_id", "").strip()
-    release_tx = data.get("release_tx", "").strip()
-    notes = data.get("notes", "").strip() or None
+    data, error_response = _json_object_body()
+    if error_response:
+        return error_response
+    try:
+        lock_id = _clean_string_field(data, "lock_id")
+        release_tx = _clean_string_field(data, "release_tx")
+        notes = _clean_string_field(data, "notes", optional=True)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
     if not lock_id:
         return jsonify({"error": "lock_id is required"}), 400
@@ -467,10 +503,12 @@ def get_ledger():
     chain_filter  = request.args.get("chain", "").strip() or None
     sender_filter = request.args.get("sender", "").strip() or None
     try:
-        limit  = min(int(request.args.get("limit", 50)), 200)
-        offset = max(int(request.args.get("offset", 0)), 0)
-    except ValueError:
-        limit, offset = 50, 0
+        limit  = int(request.args.get("limit", 50))
+        offset = int(request.args.get("offset", 0))
+    except (TypeError, ValueError):
+        return jsonify({"error": "limit and offset must be integers"}), 400
+    limit = max(1, min(limit, 200))
+    offset = max(offset, 0)
 
     where_clauses, params = [], []
     if state_filter:

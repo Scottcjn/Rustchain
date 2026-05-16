@@ -40,9 +40,9 @@ from claims_settlement import (
 
 
 @pytest.fixture
-def integration_db():
+def integration_db(tmp_path):
     """Create file-based test database with full schema"""
-    db = "test_claims_integration.db"
+    db = str(tmp_path / "test_claims_integration.db")
     
     # Remove existing test database
     if os.path.exists(db):
@@ -124,9 +124,9 @@ def integration_db():
     
     yield db
     
-    # Cleanup
-    if os.path.exists(db):
-        os.remove(db)
+    # Let pytest clean its per-test temp directory. On Windows, SQLite handles
+    # can remain briefly locked after settlement tests and make explicit unlink
+    # flaky even though all query contexts have exited.
 
 
 @pytest.fixture
@@ -597,6 +597,76 @@ class TestEdgeCases:
         
         assert result2["success"] is False
         assert "pending_claim_exists" in result2["error"] or "already exists" in result2["error"] or "Duplicate" in result2["error"]
+
+    def test_claim_rejects_unregistered_payout_wallet(self, integration_db, current_ts, current_slot):
+        """Test claims cannot redirect payout to a wallet not registered to the miner."""
+
+        test_epoch = max(0, current_slot // 144 - 3)
+
+        miner_id = "wallet-mismatch-claimer"
+        registered_wallet = "RTC1RegisteredWallet123456"
+        attacker_wallet = "RTC1AttackerWallet9876543"
+        setup_test_miner(
+            integration_db,
+            miner_id,
+            "g4",
+            registered_wallet,
+            current_ts,
+            epoch=test_epoch,
+        )
+
+        result = submit_claim(
+            db_path=integration_db,
+            miner_id=miner_id,
+            epoch=test_epoch,
+            wallet_address=attacker_wallet,
+            signature="mock_signature",
+            public_key="mock_public_key",
+            current_slot=current_slot,
+            current_ts=current_ts,
+            skip_signature_verify=True
+        )
+
+        assert result["success"] is False
+        assert result["error"] == "wallet_address_mismatch"
+
+        with sqlite3.connect(integration_db) as conn:
+            count = conn.execute(
+                "SELECT COUNT(*) FROM claims WHERE miner_id = ?",
+                (miner_id,),
+            ).fetchone()[0]
+
+        assert count == 0
+
+    def test_claim_wallet_match_is_case_insensitive(self, integration_db, current_ts, current_slot):
+        """Test registered wallet comparison preserves existing case-insensitive behavior."""
+
+        test_epoch = max(0, current_slot // 144 - 3)
+
+        miner_id = "wallet-case-claimer"
+        registered_wallet = "RTC1CaseWallet1234567890"
+        setup_test_miner(
+            integration_db,
+            miner_id,
+            "g4",
+            registered_wallet,
+            current_ts,
+            epoch=test_epoch,
+        )
+
+        result = submit_claim(
+            db_path=integration_db,
+            miner_id=miner_id,
+            epoch=test_epoch,
+            wallet_address=registered_wallet.lower(),
+            signature="mock_signature",
+            public_key="mock_public_key",
+            current_slot=current_slot,
+            current_ts=current_ts,
+            skip_signature_verify=True
+        )
+
+        assert result["success"] is True
     
     def test_wallet_address_change(self, integration_db, current_ts, current_slot):
         """Test that wallet address can be updated between claims"""

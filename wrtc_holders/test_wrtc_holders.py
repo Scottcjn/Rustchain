@@ -15,8 +15,37 @@ from wrtc_holders import (
     get_wallet_label,
     print_header,
     print_holders,
+    SolanaClient,
     WRTC_SUPPLY
 )
+
+
+def test_get_token_supply_returns_amount_and_calls_rpc():
+    client = SolanaClient("https://example.invalid")
+    calls = []
+
+    def fake_rpc_call(method, params):
+        calls.append((method, params))
+        return {"value": {"amount": "8300000000000", "decimals": 6}}
+
+    client.rpc_call = fake_rpc_call
+
+    assert client.get_token_supply("mint-address") == 8_300_000_000_000
+    assert calls == [("getTokenSupply", ["mint-address"])]
+
+
+def test_get_token_supply_returns_none_when_rpc_fails():
+    client = SolanaClient("https://example.invalid")
+    client.rpc_call = lambda method, params: None
+
+    assert client.get_token_supply("mint-address") is None
+
+
+def test_get_token_supply_defaults_missing_amount_to_zero():
+    client = SolanaClient("https://example.invalid")
+    client.rpc_call = lambda method, params: {"value": {}}
+
+    assert client.get_token_supply("mint-address") == 0
 
 
 def test_with_mock_data():

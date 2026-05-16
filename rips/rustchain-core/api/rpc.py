@@ -13,12 +13,29 @@ Endpoints:
 """
 
 import json
+import os
 import time
 from dataclasses import dataclass
 from typing import Dict, Any, Optional, Callable
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 import threading
+
+
+RPC_PUBLIC_METHODS = frozenset({
+    "getStats",
+    "getBlock",
+    "getBlockByHash",
+    "getWallet",
+    "getBalance",
+    "getMiningStatus",
+    "getAntiquityScore",
+    "getProposals",
+    "getProposal",
+    "getNodeInfo",
+    "getPeers",
+    "getEntropyProfile",
+})
 
 
 # =============================================================================
@@ -255,6 +272,30 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
     """HTTP request handler for API"""
 
     api: RustChainApi = None  # Set by server
+    MUTATING_RPC_METHODS = {"submitProof", "createProposal", "vote"}
+    MUTATING_REST_PATHS = {
+        "/api/mine",
+        "/api/governance/create",
+        "/api/governance/vote",
+    }
+
+    @staticmethod
+    def _allowed_cors_origins() -> set[str]:
+        raw = os.getenv("RUSTCHAIN_API_ALLOWED_ORIGINS", "")
+        return {origin.strip() for origin in raw.split(",") if origin.strip() and origin.strip() != "*"}
+
+    @staticmethod
+    def _configured_csrf_token() -> str:
+        return os.getenv("RUSTCHAIN_API_CSRF_TOKEN", "").strip()
+
+    def _send_cors_headers(self):
+        """Emit CORS headers only for explicitly allowed origins."""
+        origin = self.headers.get("Origin", "")
+        if origin and origin in self._allowed_cors_origins():
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, X-CSRF-Token")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 
     def do_GET(self):
         """Handle GET requests"""
@@ -273,11 +314,23 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
         try:
             params = json.loads(body) if body else {}
         except json.JSONDecodeError:
-            params = {}
+            self._send_response(ApiResponse(success=False, error="Invalid JSON body"))
+            return
 
         parsed = urlparse(self.path)
+        csrf_error = self._csrf_error(parsed.path, params)
+        if csrf_error:
+            self._send_response(ApiResponse(success=False, error=csrf_error))
+            return
+
         response = self._route_request(parsed.path, params)
         self._send_response(response)
+
+    def do_OPTIONS(self):
+        """Handle CORS preflight without wildcard access."""
+        self.send_response(204)
+        self._send_cors_headers()
+        self.end_headers()
 
     def _route_request(self, path: str, params: Dict[str, Any]) -> ApiResponse:
         """Route request to appropriate handler"""
@@ -325,16 +378,43 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
         # JSON-RPC endpoint
         if path == "/rpc":
             method = params.get("method", "")
+            if method not in RPC_PUBLIC_METHODS:
+                return ApiResponse(
+                    success=False,
+                    error=f"Method not allowed via /rpc: {method}",
+                )
             rpc_params = params.get("params", {})
             return self.api.rpc.call(method, rpc_params)
 
         return ApiResponse(success=False, error=f"Unknown endpoint: {path}")
 
+    def _requires_csrf(self, path: str, params: Dict[str, Any]) -> bool:
+        """Return true for state-changing REST endpoints and mutating RPC methods."""
+        if path in self.MUTATING_REST_PATHS:
+            return True
+        if path == "/rpc" and params.get("method", "") in self.MUTATING_RPC_METHODS:
+            return True
+        return False
+
+    def _csrf_error(self, path: str, params: Dict[str, Any]) -> Optional[str]:
+        if not self._requires_csrf(path, params):
+            return None
+
+        expected = self._configured_csrf_token()
+        if not expected:
+            return "RUSTCHAIN_API_CSRF_TOKEN not configured"
+
+        provided = self.headers.get("X-CSRF-Token", "").strip()
+        if not provided or provided != expected:
+            return "invalid or missing CSRF token"
+
+        return None
+
     def _send_response(self, response: ApiResponse):
         """Send HTTP response"""
         self.send_response(200 if response.success else 400)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self._send_cors_headers()
         self.end_headers()
         self.wfile.write(response.to_json().encode())
 

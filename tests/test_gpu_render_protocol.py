@@ -59,6 +59,7 @@ class TestGPURenderProtocol(unittest.TestCase):
         result = self.proto.create_escrow("render", "wallet-a", "wallet-b", 10.0)
         self.assertEqual(result["status"], "locked")
         job_id = result["job_id"]
+        escrow_secret = result["escrow_secret"]
 
         # Check
         status = self.proto.get_escrow(job_id)
@@ -66,20 +67,52 @@ class TestGPURenderProtocol(unittest.TestCase):
         self.assertEqual(status["amount_rtc"], 10.0)
 
         # Release
-        release = self.proto.release_escrow(job_id)
+        release = self.proto.release_escrow(job_id, "wallet-a", escrow_secret)
         self.assertEqual(release["status"], "released")
         self.assertEqual(release["amount_rtc"], 10.0)
 
         # Double release fails
-        double = self.proto.release_escrow(job_id)
+        double = self.proto.release_escrow(job_id, "wallet-a", escrow_secret)
         self.assertIn("error", double)
 
     def test_escrow_refund(self):
         result = self.proto.create_escrow("tts", "wallet-a", "wallet-b", 5.0)
         job_id = result["job_id"]
 
-        refund = self.proto.refund_escrow(job_id)
+        refund = self.proto.refund_escrow(job_id, "wallet-b", result["escrow_secret"])
         self.assertEqual(refund["status"], "refunded")
+
+    def test_release_requires_payer_and_secret(self):
+        result = self.proto.create_escrow("render", "wallet-a", "wallet-b", 10.0)
+        job_id = result["job_id"]
+
+        missing = self.proto.release_escrow(job_id)
+        self.assertIn("error", missing)
+
+        wrong_actor = self.proto.release_escrow(job_id, "wallet-b", result["escrow_secret"])
+        self.assertIn("error", wrong_actor)
+
+        wrong_secret = self.proto.release_escrow(job_id, "wallet-a", "wrong-secret")
+        self.assertIn("error", wrong_secret)
+
+        status = self.proto.get_escrow(job_id)
+        self.assertEqual(status["status"], "locked")
+
+    def test_refund_requires_provider_and_secret(self):
+        result = self.proto.create_escrow("tts", "wallet-a", "wallet-b", 5.0)
+        job_id = result["job_id"]
+
+        wrong_actor = self.proto.refund_escrow(job_id, "wallet-a", result["escrow_secret"])
+        self.assertIn("error", wrong_actor)
+
+        outsider = self.proto.refund_escrow(job_id, "wallet-c", result["escrow_secret"])
+        self.assertIn("error", outsider)
+
+        wrong_secret = self.proto.refund_escrow(job_id, "wallet-b", "wrong-secret")
+        self.assertIn("error", wrong_secret)
+
+        status = self.proto.get_escrow(job_id)
+        self.assertEqual(status["status"], "locked")
 
     def test_escrow_invalid_type(self):
         result = self.proto.create_escrow("invalid", "a", "b", 1.0)

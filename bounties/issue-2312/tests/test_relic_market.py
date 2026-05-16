@@ -580,6 +580,62 @@ class TestAPIEndpoints(unittest.TestCase):
         data = json.loads(response.data)
         self.assertEqual(data['status'], 'confirmed')
 
+    def test_json_write_endpoints_reject_non_object_bodies(self):
+        endpoints = [
+            '/relic/reserve',
+            '/relic/reservation/missing/complete',
+            '/mcp/tool',
+            '/beacon/message',
+        ]
+
+        for endpoint in endpoints:
+            with self.subTest(endpoint=endpoint):
+                response = self.client.post(endpoint, json=["not", "an", "object"])
+
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.get_json()['error'], "JSON object required")
+
+    def test_json_write_endpoints_reject_malformed_bodies(self):
+        endpoints = [
+            '/relic/reserve',
+            '/relic/reservation/missing/complete',
+            '/mcp/tool',
+            '/beacon/message',
+        ]
+
+        for endpoint in endpoints:
+            with self.subTest(endpoint=endpoint):
+                response = self.client.post(
+                    endpoint,
+                    data="{",
+                    content_type='application/json',
+                )
+
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.get_json()['error'], "JSON object required")
+
+    def test_json_write_endpoints_reject_missing_bodies(self):
+        endpoints = [
+            '/relic/reserve',
+            '/relic/reservation/missing/complete',
+            '/mcp/tool',
+            '/beacon/message',
+        ]
+
+        for endpoint in endpoints:
+            with self.subTest(endpoint=endpoint):
+                response = self.client.post(endpoint)
+
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.get_json()['error'], "Request body required")
+
+    def test_leaderboard_rejects_invalid_limits(self):
+        for limit in ['abc', '0', '-1']:
+            with self.subTest(limit=limit):
+                response = self.client.get(f'/relic/leaderboard?limit={limit}')
+
+                self.assertEqual(response.status_code, 400)
+
 
 class TestAccessDuration(unittest.TestCase):
     """Test AccessDuration enum"""

@@ -1,10 +1,13 @@
+# SPDX-License-Identifier: MIT
+
 import json
 import hashlib
 from datetime import datetime
 
-def simulate_entropy_score(cpu_model, bios_date):
+def simulate_entropy_score(cpu_model, bios_date, current_year=None):
     year = int(bios_date.split("-")[0])
-    age_weight = max(0, 2025 - year)
+    current_year = current_year if current_year is not None else datetime.utcnow().year
+    age_weight = max(0, current_year - year)
     entropy_score = round((age_weight * 0.25) + (len(cpu_model) * 0.05), 2)
     return entropy_score
 

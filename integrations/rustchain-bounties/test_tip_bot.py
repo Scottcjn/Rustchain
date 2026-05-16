@@ -30,6 +30,7 @@ from tip_bot import (
     build_failure_comment,
     build_success_comment,
     build_unauthorized_comment,
+    main,
     parse_tip_command,
     process_event,
     validate_tip,
@@ -277,11 +278,10 @@ class TestWebhookVerification:
         with patch.dict(os.environ, {"WEBHOOK_SECRET": "mysecret"}):
             assert verify_webhook_signature(payload, None) is False
 
-    def test_no_secret_configured_allows_all(self):
+    def test_no_secret_configured_rejects_unsigned_payload(self):
         payload = b'{"action": "created"}'
         with patch.dict(os.environ, {}, clear=True):
-            # When WEBHOOK_SECRET is not set, verification is skipped
-            assert verify_webhook_signature(payload, None) is True
+            assert verify_webhook_signature(payload, None) is False
 
     def test_tampered_payload_rejected(self):
         original = b'{"action": "created"}'
@@ -290,6 +290,59 @@ class TestWebhookVerification:
         sig = self._sign(original, secret)
         with patch.dict(os.environ, {"WEBHOOK_SECRET": secret}):
             assert verify_webhook_signature(tampered, sig) is False
+
+
+# ---------------------------------------------------------------------------
+# Main entrypoint webhook gate tests
+# ---------------------------------------------------------------------------
+
+class TestMainWebhookGate:
+
+    def _write_event(self, tmp_path) -> str:
+        event_path = tmp_path / "event.json"
+        event_path.write_text(json.dumps(make_event("Just a normal comment.")))
+        return str(event_path)
+
+    def _base_env(self, event_path: str) -> dict[str, str]:
+        return {
+            "GITHUB_EVENT_PATH": event_path,
+            "GITHUB_TOKEN": "token",
+            "GITHUB_REPOSITORY": "org/repo",
+        }
+
+    def test_external_webhook_without_secret_or_signature_aborts(self, tmp_path):
+        env = self._base_env(self._write_event(tmp_path))
+        with patch.dict(os.environ, env, clear=True), \
+             patch("tip_bot.process_event") as mock_process:
+            with pytest.raises(SystemExit) as exc:
+                main()
+
+        assert exc.value.code == 1
+        mock_process.assert_not_called()
+
+    def test_external_webhook_with_secret_but_missing_signature_aborts(self, tmp_path):
+        env = self._base_env(self._write_event(tmp_path))
+        env["WEBHOOK_SECRET"] = "mysecret"
+        with patch.dict(os.environ, env, clear=True), \
+             patch("tip_bot.process_event") as mock_process:
+            with pytest.raises(SystemExit) as exc:
+                main()
+
+        assert exc.value.code == 1
+        mock_process.assert_not_called()
+
+    def test_github_actions_payload_without_signature_is_allowed(self, tmp_path, config):
+        event_path = self._write_event(tmp_path)
+        env = self._base_env(event_path)
+        env["GITHUB_ACTIONS"] = "true"
+        with patch.dict(os.environ, env, clear=True), \
+             patch("tip_bot.load_config", return_value=config), \
+             patch("tip_bot.TipState") as mock_state, \
+             patch("tip_bot.process_event", return_value="no_command") as mock_process:
+            main()
+
+        mock_state.assert_called_once_with(config["state_file"])
+        mock_process.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

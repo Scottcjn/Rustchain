@@ -6,8 +6,8 @@ Thanks for helping improve RustChain.
 
 1. Read:
    - `README.md`
-   - `docs/PROTOCOL.md`
-   - `docs/API.md`
+   - `PROTOCOL.md`
+   - `API.md`
 2. Search existing issues and PRs first to avoid duplicate work.
 
 ## 2) Recommended contribution flow

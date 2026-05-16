@@ -14,6 +14,7 @@ Formula: AS = (current_year - release_year) * log10(uptime_days + 1)
 
 import hashlib
 import math
+import secrets
 import time
 from datetime import datetime
 from dataclasses import dataclass, field
@@ -404,17 +405,15 @@ def select_block_validator(proofs: List[ValidatedProof]) -> Optional[ValidatedPr
     if not proofs:
         return None
 
-    import random
-
     total_as = sum(p.antiquity_score for p in proofs)
     if total_as == 0:
-        return random.choice(proofs)
+        return proofs[secrets.randbelow(len(proofs))]
 
     # Weighted random selection via cumulative distribution: pick a random point
     # on [0, total_as] and return the proof whose range contains it.
     # The last proof is returned as a fallback for floating-point rounding where
     # cumulative may fall just short of total_as.
-    r = random.uniform(0, total_as)
+    r = (secrets.randbits(53) / (1 << 53)) * total_as
     cumulative = 0
 
     for proof in proofs:
@@ -456,7 +455,7 @@ if __name__ == "__main__":
         tier = HardwareTier.from_release_year(year)
 
         print(f"📟 {model} ({year})")
-        print(f"   Age: {CURRENT_YEAR - year} years")
+        print(f"   Age: {current_year - year} years")
         print(f"   Uptime: {uptime} days")
         print(f"   Tier: {tier.value.upper()} ({tier.multiplier}x)")
         print(f"   Antiquity Score: {as_score:.2f}")

@@ -21,7 +21,7 @@ groups:
         annotations:
           summary: "RustChain node is down"
           description: "Node health check has been failing for more than 2 minutes. Node URL: {{ $externalLabels.node_url }}"
-          runbook_url: "https://github.com/Scottcjcn/RustChain/blob/main/bounties/issue-765/docs/RUNBOOK.md#node-down"
+          runbook_url: "https://github.com/Scottcjn/Rustchain/blob/main/bounties/issue-765/docs/RUNBOOK.md#node-down"
 
       # Database issues
       - alert: RustChainDatabaseError
@@ -33,7 +33,7 @@ groups:
         annotations:
           summary: "RustChain node database error"
           description: "Database read/write status is unhealthy. This may indicate disk issues or database corruption."
-          runbook_url: "https://github.com/Scottcjcn/RustChain/blob/main/bounties/issue-765/docs/RUNBOOK.md#database-error"
+          runbook_url: "https://github.com/Scottcjn/Rustchain/blob/main/bounties/issue-765/docs/RUNBOOK.md#database-error"
 
       # Chain tip is stale
       - alert: RustChainTipStale
@@ -45,7 +45,7 @@ groups:
         annotations:
           summary: "RustChain tip is stale"
           description: "Chain tip is {{ $value }} slots behind, indicating sync issues."
-          runbook_url: "https://github.com/Scottcjcn/RustChain/blob/main/bounties/issue-765/docs/RUNBOOK.md#stale-tip"
+          runbook_url: "https://github.com/Scottcjn/Rustchain/blob/main/bounties/issue-765/docs/RUNBOOK.md#stale-tip"
 
       # Backup is too old
       - alert: RustChainBackupOld
@@ -57,7 +57,7 @@ groups:
         annotations:
           summary: "RustChain backup is outdated"
           description: "Last backup is {{ $value }} hours old. Consider checking backup jobs."
-          runbook_url: "https://github.com/Scottcjcn/RustChain/blob/main/bounties/issue-765/docs/RUNBOOK.md#backup-old"
+          runbook_url: "https://github.com/Scottcjn/Rustchain/blob/main/bounties/issue-765/docs/RUNBOOK.md#backup-old"
 
   - name: rustchain_miner_health
     interval: 30s
@@ -76,7 +76,7 @@ groups:
         annotations:
           summary: "Significant drop in active miners"
           description: "Active miners decreased by more than 20% compared to 1-hour average. Current: {{ $value | humanizePercentage }} drop."
-          runbook_url: "https://github.com/Scottcjcn/RustChain/blob/main/bounties/issue-765/docs/RUNBOOK.md#miner-drop"
+          runbook_url: "https://github.com/Scottcjn/Rustchain/blob/main/bounties/issue-765/docs/RUNBOOK.md#miner-drop"
 
       # No active miners
       - alert: RustChainNoActiveMiners
@@ -88,7 +88,7 @@ groups:
         annotations:
           summary: "No active miners detected"
           description: "There are no active miners in the RustChain network. This is a critical issue."
-          runbook_url: "https://github.com/Scottcjcn/RustChain/blob/main/bounties/issue-765/docs/RUNBOOK.md#no-miners"
+          runbook_url: "https://github.com/Scottcjn/Rustchain/blob/main/bounties/issue-765/docs/RUNBOOK.md#no-miners"
 
       # Low antiquity multiplier (potential attack)
       - alert: RustChainLowAntiquityMultiplier
@@ -100,7 +100,7 @@ groups:
         annotations:
           summary: "Average antiquity multiplier is below expected"
           description: "Average antiquity multiplier is {{ $value }}, which may indicate VM/emulator usage or hardware spoofing."
-          runbook_url: "https://github.com/Scottcjcn/RustChain/blob/main/bounties/issue-765/docs/RUNBOOK.md#low-antiquity"
+          runbook_url: "https://github.com/Scottcjn/Rustchain/blob/main/bounties/issue-765/docs/RUNBOOK.md#low-antiquity"
 
   - name: rustchain_epoch_health
     interval: 30s
@@ -116,7 +116,7 @@ groups:
         annotations:
           summary: "RustChain epoch is not progressing"
           description: "Epoch number has not changed in 2 hours. Block production may be stalled."
-          runbook_url: "https://github.com/Scottcjcn/RustChain/blob/main/bounties/issue-765/docs/RUNBOOK.md#epoch-stuck"
+          runbook_url: "https://github.com/Scottcjn/Rustchain/blob/main/bounties/issue-765/docs/RUNBOOK.md#epoch-stuck"
 
       # Epoch pot not growing
       - alert: RustChainEpochPotStagnant
@@ -144,7 +144,7 @@ groups:
         annotations:
           summary: "RustChain exporter experiencing scrape errors"
           description: "Exporter is failing to collect metrics. Error rate: {{ $value | humanize }} errors/s."
-          runbook_url: "https://github.com/Scottcjcn/RustChain/blob/main/bounties/issue-765/docs/RUNBOOK.md#exporter-errors"
+          runbook_url: "https://github.com/Scottcjn/Rustchain/blob/main/bounties/issue-765/docs/RUNBOOK.md#exporter-errors"
 
       # Slow scrape performance
       - alert: RustChainSlowScrape
@@ -167,7 +167,7 @@ groups:
         annotations:
           summary: "RustChain Prometheus exporter is down"
           description: "Prometheus cannot scrape the RustChain exporter. Check if the exporter process is running."
-          runbook_url: "https://github.com/Scottcjcn/RustChain/blob/main/bounties/issue-765/docs/RUNBOOK.md#exporter-down"
+          runbook_url: "https://github.com/Scottcjn/Rustchain/blob/main/bounties/issue-765/docs/RUNBOOK.md#exporter-down"
 
   - name: rustchain_supply_health
     interval: 60s

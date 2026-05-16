@@ -10,7 +10,7 @@ Monitors RustChain network and alerts miners via email (+ optional SMS via Twili
 - Attestation failures (miner disappears from active list)
 
 Architecture:
-- Polling daemon that checks /api/miners and /balance endpoints periodically
+- Polling daemon that checks /api/miners and /wallet/balance endpoints periodically
 - SQLite database for tracking miner state, alert history, and subscriptions
 - SMTP email delivery (works with Gmail, SendGrid, any SMTP provider)
 - Optional Twilio SMS integration
@@ -482,7 +482,11 @@ def fetch_miners() -> List[dict]:
         )
         resp.raise_for_status()
         data = resp.json()
-        return data if isinstance(data, list) else []
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict) and isinstance(data.get("miners"), list):
+            return data["miners"]
+        return []
     except Exception as e:
         logger.error(f"Failed to fetch miners: {e}")
         return []
@@ -492,7 +496,7 @@ def fetch_balance(miner_id: str) -> Optional[float]:
     """Fetch balance for a miner."""
     try:
         resp = requests.get(
-            f"{RUSTCHAIN_API}/balance",
+            f"{RUSTCHAIN_API}/wallet/balance",
             params={"miner_id": miner_id},
             verify=VERIFY_SSL,
             timeout=10,
@@ -501,7 +505,8 @@ def fetch_balance(miner_id: str) -> Optional[float]:
             return None
         resp.raise_for_status()
         data = resp.json()
-        return float(data.get("balance", data.get("balance_rtc", 0)))
+        balance = data.get("amount_rtc", data.get("balance_rtc", data.get("balance", 0)))
+        return float(balance)
     except Exception as e:
         logger.error(f"Failed to fetch balance for {miner_id}: {e}")
         return None

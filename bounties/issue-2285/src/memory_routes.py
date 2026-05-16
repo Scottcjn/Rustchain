@@ -23,6 +23,8 @@ Usage:
 
 from __future__ import annotations
 
+import hmac
+import os
 from typing import Any, Dict, List, Optional
 
 from flask import Blueprint, jsonify, request, current_app
@@ -33,6 +35,28 @@ from memory_engine import AgentMemoryEngine, MemoryContext
 
 # Create blueprint for memory routes
 memory_bp = Blueprint("agent_memory", __name__, url_prefix="/api/memory")
+
+
+def _require_admin() -> Optional[tuple]:
+    """Require an admin key for destructive memory operations."""
+    expected_key = os.environ.get("MEMORY_ADMIN_KEY", "")
+    if not expected_key:
+        return jsonify({
+            "error": "unauthorized",
+            "message": "MEMORY_ADMIN_KEY not configured"
+        }), 401
+
+    provided_key = (
+        request.headers.get("X-Admin-Key", "")
+        or request.headers.get("X-API-Key", "")
+    )
+    if not hmac.compare_digest(provided_key, expected_key):
+        return jsonify({
+            "error": "unauthorized",
+            "message": "Invalid admin key"
+        }), 401
+
+    return None
 
 
 def _get_engine() -> AgentMemoryEngine:
@@ -494,6 +518,10 @@ def clear_memory() -> tuple:
         }
     """
     try:
+        auth_error = _require_admin()
+        if auth_error is not None:
+            return auth_error
+
         agent_id = _validate_agent_id(request.args.get("agent_id"))
 
         engine = _get_engine()
