@@ -26,6 +26,7 @@ Architectural boundary -- spending_proof validation:
 
 import hashlib
 import json
+import os
 import sqlite3
 import time
 from typing import Any, Dict, List, Optional, Tuple
@@ -44,6 +45,18 @@ MAX_POOL_SIZE = 10_000
 MAX_OUTPUTS = 100
 MAX_TX_AGE_SECONDS = 3_600  # 1 hour mempool expiry
 P2PK_PREFIX = b'\x00\x08'   # Pay-to-Public-Key proposition prefix
+MEMPOOL_ORDERING_ENV = "RUSTCHAIN_MEMPOOL_ORDERING_POLICY"
+_MEMPOOL_ORDERING_SQL = {
+    "highestgasprice": "fee_nrtc DESC, submitted_at ASC, tx_id ASC",
+    "highest_gas_price": "fee_nrtc DESC, submitted_at ASC, tx_id ASC",
+    "highestpriorityfee": "fee_nrtc DESC, submitted_at ASC, tx_id ASC",
+    "highest_priority_fee": "fee_nrtc DESC, submitted_at ASC, tx_id ASC",
+    "fee": "fee_nrtc DESC, submitted_at ASC, tx_id ASC",
+    "earliestarrival": "submitted_at ASC, tx_id ASC",
+    "earliest_arrival": "submitted_at ASC, tx_id ASC",
+    "fifo": "submitted_at ASC, tx_id ASC",
+    "current": "fee_nrtc DESC, submitted_at ASC, tx_id ASC",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -150,6 +163,16 @@ def _execute_schema(conn: sqlite3.Connection):
         statement = statement.strip()
         if statement:
             conn.execute(statement)
+
+
+def _mempool_ordering_clause(policy: Optional[str] = None) -> str:
+    """Return a safe SQL ORDER BY clause for the configured mempool policy."""
+    raw = policy or os.environ.get(MEMPOOL_ORDERING_ENV, "current")
+    normalized = raw.strip().lower().replace("-", "_")
+    if normalized not in _MEMPOOL_ORDERING_SQL:
+        allowed = ", ".join(sorted(_MEMPOOL_ORDERING_SQL))
+        raise ValueError(f"unsupported mempool ordering policy {raw!r}; expected one of: {allowed}")
+    return _MEMPOOL_ORDERING_SQL[normalized]
 
 
 # ---------------------------------------------------------------------------
@@ -944,18 +967,23 @@ class UtxoDB:
         finally:
             conn.close()
 
-    def mempool_get_block_candidates(self, max_count: int = 100) -> List[dict]:
-        """Get highest-fee transactions from mempool for block inclusion."""
+    def mempool_get_block_candidates(
+        self,
+        max_count: int = 100,
+        ordering_policy: Optional[str] = None,
+    ) -> List[dict]:
+        """Get block candidates from mempool using the configured ordering policy."""
         self.mempool_clear_expired()
         if max_count <= 0:
             return []
         conn = self._conn()
         try:
             now = int(time.time())
+            order_by = _mempool_ordering_clause(ordering_policy)
             rows = conn.execute(
-                """SELECT tx_id, tx_data_json FROM utxo_mempool
-                   WHERE expires_at > ?
-                   ORDER BY fee_nrtc DESC
+                f"""SELECT tx_id, tx_data_json FROM utxo_mempool
+                    WHERE expires_at > ?
+                    ORDER BY {order_by}
                 """,
                 (now,),
             ).fetchall()
