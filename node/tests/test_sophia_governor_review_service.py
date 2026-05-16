@@ -1,6 +1,8 @@
+import gc
 import os
 import tempfile
 import sys
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -20,15 +22,20 @@ def client(monkeypatch):
     monkeypatch.delenv("SCOTT_NOTIFICATION_SERVICE_TOKEN", raising=False)
     review_service.DB_PATH = db_path
     review_service.SCOTT_NOTIFICATION_QUEUE_URL = ""
-    review_service.SCOTT_NOTIFICATION_SERVICE_TOKEN = "elya2025"
+    review_service.SCOTT_NOTIFICATION_SERVICE_TOKEN = ""
     review_service.app.config["TESTING"] = True
     try:
         yield review_service.app.test_client()
     finally:
-        try:
-            os.unlink(db_path)
-        except FileNotFoundError:
-            pass
+        for _ in range(5):
+            try:
+                os.unlink(db_path)
+                break
+            except FileNotFoundError:
+                break
+            except PermissionError:
+                gc.collect()
+                time.sleep(0.05)
 
 
 def _payload():
@@ -50,6 +57,45 @@ def _payload():
 def test_review_requires_auth(client):
     response = client.post("/review", json=_payload())
     assert response.status_code == 401
+
+
+def test_review_auth_uses_constant_time_compare(client, monkeypatch):
+    calls = []
+
+    def spy_compare_digest(provided, expected):
+        calls.append((provided, expected))
+        return provided == expected
+
+    monkeypatch.setattr(review_service.hmac, "compare_digest", spy_compare_digest)
+    monkeypatch.setenv("SOPHIA_GOVERNOR_REVIEW_BEARER", "review-token,other-token")
+    monkeypatch.setattr(
+        review_service,
+        "_call_ollama",
+        lambda prompt: ("Assessment: ok.\nRisk: low.\nNext step: approve.", "glm-test"),
+    )
+
+    denied = client.post("/review", headers={"X-Admin-Key": "wrong-admin"}, json=_payload())
+    assert denied.status_code == 401
+
+    denied_bearer = client.post("/review", headers={"Authorization": "Bearer wrong-token"}, json=_payload())
+    assert denied_bearer.status_code == 401
+
+    accepted_bearer = client.post("/review", headers={"Authorization": "Bearer review-token"}, json=_payload())
+    assert accepted_bearer.status_code == 200
+    assert accepted_bearer.get_json()["ok"] is True
+
+    accepted_admin = client.post("/review", headers={"X-API-Key": "test-admin"}, json=_payload())
+    assert accepted_admin.status_code == 200
+    assert accepted_admin.get_json()["ok"] is True
+
+    assert calls == [
+        ("wrong-admin", "test-admin"),
+        ("wrong-token", "review-token"),
+        ("wrong-token", "other-token"),
+        ("review-token", "review-token"),
+        ("review-token", "other-token"),
+        ("test-admin", "test-admin"),
+    ]
 
 
 def test_review_endpoint_calls_model_and_stores(client, monkeypatch):
@@ -300,3 +346,28 @@ def test_scott_notification_queue_relay_endpoint(client, monkeypatch):
     assert body["notification"]["notification_id"] == "SN-RELAY0001"
     assert captured["url"] == "http://100.121.203.9:18790/scott-notifications/queue"
     assert captured["headers"]["Authorization"] == "Bearer relay-token"
+
+
+def test_scott_notification_queue_requires_configured_token(client, monkeypatch):
+    calls = []
+
+    def fake_post(*args, **kwargs):
+        calls.append((args, kwargs))
+        raise AssertionError("notification relay should not send without a token")
+
+    monkeypatch.setattr(review_service, "requests", SimpleNamespace(post=fake_post))
+    review_service.SCOTT_NOTIFICATION_QUEUE_URL = "http://100.121.203.9:18790/scott-notifications/queue"
+    review_service.SCOTT_NOTIFICATION_SERVICE_TOKEN = ""
+
+    response = client.post(
+        "/api/sophia/governor/scott-notifications/queue",
+        headers={"X-Admin-Key": "test-admin"},
+        json={
+            "title": "RustChain inbox 7 needs review",
+            "summary": "pending_transfer came in at high risk.",
+        },
+    )
+
+    assert response.status_code == 503
+    assert response.get_json()["error"] == "scott_notification_token_not_configured"
+    assert calls == []

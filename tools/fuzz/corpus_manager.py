@@ -243,16 +243,22 @@ class FuzzCorpusManager:
 
     def export_corpus(self, output_file: str, category: Optional[PayloadCategory] = None):
         crashes = self.list_crashes(category=category, limit=10_000)
+        crash_data = []
+        for crash in crashes:
+            item = asdict(crash)
+            item["category"] = crash.category.value
+            item["severity"] = crash.severity.value
+            crash_data.append(item)
         data = {
             "metadata": {
                 "exported_at": time.time(),
                 "total_entries": len(crashes),
                 "category_filter": category.value if category else None,
             },
-            "crashes": [asdict(c) for c in crashes],
+            "crashes": crash_data,
         }
         with open(output_file, "w") as fh:
-            json.dump(data, fh, indent=2, default=str)
+            json.dump(data, fh, indent=2)
 
     def import_corpus(self, input_file: str) -> int:
         with open(input_file) as fh:

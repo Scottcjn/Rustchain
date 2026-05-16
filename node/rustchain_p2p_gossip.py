@@ -1377,7 +1377,9 @@ def register_p2p_endpoints(app, p2p_node: RustChainP2PNode):
         if not _gossip_rate_check(remote_ip):
             return jsonify({"error": "rate_limited", "limit": f"{GOSSIP_RATE_LIMIT}/{GOSSIP_RATE_WINDOW_S}s"}), 429
 
-        data = request.get_json()
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({"error": "JSON object required"}), 400
         result = p2p_node.handle_gossip(data)
         return jsonify(result)
 

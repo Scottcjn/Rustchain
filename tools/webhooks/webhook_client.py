@@ -11,8 +11,10 @@ Usage:
   python webhook_client.py --port 9801
 
   # 2. Register it with the dispatcher
+  export WEBHOOK_ADMIN_API_KEY="local-dev-admin-key"
   curl -X POST http://localhost:9800/webhooks/subscribe \
        -H "Content-Type: application/json" \
+       -H "X-Admin-API-Key: $WEBHOOK_ADMIN_API_KEY" \
        -d '{"url": "http://localhost:9801/hook", "events": ["new_block", "miner_joined"]}'
 
   # 3. Watch events stream in
@@ -154,8 +156,10 @@ def main():
         log.info("Signature verification disabled (no --secret provided)")
 
     log.info("Register this receiver with the dispatcher:")
+    log.info('  export WEBHOOK_ADMIN_API_KEY="local-dev-admin-key"')
     log.info('  curl -X POST http://localhost:9800/webhooks/subscribe \\')
     log.info('    -H "Content-Type: application/json" \\')
+    log.info('    -H "X-Admin-API-Key: $WEBHOOK_ADMIN_API_KEY" \\')
     log.info('    -d \'{"url": "http://localhost:%d/hook"}\'', args.port)
 
     try:

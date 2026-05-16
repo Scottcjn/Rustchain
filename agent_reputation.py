@@ -338,6 +338,8 @@ def check_eligibility():
         job_value = float(request.args.get("job_value", 0))
     except (ValueError, TypeError):
         return jsonify({"error": "job_value must be a number"}), 400
+    if not math.isfinite(job_value) or job_value < 0:
+        return jsonify({"error": "job_value must be a finite non-negative number"}), 400
 
     rep = _engine.get(agent_id)
     max_val = rep["max_job_value_rtc"]
@@ -371,6 +373,8 @@ def leaderboard():
         limit = min(int(request.args.get("limit", 20)), 100)
     except (ValueError, TypeError):
         return jsonify({"error": "limit must be an integer"}), 400
+    if limit < 1:
+        return jsonify({"error": "limit must be between 1 and 100"}), 400
     with _engine._lock:
         entries = [(w, d["reputation_score"]) for w, (d, _) in _engine._cache.items()]
     entries.sort(key=lambda x: x[1], reverse=True)

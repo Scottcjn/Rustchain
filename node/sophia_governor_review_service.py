@@ -11,11 +11,12 @@ recommendation, without depending on the full Sophia agent stack.
 from __future__ import annotations
 
 import json
+import hmac
 import os
 import re
 import sqlite3
 import time
-from typing import Any
+from typing import Any, Iterable
 
 from flask import Flask, jsonify, request
 
@@ -30,7 +31,7 @@ DB_PATH = os.getenv("SOPHIA_GOVERNOR_REVIEW_DB", "/tmp/sophia_governor_review.db
 OLLAMA_URL = os.getenv("SOPHIA_GOVERNOR_OLLAMA_URL", "http://192.168.0.160:11434")
 OLLAMA_MODEL = os.getenv("SOPHIA_GOVERNOR_REVIEW_MODEL", "glm-4.7-flash:latest")
 SCOTT_NOTIFICATION_QUEUE_URL = os.getenv("SCOTT_NOTIFICATION_QUEUE_URL", "").strip()
-SCOTT_NOTIFICATION_SERVICE_TOKEN = os.getenv("SCOTT_NOTIFICATION_SERVICE_TOKEN", "elya2025").strip()
+SCOTT_NOTIFICATION_SERVICE_TOKEN = os.getenv("SCOTT_NOTIFICATION_SERVICE_TOKEN", "").strip()
 TRUE_VALUES = {"1", "true", "yes", "on"}
 SECTION_PATTERN = re.compile(
     r"(?is)(?:\*\*|\b)(assessment|analysis(?: of the event)?|reasoning|risk|next step|next steps|recommended action|action|decision)\s*:\s*"
@@ -131,24 +132,34 @@ def _env_truthy(name: str, default: str = "false") -> bool:
     return str(os.getenv(name, default)).strip().lower() in TRUE_VALUES
 
 
-def _bearer_tokens() -> set[str]:
+def _bearer_tokens() -> tuple[str, ...]:
     raw = os.getenv("SOPHIA_GOVERNOR_REVIEW_BEARER", "").strip()
     if not raw:
-        return set()
-    return {token.strip() for token in raw.split(",") if token.strip()}
+        return ()
+    return tuple(token.strip() for token in raw.split(",") if token.strip())
+
+
+def _matches_secret(candidate: str, secrets: Iterable[str]) -> bool:
+    if not candidate:
+        return False
+    matched = False
+    for secret in secrets:
+        if secret and hmac.compare_digest(candidate, secret):
+            matched = True
+    return matched
 
 
 def _is_authorized(req) -> bool:
     required_admin = os.getenv("RC_ADMIN_KEY", "").strip()
     if required_admin:
         provided_admin = (req.headers.get("X-Admin-Key") or req.headers.get("X-API-Key") or "").strip()
-        if provided_admin == required_admin:
+        if _matches_secret(provided_admin, (required_admin,)):
             return True
 
     auth_header = (req.headers.get("Authorization") or "").strip()
     if auth_header.lower().startswith("bearer "):
         token = auth_header.split(" ", 1)[1].strip()
-        if token and token in _bearer_tokens():
+        if _matches_secret(token, _bearer_tokens()):
             return True
 
     return False
@@ -159,6 +170,8 @@ def _relay_scott_notification(payload: dict[str, Any]) -> tuple[int, dict[str, A
         return 503, {"status": "error", "error": "requests_unavailable"}
     if not SCOTT_NOTIFICATION_QUEUE_URL:
         return 503, {"status": "error", "error": "scott_notification_queue_not_configured"}
+    if not SCOTT_NOTIFICATION_SERVICE_TOKEN:
+        return 503, {"status": "error", "error": "scott_notification_token_not_configured"}
     try:
         response = requests.post(
             SCOTT_NOTIFICATION_QUEUE_URL,

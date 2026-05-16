@@ -66,6 +66,8 @@ from .description_generator import (
     DescriptionValidator,
 )
 
+from typing import Dict
+
 __version__ = "1.0.0"
 __author__ = "RustChain Bounty Contributors"
 __bounty__ = "#2286"

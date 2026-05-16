@@ -24,7 +24,8 @@ def test_wallet_transfer_fails_closed_when_admin_key_unconfigured(monkeypatch):
 
     assert response.status_code == 503
     body = response.get_json()
-    assert body["error"] == "RC_ADMIN_KEY not configured"
+    assert body["error"] == "RC_ADMIN_KEY not configured on server"
+    assert body["code"] == "ADMIN_KEY_UNSET"
 
 
 def test_wallet_transfer_rejects_wrong_admin_key(monkeypatch):

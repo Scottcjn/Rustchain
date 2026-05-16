@@ -367,26 +367,83 @@ class EscrowManager:
 
 class ReceiptSigner:
     """Signs provenance receipts with machine Ed25519 keys"""
+
+    MACHINE_IDS = ("vm-001", "vm-002", "vm-003", "vm-004", "vm-005")
+    REQUIRE_STABLE_KEYS_ENV = "RELIC_REQUIRE_STABLE_MACHINE_KEYS"
     
     def __init__(self):
         self.machine_keys: Dict[str, nacl.signing.SigningKey] = {}
         self._initialize_machine_keys()
+
+    @staticmethod
+    def _key_env_name(machine_id: str) -> str:
+        """Return the environment variable name for a machine signing key."""
+        safe_id = machine_id.upper().replace("-", "_")
+        return f"RELIC_MACHINE_KEY_{safe_id}"
+
+    @classmethod
+    def _requires_stable_keys(cls) -> bool:
+        """Return whether production mode requires configured machine keys."""
+        return os.getenv(cls.REQUIRE_STABLE_KEYS_ENV, "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+
+    @classmethod
+    def _load_signing_key_from_env(cls, machine_id: str) -> Optional[nacl.signing.SigningKey]:
+        """Load a 32-byte Ed25519 seed from hex/base64 environment config."""
+        env_name = cls._key_env_name(machine_id)
+        encoded = os.getenv(env_name, "").strip()
+        if not encoded:
+            return None
+
+        if encoded.startswith("hex:"):
+            encoded = encoded[4:]
+        elif encoded.startswith("base64:"):
+            encoded = encoded[7:]
+            try:
+                seed = base64.b64decode(encoded, validate=True)
+            except Exception as exc:
+                raise ValueError(f"{env_name} must be a 32-byte hex or base64 Ed25519 seed") from exc
+            if len(seed) != 32:
+                raise ValueError(f"{env_name} must decode to 32 bytes")
+            return nacl.signing.SigningKey(seed)
+
+        try:
+            seed = bytes.fromhex(encoded)
+        except ValueError:
+            try:
+                seed = base64.b64decode(encoded, validate=True)
+            except Exception as exc:
+                raise ValueError(f"{env_name} must be a 32-byte hex or base64 Ed25519 seed") from exc
+
+        if len(seed) != 32:
+            raise ValueError(f"{env_name} must decode to 32 bytes")
+
+        return nacl.signing.SigningKey(seed)
     
     def _initialize_machine_keys(self):
-        """Initialize Ed25519 keys for machines"""
-        # In production, these would be securely stored per machine
-        # For demo, we generate deterministic keys from machine IDs
-        sample_keys = [
-            ("vm-001", "power8-beast-key-seed-001"),
-            ("vm-002", "g5-tower-key-seed-002"),
-            ("vm-003", "p3-workstation-key-seed-003"),
-            ("vm-004", "sparcstation-20-key-seed-004"),
-            ("vm-005", "alphaserver-800-key-seed-005"),
-        ]
-        
-        for machine_id, seed in sample_keys:
-            seed_hash = hashlib.sha256(seed.encode()).digest()[:32]
-            self.machine_keys[machine_id] = nacl.signing.SigningKey(seed_hash)
+        """Initialize Ed25519 keys without embedding reusable private seeds."""
+        require_stable_keys = self._requires_stable_keys()
+        for machine_id in self.MACHINE_IDS:
+            signing_key = self._load_signing_key_from_env(machine_id)
+            if signing_key is None:
+                env_name = self._key_env_name(machine_id)
+                if require_stable_keys:
+                    raise ValueError(
+                        f"{self.REQUIRE_STABLE_KEYS_ENV}=1 requires {env_name} "
+                        "for stable production receipt verification"
+                    )
+
+                signing_key = nacl.signing.SigningKey.generate()
+                logger.warning(
+                    "Generated demo-only ephemeral signing key for %s; set %s for stable production receipts",
+                    machine_id,
+                    env_name,
+                )
+            self.machine_keys[machine_id] = signing_key
     
     def get_public_key(self, machine_id: str) -> Optional[str]:
         """Get machine's public key as hex string"""
@@ -911,6 +968,28 @@ mcp = MCPIntegration(reservation_manager)
 beacon = BeaconIntegration(reservation_manager)
 
 
+def _json_object_body():
+    data = request.get_json(silent=True)
+    if data is None:
+        if request.get_data(cache=True):
+            return None, (jsonify({"error": "JSON object required"}), 400)
+        return None, (jsonify({"error": "Request body required"}), 400)
+    if not isinstance(data, dict):
+        return None, (jsonify({"error": "JSON object required"}), 400)
+    return data, None
+
+
+def _positive_limit(default: int = 10):
+    raw = request.args.get('limit', str(default))
+    try:
+        limit = int(raw)
+    except (TypeError, ValueError):
+        return None, (jsonify({"error": "limit must be an integer"}), 400)
+    if limit < 1:
+        return None, (jsonify({"error": "limit must be positive"}), 400)
+    return limit, None
+
+
 # ============== API Endpoints ==============
 
 @app.route('/health', methods=['GET'])
@@ -956,7 +1035,9 @@ def get_machine_details(machine_id: str):
 @app.route('/relic/reserve', methods=['POST'])
 def reserve_machine():
     """POST /relic/reserve - Reserve a machine"""
-    data = request.get_json()
+    data, error = _json_object_body()
+    if error:
+        return error
     
     required = ["machine_id", "agent_id", "duration_hours", "payment_rtc"]
     if not all(k in data for k in required):
@@ -1011,7 +1092,9 @@ def start_reservation_session(reservation_id: str):
 @app.route('/relic/reservation/<reservation_id>/complete', methods=['POST'])
 def complete_reservation_session(reservation_id: str):
     """Complete session and get provenance receipt"""
-    data = request.get_json()
+    data, error = _json_object_body()
+    if error:
+        return error
     
     required = ["compute_hash", "hardware_attestation"]
     if not all(k in data for k in required):
@@ -1056,7 +1139,9 @@ def get_receipt(session_id: str):
 @app.route('/relic/leaderboard', methods=['GET'])
 def get_leaderboard():
     """Get most-rented machines leaderboard"""
-    limit = int(request.args.get('limit', '10'))
+    limit, error = _positive_limit()
+    if error:
+        return error
     leaderboard = reservation_manager.get_most_rented_machines(limit)
     
     machines_data = []
@@ -1099,7 +1184,9 @@ def get_mcp_manifest():
 @app.route('/mcp/tool', methods=['POST'])
 def call_mcp_tool():
     """Call an MCP tool"""
-    data = request.get_json()
+    data, error = _json_object_body()
+    if error:
+        return error
     
     tool_name = data.get("tool")
     arguments = data.get("arguments", {})
@@ -1116,7 +1203,9 @@ def call_mcp_tool():
 @app.route('/beacon/message', methods=['POST'])
 def handle_beacon_message():
     """Handle Beacon protocol message"""
-    data = request.get_json()
+    data, error = _json_object_body()
+    if error:
+        return error
     
     message_type = data.get("type")
     payload = data.get("payload", {})

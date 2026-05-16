@@ -100,6 +100,7 @@ def _ensure_signed_float_preserves_nrtc(amount: Decimal, nrtc: int,
 # This MUST match the multiplier used in rustchain_v2_integrated_v2.2.1_rip200.py
 # (e.g. line 2370: amount_i64 = int(amount_decimal * Decimal(1000000))).
 ACCOUNT_UNIT = 1_000_000  # 1 RTC = 1,000,000 uRTC (6 decimals)
+LEGACY_SIGNATURE_CUTOFF_TS = 1782864000  # 2026-07-01T00:00:00Z
 
 utxo_bp = Blueprint('utxo', __name__, url_prefix='/utxo')
 
@@ -139,6 +140,15 @@ def _reserve_transfer_nonce(conn: sqlite3.Connection, from_address: str, nonce) 
         (from_address, str(nonce), int(time.time())),
     )
     return conn.execute("SELECT changes()").fetchone()[0] == 1
+
+
+def _missing_transfer_nonce(nonce) -> bool:
+    return (
+        nonce is None
+        or isinstance(nonce, bool)
+        or not isinstance(nonce, (int, str))
+        or (isinstance(nonce, str) and nonce.strip() == '')
+    )
 
 
 def register_utxo_blueprint(app, utxo_db: UtxoDB, db_path: str,
@@ -342,9 +352,11 @@ def utxo_transfer():
     4. Apply atomically
     5. If dual_write: also update account model
     """
-    data = request.get_json()
-    if not data:
+    data = request.get_json(silent=True)
+    if data is None or data == {}:
         return jsonify({'error': 'JSON body required'}), 400
+    if not isinstance(data, dict):
+        return jsonify({'error': 'JSON object body required'}), 400
 
     from_address = (data.get('from_address') or '').strip()
     to_address = (data.get('to_address') or '').strip()
@@ -352,6 +364,8 @@ def utxo_transfer():
     signature = (data.get('signature') or '').strip()
     nonce = data.get('nonce')
     memo = data.get('memo', '')
+    if not isinstance(memo, str):
+        return jsonify({'error': 'memo must be a string'}), 400
     # FIX(#2867 M2): exact Decimal parsing with bounds check (was float()).
     try:
         amount_rtc = _parse_rtc_amount(data.get('amount_rtc', 0))
@@ -361,7 +375,10 @@ def utxo_transfer():
 
     # --- validation ---------------------------------------------------------
 
-    if not all([from_address, to_address, public_key, signature, nonce]):
+    if (
+        not all([from_address, to_address, public_key, signature])
+        or _missing_transfer_nonce(nonce)
+    ):
         return jsonify({
             'error': 'Missing required fields',
             'required': ['from_address', 'to_address', 'public_key',
@@ -425,6 +442,11 @@ def utxo_transfer():
             return jsonify({
                 'error': 'Legacy signature format cannot authorize nonzero fee',
                 'code': 'LEGACY_SIGNATURE_FEE_UNBOUND',
+            }), 401
+        if int(time.time()) >= LEGACY_SIGNATURE_CUTOFF_TS:
+            return jsonify({
+                'error': 'Legacy signature format expired. Upgrade client to sign fee_rtc.',
+                'code': 'LEGACY_SIGNATURE_EXPIRED',
             }), 401
         logging.warning(
             "[UTXO/SIG] DEPRECATED: signature without fee accepted for %s... "

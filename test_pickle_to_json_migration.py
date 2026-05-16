@@ -1,16 +1,33 @@
-"""Test that pickle to JSON migration in proof_of_iron.py works correctly,
-including backward-compatible dual-read for legacy pickle data."""
+"""Test that pickle has been fully removed from proof_of_iron.py.
+
+Updated post vuln-tick 2026-05-14T14:10Z: PR #4530 introduced a dual-read
+that fell back to pickle.loads() on legacy BLOBs. That fallback was an RCE
+primitive — a poisoned legacy cache row could execute arbitrary code during
+_load_features(). These tests now assert:
+
+  1. proof_of_iron.py does not import pickle and does not call pickle.loads/dumps.
+  2. _save_features still serializes with json.dumps.
+  3. _load_features returns None (cache miss) for legacy pickle BLOBs instead
+     of deserializing them.
+  4. JSON rows still round-trip cleanly through _load_features.
+"""
 import os
 import sys
 import json
 import pickle
 import sqlite3
 import tempfile
+import types
 import unittest
+import importlib.util
+
 import numpy as np
 
-# Add the project to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'issue2307_boot_chime', 'src'))
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+SRC_DIR = os.path.join(HERE, 'issue2307_boot_chime', 'src')
+PROOF_OF_IRON_PATH = os.path.join(SRC_DIR, 'proof_of_iron.py')
+
 
 SAMPLE_FEATURES = {
     'mfcc_mean': [0.1, 0.2, 0.3, 0.4, 0.5],
@@ -26,98 +43,141 @@ SAMPLE_FEATURES = {
 }
 
 
-class TestPickleToJsonMigration(unittest.TestCase):
+def _load_proof_of_iron_module():
+    """Load proof_of_iron.py as a top-level module with stub dependencies.
+
+    proof_of_iron.py uses package-relative imports
+    (`from .acoustic_fingerprint import ...`). To exercise it directly from
+    this top-level test file without polluting global packages, we install
+    a fake parent package in sys.modules with the real `src` dir on its
+    __path__, plus stub submodules for the heavy audio dependencies.
+    """
+    pkg_name = '_poi_test_pkg'
+    if pkg_name in sys.modules:
+        return sys.modules[pkg_name].proof_of_iron
+
+    pkg = types.ModuleType(pkg_name)
+    pkg.__path__ = [SRC_DIR]
+    sys.modules[pkg_name] = pkg
+
+    # Real FingerprintFeatures dataclass is needed by _load_features, so
+    # import the real acoustic_fingerprint module under our fake package name.
+    af_spec = importlib.util.spec_from_file_location(
+        f'{pkg_name}.acoustic_fingerprint',
+        os.path.join(SRC_DIR, 'acoustic_fingerprint.py'),
+    )
+    af_mod = importlib.util.module_from_spec(af_spec)
+    sys.modules[f'{pkg_name}.acoustic_fingerprint'] = af_mod
+    af_spec.loader.exec_module(af_mod)
+
+    # Stub boot_chime_capture — only BootChimeCapture and CapturedAudio names
+    # need to exist; we never instantiate them.
+    bcc_stub = types.ModuleType(f'{pkg_name}.boot_chime_capture')
+    bcc_stub.BootChimeCapture = type('BootChimeCapture', (), {'__init__': lambda self, *a, **kw: None})
+    bcc_stub.CapturedAudio = type('CapturedAudio', (), {})
+    sys.modules[f'{pkg_name}.boot_chime_capture'] = bcc_stub
+
+    poi_spec = importlib.util.spec_from_file_location(
+        f'{pkg_name}.proof_of_iron', PROOF_OF_IRON_PATH,
+    )
+    poi_mod = importlib.util.module_from_spec(poi_spec)
+    sys.modules[f'{pkg_name}.proof_of_iron'] = poi_mod
+    poi_spec.loader.exec_module(poi_mod)
+    pkg.proof_of_iron = poi_mod
+    return poi_mod
+
+
+class TestPickleRemoval(unittest.TestCase):
+    def test_no_pickle_in_source(self):
+        """proof_of_iron.py must not import pickle or call pickle.loads/dumps."""
+        with open(PROOF_OF_IRON_PATH, 'r') as f:
+            content = f.read()
+        self.assertNotIn('import pickle', content,
+                         "pickle must not be imported in proof_of_iron.py")
+        self.assertNotIn('pickle.loads', content,
+                         "pickle.loads must not appear (RCE primitive)")
+        self.assertNotIn('pickle.dumps', content,
+                         "pickle.dumps must not appear")
+
+    def test_save_uses_json(self):
+        """_save_features must serialize with json.dumps."""
+        with open(PROOF_OF_IRON_PATH, 'r') as f:
+            content = f.read()
+        self.assertIn('json.dumps', content,
+                      "json.dumps must be used in _save_features")
+
     def test_json_serialization_roundtrip(self):
-        """Test that features can be serialized to JSON and deserialized correctly."""
+        """JSON serialization roundtrip still works."""
         json_data = json.dumps(SAMPLE_FEATURES)
         loaded = json.loads(json_data)
         self.assertEqual(SAMPLE_FEATURES['mfcc_mean'], loaded['mfcc_mean'])
         self.assertEqual(SAMPLE_FEATURES['spectral_centroid'], loaded['spectral_centroid'])
-        print("✓ JSON serialization roundtrip test passed")
 
-    def test_sqlite_json_storage(self):
-        """Test that JSON data can be stored and retrieved from SQLite."""
+    def test_legacy_pickle_blob_returns_none(self):
+        """A legacy pickle BLOB in feature_cache must return None (cache miss),
+        not be deserialized. This is the core anti-RCE invariant."""
+        poi_mod = _load_proof_of_iron_module()
+        ProofOfIron = poi_mod.ProofOfIron
+
         with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as f:
             db_path = f.name
         try:
+            # Set up the schema and insert a malicious-shaped pickle BLOB.
             conn = sqlite3.connect(db_path)
             c = conn.cursor()
             c.execute('''CREATE TABLE feature_cache (
-                hash TEXT PRIMARY KEY, features TEXT, created_at INTEGER)''')
-            conn.commit()
-            c.execute('INSERT INTO feature_cache VALUES (?, ?, ?)',
-                     ('test_hash', json.dumps(SAMPLE_FEATURES), 1234567890))
-            conn.commit()
-            c.execute('SELECT features FROM feature_cache WHERE hash = ?', ('test_hash',))
-            loaded = json.loads(c.fetchone()[0])
-            self.assertEqual(loaded['spectral_centroid'], 1000.0)
-            print("✓ SQLite JSON storage test passed")
-        finally:
-            os.unlink(db_path)
-
-    def test_backward_compat_pickle_fallback(self):
-        """Test that legacy pickle data is deserialized and migrated to JSON."""
-        with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as f:
-            db_path = f.name
-        try:
-            conn = sqlite3.connect(db_path)
-            c = conn.cursor()
-            c.execute('''CREATE TABLE feature_cache (
-                hash TEXT PRIMARY KEY, features TEXT, created_at INTEGER)''')
-            conn.commit()
-            # Insert OLD pickle BLOB data
+                hash TEXT PRIMARY KEY, features BLOB, created_at INTEGER)''')
             pickle_blob = pickle.dumps(SAMPLE_FEATURES)
             c.execute('INSERT INTO feature_cache VALUES (?, ?, ?)',
-                     ('old_hash', pickle_blob, 1000000000))
+                     ('legacy_hash', pickle_blob, 1000000000))
             conn.commit()
+            conn.close()
 
-            # Manual dual-read logic test (mimics _load_features behavior)
-            c.execute('SELECT features FROM feature_cache WHERE hash = ?', ('old_hash',))
-            raw = c.fetchone()[0]
-            # Try JSON first — should fail
-            try:
-                json.loads(raw.decode('utf-8') if isinstance(raw, bytes) else raw)
-                self.fail("Expected JSON decode to fail on pickle data")
-            except (json.JSONDecodeError, UnicodeDecodeError):
-                pass  # Expected
-            # Fallback to pickle — should succeed
-            data = pickle.loads(raw) if isinstance(raw, bytes) else pickle.loads(raw.encode())
-            self.assertEqual(data['spectral_centroid'], 1000.0)
+            poi = ProofOfIron(db_path=db_path)
 
-            # Now verify the code path in proof_of_iron.py handles this:
-            # Check that the source has the fallback pattern
-            with open('issue2307_boot_chime/src/proof_of_iron.py', 'r') as f:
-                content = f.read()
-            self.assertIn('JSONDecodeError', content,
-                          "Should catch JSONDecodeError for pickle fallback")
-            self.assertIn('pickle.loads', content,
-                          "Should have pickle.loads as fallback")
-            self.assertIn('json.loads', content,
-                          "Should try json.loads first")
-            print("✓ Backward-compatible pickle fallback test passed")
+            # Contract: legacy pickle BLOBs must NOT be deserialized.
+            result = poi._load_features('legacy_hash')
+            self.assertIsNone(
+                result,
+                "Legacy pickle BLOB must be treated as cache miss, not deserialized",
+            )
+
+            # Missing hash also returns None.
+            missing = poi._load_features('does_not_exist')
+            self.assertIsNone(missing)
         finally:
-            os.unlink(db_path)
+            try:
+                os.unlink(db_path)
+            except OSError:
+                pass
 
-    def test_no_bare_pickle_in_save(self):
-        """Verify that _save_features uses json.dumps, not pickle.dumps."""
-        with open('issue2307_boot_chime/src/proof_of_iron.py', 'r') as f:
-            content = f.read()
-        self.assertNotIn('pickle.dumps', content,
-                         "pickle.dumps should NOT be used in save")
-        self.assertIn('json.dumps', content,
-                      "json.dumps should be used in save")
-        print("✓ No pickle.dumps in save test passed")
+    def test_json_row_round_trips_through_load(self):
+        """A JSON row written in feature_cache must round-trip through _load_features."""
+        poi_mod = _load_proof_of_iron_module()
+        ProofOfIron = poi_mod.ProofOfIron
 
-    def test_dual_read_in_load(self):
-        """Verify that _load_features has dual-read (json first, pickle fallback)."""
-        with open('issue2307_boot_chime/src/proof_of_iron.py', 'r') as f:
-            content = f.read()
-        self.assertIn('json.loads', content, "json.loads should be used in load")
-        self.assertIn('pickle.loads', content,
-                      "pickle.loads should be present as fallback in load")
-        self.assertIn('JSONDecodeError', content,
-                      "JSONDecodeError should be caught for dual-read")
-        print("✓ Dual-read in load test passed")
+        with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as f:
+            db_path = f.name
+        try:
+            conn = sqlite3.connect(db_path)
+            c = conn.cursor()
+            c.execute('''CREATE TABLE feature_cache (
+                hash TEXT PRIMARY KEY, features TEXT, created_at INTEGER)''')
+            c.execute('INSERT INTO feature_cache VALUES (?, ?, ?)',
+                     ('json_hash', json.dumps(SAMPLE_FEATURES), 1234567890))
+            conn.commit()
+            conn.close()
+
+            poi = ProofOfIron(db_path=db_path)
+            result = poi._load_features('json_hash')
+            self.assertIsNotNone(result, "JSON row must load successfully")
+            self.assertAlmostEqual(result.spectral_centroid, 1000.0)
+            self.assertEqual(list(result.mfcc_mean), SAMPLE_FEATURES['mfcc_mean'])
+        finally:
+            try:
+                os.unlink(db_path)
+            except OSError:
+                pass
 
 
 if __name__ == "__main__":

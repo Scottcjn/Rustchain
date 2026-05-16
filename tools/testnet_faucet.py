@@ -84,6 +84,15 @@ def _limit_for_identity(github_username: str | None, account_age_days: int | Non
     return 1.0
 
 
+def _request_data() -> tuple[dict[str, Any] | None, tuple[Any, int] | None]:
+    data = request.get_json(silent=True)
+    if data is None:
+        return request.form.to_dict() or {}, None
+    if not isinstance(data, dict):
+        return None, (jsonify({"ok": False, "error": "json_object_required"}), 400)
+    return data, None
+
+
 def _sum_last_24h(conn: sqlite3.Connection, github_username: str | None, ip: str) -> float:
     since = (_utcnow() - timedelta(hours=24)).isoformat()
     if github_username:
@@ -161,7 +170,9 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
 
     @app.post("/faucet/drip")
     def faucet_drip():
-        data = request.get_json(silent=True) or request.form.to_dict() or {}
+        data, error = _request_data()
+        if error:
+            return error
         wallet = (data.get("wallet") or "").strip()
         github_username = (data.get("github_username") or "").strip() or None
         ip = request.headers.get("X-Forwarded-For", request.remote_addr or "unknown").split(",")[0].strip()

@@ -206,6 +206,12 @@ class TestUtxoEndpoints(unittest.TestCase):
         })
         self.assertEqual(r.status_code, 400)
 
+    def test_transfer_rejects_non_object_json_body(self):
+        for payload in ([{'from_address': 'alice'}], ['bad'], 'bad'):
+            r = self.client.post('/utxo/transfer', json=payload)
+            self.assertEqual(r.status_code, 400)
+            self.assertEqual(r.get_json()['error'], 'JSON object body required')
+
     def test_transfer_zero_amount(self):
         r = self.client.post('/utxo/transfer', json={
             'from_address': 'RTC_test_aabbccdd',
@@ -274,6 +280,27 @@ class TestUtxoEndpoints(unittest.TestCase):
         self.assertEqual(bob_bal, 10_000_000,
                          f"Expected 10_000_000 nanoRTC, got {bob_bal} "
                          f"(float truncation bug)")
+
+    def test_transfer_preserves_three_nanortc_amount(self):
+        """Issue #4671: 0.00000003 RTC must transfer exactly 3 nanoRTC."""
+        sender = 'RTC_test_aabbccdd'
+        recipient = 'bob'
+        self._seed_coinbase(sender, UNIT)
+
+        r = self.client.post('/utxo/transfer', json={
+            'from_address': sender,
+            'to_address': recipient,
+            'amount_rtc': 0.00000003,
+            'public_key': 'aabbccdd' * 8,
+            'signature': 'sig' * 22,
+            'nonce': int(time.time() * 1000),
+        })
+        data = r.get_json()
+
+        self.assertEqual(r.status_code, 200, data)
+        self.assertTrue(data['ok'])
+        self.assertEqual(self.utxo_db.get_balance(recipient), 3)
+        self.assertEqual(self.utxo_db.get_balance(sender), UNIT - 3)
 
     def test_transfer_rejects_decimal_amount_not_preserved_by_signed_float(self):
         """The signed float amount must match the ledger nanoRTC amount.
@@ -362,6 +389,77 @@ class TestUtxoEndpoints(unittest.TestCase):
         )
         self.assertEqual(self.utxo_db.get_balance(sender), 100 * UNIT)
         self.assertEqual(self.utxo_db.get_balance(recipient), 0)
+
+    def test_dual_write_rejects_non_string_memo_before_utxo_commit(self):
+        """Non-string memo must not commit UTXO state then break shadow writes."""
+        import sqlite3
+
+        sender = 'RTC_test_aabbccdd'
+        recipient = 'bob'
+        self._seed_coinbase(sender, 100 * UNIT)
+
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute(
+                "INSERT OR REPLACE INTO balances (miner_id, amount_i64) VALUES (?, ?)",
+                (sender, 100_000_000),
+            )
+            conn.execute(
+                """CREATE TABLE ledger (
+                   ts INTEGER, epoch INTEGER, miner_id TEXT,
+                   delta_i64 INTEGER, reason TEXT
+                )"""
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        dual_app = Flask(__name__ + '_dual_write')
+        dual_app.config['TESTING'] = True
+        register_utxo_blueprint(
+            dual_app, self.utxo_db, self.db_path,
+            verify_sig_fn=mock_verify_sig,
+            addr_from_pk_fn=mock_addr_from_pk,
+            current_slot_fn=mock_current_slot,
+            dual_write=True,
+        )
+        client = dual_app.test_client()
+
+        for nonce, bad_memo in (
+            (616161, {'not': 'a string'}),
+            (616162, None),
+            (616163, ['not', 'a', 'string']),
+        ):
+            with self.subTest(memo=bad_memo):
+                r = client.post('/utxo/transfer', json={
+                    'from_address': sender,
+                    'to_address': recipient,
+                    'amount_rtc': 10.0,
+                    'public_key': 'aabbccdd' * 8,
+                    'signature': 'sig' * 22,
+                    'nonce': nonce,
+                    'memo': bad_memo,
+                })
+
+                self.assertEqual(r.status_code, 400)
+                self.assertEqual(r.get_json()['error'], 'memo must be a string')
+                self.assertEqual(self.utxo_db.get_balance(sender), 100 * UNIT)
+                self.assertEqual(self.utxo_db.get_balance(recipient), 0)
+
+                conn = sqlite3.connect(self.db_path)
+                try:
+                    balances = dict(conn.execute(
+                        "SELECT miner_id, amount_i64 FROM balances"
+                    ).fetchall())
+                    ledger_count = conn.execute(
+                        "SELECT COUNT(*) FROM ledger"
+                    ).fetchone()[0]
+                finally:
+                    conn.close()
+
+                self.assertEqual(balances[sender], 100_000_000)
+                self.assertNotIn(recipient, balances)
+                self.assertEqual(ledger_count, 0)
 
 
 if __name__ == '__main__':

@@ -43,7 +43,12 @@ class BountyVerifier:
                 "repos": scott_stars[:10]  # Sample
             }
         except GithubException as e:
-            return {"error": str(e), "count": 0}
+            return {
+                "error": str(e),
+                "count": 0,
+                "is_star_king": False,
+                "repos": [],
+            }
 
     def verify_following(self, username: str) -> bool:
         """Check if user follows Scottcjn."""
@@ -104,7 +109,7 @@ class BountyVerifier:
         report += "|-------|--------|\n"
         report += f"| Follows @{CONFIG['org']} | {'✅ Yes' if follows else '❌ No'} |\n"
         report += f"| {CONFIG['org']} repos starred | {stars['count']} |\n"
-        report += f"| Wallet \`{wallet}\` exists | {'✅ Balance: ' + str(wallet_info['balance']) + ' RTC' if wallet_info['exists'] else '❌ Not found'} |\n"
+        report += f"| Wallet `{wallet}` exists | {'✅ Balance: ' + str(wallet_info['balance']) + ' RTC' if wallet_info['exists'] else '❌ Not found'} |\n"
         
         if article_url:
             # Mock content fetch

@@ -16,7 +16,7 @@ homepage = "https://rustchain.org"
 [dependencies]
 # Cryptography
 ed25519-dalek = { version = "2.1", features = ["rand_core", "serde"] }
-sha2 = "0.10"
+sha2 = "0.11"
 hex = "0.4"
 bs58 = "0.5"
 aes-gcm = "0.10"
@@ -47,12 +47,12 @@ zeroize = { version = "1.7", features = ["derive"] }
 secrecy = "0.10"
 
 # Key derivation
-hmac = "0.12"
+hmac = "0.13"
 pbkdf2 = "0.12"
 
 # Random number generation
 rand = "0.10"
-getrandom = "0.2"
+getrandom = "0.4"
 
 # Filesystem
 dirs = "5.0"

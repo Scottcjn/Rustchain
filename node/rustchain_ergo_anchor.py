@@ -542,7 +542,8 @@ def create_anchor_api_routes(app, anchor_service: AnchorService):
         if error:
             return jsonify({"error": error}), 400
 
-        with sqlite3.connect(anchor_service.db_path) as conn:
+        conn = sqlite3.connect(anchor_service.db_path)
+        try:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
 
@@ -553,6 +554,8 @@ def create_anchor_api_routes(app, anchor_service: AnchorService):
             """, (limit, offset))
 
             anchors = [dict(row) for row in cursor.fetchall()]
+        finally:
+            conn.close()
 
         return jsonify({
             "count": len(anchors),

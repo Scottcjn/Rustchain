@@ -21,6 +21,7 @@ License: MIT
 """
 
 import hashlib
+import hmac
 import json
 import logging
 import os
@@ -28,6 +29,7 @@ import secrets
 import sqlite3
 import time
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from functools import wraps
 
 import requests
@@ -40,6 +42,11 @@ from flask_cors import CORS
 
 RUSTCHAIN_NODE = os.environ.get("RUSTCHAIN_NODE", "https://50.28.86.131")
 DB_PATH = os.environ.get("OTC_DB_PATH", "otc_bridge.db")
+DEFAULT_OTC_CORS_ORIGINS = (
+    "https://bottube.ai",
+    "https://rustchain.org",
+    "http://localhost:3000",
+)
 
 # TLS verification: defaults to True (secure).
 # Set RUSTCHAIN_TLS_VERIFY=false only for local development with self-signed certs.
@@ -62,6 +69,8 @@ MAX_ORDER_RTC = 100000              # Maximum 100k RTC
 RATE_LIMIT_WINDOW = 60              # 1 minute
 RATE_LIMIT_MAX = 10                 # 10 requests per minute per IP
 RTC_REFERENCE_RATE = 0.10           # $0.10 USD reference
+RTC_UNIT = 1_000_000                # 1 micro-RTC
+QUOTE_PRICE_SCALE = 1_000_000_000   # 9 decimal places for quote units
 
 SUPPORTED_PAIRS = {
     "RTC/ETH": {"quote": "ETH", "decimals": 18},
@@ -73,7 +82,82 @@ log = logging.getLogger("otc_bridge")
 logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__, static_folder="static")
-CORS(app)
+
+
+def parse_cors_origins(raw_origins=None):
+    raw_origins = os.environ.get("OTC_CORS_ORIGINS") if raw_origins is None else raw_origins
+    if raw_origins is None:
+        return list(DEFAULT_OTC_CORS_ORIGINS)
+
+    origins = [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
+    if not origins:
+        return list(DEFAULT_OTC_CORS_ORIGINS)
+    if "*" in origins:
+        raise ValueError("OTC_CORS_ORIGINS must name trusted origins and must not include '*'")
+    return origins
+
+
+OTC_CORS_ORIGINS = parse_cors_origins()
+CORS(app, origins=OTC_CORS_ORIGINS)
+
+
+def decimal_units(value, scale, field_name):
+    try:
+        amount = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        raise ValueError(f"{field_name} must be a finite decimal number")
+
+    if not amount.is_finite():
+        raise ValueError(f"{field_name} must be a finite decimal number")
+
+    units = (amount * Decimal(scale)).to_integral_value(rounding=ROUND_HALF_UP)
+    return amount, int(units)
+
+
+def units_to_float(units, scale):
+    return float(Decimal(int(units)) / Decimal(scale))
+
+
+def money_view(row):
+    data = dict(row)
+    if "amount_micro_rtc" in data and data.get("amount_micro_rtc") is not None:
+        data["amount_rtc"] = units_to_float(data["amount_micro_rtc"], RTC_UNIT)
+    if "price_per_rtc_nano_quote" in data and data.get("price_per_rtc_nano_quote") is not None:
+        data["price_per_rtc"] = units_to_float(
+            data["price_per_rtc_nano_quote"], QUOTE_PRICE_SCALE
+        )
+    if "total_quote_nano" in data and data.get("total_quote_nano") is not None:
+        data["total_quote"] = units_to_float(data["total_quote_nano"], QUOTE_PRICE_SCALE)
+    return data
+
+
+def migrate_precision_columns(cursor, table_name):
+    columns = {row[1] for row in cursor.execute(f"PRAGMA table_info({table_name})")}
+    if "amount_micro_rtc" not in columns:
+        cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN amount_micro_rtc INTEGER")
+    if "price_per_rtc_nano_quote" not in columns:
+        cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN price_per_rtc_nano_quote INTEGER")
+    if "total_quote_nano" not in columns:
+        cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN total_quote_nano INTEGER")
+
+    refreshed = {row[1] for row in cursor.execute(f"PRAGMA table_info({table_name})")}
+    if {"amount_rtc", "price_per_rtc", "total_quote"}.issubset(refreshed):
+        cursor.execute(f"""
+            UPDATE {table_name}
+            SET amount_micro_rtc = COALESCE(amount_micro_rtc, CAST(ROUND(amount_rtc * ?) AS INTEGER)),
+                price_per_rtc_nano_quote = COALESCE(price_per_rtc_nano_quote, CAST(ROUND(price_per_rtc * ?) AS INTEGER)),
+                total_quote_nano = COALESCE(total_quote_nano, CAST(ROUND(total_quote * ?) AS INTEGER))
+        """, (RTC_UNIT, QUOTE_PRICE_SCALE, QUOTE_PRICE_SCALE))
+
+
+def table_columns(cursor, table_name):
+    return {row[1] for row in cursor.execute(f"PRAGMA table_info({table_name})")}
+
+
+def include_legacy_money_columns_if_present(columns, insert_columns, values, amount_rtc, price_per_rtc, total_quote):
+    if {"amount_rtc", "price_per_rtc", "total_quote"}.issubset(columns):
+        insert_columns.extend(["amount_rtc", "price_per_rtc", "total_quote"])
+        values.extend([amount_rtc, price_per_rtc, total_quote])
 
 
 # ---------------------------------------------------------------------------
@@ -90,9 +174,9 @@ def init_db():
                 side TEXT NOT NULL CHECK(side IN ('buy', 'sell')),
                 pair TEXT NOT NULL,
                 maker_wallet TEXT NOT NULL,
-                amount_rtc REAL NOT NULL,
-                price_per_rtc REAL NOT NULL,
-                total_quote REAL NOT NULL,
+                amount_micro_rtc INTEGER NOT NULL,
+                price_per_rtc_nano_quote INTEGER NOT NULL,
+                total_quote_nano INTEGER NOT NULL,
                 status TEXT DEFAULT 'open',
                 escrow_job_id TEXT,
                 htlc_hash TEXT,
@@ -117,9 +201,9 @@ def init_db():
                 side TEXT NOT NULL,
                 maker_wallet TEXT NOT NULL,
                 taker_wallet TEXT NOT NULL,
-                amount_rtc REAL NOT NULL,
-                price_per_rtc REAL NOT NULL,
-                total_quote REAL NOT NULL,
+                amount_micro_rtc INTEGER NOT NULL,
+                price_per_rtc_nano_quote INTEGER NOT NULL,
+                total_quote_nano INTEGER NOT NULL,
                 rtc_tx TEXT,
                 quote_tx TEXT,
                 completed_at INTEGER NOT NULL
@@ -132,6 +216,9 @@ def init_db():
                 timestamp INTEGER NOT NULL
             )
         """)
+
+        migrate_precision_columns(c, "orders")
+        migrate_precision_columns(c, "trades")
 
         c.execute("CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status, pair)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_orders_side ON orders(side, status)")
@@ -210,6 +297,12 @@ def non_negative_int_arg(name, default):
         return None, f"{name}_must_be_non_negative"
 
     return value, None
+
+
+def internal_error_response(operation):
+    """Log internal exception details without exposing them to clients."""
+    log.exception("%s failed", operation)
+    return jsonify({"error": "Internal server error"}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -293,8 +386,9 @@ def rtc_create_escrow_job(poster_wallet, amount_rtc, title, description):
             return {"ok": True, "job_id": data.get("job_id")}
         else:
             return {"ok": False, "error": r.json().get("error", "Unknown error")}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
+    except Exception:
+        log.exception("Escrow job creation failed")
+        return {"ok": False, "error": "escrow_create_failed"}
 
 
 def rtc_release_escrow(job_id, poster_wallet):
@@ -356,10 +450,15 @@ def create_order():
         return jsonify({"error": "wallet required (RTC wallet ID)"}), 400
 
     try:
-        amount_rtc = float(amount_rtc)
-        price_per_rtc = float(price_per_rtc)
-    except (TypeError, ValueError):
-        return jsonify({"error": "amount_rtc and price_per_rtc must be numbers"}), 400
+        amount_dec, amount_micro_rtc = decimal_units(amount_rtc, RTC_UNIT, "amount_rtc")
+        price_dec, price_per_rtc_nano_quote = decimal_units(
+            price_per_rtc, QUOTE_PRICE_SCALE, "price_per_rtc"
+        )
+    except (TypeError, ValueError) as e:
+        return jsonify({"error": str(e)}), 400
+
+    amount_rtc = units_to_float(amount_micro_rtc, RTC_UNIT)
+    price_per_rtc = units_to_float(price_per_rtc_nano_quote, QUOTE_PRICE_SCALE)
 
     if amount_rtc < MIN_ORDER_RTC:
         return jsonify({"error": f"Minimum order: {MIN_ORDER_RTC} RTC"}), 400
@@ -371,7 +470,12 @@ def create_order():
         return jsonify({"error": "price_per_rtc too high (max $1000)"}), 400
 
     ttl = min(max(ttl, 3600), ORDER_TTL_MAX)
-    total_quote = round(amount_rtc * price_per_rtc, 8)
+    total_quote_nano = int(
+        (amount_dec * price_dec * Decimal(QUOTE_PRICE_SCALE)).to_integral_value(
+            rounding=ROUND_HALF_UP
+        )
+    )
+    total_quote = units_to_float(total_quote_nano, QUOTE_PRICE_SCALE)
     now = int(time.time())
     order_id = generate_order_id(maker_wallet, side)
 
@@ -401,21 +505,36 @@ def create_order():
             }), 400
         escrow_job_id = escrow_result["job_id"]
 
-    # Generate HTLC secret (seller generates, buyer reveals on match)
-    htlc_secret, htlc_hash = generate_htlc_secret()
+    # The RTC seller owns the release preimage. For a sell order the maker is
+    # the seller, so generate and return it at creation. For a buy order the
+    # seller is not known until match time, so defer preimage generation.
+    htlc_secret, htlc_hash = (None, None)
+    if side == "sell":
+        htlc_secret, htlc_hash = generate_htlc_secret()
 
     conn = get_db()
     try:
         c = conn.cursor()
-        c.execute("""
-            INSERT INTO orders
-            (order_id, side, pair, maker_wallet, amount_rtc, price_per_rtc,
-             total_quote, status, escrow_job_id, htlc_hash, htlc_secret,
-             maker_eth_address, created_at, expires_at, ip_hash)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?)
-        """, (order_id, side, pair, maker_wallet, amount_rtc, price_per_rtc,
-              total_quote, escrow_job_id, htlc_hash, htlc_secret,
-              maker_eth_address, now, now + ttl, hash_ip(get_client_ip())))
+        insert_columns = [
+            "order_id", "side", "pair", "maker_wallet", "amount_micro_rtc",
+            "price_per_rtc_nano_quote", "total_quote_nano", "status",
+            "escrow_job_id", "htlc_hash", "htlc_secret", "maker_eth_address",
+            "created_at", "expires_at", "ip_hash",
+        ]
+        values = [
+            order_id, side, pair, maker_wallet, amount_micro_rtc,
+            price_per_rtc_nano_quote, total_quote_nano, "open",
+            escrow_job_id, htlc_hash, htlc_secret, maker_eth_address,
+            now, now + ttl, hash_ip(get_client_ip()),
+        ]
+        include_legacy_money_columns_if_present(
+            table_columns(c, "orders"), insert_columns, values, amount_rtc, price_per_rtc, total_quote
+        )
+        placeholders = ", ".join("?" for _ in values)
+        c.execute(
+            f"INSERT INTO orders ({', '.join(insert_columns)}) VALUES ({placeholders})",
+            values,
+        )
         conn.commit()
 
         response = {
@@ -424,30 +543,37 @@ def create_order():
             "side": side,
             "pair": pair,
             "amount_rtc": amount_rtc,
+            "amount_micro_rtc": amount_micro_rtc,
             "price_per_rtc": price_per_rtc,
+            "price_per_rtc_nano_quote": price_per_rtc_nano_quote,
             "total_quote": total_quote,
+            "total_quote_nano": total_quote_nano,
             "quote_currency": pair.split("/")[1],
             "status": "open",
             "expires_at": now + ttl,
             "expires_in_hours": round(ttl / 3600, 1),
         }
+        if htlc_hash:
+            response["htlc_hash"] = htlc_hash
+        if htlc_secret:
+            # Returned only once to the RTC seller; public order reads hide it until completion.
+            response["htlc_secret"] = htlc_secret
         if escrow_job_id:
             response["escrow_job_id"] = escrow_job_id
             response["escrow_status"] = "locked"
         if side == "sell":
-            response["htlc_hash"] = htlc_hash
             response["message"] = f"Sell order created. {amount_rtc} RTC locked in escrow. HTLC hash published for buyer verification."
         else:
             response["message"] = f"Buy order created. Waiting for a seller to match."
 
         return jsonify(response), 201
 
-    except Exception as e:
+    except Exception:
         conn.rollback()
         # If we created an escrow job but DB insert failed, cancel it
         if escrow_job_id:
             rtc_cancel_escrow(escrow_job_id, maker_wallet)
-        return jsonify({"error": str(e)}), 500
+        return internal_error_response("Order creation")
     finally:
         conn.close()
 
@@ -493,19 +619,19 @@ def list_orders():
             params.append(side)
 
         query = f"""
-            SELECT order_id, side, pair, maker_wallet, amount_rtc,
-                   price_per_rtc, total_quote, status, htlc_hash,
+            SELECT order_id, side, pair, maker_wallet, amount_micro_rtc,
+                   price_per_rtc_nano_quote, total_quote_nano, status, htlc_hash,
                    created_at, expires_at, escrow_job_id
             FROM orders
             WHERE {' AND '.join(where)}
             ORDER BY
-                CASE side WHEN 'sell' THEN price_per_rtc END ASC,
-                CASE side WHEN 'buy' THEN price_per_rtc END DESC,
+                CASE side WHEN 'sell' THEN price_per_rtc_nano_quote END ASC,
+                CASE side WHEN 'buy' THEN price_per_rtc_nano_quote END DESC,
                 created_at ASC
             LIMIT ? OFFSET ?
         """
         params.extend([limit, offset])
-        orders = [dict(r) for r in c.execute(query, params).fetchall()]
+        orders = [money_view(r) for r in c.execute(query, params).fetchall()]
 
         total = c.execute(
             f"SELECT COUNT(*) FROM orders WHERE {' AND '.join(where)}",
@@ -531,7 +657,7 @@ def get_order(order_id):
         if not row:
             return jsonify({"error": "Order not found"}), 404
 
-        order = dict(row)
+        order = money_view(row)
         # Don't expose HTLC secret unless order is confirmed
         if order["status"] not in ("confirmed", "completed"):
             order.pop("htlc_secret", None)
@@ -559,7 +685,7 @@ def match_order(order_id):
         if not row:
             return jsonify({"error": "Order not found"}), 404
 
-        order = dict(row)
+        order = money_view(row)
 
         if order["status"] != "open":
             return jsonify({"error": f"Order is not open (status: {order['status']})"}), 409
@@ -597,15 +723,23 @@ def match_order(order_id):
                     "details": escrow_result.get("error")
                 }), 400
             escrow_job_id = escrow_result["job_id"]
+            htlc_secret, htlc_hash = generate_htlc_secret()
+        else:
+            htlc_secret, htlc_hash = order["htlc_secret"], order["htlc_hash"]
 
         # Update order
         c.execute("""
             UPDATE orders
             SET status = 'matched', taker_wallet = ?, taker_eth_address = ?,
-                matched_at = ?, escrow_job_id = COALESCE(?, escrow_job_id)
+                matched_at = ?, escrow_job_id = COALESCE(?, escrow_job_id),
+                htlc_hash = COALESCE(?, htlc_hash),
+                htlc_secret = COALESCE(?, htlc_secret)
             WHERE order_id = ? AND status = 'open'
         """, (taker_wallet, taker_eth_address, now,
-              escrow_job_id if order["side"] == "buy" else None, order_id))
+              escrow_job_id if order["side"] == "buy" else None,
+              htlc_hash if order["side"] == "buy" else None,
+              htlc_secret if order["side"] == "buy" else None,
+              order_id))
 
         if c.execute("SELECT changes()").fetchone()[0] == 0:
             return jsonify({"error": "Order was matched by someone else"}), 409
@@ -623,8 +757,11 @@ def match_order(order_id):
             "total_quote": order["total_quote"],
             "maker_wallet": order["maker_wallet"],
             "taker_wallet": taker_wallet,
-            "htlc_hash": order["htlc_hash"],
+            "htlc_hash": htlc_hash,
         }
+        if order["side"] == "buy":
+            # Returned only once to the matching RTC seller.
+            response["htlc_secret"] = htlc_secret
 
         quote_currency = order["pair"].split("/")[1]
         if order["side"] == "sell":
@@ -632,7 +769,7 @@ def match_order(order_id):
                 "step": "Send quote currency to complete the swap",
                 "amount": order["total_quote"],
                 "currency": quote_currency,
-                "htlc_hash": order["htlc_hash"],
+                "htlc_hash": htlc_hash,
                 "note": f"Send {order['total_quote']} {quote_currency} to the seller's address. Once confirmed, the seller reveals the HTLC secret and RTC is released from escrow."
             }
         else:
@@ -640,14 +777,15 @@ def match_order(order_id):
                 "step": "RTC is locked in escrow. Buyer sends quote currency.",
                 "amount": order["total_quote"],
                 "currency": quote_currency,
-                "note": f"Buyer must send {order['total_quote']} {quote_currency}. Once confirmed, RTC escrow releases to buyer."
+                "htlc_hash": htlc_hash,
+                "note": f"Buyer must send {order['total_quote']} {quote_currency}. The matching seller confirms by revealing the HTLC secret, then RTC escrow releases to buyer."
             }
 
         return jsonify(response)
 
-    except Exception as e:
+    except Exception:
         conn.rollback()
-        return jsonify({"error": str(e)}), 500
+        return internal_error_response("Order match")
     finally:
         conn.close()
 
@@ -663,6 +801,8 @@ def confirm_order(order_id):
 
     if not wallet:
         return jsonify({"error": "wallet required"}), 400
+    if not quote_tx:
+        return jsonify({"error": "quote_tx required"}), 400
 
     conn = get_db()
     try:
@@ -671,23 +811,29 @@ def confirm_order(order_id):
         if not row:
             return jsonify({"error": "Order not found"}), 404
 
-        order = dict(row)
+        order = money_view(row)
 
         if order["status"] != "matched":
             return jsonify({"error": f"Order must be matched to confirm (current: {order['status']})"}), 409
 
-        # Either party can confirm
-        if wallet not in (order["maker_wallet"], order["taker_wallet"]):
-            return jsonify({"error": "Only maker or taker can confirm"}), 403
+        # Only the RTC seller owns the preimage and can confirm settlement.
+        seller_wallet = order["maker_wallet"] if order["side"] == "sell" else order["taker_wallet"]
+        if wallet != seller_wallet:
+            return jsonify({"error": "Only the RTC seller can confirm settlement"}), 403
 
         # Verify HTLC preimage before releasing escrow
         if not secret:
             return jsonify({"error": "HTLC secret (preimage) required to confirm settlement"}), 400
+        if not order["htlc_hash"]:
+            return jsonify({"error": "HTLC hash unavailable for matched order"}), 409
 
         # Validate the provided secret matches the stored hash
-        computed_hash = hashlib.sha256(bytes.fromhex(secret)).hexdigest()
-        if computed_hash != order["htlc_hash"]:
-            return jsonify({"error": "Invalid HTLC secret (preimage hash mismatch)"}), 400
+        try:
+            computed_hash = hashlib.sha256(bytes.fromhex(secret)).hexdigest()
+        except ValueError:
+            return jsonify({"error": "Invalid HTLC secret format"}), 400
+        if not hmac.compare_digest(computed_hash, order["htlc_hash"]):
+            return jsonify({"error": "Invalid HTLC secret"}), 400
 
         now = int(time.time())
 
@@ -733,15 +879,30 @@ def confirm_order(order_id):
 
         # Record trade
         trade_id = generate_trade_id(order_id, order["taker_wallet"])
-        c.execute("""
-            INSERT INTO trades
-            (trade_id, order_id, pair, side, maker_wallet, taker_wallet,
-             amount_rtc, price_per_rtc, total_quote, quote_tx, completed_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (trade_id, order_id, order["pair"], order["side"],
-              order["maker_wallet"], order["taker_wallet"],
-              order["amount_rtc"], order["price_per_rtc"],
-              order["total_quote"], quote_tx, now))
+        insert_columns = [
+            "trade_id", "order_id", "pair", "side", "maker_wallet", "taker_wallet",
+            "amount_micro_rtc", "price_per_rtc_nano_quote", "total_quote_nano",
+            "quote_tx", "completed_at",
+        ]
+        values = [
+            trade_id, order_id, order["pair"], order["side"],
+            order["maker_wallet"], order["taker_wallet"],
+            order["amount_micro_rtc"], order["price_per_rtc_nano_quote"],
+            order["total_quote_nano"], quote_tx, now,
+        ]
+        include_legacy_money_columns_if_present(
+            table_columns(c, "trades"),
+            insert_columns,
+            values,
+            order["amount_rtc"],
+            order["price_per_rtc"],
+            order["total_quote"],
+        )
+        placeholders = ", ".join("?" for _ in values)
+        c.execute(
+            f"INSERT INTO trades ({', '.join(insert_columns)}) VALUES ({placeholders})",
+            values,
+        )
 
         # Update order
         c.execute("""
@@ -762,10 +923,9 @@ def confirm_order(order_id):
             "message": f"Trade completed. {order['amount_rtc']} RTC released to {rtc_recipient}. HTLC secret verified and revealed."
         })
 
-    except Exception as e:
+    except Exception:
         conn.rollback()
-        log.error(f"Confirm error: {e}")
-        return jsonify({"error": str(e)}), 500
+        return internal_error_response("Order confirmation")
     finally:
         conn.close()
 
@@ -787,7 +947,7 @@ def cancel_order(order_id):
         if not row:
             return jsonify({"error": "Order not found"}), 404
 
-        order = dict(row)
+        order = money_view(row)
 
         if order["maker_wallet"] != wallet:
             return jsonify({"error": "Only the order creator can cancel"}), 403
@@ -807,9 +967,9 @@ def cancel_order(order_id):
             "status": "cancelled",
             "message": "Order cancelled. Escrow refunded."
         })
-    except Exception as e:
+    except Exception:
         conn.rollback()
-        return jsonify({"error": str(e)}), 500
+        return internal_error_response("Order cancellation")
     finally:
         conn.close()
 
@@ -837,7 +997,7 @@ def list_trades():
 
         return jsonify({
             "ok": True,
-            "trades": [dict(t) for t in trades]
+            "trades": [money_view(t) for t in trades]
         })
     finally:
         conn.close()
@@ -856,49 +1016,69 @@ def orderbook():
 
         # Asks (sell orders) -- sorted by price ascending (cheapest first)
         asks = c.execute("""
-            SELECT price_per_rtc as price, SUM(amount_rtc) as total_rtc,
+            SELECT price_per_rtc_nano_quote as price_nano,
+                   SUM(amount_micro_rtc) as total_micro_rtc,
                    COUNT(*) as order_count
             FROM orders
             WHERE pair = ? AND side = 'sell' AND status = 'open'
-            GROUP BY ROUND(price_per_rtc, 4)
-            ORDER BY price ASC
+            GROUP BY price_per_rtc_nano_quote
+            ORDER BY price_nano ASC
             LIMIT 20
         """, (pair,)).fetchall()
 
         # Bids (buy orders) -- sorted by price descending (highest first)
         bids = c.execute("""
-            SELECT price_per_rtc as price, SUM(amount_rtc) as total_rtc,
+            SELECT price_per_rtc_nano_quote as price_nano,
+                   SUM(amount_micro_rtc) as total_micro_rtc,
                    COUNT(*) as order_count
             FROM orders
             WHERE pair = ? AND side = 'buy' AND status = 'open'
-            GROUP BY ROUND(price_per_rtc, 4)
-            ORDER BY price DESC
+            GROUP BY price_per_rtc_nano_quote
+            ORDER BY price_nano DESC
             LIMIT 20
         """, (pair,)).fetchall()
 
         # Last trade price
         last_trade = c.execute(
-            "SELECT price_per_rtc FROM trades WHERE pair = ? ORDER BY completed_at DESC LIMIT 1",
+            "SELECT price_per_rtc_nano_quote FROM trades WHERE pair = ? ORDER BY completed_at DESC LIMIT 1",
             (pair,)
         ).fetchone()
 
         # 24h volume
         day_ago = int(time.time()) - 86400
         vol = c.execute(
-            "SELECT COALESCE(SUM(amount_rtc), 0), COUNT(*) FROM trades WHERE pair = ? AND completed_at >= ?",
+            "SELECT COALESCE(SUM(amount_micro_rtc), 0), COUNT(*) FROM trades WHERE pair = ? AND completed_at >= ?",
             (pair, day_ago)
         ).fetchone()
+
+        ask_levels = [
+            {
+                "price": units_to_float(a["price_nano"], QUOTE_PRICE_SCALE),
+                "total_rtc": units_to_float(a["total_micro_rtc"], RTC_UNIT),
+                "order_count": a["order_count"],
+            }
+            for a in asks
+        ]
+        bid_levels = [
+            {
+                "price": units_to_float(b["price_nano"], QUOTE_PRICE_SCALE),
+                "total_rtc": units_to_float(b["total_micro_rtc"], RTC_UNIT),
+                "order_count": b["order_count"],
+            }
+            for b in bids
+        ]
 
         return jsonify({
             "ok": True,
             "pair": pair,
-            "asks": [dict(a) for a in asks],
-            "bids": [dict(b) for b in bids],
-            "last_price": last_trade[0] if last_trade else None,
-            "volume_24h_rtc": vol[0],
+            "asks": ask_levels,
+            "bids": bid_levels,
+            "last_price": units_to_float(last_trade[0], QUOTE_PRICE_SCALE) if last_trade else None,
+            "volume_24h_rtc": units_to_float(vol[0], RTC_UNIT),
             "trades_24h": vol[1],
             "reference_rate": RTC_REFERENCE_RATE,
-            "spread": round(asks[0]["price"] - bids[0]["price"], 6) if asks and bids else None
+            "spread": round(ask_levels[0]["price"] - bid_levels[0]["price"], 6)
+            if ask_levels and bid_levels else None
         })
     finally:
         conn.close()
@@ -915,41 +1095,47 @@ def market_stats():
         week_ago = now - 7 * 86400
 
         total_trades = c.execute("SELECT COUNT(*) FROM trades").fetchone()[0]
-        total_volume = c.execute("SELECT COALESCE(SUM(amount_rtc), 0) FROM trades").fetchone()[0]
+        total_volume = c.execute("SELECT COALESCE(SUM(amount_micro_rtc), 0) FROM trades").fetchone()[0]
         vol_24h = c.execute(
-            "SELECT COALESCE(SUM(amount_rtc), 0) FROM trades WHERE completed_at >= ?",
+            "SELECT COALESCE(SUM(amount_micro_rtc), 0) FROM trades WHERE completed_at >= ?",
             (day_ago,)
         ).fetchone()[0]
         vol_7d = c.execute(
-            "SELECT COALESCE(SUM(amount_rtc), 0) FROM trades WHERE completed_at >= ?",
+            "SELECT COALESCE(SUM(amount_micro_rtc), 0) FROM trades WHERE completed_at >= ?",
             (week_ago,)
         ).fetchone()[0]
         open_orders = c.execute(
             "SELECT COUNT(*) FROM orders WHERE status = 'open'"
         ).fetchone()[0]
         open_sell = c.execute(
-            "SELECT COUNT(*), COALESCE(SUM(amount_rtc), 0) FROM orders WHERE status = 'open' AND side = 'sell'"
+            "SELECT COUNT(*), COALESCE(SUM(amount_micro_rtc), 0) FROM orders WHERE status = 'open' AND side = 'sell'"
         ).fetchone()
         open_buy = c.execute(
-            "SELECT COUNT(*), COALESCE(SUM(amount_rtc), 0) FROM orders WHERE status = 'open' AND side = 'buy'"
+            "SELECT COUNT(*), COALESCE(SUM(amount_micro_rtc), 0) FROM orders WHERE status = 'open' AND side = 'buy'"
         ).fetchone()
 
         # Price stats from recent trades
         prices = c.execute(
-            "SELECT price_per_rtc FROM trades ORDER BY completed_at DESC LIMIT 100"
+            "SELECT price_per_rtc_nano_quote FROM trades ORDER BY completed_at DESC LIMIT 100"
         ).fetchall()
-        price_list = [p[0] for p in prices]
+        price_list = [units_to_float(p[0], QUOTE_PRICE_SCALE) for p in prices]
 
         return jsonify({
             "ok": True,
             "stats": {
                 "total_trades": total_trades,
-                "total_volume_rtc": round(total_volume, 2),
-                "volume_24h_rtc": round(vol_24h, 2),
-                "volume_7d_rtc": round(vol_7d, 2),
+                "total_volume_rtc": round(units_to_float(total_volume, RTC_UNIT), 2),
+                "volume_24h_rtc": round(units_to_float(vol_24h, RTC_UNIT), 2),
+                "volume_7d_rtc": round(units_to_float(vol_7d, RTC_UNIT), 2),
                 "open_orders": open_orders,
-                "open_sells": {"count": open_sell[0], "total_rtc": round(open_sell[1], 2)},
-                "open_buys": {"count": open_buy[0], "total_rtc": round(open_buy[1], 2)},
+                "open_sells": {
+                    "count": open_sell[0],
+                    "total_rtc": round(units_to_float(open_sell[1], RTC_UNIT), 2),
+                },
+                "open_buys": {
+                    "count": open_buy[0],
+                    "total_rtc": round(units_to_float(open_buy[1], RTC_UNIT), 2),
+                },
                 "last_price": price_list[0] if price_list else RTC_REFERENCE_RATE,
                 "high_24h": max(price_list) if price_list else None,
                 "low_24h": min(price_list) if price_list else None,

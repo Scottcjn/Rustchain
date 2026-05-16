@@ -11,6 +11,10 @@ Run with:
 import sys
 import time
 import unittest
+try:
+    import defusedxml.ElementTree as ET
+except ImportError:
+    import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -324,6 +328,19 @@ class TestAtomFeedBuilder(unittest.TestCase):
         xml = self.builder.build()
         self.assertIn("media:content", xml)
         self.assertIn("video.mp4", xml)
+
+    def test_thumbnail_is_valid_xml(self):
+        """Test Atom media thumbnail extension produces valid XML."""
+        self.builder.add_entry(
+            title="Test",
+            entry_id="urn:test:1",
+            link="https://example.com/1",
+            summary="Test",
+            thumbnail_url="https://example.com/thumb.jpg"
+        )
+        xml = self.builder.build()
+        self.assertIn('<media:thumbnail url="https://example.com/thumb.jpg"/>', xml)
+        ET.fromstring(xml)  # nosec B314 - test parses own output
 
 
 class TestConvenienceFunctions(unittest.TestCase):

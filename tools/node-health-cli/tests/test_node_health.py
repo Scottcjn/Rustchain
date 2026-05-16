@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """
 Tests for RustChain Node Health Monitor CLI
 """
@@ -8,10 +9,10 @@ import unittest
 from io import StringIO
 from unittest.mock import patch, MagicMock
 from urllib.error import URLError, HTTPError
+from pathlib import Path
 
 import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from node_health import (
     HealthStatus, EpochStatus, ReachabilityStatus, CheckResult,

@@ -17,6 +17,8 @@ import json
 from datetime import datetime, timezone
 from unittest.mock import patch, MagicMock
 
+from flask import Flask
+
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -29,6 +31,7 @@ from bottube_mood_engine import (
     COMMENT_MODIFIERS,
     TRANSITION_PROBABILITIES,
     DEFAULT_MOOD,
+    mood_bp,
 )
 
 
@@ -551,6 +554,85 @@ class TestDatabasePersistence(unittest.TestCase):
         
         # History should be preserved
         self.assertEqual(len(history1), len(history2))
+
+
+class TestMoodBlueprintJsonValidation(unittest.TestCase):
+    """Test JSON body validation for mood API write endpoints."""
+
+    def setUp(self):
+        self.temp_db = tempfile.NamedTemporaryFile(delete=False, suffix='.db')
+        self.temp_db.close()
+        app = Flask(__name__)
+        app.config["TESTING"] = True
+        app.config["DB_PATH"] = self.temp_db.name
+        app.register_blueprint(mood_bp)
+        self.client = app.test_client()
+
+    def tearDown(self):
+        try:
+            os.unlink(self.temp_db.name)
+        except Exception:
+            pass
+
+    def test_write_endpoints_reject_non_object_json(self):
+        endpoints = [
+            "/api/v1/agents/test-agent/mood/signal",
+            "/api/v1/agents/test-agent/mood/title",
+            "/api/v1/agents/test-agent/mood/comment",
+        ]
+
+        for endpoint in endpoints:
+            with self.subTest(endpoint=endpoint):
+                response = self.client.post(endpoint, json=["not", "an", "object"])
+
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(
+                    response.get_json()["error"],
+                    "JSON object required",
+                )
+
+    def test_write_endpoints_reject_malformed_json(self):
+        endpoints = [
+            "/api/v1/agents/test-agent/mood/signal",
+            "/api/v1/agents/test-agent/mood/title",
+            "/api/v1/agents/test-agent/mood/comment",
+        ]
+
+        for endpoint in endpoints:
+            with self.subTest(endpoint=endpoint):
+                response = self.client.post(
+                    endpoint,
+                    data="{",
+                    content_type="application/json",
+                )
+
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(
+                    response.get_json()["error"],
+                    "JSON object required",
+                )
+
+    def test_required_write_endpoints_still_reject_missing_body(self):
+        endpoints = [
+            "/api/v1/agents/test-agent/mood/signal",
+            "/api/v1/agents/test-agent/mood/title",
+        ]
+
+        for endpoint in endpoints:
+            with self.subTest(endpoint=endpoint):
+                response = self.client.post(endpoint)
+
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(
+                    response.get_json()["error"],
+                    "Request body required",
+                )
+
+    def test_comment_endpoint_still_allows_missing_body(self):
+        response = self.client.post("/api/v1/agents/test-agent/mood/comment")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("generated_comment", response.get_json())
 
 
 def run_demo():

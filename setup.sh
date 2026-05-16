@@ -10,8 +10,8 @@ set -euo pipefail
 
 RC_NODE_PRIMARY="https://50.28.86.131"
 RC_NODE_BACKUP="https://50.28.86.153"
-RC_MINER_URL="https://raw.githubusercontent.com/Scottcjn/Rustchain/main/rustchain_linux_miner.py"
-RC_FP_URL="https://raw.githubusercontent.com/Scottcjn/Rustchain/main/fingerprint_checks.py"
+RC_MINER_URL="https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/linux/rustchain_linux_miner.py"
+RC_FP_URL="https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/linux/fingerprint_checks.py"
 INSTALL_DIR="$HOME/.rustchain"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; BOLD='\033[1m'; NC='\033[0m'
@@ -33,6 +33,31 @@ info()    { echo -e "  ${GREEN}✓${NC} $1"; }
 warn()    { echo -e "  ${YELLOW}⚠${NC} $1"; }
 error()   { echo -e "  ${RED}✗ ERROR:${NC} $1"; exit 1; }
 heading() { echo -e "\n${BOLD}[$1]${NC}"; }
+
+download_file() {
+  local url="$1"
+  local dest="$2"
+  local label="$3"
+
+  case "$url" in
+    https://*) ;;
+    *) error "Refusing non-HTTPS ${label} URL: $url" ;;
+  esac
+
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL --proto '=https' --tlsv1.2 "$url" -o "$dest" || \
+      error "Could not download ${label} from $url"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -q --https-only "$url" -O "$dest" || \
+      error "Could not download ${label} from $url"
+  else
+    error "Neither curl nor wget found. Please install one."
+  fi
+
+  if [ ! -s "$dest" ]; then
+    error "Downloaded ${label} is empty: $dest"
+  fi
+}
 
 # ---------------------------------------------------------------------------- #
 # 1. Detect Platform
@@ -137,21 +162,11 @@ download_files() {
 
   mkdir -p "$INSTALL_DIR"
 
-  if command -v curl >/dev/null 2>&1; then
-    DL="curl -sSL -o"
-  elif command -v wget >/dev/null 2>&1; then
-    DL="wget -qO"
-  else
-    error "Neither curl nor wget found. Please install one."
-  fi
-
   info "Downloading rustchain_linux_miner.py..."
-  $DL "$INSTALL_DIR/rustchain_linux_miner.py" "$RC_MINER_URL" 2>/dev/null || \
-    warn "Could not download miner (may not exist yet in upstream)"
+  download_file "$RC_MINER_URL" "$INSTALL_DIR/rustchain_linux_miner.py" "miner"
 
   info "Downloading fingerprint_checks.py..."
-  $DL "$INSTALL_DIR/fingerprint_checks.py" "$RC_FP_URL" 2>/dev/null || \
-    warn "Could not download fingerprint checks"
+  download_file "$RC_FP_URL" "$INSTALL_DIR/fingerprint_checks.py" "fingerprint checks"
 
   info "Files saved to $INSTALL_DIR/"
 }

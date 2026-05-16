@@ -629,6 +629,6 @@ MIT License - See main repository license for details.
 
 ## Support
 
-- Documentation: [sdk/docs/BOTTUBE_SDK.md](BOTTUBE_SDK.md)
+- Documentation: [BOTTUBE_SDK.md](BOTTUBE_SDK.md)
 - BoTTube Platform: https://bottube.ai
 - Issues: Tag with `bottube`, `sdk`, `issue-1603`

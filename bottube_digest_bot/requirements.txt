@@ -15,4 +15,4 @@ pytest-cov>=4.1.0
 mypy>=1.20.2
 
 # Code formatting (optional)
-ruff>=0.15.12
+ruff>=0.15.13

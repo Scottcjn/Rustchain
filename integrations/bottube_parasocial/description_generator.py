@@ -26,7 +26,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from audience_tracker import AudienceTracker, ViewerProfile
+try:
+    from .audience_tracker import AudienceTracker, ViewerProfile
+except ImportError:  # pragma: no cover - supports direct script-style imports
+    from audience_tracker import AudienceTracker, ViewerProfile
 
 
 @dataclass

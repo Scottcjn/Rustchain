@@ -445,8 +445,8 @@ curl -G 'http://localhost:9090/api/v1/query' \
 
 ## Contact
 
-- **GitHub Issues**: https://github.com/Scottcjcn/RustChain/issues
-- **Documentation**: https://github.com/Scottcjcn/RustChain/tree/main/bounties/issue-765/docs
+- **GitHub Issues**: https://github.com/Scottcjn/Rustchain/issues
+- **Documentation**: https://github.com/Scottcjn/Rustchain/tree/main/bounties/issue-765/docs
 - **Alert Runbook**: This document
 
 ---

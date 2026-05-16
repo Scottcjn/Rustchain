@@ -82,6 +82,42 @@ class PayoutPreflightTests(unittest.TestCase):
         r = validate_wallet_transfer_signed(payload)
         self.assertTrue(r.ok)
 
+    def test_signed_requires_public_key_for_rtc_sender(self):
+        payload = {
+            "from_address": "RTC" + "a" * 40,
+            "to_address": "RTC" + "b" * 40,
+            "amount_rtc": 1.25,
+            "nonce": "123",
+            "signature": "00",
+        }
+        r = validate_wallet_transfer_signed(payload)
+        self.assertFalse(r.ok)
+        self.assertEqual(r.error, "missing_required_fields")
+        self.assertEqual(r.details.get("missing"), ["public_key"])
+
+    def test_signed_accepts_bcn_sender_without_public_key(self):
+        payload = {
+            "from_address": "bcn_sender001",
+            "to_address": "RTC" + "b" * 40,
+            "amount_rtc": 1.25,
+            "nonce": "123",
+            "signature": "00",
+        }
+        r = validate_wallet_transfer_signed(payload)
+        self.assertTrue(r.ok)
+
+    def test_signed_accepts_bcn_recipient(self):
+        payload = {
+            "from_address": "RTC" + "a" * 40,
+            "to_address": "bcn_receiver001",
+            "amount_rtc": 1.25,
+            "nonce": "123",
+            "signature": "00",
+            "public_key": "00",
+        }
+        r = validate_wallet_transfer_signed(payload)
+        self.assertTrue(r.ok)
+
     def test_signed_rejects_sub_micro_amount(self):
         payload = {
             "from_address": "RTC" + "a" * 40,

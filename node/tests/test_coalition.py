@@ -33,6 +33,9 @@ from coalition import (
 )
 from flask import Flask
 
+ADMIN_KEY = "test-admin-key"
+ADMIN_HEADERS = {"X-Admin-Key": ADMIN_KEY}
+
 
 def _unlink_temp_db(db_path):
     gc.collect()
@@ -73,12 +76,12 @@ def tmp_db():
 
 @pytest.fixture
 def app(tmp_db, monkeypatch):
-    monkeypatch.setenv("RC_ADMIN_KEY", "test-admin-key")
+    monkeypatch.setenv("RC_ADMIN_KEY", ADMIN_KEY)
     app = Flask(__name__)
     bp = create_coalition_blueprint(tmp_db)
     app.register_blueprint(bp)
     app.config["TESTING"] = True
-    return app
+    yield app
 
 
 @pytest.fixture
@@ -157,6 +160,114 @@ def test_create_coalition_no_miner_id_rejected(client):
         "name": "No miner coalition",
     })
     assert res.status_code == 400
+
+
+def test_coalition_write_routes_reject_non_object_json(client):
+    """Write routes reject JSON arrays before accessing request fields."""
+    routes = [
+        ("/api/coalition/create", {}),
+        ("/api/coalition/join", {}),
+        ("/api/coalition/leave", {}),
+        ("/api/coalition/propose", {}),
+        ("/api/coalition/vote", {}),
+        ("/api/coalition/flamebound-review", {"X-Admin-Key": "test-admin-key"}),
+    ]
+
+    for route, headers in routes:
+        res = client.post(route, json=["not", "an", "object"], headers=headers)
+
+        assert res.status_code == 400
+        assert res.get_json()["error"] == "invalid_json"
+
+
+def test_coalition_write_routes_reject_malformed_field_types(client):
+    """Write route text and ID fields are validated before business logic."""
+    cases = [
+        (
+            "/api/coalition/create",
+            {"miner_id": {"id": "alice"}, "name": "Alpha", "description": ""},
+            "miner_id",
+            "string",
+            {},
+        ),
+        (
+            "/api/coalition/join",
+            {"miner_id": "alice", "coalition_id": {"id": 1}},
+            "coalition_id",
+            "integer",
+            {},
+        ),
+        (
+            "/api/coalition/leave",
+            {"miner_id": ["alice"], "coalition_id": 1},
+            "miner_id",
+            "string",
+            {},
+        ),
+        (
+            "/api/coalition/propose",
+            {"miner_id": "alice", "coalition_id": 1, "title": ["RIP"], "description": ""},
+            "title",
+            "string",
+            {},
+        ),
+        (
+            "/api/coalition/vote",
+            {"miner_id": "alice", "proposal_id": 1, "vote": {"choice": "for"}},
+            "vote",
+            "string",
+            {},
+        ),
+        (
+            "/api/coalition/flamebound-review",
+            {"proposal_id": ["1"], "decision": "approve", "reason": ""},
+            "proposal_id",
+            "integer",
+            {"X-Admin-Key": "test-admin-key"},
+        ),
+    ]
+
+    for route, body, field, expected, headers in cases:
+        res = client.post(route, json=body, headers=headers)
+        payload = res.get_json()
+
+        assert res.status_code == 400
+        assert payload["error"] == "invalid_field_type"
+        assert payload["field"] == field
+        assert payload["expected"] == expected
+
+
+def test_coalition_proposal_rejects_malformed_rip_number(client):
+    """rip_number is optional, but provided values must be integer-like."""
+    for rip_number in ({"id": 101}, [101], True, False):
+        res = client.post("/api/coalition/propose", json={
+            "miner_id": "alice",
+            "coalition_id": 1,
+            "title": "RIP object",
+            "description": "bad rip_number",
+            "rip_number": rip_number,
+        })
+        payload = res.get_json()
+
+        assert res.status_code == 400
+        assert payload["error"] == "invalid_field_type"
+        assert payload["field"] == "rip_number"
+        assert payload["expected"] == "integer"
+
+
+def test_hex_miner_signature_field_type_returns_unauthorized(client):
+    """Malformed signature fields should fail auth instead of raising."""
+    hex_miner_id = "a" * 64
+    res = client.post("/api/coalition/create", json={
+        "miner_id": hex_miner_id,
+        "name": "Hex Miner Coalition",
+        "description": "signature type regression",
+        "signature": ["not", "hex"],
+        "timestamp": int(time.time()),
+    })
+
+    assert res.status_code == 401
+    assert "invalid or missing signature" in res.get_json()["error"]
 
 
 def test_create_coalition_creator_is_auto_member(client, rich_miner):
@@ -510,11 +621,15 @@ def test_flamebound_approve(client, test_coalition, tmp_db, rich_miner, poor_min
     """Sophia can approve a proposal."""
     pid = _create_proposal_and_add_members(client, test_coalition, tmp_db, rich_miner, poor_miner, medium_miner)
 
-    res = client.post("/api/coalition/flamebound-review", json={
-        "proposal_id": pid,
-        "decision": "approve",
-        "reason": "Proposal is well-structured and aligns with protocol goals.",
-    }, headers={"X-Admin-Key": "test-admin-key"})
+    res = client.post(
+        "/api/coalition/flamebound-review",
+        headers=ADMIN_HEADERS,
+        json={
+            "proposal_id": pid,
+            "decision": "approve",
+            "reason": "Proposal is well-structured and aligns with protocol goals.",
+        },
+    )
     assert res.status_code == 200
     data = res.get_json()
     assert data["decision"] == "approve"
@@ -525,11 +640,15 @@ def test_flamebound_veto(client, test_coalition, tmp_db, rich_miner, poor_miner,
     """Sophia can veto a proposal."""
     pid = _create_proposal_and_add_members(client, test_coalition, tmp_db, rich_miner, poor_miner, medium_miner)
 
-    res = client.post("/api/coalition/flamebound-review", json={
-        "proposal_id": pid,
-        "decision": "veto",
-        "reason": "Proposal contains security risks.",
-    }, headers={"X-Admin-Key": "test-admin-key"})
+    res = client.post(
+        "/api/coalition/flamebound-review",
+        headers=ADMIN_HEADERS,
+        json={
+            "proposal_id": pid,
+            "decision": "veto",
+            "reason": "Proposal contains security risks.",
+        },
+    )
     assert res.status_code == 200
     data = res.get_json()
     assert data["decision"] == "veto"
@@ -541,11 +660,15 @@ def test_flamebound_veto_prevents_voting(client, test_coalition, tmp_db, rich_mi
     pid = _create_proposal_and_add_members(client, test_coalition, tmp_db, rich_miner, poor_miner, medium_miner)
 
     # Veto first
-    res = client.post("/api/coalition/flamebound-review", json={
-        "proposal_id": pid,
-        "decision": "veto",
-        "reason": "Security risk.",
-    }, headers={"X-Admin-Key": "test-admin-key"})
+    res = client.post(
+        "/api/coalition/flamebound-review",
+        headers=ADMIN_HEADERS,
+        json={
+            "proposal_id": pid,
+            "decision": "veto",
+            "reason": "Security risk.",
+        },
+    )
     assert res.status_code == 200
 
     # Vote on vetoed proposal should fail
@@ -561,41 +684,73 @@ def test_flamebound_invalid_decision_rejected(client, test_coalition, tmp_db, ri
     """Invalid decision is rejected."""
     pid = _create_proposal_and_add_members(client, test_coalition, tmp_db, rich_miner, poor_miner, medium_miner)
 
-    res = client.post("/api/coalition/flamebound-review", json={
-        "proposal_id": pid,
-        "decision": "maybe",
-        "reason": "Unclear.",
-    }, headers={"X-Admin-Key": "test-admin-key"})
+    res = client.post(
+        "/api/coalition/flamebound-review",
+        headers=ADMIN_HEADERS,
+        json={
+            "proposal_id": pid,
+            "decision": "maybe",
+            "reason": "Unclear.",
+        },
+    )
     assert res.status_code == 400
 
 
 def test_flamebound_nonexistent_proposal_rejected(client, rich_miner):
     """Review on non-existent proposal is rejected."""
-    res = client.post("/api/coalition/flamebound-review", json={
-        "proposal_id": 99999,
-        "decision": "approve",
-        "reason": "N/A",
-    }, headers={"X-Admin-Key": "test-admin-key"})
+    res = client.post(
+        "/api/coalition/flamebound-review",
+        headers=ADMIN_HEADERS,
+        json={
+            "proposal_id": 99999,
+            "decision": "approve",
+            "reason": "N/A",
+        },
+    )
     assert res.status_code == 404
 
 
-def test_flamebound_review_requires_admin_key(client, test_coalition, tmp_db, rich_miner, poor_miner, medium_miner):
-    """Unauthenticated callers cannot approve or veto coalition proposals."""
+def test_flamebound_review_rejects_unauthenticated_veto(client, test_coalition, tmp_db, rich_miner, poor_miner, medium_miner):
+    """Unauthenticated callers cannot veto coalition proposals."""
     pid = _create_proposal_and_add_members(client, test_coalition, tmp_db, rich_miner, poor_miner, medium_miner)
 
     res = client.post("/api/coalition/flamebound-review", json={
         "proposal_id": pid,
         "decision": "veto",
-        "reason": "Attacker should not be able to veto.",
+        "reason": "attacker veto",
     })
-    assert res.status_code == 401
 
+    assert res.status_code == 401
     with sqlite3.connect(tmp_db) as conn:
         status = conn.execute(
             "SELECT status FROM coalition_proposals WHERE id = ?",
             (pid,),
         ).fetchone()[0]
+        review_count = conn.execute(
+            "SELECT COUNT(*) FROM flamebound_reviews WHERE proposal_id = ?",
+            (pid,),
+        ).fetchone()[0]
+
     assert status == PROPOSAL_STATUS_ACTIVE
+    assert review_count == 0
+
+
+def test_flamebound_review_fails_closed_without_admin_key(client, monkeypatch, test_coalition, tmp_db, rich_miner, poor_miner, medium_miner):
+    """Flamebound review is disabled when RC_ADMIN_KEY is not configured."""
+    pid = _create_proposal_and_add_members(client, test_coalition, tmp_db, rich_miner, poor_miner, medium_miner)
+    monkeypatch.delenv("RC_ADMIN_KEY", raising=False)
+
+    res = client.post(
+        "/api/coalition/flamebound-review",
+        headers=ADMIN_HEADERS,
+        json={
+            "proposal_id": pid,
+            "decision": "approve",
+            "reason": "N/A",
+        },
+    )
+
+    assert res.status_code == 503
 
 
 # ---------------------------------------------------------------------------
@@ -639,13 +794,15 @@ def test_list_coalitions_rejects_non_integer_pagination(client):
     assert res.get_json() == {"error": "offset must be an integer"}
 
 
-def test_list_coalitions_clamps_negative_pagination(client):
-    """Negative pagination values are clamped to safe public bounds."""
-    res = client.get("/api/coalition/list?limit=-5&offset=-10")
-    assert res.status_code == 200
-    data = res.get_json()
-    assert data["count"] == 1
-    assert data["coalitions"][0]["name"] == FLAMEBUND_COALITION_NAME
+def test_list_coalitions_rejects_negative_pagination(client):
+    """Negative pagination values are invalid."""
+    res = client.get("/api/coalition/list?limit=-5")
+    assert res.status_code == 400
+    assert res.get_json() == {"error": "limit must be at least 1"}
+
+    res = client.get("/api/coalition/list?offset=-10")
+    assert res.status_code == 400
+    assert res.get_json() == {"error": "offset must be at least 0"}
 
 
 def test_get_coalition_details(client, test_coalition, rich_miner, poor_miner):
@@ -716,6 +873,17 @@ def test_list_proposals_rejects_non_integer_pagination(client, test_coalition):
     res = client.get(f"/api/coalition/{test_coalition}/proposals?offset=NaN")
     assert res.status_code == 400
     assert res.get_json() == {"error": "offset must be an integer"}
+
+
+def test_list_proposals_rejects_negative_pagination(client, test_coalition):
+    """Proposal listing rejects negative pagination before querying SQLite."""
+    res = client.get(f"/api/coalition/{test_coalition}/proposals?limit=-1")
+    assert res.status_code == 400
+    assert res.get_json() == {"error": "limit must be at least 1"}
+
+    res = client.get(f"/api/coalition/{test_coalition}/proposals?offset=-1")
+    assert res.status_code == 400
+    assert res.get_json() == {"error": "offset must be at least 0"}
 
 
 def test_list_proposals_nonexistent_coalition(client, rich_miner):

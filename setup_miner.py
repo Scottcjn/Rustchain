@@ -13,7 +13,23 @@ import urllib.request
 import urllib.error
 import hashlib
 import time
+from urllib.parse import urlparse
 from pathlib import Path
+
+MINER_ARTIFACTS = {
+    "Linux": {
+        "url": "https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/linux/rustchain_linux_miner.py",
+        "sha256": "9475fe15d149ef7b3824c0009453c55e17fb6d1d411ea37e9f24f58c6313871c",
+    },
+    "Darwin": {
+        "url": "https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/macos/rustchain_mac_miner_v2.5.py",
+        "sha256": "e50cea51a24c8c0337e340287a05e6431f6d95883ab913a1a79c19e99bc03dd8",
+    },
+    "Windows": {
+        "url": "https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/windows/rustchain_windows_miner.py",
+        "sha256": "51fe431cbee3c5b81218a738c221d45e675dafa5d67f9aff716d4ea11f304662",
+    },
+}
 
 class MinerSetup:
     def __init__(self):
@@ -101,46 +117,40 @@ class MinerSetup:
         (self.setup_dir / "logs").mkdir(exist_ok=True)
         (self.setup_dir / "data").mkdir(exist_ok=True)
         
+    def _miner_artifact(self):
+        return MINER_ARTIFACTS.get(self.system, MINER_ARTIFACTS["Linux"])
+
     def download_miner(self):
-        """Download the universal miner script"""
-        self.log("Downloading RustChain Universal Miner...")
-        
-        miner_url = "https://raw.githubusercontent.com/RustChain/miner/main/rustchain_universal_miner.py"
-        fallback_urls = [
-            "https://rustchain.io/downloads/rustchain_universal_miner.py",
-            "https://github.com/RustChain/RustChain/raw/main/rustchain_universal_miner.py"
-        ]
-        
+        """Download and verify the platform miner script."""
+        self.log("Downloading RustChain miner...")
+
+        artifact = self._miner_artifact()
+        miner_url = artifact["url"]
+        expected_hash = artifact["sha256"]
         miner_file = self.setup_dir / "rustchain_universal_miner.py"
-        
-        # Try primary URL first, then fallbacks
-        urls_to_try = [miner_url] + fallback_urls
-        
-        for url in urls_to_try:
-            try:
-                self.log(f"Trying to download from: {url}")
-                
-                # Create a simple miner script if download fails
-                if url == urls_to_try[-1]:  # Last attempt
-                    self.log("Creating local miner implementation...")
-                    self.create_local_miner(miner_file)
-                    return
-                    
-                with urllib.request.urlopen(url, timeout=30) as response:
-                    content = response.read()
-                    
-                with open(miner_file, 'wb') as f:
-                    f.write(content)
-                    
-                self.log("Miner downloaded successfully")
-                return
-                
-            except Exception as e:
-                self.log(f"Download failed from {url}: {str(e)}")
-                continue
-                
-        # If all downloads fail, create local implementation
-        self.create_local_miner(miner_file)
+
+        parsed = urlparse(miner_url)
+        if parsed.scheme != "https":
+            raise Exception(f"Refusing non-HTTPS miner URL: {miner_url}")
+
+        try:
+            self.log(f"Downloading from: {miner_url}")
+            with urllib.request.urlopen(miner_url, timeout=30) as response:
+                content = response.read()
+        except Exception as exc:
+            raise Exception(f"Failed to download RustChain miner: {exc}") from exc
+
+        actual_hash = hashlib.sha256(content).hexdigest()
+        if actual_hash != expected_hash:
+            raise Exception(
+                "Downloaded miner SHA-256 mismatch: "
+                f"expected {expected_hash}, got {actual_hash}"
+            )
+
+        with open(miner_file, 'wb') as f:
+            f.write(content)
+
+        self.log("Miner downloaded and verified successfully")
         
     def create_local_miner(self, miner_file):
         """Create a basic local miner implementation"""

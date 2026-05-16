@@ -126,7 +126,7 @@ rtc-miner status
 
 **Fix:** Wait for at least one full epoch to complete. Check epoch status:
 ```bash
-curl -sk https://rustchain.org/api/epoch | jq .
+curl -sk https://rustchain.org/epoch | jq .
 ```
 
 ---
@@ -189,7 +189,7 @@ curl -sSL https://rustchain.org/install.sh | bash
 curl -sk "https://rustchain.org/api/miner-info?id=YOUR_WALLET" | jq .multiplier
 
 # Check total network weight this epoch:
-curl -sk https://rustchain.org/api/epoch | jq .total_weight
+curl -sk https://rustchain.org/epoch | jq .total_weight
 ```
 Your share = `(your_multiplier / total_weight) × 1.5`
 

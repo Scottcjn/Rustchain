@@ -211,6 +211,53 @@ class TestDatabaseReader(unittest.TestCase):
         self.assertIsInstance(a.ergo_tx_id, str)
 
 
+class TestAttestationReader(unittest.TestCase):
+    def setUp(self):
+        self.db_path = "/tmp/test_attestations.db"
+
+    def tearDown(self):
+        if os.path.exists(self.db_path):
+            os.remove(self.db_path)
+
+    def test_read_attestations_nonexistent_db(self):
+        rows = read_attestations_for_epoch("/tmp/nonexistent_attestations.db", 100)
+
+        self.assertEqual(rows, [])
+
+    def test_read_attestations_falls_back_to_later_table(self):
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("""
+            CREATE TABLE miner_attest_recent (
+                miner_id TEXT NOT NULL,
+                epoch INTEGER NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE attestations (
+                miner_id TEXT NOT NULL,
+                epoch INTEGER NOT NULL,
+                height INTEGER NOT NULL,
+                fingerprint_hash TEXT NOT NULL
+            )
+        """)
+        conn.executemany(
+            "INSERT INTO attestations (miner_id, epoch, height, fingerprint_hash) "
+            "VALUES (?, ?, ?, ?)",
+            [
+                ("miner-b", 200, 200, "hash-b"),
+                ("miner-a", 200, 200, "hash-a"),
+                ("miner-c", 201, 201, "hash-c"),
+            ],
+        )
+        conn.commit()
+        conn.close()
+
+        rows = read_attestations_for_epoch(self.db_path, 200)
+
+        self.assertEqual([row["miner_id"] for row in rows], ["miner-a", "miner-b"])
+        self.assertEqual([row["fingerprint_hash"] for row in rows], ["hash-a", "hash-b"])
+
+
 # ── Verifier Tests ───────────────────────────────────────────────
 
 class TestAnchorVerifier(unittest.TestCase):

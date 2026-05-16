@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 """
 Hall of Rust - Immortal Registry for Dying Hardware
 ====================================================
@@ -6,6 +8,7 @@ This is the emotional core of RustChain.
 """
 
 from flask import Blueprint, jsonify, request
+from datetime import datetime, timezone
 import sqlite3
 import hashlib
 import time
@@ -24,6 +27,11 @@ RUST_WEIGHTS = {
     'capacitor_plague': 100,   # Bonus for 2001-2006 bad cap era
     'first_attestation': 50,   # Bonus for being among first 100 miners
 }
+
+
+def _current_utc_year():
+    return datetime.now(timezone.utc).year
+
 
 # Capacitor plague era models (infamous bad electrolytic caps)
 CAPACITOR_PLAGUE_MODELS = [
@@ -82,13 +90,14 @@ def init_hall_tables(db_path):
     conn.commit()
     conn.close()
 
-def calculate_rust_score(machine):
+def calculate_rust_score(machine, current_year=None):
     """Calculate the Rust Score for a machine - higher = rustier = better."""
     score = 0
+    current_year = current_year if current_year is not None else _current_utc_year()
     
     # Age bonus (estimated from model/arch)
     if machine.get('manufacture_year'):
-        age = 2025 - machine['manufacture_year']
+        age = max(0, current_year - int(machine['manufacture_year']))
         score += age * RUST_WEIGHTS['age_years']
     
     # Attestation loyalty
@@ -439,6 +448,19 @@ def _table_exists(cursor, table_name):
     return row is not None
 
 
+def _parse_limit_arg(default=50, max_value=500):
+    raw_value = request.args.get('limit')
+    if raw_value is None or raw_value == '':
+        return default, None
+    try:
+        limit = int(raw_value)
+    except (TypeError, ValueError):
+        return None, ("limit must be an integer", 400)
+    if limit < 0:
+        return None, ("limit must be non-negative", 400)
+    return min(limit, max_value), None
+
+
 def _internal_error_response(context):
     logger.exception("Hall of Rust endpoint failed: %s", context)
     return jsonify({'error': 'internal_error'}), 500
@@ -451,7 +473,9 @@ def api_hall_of_fame_leaderboard():
     GET /api/hall_of_fame/leaderboard?limit=50&deceased=0|1
     Returns machines ordered by rust_score DESC with badge decoration.
     """
-    limit = min(int(request.args.get('limit', 50) or 50), 500)
+    limit, error_response = _parse_limit_arg()
+    if error_response:
+        return error_response
     deceased_filter = request.args.get('deceased')  # '0', '1', or omitted (all)
 
     try:
@@ -689,7 +713,8 @@ def machine_of_the_day():
         machine = dict(row)
         machine['badge'] = get_rust_badge(machine['rust_score'])
         machine['fun_fact'] = random.choice(VINTAGE_FACTS)
-        machine['age_years'] = 2025 - machine.get('manufacture_year', 2020)
+        mfg_year = machine.get('manufacture_year') or 2020
+        machine['age_years'] = max(0, _current_utc_year() - int(mfg_year))
         
         return jsonify(machine)
     except Exception:

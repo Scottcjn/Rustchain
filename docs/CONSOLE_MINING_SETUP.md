@@ -379,7 +379,7 @@ Develop attestation ROMs for additional consoles:
 
 - **GitHub Issues**: https://github.com/Scottcjn/Rustchain/issues
 - **Discord**: https://discord.gg/rustchain
-- **Documentation**: https://rustchain.org/docs
+- **Documentation**: https://github.com/Scottcjn/Rustchain/tree/main/docs
 
 ---
 

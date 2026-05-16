@@ -280,7 +280,11 @@ def register_rewards_rip200(app, DB_PATH):
         if not hmac.compare_digest(provided_key, settle_key):
             return jsonify({"error": "Unauthorized — valid X-Admin-Key header required"}), 401
 
-        data = request.json or {}
+        data = request.get_json(silent=True)
+        if data is None:
+            data = {}
+        if not isinstance(data, dict):
+            return jsonify({"error": "JSON object required"}), 400
         epoch = data.get('epoch')
 
         if epoch is None:
@@ -288,6 +292,10 @@ def register_rewards_rip200(app, DB_PATH):
             current = current_slot()
             current_epoch = slot_to_epoch(current)
             epoch = current_epoch - 1
+        elif isinstance(epoch, bool) or not isinstance(epoch, int):
+            return jsonify({"error": "epoch must be an integer"}), 400
+        elif epoch < 0:
+            return jsonify({"error": "epoch must be non-negative"}), 400
 
         result = settle_epoch_rip200(DB_PATH, epoch)
         return jsonify(result)

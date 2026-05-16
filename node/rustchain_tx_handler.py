@@ -109,6 +109,8 @@ class TransactionPool:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
 
+            self._recover_interrupted_balances_migration(cursor)
+
             # Base case: create the balances table if it doesn't exist at all.
             # The migration steps below assume the table already exists (ALTER TABLE,
             # PRAGMA table_info, etc.), so a fresh empty DB would fail without this.
@@ -169,6 +171,27 @@ class TransactionPool:
                             logger.warning(f"Schema statement failed: {e}")
 
             conn.commit()
+
+    def _recover_interrupted_balances_migration(self, cursor) -> None:
+        """Recover balances after a crash between SQLite table renames."""
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND name IN ('balances', 'balances_old', 'balances_new')"
+        )
+        tables = {row[0] for row in cursor.fetchall()}
+
+        if "balances" in tables:
+            return
+
+        if "balances_new" in tables:
+            cursor.execute("ALTER TABLE balances_new RENAME TO balances")
+            cursor.execute("DROP TABLE IF EXISTS balances_old")
+            logger.warning("Recovered interrupted balances migration from balances_new")
+            return
+
+        if "balances_old" in tables:
+            cursor.execute("ALTER TABLE balances_old RENAME TO balances")
+            logger.warning("Recovered interrupted balances migration from balances_old")
 
     @contextmanager
     def _get_connection(self):
@@ -674,7 +697,13 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
     def submit_transaction():
         """Submit a signed transaction"""
         try:
-            data = request.get_json()
+            data = request.get_json(silent=True)
+
+            if data is None:
+                return jsonify({"error": "No JSON data provided"}), 400
+
+            if not isinstance(data, dict):
+                return jsonify({"error": "JSON object required"}), 400
 
             if not data:
                 return jsonify({"error": "No JSON data provided"}), 400
