@@ -947,17 +947,24 @@ def register_sophia_governor_endpoints(app, db_path: str | None = None) -> None:
 
     @app.route("/sophia/governor/recent", methods=["GET"])
     def sophia_governor_recent():
-        limit = request.args.get("limit", 20)
+        limit_raw = request.args.get("limit", 20)
+        try:
+            limit = int(limit_raw)
+        except (TypeError, ValueError):
+            return jsonify({"error": "limit must be an integer"}), 400
         return jsonify({
             "ok": True,
-            "events": get_recent_governor_events(db_path=db, limit=int(limit)),
+            "events": get_recent_governor_events(db_path=db, limit=limit),
         })
 
     @app.route("/sophia/governor/review", methods=["POST"])
     def sophia_governor_review():
         if not _is_admin(request):
             return jsonify({"error": "Unauthorized -- admin key required"}), 401
-        data = request.get_json(silent=True) or {}
+        data = request.get_json(silent=True)
+        if data is not None and not isinstance(data, dict):
+            return jsonify({"error": "JSON object required"}), 400
+        data = data or {}
         event_type = str(data.get("event_type", "")).strip()
         source = str(data.get("source", "manual")).strip() or "manual"
         payload = data.get("payload") if isinstance(data.get("payload"), dict) else {}
