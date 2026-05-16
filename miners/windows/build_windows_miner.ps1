@@ -1,4 +1,4 @@
-# Build script for Windows: requires Python 3.11+ and PyInstaller.
+﻿# Build script for Windows: requires Python 3.11+ and PyInstaller.
 Set-StrictMode -Version Latest
 $env:PYINSTALLER_HOME = "$PSScriptRoot\dist"
 Write-Host "Ensuring pip is up to date..."
@@ -9,5 +9,12 @@ if (Test-Path $env:PYINSTALLER_HOME) {
     Remove-Item $env:PYINSTALLER_HOME -Recurse -Force
 }
 Write-Host "Building rustchain_windows_miner.exe..."
-pyinstaller --onefile --name rustchain_windows_miner rustchain_windows_miner.py
+pyinstaller `
+    --onefile `
+    --name rustchain_windows_miner `
+    --collect-submodules tkinter `
+    --hidden-import tkinter `
+    --hidden-import tkinter.ttk `
+    --hidden-import tkinter.scrolledtext `
+    rustchain_windows_miner.py
 Write-Host "Build complete. Executable located at dist\rustchain_windows_miner.exe"
