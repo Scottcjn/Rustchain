@@ -233,7 +233,7 @@ class TestAsyncMinersEndpoint:
 
 
 class TestAsyncBalanceEndpoint:
-    """Test /balance endpoint"""
+    """Test /wallet/balance endpoint"""
 
     @pytest.mark.asyncio
     async def test_balance_success(self):
@@ -266,6 +266,9 @@ class TestAsyncBalanceEndpoint:
             assert balance["balance"] == 123.456
             assert balance["epoch_rewards"] == 10.0
             assert balance["total_earned"] == 1000.0
+            _, kwargs = mock_request.call_args
+            assert kwargs["url"] == "https://rustchain.org/wallet/balance"
+            assert kwargs["params"] == {"miner_id": "test_wallet_address"}
 
     @pytest.mark.asyncio
     async def test_balance_empty_miner_id(self):
