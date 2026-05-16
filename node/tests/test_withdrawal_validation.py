@@ -22,7 +22,8 @@ class TestWithdrawalRequestValidation:
     @pytest.fixture
     def app(self):
         """Create test app instance"""
-        from rustchain_v2_integrated_v2.2.1_rip200 import app
+        import importlib
+        app = importlib.import_module("rustchain_v2_integrated_v2.2.1_rip200").app
         app.config['TESTING'] = True
         return app
 
