@@ -353,6 +353,12 @@ class RustChainMiner:
         """Stop mining"""
         self.mining = False
 
+    def _emit_lifecycle(self, callback, event_type, message, **extra):
+        if callback:
+            event = {"type": event_type, "message": message}
+            event.update(extra)
+            callback(event)
+
     def _mine_loop(self, callback):
         """Main mining loop"""
         while self.mining:
@@ -391,12 +397,24 @@ class RustChainMiner:
                 if callback:
                     callback({"type": "error", "message": "Attestation failed"})
                 return False
+            self._emit_lifecycle(
+                callback,
+                "attest",
+                "Attestation successful",
+                valid_until=int(self.attestation_valid_until),
+            )
 
         if (now - self.last_enroll) > 3600 or not self.enrolled:
             if not self.enroll():
                 if callback:
                     callback({"type": "error", "message": "Epoch enrollment failed"})
                 return False
+            self._emit_lifecycle(
+                callback,
+                "enroll",
+                "Epoch enrollment successful",
+                last_enroll=int(self.last_enroll),
+            )
 
         return True
 
