@@ -947,10 +947,16 @@ def register_sophia_governor_endpoints(app, db_path: str | None = None) -> None:
 
     @app.route("/sophia/governor/recent", methods=["GET"])
     def sophia_governor_recent():
-        limit = request.args.get("limit", 20)
+        raw_limit = request.args.get("limit", "20")
+        try:
+            limit = int(raw_limit)
+        except (ValueError, TypeError):
+            return jsonify({"error": "limit must be a positive integer"}), 400
+        if limit < 1:
+            return jsonify({"error": "limit must be a positive integer"}), 400
         return jsonify({
             "ok": True,
-            "events": get_recent_governor_events(db_path=db, limit=int(limit)),
+            "events": get_recent_governor_events(db_path=db, limit=limit),
         })
 
     @app.route("/sophia/governor/review", methods=["POST"])
