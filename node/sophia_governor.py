@@ -143,6 +143,19 @@ def _max_recent_rows() -> int:
     return max(1, min(int(os.getenv("SOPHIA_GOVERNOR_MAX_RECENT", "50")), 200))
 
 
+def _parse_recent_limit(value: Any, default: int = 20) -> int:
+    if value is None or value == "":
+        limit = default
+    else:
+        try:
+            limit = int(value)
+        except (TypeError, ValueError):
+            raise ValueError("limit must be an integer")
+    if limit < 1:
+        raise ValueError("limit must be >= 1")
+    return min(limit, _max_recent_rows())
+
+
 def _parse_csv_env(name: str) -> list[str]:
     raw = os.getenv(name, "")
     if not raw:
@@ -837,7 +850,7 @@ def get_governor_event(event_id: int, db_path: str | None = None) -> dict[str, A
 def get_recent_governor_events(db_path: str | None = None, limit: int = 20) -> list[dict[str, Any]]:
     db = db_path or DB_PATH
     init_sophia_governor_schema(db)
-    limit = max(1, min(int(limit), _max_recent_rows()))
+    limit = _parse_recent_limit(limit)
     with sqlite3.connect(db) as conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
@@ -947,10 +960,13 @@ def register_sophia_governor_endpoints(app, db_path: str | None = None) -> None:
 
     @app.route("/sophia/governor/recent", methods=["GET"])
     def sophia_governor_recent():
-        limit = request.args.get("limit", 20)
+        try:
+            limit = _parse_recent_limit(request.args.get("limit"))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
         return jsonify({
             "ok": True,
-            "events": get_recent_governor_events(db_path=db, limit=int(limit)),
+            "events": get_recent_governor_events(db_path=db, limit=limit),
         })
 
     @app.route("/sophia/governor/review", methods=["POST"])
