@@ -8,6 +8,8 @@ This is the emotional core of RustChain.
 from flask import Blueprint, jsonify, request
 import sqlite3
 import hashlib
+import hmac
+import os
 import time
 import json
 
@@ -144,6 +146,24 @@ def estimate_manufacture_year(model, arch):
         if key.lower() in arch.lower():
             return year
     return 2020  # Modern default
+
+
+def _require_hall_admin():
+    expected = os.environ.get("RC_ADMIN_KEY", "").strip()
+    if not expected:
+        return jsonify({'ok': False, 'error': 'RC_ADMIN_KEY not configured'}), 503
+
+    provided = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
+    expected_bytes = expected.encode("utf-8")
+    provided_bytes = provided.encode("utf-8") if provided else b""
+    if not provided_bytes or not hmac.compare_digest(provided_bytes, expected_bytes):
+        return jsonify({
+            'ok': False,
+            'error': 'unauthorized',
+            'message': 'Admin key required',
+        }), 401
+
+    return None
 
 # ============== API ENDPOINTS ==============
 
@@ -303,6 +323,10 @@ def rust_leaderboard():
 @hall_bp.route('/hall/eulogy/<fingerprint>', methods=['POST'])
 def set_eulogy(fingerprint):
     """Set a eulogy/nickname for a machine. For when it finally dies."""
+    auth_error = _require_hall_admin()
+    if auth_error:
+        return auth_error
+
     data = request.json or {}
     
     try:
