@@ -254,6 +254,7 @@ class RustChainMiner:
                     time.sleep(10)
                     continue
 
+                self._emit_ready_status(callback)
                 eligible = self.check_eligibility()
                 if eligible:
                     header = self.generate_header()
@@ -283,14 +284,39 @@ class RustChainMiner:
                 if callback:
                     callback({"type": "error", "message": "Attestation failed"})
                 return False
+            if callback:
+                callback({
+                    "type": "attest",
+                    "message": "Attestation submitted",
+                    "miner_id": self.miner_id,
+                    "attestation_ttl_seconds": max(0, int(self.attestation_valid_until - time.time())),
+                })
 
         if (now - self.last_enroll) > 3600 or not self.enrolled:
             if not self.enroll():
                 if callback:
                     callback({"type": "error", "message": "Epoch enrollment failed"})
                 return False
+            if callback:
+                callback({
+                    "type": "enroll",
+                    "message": "Epoch enrollment succeeded",
+                    "miner_id": self.miner_id,
+                    "last_enroll": int(self.last_enroll),
+                })
 
         return True
+
+    def _emit_ready_status(self, callback):
+        if not callback:
+            return
+        callback({
+            "type": "status",
+            "message": "Miner ready",
+            "miner_id": self.miner_id,
+            "enrolled": self.enrolled,
+            "attestation_ttl_seconds": max(0, int(self.attestation_valid_until - time.time())),
+        })
 
     def _get_mac_addresses(self):
         macs = set()
@@ -579,6 +605,35 @@ class RustChainGUI:
         self.root.mainloop()
 
 
+def _format_headless_event(evt):
+    t = evt.get("type")
+    if t == "share":
+        ok = "OK" if evt.get("success") else "FAIL"
+        return (
+            f"[share] submitted={evt.get('submitted')} "
+            f"accepted={evt.get('accepted')} {ok}"
+        )
+    if t == "attest":
+        return (
+            f"[attest] {evt.get('message')} "
+            f"miner_id={evt.get('miner_id')} "
+            f"ttl={evt.get('attestation_ttl_seconds')}s"
+        )
+    if t == "enroll":
+        return f"[enroll] {evt.get('message')} miner_id={evt.get('miner_id')}"
+    if t == "status":
+        enrolled = "yes" if evt.get("enrolled") else "no"
+        return (
+            f"[status] {evt.get('message')} "
+            f"miner_id={evt.get('miner_id')} "
+            f"enrolled={enrolled} "
+            f"attest_ttl={evt.get('attestation_ttl_seconds')}s"
+        )
+    if t == "error":
+        return f"[error] {evt.get('message')}"
+    return None
+
+
 def run_headless(wallet_address: str, node_url: str) -> int:
     wallet = RustChainWallet()
     if wallet_address:
@@ -588,16 +643,13 @@ def run_headless(wallet_address: str, node_url: str) -> int:
     miner.node_url = node_url
 
     def cb(evt):
-        t = evt.get("type")
-        if t == "share":
-            ok = "OK" if evt.get("success") else "FAIL"
-            print(
-                f"[share] submitted={evt.get('submitted')} "
-                f"accepted={evt.get('accepted')} {ok}",
-                flush=True
-            )
-        elif t == "error":
-            print(f"[error] {evt.get('message')}", file=sys.stderr, flush=True)
+        line = _format_headless_event(evt)
+        if not line:
+            return
+        if evt.get("type") == "error":
+            print(line, file=sys.stderr, flush=True)
+        else:
+            print(line, flush=True)
 
     print("RustChain Windows miner: headless mode", flush=True)
     print(f"node={miner.node_url} miner_id={miner.miner_id}", flush=True)
