@@ -14,6 +14,7 @@ Part of Bounty #2303: wRTC Solana Bridge Dashboard
 
 import os
 import json
+import logging
 import time
 from flask import Blueprint, jsonify, request
 
@@ -33,6 +34,7 @@ WRTC_MINT_ADDRESS = os.environ.get("WRTC_MINT_ADDRESS", "")
 # Cache configuration (in-memory for simplicity)
 CACHE_TTL = 30  # seconds
 _price_cache = {"data": None, "timestamp": 0}
+logger = logging.getLogger(__name__)
 
 # ─── Blueprint ────────────────────────────────────────────────────────────────
 dashboard_bp = Blueprint("dashboard", __name__, url_prefix="/bridge/dashboard")
@@ -152,8 +154,9 @@ def get_bridge_health():
             conn.execute("SELECT 1").fetchone()
         health["rustchain"] = True
         details["rustchain"] = "Database accessible"
-    except Exception as e:
-        details["rustchain"] = f"Database error: {str(e)}"
+    except Exception:
+        logger.exception("Dashboard health database check failed")
+        details["rustchain"] = "Database unavailable"
 
     # Check Solana RPC (sync version)
     try:
@@ -173,8 +176,9 @@ def get_bridge_health():
                 details["solana_rpc"] = "RPC responsive"
             else:
                 details["solana_rpc"] = "RPC returned unexpected response"
-    except Exception as e:
-        details["solana_rpc"] = f"RPC error: {str(e)}"
+    except Exception:
+        logger.exception("Dashboard health Solana RPC check failed")
+        details["solana_rpc"] = "RPC unavailable"
 
     # Bridge API is healthy if we got here
     health["bridge_api"] = True
@@ -200,8 +204,9 @@ def get_bridge_health():
                     details["wrtc_mint"] = "Mint account exists"
                 else:
                     details["wrtc_mint"] = "Mint account not found"
-        except Exception as e:
-            details["wrtc_mint"] = f"Mint check error: {str(e)}"
+        except Exception:
+            logger.exception("Dashboard health wRTC mint check failed")
+            details["wrtc_mint"] = "Mint check unavailable"
     else:
         health["wrtc_mint"] = True  # Skip if not configured
         details["wrtc_mint"] = "Mint address not configured"
