@@ -431,8 +431,17 @@ def add_p2p_endpoints(app, peer_manager, block_sync, tx_gossip):
     @app.route('/api/blocks', methods=['GET'])
     def get_blocks():
         """Get blocks for sync (start height, limit)"""
-        start = request.args.get('start', 0, type=int)
-        limit = request.args.get('limit', 100, type=int)
+        raw_start = request.args.get('start', '0')
+        raw_limit = request.args.get('limit', '100')
+        try:
+            start = int(raw_start)
+            limit = int(raw_limit)
+        except (ValueError, TypeError):
+            return jsonify({"error": "start and limit must be integers"}), 400
+        if start < 0:
+            return jsonify({"error": "start must be non-negative"}), 400
+        if limit < 1 or limit > 1000:
+            return jsonify({"error": "limit must be between 1 and 1000"}), 400
 
         # Fetch blocks from database
         with sqlite3.connect(peer_manager.db_path) as conn:

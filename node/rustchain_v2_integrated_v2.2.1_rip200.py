@@ -7793,14 +7793,23 @@ try:
     @require_peer_auth
     def p2p_get_blocks():
         """Get blocks for sync"""
+        raw_start = request.args.get('start', '0')
+        raw_limit = request.args.get('limit', '100')
         try:
-            start_height = int(request.args.get('start', 0))
-            limit = min(int(request.args.get('limit', 100)), 1000)
+            start_height = int(raw_start)
+            limit = int(raw_limit)
+        except (ValueError, TypeError):
+            return jsonify({"ok": False, "error": "start and limit must be integers"}), 400
+        if start_height < 0:
+            return jsonify({"ok": False, "error": "start must be non-negative"}), 400
+        if limit < 1 or limit > 1000:
+            limit = min(max(limit, 1), 1000) if limit > 0 else 100
 
+        try:
             blocks = block_sync.get_blocks_for_sync(start_height, limit)
             return jsonify({"ok": True, "blocks": blocks})
-        except Exception as e:
-            return jsonify({"ok": False, "error": str(e)}), 400
+        except Exception:
+            return jsonify({"ok": False, "error": "failed to retrieve blocks"}), 400
 
     @app.route('/p2p/add_peer', methods=['POST'])
     @require_peer_auth
