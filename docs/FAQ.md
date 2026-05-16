@@ -69,7 +69,9 @@ bash install-miner.sh --dry-run --wallet YOUR_WALLET_NAME
 ```powershell
 # 使用 Python 安装
 pip install clawrtc
-clawrtc mine --dry-run
+# Windows note: current clawrtc releases do not support miner dry-run.
+# Use Linux/macOS or WSL for `clawrtc mine --dry-run`.
+clawrtc --help
 ```
 
 ### 安装程序会做什么？
