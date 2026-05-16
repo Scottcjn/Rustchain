@@ -4,6 +4,7 @@ import os
 import sys
 
 from flask import Flask
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
@@ -51,3 +52,32 @@ def test_require_admin_uses_constant_time_compare(monkeypatch, tmp_path):
         ("wrong-secret", "sync-secret"),
         ("sync-secret", "sync-secret"),
     ]
+
+
+@pytest.mark.parametrize("admin_key", [None, ""])
+def test_sync_admin_auth_fails_closed_when_admin_key_unconfigured(
+    monkeypatch, tmp_path, admin_key
+):
+    """Missing sync admin key must reject requests instead of crashing."""
+    monkeypatch.setattr(rustchain_sync_endpoints, "RustChainSyncManager", DummySyncManager)
+    calls = []
+
+    def spy_compare_digest(provided, expected):
+        calls.append((provided, expected))
+        return provided == expected
+
+    monkeypatch.setattr(rustchain_sync_endpoints.hmac, "compare_digest", spy_compare_digest)
+
+    app = Flask(__name__)
+    rustchain_sync_endpoints.register_sync_endpoints(
+        app,
+        str(tmp_path / "rustchain.db"),
+        admin_key,
+    )
+    client = app.test_client()
+
+    response = client.get("/api/sync/status", headers={"X-Admin-Key": "anything"})
+
+    assert response.status_code == 401
+    assert response.get_json() == {"error": "Unauthorized"}
+    assert calls == []
