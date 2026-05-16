@@ -481,6 +481,11 @@ def utxo_transfer():
     outputs = [{'address': to_address, 'value_nrtc': amount_nrtc}]
     if change_nrtc > 0:
         outputs.append({'address': from_address, 'value_nrtc': change_nrtc})
+    selected_total_nrtc = sum(u['value_nrtc'] for u in selected)
+    absorbed_fee_nrtc = selected_total_nrtc - amount_nrtc - fee_nrtc - change_nrtc
+    if absorbed_fee_nrtc < 0:
+        return jsonify({'error': 'UTXO coin selection underfunded transaction'}), 500
+    effective_fee_nrtc = fee_nrtc + absorbed_fee_nrtc
 
     # Build and apply UTXO transaction
     block_height = _current_slot_fn()
@@ -489,7 +494,7 @@ def utxo_transfer():
         'inputs': [{'box_id': u['box_id'], 'spending_proof': signature}
                    for u in selected],
         'outputs': outputs,
-        'fee_nrtc': fee_nrtc,
+        'fee_nrtc': effective_fee_nrtc,
         'timestamp': int(time.time()),
     }
 

@@ -254,6 +254,34 @@ class TestUtxoEndpoints(unittest.TestCase):
         # 100 - 90 - 1 fee = 9 change
         self.assertEqual(data['change_rtc'], 9.0)
 
+    def test_transfer_records_absorbed_dust_as_fee(self):
+        sender = 'RTC_test_aabbccdd'
+        self._seed_coinbase(sender, 100 * UNIT + 500)
+
+        r = self.client.post('/utxo/transfer', json={
+            'from_address': sender,
+            'to_address': 'bob',
+            'amount_rtc': 100.0,
+            'public_key': 'aabbccdd' * 8,
+            'signature': 'sig' * 22,
+            'nonce': int(time.time() * 1000),
+        })
+        data = r.get_json()
+        self.assertEqual(r.status_code, 200, data)
+        self.assertTrue(data['ok'])
+        self.assertEqual(data['change_nrtc'], 0)
+        self.assertEqual(self.utxo_db.get_balance(sender), 0)
+        self.assertEqual(self.utxo_db.get_balance('bob'), 100 * UNIT)
+
+        conn = self.utxo_db._conn()
+        try:
+            row = conn.execute(
+                "SELECT fee_nrtc FROM utxo_transactions WHERE tx_type = 'transfer'"
+            ).fetchone()
+            self.assertEqual(row['fee_nrtc'], 500)
+        finally:
+            conn.close()
+
     def test_transfer_float_precision(self):
         """0.1 RTC must convert to exactly 10_000_000 nanoRTC.
 
