@@ -165,11 +165,11 @@ class TestMinersEndpoint:
 
 
 class TestBalanceEndpoint:
-    """Test /balance endpoint"""
+    """Test /wallet/balance endpoint"""
 
     @patch("requests.Session.request")
     def test_balance_success(self, mock_request):
-        """Test successful balance query"""
+        """Test successful balance query with the legacy SDK shape"""
         mock_response = Mock()
         mock_response.json.return_value = {
             "miner_pk": "test_wallet_address",
@@ -186,6 +186,30 @@ class TestBalanceEndpoint:
         assert balance["balance"] == 123.456
         assert balance["epoch_rewards"] == 10.0
         assert balance["total_earned"] == 1000.0
+        _, kwargs = mock_request.call_args
+        assert kwargs["url"] == "https://rustchain.org/wallet/balance"
+        assert kwargs["params"] == {"miner_id": "test_wallet_address"}
+
+    @patch("requests.Session.request")
+    def test_balance_live_response_shape_adds_sdk_aliases(self, mock_request):
+        """Test live /wallet/balance shape keeps SDK balance aliases"""
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "miner_id": "test_wallet_address",
+            "amount_i64": 123456000,
+            "amount_rtc": 123.456,
+        }
+        mock_response.raise_for_status = Mock()
+        mock_request.return_value = mock_response
+
+        with RustChainClient("https://rustchain.org") as client:
+            balance = client.balance("test_wallet_address")
+
+        assert balance["miner_id"] == "test_wallet_address"
+        assert balance["amount_i64"] == 123456000
+        assert balance["amount_rtc"] == 123.456
+        assert balance["balance"] == 123.456
+        assert balance["miner_pk"] == "test_wallet_address"
 
     def test_balance_empty_miner_id(self):
         """Test balance with empty miner_id raises ValidationError"""

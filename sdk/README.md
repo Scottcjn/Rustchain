@@ -185,10 +185,11 @@ balance = client.balance("wallet_address")
 - `miner_id`: Miner wallet address
 
 **Returns:**
-- `miner_pk` (str): Wallet address
-- `balance` (float): Current balance in RTC
-- `epoch_rewards` (float): Rewards in current epoch
-- `total_earned` (float): Total RTC earned
+- `miner_id` (str): Miner wallet address
+- `amount_i64` (int): Current balance in micro-RTC
+- `amount_rtc` (float): Current balance in RTC
+- `balance` (float): Compatibility alias for `amount_rtc`
+- `miner_pk` (str): Compatibility alias for `miner_id`
 
 ##### transfer(from_addr, to_addr, amount, signature=None, fee=0.01)
 

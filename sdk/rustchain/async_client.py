@@ -18,6 +18,18 @@ from rustchain.exceptions import (
 )
 
 
+def _normalize_wallet_balance(result: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(result, dict):
+        return result
+
+    normalized = dict(result)
+    if "balance" not in normalized and "amount_rtc" in normalized:
+        normalized["balance"] = normalized["amount_rtc"]
+    if "miner_pk" not in normalized and "miner_id" in normalized:
+        normalized["miner_pk"] = normalized["miner_id"]
+    return normalized
+
+
 class AsyncRustChainClient:
     """
     Async client for interacting with RustChain node API.
@@ -170,10 +182,11 @@ class AsyncRustChainClient:
 
         Returns:
             Dict with balance information:
-                - miner_pk (str): Wallet address
-                - balance (float): Current balance in RTC
-                - epoch_rewards (float): Rewards in current epoch
-                - total_earned (float): Total RTC earned
+                - miner_id (str): Miner wallet address
+                - amount_i64 (int): Current balance in micro-RTC
+                - amount_rtc (float): Current balance in RTC
+                - balance (float): Compatibility alias for amount_rtc
+                - miner_pk (str): Compatibility alias for miner_id
 
         Raises:
             ValidationError: If miner_id is invalid
@@ -181,7 +194,8 @@ class AsyncRustChainClient:
         if not miner_id or not isinstance(miner_id, str):
             raise ValidationError("miner_id must be a non-empty string")
 
-        return await self._request("GET", "/balance", params={"miner_id": miner_id})
+        result = await self._request("GET", "/wallet/balance", params={"miner_id": miner_id})
+        return _normalize_wallet_balance(result)
 
     async def transfer(
         self,

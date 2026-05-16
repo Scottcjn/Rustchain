@@ -233,11 +233,11 @@ class TestAsyncMinersEndpoint:
 
 
 class TestAsyncBalanceEndpoint:
-    """Test /balance endpoint"""
+    """Test /wallet/balance endpoint"""
 
     @pytest.mark.asyncio
     async def test_balance_success(self):
-        """Test successful balance query"""
+        """Test successful balance query with the legacy SDK shape"""
         mock_response = AsyncMock()
         mock_response.status = 200
         mock_response.json = AsyncMock(return_value={
@@ -266,6 +266,42 @@ class TestAsyncBalanceEndpoint:
             assert balance["balance"] == 123.456
             assert balance["epoch_rewards"] == 10.0
             assert balance["total_earned"] == 1000.0
+            _, kwargs = mock_request.call_args
+            assert kwargs["url"] == "https://rustchain.org/wallet/balance"
+            assert kwargs["params"] == {"miner_id": "test_wallet_address"}
+
+    @pytest.mark.asyncio
+    async def test_balance_live_response_shape_adds_sdk_aliases(self):
+        """Test live /wallet/balance shape keeps SDK balance aliases"""
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value={
+            "miner_id": "test_wallet_address",
+            "amount_i64": 123456000,
+            "amount_rtc": 123.456,
+        })
+        mock_response.reason = "OK"
+
+        mock_cm = AsyncContextManager(mock_response)
+
+        with patch('aiohttp.ClientSession') as mock_session_class:
+            mock_request = Mock(return_value=mock_cm)
+            mock_session = Mock()
+            mock_session.request = mock_request
+            mock_session.closed = False
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=None)
+            mock_session.close = AsyncMock()
+            mock_session_class.return_value = mock_session
+
+            async with AsyncRustChainClient("https://rustchain.org") as client:
+                balance = await client.balance("test_wallet_address")
+
+            assert balance["miner_id"] == "test_wallet_address"
+            assert balance["amount_i64"] == 123456000
+            assert balance["amount_rtc"] == 123.456
+            assert balance["balance"] == 123.456
+            assert balance["miner_pk"] == "test_wallet_address"
 
     @pytest.mark.asyncio
     async def test_balance_empty_miner_id(self):
