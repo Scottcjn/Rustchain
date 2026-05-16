@@ -44,6 +44,8 @@ WS_PORT = int(os.environ.get('WEBSOCKET_PORT', 8765))
 API_BASE = os.environ.get('RUSTCHAIN_API_BASE', 'http://localhost:8088')
 POLL_INTERVAL = float(os.environ.get('WS_POLL_INTERVAL', '3'))
 MAX_EVENTS = int(os.environ.get('WS_MAX_EVENTS', '100'))
+JSON_RPC_VERSION = '2.0'
+MINING_STATS_SUBSCRIPTION = 'mining_stats'
 
 
 @dataclass
@@ -105,6 +107,7 @@ class WebSocketFeed:
         self.block_history: deque = deque(maxlen=MAX_EVENTS)
         self.attestation_history: deque = deque(maxlen=MAX_EVENTS)
         self.settlement_history: deque = deque(maxlen=10)
+        self.started_at = time.time()
         
         # State
         self.state: Dict[str, Any] = {
@@ -124,6 +127,7 @@ class WebSocketFeed:
             'attestations_sent': 0,
             'settlements_sent': 0
         }
+        self.json_rpc_subscriptions: Dict[str, Dict[str, Any]] = {}
         
         # Lock for thread safety
         self._lock = threading.Lock()
@@ -248,6 +252,15 @@ class WebSocketFeed:
             with self._lock:
                 emit('metrics', dict(self.metrics))
 
+        @self.socketio.on('json_rpc')
+        def handle_json_rpc(data):
+            """Handle JSON-RPC requests over the existing WebSocket channel."""
+            client_id = request.sid if request else None
+            response = self.handle_json_rpc_message(data, client_id=client_id)
+            emit('json_rpc', response)
+            if isinstance(response, dict) and response.get('result'):
+                emit('json_rpc', self.build_mining_stats_notification(response['result']))
+
     def set_fetch_callbacks(self, fetch_blocks=None, fetch_miners=None, 
                             fetch_epoch=None, fetch_health=None):
         """Set custom callbacks for data fetching"""
@@ -267,6 +280,7 @@ class WebSocketFeed:
         
         self.socketio.emit('block', block.to_dict(), namespace='/')
         logger.info(f"[WebSocket] Broadcasted block #{block.height}")
+        self.broadcast_mining_stats()
 
     def broadcast_attestation(self, attestation: AttestationEvent):
         """Broadcast new attestation to all connected clients"""
@@ -302,6 +316,7 @@ class WebSocketFeed:
             self.state['last_update'] = time.time()
         
         self.socketio.emit('miner_update', {'miners': miners}, namespace='/')
+        self.broadcast_mining_stats()
 
     def broadcast_epoch_update(self, epoch: Dict):
         """Broadcast epoch update"""
@@ -313,6 +328,7 @@ class WebSocketFeed:
             self.state['last_update'] = time.time()
         
         self.socketio.emit('epoch_update', epoch, namespace='/')
+        self.broadcast_mining_stats()
 
     def broadcast_health_update(self, health: Dict):
         """Broadcast health status update"""
@@ -324,6 +340,7 @@ class WebSocketFeed:
             self.state['last_update'] = time.time()
         
         self.socketio.emit('health', health, namespace='/')
+        self.broadcast_mining_stats()
 
     def update_state(self, key: str, value: Any):
         """Update internal state"""
@@ -340,6 +357,135 @@ class WebSocketFeed:
         """Get current metrics"""
         with self._lock:
             return dict(self.metrics)
+
+    def handle_json_rpc_message(self, message: Dict, client_id: Optional[str] = None) -> Dict:
+        """Handle JSON-RPC subscription requests for mining stats."""
+        if not isinstance(message, dict):
+            return self._json_rpc_error(None, -32600, "Invalid Request")
+
+        request_id = message.get('id')
+        if message.get('method') != 'eth_subscribe':
+            return self._json_rpc_error(request_id, -32601, "Method not found")
+
+        params = message.get('params') or []
+        if not isinstance(params, list) or not params or params[0] != MINING_STATS_SUBSCRIPTION:
+            return self._json_rpc_error(request_id, -32602, "Expected params ['mining_stats', options]")
+
+        subscription_id = self._create_json_rpc_subscription(MINING_STATS_SUBSCRIPTION, client_id)
+        return {
+            'jsonrpc': JSON_RPC_VERSION,
+            'id': request_id,
+            'result': subscription_id
+        }
+
+    def _create_json_rpc_subscription(self, channel: str, client_id: Optional[str]) -> str:
+        with self._lock:
+            subscription_id = f"{channel}:{client_id or 'anonymous'}:{len(self.json_rpc_subscriptions) + 1}"
+            self.json_rpc_subscriptions[subscription_id] = {
+                'channel': channel,
+                'client_id': client_id,
+                'created_at': time.time()
+            }
+        return subscription_id
+
+    def build_mining_stats_notification(self, subscription_id: str, stats: Optional[Dict] = None) -> Dict:
+        """Build an Ethereum-style eth_subscription notification."""
+        return {
+            'jsonrpc': JSON_RPC_VERSION,
+            'method': 'eth_subscription',
+            'params': {
+                'subscription': subscription_id,
+                'result': stats or self.get_mining_stats()
+            }
+        }
+
+    def get_mining_stats(self) -> Dict:
+        """Return the compact stats payload expected by JSON-RPC subscribers."""
+        with self._lock:
+            miners = list(self.state.get('miners') or [])
+            blocks = list(self.state.get('blocks') or [])
+            transactions = list(self.state.get('transactions') or [])
+            health = dict(self.state.get('health') or {})
+            metrics = dict(self.metrics)
+            started_at = self.started_at
+
+        hashrate = self._sum_hashrate(miners)
+        if hashrate == 0:
+            hashrate = self._to_float(health.get('hashrate', health.get('hash_rate', 0)))
+
+        blocks_found = self._to_int(
+            health.get('blocks_found', health.get('block_count', len(blocks) or metrics.get('blocks_sent', 0)))
+        )
+        pending_tx = self._to_int(
+            health.get('pending_tx', health.get('pending_transactions', len(transactions)))
+        )
+
+        return {
+            'hashrate': hashrate,
+            'blocks_found': blocks_found,
+            'pending_tx': pending_tx,
+            'peers': self._peer_count(health),
+            'uptime_s': max(0, int(time.time() - started_at))
+        }
+
+    def broadcast_mining_stats(self) -> Dict:
+        """Broadcast mining stats through plain SocketIO and JSON-RPC streams."""
+        stats = self.get_mining_stats()
+        if not self.socketio:
+            return stats
+
+        self.socketio.emit('mining_stats', stats, namespace='/')
+        with self._lock:
+            subscriptions = list(self.json_rpc_subscriptions.items())
+
+        for subscription_id, subscription in subscriptions:
+            notification = self.build_mining_stats_notification(subscription_id, stats)
+            client_id = subscription.get('client_id')
+            if client_id:
+                self.socketio.emit('json_rpc', notification, to=client_id, namespace='/')
+            else:
+                self.socketio.emit('json_rpc', notification, namespace='/')
+
+        return stats
+
+    def _json_rpc_error(self, request_id: Any, code: int, message: str) -> Dict:
+        return {
+            'jsonrpc': JSON_RPC_VERSION,
+            'id': request_id,
+            'error': {
+                'code': code,
+                'message': message
+            }
+        }
+
+    def _sum_hashrate(self, miners: List[Dict]) -> float:
+        total = 0.0
+        for miner in miners:
+            if not isinstance(miner, dict):
+                continue
+            for key in ('hashrate', 'hash_rate', 'hashrate_hs', 'hashrate_hps'):
+                if key in miner:
+                    total += self._to_float(miner.get(key))
+                    break
+        return total
+
+    def _peer_count(self, health: Dict) -> int:
+        peers = health.get('peers', health.get('peer_count', health.get('connected_peers', 0)))
+        if isinstance(peers, list):
+            return len(peers)
+        return self._to_int(peers)
+
+    def _to_float(self, value: Any) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _to_int(self, value: Any) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 0
 
     def run(self, host: str = '0.0.0.0', port: int = None, **kwargs):
         """Run the WebSocket server"""
