@@ -13,6 +13,7 @@ import time
 import hmac
 import hashlib
 import pytest
+from pathlib import Path
 
 # Use a temp DB for testing
 os.environ["BRIDGE_DB_PATH"] = "/tmp/bridge_test_727.db"
@@ -28,6 +29,12 @@ if os.path.exists("/tmp/bridge_test_727.db"):
 sys.path.insert(0, os.path.dirname(__file__))
 import bridge_api
 from bridge_api import Flask, register_bridge_routes, STATE_REQUESTED, STATE_CONFIRMED
+
+
+def test_standalone_bridge_server_does_not_enable_debugger():
+    source = Path(bridge_api.__file__).read_text(encoding="utf-8")
+    assert "debug=True" not in source
+    assert 'debug=False' in source
 
 
 def _receipt_signature(sender_wallet, amount, target_chain, target_wallet, tx_hash):
