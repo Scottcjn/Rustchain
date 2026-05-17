@@ -28,7 +28,7 @@ try:
     )
     X402_CONFIG_OK = True
 except ImportError:
-    log.warning("x402_config not found — x402 features disabled")
+    log.warning("x402_config not found ? x402 features disabled")
     X402_CONFIG_OK = False
 
 
@@ -182,7 +182,7 @@ def init_app(app, get_db_func):
         log.error(f"Beacon x402 migration failed: {e}")
 
     # ---------------------------------------------------------------
-    # Wallet Management — Native Agents
+    # Wallet Management ? Native Agents
     # ---------------------------------------------------------------
 
     @app.route("/api/agents/<agent_id>/wallet", methods=["POST", "OPTIONS"])
@@ -191,13 +191,13 @@ def init_app(app, get_db_func):
         if request.method == "OPTIONS":
             return _cors_json({"ok": True})
 
-        # Simple admin check — require admin key in header
+        # Simple admin check ? require admin key in header
         admin_key = request.headers.get("X-Admin-Key", "")
         expected = os.environ.get("BEACON_ADMIN_KEY", "")
         if not expected:
             return _cors_json({"error": "Admin key not configured"}, 503)
         if not hmac.compare_digest(admin_key, expected):
-            return _cors_json({"error": "Unauthorized — admin key required"}, 401)
+            return _cors_json({"error": "Unauthorized ? admin key required"}, 401)
 
         data, error_response = _json_object_body()
         if error_response:
@@ -254,7 +254,7 @@ def init_app(app, get_db_func):
                 "SELECT coinbase_address FROM relay_agents WHERE agent_id = ?",
                 (agent_id,),
             ).fetchone()
-            if relay and relay.get("coinbase_address"):
+            if relay and relay["coinbase_address"]:
                 return _cors_json({
                     "agent_id": agent_id,
                     "coinbase_address": relay["coinbase_address"],
@@ -317,9 +317,12 @@ def init_app(app, get_db_func):
             return err_resp
 
         db = get_db_func()
-        rows = db.execute(
-            "SELECT * FROM contracts ORDER BY created_at DESC"
-        ).fetchall()
+        try:
+            rows = db.execute(
+                "SELECT * FROM contracts ORDER BY created_at DESC"
+            ).fetchall()
+        except sqlite3.OperationalError:
+            rows = []
 
         contracts = []
         for r in rows:

@@ -16,6 +16,32 @@ def client(tmp_path, monkeypatch):
     db_path = tmp_path / "beacon.db"
     with sqlite3.connect(db_path) as conn:
         conn.executescript(beacon_x402.X402_BEACON_SCHEMA)
+        conn.execute(
+            """
+            CREATE TABLE relay_agents (
+                agent_id TEXT PRIMARY KEY,
+                pubkey_hex TEXT NOT NULL,
+                name TEXT,
+                status TEXT DEFAULT 'active',
+                coinbase_address TEXT DEFAULT NULL,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER
+            )
+            """
+        )
+        conn.execute(
+            """INSERT INTO relay_agents
+               (agent_id, pubkey_hex, name, coinbase_address, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (
+                "relay-1",
+                "00" * 32,
+                "Relay One",
+                "0x1234567890123456789012345678901234567890",
+                1,
+                1,
+            ),
+        )
 
     monkeypatch.setenv("BEACON_ADMIN_KEY", "test-admin-key")
     monkeypatch.setattr(beacon_x402, "_run_migrations", lambda _db_path: None)
@@ -63,3 +89,11 @@ def test_set_agent_wallet_preserves_valid_address(client):
 
     assert response.status_code == 200
     assert response.get_json()["coinbase_address"] == "0x1234567890123456789012345678901234567890"
+
+def test_get_agent_wallet_returns_relay_wallet(client):
+    response = client.get("/api/agents/relay-1/wallet")
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["source"] == "relay"
+    assert body["coinbase_address"] == "0x1234567890123456789012345678901234567890"
