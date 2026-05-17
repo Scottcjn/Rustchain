@@ -131,13 +131,11 @@ def build_payment_key(repo: str, pr_number: str, payment_comment_id: object,
 
 def find_existing_payment_marker(comments: list, repo_owner: str,
                                  payment_key: str) -> str:
-    """Find a trusted started/confirmed marker for this payment key."""
+    """Find a trusted final payment marker for this payment key."""
     for c in comments:
         if not trusted_marker_author(c, repo_owner):
             continue
         body = c.get("body") or ""
-        if PAYMENT_STARTED_MARKER in body and f"payment_key={payment_key}" in body:
-            return PAYMENT_STARTED_MARKER
         if ALREADY_PAID_MARKER not in body:
             continue
         if f"payment_key={payment_key}" in body:

@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from requests.exceptions import HTTPError
+from requests.exceptions import ConnectionError, HTTPError
 
 
 SCRIPT = Path(__file__).with_name("auto-pay.py")
@@ -93,10 +93,11 @@ def test_untrusted_confirmation_marker_does_not_suppress_owner_payment():
     assert any("RTC-AutoPay-Confirmed" in body for body in comment_posts)
 
 
-def test_started_marker_prevents_duplicate_transfer_after_confirmation_comment_failure():
+def test_confirmation_comment_failure_retries_with_same_idempotency_key():
     auto_pay = load_auto_pay()
     persisted_comments = [owner_payment_comment()]
     transfer_calls = []
+    accepted_transfers = {}
     comment_attempts = []
 
     def fake_get(url, headers=None, params=None):
@@ -106,13 +107,18 @@ def test_started_marker_prevents_duplicate_transfer_after_confirmation_comment_f
     def fake_post(url, headers=None, json=None, timeout=None):
         if url.endswith("/wallet/transfer"):
             transfer_calls.append(json)
-            return FakeResponse({"ok": True, "pending_id": f"p{len(transfer_calls)}"})
+            key = json["idempotency_key"]
+            accepted_transfers.setdefault(key, f"p{len(accepted_transfers) + 1}")
+            return FakeResponse({"ok": True, "pending_id": accepted_transfers[key]})
 
         body = json["body"]
         comment_attempts.append(body)
         if "RTC-AutoPay-Started" in body:
             persisted_comments.append({"id": 200, "user": {"login": "github-actions[bot]"}, "body": body})
             return FakeResponse({"id": 200})
+        if "RTC-AutoPay-Confirmed" in body and len([b for b in comment_attempts if "RTC-AutoPay-Confirmed" in b]) > 1:
+            persisted_comments.append({"id": 201, "user": {"login": "github-actions[bot]"}, "body": body})
+            return FakeResponse({"id": 201})
 
         return FakeResponse(
             {"message": "Resource not accessible by integration"},
@@ -129,5 +135,48 @@ def test_started_marker_prevents_duplicate_transfer_after_confirmation_comment_f
 
         auto_pay.main()
 
-    assert len(transfer_calls) == 1
-    assert len([body for body in comment_attempts if "RTC-AutoPay-Confirmed" in body]) == 1
+    assert len(transfer_calls) == 2
+    assert len(accepted_transfers) == 1
+    assert transfer_calls[0]["idempotency_key"] == transfer_calls[1]["idempotency_key"]
+    assert len([body for body in comment_attempts if "RTC-AutoPay-Confirmed" in body]) == 2
+
+
+def test_started_marker_does_not_block_retry_after_transfer_connection_failure():
+    auto_pay = load_auto_pay()
+    persisted_comments = [owner_payment_comment()]
+    transfer_calls = []
+    comment_posts = []
+
+    def fake_get(url, headers=None, params=None):
+        page = (params or {}).get("page", 1)
+        return FakeResponse(persisted_comments if page == 1 else [])
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        if url.endswith("/wallet/transfer"):
+            transfer_calls.append(json)
+            if len(transfer_calls) == 1:
+                raise ConnectionError("temporary transfer outage")
+            return FakeResponse({"ok": True, "pending_id": "p1"})
+
+        body = json["body"]
+        comment_posts.append(body)
+        if "RTC-AutoPay-Started" in body or "RTC-AutoPay-Confirmed" in body:
+            persisted_comments.append({
+                "id": 200 + len(comment_posts),
+                "user": {"login": "github-actions[bot]"},
+                "body": body,
+            })
+        return FakeResponse({"id": 200 + len(comment_posts)})
+
+    with patch.dict(os.environ, base_env(), clear=True):
+        auto_pay.requests.get = fake_get
+        auto_pay.requests.post = fake_post
+
+        with pytest.raises(SystemExit):
+            auto_pay.main()
+
+        auto_pay.main()
+
+    assert len(transfer_calls) == 2
+    assert transfer_calls[0]["idempotency_key"] == transfer_calls[1]["idempotency_key"]
+    assert any("RTC-AutoPay-Confirmed" in body for body in comment_posts)
