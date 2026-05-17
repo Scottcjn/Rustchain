@@ -7262,6 +7262,14 @@ def wallet_transfer_v2():
     to_miner = pre.details["to_miner"]
     amount_rtc = pre.details["amount_rtc"]
     reason = str((data or {}).get('reason', 'admin_transfer'))
+    idempotency_key = ""
+    raw_idempotency_key = (data or {}).get("idempotency_key")
+    if raw_idempotency_key not in (None, ""):
+        if not isinstance(raw_idempotency_key, str):
+            return jsonify({"error": "invalid_idempotency_key"}), 400
+        idempotency_key = raw_idempotency_key.strip()
+        if not re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", idempotency_key):
+            return jsonify({"error": "invalid_idempotency_key"}), 400
     
     amount_i64 = int(amount_rtc * 1000000)
     now = int(time.time())
@@ -7269,7 +7277,10 @@ def wallet_transfer_v2():
     current_epoch = current_slot()
     
     # Generate transaction hash
-    tx_data = f"{from_miner}:{to_miner}:{amount_i64}:{now}:{os.urandom(8).hex()}"
+    if idempotency_key:
+        tx_data = f"wallet_transfer_idempotency:{idempotency_key}"
+    else:
+        tx_data = f"{from_miner}:{to_miner}:{amount_i64}:{now}:{os.urandom(8).hex()}"
     tx_hash = hashlib.sha256(tx_data.encode()).hexdigest()[:32]
     
     conn = sqlite3.connect(DB_PATH)
@@ -7279,6 +7290,40 @@ def wallet_transfer_v2():
         # SECURITY: Acquire write lock BEFORE reading balance to prevent
         # concurrent transfers from both passing the balance check.
         c.execute("BEGIN IMMEDIATE")
+
+        if idempotency_key:
+            existing = c.execute("""
+                SELECT id, from_miner, to_miner, amount_i64, reason, status, confirms_at
+                FROM pending_ledger
+                WHERE tx_hash = ?
+            """, (tx_hash,)).fetchone()
+            if existing:
+                pending_id, existing_from, existing_to, existing_amount, existing_reason, status, existing_confirms_at = existing
+                if (
+                    existing_from != from_miner or
+                    existing_to != to_miner or
+                    int(existing_amount) != amount_i64 or
+                    str(existing_reason or "") != reason
+                ):
+                    conn.rollback()
+                    return jsonify({
+                        "error": "idempotency_key_conflict",
+                        "tx_hash": tx_hash,
+                    }), 409
+
+                conn.rollback()
+                return jsonify({
+                    "ok": True,
+                    "phase": status or "pending",
+                    "pending_id": pending_id,
+                    "tx_hash": tx_hash,
+                    "from_miner": from_miner,
+                    "to_miner": to_miner,
+                    "amount_rtc": amount_rtc,
+                    "confirms_at": existing_confirms_at,
+                    "confirms_in_hours": CONFIRMATION_DELAY_SECONDS / 3600,
+                    "message": "Transfer already pending for idempotency key."
+                })
         
         # Check sender balance
         row = c.execute("SELECT amount_i64 FROM balances WHERE miner_id = ?", (from_miner,)).fetchone()
