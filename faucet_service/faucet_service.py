@@ -1146,7 +1146,8 @@ def main():
                         help='Path to configuration file')
     parser.add_argument('--host', help='Override host from config')
     parser.add_argument('--port', '-p', type=int, help='Override port from config')
-    parser.add_argument('--debug', action='store_true', help='Enable debug mode')
+    parser.add_argument('--debug', action='store_true',
+                        help='Deprecated; Flask debug mode remains disabled')
     
     args = parser.parse_args()
     
@@ -1158,8 +1159,7 @@ def main():
         config['server']['host'] = args.host
     if args.port:
         config['server']['port'] = args.port
-    if args.debug:
-        config['server']['debug'] = True
+    config['server']['debug'] = False
     
     # Create and run app
     app = create_app(config)
