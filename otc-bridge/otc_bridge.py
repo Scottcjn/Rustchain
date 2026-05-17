@@ -81,6 +81,7 @@ RTC_UNIT = 1_000_000                # 1 micro-RTC
 QUOTE_PRICE_SCALE = 1_000_000_000   # 9 decimal places for quote units
 WALLET_AUTH_MAX_AGE_SECONDS = 300
 RTC_WALLET_RE = re.compile(r"^RTC[0-9a-fA-F]{40}$")
+CREATE_ORDER_AUTH_ID = "create_order"
 
 SUPPORTED_PAIRS = {
     "RTC/ETH": {"quote": "ETH", "decimals": 18},
@@ -278,6 +279,24 @@ def wallet_auth_message(action, order_id, wallet, timestamp, bound_fields=None):
     if bound_fields:
         payload.update(bound_fields)
     return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def create_order_auth_fields(
+    side,
+    pair,
+    amount_micro_rtc,
+    price_per_rtc_nano_quote,
+    ttl_seconds,
+    eth_address,
+):
+    return {
+        "side": side,
+        "pair": pair,
+        "amount_micro_rtc": int(amount_micro_rtc),
+        "price_per_rtc_nano_quote": int(price_per_rtc_nano_quote),
+        "ttl_seconds": int(ttl_seconds),
+        "eth_address": eth_address,
+    }
 
 
 def require_wallet_auth(data, action, order_id, wallet, bound_fields=None):
@@ -543,6 +562,23 @@ def create_order():
     total_quote = units_to_float(total_quote_nano, QUOTE_PRICE_SCALE)
     now = int(time.time())
     order_id = generate_order_id(maker_wallet, side)
+
+    auth_error = require_wallet_auth(
+        data,
+        "create_order",
+        CREATE_ORDER_AUTH_ID,
+        maker_wallet,
+        create_order_auth_fields(
+            side,
+            pair,
+            amount_micro_rtc,
+            price_per_rtc_nano_quote,
+            ttl,
+            maker_eth_address,
+        ),
+    )
+    if auth_error:
+        return jsonify({"error": auth_error}), 401
 
     # For sell orders: lock RTC in escrow via RIP-302
     escrow_job_id = None
