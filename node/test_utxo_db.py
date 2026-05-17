@@ -812,6 +812,25 @@ class TestUtxoDB(unittest.TestCase):
         }, block_height=10)
         self.assertFalse(ok)
 
+
+    def test_user_supplied_mining_reward_preserves_external_connection(self):
+        """Caller-owned connection must survive rejected mining_reward."""
+        import sqlite3
+        conn = sqlite3.connect(self.tmp.name)
+        try:
+            ok = self.db.apply_transaction({
+                'tx_type': 'mining_reward',
+                'inputs': [],
+                'outputs': [{'address': 'attacker', 'value_nrtc': 1 * 10**8}],
+                'fee_nrtc': 0,
+                'timestamp': int(time.time()),
+            }, block_height=10, conn=conn)
+            self.assertFalse(ok)
+            cur = conn.execute("SELECT 1")
+            self.assertEqual(cur.fetchone()[0], 1)
+        finally:
+            conn.close()
+
     def test_mempool_empty_inputs_rejected_for_transfer(self):
         """Mempool must also reject non-minting txs with empty inputs."""
         tx = {
