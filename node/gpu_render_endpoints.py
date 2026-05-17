@@ -79,6 +79,10 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
     # 1. GPU Node Attestation (Extension)
     @app.route("/api/gpu/attest", methods=["POST"])
     def gpu_attest():
+        auth_error = _require_admin_key()
+        if auth_error:
+            return auth_error
+
         data, json_error = _request_json_object()
         if json_error:
             return json_error

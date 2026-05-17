@@ -13,7 +13,7 @@ ADMIN_KEY = "test-admin-key"
 
 def _create_app(db_path, admin_key=ADMIN_KEY):
     app = Flask(__name__)
-    app.config["TESTING"] = True
+    app.testing = True
     register_gpu_render_endpoints(app, str(db_path), admin_key)
     return app
 
@@ -159,6 +159,19 @@ def test_gpu_escrow_rejects_unauthenticated_wallet_lock(tmp_path):
     client = _create_app(db_path).test_client()
 
     response = client.post("/api/gpu/escrow", json=_escrow_payload())
+
+    assert response.status_code == 401
+    assert response.get_json() == {"error": "Unauthorized - admin key required"}
+    assert _balance(db_path, "victim") == 25.0
+    assert _balance(db_path, "attacker") == 0.0
+
+
+def test_gpu_attest_rejects_unauthenticated_submission(tmp_path):
+    db_path = tmp_path / "gpu.db"
+    _init_db(db_path)
+    client = _create_app(db_path).test_client()
+
+    response = client.post("/api/gpu/attest", json={"miner_id": "fake-gpu-miner"})
 
     assert response.status_code == 401
     assert response.get_json() == {"error": "Unauthorized - admin key required"}
