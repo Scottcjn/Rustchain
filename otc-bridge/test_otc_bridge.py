@@ -223,6 +223,27 @@ class OTCBridgeTestCase(unittest.TestCase):
         self.assertEqual(data["escrow_status"], "locked")
         mock_escrow.assert_called_once()
 
+    def test_create_order_rejects_non_object_json(self):
+        r = self.app.post("/api/orders", json=["not-an-object"])
+        data = r.get_json()
+
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(data["error"], "JSON object required")
+
+    def test_create_order_rejects_invalid_ttl_seconds(self):
+        r = self.app.post("/api/orders", json={
+            "side": "buy",
+            "pair": "RTC/USDC",
+            "wallet": "test-buyer",
+            "amount_rtc": 100,
+            "price_per_rtc": 0.10,
+            "ttl_seconds": "abc",
+        })
+        data = r.get_json()
+
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(data["error"], "ttl_seconds must be an integer")
+
     @patch("otc_bridge.rtc_get_balance", return_value=10.0)
     def test_sell_order_insufficient_balance(self, mock_balance):
         """Reject sell order if balance too low."""
