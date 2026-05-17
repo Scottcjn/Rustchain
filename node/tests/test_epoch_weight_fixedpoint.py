@@ -116,7 +116,7 @@ def test_legacy_real_weights_migrate_to_fixed_point_units():
 
 def test_vrf_selection_ignores_zero_weight_enrollments(monkeypatch):
     node = load_node_module()
-    with tempfile.TemporaryDirectory() as tmpdir:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
         db_path = str(Path(tmpdir) / "vrf_zero_weight.db")
         conn = sqlite3.connect(db_path)
         try:
