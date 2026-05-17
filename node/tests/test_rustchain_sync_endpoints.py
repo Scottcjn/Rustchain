@@ -51,3 +51,29 @@ def test_require_admin_uses_constant_time_compare(monkeypatch, tmp_path):
         ("wrong-secret", "sync-secret"),
         ("sync-secret", "sync-secret"),
     ]
+
+
+def test_require_admin_fails_closed_when_admin_key_is_unset(monkeypatch, tmp_path):
+    """Unset sync admin keys reject requests without comparing against None."""
+    monkeypatch.setattr(rustchain_sync_endpoints, "RustChainSyncManager", DummySyncManager)
+    calls = []
+
+    def spy_compare_digest(provided, expected):
+        calls.append((provided, expected))
+        raise AssertionError("compare_digest must not receive an unset admin key")
+
+    monkeypatch.setattr(rustchain_sync_endpoints.hmac, "compare_digest", spy_compare_digest)
+
+    app = Flask(__name__)
+    rustchain_sync_endpoints.register_sync_endpoints(
+        app,
+        str(tmp_path / "rustchain.db"),
+        None,
+    )
+    client = app.test_client()
+
+    response = client.get("/api/sync/status", headers={"X-Admin-Key": "any-secret"})
+
+    assert response.status_code == 401
+    assert response.get_json() == {"error": "Unauthorized"}
+    assert calls == []
