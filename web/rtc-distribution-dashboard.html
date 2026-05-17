@@ -1,4 +1,5 @@
 <!doctype html>
+<!-- SPDX-License-Identifier: MIT -->
 <html lang="en">
   <head>
     <meta charset="utf-8">
@@ -574,6 +575,49 @@
       };
 
       const $ = (id) => document.getElementById(id);
+      const SVG_NS = "http://www.w3.org/2000/svg";
+
+      function appendText(parent, tagName, text, className = "") {
+        const node = document.createElement(tagName);
+        if (className) node.className = className;
+        node.textContent = text;
+        parent.appendChild(node);
+        return node;
+      }
+
+      function appendBar(parent, className, label, widthPercent, value) {
+        const row = document.createElement("div");
+        row.className = className;
+        appendText(row, "span", label);
+        const track = document.createElement("span");
+        track.className = "bar-track";
+        const fill = document.createElement("span");
+        fill.className = "bar-fill";
+        fill.style.width = `${widthPercent}%`;
+        track.appendChild(fill);
+        row.appendChild(track);
+        appendText(row, "strong", value);
+        parent.appendChild(row);
+      }
+
+      function showHolderMessage(message) {
+        const body = $("holders-body");
+        body.replaceChildren();
+        const row = document.createElement("tr");
+        const cell = appendText(row, "td", message);
+        cell.colSpan = 4;
+        body.appendChild(row);
+      }
+
+      function appendSvg(parent, tagName, attrs, text = "") {
+        const node = document.createElementNS(SVG_NS, tagName);
+        Object.entries(attrs).forEach(([key, value]) => {
+          node.setAttribute(key, String(value));
+        });
+        if (text) node.textContent = text;
+        parent.appendChild(node);
+        return node;
+      }
 
       function formatRtc(value, digits = 2) {
         return Number(value || 0).toLocaleString(undefined, {
@@ -645,18 +689,17 @@
         const toXY = ([x, y]) => [pad + x * plotW, height - pad - y * plotH];
         const curve = points.map((point) => toXY(point).join(",")).join(" ");
         const equality = `${pad},${height - pad} ${width - pad},${pad}`;
-        svg.innerHTML = `
-          <rect x="0" y="0" width="${width}" height="${height}" rx="8" fill="#fbfcfe"></rect>
-          <line x1="${pad}" y1="${height - pad}" x2="${width - pad}" y2="${height - pad}" stroke="#9aa7b8"></line>
-          <line x1="${pad}" y1="${pad}" x2="${pad}" y2="${height - pad}" stroke="#9aa7b8"></line>
-          <polyline points="${equality}" fill="none" stroke="#cbd5e1" stroke-width="2" stroke-dasharray="6 6"></polyline>
-          <polyline points="${curve}" fill="none" stroke="#0f766e" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"></polyline>
-          <text x="${pad}" y="${height - 10}" fill="#5d687d" font-size="13">0% wallets</text>
-          <text x="${width - pad - 72}" y="${height - 10}" fill="#5d687d" font-size="13">100% wallets</text>
-          <text x="12" y="${pad + 4}" fill="#5d687d" font-size="13">100% RTC</text>
-          <text x="${width - pad - 142}" y="${pad + 18}" fill="#5d687d" font-size="13">perfect equality</text>
-          <text x="${width - pad - 116}" y="${height - pad - 16}" fill="#0f766e" font-size="13">live curve</text>
-        `;
+        svg.replaceChildren();
+        appendSvg(svg, "rect", { x: 0, y: 0, width, height, rx: 8, fill: "#fbfcfe" });
+        appendSvg(svg, "line", { x1: pad, y1: height - pad, x2: width - pad, y2: height - pad, stroke: "#9aa7b8" });
+        appendSvg(svg, "line", { x1: pad, y1: pad, x2: pad, y2: height - pad, stroke: "#9aa7b8" });
+        appendSvg(svg, "polyline", { points: equality, fill: "none", stroke: "#cbd5e1", "stroke-width": 2, "stroke-dasharray": "6 6" });
+        appendSvg(svg, "polyline", { points: curve, fill: "none", stroke: "#0f766e", "stroke-width": 4, "stroke-linecap": "round", "stroke-linejoin": "round" });
+        appendSvg(svg, "text", { x: pad, y: height - 10, fill: "#5d687d", "font-size": 13 }, "0% wallets");
+        appendSvg(svg, "text", { x: width - pad - 72, y: height - 10, fill: "#5d687d", "font-size": 13 }, "100% wallets");
+        appendSvg(svg, "text", { x: 12, y: pad + 4, fill: "#5d687d", "font-size": 13 }, "100% RTC");
+        appendSvg(svg, "text", { x: width - pad - 142, y: pad + 18, fill: "#5d687d", "font-size": 13 }, "perfect equality");
+        appendSvg(svg, "text", { x: width - pad - 116, y: height - pad - 16, fill: "#0f766e", "font-size": 13 }, "live curve");
       }
 
       function updateMetrics(wallets, epoch) {
@@ -686,14 +729,19 @@
 
       function updateHolders(wallets) {
         const total = wallets.reduce((sum, wallet) => sum + wallet.balance, 0);
-        $("holders-body").innerHTML = wallets.slice(0, 20).map((wallet, index) => `
-          <tr>
-            <td>${index + 1}</td>
-            <td class="wallet">${wallet.id}${wallet.founder ? `<span class="badge founder">${wallet.label}</span>` : ""}</td>
-            <td class="num">${percent(wallet.balance, total, 2)}</td>
-            <td class="num">${formatRtc(wallet.balance, 6)}</td>
-          </tr>
-        `).join("");
+        const body = $("holders-body");
+        body.replaceChildren();
+        wallets.slice(0, 20).forEach((wallet, index) => {
+          const row = document.createElement("tr");
+          appendText(row, "td", String(index + 1));
+          const walletCell = appendText(row, "td", wallet.id, "wallet");
+          if (wallet.founder) {
+            appendText(walletCell, "span", wallet.label, "badge founder");
+          }
+          appendText(row, "td", percent(wallet.balance, total, 2), "num");
+          appendText(row, "td", formatRtc(wallet.balance, 6), "num");
+          body.appendChild(row);
+        });
       }
 
       function updateBuckets(wallets) {
@@ -710,13 +758,17 @@
         }));
 
         const max = Math.max(1, ...buckets.map((bucket) => bucket.count));
-        $("bucket-bars").innerHTML = buckets.map((bucket) => `
-          <div class="bar-row">
-            <span>${bucket.label} RTC</span>
-            <span class="bar-track"><span class="bar-fill" style="width:${(bucket.count / max) * 100}%"></span></span>
-            <strong>${bucket.count}</strong>
-          </div>
-        `).join("");
+        const bars = $("bucket-bars");
+        bars.replaceChildren();
+        buckets.forEach((bucket) => {
+          appendBar(
+            bars,
+            "bar-row",
+            `${bucket.label} RTC`,
+            (bucket.count / max) * 100,
+            String(bucket.count)
+          );
+        });
       }
 
       function updateFlow(wallets, epoch) {
@@ -733,13 +785,17 @@
           { label: "Mining run rate", value: epochPotAnnualized, unit: "RTC/year" }
         ];
         const max = Math.max(1, ...rows.map((row) => row.value));
-        $("flow-bars").innerHTML = rows.map((row) => `
-          <div class="flow-row">
-            <span>${row.label}</span>
-            <span class="bar-track"><span class="bar-fill" style="width:${(row.value / max) * 100}%"></span></span>
-            <strong>${formatRtc(row.value, row.unit.includes("year") ? 1 : 2)} ${row.unit}</strong>
-          </div>
-        `).join("");
+        const bars = $("flow-bars");
+        bars.replaceChildren();
+        rows.forEach((row) => {
+          appendBar(
+            bars,
+            "flow-row",
+            row.label,
+            (row.value / max) * 100,
+            `${formatRtc(row.value, row.unit.includes("year") ? 1 : 2)} ${row.unit}`
+          );
+        });
       }
 
       function saveSnapshot(wallets) {
@@ -762,9 +818,15 @@
       }
 
       function updateSnapshots(snapshots) {
-        $("snapshot-list").innerHTML = snapshots.slice().reverse().map((snapshot) => `
-          <li>${snapshot.date}: ${formatRtc(snapshot.total)} RTC visible, ${snapshot.wallets} funded wallets, Gini ${snapshot.gini.toFixed(4)}</li>
-        `).join("");
+        const list = $("snapshot-list");
+        list.replaceChildren();
+        snapshots.slice().reverse().forEach((snapshot) => {
+          appendText(
+            list,
+            "li",
+            `${snapshot.date}: ${formatRtc(snapshot.total)} RTC visible, ${snapshot.wallets} funded wallets, Gini ${Number(snapshot.gini || 0).toFixed(4)}`
+          );
+        });
       }
 
       async function loadDashboard() {
@@ -793,7 +855,7 @@
         } catch (error) {
           console.error(error);
           setStatus("error", error.message || "Unable to load live data");
-          $("holders-body").innerHTML = `<tr><td colspan="4">Unable to load live data: ${error.message}</td></tr>`;
+          showHolderMessage(`Unable to load live data: ${error.message || "unknown error"}`);
         }
       }
 
