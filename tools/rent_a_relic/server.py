@@ -57,6 +57,15 @@ def _get_json_object_or_empty() -> dict:
     return data
 
 
+def _optional_string_value(data: dict, key: str) -> str | None:
+    value = data.get(key)
+    if value is None or value == "":
+        return None
+    if not isinstance(value, str):
+        abort(400, description=f"{key} must be a string")
+    return value
+
+
 def _require_admin_key() -> None:
     """Require the shared RustChain admin key for escrow-releasing actions."""
     expected_key = os.environ.get("RC_ADMIN_KEY", "")
@@ -439,8 +448,9 @@ def get_reservation(session_id: str):
 def post_complete(session_id: str):
     """Mark a session as completed and release escrow."""
     _require_admin_key()
-    data        = _get_json_object_or_empty()
-    output_hash = data.get("output_hash") or hashlib.sha256(session_id.encode()).hexdigest()
+    data                = _get_json_object_or_empty()
+    default_output_hash = hashlib.sha256(session_id.encode()).hexdigest()
+    output_hash         = _optional_string_value(data, "output_hash") or default_output_hash
 
     with db_conn() as conn:
         row = conn.execute("SELECT * FROM reservations WHERE session_id=?", (session_id,)).fetchone()

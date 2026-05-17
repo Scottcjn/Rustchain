@@ -221,6 +221,22 @@ class TestReservationFlow:
         assert cr.status_code == 400
         assert cr.json["error"] == "JSON object required"
 
+    @pytest.mark.parametrize("output_hash", [["not-a-string"], {"hash": "abc"}, 123, True])
+    def test_complete_rejects_non_string_output_hash(self, app, output_hash):
+        r = app.post("/relic/reserve", json={
+            "agent_id": "agent_bad_output_hash", "machine_id": "riscv-hifive",
+            "duration_hours": 1, "rtc_amount": 10.0,
+        })
+        assert r.status_code == 201
+
+        cr = complete_session(app, r.json["session_id"], {"output_hash": output_hash})
+
+        assert cr.status_code == 400
+        assert cr.json["error"] == "output_hash must be a string"
+        sr = app.get(f"/relic/reservation/{r.json['session_id']}")
+        assert sr.json["status"] == "active"
+        assert sr.json["escrow"]["status"] == "locked"
+
     def test_status_endpoint(self, app):
         r = app.post("/relic/reserve", json={
             "agent_id": "agent_stat", "machine_id": "g4-quicksilver",
