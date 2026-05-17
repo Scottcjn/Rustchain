@@ -2101,6 +2101,22 @@ def _ensure_rewards_settle_schema(conn: sqlite3.Connection):
     """Keep init_db() compatible with the RIP-200 rewards settlement module."""
     conn.execute(
         """
+        CREATE TABLE IF NOT EXISTS miner_attest_recent (
+            miner TEXT PRIMARY KEY,
+            ts_ok INTEGER DEFAULT 0,
+            device_family TEXT,
+            device_arch TEXT,
+            entropy_score REAL DEFAULT 0.0,
+            fingerprint_passed INTEGER DEFAULT 0,
+            source_ip TEXT,
+            warthog_bonus REAL DEFAULT 1.0,
+            signing_pubkey TEXT,
+            fingerprint_checks_json TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS ledger (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ts INTEGER,

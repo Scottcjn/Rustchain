@@ -15,16 +15,17 @@ def test_init_db_schema_supports_rewards_settle(tmp_path, monkeypatch):
     monkeypatch.setattr(integrated_node, "slot_to_epoch", lambda slot: slot // integrated_node.EPOCH_SLOTS)
     monkeypatch.setattr(rewards, "DB_PATH", str(db_path))
     monkeypatch.setattr(rewards, "ANTI_DOUBLE_MINING_AVAILABLE", False)
-    monkeypatch.setattr(
-        rewards,
-        "calculate_epoch_rewards_time_aged",
-        lambda db_path_arg, epoch, total, current, prev: {"alice": total},
-    )
 
     integrated_node.init_db()
     with sqlite3.connect(db_path) as conn:
-        conn.execute("CREATE TABLE IF NOT EXISTS miner_attest_recent(miner TEXT, device_arch TEXT)")
-        conn.execute("INSERT INTO miner_attest_recent(miner, device_arch) VALUES (?, ?)", ("alice", "x86_64"))
+        conn.execute(
+            "INSERT INTO miner_attest_recent(miner, ts_ok, device_arch, fingerprint_passed) VALUES (?, ?, ?, ?)",
+            ("alice", 0, "x86_64", 1),
+        )
+        conn.execute(
+            "INSERT INTO epoch_enroll(epoch, miner_pk, weight) VALUES (?, ?, ?)",
+            (0, "alice", 1),
+        )
         conn.commit()
 
     integrated_node.app.config["TESTING"] = True
@@ -48,8 +49,18 @@ def test_init_db_schema_supports_rewards_settle(tmp_path, monkeypatch):
             "SELECT settled FROM epoch_state WHERE epoch = ?",
             (0,),
         ).fetchone()
+        ledger = conn.execute(
+            "SELECT miner_id, delta_i64, reason FROM ledger WHERE miner_id = ?",
+            ("alice",),
+        ).fetchall()
+        reward = conn.execute(
+            "SELECT miner_id, share_i64 FROM epoch_rewards WHERE epoch = ?",
+            (0,),
+        ).fetchall()
 
     assert {"settled", "settled_ts"}.issubset(epoch_cols)
     assert {"miner_id", "amount_i64"}.issubset(balance_cols)
     assert balance == ("alice", rewards.PER_EPOCH_URTC)
     assert settled == (1,)
+    assert ledger == [("alice", rewards.PER_EPOCH_URTC, "epoch_0_reward")]
+    assert reward == [("alice", rewards.PER_EPOCH_URTC)]
