@@ -246,7 +246,11 @@ def check_already_awarded(comments: list) -> bool:
         if marker_end != -1:
             marker_tail = marker_tail[:marker_end]
 
-        if "(dry-run)" in marker_tail or ":failed" in marker_tail:
+        if (
+            "(dry-run)" in marker_tail
+            or ":failed" in marker_tail
+            or ":manual-required" in marker_tail
+        ):
             continue
         return True
     return False
@@ -442,6 +446,26 @@ def main() -> int:
         log_error(f"Transfer failed: {error_msg}")
         set_output("awarded", "false")
         set_output("skip_reason", f"transfer_failed: {error_msg}")
+
+        if error_msg.lower().startswith("connection failed:"):
+            if cfg.post_comment:
+                manual_body = (
+                    f"**RTC Auto-Bounty Manual Transfer Required**\n\n"
+                    f"The merged PR qualifies for an RTC award, but the RustChain "
+                    f"transfer endpoint was unreachable when the workflow ran:\n\n"
+                    f"```\n{error_msg}\n```\n\n"
+                    f"| Field | Value |\n"
+                    f"|-------|-------|\n"
+                    f"| Amount | **{amount} RTC** |\n"
+                    f"| Recipient | `{wallet}` |\n"
+                    f"| From | `{cfg.from_wallet}` |\n"
+                    f"| Memo | {memo} |\n\n"
+                    f"Please rerun the award after the endpoint is healthy or process "
+                    f"this transfer manually.\n\n"
+                    f"<!-- { _AWARD_MARKER }:MANUAL-REQUIRED -->"
+                )
+                post_pr_comment(repo, pr_number, manual_body, cfg.github_token)
+            return 0
 
         if cfg.post_comment:
             fail_body = (

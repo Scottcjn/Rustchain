@@ -151,6 +151,10 @@ class TestCheckAlreadyAwarded(unittest.TestCase):
         comments = [{"body": f"<!-- {_AWARD_MARKER}:FAILED -->"}]
         self.assertFalse(check_already_awarded(comments))
 
+    def test_manual_required_marker_does_not_block_retry(self):
+        comments = [{"body": f"<!-- {_AWARD_MARKER}:MANUAL-REQUIRED -->"}]
+        self.assertFalse(check_already_awarded(comments))
+
     def test_failed_text_outside_marker_does_not_hide_success_marker(self):
         comments = [{"body": f"failed before marker\n<!-- {_AWARD_MARKER} tx=xyz -->"}]
         self.assertTrue(check_already_awarded(comments))
@@ -372,6 +376,22 @@ class TestMainFlow(unittest.TestCase):
                     with patch("award_rtc.post_pr_comment", return_value=True):
                         rc = main()
         self.assertEqual(rc, 1)
+
+    def test_connection_failure_posts_manual_notice_without_failing_job(self):
+        from award_rtc import main
+        transfer_result = {
+            "ok": False,
+            "error": "Connection failed: [Errno 111] Connection refused",
+        }
+        with self._env():
+            with patch("award_rtc.fetch_pr_comments", return_value=[]):
+                with patch("award_rtc.transfer_rtc", return_value=(False, transfer_result)):
+                    with patch("award_rtc.post_pr_comment", return_value=True) as mock_post:
+                        rc = main()
+        self.assertEqual(rc, 0)
+        comment_body = mock_post.call_args[0][2]
+        self.assertIn("Manual Transfer Required", comment_body)
+        self.assertIn(":MANUAL-REQUIRED", comment_body)
 
     def test_amount_exceeds_cap(self):
         from award_rtc import main
