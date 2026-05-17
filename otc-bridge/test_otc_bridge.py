@@ -107,6 +107,25 @@ class OTCBridgeTestCase(unittest.TestCase):
         self.assertEqual(data["status"], "open")
         self.assertIn("otc_", data["order_id"])
 
+    def test_create_order_rejects_non_object_json(self):
+        r = self.app.post("/api/orders", json=["not-an-object"])
+
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.get_json(), {"error": "JSON object required"})
+
+    def test_create_order_rejects_non_integer_ttl_seconds(self):
+        r = self.app.post("/api/orders", json={
+            "side": "buy",
+            "pair": "RTC/USDC",
+            "wallet": "test-buyer",
+            "amount_rtc": 100,
+            "price_per_rtc": 0.10,
+            "ttl_seconds": "abc",
+        })
+
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.get_json(), {"error": "ttl_seconds must be an integer"})
+
     def test_create_order_stores_scaled_integer_money_fields(self):
         """OTC money values are stored as integer scaled units, not SQLite REAL."""
         r = self.app.post("/api/orders", json={
