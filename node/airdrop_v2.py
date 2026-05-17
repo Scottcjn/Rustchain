@@ -1260,6 +1260,11 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
 
     def wrtc_amount_field(data: Dict[str, Any]) -> Tuple[Optional[int], Optional[Tuple[Any, int]]]:
         value = data.get("amount_wrtc", 0)
+        if isinstance(value, bool):
+            return None, (
+                jsonify({"ok": False, "error": "invalid_amount_wrtc"}),
+                400,
+            )
         try:
             amount_wrtc = float(value)
         except (TypeError, ValueError):
@@ -1284,7 +1289,7 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
     def check_airdrop_eligibility():
         """Check airdrop eligibility."""
         data = request.get_json(silent=True)
-        if not data:
+        if not isinstance(data, dict) or not data:
             return jsonify({"ok": False, "error": "invalid_json"}), 400
 
         github_username, error = text_field(data, "github_username")
@@ -1317,7 +1322,7 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
     def claim_airdrop():
         """Submit airdrop claim."""
         data = request.get_json(silent=True)
-        if not data:
+        if not isinstance(data, dict) or not data:
             return jsonify({"ok": False, "error": "invalid_json"}), 400
 
         github_username, error = text_field(data, "github_username")
@@ -1372,7 +1377,7 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
     def create_bridge_lock():
         """Create bridge lock."""
         data = request.get_json(silent=True)
-        if not data:
+        if not isinstance(data, dict) or not data:
             return jsonify({"ok": False, "error": "invalid_json"}), 400
 
         from_address, error = text_field(data, "from_address")

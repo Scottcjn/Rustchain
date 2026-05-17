@@ -67,6 +67,19 @@ class TestAirdropV2RouteValidation(unittest.TestCase):
                 self.assertEqual(response.status_code, 400)
                 self.assertNotIn("Internal Server Error", response.get_data(as_text=True))
 
+    def test_public_routes_reject_array_json_bodies_without_500(self):
+        cases = [
+            "/api/airdrop/eligibility",
+            "/api/airdrop/claim",
+            "/api/bridge/lock",
+        ]
+
+        for path in cases:
+            with self.subTest(path=path):
+                response = self.client.post(path, json=["not", "an", "object"])
+                self.assertEqual(response.status_code, 400)
+                self.assertNotIn("Internal Server Error", response.get_data(as_text=True))
+
     def test_bridge_lock_rejects_invalid_amount_without_500(self):
         base_payload = {
             "from_address": "source_wallet_12345",
@@ -74,7 +87,7 @@ class TestAirdropV2RouteValidation(unittest.TestCase):
             "from_chain": "solana",
             "to_chain": "base",
         }
-        for amount_wrtc in ("not-a-number", "nan", "inf", {}, []):
+        for amount_wrtc in ("not-a-number", "nan", "inf", {}, [], True):
             with self.subTest(amount_wrtc=amount_wrtc):
                 response = self.client.post(
                     "/api/bridge/lock",
