@@ -79,13 +79,17 @@ def _env(name: str, default: str = "") -> str:
     return os.environ.get(name, default)
 
 
+def _env_stripped(name: str, default: str = "") -> str:
+    return _env(name, default).strip()
+
+
 def _env_bool(name: str, default: bool = False) -> bool:
-    return _env(name, str(default)).lower() in ("true", "1", "yes")
+    return _env_stripped(name, str(default)).lower() in ("true", "1", "yes")
 
 
 def _env_float(name: str, default: float = 0.0) -> float:
     try:
-        return float(_env(name, str(default)))
+        return float(_env_stripped(name, str(default)))
     except (TypeError, ValueError):
         return default
 
@@ -95,21 +99,24 @@ class Config:
 
     def __init__(self) -> None:
         self.rtc_amount: float = _env_float("INPUT_RTC_AMOUNT", 50.0)
-        self.vps_host: str = _env("INPUT_RTC_VPS_HOST").strip()
-        self.admin_key: str = _env("INPUT_RTC_ADMIN_KEY").strip()
-        self.from_wallet: str = _env("INPUT_FROM_WALLET", "founder_community")
+        self.vps_host: str = _env_stripped("INPUT_RTC_VPS_HOST")
+        self.admin_key: str = _env_stripped("INPUT_RTC_ADMIN_KEY")
+        self.from_wallet: str = _env_stripped("INPUT_FROM_WALLET", "founder_community")
         self.dry_run: bool = _env_bool("INPUT_DRY_RUN")
         self.post_comment: bool = _env_bool("INPUT_POST_COMMENT", True)
-        self.github_token: str = _env("INPUT_GITHUB_TOKEN", _env("GITHUB_TOKEN"))
-        self.repo_path: str = _env("INPUT_REPO_PATH", ".")
+        self.github_token: str = _env_stripped(
+            "INPUT_GITHUB_TOKEN",
+            _env_stripped("GITHUB_TOKEN"),
+        )
+        self.repo_path: str = _env_stripped("INPUT_REPO_PATH", ".")
         self.max_amount: float = _env_float("INPUT_MAX_AMOUNT", 10000.0)
-        self.repo: str = _env("GITHUB_REPOSITORY")
-        self.pr_number: str = _env("PR_NUMBER")
-        self.pr_author: str = _env("PR_AUTHOR", _env("PR_AUTHOR"))
-        self.pr_merged: str = _env("PR_MERGED")
+        self.repo: str = _env_stripped("GITHUB_REPOSITORY")
+        self.pr_number: str = _env_stripped("PR_NUMBER")
+        self.pr_author: str = _env_stripped("PR_AUTHOR", _env_stripped("PR_AUTHOR"))
+        self.pr_merged: str = _env_stripped("PR_MERGED")
         self.pr_body: str = _env("PR_BODY", "")
-        self.pr_head_sha: str = _env("PR_HEAD_SHA", "")
-        self.pr_title: str = _env("PR_TITLE", "")
+        self.pr_head_sha: str = _env_stripped("PR_HEAD_SHA", "")
+        self.pr_title: str = _env_stripped("PR_TITLE", "")
 
     def validate(self) -> Optional[str]:
         """Return an error string if required config is missing, else None."""
@@ -270,6 +277,11 @@ def transfer_rtc(
 
     Returns ``(success, response_body_dict)``.
     """
+    vps_host = vps_host.strip()
+    admin_key = admin_key.strip()
+    from_wallet = from_wallet.strip()
+    to_wallet = to_wallet.strip()
+
     url = f"http://{vps_host}:{VPS_PORT}/wallet/transfer"
     payload = {
         "from_miner": from_wallet,

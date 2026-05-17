@@ -27,6 +27,7 @@ from award_rtc import (
     resolve_wallet_from_file,
     check_already_awarded,
     set_output,
+    transfer_rtc,
     _AWARD_MARKER,
 )
 
@@ -195,6 +196,41 @@ class TestConfig(unittest.TestCase):
         self.assertFalse(cfg.dry_run)
         self.assertTrue(cfg.post_comment)
 
+    def test_trims_scalar_inputs(self):
+        cfg = self._cfg(
+            INPUT_RTC_AMOUNT=" 50\n",
+            INPUT_RTC_VPS_HOST=" 1.2.3.4\n",
+            INPUT_RTC_ADMIN_KEY=" test-key-32-chars-long!!\n",
+            INPUT_FROM_WALLET=" founder_community\n",
+            INPUT_DRY_RUN=" true\n",
+            INPUT_POST_COMMENT=" true\n",
+            INPUT_GITHUB_TOKEN=" ghp_test\n",
+            INPUT_REPO_PATH=" .\n",
+            INPUT_MAX_AMOUNT=" 10000\n",
+            GITHUB_REPOSITORY=" test/repo\n",
+            PR_NUMBER=" 42\n",
+            PR_AUTHOR=" alice\n",
+            PR_MERGED=" true\n",
+            PR_HEAD_SHA=" abc123\n",
+            PR_TITLE=" Test PR\n",
+        )
+
+        self.assertEqual(cfg.rtc_amount, 50.0)
+        self.assertEqual(cfg.vps_host, "1.2.3.4")
+        self.assertEqual(cfg.admin_key, "test-key-32-chars-long!!")
+        self.assertEqual(cfg.from_wallet, "founder_community")
+        self.assertTrue(cfg.dry_run)
+        self.assertTrue(cfg.post_comment)
+        self.assertEqual(cfg.github_token, "ghp_test")
+        self.assertEqual(cfg.repo_path, ".")
+        self.assertEqual(cfg.max_amount, 10000.0)
+        self.assertEqual(cfg.repo, "test/repo")
+        self.assertEqual(cfg.pr_number, "42")
+        self.assertEqual(cfg.pr_author, "alice")
+        self.assertEqual(cfg.pr_merged, "true")
+        self.assertEqual(cfg.pr_head_sha, "abc123")
+        self.assertEqual(cfg.pr_title, "Test PR")
+
     def test_dry_run_mode(self):
         cfg = self._cfg(INPUT_DRY_RUN="true")
         self.assertTrue(cfg.dry_run)
@@ -248,6 +284,40 @@ class TestSetOutput(unittest.TestCase):
             self.assertIn("amount=50.0", content)
         finally:
             os.unlink(output_file)
+
+
+# ---------------------------------------------------------------------------
+# transfer_rtc tests
+# ---------------------------------------------------------------------------
+
+
+class TestTransferRtc(unittest.TestCase):
+    """Test RustChain transfer API request construction."""
+
+    def test_strips_scalar_request_values(self):
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = b'{"ok": true, "tx_hash": "tx_abc"}'
+
+        with patch("award_rtc.urlopen", return_value=mock_resp) as mock_urlopen:
+            ok, result = transfer_rtc(
+                " 1.2.3.4\n",
+                " test-admin-key\n",
+                " founder_community\n",
+                " alice\n",
+                5.0,
+                "PR #4559 auto-bounty",
+            )
+
+        self.assertTrue(ok)
+        self.assertEqual(result["tx_hash"], "tx_abc")
+
+        req = mock_urlopen.call_args[0][0]
+        self.assertEqual(req.full_url, "http://1.2.3.4:8099/wallet/transfer")
+        self.assertEqual(req.get_header("X-admin-key"), "test-admin-key")
+
+        payload = json.loads(req.data.decode("utf-8"))
+        self.assertEqual(payload["from_miner"], "founder_community")
+        self.assertEqual(payload["to_miner"], "alice")
 
 
 # ---------------------------------------------------------------------------
