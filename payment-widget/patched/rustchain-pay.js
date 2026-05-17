@@ -476,7 +476,7 @@
   function blockFraming() {
     try {
       if (window !== top) {
-        top.location.location = self.location; // eslint-disable-line no-script-n
+        top.location = self.location; // eslint-disable-line no-script-url
       }
     } catch (e) {
       // Cross-origin access denied — already protected
