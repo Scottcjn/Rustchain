@@ -431,10 +431,16 @@ def plan_tip_rewards(tips: list[dict[str, Any]], config: dict[str, Any], state: 
             continue
         if amount < minimum:
             continue
-        wallet = (
-            wallet_from_text(str(tip.get("rtc_wallet") or tip.get("wallet") or ""), pattern)
-            or wallet_from_text(str(tip.get("memo") or tip.get("note") or ""), pattern)
-        )
+        wallet = None
+        for value in (tip.get("rtc_wallet"), tip.get("wallet"), tip.get("payout_wallet")):
+            wallet = raw_wallet(value)
+            if wallet:
+                break
+        if not wallet:
+            wallet = (
+                wallet_from_text(str(tip.get("rtc_wallet") or tip.get("wallet") or ""), pattern)
+                or wallet_from_text(str(tip.get("memo") or tip.get("note") or ""), pattern)
+            )
         if not wallet:
             continue
         if not can_plan_tip(wallet):
