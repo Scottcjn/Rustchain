@@ -44,7 +44,7 @@ Before claiming rewards, ensure you have:
 
 If you don't have a wallet address:
 
-1. Download the [RustChain Wallet](/wallet) (Note: wallet download page not yet live — use `pip install clawrtc` or build from source)
+1. Use `pip install clawrtc` or build from the [RustChain Wallet source](../wallet) (wallet download page not yet live)
 2. Generate a new address
 3. Save your private key securely (never share it!)
 4. Copy the public address (starts with `RTC`)
