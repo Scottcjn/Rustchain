@@ -812,6 +812,32 @@ class TestUtxoDB(unittest.TestCase):
         }, block_height=10)
         self.assertFalse(ok)
 
+    def test_user_supplied_mining_reward_preserves_external_conn(self):
+        """Rejected mint attempts must not close a caller-owned connection."""
+        conn = self.db._conn()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            ok = self.db.apply_transaction({
+                'tx_type': 'mining_reward',
+                'inputs': [],
+                'outputs': [{'address': 'attacker', 'value_nrtc': 1 * UNIT}],
+                'fee_nrtc': 0,
+                'timestamp': int(time.time()),
+            }, block_height=10, conn=conn)
+            self.assertFalse(ok)
+
+            try:
+                self.assertEqual(conn.execute("SELECT 1").fetchone()[0], 1)
+            except Exception as exc:
+                self.fail(f"apply_transaction closed caller-owned conn: {exc}")
+        finally:
+            try:
+                if conn.in_transaction:
+                    conn.execute("ROLLBACK")
+                conn.close()
+            except Exception:
+                pass
+
     def test_mempool_empty_inputs_rejected_for_transfer(self):
         """Mempool must also reject non-minting txs with empty inputs."""
         tx = {

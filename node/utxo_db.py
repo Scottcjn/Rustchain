@@ -446,8 +446,6 @@ class UtxoDB:
         # Require _allow_minting=True (internal flag) to permit mining_reward.
         MINTING_TX_TYPES = {'mining_reward'}
         if tx_type in MINTING_TX_TYPES and not tx.get('_allow_minting'):
-            if conn:
-                conn.close()
             return False
         if own:
             conn = self._conn()
