@@ -4,6 +4,8 @@ import sys
 import types
 from pathlib import Path
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -80,6 +82,57 @@ def test_orders_accepts_capped_limit(tmp_path):
 
     assert response.status_code == 200
     assert response.get_json()["ok"] is True
+
+
+def valid_order_payload(**overrides):
+    payload = {
+        "side": "buy",
+        "pair": "RTC/USDC",
+        "wallet": "buyer-1",
+        "amount_rtc": 1,
+        "price_per_rtc": "0.10",
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_order_creation_rejects_non_object_json(tmp_path):
+    otc_bridge = load_otc_bridge(tmp_path)
+
+    with otc_bridge.app.test_client() as client:
+        response = client.post("/api/orders", json=["not-an-object"])
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "JSON object required"}
+
+
+@pytest.mark.parametrize("ttl", ["abc", 1.5, True, None])
+def test_order_creation_rejects_non_integer_ttl_seconds(tmp_path, ttl):
+    otc_bridge = load_otc_bridge(tmp_path)
+
+    with otc_bridge.app.test_client() as client:
+        response = client.post(
+            "/api/orders",
+            json=valid_order_payload(ttl_seconds=ttl),
+        )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "ttl_seconds must be an integer"}
+
+
+def test_order_creation_accepts_integer_ttl_seconds(tmp_path):
+    otc_bridge = load_otc_bridge(tmp_path)
+
+    with otc_bridge.app.test_client() as client:
+        response = client.post(
+            "/api/orders",
+            json=valid_order_payload(ttl_seconds=7200),
+        )
+
+    assert response.status_code == 201
+    body = response.get_json()
+    assert body["ok"] is True
+    assert body["expires_in_hours"] == 2
 
 
 def test_trades_rejects_bad_limits(tmp_path):
