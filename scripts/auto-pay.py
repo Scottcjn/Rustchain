@@ -20,6 +20,7 @@ Environment variables (set by the GitHub Action):
 """
 
 import json
+import hashlib
 import os
 import re
 import sys
@@ -47,6 +48,8 @@ PAYMENT_RE = re.compile(
 # Duplicate-detection: if this string appears in any comment, payment was
 # already processed for this PR.
 ALREADY_PAID_MARKER = "RTC-AutoPay-Confirmed"
+PAYMENT_STARTED_MARKER = "RTC-AutoPay-Started"
+TRUSTED_BOT_LOGINS = {"github-actions[bot]"}
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -94,7 +97,7 @@ def post_comment(repo: str, pr_number: str, body: str) -> None:
 
 
 def transfer_rtc(vps_host: str, admin_key: str, to_wallet: str,
-                 amount: float, memo: str) -> dict:
+                 amount: float, memo: str, payment_key: str) -> dict:
     """Call the RustChain VPS transfer endpoint."""
     url = f"http://{vps_host}:{VPS_PORT}/wallet/transfer"
     payload = {
@@ -102,6 +105,7 @@ def transfer_rtc(vps_host: str, admin_key: str, to_wallet: str,
         "to_miner": to_wallet,
         "amount_rtc": amount,
         "memo": memo,
+        "idempotency_key": payment_key,
     }
     headers = {
         "Content-Type": "application/json",
@@ -110,6 +114,37 @@ def transfer_rtc(vps_host: str, admin_key: str, to_wallet: str,
     resp = requests.post(url, headers=headers, json=payload, timeout=30)
     resp.raise_for_status()
     return resp.json()
+
+
+def trusted_marker_author(comment: dict, repo_owner: str) -> bool:
+    """Return True if a comment author may create auto-pay state markers."""
+    author = ((comment.get("user") or {}).get("login") or "").lower()
+    return author == repo_owner.lower() or author in TRUSTED_BOT_LOGINS
+
+
+def build_payment_key(repo: str, pr_number: str, payment_comment_id: object,
+                      amount: float, to_wallet: str) -> str:
+    """Build a stable key for a specific owner payment directive."""
+    raw = f"{repo}:{pr_number}:{payment_comment_id}:{amount:.6f}:{to_wallet}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
+
+
+def find_existing_payment_marker(comments: list, repo_owner: str,
+                                 payment_key: str) -> str:
+    """Find a trusted started/confirmed marker for this payment key."""
+    for c in comments:
+        if not trusted_marker_author(c, repo_owner):
+            continue
+        body = c.get("body") or ""
+        if PAYMENT_STARTED_MARKER in body and f"payment_key={payment_key}" in body:
+            return PAYMENT_STARTED_MARKER
+        if ALREADY_PAID_MARKER not in body:
+            continue
+        if f"payment_key={payment_key}" in body:
+            return ALREADY_PAID_MARKER
+        if "payment_key=" not in body:
+            return ALREADY_PAID_MARKER
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -130,12 +165,6 @@ def main() -> None:
     # --- Fetch comments ---------------------------------------------------
     comments = fetch_pr_comments(repo, pr_number)
     print(f"Found {len(comments)} comment(s) on PR #{pr_number}")
-
-    # --- Check for duplicate run ------------------------------------------
-    for c in comments:
-        if ALREADY_PAID_MARKER in (c.get("body") or ""):
-            print(f"Payment already processed (found {ALREADY_PAID_MARKER}). Skipping.")
-            return
 
     # --- Find payment directive from repo owner ---------------------------
     payment_amount = None
@@ -175,6 +204,13 @@ def main() -> None:
     # Wallet is the contributor's GitHub username
     to_wallet = pr_author
     memo = f"PR #{pr_number} in {repo} — auto-pay"
+    payment_key = build_payment_key(repo, pr_number, payment_comment_id, payment_amount, to_wallet)
+
+    # --- Check for duplicate run ------------------------------------------
+    marker = find_existing_payment_marker(comments, repo_owner, payment_key)
+    if marker:
+        print(f"Payment already processed or in progress (found trusted {marker}). Skipping.")
+        return
 
     print(f"Initiating transfer: {payment_amount} RTC from {FROM_WALLET} to {to_wallet}")
 
@@ -185,15 +221,24 @@ def main() -> None:
             f"**RTC Auto-Pay — Manual Transfer Required**\n\n"
             f"Payment directive found: **{payment_amount} RTC** for @{to_wallet}\n\n"
             f"VPS secrets not configured — please process this payment manually.\n\n"
-            f"<!-- {ALREADY_PAID_MARKER}:MANUAL -->"
+            f"<!-- {ALREADY_PAID_MARKER}:MANUAL payment_key={payment_key} "
+            f"payment_comment_id={payment_comment_id} -->"
         )
         post_comment(repo, pr_number, manual_body)
         print(f"Manual transfer notice posted for {payment_amount} RTC to {to_wallet}")
         return
 
+    started_body = (
+        f"**RTC Auto-Pay Started**\n\n"
+        f"Preparing to pay **{payment_amount} RTC** to `{to_wallet}`.\n\n"
+        f"<!-- {PAYMENT_STARTED_MARKER} payment_key={payment_key} "
+        f"payment_comment_id={payment_comment_id} -->"
+    )
+    post_comment(repo, pr_number, started_body)
+
     # --- Call VPS transfer API --------------------------------------------
     try:
-        result = transfer_rtc(vps_host, admin_key, to_wallet, payment_amount, memo)
+        result = transfer_rtc(vps_host, admin_key, to_wallet, payment_amount, memo, payment_key)
     except requests.exceptions.ConnectionError as e:
         print(f"::error::Cannot reach VPS at {vps_host}:{VPS_PORT} — {e}")
         sys.exit(1)
@@ -217,7 +262,8 @@ def main() -> None:
             f"but the transfer was rejected:\n\n"
             f"```\n{error}\n```\n\n"
             f"Please process this payment manually.\n\n"
-            f"<!-- {ALREADY_PAID_MARKER}:FAILED -->"
+            f"<!-- {ALREADY_PAID_MARKER}:FAILED payment_key={payment_key} "
+            f"payment_comment_id={payment_comment_id} -->"
         )
         post_comment(repo, pr_number, fail_body)
         sys.exit(1)
@@ -233,7 +279,8 @@ def main() -> None:
         f"| Memo | {memo} |\n"
         f"| pending_id | `{pending_id}` |\n\n"
         f"Transfer confirmed on RustChain.\n\n"
-        f"<!-- {ALREADY_PAID_MARKER} pending_id={pending_id} -->"
+        f"<!-- {ALREADY_PAID_MARKER} payment_key={payment_key} "
+        f"payment_comment_id={payment_comment_id} pending_id={pending_id} -->"
     )
     post_comment(repo, pr_number, confirm_body)
 
