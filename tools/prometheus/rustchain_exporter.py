@@ -377,8 +377,8 @@ def collect_once() -> None:
 def main() -> None:
     logger.info(
         "starting exporter node_url=%s p2p_node_url=%s port=%s scrape_interval=%ss",
-        NODE_URL,
-        P2P_NODE_URL,
+        _safe_base_url_for_log(NODE_URL),
+        _safe_base_url_for_log(P2P_NODE_URL),
         EXPORTER_PORT,
         SCRAPE_INTERVAL,
     )

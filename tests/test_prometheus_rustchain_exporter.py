@@ -85,6 +85,30 @@ def test_fetch_json_redacts_credentials_from_warning_logs(caplog):
     assert "https://p2p.example.invalid" in caplog.text
 
 
+def test_main_redacts_credentials_from_startup_logs(caplog):
+    module = load_module()
+    module.NODE_URL = "https://node-user:node-secret@example.invalid/path?token=node"
+    module.P2P_NODE_URL = "https://p2p-user:p2p-secret@p2p.example.invalid/path?token=p2p"
+
+    with (
+        patch.object(module, "start_http_server"),
+        patch.object(module, "collect_once"),
+        patch.object(module.time, "sleep", side_effect=KeyboardInterrupt),
+        caplog.at_level("INFO", logger="rustchain_exporter"),
+    ):
+        try:
+            module.main()
+        except KeyboardInterrupt:
+            pass
+
+    assert "node-secret" not in caplog.text
+    assert "p2p-secret" not in caplog.text
+    assert "token=node" not in caplog.text
+    assert "token=p2p" not in caplog.text
+    assert "https://example.invalid" in caplog.text
+    assert "https://p2p.example.invalid" in caplog.text
+
+
 def test_default_p2p_node_url_uses_certificate_valid_hostname():
     module = load_module()
 
