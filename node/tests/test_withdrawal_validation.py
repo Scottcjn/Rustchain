@@ -22,6 +22,9 @@ if NODE_DIR not in sys.path:
 
 
 def _load_integrated_node():
+    if "integrated_node" in sys.modules:
+        return sys.modules["integrated_node"]
+
     spec = importlib.util.spec_from_file_location(
         "rustchain_integrated_withdrawal_validation_test",
         MODULE_PATH,
@@ -29,6 +32,13 @@ def _load_integrated_node():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def test_loader_reuses_preloaded_integrated_node(monkeypatch):
+    preloaded_module = object()
+    monkeypatch.setitem(sys.modules, "integrated_node", preloaded_module)
+
+    assert _load_integrated_node() is preloaded_module
 
 
 @pytest.fixture(scope="module")
