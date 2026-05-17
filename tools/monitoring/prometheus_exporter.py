@@ -305,7 +305,7 @@ class RustChainPrometheusExporter:
     # Main loop
     # -------------------------------------------------------------------------
 
-    def start_scrapping(self):
+    def start_scraping(self):
         self.running = True
         logger.info("Scrape loop started (%ds interval)", self.scrape_interval)
         while self.running:
@@ -405,7 +405,7 @@ def main():
     start_http_server(listen_port)
     logger.info("Metrics server started on http://0.0.0.0:%d", listen_port)
 
-    scrape_thread = Thread(target=exporter.start_scrapping, daemon=True)
+    scrape_thread = Thread(target=exporter.start_scraping, daemon=True)
     scrape_thread.start()
 
     try:

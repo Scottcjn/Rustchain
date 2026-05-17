@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: MIT
-# SPDX-License-Identifier: MIT
 
 import os
 import time
@@ -148,7 +147,6 @@ def scrape_metrics():
             if api_data:
                 metrics_data['node_up'] = 1
                 update_metrics_from_source(api_data)
-                metrics_data['node_up'] = 1
             else:
                 metrics_data['node_up'] = 0
                 # Fallback to database
