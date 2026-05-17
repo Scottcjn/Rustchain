@@ -20,6 +20,8 @@ from .moderation_service import ModerationService
 
 logger = logging.getLogger(__name__)
 
+INTERNAL_MODERATION_ERROR = "Internal moderation processing error"
+
 
 def _payload_object(
     payload: dict[str, Any],
@@ -301,7 +303,7 @@ def register_routes(app: FastAPI, config: BotConfig) -> None:
             )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=str(e),
+                detail=INTERNAL_MODERATION_ERROR,
             )
 
     @app.get("/stats")

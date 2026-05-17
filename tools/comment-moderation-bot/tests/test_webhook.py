@@ -390,6 +390,50 @@ class TestWebhookProcessing:
             assert data["action"] == "delete"
             assert data["risk_score"] > 0.8
 
+    @pytest.mark.asyncio
+    async def test_webhook_processing_error_redacts_internal_details(
+        self, app: TestClient, sample_webhook_payload: dict, mock_config: MagicMock
+    ) -> None:
+        """Test processing failures keep details in audit logs, not responses."""
+        leaked = (
+            "database dsn=postgres://bot:secret@internal-db/moderation "
+            "at /srv/rustchain/private/moderation.py"
+        )
+        body = json.dumps(sample_webhook_payload).encode()
+        signature = generate_signature(body, mock_config.github_app.webhook_secret.get_secret_value())
+
+        with patch.object(
+            app.app.state.moderation_service,
+            "process_comment_event",
+            new_callable=AsyncMock,
+        ) as mock_process, patch.object(
+            app.app.state.audit_logger,
+            "log_error",
+        ) as mock_log_error:
+            mock_process.side_effect = RuntimeError(leaked)
+
+            response = app.post(
+                "/webhook",
+                content=body,
+                headers={
+                    "X-GitHub-Event": "issue_comment",
+                    "X-GitHub-Delivery": "test-delivery-id",
+                    "X-Hub-Signature-256": signature,
+                },
+            )
+
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        assert response.json()["detail"] == "Internal moderation processing error"
+        rendered = response.text
+        assert "postgres://bot:secret@internal-db" not in rendered
+        assert "/srv/rustchain/private/moderation.py" not in rendered
+
+        mock_log_error.assert_called()
+        audit_kwargs = mock_log_error.call_args.kwargs
+        assert audit_kwargs["error_type"] == "processing_error"
+        assert leaked in audit_kwargs["message"]
+        assert leaked in audit_kwargs["traceback"]
+
     def test_webhook_missing_payload_data(
         self, app: TestClient, mock_config: MagicMock
     ) -> None:
