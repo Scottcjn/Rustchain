@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 import os
 import sqlite3
 import tempfile
@@ -14,7 +15,8 @@ class TestBridgeInitiateTypeValidation(unittest.TestCase):
         self.tmp.close()
         self.db_path = self.tmp.name
         bridge_api.DB_PATH = self.db_path
-        with sqlite3.connect(self.db_path) as conn:
+        conn = sqlite3.connect(self.db_path)
+        try:
             bridge_api.init_bridge_schema(conn.cursor())
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS balances (miner_id TEXT PRIMARY KEY, amount_i64 INTEGER DEFAULT 0)"
@@ -35,6 +37,8 @@ class TestBridgeInitiateTypeValidation(unittest.TestCase):
                 """
             )
             conn.commit()
+        finally:
+            conn.close()
 
         app = Flask(__name__)
         bridge_api.register_bridge_routes(app)
@@ -77,6 +81,31 @@ class TestBridgeInitiateTypeValidation(unittest.TestCase):
                 payload = {**self.valid_payload(), "amount_rtc": amount_rtc}
                 response = self.client.post("/api/bridge/initiate", json=payload)
                 self.assertEqual(response.status_code, 400)
+
+    def test_mixed_case_chain_uses_normalized_value_for_address_validation(self):
+        payload = {
+            **self.valid_payload(),
+            "source_chain": "Base",
+            "source_address": "not-a-base-wallet",
+        }
+
+        response = self.client.post("/api/bridge/initiate", json=payload)
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_successful_mixed_case_chain_response_uses_normalized_values(self):
+        payload = {
+            **self.valid_payload(),
+            "source_chain": "Solana",
+            "dest_chain": "RustChain",
+        }
+
+        response = self.client.post("/api/bridge/initiate", json=payload)
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        self.assertEqual(body["source_chain"], "solana")
+        self.assertEqual(body["dest_chain"], "rustchain")
 
 
 if __name__ == "__main__":

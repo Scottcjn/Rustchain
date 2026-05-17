@@ -718,11 +718,12 @@ def register_bridge_routes(app):
         validation = validate_bridge_request(data)
         if not validation.ok:
             return jsonify({"error": validation.error}), 400
+        details = validation.details or {}
         
         # Validate address formats
         for chain, addr in [
-            (data["source_chain"], data["source_address"]),
-            (data["dest_chain"], data["dest_address"])
+            (details["source_chain"], details["source_address"]),
+            (details["dest_chain"], details["dest_address"])
         ]:
             valid, msg = validate_chain_address_format(chain, addr)
             if not valid:
@@ -732,7 +733,7 @@ def register_bridge_routes(app):
         admin_key = request.headers.get("X-Admin-Key", "")
         expected_admin_key = os.environ.get("RC_ADMIN_KEY", "")
         admin_initiated = bool(expected_admin_key) and hmac.compare_digest(admin_key, expected_admin_key)
-        if data["direction"] == "deposit":
+        if details["direction"] == "deposit":
             # Deposits create balance locks by source_address; require operator
             # authorization until a wallet-owner signature flow exists.
             if not expected_admin_key:
@@ -742,14 +743,14 @@ def register_bridge_routes(app):
         
         # Create bridge transfer
         req = BridgeTransferRequest(
-            direction=data["direction"],
-            source_chain=data["source_chain"],
-            dest_chain=data["dest_chain"],
-            source_address=data["source_address"],
-            dest_address=data["dest_address"],
-            amount_rtc=data["amount_rtc"],
-            memo=data.get("memo"),
-            bridge_type=data.get("bridge_type", "bottube")
+            direction=details["direction"],
+            source_chain=details["source_chain"],
+            dest_chain=details["dest_chain"],
+            source_address=details["source_address"],
+            dest_address=details["dest_address"],
+            amount_rtc=details["amount_rtc"],
+            memo=details.get("memo"),
+            bridge_type=details["bridge_type"]
         )
         
         conn = sqlite3.connect(DB_PATH)
