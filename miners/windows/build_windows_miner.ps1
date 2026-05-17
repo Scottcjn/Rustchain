@@ -1,4 +1,4 @@
-﻿# Build script for Windows: requires Python 3.11+ and PyInstaller.
+# Build script for Windows: requires Python 3.11+ and PyInstaller.
 Set-StrictMode -Version Latest
 $env:PYINSTALLER_HOME = "$PSScriptRoot\dist"
 Write-Host "Ensuring pip is up to date..."

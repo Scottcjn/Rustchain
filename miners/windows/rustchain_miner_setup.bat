@@ -1,4 +1,4 @@
-﻿@echo off
+@echo off
 setlocal enabledelayedexpansion
 set "SCRIPT_DIR=%~dp0"
 set "REQUIREMENTS=%SCRIPT_DIR%requirements-miner.txt"
