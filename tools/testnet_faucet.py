@@ -93,6 +93,16 @@ def _request_data() -> tuple[dict[str, Any] | None, tuple[Any, int] | None]:
     return data, None
 
 
+def _strip_string_field(data: dict[str, Any], name: str) -> tuple[str | None, tuple[Any, int] | None]:
+    value = data.get(name)
+    if value is None:
+        return None, None
+    if not isinstance(value, str):
+        return None, (jsonify({"ok": False, "error": f"{name}_must_be_string"}), 400)
+    value = value.strip()
+    return value or None, None
+
+
 def _sum_last_24h(conn: sqlite3.Connection, github_username: str | None, ip: str) -> float:
     since = (_utcnow() - timedelta(hours=24)).isoformat()
     if github_username:
@@ -173,8 +183,12 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
         data, error = _request_data()
         if error:
             return error
-        wallet = (data.get("wallet") or "").strip()
-        github_username = (data.get("github_username") or "").strip() or None
+        wallet, error = _strip_string_field(data, "wallet")
+        if error:
+            return error
+        github_username, error = _strip_string_field(data, "github_username")
+        if error:
+            return error
         ip = request.headers.get("X-Forwarded-For", request.remote_addr or "unknown").split(",")[0].strip()
 
         if not wallet:

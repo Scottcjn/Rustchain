@@ -63,6 +63,22 @@ def test_drip_accepts_form_payload(app):
     assert r.get_json()["ok"] is True
 
 
+@pytest.mark.parametrize(
+    ("payload", "error"),
+    [
+        ({"wallet": ["rtc_wallet_1"]}, "wallet_must_be_string"),
+        ({"wallet": 123}, "wallet_must_be_string"),
+        ({"wallet": "rtc_wallet_1", "github_username": ["alice"]}, "github_username_must_be_string"),
+        ({"wallet": "rtc_wallet_1", "github_username": 123}, "github_username_must_be_string"),
+    ],
+)
+def test_drip_rejects_non_string_fields(app, payload, error):
+    c = app.test_client()
+    r = c.post("/faucet/drip", json=payload)
+    assert r.status_code == 400
+    assert r.get_json() == {"ok": False, "error": error}
+
+
 def test_ip_only_limit(app):
     c = app.test_client()
     h = {"X-Forwarded-For": "1.2.3.4"}
