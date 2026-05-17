@@ -621,4 +621,3 @@ class BountyVerifier:
         if response:
             return response.get("html_url")
         return None
-

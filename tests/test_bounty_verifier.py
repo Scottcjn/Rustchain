@@ -708,4 +708,3 @@ class TestIntegration:
         result = verifier.verify_claim(sample_claim_comment)
         
         assert result.overall_status == VerificationStatus.FAILED
-
