@@ -641,6 +641,7 @@ def update_external_confirmation(
         completed_at = None
     
     try:
+        cursor.execute("BEGIN IMMEDIATE")
         cursor.execute("""
             UPDATE bridge_transfers
             SET external_tx_hash = ?,
@@ -650,7 +651,21 @@ def update_external_confirmation(
                 completed_at = ?,
                 updated_at = ?
             WHERE tx_hash = ?
+              AND status IN ('pending', 'locked', 'confirming')
         """, (external_tx_hash, confirmations, req_conf, new_status, completed_at, now, tx_hash))
+
+        if cursor.rowcount != 1:
+            current = cursor.execute(
+                "SELECT status FROM bridge_transfers WHERE tx_hash = ?",
+                (tx_hash,),
+            ).fetchone()
+            db_conn.rollback()
+            if not current:
+                return False, {"error": "Bridge transfer not found"}
+            return False, {
+                "error": "Cannot update completed/failed/voided transfer",
+                "current_status": current[0],
+            }
         
         # If completed, release the lock
         if new_status == "completed":

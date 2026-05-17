@@ -1,8 +1,11 @@
+# SPDX-License-Identifier: MIT
+
 import os
 import sqlite3
 import tempfile
 import unittest
 
+import bridge_api
 from bridge_api import (
     BRIDGE_UNIT,
     BridgeTransferRequest,
@@ -56,6 +59,54 @@ class TestBridgeWithdrawCompletionCreditsDestination(unittest.TestCase):
         balance_i64 = self.conn.execute(
             "SELECT amount_i64 FROM balances WHERE miner_id = ?",
             ("RTCdest1234",),
+        ).fetchone()[0]
+        self.assertEqual(balance_i64, 10 * BRIDGE_UNIT)
+
+    def test_stale_completed_callback_does_not_credit_destination_twice(self):
+        request = BridgeTransferRequest(
+            direction="withdraw",
+            source_chain="solana",
+            dest_chain="rustchain",
+            source_address="B" * 32,
+            dest_address="RTCdest5678",
+            amount_rtc=10.0,
+        )
+
+        ok, result = create_bridge_transfer(self.conn, request, admin_initiated=False)
+        self.assertTrue(ok, result)
+
+        stale_transfer = bridge_api.get_bridge_transfer_by_hash(self.conn, result["tx_hash"])
+
+        ok, first_result = update_external_confirmation(
+            self.conn,
+            result["tx_hash"],
+            external_tx_hash="solana_tx_456",
+            confirmations=12,
+            required_confirmations=12,
+        )
+        self.assertTrue(ok, first_result)
+        self.assertEqual(first_result["status"], "completed")
+
+        original_get_bridge_transfer_by_hash = bridge_api.get_bridge_transfer_by_hash
+        try:
+            bridge_api.get_bridge_transfer_by_hash = (
+                lambda conn, tx_hash: stale_transfer
+                if tx_hash == result["tx_hash"]
+                else original_get_bridge_transfer_by_hash(conn, tx_hash)
+            )
+            update_external_confirmation(
+                self.conn,
+                result["tx_hash"],
+                external_tx_hash="solana_tx_456",
+                confirmations=12,
+                required_confirmations=12,
+            )
+        finally:
+            bridge_api.get_bridge_transfer_by_hash = original_get_bridge_transfer_by_hash
+
+        balance_i64 = self.conn.execute(
+            "SELECT amount_i64 FROM balances WHERE miner_id = ?",
+            ("RTCdest5678",),
         ).fetchone()[0]
         self.assertEqual(balance_i64, 10 * BRIDGE_UNIT)
 
