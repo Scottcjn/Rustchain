@@ -9,6 +9,15 @@ app = Flask(__name__)
 API_BASE_URL = "http://localhost:8000"
 MINERS_ENDPOINT = f"{API_BASE_URL}/api/miners"
 
+UPSTREAM_UNAVAILABLE_ERROR = "Upstream node unavailable"
+
+
+def upstream_unavailable_response(*, include_miners=False):
+    payload = {"error": UPSTREAM_UNAVAILABLE_ERROR}
+    if include_miners:
+        payload["miners"] = []
+    return jsonify(payload), 502
+
 @app.route('/')
 def dashboard():
     return render_template('dashboard.html')
@@ -49,8 +58,9 @@ def get_miners():
             return jsonify(miners_data)
         else:
             return jsonify({'error': 'Failed to fetch miners data', 'miners': []}), 500
-    except requests.exceptions.RequestException as e:
-        return jsonify({'error': f'Connection error: {str(e)}', 'miners': []}), 500
+    except requests.exceptions.RequestException:
+        app.logger.exception("Failed to fetch miners from upstream node")
+        return upstream_unavailable_response(include_miners=True)
 
 @app.route('/api/network/stats')
 def get_network_stats():
@@ -80,8 +90,9 @@ def get_network_stats():
             return jsonify(stats)
         else:
             return jsonify({'error': 'Failed to fetch network stats'}), 500
-    except requests.exceptions.RequestException as e:
-        return jsonify({'error': f'Connection error: {str(e)}'}), 500
+    except requests.exceptions.RequestException:
+        app.logger.exception("Failed to fetch network stats from upstream node")
+        return upstream_unavailable_response()
 
 @app.route('/miner/<miner_id>')
 def miner_detail(miner_id):
@@ -122,8 +133,9 @@ def get_miner_detail(miner_id):
                 return jsonify({'error': 'Miner not found'}), 404
         else:
             return jsonify({'error': 'Failed to fetch miner data'}), 500
-    except requests.exceptions.RequestException as e:
-        return jsonify({'error': f'Connection error: {str(e)}'}), 500
+    except requests.exceptions.RequestException:
+        app.logger.exception("Failed to fetch miner detail from upstream node")
+        return upstream_unavailable_response()
 
 @app.errorhandler(404)
 def not_found(error):
