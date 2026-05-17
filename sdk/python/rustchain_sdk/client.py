@@ -389,14 +389,13 @@ class RustChainClient:
             Transaction result dict with tx_hash, status, etc.
         """
         return await self._post(
-            "/transfer",
+            "/wallet/transfer/signed",
             json_data={
-                "from": from_address,
-                "to": to_address,
-                "amount": amount,
-                "fee": fee,
+                "from_address": from_address,
+                "to_address": to_address,
+                "amount_rtc": amount,
                 "signature": signature,
-                "timestamp": timestamp,
+                "nonce": timestamp,
             },
         )
 
