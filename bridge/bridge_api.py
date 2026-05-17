@@ -237,8 +237,11 @@ def lock_rtc():
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
+    raw_amount = data.get("amount", 0)
+    if isinstance(raw_amount, bool):
+        return jsonify({"error": "invalid amount"}), 400
     try:
-        amount_float = float(data.get("amount", 0))
+        amount_float = float(raw_amount)
     except (TypeError, ValueError):
         return jsonify({"error": "invalid amount"}), 400
     if not math.isfinite(amount_float):
