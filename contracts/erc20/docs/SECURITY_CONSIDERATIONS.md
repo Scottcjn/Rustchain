@@ -375,7 +375,7 @@ Maintain list of:
 - [Slither](https://github.com/crytic/slither) - Static analysis
 - [Mythril](https://github.com/ConsenSys/mythril) - Security analysis
 - [Echidna](https://github.com/crytic/echidna) - Fuzz testing
-- [Manticore](https://github.com/crytic/manticore) - Symbolic execution
+- [Manticore](https://github.com/trailofbits/manticore) - Symbolic execution
 
 ### Audit Firms
 
