@@ -393,6 +393,19 @@ class TestMainFlow(unittest.TestCase):
         self.assertIn("Manual Transfer Required", comment_body)
         self.assertIn(":MANUAL-REQUIRED", comment_body)
 
+    def test_connection_failure_fails_when_manual_notice_cannot_be_posted(self):
+        from award_rtc import main
+        transfer_result = {
+            "ok": False,
+            "error": "Connection failed: [Errno 111] Connection refused",
+        }
+        with self._env():
+            with patch("award_rtc.fetch_pr_comments", return_value=[]):
+                with patch("award_rtc.transfer_rtc", return_value=(False, transfer_result)):
+                    with patch("award_rtc.post_pr_comment", return_value=False):
+                        rc = main()
+        self.assertEqual(rc, 1)
+
     def test_amount_exceeds_cap(self):
         from award_rtc import main
         with self._env(INPUT_RTC_AMOUNT="50000", INPUT_MAX_AMOUNT="10000"):

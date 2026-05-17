@@ -464,7 +464,10 @@ def main() -> int:
                     f"this transfer manually.\n\n"
                     f"<!-- { _AWARD_MARKER }:MANUAL-REQUIRED -->"
                 )
-                post_pr_comment(repo, pr_number, manual_body, cfg.github_token)
+                if not post_pr_comment(repo, pr_number, manual_body, cfg.github_token):
+                    log_error("Manual transfer notice could not be posted.")
+                    set_output("skip_reason", f"manual_notice_failed: {error_msg}")
+                    return 1
             return 0
 
         if cfg.post_comment:
