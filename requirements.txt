@@ -3,6 +3,10 @@
 flask>=2.0.0
 # For miner and SDK:
 requests>=2.34.2
+# For async agent-economy SDK calls:
+aiohttp>=3.9.0
+# For faucet service CORS headers:
+flask-cors>=4.0.0
 # For wallet CLI (Ed25519 + AES-GCM):
 cryptography>=46.0.7
 # For node / Beacon Ed25519 verification:
