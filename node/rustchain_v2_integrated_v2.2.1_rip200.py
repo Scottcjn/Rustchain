@@ -7914,6 +7914,39 @@ def address_from_pubkey(public_key_hex: str) -> str:
     pubkey_hash = hashlib.sha256(bytes.fromhex(public_key_hex)).hexdigest()[:40]
     return f"RTC{pubkey_hash}"
 
+def _wallet_transfer_signed_messages(
+    from_address,
+    to_address,
+    amount_rtc,
+    fee_rtc,
+    memo,
+    nonce,
+    chain_id=None,
+):
+    """Build current and legacy canonical messages for signed transfers."""
+    tx_data = {
+        "from": from_address,
+        "to": to_address,
+        "amount": amount_rtc,
+        "fee": fee_rtc,
+        "memo": memo,
+        "nonce": nonce,
+    }
+    tx_data_legacy = {
+        "from": from_address,
+        "to": to_address,
+        "amount": amount_rtc,
+        "memo": memo,
+        "nonce": nonce,
+    }
+    if chain_id:
+        tx_data["chain_id"] = chain_id
+        tx_data_legacy["chain_id"] = chain_id
+    return (
+        json.dumps(tx_data, sort_keys=True, separators=(",", ":")).encode(),
+        json.dumps(tx_data_legacy, sort_keys=True, separators=(",", ":")).encode(),
+    )
+
 def _ensure_governance_tables(c: sqlite3.Cursor) -> None:
     c.execute("""
         CREATE TABLE IF NOT EXISTS governance_proposals (
@@ -8166,6 +8199,7 @@ def wallet_transfer_signed():
     public_key = str(data.get("public_key", "")).strip()
     memo = str(data.get("memo", ""))
     amount_rtc = pre.details["amount_rtc"]
+    fee_rtc = pre.details["fee_rtc"]
 
     if chain_id and chain_id != CHAIN_ID:
         return jsonify({
@@ -8203,20 +8237,27 @@ def wallet_transfer_signed():
     
     nonce = str(nonce_int)
 
-    # Recreate the signed message (must match client signing format)
-    tx_data = {
-        "from": from_address,
-        "to": to_address,
-        "amount": amount_rtc,
-        "memo": memo,
-        "nonce": nonce
-    }
-    if chain_id:
-        tx_data["chain_id"] = chain_id
-    message = json.dumps(tx_data, sort_keys=True, separators=(",", ":")).encode()
-    
-    # Verify Ed25519 signature
-    if not verify_rtc_signature(public_key, message, signature):
+    # Recreate the signed message (must match client signing format).
+    message, legacy_message = _wallet_transfer_signed_messages(
+        from_address,
+        to_address,
+        amount_rtc,
+        fee_rtc,
+        memo,
+        nonce,
+        chain_id,
+    )
+
+    if verify_rtc_signature(public_key, message, signature):
+        pass
+    elif verify_rtc_signature(public_key, legacy_message, signature):
+        if fee_rtc != 0:
+            return jsonify({
+                "error": "Legacy signature format cannot authorize nonzero fee",
+                "code": "LEGACY_SIGNATURE_FEE_UNBOUND",
+            }), 401
+        message = legacy_message
+    else:
         return jsonify({"error": "Invalid signature"}), 401
     
     # Signature valid - process the transfer (2-phase commit + replay protection).

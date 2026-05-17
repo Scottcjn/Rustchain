@@ -44,7 +44,7 @@ async def main():
         result = await client.wallet_transfer_with_wallet(
             wallet,
             to_address="RTCrecipient...",
-            amount=1000,
+            amount=10.5,  # RTC
             fee=0,
         )
         print("TX result:", result)
