@@ -33,7 +33,7 @@ class PayoutWorker:
             'processed': 0,
             'failed': 0,
             'total_rtc': 0.0
-        }
+        }        self._recover_orphaned_processing()
 
     def get_pending_withdrawals(self, limit: int = BATCH_SIZE) -> List[Dict]:
         """Fetch pending withdrawals from database"""
