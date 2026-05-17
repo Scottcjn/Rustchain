@@ -386,10 +386,16 @@ class RustChainMiner:
         apply the PoW bonus multiplier to this miner's RTC rewards.
         """
         try:
-            challenge = requests.post(
+            challenge_resp = requests.post(
                 f"{self.node_url}/attest/challenge", json={}, timeout=10
-            ).json()
-            nonce = challenge.get("nonce")
+            )
+            challenge = challenge_resp.json()
+            nonce = challenge.get("nonce") if isinstance(challenge, dict) else None
+            if challenge_resp.status_code != 200 or not nonce:
+                self.last_attestation_error = (
+                    f"challenge rejected: {self._response_diagnostic(challenge_resp)}"
+                )
+                return False
         except Exception as e:
             self.last_attestation_error = f"challenge request failed: {e}"
             return False

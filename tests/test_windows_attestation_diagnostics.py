@@ -72,6 +72,32 @@ def test_attest_records_challenge_exception(monkeypatch):
     assert miner.last_attestation_error == "challenge request failed: challenge timed out"
 
 
+def test_attest_records_challenge_rejection_details(monkeypatch):
+    module = _load_windows_miner()
+    miner = module.RustChainMiner("RTC877021895fd29d034f35c87e1b37af8534703792")
+    miner.node_url = "http://node.example"
+
+    def fake_post(url, **kwargs):
+        if url.endswith("/attest/challenge"):
+            return _Response(
+                503,
+                {
+                    "code": "ATTEST_BUSY",
+                    "error": "try later",
+                    "message": "challenge unavailable",
+                },
+            )
+        raise AssertionError(url)
+
+    monkeypatch.setattr(module.requests, "post", fake_post)
+
+    assert miner.attest() is False
+    assert miner.last_attestation_error == (
+        "challenge rejected: HTTP 503 code=ATTEST_BUSY "
+        "error=try later message=challenge unavailable"
+    )
+
+
 def test_ensure_ready_prints_last_attestation_error():
     module = _load_windows_miner()
     miner = module.RustChainMiner("RTC877021895fd29d034f35c87e1b37af8534703792")
