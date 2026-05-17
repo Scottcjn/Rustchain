@@ -688,6 +688,36 @@ class TestUtxoDB(unittest.TestCase):
         self.assertFalse(ok)
         self.assertFalse(self.db.mempool_check_double_spend(box['box_id']))
 
+    def test_mempool_rejects_oversized_timestamp_without_locking_input(self):
+        """Mempool metadata validation must mirror apply_transaction."""
+        self._apply_coinbase('alice', 100 * UNIT, block_height=1)
+        box = self.db.get_unspent_for_address('alice')[0]
+
+        tx = {
+            'tx_id': 'tsov' * 16,
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': box['box_id']}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+            'timestamp': MAX_SQLITE_INT64 + 1,
+        }
+
+        ok = self.db.mempool_add(tx)
+
+        self.assertFalse(ok)
+        self.assertFalse(self.db.mempool_check_double_spend(box['box_id']))
+        self.assertEqual(self.db.mempool_get_block_candidates(), [])
+
+        conn = self.db._conn()
+        try:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM utxo_mempool_inputs WHERE box_id = ?",
+                (box['box_id'],),
+            ).fetchone()
+            self.assertEqual(row['n'], 0)
+        finally:
+            conn.close()
+
     # -- fix(#9273): mempool output validation ------------------------------
 
     def test_mempool_rejects_too_many_outputs(self):

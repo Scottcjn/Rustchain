@@ -836,6 +836,9 @@ class UtxoDB:
                 return False
             data_inputs = tx.get('data_inputs', [])
             now = int(time.time())
+            timestamp = tx.get('timestamp', now)
+            if not _is_nonnegative_int64(timestamp):
+                return False
 
             # Public mempool admission must never accept minting transactions.
             # Coinbase/mining rewards are internally constructed during block
