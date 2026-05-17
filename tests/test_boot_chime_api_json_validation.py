@@ -186,6 +186,8 @@ def test_capture_accepts_bounded_duration(client, api_module):
 
     assert response.status_code == 200
     assert response.mimetype == "audio/wav"
+    assert response.get_data() == b"RIFF\x00\x00\x00\x00WAVE"
     assert api_module.audio_capture.calls == [(30.0, True)]
     assert api_module.audio_capture.saved_paths
-    assert not Path(api_module.audio_capture.saved_paths[-1]).exists()
+    tmp_path = Path(api_module.audio_capture.saved_paths[-1])
+    assert not tmp_path.exists()

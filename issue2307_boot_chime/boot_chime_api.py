@@ -5,8 +5,9 @@ Flask-based REST API for acoustic hardware attestation.
 Integrates with RustChain node for miner attestation.
 """
 
-from flask import Flask, request, jsonify, send_file, after_this_request
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
+import io
 import json
 import math
 import os
@@ -358,16 +359,16 @@ def capture_audio():
             audio_capture.save_audio(captured, tmp.name)
             tmp_path = tmp.name
 
-        @after_this_request
-        def cleanup_temp_file(response):
+        try:
+            wav_data = Path(tmp_path).read_bytes()
+        finally:
             try:
                 os.unlink(tmp_path)
             except FileNotFoundError:
                 pass
-            return response
-        
+
         return send_file(
-            tmp_path,
+            io.BytesIO(wav_data),
             mimetype='audio/wav',
             as_attachment=True,
             download_name=f'boot_chime_{int(time.time())}.wav'
