@@ -127,6 +127,12 @@ function getRustBadge(score) {
     return 'Fresh Metal';
 }
 
+function normalizeMinersPayload(payload) {
+    if (Array.isArray(payload)) return payload;
+    if (payload && Array.isArray(payload.miners)) return payload.miners;
+    return [];
+}
+
 // API Fetcher with Error Handling
 async function fetchAPI(endpoint, options = {}) {
     const url = `${CONFIG.API_BASE}${endpoint}`;
@@ -204,7 +210,7 @@ async function fetchMiners() {
     try {
         state.loading.miners = true;
         state.error.miners = null;
-        state.miners = await fetchAPI('/api/miners') || [];
+        state.miners = normalizeMinersPayload(await fetchAPI('/api/miners'));
     } catch (error) {
         state.error.miners = error.message;
         // Fallback mock data
@@ -754,5 +760,6 @@ window.RustChainExplorer = {
         fetchTransactions()
     ]),
     search: handleSearch,
-    switchTab
+    switchTab,
+    normalizeMinersPayload
 };
