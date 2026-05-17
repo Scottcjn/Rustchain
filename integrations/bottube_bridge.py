@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """BoTTube -> RustChain reward bridge.
 
 The bridge polls public BoTTube endpoints, finds creator RTC wallets, and
@@ -297,6 +298,15 @@ def increment_daily_limit(state: dict[str, Any], creator: str) -> None:
             state["daily_counts"].pop(old_day, None)
 
 
+def reward_within_daily_limits(state: dict[str, Any], reward: Reward, config: dict[str, Any]) -> bool:
+    creator = str(reward.metadata.get("creator") or "")
+    checks = [
+        (f"creator:{creator}" if creator else "", int(config["max_rewards_per_creator_per_day"])),
+        (f"wallet:{reward.to_wallet}", int(config["max_rewards_per_wallet_per_day"])),
+    ]
+    return all(within_daily_limit(state, key, limit) for key, limit in checks if key)
+
+
 def plan_video_rewards(
     videos: list[dict[str, Any]],
     config: dict[str, Any],
@@ -397,6 +407,17 @@ def plan_tip_rewards(tips: list[dict[str, Any]], config: dict[str, Any], state: 
     paid = state.setdefault("paid", {})
     minimum = float(config["minimum_tip_rtc"])
     pattern = str(config["wallet_pattern"])
+    wallet_daily_limit = int(config["max_rewards_per_wallet_per_day"])
+    planned_counts: dict[str, int] = {}
+    day_counts = state.setdefault("daily_counts", {}).setdefault(today_key(), {})
+
+    def can_plan_tip(wallet: str) -> bool:
+        key = f"wallet:{wallet}"
+        if not within_daily_limit(state, key, wallet_daily_limit):
+            return False
+        already = int(day_counts.get(key, 0))
+        return already + planned_counts.get(key, 0) < wallet_daily_limit
+
     for tip in tips:
         tip_id = str(tip.get("id") or tip.get("tx_id") or tip.get("created_at") or "")
         if not tip_id:
@@ -416,6 +437,8 @@ def plan_tip_rewards(tips: list[dict[str, Any]], config: dict[str, Any], state: 
         )
         if not wallet:
             continue
+        if not can_plan_tip(wallet):
+            continue
         rewards.append(
             Reward(
                 key=key,
@@ -425,6 +448,8 @@ def plan_tip_rewards(tips: list[dict[str, Any]], config: dict[str, Any], state: 
                 metadata={"tip_id": tip_id},
             )
         )
+        wallet_key = f"wallet:{wallet}"
+        planned_counts[wallet_key] = planned_counts.get(wallet_key, 0) + 1
     return rewards
 
 
@@ -476,6 +501,8 @@ def run_once(config: dict[str, Any]) -> int:
     completed = 0
     for reward in rewards:
         if reward.key in state.get("paid", {}):
+            continue
+        if not config.get("dry_run", True) and not reward_within_daily_limits(state, reward, config):
             continue
         result = send_reward(config, admin_key, reward)
         if config.get("dry_run", True):
