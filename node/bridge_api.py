@@ -57,6 +57,7 @@ BRIDGE_LOCK_EXPIRY_SECONDS = int(os.environ.get("RC_BRIDGE_LOCK_EXPIRY_SECONDS",
 BRIDGE_MIN_AMOUNT_RTC = float(os.environ.get("RC_BRIDGE_MIN_AMOUNT_RTC", "1.0"))
 BRIDGE_UNIT = 1000000  # Micro-units per RTC
 logger = logging.getLogger(__name__)
+EVM_HEX_CHARS = set("0123456789abcdefABCDEF")
 
 
 # =============================================================================
@@ -222,11 +223,13 @@ def validate_chain_address_format(chain: str, address: str) -> Tuple[bool, str]:
             return False, "Ergo address too short"
     
     elif chain == "base":
-        # Base (Ethereum L2) addresses are 0x-prefixed
+        # Base (Ethereum L2) addresses are 0x-prefixed plus 40 hex chars.
         if not address.startswith("0x"):
             return False, "Base addresses must start with '0x'"
         if len(address) != 42:
             return False, "Invalid Base address length"
+        if not all(ch in EVM_HEX_CHARS for ch in address[2:]):
+            return False, "Invalid Base address format"
     
     return True, ""
 

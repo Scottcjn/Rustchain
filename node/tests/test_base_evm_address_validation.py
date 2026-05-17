@@ -18,6 +18,7 @@ def _load_module(name, path):
 
 beacon_x402 = _load_module("beacon_x402_under_test", NODE_DIR / "beacon_x402.py")
 rustchain_x402 = _load_module("rustchain_x402_under_test", NODE_DIR / "rustchain_x402.py")
+bridge_api = _load_module("node_bridge_api_under_test", NODE_DIR / "bridge_api.py")
 
 
 INVALID_BASE_ADDRESSES = [
@@ -70,3 +71,16 @@ def test_beacon_x402_rejects_short_and_non_hex_agent_wallets(monkeypatch):
 
         assert response.status_code == 400
         assert "Invalid Base address" in response.get_json()["error"]
+
+def test_node_bridge_api_rejects_non_hex_base_addresses():
+    for address in INVALID_BASE_ADDRESSES:
+        ok, msg = bridge_api.validate_chain_address_format("base", address)
+
+        assert ok is False
+        assert "Base address" in msg
+
+    ok, msg = bridge_api.validate_chain_address_format(
+        "base", "0x1234567890abcdefABCDEF1234567890abcdef12"
+    )
+    assert ok is True
+    assert msg == ""
