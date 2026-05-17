@@ -693,6 +693,10 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
     """
     from flask import request, jsonify
 
+    def internal_error(route_name: str):
+        logger.exception("Internal error in %s", route_name)
+        return jsonify({"error": "internal_error"}), 500
+
     @app.route('/tx/submit', methods=['POST'])
     def submit_transaction():
         """Submit a signed transaction"""
@@ -730,9 +734,8 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
                     "error": result
                 }), 400
 
-        except Exception as e:
-            logger.error(f"Error submitting transaction: {e}")
-            return jsonify({"error": str(e)}), 500
+        except Exception:
+            return internal_error("submit_transaction")
 
     @app.route('/tx/status/<tx_hash>', methods=['GET'])
     def get_tx_status(tx_hash: str):
@@ -740,8 +743,8 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
         try:
             status = tx_pool.get_transaction_status(tx_hash)
             return jsonify(status)
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
+        except Exception:
+            return internal_error("get_tx_status")
 
     @app.route('/tx/pending', methods=['GET'])
     def list_pending():
@@ -766,8 +769,8 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
                 "count": len(pending),
                 "transactions": [tx.to_dict() for tx in pending]
             })
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
+        except Exception:
+            return internal_error("list_pending")
 
     @app.route('/wallet/<address>/balance', methods=['GET'])
     def get_wallet_balance(address: str):
@@ -785,8 +788,8 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
                 "balance_rtc": balance / 100_000_000,
                 "available_rtc": available / 100_000_000
             })
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
+        except Exception:
+            return internal_error("get_wallet_balance")
 
     @app.route('/wallet/<address>/nonce', methods=['GET'])
     def get_wallet_nonce(address: str):
@@ -806,8 +809,8 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
                 "next_nonce": next_nonce,
                 "pending_nonces": sorted(pending_nonces)
             })
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
+        except Exception:
+            return internal_error("get_wallet_nonce")
 
     @app.route('/wallet/<address>/history', methods=['GET'])
     def get_wallet_history(address: str):
@@ -850,8 +853,8 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
                 "count": len(transactions),
                 "transactions": transactions
             })
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
+        except Exception:
+            return internal_error("get_wallet_history")
 
 
 # =============================================================================
