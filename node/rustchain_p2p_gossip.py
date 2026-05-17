@@ -116,18 +116,54 @@ MAX_INV_BATCH = 1000
 DB_PATH = os.environ.get("RUSTCHAIN_DB", "/root/rustchain/rustchain_v2.db")
 
 
-def _positive_int(value: Any, default: int) -> int:
+MIN_P2P_PROTOCOL_VERSION = 1
+MAX_P2P_PROTOCOL_VERSION = 10
+MIN_P2P_K_BUCKET_SIZE = 1
+MAX_P2P_K_BUCKET_SIZE = 1000
+MIN_P2P_PING_INTERVAL = 5
+MAX_P2P_PING_INTERVAL = 3600
+MIN_P2P_HANDSHAKE_TIMEOUT = 1
+MAX_P2P_HANDSHAKE_TIMEOUT = 120
+_HANDSHAKE_BOUNDS = {
+    "protocol_version": (MIN_P2P_PROTOCOL_VERSION, MAX_P2P_PROTOCOL_VERSION),
+    "k_bucket_size": (MIN_P2P_K_BUCKET_SIZE, MAX_P2P_K_BUCKET_SIZE),
+    "ping_interval": (MIN_P2P_PING_INTERVAL, MAX_P2P_PING_INTERVAL),
+    "timeout": (MIN_P2P_HANDSHAKE_TIMEOUT, MAX_P2P_HANDSHAKE_TIMEOUT),
+}
+
+
+def _bounded_int(value: Any, default: int, min_value: int, max_value: int) -> int:
     try:
         parsed = int(value)
     except (TypeError, ValueError):
         return default
-    return parsed if parsed > 0 else default
+    return min(max(parsed, min_value), max_value)
 
 
-P2P_PROTOCOL_VERSION = _positive_int(os.environ.get("RC_P2P_PROTOCOL_VERSION"), 1)
-P2P_K_BUCKET_SIZE = _positive_int(os.environ.get("RC_P2P_K_BUCKET_SIZE"), 20)
-P2P_PING_INTERVAL = _positive_int(os.environ.get("RC_P2P_PING_INTERVAL"), SYNC_INTERVAL)
-P2P_HANDSHAKE_TIMEOUT = _positive_int(os.environ.get("RC_P2P_HANDSHAKE_TIMEOUT"), 10)
+P2P_PROTOCOL_VERSION = _bounded_int(
+    os.environ.get("RC_P2P_PROTOCOL_VERSION"),
+    1,
+    MIN_P2P_PROTOCOL_VERSION,
+    MAX_P2P_PROTOCOL_VERSION,
+)
+P2P_K_BUCKET_SIZE = _bounded_int(
+    os.environ.get("RC_P2P_K_BUCKET_SIZE"),
+    20,
+    MIN_P2P_K_BUCKET_SIZE,
+    MAX_P2P_K_BUCKET_SIZE,
+)
+P2P_PING_INTERVAL = _bounded_int(
+    os.environ.get("RC_P2P_PING_INTERVAL"),
+    SYNC_INTERVAL,
+    MIN_P2P_PING_INTERVAL,
+    MAX_P2P_PING_INTERVAL,
+)
+P2P_HANDSHAKE_TIMEOUT = _bounded_int(
+    os.environ.get("RC_P2P_HANDSHAKE_TIMEOUT"),
+    10,
+    MIN_P2P_HANDSHAKE_TIMEOUT,
+    MAX_P2P_HANDSHAKE_TIMEOUT,
+)
 _HANDSHAKE_FIELDS = (
     "protocol_version",
     "k_bucket_size",
@@ -152,7 +188,11 @@ def _normalise_handshake_params(
 ) -> Dict[str, int]:
     params = params if isinstance(params, dict) else {}
     return {
-        field: _positive_int(params.get(field), defaults[field])
+        field: _bounded_int(
+            params.get(field),
+            defaults[field],
+            *_HANDSHAKE_BOUNDS[field],
+        )
         for field in _HANDSHAKE_FIELDS
     }
 

@@ -91,6 +91,28 @@ def test_negotiate_handshake_params_chooses_compatible_values():
     }
 
 
+def test_negotiate_handshake_params_clamps_extreme_values():
+    local = {
+        "protocol_version": 50,
+        "k_bucket_size": 1_000_000,
+        "ping_interval": 1,
+        "timeout": 10_000,
+    }
+    remote = {
+        "protocol_version": 50,
+        "k_bucket_size": 1_000_000,
+        "ping_interval": 1,
+        "timeout": 10_000,
+    }
+
+    assert gossip.negotiate_handshake_params(local, remote) == {
+        "protocol_version": gossip.MAX_P2P_PROTOCOL_VERSION,
+        "k_bucket_size": gossip.MAX_P2P_K_BUCKET_SIZE,
+        "ping_interval": gossip.MIN_P2P_PING_INTERVAL,
+        "timeout": gossip.MAX_P2P_HANDSHAKE_TIMEOUT,
+    }
+
+
 def test_ping_response_includes_local_and_agreed_handshake(tmp_path):
     local_db = tmp_path / "local.db"
     remote_db = tmp_path / "remote.db"
