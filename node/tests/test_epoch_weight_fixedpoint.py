@@ -112,3 +112,31 @@ def test_legacy_real_weights_migrate_to_fixed_point_units():
     weight_column = next(col for col in columns if col[1] == "weight")
     assert weight_column[2].upper() == "INTEGER"
     assert rows == [("miner_A", 100_000_000), ("miner_B", 2_500_000_000)]
+
+
+def test_vrf_selection_ignores_zero_weight_enrollments(monkeypatch):
+    node = load_node_module()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = str(Path(tmpdir) / "vrf_zero_weight.db")
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.execute(
+                "CREATE TABLE epoch_enroll (epoch INTEGER, miner_pk TEXT, weight INTEGER, PRIMARY KEY (epoch, miner_pk))"
+            )
+            conn.execute(
+                "INSERT INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)",
+                (7, "failed-fingerprint", 0),
+            )
+            conn.execute(
+                "INSERT INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)",
+                (7, "good-miner", 1),
+            )
+            conn.commit()
+
+            monkeypatch.setattr(node, "DB_PATH", db_path)
+            monkeypatch.setattr(node, "slot_to_epoch", lambda slot: 7)
+
+            assert node.vrf_is_selected("failed-fingerprint", 144) is False
+            assert node.vrf_is_selected("good-miner", 144) is True
+        finally:
+            conn.close()

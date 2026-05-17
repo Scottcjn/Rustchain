@@ -4132,10 +4132,11 @@ def vrf_is_selected(miner_pk: str, slot: int) -> bool:
             "SELECT miner_pk, weight FROM epoch_enroll WHERE epoch = ?",
             (epoch,)
         ).fetchall()
-        all_miners = [
-            (pk, normalize_epoch_weight_units(stored_weight))
-            for pk, stored_weight in raw_miners
-        ]
+        all_miners = []
+        for pk, stored_weight in raw_miners:
+            normalized_weight = normalize_epoch_weight_units(stored_weight)
+            if normalized_weight > 0:
+                all_miners.append((pk, normalized_weight))
 
     if not all_miners:
         return False
