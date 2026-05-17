@@ -1069,6 +1069,14 @@ def create_relationship_blueprint(engine: RelationshipEngine):
             return jsonify({"error": "Unauthorized relationship mutation"}), 401
 
         return None
+
+    def _mutation_json_object():
+        data = request.get_json(silent=True)
+        if data is None:
+            return {}, None
+        if not isinstance(data, dict):
+            return None, (jsonify({"error": "JSON object required"}), 400)
+        return data, None
     
     @bp.route("/api/relationships", methods=["GET"])
     def list_relationships():
@@ -1097,7 +1105,9 @@ def create_relationship_blueprint(engine: RelationshipEngine):
         if auth_error:
             return auth_error
 
-        data = request.get_json(silent=True) or {}
+        data, json_error = _mutation_json_object()
+        if json_error:
+            return json_error
         try:
             result = engine.record_disagreement(
                 agent_a, agent_b,
@@ -1114,7 +1124,9 @@ def create_relationship_blueprint(engine: RelationshipEngine):
         if auth_error:
             return auth_error
 
-        data = request.get_json(silent=True) or {}
+        data, json_error = _mutation_json_object()
+        if json_error:
+            return json_error
         try:
             result = engine.record_collaboration(
                 agent_a, agent_b,
@@ -1131,7 +1143,9 @@ def create_relationship_blueprint(engine: RelationshipEngine):
         if auth_error:
             return auth_error
 
-        data = request.get_json(silent=True) or {}
+        data, json_error = _mutation_json_object()
+        if json_error:
+            return json_error
         try:
             result = engine.record_reconciliation(
                 agent_a, agent_b,
@@ -1147,7 +1161,9 @@ def create_relationship_blueprint(engine: RelationshipEngine):
         if auth_error:
             return auth_error
 
-        data = request.json or {}
+        data, json_error = _mutation_json_object()
+        if json_error:
+            return json_error
         try:
             result = engine.admin_intervene(
                 agent_a, agent_b,
