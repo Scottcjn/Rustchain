@@ -1047,7 +1047,7 @@ GOVERNANCE_ACTIVE_MINER_WINDOW_SECONDS = 3600
 EPOCH_WEIGHT_SCALE = 1_000_000_000
 MAX_EPOCH_WEIGHT = 10_000
 MAX_EPOCH_WEIGHT_UNITS = MAX_EPOCH_WEIGHT * EPOCH_WEIGHT_SCALE
-MIN_FAILED_FINGERPRINT_WEIGHT_UNITS = 1
+FAILED_FINGERPRINT_WEIGHT_UNITS = 0
 
 
 def epoch_weight_to_units(weight) -> int:
@@ -3791,7 +3791,7 @@ def _submit_attestation_impl():
                 fingerprint if isinstance(fingerprint, dict) else {},
             )
             if not fingerprint_passed:
-                enroll_weight_units = MIN_FAILED_FINGERPRINT_WEIGHT_UNITS
+                enroll_weight_units = FAILED_FINGERPRINT_WEIGHT_UNITS
             else:
                 enroll_weight_units = epoch_weight_to_units(hw_weight * rotation_eval["active_ratio"])
             enroll_weight = epoch_weight_units_to_display(enroll_weight_units)
@@ -4038,8 +4038,7 @@ def enroll_epoch():
     arch = device.get('arch', 'default')
     hw_weight = HARDWARE_WEIGHTS.get(family, {}).get(arch, 1.0)
 
-    # RIP-PoA Phase 2: VM miners get minimal (but non-zero) weight
-    # VMs can technically earn RTC, but it's economically pointless (1e-9 vs 1.0-2.5 for real hardware)
+    # RIP-PoA Phase 2: failed fingerprints are tracked but receive zero rewards.
     fingerprint_failed = check_result.get('fingerprint_failed', False)
 
     with sqlite3.connect(DB_PATH) as c:
@@ -4049,9 +4048,9 @@ def enroll_epoch():
             data.get('fingerprint') if isinstance(data.get('fingerprint'), dict) else {},
         )
         if fingerprint_failed:
-            weight_units = MIN_FAILED_FINGERPRINT_WEIGHT_UNITS
+            weight_units = FAILED_FINGERPRINT_WEIGHT_UNITS
             weight = epoch_weight_units_to_display(weight_units)
-            print(f"[ENROLL] Miner {miner_pk[:16]}... fingerprint FAILED - VM weight: {weight}")
+            print(f"[ENROLL] Miner {miner_pk[:16]}... fingerprint FAILED - weight: {weight}")
         else:
             weight_units = epoch_weight_to_units(hw_weight * rotation_eval['active_ratio'])
             weight = epoch_weight_units_to_display(weight_units)
