@@ -592,7 +592,7 @@ curl -sk https://rustchain.org/wallet/swap-info
   "wrtc_solana_mint": "12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X",
   "wrtc_base_contract": "0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6",
   "raydium_pool": "8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb",
-  "bridge_url": "https://bottube.ai/bridge"
+  "bridge_url": "https://bottube.ai/bridge/wrtc"
 }
 ```
 

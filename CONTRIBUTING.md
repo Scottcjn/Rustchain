@@ -122,14 +122,14 @@ For package-specific work, use the closest local manifest or test folder:
 | Active Miners | `https://rustchain.org/api/miners` |
 | Current Epoch | `https://rustchain.org/epoch` |
 | Block Explorer | `https://rustchain.org/explorer` |
-| wRTC Bridge | `https://bottube.ai/bridge` |
+| wRTC Bridge | `https://bottube.ai/bridge/wrtc` |
 
 ## RTC Payout Process
 
 1. PR gets reviewed and merged
 2. We comment asking for your wallet address
 3. RTC is transferred from the community fund
-4. Bridge RTC to wRTC (Solana) via [bottube.ai/bridge](https://bottube.ai/bridge)
+4. Bridge RTC to wRTC (Solana) via [bottube.ai/bridge/wrtc](https://bottube.ai/bridge/wrtc)
 5. Trade on [Raydium](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X)
 
 

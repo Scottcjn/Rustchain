@@ -148,7 +148,7 @@ graph LR
 RustChain Token is bridged to Solana as **wRTC**:
 - **Token Mint**: `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X`
 - **DEX**: [Raydium](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X)
-- **Bridge**: [BoTTube Bridge](https://bottube.ai/bridge)
+- **Bridge**: [BoTTube Bridge](https://bottube.ai/bridge/wrtc)
 
 ## Security Model
 

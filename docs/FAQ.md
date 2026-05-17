@@ -177,7 +177,7 @@ RTC (RustChain Token) 是 RustChain 的原生加密货币。
 |-----|------|
 | 交换 wRTC | [Raydium DEX](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) |
 | 价格图表 | [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) |
-| 桥接 RTC ↔ wRTC | [BoTTube Bridge](https://bottube.ai/bridge) |
+| 桥接 RTC ↔ wRTC | [BoTTube Bridge](https://bottube.ai/bridge/wrtc) |
 
 **Token Mint (Solana):** `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X`
 

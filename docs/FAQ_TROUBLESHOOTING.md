@@ -94,7 +94,7 @@ If those commands work but your local helper still says `could not reach network
 
 ### Bridge/swap confusion (RTC vs wRTC)
 
-- Bridge URL: <https://bottube.ai/bridge>
+- Bridge URL: <https://bottube.ai/bridge/wrtc>
 - Raydium swap URL:
   <https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X>
 - Always verify mint:

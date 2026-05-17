@@ -44,7 +44,7 @@ RustChain is a **Proof-of-Antiquity** blockchain that rewards real vintage hardw
 |-----------|------|-----|
 | **Attestation Server** | Validates hardware fingerprints, tracks miners | `https://rustchain.org` |
 | **Block Explorer** | View miners, epochs, rewards | `https://rustchain.org/explorer` |
-| **wRTC Bridge** | Bridge RTC to Solana (wRTC) | `https://bottube.ai/bridge` |
+| **wRTC Bridge** | Bridge RTC to Solana (wRTC) | `https://bottube.ai/bridge/wrtc` |
 
 ---
 
@@ -217,7 +217,7 @@ The attestation server doesn't trust self-reported data. It performs:
 
 ```bash
 # Bridge RTC to wRTC (Solana)
-Visit: https://bottube.ai/bridge
+Visit: https://bottube.ai/bridge/wrtc
 
 # Trade on Raydium
 https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X

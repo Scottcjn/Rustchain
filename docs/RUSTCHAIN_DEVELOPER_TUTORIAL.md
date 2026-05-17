@@ -662,7 +662,7 @@ python dashboard.py
 Example: Bridge RTC to wRTC using the BoTTube Bridge API.
 
 Note: This is a conceptual example. Always use the official
-bridge UI at https://bottube.ai/bridge for production use.
+bridge UI at https://bottube.ai/bridge/wrtc for production use.
 """
 
 import requests

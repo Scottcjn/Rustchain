@@ -14,7 +14,7 @@ Official Solana mint for wRTC:
 
 ## 2) Official links
 
-- Bridge UI: <https://bottube.ai/bridge>
+- Bridge UI: <https://bottube.ai/bridge/wrtc>
 - Direct bridge page (wRTC): <https://bottube.ai/bridge/wrtc>
 - Raydium swap (SOL -> wRTC):
   <https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X>
@@ -23,7 +23,7 @@ Official Solana mint for wRTC:
 
 ## 3) Bridge walkthrough (RTC <-> wRTC)
 
-1. Open <https://bottube.ai/bridge>.
+1. Open <https://bottube.ai/bridge/wrtc>.
 2. Select the direction you need:
    - RTC -> wRTC (to use on Solana), or
    - wRTC -> RTC (to return to RustChain side).

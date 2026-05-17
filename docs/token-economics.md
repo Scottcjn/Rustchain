@@ -253,7 +253,7 @@ graph LR
 | **Token Mint** | `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X` |
 | **DEX** | [Raydium](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) |
 | **Chart** | [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) |
-| **Bridge** | [BoTTube Bridge](https://bottube.ai/bridge) |
+| **Bridge** | [BoTTube Bridge](https://bottube.ai/bridge/wrtc) |
 | **Ratio** | 1:1 (1 RTC = 1 wRTC) |
 
 ### Bridge Process
