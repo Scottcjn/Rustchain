@@ -2099,6 +2099,29 @@ def _table_columns(conn: sqlite3.Connection, table_name: str) -> set:
 
 def _ensure_rewards_settle_schema(conn: sqlite3.Connection):
     """Keep init_db() compatible with the RIP-200 rewards settlement module."""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS ledger (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts INTEGER,
+            epoch INTEGER,
+            miner_id TEXT,
+            delta_i64 INTEGER,
+            reason TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS epoch_rewards (
+            epoch INTEGER,
+            miner_id TEXT,
+            share_i64 INTEGER,
+            PRIMARY KEY (epoch, miner_id)
+        )
+        """
+    )
+
     epoch_cols = _table_columns(conn, "epoch_state")
     if "settled" not in epoch_cols:
         conn.execute("ALTER TABLE epoch_state ADD COLUMN settled INTEGER DEFAULT 0")

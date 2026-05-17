@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 import sqlite3
 
 
@@ -22,8 +24,6 @@ def test_init_db_schema_supports_rewards_settle(tmp_path, monkeypatch):
     integrated_node.init_db()
     with sqlite3.connect(db_path) as conn:
         conn.execute("CREATE TABLE IF NOT EXISTS miner_attest_recent(miner TEXT, device_arch TEXT)")
-        conn.execute("CREATE TABLE IF NOT EXISTS epoch_rewards(epoch INTEGER, miner_id TEXT, share_i64 INTEGER)")
-        conn.execute("CREATE TABLE IF NOT EXISTS ledger(ts INTEGER, epoch INTEGER, miner_id TEXT, delta_i64 INTEGER, reason TEXT)")
         conn.execute("INSERT INTO miner_attest_recent(miner, device_arch) VALUES (?, ?)", ("alice", "x86_64"))
         conn.commit()
 
