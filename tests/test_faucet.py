@@ -56,6 +56,20 @@ def test_drip_rejects_non_object_json(app, body):
     assert r.get_json() == {"ok": False, "error": "json_object_required"}
 
 
+def test_drip_rejects_non_string_wallet_field(app):
+    c = app.test_client()
+    r = c.post("/faucet/drip", json={"wallet": ["rtc_wallet_1"]})
+    assert r.status_code == 400
+    assert r.get_json() == {"ok": False, "error": "wallet_must_be_string"}
+
+
+def test_drip_rejects_non_string_github_username_field(app):
+    c = app.test_client()
+    r = c.post("/faucet/drip", json={"wallet": "rtc_wallet_1", "github_username": ["alice"]})
+    assert r.status_code == 400
+    assert r.get_json() == {"ok": False, "error": "github_username_must_be_string"}
+
+
 def test_drip_accepts_form_payload(app):
     c = app.test_client()
     r = c.post("/faucet/drip", data={"wallet": "form_wallet"})
