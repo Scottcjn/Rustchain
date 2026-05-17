@@ -178,8 +178,11 @@ def validate_bridge_request(data: Optional[Dict]) -> ValidationResult:
         return ValidationResult(ok=False, error="Invalid dest_address (too short)")
     
     # Validate amount
+    amount_raw = data.get("amount_rtc", 0)
+    if isinstance(amount_raw, bool):
+        return ValidationResult(ok=False, error="amount_rtc must be a number")
     try:
-        amount_rtc = float(data.get("amount_rtc", 0))
+        amount_rtc = float(amount_raw)
     except (TypeError, ValueError):
         return ValidationResult(ok=False, error="amount_rtc must be a number")
     

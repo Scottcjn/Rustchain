@@ -65,6 +65,7 @@ class TestBridgeInitiateTypeValidation(unittest.TestCase):
             "dest_chain_dict": {"dest_chain": {}},
             "source_address_list": {"source_address": ["x"] * 12},
             "dest_address_dict": {"dest_address": {"wallet": "RTCdestination12345"}},
+            "amount_bool": {"amount_rtc": True},
             "bridge_type_list": {"bridge_type": []},
             "memo_dict": {"memo": {"note": "not a string"}},
         }
