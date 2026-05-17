@@ -262,8 +262,9 @@ class WebSocketFeed:
             client_id = request.sid if request else None
             response = self.handle_json_rpc_message(data, client_id=client_id)
             emit('json_rpc', response)
-            if isinstance(response, dict) and response.get('result'):
-                emit('json_rpc', self.build_mining_stats_notification(response['result']))
+            subscription_id = self._mining_stats_notification_subscription_id(response)
+            if subscription_id:
+                emit('json_rpc', self.build_mining_stats_notification(subscription_id))
 
     def set_fetch_callbacks(self, fetch_blocks=None, fetch_miners=None, 
                             fetch_epoch=None, fetch_health=None):
@@ -402,6 +403,18 @@ class WebSocketFeed:
                 'client_id': client_id,
                 'created_at': time.time()
             }
+        return subscription_id
+
+    def _mining_stats_notification_subscription_id(self, response: Dict) -> Optional[str]:
+        if not isinstance(response, dict):
+            return None
+        subscription_id = response.get('result')
+        if not isinstance(subscription_id, str):
+            return None
+        with self._lock:
+            subscription = self.json_rpc_subscriptions.get(subscription_id)
+        if not subscription or subscription.get('channel') != MINING_STATS_SUBSCRIPTION:
+            return None
         return subscription_id
 
     def remove_json_rpc_subscription(self, subscription_id: str, client_id: Optional[str] = None) -> bool:

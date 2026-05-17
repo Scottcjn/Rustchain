@@ -73,6 +73,8 @@ def test_json_rpc_rejects_unknown_subscription():
 
     assert response["id"] == 3
     assert response["error"]["code"] == -32602
+
+
 class FakeSocketIO:
     def __init__(self):
         self.emitted = []
@@ -102,10 +104,13 @@ def test_disconnect_cleanup_removes_stale_subscription_before_broadcast():
 
 def test_eth_unsubscribe_removes_only_callers_subscription():
     feed = WebSocketFeed()
-    own = feed.handle_json_rpc_message(
+    own_response = feed.handle_json_rpc_message(
         {"jsonrpc": "2.0", "id": 5, "method": "eth_subscribe", "params": ["mining_stats", {}]},
         client_id="client-1",
-    )["result"]
+    )
+    own = own_response["result"]
+    assert feed._mining_stats_notification_subscription_id(own_response) == own
+
     other = feed.handle_json_rpc_message(
         {"jsonrpc": "2.0", "id": 6, "method": "eth_subscribe", "params": ["mining_stats", {}]},
         client_id="client-2",
@@ -122,6 +127,6 @@ def test_eth_unsubscribe_removes_only_callers_subscription():
 
     assert rejected["result"] is False
     assert removed["result"] is True
+    assert feed._mining_stats_notification_subscription_id(removed) is None
     assert own not in feed.json_rpc_subscriptions
     assert other in feed.json_rpc_subscriptions
-
