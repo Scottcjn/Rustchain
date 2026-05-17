@@ -430,6 +430,8 @@ def rtc_cancel_escrow(job_id, poster_wallet):
 def create_order():
     """Create a new buy or sell order."""
     data = request.get_json(silent=True)
+    if data is not None and not isinstance(data, dict):
+        return jsonify({"error": "expected JSON object"}), 400
     if not data:
         return jsonify({"error": "JSON body required"}), 400
 

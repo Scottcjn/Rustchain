@@ -317,9 +317,12 @@ def init_app(app, get_db_func):
             return err_resp
 
         db = get_db_func()
-        rows = db.execute(
-            "SELECT * FROM contracts ORDER BY created_at DESC"
-        ).fetchall()
+        try:
+            rows = db.execute(
+                "SELECT * FROM contracts ORDER BY created_at DESC"
+            ).fetchall()
+        except Exception:
+            rows = []
 
         contracts = []
         for r in rows:
@@ -331,7 +334,7 @@ def init_app(app, get_db_func):
                     "SELECT coinbase_address FROM beacon_wallets WHERE agent_id = ?",
                     (agent_id,),
                 ).fetchone()
-                d[f"{field}_wallet"] = wallet_row["coinbase_address"] if wallet_row else None
+                d[f"{field}_wallet"] = dict(wallet_row).get("coinbase_address") if wallet_row else None
             contracts.append(d)
 
         return _cors_json({

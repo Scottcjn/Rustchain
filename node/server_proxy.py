@@ -59,7 +59,9 @@ def proxy(path):
     except requests.exceptions.Timeout:
         return jsonify({'error': 'Local server timeout'}), 504
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        import logging
+        logging.error(f"Server proxy upstream error: {e}")
+        return jsonify({'error': 'Local server unavailable'}), 502
 
 @app.route('/status')
 def status():
