@@ -123,15 +123,79 @@ class TestApiContributors:
 
 
 class TestApproveRoute:
-    def test_approve_pending_contributor(self, client):
-        """GET /approve/<username> should set status to approved."""
+    def test_get_approve_is_not_allowed(self, client):
+        """GET /approve/<username> must not mutate contributor status."""
         client.post("/register", data={
             "github_username": "pendinguser",
             "contributor_type": "bot",
             "rtc_wallet": "RTC0pending",
             "contribution_history": "",
         }, follow_redirects=True)
-        response = client.get("/approve/pendinguser", follow_redirects=True)
+        response = client.get("/approve/pendinguser")
+        assert response.status_code == 405
+        with sqlite3.connect(cr.DB_PATH) as conn:
+            row = conn.execute(
+                "SELECT status FROM contributors WHERE github_username='pendinguser'"
+            ).fetchone()
+        assert row[0] == "pending"
+
+    def test_approve_fails_closed_without_admin_key(self, client, monkeypatch):
+        """POST /approve/<username> must not approve when the admin key is unset."""
+        monkeypatch.delenv("CONTRIBUTOR_ADMIN_KEY", raising=False)
+        client.post("/register", data={
+            "github_username": "pendinguser",
+            "contributor_type": "bot",
+            "rtc_wallet": "RTC0pending",
+            "contribution_history": "",
+        }, follow_redirects=True)
+        response = client.post("/approve/pendinguser")
+        assert response.status_code == 503
+        assert response.get_json()["error"] == "CONTRIBUTOR_ADMIN_KEY not configured"
+        with sqlite3.connect(cr.DB_PATH) as conn:
+            row = conn.execute(
+                "SELECT status FROM contributors WHERE github_username='pendinguser'"
+            ).fetchone()
+        assert row[0] == "pending"
+
+    def test_approve_rejects_missing_or_wrong_admin_key(self, client, monkeypatch):
+        """POST /approve/<username> must reject absent and incorrect admin keys."""
+        monkeypatch.setenv("CONTRIBUTOR_ADMIN_KEY", "expected-admin")
+        client.post("/register", data={
+            "github_username": "pendinguser",
+            "contributor_type": "bot",
+            "rtc_wallet": "RTC0pending",
+            "contribution_history": "",
+        }, follow_redirects=True)
+
+        missing = client.post("/approve/pendinguser")
+        wrong = client.post(
+            "/approve/pendinguser",
+            headers={"X-Admin-Key": "wrong-admin"},
+        )
+
+        assert missing.status_code == 401
+        assert wrong.status_code == 401
+        with sqlite3.connect(cr.DB_PATH) as conn:
+            row = conn.execute(
+                "SELECT status FROM contributors WHERE github_username='pendinguser'"
+            ).fetchone()
+        assert row[0] == "pending"
+
+    @pytest.mark.parametrize("header_name", ["X-Admin-Key", "X-API-Key"])
+    def test_approve_pending_contributor_with_admin_key(self, client, monkeypatch, header_name):
+        """POST /approve/<username> should set status to approved with a valid admin key."""
+        monkeypatch.setenv("CONTRIBUTOR_ADMIN_KEY", "expected-admin")
+        client.post("/register", data={
+            "github_username": "pendinguser",
+            "contributor_type": "bot",
+            "rtc_wallet": "RTC0pending",
+            "contribution_history": "",
+        }, follow_redirects=True)
+        response = client.post(
+            "/approve/pendinguser",
+            headers={header_name: "expected-admin"},
+            follow_redirects=True,
+        )
         assert response.status_code == 200
         with sqlite3.connect(cr.DB_PATH) as conn:
             row = conn.execute(
