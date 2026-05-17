@@ -14,6 +14,19 @@ app = Flask(__name__)
 # Local server on same machine
 LOCAL_SERVER = "http://localhost:8088"
 
+
+def _generic_upstream_error(response, reason):
+    """Hide upstream failure details from public proxy clients."""
+    app.logger.warning(
+        "RustChain proxy upstream %s: status=%s content_type=%r body=%r",
+        reason,
+        getattr(response, "status_code", None),
+        getattr(response, "headers", {}).get("Content-Type", ""),
+        getattr(response, "text", "")[:1000],
+    )
+    return jsonify({'error': 'Local server unavailable'}), 502
+
+
 def _build_local_api_url(path):
     """Return a local /api URL without allowing dot-segment escapes."""
     parts = path.split("/")
@@ -44,14 +57,16 @@ def proxy(path):
             response = requests.get(url, timeout=10)
 
         # Return the response from local server
+        if response.status_code >= 500:
+            return _generic_upstream_error(response, "error response")
+
         # Safely handle non-JSON responses from upstream
         content_type = response.headers.get('Content-Type', '')
         if 'application/json' in content_type:
             try:
                 return response.json(), response.status_code
-            except (ValueError, Exception):
-                # JSON parse failed, fall back to text
-                return response.text, response.status_code
+            except ValueError:
+                return _generic_upstream_error(response, "invalid json")
         else:
             # Non-JSON response (e.g., HTML error page), return as-is with text
             return response.text, response.status_code
