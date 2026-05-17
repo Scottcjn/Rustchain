@@ -1097,7 +1097,10 @@ def create_relationship_blueprint(engine: RelationshipEngine):
         if auth_error:
             return auth_error
 
-        data = request.get_json(silent=True) or {}
+        raw = request.get_json(silent=True)
+    data = {} if raw is None else raw
+    if not isinstance(data, dict):
+        return jsonify({"error": "expected JSON object"}), 400
         if not isinstance(data, dict):
             return jsonify({"error": "expected JSON object, got array"}), 400
         try:
@@ -1116,7 +1119,10 @@ def create_relationship_blueprint(engine: RelationshipEngine):
         if auth_error:
             return auth_error
 
-        data = request.get_json(silent=True) or {}
+        raw = request.get_json(silent=True)
+    data = {} if raw is None else raw
+    if not isinstance(data, dict):
+        return jsonify({"error": "expected JSON object"}), 400
         if not isinstance(data, dict):
             return jsonify({"error": "expected JSON object, got array"}), 400
         try:
@@ -1135,7 +1141,10 @@ def create_relationship_blueprint(engine: RelationshipEngine):
         if auth_error:
             return auth_error
 
-        data = request.get_json(silent=True) or {}
+        raw = request.get_json(silent=True)
+    data = {} if raw is None else raw
+    if not isinstance(data, dict):
+        return jsonify({"error": "expected JSON object"}), 400
         if not isinstance(data, dict):
             return jsonify({"error": "expected JSON object, got array"}), 400
         try:
