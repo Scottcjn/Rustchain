@@ -373,6 +373,7 @@ class RustChainClient:
         fee: int,
         signature: str,
         timestamp: int,
+        public_key: str = None,
     ) -> Dict[str, Any]:
         """
         Submit a signed transfer transaction.
@@ -394,8 +395,10 @@ class RustChainClient:
                 "from_address": from_address,
                 "to_address": to_address,
                 "amount_rtc": amount,
-                "signature": signature,
+                "fee_rtc": fee,
                 "nonce": timestamp,
+                "public_key": public_key or "",
+                "signature": signature,
             },
         )
 
