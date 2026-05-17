@@ -430,7 +430,7 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 | **Wallet** | Your miner name/address. This is where your RTC is sent. You chose it during install. |
 | **Miner** | The software running on your machine that attests to the network and earns RTC. |
 | **Fingerprint** | 6 hardware measurements (clock drift, cache timing, SIMD identity, thermal drift, instruction jitter, anti-emulation) that prove your machine is real. |
-| **wRTC** | Wrapped RTC on Solana. You can swap between RTC and wRTC using the bridge at bottube.ai/bridge. |
+| **wRTC** | Wrapped RTC on Solana. You can swap between RTC and wRTC using the bridge at bottube.ai/bridge/wrtc. |
 | **Block Explorer** | A web page showing all network activity: miners, balances, epochs. Visit rustchain.org/explorer. |
 
 ---

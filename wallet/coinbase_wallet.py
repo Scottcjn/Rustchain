@@ -212,7 +212,7 @@ def coinbase_swap_info(args):
     2. Go to the Aerodrome swap URL above
     3. Connect your wallet (MetaMask, Coinbase Wallet, etc.)
     4. Swap USDC for wRTC
-    5. Bridge wRTC to native RTC at https://bottube.ai/bridge
+    5. Bridge wRTC to native RTC at https://bottube.ai/bridge/wrtc
 
   {DIM}Or use the RustChain API:{NC}
     curl -s {NODE_URL}/wallet/swap-info

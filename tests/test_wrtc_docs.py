@@ -281,8 +281,8 @@ class TestWRTCDocumentation:
 
     def test_readme_has_bridge_link(self, readme_content: str):
         """Verify README links to BoTTube bridge."""
-        assert "bottube.ai/bridge" in readme_content.lower(), (
-            "README must link to BoTTube bridge"
+        assert "bottube.ai/bridge/wrtc" in readme_content.lower(), (
+            "README must link to the wRTC BoTTube bridge"
         )
 
     def test_readme_has_raydium_link(self, readme_content: str):

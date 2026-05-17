@@ -52,7 +52,7 @@ RustChain Token (RTC) ahora está disponible como **wRTC** en Solana a través d
 |----------|------|
 | **Swap wRTC** | [Raydium DEX](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) |
 | **Gráfico de Precios** | [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) |
-| **Puente RTC ↔ wRTC** | [BoTTube Bridge](https://bottube.ai/bridge) |
+| **Puente RTC ↔ wRTC** | [BoTTube Bridge](https://bottube.ai/bridge/wrtc) |
 | **Guía de Inicio Rápido** | [wRTC Quickstart (Compra, Puente, Seguridad)](docs/wrtc.md) |
 | **Tutorial de Incorporación** | [Guía de Seguridad del Puente + Swap wRTC](docs/WRTC_ONBOARDING_TUTORIAL.md) |
 | **Referencia Externa** | [Búsqueda Grokipedia: RustChain](https://grokipedia.com/search?q=RustChain) |
@@ -425,7 +425,7 @@ Lee el spec borrador:
 | **Block Explorer** | [rustchain.org/explorer](https://rustchain.org/explorer) |
 | **Swap wRTC (Raydium)** | [Raydium DEX](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) |
 | **Gráfico de Precios** | [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) |
-| **Puente RTC ↔ wRTC** | [BoTTube Bridge](https://bottube.ai/bridge) |
+| **Puente RTC ↔ wRTC** | [BoTTube Bridge](https://bottube.ai/bridge/wrtc) |
 | **Token Mint wRTC** | `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X` |
 | **BoTTube** | [bottube.ai](https://bottube.ai) - Plataforma de video AI |
 | **Moltbook** | [moltbook.com](https://moltbook.com) - Red social AI |

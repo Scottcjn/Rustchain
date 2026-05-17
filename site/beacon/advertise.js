@@ -11,7 +11,7 @@ const LISTING_TIERS = [
     icon: '\u26A1', // ⚡
     color: '#ffd700',
     requirements: [
-      'Bridge minimum 500 RTC liquidity via bottube.ai/bridge',
+      'Bridge minimum 500 RTC liquidity via bottube.ai/bridge/wrtc',
       'Provide token contract address and chain details',
       'Maintain active liquidity pool for 90 days',
     ],
@@ -195,7 +195,7 @@ export function openAdvertisePanel() {
         <div>1. Get SOL on any Solana wallet</div>
         <div>2. Swap for wRTC on <a href="https://raydium.io" target="_blank" style="color:#33ff33;text-decoration:none;">Raydium</a>
              (mint: 12TAdK...5i4X)</div>
-        <div>3. Bridge wRTC &rarr; RTC at <a href="https://bottube.ai/bridge" target="_blank" style="color:#33ff33;text-decoration:none;">bottube.ai/bridge</a></div>
+        <div>3. Bridge wRTC &rarr; RTC at <a href="https://bottube.ai/bridge/wrtc" target="_blank" style="color:#33ff33;text-decoration:none;">bottube.ai/bridge/wrtc</a></div>
         <div>4. Transfer RTC to community fund</div>
       </div>
       <div>

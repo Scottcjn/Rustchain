@@ -117,7 +117,7 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 |--------|--------|
 | **Обмен wRTC** | [Raydium DEX](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) |
 | **График цены** | [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) |
-| **Мост RTC ↔ wRTC** | [BoTTube Bridge](https://bottube.ai/bridge) |
+| **Мост RTC ↔ wRTC** | [BoTTube Bridge](https://bottube.ai/bridge/wrtc) |
 | **Адрес токена** | `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X` |
 
 ---
