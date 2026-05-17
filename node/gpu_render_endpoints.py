@@ -109,6 +109,8 @@ def _parse_positive_amount(value):
             return auth_error
 
         data = request.get_json(silent=True) or {}
+        if not isinstance(data, dict):
+            return jsonify({"error": "expected JSON object"}), 400
         job_id = data.get("job_id") or f"job_{secrets.token_hex(8)}"
         job_type = data.get("job_type")  # render, tts, stt, llm
         from_wallet = data.get("from_wallet")
@@ -160,6 +162,8 @@ def _parse_positive_amount(value):
             return auth_error
 
         data = request.get_json(silent=True) or {}
+        if not isinstance(data, dict):
+            return jsonify({"error": "expected JSON object"}), 400
         job_id = data.get("job_id")
         actor_wallet = data.get("actor_wallet")
         escrow_secret = data.get("escrow_secret")
