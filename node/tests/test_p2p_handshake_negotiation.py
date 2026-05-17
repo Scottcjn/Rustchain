@@ -155,3 +155,32 @@ def test_ping_response_includes_local_and_agreed_handshake(tmp_path):
         "local": gossip.local_handshake_params()["k_bucket_size"],
         "remote": 12,
     }
+
+
+def test_ping_response_ignores_non_object_payloads(tmp_path):
+    local_db = tmp_path / "local.db"
+    remote_db = tmp_path / "remote.db"
+    _init_minimal_p2p_db(local_db)
+    _init_minimal_p2p_db(remote_db)
+
+    local = gossip.GossipLayer(
+        "local",
+        {"remote": "http://remote.example"},
+        str(local_db),
+    )
+    remote = gossip.GossipLayer(
+        "remote",
+        {"local": "http://local.example"},
+        str(remote_db),
+    )
+
+    for payload in (["legacy"], None, "legacy"):
+        ping = remote.create_message(gossip.MessageType.PING, payload)
+
+        response = local.handle_message(ping)
+
+        assert response["status"] == "ok"
+        pong_payload = response["pong"]["payload"]
+        assert pong_payload["handshake"] == gossip.local_handshake_params()
+        assert pong_payload["agreed_handshake"] == gossip.local_handshake_params()
+        assert "handshake_mismatches" not in pong_payload

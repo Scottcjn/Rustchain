@@ -798,7 +798,8 @@ class GossipLayer:
     def _handle_ping(self, msg: GossipMessage) -> Dict:
         """Respond to ping with pong"""
         local_handshake = local_handshake_params()
-        remote_handshake = msg.payload.get("handshake")
+        payload = msg.payload if isinstance(msg.payload, dict) else {}
+        remote_handshake = payload.get("handshake")
         agreed_handshake = negotiate_handshake_params(local_handshake, remote_handshake)
         mismatches = handshake_mismatches(local_handshake, remote_handshake)
         if mismatches:
