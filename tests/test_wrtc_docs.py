@@ -2,7 +2,7 @@
 wRTC Documentation Test Suite
 
 Comprehensive tests to validate wRTC documentation integrity.
-Ensures all URLs are reachable, mint address is valid, and content is complete.
+Ensures all URLs are reachable, contract address is valid, and content is complete.
 
 Run with: python -m pytest tests/test_wrtc_docs.py -v
 """
@@ -19,7 +19,7 @@ class TestWRTCDocumentation:
 
     DOCS_PATH = Path(__file__).parent.parent / "docs" / "wrtc.md"
     README_PATH = Path(__file__).parent.parent / "README.md"
-    CANONICAL_MINT = "12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X"
+    CANONICAL_MINT = "0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6"
     CANONICAL_DECIMALS = "6"
 
     @pytest.fixture(scope="class")
@@ -50,42 +50,33 @@ class TestWRTCDocumentation:
         assert len(docs_content) > 1000, "Documentation must be substantial (>1000 chars)"
 
     # =========================================================================
-    # Section 2: Mint Address Tests
+    # Section 2: Contract Address Tests
     # =========================================================================
 
     def test_mint_address_format_base58(self):
-        """Verify mint address is valid base58 format."""
-        # Base58 alphabet
-        base58_chars = set("123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz")
-        mint_chars = set(self.CANONICAL_MINT)
-        
-        assert mint_chars.issubset(base58_chars), (
-            f"Mint address contains non-base58 characters: {mint_chars - base58_chars}"
+        """Verify wRTC contract address is valid Base/EVM hex format."""
+        assert re.fullmatch(r"0x[a-fA-F0-9]{40}", self.CANONICAL_MINT), (
+            f"wRTC contract address must be 0x + 40 hex chars: {self.CANONICAL_MINT}"
         )
 
     def test_mint_address_length(self):
-        """Verify mint address has correct length (Solana pubkeys are typically 43-44 base58 chars)."""
-        assert len(self.CANONICAL_MINT) == 44, (
-            f"Mint address must be 44 characters, got {len(self.CANONICAL_MINT)}"
+        """Verify contract address has correct length."""
+        assert len(self.CANONICAL_MINT) == 42, (
+            f"Contract address must be 42 characters, got {len(self.CANONICAL_MINT)}"
         )
 
     def test_mint_address_in_documentation(self, docs_content: str):
-        """Verify canonical mint address appears in documentation."""
+        """Verify canonical contract address appears in documentation."""
         assert self.CANONICAL_MINT in docs_content, (
-            f"Canonical mint address {self.CANONICAL_MINT} must appear in documentation"
+            f"Canonical contract address {self.CANONICAL_MINT} must appear in documentation"
         )
 
     def test_mint_addresses_in_urls_match_canonical(self, docs_content: str):
-        """Verify any swap URLs in docs use the canonical mint (avoid typosquatting)."""
-        # Only validate mints that appear in URL query params; docs may include other
-        # Solana addresses (pool IDs, example wallets, etc.) that are not mint addresses.
-        output_mint_pattern = (
-            r'outputMint='
-            r'([123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{32,44})'
-        )
-        found = set(re.findall(output_mint_pattern, docs_content))
-        assert found == {self.CANONICAL_MINT}, (
-            f"All outputMint params must use the canonical mint. Found: {sorted(found)}"
+        """Verify Aerodrome swap URLs use the canonical wRTC contract."""
+        to_contract_pattern = r'to=(0x[a-fA-F0-9]{40})'
+        found = {m.lower() for m in re.findall(to_contract_pattern, docs_content)}
+        assert found == {self.CANONICAL_MINT.lower()}, (
+            f"All Aerodrome to= params must use the canonical wRTC contract. Found: {sorted(found)}"
         )
 
     # =========================================================================
@@ -95,7 +86,7 @@ class TestWRTCDocumentation:
     @pytest.mark.parametrize("section", [
         ("Anti-Scam Checklist", ["anti-scam", "checklist"]),
         ("Step-by-Step Guide", ["step", "guide"]),
-        ("Buying wRTC", ["buy", "raydium"]),
+        ("Buying wRTC", ["buy", "aerodrome"]),
         ("Bridging", ["bridge", "bottube"]),
         ("Withdrawing", ["withdraw"]),
         ("Quick Reference", ["quick reference", "reference"]),
@@ -119,8 +110,8 @@ class TestWRTCDocumentation:
         )
 
     def test_canonical_info_section(self, docs_content: str):
-        """Verify canonical info (mint, decimals) is clearly documented."""
-        assert self.CANONICAL_MINT in docs_content, "Canonical mint must be documented"
+        """Verify canonical info (contract, decimals) is clearly documented."""
+        assert self.CANONICAL_MINT in docs_content, "Canonical wRTC contract must be documented"
         assert self.CANONICAL_DECIMALS in docs_content, "Canonical decimals must be documented"
 
     # =========================================================================
@@ -148,9 +139,13 @@ class TestWRTCDocumentation:
         return urls
 
     def test_raydium_url_present(self, docs_content: str):
-        """Verify Raydium swap URL is present and correct."""
-        expected_url = "https://raydium.io/swap/?inputMint=sol&outputMint=" + self.CANONICAL_MINT
-        assert expected_url in docs_content, f"Raydium URL must be present: {expected_url}"
+        """Verify Aerodrome swap URL is present and correct."""
+        expected_url = (
+            "https://aerodrome.finance/swap?"
+            "from=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913&"
+            f"to={self.CANONICAL_MINT}"
+        )
+        assert expected_url in docs_content, f"Aerodrome URL must be present: {expected_url}"
 
     def test_bottube_bridge_url_present(self, docs_content: str):
         """Verify BoTTube bridge URL is present and correct."""
@@ -207,11 +202,11 @@ class TestWRTCDocumentation:
         )
 
     def test_mint_verification_emphasized(self, docs_content: str):
-        """Verify mint address verification is emphasized."""
-        # Count occurrences of mint address (should appear multiple times)
+        """Verify contract address verification is emphasized."""
+        # Count occurrences of contract address (should appear multiple times)
         mint_count = docs_content.count(self.CANONICAL_MINT)
         assert mint_count >= 3, (
-            f"Mint address should appear at least 3 times for emphasis, found {mint_count}"
+            f"Contract address should appear at least 3 times for emphasis, found {mint_count}"
         )
 
     # =========================================================================
@@ -274,9 +269,9 @@ class TestWRTCDocumentation:
         )
 
     def test_readme_has_canonical_mint(self, readme_content: str):
-        """Verify README contains the canonical mint address."""
+        """Verify README contains the canonical wRTC contract address."""
         assert self.CANONICAL_MINT in readme_content, (
-            "README must contain the canonical wRTC mint address"
+            "README must contain the canonical wRTC contract address"
         )
 
     def test_readme_has_bridge_link(self, readme_content: str):
@@ -286,9 +281,9 @@ class TestWRTCDocumentation:
         )
 
     def test_readme_has_raydium_link(self, readme_content: str):
-        """Verify README links to Raydium swap."""
-        assert "raydium" in readme_content.lower(), (
-            "README must link to Raydium DEX"
+        """Verify README links to Aerodrome swap."""
+        assert "aerodrome" in readme_content.lower(), (
+            "README must link to Aerodrome DEX"
         )
 
     # =========================================================================
@@ -339,7 +334,7 @@ class TestWRTCDocumentation:
     def test_official_resources_listed(self, docs_content: str):
         """Verify official resources are listed."""
         required_resources = [
-            "raydium",
+            "aerodrome",
             "bottube",
             "dexscreener",
         ]
@@ -374,13 +369,13 @@ class TestDocumentationIntegrity:
         assert not duplicates, f"Found duplicate H2 sections: {duplicates}"
 
     def test_consistent_mint_formatting(self):
-        """Verify mint address is consistently formatted."""
+        """Verify contract address is consistently formatted."""
         docs_path = Path(__file__).parent.parent / "docs" / "wrtc.md"
         if not docs_path.exists():
             pytest.skip("wrtc.md not found")
         
         content = docs_path.read_text(encoding="utf-8")
-        canonical_mint = "12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X"
+        canonical_mint = "0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6"
         
         # Find all occurrences
         occurrences = [m.start() for m in re.finditer(canonical_mint, content)]
@@ -392,8 +387,8 @@ class TestDocumentationIntegrity:
             end = min(len(content), pos + len(canonical_mint) + 10)
             context = content[start:end]
             
-            # Mint should not be split across lines or malformed
-            assert '\n' not in canonical_mint, "Mint address should not contain newlines"
+            # Contract should not be split across lines or malformed
+            assert '\n' not in canonical_mint, "Contract address should not contain newlines"
 
 
 if __name__ == "__main__":

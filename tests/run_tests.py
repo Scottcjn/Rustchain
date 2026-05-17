@@ -56,50 +56,42 @@ def test_documentation_not_empty():
 
 
 def test_mint_address_format_base58():
-    """Verify mint address is valid base58 format."""
-    CANONICAL_MINT = "12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X"
-    base58_chars = set("123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz")
-    mint_chars = set(CANONICAL_MINT)
-    
-    assert mint_chars.issubset(base58_chars), (
-        f"Mint address contains non-base58 characters: {mint_chars - base58_chars}"
+    """Verify wRTC contract address is valid Base/EVM hex format."""
+    CANONICAL_MINT = "0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6"
+    assert re.fullmatch(r"0x[a-fA-F0-9]{40}", CANONICAL_MINT), (
+        f"wRTC contract address must be 0x + 40 hex chars: {CANONICAL_MINT}"
     )
 
 
 def test_mint_address_length():
-    """Verify mint address has correct length (44 chars for this mint)."""
-    CANONICAL_MINT = "12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X"
-    # Solana mint addresses are 32 bytes = 43-44 base58 characters
-    assert len(CANONICAL_MINT) == 44, (
-        f"Mint address must be 44 characters, got {len(CANONICAL_MINT)}"
+    """Verify contract address has correct length."""
+    CANONICAL_MINT = "0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6"
+    assert len(CANONICAL_MINT) == 42, (
+        f"Contract address must be 42 characters, got {len(CANONICAL_MINT)}"
     )
 
 
 def test_mint_address_in_documentation():
-    """Verify canonical mint address appears in documentation."""
-    CANONICAL_MINT = "12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X"
+    """Verify canonical contract address appears in documentation."""
+    CANONICAL_MINT = "0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6"
     docs_path = Path("docs/wrtc.md")
     content = docs_path.read_text(encoding="utf-8")
     
     assert CANONICAL_MINT in content, (
-        f"Canonical mint address {CANONICAL_MINT} must appear in documentation"
+        f"Canonical contract address {CANONICAL_MINT} must appear in documentation"
     )
 
 
 def test_mint_address_consistency():
-    """Verify all mint addresses in docs match canonical."""
-    CANONICAL_MINT = "12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X"
+    """Verify Aerodrome swap URLs use the canonical wRTC contract."""
+    CANONICAL_MINT = "0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6"
     docs_path = Path("docs/wrtc.md")
     content = docs_path.read_text(encoding="utf-8")
-    
-    mint_pattern = r'[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{32,44}'
-    found_mints = set(re.findall(mint_pattern, content))
-    likely_mints = {m for m in found_mints if len(m) == 43}
-    
-    for mint in likely_mints:
-        assert mint == CANONICAL_MINT, (
-            f"Found non-canonical mint address: {mint}"
-        )
+
+    found = {m.lower() for m in re.findall(r'to=(0x[a-fA-F0-9]{40})', content)}
+    assert found == {CANONICAL_MINT.lower()}, (
+        f"All Aerodrome to= params must use the canonical wRTC contract. Found: {sorted(found)}"
+    )
 
 
 def test_required_sections_exist():
@@ -110,7 +102,7 @@ def test_required_sections_exist():
     
     required = [
         ("anti-scam", ["anti-scam", "scam"]),
-        ("buying wRTC", ["buy", "raydium"]),
+        ("buying wRTC", ["buy", "aerodrome"]),
         ("bridging", ["bridge", "bottube"]),
         ("withdrawing", ["withdraw"]),
         ("quick reference", ["quick reference"]),
@@ -123,13 +115,17 @@ def test_required_sections_exist():
 
 
 def test_raydium_url_present():
-    """Verify Raydium swap URL is present and correct."""
-    CANONICAL_MINT = "12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X"
+    """Verify Aerodrome swap URL is present and correct."""
+    CANONICAL_MINT = "0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6"
     docs_path = Path("docs/wrtc.md")
     content = docs_path.read_text(encoding="utf-8")
-    
-    expected_url = f"https://raydium.io/swap/?inputMint=sol&outputMint={CANONICAL_MINT}"
-    assert expected_url in content, f"Raydium URL must be present"
+
+    expected_url = (
+        "https://aerodrome.finance/swap?"
+        "from=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913&"
+        f"to={CANONICAL_MINT}"
+    )
+    assert expected_url in content, "Aerodrome URL must be present"
 
 
 def test_bottube_bridge_url_present():
@@ -228,12 +224,12 @@ def test_readme_links_to_wrtc_docs():
 
 
 def test_readme_has_canonical_mint():
-    """Verify README contains the canonical mint address."""
-    CANONICAL_MINT = "12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X"
+    """Verify README contains the canonical contract address."""
+    CANONICAL_MINT = "0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6"
     readme_path = Path("README.md")
     content = readme_path.read_text(encoding="utf-8")
     
-    assert CANONICAL_MINT in content, "README must contain the canonical wRTC mint address"
+    assert CANONICAL_MINT in content, "README must contain the canonical wRTC contract address"
 
 
 def test_proper_markdown_headers():
@@ -260,7 +256,7 @@ def test_official_resources_listed():
     content = docs_path.read_text(encoding="utf-8")
     content_lower = content.lower()
     
-    resources = ["raydium", "bottube", "dexscreener"]
+    resources = ["aerodrome", "bottube", "dexscreener"]
     for resource in resources:
         assert resource in content_lower, f"Official resource '{resource}' must be listed"
 

@@ -99,7 +99,7 @@ export function openAdvertisePanel() {
     Get your project in front of the network.
     <div style="margin-top:8px;padding:8px 12px;border-left:2px solid #ffd700;color:#ffd700;font-size:12px;">
       All listing fees fund RTC liquidity, strengthening the entire ecosystem.
-      <br>wRTC on Solana: <span style="color:#fff">12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X</span>
+      <br>wRTC on Base: <span style="color:#fff">0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6</span>
     </div>
   `;
   panel.appendChild(intro);
@@ -192,9 +192,9 @@ export function openAdvertisePanel() {
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
       <div>
         <div style="color:#ffd700;font-weight:600;margin-bottom:4px;">HOW TO FUND LIQUIDITY</div>
-        <div>1. Get SOL on any Solana wallet</div>
-        <div>2. Swap for wRTC on <a href="https://raydium.io" target="_blank" style="color:#33ff33;text-decoration:none;">Raydium</a>
-             (mint: 12TAdK...5i4X)</div>
+        <div>1. Get USDC on any Base wallet</div>
+        <div>2. Swap for wRTC on <a href="https://aerodrome.finance" target="_blank" style="color:#33ff33;text-decoration:none;">Aerodrome</a>
+             (contract: 12TAdK...5i4X)</div>
         <div>3. Bridge wRTC &rarr; RTC at <a href="https://bottube.ai/bridge/wrtc" target="_blank" style="color:#33ff33;text-decoration:none;">bottube.ai/bridge/wrtc</a></div>
         <div>4. Transfer RTC to community fund</div>
       </div>

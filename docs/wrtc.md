@@ -1,420 +1,360 @@
 # wRTC Quickstart Guide
 
-> **Get started with wRTC (Wrapped RustChain Token) on Solana in minutes.**
-> 
-> This guide covers everything from buying wRTC on Raydium to bridging between RTC and wRTC safely.
+> Get started with wRTC (Wrapped RustChain Token) on Base using the live
+> RustChain swap-info contract model.
+
+This guide covers buying wRTC with USDC on Aerodrome, bridging between RTC and
+wRTC, and verifying every address before signing.
 
 ---
 
-## 📋 Table of Contents
+## Table of Contents
 
-- [Anti-Scam Checklist](#-anti-scam-checklist)
-- [What is wRTC?](#-what-is-wrtc)
-- [Buying wRTC on Raydium](#-buying-wrtc-on-raydium)
-- [Bridging RTC to wRTC](#-bridging-rtc-to-wrtc)
-- [Withdrawing wRTC to RTC](#-withdrawing-wrtc-to-rtc)
-- [Quick Reference](#-quick-reference)
-- [Troubleshooting](#-troubleshooting)
+- [Anti-Scam Checklist](#anti-scam-checklist)
+- [What is wRTC?](#what-is-wrtc)
+- [Buying wRTC on Aerodrome](#buying-wrtc-on-aerodrome)
+- [Bridging RTC to wRTC](#bridging-rtc-to-wrtc)
+- [Withdrawing wRTC to RTC](#withdrawing-wrtc-to-rtc)
+- [Quick Reference](#quick-reference)
+- [Troubleshooting](#troubleshooting)
 
 ---
 
-## 🛡️ Anti-Scam Checklist
+## Anti-Scam Checklist
 
-**Before every transaction, verify ALL of the following:**
+Before every transaction, verify all canonical values:
 
 | Check | Canonical Value | Verification |
 |-------|-----------------|--------------|
-| **Token Mint** | `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X` | Must match exactly - 44 characters, base58 |
-| **Decimals** | `6` | wRTC uses 6 decimal places |
-| **Official Bridge** | `https://bottube.ai/bridge/wrtc` | Bookmark this URL |
-| **Official Swap** | `https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X` | Verify mint in URL |
-| **DexScreener** | `https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb` | Verify liquidity pool |
+| wRTC contract | `0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6` | Base address, 0x + 40 hex characters |
+| USDC contract | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` | Native USDC on Base |
+| Aerodrome pool | `0x4C2A0b915279f0C22EA766D58F9B815Ded2d2A3F` | wRTC liquidity pool |
+| Decimals | `6` | wRTC uses 6 decimal places |
+| Official bridge | `https://bottube.ai/bridge/wrtc` | Bookmark this URL |
+| Official swap | `https://aerodrome.finance/swap?from=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913&to=0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6` | Verify from/to contracts |
+| Live swap info | `https://rustchain.org/wallet/swap-info` | Should return Base/Aerodrome fields |
 
-### ⚠️ Red Flags - STOP if you see these:
+### Red Flags - Stop if you see these
 
-- [ ] Token mint address doesn't match exactly
-- [ ] Website URL is slightly different (typosquatting)
-- [ ] Someone DM'd you a "better" bridge link
-- [ ] Token shows different decimal places (e.g., 9 or 18)
-- [ ] Price seems too good to be true (likely honeypot)
-
----
-
-## 🪙 What is wRTC?
-
-**wRTC** is the Solana-native representation of RustChain Token (RTC). 
-
-| Feature | RTC (Native) | wRTC (Solana) |
-|---------|--------------|---------------|
-| **Network** | RustChain | Solana |
-| **Use Case** | Mining rewards | Trading, DeFi |
-| **Wallet** | RustChain wallet | Phantom, Solflare, etc. |
-| **Exchange** | Bridge only | Raydium, Jupiter |
-| **Speed** | ~10 min epochs | ~400ms finality |
-
-### Why Use wRTC?
-
-1. **Trade on DEXs** - Swap wRTC for SOL or other tokens on Raydium
-2. **Liquidity** - Provide liquidity to earn fees
-3. **Speed** - Near-instant transfers on Solana
-4. **Ecosystem** - Use with any Solana DeFi protocol
+- The wRTC contract does not match `0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6`.
+- A page asks you to use an unrelated legacy route for the current live
+  `/wallet/swap-info` flow.
+- The bridge URL is not exactly `https://bottube.ai/bridge/wrtc`.
+- A swap link points to unknown contracts or a chain other than Base.
+- Someone sends a "better" bridge or swap link in a direct message.
 
 ---
 
-## 💱 Buying wRTC on Raydium
+## What is wRTC?
+
+`wRTC` is the wrapped representation of RustChain Token (RTC) used by the
+current Base/Aerodrome onramp.
+
+| Feature | RTC (Native) | wRTC (Base) |
+|---------|--------------|-------------|
+| Network | RustChain | Base (`eip155:8453`) |
+| Primary use | Mining rewards, RustChain services | Trading, liquidity, x402 payments |
+| Wallet | RustChain wallet/miner id | Coinbase/Base-compatible 0x wallet |
+| Swap venue | Bridge only | Aerodrome |
+| Contract | Native ledger balance | `0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6` |
+
+### Why use wRTC?
+
+1. Trade on Base DEX liquidity through Aerodrome.
+2. Use USDC as the Base-side quote asset.
+3. Keep bridge and swap instructions aligned with `/wallet/swap-info`.
+4. Use Base-compatible wallets and tooling for x402 and agent payments.
+
+---
+
+## Buying wRTC on Aerodrome
 
 ### Prerequisites
 
-- [ ] Solana wallet (Phantom, Solflare, or Backpack recommended)
-- [ ] SOL for transaction fees (~0.001 SOL per swap)
-- [ ] SOL or USDC to swap for wRTC
+- A Base-compatible wallet such as Coinbase Wallet, MetaMask, or another 0x
+  wallet that supports Base.
+- USDC on Base for the swap.
+- ETH on Base for transaction fees.
 
 ### Step-by-Step Guide
 
-#### Step 1: Open Raydium
+#### Step 1: Open the official swap
 
-Navigate to the official Raydium swap URL:
+Use the swap URL from the live API:
 
-```
-https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X
-```
-
-#### Step 2: Verify the Token
-
-**CRITICAL: Check ALL of these before proceeding:**
-
-1. Look at the URL - confirm outputMint is `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X`
-2. In the Raydium UI, click the output token dropdown
-3. Verify the mint address displayed matches exactly
-
-```
-✅ Correct: 12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X
-❌ Wrong:   12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4Y (different last char)
-❌ Wrong:   Any other address
+```text
+https://aerodrome.finance/swap?from=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913&to=0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6
 ```
 
-#### Step 3: Connect Wallet
+You can also verify it directly:
 
-1. Click **"Connect Wallet"** in the top right
-2. Select your wallet (Phantom, Solflare, etc.)
-3. Approve the connection in your wallet popup
+```bash
+curl -sk https://rustchain.org/wallet/swap-info
+```
 
-#### Step 4: Enter Swap Amount
+The response should include:
 
-1. **Input**: Select SOL (or USDC)
-2. **Output**: wRTC (should auto-populate)
-3. Enter the amount of SOL you want to swap
-4. Review the estimated wRTC you'll receive
+```json
+{
+  "network": "Base (eip155:8453)",
+  "usdc_contract": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+  "wrtc_contract": "0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6",
+  "aerodrome_pool": "0x4C2A0b915279f0C22EA766D58F9B815Ded2d2A3F",
+  "reference_price_usd": 0.1
+}
+```
 
-#### Step 5: Adjust Slippage (Optional)
+#### Step 2: Verify the contracts
 
-- Default: 0.5% (recommended for stable pairs)
-- Volatile markets: 1-2%
-- **Never exceed 5%** - high slippage increases MEV risk
+1. Confirm the source asset is Base USDC:
+   `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`.
+2. Confirm the output asset is wRTC:
+   `0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6`.
+3. Confirm the wallet is connected to Base, not Ethereum mainnet or another
+   chain.
 
-To adjust: Click the gear icon → Set slippage tolerance
+#### Step 3: Connect wallet
 
-#### Step 6: Execute Swap
+1. Click **Connect Wallet** in Aerodrome.
+2. Select your Base-compatible wallet.
+3. Verify the connected account is the 0x address you intend to use.
 
-1. Click **"Swap"**
-2. Review the transaction details in the confirmation modal
-3. Click **"Confirm Swap"**
-4. Approve the transaction in your wallet
-5. Wait for confirmation (~2-5 seconds)
+#### Step 4: Enter swap amount
 
-#### Step 7: Verify Receipt
+1. Input: USDC on Base.
+2. Output: wRTC on Base.
+3. Enter the amount of USDC you want to swap.
+4. Review the estimated wRTC, route, price impact, and fees.
 
-1. Check your wallet balance for wRTC
-2. View transaction on [Solscan](https://solscan.io) or [SolanaFM](https://solana.fm)
-3. The token should appear automatically in most wallets
+#### Step 5: Execute swap
 
-**If wRTC doesn't appear:**
-- Phantom: Click "Manage token list" → Search wRTC → Enable
-- Solflare: Click "+" → Paste mint address → Add
+1. Approve USDC if Aerodrome requires an allowance transaction.
+2. Click **Swap**.
+3. Review the transaction in your wallet.
+4. Sign only if the wallet shows the expected Base network and contracts.
+
+#### Step 6: Verify receipt
+
+Check your wallet, the Aerodrome transaction, or BaseScan for the wRTC contract:
+
+```text
+0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6
+```
 
 ---
 
-## 🌉 Bridging RTC to wRTC
+## Bridging RTC to wRTC
 
-Bridge your native RTC (earned from mining) to wRTC on Solana.
+Bridge native RTC earned on RustChain into wRTC on Base.
 
 ### Prerequisites
 
-- [ ] RustChain wallet with RTC balance
-- [ ] Solana wallet address (destination)
-- [ ] Both wallets ready and accessible
+- RustChain wallet or miner id with RTC balance.
+- Base-compatible destination wallet address (`0x...`).
+- Access to the official BoTTube bridge.
 
 ### Step-by-Step Guide
 
-#### Step 1: Navigate to BoTTube Bridge
+#### Step 1: Open the official bridge
 
-Open the official bridge URL:
-
-```
+```text
 https://bottube.ai/bridge/wrtc
 ```
 
-**Always verify the URL:**
-- ✅ `https://bottube.ai/bridge/wrtc`
-- ❌ Any variation (bottube.com, bottube-bridge.xyz, etc.)
+#### Step 2: Select direction
 
-#### Step 2: Select Bridge Direction
+Choose **RTC -> wRTC**.
 
-Choose **"RTC → wRTC"** (RustChain to Solana)
+#### Step 3: Enter destination
 
-#### Step 3: Connect RustChain Wallet
+Use a Base address:
 
-1. Click **"Connect RustChain Wallet"**
-2. Enter your wallet address or connect via available method
-3. Verify your RTC balance displays correctly
-
-#### Step 4: Enter wRTC Destination
-
-1. Enter your Solana wallet address (where wRTC will be sent)
-2. **Double-check this address** - transactions are irreversible
-3. Verify the address starts with a letter/number (base58 format)
-
-```
-✅ Valid:   7nx8QmzxD1wKX7QJ1FVqT5hX9YvJxKqZb8yPoR3dL8mN
-❌ Invalid: 0x... (Ethereum format)
-❌ Invalid: Any non-base58 characters
+```text
+0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6
 ```
 
-#### Step 5: Enter Amount
+The value above is the token contract, not your receiving wallet. Your receiving
+wallet should also be an `0x` Base address.
 
-1. Enter the amount of RTC to bridge
-2. Review the bridge fee (usually 0.1-0.5%)
-3. Ensure you have enough RTC after fees
+#### Step 4: Review and confirm
 
-#### Step 6: Review and Confirm
+1. Check the RTC amount.
+2. Check the destination Base wallet.
+3. Check bridge fees.
+4. Confirm only after every field matches the intended transfer.
 
-**Final Checklist:**
-- [ ] Source RTC wallet has sufficient balance
-- [ ] Destination Solana address is correct
-- [ ] Amount + fees are acceptable
-- [ ] You understand this may take 5-30 minutes
+#### Step 5: Verify wRTC receipt
 
-Click **"Bridge"** or **"Confirm"**
+After completion, verify wRTC on Base with the canonical contract:
 
-#### Step 7: Wait for Confirmation
-
-Bridging involves two transactions:
-1. **Lock on RustChain** (~1-5 minutes)
-2. **Mint on Solana** (~1-5 minutes)
-
-Monitor the bridge UI for status updates. You'll see:
-- "Pending" → "Confirming" → "Completed"
-
-#### Step 8: Verify wRTC Receipt
-
-1. Check your Solana wallet for wRTC balance
-2. View transaction on [Solscan](https://solscan.io)
-3. The wRTC should appear automatically
+```text
+0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6
+```
 
 ---
 
-## 🔄 Withdrawing wRTC to RTC
+## Withdrawing wRTC to RTC
 
-Bridge your wRTC back to native RTC on RustChain.
+Bridge wRTC on Base back to native RTC on RustChain.
 
 ### Prerequisites
 
-- [ ] Solana wallet with wRTC balance
-- [ ] RustChain wallet address (destination)
-- [ ] SOL for Solana transaction fees (~0.0001 SOL)
+- Base wallet with wRTC balance.
+- ETH on Base for gas.
+- RustChain wallet or miner id as the destination.
 
 ### Step-by-Step Guide
 
-#### Step 1: Navigate to BoTTube Bridge
+#### Step 1: Open bridge
 
-Open: `https://bottube.ai/bridge/wrtc`
+```text
+https://bottube.ai/bridge/wrtc
+```
 
-#### Step 2: Select Bridge Direction
+#### Step 2: Select direction
 
-Choose **"wRTC → RTC"** (Solana to RustChain)
+Choose **wRTC -> RTC**.
 
-#### Step 3: Connect Solana Wallet
+#### Step 3: Connect Base wallet
 
-1. Click **"Connect Solana Wallet"**
-2. Select your wallet provider (Phantom, Solflare, etc.)
-3. Approve the connection
-4. Verify your wRTC balance displays
+1. Connect the wallet holding wRTC.
+2. Confirm the wallet network is Base.
+3. Confirm the wRTC contract is
+   `0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6`.
 
-#### Step 4: Enter RTC Destination
+#### Step 4: Enter RustChain destination
 
-1. Enter your RustChain wallet address
-2. **Double-check this address**
-3. Ensure it's a valid RustChain address format
+Enter your RustChain wallet or miner id. Double-check it before signing.
 
-#### Step 5: Enter Amount
+#### Step 5: Confirm and monitor
 
-1. Enter the amount of wRTC to bridge
-2. Review the bridge fee
-3. Click **"Max"** to bridge entire balance (minus fees)
+1. Approve or sign the Base transaction.
+2. Monitor the bridge UI until the transfer completes.
+3. Verify the native RTC balance:
 
-#### Step 6: Review and Confirm
-
-**Final Checklist:**
-- [ ] Source wRTC balance is sufficient
-- [ ] Destination RustChain address is correct
-- [ ] Amount + fees are acceptable
-- [ ] You have SOL for transaction fees
-
-Click **"Bridge"**
-
-#### Step 7: Approve Solana Transaction
-
-1. Your wallet will prompt for transaction approval
-2. Review the transaction details
-3. Click **"Approve"** or **"Sign"**
-
-#### Step 8: Wait for Confirmation
-
-Bridging process:
-1. **Burn on Solana** (~5-15 seconds)
-2. **Release on RustChain** (~5-30 minutes)
-
-Monitor the bridge UI for updates.
-
-#### Step 9: Verify RTC Receipt
-
-1. Check your RustChain wallet balance
 ```bash
 curl -sk "https://rustchain.org/wallet/balance?miner_id=my-miner-id"
 ```
-2. Verify on [RustChain Explorer](https://rustchain.org/explorer)
 
 ---
 
-## 📊 Quick Reference
+## Quick Reference
 
 ### Token Details
 
 | Property | Value |
 |----------|-------|
-| **Token Name** | Wrapped RustChain Token |
-| **Symbol** | wRTC |
-| **Mint Address** | `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X` |
-| **Decimals** | 6 |
-| **Network** | Solana |
-| **Standard** | SPL Token |
+| Token name | Wrapped RustChain Token |
+| Symbol | wRTC |
+| Contract | `0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6` |
+| Decimals | 6 |
+| Network | Base (`eip155:8453`) |
+| Standard | ERC-20 compatible |
 
 ### Official Links
 
 | Resource | URL |
 |----------|-----|
-| **Raydium Swap (SOL→wRTC)** | <https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X> |
-| **BoTTube Bridge** | <https://bottube.ai/bridge/wrtc> |
-| **DexScreener** | <https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb> |
-| **RustChain Explorer** | <https://rustchain.org/explorer> |
+| Aerodrome swap | <https://aerodrome.finance/swap?from=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913&to=0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6> |
+| BoTTube bridge | <https://bottube.ai/bridge/wrtc> |
+| Live swap info | <https://rustchain.org/wallet/swap-info> |
+| BaseScan wRTC | <https://basescan.org/address/0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6> |
+| BaseScan USDC | <https://basescan.org/address/0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913> |
+| DexScreener | <https://dexscreener.com/search?q=0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6> |
+| RustChain Explorer | <https://rustchain.org/explorer> |
 
 ### Bridge Fees
 
 | Direction | Typical Fee | Time |
 |-----------|-------------|------|
-| RTC → wRTC | 0.1-0.5% | 5-30 min |
-| wRTC → RTC | 0.1-0.5% | 5-30 min |
+| RTC -> wRTC | Check bridge quote | Check bridge UI |
+| wRTC -> RTC | Check bridge quote | Check bridge UI |
 
 ### Transaction Costs
 
 | Operation | Network Fee |
 |-----------|-------------|
-| Raydium Swap | ~0.001 SOL |
-| Bridge (wRTC→RTC) | ~0.0001 SOL |
-| Transfer wRTC | ~0.000005 SOL |
+| Aerodrome swap | Base gas |
+| Bridge wRTC -> RTC | Base gas + bridge fee |
+| Transfer wRTC | Base gas |
 
 ---
 
-## 🔧 Troubleshooting
+## Troubleshooting
 
 ### Common Issues
 
-#### Issue: "Insufficient SOL for transaction fees"
+#### Issue: "Wrong network"
 
-**Solution:**
-- Ensure your Solana wallet has at least 0.001 SOL
-- Buy SOL on any exchange and transfer to your wallet
-- Even small amounts (0.01 SOL) are sufficient for many transactions
+Solution:
 
-#### Issue: "Token mint not found" or wrong token showing
+1. Switch the wallet to Base.
+2. Reopen the Aerodrome or bridge page.
+3. Confirm the wallet account is still the intended one.
 
-**Solution:**
-1. Verify you're using the correct mint: `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X`
-2. Clear your wallet's token cache (settings → clear cache)
-3. Manually add the token using the mint address
+#### Issue: "Token not found"
 
-#### Issue: Bridge transaction stuck on "Pending"
+Solution:
 
-**Solution:**
-1. Wait up to 1 hour (network congestion)
-2. Check [Solscan](https://solscan.io) for your Solana transaction status
-3. Check RustChain explorer for the corresponding transaction
-4. Contact support with transaction hash if >1 hour
+1. Add wRTC manually with contract
+   `0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6`.
+2. Verify decimals are `6`.
+3. Verify the network is Base.
 
-#### Issue: "Slippage tolerance exceeded" on Raydium
+#### Issue: "Insufficient gas"
 
-**Solution:**
-1. Increase slippage tolerance (gear icon) to 1-2%
-2. Try swapping a smaller amount
-3. Wait a few minutes and retry (price may be volatile)
-4. Check DexScreener for current pool liquidity
+Solution:
 
-#### Issue: Bridge shows "Failed" or "Rejected"
+1. Keep ETH on Base for gas.
+2. Do not use Ethereum mainnet ETH for Base transactions.
+3. Retry with a smaller amount if the wallet needs a gas buffer.
 
-**Solution:**
-1. Verify you have enough balance for the amount + fees
-2. Check that both wallet addresses are correct
-3. Ensure you're on the correct network (Mainnet Beta for Solana)
-4. Clear browser cache and try again
-5. Try a smaller amount first
+#### Issue: "Bridge transaction pending"
 
-#### Issue: wRTC not appearing in wallet after purchase
+Solution:
 
-**Solution:**
-- **Phantom**: Settings → Preferences → Manage token list → Search "wRTC"
-- **Solflare**: Portfolio → Click "+" → Paste mint address → Add
-- **Backpack**: Tokens → Search or paste mint
+1. Wait for the bridge UI to update.
+2. Check the Base transaction status on BaseScan.
+3. Check the RustChain explorer for the corresponding native-side balance.
+4. Contact official support with transaction hash if it remains pending.
 
-#### Issue: "Invalid address format" when bridging
+#### Issue: "Slippage tolerance exceeded"
 
-**Solution:**
-- RustChain addresses: Alphanumeric, case-sensitive
-- Solana addresses: 32-44 characters, base58 encoded
-- Never use Ethereum (0x...) addresses for Solana transactions
+Solution:
 
-### Emergency Contacts
+1. Check the Aerodrome quote and pool liquidity.
+2. Try a smaller swap.
+3. Adjust slippage carefully.
+4. Verify the contracts again before signing.
 
-| Issue | Contact |
-|-------|---------|
-| Bridge problems | BoTTube support on [bottube.ai](https://bottube.ai) |
-| RustChain issues | GitHub Issues: [Scottcjn/Rustchain](https://github.com/Scottcjn/Rustchain) |
-| Scam reports | Report to official RustChain Discord/Telegram mods |
+#### Issue: "Invalid destination address"
+
+Solution:
+
+- Base wallet addresses use `0x` plus 40 hexadecimal characters.
+- RustChain wallet/miner ids are native RustChain identifiers.
+- Do not paste a Base address where the UI requests a RustChain destination,
+  or a RustChain id where the UI requests a Base wallet.
 
 ### Safety Reminders
 
-1. **Never share your seed phrase or private keys**
-2. **Never approve transactions you don't understand**
-3. **Always verify mint addresses character-by-character**
-4. **Bookmark official URLs** - never click links from DMs
-5. **Start with small amounts** when testing new processes
-6. **Keep software updated** - wallet apps, browsers
+1. Never share seed phrases or private keys.
+2. Never approve transactions you do not understand.
+3. Always verify contract addresses character by character.
+4. Bookmark official URLs.
+5. Start with small amounts when testing a new path.
+6. Use the live `/wallet/swap-info` endpoint as the source of truth.
 
 ---
 
-## 📚 Additional Resources
+## Additional Resources
 
 - [RustChain Whitepaper](WHITEPAPER.md)
 - [Protocol Specification](./PROTOCOL.md)
 - [API Reference](./API.md)
 - [Wallet User Guide](./WALLET_USER_GUIDE.md)
-- [Original Onboarding Tutorial](./WRTC_ONBOARDING_TUTORIAL.md)
+- [Onboarding Tutorial](./WRTC_ONBOARDING_TUTORIAL.md)
 
 ---
 
-<div align="center">
-
-**Questions?** Open an issue on [GitHub](https://github.com/Scottcjn/Rustchain) or reach out in official community channels.
-
-*Always verify, never rush. Your security is worth the extra 30 seconds.*
-
-</div>
+Questions? Open an issue on [GitHub](https://github.com/Scottcjn/Rustchain).

@@ -172,7 +172,7 @@ An autonomous agent can't apply for a Chase checking account. It can't sign a Te
 | **Machine-to-machine settlement** | Requires human intermediary | Direct agent-to-agent transfers, Ed25519 signed |
 | **Hardware-verified identity** | IP address (spoofable) | 6-check hardware fingerprint (unfakeable) |
 | **Programmable money** | Manual approval workflows | Smart contracts execute on attestation |
-| **Cross-border by default** | SWIFT, 3-5 business days, fees | Solana bridge (wRTC), instant, global |
+| **Cross-border by default** | SWIFT, 3-5 business days, fees | Base bridge (wRTC), instant, global |
 
 ### The Agent Stack We Already Built
 
@@ -181,7 +181,7 @@ This isn't a roadmap. This is deployed and running:
 | Layer | What | Status |
 |-------|------|--------|
 | **Identity** | Hardware fingerprinting — agents prove they run on real machines, not spoofed VMs | Live, 26+ miners |
-| **Currency** | RTC (native) + wRTC (Solana bridge) — agent-native money with micropayment support | Live, Raydium swap link below |
+| **Currency** | RTC (native) + wRTC (Base bridge) — agent-native money with micropayment support | Live, Aerodrome swap link below |
 | **Discovery** | [Beacon protocol](https://github.com/Scottcjn/beacon-skill) — agents find and negotiate with other agents | Live, 126 stars |
 | **Execution** | [TrashClaw](https://github.com/Scottcjn/trashclaw) — zero-dep local LLM agent that runs on anything | Live |
 | **Social** | BoTTube — AI-native platform where agents create, trade, and engage | Live, 1,000+ videos |
@@ -360,12 +360,12 @@ VMs are detected and receive **1 billionth** of normal rewards. Real hardware on
 
 ---
 
-## wRTC on Solana
+## wRTC on Base
 
 | | Link |
 |--|------|
-| **Swap** | [Raydium DEX](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) |
-| **Chart** | [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) |
+| **Swap** | [Aerodrome DEX](https://aerodrome.finance/swap?from=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913&to=0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6) |
+| **Chart** | [DexScreener](https://dexscreener.com/search?q=0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6) |
 | **Bridge** | [Bridge](https://bottube.ai/bridge/wrtc) |
 | **Guide** | [wRTC Quickstart](docs/wrtc.md) |
 

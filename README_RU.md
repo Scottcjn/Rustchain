@@ -109,16 +109,16 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 
 ---
 
-## 🪙 wRTC на Solana
+## 🪙 wRTC на Base
 
-Токен RustChain (RTC) теперь доступен как **wRTC** на Solana через мост BoTTube:
+Токен RustChain (RTC) теперь доступен как **wRTC** на Base через мост BoTTube:
 
 | Ресурс | Ссылка |
 |--------|--------|
-| **Обмен wRTC** | [Raydium DEX](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) |
-| **График цены** | [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) |
+| **Обмен wRTC** | [Aerodrome DEX](https://aerodrome.finance/swap?from=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913&to=0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6) |
+| **График цены** | [DexScreener](https://dexscreener.com/search?q=0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6) |
 | **Мост RTC ↔ wRTC** | [BoTTube Bridge](https://bottube.ai/bridge/wrtc) |
-| **Адрес токена** | `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X` |
+| **Адрес токена** | `0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6` |
 
 ---
 

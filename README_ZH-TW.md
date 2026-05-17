@@ -13,25 +13,25 @@
 
 *你的 PowerPC G4 賺得比最新的 Threadripper 還多。這就是重點。*
 
-[官網](https://rustchain.org) • [區塊瀏覽器](https://rustchain.org/explorer) • [交換 wRTC](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) • [價格圖表](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) • [wRTC 快速入門](docs/wrtc.md) • [wRTC 教學](docs/WRTC_ONBOARDING_TUTORIAL.md) • [Grokipedia 參考](https://grokipedia.com/search?q=RustChain) • [白皮書](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf) • [快速開始](#-快速開始) • [運作原理](#-古董證明如何運作)
+[官網](https://rustchain.org) • [區塊瀏覽器](https://rustchain.org/explorer) • [交換 wRTC](https://aerodrome.finance/swap?from=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913&to=0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6) • [價格圖表](https://dexscreener.com/search?q=0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6) • [wRTC 快速入門](docs/wrtc.md) • [wRTC 教學](docs/WRTC_ONBOARDING_TUTORIAL.md) • [Grokipedia 參考](https://grokipedia.com/search?q=RustChain) • [白皮書](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf) • [快速開始](#-快速開始) • [運作原理](#-古董證明如何運作)
 
 </div>
 
 ---
 
-## 🪙 Solana 上的 wRTC
+## 🪙 Base 上的 wRTC
 
-RustChain 代幣 (RTC) 現已透過 BoTTube Bridge 在 Solana 上以 **wRTC** 形式流通：
+RustChain 代幣 (RTC) 現已透過 BoTTube Bridge 在 Base 上以 **wRTC** 形式流通：
 
 | 資源 | 連結 |
 |------|------|
-| **交換 wRTC** | [Raydium DEX](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) |
-| **價格圖表** | [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) |
+| **交換 wRTC** | [Aerodrome DEX](https://aerodrome.finance/swap?from=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913&to=0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6) |
+| **價格圖表** | [DexScreener](https://dexscreener.com/search?q=0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6) |
 | **RTC ↔ wRTC 跨鏈橋** | [BoTTube Bridge](https://bottube.ai/bridge/wrtc) |
 | **快速入門指南** | [wRTC 快速入門（購買、跨鏈、安全須知）](docs/wrtc.md) |
 | **新手教學** | [wRTC 跨鏈 + 交易安全指南](docs/WRTC_ONBOARDING_TUTORIAL.md) |
 | **外部參考** | [Grokipedia 搜尋：RustChain](https://grokipedia.com/search?q=RustChain) |
-| **代幣鑄造地址** | `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X` |
+| **wRTC 合約地址** | `0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6` |
 
 ---
 
@@ -302,10 +302,10 @@ Rustchain/
 |------|------|
 | **官方網站** | [rustchain.org](https://rustchain.org) |
 | **區塊瀏覽器** | [rustchain.org/explorer](https://rustchain.org/explorer) |
-| **交換 wRTC (Raydium)** | [Raydium DEX](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) |
-| **價格圖表** | [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) |
+| **交換 wRTC (Aerodrome)** | [Aerodrome DEX](https://aerodrome.finance/swap?from=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913&to=0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6) |
+| **價格圖表** | [DexScreener](https://dexscreener.com/search?q=0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6) |
 | **RTC ↔ wRTC 跨鏈橋** | [BoTTube Bridge](https://bottube.ai/bridge/wrtc) |
-| **wRTC 代幣鑄造地址** | `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X` |
+| **wRTC 合約地址** | `0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6` |
 | **BoTTube** | [bottube.ai](https://bottube.ai) - AI 影片平台 |
 | **Moltbook** | [moltbook.com](https://moltbook.com) - AI 社群網路 |
 | [nvidia-power8-patches](https://github.com/Scottcjn/nvidia-power8-patches) | POWER8 的 NVIDIA 驅動程式 |
