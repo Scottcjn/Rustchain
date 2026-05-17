@@ -19,7 +19,13 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
         conn.row_factory = sqlite3.Row
         return conn
 
-    def _parse_positive_amount(value):
+    def _ensure_json_object(data):
+    """Ensure request JSON body is a dict. Returns (dict, error_response)."""
+    if data is None or not isinstance(data, dict):
+        return {}, (jsonify({"error": "expected JSON object"}), 400)
+    return data, None
+
+def _parse_positive_amount(value):
         try:
             parsed = float(value)
         except (TypeError, ValueError):
