@@ -8259,6 +8259,13 @@ def wallet_transfer_signed():
         message = legacy_message
     else:
         return jsonify({"error": "Invalid signature"}), 401
+
+    if fee_rtc != 0:
+        return jsonify({
+            "error": "Nonzero signed transfer fees are not supported until fee settlement is implemented",
+            "code": "SIGNED_TRANSFER_FEE_UNSETTLED",
+            "fee_rtc": fee_rtc,
+        }), 400
     
     # Signature valid - process the transfer (2-phase commit + replay protection).
     

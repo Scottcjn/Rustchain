@@ -151,7 +151,10 @@ def test_insufficient_balance_does_not_burn_nonce(signed_transfer_client):
     assert pending_count == 1
 
 
-def test_signed_transfer_accepts_sdk_fee_signed_message(signed_transfer_client, monkeypatch):
+def test_signed_transfer_rejects_nonzero_fee_until_fee_settlement(
+    signed_transfer_client,
+    monkeypatch,
+):
     client, db_path = signed_transfer_client
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
     from rustchain_sdk.wallet import RustChainWallet
@@ -212,8 +215,15 @@ def test_signed_transfer_accepts_sdk_fee_signed_message(signed_transfer_client, 
         separators=(",", ":"),
     ).encode()
     assert captured["messages"][0] == expected_message
-    assert response.status_code == 200
-    assert response.get_json()["ok"] is True
+    assert response.status_code == 400
+    assert response.get_json()["code"] == "SIGNED_TRANSFER_FEE_UNSETTLED"
+
+    with sqlite3.connect(db_path) as conn:
+        nonce_count = conn.execute("SELECT COUNT(*) FROM transfer_nonces").fetchone()[0]
+        pending_count = conn.execute("SELECT COUNT(*) FROM pending_ledger").fetchone()[0]
+
+    assert nonce_count == 0
+    assert pending_count == 0
 
 
 def test_signed_transfer_keeps_legacy_zero_fee_signature_compatible(
