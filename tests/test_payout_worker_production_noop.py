@@ -71,3 +71,96 @@ def test_process_withdrawal_leaves_pending_when_production_broadcast_is_not_conf
     assert status == "pending"
     assert "not configured" in error_msg
     assert tx_hash is None
+
+
+def test_processing_withdrawal_failure_requires_manual_recovery_without_refund(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(payout_worker, "MOCK_MODE", True)
+    db_path = str(tmp_path / "payout_worker.db")
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("CREATE TABLE accounts (public_key TEXT PRIMARY KEY, balance INTEGER)")
+        conn.execute(
+            "CREATE TABLE withdrawals ("
+            "withdrawal_id TEXT PRIMARY KEY, miner_pk TEXT, amount INTEGER, fee INTEGER, "
+            "destination TEXT, status TEXT, error_msg TEXT, processed_at INTEGER, "
+            "tx_hash TEXT, created_at INTEGER)"
+        )
+        conn.execute(
+            "INSERT INTO accounts (public_key, balance) VALUES (?, ?)",
+            ("miner-pubkey", 100),
+        )
+        conn.execute(
+            "INSERT INTO withdrawals "
+            "(withdrawal_id, miner_pk, amount, fee, destination, status, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            ("wd-1", "miner-pubkey", 10, 1, "RTCdest", "pending", 1234567890),
+        )
+
+    class AmbiguousBroadcastWorker(payout_worker.PayoutWorker):
+        def execute_withdrawal(self, withdrawal):
+            raise RuntimeError("broadcast status unknown after restart")
+
+    worker = AmbiguousBroadcastWorker()
+    worker.db_path = db_path
+
+    assert worker.process_withdrawal(withdrawal()) is False
+
+    with sqlite3.connect(db_path) as conn:
+        balance = conn.execute(
+            "SELECT balance FROM accounts WHERE public_key = ?",
+            ("miner-pubkey",),
+        ).fetchone()[0]
+        status, error_msg = conn.execute(
+            "SELECT status, error_msg FROM withdrawals WHERE withdrawal_id = ?",
+            ("wd-1",),
+        ).fetchone()
+
+    assert balance == 89
+    assert status == "recovery_required"
+    assert "Manual recovery required" in error_msg
+    assert "broadcast status unknown" in error_msg
+    assert worker.get_stats()["recovery_required"] == 1
+
+
+def test_startup_recovery_moves_processing_withdrawals_to_manual_review_without_refund(
+    tmp_path,
+):
+    db_path = str(tmp_path / "payout_worker.db")
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("CREATE TABLE accounts (public_key TEXT PRIMARY KEY, balance INTEGER)")
+        conn.execute(
+            "CREATE TABLE withdrawals ("
+            "withdrawal_id TEXT PRIMARY KEY, miner_pk TEXT, amount INTEGER, fee INTEGER, "
+            "destination TEXT, status TEXT, error_msg TEXT, processed_at INTEGER, "
+            "tx_hash TEXT, created_at INTEGER)"
+        )
+        conn.execute(
+            "INSERT INTO accounts (public_key, balance) VALUES (?, ?)",
+            ("miner-pubkey", 89),
+        )
+        conn.execute(
+            "INSERT INTO withdrawals "
+            "(withdrawal_id, miner_pk, amount, fee, destination, status, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            ("wd-1", "miner-pubkey", 10, 1, "RTCdest", "processing", 1234567890),
+        )
+
+    worker = payout_worker.PayoutWorker()
+    worker.db_path = db_path
+
+    assert worker.recover_processing_withdrawals() == 1
+
+    with sqlite3.connect(db_path) as conn:
+        balance = conn.execute(
+            "SELECT balance FROM accounts WHERE public_key = ?",
+            ("miner-pubkey",),
+        ).fetchone()[0]
+        status, error_msg = conn.execute(
+            "SELECT status, error_msg FROM withdrawals WHERE withdrawal_id = ?",
+            ("wd-1",),
+        ).fetchone()
+
+    assert balance == 89
+    assert status == "recovery_required"
+    assert "worker restart" in error_msg

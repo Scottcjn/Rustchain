@@ -20,6 +20,7 @@ BATCH_SIZE = 10
 POLL_INTERVAL = 30  # seconds
 MAX_RETRIES = 3
 MOCK_MODE = os.environ.get("RUSTCHAIN_MOCK_MODE", "0") == "1"  # Default: production (False)
+RECOVERY_REQUIRED_STATUS = "recovery_required"
 
 
 class ProductionWithdrawalNotConfigured(RuntimeError):
@@ -90,6 +91,8 @@ class PayoutWorker:
     def process_withdrawal(self, withdrawal: Dict) -> bool:
         """Process a single withdrawal with balance deduction before execution."""
         withdrawal_id = withdrawal['withdrawal_id']
+        marked_processing = False
+        broadcast_tx_hash = None
 
         try:
             logger.info(f"Processing withdrawal {withdrawal_id}")
@@ -149,14 +152,15 @@ class PayoutWorker:
                         (withdrawal_id,)
                     )
                     conn.execute("COMMIT")
+                    marked_processing = True
                 except Exception:
                     conn.execute("ROLLBACK")
                     raise
 
             # Execute withdrawal (broadcast transaction)
-            tx_hash = self.execute_withdrawal(withdrawal)
+            broadcast_tx_hash = self.execute_withdrawal(withdrawal)
 
-            if tx_hash:
+            if broadcast_tx_hash:
                 # Mark as completed
                 with sqlite3.connect(self.db_path) as conn:
                     conn.execute("""
@@ -165,9 +169,9 @@ class PayoutWorker:
                             processed_at = ?,
                             tx_hash = ?
                         WHERE withdrawal_id = ?
-                    """, (int(time.time()), tx_hash, withdrawal_id))
+                    """, (int(time.time()), broadcast_tx_hash, withdrawal_id))
 
-                logger.info(f"[OK] Withdrawal {withdrawal_id} completed: {tx_hash}")
+                logger.info(f"[OK] Withdrawal {withdrawal_id} completed: {broadcast_tx_hash}")
                 self.stats['processed'] += 1
                 self.stats['total_rtc'] += withdrawal['amount']
                 return True
@@ -177,21 +181,32 @@ class PayoutWorker:
         except Exception as e:
             logger.error(f"✗ Withdrawal {withdrawal_id} failed: {e}")
 
-            # Refund balance on broadcast failure and mark as failed
-            with sqlite3.connect(self.db_path) as conn:
-                conn.execute("BEGIN IMMEDIATE")
-                conn.execute(
-                    "UPDATE accounts SET balance = balance + ? WHERE public_key = ?",
-                    (withdrawal['amount'] + withdrawal.get('fee', 0),
-                     withdrawal['miner_pk'])
+            if marked_processing:
+                message = (
+                    "Manual recovery required after processing failure; "
+                    "verify transaction status before retrying or refunding: "
+                    f"{e}"
                 )
+                with sqlite3.connect(self.db_path) as conn:
+                    conn.execute("""
+                        UPDATE withdrawals
+                        SET status = ?,
+                            error_msg = ?,
+                            tx_hash = COALESCE(?, tx_hash)
+                        WHERE withdrawal_id = ?
+                    """, (RECOVERY_REQUIRED_STATUS, message, broadcast_tx_hash, withdrawal_id))
+
+                self.stats['failed'] += 1
+                return False
+
+            # Fail only pre-processing errors; no funds have been deducted yet.
+            with sqlite3.connect(self.db_path) as conn:
                 conn.execute("""
                     UPDATE withdrawals
                     SET status = 'failed',
                         error_msg = ?
                     WHERE withdrawal_id = ?
                 """, (str(e), withdrawal_id))
-                conn.execute("COMMIT")
 
             self.stats['failed'] += 1
             return False
@@ -214,6 +229,24 @@ class PayoutWorker:
             time.sleep(1)
 
         return processed
+
+    def recover_processing_withdrawals(self) -> int:
+        """Move startup-orphaned processing withdrawals to manual recovery."""
+        message = (
+            "Manual recovery required after worker restart; verify transaction "
+            "status before retrying or refunding"
+        )
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute("""
+                UPDATE withdrawals
+                SET status = ?,
+                    error_msg = CASE
+                        WHEN error_msg IS NULL OR error_msg = '' THEN ?
+                        ELSE error_msg || '; ' || ?
+                    END
+                WHERE status = 'processing'
+            """, (RECOVERY_REQUIRED_STATUS, message, message))
+            return cursor.rowcount
 
     def run_forever(self):
         """Main worker loop"""
@@ -303,11 +336,17 @@ class PayoutWorker:
                 "SELECT COUNT(*) FROM withdrawals WHERE status = 'failed'"
             ).fetchone()[0]
 
+            recovery_required = conn.execute(
+                "SELECT COUNT(*) FROM withdrawals WHERE status = ?",
+                (RECOVERY_REQUIRED_STATUS,),
+            ).fetchone()[0]
+
         return {
             'pending': pending,
             'processing': processing,
             'completed': completed,
             'failed': failed,
+            'recovery_required': recovery_required,
             'session_processed': self.stats['processed'],
             'session_failed': self.stats['failed'],
             'session_total_rtc': self.stats['total_rtc']
@@ -318,6 +357,12 @@ def main():
     worker = PayoutWorker()
 
     try:
+        recovered = worker.recover_processing_withdrawals()
+        if recovered:
+            logger.warning(
+                "Moved %s processing withdrawals to manual recovery", recovered
+            )
+
         # Print initial stats
         stats = worker.get_stats()
         logger.info(f"Initial queue state: {stats}")
