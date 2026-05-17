@@ -59,14 +59,14 @@ cargo build --release
 curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET" | jq .
 ```
 
-### 2. Web Wallet
+### 2. Wallet Documentation
 
-Access your wallet from any browser at **https://rustchain.org/wallet**
+Read the current wallet documentation from any browser at **https://rustchain.org/wallets/**
 
-- No installation required
-- Supports key import via seed phrase or private key
-- View balance, transaction history, and epoch rewards
-- Initiate transfers with a confirmation dialog
+- Native RTC wallet setup with `clawrtc wallet create`
+- Wallet address display with `clawrtc wallet show`
+- Coinbase/Base wallet linking for x402 payment flows
+- Swap and bridge references for wRTC
 
 > ⚠️ Always verify you are on the official domain (`rustchain.org`) before entering keys.
 
@@ -101,13 +101,12 @@ The RustChain browser extension integrates your wallet with dApps and the x402 p
 # 3. Back up your seed phrase (see section below)
 ```
 
-### Step-by-Step (Web)
+### Step-by-Step (Hosted Docs)
 
-1. Go to `https://rustchain.org/wallet`
-2. Click **Create New Wallet**
+1. Go to `https://rustchain.org/wallets/`
+2. Follow the native RTC wallet commands (`pip install clawrtc`, `clawrtc wallet create`, `clawrtc wallet show`)
 3. Write down your 12-word seed phrase — **do not screenshot it**
-4. Confirm two random words from the seed phrase
-5. Your wallet address is now ready
+4. Confirm your public wallet address before using it for mining or bounty claims
 
 ---
 
