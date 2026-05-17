@@ -97,6 +97,22 @@ def test_bcos_attest_rejects_invalid_trust_score(bcos_client, trust_score, messa
     assert body["message"] == message
 
 
+@pytest.mark.parametrize("payload", [[], ["not", "an", "object"], "bad"])
+def test_bcos_attest_rejects_non_object_json_body(bcos_client, payload):
+    response = bcos_client.post("/bcos/attest", json=payload)
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "JSON object required"}
+
+
+@pytest.mark.parametrize("report", [[], ["not", "an", "object"], "bad"])
+def test_bcos_attest_rejects_non_object_nested_report(bcos_client, report):
+    response = bcos_client.post("/bcos/attest", json={"report": report})
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "report must be a JSON object"}
+
+
 def test_bcos_attest_stores_numeric_trust_score(bcos_client):
     response = bcos_client.post(
         "/bcos/attest",
