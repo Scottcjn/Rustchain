@@ -106,7 +106,7 @@ impl Wallet {
         Self::new(KeyPair::generate())
     }
 
-    /// Get the wallet's RTC address (RTC + sha256(pubkey)[:40])
+    /// Get the wallet's RTC address (RTC + first 40 hex chars of sha256(pubkey))
     pub fn address(&self) -> String {
         self.keypair.rtc_address()
     }

@@ -72,7 +72,7 @@ impl KeyPair {
         bs58::encode(self.verifying_key.as_bytes()).into_string()
     }
 
-    /// Derive the RTC address: "RTC" + sha256(pubkey_bytes)[:40] (hex)
+    /// Derive the RTC address: "RTC" + the first 40 hex chars of sha256(pubkey_bytes).
     pub fn rtc_address(&self) -> String {
         use sha2::{Digest, Sha256};
         let hash = Sha256::digest(self.verifying_key.as_bytes());
