@@ -147,3 +147,66 @@ def test_collect_hall_of_fame_fee_pool_and_stats_fallbacks():
     assert module.rustchain_highest_rust_score._value.get() == 9.5
     assert module.rustchain_total_fees_collected_rtc._value.get() == 12.25
     assert module.rustchain_fee_events_total._value.get() == 6
+
+
+def test_collect_p2p_exports_health_metrics():
+    module = load_module()
+    module.P2P_NODE_URL = "https://p2p.rustchain.example"
+
+    with (
+        patch.object(module, "fetch_json", return_value={
+            "running": True,
+            "peer_count": "3",
+            "attestation_count": "11",
+            "settled_epochs": "4",
+            "messages_per_second": "2.5",
+            "messages_total": "99",
+        }) as fetch_json,
+        patch.object(module.time, "time", side_effect=[100.0, 100.25]),
+    ):
+        module.collect_p2p()
+
+    fetch_json.assert_called_once_with("/p2p/health", module.P2P_NODE_URL)
+    assert module.rustchain_p2p_up._value.get() == 1
+    assert module.rustchain_p2p_peer_count._value.get() == 3
+    assert module.rustchain_p2p_attestation_count._value.get() == 11
+    assert module.rustchain_p2p_settled_epochs._value.get() == 4
+    assert module.rustchain_p2p_message_rate_per_second._value.get() == 2.5
+    assert module.rustchain_p2p_messages_total._value.get() == 99
+    assert module.rustchain_p2p_health_latency_seconds._value.get() == 0.25
+
+
+def test_collect_p2p_skips_when_endpoint_not_configured():
+    module = load_module()
+
+    with patch.object(module, "fetch_json") as fetch_json:
+        module.collect_p2p()
+
+    fetch_json.assert_not_called()
+    assert module.P2P_NODE_URL == ""
+    assert module.rustchain_p2p_up._value.get() == 0
+    assert module.rustchain_p2p_peer_count._value.get() == 0
+    assert module.rustchain_p2p_attestation_count._value.get() == 0
+    assert module.rustchain_p2p_settled_epochs._value.get() == 0
+    assert module.rustchain_p2p_message_rate_per_second._value.get() == 0
+    assert module.rustchain_p2p_messages_total._value.get() == 0
+    assert module.rustchain_p2p_health_latency_seconds._value.get() == 0
+
+
+def test_collect_p2p_zeros_metrics_when_endpoint_unavailable():
+    module = load_module()
+    module.P2P_NODE_URL = "https://p2p.rustchain.example"
+
+    with (
+        patch.object(module, "fetch_json", return_value=None),
+        patch.object(module.time, "time", side_effect=[100.0, 100.5]),
+    ):
+        module.collect_p2p()
+
+    assert module.rustchain_p2p_up._value.get() == 0
+    assert module.rustchain_p2p_peer_count._value.get() == 0
+    assert module.rustchain_p2p_attestation_count._value.get() == 0
+    assert module.rustchain_p2p_settled_epochs._value.get() == 0
+    assert module.rustchain_p2p_message_rate_per_second._value.get() == 0
+    assert module.rustchain_p2p_messages_total._value.get() == 0
+    assert module.rustchain_p2p_health_latency_seconds._value.get() == 0.5
