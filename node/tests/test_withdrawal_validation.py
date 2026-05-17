@@ -10,21 +10,57 @@ Covers the fix for:
 
 import pytest
 import json
+import importlib.util
 import sys
 import os
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+NODE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+MODULE_PATH = os.path.join(NODE_DIR, "rustchain_v2_integrated_v2.2.1_rip200.py")
+
+if NODE_DIR not in sys.path:
+    sys.path.insert(0, NODE_DIR)
+
+
+def _load_integrated_node():
+    spec = importlib.util.spec_from_file_location(
+        "rustchain_integrated_withdrawal_validation_test",
+        MODULE_PATH,
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.fixture(scope="module")
+def integrated_node(tmp_path_factory):
+    previous_db_path = os.environ.get("RUSTCHAIN_DB_PATH")
+    previous_admin_key = os.environ.get("RC_ADMIN_KEY")
+    db_path = tmp_path_factory.mktemp("withdrawal_validation") / "import.db"
+    os.environ["RUSTCHAIN_DB_PATH"] = str(db_path)
+    os.environ["RC_ADMIN_KEY"] = "0123456789abcdef0123456789abcdef"
+
+    module = _load_integrated_node()
+    try:
+        yield module
+    finally:
+        if previous_db_path is None:
+            os.environ.pop("RUSTCHAIN_DB_PATH", None)
+        else:
+            os.environ["RUSTCHAIN_DB_PATH"] = previous_db_path
+        if previous_admin_key is None:
+            os.environ.pop("RC_ADMIN_KEY", None)
+        else:
+            os.environ["RC_ADMIN_KEY"] = previous_admin_key
 
 
 class TestWithdrawalRequestValidation:
     """Tests for /withdraw/request endpoint input validation"""
 
     @pytest.fixture
-    def app(self):
+    def app(self, integrated_node):
         """Create test app instance"""
-        from rustchain_v2_integrated_v2.2.1_rip200 import app
-        app.config['TESTING'] = True
-        return app
+        integrated_node.app.config['TESTING'] = True
+        return integrated_node.app
 
     @pytest.fixture
     def client(self, app):
