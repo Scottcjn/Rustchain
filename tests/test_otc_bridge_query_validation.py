@@ -160,6 +160,26 @@ def test_order_create_rejects_non_integer_ttl(tmp_path):
     assert response.get_json() == {"error": "ttl_seconds must be an integer"}
 
 
+def test_order_create_rejects_float_ttl(tmp_path):
+    otc_bridge = load_otc_bridge(tmp_path)
+
+    with otc_bridge.app.test_client() as client:
+        response = client.post(
+            "/api/orders",
+            json={
+                "side": "buy",
+                "pair": "RTC/USDC",
+                "wallet": "buyer-1",
+                "amount_rtc": "1",
+                "price_per_rtc": "0.10",
+                "ttl_seconds": 3600.5,
+            },
+        )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "ttl_seconds must be an integer"}
+
+
 def test_order_create_accepts_valid_buy_order_with_ttl(tmp_path):
     otc_bridge = load_otc_bridge(tmp_path)
 

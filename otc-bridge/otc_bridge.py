@@ -126,9 +126,15 @@ def get_json_object():
 def parse_order_ttl(raw):
     if isinstance(raw, bool):
         return None, "ttl_seconds must be an integer"
-    try:
-        ttl = int(raw)
-    except (TypeError, ValueError):
+    if isinstance(raw, int):
+        ttl = raw
+    elif isinstance(raw, str):
+        value = raw.strip()
+        digits = value[1:] if value.startswith(("+", "-")) else value
+        if not digits.isdecimal():
+            return None, "ttl_seconds must be an integer"
+        ttl = int(value)
+    else:
         return None, "ttl_seconds must be an integer"
     return min(max(ttl, 3600), ORDER_TTL_MAX), None
 

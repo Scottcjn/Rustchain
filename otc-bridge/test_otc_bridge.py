@@ -124,6 +124,18 @@ class OTCBridgeTestCase(unittest.TestCase):
         self.assertEqual(r.status_code, 400)
         self.assertEqual(r.get_json(), {"error": "ttl_seconds must be an integer"})
 
+    def test_create_order_rejects_float_ttl(self):
+        r = self.app.post("/api/orders", json={
+            "side": "buy",
+            "pair": "RTC/USDC",
+            "wallet": "test-buyer",
+            "amount_rtc": "1",
+            "price_per_rtc": "0.10",
+            "ttl_seconds": 3600.5,
+        })
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.get_json(), {"error": "ttl_seconds must be an integer"})
+
     def test_create_buy_order_accepts_valid_ttl(self):
         r = self.app.post("/api/orders", json={
             "side": "buy",
