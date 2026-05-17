@@ -9,9 +9,11 @@ Run:  python3 -m pytest test_utxo_db.py -v
 import json
 import os
 import tempfile
+import threading
 import time
 import unittest
 
+import utxo_db as utxo_db_module
 from utxo_db import (
     UtxoDB, coin_select, compute_box_id, address_to_proposition,
     proposition_to_address, UNIT, DUST_THRESHOLD, MAX_COINBASE_OUTPUT_NRTC,
@@ -487,6 +489,82 @@ class TestUtxoDB(unittest.TestCase):
         self.assertFalse(
             self.db.mempool_check_double_spend(boxes[0]['box_id'])
         )
+
+    def test_mempool_size_limit_checked_inside_write_transaction(self):
+        """Concurrent admissions must not bypass MAX_POOL_SIZE."""
+        self._apply_coinbase('alice', 100 * UNIT, block_height=1)
+        self._apply_coinbase('carol', 100 * UNIT, block_height=2)
+        alice_box = self.db.get_unspent_for_address('alice')[0]
+        carol_box = self.db.get_unspent_for_address('carol')[0]
+
+        original_limit = utxo_db_module.MAX_POOL_SIZE
+        original_conn = self.db._conn
+        count_barrier = threading.Barrier(2)
+
+        class RacingConnection(utxo_db_module.sqlite3.Connection):
+            def execute(self, sql, parameters=()):
+                if (
+                    "SELECT COUNT(*) AS n FROM utxo_mempool" in sql
+                    and not self.in_transaction
+                ):
+                    count_barrier.wait(timeout=5)
+                return super().execute(sql, parameters)
+
+        def racing_conn():
+            c = utxo_db_module.sqlite3.connect(
+                self.tmp.name,
+                timeout=30,
+                factory=RacingConnection,
+            )
+            try:
+                c.row_factory = utxo_db_module.sqlite3.Row
+                c.execute("PRAGMA journal_mode=WAL")
+                c.execute("PRAGMA foreign_keys=ON")
+                return c
+            except Exception:
+                c.close()
+                raise
+
+        txs = [
+            {
+                'tx_id': 'race_a' * 10,
+                'inputs': [{'box_id': alice_box['box_id']}],
+                'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+                'fee_nrtc': 0,
+            },
+            {
+                'tx_id': 'race_b' * 10,
+                'inputs': [{'box_id': carol_box['box_id']}],
+                'outputs': [{'address': 'dave', 'value_nrtc': 100 * UNIT}],
+                'fee_nrtc': 0,
+            },
+        ]
+        results = []
+        errors = []
+
+        def add_tx(tx):
+            try:
+                results.append(self.db.mempool_add(tx))
+            except Exception as exc:
+                errors.append(exc)
+
+        utxo_db_module.MAX_POOL_SIZE = 1
+        self.db._conn = racing_conn
+        try:
+            threads = [threading.Thread(target=add_tx, args=(tx,)) for tx in txs]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=10)
+                self.assertFalse(thread.is_alive())
+
+            self.assertEqual(errors, [])
+            self.assertEqual(results.count(True), 1)
+            self.assertEqual(results.count(False), 1)
+            self.assertEqual(len(self.db.mempool_get_block_candidates(10)), 1)
+        finally:
+            utxo_db_module.MAX_POOL_SIZE = original_limit
+            self.db._conn = original_conn
 
     def test_mempool_rejects_user_supplied_mining_reward(self):
         """Public mempool must not admit minting transactions.
