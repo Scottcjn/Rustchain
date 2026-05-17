@@ -389,9 +389,14 @@ class RustChainMiner:
             challenge_resp = requests.post(
                 f"{self.node_url}/attest/challenge", json={}, timeout=10
             )
+            if challenge_resp.status_code != 200:
+                self.last_attestation_error = (
+                    f"challenge rejected: {self._response_diagnostic(challenge_resp)}"
+                )
+                return False
             challenge = challenge_resp.json()
             nonce = challenge.get("nonce") if isinstance(challenge, dict) else None
-            if challenge_resp.status_code != 200 or not nonce:
+            if not nonce:
                 self.last_attestation_error = (
                     f"challenge rejected: {self._response_diagnostic(challenge_resp)}"
                 )

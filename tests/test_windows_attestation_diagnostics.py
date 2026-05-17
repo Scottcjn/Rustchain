@@ -98,6 +98,24 @@ def test_attest_records_challenge_rejection_details(monkeypatch):
     )
 
 
+def test_attest_records_non_json_challenge_http_error(monkeypatch):
+    module = _load_windows_miner()
+    miner = module.RustChainMiner("RTC877021895fd29d034f35c87e1b37af8534703792")
+    miner.node_url = "http://node.example"
+
+    def fake_post(url, **kwargs):
+        if url.endswith("/attest/challenge"):
+            return _Response(503, ValueError("not json"), text="temporarily unavailable")
+        raise AssertionError(url)
+
+    monkeypatch.setattr(module.requests, "post", fake_post)
+
+    assert miner.attest() is False
+    assert miner.last_attestation_error == (
+        "challenge rejected: HTTP 503 body=temporarily unavailable"
+    )
+
+
 def test_ensure_ready_prints_last_attestation_error():
     module = _load_windows_miner()
     miner = module.RustChainMiner("RTC877021895fd29d034f35c87e1b37af8534703792")
