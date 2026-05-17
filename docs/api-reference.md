@@ -588,11 +588,12 @@ curl -sk https://rustchain.org/wallet/swap-info
 **Response**:
 ```json
 {
-  "rtc_price_usd": 0.10,
-  "wrtc_solana_mint": "12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X",
-  "wrtc_base_contract": "0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6",
-  "raydium_pool": "8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb",
-  "bridge_url": "https://bottube.ai/bridge/wrtc"
+  "aerodrome_pool": "0x4C2A0b915279f0C22EA766D58F9B815Ded2d2A3F",
+  "network": "Base (eip155:8453)",
+  "reference_price_usd": 0.1,
+  "swap_url": "https://aerodrome.finance/swap?from=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913&to=0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6",
+  "usdc_contract": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+  "wrtc_contract": "0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6"
 }
 ```
 
