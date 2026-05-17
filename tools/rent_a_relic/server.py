@@ -57,6 +57,31 @@ def _get_json_object_or_empty() -> dict:
     return data
 
 
+def _string_field(data: dict, name: str) -> str:
+    value = data.get(name, "")
+    if value is None:
+        value = ""
+    if not isinstance(value, str):
+        abort(400, description=f"{name} must be a string")
+    return value.strip()
+
+
+def _duration_field(data: dict) -> int | None:
+    value = data.get("duration_hours")
+    if isinstance(value, bool) or not isinstance(value, int):
+        abort(400, description=f"duration_hours must be one of {sorted(VALID_DURATIONS_HOURS)}")
+    return value
+
+
+def _positive_number_field(data: dict, name: str) -> int | float | None:
+    value = data.get(name)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        abort(400, description=f"{name} must be a positive number")
+    if value <= 0:
+        abort(400, description=f"{name} must be a positive number")
+    return value
+
+
 def _require_admin_key() -> None:
     """Require the shared RustChain admin key for escrow-releasing actions."""
     expected_key = os.environ.get("RC_ADMIN_KEY", "")
@@ -249,10 +274,10 @@ def post_reserve():
     """Reserve a machine and lock RTC in escrow."""
     data = _get_json_object_or_empty()
 
-    agent_id       = data.get("agent_id", "").strip()
-    machine_id     = data.get("machine_id", "").strip()
-    duration_hours = data.get("duration_hours")
-    rtc_amount     = data.get("rtc_amount")
+    agent_id       = _string_field(data, "agent_id")
+    machine_id     = _string_field(data, "machine_id")
+    duration_hours = _duration_field(data)
+    rtc_amount     = _positive_number_field(data, "rtc_amount")
 
     if not agent_id:
         abort(400, description="agent_id is required")
@@ -260,8 +285,6 @@ def post_reserve():
         abort(400, description="machine_id is required")
     if duration_hours not in VALID_DURATIONS_HOURS:
         abort(400, description=f"duration_hours must be one of {sorted(VALID_DURATIONS_HOURS)}")
-    if rtc_amount is None or not isinstance(rtc_amount, (int, float)) or rtc_amount <= 0:
-        abort(400, description="rtc_amount must be a positive number")
 
     machine = MACHINE_REGISTRY.get(machine_id)
     if machine is None:

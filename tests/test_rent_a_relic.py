@@ -243,6 +243,45 @@ class TestReservationFlow:
         assert resp.status_code == 400
         assert resp.json["error"] == "JSON object required"
 
+    def test_reserve_rejects_non_string_agent_id(self, app):
+        resp = app.post("/relic/reserve", json={
+            "agent_id": ["agent"],
+            "machine_id": "g3-beige",
+            "duration_hours": 1,
+            "rtc_amount": 4.0,
+        })
+        assert resp.status_code == 400
+        assert resp.json["error"] == "agent_id must be a string"
+
+    def test_reserve_rejects_non_string_machine_id(self, app):
+        resp = app.post("/relic/reserve", json={
+            "agent_id": "agent",
+            "machine_id": ["g3-beige"],
+            "duration_hours": 1,
+            "rtc_amount": 4.0,
+        })
+        assert resp.status_code == 400
+        assert resp.json["error"] == "machine_id must be a string"
+
+    def test_reserve_rejects_boolean_duration_and_amount(self, app):
+        duration_resp = app.post("/relic/reserve", json={
+            "agent_id": "agent",
+            "machine_id": "g3-beige",
+            "duration_hours": True,
+            "rtc_amount": 4.0,
+        })
+        assert duration_resp.status_code == 400
+        assert "duration_hours must be one of" in duration_resp.json["error"]
+
+        amount_resp = app.post("/relic/reserve", json={
+            "agent_id": "agent",
+            "machine_id": "g3-beige",
+            "duration_hours": 1,
+            "rtc_amount": True,
+        })
+        assert amount_resp.status_code == 400
+        assert amount_resp.json["error"] == "rtc_amount must be a positive number"
+
     def test_unknown_machine_returns_404(self, app):
         resp = app.post("/relic/reserve", json={
             "agent_id": "a", "machine_id": "nonexistent",
