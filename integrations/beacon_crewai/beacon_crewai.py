@@ -33,10 +33,57 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-from beacon_skill import AgentIdentity, HeartbeatManager
-from beacon_skill.codec import encode_envelope, decode_envelopes, verify_envelope
-from beacon_skill.contracts import ContractManager
-from beacon_skill.transports.udp import udp_listen, udp_send
+try:
+    from beacon_skill import AgentIdentity, HeartbeatManager
+    from beacon_skill.codec import encode_envelope, decode_envelopes, verify_envelope
+    from beacon_skill.contracts import ContractManager
+    from beacon_skill.transports.udp import udp_listen, udp_send
+    BEACON_SKILL_AVAILABLE = True
+except ImportError:
+    BEACON_SKILL_AVAILABLE = False
+
+    @dataclass
+    class AgentIdentity:
+        agent_id: str = "fallback-agent"
+        pubkey: bytes = b"\0" * 32
+
+        @classmethod
+        def generate(cls, use_mnemonic: bool = False) -> "AgentIdentity":
+            return cls()
+
+    class HeartbeatManager:
+        def __init__(self, data_dir: str):
+            self.data_dir = data_dir
+
+        def build_heartbeat(self, identity: AgentIdentity, **kwargs) -> Dict[str, Any]:
+            return {
+                "agent_id": identity.agent_id,
+                "status": kwargs.get("status", "alive"),
+                "health": kwargs.get("health", {}),
+                "config": kwargs.get("config", {}),
+            }
+
+    class ContractManager:
+        def __init__(self, data_dir: str):
+            self.data_dir = data_dir
+
+        def list_agent(self, **kwargs) -> Dict[str, Any]:
+            return {"error": "beacon_skill package not installed"}
+
+    def encode_envelope(payload: Dict[str, Any], **kwargs) -> str:
+        return json.dumps(payload)
+
+    def decode_envelopes(text: str) -> List[str]:
+        return [text] if text else []
+
+    def verify_envelope(envelope: str, known_keys: Optional[Dict[str, str]] = None) -> Optional[Dict[str, str]]:
+        return None
+
+    def udp_send(host: str, port: int, data: bytes, broadcast: bool = False) -> None:
+        return None
+
+    def udp_listen(host: str, port: int, callback: Callable[[Any], None], timeout_s: float = 5.0) -> None:
+        return None
 
 # Optional CrewAI import (graceful degradation)
 try:

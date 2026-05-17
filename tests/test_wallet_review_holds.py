@@ -1,6 +1,7 @@
 import sqlite3
 import sys
 import uuid
+import os
 from pathlib import Path
 
 import pytest
@@ -134,6 +135,7 @@ def client(monkeypatch):
     monkeypatch.setattr(integrated_node, "current_slot", lambda: 12345)
     monkeypatch.setattr(integrated_node, "slot_to_epoch", lambda slot: 85)
     monkeypatch.setattr(integrated_node, "HAVE_REPLAY_DEFENSE", False, raising=False)
+    monkeypatch.setenv("RC_ADMIN_KEY", "0" * 32)
     integrated_node.init_db()
 
     integrated_node.app.config["TESTING"] = True
@@ -227,7 +229,7 @@ def test_wallet_review_ui_lists_entries_and_accepts_query_admin_key(client):
         )
         conn.commit()
 
-    response = test_client.get("/admin/wallet-review-holds/ui?admin_key=" + ("0" * 32))
+    response = test_client.get("/admin/wallet-review-holds/ui", headers={"X-Admin-Key": os.environ["RC_ADMIN_KEY"]})
 
     assert response.status_code == 200
     html = response.get_data(as_text=True)
@@ -249,7 +251,7 @@ def test_admin_operator_ui_links_to_wallet_review_surface(client):
         )
         conn.commit()
 
-    response = test_client.get("/admin/ui?admin_key=" + ("0" * 32))
+    response = test_client.get("/admin/ui", headers={"X-Admin-Key": os.environ["RC_ADMIN_KEY"]})
 
     assert response.status_code == 200
     html = response.get_data(as_text=True)

@@ -4717,6 +4717,7 @@ def admin_wallet_review_holds_ui():
 
     # session_id used for navigation links (no admin key in URLs)
     sid = getattr(request, '_admin_session_id', '') or secrets.token_hex(16)
+    admin_key = ""
     active_status = str(request.values.get("status") or "").strip().lower()
 
     if request.method == 'POST':

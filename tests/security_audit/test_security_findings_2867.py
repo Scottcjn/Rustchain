@@ -30,6 +30,28 @@ sys.path.insert(0, _node_dir)
 # arguments and use absolute paths from tempfile.mkstemp().
 
 
+def _function_lines(lines, function_name):
+    """Return source lines for a top-level method/function without brittle offsets."""
+    start = None
+    indent = None
+    for index, line in enumerate(lines):
+        stripped = line.lstrip()
+        if stripped.startswith(f"def {function_name}("):
+            start = index
+            indent = len(line) - len(stripped)
+            break
+    assert start is not None, f"{function_name} should exist"
+
+    end = len(lines)
+    for index in range(start + 1, len(lines)):
+        stripped = lines[index].lstrip()
+        current_indent = len(lines[index]) - len(stripped)
+        if stripped.startswith("def ") and current_indent <= indent:
+            end = index
+            break
+    return list(enumerate(lines[start:end], start + 1))
+
+
 # ============================================================
 # FINDING 1 (CRITICAL): manage_tx undefined in mempool_add()
 # File: node/utxo_db.py, lines 687, 698, 707, 714, 736, 742, 775
@@ -53,23 +75,19 @@ def test_mempool_add_manage_tx_undefined():
                            '..', '..', 'node', 'utxo_db.py')) as f:
         lines = f.readlines()
 
+    apply_transaction_lines = _function_lines(lines, "apply_transaction")
+    mempool_add_lines = _function_lines(lines, "mempool_add")
+
     # apply_transaction defines manage_tx based on conn ownership
-    found_define = False
-    for i, line in enumerate(lines[350:400], 351):
-        if 'manage_tx = ' in line and 'own' in line:
-            found_define = True
-            break
+    found_define = any('manage_tx = ' in line and 'own' in line for _, line in apply_transaction_lines)
 
     # mempool_add MUST now define manage_tx (#2812 fix)
-    in_mempool_add = False
     mempool_refs = []
     mempool_define = False
-    for i, line in enumerate(lines[647:790], 648):
-        if 'def mempool_add' in line:
-            in_mempool_add = True
-        if in_mempool_add and line.strip().startswith('manage_tx = '):
+    for i, line in mempool_add_lines:
+        if line.strip().startswith('manage_tx = '):
             mempool_define = True
-        if in_mempool_add and 'manage_tx' in line:
+        if 'manage_tx' in line:
             mempool_refs.append((i, line.strip()))
 
     assert found_define, "apply_transaction should define manage_tx"
@@ -115,6 +133,7 @@ def test_pncounter_max_merge_inflation():
     sys.modules['bcos_directory'].get_bcos_dir = lambda: None
     sys.modules['ed25519_config'] = types.ModuleType('ed25519_config')
     sys.modules['ed25519_config'].load_ed25519_config = lambda: (None, None)
+    os.environ.setdefault("RC_P2P_SECRET", "0" * 64)
     
     from rustchain_p2p_gossip import PNCounter
     
