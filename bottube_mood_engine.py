@@ -912,9 +912,10 @@ class MoodEngine:
 
 
 # ─── Flask Blueprint ─────────────────────────────────────────────────────────── #
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 
 mood_bp = Blueprint("bottube_mood", __name__, url_prefix="/api/v1/agents")
+MOOD_SERVICE_ERROR = "Mood service unavailable"
 
 
 def get_mood_engine() -> MoodEngine:
@@ -936,6 +937,11 @@ def _get_json_object(allow_empty: bool = False):
     if not isinstance(data, dict):
         return None, (jsonify({"error": "JSON object required"}), 400)
     return data, None
+
+
+def _mood_service_error_response():
+    current_app.logger.exception("BoTTube mood service failure")
+    return jsonify({"error": MOOD_SERVICE_ERROR}), 500
 
 
 @mood_bp.route("/<agent_name>/mood", methods=["GET"])
@@ -960,8 +966,8 @@ def get_agent_mood_endpoint(agent_name: str):
 
         return jsonify(mood_info)
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        return _mood_service_error_response()
 
 
 @mood_bp.route("/<agent_name>/mood/signal", methods=["POST"])
@@ -992,8 +998,8 @@ def record_mood_signal(agent_name: str):
         result = engine.record_signal(agent_name, signal_type, value, weight)
         return jsonify(result)
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        return _mood_service_error_response()
 
 
 @mood_bp.route("/<agent_name>/mood/title", methods=["POST"])
@@ -1022,8 +1028,8 @@ def generate_mood_title(agent_name: str):
             "current_mood": engine.get_agent_mood(agent_name)["current_mood"],
         })
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        return _mood_service_error_response()
 
 
 @mood_bp.route("/<agent_name>/mood/comment", methods=["POST"])
@@ -1051,8 +1057,8 @@ def generate_mood_comment(agent_name: str):
             "current_mood": engine.get_agent_mood(agent_name)["current_mood"],
         })
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        return _mood_service_error_response()
 
 
 @mood_bp.route("/<agent_name>/mood/post-probability", methods=["GET"])
@@ -1074,8 +1080,8 @@ def get_post_probability(agent_name: str):
             "current_mood": engine.get_agent_mood(agent_name)["current_mood"],
         })
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        return _mood_service_error_response()
 
 
 @mood_bp.route("/<agent_name>/mood/statistics", methods=["GET"])
@@ -1090,8 +1096,8 @@ def get_mood_statistics_endpoint(agent_name: str):
         stats = engine.get_mood_statistics(agent_name)
         return jsonify(stats)
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        return _mood_service_error_response()
 
 
 def init_mood_routes(app):

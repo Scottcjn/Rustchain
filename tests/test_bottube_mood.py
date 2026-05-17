@@ -566,6 +566,7 @@ class TestMoodBlueprintJsonValidation(unittest.TestCase):
         app.config["TESTING"] = True
         app.config["DB_PATH"] = self.temp_db.name
         app.register_blueprint(mood_bp)
+        self.app = app
         self.client = app.test_client()
 
     def tearDown(self):
@@ -633,6 +634,39 @@ class TestMoodBlueprintJsonValidation(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("generated_comment", response.get_json())
+
+    def test_mood_routes_redact_internal_engine_errors(self):
+        leaked = (
+            "sqlite3.OperationalError: no such table: agent_mood_history "
+            "at /srv/rustchain/private/mood.db token=super-secret"
+        )
+        routes = [
+            ("GET", "/api/v1/agents/test-agent/mood", None),
+            ("POST", "/api/v1/agents/test-agent/mood/signal", {"signal_type": "video_views"}),
+            ("POST", "/api/v1/agents/test-agent/mood/title", {"topic": "status"}),
+            ("POST", "/api/v1/agents/test-agent/mood/comment", {"base_comment": "hello"}),
+            ("GET", "/api/v1/agents/test-agent/mood/post-probability", None),
+            ("GET", "/api/v1/agents/test-agent/mood/statistics", None),
+        ]
+
+        with patch("bottube_mood_engine.get_mood_engine", side_effect=RuntimeError(leaked)):
+            self.app.logger.exception = MagicMock()
+
+            for method, route, payload in routes:
+                with self.subTest(route=route):
+                    if method == "GET":
+                        response = self.client.get(route)
+                    else:
+                        response = self.client.post(route, json=payload)
+
+                    self.assertEqual(response.status_code, 500)
+                    self.assertEqual(response.get_json()["error"], "Mood service unavailable")
+                    rendered = response.get_data(as_text=True)
+                    self.assertNotIn("agent_mood_history", rendered)
+                    self.assertNotIn("/srv/rustchain/private/mood.db", rendered)
+                    self.assertNotIn("super-secret", rendered)
+
+        self.assertEqual(self.app.logger.exception.call_count, len(routes))
 
 
 def run_demo():
