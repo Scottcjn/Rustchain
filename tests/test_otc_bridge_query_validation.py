@@ -82,6 +82,59 @@ def test_orders_accepts_capped_limit(tmp_path):
     assert response.get_json()["ok"] is True
 
 
+def test_create_order_rejects_non_object_json(tmp_path):
+    otc_bridge = load_otc_bridge(tmp_path)
+
+    with otc_bridge.app.test_client() as client:
+        response = client.post("/api/orders", json=["not-an-object"])
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "JSON object required"}
+
+
+def test_create_order_rejects_non_integer_ttl(tmp_path):
+    otc_bridge = load_otc_bridge(tmp_path)
+
+    with otc_bridge.app.test_client() as client:
+        for ttl_seconds in ("abc", "1.5", 1.5, True):
+            response = client.post(
+                "/api/orders",
+                json={
+                    "side": "buy",
+                    "pair": "RTC/USDC",
+                    "wallet": "buyer-1",
+                    "amount_rtc": 1,
+                    "price_per_rtc": "0.10",
+                    "ttl_seconds": ttl_seconds,
+                },
+            )
+
+            assert response.status_code == 400
+            assert response.get_json() == {"error": "ttl_seconds must be an integer"}
+
+
+def test_create_order_accepts_valid_buy_with_ttl(tmp_path):
+    otc_bridge = load_otc_bridge(tmp_path)
+
+    with otc_bridge.app.test_client() as client:
+        response = client.post(
+            "/api/orders",
+            json={
+                "side": "buy",
+                "pair": "RTC/USDC",
+                "wallet": "buyer-1",
+                "amount_rtc": 1,
+                "price_per_rtc": "0.10",
+                "ttl_seconds": "7200",
+            },
+        )
+
+    body = response.get_json()
+    assert response.status_code == 201
+    assert body["ok"] is True
+    assert body["expires_in_hours"] == 2.0
+
+
 def test_trades_rejects_bad_limits(tmp_path):
     otc_bridge = load_otc_bridge(tmp_path)
 

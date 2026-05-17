@@ -299,6 +299,25 @@ def non_negative_int_arg(name, default):
     return value, None
 
 
+def parse_ttl_seconds(data):
+    raw_value = data.get("ttl_seconds", ORDER_TTL_DEFAULT)
+
+    if isinstance(raw_value, bool):
+        return None, "ttl_seconds must be an integer"
+
+    if isinstance(raw_value, int):
+        value = raw_value
+    elif isinstance(raw_value, str):
+        stripped_value = raw_value.strip()
+        if not stripped_value.lstrip("+-").isdigit():
+            return None, "ttl_seconds must be an integer"
+        value = int(stripped_value)
+    else:
+        return None, "ttl_seconds must be an integer"
+
+    return min(max(value, 3600), ORDER_TTL_MAX), None
+
+
 def internal_error_response(operation):
     """Log internal exception details without exposing them to clients."""
     log.exception("%s failed", operation)
@@ -430,8 +449,10 @@ def rtc_cancel_escrow(job_id, poster_wallet):
 def create_order():
     """Create a new buy or sell order."""
     data = request.get_json(silent=True)
-    if not data:
+    if data is None:
         return jsonify({"error": "JSON body required"}), 400
+    if not isinstance(data, dict):
+        return jsonify({"error": "JSON object required"}), 400
 
     side = str(data.get("side", "")).strip().lower()
     pair = str(data.get("pair", "RTC/USDC")).strip().upper()
@@ -439,7 +460,9 @@ def create_order():
     amount_rtc = data.get("amount_rtc", 0)
     price_per_rtc = data.get("price_per_rtc", 0)
     maker_eth_address = str(data.get("eth_address", "")).strip()
-    ttl = int(data.get("ttl_seconds", ORDER_TTL_DEFAULT))
+    ttl, ttl_error = parse_ttl_seconds(data)
+    if ttl_error:
+        return jsonify({"error": ttl_error}), 400
 
     # Validation
     if side not in ("buy", "sell"):
@@ -469,7 +492,6 @@ def create_order():
     if price_per_rtc > 1000:
         return jsonify({"error": "price_per_rtc too high (max $1000)"}), 400
 
-    ttl = min(max(ttl, 3600), ORDER_TTL_MAX)
     total_quote_nano = int(
         (amount_dec * price_dec * Decimal(QUOTE_PRICE_SCALE)).to_integral_value(
             rounding=ROUND_HALF_UP
