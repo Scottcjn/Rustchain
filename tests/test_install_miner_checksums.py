@@ -40,5 +40,7 @@ def test_installers_verify_fingerprint_helper_checksum():
         assert 'verify_sum "rustchain_miner.py" "$MINER_SUM"' in script
         assert 'verify_sum "fingerprint_checks.py" "$FINGERPRINT_SUM"' in script
         assert 'curl -fsSL "$CHECKSUM_URL" -o sums' in script
+        assert "(sha256sum \"$file\" 2>/dev/null || shasum -a 256 \"$file\" 2>/dev/null) | cut -d' ' -f1" in script
+        assert "sha256sum \"$file\" 2>/dev/null | cut -d' ' -f1 || shasum" not in script
         assert 'grep "$(basename $FILE)"' not in script
         assert 'curl -sSL "$CHECKSUM_URL" -o sums 2>/dev/null || true' not in script
