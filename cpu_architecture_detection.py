@@ -77,8 +77,8 @@ INTEL_GENERATIONS = {
     "nehalem": {
         "years": (2008, 2010),
         "patterns": [
-            r"Core\(TM\) i[3579]-[789]\d{2}",  # i7-920, i5-750, etc.
-            r"Xeon\(R\).*[EWX]55\d{2}",  # Xeon X5570, W5580, etc.
+            r"Core(?:\(TM\))? i[3579]-(?:[78]\d{2}|9[0-4]\d)(?!\d)",  # i7-920, i5-750, etc.
+            r"Xeon(?:\(R\))?.*[EWX]55\d{2}",  # Xeon X5570, W5580, etc.
         ],
         "base_multiplier": 1.2,
         "description": "Intel Nehalem (1st-gen Core i)"
@@ -86,8 +86,8 @@ INTEL_GENERATIONS = {
     "westmere": {
         "years": (2010, 2011),
         "patterns": [
-            r"Core\(TM\) i[3579]-[89]\d{2}",  # i7-980, i5-880, etc.
-            r"Xeon\(R\).*[EWX]56\d{2}",  # Xeon X5675, etc.
+            r"Core(?:\(TM\))? i[3579]-[89]\d{2}(?!\d)",  # i7-980, i5-880, etc.
+            r"Xeon(?:\(R\))?.*[EWX]56\d{2}",  # Xeon X5675, etc.
         ],
         "base_multiplier": 1.2,
         "description": "Intel Westmere (32nm Nehalem)"
@@ -97,9 +97,9 @@ INTEL_GENERATIONS = {
     "sandy_bridge": {
         "years": (2011, 2012),
         "patterns": [
-            r"Core\(TM\) i[3579]-2\d{3}",  # i7-2600K, i5-2500, etc.
-            r"Xeon\(R\).*E3-12\d{2}(?!\s*v)",  # E3-1230 (no v-suffix)
-            r"Xeon\(R\).*E5-[124]6\d{2}(?!\s*v)",  # E5-1650, E5-2670 (no v-suffix)
+            r"Core(?:\(TM\))? i[3579]-2\d{3}",  # i7-2600K, i5-2500, etc.
+            r"Xeon(?:\(R\))?.*E3-12\d{2}(?!\s*v)",  # E3-1230 (no v-suffix)
+            r"Xeon(?:\(R\))?.*E5-[124]6\d{2}(?!\s*v)",  # E5-1650, E5-2670 (no v-suffix)
         ],
         "base_multiplier": 1.1,
         "description": "Intel Sandy Bridge (2nd-gen Core i)"
@@ -109,10 +109,10 @@ INTEL_GENERATIONS = {
     "ivy_bridge": {
         "years": (2012, 2013),
         "patterns": [
-            r"Core\(TM\) i[3579]-3\d{3}",  # i7-3770K, i5-3570, etc.
-            r"Xeon\(R\).*E3-12\d{2}\s*v2",  # E3-1230 v2
-            r"Xeon\(R\).*E5-[124]6\d{2}\s*v2",  # E5-1650 v2, E5-2670 v2
-            r"Xeon\(R\).*E7-[248]8\d{2}\s*v2",  # E7-4870 v2, E7-8870 v2
+            r"Core(?:\(TM\))? i[3579]-3\d{3}",  # i7-3770K, i5-3570, etc.
+            r"Xeon(?:\(R\))?.*E3-12\d{2}\s*v2",  # E3-1230 v2
+            r"Xeon(?:\(R\))?.*E5-[124]6\d{2}\s*v2",  # E5-1650 v2, E5-2670 v2
+            r"Xeon(?:\(R\))?.*E7-[248]8\d{2}\s*v2",  # E7-4870 v2, E7-8870 v2
         ],
         "base_multiplier": 1.1,
         "description": "Intel Ivy Bridge (3rd-gen Core i)"
@@ -122,10 +122,10 @@ INTEL_GENERATIONS = {
     "haswell": {
         "years": (2013, 2015),
         "patterns": [
-            r"Core\(TM\) i[3579]-4\d{3}",  # i7-4770K, i5-4590, etc.
-            r"Xeon\(R\).*E3-12\d{2}\s*v3",  # E3-1231 v3
-            r"Xeon\(R\).*E5-[124]6\d{2}\s*v3",  # E5-1650 v3, E5-2680 v3
-            r"Xeon\(R\).*E7-[248]8\d{2}\s*v3",  # E7-4880 v3
+            r"Core(?:\(TM\))? i[3579]-4\d{3}",  # i7-4770K, i5-4590, etc.
+            r"Xeon(?:\(R\))?.*E3-12\d{2}\s*v3",  # E3-1231 v3
+            r"Xeon(?:\(R\))?.*E5-[124]6\d{2}\s*v3",  # E5-1650 v3, E5-2680 v3
+            r"Xeon(?:\(R\))?.*E7-[248]8\d{2}\s*v3",  # E7-4880 v3
         ],
         "base_multiplier": 1.1,
         "description": "Intel Haswell (4th-gen Core i)"
@@ -135,10 +135,10 @@ INTEL_GENERATIONS = {
     "broadwell": {
         "years": (2014, 2015),
         "patterns": [
-            r"Core\(TM\) i[3579]-5\d{3}",  # i7-5775C, i5-5675C
-            r"Xeon\(R\).*E3-12\d{2}\s*v4",  # E3-1240 v4
-            r"Xeon\(R\).*E5-[124]6\d{2}\s*v4",  # E5-2680 v4
-            r"Xeon\(R\).*E7-[248]8\d{2}\s*v4",  # E7-8890 v4
+            r"Core(?:\(TM\))? i[3579]-5\d{3}",  # i7-5775C, i5-5675C
+            r"Xeon(?:\(R\))?.*E3-12\d{2}\s*v4",  # E3-1240 v4
+            r"Xeon(?:\(R\))?.*E5-[124]6\d{2}\s*v4",  # E5-2680 v4
+            r"Xeon(?:\(R\))?.*E7-[248]8\d{2}\s*v4",  # E7-8890 v4
         ],
         "base_multiplier": 1.05,
         "description": "Intel Broadwell (5th-gen Core i)"
@@ -148,9 +148,9 @@ INTEL_GENERATIONS = {
     "skylake": {
         "years": (2015, 2017),
         "patterns": [
-            r"Core\(TM\) i[3579]-6\d{3}",  # i7-6700K, i5-6600K
-            r"Xeon\(R\).*E3-12\d{2}\s*v[56]",  # E3-1230 v5/v6
-            r"Xeon\(R\).*(Gold|Silver|Bronze|Platinum)\s*\d{4}(?!\w)",  # Scalable 1st-gen (no letter suffix)
+            r"Core(?:\(TM\))? i[3579]-6\d{3}",  # i7-6700K, i5-6600K
+            r"Xeon(?:\(R\))?.*E3-12\d{2}\s*v[56]",  # E3-1230 v5/v6
+            r"Xeon(?:\(R\))?.*(Gold|Silver|Bronze|Platinum)\s*\d{4}(?!\w)",  # Scalable 1st-gen (no letter suffix)
         ],
         "base_multiplier": 1.05,
         "description": "Intel Skylake (6th-gen Core i / Xeon Scalable 1st-gen)"
@@ -160,7 +160,7 @@ INTEL_GENERATIONS = {
     "kaby_lake": {
         "years": (2016, 2018),
         "patterns": [
-            r"Core\(TM\) i[3579]-7\d{3}",  # i7-7700K, i5-7600K
+            r"Core(?:\(TM\))? i[3579]-7\d{3}",  # i7-7700K, i5-7600K
         ],
         "base_multiplier": 1.0,
         "description": "Intel Kaby Lake (7th-gen Core i)"
@@ -170,7 +170,7 @@ INTEL_GENERATIONS = {
     "coffee_lake": {
         "years": (2017, 2019),
         "patterns": [
-            r"Core\(TM\) i[3579]-[89]\d{3}",  # i7-8700K, i9-9900K
+            r"Core(?:\(TM\))? i[3579]-[89]\d{3}",  # i7-8700K, i9-9900K
         ],
         "base_multiplier": 1.0,
         "description": "Intel Coffee Lake (8th/9th-gen Core i)"
@@ -180,7 +180,7 @@ INTEL_GENERATIONS = {
     "cascade_lake": {
         "years": (2019, 2020),
         "patterns": [
-            r"Xeon\(R\).*(Gold|Silver|Bronze|Platinum)\s*\d{4}[A-Z]",  # Scalable 2nd-gen (letter suffix)
+            r"Xeon(?:\(R\))?.*(Gold|Silver|Bronze|Platinum)\s*[0-5]\d{3}[A-Z]",  # Scalable 2nd-gen (letter suffix)
         ],
         "base_multiplier": 1.0,
         "description": "Intel Cascade Lake (Xeon Scalable 2nd-gen)"
@@ -190,7 +190,7 @@ INTEL_GENERATIONS = {
     "comet_lake": {
         "years": (2020, 2020),
         "patterns": [
-            r"Core\(TM\) i[3579]-10\d{3}",  # i7-10700K, i9-10900K
+            r"Core(?:\(TM\))? i[3579]-10\d{3}",  # i7-10700K, i9-10900K
         ],
         "base_multiplier": 1.0,
         "description": "Intel Comet Lake (10th-gen Core i)"
@@ -200,7 +200,7 @@ INTEL_GENERATIONS = {
     "rocket_lake": {
         "years": (2021, 2021),
         "patterns": [
-            r"Core\(TM\) i[3579]-11\d{3}",  # i7-11700K, i9-11900K
+            r"Core(?:\(TM\))? i[3579]-11\d{3}",  # i7-11700K, i9-11900K
         ],
         "base_multiplier": 1.0,
         "description": "Intel Rocket Lake (11th-gen Core i)"
@@ -210,8 +210,8 @@ INTEL_GENERATIONS = {
     "alder_lake": {
         "years": (2021, 2022),
         "patterns": [
-            r"Core\(TM\) i[3579]-12\d{3}",  # i7-12700K, i9-12900K
-            r"Core\(TM\) [3579]\s*12\d{3}",  # New naming: Core 5 12600K
+            r"Core(?:\(TM\))? i[3579]-12\d{3}",  # i7-12700K, i9-12900K
+            r"Core(?:\(TM\))? [3579]\s*12\d{3}",  # New naming: Core 5 12600K
         ],
         "base_multiplier": 1.0,
         "description": "Intel Alder Lake (12th-gen Core i)"
@@ -221,8 +221,8 @@ INTEL_GENERATIONS = {
     "raptor_lake": {
         "years": (2022, 2024),
         "patterns": [
-            r"Core\(TM\) i[3579]-1[34]\d{3}",  # i7-13700K, i9-14900K
-            r"Core\(TM\) [3579]\s*1[34]\d{3}",  # New naming
+            r"Core(?:\(TM\))? i[3579]-1[34]\d{3}",  # i7-13700K, i9-14900K
+            r"Core(?:\(TM\))? [3579]\s*1[34]\d{3}",  # New naming
         ],
         "base_multiplier": 1.0,
         "description": "Intel Raptor Lake (13th/14th-gen Core i)"
@@ -232,7 +232,7 @@ INTEL_GENERATIONS = {
     "sapphire_rapids": {
         "years": (2023, 2024),
         "patterns": [
-            r"Xeon\(R\).*(Gold|Silver|Bronze|Platinum)\s*[89]\d{3}",  # Scalable 4th-gen (8xxx/9xxx)
+            r"Xeon(?:\(R\))?.*(Gold|Silver|Bronze|Platinum)\s*\d{4}R",  # Scalable 4th-gen refresh suffix
         ],
         "base_multiplier": 1.0,
         "description": "Intel Sapphire Rapids (Xeon Scalable 4th-gen)"
@@ -242,7 +242,7 @@ INTEL_GENERATIONS = {
     "meteor_lake": {
         "years": (2023, 2024),
         "patterns": [
-            r"Core\(TM\) Ultra\s*[579]",  # Core Ultra 5/7/9
+            r"Core(?:\(TM\))? Ultra\s*[579](?!\s*2\d{2})",  # Core Ultra 5/7/9
         ],
         "base_multiplier": 1.0,
         "description": "Intel Meteor Lake (Core Ultra)"
@@ -252,8 +252,8 @@ INTEL_GENERATIONS = {
     "arrow_lake": {
         "years": (2024, 2025),
         "patterns": [
-            r"Core\(TM\) i[3579]-15\d{3}",  # i9-15900K (if released)
-            r"Core\(TM\) Ultra\s*[579]\s*2\d{2}",  # Core Ultra 9 285K
+            r"Core(?:\(TM\))? i[3579]-15\d{3}",  # i9-15900K (if released)
+            r"Core(?:\(TM\))? Ultra\s*[579]\s*2\d{2}",  # Core Ultra 9 285K
         ],
         "base_multiplier": 1.0,
         "description": "Intel Arrow Lake (15th-gen / Core Ultra 2xx)"
@@ -280,10 +280,9 @@ AMD_GENERATIONS = {
     "k7_athlon": {
         "years": (1999, 2005),
         "patterns": [
-            r"AMD Athlon\(tm\)",
+            r"AMD Athlon\(tm\)(?!\s*64)",
             r"AMD Athlon XP",
             r"AMD Duron",
-            r"Athlon 64 X2",  # Early dual-core
         ],
         "base_multiplier": 1.5,
         "description": "AMD K7 (Athlon/Duron)"
@@ -293,9 +292,10 @@ AMD_GENERATIONS = {
     "k8_athlon64": {
         "years": (2003, 2007),
         "patterns": [
-            r"AMD Athlon\(tm\) 64",
+            r"AMD Athlon(?:\(tm\))? 64",
             r"Athlon 64",
             r"Opteron\(tm\)",
+            r"Opteron",
             r"Turion 64",
         ],
         "base_multiplier": 1.5,
@@ -318,7 +318,7 @@ AMD_GENERATIONS = {
     "bulldozer": {
         "years": (2011, 2012),
         "patterns": [
-            r"AMD FX\(tm\)-\d{4}(?!\s*\w)",  # FX-8150, FX-6100 (no suffix)
+            r"AMD FX(?:\(tm\))?-(?:4[01]\d{2}|6[01]\d{2}|8[01]\d{2})(?!\d)",  # FX-8150, FX-6100
         ],
         "base_multiplier": 1.3,
         "description": "AMD Bulldozer (FX 1st-gen)"
@@ -326,7 +326,7 @@ AMD_GENERATIONS = {
     "piledriver": {
         "years": (2012, 2014),
         "patterns": [
-            r"AMD FX\(tm\)-\d{4}\s*[A-Z]",  # FX-8350, FX-6300 (with suffix)
+            r"AMD FX(?:\(tm\))?-(?:43\d{2}|63\d{2}|83\d{2}|9[3-9]\d{2})",  # FX-8350, FX-6300
         ],
         "base_multiplier": 1.3,
         "description": "AMD Piledriver (FX 2nd-gen)"
@@ -334,7 +334,7 @@ AMD_GENERATIONS = {
     "steamroller": {
         "years": (2014, 2015),
         "patterns": [
-            r"AMD A[468]-\d{4}[A-Z]?",  # A10-7850K, A8-7600
+            r"AMD A(?:10|[468])-7\d{3}[A-Z]?",  # A10-7850K, A8-7600
         ],
         "base_multiplier": 1.2,
         "description": "AMD Steamroller (APU)"
@@ -342,7 +342,7 @@ AMD_GENERATIONS = {
     "excavator": {
         "years": (2015, 2016),
         "patterns": [
-            r"AMD A[468]-\d{4}[A-Z]\s*(?:PRO)?",  # A12-9800, A10-9700
+            r"AMD A(?:12|10|[468])-9\d{3}[A-Z]?\s*(?:PRO)?",  # A12-9800, A10-9700
         ],
         "base_multiplier": 1.2,
         "description": "AMD Excavator (APU final Bulldozer)"
@@ -370,7 +370,7 @@ AMD_GENERATIONS = {
         "years": (2019, 2020),
         "patterns": [
             r"AMD Ryzen\s*[3579]\s*3\d{3}",  # Ryzen 9 3900X, Ryzen 7 3700X
-            r"EPYC 7[2-4]\d{2}",  # EPYC 7002 series (Rome)
+            r"EPYC \d{3}2",  # EPYC 7002 series (Rome)
         ],
         "base_multiplier": 1.05,
         "description": "AMD Zen 2 (Ryzen 3000 / EPYC Rome)"
@@ -379,7 +379,7 @@ AMD_GENERATIONS = {
         "years": (2020, 2022),
         "patterns": [
             r"AMD Ryzen\s*[3579]\s*5\d{3}",  # Ryzen 9 5950X, Ryzen 7 5800X
-            r"EPYC 7[3-5]\d{2}",  # EPYC 7003 series (Milan)
+            r"EPYC \d{3}3",  # EPYC 7003 series (Milan)
         ],
         "base_multiplier": 1.0,
         "description": "AMD Zen 3 (Ryzen 5000 / EPYC Milan)"
@@ -389,8 +389,7 @@ AMD_GENERATIONS = {
         "patterns": [
             r"AMD Ryzen\s*[3579]\s*7\d{3}",  # Ryzen 9 7950X, Ryzen 7 7700X
             r"AMD Ryzen\s*[3579]\s*8\d{3}",  # Ryzen 5 8645HS (mobile Zen4)
-            r"EPYC 9[0-4]\d{2}",  # EPYC 9004 series (Genoa)
-            r"EPYC 8[0-4]\d{2}",  # EPYC 8004 series (Siena)
+            r"EPYC \d{3}4",  # EPYC 9004/8004 series (Genoa/Siena)
         ],
         "base_multiplier": 1.0,
         "description": "AMD Zen 4 (Ryzen 7000/8000 / EPYC Genoa)"
@@ -399,7 +398,7 @@ AMD_GENERATIONS = {
         "years": (2024, 2025),
         "patterns": [
             r"AMD Ryzen\s*[3579]\s*9\d{3}",  # Ryzen 9 9950X, Ryzen 7 9700X
-            r"EPYC 9[5-9]\d{2}",  # EPYC 9005 series (Turin)
+            r"EPYC \d{3}5",  # EPYC 9005 series (Turin)
         ],
         "base_multiplier": 1.0,
         "description": "AMD Zen 5 (Ryzen 9000 / EPYC Turin)"
@@ -600,36 +599,32 @@ def detect_cpu_architecture(brand_string: str) -> Tuple[str, str, int, bool]:
             if re.search(pattern, brand_string, re.IGNORECASE):
                 return ("apple", arch_name, arch_info["years"][0], False)
 
-    # Check Intel CPUs (order matters - check specific patterns first)
+    # Check Intel CPUs (order matters - check specific patterns first). Some
+    # OS brand strings omit the vendor while still using Intel product names.
+    is_server = bool(re.search(r"Xeon", brand_string, re.IGNORECASE))
+    for arch_name, arch_info in INTEL_GENERATIONS.items():
+        if arch_name == "modern_intel":
+            continue  # Skip fallback for now
+
+        for pattern in arch_info["patterns"]:
+            if re.search(pattern, brand_string, re.IGNORECASE):
+                return ("intel", arch_name, arch_info["years"][0], is_server)
+
     if re.search(r"Intel", brand_string, re.IGNORECASE):
-        # Check server patterns first (Xeon)
-        is_server = bool(re.search(r"Xeon", brand_string, re.IGNORECASE))
-
-        for arch_name, arch_info in INTEL_GENERATIONS.items():
-            if arch_name == "modern_intel":
-                continue  # Skip fallback for now
-
-            for pattern in arch_info["patterns"]:
-                if re.search(pattern, brand_string, re.IGNORECASE):
-                    return ("intel", arch_name, arch_info["years"][0], is_server)
-
-        # Fallback to modern Intel
         return ("intel", "modern_intel", 2020, is_server)
 
-    # Check AMD CPUs (order matters - check specific patterns first)
+    # Check AMD CPUs (order matters - check specific patterns first). Opteron
+    # and EPYC strings may omit the AMD vendor prefix.
+    is_server = bool(re.search(r"EPYC|Opteron", brand_string, re.IGNORECASE))
+    for arch_name, arch_info in AMD_GENERATIONS.items():
+        if arch_name == "modern_amd":
+            continue  # Skip fallback for now
+
+        for pattern in arch_info["patterns"]:
+            if re.search(pattern, brand_string, re.IGNORECASE):
+                return ("amd", arch_name, arch_info["years"][0], is_server)
+
     if re.search(r"AMD", brand_string, re.IGNORECASE):
-        # Check server patterns first (EPYC, Opteron)
-        is_server = bool(re.search(r"EPYC|Opteron", brand_string, re.IGNORECASE))
-
-        for arch_name, arch_info in AMD_GENERATIONS.items():
-            if arch_name == "modern_amd":
-                continue  # Skip fallback for now
-
-            for pattern in arch_info["patterns"]:
-                if re.search(pattern, brand_string, re.IGNORECASE):
-                    return ("amd", arch_name, arch_info["years"][0], is_server)
-
-        # Fallback to modern AMD
         return ("amd", "modern_amd", 2020, is_server)
 
     # Unknown CPU - assume modern
@@ -687,15 +682,15 @@ def calculate_antiquity_multiplier(
     elif vendor == "riscv":
         base_multiplier = RISC_V_ARCHITECTURES[architecture]["base_multiplier"]
 
-    # Apply time decay for vintage hardware (>5 years old)
-    # Decay formula: aged = 1.0 + (base - 1.0) * (1 - 0.15 * years_since_genesis)
-    # Full decay after ~6.67 years (vintage bonus → 0, then multiplier = 1.0)
+    # Apply a slow time decay for vintage hardware (>5 years old). The bonus
+    # should taper enough to reward newer vintage devices more, but not erase
+    # the preservation incentive for PowerPC-era hardware.
     final_multiplier = base_multiplier
 
     if hardware_age > 5 and base_multiplier > 1.0:
         # Calculate chain age (in RustChain context, use genesis timestamp)
         # For now, use hardware age as proxy
-        decay_factor = max(0.0, 1.0 - (0.15 * (hardware_age - 5) / 5.0))
+        decay_factor = max(0.0, 1.0 - (0.03 * (hardware_age - 5) / 5.0))
         vintage_bonus = base_multiplier - 1.0
         final_multiplier = 1.0 + (vintage_bonus * decay_factor)
 
