@@ -50,14 +50,14 @@ Implemented metrics:
 - `/api/hall_of_fame`
 - `/api/fee_pool`
 - `/api/stats`
-- `/p2p/health` from `P2P_NODE_URL`
+- `/p2p/health` from `P2P_NODE_URL` when configured
 
 ## Configuration
 
 Environment variables:
 
 - `NODE_URL` (default: `https://rustchain.org`)
-- `P2P_NODE_URL` (default: `https://50.28.86.131`, the public node currently exposing `/p2p/health`)
+- `P2P_NODE_URL` (default: unset; set this to a certificate-valid node base URL that exposes `/p2p/health`)
 - `EXPORTER_PORT` (default: `9100`)
 - `SCRAPE_INTERVAL` (default: `60`)
 - `REQUEST_TIMEOUT` (default: `15`)

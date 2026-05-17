@@ -10,7 +10,7 @@ import requests
 from prometheus_client import Gauge, start_http_server
 
 NODE_URL = os.getenv("NODE_URL", "https://rustchain.org").rstrip("/")
-P2P_NODE_URL = os.getenv("P2P_NODE_URL", "https://50.28.86.131").rstrip("/")
+P2P_NODE_URL = os.getenv("P2P_NODE_URL", "").rstrip("/")
 EXPORTER_PORT = int(os.getenv("EXPORTER_PORT", "9100"))
 SCRAPE_INTERVAL = int(os.getenv("SCRAPE_INTERVAL", "60"))
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "15"))
@@ -291,6 +291,17 @@ def collect_stats() -> None:
 
 
 def collect_p2p() -> None:
+    if not P2P_NODE_URL:
+        logger.info("skipping P2P scrape because P2P_NODE_URL is not configured")
+        rustchain_p2p_up.set(0)
+        rustchain_p2p_peer_count.set(0)
+        rustchain_p2p_attestation_count.set(0)
+        rustchain_p2p_settled_epochs.set(0)
+        rustchain_p2p_message_rate_per_second.set(0)
+        rustchain_p2p_messages_total.set(0)
+        rustchain_p2p_health_latency_seconds.set(0)
+        return
+
     start = time.time()
     payload = fetch_json("/p2p/health", P2P_NODE_URL)
     rustchain_p2p_health_latency_seconds.set(time.time() - start)

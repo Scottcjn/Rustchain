@@ -151,6 +151,7 @@ def test_collect_hall_of_fame_fee_pool_and_stats_fallbacks():
 
 def test_collect_p2p_exports_health_metrics():
     module = load_module()
+    module.P2P_NODE_URL = "https://p2p.rustchain.example"
 
     with (
         patch.object(module, "fetch_json", return_value={
@@ -175,8 +176,26 @@ def test_collect_p2p_exports_health_metrics():
     assert module.rustchain_p2p_health_latency_seconds._value.get() == 0.25
 
 
+def test_collect_p2p_skips_when_endpoint_not_configured():
+    module = load_module()
+
+    with patch.object(module, "fetch_json") as fetch_json:
+        module.collect_p2p()
+
+    fetch_json.assert_not_called()
+    assert module.P2P_NODE_URL == ""
+    assert module.rustchain_p2p_up._value.get() == 0
+    assert module.rustchain_p2p_peer_count._value.get() == 0
+    assert module.rustchain_p2p_attestation_count._value.get() == 0
+    assert module.rustchain_p2p_settled_epochs._value.get() == 0
+    assert module.rustchain_p2p_message_rate_per_second._value.get() == 0
+    assert module.rustchain_p2p_messages_total._value.get() == 0
+    assert module.rustchain_p2p_health_latency_seconds._value.get() == 0
+
+
 def test_collect_p2p_zeros_metrics_when_endpoint_unavailable():
     module = load_module()
+    module.P2P_NODE_URL = "https://p2p.rustchain.example"
 
     with (
         patch.object(module, "fetch_json", return_value=None),
