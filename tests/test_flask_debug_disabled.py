@@ -11,8 +11,13 @@ PUBLIC_FLASK_ENTRYPOINTS = [
     ROOT / "explorer" / "app.py",
     ROOT / "faucet_service" / "faucet_service.py",
     ROOT / "keeper_explorer.py",
+    ROOT / "profile_badge_generator.py",
     ROOT / "security_test_payment_widget.py",
 ]
+
+LOCAL_POC_DEBUG_HARNESSES = {
+    "xss_poc_templates.py",
+}
 
 
 def is_debug_subscript(node):
@@ -45,11 +50,32 @@ def debug_true_locations(path):
     return locations
 
 
+def python_sources():
+    skipped_dirs = {".git", ".mypy_cache", ".pytest_cache", "__pycache__", "venv", ".venv"}
+    for path in ROOT.rglob("*.py"):
+        if skipped_dirs.intersection(path.relative_to(ROOT).parts):
+            continue
+        yield path
+
+
 def test_public_flask_entrypoints_do_not_enable_debug_mode():
     failures = {
         str(path.relative_to(ROOT)): debug_true_locations(path)
         for path in PUBLIC_FLASK_ENTRYPOINTS
     }
     failures = {path: locations for path, locations in failures.items() if locations}
+
+    assert failures == {}
+
+
+def test_no_undocumented_flask_debug_true_entrypoints():
+    failures = {}
+    for path in python_sources():
+        relative = str(path.relative_to(ROOT)).replace("\\", "/")
+        if relative in LOCAL_POC_DEBUG_HARNESSES:
+            continue
+        locations = debug_true_locations(path)
+        if locations:
+            failures[relative] = locations
 
     assert failures == {}
