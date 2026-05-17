@@ -69,6 +69,22 @@ def test_fetch_json_returns_payload_and_handles_errors():
         assert module.fetch_json("/health") is None
 
 
+def test_fetch_json_redacts_credentials_from_warning_logs(caplog):
+    module = load_module()
+    credential_url = "https://node-user:super-secret-token@p2p.example.invalid/path?token=abc"
+
+    with (
+        patch.object(module.session, "get", side_effect=RuntimeError("offline")),
+        caplog.at_level("WARNING", logger="rustchain_exporter"),
+    ):
+        assert module.fetch_json("/p2p/health", credential_url) is None
+
+    assert "super-secret-token" not in caplog.text
+    assert "node-user:super-secret-token" not in caplog.text
+    assert "token=abc" not in caplog.text
+    assert "https://p2p.example.invalid" in caplog.text
+
+
 def test_default_p2p_node_url_uses_certificate_valid_hostname():
     module = load_module()
 
@@ -180,6 +196,22 @@ def test_collect_p2p_exports_health_metrics():
     assert module.rustchain_p2p_message_rate_per_second._value.get() == 2.5
     assert module.rustchain_p2p_messages_total._value.get() == 99
     assert module.rustchain_p2p_health_latency_seconds._value.get() == 0.25
+
+
+def test_collect_p2p_uses_peer_count_when_peers_is_null():
+    module = load_module()
+
+    with (
+        patch.object(module, "fetch_json", return_value={
+            "running": True,
+            "peer_count": "7",
+            "peers": None,
+        }),
+        patch.object(module.time, "time", side_effect=[100.0, 100.25]),
+    ):
+        module.collect_p2p()
+
+    assert module.rustchain_p2p_peer_count._value.get() == 7
 
 
 def test_collect_p2p_zeros_metrics_when_endpoint_unavailable():

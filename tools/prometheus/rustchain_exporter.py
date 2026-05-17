@@ -5,6 +5,7 @@ import logging
 import os
 import time
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 import requests
 from prometheus_client import Gauge, start_http_server
@@ -45,6 +46,24 @@ def _to_int(value: Any, default: int = 0) -> int:
         return default
 
 
+def _safe_base_url_for_log(base_url: str) -> str:
+    try:
+        parts = urlsplit(base_url)
+    except ValueError:
+        return "<invalid-url>"
+
+    if not parts.scheme or not parts.hostname:
+        return "<invalid-url>"
+
+    host = parts.hostname
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+    netloc = host
+    if parts.port is not None:
+        netloc = f"{netloc}:{parts.port}"
+    return urlunsplit((parts.scheme, netloc, "", "", ""))
+
+
 def fetch_json(endpoint: str, base_url: str = NODE_URL) -> Any:
     url = f"{base_url}{endpoint}"
     try:
@@ -54,7 +73,7 @@ def fetch_json(endpoint: str, base_url: str = NODE_URL) -> Any:
     except Exception as exc:  # noqa: BLE001
         logger.warning(
             "request failed base_url=%s endpoint=%s error=%s",
-            base_url,
+            _safe_base_url_for_log(base_url),
             endpoint,
             exc,
         )
@@ -298,6 +317,13 @@ def collect_stats() -> None:
         rustchain_balance_rtc.labels(miner=miner).set(balance)
 
 
+def _p2p_peer_count(payload: dict[str, Any]) -> int:
+    if payload.get("peer_count") is not None:
+        return _to_int(payload.get("peer_count"))
+    peers = payload.get("peers")
+    return len(peers) if isinstance(peers, list) else 0
+
+
 def collect_p2p() -> None:
     start = time.time()
     payload = fetch_json("/p2p/health", P2P_NODE_URL)
@@ -313,9 +339,7 @@ def collect_p2p() -> None:
         return
 
     rustchain_p2p_up.set(1 if payload.get("running", True) else 0)
-    rustchain_p2p_peer_count.set(
-        _to_float(payload.get("peer_count", len(payload.get("peers", []))))
-    )
+    rustchain_p2p_peer_count.set(_p2p_peer_count(payload))
     rustchain_p2p_attestation_count.set(_to_float(payload.get("attestation_count", 0)))
     rustchain_p2p_settled_epochs.set(_to_float(payload.get("settled_epochs", 0)))
     rustchain_p2p_message_rate_per_second.set(
