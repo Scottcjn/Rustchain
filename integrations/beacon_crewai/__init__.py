@@ -15,7 +15,13 @@ Modules:
 """
 
 try:
-    from .beacon_crewai import BeaconAgent, BeaconConfig, create_beacon_crew
+    from .beacon_crewai import (
+        BEACON_SKILL_AVAILABLE,
+        CREWAI_AVAILABLE,
+        BeaconAgent,
+        BeaconConfig,
+        create_beacon_crew,
+    )
     from .beacon_langgraph import (
         BeaconNode,
         BeaconConfig as LangGraphBeaconConfig,
@@ -24,7 +30,13 @@ try:
         create_beacon_tools,
     )
 except ImportError:
-    from beacon_crewai import BeaconAgent, BeaconConfig, create_beacon_crew
+    from beacon_crewai import (
+        BEACON_SKILL_AVAILABLE,
+        CREWAI_AVAILABLE,
+        BeaconAgent,
+        BeaconConfig,
+        create_beacon_crew,
+    )
     from beacon_langgraph import (
         BeaconNode,
         BeaconConfig as LangGraphBeaconConfig,
@@ -36,6 +48,8 @@ except ImportError:
 __version__ = "0.1.0"
 __all__ = [
     # CrewAI
+    "BEACON_SKILL_AVAILABLE",
+    "CREWAI_AVAILABLE",
     "BeaconAgent",
     "BeaconConfig",
     "create_beacon_crew",
