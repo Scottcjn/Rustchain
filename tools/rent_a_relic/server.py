@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import math
 import os
 import sqlite3
 import time
@@ -77,7 +78,7 @@ def _positive_number_field(data: dict, name: str) -> int | float | None:
     value = data.get(name)
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         abort(400, description=f"{name} must be a positive number")
-    if value <= 0:
+    if not math.isfinite(value) or value <= 0:
         abort(400, description=f"{name} must be a positive number")
     return value
 

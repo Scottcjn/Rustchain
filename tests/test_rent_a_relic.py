@@ -282,6 +282,17 @@ class TestReservationFlow:
         assert amount_resp.status_code == 400
         assert amount_resp.json["error"] == "rtc_amount must be a positive number"
 
+    @pytest.mark.parametrize("rtc_amount", [float("nan"), float("inf")])
+    def test_reserve_rejects_non_finite_rtc_amount(self, app, rtc_amount):
+        resp = app.post("/relic/reserve", json={
+            "agent_id": "agent",
+            "machine_id": "g3-beige",
+            "duration_hours": 1,
+            "rtc_amount": rtc_amount,
+        })
+        assert resp.status_code == 400
+        assert resp.json["error"] == "rtc_amount must be a positive number"
+
     def test_unknown_machine_returns_404(self, app):
         resp = app.post("/relic/reserve", json={
             "agent_id": "a", "machine_id": "nonexistent",
