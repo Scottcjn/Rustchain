@@ -37,7 +37,7 @@ python faucet_service.py
 python faucet_service.py --config faucet_config.local.yaml
 
 # Run with command-line overrides
-python faucet_service.py --host 0.0.0.0 --port 9000 --debug
+python faucet_service.py --host 0.0.0.0 --port 9000
 ```
 
 The faucet will start at `http://localhost:8090/faucet`
@@ -85,7 +85,7 @@ distribution:
 |--------|---------|-------------|
 | `host` | `0.0.0.0` | Server bind address |
 | `port` | `8090` | Server port |
-| `debug` | `false` | Enable debug mode |
+| `debug` | `false` | Flask debug mode stays disabled |
 | `base_path` | `/faucet` | Base URL path |
 
 #### Rate Limiting
@@ -430,13 +430,9 @@ redis-cli ping
 sqlite3 faucet.db "SELECT * FROM drip_requests LIMIT 5;"
 ```
 
-### Debug Mode
+### Debugging
 
-Enable debug mode for detailed logging:
-
-```bash
-python faucet_service.py --debug
-```
+Use application logs and health endpoints for diagnostics. Flask debug mode stays disabled for service entrypoints.
 
 ## License
 

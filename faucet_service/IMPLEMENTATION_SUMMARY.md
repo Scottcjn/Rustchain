@@ -284,7 +284,7 @@ cd faucet_service
 python3 test_faucet_service.py
 
 # Start the service
-python3 faucet_service.py --debug
+python3 faucet_service.py
 
 # Test API
 curl http://localhost:8090/health
