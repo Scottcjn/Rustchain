@@ -19,13 +19,7 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
         conn.row_factory = sqlite3.Row
         return conn
 
-    def _ensure_json_object(data):
-    """Ensure request JSON body is a dict. Returns (dict, error_response)."""
-    if data is None or not isinstance(data, dict):
-        return {}, (jsonify({"error": "expected JSON object"}), 400)
-    return data, None
-
-def _parse_positive_amount(value):
+    def _parse_positive_amount(value):
         try:
             parsed = float(value)
         except (TypeError, ValueError):
@@ -59,8 +53,6 @@ def _parse_positive_amount(value):
     @app.route("/api/gpu/attest", methods=["POST"])
     def gpu_attest():
         data = request.get_json(silent=True) or {}
-        if not isinstance(data, dict):
-            return jsonify({"error": "expected JSON object, got array"}), 400
         miner_id = data.get("miner_id")
         if not miner_id:
             return jsonify({"error": "miner_id required"}), 400
@@ -96,8 +88,8 @@ def _parse_positive_amount(value):
             )
             db.commit()
             return jsonify({"ok": True, "message": "GPU attestation recorded"})
-        except sqlite3.Error:
-            return jsonify({"error": "database error"}), 500
+        except sqlite3.Error as e:
+            return jsonify({"error": str(e)}), 500
         finally:
             db.close()
 
@@ -109,8 +101,6 @@ def _parse_positive_amount(value):
             return auth_error
 
         data = request.get_json(silent=True) or {}
-        if not isinstance(data, dict):
-            return jsonify({"error": "expected JSON object"}), 400
         job_id = data.get("job_id") or f"job_{secrets.token_hex(8)}"
         job_type = data.get("job_type")  # render, tts, stt, llm
         from_wallet = data.get("from_wallet")
@@ -149,8 +139,8 @@ def _parse_positive_amount(value):
             db.commit()
             # escrow_secret is intentionally returned once to allow participant-auth for release/refund.
             return jsonify({"ok": True, "job_id": job_id, "status": "locked", "escrow_secret": escrow_secret})
-        except sqlite3.Error:
-            return jsonify({"error": "database error"}), 500
+        except sqlite3.Error as e:
+            return jsonify({"error": str(e)}), 500
         finally:
             db.close()
 
@@ -162,8 +152,6 @@ def _parse_positive_amount(value):
             return auth_error
 
         data = request.get_json(silent=True) or {}
-        if not isinstance(data, dict):
-            return jsonify({"error": "expected JSON object"}), 400
         job_id = data.get("job_id")
         actor_wallet = data.get("actor_wallet")
         escrow_secret = data.get("escrow_secret")
@@ -201,8 +189,8 @@ def _parse_positive_amount(value):
             db.execute("UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk = ?", (job["amount_rtc"], job["to_wallet"]))
             db.commit()
             return jsonify({"ok": True, "status": "released"})
-        except sqlite3.Error:
-            return jsonify({"error": "database error"}), 500
+        except sqlite3.Error as e:
+            return jsonify({"error": str(e)}), 500
         finally:
             db.close()
 
@@ -251,8 +239,8 @@ def _parse_positive_amount(value):
             db.execute("UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk = ?", (job["amount_rtc"], job["from_wallet"]))
             db.commit()
             return jsonify({"ok": True, "status": "refunded"})
-        except sqlite3.Error:
-            return jsonify({"error": "database error"}), 500
+        except sqlite3.Error as e:
+            return jsonify({"error": str(e)}), 500
         finally:
             db.close()
 
