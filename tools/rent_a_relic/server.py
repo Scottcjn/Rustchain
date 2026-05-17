@@ -41,6 +41,7 @@ from tools.rent_a_relic.provenance import generate_receipt, verify_receipt
 
 app = Flask(__name__)
 DB_PATH = "rent_a_relic.db"
+SHA256_HEX_CHARS = frozenset("0123456789abcdefABCDEF")
 
 
 def get_db_path() -> str:
@@ -63,6 +64,15 @@ def _optional_string_value(data: dict, key: str) -> str | None:
         return None
     if not isinstance(value, str):
         abort(400, description=f"{key} must be a string")
+    return value
+
+
+def _optional_sha256_hex_value(data: dict, key: str) -> str | None:
+    value = _optional_string_value(data, key)
+    if value is None:
+        return None
+    if len(value) != 64 or any(char not in SHA256_HEX_CHARS for char in value):
+        abort(400, description=f"{key} must be a 64-character SHA-256 hex digest")
     return value
 
 
@@ -450,7 +460,7 @@ def post_complete(session_id: str):
     _require_admin_key()
     data                = _get_json_object_or_empty()
     default_output_hash = hashlib.sha256(session_id.encode()).hexdigest()
-    output_hash         = _optional_string_value(data, "output_hash") or default_output_hash
+    output_hash         = _optional_sha256_hex_value(data, "output_hash") or default_output_hash
 
     with db_conn() as conn:
         row = conn.execute("SELECT * FROM reservations WHERE session_id=?", (session_id,)).fetchone()

@@ -237,6 +237,22 @@ class TestReservationFlow:
         assert sr.json["status"] == "active"
         assert sr.json["escrow"]["status"] == "locked"
 
+    @pytest.mark.parametrize("output_hash", ["abc", "g" * 64])
+    def test_complete_rejects_invalid_sha256_output_hash(self, app, output_hash):
+        r = app.post("/relic/reserve", json={
+            "agent_id": "agent_malformed_output_hash", "machine_id": "riscv-hifive",
+            "duration_hours": 1, "rtc_amount": 10.0,
+        })
+        assert r.status_code == 201
+
+        cr = complete_session(app, r.json["session_id"], {"output_hash": output_hash})
+
+        assert cr.status_code == 400
+        assert cr.json["error"] == "output_hash must be a 64-character SHA-256 hex digest"
+        sr = app.get(f"/relic/reservation/{r.json['session_id']}")
+        assert sr.json["status"] == "active"
+        assert sr.json["escrow"]["status"] == "locked"
+
     def test_status_endpoint(self, app):
         r = app.post("/relic/reserve", json={
             "agent_id": "agent_stat", "machine_id": "g4-quicksilver",
