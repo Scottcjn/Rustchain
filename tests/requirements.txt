@@ -4,3 +4,12 @@ pytest>=7.4.4
 PyNaCl>=1.6.2
 # Needed by test_wallet_cli_39 (imports from tools/rustchain_wallet_cli.py)
 cryptography>=46.0.7
+# Needed by test_agent_economy_sdk.py (imports agent_economy_sdk)
+aiohttp>=3.9.0
+# Needed by test_faucet_service_wallet_validation.py (imports faucet_service)
+flask-cors>=6.0.2
+PyYAML>=6.0.3
+# Needed by hardware and PSE visualization tests
+matplotlib>=3.7
+seaborn>=0.12
+numpy>=1.24
