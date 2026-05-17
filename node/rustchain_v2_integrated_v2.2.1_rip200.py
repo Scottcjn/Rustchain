@@ -1172,6 +1172,7 @@ def init_db():
         c.execute("CREATE TABLE IF NOT EXISTS epoch_enroll (epoch INTEGER, miner_pk TEXT, weight INTEGER, PRIMARY KEY (epoch, miner_pk))")
         ensure_epoch_enroll_integer_weights(c)
         c.execute("CREATE TABLE IF NOT EXISTS balances (miner_pk TEXT PRIMARY KEY, balance_rtc REAL DEFAULT 0)")
+        _ensure_rewards_settle_schema(c)
         ensure_fingerprint_history_table(c)
         ensure_epoch_fingerprint_rotation_table(c)
 
@@ -2094,6 +2095,41 @@ def auto_induct_to_hall(miner: str, device: dict):
 
 def _table_columns(conn: sqlite3.Connection, table_name: str) -> set:
     return {row[1] for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()}
+
+
+def _ensure_rewards_settle_schema(conn: sqlite3.Connection):
+    """Keep init_db() compatible with the RIP-200 rewards settlement module."""
+    epoch_cols = _table_columns(conn, "epoch_state")
+    if "settled" not in epoch_cols:
+        conn.execute("ALTER TABLE epoch_state ADD COLUMN settled INTEGER DEFAULT 0")
+    if "settled_ts" not in epoch_cols:
+        conn.execute("ALTER TABLE epoch_state ADD COLUMN settled_ts INTEGER")
+
+    balance_cols = _table_columns(conn, "balances")
+    if "miner_id" not in balance_cols:
+        conn.execute("ALTER TABLE balances ADD COLUMN miner_id TEXT")
+    if "amount_i64" not in balance_cols:
+        conn.execute("ALTER TABLE balances ADD COLUMN amount_i64 INTEGER DEFAULT 0")
+    if "balance_rtc" not in balance_cols:
+        conn.execute("ALTER TABLE balances ADD COLUMN balance_rtc REAL DEFAULT 0")
+
+    balance_cols = _table_columns(conn, "balances")
+    if {"miner_pk", "miner_id"}.issubset(balance_cols):
+        conn.execute(
+            "UPDATE balances SET miner_id = miner_pk WHERE miner_id IS NULL AND miner_pk IS NOT NULL"
+        )
+    if {"balance_rtc", "amount_i64"}.issubset(balance_cols):
+        conn.execute(
+            """
+            UPDATE balances
+            SET amount_i64 = CAST(balance_rtc * 1000000 AS INTEGER)
+            WHERE COALESCE(amount_i64, 0) = 0
+              AND COALESCE(balance_rtc, 0) != 0
+            """
+        )
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_balances_miner_id ON balances(miner_id)"
+    )
 
 
 def _welcome_bonus_epoch() -> int:
