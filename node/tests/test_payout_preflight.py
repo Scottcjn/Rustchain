@@ -171,5 +171,49 @@ class PayoutPreflightTests(unittest.TestCase):
         self.assertEqual(r.details.get("amount_i64"), 1)
 
 
+
+    def test_processing_withdrawal_failure_requires_manual_recovery_without_refund(self):
+        """Broadcast failure should set recovery_required, not auto-refund."""
+        import os, time, sqlite3, shutil
+        from node.payout_worker import PayoutWorker
+
+        tmpdir = '/tmp/test_payout_worker_5577'
+        if os.path.exists(tmpdir):
+            shutil.rmtree(tmpdir)
+        os.makedirs(tmpdir, exist_ok=True)
+
+        db_path = os.path.join(tmpdir, 'test.db')
+        conn = sqlite3.connect(db_path)
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS accounts (
+                public_key TEXT PRIMARY KEY,
+                balance INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE TABLE IF NOT EXISTS withdrawals (
+                withdrawal_id TEXT PRIMARY KEY,
+                miner_pk TEXT,
+                amount INTEGER,
+                fee INTEGER,
+                status TEXT DEFAULT 'pending',
+                error_msg TEXT,
+                created_at REAL
+            );
+        """)
+        conn.execute("INSERT INTO accounts (public_key, balance) VALUES ('test_pk', 1000)")
+        conn.commit()
+        conn.close()
+
+        worker = PayoutWorker()
+        worker.db_path = db_path
+        worker._recover_orphaned_processing()
+
+        stats = worker.get_stats()
+        self.assertIn('recovery_required', stats,
+                       msg="stats should include recovery_required field")
+
+
+if __name__ == "__main__":
+    unittest.main()
+
 if __name__ == "__main__":
     unittest.main()

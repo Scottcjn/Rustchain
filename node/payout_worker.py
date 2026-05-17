@@ -87,6 +87,33 @@ class PayoutWorker:
                 "complete withdrawal without a broadcast transaction hash"
             )
 
+
+    def _recover_orphaned_processing(self):
+        """Move orphaned processing withdrawals to recovery_required on startup."""
+        import sqlite3
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cur = conn.execute(
+                    "SELECT COUNT(*) FROM withdrawals WHERE status = 'processing'"
+                )
+                count = cur.fetchone()[0]
+                if count:
+                    conn.execute("BEGIN IMMEDIATE")
+                    conn.execute(
+                        "UPDATE withdrawals SET status = 'recovery_required' "
+                        "WHERE status = 'processing'"
+                    )
+                    conn.execute("COMMIT")
+                    import logging
+                    logging.warning(
+                        f"Recovered {count} orphaned processing withdrawal(s) -> recovery_required"
+                    )
+                self.stats['recovered'] = count
+        except Exception:
+            import logging
+            logging.error("Orphan recovery failed", exc_info=True)
+            self.stats['recovered'] = 0
+
     def process_withdrawal(self, withdrawal: Dict) -> bool:
         """Process a single withdrawal with balance deduction before execution."""
         withdrawal_id = withdrawal['withdrawal_id']
@@ -177,17 +204,12 @@ class PayoutWorker:
         except Exception as e:
             logger.error(f"✗ Withdrawal {withdrawal_id} failed: {e}")
 
-            # Refund balance on broadcast failure and mark as failed
+            # Mark as recovery_required without refunding balance
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute("BEGIN IMMEDIATE")
-                conn.execute(
-                    "UPDATE accounts SET balance = balance + ? WHERE public_key = ?",
-                    (withdrawal['amount'] + withdrawal.get('fee', 0),
-                     withdrawal['miner_pk'])
-                )
                 conn.execute("""
                     UPDATE withdrawals
-                    SET status = 'failed',
+                    SET status = 'recovery_required',
                         error_msg = ?
                     WHERE withdrawal_id = ?
                 """, (str(e), withdrawal_id))
@@ -303,11 +325,16 @@ class PayoutWorker:
                 "SELECT COUNT(*) FROM withdrawals WHERE status = 'failed'"
             ).fetchone()[0]
 
+            recovery_required = conn.execute(
+                "SELECT COUNT(*) FROM withdrawals WHERE status = 'recovery_required'"
+            ).fetchone()[0]
+
         return {
             'pending': pending,
             'processing': processing,
             'completed': completed,
             'failed': failed,
+            'recovery_required': recovery_required,
             'session_processed': self.stats['processed'],
             'session_failed': self.stats['failed'],
             'session_total_rtc': self.stats['total_rtc']
