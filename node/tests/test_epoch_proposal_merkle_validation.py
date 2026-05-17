@@ -34,6 +34,8 @@ from unittest.mock import patch
 NODE_DIR = os.path.join(os.path.dirname(__file__), '..', 'node')
 sys.path.insert(0, NODE_DIR)
 
+os.environ.setdefault("RC_P2P_SECRET", "unit-test-secret-0123456789abcdef")
+
 from rustchain_p2p_gossip import GossipLayer, GossipMessage, MessageType
 
 
