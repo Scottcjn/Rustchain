@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import sys
@@ -231,6 +232,18 @@ def resolve_wallet(video: dict[str, Any], agent: dict[str, Any], config: dict[st
     return None
 
 
+def tip_amount(value: Any) -> float | None:
+    if value is None or value == "" or isinstance(value, bool):
+        return None
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(amount):
+        return None
+    return amount
+
+
 def video_id(video: dict[str, Any]) -> str:
     for key in ("id", "video_id", "slug", "uuid"):
         if video.get(key) is not None:
@@ -425,9 +438,11 @@ def plan_tip_rewards(tips: list[dict[str, Any]], config: dict[str, Any], state: 
         key = f"tip:{tip_id}"
         if key in paid:
             continue
-        try:
-            amount = float(tip.get("amount_rtc") or tip.get("amount") or 0)
-        except (TypeError, ValueError):
+        raw_amount = tip.get("amount_rtc")
+        if raw_amount is None or raw_amount == "":
+            raw_amount = tip.get("amount")
+        amount = tip_amount(raw_amount)
+        if amount is None:
             continue
         if amount < minimum:
             continue
