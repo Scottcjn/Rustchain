@@ -1,10 +1,15 @@
 import sqlite3
 import sys
 import uuid
+import json
 from pathlib import Path
 
 import pytest
 
+
+SDK_PATH = Path(__file__).resolve().parents[1] / "sdk" / "python"
+if str(SDK_PATH) not in sys.path:
+    sys.path.insert(0, str(SDK_PATH))
 
 integrated_node = sys.modules["integrated_node"]
 
@@ -144,3 +149,96 @@ def test_insufficient_balance_does_not_burn_nonce(signed_transfer_client):
 
     assert nonce_count == 1
     assert pending_count == 1
+
+
+def test_signed_transfer_accepts_sdk_fee_signed_message(signed_transfer_client, monkeypatch):
+    client, db_path = signed_transfer_client
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+    from rustchain_sdk.wallet import RustChainWallet
+
+    wallet = RustChainWallet.create(strength=128)
+    transfer = wallet.sign_transfer(
+        "RTC" + "b" * 40,
+        1.5,
+        fee=0.25,
+        memo="fee-bound",
+        nonce=1733420001234,
+    )
+    payload = {
+        "from_address": transfer["from_address"],
+        "to_address": transfer["to_address"],
+        "amount_rtc": transfer["amount_rtc"],
+        "fee_rtc": transfer["fee_rtc"],
+        "nonce": transfer["nonce"],
+        "signature": transfer["signature"],
+        "public_key": transfer["public_key"],
+        "memo": transfer["memo"],
+    }
+    captured = {}
+
+    def verify_signature(public_key, message, signature):
+        captured.setdefault("messages", []).append(message)
+        try:
+            Ed25519PublicKey.from_public_bytes(bytes.fromhex(public_key)).verify(
+                bytes.fromhex(signature),
+                message,
+            )
+            return True
+        except Exception:
+            return False
+
+    monkeypatch.setattr(integrated_node, "verify_rtc_signature", verify_signature)
+    monkeypatch.setattr(integrated_node, "address_from_pubkey", lambda public_key: wallet.address)
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?)",
+            (wallet.address, 10_000_000),
+        )
+        conn.commit()
+
+    response = client.post("/wallet/transfer/signed", json=payload)
+
+    expected_message = json.dumps(
+        {
+            "amount": 1.5,
+            "fee": 0.25,
+            "from": wallet.address,
+            "memo": "fee-bound",
+            "nonce": "1733420001234",
+            "to": "RTC" + "b" * 40,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    assert captured["messages"][0] == expected_message
+    assert response.status_code == 200
+    assert response.get_json()["ok"] is True
+
+
+def test_signed_transfer_keeps_legacy_zero_fee_signature_compatible(
+    signed_transfer_client,
+    monkeypatch,
+):
+    client, db_path = signed_transfer_client
+    seen_messages = []
+
+    def verify_legacy_only(public_key, message, signature):
+        body = json.loads(message)
+        seen_messages.append(body)
+        return "fee" not in body
+
+    monkeypatch.setattr(integrated_node, "verify_rtc_signature", verify_legacy_only)
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?)",
+            ("RTC" + "a" * 40, 10_000_000),
+        )
+        conn.commit()
+
+    response = client.post("/wallet/transfer/signed", json=_payload(nonce=1733420004444))
+
+    assert response.status_code == 200
+    assert "fee" in seen_messages[0]
+    assert "fee" not in seen_messages[1]

@@ -105,6 +105,11 @@ def validate_wallet_transfer_signed(payload: Any) -> PreflightResult:
             error="amount_too_small_after_quantization",
             details={"amount_rtc": float(amount_rtc), "min_rtc": 0.000001},
         )
+    fee_rtc, ferr = _safe_decimal(data.get("fee_rtc", 0))
+    if ferr:
+        return PreflightResult(ok=False, error=ferr, details={"field": "fee_rtc"})
+    if fee_rtc is None or fee_rtc < 0:
+        return PreflightResult(ok=False, error="fee_must_be_non_negative", details={})
 
     if not (_is_rtc_address(from_address) or _is_bcn_address(from_address)):
         return PreflightResult(ok=False, error="invalid_from_address_format", details={})
@@ -134,6 +139,7 @@ def validate_wallet_transfer_signed(payload: Any) -> PreflightResult:
             "to_address": to_address,
             "amount_rtc": float(amount_rtc),
             "amount_i64": amount_i64,
+            "fee_rtc": float(fee_rtc),
             "nonce": nonce_int,
             "chain_id": chain_id or None,
         },

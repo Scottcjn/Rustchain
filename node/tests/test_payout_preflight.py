@@ -81,6 +81,35 @@ class PayoutPreflightTests(unittest.TestCase):
         }
         r = validate_wallet_transfer_signed(payload)
         self.assertTrue(r.ok)
+        self.assertEqual(r.details.get("fee_rtc"), 0.0)
+
+    def test_signed_accepts_optional_fee(self):
+        payload = {
+            "from_address": "RTC" + "a" * 40,
+            "to_address": "RTC" + "b" * 40,
+            "amount_rtc": 1.25,
+            "fee_rtc": "0.25",
+            "nonce": "123",
+            "signature": "00",
+            "public_key": "00",
+        }
+        r = validate_wallet_transfer_signed(payload)
+        self.assertTrue(r.ok)
+        self.assertEqual(r.details.get("fee_rtc"), 0.25)
+
+    def test_signed_rejects_negative_fee(self):
+        payload = {
+            "from_address": "RTC" + "a" * 40,
+            "to_address": "RTC" + "b" * 40,
+            "amount_rtc": 1.25,
+            "fee_rtc": -0.01,
+            "nonce": "123",
+            "signature": "00",
+            "public_key": "00",
+        }
+        r = validate_wallet_transfer_signed(payload)
+        self.assertFalse(r.ok)
+        self.assertEqual(r.error, "fee_must_be_non_negative")
 
     def test_signed_requires_public_key_for_rtc_sender(self):
         payload = {
