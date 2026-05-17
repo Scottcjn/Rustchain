@@ -159,10 +159,11 @@ class TestFeedEndpoint:
         """Test basic feed retrieval"""
         mock_response = MagicMock()
         mock_response.read.return_value = json.dumps({
-            "items": [
-                {"type": "video", "video": {"id": "v1", "title": "Video 1"}},
-                {"type": "video", "video": {"id": "v2", "title": "Video 2"}}
-            ]
+            "page": 1,
+            "videos": [
+                {"video_id": "v1", "title": "Video 1"},
+                {"video_id": "v2", "title": "Video 2"}
+            ],
         }).encode()
         mock_response.__enter__ = Mock(return_value=mock_response)
         mock_response.__exit__ = Mock(return_value=None)
@@ -171,8 +172,66 @@ class TestFeedEndpoint:
         client = BoTTubeClient()
         result = client.feed(limit=10)
 
-        assert len(result["items"]) == 2
-        assert result["items"][0]["type"] == "video"
+        assert len(result["videos"]) == 2
+        assert result["videos"][0]["video_id"] == "v1"
+        request_url = mock_urlopen.call_args[0][0].full_url
+        assert "page=1" in request_url
+        assert "per_page=10" in request_url
+
+    @patch("rustchain_sdk.bottube.client.urllib.request.urlopen")
+    def test_feed_rss_uses_public_feed_route(self, mock_urlopen):
+        """Test RSS feed uses the public feed-reader route"""
+        mock_response = MagicMock()
+        mock_response.read.return_value = b"<?xml version=\"1.0\"?><rss></rss>"
+        mock_response.__enter__ = Mock(return_value=mock_response)
+        mock_response.__exit__ = Mock(return_value=None)
+        mock_urlopen.return_value = mock_response
+
+        client = BoTTubeClient()
+        result = client.feed_rss(limit=10)
+
+        assert result.startswith("<?xml")
+        request_url = mock_urlopen.call_args[0][0].full_url
+        assert "/feed/rss" in request_url
+        assert "/api/feed/rss" not in request_url
+
+    @patch("rustchain_sdk.bottube.client.urllib.request.urlopen")
+    def test_feed_atom_uses_public_feed_route(self, mock_urlopen):
+        """Test Atom feed uses the public feed-reader route"""
+        mock_response = MagicMock()
+        mock_response.read.return_value = b"<?xml version=\"1.0\"?><feed></feed>"
+        mock_response.__enter__ = Mock(return_value=mock_response)
+        mock_response.__exit__ = Mock(return_value=None)
+        mock_urlopen.return_value = mock_response
+
+        client = BoTTubeClient()
+        result = client.feed_atom(limit=10)
+
+        assert result.startswith("<?xml")
+        request_url = mock_urlopen.call_args[0][0].full_url
+        assert "/feed/atom" in request_url
+        assert "/api/feed/atom" not in request_url
+
+    @patch("rustchain_sdk.bottube.client.urllib.request.urlopen")
+    def test_feed_json_uses_relative_api_endpoint(self, mock_urlopen):
+        """Test JSON feed uses page/per_page on the API feed route"""
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps({
+            "page": 2,
+            "videos": [{"video_id": "v3", "title": "Video 3"}],
+        }).encode()
+        mock_response.__enter__ = Mock(return_value=mock_response)
+        mock_response.__exit__ = Mock(return_value=None)
+        mock_urlopen.return_value = mock_response
+
+        client = BoTTubeClient()
+        result = client.feed_json(page=2, per_page=5)
+
+        assert result["page"] == 2
+        request_url = mock_urlopen.call_args[0][0].full_url
+        assert request_url.startswith("https://bottube.ai/api/feed?")
+        assert "page=2" in request_url
+        assert "per_page=5" in request_url
 
 
 class TestVideoEndpoint:
