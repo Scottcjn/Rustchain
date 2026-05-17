@@ -53,6 +53,8 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
     @app.route("/api/gpu/attest", methods=["POST"])
     def gpu_attest():
         data = request.get_json(silent=True) or {}
+        if not isinstance(data, dict):
+            return jsonify({"error": "expected JSON object, got array"}), 400
         miner_id = data.get("miner_id")
         if not miner_id:
             return jsonify({"error": "miner_id required"}), 400
@@ -88,8 +90,8 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
             )
             db.commit()
             return jsonify({"ok": True, "message": "GPU attestation recorded"})
-        except sqlite3.Error as e:
-            return jsonify({"error": str(e)}), 500
+        except sqlite3.Error:
+            return jsonify({"error": "database error"}), 500
         finally:
             db.close()
 
@@ -139,8 +141,8 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
             db.commit()
             # escrow_secret is intentionally returned once to allow participant-auth for release/refund.
             return jsonify({"ok": True, "job_id": job_id, "status": "locked", "escrow_secret": escrow_secret})
-        except sqlite3.Error as e:
-            return jsonify({"error": str(e)}), 500
+        except sqlite3.Error:
+            return jsonify({"error": "database error"}), 500
         finally:
             db.close()
 
@@ -189,8 +191,8 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
             db.execute("UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk = ?", (job["amount_rtc"], job["to_wallet"]))
             db.commit()
             return jsonify({"ok": True, "status": "released"})
-        except sqlite3.Error as e:
-            return jsonify({"error": str(e)}), 500
+        except sqlite3.Error:
+            return jsonify({"error": "database error"}), 500
         finally:
             db.close()
 
@@ -239,8 +241,8 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
             db.execute("UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk = ?", (job["amount_rtc"], job["from_wallet"]))
             db.commit()
             return jsonify({"ok": True, "status": "refunded"})
-        except sqlite3.Error as e:
-            return jsonify({"error": str(e)}), 500
+        except sqlite3.Error:
+            return jsonify({"error": "database error"}), 500
         finally:
             db.close()
 
