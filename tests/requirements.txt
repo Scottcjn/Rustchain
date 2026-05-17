@@ -10,3 +10,5 @@ aiohttp>=3.9.0
 flask-cors>=4.0.0
 # Needed by CI collection for hardware visualizer and PSE analysis tests.
 matplotlib>=3.8.0
+# Needed by benchmarks/pse/analyze_results.py during CI collection.
+seaborn>=0.13.0
