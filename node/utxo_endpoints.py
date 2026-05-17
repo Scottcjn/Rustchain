@@ -26,7 +26,9 @@ from decimal import Decimal, InvalidOperation
 
 from flask import Blueprint, request, jsonify
 
-from utxo_db import UtxoDB, coin_select, address_to_proposition, UNIT
+from utxo_db import (
+    UtxoDB, coin_select, address_to_proposition, UNIT, DUST_THRESHOLD,
+)
 
 # FIX(#2867 M2): Reject inputs that would overflow int64 (signed) or
 # represent absurd amounts. Total RTC supply is bounded; cap at 2^53 RTC
@@ -395,6 +397,16 @@ def utxo_transfer():
         _ensure_signed_float_preserves_nrtc(fee_rtc, fee_nrtc, 'fee_rtc')
     except ValueError as e:
         return jsonify({'error': f'Invalid amount: {e}'}), 400
+
+    if amount_nrtc < DUST_THRESHOLD:
+        return jsonify({
+            'error': (
+                f'Amount below dust threshold: minimum is '
+                f'{DUST_THRESHOLD / UNIT:.8f} RTC'
+            ),
+            'dust_threshold_nrtc': DUST_THRESHOLD,
+            'dust_threshold_rtc': DUST_THRESHOLD / UNIT,
+        }), 400
 
     # Verify pubkey → address
     expected_addr = _addr_from_pk_fn(public_key)
