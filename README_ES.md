@@ -227,6 +227,8 @@ bash install-miner.sh --wallet TU_BILLETERA
 bash install-miner.sh --dry-run --wallet TU_BILLETERA
 ```
 
+Nota para Windows: `install-miner.sh --dry-run` es una ruta de vista previa para Linux/macOS/WSL. En Windows nativo, usa la guía de Windows o ejecuta la prueba dentro de WSL para evitar el error de plataforma no compatible.
+
 ## 💰 Tablero de Bounties
 
 ¡Gana **RTC** contribuyendo al ecosistema RustChain!
@@ -480,6 +482,7 @@ clawrtc mine --dry-run
 ```
 
 Esperado: las 6 verificaciones de huella digital de hardware se ejecutan en ARM64 nativo sin errores de fallback de arquitectura.
+Nota: esta ruta de `clawrtc mine --dry-run` está pensada para Linux/macOS/WSL, no para Windows nativo.
 
 ---
 

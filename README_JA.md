@@ -229,6 +229,8 @@ bash install-miner.sh --wallet YOUR_WALLET_NAME
 bash install-miner.sh --dry-run --wallet YOUR_WALLET_NAME
 ```
 
+Windows向け注記: `install-miner.sh --dry-run` は Linux/macOS/WSL 用のプレビュー手順です。ネイティブ Windows では Windows 向けガイドを使うか、WSL 内で実行してください。
+
 ## 💰 バウンティボード
 
 RustChainエコシステムへの貢献で**RTC**を獲得！
@@ -473,3 +475,4 @@ clawrtc mine --dry-run
 ```
 
 期待される動作：6つすべてのハードウェアフィンガープリントチェックが、アーキテクチャフォールバックエラーなしでネイティブARM64で実行されます。
+注: この `clawrtc mine --dry-run` の確認手順は Linux/macOS/WSL 向けであり、ネイティブ Windows 向けではありません。
