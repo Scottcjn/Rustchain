@@ -113,6 +113,14 @@ def _json_string_field(data, field_name, default=""):
     return value.strip()
 
 
+def _is_base_address(value: str) -> bool:
+    return (
+        value.startswith("0x")
+        and len(value) == 42
+        and all(char in "0123456789abcdefABCDEF" for char in value[2:])
+    )
+
+
 # ---------------------------------------------------------------------------
 # x402 payment check
 # ---------------------------------------------------------------------------
@@ -206,7 +214,7 @@ def init_app(app, get_db_func):
             address = _json_string_field(data, "coinbase_address")
         except ValueError as exc:
             return _cors_json({"error": str(exc)}, 400)
-        if not address or not address.startswith("0x") or len(address) != 42:
+        if not address or not _is_base_address(address):
             return _cors_json({"error": "Invalid Base address"}, 400)
 
         db = get_db_func()

@@ -66,6 +66,20 @@ def test_link_coinbase_rejects_non_string_fields(client, field, value):
     assert response.get_json()["error"] == f"{field} must be a string"
 
 
+def test_link_coinbase_rejects_non_hex_base_address(client):
+    response = client.post(
+        "/wallet/link-coinbase",
+        json={
+            "miner_id": "miner-1",
+            "coinbase_address": "0xZZ34567890123456789012345678901234567890",
+        },
+        headers={"X-Admin-Key": "test-admin-key"},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "Invalid Base address (must be 0x + 40 hex chars)"
+
+
 def test_link_coinbase_preserves_valid_request(client):
     response = client.post(
         "/wallet/link-coinbase",
