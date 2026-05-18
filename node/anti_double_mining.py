@@ -24,6 +24,9 @@ import time
 import hashlib
 import json
 import logging
+import os
+import tempfile
+from contextlib import closing
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 
@@ -448,7 +451,7 @@ def calculate_anti_double_mining_rewards(
     epoch_start_ts = GENESIS_TIMESTAMP + (epoch_start_slot * BLOCK_TIME)
     epoch_end_ts = GENESIS_TIMESTAMP + (epoch_end_slot * BLOCK_TIME)
 
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         conn.execute("BEGIN")
         
         # Detect duplicate identities
@@ -845,13 +848,11 @@ def setup_test_scenario(db_path: str):
     - Machine B: 1 miner ID (should reward normally)
     - Machine C: 2 miner IDs (should only reward 1)
     """
-    import os
-    
     # Remove existing test DB
     if os.path.exists(db_path):
         os.remove(db_path)
     
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         # Create tables
         conn.execute("""
             CREATE TABLE miner_attest_recent (
@@ -870,6 +871,13 @@ def setup_test_scenario(db_path: str):
                 miner TEXT NOT NULL,
                 ts INTEGER NOT NULL,
                 profile_json TEXT NOT NULL
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE epoch_enroll (
+                epoch INTEGER NOT NULL,
+                miner_pk TEXT NOT NULL
             )
         """)
         
@@ -995,7 +1003,7 @@ if __name__ == "__main__":
     import sys
     
     # Run tests
-    test_db = "/tmp/test_anti_double_mining.db"
+    test_db = os.path.join(tempfile.gettempdir(), "test_anti_double_mining.db")
     setup_test_scenario(test_db)
     
     print("\n=== Testing Anti-Double-Mining Detection ===\n")

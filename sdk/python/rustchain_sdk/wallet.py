@@ -351,31 +351,43 @@ class RustChainWallet:
             return _hmac_sha512(self._private_key, message)[:64]
 
     def sign_transfer(
-        self, to_address: str, amount: int, fee: int = 0
+        self, to_address: str, amount: int, fee: int = 0, memo: str = ""
     ) -> Dict[str, Any]:
         """
-        Create a signed transfer payload for the RustChain network.
+        Create a signed transfer payload for the RustChain network (canonical JSON format).
 
         Args:
             to_address: Recipient wallet address.
             amount: Amount to transfer (in smallest units).
             fee: Transaction fee (in smallest units).
+            memo: Optional transaction memo.
 
         Returns:
             A dict containing the transfer payload with signature.
         """
         import time
+        import json
 
-        timestamp = int(time.time())
-        payload = f"{self._address}:{to_address}:{amount}:{fee}:{timestamp}".encode()
-        signature = self.sign(payload)
-
-        return {
+        nonce = int(time.time())
+        # Canonical JSON with sorted keys (node requires this format)
+        payload_dict = {
             "from": self._address,
             "to": to_address,
             "amount": amount,
-            "fee": fee,
-            "timestamp": timestamp,
+            "memo": memo,
+            "nonce": nonce,
+        }
+        canonical_payload = json.dumps(payload_dict, sort_keys=True, separators=(",", ":")).encode()
+        signature = self.sign(canonical_payload)
+
+        return {
+            "from_address": self._address,
+            "to_address": to_address,
+            "amount_rtc": amount,
+            "fee_rtc": fee,
+            "nonce": nonce,
+            "memo": memo,
+            "public_key": self.public_key_hex,
             "signature": signature.hex(),
         }
 

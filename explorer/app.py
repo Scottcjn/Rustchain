@@ -2,9 +2,11 @@ from flask import Flask, render_template, jsonify
 import requests
 import json
 import os
+import logging
 from datetime import datetime
 
 app = Flask(__name__)
+logger = logging.getLogger(__name__)
 
 # Configuration
 API_BASE_URL = "http://localhost:8000"
@@ -15,6 +17,14 @@ def debug_enabled() -> bool:
     return os.environ.get('RUSTCHAIN_EXPLORER_DEBUG', '').strip().lower() in {
         '1', 'true', 'yes', 'on'
     }
+
+
+def _upstream_node_unavailable(include_miners=False):
+    logger.exception("Explorer upstream node request failed")
+    payload = {"error": "Upstream node unavailable"}
+    if include_miners:
+        payload["miners"] = []
+    return jsonify(payload), 500
 
 @app.route('/')
 def dashboard():
@@ -56,8 +66,8 @@ def get_miners():
             return jsonify(miners_data)
         else:
             return jsonify({'error': 'Failed to fetch miners data', 'miners': []}), 500
-    except requests.exceptions.RequestException as e:
-        return jsonify({'error': f'Connection error: {str(e)}', 'miners': []}), 500
+    except requests.exceptions.RequestException:
+        return _upstream_node_unavailable(include_miners=True)
 
 @app.route('/api/network/stats')
 def get_network_stats():
@@ -87,8 +97,8 @@ def get_network_stats():
             return jsonify(stats)
         else:
             return jsonify({'error': 'Failed to fetch network stats'}), 500
-    except requests.exceptions.RequestException as e:
-        return jsonify({'error': f'Connection error: {str(e)}'}), 500
+    except requests.exceptions.RequestException:
+        return _upstream_node_unavailable()
 
 @app.route('/miner/<miner_id>')
 def miner_detail(miner_id):
@@ -129,8 +139,8 @@ def get_miner_detail(miner_id):
                 return jsonify({'error': 'Miner not found'}), 404
         else:
             return jsonify({'error': 'Failed to fetch miner data'}), 500
-    except requests.exceptions.RequestException as e:
-        return jsonify({'error': f'Connection error: {str(e)}'}), 500
+    except requests.exceptions.RequestException:
+        return _upstream_node_unavailable()
 
 @app.errorhandler(404)
 def not_found(error):

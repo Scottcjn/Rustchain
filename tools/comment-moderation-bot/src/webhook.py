@@ -301,7 +301,7 @@ def register_routes(app: FastAPI, config: BotConfig) -> None:
             )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=str(e),
+                detail="Internal moderation processing error",
             )
 
     @app.get("/stats")

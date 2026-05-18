@@ -26,6 +26,9 @@ PKT_TYPE_ATTEST = 0
 PKT_TYPE_HEARTBEAT = 1
 PKT_TYPE_BALANCE = 2
 PKT_TYPE_EPOCH_ACK = 3
+PKT_TYPE_REATTEST = 4
+
+CORRUPTED_SAVE_MAGIC_VALUES = {0xFFFFFFFF, 0x00000000}
 
 FRAME_HEADER = bytes([0x52, 0x54])
 DEVICE_ARCH = "mips_r4300"
@@ -52,6 +55,8 @@ class N64Relay:
         self.serial_conn = None
         self.attestations_sent = 0
         self.attestations_ok = 0
+        self.corrupt_attestations = 0
+        self.health_events = []
         self.total_earned = 0
         self.current_epoch = 0
 
@@ -110,6 +115,39 @@ class N64Relay:
         self.serial_conn.write(header + data + checksum)
         return True
 
+    def emit_health_event(self, event: dict) -> None:
+        """Record a miner health event for node-side observers."""
+        self.health_events.append(event)
+
+    def send_reattest_request(self, epoch: int) -> bool:
+        """Ask the miner to re-attest from the last known checkpoint."""
+        req = struct.pack("<IBBHI",
+                          ATTEST_MAGIC,
+                          1,  # version
+                          PKT_TYPE_REATTEST,
+                          0,  # payload_len
+                          epoch)
+        return self.send_frame(req)
+
+    def _record_corrupt_attestation(self, magic: int) -> None:
+        """Log and surface corrupted cartridge save-data markers."""
+        self.corrupt_attestations += 1
+        event = {
+            "type": "miner_attestation_corrupt",
+            "severity": "warn",
+            "magic": f"0x{magic:08X}",
+            "block_height": self.current_epoch,
+            "epoch": self.current_epoch,
+            "action": "reattest_requested",
+        }
+        print(
+            "[relay][WARN] miner_attestation_corrupt: "
+            f"magic=0x{magic:08X} block_height={self.current_epoch}; "
+            "requesting re-attest"
+        )
+        self.emit_health_event(event)
+        self.send_reattest_request(self.current_epoch)
+
     def _demo_attestation(self) -> bytes:
         """Generate a fake attestation packet for demo mode."""
         import os
@@ -147,6 +185,10 @@ class N64Relay:
             return None
 
         magic = struct.unpack_from("<I", data, 0)[0]
+        if magic in CORRUPTED_SAVE_MAGIC_VALUES:
+            self._record_corrupt_attestation(magic)
+            return None
+
         if magic != ATTEST_MAGIC:
             return None
 

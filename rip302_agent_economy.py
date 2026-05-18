@@ -284,6 +284,11 @@ def _parse_ttl_seconds(raw):
     return min(max(ttl_seconds, 3600), JOB_TTL_MAX), None
 
 
+def _internal_error_response(action: str, exc: Exception):
+    log.exception("%s failed with %s", action, type(exc).__name__)
+    return jsonify({"error": "Internal error"}), 500
+
+
 # ---------------------------------------------------------------------------
 # Route Registration
 # ---------------------------------------------------------------------------
@@ -399,8 +404,7 @@ def register_agent_economy(app: Flask, db_path: str):
 
         except Exception as e:
             conn.rollback()
-            log.error(f"agent_post_job error: {e}")
-            return jsonify({"error": "Internal error", "details": str(e)}), 500
+            return _internal_error_response("agent_post_job", e)
         finally:
             conn.close()
 
@@ -472,8 +476,7 @@ def register_agent_economy(app: Flask, db_path: str):
 
         except Exception as e:
             conn.rollback()
-            log.error(f"agent_claim_job error: {e}")
-            return jsonify({"error": str(e)}), 500
+            return _internal_error_response("agent_claim_job", e)
         finally:
             conn.close()
 
@@ -532,7 +535,7 @@ def register_agent_economy(app: Flask, db_path: str):
 
         except Exception as e:
             conn.rollback()
-            return jsonify({"error": str(e)}), 500
+            return _internal_error_response("agent_deliver_job", e)
         finally:
             conn.close()
 
@@ -649,7 +652,7 @@ def register_agent_economy(app: Flask, db_path: str):
 
         except Exception as e:
             conn.rollback()
-            return jsonify({"error": str(e)}), 500
+            return _internal_error_response("agent_accept_delivery", e)
         finally:
             conn.close()
 
@@ -711,7 +714,7 @@ def register_agent_economy(app: Flask, db_path: str):
 
         except Exception as e:
             conn.rollback()
-            return jsonify({"error": str(e)}), 500
+            return _internal_error_response("agent_dispute_job", e)
         finally:
             conn.close()
 
@@ -777,7 +780,7 @@ def register_agent_economy(app: Flask, db_path: str):
 
         except Exception as e:
             conn.rollback()
-            return jsonify({"error": str(e)}), 500
+            return _internal_error_response("agent_cancel_job", e)
         finally:
             conn.close()
 

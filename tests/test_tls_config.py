@@ -18,6 +18,23 @@ def test_verified_tls_clients_default_to_certificate_hostname():
     )
 
 
+def test_public_sdk_and_macos_defaults_avoid_raw_node_ip():
+    legacy_public_node = "https://" + "50.28.86.131"
+    default_surfaces = [
+        "sdk/python/README.md",
+        "sdk/python/rustchain_sdk/__init__.py",
+        "sdk/python/rustchain_sdk/client.py",
+        "sdk/python/rustchain_sdk/cli.py",
+        "sdk/python/test_rustchain_sdk.py",
+        "miners/macos/rustchain_mac_miner_v2.5.py",
+    ]
+
+    for relpath in default_surfaces:
+        text = Path(relpath).read_text(encoding="utf-8")
+        assert legacy_public_node not in text, relpath
+        assert "https://rustchain.org" in text or "DEFAULT_NODE_URL" in text, relpath
+
+
 def test_ssl_context_verifies_by_default(monkeypatch):
     monkeypatch.delenv("RUSTCHAIN_TLS_VERIFY", raising=False)
     monkeypatch.delenv("RUSTCHAIN_CA_BUNDLE", raising=False)

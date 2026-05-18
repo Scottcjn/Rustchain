@@ -1,112 +1,168 @@
 # SPDX-License-Identifier: MIT
 
+import asyncio
+import inspect
+
 import agent_sdk_demo
 
 
 class FakeResponse:
-    def __init__(self, payload):
+    def __init__(self, payload, status=200):
         self.payload = payload
+        self.status = status
 
-    def json(self):
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    async def json(self):
         return self.payload
 
 
-def test_client_strips_trailing_slash_and_posts_job_defaults(monkeypatch):
-    calls = []
+class FakeSession:
+    def __init__(self):
+        self.calls = []
+        self.responses = [
+            {"job_id": "job-1"},
+            {"jobs": []},
+            {"ok": True},
+            {"ok": True},
+            {"ok": True},
+            {"stats": {"total_jobs": 1}},
+            {"reputation": None},
+        ]
+        self.closed = False
 
-    def fake_post(url, json):
-        calls.append((url, json))
-        return FakeResponse({"job_id": "job-1"})
+    def request(self, method, url, **kwargs):
+        self.calls.append((method, url, kwargs))
+        return FakeResponse(self.responses.pop(0))
 
-    monkeypatch.setattr(agent_sdk_demo.requests, "post", fake_post)
+    async def close(self):
+        self.closed = True
 
-    client = agent_sdk_demo.AgentEconomyClient("http://node.local/")
-    result = client.post_job("Docs", "Write docs", 3.5)
 
-    assert result == {"job_id": "job-1"}
-    assert calls == [
+def run(coro):
+    return asyncio.run(coro)
+
+
+def test_client_methods_are_async():
+    for method_name in (
+        "post_job",
+        "get_jobs",
+        "claim_job",
+        "deliver_work",
+        "accept_delivery",
+        "get_marketplace_stats",
+        "get_reputation",
+    ):
+        method = getattr(agent_sdk_demo.AgentEconomyClient, method_name)
+        assert inspect.iscoroutinefunction(method), method_name
+
+
+def test_async_client_uses_live_rip302_routes_and_payloads():
+    session = FakeSession()
+    client = agent_sdk_demo.AgentEconomyClient("http://node.local/", session=session)
+
+    async def exercise_client():
+        assert await client.post_job(
+            "Write docs",
+            "Write complete API docs for the live RIP-302 routes",
+            3.5,
+            poster_wallet="poster-1",
+            category="code",
+            ttl_seconds=7200,
+            tags=["docs", "api"],
+        ) == {"job_id": "job-1"}
+        assert await client.get_jobs(status="delivered", category="code", limit=25) == {
+            "jobs": []
+        }
+        assert await client.claim_job("job-1", "worker-1") == {"ok": True}
+        assert await client.deliver_work(
+            "job-1",
+            "worker-1",
+            deliverable_url="https://github.com/example/pr/1",
+            result_summary="Implemented with tests",
+        ) == {"ok": True}
+        assert await client.accept_delivery("job-1", "poster-1", rating=5) == {
+            "ok": True
+        }
+        assert await client.get_marketplace_stats() == {"stats": {"total_jobs": 1}}
+        assert await client.get_reputation("worker-1") == {"reputation": None}
+
+    run(exercise_client())
+
+    assert session.calls == [
         (
-            "http://node.local/api/agent_economy/jobs",
+            "POST",
+            "http://node.local/agent/jobs",
             {
-                "title": "Docs",
-                "description": "Write docs",
-                "reward": 3.5,
-                "category": "general",
-                "requirements": {},
+                "json": {
+                    "poster_wallet": "poster-1",
+                    "title": "Write docs",
+                    "description": "Write complete API docs for the live RIP-302 routes",
+                    "reward_rtc": 3.5,
+                    "category": "code",
+                    "ttl_seconds": 7200,
+                    "tags": ["docs", "api"],
+                }
             },
-        )
-    ]
-
-
-def test_get_jobs_includes_status_and_optional_category(monkeypatch):
-    calls = []
-
-    def fake_get(url, params=None):
-        calls.append((url, params))
-        return FakeResponse({"jobs": []})
-
-    monkeypatch.setattr(agent_sdk_demo.requests, "get", fake_get)
-
-    client = agent_sdk_demo.AgentEconomyClient("http://node.local")
-    assert client.get_jobs(status="completed", category="writing") == {"jobs": []}
-
-    assert calls == [
-        (
-            "http://node.local/api/agent_economy/jobs",
-            {"status": "completed", "category": "writing"},
-        )
-    ]
-
-
-def test_claim_deliver_and_review_use_expected_payloads(monkeypatch):
-    calls = []
-
-    def fake_post(url, json):
-        calls.append((url, json))
-        return FakeResponse({"ok": True})
-
-    monkeypatch.setattr(agent_sdk_demo.requests, "post", fake_post)
-
-    client = agent_sdk_demo.AgentEconomyClient("http://node.local")
-
-    assert client.claim_job("job-1", "agent-a") == {"ok": True}
-    assert client.deliver_work("job-1", "https://example.com/pr", "done") == {"ok": True}
-    assert client.review_work("job-1", accept=False, feedback="needs tests") == {"ok": True}
-
-    assert calls == [
-        (
-            "http://node.local/api/agent_economy/jobs/job-1/claim",
-            {"agent_id": "agent-a"},
         ),
         (
-            "http://node.local/api/agent_economy/jobs/job-1/deliver",
-            {"deliverable_url": "https://example.com/pr", "summary": "done"},
+            "GET",
+            "http://node.local/agent/jobs",
+            {
+                "params": {
+                    "status": "delivered",
+                    "limit": 25,
+                    "offset": 0,
+                    "min_reward": 0,
+                    "category": "code",
+                }
+            },
         ),
         (
-            "http://node.local/api/agent_economy/jobs/job-1/review",
-            {"accept": False, "feedback": "needs tests"},
+            "POST",
+            "http://node.local/agent/jobs/job-1/claim",
+            {"json": {"worker_wallet": "worker-1"}},
         ),
+        (
+            "POST",
+            "http://node.local/agent/jobs/job-1/deliver",
+            {
+                "json": {
+                    "worker_wallet": "worker-1",
+                    "deliverable_url": "https://github.com/example/pr/1",
+                    "result_summary": "Implemented with tests",
+                }
+            },
+        ),
+        (
+            "POST",
+            "http://node.local/agent/jobs/job-1/accept",
+            {"json": {"poster_wallet": "poster-1", "rating": 5}},
+        ),
+        ("GET", "http://node.local/agent/stats", {}),
+        ("GET", "http://node.local/agent/reputation/worker-1", {}),
     ]
 
 
-def test_reputation_and_stats_read_from_expected_endpoints(monkeypatch):
-    calls = []
+def test_context_manager_closes_owned_session(monkeypatch):
+    created_sessions = []
 
-    def fake_get(url, params=None):
-        calls.append((url, params))
-        return FakeResponse({"url": url})
+    class FakeClientSession(FakeSession):
+        def __init__(self, timeout=None):
+            super().__init__()
+            self.timeout = timeout
+            created_sessions.append(self)
 
-    monkeypatch.setattr(agent_sdk_demo.requests, "get", fake_get)
+    monkeypatch.setattr(agent_sdk_demo.aiohttp, "ClientSession", FakeClientSession)
 
-    client = agent_sdk_demo.AgentEconomyClient("http://node.local")
-    reputation = client.get_reputation("agent-a")
-    stats = client.get_marketplace_stats()
+    async def use_context_manager():
+        async with agent_sdk_demo.AgentEconomyClient("http://node.local") as client:
+            assert client.session is created_sessions[0]
+            assert await client.get_marketplace_stats() == {"job_id": "job-1"}
+        assert created_sessions[0].closed is True
 
-    assert reputation == {
-        "url": "http://node.local/api/agent_economy/agents/agent-a/reputation"
-    }
-    assert stats == {"url": "http://node.local/api/agent_economy/stats"}
-    assert calls == [
-        ("http://node.local/api/agent_economy/agents/agent-a/reputation", None),
-        ("http://node.local/api/agent_economy/stats", None),
-    ]
+    run(use_context_manager())

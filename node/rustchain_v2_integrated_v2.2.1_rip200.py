@@ -1047,7 +1047,7 @@ GOVERNANCE_ACTIVE_MINER_WINDOW_SECONDS = 3600
 EPOCH_WEIGHT_SCALE = 1_000_000_000
 MAX_EPOCH_WEIGHT = 10_000
 MAX_EPOCH_WEIGHT_UNITS = MAX_EPOCH_WEIGHT * EPOCH_WEIGHT_SCALE
-MIN_FAILED_FINGERPRINT_WEIGHT_UNITS = 1
+FAILED_FINGERPRINT_WEIGHT_UNITS = 0
 
 
 def epoch_weight_to_units(weight) -> int:
@@ -3791,7 +3791,7 @@ def _submit_attestation_impl():
                 fingerprint if isinstance(fingerprint, dict) else {},
             )
             if not fingerprint_passed:
-                enroll_weight_units = MIN_FAILED_FINGERPRINT_WEIGHT_UNITS
+                enroll_weight_units = FAILED_FINGERPRINT_WEIGHT_UNITS
             else:
                 enroll_weight_units = epoch_weight_to_units(hw_weight * rotation_eval["active_ratio"])
             enroll_weight = epoch_weight_units_to_display(enroll_weight_units)
@@ -4038,8 +4038,7 @@ def enroll_epoch():
     arch = device.get('arch', 'default')
     hw_weight = HARDWARE_WEIGHTS.get(family, {}).get(arch, 1.0)
 
-    # RIP-PoA Phase 2: VM miners get minimal (but non-zero) weight
-    # VMs can technically earn RTC, but it's economically pointless (1e-9 vs 1.0-2.5 for real hardware)
+    # RIP-PoA Phase 2: failed fingerprints are tracked but receive zero rewards.
     fingerprint_failed = check_result.get('fingerprint_failed', False)
 
     with sqlite3.connect(DB_PATH) as c:
@@ -4049,9 +4048,9 @@ def enroll_epoch():
             data.get('fingerprint') if isinstance(data.get('fingerprint'), dict) else {},
         )
         if fingerprint_failed:
-            weight_units = MIN_FAILED_FINGERPRINT_WEIGHT_UNITS
+            weight_units = FAILED_FINGERPRINT_WEIGHT_UNITS
             weight = epoch_weight_units_to_display(weight_units)
-            print(f"[ENROLL] Miner {miner_pk[:16]}... fingerprint FAILED - VM weight: {weight}")
+            print(f"[ENROLL] Miner {miner_pk[:16]}... fingerprint FAILED - weight: {weight}")
         else:
             weight_units = epoch_weight_to_units(hw_weight * rotation_eval['active_ratio'])
             weight = epoch_weight_units_to_display(weight_units)
@@ -4133,10 +4132,11 @@ def vrf_is_selected(miner_pk: str, slot: int) -> bool:
             "SELECT miner_pk, weight FROM epoch_enroll WHERE epoch = ?",
             (epoch,)
         ).fetchall()
-        all_miners = [
-            (pk, normalize_epoch_weight_units(stored_weight))
-            for pk, stored_weight in raw_miners
-        ]
+        all_miners = []
+        for pk, stored_weight in raw_miners:
+            normalized_weight = normalize_epoch_weight_units(stored_weight)
+            if normalized_weight > 0:
+                all_miners.append((pk, normalized_weight))
 
     if not all_miners:
         return False
@@ -6021,11 +6021,15 @@ def api_miners():
     
     # Pagination args
     try:
-        limit = min(max(int(request.args.get("limit", 100)), 1), 1000)
-        offset = max(int(request.args.get("offset", 0)), 0)
+        limit = int(request.args.get("limit", 100))
     except (ValueError, TypeError):
-        limit = 100
-        offset = 0
+        return jsonify({"ok": False, "error": "limit must be an integer"}), 400
+    try:
+        offset = int(request.args.get("offset", 0))
+    except (ValueError, TypeError):
+        return jsonify({"ok": False, "error": "offset must be an integer"}), 400
+    limit = min(max(limit, 1), 1000)
+    offset = max(offset, 0)
 
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
@@ -7262,6 +7266,14 @@ def wallet_transfer_v2():
     to_miner = pre.details["to_miner"]
     amount_rtc = pre.details["amount_rtc"]
     reason = str((data or {}).get('reason', 'admin_transfer'))
+    idempotency_key = ""
+    raw_idempotency_key = (data or {}).get("idempotency_key")
+    if raw_idempotency_key not in (None, ""):
+        if not isinstance(raw_idempotency_key, str):
+            return jsonify({"error": "invalid_idempotency_key"}), 400
+        idempotency_key = raw_idempotency_key.strip()
+        if not re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", idempotency_key):
+            return jsonify({"error": "invalid_idempotency_key"}), 400
     
     amount_i64 = int(amount_rtc * 1000000)
     now = int(time.time())
@@ -7269,7 +7281,10 @@ def wallet_transfer_v2():
     current_epoch = current_slot()
     
     # Generate transaction hash
-    tx_data = f"{from_miner}:{to_miner}:{amount_i64}:{now}:{os.urandom(8).hex()}"
+    if idempotency_key:
+        tx_data = f"wallet_transfer_idempotency:{idempotency_key}"
+    else:
+        tx_data = f"{from_miner}:{to_miner}:{amount_i64}:{now}:{os.urandom(8).hex()}"
     tx_hash = hashlib.sha256(tx_data.encode()).hexdigest()[:32]
     
     conn = sqlite3.connect(DB_PATH)
@@ -7279,6 +7294,40 @@ def wallet_transfer_v2():
         # SECURITY: Acquire write lock BEFORE reading balance to prevent
         # concurrent transfers from both passing the balance check.
         c.execute("BEGIN IMMEDIATE")
+
+        if idempotency_key:
+            existing = c.execute("""
+                SELECT id, from_miner, to_miner, amount_i64, reason, status, confirms_at
+                FROM pending_ledger
+                WHERE tx_hash = ?
+            """, (tx_hash,)).fetchone()
+            if existing:
+                pending_id, existing_from, existing_to, existing_amount, existing_reason, status, existing_confirms_at = existing
+                if (
+                    existing_from != from_miner or
+                    existing_to != to_miner or
+                    int(existing_amount) != amount_i64 or
+                    str(existing_reason or "") != reason
+                ):
+                    conn.rollback()
+                    return jsonify({
+                        "error": "idempotency_key_conflict",
+                        "tx_hash": tx_hash,
+                    }), 409
+
+                conn.rollback()
+                return jsonify({
+                    "ok": True,
+                    "phase": status or "pending",
+                    "pending_id": pending_id,
+                    "tx_hash": tx_hash,
+                    "from_miner": from_miner,
+                    "to_miner": to_miner,
+                    "amount_rtc": amount_rtc,
+                    "confirms_at": existing_confirms_at,
+                    "confirms_in_hours": CONFIRMATION_DELAY_SECONDS / 3600,
+                    "message": "Transfer already pending for idempotency key."
+                })
         
         # Check sender balance
         row = c.execute("SELECT amount_i64 FROM balances WHERE miner_id = ?", (from_miner,)).fetchone()
@@ -7412,6 +7461,11 @@ def void_pending():
     tx_hash = data.get('tx_hash')
     reason = data.get('reason', 'admin_void')
     voided_by = data.get('voided_by', 'admin')
+
+    if pending_id is not None and not isinstance(pending_id, (int, str)):
+        return jsonify({"error": "pending_id must be a scalar"}), 400
+    if tx_hash is not None and not isinstance(tx_hash, str):
+        return jsonify({"error": "tx_hash must be a string"}), 400
     
     if not pending_id and not tx_hash:
         return jsonify({"error": "Provide pending_id or tx_hash"}), 400

@@ -17,12 +17,14 @@ import json
 import time
 import sys
 import os
+import urllib.request
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from flask import Flask
 from bridge.bridge_api import register_bridge_routes, init_bridge_db, get_db, _amount_to_base, STATE_COMPLETE
+import bridge.dashboard_api as dashboard_api
 from bridge.dashboard_api import register_dashboard_routes
 
 
@@ -185,6 +187,66 @@ class TestBridgeHealth:
         
         now = int(time.time())
         assert abs(data['last_checked'] - now) < 5  # Within 5 seconds
+
+    def test_health_hides_database_exception_details(self, client, monkeypatch):
+        """Health checks should not expose local DB paths or exception text."""
+        secret_error = "sqlite failure at C:/srv/rustchain/private/bridge.db"
+
+        class FailingDb:
+            def __enter__(self):
+                raise RuntimeError(secret_error)
+
+            def __exit__(self, *_args):
+                return False
+
+        def fail_rpc(*_args, **_kwargs):
+            raise RuntimeError("rpc unavailable")
+
+        monkeypatch.setattr(dashboard_api, "get_db", lambda: FailingDb())
+        monkeypatch.setattr(urllib.request, "urlopen", fail_rpc)
+
+        response = client.get('/bridge/dashboard/health')
+
+        assert response.status_code == 200
+        body = json.loads(response.data)
+        assert body["components"]["rustchain"] is False
+        assert body["details"]["rustchain"] == "Database unavailable"
+        assert secret_error not in response.get_data(as_text=True)
+
+    def test_health_hides_rpc_exception_details(self, client, monkeypatch):
+        """Health checks should not expose RPC URLs or network exception text."""
+        secret_error = "GET https://internal-solana.local/rpc?token=secret failed"
+
+        def fail_rpc(*_args, **_kwargs):
+            raise RuntimeError(secret_error)
+
+        monkeypatch.setattr(urllib.request, "urlopen", fail_rpc)
+
+        response = client.get('/bridge/dashboard/health')
+
+        assert response.status_code == 200
+        body = json.loads(response.data)
+        assert body["components"]["solana_rpc"] is False
+        assert body["details"]["solana_rpc"] == "RPC unavailable"
+        assert secret_error not in response.get_data(as_text=True)
+
+    def test_health_hides_mint_exception_details(self, client, monkeypatch):
+        """Health checks should not expose configured mint lookup errors."""
+        secret_error = "mint lookup failed for account 7xPrivateInternalMint"
+
+        def fail_rpc(*_args, **_kwargs):
+            raise RuntimeError(secret_error)
+
+        monkeypatch.setattr(dashboard_api, "WRTC_MINT_ADDRESS", "7xPrivateInternalMint")
+        monkeypatch.setattr(urllib.request, "urlopen", fail_rpc)
+
+        response = client.get('/bridge/dashboard/health')
+
+        assert response.status_code == 200
+        body = json.loads(response.data)
+        assert body["components"]["wrtc_mint"] is False
+        assert body["details"]["wrtc_mint"] == "Mint check unavailable"
+        assert secret_error not in response.get_data(as_text=True)
 
 
 class TestDashboardTransactions:

@@ -4,7 +4,11 @@ import sys
 import tempfile
 import unittest
 
+import pytest
+from flask import Flask
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from node import gpu_render_protocol
 from node.gpu_render_protocol import GPURenderProtocol
 
 
@@ -166,6 +170,67 @@ class TestGPURenderProtocol(unittest.TestCase):
         self.assertEqual(result["status"], "locked")
         status = self.proto.get_escrow(result["job_id"])
         self.assertEqual(status["metadata"]["model"], "llama-70b")
+
+
+def _route_client(tmp_path, monkeypatch):
+    proto = GPURenderProtocol(db_path=str(tmp_path / "gpu_routes.db"))
+    monkeypatch.setattr(gpu_render_protocol, "GPURenderProtocol", lambda: proto)
+    app = Flask(__name__)
+    app.config["TESTING"] = True
+    gpu_render_protocol.register_routes(app)
+    return app.test_client()
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/gpu/attest",
+        "/render/escrow",
+        "/voice/escrow",
+        "/llm/escrow",
+        "/render/release",
+        "/voice/release",
+        "/llm/release",
+        "/render/refund",
+        "/render/pricing/check",
+    ],
+)
+def test_gpu_protocol_routes_reject_non_object_json(tmp_path, monkeypatch, path):
+    client = _route_client(tmp_path, monkeypatch)
+
+    response = client.post(path, json=[{"unexpected": "array"}])
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "JSON object required"}
+
+
+def test_gpu_protocol_escrow_rejects_structured_wallet(tmp_path, monkeypatch):
+    client = _route_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/render/escrow",
+        json={
+            "job_type": "render",
+            "from_wallet": {"wallet": "payer"},
+            "to_wallet": "provider",
+            "amount_rtc": 1,
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "from_wallet must be a string"}
+
+
+def test_gpu_protocol_pricing_check_rejects_structured_price(tmp_path, monkeypatch):
+    client = _route_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/render/pricing/check",
+        json={"job_type": "render", "price": ["not", "numeric"]},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "price must be a finite number"}
 
 
 if __name__ == "__main__":

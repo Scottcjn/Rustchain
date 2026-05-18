@@ -123,6 +123,17 @@ def test_review_endpoint_calls_model_and_stores(client, monkeypatch):
     assert recent_body["reviews"][0]["recommended_resolution"]["target_inbox_status"] == "resolved"
 
 
+@pytest.mark.parametrize("limit", ["abc", "10.5"])
+def test_recent_rejects_malformed_limit(client, limit):
+    response = client.get(
+        f"/recent?limit={limit}",
+        headers={"X-Admin-Key": "test-admin"},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "limit must be an integer"
+
+
 def test_health_reports_status(client):
     response = client.get("/health")
     assert response.status_code == 200
