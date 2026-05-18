@@ -2406,16 +2406,28 @@ def extract_temporal_profile(fingerprint: dict) -> dict:
             return data if isinstance(data, dict) else {}
         return {}
 
+    def _metric_float(*values):
+        for value in values:
+            if value is None or isinstance(value, bool):
+                continue
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError, OverflowError):
+                continue
+            if math.isfinite(numeric):
+                return numeric
+        return 0.0
+
     clock = _check_data("clock_drift")
     thermal = _check_data("thermal_entropy") or _check_data("thermal_drift")
     jitter = _check_data("instruction_jitter")
     cache = _check_data("cache_timing")
 
     return {
-        "clock_drift_cv": float(clock.get("cv", 0.0) or 0.0),
-        "thermal_variance": float(thermal.get("variance", 0.0) or 0.0),
-        "jitter_cv": float(jitter.get("cv", 0.0) or jitter.get("stddev_ns", 0.0) or 0.0),
-        "cache_hierarchy_ratio": float(cache.get("hierarchy_ratio", 0.0) or 0.0),
+        "clock_drift_cv": _metric_float(clock.get("cv")),
+        "thermal_variance": _metric_float(thermal.get("variance")),
+        "jitter_cv": _metric_float(jitter.get("cv"), jitter.get("stddev_ns")),
+        "cache_hierarchy_ratio": _metric_float(cache.get("hierarchy_ratio")),
     }
 
 

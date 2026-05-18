@@ -261,6 +261,38 @@ def test_validate_fingerprint_data_rejects_non_dict_input():
     assert reason == "fingerprint_not_dict"
 
 
+def test_extract_temporal_profile_sanitizes_malformed_optional_metrics():
+    fingerprint = {
+        "checks": {
+            "clock_drift": {
+                "passed": True,
+                "data": {"cv": 0.031},
+            },
+            "thermal_entropy": {
+                "passed": True,
+                "data": {"variance": "not-a-number"},
+            },
+            "instruction_jitter": {
+                "passed": True,
+                "data": {"cv": {"nested": "bad"}, "stddev_ns": 0.17},
+            },
+            "cache_timing": {
+                "passed": True,
+                "data": {"hierarchy_ratio": ["bad"]},
+            },
+        }
+    }
+
+    profile = integrated_node.extract_temporal_profile(fingerprint)
+
+    assert profile == {
+        "clock_drift_cv": 0.031,
+        "thermal_variance": 0.0,
+        "jitter_cv": 0.17,
+        "cache_hierarchy_ratio": 0.0,
+    }
+
+
 def test_attest_submit_strict_fixture_rejects_malformed_fingerprint(strict_client):
     payload = _base_payload()
     payload["fingerprint"]["checks"] = []
