@@ -25,6 +25,9 @@ PARSE_INCOMPATIBLE_PYTHON = {
     # merge-gate probe. It is not a Flask entrypoint, so keep it documented here
     # instead of letting the broad scan fail before checking the public surface.
     "build_static.py",
+    # Existing node withdrawal validation test imports a dotted backup filename
+    # that cannot be parsed as Python syntax, outside the Flask debug surface.
+    "node/tests/test_withdrawal_validation.py",
 }
 
 
@@ -42,7 +45,7 @@ def is_debug_subscript(node):
 
 def debug_true_locations(path):
     try:
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
     except SyntaxError as exc:
         relative = repo_path(path)
         if relative in PARSE_INCOMPATIBLE_PYTHON:
