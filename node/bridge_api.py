@@ -466,6 +466,7 @@ def get_bridge_transfer_by_hash(
         "dest_chain": row[3],
         "source_address": row[4],
         "dest_address": row[5],
+        "amount_i64": row[6],
         "amount_rtc": row[7],
         "bridge_type": row[8],
         "external_tx_hash": row[10],
@@ -666,6 +667,7 @@ def update_external_confirmation(
         completed_at = None
     
     try:
+        cursor.execute("BEGIN IMMEDIATE")
         cursor.execute("""
             UPDATE bridge_transfers
             SET external_tx_hash = ?,
@@ -675,7 +677,21 @@ def update_external_confirmation(
                 completed_at = ?,
                 updated_at = ?
             WHERE tx_hash = ?
+              AND status IN ('pending', 'locked', 'confirming')
         """, (external_tx_hash, confirmations, req_conf, new_status, completed_at, now, tx_hash))
+
+        if cursor.rowcount != 1:
+            current = cursor.execute(
+                "SELECT status FROM bridge_transfers WHERE tx_hash = ?",
+                (tx_hash,),
+            ).fetchone()
+            db_conn.rollback()
+            if not current:
+                return False, {"error": "Bridge transfer not found"}
+            return False, {
+                "error": "Cannot update completed/failed/voided transfer",
+                "current_status": current[0],
+            }
         
         # If completed, release the lock
         if new_status == "completed":
@@ -687,6 +703,15 @@ def update_external_confirmation(
                 WHERE bridge_transfer_id = ?
                   AND status = 'locked'
             """, (now, external_tx_hash, transfer["id"]))
+            if transfer["direction"] == "withdraw":
+                cursor.execute(
+                    "INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)",
+                    (transfer["dest_address"],),
+                )
+                cursor.execute(
+                    "UPDATE balances SET amount_i64 = amount_i64 + ? WHERE miner_id = ?",
+                    (transfer["amount_i64"], transfer["dest_address"]),
+                )
         
         db_conn.commit()
         
