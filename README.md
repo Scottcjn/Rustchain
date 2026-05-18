@@ -229,9 +229,9 @@ What they *can't* capture:
 
 ```bash
 # Verify right now
-curl -sk https://rustchain.org/health          # Node health
-curl -sk https://rustchain.org/api/miners      # Active miners
-curl -sk https://rustchain.org/epoch           # Current epoch
+curl -fsS https://rustchain.org/health          # Node health
+curl -fsS https://rustchain.org/api/miners      # Active miners
+curl -fsS https://rustchain.org/epoch           # Current epoch
 ```
 
 ### Attestation Nodes
@@ -247,7 +247,7 @@ curl -sk https://rustchain.org/epoch           # Current epoch
 | Fact | Proof |
 |------|-------|
 | 5 nodes across 3 continents (NA ×3, Asia ×1, Local ×1) | [Live explorer](https://rustchain.org/explorer/) |
-| 26+ miners attesting | `curl -sk https://rustchain.org/api/miners` |
+| 26+ miners attesting | `curl -fsS https://rustchain.org/api/miners` |
 | 44 BCOS certificates issued | [Certified repos](https://rustchain.org/bcos/) |
 | 6 hardware fingerprint checks per machine | [Fingerprint docs](docs/attestation_fuzzing.md) |
 | 25,875+ RTC paid to 260+ contributors | [Public ledger](https://github.com/Scottcjn/rustchain-bounties/issues/104) |
@@ -273,7 +273,7 @@ Works on Linux (x86_64, ppc64le, aarch64, mips, sparc, m68k, riscv64, ia64, s390
 curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --wallet my-wallet
 
 # Check your balance
-curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
 ```
 
 ### Manage the Miner
