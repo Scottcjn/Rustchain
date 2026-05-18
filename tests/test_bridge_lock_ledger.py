@@ -304,6 +304,55 @@ class TestBridgeValidation:
         assert result.ok is False
         assert "must be >=" in result.error
 
+    def test_rejects_non_object_payload(self, setup_test_db):
+        bridge_api = setup_test_db['bridge_api']
+        result = bridge_api.validate_bridge_request(["not", "object"])
+        assert result.ok is False
+        assert result.error == "Request body is required"
+
+    def test_rejects_non_string_route_fields(self, setup_test_db):
+        bridge_api = setup_test_db['bridge_api']
+        data = {
+            "direction": {"op": "deposit"},
+            "source_chain": "rustchain",
+            "dest_chain": "solana",
+            "source_address": "RTC_test123",
+            "dest_address": "4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXqXq",
+            "amount_rtc": 10.0
+        }
+        result = bridge_api.validate_bridge_request(data)
+        assert result.ok is False
+        assert result.error == "direction must be a string"
+
+    def test_rejects_non_finite_amount(self, setup_test_db):
+        bridge_api = setup_test_db['bridge_api']
+        data = {
+            "direction": "deposit",
+            "source_chain": "rustchain",
+            "dest_chain": "solana",
+            "source_address": "RTC_test123",
+            "dest_address": "4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXqXq",
+            "amount_rtc": "NaN"
+        }
+        result = bridge_api.validate_bridge_request(data)
+        assert result.ok is False
+        assert result.error == "amount_rtc must be a finite number"
+
+    def test_rejects_non_string_optional_fields(self, setup_test_db):
+        bridge_api = setup_test_db['bridge_api']
+        data = {
+            "direction": "deposit",
+            "source_chain": "rustchain",
+            "dest_chain": "solana",
+            "source_address": "RTC_test123",
+            "dest_address": "4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXqXq",
+            "amount_rtc": 10.0,
+            "memo": {"note": "bad"},
+        }
+        result = bridge_api.validate_bridge_request(data)
+        assert result.ok is False
+        assert result.error == "memo must be a string"
+
 
 # =============================================================================
 # Address Validation Tests
