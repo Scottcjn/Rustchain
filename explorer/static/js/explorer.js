@@ -99,6 +99,12 @@ function formatRelativeTime(ts) {
     return 'Just now';
 }
 
+function normalizeMinersResponse(payload) {
+    if (Array.isArray(payload)) return payload;
+    if (payload && Array.isArray(payload.miners)) return payload.miners;
+    return [];
+}
+
 function getArchitectureTier(arch) {
     if (!arch) return 'modern';
     const archLower = arch.toLowerCase();
@@ -204,7 +210,7 @@ async function fetchMiners() {
     try {
         state.loading.miners = true;
         state.error.miners = null;
-        state.miners = await fetchAPI('/api/miners') || [];
+        state.miners = normalizeMinersResponse(await fetchAPI('/api/miners'));
     } catch (error) {
         state.error.miners = error.message;
         // Fallback mock data
@@ -413,20 +419,26 @@ function renderMinersTable() {
     }
     
     const sortedMiners = [...state.miners].sort((a, b) => 
-        (b.score || b.multiplier || 0) - (a.score || b.multiplier || 0)
+        (b.score || b.multiplier || b.antiquity_multiplier || 0) -
+        (a.score || a.multiplier || a.antiquity_multiplier || 0)
     ).slice(0, 20);
     
     container.innerHTML = sortedMiners.map(miner => {
-        const tier = getArchitectureTier(miner.device_arch);
-        const badgeClass = getArchitectureBadge(miner.device_arch);
+        const minerId = miner.miner_id || miner.miner || 'unknown';
+        const arch = miner.device_arch || miner.device_family || miner.hardware_type || 'Unknown';
+        const multiplier = miner.multiplier || miner.antiquity_multiplier || 1.0;
+        const balance = miner.balance || miner.balance_rtc || miner.amount_rtc || 0;
+        const lastSeen = miner.last_seen || miner.last_attest || miner.last_attestation;
+        const tier = getArchitectureTier(arch);
+        const badgeClass = getArchitectureBadge(arch);
         return `
             <tr>
-                <td class="mono" title="${escapeHtml(miner.miner_id)}">${shortenAddress(miner.miner_id || 'unknown')}</td>
-                <td><span class="badge ${badgeClass}">${escapeHtml(miner.device_arch || 'Unknown')}</span></td>
+                <td class="mono" title="${escapeHtml(minerId)}">${shortenAddress(minerId)}</td>
+                <td><span class="badge ${badgeClass}">${escapeHtml(arch)}</span></td>
                 <td><span class="badge badge-${tier}">${tier.toUpperCase()}</span></td>
-                <td class="text-accent">${formatNumber(miner.multiplier || 1.0, 2)}x</td>
-                <td class="text-success">${formatNumber(miner.balance || 0, 6)} RTC</td>
-                <td class="mono">${formatRelativeTime(miner.last_seen)}</td>
+                <td class="text-accent">${formatNumber(multiplier, 2)}x</td>
+                <td class="text-success">${formatNumber(balance, 6)} RTC</td>
+                <td class="mono">${formatRelativeTime(lastSeen)}</td>
                 <td><span class="badge badge-active">● ACTIVE</span></td>
             </tr>
         `;
@@ -519,10 +531,10 @@ function renderHardwareBreakdown() {
     
     const breakdown = {};
     state.miners.forEach(miner => {
-        const arch = miner.device_arch || 'Unknown';
+        const arch = miner.device_arch || miner.device_family || miner.hardware_type || 'Unknown';
         if (!breakdown[arch]) breakdown[arch] = { count: 0, totalMultiplier: 0 };
         breakdown[arch].count++;
-        breakdown[arch].totalMultiplier += miner.multiplier || 1;
+        breakdown[arch].totalMultiplier += miner.multiplier || miner.antiquity_multiplier || 1;
     });
     
     const sorted = Object.entries(breakdown)
