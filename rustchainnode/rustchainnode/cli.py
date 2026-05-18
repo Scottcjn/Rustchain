@@ -177,6 +177,7 @@ def cmd_status(args):
         print(f"   Network: {'testnet' if cfg.get('testnet') else 'mainnet'}")
         print(f"   Arch: {cfg.get('arch_type', 'unknown')}")
         print(f"   Antiquity: {cfg.get('antiquity_multiplier', 1.0)}x")
+        print(f"   Testnet: {cfg.get('testnet', False)}")
 
     health = _check_health(node_url)
     if health.get("ok"):
