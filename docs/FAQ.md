@@ -69,7 +69,9 @@ bash install-miner.sh --dry-run --wallet YOUR_WALLET_NAME
 ```powershell
 # 使用 Python 安装
 pip install clawrtc
-clawrtc mine --dry-run
+# Windows note: current clawrtc releases do not support miner dry-run.
+# Use Linux/macOS or WSL for `clawrtc mine --dry-run`.
+clawrtc --help
 ```
 
 ### 安装程序会做什么？
@@ -334,7 +336,7 @@ curl -sk https://rustchain.org/epoch
 curl -sk https://rustchain.org/api/miners
 
 # 区块浏览器
-open https://rustchain.org/explorer
+open https://rustchain.org/explorer/
 ```
 
 ### 节点架构
@@ -410,7 +412,7 @@ curl -sk -X POST https://rustchain.org/governance/vote \
 - **Discord:** [discord.gg/VqVVS2CW9Q](https://discord.gg/VqVVS2CW9Q)
 - **GitHub:** [github.com/Scottcjn/RustChain](https://github.com/Scottcjn/RustChain)
 - **网站:** [rustchain.org](https://rustchain.org)
-- **区块浏览器:** [rustchain.org/explorer](https://rustchain.org/explorer)
+- **区块浏览器:** [rustchain.org/explorer/](https://rustchain.org/explorer/)
 
 ### 相关项目
 
@@ -435,7 +437,7 @@ curl -sk -X POST https://rustchain.org/governance/vote \
 ```
 RustChain - Proof of Antiquity by Scott (Scottcjn)
 https://github.com/Scottcjn/Rustchain
-MIT License
+Apache License 2.0
 ```
 
 ---

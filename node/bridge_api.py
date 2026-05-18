@@ -20,6 +20,7 @@ import hmac
 import hashlib
 import logging
 import os
+import math
 from typing import Optional, Tuple, Dict, Any
 from decimal import Decimal
 from dataclasses import dataclass
@@ -120,6 +121,8 @@ def validate_bridge_request(data: Optional[Dict]) -> ValidationResult:
     """Validate bridge transfer request payload."""
     if not data:
         return ValidationResult(ok=False, error="Request body is required")
+    if not isinstance(data, dict):
+        return ValidationResult(ok=False, error="Request body must be a JSON object")
     
     # Required fields
     required = ["direction", "source_chain", "dest_chain", "source_address", "dest_address", "amount_rtc"]
@@ -129,12 +132,20 @@ def validate_bridge_request(data: Optional[Dict]) -> ValidationResult:
     
     # Validate direction
     direction = data.get("direction")
+    if not isinstance(direction, str):
+        return ValidationResult(ok=False, error="direction must be a string")
     if direction not in ["deposit", "withdraw"]:
         return ValidationResult(ok=False, error=f"Invalid direction: {direction}. Must be 'deposit' or 'withdraw'")
     
     # Validate chains
-    source_chain = data.get("source_chain", "").lower()
-    dest_chain = data.get("dest_chain", "").lower()
+    source_chain_raw = data.get("source_chain", "")
+    dest_chain_raw = data.get("dest_chain", "")
+    if not isinstance(source_chain_raw, str):
+        return ValidationResult(ok=False, error="source_chain must be a string")
+    if not isinstance(dest_chain_raw, str):
+        return ValidationResult(ok=False, error="dest_chain must be a string")
+    source_chain = source_chain_raw.lower()
+    dest_chain = dest_chain_raw.lower()
     
     if source_chain not in VALID_CHAINS:
         return ValidationResult(ok=False, error=f"Invalid source_chain: {source_chain}")
@@ -156,6 +167,10 @@ def validate_bridge_request(data: Optional[Dict]) -> ValidationResult:
     # Validate addresses
     source_address = data.get("source_address", "")
     dest_address = data.get("dest_address", "")
+    if not isinstance(source_address, str):
+        return ValidationResult(ok=False, error="source_address must be a string")
+    if not isinstance(dest_address, str):
+        return ValidationResult(ok=False, error="dest_address must be a string")
     
     if not source_address or len(source_address) < 10:
         return ValidationResult(ok=False, error="Invalid source_address (too short)")
@@ -163,11 +178,16 @@ def validate_bridge_request(data: Optional[Dict]) -> ValidationResult:
         return ValidationResult(ok=False, error="Invalid dest_address (too short)")
     
     # Validate amount
+    amount_raw = data.get("amount_rtc", 0)
+    if isinstance(amount_raw, bool):
+        return ValidationResult(ok=False, error="amount_rtc must be a number")
     try:
-        amount_rtc = float(data.get("amount_rtc", 0))
+        amount_rtc = float(amount_raw)
     except (TypeError, ValueError):
         return ValidationResult(ok=False, error="amount_rtc must be a number")
     
+    if not math.isfinite(amount_rtc):
+        return ValidationResult(ok=False, error="amount_rtc must be finite")
     if amount_rtc <= 0:
         return ValidationResult(ok=False, error="amount_rtc must be positive")
     if amount_rtc < BRIDGE_MIN_AMOUNT_RTC:
@@ -175,11 +195,15 @@ def validate_bridge_request(data: Optional[Dict]) -> ValidationResult:
     
     # Validate bridge type (optional)
     bridge_type = data.get("bridge_type", "bottube")
+    if not isinstance(bridge_type, str):
+        return ValidationResult(ok=False, error="bridge_type must be a string")
     if bridge_type not in VALID_BRIDGE_TYPES:
         return ValidationResult(ok=False, error=f"Invalid bridge_type: {bridge_type}")
     
     # Validate memo (optional)
     memo = data.get("memo")
+    if memo is not None and not isinstance(memo, str):
+        return ValidationResult(ok=False, error="memo must be a string")
     if memo and len(memo) > 256:
         return ValidationResult(ok=False, error="Memo must be <= 256 characters")
     
@@ -227,6 +251,8 @@ def validate_chain_address_format(chain: str, address: str) -> Tuple[bool, str]:
             return False, "Base addresses must start with '0x'"
         if len(address) != 42:
             return False, "Invalid Base address length"
+        if not all(char in "0123456789abcdefABCDEF" for char in address[2:]):
+            return False, "Invalid Base address hex"
     
     return True, ""
 
@@ -440,6 +466,7 @@ def get_bridge_transfer_by_hash(
         "dest_chain": row[3],
         "source_address": row[4],
         "dest_address": row[5],
+        "amount_i64": row[6],
         "amount_rtc": row[7],
         "bridge_type": row[8],
         "external_tx_hash": row[10],
@@ -640,6 +667,7 @@ def update_external_confirmation(
         completed_at = None
     
     try:
+        cursor.execute("BEGIN IMMEDIATE")
         cursor.execute("""
             UPDATE bridge_transfers
             SET external_tx_hash = ?,
@@ -649,7 +677,21 @@ def update_external_confirmation(
                 completed_at = ?,
                 updated_at = ?
             WHERE tx_hash = ?
+              AND status IN ('pending', 'locked', 'confirming')
         """, (external_tx_hash, confirmations, req_conf, new_status, completed_at, now, tx_hash))
+
+        if cursor.rowcount != 1:
+            current = cursor.execute(
+                "SELECT status FROM bridge_transfers WHERE tx_hash = ?",
+                (tx_hash,),
+            ).fetchone()
+            db_conn.rollback()
+            if not current:
+                return False, {"error": "Bridge transfer not found"}
+            return False, {
+                "error": "Cannot update completed/failed/voided transfer",
+                "current_status": current[0],
+            }
         
         # If completed, release the lock
         if new_status == "completed":
@@ -661,6 +703,15 @@ def update_external_confirmation(
                 WHERE bridge_transfer_id = ?
                   AND status = 'locked'
             """, (now, external_tx_hash, transfer["id"]))
+            if transfer["direction"] == "withdraw":
+                cursor.execute(
+                    "INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)",
+                    (transfer["dest_address"],),
+                )
+                cursor.execute(
+                    "UPDATE balances SET amount_i64 = amount_i64 + ? WHERE miner_id = ?",
+                    (transfer["amount_i64"], transfer["dest_address"]),
+                )
         
         db_conn.commit()
         
@@ -697,11 +748,12 @@ def register_bridge_routes(app):
         validation = validate_bridge_request(data)
         if not validation.ok:
             return jsonify({"error": validation.error}), 400
+        details = validation.details or {}
         
         # Validate address formats
         for chain, addr in [
-            (data["source_chain"], data["source_address"]),
-            (data["dest_chain"], data["dest_address"])
+            (details["source_chain"], details["source_address"]),
+            (details["dest_chain"], details["dest_address"])
         ]:
             valid, msg = validate_chain_address_format(chain, addr)
             if not valid:
@@ -711,7 +763,7 @@ def register_bridge_routes(app):
         admin_key = request.headers.get("X-Admin-Key", "")
         expected_admin_key = os.environ.get("RC_ADMIN_KEY", "")
         admin_initiated = bool(expected_admin_key) and hmac.compare_digest(admin_key, expected_admin_key)
-        if data["direction"] == "deposit":
+        if details["direction"] == "deposit":
             # Deposits create balance locks by source_address; require operator
             # authorization until a wallet-owner signature flow exists.
             if not expected_admin_key:
@@ -721,14 +773,14 @@ def register_bridge_routes(app):
         
         # Create bridge transfer
         req = BridgeTransferRequest(
-            direction=data["direction"],
-            source_chain=data["source_chain"],
-            dest_chain=data["dest_chain"],
-            source_address=data["source_address"],
-            dest_address=data["dest_address"],
-            amount_rtc=data["amount_rtc"],
-            memo=data.get("memo"),
-            bridge_type=data.get("bridge_type", "bottube")
+            direction=details["direction"],
+            source_chain=details["source_chain"],
+            dest_chain=details["dest_chain"],
+            source_address=details["source_address"],
+            dest_address=details["dest_address"],
+            amount_rtc=details["amount_rtc"],
+            memo=details.get("memo"),
+            bridge_type=details["bridge_type"]
         )
         
         conn = sqlite3.connect(DB_PATH)

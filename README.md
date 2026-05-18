@@ -13,12 +13,14 @@
 [![Nodes](https://img.shields.io/badge/Nodes-5%20Active-brightgreen)](https://rustchain.org/explorer/)
 [![DePIN](https://img.shields.io/badge/DePIN-Vintage%20Hardware-8B4513)](https://rustchain.org)
 [![Proof of Antiquity](https://img.shields.io/badge/Consensus-Proof%20of%20Antiquity-DAA520)](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf)
-[![DOI](https://zenodo.org/badge/doi/10.5281/zenodo.19442753.svg)](https://doi.org/10.5281/zenodo.19442753)
+[![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.19442753-blue)](https://doi.org/10.5281/zenodo.19442753)
 
 A PowerBook G4 from 2003 earns **2.5x** more than a modern Threadripper.
 A Power Mac G5 earns **2.0x**. A 486 with rusty serial ports earns the most respect of all.
 
 [Explorer](https://rustchain.org/explorer/) · [Machines Preserved](https://rustchain.org/preserved.html) · [Install Miner](#quickstart) · [Beginner Guide](docs/QUICKSTART.md) · [Manifesto](https://rustchain.org/manifesto.html) · [Whitepaper](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf)
+
+中文入口: [中文文档](docs/zh-CN/README.md) · [中文 API 快速参考](docs/zh-CN/API.md)
 
 </div>
 
@@ -227,9 +229,9 @@ What they *can't* capture:
 
 ```bash
 # Verify right now
-curl -sk https://rustchain.org/health          # Node health
-curl -sk https://rustchain.org/api/miners      # Active miners
-curl -sk https://rustchain.org/epoch           # Current epoch
+curl -fsS https://rustchain.org/health          # Node health
+curl -fsS https://rustchain.org/api/miners      # Active miners
+curl -fsS https://rustchain.org/epoch           # Current epoch
 ```
 
 ### Attestation Nodes
@@ -245,7 +247,7 @@ curl -sk https://rustchain.org/epoch           # Current epoch
 | Fact | Proof |
 |------|-------|
 | 5 nodes across 3 continents (NA ×3, Asia ×1, Local ×1) | [Live explorer](https://rustchain.org/explorer/) |
-| 26+ miners attesting | `curl -sk https://rustchain.org/api/miners` |
+| 26+ miners attesting | `curl -fsS https://rustchain.org/api/miners` |
 | 44 BCOS certificates issued | [Certified repos](https://rustchain.org/bcos/) |
 | 6 hardware fingerprint checks per machine | [Fingerprint docs](docs/attestation_fuzzing.md) |
 | 25,875+ RTC paid to 260+ contributors | [Public ledger](https://github.com/Scottcjn/rustchain-bounties/issues/104) |
@@ -271,7 +273,7 @@ Works on Linux (x86_64, ppc64le, aarch64, mips, sparc, m68k, riscv64, ia64, s390
 curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --wallet my-wallet
 
 # Check your balance
-curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
 ```
 
 ### Manage the Miner
@@ -340,7 +342,7 @@ Epoch: 10 minutes  |  Pool: 1.5 RTC/epoch  |  Split by antiquity weight
 
 G4 Mac (2.5x):     0.30 RTC  ████████████████████
 G5 Mac (2.0x):     0.24 RTC  ████████████████
-Modern PC (0.8x):  0.10 RTC  ██████
+Modern PC (1.0x):  0.12 RTC  ████████
 ```
 
 ### Anti-VM Enforcement
@@ -391,11 +393,11 @@ Every contribution earns RTC tokens. Browse [open bounties](https://github.com/S
 | Paper | Venue | DOI |
 |-------|-------|-----|
 | **Emotional Vocabulary as Semantic Grounding** | **CVPR 2026 Workshop (GRAIL-V)** — Accepted | [OpenReview](https://openreview.net/forum?id=pXjE6Tqp70) |
-| **One CPU, One Vote** | Preprint | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18623592.svg)](https://doi.org/10.5281/zenodo.18623592) |
-| **Non-Bijunctive Permutation Collapse** | Preprint | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18623920.svg)](https://doi.org/10.5281/zenodo.18623920) |
-| **PSE Hardware Entropy** | Preprint | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18623922.svg)](https://doi.org/10.5281/zenodo.18623922) |
-| **RAM Coffers** | Preprint | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18321905.svg)](https://doi.org/10.5281/zenodo.18321905) |
-| **RPI: Resonant Permutation Inference** | Preprint | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.19271983.svg)](https://doi.org/10.5281/zenodo.19271983) |
+| **One CPU, One Vote** | Preprint | [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18623592-blue)](https://doi.org/10.5281/zenodo.18623592) |
+| **Non-Bijunctive Permutation Collapse** | Preprint | [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18623920-blue)](https://doi.org/10.5281/zenodo.18623920) |
+| **PSE Hardware Entropy** | Preprint | [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18623922-blue)](https://doi.org/10.5281/zenodo.18623922) |
+| **RAM Coffers** | Preprint | [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18321905-blue)](https://doi.org/10.5281/zenodo.18321905) |
+| **RPI: Resonant Permutation Inference** | Preprint | [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.19271983-blue)](https://doi.org/10.5281/zenodo.19271983) |
 
 ---
 

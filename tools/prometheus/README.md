@@ -34,6 +34,13 @@ Implemented metrics:
 - `rustchain_highest_rust_score`
 - `rustchain_total_fees_collected_rtc`
 - `rustchain_fee_events_total`
+- `rustchain_p2p_up`
+- `rustchain_p2p_peer_count`
+- `rustchain_p2p_attestation_count`
+- `rustchain_p2p_settled_epochs`
+- `rustchain_p2p_message_rate_per_second`
+- `rustchain_p2p_messages_total`
+- `rustchain_p2p_health_latency_seconds`
 
 ## API Endpoints Scraped (every 60s)
 
@@ -43,12 +50,14 @@ Implemented metrics:
 - `/api/hall_of_fame`
 - `/api/fee_pool`
 - `/api/stats`
+- `/p2p/health` from `P2P_NODE_URL` when configured
 
 ## Configuration
 
 Environment variables:
 
 - `NODE_URL` (default: `https://rustchain.org`)
+- `P2P_NODE_URL` (default: unset; set this to a certificate-valid node base URL that exposes `/p2p/health`)
 - `EXPORTER_PORT` (default: `9100`)
 - `SCRAPE_INTERVAL` (default: `60`)
 - `REQUEST_TIMEOUT` (default: `15`)

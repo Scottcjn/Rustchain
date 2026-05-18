@@ -53,16 +53,15 @@ Great fix! /tip @alice 25 RTC for the patch.
 
 ## Setup
 
-### 1. Add this repo as a submodule (or copy files into your repo)
+### 1. Copy the tip-bot files into your repo
 
 ```bash
-# Option A: standalone repo
-git clone https://github.com/mtarcure/rustchain-tip-bot
-cp -r rustchain-tip-bot/.github/workflows/tip-bot.yml your-repo/.github/workflows/
-cp rustchain-tip-bot/{tip_bot.py,auth.py,state.py,config.yml,requirements.txt} your-repo/
+# Option A: copy from the RustChain monorepo
+git clone https://github.com/Scottcjn/Rustchain.git
+cp Rustchain/integrations/rustchain-bounties/{tip_bot.py,tip_bot_action.py,auth.py,state.py,config.yml,requirements.txt} your-repo/
 
 # Option B: reference directly via workflow
-# Point the workflow's checkout step to this repo
+# Check out Scottcjn/Rustchain and run from integrations/rustchain-bounties
 ```
 
 ### 2. Initialize the state file
@@ -253,8 +252,8 @@ requirements.txt                Python dependencies
 README.md                       This file
 ```
 
-> **Note:** The Python source files (`tip_bot.py`, `auth.py`, `state.py`, `test_tip_bot.py`,
-> `requirements.txt`) live in the upstream repository
-> [github.com/mtarcure/rustchain-tip-bot](https://github.com/mtarcure/rustchain-tip-bot).
-> This directory contains only `config.yml` and this README. Follow the Setup section
-> to copy the full project into your repo.
+> **Note:** The Python source files (`tip_bot.py`, `auth.py`, `state.py`,
+> `test_tip_bot.py`, `tip_bot_action.py`, and `requirements.txt`) live in this
+> RustChain directory:
+> [integrations/rustchain-bounties](https://github.com/Scottcjn/Rustchain/tree/main/integrations/rustchain-bounties).
+> Follow the Setup section to copy the project into your repo.

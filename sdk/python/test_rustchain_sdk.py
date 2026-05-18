@@ -7,7 +7,7 @@ from rustchain_sdk import RustChainClient, APIError
 
 
 # Test configuration
-TEST_NODE_URL = "https://50.28.86.131"
+TEST_NODE_URL = "https://rustchain.org"
 
 
 class TestRustChainClient:

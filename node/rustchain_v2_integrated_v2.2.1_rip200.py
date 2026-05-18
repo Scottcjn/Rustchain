@@ -5,11 +5,12 @@ Includes RIP-0005 (Epoch Rewards), RIP-0008 (Withdrawals), RIP-0009 (Finality)
 """
 import os, time, json, secrets, hashlib, hmac, sqlite3, base64, struct, uuid, glob, logging, sys, binascii, math, re, statistics
 import ipaddress
+from threading import Lock
 from urllib.parse import urlparse
 from flask import Flask, request, jsonify, g, send_from_directory, send_file, abort, render_template_string, redirect, Response
 import json
 from decimal import Decimal, ROUND_HALF_UP
-from beacon_anchor import init_beacon_table, store_envelope, compute_beacon_digest, get_recent_envelopes, VALID_KINDS
+from beacon_anchor import init_beacon_table, store_envelope, compute_beacon_digest, get_recent_envelopes, normalize_beacon_pagination, VALID_KINDS
 try:
     # Deployment compatibility: production may run this file as a single script.
     from payout_preflight import validate_wallet_transfer_admin, validate_wallet_transfer_signed
@@ -184,6 +185,86 @@ MUSEUM_DIR = os.path.join(REPO_ROOT, "web", "museum")
 HOF_DIR = os.path.join(REPO_ROOT, "web", "hall-of-fame")
 DASHBOARD_DIR = os.path.join(REPO_ROOT, "tools", "miner_dashboard")
 EXPLORER_DIR = os.path.join(REPO_ROOT, "tools", "explorer")
+
+ADMIN_RATE_LIMIT_MAX = int(os.environ.get("RC_ADMIN_RATE_LIMIT_MAX", "12"))
+ADMIN_RATE_LIMIT_WINDOW = int(os.environ.get("RC_ADMIN_RATE_LIMIT_WINDOW_SECONDS", "60"))
+_ADMIN_RATE_LIMIT_BUCKETS = {}
+_ADMIN_RATE_LIMIT_LOCK = Lock()
+_ADMIN_RATE_LIMIT_PREFIXES = (
+    "/admin/",
+    "/gov/rotate/",
+    "/pending/",
+)
+_ADMIN_RATE_LIMIT_PATHS = {
+    "/api/balances",
+    "/api/bridge/void",
+    "/api/lock/forfeit",
+    "/api/lock/release",
+    "/genesis/export",
+    "/miner/headerkey",
+    "/ops/attest/debug",
+    "/rewards/settle",
+    "/wallet/balances/all",
+    "/wallet/ledger",
+    "/wallet/link-coinbase",
+    "/wallet/transfer",
+    "/wallet/transfer_OLD_DISABLED",
+    "/withdraw/register",
+}
+
+
+def _admin_rate_limit_bucket_path(path: str) -> Optional[str]:
+    if path in _ADMIN_RATE_LIMIT_PATHS:
+        return path
+    if path.startswith("/api/miner/") and path.endswith("/attestations"):
+        return "/api/miner/:miner_id/attestations"
+    if path.startswith("/api/bridge/lock/"):
+        if path.endswith("/confirm"):
+            return "/api/bridge/lock/:lock_id/confirm"
+        if path.endswith("/release"):
+            return "/api/bridge/lock/:lock_id/release"
+    if path.startswith("/withdraw/history/"):
+        return "/withdraw/history/:miner_pk"
+    for prefix in _ADMIN_RATE_LIMIT_PREFIXES:
+        if path.startswith(prefix):
+            return f"{prefix.rstrip('/')}/*"
+    return None
+
+
+def _is_admin_rate_limited_path(path: str) -> bool:
+    return _admin_rate_limit_bucket_path(path) is not None
+
+
+def _check_admin_rate_limit(client_ip: str, route_key: str, now_ts: Optional[int] = None):
+    """Bound repeated admin endpoint attempts per client IP and route."""
+    if ADMIN_RATE_LIMIT_MAX <= 0:
+        return True, 0
+    now_ts = int(time.time()) if now_ts is None else int(now_ts)
+    window = max(1, ADMIN_RATE_LIMIT_WINDOW)
+    cutoff = now_ts - window
+    key = (client_ip or "unknown", route_key)
+    with _ADMIN_RATE_LIMIT_LOCK:
+        attempts = [ts for ts in _ADMIN_RATE_LIMIT_BUCKETS.get(key, []) if ts > cutoff]
+        if len(attempts) >= ADMIN_RATE_LIMIT_MAX:
+            _ADMIN_RATE_LIMIT_BUCKETS[key] = attempts
+            retry_after = max(1, window - (now_ts - attempts[0]))
+            return False, retry_after
+        attempts.append(now_ts)
+        _ADMIN_RATE_LIMIT_BUCKETS[key] = attempts
+        return True, 0
+
+
+def _admin_rate_limit_response(retry_after: int):
+    response = jsonify({
+        "ok": False,
+        "error": "rate_limited",
+        "code": "ADMIN_RATE_LIMIT",
+        "limit": ADMIN_RATE_LIMIT_MAX,
+        "window_seconds": ADMIN_RATE_LIMIT_WINDOW,
+    })
+    response.status_code = 429
+    response.headers["Retry-After"] = str(retry_after)
+    return response
 
 
 def _attest_mapping(value):
@@ -497,6 +578,11 @@ except Exception as e:
 def _start_timer():
     g._ts = time.time()
     g.request_id = request.headers.get("X-Request-Id") or uuid.uuid4().hex
+    rate_limit_path = _admin_rate_limit_bucket_path(request.path)
+    if rate_limit_path:
+        allowed, retry_after = _check_admin_rate_limit(get_client_ip(), rate_limit_path)
+        if not allowed:
+            return _admin_rate_limit_response(retry_after)
 
 def _normalize_client_ip(raw_value) -> str:
     """Normalize a peer/header IP string down to the first address token."""
@@ -1047,7 +1133,7 @@ GOVERNANCE_ACTIVE_MINER_WINDOW_SECONDS = 3600
 EPOCH_WEIGHT_SCALE = 1_000_000_000
 MAX_EPOCH_WEIGHT = 10_000
 MAX_EPOCH_WEIGHT_UNITS = MAX_EPOCH_WEIGHT * EPOCH_WEIGHT_SCALE
-MIN_FAILED_FINGERPRINT_WEIGHT_UNITS = 1
+FAILED_FINGERPRINT_WEIGHT_UNITS = 0
 
 
 def epoch_weight_to_units(weight) -> int:
@@ -3791,7 +3877,7 @@ def _submit_attestation_impl():
                 fingerprint if isinstance(fingerprint, dict) else {},
             )
             if not fingerprint_passed:
-                enroll_weight_units = MIN_FAILED_FINGERPRINT_WEIGHT_UNITS
+                enroll_weight_units = FAILED_FINGERPRINT_WEIGHT_UNITS
             else:
                 enroll_weight_units = epoch_weight_to_units(hw_weight * rotation_eval["active_ratio"])
             enroll_weight = epoch_weight_units_to_display(enroll_weight_units)
@@ -4038,8 +4124,7 @@ def enroll_epoch():
     arch = device.get('arch', 'default')
     hw_weight = HARDWARE_WEIGHTS.get(family, {}).get(arch, 1.0)
 
-    # RIP-PoA Phase 2: VM miners get minimal (but non-zero) weight
-    # VMs can technically earn RTC, but it's economically pointless (1e-9 vs 1.0-2.5 for real hardware)
+    # RIP-PoA Phase 2: failed fingerprints are tracked but receive zero rewards.
     fingerprint_failed = check_result.get('fingerprint_failed', False)
 
     with sqlite3.connect(DB_PATH) as c:
@@ -4049,9 +4134,9 @@ def enroll_epoch():
             data.get('fingerprint') if isinstance(data.get('fingerprint'), dict) else {},
         )
         if fingerprint_failed:
-            weight_units = MIN_FAILED_FINGERPRINT_WEIGHT_UNITS
+            weight_units = FAILED_FINGERPRINT_WEIGHT_UNITS
             weight = epoch_weight_units_to_display(weight_units)
-            print(f"[ENROLL] Miner {miner_pk[:16]}... fingerprint FAILED - VM weight: {weight}")
+            print(f"[ENROLL] Miner {miner_pk[:16]}... fingerprint FAILED - weight: {weight}")
         else:
             weight_units = epoch_weight_to_units(hw_weight * rotation_eval['active_ratio'])
             weight = epoch_weight_units_to_display(weight_units)
@@ -4133,10 +4218,11 @@ def vrf_is_selected(miner_pk: str, slot: int) -> bool:
             "SELECT miner_pk, weight FROM epoch_enroll WHERE epoch = ?",
             (epoch,)
         ).fetchall()
-        all_miners = [
-            (pk, normalize_epoch_weight_units(stored_weight))
-            for pk, stored_weight in raw_miners
-        ]
+        all_miners = []
+        for pk, stored_weight in raw_miners:
+            normalized_weight = normalize_epoch_weight_units(stored_weight)
+            if normalized_weight > 0:
+                all_miners.append((pk, normalized_weight))
 
     if not all_miners:
         return False
@@ -4442,9 +4528,14 @@ def _wallet_review_ui_authorized(req):
         # Store session_id on request for template rendering
         req._admin_session_id = sid  # type: ignore
         return True
-    # Legacy fallback: admin_key via POST body only (not URL query params)
+    # Legacy operator UI links and tests use query-string admin_key for GET-only
+    # HTML pages. Mutating requests still require header/session or POST body.
     need = os.environ.get("RC_ADMIN_KEY", "")
-    got = str(req.form.get("admin_key") or "").strip()
+    got = str(
+        (req.args.get("admin_key") if req.method == "GET" else "")
+        or req.form.get("admin_key")
+        or ""
+    ).strip()
     return bool(need and got and hmac.compare_digest(need, got))
 
 
@@ -4913,7 +5004,7 @@ def admin_wallet_review_holds_ui():
         """,
         entries=entries,
         active_status=active_status,
-        admin_key=admin_key,
+        sid=sid,
         statuses=["needs_review", "held", "escalated", "blocked", "released", "dismissed"],
     )
 
@@ -6021,11 +6112,15 @@ def api_miners():
     
     # Pagination args
     try:
-        limit = min(max(int(request.args.get("limit", 100)), 1), 1000)
-        offset = max(int(request.args.get("offset", 0)), 0)
+        limit = int(request.args.get("limit", 100))
     except (ValueError, TypeError):
-        limit = 100
-        offset = 0
+        return jsonify({"ok": False, "error": "limit must be an integer"}), 400
+    try:
+        offset = int(request.args.get("offset", 0))
+    except (ValueError, TypeError):
+        return jsonify({"ok": False, "error": "offset must be an integer"}), 400
+    limit = min(max(limit, 1), 1000)
+    offset = max(offset, 0)
 
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
@@ -7262,6 +7357,14 @@ def wallet_transfer_v2():
     to_miner = pre.details["to_miner"]
     amount_rtc = pre.details["amount_rtc"]
     reason = str((data or {}).get('reason', 'admin_transfer'))
+    idempotency_key = ""
+    raw_idempotency_key = (data or {}).get("idempotency_key")
+    if raw_idempotency_key not in (None, ""):
+        if not isinstance(raw_idempotency_key, str):
+            return jsonify({"error": "invalid_idempotency_key"}), 400
+        idempotency_key = raw_idempotency_key.strip()
+        if not re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", idempotency_key):
+            return jsonify({"error": "invalid_idempotency_key"}), 400
     
     amount_i64 = int(amount_rtc * 1000000)
     now = int(time.time())
@@ -7269,7 +7372,10 @@ def wallet_transfer_v2():
     current_epoch = current_slot()
     
     # Generate transaction hash
-    tx_data = f"{from_miner}:{to_miner}:{amount_i64}:{now}:{os.urandom(8).hex()}"
+    if idempotency_key:
+        tx_data = f"wallet_transfer_idempotency:{idempotency_key}"
+    else:
+        tx_data = f"{from_miner}:{to_miner}:{amount_i64}:{now}:{os.urandom(8).hex()}"
     tx_hash = hashlib.sha256(tx_data.encode()).hexdigest()[:32]
     
     conn = sqlite3.connect(DB_PATH)
@@ -7279,6 +7385,40 @@ def wallet_transfer_v2():
         # SECURITY: Acquire write lock BEFORE reading balance to prevent
         # concurrent transfers from both passing the balance check.
         c.execute("BEGIN IMMEDIATE")
+
+        if idempotency_key:
+            existing = c.execute("""
+                SELECT id, from_miner, to_miner, amount_i64, reason, status, confirms_at
+                FROM pending_ledger
+                WHERE tx_hash = ?
+            """, (tx_hash,)).fetchone()
+            if existing:
+                pending_id, existing_from, existing_to, existing_amount, existing_reason, status, existing_confirms_at = existing
+                if (
+                    existing_from != from_miner or
+                    existing_to != to_miner or
+                    int(existing_amount) != amount_i64 or
+                    str(existing_reason or "") != reason
+                ):
+                    conn.rollback()
+                    return jsonify({
+                        "error": "idempotency_key_conflict",
+                        "tx_hash": tx_hash,
+                    }), 409
+
+                conn.rollback()
+                return jsonify({
+                    "ok": True,
+                    "phase": status or "pending",
+                    "pending_id": pending_id,
+                    "tx_hash": tx_hash,
+                    "from_miner": from_miner,
+                    "to_miner": to_miner,
+                    "amount_rtc": amount_rtc,
+                    "confirms_at": existing_confirms_at,
+                    "confirms_in_hours": CONFIRMATION_DELAY_SECONDS / 3600,
+                    "message": "Transfer already pending for idempotency key."
+                })
         
         # Check sender balance
         row = c.execute("SELECT amount_i64 FROM balances WHERE miner_id = ?", (from_miner,)).fetchone()
@@ -7412,6 +7552,11 @@ def void_pending():
     tx_hash = data.get('tx_hash')
     reason = data.get('reason', 'admin_void')
     voided_by = data.get('voided_by', 'admin')
+
+    if pending_id is not None and not isinstance(pending_id, (int, str)):
+        return jsonify({"error": "pending_id must be a scalar"}), 400
+    if tx_hash is not None and not isinstance(tx_hash, str):
+        return jsonify({"error": "tx_hash must be a string"}), 400
     
     if not pending_id and not tx_hash:
         return jsonify({"error": "Provide pending_id or tx_hash"}), 400
@@ -8412,11 +8557,10 @@ def beacon_digest():
 
 @app.route("/beacon/envelopes", methods=["GET"])
 def beacon_envelopes_list():
-    try:
-        limit = min(int(request.args.get("limit", 50)), 50)
-        offset = max(int(request.args.get("offset", 0)), 0)
-    except (ValueError, TypeError):
-        limit, offset = 50, 0
+    limit, offset = normalize_beacon_pagination(
+        request.args.get("limit", 50),
+        request.args.get("offset", 0),
+    )
     envelopes = get_recent_envelopes(limit=limit, offset=offset, db_path=DB_PATH)
     return jsonify({"ok": True, "count": len(envelopes), "envelopes": envelopes})
 
@@ -8591,3 +8735,4 @@ def check_hardware_wallet_consistency(hardware_id, miner_wallet, conn):
             return False, f'hardware_bound_to_different_wallet:{bound_wallet[:20]}'
     
     return True, 'ok'
+    

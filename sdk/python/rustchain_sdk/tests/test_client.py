@@ -3,11 +3,11 @@ Tests for RustChainClient.
 Uses respx for HTTP mocking.
 """
 
+import httpx
 import pytest
 import respx
-import httpx
 import json
-from rustchain_sdk.client import RustChainClient
+from rustchain_sdk.client import DEFAULT_NODE_URL, RustChainClient
 from rustchain_sdk.exceptions import ConnectionError, APIError
 from rustchain_sdk.wallet import RustChainWallet
 
@@ -18,7 +18,7 @@ class TestRustChainClientInit:
     def test_default_base_url(self):
         """Default base URL is set correctly."""
         client = RustChainClient()
-        assert client._base_url == "https://50.28.86.131"
+        assert client._base_url == DEFAULT_NODE_URL
 
     def test_custom_base_url(self):
         """Custom base URL is set correctly."""
@@ -63,7 +63,7 @@ class TestRustChainClientHealth:
     @respx.mock
     async def test_health_returns_dict(self):
         """Health returns a dict."""
-        route = respx.get("https://50.28.86.131/health").mock(
+        route = respx.get(f"{DEFAULT_NODE_URL}/health").mock(
             return_value=httpx.Response(200, json={"status": "ok", "version": "1.0.0"})
         )
         async with RustChainClient() as client:
@@ -75,7 +75,7 @@ class TestRustChainClientHealth:
     @respx.mock
     async def test_health_raises_on_connection_error(self):
         """Connection error raises RustChainError."""
-        route = respx.get("https://50.28.86.131/health").mock(
+        route = respx.get(f"{DEFAULT_NODE_URL}/health").mock(
             side_effect=httpx.ConnectError("Connection refused")
         )
         async with RustChainClient() as client:
@@ -90,7 +90,7 @@ class TestRustChainClientEpoch:
     @respx.mock
     async def test_get_epoch_returns_dict(self):
         """get_epoch returns epoch info dict."""
-        route = respx.get("https://50.28.86.131/epoch").mock(
+        route = respx.get(f"{DEFAULT_NODE_URL}/epoch").mock(
             return_value=httpx.Response(200, json={
                 "epoch_number": 42,
                 "start_time": 1700000000,
@@ -110,7 +110,7 @@ class TestRustChainClientMiners:
     @respx.mock
     async def test_get_miners_returns_list(self):
         """get_miners returns a list of miner dicts."""
-        route = respx.get("https://50.28.86.131/miners").mock(
+        route = respx.get(f"{DEFAULT_NODE_URL}/miners").mock(
             return_value=httpx.Response(200, json=[
                 {"public_key": "pk1", "score": 100},
                 {"public_key": "pk2", "score": 90},
@@ -125,7 +125,7 @@ class TestRustChainClientMiners:
     @respx.mock
     async def test_get_miners_handles_dict_response(self):
         """get_miners handles miners nested in dict response."""
-        route = respx.get("https://50.28.86.131/miners").mock(
+        route = respx.get(f"{DEFAULT_NODE_URL}/miners").mock(
             return_value=httpx.Response(200, json={
                 "miners": [{"public_key": "pk1", "score": 100}]
             })
@@ -143,7 +143,7 @@ class TestRustChainClientBalance:
     @respx.mock
     async def test_get_balance_returns_dict(self):
         """get_balance returns balance info dict."""
-        route = respx.get("https://50.28.86.131/wallet/balance").mock(
+        route = respx.get(f"{DEFAULT_NODE_URL}/wallet/balance").mock(
             return_value=httpx.Response(200, json={
                 "address": "RTCabc123",
                 "balance": 1000,
@@ -163,7 +163,7 @@ class TestRustChainClientTransfer:
     @respx.mock
     async def test_transfer_signed_success(self):
         """transfer_signed returns tx result."""
-        route = respx.post("https://50.28.86.131/wallet/transfer/signed").mock(
+        route = respx.post(f"{DEFAULT_NODE_URL}/wallet/transfer/signed").mock(
             return_value=httpx.Response(200, json={
                 "tx_hash": "0xabc123",
                 "status": "confirmed",
@@ -198,7 +198,7 @@ class TestRustChainClientTransfer:
     @respx.mock
     async def test_wallet_transfer_with_wallet_sends_fee_rtc(self):
         """wallet_transfer_with_wallet preserves a caller-supplied fee."""
-        route = respx.post("https://50.28.86.131/wallet/transfer/signed").mock(
+        route = respx.post(f"{DEFAULT_NODE_URL}/wallet/transfer/signed").mock(
             return_value=httpx.Response(200, json={
                 "tx_hash": "0xabc123",
                 "status": "confirmed",
@@ -222,7 +222,7 @@ class TestRustChainClientTransfer:
     @respx.mock
     async def test_transfer_signed_raises_on_api_error(self):
         """API error raises APIError with status code."""
-        route = respx.post("https://50.28.86.131/wallet/transfer/signed").mock(
+        route = respx.post(f"{DEFAULT_NODE_URL}/wallet/transfer/signed").mock(
             return_value=httpx.Response(400, json={"message": "Invalid signature"})
         )
         async with RustChainClient() as client:
@@ -240,7 +240,7 @@ class TestRustChainClientExplorer:
     @respx.mock
     async def test_explorer_blocks_returns_list(self):
         """explorer_blocks returns list of blocks."""
-        route = respx.get("https://50.28.86.131/explorer/blocks").mock(
+        route = respx.get(f"{DEFAULT_NODE_URL}/explorer/blocks").mock(
             return_value=httpx.Response(200, json=[
                 {"height": 100, "hash": "0x1"},
                 {"height": 99, "hash": "0x2"},
@@ -256,7 +256,7 @@ class TestRustChainClientExplorer:
     @respx.mock
     async def test_explorer_transactions_filters_by_address(self):
         """explorer_transactions sends address as param."""
-        route = respx.get("https://50.28.86.131/explorer/transactions").mock(
+        route = respx.get(f"{DEFAULT_NODE_URL}/explorer/transactions").mock(
             return_value=httpx.Response(200, json=[])
         )
         async with RustChainClient() as client:
@@ -272,7 +272,7 @@ class TestRustChainClientGovernance:
     @respx.mock
     async def test_list_governance_proposals(self):
         """list_governance_proposals returns list."""
-        route = respx.get("https://50.28.86.131/governance/proposals").mock(
+        route = respx.get(f"{DEFAULT_NODE_URL}/governance/proposals").mock(
             return_value=httpx.Response(200, json=[
                 {"id": 1, "type": "param_change", "status": "active"},
             ])
@@ -286,7 +286,7 @@ class TestRustChainClientGovernance:
     @respx.mock
     async def test_governance_vote_success(self):
         """governance_vote returns vote result."""
-        route = respx.post("https://50.28.86.131/governance/vote").mock(
+        route = respx.post(f"{DEFAULT_NODE_URL}/governance/vote").mock(
             return_value=httpx.Response(200, json={
                 "proposal_id": 1,
                 "vote": "yes",
@@ -310,7 +310,7 @@ class TestRustChainClientAttestation:
     @respx.mock
     async def test_attest_challenge_returns_challenge(self):
         """attest_challenge returns challenge string."""
-        route = respx.post("https://50.28.86.131/attestation/challenge").mock(
+        route = respx.post(f"{DEFAULT_NODE_URL}/attestation/challenge").mock(
             return_value=httpx.Response(200, json={
                 "challenge": "random-challenge-string",
                 "expires_at": 1700010000,
@@ -324,7 +324,7 @@ class TestRustChainClientAttestation:
     @respx.mock
     async def test_attest_submit_success(self):
         """attest_submit returns submission result."""
-        route = respx.post("https://50.28.86.131/attestation/submit").mock(
+        route = respx.post(f"{DEFAULT_NODE_URL}/attestation/submit").mock(
             return_value=httpx.Response(200, json={
                 "status": "attested",
                 "miner_public_key": "pk-hex",

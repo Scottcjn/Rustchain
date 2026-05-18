@@ -27,6 +27,7 @@ from requests.exceptions import RequestException, Timeout
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
 
+import metrics_exposition
 from rustchain_exporter import (
     ExporterConfig,
     MetricsRegistry,
@@ -400,6 +401,17 @@ class TestMetricsCollector:
 
 class TestPrometheusExposition:
     """Tests for PrometheusExposition."""
+
+    def test_module_docstring_links_to_live_prometheus_docs(self):
+        """The format reference should use Prometheus' live docs URL."""
+        assert (
+            "https://prometheus.io/docs/instrumenting/exposition_formats/"
+            in metrics_exposition.__doc__
+        )
+        assert (
+            "https://github.com/prometheus/docs/blob/main/content/docs/instrumenting/exposition_formats.md"
+            not in metrics_exposition.__doc__
+        )
 
     def test_add_gauge(self):
         """Test adding gauge metrics."""

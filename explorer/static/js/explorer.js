@@ -127,6 +127,11 @@ function getRustBadge(score) {
     return 'Fresh Metal';
 }
 
+
+function normalizeMinersResponse(response) {
+    return Array.isArray(response) ? response : (response?.miners || []);
+}
+
 // API Fetcher with Error Handling
 async function fetchAPI(endpoint, options = {}) {
     const url = `${CONFIG.API_BASE}${endpoint}`;
@@ -204,7 +209,7 @@ async function fetchMiners() {
     try {
         state.loading.miners = true;
         state.error.miners = null;
-        state.miners = await fetchAPI('/api/miners') || [];
+        state.miners = normalizeMinersResponse(await fetchAPI('/api/miners'));
     } catch (error) {
         state.error.miners = error.message;
         // Fallback mock data

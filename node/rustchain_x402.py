@@ -70,6 +70,14 @@ def _json_string_field(data, field_name, default=""):
     return value.strip()
 
 
+def _is_base_address(value: str) -> bool:
+    return (
+        value.startswith("0x")
+        and len(value) == 42
+        and all(char in "0123456789abcdefABCDEF" for char in value[2:])
+    )
+
+
 def init_app(app, db_path):
     """Register x402 routes on the RustChain Flask app."""
 
@@ -104,7 +112,7 @@ def init_app(app, db_path):
 
         if not miner_id:
             return jsonify({"error": "miner_id is required"}), 400
-        if not coinbase_address or not coinbase_address.startswith("0x") or len(coinbase_address) != 42:
+        if not coinbase_address or not _is_base_address(coinbase_address):
             return jsonify({"error": "Invalid Base address (must be 0x + 40 hex chars)"}), 400
 
         conn = sqlite3.connect(db_path)

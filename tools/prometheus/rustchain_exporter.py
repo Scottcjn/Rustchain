@@ -5,11 +5,13 @@ import logging
 import os
 import time
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 import requests
 from prometheus_client import Gauge, start_http_server
 
 NODE_URL = os.getenv("NODE_URL", "https://rustchain.org").rstrip("/")
+P2P_NODE_URL = os.getenv("P2P_NODE_URL", "").rstrip("/")
 EXPORTER_PORT = int(os.getenv("EXPORTER_PORT", "9100"))
 SCRAPE_INTERVAL = int(os.getenv("SCRAPE_INTERVAL", "60"))
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "15"))
@@ -41,14 +43,40 @@ def _to_int(value: Any, default: int = 0) -> int:
         return default
 
 
-def fetch_json(endpoint: str) -> Any:
-    url = f"{NODE_URL}{endpoint}"
+def _safe_base_url_for_log(base_url: str) -> str:
+    if not base_url:
+        return "<unset>"
+
+    try:
+        parts = urlsplit(base_url)
+    except ValueError:
+        return "<invalid-url>"
+
+    if not parts.scheme or not parts.hostname:
+        return "<invalid-url>"
+
+    host = parts.hostname
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+    netloc = host
+    if parts.port is not None:
+        netloc = f"{netloc}:{parts.port}"
+    return urlunsplit((parts.scheme, netloc, "", "", ""))
+
+
+def fetch_json(endpoint: str, base_url: str = NODE_URL) -> Any:
+    url = f"{base_url}{endpoint}"
     try:
         response = session.get(url, timeout=REQUEST_TIMEOUT)
         response.raise_for_status()
         return response.json()
     except Exception as exc:  # noqa: BLE001
-        logger.warning("request failed endpoint=%s error=%s", endpoint, exc)
+        logger.warning(
+            "request failed base_url=%s endpoint=%s error=%s",
+            _safe_base_url_for_log(base_url),
+            endpoint,
+            exc,
+        )
         return None
 
 
@@ -112,6 +140,34 @@ rustchain_total_fees_collected_rtc = Gauge(
 rustchain_fee_events_total = Gauge(
     "rustchain_fee_events_total",
     "Total fee events",
+)
+rustchain_p2p_up = Gauge(
+    "rustchain_p2p_up",
+    "RustChain P2P health endpoint status (1=up, 0=down)",
+)
+rustchain_p2p_peer_count = Gauge(
+    "rustchain_p2p_peer_count",
+    "Number of peers reported by the P2P subsystem",
+)
+rustchain_p2p_attestation_count = Gauge(
+    "rustchain_p2p_attestation_count",
+    "Number of attestations reported by the P2P subsystem",
+)
+rustchain_p2p_settled_epochs = Gauge(
+    "rustchain_p2p_settled_epochs",
+    "Number of settled epochs reported by the P2P subsystem",
+)
+rustchain_p2p_message_rate_per_second = Gauge(
+    "rustchain_p2p_message_rate_per_second",
+    "P2P message rate reported by the node, if available",
+)
+rustchain_p2p_messages_total = Gauge(
+    "rustchain_p2p_messages_total",
+    "Total P2P messages reported by the node, if available",
+)
+rustchain_p2p_health_latency_seconds = Gauge(
+    "rustchain_p2p_health_latency_seconds",
+    "Latency of the P2P health scrape in seconds",
 )
 
 
@@ -261,6 +317,63 @@ def collect_stats() -> None:
         rustchain_balance_rtc.labels(miner=miner).set(balance)
 
 
+def _p2p_peer_count(payload: dict[str, Any]) -> int:
+    if payload.get("peer_count") is not None:
+        return _to_int(payload.get("peer_count"))
+    peers = payload.get("peers")
+    return len(peers) if isinstance(peers, list) else 0
+
+
+def collect_p2p() -> None:
+    if not P2P_NODE_URL:
+        logger.info("skipping P2P scrape because P2P_NODE_URL is not configured")
+        rustchain_p2p_up.set(0)
+        rustchain_p2p_peer_count.set(0)
+        rustchain_p2p_attestation_count.set(0)
+        rustchain_p2p_settled_epochs.set(0)
+        rustchain_p2p_message_rate_per_second.set(0)
+        rustchain_p2p_messages_total.set(0)
+        rustchain_p2p_health_latency_seconds.set(0)
+        return
+
+    start = time.time()
+    payload = fetch_json("/p2p/health", P2P_NODE_URL)
+    rustchain_p2p_health_latency_seconds.set(time.time() - start)
+
+    if not isinstance(payload, dict):
+        rustchain_p2p_up.set(0)
+        rustchain_p2p_peer_count.set(0)
+        rustchain_p2p_attestation_count.set(0)
+        rustchain_p2p_settled_epochs.set(0)
+        rustchain_p2p_message_rate_per_second.set(0)
+        rustchain_p2p_messages_total.set(0)
+        return
+
+    rustchain_p2p_up.set(1 if payload.get("running", True) else 0)
+    rustchain_p2p_peer_count.set(_p2p_peer_count(payload))
+    rustchain_p2p_attestation_count.set(_to_float(payload.get("attestation_count", 0)))
+    rustchain_p2p_settled_epochs.set(_to_float(payload.get("settled_epochs", 0)))
+    rustchain_p2p_message_rate_per_second.set(
+        _to_float(
+            payload.get(
+                "message_rate",
+                payload.get(
+                    "messages_per_second",
+                    payload.get("gossip_messages_per_second", 0),
+                ),
+            )
+        )
+    )
+    rustchain_p2p_messages_total.set(
+        _to_float(
+            payload.get(
+                "message_count",
+                payload.get("messages_total", payload.get("gossip_messages_total", 0)),
+            )
+        )
+    )
+
+
 def collect_once() -> None:
     health_ok = collect_health()
     epoch = collect_epoch()
@@ -268,13 +381,15 @@ def collect_once() -> None:
     collect_hall_of_fame()
     collect_fee_pool()
     collect_stats()
+    collect_p2p()
     logger.info("collection complete health_ok=%s", health_ok)
 
 
 def main() -> None:
     logger.info(
-        "starting exporter node_url=%s port=%s scrape_interval=%ss",
-        NODE_URL,
+        "starting exporter node_url=%s p2p_node_url=%s port=%s scrape_interval=%ss",
+        _safe_base_url_for_log(NODE_URL),
+        _safe_base_url_for_log(P2P_NODE_URL),
         EXPORTER_PORT,
         SCRAPE_INTERVAL,
     )

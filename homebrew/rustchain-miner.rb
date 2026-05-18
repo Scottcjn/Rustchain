@@ -5,9 +5,9 @@
 class RustchainMiner < Formula
   desc "RustChain Proof-of-Antiquity Miner - rewards vintage hardware"
   homepage "https://github.com/Scottcjn/Rustchain"
-  url "https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.5.0.tar.gz"
+  url "https://github.com/Scottcjn/Rustchain/archive/448e835cd76e28fef9bc76f9ddaaf38be0ffc2b8.tar.gz"
   version "2.5.0"
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000" # REPLACE with actual sha256
+  sha256 "eaa09a1586dec2748c205cca2ec76602fa985e0dbd0d1b110bb12dc98aa6837a"
   license "MIT"
 
   depends_on "python@3.11"
@@ -15,7 +15,7 @@ class RustchainMiner < Formula
   def install
     libexec.install "miners/macos/rustchain_mac_miner_v2.5.py" => "rustchain_miner.py"
     libexec.install "miners/macos/color_logs.py"
-    libexec.install "miners/fingerprint_checks.py"
+    libexec.install "miners/macos/fingerprint_checks.py"
 
     venv = virtualenv_create(libexec, "python@3.11")
     virtualenv_install(venv, "miners/macos/requirements-miner.txt")

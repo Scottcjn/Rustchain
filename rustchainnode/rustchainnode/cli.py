@@ -29,6 +29,7 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 PID_FILE = CONFIG_DIR / "node.pid"
 
 NODE_URL = "https://50.28.86.131"
+TESTNET_NODE_URL = "http://localhost:8099"
 
 
 # ---------------------------------------------------------------------------
@@ -44,6 +45,15 @@ def _load_config() -> dict:
 def _save_config(cfg: dict):
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     CONFIG_FILE.write_text(json.dumps(cfg, indent=2))
+
+
+def _resolve_node_url(cfg: dict, force_testnet: bool = False) -> str:
+    configured_url = cfg.get("node_url")
+    if force_testnet or cfg.get("testnet"):
+        if configured_url and configured_url != NODE_URL:
+            return configured_url
+        return TESTNET_NODE_URL
+    return configured_url or NODE_URL
 
 
 def _check_health(node_url: str = NODE_URL) -> dict:
@@ -83,11 +93,14 @@ def cmd_init(args):
 
     cfg = get_optimal_config(wallet, port)
     cfg["testnet"] = testnet
+    if testnet:
+        cfg["node_url"] = TESTNET_NODE_URL
     _save_config(cfg)
 
     # Test connectivity
-    print(f"\n  Testing connectivity to {NODE_URL}...")
-    health = _check_health()
+    node_url = _resolve_node_url(cfg)
+    print(f"\n  Testing connectivity to {node_url}...")
+    health = _check_health(node_url)
     if health.get("ok"):
         print(f"  ✅ Node reachable: {health}")
     else:
@@ -103,14 +116,14 @@ def cmd_start(args):
     cfg = _load_config()
     wallet = getattr(args, "wallet", None) or cfg.get("wallet")
     port = getattr(args, "port", None) or cfg.get("port", 8099)
-    testnet = getattr(args, "testnet", False)
+    testnet = getattr(args, "testnet", False) or bool(cfg.get("testnet", False))
 
     if not wallet:
         print("❌ No wallet configured. Run: rustchainnode init --wallet <name>")
         sys.exit(1)
 
     hw = detect_cpu_info()
-    node_url = "http://localhost:8099" if testnet else NODE_URL
+    node_url = _resolve_node_url(cfg, testnet)
 
     print(f"🚀 Starting RustChain node...")
     print(f"   Wallet: {wallet}")
@@ -153,7 +166,7 @@ def cmd_stop(args):
 def cmd_status(args):
     """Show node status."""
     cfg = _load_config()
-    node_url = NODE_URL
+    node_url = _resolve_node_url(cfg)
 
     print("🔍 RustChain Node Status")
     print(f"   Config: {CONFIG_FILE}")
@@ -188,7 +201,7 @@ def cmd_config(args):
 def cmd_dashboard(args):
     """Show TUI-style health dashboard."""
     cfg = _load_config()
-    node_url = NODE_URL
+    node_url = _resolve_node_url(cfg)
 
     print("\n" + "=" * 60)
     print("  🦀 RustChain Node Dashboard")

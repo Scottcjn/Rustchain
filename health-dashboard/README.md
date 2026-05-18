@@ -15,9 +15,9 @@ A production-ready monitoring dashboard that tracks the health and performance o
 - **Mobile-friendly** responsive design
 - **Deployable** as static site + lightweight backend
 
-## 🌐 Live Demo
+## 🌐 Local Demo
 
-Access the dashboard at: `https://rustchain.org/status`
+Run the dashboard locally at: `http://localhost:5000`
 
 ## ✨ Features
 

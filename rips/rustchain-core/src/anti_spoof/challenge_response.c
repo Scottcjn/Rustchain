@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * RustChain Anti-Spoofing Challenge-Response System
  * =================================================
@@ -18,7 +19,7 @@
  * - No real thermal sensors
  * - OpenFirmware values don't match hardware
  *
- * Compile: gcc -O0 challenge_response.c -o challenge -framework CoreFoundation -framework IOKit
+ * Compile: gcc -O0 challenge_response.c -o challenge -framework CoreFoundation -framework IOKit -framework Security
  */
 
 #include <stdio.h>
@@ -26,15 +27,15 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
-
-#ifdef __linux__
 #include <errno.h>
-#include <sys/random.h>
-#endif
+#include <fcntl.h>
 
 #ifdef __APPLE__
 #include <sys/sysctl.h>
 #include <mach/mach_time.h>
+#include <Security/Security.h>
+#elif defined(__linux__)
+#include <sys/random.h>
 #endif
 
 #ifdef __ppc__
@@ -87,6 +88,7 @@ typedef struct {
     char failure_reason[256];
 } ValidationResult;
 
+/* Fill nonce bytes from the operating system CSPRNG. */
 static int fill_secure_nonce(unsigned char *nonce, size_t len) {
 #ifdef __APPLE__
     arc4random_buf(nonce, len);
@@ -105,15 +107,11 @@ static int fill_secure_nonce(unsigned char *nonce, size_t len) {
         }
         return -1;
     }
-
     return 0;
 #else
-    (void)nonce;
-    (void)len;
     return -1;
 #endif
 }
-
 /* PowerPC-specific: Read timebase register */
 static inline unsigned long long read_timebase(void) {
 #ifdef __ppc__
@@ -328,8 +326,9 @@ Challenge generate_challenge(unsigned char type) {
     c.challenge_type = type;
     c.timestamp = read_timebase();
 
+    /* Generate unpredictable nonce bytes. Fail closed if the OS CSPRNG is unavailable. */
     if (fill_secure_nonce(c.nonce, sizeof(c.nonce)) != 0) {
-        fputs("Failed to generate secure challenge nonce\n", stderr);
+        fprintf(stderr, "Failed to generate secure challenge nonce\n");
         exit(EXIT_FAILURE);
     }
 

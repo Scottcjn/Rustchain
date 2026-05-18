@@ -25,6 +25,7 @@ from typing import Dict, List, Optional, Set, Tuple, Any
 from collections import defaultdict, OrderedDict
 import logging
 import requests
+from urllib.parse import urlparse
 
 # ---------------------------------------------------------------------------
 # P2P HMAC secret — MUST be set via the RC_P2P_SECRET environment variable.
@@ -114,6 +115,124 @@ SYNC_INTERVAL = 30
 MESSAGE_EXPIRY = 300  # 5 minutes
 MAX_INV_BATCH = 1000
 DB_PATH = os.environ.get("RUSTCHAIN_DB", "/root/rustchain/rustchain_v2.db")
+
+
+MIN_P2P_PROTOCOL_VERSION = 1
+MAX_P2P_PROTOCOL_VERSION = 10
+MIN_P2P_K_BUCKET_SIZE = 1
+MAX_P2P_K_BUCKET_SIZE = 1000
+MIN_P2P_PING_INTERVAL = 5
+MAX_P2P_PING_INTERVAL = 3600
+MIN_P2P_HANDSHAKE_TIMEOUT = 1
+MAX_P2P_HANDSHAKE_TIMEOUT = 120
+_HANDSHAKE_BOUNDS = {
+    "protocol_version": (MIN_P2P_PROTOCOL_VERSION, MAX_P2P_PROTOCOL_VERSION),
+    "k_bucket_size": (MIN_P2P_K_BUCKET_SIZE, MAX_P2P_K_BUCKET_SIZE),
+    "ping_interval": (MIN_P2P_PING_INTERVAL, MAX_P2P_PING_INTERVAL),
+    "timeout": (MIN_P2P_HANDSHAKE_TIMEOUT, MAX_P2P_HANDSHAKE_TIMEOUT),
+}
+
+
+def _bounded_int(value: Any, default: int, min_value: int, max_value: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return min(max(parsed, min_value), max_value)
+
+
+P2P_PROTOCOL_VERSION = _bounded_int(
+    os.environ.get("RC_P2P_PROTOCOL_VERSION"),
+    1,
+    MIN_P2P_PROTOCOL_VERSION,
+    MAX_P2P_PROTOCOL_VERSION,
+)
+P2P_K_BUCKET_SIZE = _bounded_int(
+    os.environ.get("RC_P2P_K_BUCKET_SIZE"),
+    20,
+    MIN_P2P_K_BUCKET_SIZE,
+    MAX_P2P_K_BUCKET_SIZE,
+)
+P2P_PING_INTERVAL = _bounded_int(
+    os.environ.get("RC_P2P_PING_INTERVAL"),
+    SYNC_INTERVAL,
+    MIN_P2P_PING_INTERVAL,
+    MAX_P2P_PING_INTERVAL,
+)
+P2P_HANDSHAKE_TIMEOUT = _bounded_int(
+    os.environ.get("RC_P2P_HANDSHAKE_TIMEOUT"),
+    10,
+    MIN_P2P_HANDSHAKE_TIMEOUT,
+    MAX_P2P_HANDSHAKE_TIMEOUT,
+)
+_HANDSHAKE_FIELDS = (
+    "protocol_version",
+    "k_bucket_size",
+    "ping_interval",
+    "timeout",
+)
+
+
+def local_handshake_params() -> Dict[str, int]:
+    """Return the local P2P compatibility parameters advertised to peers."""
+    return {
+        "protocol_version": P2P_PROTOCOL_VERSION,
+        "k_bucket_size": P2P_K_BUCKET_SIZE,
+        "ping_interval": P2P_PING_INTERVAL,
+        "timeout": P2P_HANDSHAKE_TIMEOUT,
+    }
+
+
+def _normalise_handshake_params(
+    params: Optional[Dict],
+    defaults: Dict[str, int],
+) -> Dict[str, int]:
+    params = params if isinstance(params, dict) else {}
+    return {
+        field: _bounded_int(
+            params.get(field),
+            defaults[field],
+            *_HANDSHAKE_BOUNDS[field],
+        )
+        for field in _HANDSHAKE_FIELDS
+    }
+
+
+def negotiate_handshake_params(local: Dict, remote: Optional[Dict]) -> Dict[str, int]:
+    """Choose compatible P2P parameters for a local/remote handshake pair."""
+    local_values = _normalise_handshake_params(local, local_handshake_params())
+    remote_values = _normalise_handshake_params(remote, local_values)
+    return {
+        "protocol_version": min(
+            local_values["protocol_version"],
+            remote_values["protocol_version"],
+        ),
+        "k_bucket_size": min(
+            local_values["k_bucket_size"],
+            remote_values["k_bucket_size"],
+        ),
+        "ping_interval": min(
+            local_values["ping_interval"],
+            remote_values["ping_interval"],
+        ),
+        "timeout": max(local_values["timeout"], remote_values["timeout"]),
+    }
+
+
+def handshake_mismatches(
+    local: Dict,
+    remote: Optional[Dict],
+) -> Dict[str, Dict[str, int]]:
+    """Return advertised handshake fields where local and remote disagree."""
+    if not isinstance(remote, dict):
+        return {}
+    local_values = _normalise_handshake_params(local, local_handshake_params())
+    remote_values = _normalise_handshake_params(remote, local_values)
+    return {
+        field: {"local": local_values[field], "remote": remote_values[field]}
+        for field in _HANDSHAKE_FIELDS
+        if field in remote and local_values[field] != remote_values[field]
+    }
 
 # TLS verification: defaults to True (secure).
 # Set RUSTCHAIN_TLS_VERIFY=false only for local development with self-signed certs.
@@ -540,6 +659,13 @@ class GossipLayer:
         )
         return msg
 
+    def create_ping(self) -> GossipMessage:
+        """Create a ping that advertises local P2P handshake parameters."""
+        return self.create_message(MessageType.PING, {
+            "node_id": self.node_id,
+            "handshake": local_handshake_params(),
+        })
+
     def verify_message(self, msg: GossipMessage) -> bool:
         """Verify message signature and freshness.
 
@@ -672,11 +798,30 @@ class GossipLayer:
 
     def _handle_ping(self, msg: GossipMessage) -> Dict:
         """Respond to ping with pong"""
-        pong = self.create_message(MessageType.PONG, {
+        local_handshake = local_handshake_params()
+        payload = msg.payload if isinstance(msg.payload, dict) else {}
+        remote_handshake = payload.get("handshake")
+        agreed_handshake = negotiate_handshake_params(local_handshake, remote_handshake)
+        mismatches = handshake_mismatches(local_handshake, remote_handshake)
+        if mismatches:
+            logger.info(
+                "P2P handshake with %s negotiated %s; mismatches=%s",
+                msg.sender_id,
+                agreed_handshake,
+                mismatches,
+            )
+
+        pong_payload = {
             "node_id": self.node_id,
             "attestation_count": len(self.attestation_crdt.data),
-            "settled_epochs": len(self.epoch_crdt.items)
-        })
+            "settled_epochs": len(self.epoch_crdt.items),
+            "handshake": local_handshake,
+            "agreed_handshake": agreed_handshake,
+        }
+        if mismatches:
+            pong_payload["handshake_mismatches"] = mismatches
+
+        pong = self.create_message(MessageType.PONG, pong_payload)
         return {"status": "ok", "pong": pong.to_dict()}
 
     def _handle_inv_attestation(self, msg: GossipMessage) -> Dict:
@@ -719,6 +864,12 @@ class GossipLayer:
                 f"rejecting future-dated ts_ok={ts_ok} (now={now})"
             )
             return {"status": "error", "reason": "future_timestamp"}
+        if miner_id != msg.sender_id:
+            logger.warning(
+                f"Attestation from {msg.sender_id}: rejecting write for "
+                f"foreign miner namespace {miner_id[:16]}"
+            )
+            return {"status": "error", "reason": "sender_namespace_mismatch"}
 
         # Update CRDT
         if self.attestation_crdt.set(miner_id, attestation, int(ts_ok)):
@@ -1045,6 +1196,12 @@ class GossipLayer:
                             logger.warning(
                                 f"State from {sender}: rejecting future-dated "
                                 f"attestation {key[:16]} (ts={ts}, now={now})"
+                            )
+                            continue
+                        if key != sender:
+                            logger.warning(
+                                f"State from {sender}: rejecting attestation "
+                                f"for foreign miner namespace {key[:16]}"
                             )
                             continue
                         filtered.set(key, value, ts)
@@ -1425,22 +1582,72 @@ def register_p2p_endpoints(app, p2p_node: RustChainP2PNode):
 
 
 # =============================================================================
+# STANDALONE DEMO PEER CONFIG
+# =============================================================================
+
+DEFAULT_BOOTSTRAP_PEERS = {
+    "node1": "https://rustchain.org",
+}
+
+
+def _parse_peer_config(raw_peers: str) -> Dict[str, str]:
+    """
+    Parse RC_P2P_PEERS as: node2=https://peer.example,node3=http://localhost:8099
+
+    Remote peers must use HTTPS. Plain HTTP is accepted only for loopback
+    development nodes.
+    """
+    peers: Dict[str, str] = {}
+    for item in raw_peers.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        if "=" not in item:
+            raise ValueError("expected entries like node_id=https://host:port")
+
+        node_id, peer_url = (part.strip() for part in item.split("=", 1))
+        if not node_id or not peer_url:
+            raise ValueError("peer entries require both node_id and URL")
+
+        parsed = urlparse(peer_url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError(f"invalid URL for peer {node_id!r}: {peer_url!r}")
+
+        is_loopback = parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+        if parsed.scheme == "http" and not is_loopback:
+            raise ValueError(
+                f"remote peer {node_id!r} must use HTTPS, got {peer_url!r}"
+            )
+
+        peers[node_id] = peer_url.rstrip("/")
+    return peers
+
+
+def _load_demo_peers(node_id: str, raw_peers: Optional[str] = None) -> Dict[str, str]:
+    """Return configured standalone peers without including this node."""
+    if raw_peers is None:
+        raw_peers = os.environ.get("RC_P2P_PEERS", "")
+
+    peers = (
+        _parse_peer_config(raw_peers)
+        if raw_peers.strip()
+        else dict(DEFAULT_BOOTSTRAP_PEERS)
+    )
+    peers.pop(node_id, None)
+    return peers
+
+
+# =============================================================================
 # MAIN (for testing)
 # =============================================================================
 
 if __name__ == "__main__":
     # Test configuration
     NODE_ID = os.environ.get("RC_NODE_ID", "node1")
-
-    PEERS = {
-        "node1": "https://rustchain.org",
-        "node2": "http://50.28.86.153:8099",
-        "node3": "http://76.8.228.245:8099"
-    }
-
-    # Remove self from peers
-    if NODE_ID in PEERS:
-        del PEERS[NODE_ID]
+    try:
+        PEERS = _load_demo_peers(NODE_ID)
+    except ValueError as exc:
+        raise SystemExit(f"[P2P] invalid RC_P2P_PEERS: {exc}") from exc
 
     # Create and start node
     node = RustChainP2PNode(NODE_ID, DB_PATH, PEERS)

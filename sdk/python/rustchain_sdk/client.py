@@ -15,13 +15,16 @@ from .exceptions import (
 )
 
 
+DEFAULT_NODE_URL = "https://rustchain.org"
+
+
 class RustChainClient:
     """
     Async HTTP client for the RustChain blockchain network.
 
     Args:
         base_url: Base URL of the RustChain node RPC endpoint.
-                   Defaults to "https://50.28.86.131".
+                   Defaults to "https://rustchain.org".
         timeout: Request timeout in seconds. Defaults to 30.
 
     Example:
@@ -40,7 +43,7 @@ class RustChainClient:
 
     def __init__(
         self,
-        base_url: str = "https://50.28.86.131",
+        base_url: str = DEFAULT_NODE_URL,
         timeout: float = 30.0,
         verify: Optional[bool] = None,
     ):
@@ -376,7 +379,7 @@ class RustChainClient:
         fee: float,
         signature: str,
         timestamp: int,
-        public_key: str = "",
+        public_key: Optional[str] = None,
         memo: str = "",
         chain_id: Optional[str] = None,
     ) -> Dict[str, Any]:
@@ -404,7 +407,7 @@ class RustChainClient:
             "fee_rtc": fee,
             "nonce": timestamp,
             "signature": signature,
-            "public_key": public_key,
+            "public_key": public_key or "",
         }
         if memo:
             payload["memo"] = memo

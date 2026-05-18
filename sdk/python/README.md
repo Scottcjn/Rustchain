@@ -24,7 +24,7 @@ from rustchain_sdk import RustChainClient, RustChainWallet
 
 async def main():
     # Connect to a RustChain node
-    client = RustChainClient("https://50.28.86.131")
+    client = RustChainClient("https://rustchain.org")
 
     async with client:
         # Check node health

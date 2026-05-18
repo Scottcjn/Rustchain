@@ -31,6 +31,22 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
     def _hash_job_secret(secret):
         return hashlib.sha256((secret or "").encode("utf-8")).hexdigest()
 
+    def _json_object_body():
+        data = request.get_json(silent=True)
+        if data is None:
+            return {}, None
+        if not isinstance(data, dict):
+            return None, (jsonify({"error": "JSON object required"}), 400)
+        return data, None
+
+    def _string_field(data, name, default=None):
+        value = data.get(name)
+        if value is None or value == "":
+            return default, None
+        if not isinstance(value, str):
+            return None, (jsonify({"error": f"{name} must be a string"}), 400)
+        return value, None
+
     def _require_admin_key():
         if not admin_key:
             return jsonify({"error": "Admin key not configured"}), 503
@@ -52,8 +68,12 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
     # 1. GPU Node Attestation (Extension)
     @app.route("/api/gpu/attest", methods=["POST"])
     def gpu_attest():
-        data = request.get_json(silent=True) or {}
-        miner_id = data.get("miner_id")
+        data, body_error = _json_object_body()
+        if body_error:
+            return body_error
+        miner_id, field_error = _string_field(data, "miner_id")
+        if field_error:
+            return field_error
         if not miner_id:
             return jsonify({"error": "miner_id required"}), 400
 
@@ -100,11 +120,21 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
         if auth_error:
             return auth_error
 
-        data = request.get_json(silent=True) or {}
-        job_id = data.get("job_id") or f"job_{secrets.token_hex(8)}"
-        job_type = data.get("job_type")  # render, tts, stt, llm
-        from_wallet = data.get("from_wallet")
-        to_wallet = data.get("to_wallet")
+        data, body_error = _json_object_body()
+        if body_error:
+            return body_error
+        job_id, field_error = _string_field(data, "job_id", default=f"job_{secrets.token_hex(8)}")
+        if field_error:
+            return field_error
+        job_type, field_error = _string_field(data, "job_type")  # render, tts, stt, llm
+        if field_error:
+            return field_error
+        from_wallet, field_error = _string_field(data, "from_wallet")
+        if field_error:
+            return field_error
+        to_wallet, field_error = _string_field(data, "to_wallet")
+        if field_error:
+            return field_error
         amount = _parse_positive_amount(data.get("amount_rtc"))
 
         if not all([job_type, from_wallet, to_wallet]):
@@ -112,7 +142,9 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
         if amount is None:
             return jsonify({"error": "amount_rtc must be a finite number > 0"}), 400
 
-        escrow_secret = data.get("escrow_secret") or secrets.token_hex(16)
+        escrow_secret, field_error = _string_field(data, "escrow_secret", default=secrets.token_hex(16))
+        if field_error:
+            return field_error
 
         db = get_db()
         try:
@@ -151,10 +183,18 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
         if auth_error:
             return auth_error
 
-        data = request.get_json(silent=True) or {}
-        job_id = data.get("job_id")
-        actor_wallet = data.get("actor_wallet")
-        escrow_secret = data.get("escrow_secret")
+        data, body_error = _json_object_body()
+        if body_error:
+            return body_error
+        job_id, field_error = _string_field(data, "job_id")
+        if field_error:
+            return field_error
+        actor_wallet, field_error = _string_field(data, "actor_wallet")
+        if field_error:
+            return field_error
+        escrow_secret, field_error = _string_field(data, "escrow_secret")
+        if field_error:
+            return field_error
 
         if not all([job_id, actor_wallet, escrow_secret]):
             return jsonify({"error": "job_id, actor_wallet, escrow_secret are required"}), 400
@@ -201,10 +241,18 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
         if auth_error:
             return auth_error
 
-        data = request.get_json(silent=True) or {}
-        job_id = data.get("job_id")
-        actor_wallet = data.get("actor_wallet")
-        escrow_secret = data.get("escrow_secret")
+        data, body_error = _json_object_body()
+        if body_error:
+            return body_error
+        job_id, field_error = _string_field(data, "job_id")
+        if field_error:
+            return field_error
+        actor_wallet, field_error = _string_field(data, "actor_wallet")
+        if field_error:
+            return field_error
+        escrow_secret, field_error = _string_field(data, "escrow_secret")
+        if field_error:
+            return field_error
 
         if not all([job_id, actor_wallet, escrow_secret]):
             return jsonify({"error": "job_id, actor_wallet, escrow_secret are required"}), 400

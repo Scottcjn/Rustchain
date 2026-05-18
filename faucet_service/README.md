@@ -448,6 +448,6 @@ See CONTRIBUTING.md for contribution guidelines.
 
 ## Support
 
-- Documentation: https://rustchain.org/docs/faucet
+- Documentation: https://github.com/Scottcjn/Rustchain/tree/main/faucet_service
 - Issues: https://github.com/Scottcjn/rustchain-bounties/issues
 - Discord: https://discord.gg/rustchain

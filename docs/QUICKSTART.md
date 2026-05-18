@@ -199,7 +199,7 @@ is running.
 
 You can also see the full network, all miners, and your rewards at:
 
-[https://rustchain.org/explorer](https://rustchain.org/explorer)
+[https://rustchain.org/explorer/](https://rustchain.org/explorer/)
 
 ---
 
@@ -280,7 +280,7 @@ Even fixing a single typo in the README earns RTC.
 
 See all miners, blocks, and balances at:
 
-[https://rustchain.org/explorer](https://rustchain.org/explorer)
+[https://rustchain.org/explorer/](https://rustchain.org/explorer/)
 
 ### API Endpoints (for the curious)
 

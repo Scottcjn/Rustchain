@@ -3,7 +3,7 @@
 # 🧱 RustChain: 古董证明区块链
 
 [![CI](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml/badge.svg)](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/Scottcjn/Rustchain?style=flat&color=gold)](https://github.com/Scottcjn/Rustchain/stargazers)
 [![Contributors](https://img.shields.io/github/contributors/Scottcjn/Rustchain?color=brightgreen)](https://github.com/Scottcjn/Rustchain/graphs/contributors)
 [![Last Commit](https://img.shields.io/github/last-commit/Scottcjn/Rustchain?color=blue)](https://github.com/Scottcjn/Rustchain/commits/main)
@@ -25,6 +25,12 @@
 </div>
 
 ---
+
+## 文档导航
+
+- [中文 API 快速参考](./API.md)
+- [英文 API Reference](../API.md)
+- [英文文档索引](../README.md)
 
 ## 🪙 Solana 上的 wRTC
 
@@ -163,23 +169,23 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 
 **检查钱包余额：**
 ```bash
-# 注意：使用 -sk 标志，因为节点可能使用自签名 SSL 证书
-curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
+# 生产域名 rustchain.org 使用正常 TLS 证书验证
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
 ```
 
 **列出活跃矿工：**
 ```bash
-curl -sk https://rustchain.org/api/miners
+curl -fsS https://rustchain.org/api/miners
 ```
 
 **检查节点健康状态：**
 ```bash
-curl -sk https://rustchain.org/health
+curl -fsS https://rustchain.org/health
 ```
 
 **获取当前纪元：**
 ```bash
-curl -sk https://rustchain.org/epoch
+curl -fsS https://rustchain.org/epoch
 ```
 
 **管理矿工服务：**
@@ -208,6 +214,8 @@ bash install-miner.sh --wallet YOUR_WALLET_NAME
 # 可选：预览操作而不更改系统
 bash install-miner.sh --dry-run --wallet YOUR_WALLET_NAME
 ```
+
+注意：`install-miner.sh --dry-run` 是 Linux/macOS/WSL 预览路径。原生 Windows 用户应使用 Windows 矿工说明，或在 WSL 中运行该 dry-run，避免遇到不支持平台的报错。
 
 ## 💰 悬赏板
 
@@ -310,16 +318,16 @@ RustChain 纪元 → 承诺哈希 → Ergo 交易（R4 寄存器）
 
 ```bash
 # 检查网络健康状态
-curl -sk https://rustchain.org/health
+curl -fsS https://rustchain.org/health
 
 # 获取当前纪元
-curl -sk https://rustchain.org/epoch
+curl -fsS https://rustchain.org/epoch
 
 # 列出活跃矿工
-curl -sk https://rustchain.org/api/miners
+curl -fsS https://rustchain.org/api/miners
 
 # 检查钱包余额
-curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET"
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET"
 
 # 区块浏览器（网页浏览器）
 open https://rustchain.org/explorer
@@ -426,7 +434,7 @@ https://github.com/Scottcjn/Rustchain
 
 ## 📜 许可证
 
-MIT 许可证 - 可自由使用，但请保留版权声明和署名。
+Apache License 2.0 - 可自由使用，但请遵守 Apache License 2.0 条款并保留版权声明和署名。
 
 ---
 

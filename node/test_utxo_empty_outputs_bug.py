@@ -62,6 +62,7 @@ class TestUTXOEmptyOutputsBug(unittest.TestCase):
             'outputs': [{'address': 'alice', 'value_nrtc': 100 * UNIT}],
             'fee_nrtc': 0,
             'timestamp': int(time.time()),
+            '_allow_minting': True,
         }, block_height=1)
         self.assertTrue(ok, "Coinbase should succeed")
 

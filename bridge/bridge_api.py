@@ -13,9 +13,11 @@ Admin-controlled Phase 1 (upgrade to trustless lock in Phase 2)
 
 import os
 import json
+import math
 import sqlite3
 import hashlib
 import hmac
+import math
 import time
 import threading
 import uuid
@@ -37,6 +39,10 @@ SUPPORTED_CHAINS = {CHAIN_SOLANA, CHAIN_BASE}
 
 # RTC decimal precision
 RTC_DECIMALS = 6
+
+
+def _debug_enabled() -> bool:
+    return os.environ.get("BRIDGE_API_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}
 
 # Minimum lock amounts
 MIN_LOCK_AMOUNT = 1  # 1 RTC
@@ -130,6 +136,14 @@ def _amount_to_base(amount_float: float) -> int:
 def _amount_from_base(amount_int: int) -> float:
     """Convert base units to human-readable RTC."""
     return amount_int / (10 ** RTC_DECIMALS)
+
+
+def _is_base_wallet_address(value: str) -> bool:
+    return (
+        value.startswith("0x")
+        and len(value) == 42
+        and all(char in "0123456789abcdefABCDEF" for char in value[2:])
+    )
 
 
 def _generate_lock_id(sender: str, amount: int, target_chain: str, ts: int) -> str:
@@ -236,9 +250,14 @@ def lock_rtc():
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
+    raw_amount = data.get("amount", 0)
+    if isinstance(raw_amount, bool):
+        return jsonify({"error": "invalid amount"}), 400
     try:
-        amount_float = float(data.get("amount", 0))
+        amount_float = float(raw_amount)
     except (TypeError, ValueError):
+        return jsonify({"error": "invalid amount"}), 400
+    if not math.isfinite(amount_float):
         return jsonify({"error": "invalid amount"}), 400
 
     if not sender:
@@ -255,7 +274,7 @@ def lock_rtc():
         return jsonify({"error": f"maximum lock amount is {MAX_LOCK_AMOUNT} RTC"}), 400
 
     # Validate target wallet format
-    if target_chain == CHAIN_BASE and not target_wallet.startswith("0x"):
+    if target_chain == CHAIN_BASE and not _is_base_wallet_address(target_wallet):
         return jsonify({"error": "Base wallet must be a 0x EVM address"}), 400
     if target_chain == CHAIN_SOLANA and len(target_wallet) < 32:
         return jsonify({"error": "Solana wallet must be a valid base58 address"}), 400
@@ -659,4 +678,4 @@ if __name__ == "__main__":
     app = Flask(__name__)
     register_bridge_routes(app)
     print("Bridge dev server on http://0.0.0.0:8096")
-    app.run(host="0.0.0.0", port=8096, debug=True)
+    app.run(host="0.0.0.0", port=8096, debug=_debug_enabled())

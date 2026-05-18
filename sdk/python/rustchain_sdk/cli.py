@@ -19,7 +19,7 @@ from typing import Optional
 
 import click
 
-from .client import RustChainClient
+from .client import DEFAULT_NODE_URL, RustChainClient
 from .wallet import RustChainWallet
 from .exceptions import RustChainError
 
@@ -87,7 +87,7 @@ def wallet_create(words: int, as_json: bool):
 @click.argument("address")
 @click.option(
     "--node",
-    default="https://50.28.86.131",
+    default=DEFAULT_NODE_URL,
     help="RustChain node URL.",
 )
 @click.option(
@@ -136,7 +136,7 @@ async def _wallet_balance(address: str, node: str, as_json: bool):
 )
 @click.option(
     "--node",
-    default="https://50.28.86.131",
+    default=DEFAULT_NODE_URL,
     help="RustChain node URL.",
 )
 @click.option(
@@ -206,7 +206,7 @@ async def _wallet_send(
 @main.command(name="node")
 @click.option(
     "--node",
-    default="https://50.28.86.131",
+    default=DEFAULT_NODE_URL,
     help="RustChain node URL.",
 )
 @click.option(
@@ -244,7 +244,7 @@ async def _node_status(node: str, as_json: bool):
 @main.command(name="epoch")
 @click.option(
     "--node",
-    default="https://50.28.86.131",
+    default=DEFAULT_NODE_URL,
     help="RustChain node URL.",
 )
 @click.option(
@@ -286,7 +286,7 @@ def miners_group():
 @miners_group.command(name="list")
 @click.option(
     "--node",
-    default="https://50.28.86.131",
+    default=DEFAULT_NODE_URL,
     help="RustChain node URL.",
 )
 @click.option(
@@ -329,7 +329,7 @@ async def _miners_list(node: str, as_json: bool):
 )
 @click.option(
     "--node",
-    default="https://50.28.86.131",
+    default=DEFAULT_NODE_URL,
     help="RustChain node URL.",
 )
 @click.option(

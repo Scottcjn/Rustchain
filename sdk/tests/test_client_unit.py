@@ -165,7 +165,7 @@ class TestMinersEndpoint:
 
 
 class TestBalanceEndpoint:
-    """Test /balance endpoint"""
+    """Test /wallet/balance endpoint"""
 
     @patch("requests.Session.request")
     def test_balance_success(self, mock_request):
@@ -186,6 +186,9 @@ class TestBalanceEndpoint:
         assert balance["balance"] == 123.456
         assert balance["epoch_rewards"] == 10.0
         assert balance["total_earned"] == 1000.0
+        mock_request.assert_called_once()
+        assert mock_request.call_args.kwargs["url"] == "https://rustchain.org/wallet/balance"
+        assert mock_request.call_args.kwargs["params"] == {"miner_id": "test_wallet_address"}
 
     def test_balance_empty_miner_id(self):
         """Test balance with empty miner_id raises ValidationError"""

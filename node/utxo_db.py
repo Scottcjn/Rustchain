@@ -1,3 +1,4 @@
+
 """
 RustChain UTXO Database Layer
 =============================
@@ -36,14 +37,31 @@ from typing import Any, Dict, List, Optional, Tuple
 
 UNIT = 100_000_000          # 1 RTC = 100,000,000 nanoRTC (8 decimals)
 DUST_THRESHOLD = 1_000      # nanoRTC below which change is absorbed into fee
-MAX_COINBASE_OUTPUT_NRTC = 150 * 144 * UNIT  # Max minting output per block (1.5 RTC)
+MAX_COINBASE_OUTPUT_NRTC = 150 * UNIT  # Max minting output per block (150 RTC)
 MAX_POOL_SIZE = 10_000
 
 # Anti-UTXO-bloat: maximum outputs per transaction
 # Without this, a single tx creates unlimited outputs, bloating the UTXO set.
 MAX_OUTPUTS = 100
 MAX_TX_AGE_SECONDS = 3_600  # 1 hour mempool expiry
+MAX_SQLITE_INT64 = 2**63 - 1
 P2PK_PREFIX = b'\x00\x08'   # Pay-to-Public-Key proposition prefix
+SUPPORTED_TX_TYPES = {'transfer', 'mining_reward'}
+MINTING_TX_TYPES = {'mining_reward'}
+
+
+# ---------------------------------------------------------------------------
+# Numeric validation
+# ---------------------------------------------------------------------------
+
+def _is_nonnegative_int64(value: Any) -> bool:
+    """Return True only for real ints that SQLite can persist as INTEGER."""
+    return type(value) is int and 0 <= value <= MAX_SQLITE_INT64
+
+
+def _is_positive_int64(value: Any) -> bool:
+    """Return True only for positive int64 amounts."""
+    return type(value) is int and 0 < value <= MAX_SQLITE_INT64
 
 
 # ---------------------------------------------------------------------------
@@ -371,16 +389,56 @@ class UtxoDB:
         return normalized
 
     def _normalize_tx_type(self, tx: dict) -> Optional[str]:
-        """Return a valid transaction type, defaulting only when absent."""
+        """Return a supported transaction type, defaulting only when absent."""
         if 'tx_type' not in tx:
             return 'transfer'
         tx_type = tx.get('tx_type')
         if not isinstance(tx_type, str):
             return None
-        tx_type = tx_type.strip()
-        if not tx_type:
+        if not tx_type or tx_type not in SUPPORTED_TX_TYPES:
             return None
         return tx_type
+
+    def _normalize_outputs(self, outputs: Any) -> Optional[List[dict]]:
+        """Return outputs that are safe for both mempool and persistence."""
+        if not isinstance(outputs, list):
+            return None
+
+        normalized = []
+        for out in outputs:
+            if not isinstance(out, dict):
+                return None
+
+            address = out.get('address')
+            if not isinstance(address, str) or not address.strip():
+                return None
+
+            val = out.get('value_nrtc')
+            if not _is_positive_int64(val):
+                return None
+
+            tokens_json = out.get('tokens_json', '[]')
+            registers_json = out.get('registers_json', '{}')
+            if not isinstance(tokens_json, str):
+                return None
+            if not isinstance(registers_json, str):
+                return None
+            try:
+                tokens = json.loads(tokens_json)
+                registers = json.loads(registers_json)
+            except (TypeError, json.JSONDecodeError):
+                return None
+            if not isinstance(tokens, list):
+                return None
+            if not isinstance(registers, dict):
+                return None
+
+            record = dict(out)
+            record['tokens_json'] = tokens_json
+            record['registers_json'] = registers_json
+            normalized.append(record)
+
+        return normalized
 
     def _data_inputs_are_unspent(self, conn: sqlite3.Connection,
                                  data_inputs: list) -> bool:
@@ -424,7 +482,14 @@ class UtxoDB:
 
         Returns True on success, False on validation failure.
         """
+        own = conn is None
+
         ts = tx.get('timestamp', int(time.time()))
+        if not _is_nonnegative_int64(ts):
+            return False
+        if not _is_nonnegative_int64(block_height):
+            return False
+
         # NOTE(issue #2085): spending_proof is present on each input dict but
         # is intentionally ignored by this layer.  It is stored for
         # on-chain auditability, but cryptographic verification is the sole
@@ -444,10 +509,10 @@ class UtxoDB:
         # passes user-controlled tx_type, an attacker could mint unlimited coins.
         # Only the epoch settlement system should create mining_reward transactions.
         # Require _allow_minting=True (internal flag) to permit mining_reward.
-        MINTING_TX_TYPES = {'mining_reward'}
         if tx_type in MINTING_TX_TYPES and not tx.get('_allow_minting'):
-            if conn:
-                conn.close()
+            return False
+        outputs = self._normalize_outputs(outputs)
+        if outputs is None:
             return False
         if own:
             conn = self._conn()
@@ -502,7 +567,6 @@ class UtxoDB:
             # -- conservation check ------------------------------------------
             # Only authorized minting transaction types may have empty inputs.
             # All other transactions must consume at least one input box.
-            MINTING_TX_TYPES = {'mining_reward'}
             if not inputs and tx_type not in MINTING_TX_TYPES:
                 return abort()
 
@@ -516,21 +580,9 @@ class UtxoDB:
             if len(outputs) > MAX_OUTPUTS:
                 return abort()
 
-            # Every output must be above the dust floor. Without this, a
-            # transaction can split one UTXO into thousands of 1-nanoRTC
-            # boxes and permanently bloat the UTXO set.
-            for o in outputs:
-                val = o.get('value_nrtc')
-                if (
-                    isinstance(val, bool)
-                    or not isinstance(val, int)
-                    or val < DUST_THRESHOLD
-                ):
-                    return abort()
-                # FIX(#9273): Reject dust outputs below DUST_THRESHOLD
-                if o['value_nrtc'] < DUST_THRESHOLD:
-                    return abort()
-
+            # Output shape, dust, and metadata checks are shared with
+            # mempool_add() so block candidates cannot drift from the
+            # transaction application rules.
             output_total = sum(o['value_nrtc'] for o in outputs)
 
             # Cap minting (coinbase) output to prevent unbounded fund creation.
@@ -539,11 +591,9 @@ class UtxoDB:
             if tx_type in MINTING_TX_TYPES and output_total > MAX_COINBASE_OUTPUT_NRTC:
                 return abort()
 
-            if type(fee) is not int:
+            if not _is_nonnegative_int64(fee):
                 return abort()
-            if fee < 0:
-                return abort()
-            if inputs and (output_total + fee) > input_total:
+            if inputs and (output_total + fee) != input_total:
                 return abort()
 
             # -- compute output box IDs and build tx_id ----------------------
@@ -661,7 +711,7 @@ class UtxoDB:
 
     def compute_state_root(self) -> str:
         """
-        Merkle root of all unspent box IDs (hex).
+        Merkle root of all unspent box contents (hex).
 
         Deterministic: sorted by box_id, pairwise SHA256.
         All nodes with the same UTXO set produce the same root.
@@ -678,7 +728,10 @@ class UtxoDB:
         conn = self._conn()
         try:
             rows = conn.execute(
-                """SELECT box_id FROM utxo_boxes
+                """SELECT box_id, value_nrtc, proposition, owner_address,
+                          creation_height, transaction_id, output_index,
+                          tokens_json, registers_json
+                   FROM utxo_boxes
                    WHERE spent_at IS NULL
                    ORDER BY box_id ASC"""
             ).fetchall()
@@ -688,10 +741,23 @@ class UtxoDB:
 
             # Mix element count into leaf hashes to bind tree to cardinality
             count_bytes = len(rows).to_bytes(8, 'little')
-            hashes = [
-                hashlib.sha256(count_bytes + bytes.fromhex(r['box_id'])).digest()
-                for r in rows
-            ]
+            hashes = []
+            for row in rows:
+                leaf = {
+                    'box_id': row['box_id'],
+                    'value_nrtc': row['value_nrtc'],
+                    'proposition': row['proposition'],
+                    'owner_address': row['owner_address'],
+                    'creation_height': row['creation_height'],
+                    'transaction_id': row['transaction_id'],
+                    'output_index': row['output_index'],
+                    'tokens_json': row['tokens_json'],
+                    'registers_json': row['registers_json'],
+                }
+                leaf_bytes = json.dumps(
+                    leaf, sort_keys=True, separators=(',', ':')
+                ).encode()
+                hashes.append(hashlib.sha256(count_bytes + leaf_bytes).digest())
 
             while len(hashes) > 1:
                 if len(hashes) % 2 == 1:
@@ -767,46 +833,63 @@ class UtxoDB:
         # paths and leak the transaction-in-progress lock.
         manage_tx = True
         try:
-            # Check pool size
+            conn.execute("BEGIN IMMEDIATE")
+
+            # Check pool size under the write lock; otherwise concurrent
+            # admissions can all observe the same free slot and overfill.
             row = conn.execute(
                 "SELECT COUNT(*) AS n FROM utxo_mempool"
             ).fetchone()
             if row['n'] >= MAX_POOL_SIZE:
+                if manage_tx:
+                    conn.execute("ROLLBACK")
                 return False
 
             tx_id = tx.get('tx_id', '')
             # FIX(#2179): Reject empty/whitespace-only tx_id to prevent
             # INSERT OR IGNORE collisions that create orphan input claims.
             if not tx_id or not tx_id.strip():
+                if manage_tx:
+                    conn.execute("ROLLBACK")
                 return False
 
             inputs = tx.get('inputs', [])
             tx_type = self._normalize_tx_type(tx)
             if tx_type is None:
+                if manage_tx:
+                    conn.execute("ROLLBACK")
                 return False
             data_inputs = tx.get('data_inputs', [])
             now = int(time.time())
+            timestamp = tx.get('timestamp', now)
+            if not _is_nonnegative_int64(timestamp):
+                return False
 
             # Public mempool admission must never accept minting transactions.
             # Coinbase/mining rewards are internally constructed during block
             # production and guarded by apply_transaction(_allow_minting=True).
             # Admitting user-supplied mining_reward txs here lets invalid mint
             # candidates occupy mempool slots and reach block candidate selection.
-            MINTING_TX_TYPES = {'mining_reward'}
             if tx_type in MINTING_TX_TYPES:
+                if manage_tx:
+                    conn.execute("ROLLBACK")
                 return False
 
             if not inputs:
+                if manage_tx:
+                    conn.execute("ROLLBACK")
                 return False
 
             data_inputs = self._normalize_data_inputs(data_inputs)
             if data_inputs is None:
+                if manage_tx:
+                    conn.execute("ROLLBACK")
                 return False
             input_box_ids = [i['box_id'] for i in inputs]
             if set(input_box_ids) & set(data_inputs):
+                if manage_tx:
+                    conn.execute("ROLLBACK")
                 return False
-
-            conn.execute("BEGIN IMMEDIATE")
 
             # Check for double-spend in mempool
             for inp in inputs:
@@ -839,17 +922,18 @@ class UtxoDB:
             # Prevent mempool admission of transactions that would fail
             # apply_transaction(), locking UTXOs until expiry (DoS vector).
             fee = tx.get('fee_nrtc', 0)
-            if type(fee) is not int:
-                if manage_tx:
-                        conn.execute("ROLLBACK")
-                return False
-            if fee < 0:
+            if not _is_nonnegative_int64(fee):
                 if manage_tx:
                         conn.execute("ROLLBACK")
                 return False
 
             # MEDIUM FIX: Reject empty outputs to prevent DoS
             outputs = tx.get('outputs', [])
+            outputs = self._normalize_outputs(outputs)
+            if outputs is None:
+                if manage_tx:
+                        conn.execute("ROLLBACK")
+                return False
             if not outputs and tx_type not in MINTING_TX_TYPES:
                 if manage_tx:
                         conn.execute("ROLLBACK")
@@ -869,26 +953,8 @@ class UtxoDB:
                 if row:
                     input_total += row['value_nrtc']
 
-            outputs = tx.get('outputs', [])
-
-            # FIX(#2179): Mirror apply_transaction() output validation.
-            # Reject outputs with missing, non-int, zero, or negative value_nrtc.
-            # Without this, unmineable transactions enter the mempool and lock
-            # UTXOs until expiry (DoS vector).
-            for o in outputs:
-                val = o.get('value_nrtc')
-                if isinstance(val, bool) or not isinstance(val, int) or val < DUST_THRESHOLD:
-                    if manage_tx:
-                        conn.execute("ROLLBACK")
-                    return False
-                # FIX(#9273): Reject dust outputs below DUST_THRESHOLD.
-                if val < DUST_THRESHOLD:
-                    if manage_tx:
-                        conn.execute("ROLLBACK")
-                    return False
-
             output_total = sum(o['value_nrtc'] for o in outputs)
-            if input_total > 0 and (output_total + fee) > input_total:
+            if inputs and (output_total + fee) != input_total:
                 if manage_tx:
                         conn.execute("ROLLBACK")
                 return False
@@ -967,27 +1033,35 @@ class UtxoDB:
                 try:
                     tx = json.loads(row['tx_data_json'])
                     input_ids = [inp['box_id'] for inp in tx.get('inputs', [])]
+                    data_inputs = self._normalize_data_inputs(
+                        tx.get('data_inputs', [])
+                    )
                 except Exception:
                     stale_tx_ids.append(tx_id)
                     continue
 
-                if not input_ids:
+                if not input_ids or data_inputs is None:
                     stale_tx_ids.append(tx_id)
                     continue
 
-                placeholders = ",".join("?" for _ in input_ids)
-                unspent_count = conn.execute(
-                    f"""SELECT COUNT(*) AS n FROM utxo_boxes
-                        WHERE box_id IN ({placeholders}) AND spent_at IS NULL""",
-                    input_ids,
-                ).fetchone()['n']
-                if unspent_count != len(set(input_ids)):
-                    stale_tx_ids.append(tx_id)
-                    continue
+                for box_ids in (input_ids, data_inputs):
+                    if not box_ids:
+                        continue
+                    placeholders = ",".join("?" for _ in box_ids)
+                    unspent_count = conn.execute(
+                        f"""SELECT COUNT(*) AS n FROM utxo_boxes
+                            WHERE box_id IN ({placeholders})
+                              AND spent_at IS NULL""",
+                        box_ids,
+                    ).fetchone()['n']
+                    if unspent_count != len(set(box_ids)):
+                        stale_tx_ids.append(tx_id)
+                        break
+                else:
+                    candidates.append(tx)
+                    if len(candidates) >= max_count:
+                        break
 
-                candidates.append(tx)
-                if len(candidates) >= max_count:
-                    break
 
             for tx_id in stale_tx_ids:
                 conn.execute(

@@ -180,6 +180,62 @@ def test_epoch_votes_survive_restart_and_reject_retransmit():
     assert restarted._epoch_votes[key] == {"node2": "accept"}
 
 
+# Phase D / #2867 H2 regression
+def test_phase_d_state_attestations_are_scoped_to_sender_namespace():
+    """State sync must not let one sender overwrite another miner's attestation."""
+    target = _mk_layer("node1", {"node2": "http://n2"})
+    sender = _mk_layer("node2", db_path=target.db_path)
+    sender.broadcast = lambda *args, **kwargs: None
+
+    now = int(time.time())
+    msg = sender.create_message(
+        mod.MessageType.STATE,
+        {
+            "state": {
+                "attestations": {
+                    "node2": {
+                        "ts": now,
+                        "value": {"miner": "node2", "device_arch": "modern"},
+                    },
+                    "victim-miner": {
+                        "ts": now,
+                        "value": {"miner": "victim-miner", "device_arch": "modern"},
+                    },
+                }
+            }
+        },
+    )
+
+    assert target.handle_message(msg)["status"] == "ok"
+    assert target.attestation_crdt.get("node2")["miner"] == "node2"
+    assert target.attestation_crdt.get("victim-miner") is None
+
+
+def test_phase_d_direct_attestation_rejects_foreign_miner_namespace():
+    """A signed ATTESTATION message can only update the sender's own key."""
+    target = _mk_layer("node1", {"node2": "http://n2"})
+    sender = _mk_layer("node2", db_path=target.db_path)
+    sender.broadcast = lambda *args, **kwargs: None
+
+    now = int(time.time())
+    foreign = sender.create_message(
+        mod.MessageType.ATTESTATION,
+        {"miner": "victim-miner", "ts_ok": now, "device_arch": "modern"},
+    )
+    result = target.handle_message(foreign)
+
+    assert result["status"] == "error"
+    assert result.get("reason") == "sender_namespace_mismatch"
+    assert target.attestation_crdt.get("victim-miner") is None
+
+    own = sender.create_message(
+        mod.MessageType.ATTESTATION,
+        {"miner": "node2", "ts_ok": now, "device_arch": "modern"},
+    )
+    assert target.handle_message(own)["status"] == "ok"
+    assert target.attestation_crdt.get("node2")["miner"] == "node2"
+
+
 # Phase E regression
 def test_phase_e_future_timestamp_attestation_rejected():
     """Phase E: attestations with ts_ok far in the future are rejected."""

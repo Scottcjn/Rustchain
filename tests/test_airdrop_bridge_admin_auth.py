@@ -2,6 +2,7 @@
 
 import sqlite3
 
+import pytest
 from flask import Flask
 
 from node.airdrop_v2 import AirdropV2, init_airdrop_routes
@@ -99,3 +100,71 @@ def test_bridge_confirm_and_release_accept_valid_admin_key(tmp_path, monkeypatch
         "real-source-tx",
         "real-dest-tx",
     )
+
+
+@pytest.mark.parametrize(
+    ("path", "headers"),
+    [
+        ("/api/airdrop/eligibility", {}),
+        ("/api/airdrop/claim", {}),
+        ("/api/bridge/lock", {}),
+        ("/api/bridge/lock/test-lock/confirm", {"X-Admin-Key": "expected-admin"}),
+        ("/api/bridge/lock/test-lock/release", {"X-Admin-Key": "expected-admin"}),
+    ],
+)
+def test_airdrop_write_routes_reject_non_object_json(tmp_path, monkeypatch, path, headers):
+    client, _db_path = _make_client(tmp_path)
+    monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
+
+    response = client.post(path, headers=headers, json=[{"unexpected": "array"}])
+
+    assert response.status_code == 400
+    assert response.get_json() == {"ok": False, "error": "JSON object required"}
+
+
+def test_airdrop_eligibility_rejects_structured_text_field(tmp_path):
+    client, _db_path = _make_client(tmp_path)
+
+    response = client.post(
+        "/api/airdrop/eligibility",
+        json={
+            "github_username": {"login": "alice"},
+            "wallet_address": "wallet-1",
+            "chain": "base",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"ok": False, "error": "github_username must be a string"}
+
+
+def test_bridge_lock_rejects_structured_amount(tmp_path):
+    client, _db_path = _make_client(tmp_path)
+
+    response = client.post(
+        "/api/bridge/lock",
+        json={
+            "from_address": "solana-source",
+            "to_address": "base-destination",
+            "from_chain": "solana",
+            "to_chain": "base",
+            "amount_wrtc": ["bad"],
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"ok": False, "error": "amount_wrtc must be a finite number"}
+
+
+def test_bridge_confirm_rejects_structured_source_tx(tmp_path, monkeypatch):
+    client, _db_path = _make_client(tmp_path)
+    monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
+
+    response = client.post(
+        "/api/bridge/lock/test-lock/confirm",
+        headers={"X-Admin-Key": "expected-admin"},
+        json={"source_tx": {"tx": "abc"}},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"ok": False, "error": "source_tx must be a string"}

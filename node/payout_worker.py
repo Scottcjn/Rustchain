@@ -59,6 +59,34 @@ class PayoutWorker:
 
             return withdrawals
 
+    def _record_broadcast_reconciliation_needed(
+        self,
+        withdrawal_id: str,
+        tx_hash: str,
+        error: str,
+    ) -> None:
+        """Keep broadcast withdrawals out of the refund path after DB failures."""
+        message = (
+            "Broadcast returned transaction hash but completion update failed; "
+            f"manual reconciliation required: {error}"
+        )
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute("""
+                    UPDATE withdrawals
+                    SET status = 'processing',
+                        tx_hash = ?,
+                        error_msg = ?
+                    WHERE withdrawal_id = ?
+                """, (tx_hash, message, withdrawal_id))
+        except Exception as record_error:
+            logger.error(
+                "Failed to record reconciliation state for %s (%s): %s",
+                withdrawal_id,
+                tx_hash,
+                record_error,
+            )
+
     def execute_withdrawal(self, withdrawal: Dict) -> Optional[str]:
         """Execute withdrawal transaction"""
         if MOCK_MODE:
@@ -90,6 +118,7 @@ class PayoutWorker:
     def process_withdrawal(self, withdrawal: Dict) -> bool:
         """Process a single withdrawal with balance deduction before execution."""
         withdrawal_id = withdrawal['withdrawal_id']
+        tx_hash = None
 
         try:
             logger.info(f"Processing withdrawal {withdrawal_id}")
@@ -177,6 +206,15 @@ class PayoutWorker:
         except Exception as e:
             logger.error(f"✗ Withdrawal {withdrawal_id} failed: {e}")
 
+            if tx_hash:
+                self._record_broadcast_reconciliation_needed(
+                    withdrawal_id,
+                    tx_hash,
+                    str(e),
+                )
+                self.stats['failed'] += 1
+                return False
+
             # Refund balance on broadcast failure and mark as failed
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute("BEGIN IMMEDIATE")
@@ -195,6 +233,42 @@ class PayoutWorker:
 
             self.stats['failed'] += 1
             return False
+
+    def recover_orphans(self):
+        """Recover withdrawals stuck in processing state (e.g. from a crash during execute_withdrawal)."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute("BEGIN IMMEDIATE")
+                rows = conn.execute("""
+                    SELECT withdrawal_id, miner_pk, amount, fee
+                    FROM withdrawals
+                    WHERE status = 'processing'
+                """).fetchall()
+
+                for row in rows:
+                    withdrawal_id, miner_pk, amount, fee = row
+                    total_refund = amount + (fee or 0)
+
+                    logger.warning(f"Recovering orphaned withdrawal {withdrawal_id} (refunding {total_refund} to {miner_pk})")
+
+                    # Refund the balance
+                    conn.execute(
+                        "UPDATE accounts SET balance = balance + ? WHERE public_key = ?",
+                        (total_refund, miner_pk)
+                    )
+
+                    # Mark as failed
+                    conn.execute(
+                        "UPDATE withdrawals SET status = 'failed', error_msg = 'Orphaned processing state recovered' WHERE withdrawal_id = ?",
+                        (withdrawal_id,)
+                    )
+                conn.execute("COMMIT")
+                
+                if rows:
+                    logger.info(f"Recovered {len(rows)} orphaned withdrawals.")
+                    
+        except Exception as e:
+            logger.error(f"Failed to recover orphans: {e}")
 
     def process_batch(self) -> int:
         """Process a batch of withdrawals"""
@@ -225,6 +299,9 @@ class PayoutWorker:
 
         while True:
             try:
+                # Recover orphans before processing new batches to prevent stranded funds
+                self.recover_orphans()
+
                 # Process batch
                 processed = self.process_batch()
 

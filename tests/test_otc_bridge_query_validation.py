@@ -1,8 +1,12 @@
 import importlib.util
 import os
 import sys
+import time
 import types
 from pathlib import Path
+
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -24,6 +28,61 @@ def load_otc_bridge(tmp_path):
     module.app.testing = True
     module.init_db()
     return module
+
+
+def signed_order_payload(otc_bridge):
+    private_key, public_key_hex, wallet = make_wallet(otc_bridge)
+    payload = {
+        "side": "buy",
+        "pair": "RTC/USDC",
+        "wallet": wallet,
+        "amount_rtc": 1,
+        "price_per_rtc": "0.10",
+    }
+    _, amount_micro_rtc = otc_bridge.decimal_units(
+        payload["amount_rtc"], otc_bridge.RTC_UNIT, "amount_rtc"
+    )
+    _, price_per_rtc_nano_quote = otc_bridge.decimal_units(
+        payload["price_per_rtc"], otc_bridge.QUOTE_PRICE_SCALE, "price_per_rtc"
+    )
+    bound_fields = otc_bridge.create_order_auth_fields(
+        payload["side"],
+        payload["pair"],
+        amount_micro_rtc,
+        price_per_rtc_nano_quote,
+        otc_bridge.ORDER_TTL_DEFAULT,
+        "",
+    )
+    payload["wallet_auth"] = wallet_auth(
+        otc_bridge,
+        private_key,
+        public_key_hex,
+        "create_order",
+        otc_bridge.CREATE_ORDER_AUTH_ID,
+        wallet,
+        **bound_fields,
+    )
+    return payload
+
+
+def make_wallet(otc_bridge):
+    private_key = Ed25519PrivateKey.generate()
+    public_key_hex = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    ).hex()
+    wallet = otc_bridge.rtc_address_from_public_key(public_key_hex)
+    return private_key, public_key_hex, wallet
+
+
+def wallet_auth(otc_bridge, private_key, public_key_hex, action, order_id, wallet, **bound_fields):
+    timestamp = int(time.time())
+    message = otc_bridge.wallet_auth_message(action, order_id, wallet, timestamp, bound_fields)
+    return {
+        "public_key": public_key_hex,
+        "signature": private_key.sign(message).hex(),
+        "timestamp": timestamp,
+    }
 
 
 def test_orders_rejects_malformed_pagination(tmp_path):
@@ -117,13 +176,7 @@ def test_unexpected_order_errors_are_generic(tmp_path, monkeypatch):
     with otc_bridge.app.test_client() as client:
         response = client.post(
             "/api/orders",
-            json={
-                "side": "buy",
-                "pair": "RTC/USDC",
-                "wallet": "buyer-1",
-                "amount_rtc": 1,
-                "price_per_rtc": 0.10,
-            },
+            json=signed_order_payload(otc_bridge),
         )
 
     assert response.status_code == 500
@@ -135,3 +188,73 @@ def test_otc_bridge_no_longer_returns_raw_exception_strings():
 
     assert 'return jsonify({"error": str(e)}), 500' not in source
     assert 'return {"ok": False, "error": str(e)}' not in source
+
+
+class ExplodingConnection:
+    def cursor(self):
+        raise RuntimeError("sensitive sqlite path /var/lib/rustchain/otc_bridge.db")
+
+    def rollback(self):
+        pass
+
+    def close(self):
+        pass
+
+
+def test_mutating_order_errors_do_not_leak_exception_details(tmp_path, monkeypatch):
+    otc_bridge = load_otc_bridge(tmp_path)
+    monkeypatch.setattr(otc_bridge, "check_rate_limit", lambda _ip: True)
+    monkeypatch.setattr(otc_bridge, "get_db", lambda: ExplodingConnection())
+    private_key, public_key_hex, wallet = make_wallet(otc_bridge)
+
+    cases = [
+        ("/api/orders", signed_order_payload(otc_bridge)),
+        ("/api/orders/otc_test/match", {
+            "wallet": wallet,
+            "wallet_auth": wallet_auth(
+                otc_bridge,
+                private_key,
+                public_key_hex,
+                "match_order",
+                "otc_test",
+                wallet,
+                eth_address="",
+            ),
+        }),
+        ("/api/orders/otc_test/confirm", {"wallet": wallet, "quote_tx": "0xdeadbeef"}),
+        ("/api/orders/otc_test/cancel", {
+            "wallet": wallet,
+            "wallet_auth": wallet_auth(
+                otc_bridge,
+                private_key,
+                public_key_hex,
+                "cancel_order",
+                "otc_test",
+                wallet,
+            ),
+        }),
+    ]
+
+    with otc_bridge.app.test_client() as client:
+        for path, body in cases:
+            response = client.post(path, json=body)
+            assert response.status_code == 500
+            assert response.get_json() == {"error": otc_bridge.GENERIC_INTERNAL_ERROR}
+
+
+def test_escrow_helper_returns_generic_error_on_exception(tmp_path, monkeypatch):
+    otc_bridge = load_otc_bridge(tmp_path)
+
+    def raise_sensitive_error(*_args, **_kwargs):
+        raise RuntimeError("upstream token leaked from /etc/otc.env")
+
+    monkeypatch.setattr(otc_bridge.requests, "post", raise_sensitive_error)
+
+    result = otc_bridge.rtc_create_escrow_job(
+        poster_wallet="seller-wallet",
+        amount_rtc=1,
+        title="test escrow",
+        description="test",
+    )
+
+    assert result == {"ok": False, "error": otc_bridge.GENERIC_INTERNAL_ERROR}

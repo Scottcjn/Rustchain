@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MIT
 
+import importlib.util
 from pathlib import Path
 
 
@@ -10,6 +11,18 @@ RUSTCHAIN_DASHBOARD = (
 
 def _source() -> str:
     return RUSTCHAIN_DASHBOARD.read_text(encoding="utf-8")
+
+
+def _load_dashboard_module():
+    spec = importlib.util.spec_from_file_location(
+        "rustchain_dashboard_under_test",
+        RUSTCHAIN_DASHBOARD,
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    module.app.config["TESTING"] = True
+    return module
 
 
 def test_dashboard_escapes_api_fields_before_inner_html_rendering():
@@ -56,3 +69,35 @@ def test_dashboard_escapes_search_result_and_error_text():
     assert "${data.weight}" not in source
     assert "${data.tier}" not in source
     assert '<span class="mono">${wallet}</span>' not in source
+
+
+def test_stats_api_does_not_echo_internal_exception_details(monkeypatch):
+    dashboard = _load_dashboard_module()
+
+    def fail_connect(*args, **kwargs):
+        raise RuntimeError("secret database path: /private/rustchain.db")
+
+    monkeypatch.setattr(dashboard.sqlite3, "connect", fail_connect)
+
+    response = dashboard.app.test_client().get("/api/stats")
+
+    assert response.status_code == 500
+    body = response.get_json()
+    assert body["error"] == "stats_unavailable"
+    assert "secret database path" not in response.get_data(as_text=True)
+
+
+def test_wallet_lookup_api_does_not_echo_internal_exception_details(monkeypatch):
+    dashboard = _load_dashboard_module()
+
+    def fail_connect(*args, **kwargs):
+        raise RuntimeError("secret database path: /private/rustchain.db")
+
+    monkeypatch.setattr(dashboard.sqlite3, "connect", fail_connect)
+
+    response = dashboard.app.test_client().get("/api/wallet/RTCabc123")
+
+    assert response.status_code == 500
+    body = response.get_json()
+    assert body["error"] == "wallet_lookup_unavailable"
+    assert "secret database path" not in response.get_data(as_text=True)

@@ -68,3 +68,70 @@ def test_proxy_keeps_safe_requests_under_api(monkeypatch):
     assert response.status_code == 200
     assert response.get_data(as_text=True) == "ok"
     assert captured == {"url": "http://localhost:8088/api/stats", "timeout": 10}
+
+
+def test_proxy_hides_upstream_exception_details(monkeypatch):
+    proxy = load_server_proxy()
+
+    def fake_get(url, timeout):
+        raise RuntimeError(
+            "connect failed to http://127.0.0.1:8088/api/miners "
+            "token=secret path=/srv/rustchain/private.db"
+        )
+
+    monkeypatch.setattr(proxy.requests, "get", fake_get)
+
+    response = proxy.app.test_client().get("/api/miners")
+    body = response.get_json()
+
+    assert response.status_code == 502
+    assert body == {"error": "Local server unavailable"}
+    assert "127.0.0.1" not in response.get_data(as_text=True)
+    assert "token=secret" not in response.get_data(as_text=True)
+    assert "/srv/rustchain/private.db" not in response.get_data(as_text=True)
+
+
+def test_proxy_hides_upstream_error_response_details(monkeypatch):
+    proxy = load_server_proxy()
+
+    class FakeResponse:
+        status_code = 500
+        text = "trace token=super-secret path=/srv/rustchain/private.db host=127.0.0.1"
+        headers = {"Content-Type": "text/html"}
+
+    def fake_get(url, timeout):
+        return FakeResponse()
+
+    monkeypatch.setattr(proxy.requests, "get", fake_get)
+
+    response = proxy.app.test_client().get("/api/miners")
+
+    assert response.status_code == 502
+    assert response.get_json() == {"error": "Local server unavailable"}
+    assert "super-secret" not in response.get_data(as_text=True)
+    assert "/srv/rustchain/private.db" not in response.get_data(as_text=True)
+    assert "127.0.0.1" not in response.get_data(as_text=True)
+
+
+def test_proxy_hides_invalid_json_response_details(monkeypatch):
+    proxy = load_server_proxy()
+
+    class FakeResponse:
+        status_code = 200
+        text = '{"error":"token=super-secret path=/srv/rustchain/private.db"}'
+        headers = {"Content-Type": "application/json"}
+
+        def json(self):
+            raise ValueError("invalid json")
+
+    def fake_get(url, timeout):
+        return FakeResponse()
+
+    monkeypatch.setattr(proxy.requests, "get", fake_get)
+
+    response = proxy.app.test_client().get("/api/miners")
+
+    assert response.status_code == 502
+    assert response.get_json() == {"error": "Local server unavailable"}
+    assert "super-secret" not in response.get_data(as_text=True)
+    assert "/srv/rustchain/private.db" not in response.get_data(as_text=True)

@@ -360,7 +360,7 @@ class RustChainWallet:
         nonce: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
-        Create a signed transfer payload for the RustChain network.
+        Create a signed transfer payload for the RustChain network (canonical JSON format).
 
         Args:
             to_address: Recipient wallet address.
@@ -374,6 +374,7 @@ class RustChainWallet:
             A dict containing the transfer payload with signature.
         """
         import time
+        import json
 
         nonce_value = int(nonce if nonce is not None else time.time_ns() // 1_000_000)
         amount_for_sig = float(amount)

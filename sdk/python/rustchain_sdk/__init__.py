@@ -18,7 +18,7 @@ Quick Start:
   from rustchain_sdk import RustChainClient, RustChainWallet
 
   # Connect to a node
-  client = RustChainClient("https://50.28.86.131")
+  client = RustChainClient("https://rustchain.org")
 
   # Check health
   health = await client.health()

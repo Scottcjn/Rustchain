@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from flask import Flask
 
-from utxo_db import UtxoDB, UNIT
+from utxo_db import MAX_COINBASE_OUTPUT_NRTC, UtxoDB, UNIT
 from utxo_endpoints import register_utxo_blueprint, ACCOUNT_UNIT
 
 
@@ -80,12 +80,20 @@ class TestDualWriteUnitCorrectness(unittest.TestCase):
         os.unlink(self.db_path)
 
     def _seed_coinbase(self, address, value_nrtc, height=1):
-        self.utxo_db.apply_transaction({
-            'tx_type': 'mining_reward',
-            'inputs': [],
-            'outputs': [{'address': address, 'value_nrtc': value_nrtc}],
-            'timestamp': int(time.time()),
-        }, block_height=height)
+        remaining = value_nrtc
+        block_height = height
+        while remaining > 0:
+            chunk = min(remaining, MAX_COINBASE_OUTPUT_NRTC)
+            ok = self.utxo_db.apply_transaction({
+                'tx_type': 'mining_reward',
+                'inputs': [],
+                'outputs': [{'address': address, 'value_nrtc': chunk}],
+                'timestamp': int(time.time()),
+                '_allow_minting': True,
+            }, block_height=block_height)
+            self.assertTrue(ok, "Coinbase fixture should seed UTXO balance")
+            remaining -= chunk
+            block_height += 1
 
     def _get_account_balance_i64(self, miner_id):
         conn = sqlite3.connect(self.db_path)
@@ -377,12 +385,14 @@ class TestDualWriteDisabled(unittest.TestCase):
         os.unlink(self.db_path)
 
     def _seed_coinbase(self, address, value_nrtc, height=1):
-        self.utxo_db.apply_transaction({
+        ok = self.utxo_db.apply_transaction({
             'tx_type': 'mining_reward',
             'inputs': [],
             'outputs': [{'address': address, 'value_nrtc': value_nrtc}],
             'timestamp': int(time.time()),
+            '_allow_minting': True,
         }, block_height=height)
+        self.assertTrue(ok, "Coinbase fixture should seed UTXO balance")
 
     def test_no_account_write_when_dual_write_false(self):
         """When dual_write=False, balances table should remain untouched."""
