@@ -17,7 +17,7 @@ import utxo_db as utxo_db_module
 from utxo_db import (
     UtxoDB, coin_select, compute_box_id, address_to_proposition,
     proposition_to_address, UNIT, DUST_THRESHOLD, MAX_COINBASE_OUTPUT_NRTC,
-    MAX_OUTPUTS,
+    MAX_OUTPUTS, MAX_SQLITE_INT64,
 )
 
 
@@ -236,6 +236,59 @@ class TestUtxoDB(unittest.TestCase):
 
         self.assertFalse(ok)
         # Balances unchanged
+        self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
+        self.assertEqual(self.db.get_balance('bob'), 0)
+
+    def test_timestamp_above_sqlite_int64_rejected(self):
+        """Oversized timestamps must reject cleanly before SQLite persistence."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        alice_boxes = self.db.get_unspent_for_address('alice')
+        opened = []
+        original_conn = self.db._conn
+
+        def tracking_conn():
+            opened.append(True)
+            return original_conn()
+
+        self.db._conn = tracking_conn
+
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': alice_boxes[0]['box_id'],
+                         'spending_proof': 'sig'}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+            'timestamp': MAX_SQLITE_INT64 + 1,
+        }, block_height=10)
+
+        self.assertFalse(ok)
+        self.assertFalse(opened)
+        self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
+        self.assertEqual(self.db.get_balance('bob'), 0)
+
+    def test_negative_block_height_rejected(self):
+        """Invalid block heights must not reach box-id serialization."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        alice_boxes = self.db.get_unspent_for_address('alice')
+        opened = []
+        original_conn = self.db._conn
+
+        def tracking_conn():
+            opened.append(True)
+            return original_conn()
+
+        self.db._conn = tracking_conn
+
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': alice_boxes[0]['box_id'],
+                         'spending_proof': 'sig'}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+        }, block_height=-1)
+
+        self.assertFalse(ok)
+        self.assertFalse(opened)
         self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
         self.assertEqual(self.db.get_balance('bob'), 0)
 
@@ -750,6 +803,36 @@ class TestUtxoDB(unittest.TestCase):
         ok = self.db.mempool_add(tx)
         self.assertFalse(ok)
         self.assertFalse(self.db.mempool_check_double_spend(box['box_id']))
+
+    def test_mempool_rejects_oversized_timestamp_without_locking_input(self):
+        """Mempool metadata validation must mirror apply_transaction."""
+        self._apply_coinbase('alice', 100 * UNIT, block_height=1)
+        box = self.db.get_unspent_for_address('alice')[0]
+
+        tx = {
+            'tx_id': 'tsov' * 16,
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': box['box_id']}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+            'timestamp': MAX_SQLITE_INT64 + 1,
+        }
+
+        ok = self.db.mempool_add(tx)
+
+        self.assertFalse(ok)
+        self.assertFalse(self.db.mempool_check_double_spend(box['box_id']))
+        self.assertEqual(self.db.mempool_get_block_candidates(), [])
+
+        conn = self.db._conn()
+        try:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM utxo_mempool_inputs WHERE box_id = ?",
+                (box['box_id'],),
+            ).fetchone()
+            self.assertEqual(row['n'], 0)
+        finally:
+            conn.close()
 
     # -- fix(#9273): mempool output validation ------------------------------
 
