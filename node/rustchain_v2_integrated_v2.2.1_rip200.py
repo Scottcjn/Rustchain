@@ -4740,7 +4740,12 @@ def admin_wallet_review_holds_ui():
                     )
                     conn.commit()
             elif form_action == "resolve":
-                hold_id = int(request.form.get("hold_id") or "0")
+                try:
+                    hold_id = int(request.form.get("hold_id") or "0")
+                except (ValueError, TypeError):
+                    return jsonify({
+                        "ok": False, "error": "hold_id must be an integer"
+                    }), 400
                 action = str(request.form.get("review_action") or "release").strip().lower()
                 reviewer_note = str(request.form.get("reviewer_note") or "").strip()
                 coach_note = str(request.form.get("coach_note") or "").strip()
