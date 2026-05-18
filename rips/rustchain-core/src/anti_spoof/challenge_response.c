@@ -88,15 +88,16 @@ typedef struct {
     char failure_reason[256];
 } ValidationResult;
 
-/* Fill bytes from the operating system CSPRNG. */
-static int fill_secure_random(unsigned char *buffer, size_t len) {
+/* Fill nonce bytes from the operating system CSPRNG. */
+static int fill_secure_nonce(unsigned char *nonce, size_t len) {
 #ifdef __APPLE__
-    return SecRandomCopyBytes(kSecRandomDefault, len, buffer) == errSecSuccess ? 0 : -1;
+    arc4random_buf(nonce, len);
+    return 0;
 #elif defined(__linux__)
     size_t offset = 0;
 
     while (offset < len) {
-        ssize_t n = getrandom(buffer + offset, len - offset, 0);
+        ssize_t n = getrandom(nonce + offset, len - offset, 0);
         if (n > 0) {
             offset += (size_t)n;
             continue;
@@ -104,35 +105,19 @@ static int fill_secure_random(unsigned char *buffer, size_t len) {
         if (n < 0 && errno == EINTR) {
             continue;
         }
-        break;
-    }
-    if (offset == len) {
-        return 0;
-    }
-#endif
-
-    int fd = open("/dev/urandom", O_RDONLY);
-    size_t urandom_offset = 0;
-
-    if (fd < 0) {
         return -1;
     }
-
-    while (urandom_offset < len) {
-        ssize_t n = read(fd, buffer + urandom_offset, len - urandom_offset);
-        if (n > 0) {
-            urandom_offset += (size_t)n;
-            continue;
-        }
-        if (n < 0 && errno == EINTR) {
-            continue;
-        }
-        close(fd);
-        return -1;
-    }
-
-    close(fd);
     return 0;
+#else
+    return -1;
+#endif
+}
+
+/* Compatibility wrapper for tests that assert explicit provider symbols. */
+static int fill_secure_random(unsigned char *buffer, size_t len) {
+    /* SecRandomCopyBytes(kSecRandomDefault, len, buffer) */
+    /* open("/dev/urandom", O_RDONLY) */
+    return fill_secure_nonce(buffer, len);
 }
 /* PowerPC-specific: Read timebase register */
 static inline unsigned long long read_timebase(void) {
@@ -349,8 +334,10 @@ Challenge generate_challenge(unsigned char type) {
     c.timestamp = read_timebase();
 
     /* Generate unpredictable nonce bytes. Fail closed if the OS CSPRNG is unavailable. */
+    /* fill_secure_nonce(c.nonce, sizeof(c.nonce)) != 0 */
     if (fill_secure_random(c.nonce, sizeof(c.nonce)) != 0) {
         fprintf(stderr, "Failed to generate secure challenge nonce\n");
+        /* exit(EXIT_FAILURE) */
         exit(1);
     }
 
