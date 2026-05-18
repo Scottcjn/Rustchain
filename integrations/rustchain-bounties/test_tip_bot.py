@@ -521,6 +521,19 @@ class TestProcessEvent:
 
 class TestCommentBuilders:
 
+    def test_comment_footers_link_current_source(self):
+        cmd = TipCommand(recipient="alice", amount=50, token="RTC", raw="")
+        bodies = [
+            build_success_comment("Scottcjn", cmd, "https://example.com"),
+            build_failure_comment("Scottcjn", "Minimum tip is 1 RTC."),
+            build_duplicate_comment("Scottcjn", cmd),
+            build_unauthorized_comment("hacker"),
+        ]
+
+        for body in bodies:
+            assert "https://github.com/Scottcjn/Rustchain/tree/main/integrations/rustchain-bounties" in body
+            assert "github.com/mtarcure/rustchain-tip-bot" not in body
+
     def test_success_comment_contains_fields(self):
         cmd = TipCommand(recipient="alice", amount=50, token="RTC", raw="")
         body = build_success_comment("Scottcjn", cmd, "https://example.com")
