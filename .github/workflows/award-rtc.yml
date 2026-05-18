@@ -21,6 +21,7 @@ jobs:
         uses: ./.github/actions/rtc-auto-bounty
         with:
           rtc-amount: '5'
+          rtc-api-url: ${{ secrets.RTC_API_URL }}
           rtc-vps-host: ${{ secrets.RTC_VPS_HOST }}
           rtc-admin-key: ${{ secrets.RTC_ADMIN_KEY }}
           from-wallet: 'founder_community'

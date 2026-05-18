@@ -25,5 +25,6 @@ def test_award_rtc_workflow_passes_live_transfer_secrets() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
     assert "rtc-vps-host: ${{ secrets.RTC_VPS_HOST }}" in workflow
+    assert "rtc-api-url: ${{ secrets.RTC_API_URL }}" in workflow
     assert "rtc-admin-key: ${{ secrets.RTC_ADMIN_KEY }}" in workflow
     assert "github-token: ${{ secrets.GITHUB_TOKEN }}" in workflow
