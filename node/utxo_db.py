@@ -44,6 +44,8 @@ MAX_POOL_SIZE = 10_000
 MAX_OUTPUTS = 100
 MAX_TX_AGE_SECONDS = 3_600  # 1 hour mempool expiry
 P2PK_PREFIX = b'\x00\x08'   # Pay-to-Public-Key proposition prefix
+SUPPORTED_TX_TYPES = {'transfer', 'mining_reward'}
+MINTING_TX_TYPES = {'mining_reward'}
 
 
 # ---------------------------------------------------------------------------
@@ -371,14 +373,14 @@ class UtxoDB:
         return normalized
 
     def _normalize_tx_type(self, tx: dict) -> Optional[str]:
-        """Return a valid transaction type, defaulting only when absent."""
+        """Return a supported transaction type, defaulting only when absent."""
         if 'tx_type' not in tx:
             return 'transfer'
         tx_type = tx.get('tx_type')
         if not isinstance(tx_type, str):
             return None
         tx_type = tx_type.strip()
-        if not tx_type:
+        if not tx_type or tx_type not in SUPPORTED_TX_TYPES:
             return None
         return tx_type
 
@@ -444,7 +446,6 @@ class UtxoDB:
         # passes user-controlled tx_type, an attacker could mint unlimited coins.
         # Only the epoch settlement system should create mining_reward transactions.
         # Require _allow_minting=True (internal flag) to permit mining_reward.
-        MINTING_TX_TYPES = {'mining_reward'}
         if tx_type in MINTING_TX_TYPES and not tx.get('_allow_minting'):
             if conn:
                 conn.close()
@@ -502,7 +503,6 @@ class UtxoDB:
             # -- conservation check ------------------------------------------
             # Only authorized minting transaction types may have empty inputs.
             # All other transactions must consume at least one input box.
-            MINTING_TX_TYPES = {'mining_reward'}
             if not inputs and tx_type not in MINTING_TX_TYPES:
                 return abort()
 
@@ -792,7 +792,6 @@ class UtxoDB:
             # production and guarded by apply_transaction(_allow_minting=True).
             # Admitting user-supplied mining_reward txs here lets invalid mint
             # candidates occupy mempool slots and reach block candidate selection.
-            MINTING_TX_TYPES = {'mining_reward'}
             if tx_type in MINTING_TX_TYPES:
                 return False
 
