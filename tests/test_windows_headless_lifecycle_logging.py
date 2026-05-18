@@ -65,3 +65,44 @@ def test_ready_status_and_headless_format_include_lifecycle_details():
         "message": "Epoch enrollment succeeded",
         "miner_id": "windows_abc123",
     }) == "[enroll] Epoch enrollment succeeded miner_id=windows_abc123"
+
+
+def test_ensure_ready_surfaces_attestation_diagnostics(monkeypatch):
+    module = _load_windows_miner()
+    miner = module.RustChainMiner("RTC02811ff5e2bb4bb4b95eee44c5429cd9525496e7")
+    miner.last_attestation_error = (
+        "submit rejected: HTTP 409 code=DUPLICATE_HARDWARE "
+        "error=hardware_already_bound"
+    )
+    events = []
+
+    monkeypatch.setattr(miner, "attest", lambda: False)
+
+    assert not miner._ensure_ready(events.append)
+    assert events == [{
+        "type": "error",
+        "message": (
+            "Attestation failed: submit rejected: HTTP 409 "
+            "code=DUPLICATE_HARDWARE error=hardware_already_bound"
+        ),
+    }]
+
+
+def test_response_diagnostic_includes_safe_json_fields():
+    module = _load_windows_miner()
+    miner = module.RustChainMiner("RTC02811ff5e2bb4bb4b95eee44c5429cd9525496e7")
+
+    class Response:
+        status_code = 409
+
+        def json(self):
+            return {
+                "code": "DUPLICATE_HARDWARE",
+                "error": "hardware_already_bound",
+                "message": "This hardware is already registered",
+            }
+
+    assert miner._response_diagnostic(Response()) == (
+        "HTTP 409 code=DUPLICATE_HARDWARE error=hardware_already_bound "
+        "message=This hardware is already registered"
+    )
