@@ -966,36 +966,66 @@
             renderFeed();
         }
 
+        function textElement(tagName, className, text) {
+            const element = document.createElement(tagName);
+            if (className) element.className = className;
+            element.textContent = text;
+            return element;
+        }
+
         function renderFeed() {
             const feed = document.getElementById('live-feed');
-            feed.innerHTML = feedItems.map(item => `
-                <div class="feed-item new-entry">
-                    <span class="feed-icon">${item.icon}</span>
-                    <div class="feed-content">
-                        <div class="feed-title">${item.title}</div>
-                        <div style="color: var(--text-secondary); font-size: 13px;">${item.subtitle}</div>
-                    </div>
-                    <span class="feed-time">${item.time}</span>
-                </div>
-            `).join('');
+            const items = feedItems.map(item => {
+                const row = document.createElement('div');
+                row.className = 'feed-item new-entry';
+
+                const icon = textElement('span', 'feed-icon', item.icon);
+                const content = document.createElement('div');
+                content.className = 'feed-content';
+
+                const title = textElement('div', 'feed-title', item.title);
+                const subtitle = textElement('div', null, item.subtitle);
+                subtitle.style.color = 'var(--text-secondary)';
+                subtitle.style.fontSize = '13px';
+
+                const time = textElement('span', 'feed-time', item.time);
+                content.append(title, subtitle);
+                row.append(icon, content, time);
+                return row;
+            });
+            feed.replaceChildren(...items);
         }
 
         function showEpochNotification(data) {
             // Create notification element
             const notification = document.createElement('div');
             notification.className = 'epoch-notification';
-            notification.innerHTML = `
-                <div class="notification-title">
-                    <span aria-hidden="true">🎉</span> Epoch Settlement!
-                </div>
-                <div class="notification-content">
-                    <p>Epoch ${data.epoch} → ${data.new_epoch}</p>
-                    <p style="margin-top: 8px;">
-                        <strong>Pot:</strong> ${data.total_rtc || 0} RTC<br>
-                        <strong>Miners:</strong> ${data.miners || 0}
-                    </p>
-                </div>
-            `;
+
+            const title = document.createElement('div');
+            title.className = 'notification-title';
+            const icon = textElement('span', null, '🎉');
+            icon.setAttribute('aria-hidden', 'true');
+            title.append(icon, document.createTextNode(' Epoch Settlement!'));
+
+            const content = document.createElement('div');
+            content.className = 'notification-content';
+            content.append(
+                textElement('p', null, `Epoch ${data.epoch ?? '?'} → ${data.new_epoch ?? '?'}`)
+            );
+
+            const stats = document.createElement('p');
+            stats.style.marginTop = '8px';
+            const potLabel = textElement('strong', null, 'Pot:');
+            const minersLabel = textElement('strong', null, 'Miners:');
+            stats.append(
+                potLabel,
+                document.createTextNode(` ${data.total_rtc || 0} RTC`),
+                document.createElement('br'),
+                minersLabel,
+                document.createTextNode(` ${data.miners || 0}`)
+            );
+            content.append(stats);
+            notification.append(title, content);
 
             document.body.appendChild(notification);
 
