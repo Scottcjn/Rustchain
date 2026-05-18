@@ -48,7 +48,6 @@ def _init_db(db_path):
         conn.execute("INSERT INTO balances (miner_pk, balance_rtc) VALUES (?, ?)", ("victim", 25.0))
         conn.execute("INSERT INTO balances (miner_pk, balance_rtc) VALUES (?, ?)", ("attacker", 0.0))
 
-
 def _init_gpu_attestation_table(db_path):
     with sqlite3.connect(db_path) as conn:
         conn.execute(
@@ -71,6 +70,20 @@ def _init_gpu_attestation_table(db_path):
             )
             """
         )
+
+
+def _init_balances_only_db(db_path):
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE balances (
+                miner_pk TEXT PRIMARY KEY,
+                balance_rtc REAL NOT NULL
+            )
+            """
+        )
+        conn.execute("INSERT INTO balances (miner_pk, balance_rtc) VALUES (?, ?)", ("victim", 25.0))
+        conn.execute("INSERT INTO balances (miner_pk, balance_rtc) VALUES (?, ?)", ("attacker", 0.0))
 
 
 def _balance(db_path, wallet):
@@ -356,3 +369,100 @@ def test_gpu_attest_hides_sqlite_schema_errors(tmp_path):
 
     assert response.status_code == 500
     assert response.get_json() == {"error": "Database operation failed"}
+
+
+def test_gpu_attest_rejects_blank_miner_id_before_database_work(tmp_path):
+    db_path = tmp_path / "gpu.db"
+    _init_db(db_path)
+    client = _create_app(db_path).test_client()
+
+    response = client.post(
+        "/api/gpu/attest",
+        headers={"X-Admin-Key": ADMIN_KEY},
+        json={"miner_id": "   "},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "miner_id required"}
+
+
+def test_gpu_escrow_rejects_blank_required_strings(tmp_path):
+    db_path = tmp_path / "gpu.db"
+    _init_db(db_path)
+    client = _create_app(db_path).test_client()
+
+    payload = _escrow_payload()
+    payload["job_type"] = "   "
+
+    response = client.post(
+        "/api/gpu/escrow",
+        json=payload,
+        headers={"X-Admin-Key": ADMIN_KEY},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "Missing required escrow fields"}
+    assert _balance(db_path, "victim") == 25.0
+    assert _balance(db_path, "attacker") == 0.0
+
+
+def test_gpu_release_rejects_blank_secret_before_transition(tmp_path):
+    db_path = tmp_path / "gpu.db"
+    _init_db(db_path)
+    client = _create_app(db_path).test_client()
+
+    created = client.post(
+        "/api/gpu/escrow",
+        json=_escrow_payload(),
+        headers={"X-Admin-Key": ADMIN_KEY},
+    )
+    assert created.status_code == 200
+
+    response = client.post(
+        "/api/gpu/release",
+        json={"job_id": "job-1", "actor_wallet": "victim", "escrow_secret": "   "},
+        headers={"X-Admin-Key": ADMIN_KEY},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "job_id, actor_wallet, escrow_secret are required"}
+    assert _balance(db_path, "victim") == 20.0
+    assert _balance(db_path, "attacker") == 0.0
+
+
+@pytest.mark.parametrize(
+    ("path", "headers", "payload", "init_db"),
+    [
+        ("/api/gpu/attest", {"X-Admin-Key": ADMIN_KEY}, {"miner_id": "gpu-miner"}, lambda db_path: None),
+        ("/api/gpu/escrow", {"X-Admin-Key": ADMIN_KEY}, _escrow_payload(), _init_balances_only_db),
+        (
+            "/api/gpu/release",
+            {"X-Admin-Key": ADMIN_KEY},
+            {"job_id": "job-1", "actor_wallet": "victim", "escrow_secret": "secret"},
+            _init_balances_only_db,
+        ),
+        (
+            "/api/gpu/refund",
+            {"X-Admin-Key": ADMIN_KEY},
+            {"job_id": "job-1", "actor_wallet": "attacker", "escrow_secret": "secret"},
+            _init_balances_only_db,
+        ),
+    ],
+)
+def test_gpu_routes_hide_sqlite_schema_errors(tmp_path, path, headers, payload, init_db):
+    db_path = tmp_path / "gpu.db"
+    init_db(db_path)
+    client = _create_app(db_path).test_client()
+
+    response = client.post(path, headers=headers, json=payload)
+
+    assert response.status_code == 500
+    body = response.get_json()
+    assert body == {"error": "Database operation failed"}
+    assert "no such table" not in str(body)
+    assert "gpu_attestations" not in str(body)
+    assert "balances" not in str(body)
+    assert "render_escrow" not in str(body)
+
+    if path == "/api/gpu/escrow":
+        assert _balance(db_path, "victim") == 25.0

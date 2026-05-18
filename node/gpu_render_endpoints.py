@@ -45,7 +45,18 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
             return default, None
         if not isinstance(value, str):
             return None, (jsonify({"error": f"{name} must be a string"}), 400)
+        value = value.strip()
+        if value == "":
+            return default, None
         return value, None
+
+    def _database_error(db, route_name):
+        try:
+            db.rollback()
+        except sqlite3.Error:
+            pass
+        app.logger.exception("GPU render database error in %s", route_name)
+        return jsonify({"error": "Database operation failed"}), 500
 
     def _require_admin_key():
         if not admin_key:
@@ -54,9 +65,6 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
         if not hmac.compare_digest(provided, admin_key):
             return jsonify({"error": "Unauthorized - admin key required"}), 401
         return None
-
-    def _database_error_response():
-        return jsonify({"error": "Database operation failed"}), 500
 
     def _ensure_escrow_secret_column(db):
         """Best-effort migration for older DBs."""
@@ -122,8 +130,8 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
             )
             db.commit()
             return jsonify({"ok": True, "message": "GPU attestation recorded"})
-        except sqlite3.Error as e:
-            return _database_error_response()
+        except sqlite3.Error:
+            return _database_error(db, "gpu_attest")
         finally:
             db.close()
 
@@ -188,8 +196,8 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
             db.commit()
             # escrow_secret is intentionally returned once to allow participant-auth for release/refund.
             return jsonify({"ok": True, "job_id": job_id, "status": "locked", "escrow_secret": escrow_secret})
-        except sqlite3.Error as e:
-            return _database_error_response()
+        except sqlite3.Error:
+            return _database_error(db, "gpu_escrow")
         finally:
             db.close()
 
@@ -255,8 +263,8 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
                 )
             db.commit()
             return jsonify({"ok": True, "status": "released"})
-        except sqlite3.Error as e:
-            return _database_error_response()
+        except sqlite3.Error:
+            return _database_error(db, "gpu_release")
         finally:
             db.close()
 
@@ -313,8 +321,8 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
             db.execute("UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk = ?", (job["amount_rtc"], job["from_wallet"]))
             db.commit()
             return jsonify({"ok": True, "status": "refunded"})
-        except sqlite3.Error as e:
-            return _database_error_response()
+        except sqlite3.Error:
+            return _database_error(db, "gpu_refund")
         finally:
             db.close()
 
