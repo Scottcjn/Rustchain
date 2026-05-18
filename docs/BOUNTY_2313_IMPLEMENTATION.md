@@ -575,7 +575,7 @@ sudo rustchain-witness write --epoch 1 --device /dev/fd0
 
 ## License
 
-MIT License - See LICENSE file in repository root.
+Apache License 2.0 - See LICENSE file in repository root.
 
 ---
 

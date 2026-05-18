@@ -435,7 +435,7 @@ curl -sk -X POST https://rustchain.org/governance/vote \
 ```
 RustChain - Proof of Antiquity by Scott (Scottcjn)
 https://github.com/Scottcjn/Rustchain
-MIT License
+Apache License 2.0
 ```
 
 ---
