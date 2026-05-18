@@ -28,6 +28,19 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
             return None
         return parsed
 
+    def _parse_text_field(data, field, *, required=True):
+        value = data.get(field)
+        if value is None:
+            if required:
+                return None, f"{field} is required"
+            return None, None
+        if not isinstance(value, str):
+            return None, f"{field} must be a string"
+        value = value.strip()
+        if required and not value:
+            return None, f"{field} is required"
+        return value, None
+
     def _hash_job_secret(secret):
         return hashlib.sha256((secret or "").encode("utf-8")).hexdigest()
 
@@ -53,9 +66,9 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
     @app.route("/api/gpu/attest", methods=["POST"])
     def gpu_attest():
         data = request.get_json(silent=True) or {}
-        miner_id = data.get("miner_id")
-        if not miner_id:
-            return jsonify({"error": "miner_id required"}), 400
+        miner_id, field_error = _parse_text_field(data, "miner_id")
+        if field_error:
+            return jsonify({"error": field_error}), 400
 
         # In a real node, we'd verify the signed hardware fingerprint here.
         # For the bounty, we implement the protocol storage and API.
@@ -101,18 +114,29 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
             return auth_error
 
         data = request.get_json(silent=True) or {}
-        job_id = data.get("job_id") or f"job_{secrets.token_hex(8)}"
-        job_type = data.get("job_type")  # render, tts, stt, llm
-        from_wallet = data.get("from_wallet")
-        to_wallet = data.get("to_wallet")
+        job_id, field_error = _parse_text_field(data, "job_id", required=False)
+        if field_error:
+            return jsonify({"error": field_error}), 400
+        job_id = job_id or f"job_{secrets.token_hex(8)}"
+
+        job_type, field_error = _parse_text_field(data, "job_type")  # render, tts, stt, llm
+        if field_error:
+            return jsonify({"error": field_error}), 400
+        from_wallet, field_error = _parse_text_field(data, "from_wallet")
+        if field_error:
+            return jsonify({"error": field_error}), 400
+        to_wallet, field_error = _parse_text_field(data, "to_wallet")
+        if field_error:
+            return jsonify({"error": field_error}), 400
         amount = _parse_positive_amount(data.get("amount_rtc"))
 
-        if not all([job_type, from_wallet, to_wallet]):
-            return jsonify({"error": "Missing required escrow fields"}), 400
         if amount is None:
             return jsonify({"error": "amount_rtc must be a finite number > 0"}), 400
 
-        escrow_secret = data.get("escrow_secret") or secrets.token_hex(16)
+        escrow_secret, field_error = _parse_text_field(data, "escrow_secret", required=False)
+        if field_error:
+            return jsonify({"error": field_error}), 400
+        escrow_secret = escrow_secret or secrets.token_hex(16)
 
         db = get_db()
         try:
@@ -152,12 +176,15 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
             return auth_error
 
         data = request.get_json(silent=True) or {}
-        job_id = data.get("job_id")
-        actor_wallet = data.get("actor_wallet")
-        escrow_secret = data.get("escrow_secret")
-
-        if not all([job_id, actor_wallet, escrow_secret]):
-            return jsonify({"error": "job_id, actor_wallet, escrow_secret are required"}), 400
+        job_id, field_error = _parse_text_field(data, "job_id")
+        if field_error:
+            return jsonify({"error": field_error}), 400
+        actor_wallet, field_error = _parse_text_field(data, "actor_wallet")
+        if field_error:
+            return jsonify({"error": field_error}), 400
+        escrow_secret, field_error = _parse_text_field(data, "escrow_secret")
+        if field_error:
+            return jsonify({"error": field_error}), 400
 
         db = get_db()
         try:
@@ -202,12 +229,15 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
             return auth_error
 
         data = request.get_json(silent=True) or {}
-        job_id = data.get("job_id")
-        actor_wallet = data.get("actor_wallet")
-        escrow_secret = data.get("escrow_secret")
-
-        if not all([job_id, actor_wallet, escrow_secret]):
-            return jsonify({"error": "job_id, actor_wallet, escrow_secret are required"}), 400
+        job_id, field_error = _parse_text_field(data, "job_id")
+        if field_error:
+            return jsonify({"error": field_error}), 400
+        actor_wallet, field_error = _parse_text_field(data, "actor_wallet")
+        if field_error:
+            return jsonify({"error": field_error}), 400
+        escrow_secret, field_error = _parse_text_field(data, "escrow_secret")
+        if field_error:
+            return jsonify({"error": field_error}), 400
 
         db = get_db()
         try:
