@@ -14,6 +14,7 @@ Features:
 
 import hashlib
 import json
+import logging
 import os
 import re
 import secrets
@@ -30,6 +31,7 @@ NODE_API = os.environ.get("RUSTCHAIN_NODE_API", "http://localhost:8000")
 FAUCET_DB = "faucet_service/faucet.db"
 PORT = 8095
 WALLET_ADDRESS_RE = re.compile(r"^[A-Za-z0-9._:-]{3,128}$")
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 CORS(app)
@@ -106,8 +108,9 @@ def proxy_api(path):
             
         resp = requests.get(url, timeout=5)
         return (resp.content, resp.status_code, resp.headers.items())
-    except Exception as e:
-        return jsonify({"error": f"Node Connection Error: {str(e)}"}), 502
+    except Exception:
+        logger.exception("Keeper explorer proxy request failed")
+        return jsonify({"error": "Node connection failed"}), 502
 
 @app.route('/api/faucet/drip', methods=['POST'])
 def faucet_drip():

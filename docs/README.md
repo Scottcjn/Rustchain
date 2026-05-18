@@ -18,15 +18,18 @@
 | [FAQ & Troubleshooting](./FAQ_TROUBLESHOOTING.md) | Common setup/runtime issues and recovery steps |
 | [Wallet User Guide](./WALLET_USER_GUIDE.md) | Wallet basics, balance checks, and safe operations |
 | [Contributing Guide](./CONTRIBUTING.md) | Contribution workflow, PR checklist, and bounty submission notes |
+| [Smart Contract Developer Guide](./SMART_CONTRACT_DEVELOPER_GUIDE.md) | Contract quickstart, lifecycle, deployment, and security checklist |
 | [Reward Analytics Dashboard](./REWARD_ANALYTICS_DASHBOARD.md) | Charts and API for RTC reward transparency |
 | [Cross-Node Sync Validator](./CROSS_NODE_SYNC_VALIDATOR.md) | Multi-node consistency checks and discrepancy reports |
 | [Discord Leaderboard Bot](./DISCORD_LEADERBOARD_BOT.md) | Webhook bot setup and usage |
+| [Chinese Documentation](./zh-CN/README.md) | Community-maintained Chinese documentation entry point |
+| [Chinese API Quick Reference](./zh-CN/API.md) | Chinese quick reference for common public API queries |
 | [Japanese Quickstart (日本語)](./ja/README.md) | Community-maintained Japanese quickstart guide |
 
 ## Live Network
 
 - **Primary Node**: `https://rustchain.org`
-- **Explorer**: `https://rustchain.org/explorer`
+- **Explorer**: `https://rustchain.org/explorer/`
 - **Health Check**: `curl -sk https://rustchain.org/health`
 - **Network Status Page**: `docs/network-status.html` (GitHub Pages-hostable status dashboard)
 

@@ -149,6 +149,16 @@ def _matches_secret(candidate: str, secrets: Iterable[str]) -> bool:
     return matched
 
 
+def _normalize_limit(value: Any, default: int = 10, maximum: int = 100) -> int:
+    if value is None or value == "":
+        return default
+    try:
+        limit = int(value)
+    except (TypeError, ValueError):
+        raise ValueError("limit must be an integer")
+    return max(1, min(limit, maximum))
+
+
 def _is_authorized(req) -> bool:
     required_admin = os.getenv("RC_ADMIN_KEY", "").strip()
     if required_admin:
@@ -457,7 +467,7 @@ def _store_review(
 def _recent_reviews(limit: int = 10, db_path: str | None = None) -> list[dict[str, Any]]:
     db = db_path or DB_PATH
     init_db(db)
-    limit = max(1, min(int(limit), 100))
+    limit = _normalize_limit(limit)
     with sqlite3.connect(db) as conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
@@ -622,7 +632,10 @@ def health():
 def recent():
     if not _is_authorized(request):
         return jsonify({"error": "Unauthorized -- admin key or bearer required"}), 401
-    limit = request.args.get("limit", 10, type=int)
+    try:
+        limit = _normalize_limit(request.args.get("limit"))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     return jsonify({"ok": True, "reviews": _recent_reviews(limit=limit)})
 
 

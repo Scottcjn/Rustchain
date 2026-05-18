@@ -719,6 +719,12 @@ class GossipLayer:
                 f"rejecting future-dated ts_ok={ts_ok} (now={now})"
             )
             return {"status": "error", "reason": "future_timestamp"}
+        if miner_id != msg.sender_id:
+            logger.warning(
+                f"Attestation from {msg.sender_id}: rejecting write for "
+                f"foreign miner namespace {miner_id[:16]}"
+            )
+            return {"status": "error", "reason": "sender_namespace_mismatch"}
 
         # Update CRDT
         if self.attestation_crdt.set(miner_id, attestation, int(ts_ok)):
@@ -1045,6 +1051,12 @@ class GossipLayer:
                             logger.warning(
                                 f"State from {sender}: rejecting future-dated "
                                 f"attestation {key[:16]} (ts={ts}, now={now})"
+                            )
+                            continue
+                        if key != sender:
+                            logger.warning(
+                                f"State from {sender}: rejecting attestation "
+                                f"for foreign miner namespace {key[:16]}"
                             )
                             continue
                         filtered.set(key, value, ts)

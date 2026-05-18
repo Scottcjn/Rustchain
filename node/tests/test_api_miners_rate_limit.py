@@ -86,6 +86,24 @@ class TestApiMinersRateLimit(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.headers["X-RateLimit-Remaining"], "1")
 
+    def test_api_miners_rejects_malformed_limit(self):
+        resp = self.client.get(
+            "/api/miners?limit=abc",
+            environ_base={"REMOTE_ADDR": "203.0.113.20"},
+        )
+
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.get_json(), {"ok": False, "error": "limit must be an integer"})
+
+    def test_api_miners_rejects_malformed_offset(self):
+        resp = self.client.get(
+            "/api/miners?offset=abc",
+            environ_base={"REMOTE_ADDR": "203.0.113.21"},
+        )
+
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.get_json(), {"ok": False, "error": "offset must be an integer"})
+
 
 if __name__ == "__main__":
     unittest.main()

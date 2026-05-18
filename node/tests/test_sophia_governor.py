@@ -186,6 +186,24 @@ def test_governor_endpoints_require_admin_for_manual_review(client):
     assert response.status_code == 401
 
 
+def test_governor_recent_rejects_malformed_limit(client):
+    response = client.get("/sophia/governor/recent?limit=not-an-int")
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "limit must be an integer"
+
+
+def test_governor_review_rejects_non_object_json(client):
+    response = client.post(
+        "/sophia/governor/review",
+        headers={"X-Admin-Key": "test-admin"},
+        json=[{"event_type": "pending_transfer"}],
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "JSON object required"
+
+
 def test_governor_admin_auth_uses_constant_time_compare(client, monkeypatch):
     """Admin-gated governor endpoints compare configured keys with hmac.compare_digest."""
     calls = []

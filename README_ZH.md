@@ -2,7 +2,7 @@
 
 # 🧱 RustChain：古董证明区块链
 
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![PowerPC](https://img.shields.io/badge/PowerPC-G3%2FG4%2FG5-orange)](https://github.com/Scottcjn/Rustchain)
 [![Blockchain](https://img.shields.io/badge/Consensus-Proof--of--Antiquity-green)](https://github.com/Scottcjn/Rustchain)
 [![Python](https://img.shields.io/badge/Python-3.x-yellow)](https://python.org)
@@ -387,7 +387,7 @@ https://github.com/Scottcjn/Rustchain
 
 ## 📜 许可证
 
-MIT许可证 - 可免费使用，但请保留版权声明和署名。
+Apache License 2.0 - 可免费使用，但请遵守 Apache License 2.0 条款并保留版权声明和署名。
 
 ---
 

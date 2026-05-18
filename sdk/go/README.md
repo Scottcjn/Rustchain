@@ -1,6 +1,6 @@
 # RustChain Agent Economy Go SDK
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/Scottcjn/Rustchain/sdk/go/agenteco.svg)](https://pkg.go.dev/github.com/Scottcjn/Rustchain/sdk/go/agenteco)
+[![Go SDK](https://img.shields.io/badge/Go%20SDK-agenteco-blue.svg)](https://github.com/Scottcjn/Rustchain/tree/main/sdk/go/agenteco)
 [![Go Report Card](https://goreportcard.com/badge/github.com/Scottcjn/Rustchain/sdk/go)](https://goreportcard.com/report/github.com/Scottcjn/Rustchain/sdk/go)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![RIP-302](https://img.shields.io/badge/RIP-302-Agent%20Economy-green)](https://github.com/Scottcjn/Rustchain)
@@ -459,4 +459,4 @@ MIT License - see [LICENSE](LICENSE) for details.
 - [RustChain GitHub](https://github.com/Scottcjn/Rustchain)
 - [RIP-302 Specification](../../rips/docs/)
 - [Agent Economy Documentation](../docs/AGENT_ECONOMY_SDK.md)
-- [Go Reference](https://pkg.go.dev/github.com/Scottcjn/Rustchain/sdk/go/agenteco)
+- [Go SDK source](https://github.com/Scottcjn/Rustchain/tree/main/sdk/go/agenteco)

@@ -9,6 +9,7 @@ Complete code examples for interacting with the RustChain REST API.
 - [JavaScript/Node.js Examples](#javascriptnodejs-examples)
 - [Go Examples](#go-examples)
 - [Rust Examples](#rust-examples)
+- [Error Handling Cookbook](#error-handling-cookbook)
 - [Bash Script](#bash-script)
 
 ---
@@ -148,6 +149,55 @@ curl -sk -X POST https://rustchain.org/wallet/transfer \
     "amount_rtc": 10.0,
     "memo": "Bounty payment #123"
   }' | jq
+```
+
+---
+
+## Error Handling Cookbook
+
+### Capture Status Codes in Scripts
+
+Use `--write-out` when a script needs to branch on HTTP status instead of only
+printing the response body.
+
+```bash
+response_file="$(mktemp)"
+status_code="$(
+  curl -sk \
+    --output "$response_file" \
+    --write-out "%{http_code}" \
+    "https://rustchain.org/wallet/balance?miner_id=scott"
+)"
+
+case "$status_code" in
+  200)
+    jq . "$response_file"
+    ;;
+  400)
+    echo "Bad request; check query parameters or JSON field names" >&2
+    jq . "$response_file" >&2
+    ;;
+  401|403)
+    echo "Authentication failed; check X-Admin-Key or request signature" >&2
+    jq . "$response_file" >&2
+    ;;
+  404)
+    echo "Resource not found; verify wallet, miner, epoch, or route path" >&2
+    jq . "$response_file" >&2
+    ;;
+  429)
+    echo "Rate limited; back off before retrying" >&2
+    ;;
+  5*)
+    echo "Node error; retry later or check /health and /ready" >&2
+    jq . "$response_file" >&2
+    ;;
+  *)
+    echo "Unexpected HTTP status: $status_code" >&2
+    jq . "$response_file" >&2
+    ;;
+esac
+rm -f "$response_file"
 ```
 
 ---

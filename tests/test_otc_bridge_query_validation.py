@@ -1,8 +1,12 @@
 import importlib.util
 import os
 import sys
+import time
 import types
 from pathlib import Path
+
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -24,6 +28,51 @@ def load_otc_bridge(tmp_path):
     module.app.testing = True
     module.init_db()
     return module
+
+
+def signed_order_payload(otc_bridge):
+    private_key = Ed25519PrivateKey.generate()
+    public_key_hex = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    ).hex()
+    wallet = otc_bridge.rtc_address_from_public_key(public_key_hex)
+    payload = {
+        "side": "buy",
+        "pair": "RTC/USDC",
+        "wallet": wallet,
+        "amount_rtc": 1,
+        "price_per_rtc": "0.10",
+    }
+    _, amount_micro_rtc = otc_bridge.decimal_units(
+        payload["amount_rtc"], otc_bridge.RTC_UNIT, "amount_rtc"
+    )
+    _, price_per_rtc_nano_quote = otc_bridge.decimal_units(
+        payload["price_per_rtc"], otc_bridge.QUOTE_PRICE_SCALE, "price_per_rtc"
+    )
+    timestamp = int(time.time())
+    bound_fields = otc_bridge.create_order_auth_fields(
+        payload["side"],
+        payload["pair"],
+        amount_micro_rtc,
+        price_per_rtc_nano_quote,
+        otc_bridge.ORDER_TTL_DEFAULT,
+        "",
+    )
+    payload["wallet_auth"] = {
+        "public_key": public_key_hex,
+        "signature": private_key.sign(
+            otc_bridge.wallet_auth_message(
+                "create_order",
+                otc_bridge.CREATE_ORDER_AUTH_ID,
+                wallet,
+                timestamp,
+                bound_fields,
+            )
+        ).hex(),
+        "timestamp": timestamp,
+    }
+    return payload
 
 
 def test_orders_rejects_malformed_pagination(tmp_path):
@@ -117,13 +166,7 @@ def test_unexpected_order_errors_are_generic(tmp_path, monkeypatch):
     with otc_bridge.app.test_client() as client:
         response = client.post(
             "/api/orders",
-            json={
-                "side": "buy",
-                "pair": "RTC/USDC",
-                "wallet": "buyer-1",
-                "amount_rtc": 1,
-                "price_per_rtc": 0.10,
-            },
+            json=signed_order_payload(otc_bridge),
         )
 
     assert response.status_code == 500
