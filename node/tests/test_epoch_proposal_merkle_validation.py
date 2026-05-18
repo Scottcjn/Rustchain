@@ -36,6 +36,7 @@ os.environ.setdefault("RC_P2P_SECRET", TEST_P2P_SECRET)
 # Add node directory to path
 NODE_DIR = os.path.join(os.path.dirname(__file__), '..', 'node')
 sys.path.insert(0, NODE_DIR)
+os.environ.setdefault("RC_P2P_SECRET", "a" * 64)
 
 from rustchain_p2p_gossip import GossipLayer, GossipMessage, MessageType
 
