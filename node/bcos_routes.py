@@ -93,18 +93,21 @@ def _parse_bounded_int_arg(name: str, default: int, maximum: int):
     return min(value, maximum), None, None
 
 
+def _report_commitment(report: dict) -> str:
+    """Compute the canonical BCOS report commitment."""
+    report_copy = {
+        k: v for k, v in report.items()
+        if k not in ("cert_id", "commitment")
+    }
+    canonical = json.dumps(report_copy, sort_keys=True, separators=(",", ":"))
+    return blake2b(canonical.encode(), digest_size=32).hexdigest()
+
+
 def _verify_commitment(report_json_str: str, claimed_commitment: str) -> bool:
     """Recompute BLAKE2b commitment and compare."""
     try:
-        # Reparse and re-serialize to canonical form
         report = json.loads(report_json_str)
-        # Remove cert_id and commitment before recomputing
-        # (they were added after the commitment was computed)
-        report_copy = {k: v for k, v in report.items()
-                       if k not in ("cert_id", "commitment")}
-        canonical = json.dumps(report_copy, sort_keys=True, separators=(",", ":"))
-        computed = blake2b(canonical.encode(), digest_size=32).hexdigest()
-        return computed == claimed_commitment
+        return hmac.compare_digest(_report_commitment(report), claimed_commitment)
     except Exception:
         return False
 
@@ -256,6 +259,11 @@ def bcos_attest():
 
     # Verify commitment matches report
     report_json_str = json.dumps(report, sort_keys=True, separators=(",", ":"))
+    if not _verify_commitment(report_json_str, commitment):
+        return jsonify({
+            "error": "invalid_commitment",
+            "message": "commitment does not match report payload",
+        }), 400
 
     # Store
     now = int(time.time())
@@ -322,11 +330,8 @@ def bcos_verify(cert_id):
 
         # Recompute commitment from stored report
         report = json.loads(row["report_json"])
-        report_copy = {k: v for k, v in report.items()
-                       if k not in ("cert_id", "commitment")}
-        canonical = json.dumps(report_copy, sort_keys=True, separators=(",", ":"))
-        recomputed = blake2b(canonical.encode(), digest_size=32).hexdigest()
-        commitment_valid = recomputed == row["commitment"]
+        recomputed = _report_commitment(report)
+        commitment_valid = hmac.compare_digest(recomputed, row["commitment"])
 
         # Verify Ed25519 signature if present
         sig_valid = None
