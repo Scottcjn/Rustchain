@@ -596,6 +596,73 @@ class TestAirdropBridgeRoutes(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         return response.get_json()["lock"]["lock_id"]
 
+    def test_eligibility_route_rejects_non_object_json(self):
+        response = self.client.post("/api/airdrop/eligibility", json=["bad"])
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["error"], "invalid_json")
+
+    def test_eligibility_route_rejects_non_string_fields(self):
+        response = self.client.post(
+            "/api/airdrop/eligibility",
+            json={
+                "github_username": {"login": "alice"},
+                "wallet_address": "0x123",
+                "chain": "base",
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["error"], "invalid_github_username_type")
+
+    def test_claim_route_rejects_non_string_github_token(self):
+        response = self.client.post(
+            "/api/airdrop/claim",
+            json={
+                "github_username": "alice",
+                "wallet_address": "0x123",
+                "chain": "base",
+                "tier": "builder",
+                "github_token": {"token": "secret"},
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["error"], "invalid_github_token_type")
+
+    def test_bridge_lock_rejects_bad_amount_values(self):
+        for amount in ("lots", True, {"amount": 1}, 0, -1):
+            with self.subTest(amount=amount):
+                response = self.client.post(
+                    "/api/bridge/lock",
+                    json={
+                        "from_address": "RTC1234567890123456789012345678901234567890",
+                        "to_address": "0x1234567890123456789012345678901234567890",
+                        "from_chain": "rustchain",
+                        "to_chain": "base",
+                        "amount_wrtc": amount,
+                    },
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.get_json()["error"], "invalid_amount_wrtc")
+
+    def test_confirm_and_release_reject_non_string_tx_fields(self):
+        lock_id = self._create_lock()
+        confirm = self.client.post(
+            f"/api/bridge/lock/{lock_id}/confirm",
+            headers=ADMIN_HEADERS,
+            json={"source_tx": ["tx"]},
+        )
+        self.assertEqual(confirm.status_code, 400)
+        self.assertEqual(confirm.get_json()["error"], "invalid_source_tx_type")
+
+        success, _ = self.airdrop.confirm_bridge_lock(lock_id, "operator-source-tx")
+        self.assertTrue(success)
+        release = self.client.post(
+            f"/api/bridge/lock/{lock_id}/release",
+            headers=ADMIN_HEADERS,
+            json={"dest_tx": {"hash": "tx"}},
+        )
+        self.assertEqual(release.status_code, 400)
+        self.assertEqual(release.get_json()["error"], "invalid_dest_tx_type")
+
     def test_confirm_route_requires_admin_key(self):
         lock_id = self._create_lock()
 

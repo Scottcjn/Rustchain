@@ -39,11 +39,54 @@ import re
 import sqlite3
 import time
 from dataclasses import dataclass, asdict
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
+
+
+def _json_object(payload: Any) -> Dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise ValueError("invalid_json")
+    return payload
+
+
+def _text_field(data: Dict[str, Any], field_name: str, *, required: bool = False) -> str:
+    value = data.get(field_name, "")
+    if required and (value is None or value == ""):
+        raise ValueError(f"missing_{field_name}")
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise ValueError(f"invalid_{field_name}_type")
+    value = value.strip()
+    if required and not value:
+        raise ValueError(f"missing_{field_name}")
+    return value
+
+
+def _optional_text_field(data: Dict[str, Any], field_name: str) -> Optional[str]:
+    value = data.get(field_name)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"invalid_{field_name}_type")
+    return value.strip() or None
+
+
+def _amount_uwrtc_field(data: Dict[str, Any]) -> int:
+    value = data.get("amount_wrtc", 0)
+    if isinstance(value, bool):
+        raise ValueError("invalid_amount_wrtc")
+    try:
+        amount = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        raise ValueError("invalid_amount_wrtc")
+    if not amount.is_finite() or amount <= 0:
+        raise ValueError("invalid_amount_wrtc")
+    return int((amount * Decimal(1_000_000)).to_integral_value(rounding=ROUND_HALF_UP))
 
 # ============================================================================
 # Configuration
@@ -1251,14 +1294,14 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
     @app.route("/api/airdrop/eligibility", methods=["POST"])
     def check_airdrop_eligibility():
         """Check airdrop eligibility."""
-        data = request.get_json(silent=True)
-        if not data:
-            return jsonify({"ok": False, "error": "invalid_json"}), 400
-
-        github_username = data.get("github_username", "").strip()
-        wallet_address = data.get("wallet_address", "").strip()
-        chain = data.get("chain", "").strip()
-        github_token = data.get("github_token")
+        try:
+            data = _json_object(request.get_json(silent=True))
+            github_username = _text_field(data, "github_username")
+            wallet_address = _text_field(data, "wallet_address")
+            chain = _text_field(data, "chain")
+            github_token = _optional_text_field(data, "github_token")
+        except ValueError as e:
+            return jsonify({"ok": False, "error": str(e)}), 400
         # SECURITY: skip_antisybil must NEVER be settable from API requests.
         # It exists only for internal testing via direct Python calls.
 
@@ -1278,15 +1321,15 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
     @app.route("/api/airdrop/claim", methods=["POST"])
     def claim_airdrop():
         """Submit airdrop claim."""
-        data = request.get_json(silent=True)
-        if not data:
-            return jsonify({"ok": False, "error": "invalid_json"}), 400
-
-        github_username = data.get("github_username", "").strip()
-        wallet_address = data.get("wallet_address", "").strip()
-        chain = data.get("chain", "").strip()
-        tier = data.get("tier", "").strip()
-        github_token = data.get("github_token")
+        try:
+            data = _json_object(request.get_json(silent=True))
+            github_username = _text_field(data, "github_username")
+            wallet_address = _text_field(data, "wallet_address")
+            chain = _text_field(data, "chain")
+            tier = _text_field(data, "tier")
+            github_token = _optional_text_field(data, "github_token")
+        except ValueError as e:
+            return jsonify({"ok": False, "error": str(e)}), 400
 
         if not all([github_username, wallet_address, chain, tier]):
             return (
@@ -1325,15 +1368,15 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
     @app.route("/api/bridge/lock", methods=["POST"])
     def create_bridge_lock():
         """Create bridge lock."""
-        data = request.get_json(silent=True)
-        if not data:
-            return jsonify({"ok": False, "error": "invalid_json"}), 400
-
-        from_address = data.get("from_address", "").strip()
-        to_address = data.get("to_address", "").strip()
-        from_chain = data.get("from_chain", "").strip()
-        to_chain = data.get("to_chain", "").strip()
-        amount_wrtc = data.get("amount_wrtc", 0)
+        try:
+            data = _json_object(request.get_json(silent=True))
+            from_address = _text_field(data, "from_address")
+            to_address = _text_field(data, "to_address")
+            from_chain = _text_field(data, "from_chain")
+            to_chain = _text_field(data, "to_chain")
+            amount_uwrtc = _amount_uwrtc_field(data)
+        except ValueError as e:
+            return jsonify({"ok": False, "error": str(e)}), 400
 
         if not all([from_address, to_address, from_chain, to_chain]):
             return (
@@ -1346,8 +1389,6 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
                 ),
                 400,
             )
-
-        amount_uwrtc = int(float(amount_wrtc) * 1_000_000)
 
         success, message, lock = airdrop.create_bridge_lock(
             from_address, to_address, from_chain, to_chain, amount_uwrtc
@@ -1365,8 +1406,11 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
         if auth_error:
             return auth_error
 
-        data = request.get_json(silent=True) or {}
-        source_tx = data.get("source_tx", "").strip()
+        try:
+            data = _json_object(request.get_json(silent=True) or {})
+            source_tx = _text_field(data, "source_tx")
+        except ValueError as e:
+            return jsonify({"ok": False, "error": str(e)}), 400
 
         if not source_tx:
             return jsonify({"ok": False, "error": "missing_source_tx"}), 400
@@ -1385,8 +1429,11 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
         if auth_error:
             return auth_error
 
-        data = request.get_json(silent=True) or {}
-        dest_tx = data.get("dest_tx", "").strip()
+        try:
+            data = _json_object(request.get_json(silent=True) or {})
+            dest_tx = _text_field(data, "dest_tx")
+        except ValueError as e:
+            return jsonify({"ok": False, "error": str(e)}), 400
 
         if not dest_tx:
             return jsonify({"ok": False, "error": "missing_dest_tx"}), 400
