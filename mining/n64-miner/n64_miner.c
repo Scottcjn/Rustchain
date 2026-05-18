@@ -133,16 +133,20 @@ int miner_attest(miner_context_t *ctx) {
     
     ctx->attestations_sent++;
     ctx->last_fingerprint = fp;
-    
-    /* Wait for epoch acknowledgment */
+    /* Wait for epoch acknowledgment or re-attestation request */
     epoch_ack_packet_t ack;
     rc = serial_recv(&ack, sizeof(ack), 10000);
-    if (rc > 0 && ack.header.magic == ATTEST_MAGIC && 
-        ack.header.type == PKT_TYPE_EPOCH_ACK) {
-        ctx->current_epoch = ack.epoch;
-        ctx->total_earned += ack.balance_rtc;
-        ctx->session_earned += ack.balance_rtc;
-        ctx->attestations_ok++;
+    if (rc > 0 && ack.header.magic == ATTEST_MAGIC) {
+        if (ack.header.type == PKT_TYPE_EPOCH_ACK) {
+            ctx->current_epoch = ack.epoch;
+            ctx->total_earned += ack.balance_rtc;
+            ctx->session_earned += ack.balance_rtc;
+            ctx->attestations_ok++;
+        } else if (ack.header.type == PKT_TYPE_REATTEST) {
+            ctx->current_epoch = ack.epoch;
+            ctx->state = STATE_ATTEST;
+            return miner_attest(ctx);
+        }
     }
     
     ctx->state = STATE_MINING;
