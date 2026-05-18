@@ -6021,11 +6021,15 @@ def api_miners():
     
     # Pagination args
     try:
-        limit = min(max(int(request.args.get("limit", 100)), 1), 1000)
-        offset = max(int(request.args.get("offset", 0)), 0)
+        limit = int(request.args.get("limit", 100))
     except (ValueError, TypeError):
-        limit = 100
-        offset = 0
+        return jsonify({"ok": False, "error": "limit must be an integer"}), 400
+    try:
+        offset = int(request.args.get("offset", 0))
+    except (ValueError, TypeError):
+        return jsonify({"ok": False, "error": "offset must be an integer"}), 400
+    limit = min(max(limit, 1), 1000)
+    offset = max(offset, 0)
 
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
