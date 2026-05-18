@@ -5,7 +5,7 @@
 > **日本語翻訳版** | [English Version](README.md)
 
 [![CI](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml/badge.svg)](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/Scottcjn/Rustchain?style=flat&color=gold)](https://github.com/Scottcjn/Rustchain/stargazers)
 [![Contributors](https://img.shields.io/github/contributors/Scottcjn/Rustchain?color=brightgreen)](https://github.com/Scottcjn/Rustchain/graphs/contributors)
 [![Last Commit](https://img.shields.io/github/last-commit/Scottcjn/Rustchain?color=blue)](https://github.com/Scottcjn/Rustchain/commits/main)
@@ -449,7 +449,7 @@ https://github.com/Scottcjn/Rustchain
 
 ## 📜 ライセンス
 
-MITライセンス - 自由に使用できますが、著作権表示と帰属を保持してください。
+Apache License 2.0 - 自由に使用できますが、Apache License 2.0 の条項を遵守し、著作権表示と帰属を保持してください。
 
 ---
 
