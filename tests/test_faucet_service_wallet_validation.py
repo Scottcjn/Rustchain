@@ -16,6 +16,8 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "faucet_service"))
 
+pytest.importorskip("flask_cors")
+
 import faucet_service  # noqa: E402
 
 

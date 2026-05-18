@@ -32,6 +32,7 @@ Environment variables (set by the action):
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import sys
@@ -79,15 +80,23 @@ def _env(name: str, default: str = "") -> str:
     return os.environ.get(name, default)
 
 
+def _env_stripped(name: str, default: str = "") -> str:
+    return _env(name, default).strip()
+
+
 def _env_bool(name: str, default: bool = False) -> bool:
-    return _env(name, str(default)).lower() in ("true", "1", "yes")
+    return _env_stripped(name, str(default)).lower() in ("true", "1", "yes")
 
 
 def _env_float(name: str, default: float = 0.0) -> float:
     try:
-        return float(_env(name, str(default)))
+        return float(_env_stripped(name, str(default)))
     except (TypeError, ValueError):
         return default
+
+
+def _is_finite_amount(value: float) -> bool:
+    return math.isfinite(value)
 
 
 class Config:
@@ -95,21 +104,24 @@ class Config:
 
     def __init__(self) -> None:
         self.rtc_amount: float = _env_float("INPUT_RTC_AMOUNT", 50.0)
-        self.vps_host: str = _env("INPUT_RTC_VPS_HOST").strip()
-        self.admin_key: str = _env("INPUT_RTC_ADMIN_KEY").strip()
-        self.from_wallet: str = _env("INPUT_FROM_WALLET", "founder_community")
+        self.vps_host: str = _env_stripped("INPUT_RTC_VPS_HOST")
+        self.admin_key: str = _env_stripped("INPUT_RTC_ADMIN_KEY")
+        self.from_wallet: str = _env_stripped("INPUT_FROM_WALLET", "founder_community")
         self.dry_run: bool = _env_bool("INPUT_DRY_RUN")
         self.post_comment: bool = _env_bool("INPUT_POST_COMMENT", True)
-        self.github_token: str = _env("INPUT_GITHUB_TOKEN", _env("GITHUB_TOKEN"))
-        self.repo_path: str = _env("INPUT_REPO_PATH", ".")
+        self.github_token: str = _env_stripped(
+            "INPUT_GITHUB_TOKEN",
+            _env_stripped("GITHUB_TOKEN"),
+        )
+        self.repo_path: str = _env_stripped("INPUT_REPO_PATH", ".")
         self.max_amount: float = _env_float("INPUT_MAX_AMOUNT", 10000.0)
-        self.repo: str = _env("GITHUB_REPOSITORY")
-        self.pr_number: str = _env("PR_NUMBER")
-        self.pr_author: str = _env("PR_AUTHOR", _env("PR_AUTHOR"))
-        self.pr_merged: str = _env("PR_MERGED")
+        self.repo: str = _env_stripped("GITHUB_REPOSITORY")
+        self.pr_number: str = _env_stripped("PR_NUMBER")
+        self.pr_author: str = _env_stripped("PR_AUTHOR", _env_stripped("PR_AUTHOR"))
+        self.pr_merged: str = _env_stripped("PR_MERGED")
         self.pr_body: str = _env("PR_BODY", "")
-        self.pr_head_sha: str = _env("PR_HEAD_SHA", "")
-        self.pr_title: str = _env("PR_TITLE", "")
+        self.pr_head_sha: str = _env_stripped("PR_HEAD_SHA", "")
+        self.pr_title: str = _env_stripped("PR_TITLE", "")
 
     def validate(self) -> Optional[str]:
         """Return an error string if required config is missing, else None."""
@@ -123,8 +135,14 @@ class Config:
             return "INPUT_RTC_VPS_HOST is required (unless dry-run is enabled)"
         if not self.dry_run and not self.admin_key:
             return "INPUT_RTC_ADMIN_KEY is required (unless dry-run is enabled)"
+        if not _is_finite_amount(self.rtc_amount):
+            return f"rtc-amount must be finite, got {self.rtc_amount}"
+        if not _is_finite_amount(self.max_amount):
+            return f"max-amount must be finite, got {self.max_amount}"
         if self.rtc_amount <= 0:
             return f"rtc-amount must be positive, got {self.rtc_amount}"
+        if self.max_amount <= 0:
+            return f"max-amount must be positive, got {self.max_amount}"
         return None
 
 
@@ -270,6 +288,11 @@ def transfer_rtc(
 
     Returns ``(success, response_body_dict)``.
     """
+    vps_host = vps_host.strip()
+    admin_key = admin_key.strip()
+    from_wallet = from_wallet.strip()
+    to_wallet = to_wallet.strip()
+
     url = f"http://{vps_host}:{VPS_PORT}/wallet/transfer"
     payload = {
         "from_miner": from_wallet,
@@ -379,7 +402,7 @@ def main() -> int:
     bounty_match = _BOUNTY_RE.search(cfg.pr_body)
     if bounty_match:
         override = float(bounty_match.group(1))
-        if 0 < override <= cfg.max_amount:
+        if _is_finite_amount(override) and 0 < override <= cfg.max_amount:
             amount = override
             print(f"Bounty override in PR body: {amount} RTC")
         else:
