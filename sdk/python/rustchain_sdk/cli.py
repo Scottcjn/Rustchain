@@ -66,7 +66,10 @@ def wallet_group():
 def wallet_create(words: int, as_json: bool):
     """Create a new RustChain wallet with BIP39 seed phrase."""
     try:
-        wallet = RustChainWallet.create(strength=words * 8 + 4)
+        if words not in (12, 24):
+            raise ValueError("Number of seed words must be 12 or 24")
+        strength = 128 if words == 12 else 256
+        wallet = RustChainWallet.create(strength=strength)
         if as_json:
             click.echo(json.dumps(wallet.export(), indent=2))
         else:
