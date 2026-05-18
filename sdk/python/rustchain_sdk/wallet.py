@@ -351,16 +351,24 @@ class RustChainWallet:
             return _hmac_sha512(self._private_key, message)[:64]
 
     def sign_transfer(
-        self, to_address: str, amount: int, fee: int = 0, memo: str = ""
+        self,
+        to_address: str,
+        amount: float,
+        fee: float = 0,
+        memo: str = "",
+        chain_id: Optional[str] = None,
+        nonce: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         Create a signed transfer payload for the RustChain network (canonical JSON format).
 
         Args:
             to_address: Recipient wallet address.
-            amount: Amount to transfer (in smallest units).
-            fee: Transaction fee (in smallest units).
-            memo: Optional transaction memo.
+            amount: Amount to transfer in RTC.
+            fee: Transaction fee in RTC.
+            memo: Optional transfer memo.
+            chain_id: Optional chain/network id.
+            nonce: Optional caller-supplied nonce. Defaults to current unix ms.
 
         Returns:
             A dict containing the transfer payload with signature.
@@ -368,27 +376,33 @@ class RustChainWallet:
         import time
         import json
 
-        nonce = int(time.time())
-        # Canonical JSON with sorted keys (node requires this format)
-        payload_dict = {
+        nonce_value = int(nonce if nonce is not None else time.time_ns() // 1_000_000)
+        amount_for_sig = float(amount)
+        fee_for_sig = float(fee)
+        tx_data = {
             "from": self._address,
             "to": to_address,
-            "amount": amount,
+            "amount": amount_for_sig,
+            "fee": fee_for_sig,
             "memo": memo,
-            "nonce": nonce,
+            "nonce": str(nonce_value),
         }
-        canonical_payload = json.dumps(payload_dict, sort_keys=True, separators=(",", ":")).encode()
-        signature = self.sign(canonical_payload)
+        if chain_id:
+            tx_data["chain_id"] = chain_id
+        message = json.dumps(tx_data, sort_keys=True, separators=(",", ":")).encode()
+        signature = self.sign(message)
 
         return {
             "from_address": self._address,
             "to_address": to_address,
-            "amount_rtc": amount,
-            "fee_rtc": fee,
-            "nonce": nonce,
-            "memo": memo,
-            "public_key": self.public_key_hex,
+            "amount_rtc": amount_for_sig,
+            "fee": fee_for_sig,
+            "fee_rtc": fee_for_sig,
+            "nonce": nonce_value,
             "signature": signature.hex(),
+            "public_key": self.public_key_hex,
+            "memo": memo,
+            **({"chain_id": chain_id} if chain_id else {}),
         }
 
     @property
