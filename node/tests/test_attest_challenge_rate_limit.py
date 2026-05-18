@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MIT
 import importlib.util
+import gc
 import os
 import sqlite3
 import sys
@@ -11,6 +12,31 @@ from unittest import mock
 
 NODE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 MODULE_PATH = os.path.join(NODE_DIR, "rustchain_v2_integrated_v2.2.1_rip200.py")
+MODULE_NAME = "rustchain_integrated_rate_limit_test"
+
+
+def _load_integrated_module():
+    if "integrated_node" in sys.modules:
+        return sys.modules["integrated_node"]
+    if MODULE_NAME in sys.modules:
+        return sys.modules[MODULE_NAME]
+    spec = importlib.util.spec_from_file_location(MODULE_NAME, MODULE_PATH)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[MODULE_NAME] = mod
+    try:
+        spec.loader.exec_module(mod)
+    except Exception:
+        sys.modules.pop(MODULE_NAME, None)
+        raise
+    return mod
+
+
+def _cleanup_tempdir(tempdir):
+    gc.collect()
+    try:
+        tempdir.cleanup()
+    except OSError:
+        pass
 
 
 class TestAttestChallengeRateLimit(unittest.TestCase):
@@ -23,6 +49,8 @@ class TestAttestChallengeRateLimit(unittest.TestCase):
 
         if NODE_DIR not in sys.path:
             sys.path.insert(0, NODE_DIR)
+        os.environ["RUSTCHAIN_DB_PATH"] = str(Path(cls._tmp.name) / "challenge_rate_limit.db")
+        cls.mod = _load_integrated_module()
 
     @classmethod
     def tearDownClass(cls):
@@ -34,14 +62,14 @@ class TestAttestChallengeRateLimit(unittest.TestCase):
             os.environ.pop("RUSTCHAIN_DB_PATH", None)
         else:
             os.environ["RUSTCHAIN_DB_PATH"] = cls._prev_db_path
-        cls._tmp.cleanup()
+        _cleanup_tempdir(cls._tmp)
 
     def _load_module(self, module_name: str, db_name: str):
         db_path = str(Path(self._tmp.name) / db_name)
         os.environ["RUSTCHAIN_DB_PATH"] = db_path
-        spec = importlib.util.spec_from_file_location(module_name, MODULE_PATH)
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
+        mod = self.mod
+        mod.DB_PATH = db_path
+        mod.app.config["DB_PATH"] = db_path
         with sqlite3.connect(db_path) as conn:
             mod.attest_ensure_tables(conn)
         mod.ATTEST_CHALLENGE_IP_LIMIT = 2
