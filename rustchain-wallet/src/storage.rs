@@ -68,7 +68,7 @@ impl WalletStorage {
 
         // Generate random salt
         let mut salt = [0u8; 32];
-        getrandom::getrandom(&mut salt)
+        getrandom::fill(&mut salt)
             .map_err(|e| WalletError::Encryption(format!("Failed to generate salt: {}", e)))?;
 
         // Derive encryption key from password
@@ -76,7 +76,7 @@ impl WalletStorage {
 
         // Generate random nonce
         let mut nonce = [0u8; 12];
-        getrandom::getrandom(&mut nonce)
+        getrandom::fill(&mut nonce)
             .map_err(|e| WalletError::Encryption(format!("Failed to generate nonce: {}", e)))?;
 
         // Encrypt the private key

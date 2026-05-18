@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: MIT
 
-from flask import Flask, request, redirect, url_for, flash
+from flask import Flask, request, redirect, url_for, flash, abort
 import sqlite3
 import os
 import secrets
+import hmac
 from datetime import datetime
 
 app = Flask(__name__)
@@ -37,6 +38,14 @@ def debug_enabled() -> bool:
     return os.environ.get('CONTRIBUTOR_REGISTRY_DEBUG', '').strip().lower() in {
         '1', 'true', 'yes', 'on'
     }
+
+def _contributor_admin_authorized() -> bool:
+    expected_key = os.environ.get('CONTRIBUTOR_ADMIN_KEY', '')
+    provided_key = request.headers.get('X-Admin-Key') or request.headers.get('X-API-Key') or ''
+    return bool(expected_key) and bool(provided_key) and hmac.compare_digest(
+        provided_key,
+        expected_key,
+    )
 
 def init_db():
     with sqlite3.connect(DB_PATH) as conn:
@@ -178,8 +187,11 @@ def api_contributors():
         ]
     }
 
-@app.route('/approve/<username>')
+@app.route('/approve/<username>', methods=['POST'])
 def approve_contributor(username):
+    if not _contributor_admin_authorized():
+        abort(401)
+
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
             'UPDATE contributors SET status = "approved" WHERE github_username = ?',

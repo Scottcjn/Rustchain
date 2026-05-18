@@ -18,7 +18,7 @@ impl KeyPair {
     /// Generate a new random keypair
     pub fn generate() -> Self {
         let mut seed = [0u8; 32];
-        getrandom::getrandom(&mut seed).expect("Failed to generate random bytes");
+        getrandom::fill(&mut seed).expect("Failed to generate random bytes");
         let signing_key = SigningKey::from_bytes(&seed);
         let verifying_key = signing_key.verifying_key();
 
@@ -159,7 +159,7 @@ impl Drop for KeyPair {
 /// * `Ok(KeyPair)` - Derived keypair
 /// * `Err(WalletError::KeyDerivation)` - Invalid key length during derivation
 pub fn derive_from_mnemonic(mnemonic: &str, derivation_path: &str) -> Result<KeyPair> {
-    use hmac::{Hmac, Mac};
+    use hmac::{Hmac, KeyInit, Mac};
     use pbkdf2::pbkdf2_hmac;
     use sha2::{Digest, Sha512};
 
