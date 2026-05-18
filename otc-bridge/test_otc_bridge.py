@@ -2,6 +2,7 @@
 Tests for RustChain OTC Bridge
 """
 import json
+import hashlib
 import os
 import sqlite3
 import tempfile
@@ -171,7 +172,7 @@ class OTCBridgeTestCase(unittest.TestCase):
             ).fetchone()[0]
 
         r3 = self.app.post(f"/api/orders/{order_id}/confirm", json={
-            "wallet": "legacy-buyer",
+            "wallet": "legacy-seller",
             "quote_tx": "0xlegacy",
             "secret": secret,
         })
@@ -446,6 +447,9 @@ class OTCBridgeTestCase(unittest.TestCase):
     # ---------------------------------------------------------------
 
     def test_confirm_matched_order(self):
+        htlc_secret = "11" * 32
+        htlc_hash = hashlib.sha256(bytes.fromhex(htlc_secret)).hexdigest()
+
         # Create and match an order
         r1 = self.app.post("/api/orders", json={
             "side": "buy", "pair": "RTC/USDC",
@@ -454,7 +458,8 @@ class OTCBridgeTestCase(unittest.TestCase):
         order_id = r1.get_json()["order_id"]
 
         with patch("otc_bridge.rtc_get_balance", return_value=500.0), \
-             patch("otc_bridge.rtc_create_escrow_job", return_value={"ok": True, "job_id": "job_conf1"}):
+             patch("otc_bridge.rtc_create_escrow_job", return_value={"ok": True, "job_id": "job_conf1"}), \
+             patch("otc_bridge.generate_htlc_secret", return_value=(htlc_secret, htlc_hash)):
             self.app.post(f"/api/orders/{order_id}/match", json={
                 "wallet": "seller1",
             })
@@ -468,14 +473,14 @@ class OTCBridgeTestCase(unittest.TestCase):
                     (order_id,),
                 ).fetchone()[0]
             r3 = self.app.post(f"/api/orders/{order_id}/confirm", json={
-                "wallet": "buyer1",
+                "wallet": "seller1",
                 "quote_tx": "0xabc123def456",
                 "secret": secret,
             })
             data = r3.get_json()
             self.assertTrue(data["ok"])
             self.assertEqual(data["status"], "completed")
-            self.assertIn("htlc_secret", data)
+            self.assertEqual(data["htlc_secret"], htlc_secret)
 
     def test_cannot_confirm_unmatched(self):
         r1 = self.app.post("/api/orders", json={
