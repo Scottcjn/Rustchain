@@ -181,7 +181,7 @@ class AsyncRustChainClient:
         if not miner_id or not isinstance(miner_id, str):
             raise ValidationError("miner_id must be a non-empty string")
 
-        return await self._request("GET", "/balance", params={"miner_id": miner_id})
+        return await self._request("GET", "/wallet/balance", params={"miner_id": miner_id})
 
     async def transfer(
         self,
