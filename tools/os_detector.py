@@ -2,6 +2,7 @@
 import os
 import platform
 import json
+import os
 from datetime import datetime
 
 def detect_legacy_os_badges():
