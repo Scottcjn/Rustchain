@@ -56,7 +56,7 @@ except ImportError:
     CPU_DETECTION_AVAILABLE = False
 
 MINER_VERSION = "2.5.0"
-NODE_URL = os.environ.get("RUSTCHAIN_NODE", "https://50.28.86.131")
+NODE_URL = os.environ.get("RUSTCHAIN_NODE", "https://rustchain.org")
 PROXY_URL = os.environ.get("RUSTCHAIN_PROXY", "http://192.168.0.160:8089")
 BLOCK_TIME = 600  # 10 minutes
 LOTTERY_CHECK_INTERVAL = 10

@@ -19,6 +19,13 @@ def test_setup_miner_pins_current_miner_artifacts():
         assert artifact["sha256"] == hashlib.sha256(expected_files[platform].read_bytes()).hexdigest()
 
 
+def test_setup_miner_pins_current_macos_artifact():
+    expected_file = ROOT / "miners" / "macos" / "rustchain_mac_miner_v2.5.py"
+    artifact = setup_miner.MINER_ARTIFACTS["Darwin"]
+
+    assert artifact["sha256"] == hashlib.sha256(expected_file.read_bytes()).hexdigest()
+
+
 def test_setup_miner_downloads_current_verified_artifact():
     source = Path(setup_miner.__file__).read_text(encoding="utf-8")
 
