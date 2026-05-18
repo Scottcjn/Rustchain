@@ -29,7 +29,7 @@ INSTALL_DIR="$HOME/.rustchain"
 RUSTCHAIN_REF="${RUSTCHAIN_REF:-main}"
 BASE_URL="${RUSTCHAIN_BASE_URL:-https://raw.githubusercontent.com/Scottcjn/Rustchain/${RUSTCHAIN_REF}}"
 CHECKSUM_URL="${BASE_URL}/miners/checksums.sha256"
-NODE_URL="https://50.28.86.131"
+NODE_URL="https://rustchain.org"
 VERSION="1.0.0"
 
 # ─── Parse Arguments ─────────────────────────────────────────────────
