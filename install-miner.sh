@@ -96,6 +96,17 @@ verify_sum() {
     if [ "$actual" = "$expected" ]; then return 0; else echo -e "${RED}[!] Checksum fail: $file${NC}"; return 1; fi
 }
 
+checksum_for() {
+    local artifact=$1
+    local expected
+    expected=$(awk -v path="$artifact" '$2 == path { print $1; found=1; exit } END { if (!found) exit 1 }' sums)
+    if [ -z "$expected" ]; then
+        echo -e "${RED}[!] Missing checksum entry: $artifact${NC}" >&2
+        return 1
+    fi
+    printf '%s' "$expected"
+}
+
 download_miner() {
     if [ "$DRY_RUN" = true ]; then
         echo -e "${CYAN}[DRY-RUN]${NC} Would run: cd $INSTALL_DIR"
@@ -113,8 +124,12 @@ download_miner() {
     run_cmd curl -sSL "$REPO_BASE/linux/fingerprint_checks.py" -o fingerprint_checks.py
     
     if [ "$SKIP_CHECKSUM" != true ] && [ "$DRY_RUN" != true ]; then
-        curl -sSL "$CHECKSUM_URL" -o sums 2>/dev/null || true
-        [ -f sums ] && { SUM=$(grep "$(basename $FILE)" sums | awk '{print $1}'); [ -n "$SUM" ] && verify_sum "rustchain_miner.py" "$SUM"; rm sums; }
+        curl -fsSL "$CHECKSUM_URL" -o sums
+        MINER_SUM=$(checksum_for "$FILE")
+        FINGERPRINT_SUM=$(checksum_for "linux/fingerprint_checks.py")
+        verify_sum "rustchain_miner.py" "$MINER_SUM"
+        verify_sum "fingerprint_checks.py" "$FINGERPRINT_SUM"
+        rm -f sums
     fi
 }
 
