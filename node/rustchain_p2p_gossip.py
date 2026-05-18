@@ -25,6 +25,7 @@ from typing import Dict, List, Optional, Set, Tuple, Any
 from collections import defaultdict, OrderedDict
 import logging
 import requests
+from urllib.parse import urlparse
 
 # ---------------------------------------------------------------------------
 # P2P HMAC secret — MUST be set via the RC_P2P_SECRET environment variable.
@@ -1437,22 +1438,72 @@ def register_p2p_endpoints(app, p2p_node: RustChainP2PNode):
 
 
 # =============================================================================
+# STANDALONE DEMO PEER CONFIG
+# =============================================================================
+
+DEFAULT_BOOTSTRAP_PEERS = {
+    "node1": "https://rustchain.org",
+}
+
+
+def _parse_peer_config(raw_peers: str) -> Dict[str, str]:
+    """
+    Parse RC_P2P_PEERS as: node2=https://peer.example,node3=http://localhost:8099
+
+    Remote peers must use HTTPS. Plain HTTP is accepted only for loopback
+    development nodes.
+    """
+    peers: Dict[str, str] = {}
+    for item in raw_peers.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        if "=" not in item:
+            raise ValueError("expected entries like node_id=https://host:port")
+
+        node_id, peer_url = (part.strip() for part in item.split("=", 1))
+        if not node_id or not peer_url:
+            raise ValueError("peer entries require both node_id and URL")
+
+        parsed = urlparse(peer_url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError(f"invalid URL for peer {node_id!r}: {peer_url!r}")
+
+        is_loopback = parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+        if parsed.scheme == "http" and not is_loopback:
+            raise ValueError(
+                f"remote peer {node_id!r} must use HTTPS, got {peer_url!r}"
+            )
+
+        peers[node_id] = peer_url.rstrip("/")
+    return peers
+
+
+def _load_demo_peers(node_id: str, raw_peers: Optional[str] = None) -> Dict[str, str]:
+    """Return configured standalone peers without including this node."""
+    if raw_peers is None:
+        raw_peers = os.environ.get("RC_P2P_PEERS", "")
+
+    peers = (
+        _parse_peer_config(raw_peers)
+        if raw_peers.strip()
+        else dict(DEFAULT_BOOTSTRAP_PEERS)
+    )
+    peers.pop(node_id, None)
+    return peers
+
+
+# =============================================================================
 # MAIN (for testing)
 # =============================================================================
 
 if __name__ == "__main__":
     # Test configuration
     NODE_ID = os.environ.get("RC_NODE_ID", "node1")
-
-    PEERS = {
-        "node1": "https://rustchain.org",
-        "node2": "http://50.28.86.153:8099",
-        "node3": "http://76.8.228.245:8099"
-    }
-
-    # Remove self from peers
-    if NODE_ID in PEERS:
-        del PEERS[NODE_ID]
+    try:
+        PEERS = _load_demo_peers(NODE_ID)
+    except ValueError as exc:
+        raise SystemExit(f"[P2P] invalid RC_P2P_PEERS: {exc}") from exc
 
     # Create and start node
     node = RustChainP2PNode(NODE_ID, DB_PATH, PEERS)
