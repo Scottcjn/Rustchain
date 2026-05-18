@@ -114,6 +114,7 @@ class RustChainMiner:
         self.enrolled = False
         self.hw_info = self._get_hw_info()
         self.last_entropy = {}
+        self.last_attestation_error = ""
 
         # Zephyr dual-mining state — detected once per attest() cycle
         self._pow_proof = None
@@ -282,7 +283,10 @@ class RustChainMiner:
         if now >= self.attestation_valid_until - 60:
             if not self.attest():
                 if callback:
-                    callback({"type": "error", "message": "Attestation failed"})
+                    message = "Attestation failed"
+                    if self.last_attestation_error:
+                        message = f"{message}: {self.last_attestation_error}"
+                    callback({"type": "error", "message": message})
                 return False
             if callback:
                 callback({
@@ -388,11 +392,23 @@ class RustChainMiner:
         apply the PoW bonus multiplier to this miner's RTC rewards.
         """
         try:
-            challenge = requests.post(
+            challenge_resp = requests.post(
                 f"{self.node_url}/attest/challenge", json={}, timeout=10
-            ).json()
-            nonce = challenge.get("nonce")
-        except Exception:
+            )
+            if challenge_resp.status_code != 200:
+                self.last_attestation_error = (
+                    f"challenge rejected: {self._response_diagnostic(challenge_resp)}"
+                )
+                return False
+            challenge = challenge_resp.json()
+            nonce = challenge.get("nonce") if isinstance(challenge, dict) else None
+            if not nonce:
+                self.last_attestation_error = (
+                    f"challenge rejected: {self._response_diagnostic(challenge_resp)}"
+                )
+                return False
+        except Exception as e:
+            self.last_attestation_error = f"challenge request failed: {e}"
             return False
 
         entropy = self._collect_entropy()
@@ -438,10 +454,32 @@ class RustChainMiner:
             )
             if resp.status_code == 200 and resp.json().get("ok"):
                 self.attestation_valid_until = time.time() + 580
+                self.last_attestation_error = ""
                 return True
-        except Exception:
-            pass
+            self.last_attestation_error = f"submit rejected: {self._response_diagnostic(resp)}"
+        except Exception as e:
+            self.last_attestation_error = f"submit request failed: {e}"
         return False
+
+    def _response_diagnostic(self, resp):
+        """Return a compact HTTP failure description for operator logs."""
+        parts = [f"HTTP {getattr(resp, 'status_code', 'unknown')}"]
+        try:
+            payload = resp.json()
+        except Exception:
+            payload = None
+
+        if isinstance(payload, dict):
+            for key in ("code", "error", "message"):
+                value = payload.get(key)
+                if value:
+                    parts.append(f"{key}={value}")
+        else:
+            text = (getattr(resp, "text", "") or "").strip()
+            if text:
+                parts.append(f"body={text[:240]}")
+
+        return " ".join(parts)
 
     def enroll(self):
         """Enroll the miner into the current epoch after attesting."""
@@ -636,10 +674,8 @@ def _format_headless_event(evt):
 
 def run_headless(wallet_address: str, node_url: str) -> int:
     wallet = RustChainWallet()
-    if wallet_address:
-        wallet.wallet_data["address"] = wallet_address
-        wallet.save_wallet(wallet.wallet_data)
-    miner = RustChainMiner(wallet.wallet_data["address"])
+    active_wallet = wallet_address or wallet.wallet_data["address"]
+    miner = RustChainMiner(active_wallet)
     miner.node_url = node_url
 
     def cb(evt):
@@ -686,8 +722,6 @@ def main(argv=None):
     app = RustChainGUI()
     app.miner.node_url = args.node
     if args.wallet:
-        app.wallet.wallet_data["address"] = args.wallet
-        app.wallet.save_wallet(app.wallet.wallet_data)
         app.miner.wallet_address = args.wallet
         app.miner.miner_id = f"windows_{hashlib.md5(args.wallet.encode()).hexdigest()[:8]}"
     app.run()
