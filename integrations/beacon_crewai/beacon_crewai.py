@@ -33,10 +33,38 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-from beacon_skill import AgentIdentity, HeartbeatManager
-from beacon_skill.codec import encode_envelope, decode_envelopes, verify_envelope
-from beacon_skill.contracts import ContractManager
-from beacon_skill.transports.udp import udp_listen, udp_send
+try:
+    from beacon_skill import AgentIdentity, HeartbeatManager
+    from beacon_skill.codec import decode_envelopes, encode_envelope, verify_envelope
+    from beacon_skill.contracts import ContractManager
+    from beacon_skill.transports.udp import udp_listen, udp_send
+except ImportError:
+    class _MissingBeaconSkill:
+        @classmethod
+        def generate(cls, *args, **kwargs):
+            raise ImportError("beacon_skill package not installed")
+
+        def __init__(self, *args, **kwargs):
+            raise ImportError("beacon_skill package not installed")
+
+    AgentIdentity = _MissingBeaconSkill
+    HeartbeatManager = _MissingBeaconSkill
+    ContractManager = _MissingBeaconSkill
+
+    def encode_envelope(*args, **kwargs):
+        raise ImportError("beacon_skill package not installed")
+
+    def decode_envelopes(*args, **kwargs):
+        raise ImportError("beacon_skill package not installed")
+
+    def verify_envelope(*args, **kwargs):
+        raise ImportError("beacon_skill package not installed")
+
+    def udp_listen(*args, **kwargs):
+        raise ImportError("beacon_skill package not installed")
+
+    def udp_send(*args, **kwargs):
+        raise ImportError("beacon_skill package not installed")
 
 # Optional CrewAI import (graceful degradation)
 try:

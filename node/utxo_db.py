@@ -395,7 +395,6 @@ class UtxoDB:
         tx_type = tx.get('tx_type')
         if not isinstance(tx_type, str):
             return None
-        tx_type = tx_type.strip()
         if not tx_type or tx_type not in SUPPORTED_TX_TYPES:
             return None
         return tx_type
@@ -415,7 +414,7 @@ class UtxoDB:
                 return None
 
             val = out.get('value_nrtc')
-            if not _is_positive_int64(val) or val < DUST_THRESHOLD:
+            if not _is_positive_int64(val):
                 return None
 
             tokens_json = out.get('tokens_json', '[]')

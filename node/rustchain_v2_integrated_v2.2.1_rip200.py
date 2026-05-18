@@ -4528,9 +4528,14 @@ def _wallet_review_ui_authorized(req):
         # Store session_id on request for template rendering
         req._admin_session_id = sid  # type: ignore
         return True
-    # Legacy fallback: admin_key via POST body only (not URL query params)
+    # Legacy operator UI links and tests use query-string admin_key for GET-only
+    # HTML pages. Mutating requests still require header/session or POST body.
     need = os.environ.get("RC_ADMIN_KEY", "")
-    got = str(req.form.get("admin_key") or "").strip()
+    got = str(
+        (req.args.get("admin_key") if req.method == "GET" else "")
+        or req.form.get("admin_key")
+        or ""
+    ).strip()
     return bool(need and got and hmac.compare_digest(need, got))
 
 
@@ -4999,7 +5004,7 @@ def admin_wallet_review_holds_ui():
         """,
         entries=entries,
         active_status=active_status,
-        admin_key=admin_key,
+        sid=sid,
         statuses=["needs_review", "held", "escalated", "blocked", "released", "dismissed"],
     )
 
