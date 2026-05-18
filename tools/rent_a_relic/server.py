@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import math
 import os
 import sqlite3
 import time
@@ -55,6 +56,26 @@ def _get_json_object_or_empty() -> dict:
     if not isinstance(data, dict):
         abort(400, description="JSON object required")
     return data
+
+
+def _require_text_field(data: dict, field: str) -> str:
+    value = data.get(field)
+    if not isinstance(value, str):
+        abort(400, description=f"{field} must be a string")
+    value = value.strip()
+    if not value:
+        abort(400, description=f"{field} is required")
+    return value
+
+
+def _optional_text_field(data: dict, field: str, default: str) -> str:
+    value = data.get(field)
+    if value is None:
+        return default
+    if not isinstance(value, str):
+        abort(400, description=f"{field} must be a string")
+    value = value.strip()
+    return value or default
 
 
 def _require_admin_key() -> None:
@@ -249,18 +270,22 @@ def post_reserve():
     """Reserve a machine and lock RTC in escrow."""
     data = _get_json_object_or_empty()
 
-    agent_id       = data.get("agent_id", "").strip()
-    machine_id     = data.get("machine_id", "").strip()
+    agent_id       = _require_text_field(data, "agent_id")
+    machine_id     = _require_text_field(data, "machine_id")
     duration_hours = data.get("duration_hours")
     rtc_amount     = data.get("rtc_amount")
 
-    if not agent_id:
-        abort(400, description="agent_id is required")
-    if not machine_id:
-        abort(400, description="machine_id is required")
+    if isinstance(duration_hours, bool):
+        abort(400, description=f"duration_hours must be one of {sorted(VALID_DURATIONS_HOURS)}")
     if duration_hours not in VALID_DURATIONS_HOURS:
         abort(400, description=f"duration_hours must be one of {sorted(VALID_DURATIONS_HOURS)}")
-    if rtc_amount is None or not isinstance(rtc_amount, (int, float)) or rtc_amount <= 0:
+    if (
+        rtc_amount is None
+        or isinstance(rtc_amount, bool)
+        or not isinstance(rtc_amount, (int, float))
+        or not math.isfinite(float(rtc_amount))
+        or rtc_amount <= 0
+    ):
         abort(400, description="rtc_amount must be a positive number")
 
     machine = MACHINE_REGISTRY.get(machine_id)
@@ -440,7 +465,11 @@ def post_complete(session_id: str):
     """Mark a session as completed and release escrow."""
     _require_admin_key()
     data        = _get_json_object_or_empty()
-    output_hash = data.get("output_hash") or hashlib.sha256(session_id.encode()).hexdigest()
+    output_hash = _optional_text_field(
+        data,
+        "output_hash",
+        hashlib.sha256(session_id.encode()).hexdigest(),
+    )
 
     with db_conn() as conn:
         row = conn.execute("SELECT * FROM reservations WHERE session_id=?", (session_id,)).fetchone()
