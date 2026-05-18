@@ -244,6 +244,20 @@ class OTCBridgeTestCase(unittest.TestCase):
         self.assertEqual(r.status_code, 400)
         self.assertEqual(data["error"], "ttl_seconds must be an integer")
 
+    def test_create_order_rejects_fractional_ttl_seconds(self):
+        r = self.app.post("/api/orders", json={
+            "side": "buy",
+            "pair": "RTC/USDC",
+            "wallet": "test-buyer",
+            "amount_rtc": 100,
+            "price_per_rtc": 0.10,
+            "ttl_seconds": 3600.5,
+        })
+        data = r.get_json()
+
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(data["error"], "ttl_seconds must be an integer")
+
     @patch("otc_bridge.rtc_get_balance", return_value=10.0)
     def test_sell_order_insufficient_balance(self, mock_balance):
         """Reject sell order if balance too low."""

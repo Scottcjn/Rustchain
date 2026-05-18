@@ -516,6 +516,8 @@ def parse_order_ttl(value):
         return ORDER_TTL_DEFAULT
     if isinstance(value, bool):
         raise ValueError("ttl_seconds must be an integer")
+    if isinstance(value, float) and not value.is_integer():
+        raise ValueError("ttl_seconds must be an integer")
     try:
         return int(value)
     except (TypeError, ValueError) as exc:
