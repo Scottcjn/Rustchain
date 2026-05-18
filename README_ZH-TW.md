@@ -333,7 +333,7 @@ https://github.com/Scottcjn/Rustchain
 
 ## 📜 授權條款
 
-MIT 授權條款 - 可自由使用，但請保留版權聲明與出處。
+Apache License 2.0 - 可自由使用，但請遵守 Apache License 2.0 條款並保留版權聲明與署名。
 
 ---
 

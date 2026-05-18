@@ -454,7 +454,7 @@ https://github.com/Scottcjn/Rustchain
 
 ## 📜 Licencia
 
-Licencia MIT - Libre de usar, pero por favor mantén el aviso de copyright y atribución.
+Licencia Apache 2.0 - Libre de usar, pero cumple los términos de Apache 2.0 y conserva el aviso de copyright y atribución.
 
 ---
 

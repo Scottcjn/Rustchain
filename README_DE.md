@@ -2,7 +2,7 @@
 
 # 🧱 RustChain: Proof-of-Antiquity Blockchain
 
-[![Lizenz](https://img.shields.io/badge/Lizenz-MIT-blue.svg)](LICENSE)
+[![Lizenz](https://img.shields.io/badge/Lizenz-Apache_2.0-blue.svg)](LICENSE)
 [![PowerPC](https://img.shields.io/badge/PowerPC-G3%2FG4%2FG5-orange)](https://github.com/Scottcjn/Rustchain)
 [![Blockchain](https://img.shields.io/badge/Konsens-Proof--of--Antiquity-green)](https://github.com/Scottcjn/Rustchain)
 [![Python](https://img.shields.io/badge/Python-3.x-yellow)](https://python.org)

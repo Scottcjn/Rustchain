@@ -447,7 +447,7 @@ https://github.com/Scottcjn/Rustchain
 
 ## 📜 ライセンス
 
-MITライセンス - 自由に使用できますが、著作権表示と帰属を保持してください。
+Apache License 2.0 - 自由に使用できますが、Apache License 2.0 の条項を遵守し、著作権表示と帰属を保持してください。
 
 ---
 
