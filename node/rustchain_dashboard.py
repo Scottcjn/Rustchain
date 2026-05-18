@@ -599,7 +599,7 @@ def api_stats():
             'active_miners': [],
             'recent_blocks': [],
             'system_stats': {},
-            'error': str(e)
+            'error': 'stats_unavailable'
         }), 500
 
 @app.route('/api/wallet/<wallet_address>')
@@ -683,7 +683,7 @@ def api_wallet_lookup(wallet_address):
 
     except Exception as e:
         print(f"Error in wallet lookup: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'wallet_lookup_unavailable'}), 500
 
 def format_uptime(seconds):
     """Format uptime in human-readable format"""
