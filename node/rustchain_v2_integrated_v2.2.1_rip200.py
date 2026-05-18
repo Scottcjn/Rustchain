@@ -8365,8 +8365,8 @@ def beacon_digest():
 @app.route("/beacon/envelopes", methods=["GET"])
 def beacon_envelopes_list():
     try:
-        limit = min(int(request.args.get("limit", 50)), 50)
-        offset = max(int(request.args.get("offset", 0)), 0)
+        limit = max(1, min(int(request.args.get("limit", 50)), 50))
+        offset = max(0, int(request.args.get("offset", 0)))
     except (ValueError, TypeError):
         limit, offset = 50, 0
     envelopes = get_recent_envelopes(limit=limit, offset=offset, db_path=DB_PATH)

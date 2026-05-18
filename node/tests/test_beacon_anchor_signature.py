@@ -316,6 +316,47 @@ class BeaconAnchorSignatureTests(unittest.TestCase):
         finally:
             os.unlink(db_path)
 
+    def test_get_recent_envelopes_clamps_non_positive_pagination(self):
+        db_path = _make_temp_db()
+        try:
+            beacon_anchor.init_beacon_table(db_path)
+            with sqlite3.connect(db_path) as conn:
+                for idx in range(3):
+                    conn.execute(
+                        """
+                        INSERT INTO beacon_envelopes
+                        (agent_id, kind, nonce, sig, pubkey, payload_hash,
+                         payload_hash_version, anchored, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)
+                        """,
+                        (
+                            f"bcn_test{idx}",
+                            "hello",
+                            f"nonce-{idx}",
+                            "ab" * 64,
+                            "cd" * 32,
+                            f"hash-{idx}",
+                            beacon_anchor.CURRENT_PAYLOAD_HASH_VERSION,
+                            idx,
+                        ),
+                    )
+                conn.commit()
+
+            self.assertEqual(
+                len(beacon_anchor.get_recent_envelopes(limit=2, offset=0, db_path=db_path)),
+                2,
+            )
+            self.assertEqual(
+                len(beacon_anchor.get_recent_envelopes(limit=-1, offset=0, db_path=db_path)),
+                1,
+            )
+            self.assertEqual(
+                len(beacon_anchor.get_recent_envelopes(limit=0, offset=-10, db_path=db_path)),
+                1,
+            )
+        finally:
+            os.unlink(db_path)
+
 
 if __name__ == "__main__":
     unittest.main()

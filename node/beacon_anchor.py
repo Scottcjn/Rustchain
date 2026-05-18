@@ -261,6 +261,15 @@ def mark_anchored(envelope_ids: list, db_path=DB_PATH):
 
 def get_recent_envelopes(limit=50, offset=0, db_path=DB_PATH) -> list:
     """Return recent envelopes, newest first."""
+    try:
+        limit = max(1, int(limit))
+    except (TypeError, ValueError):
+        limit = 50
+    try:
+        offset = max(0, int(offset))
+    except (TypeError, ValueError):
+        offset = 0
+
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
