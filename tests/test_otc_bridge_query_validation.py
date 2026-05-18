@@ -31,12 +31,7 @@ def load_otc_bridge(tmp_path):
 
 
 def signed_order_payload(otc_bridge):
-    private_key = Ed25519PrivateKey.generate()
-    public_key_hex = private_key.public_key().public_bytes(
-        encoding=serialization.Encoding.Raw,
-        format=serialization.PublicFormat.Raw,
-    ).hex()
-    wallet = otc_bridge.rtc_address_from_public_key(public_key_hex)
+    private_key, public_key_hex, wallet = make_wallet(otc_bridge)
     payload = {
         "side": "buy",
         "pair": "RTC/USDC",
@@ -50,7 +45,6 @@ def signed_order_payload(otc_bridge):
     _, price_per_rtc_nano_quote = otc_bridge.decimal_units(
         payload["price_per_rtc"], otc_bridge.QUOTE_PRICE_SCALE, "price_per_rtc"
     )
-    timestamp = int(time.time())
     bound_fields = otc_bridge.create_order_auth_fields(
         payload["side"],
         payload["pair"],
@@ -59,20 +53,36 @@ def signed_order_payload(otc_bridge):
         otc_bridge.ORDER_TTL_DEFAULT,
         "",
     )
-    payload["wallet_auth"] = {
+    payload["wallet_auth"] = wallet_auth(
+        otc_bridge,
+        private_key,
+        public_key_hex,
+        "create_order",
+        otc_bridge.CREATE_ORDER_AUTH_ID,
+        wallet,
+        **bound_fields,
+    )
+    return payload
+
+
+def make_wallet(otc_bridge):
+    private_key = Ed25519PrivateKey.generate()
+    public_key_hex = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    ).hex()
+    wallet = otc_bridge.rtc_address_from_public_key(public_key_hex)
+    return private_key, public_key_hex, wallet
+
+
+def wallet_auth(otc_bridge, private_key, public_key_hex, action, order_id, wallet, **bound_fields):
+    timestamp = int(time.time())
+    message = otc_bridge.wallet_auth_message(action, order_id, wallet, timestamp, bound_fields)
+    return {
         "public_key": public_key_hex,
-        "signature": private_key.sign(
-            otc_bridge.wallet_auth_message(
-                "create_order",
-                otc_bridge.CREATE_ORDER_AUTH_ID,
-                wallet,
-                timestamp,
-                bound_fields,
-            )
-        ).hex(),
+        "signature": private_key.sign(message).hex(),
         "timestamp": timestamp,
     }
-    return payload
 
 
 def test_orders_rejects_malformed_pagination(tmp_path):
@@ -195,18 +205,34 @@ def test_mutating_order_errors_do_not_leak_exception_details(tmp_path, monkeypat
     otc_bridge = load_otc_bridge(tmp_path)
     monkeypatch.setattr(otc_bridge, "check_rate_limit", lambda _ip: True)
     monkeypatch.setattr(otc_bridge, "get_db", lambda: ExplodingConnection())
+    private_key, public_key_hex, wallet = make_wallet(otc_bridge)
 
     cases = [
-        ("/api/orders", {
-            "side": "buy",
-            "pair": "RTC/USDC",
-            "wallet": "buyer-wallet",
-            "amount_rtc": 1,
-            "price_per_rtc": 1,
+        ("/api/orders", signed_order_payload(otc_bridge)),
+        ("/api/orders/otc_test/match", {
+            "wallet": wallet,
+            "wallet_auth": wallet_auth(
+                otc_bridge,
+                private_key,
+                public_key_hex,
+                "match_order",
+                "otc_test",
+                wallet,
+                eth_address="",
+            ),
         }),
-        ("/api/orders/otc_test/match", {"wallet": "taker-wallet"}),
-        ("/api/orders/otc_test/confirm", {"wallet": "buyer-wallet", "quote_tx": "0xdeadbeef"}),
-        ("/api/orders/otc_test/cancel", {"wallet": "maker-wallet"}),
+        ("/api/orders/otc_test/confirm", {"wallet": wallet, "quote_tx": "0xdeadbeef"}),
+        ("/api/orders/otc_test/cancel", {
+            "wallet": wallet,
+            "wallet_auth": wallet_auth(
+                otc_bridge,
+                private_key,
+                public_key_hex,
+                "cancel_order",
+                "otc_test",
+                wallet,
+            ),
+        }),
     ]
 
     with otc_bridge.app.test_client() as client:

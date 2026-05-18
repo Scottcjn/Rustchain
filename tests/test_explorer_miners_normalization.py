@@ -1,6 +1,6 @@
 from pathlib import Path
 
-JS = Path('explorer/static/js/explorer.js').read_text()
+JS = Path('explorer/static/js/explorer.js').read_text(encoding='utf-8')
 
 
 def test_explorer_normalizes_paginated_miners_response():
