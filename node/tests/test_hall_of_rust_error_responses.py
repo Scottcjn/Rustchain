@@ -46,6 +46,28 @@ def test_hall_stats_still_returns_valid_empty_stats(tmp_path):
     assert body["average_rust_score"] == 0
 
 
+def test_induct_rejects_non_object_json(tmp_path):
+    db_path = tmp_path / "hall.db"
+    hall_of_rust.init_hall_tables(str(db_path))
+    client = _client_for(db_path)
+
+    response = client.post("/hall/induct", json=["not", "an", "object"])
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "JSON object required"}
+
+
+def test_eulogy_rejects_non_object_json(tmp_path):
+    db_path = tmp_path / "hall.db"
+    hall_of_rust.init_hall_tables(str(db_path))
+    client = _client_for(db_path)
+
+    response = client.post("/hall/eulogy/fingerprint-1", json=["nickname"])
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "JSON object required"}
+
+
 def test_calculate_rust_score_uses_current_year_for_age_weight():
     score = hall_of_rust.calculate_rust_score(
         {
