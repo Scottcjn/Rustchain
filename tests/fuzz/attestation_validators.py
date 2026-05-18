@@ -229,14 +229,28 @@ def _validate_attestation_payload_shape(data: Any):
                 )
 
     fingerprint = data.get("fingerprint")
-    if (
-        isinstance(fingerprint, dict)
-        and "checks" in fingerprint
-        and not isinstance(fingerprint.get("checks"), dict)
-    ):
-        return _attest_field_error(
-            "INVALID_FINGERPRINT_CHECKS",
-            "Field 'fingerprint.checks' must be a JSON object",
-        )
+    if isinstance(fingerprint, dict):
+        checks = fingerprint.get("checks")
+        if "checks" in fingerprint and not isinstance(checks, dict):
+            return _attest_field_error(
+                "INVALID_FINGERPRINT_CHECKS",
+                "Field 'fingerprint.checks' must be a JSON object",
+            )
+        if isinstance(checks, dict):
+            clock_drift = checks.get("clock_drift")
+            if isinstance(clock_drift, dict):
+                clock_data = clock_drift.get("data")
+                if "data" in clock_drift and clock_data is not None and not isinstance(clock_data, dict):
+                    return _attest_field_error(
+                        "INVALID_FINGERPRINT_CHECKS",
+                        "Field 'fingerprint.checks.clock_drift.data' must be a JSON object",
+                    )
+                if isinstance(clock_data, dict) and "cv" in clock_data:
+                    cv = clock_data.get("cv")
+                    if isinstance(cv, bool) or not isinstance(cv, (int, float)) or not math.isfinite(cv):
+                        return _attest_field_error(
+                            "INVALID_FINGERPRINT_CHECKS",
+                            "Field 'fingerprint.checks.clock_drift.data.cv' must be a finite number",
+                        )
 
     return None

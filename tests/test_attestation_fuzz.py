@@ -254,6 +254,18 @@ def test_attest_submit_rejects_invalid_miner_id_even_when_miner_is_valid(client)
     assert response.get_json()["code"] == "INVALID_MINER"
 
 
+@pytest.mark.parametrize("cv", ["abc", [], {"nested": "bad"}])
+def test_attest_submit_rejects_malformed_clock_drift_cv(client, cv):
+    payload = _attach_live_challenge(client, _base_payload())
+    payload["fingerprint"]["checks"]["clock_drift"]["data"]["cv"] = cv
+
+    response = client.post("/attest/submit", json=payload)
+
+    assert response.status_code == 400
+    assert response.get_json()["ok"] is False
+    assert response.get_json()["code"] == "INVALID_FINGERPRINT_CHECKS"
+
+
 def test_validate_fingerprint_data_rejects_non_dict_input():
     passed, reason = integrated_node.validate_fingerprint_data(["not", "a", "dict"])
 
