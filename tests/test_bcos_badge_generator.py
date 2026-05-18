@@ -29,6 +29,7 @@ from tools.bcos_badge_generator import (
     record_badge_generation,
     increment_download_count,
     load_secret_key,
+    is_valid_cert_id,
 )
 
 
@@ -498,6 +499,62 @@ class TestFlaskIntegration(unittest.TestCase):
                 data = json.loads(response.data)
                 self.assertFalse(data['success'])
                 self.assertEqual(data['error'], 'Trust score must be a number')
+
+    def test_generate_badge_rejects_attribute_breaking_cert_id(self):
+        """User-supplied cert IDs must not break generated embed attributes."""
+        payload = {
+            'repo_name': 'test/repo',
+            'tier': 'L1',
+            'trust_score': 75,
+            'cert_id': 'BCOS-abc" onerror="alert(1)',
+        }
+
+        response = self.post_generate_badge(payload)
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertFalse(data['success'])
+        self.assertIn('Invalid certificate ID', data['error'])
+        self.assertFalse(is_valid_cert_id(payload['cert_id']))
+
+    def test_generate_badge_rejects_non_string_cert_id(self):
+        """Non-string cert IDs should fail validation instead of raising 500."""
+        invalid_ids = [123, True, ['BCOS-safe'], {'id': 'BCOS-safe'}]
+
+        for cert_id in invalid_ids:
+            with self.subTest(cert_id=cert_id):
+                response = self.post_generate_badge(
+                    {
+                        'repo_name': 'test/repo',
+                        'tier': 'L1',
+                        'trust_score': 75,
+                        'cert_id': cert_id,
+                    }
+                )
+
+                self.assertEqual(response.status_code, 200)
+                data = json.loads(response.data)
+                self.assertFalse(data['success'])
+                self.assertIn('Invalid certificate ID', data['error'])
+                self.assertFalse(is_valid_cert_id(cert_id))
+
+    def test_generate_badge_accepts_safe_custom_cert_id(self):
+        """Safe custom cert IDs remain supported."""
+        response = self.post_generate_badge(
+            {
+                'repo_name': 'test/repo',
+                'tier': 'L1',
+                'trust_score': 75,
+                'cert_id': 'BCOS-safe_ID-123',
+            }
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertTrue(data['success'])
+        self.assertEqual(data['cert_id'], 'BCOS-safe_ID-123')
+        self.assertIn('https://rustchain.org/bcos/badge/BCOS-safe_ID-123.svg', data['html'])
+        self.assertNotIn('onerror=', data['html'])
 
     def test_stats_endpoint(self):
         """Test stats endpoint."""
