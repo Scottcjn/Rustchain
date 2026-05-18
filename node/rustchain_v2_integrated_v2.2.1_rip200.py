@@ -2107,11 +2107,18 @@ def _current_utc_year():
     return time.gmtime().tm_year
 
 
-def calculate_rust_score_inline(mfg_year, arch, attestations, machine_id):
-    """Calculate rust score for a machine."""
+def calculate_rust_score_inline(mfg_year, arch, attestations, machine_id, current_year=None):
+    """Calculate rust score for a machine.
+
+    `current_year` is injectable for deterministic testing. Defaults to the
+    current UTC year via `_current_utc_year()`. The age bonus is clamped to
+    a non-negative value so that a future-dated `mfg_year` (sensor error,
+    misconfigured firmware) cannot reduce the score below the no-age baseline.
+    """
     score = 0
+    current_year = current_year if current_year is not None else _current_utc_year()
     if mfg_year:
-        score += (_current_utc_year() - mfg_year) * 10  # age bonus
+        score += max(0, current_year - int(mfg_year)) * 10  # age bonus
     score += attestations * 0.001  # attestation bonus
     if machine_id <= 100:
         score += 50  # early adopter
