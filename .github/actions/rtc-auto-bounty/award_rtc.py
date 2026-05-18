@@ -32,6 +32,7 @@ Environment variables (set by the action):
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import sys
@@ -94,6 +95,10 @@ def _env_float(name: str, default: float = 0.0) -> float:
         return default
 
 
+def _is_finite_amount(value: float) -> bool:
+    return math.isfinite(value)
+
+
 class Config:
     """Immutable configuration gathered from environment variables."""
 
@@ -130,8 +135,14 @@ class Config:
             return "INPUT_RTC_VPS_HOST is required (unless dry-run is enabled)"
         if not self.dry_run and not self.admin_key:
             return "INPUT_RTC_ADMIN_KEY is required (unless dry-run is enabled)"
+        if not _is_finite_amount(self.rtc_amount):
+            return f"rtc-amount must be finite, got {self.rtc_amount}"
+        if not _is_finite_amount(self.max_amount):
+            return f"max-amount must be finite, got {self.max_amount}"
         if self.rtc_amount <= 0:
             return f"rtc-amount must be positive, got {self.rtc_amount}"
+        if self.max_amount <= 0:
+            return f"max-amount must be positive, got {self.max_amount}"
         return None
 
 
@@ -391,7 +402,7 @@ def main() -> int:
     bounty_match = _BOUNTY_RE.search(cfg.pr_body)
     if bounty_match:
         override = float(bounty_match.group(1))
-        if 0 < override <= cfg.max_amount:
+        if _is_finite_amount(override) and 0 < override <= cfg.max_amount:
             amount = override
             print(f"Bounty override in PR body: {amount} RTC")
         else:

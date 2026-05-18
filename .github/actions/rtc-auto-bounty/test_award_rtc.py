@@ -259,6 +259,18 @@ class TestConfig(unittest.TestCase):
         cfg = self._cfg(INPUT_RTC_AMOUNT="-5")
         self.assertIsNotNone(cfg.validate())
 
+    def test_validate_rejects_nan_amount(self):
+        cfg = self._cfg(INPUT_RTC_AMOUNT="nan")
+        self.assertEqual(cfg.validate(), "rtc-amount must be finite, got nan")
+
+    def test_validate_rejects_infinite_amount(self):
+        cfg = self._cfg(INPUT_RTC_AMOUNT="inf")
+        self.assertEqual(cfg.validate(), "rtc-amount must be finite, got inf")
+
+    def test_validate_rejects_nan_max_amount(self):
+        cfg = self._cfg(INPUT_MAX_AMOUNT="nan")
+        self.assertEqual(cfg.validate(), "max-amount must be finite, got nan")
+
 
 # ---------------------------------------------------------------------------
 # set_output tests
@@ -416,6 +428,16 @@ class TestMainFlow(unittest.TestCase):
         self.assertEqual(rc, 0)
         # Should have posted a dry-run comment
         mock_post.assert_called_once()
+
+    def test_dry_run_rejects_nan_amount(self):
+        from award_rtc import main
+        with self._env(INPUT_DRY_RUN="true", INPUT_RTC_AMOUNT="nan"):
+            with patch("award_rtc.fetch_pr_comments") as mock_fetch:
+                with patch("award_rtc.post_pr_comment") as mock_post:
+                    rc = main()
+        self.assertEqual(rc, 1)
+        mock_fetch.assert_not_called()
+        mock_post.assert_not_called()
 
     def test_successful_transfer(self):
         from award_rtc import main
