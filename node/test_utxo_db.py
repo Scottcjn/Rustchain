@@ -712,6 +712,24 @@ class TestUtxoDB(unittest.TestCase):
         }, block_height=10)
         self.assertFalse(ok)
 
+    def test_unknown_tx_type_rejected_with_valid_inputs(self):
+        """Unsupported tx_type values must not be treated as transfers."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        ok = self.db.apply_transaction({
+            'tx_type': 'airdrop',
+            'inputs': [{'box_id': boxes[0]['box_id'],
+                         'spending_proof': 'sig'}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 99 * UNIT}],
+            'fee_nrtc': 1 * UNIT,
+            'timestamp': int(time.time()),
+        }, block_height=10)
+
+        self.assertFalse(ok)
+        self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
+        self.assertEqual(self.db.get_balance('bob'), 0)
+
     def test_mining_reward_empty_inputs_allowed(self):
         """Legitimate mining_reward transactions MUST still work with empty inputs."""
         ok = self._apply_coinbase('alice', 100 * UNIT)
@@ -927,6 +945,27 @@ class TestUtxoDB(unittest.TestCase):
             'fee_nrtc': 1 * UNIT,
         }
         ok = self.db.mempool_add(tx)
+        self.assertFalse(ok)
+        self.assertEqual(self.db.mempool_get_block_candidates(), [])
+        self.assertFalse(
+            self.db.mempool_check_double_spend(boxes[0]['box_id'])
+        )
+
+    def test_mempool_rejects_unknown_tx_type(self):
+        """Mempool must not admit unsupported transfer-like tx_type values."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        tx = {
+            'tx_id': 'utyp' * 16,
+            'tx_type': 'airdrop',
+            'inputs': [{'box_id': boxes[0]['box_id']}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 99 * UNIT}],
+            'fee_nrtc': 1 * UNIT,
+        }
+
+        ok = self.db.mempool_add(tx)
+
         self.assertFalse(ok)
         self.assertEqual(self.db.mempool_get_block_candidates(), [])
         self.assertFalse(
