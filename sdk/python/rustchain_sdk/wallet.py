@@ -259,15 +259,8 @@ class RustChainWallet:
         if strength not in (128, 256):
             raise ValueError("Strength must be 128 (12 words) or 256 (24 words)")
 
-        # Generate random entropy
-        raw_bytes = secrets.token_bytes(strength // 8)
-
-        # Add checksum (first byte of SHA256 of entropy)
-        checksum = hashlib.sha256(raw_bytes).digest()[:1]
-        extended = raw_bytes + checksum
-
-        # Convert to words
-        words = _to_words(extended, _BIP39_WORDLIST)
+        word_count = 12 if strength == 128 else 24
+        words = [secrets.choice(_BIP39_WORDLIST) for _ in range(word_count)]
 
         # Derive seed from words
         seed = _hmac_sha512(b"mnemonic", " ".join(words).encode("utf-8"))
@@ -287,19 +280,14 @@ class RustChainWallet:
 
     @classmethod
     def _generate_address(cls, private_key: bytes) -> str:
-        """Generate a wallet address from private key."""
+        """Generate the node-compatible RTC address from a private key."""
         # Derive public key
         if hasattr(cls, "_derive_public_key"):
             pubkey = cls._derive_public_key(private_key)
         else:
             pubkey = _sha256d(b"pubkey" + private_key)[:32]
 
-        # Hash public key to get address
-        addr_hash = _sha256d(b"address" + pubkey)
-        addr_bytes = addr_hash[:20]
-
-        # Format as RTC + hex
-        return cls.ADDRESS_PREFIX + addr_bytes.hex()
+        return cls.ADDRESS_PREFIX + hashlib.sha256(pubkey).hexdigest()[:40]
 
     @classmethod
     def from_seed_phrase(cls, words: List[str]) -> "RustChainWallet":
@@ -351,32 +339,58 @@ class RustChainWallet:
             return _hmac_sha512(self._private_key, message)[:64]
 
     def sign_transfer(
-        self, to_address: str, amount: int, fee: int = 0
+        self,
+        to_address: str,
+        amount_rtc: float,
+        fee: int = 0,
+        nonce: Optional[int] = None,
+        memo: str = "",
+        chain_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Create a signed transfer payload for the RustChain network.
 
         Args:
             to_address: Recipient wallet address.
-            amount: Amount to transfer (in smallest units).
-            fee: Transaction fee (in smallest units).
+            amount_rtc: Amount to transfer in RTC.
+            fee: Legacy transaction fee retained for compatibility.
+            nonce: Unique positive nonce. Defaults to current time in ms.
+            memo: Optional transfer memo.
+            chain_id: Optional network chain id.
 
         Returns:
             A dict containing the transfer payload with signature.
         """
         import time
 
-        timestamp = int(time.time())
-        payload = f"{self._address}:{to_address}:{amount}:{fee}:{timestamp}".encode()
-        signature = self.sign(payload)
+        transfer_nonce = int(nonce if nonce is not None else time.time() * 1000)
+        amount_value = float(amount_rtc)
+        tx_data = {
+            "amount": amount_value,
+            "from": self._address,
+            "memo": memo,
+            "nonce": str(transfer_nonce),
+            "to": to_address,
+        }
+        if chain_id:
+            tx_data["chain_id"] = chain_id
+        message = json.dumps(tx_data, sort_keys=True, separators=(",", ":")).encode()
+        signature = self.sign(message)
 
+        # Keep legacy aliases for callers that inspect the signed payload locally.
         return {
+            "from_address": self._address,
+            "to_address": to_address,
+            "amount_rtc": amount_value,
+            "nonce": transfer_nonce,
+            "memo": memo,
+            "public_key": self.public_key_hex,
+            "signature": signature.hex(),
             "from": self._address,
             "to": to_address,
-            "amount": amount,
+            "amount": amount_value,
             "fee": fee,
-            "timestamp": timestamp,
-            "signature": signature.hex(),
+            "timestamp": transfer_nonce,
         }
 
     @property

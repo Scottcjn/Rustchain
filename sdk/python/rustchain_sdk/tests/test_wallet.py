@@ -2,6 +2,9 @@
 Tests for RustChainWallet.
 """
 
+import hashlib
+import json
+
 import pytest
 from rustchain_sdk.wallet import RustChainWallet
 
@@ -32,6 +35,12 @@ class TestRustChainWalletCreate:
         wallet1 = RustChainWallet.create(strength=128)
         wallet2 = RustChainWallet.from_seed_phrase(wallet1.seed_phrase)
         assert wallet1.address == wallet2.address
+
+    def test_wallet_address_matches_node_derivation(self):
+        """RTC addresses match the node's SHA256(public_key) derivation."""
+        wallet = RustChainWallet.create(strength=128)
+        expected = "RTC" + hashlib.sha256(bytes.fromhex(wallet.public_key_hex)).hexdigest()[:40]
+        assert wallet.address == expected
 
     def test_wallet_address_unique_per_wallet(self):
         """Two wallets have different addresses."""
@@ -104,29 +113,50 @@ class TestRustChainWalletTransfer:
         wallet = RustChainWallet.create(strength=128)
         transfer = wallet.sign_transfer("RTCrecipient123", 1000, fee=5)
         assert isinstance(transfer, dict)
-        assert "from" in transfer
-        assert "to" in transfer
-        assert "amount" in transfer
-        assert "fee" in transfer
-        assert "timestamp" in transfer
+        assert "from_address" in transfer
+        assert "to_address" in transfer
+        assert "amount_rtc" in transfer
+        assert "nonce" in transfer
+        assert "public_key" in transfer
         assert "signature" in transfer
 
     def test_sign_transfer_amount_and_fee(self):
         """Transfer contains correct amount and fee."""
         wallet = RustChainWallet.create(strength=128)
         transfer = wallet.sign_transfer("RTCrecipient123", 500, fee=10)
-        assert transfer["amount"] == 500
+        assert transfer["amount_rtc"] == 500.0
         assert transfer["fee"] == 10
-        assert transfer["to"] == "RTCrecipient123"
+        assert transfer["to_address"] == "RTCrecipient123"
 
-    def test_sign_transfer_timestamp_is_recent(self):
-        """Transfer timestamp is a recent unix timestamp."""
+    def test_sign_transfer_nonce_is_recent(self):
+        """Generated transfer nonce is a recent millisecond timestamp."""
         import time
         wallet = RustChainWallet.create(strength=128)
-        before = int(time.time())
+        before = int(time.time() * 1000)
         transfer = wallet.sign_transfer("RTCrecipient123", 500, fee=0)
-        after = int(time.time())
-        assert before <= transfer["timestamp"] <= after
+        after = int(time.time() * 1000)
+        assert before <= transfer["nonce"] <= after
+
+    def test_sign_transfer_uses_node_canonical_message(self):
+        """Signed transfer payload matches /wallet/transfer/signed verification."""
+        wallet = RustChainWallet.create(strength=128)
+        transfer = wallet.sign_transfer(
+            "RTCrecipient123",
+            1.25,
+            nonce=1700000000123,
+            memo="sdk-test",
+            chain_id="testnet",
+        )
+        tx_data = {
+            "amount": 1.25,
+            "chain_id": "testnet",
+            "from": wallet.address,
+            "memo": "sdk-test",
+            "nonce": "1700000000123",
+            "to": "RTCrecipient123",
+        }
+        message = json.dumps(tx_data, sort_keys=True, separators=(",", ":")).encode()
+        assert wallet.sign(message).hex() == transfer["signature"]
 
 
 class TestRustChainWalletExportImport:

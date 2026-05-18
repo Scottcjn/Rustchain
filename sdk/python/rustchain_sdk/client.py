@@ -336,8 +336,10 @@ class RustChainClient:
         self,
         wallet,
         to_address: str,
-        amount: int,
+        amount: float,
         fee: int = 0,
+        memo: str = "",
+        chain_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Build and submit a signed transfer using a RustChainWallet.
@@ -345,20 +347,24 @@ class RustChainClient:
         Args:
             wallet: A RustChainWallet instance.
             to_address: Recipient wallet address.
-            amount: Amount to transfer (in smallest units).
-            fee: Transaction fee (default 0).
+            amount: Amount to transfer in RTC.
+            fee: Legacy transaction fee retained for compatibility.
+            memo: Optional transfer memo.
+            chain_id: Optional network chain id.
 
         Returns:
             Transaction result dict.
         """
-        transfer = wallet.sign_transfer(to_address, amount, fee)
+        transfer = wallet.sign_transfer(to_address, amount, fee, memo=memo, chain_id=chain_id)
         return await self.transfer_signed(
-            from_address=transfer["from"],
-            to_address=transfer["to"],
-            amount=transfer["amount"],
-            fee=transfer["fee"],
+            from_address=transfer["from_address"],
+            to_address=transfer["to_address"],
+            amount_rtc=transfer["amount_rtc"],
             signature=transfer["signature"],
-            timestamp=transfer["timestamp"],
+            public_key=transfer["public_key"],
+            nonce=transfer["nonce"],
+            memo=transfer["memo"],
+            chain_id=chain_id,
         )
 
     # ─────────────────────────────────────────────────────────────────
@@ -369,10 +375,12 @@ class RustChainClient:
         self,
         from_address: str,
         to_address: str,
-        amount: int,
-        fee: int,
+        amount_rtc: float,
         signature: str,
-        timestamp: int,
+        public_key: str,
+        nonce: int,
+        memo: str = "",
+        chain_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Submit a signed transfer transaction.
@@ -380,25 +388,28 @@ class RustChainClient:
         Args:
             from_address: Sender wallet address.
             to_address: Recipient wallet address.
-            amount: Amount in smallest units.
-            fee: Transaction fee.
+            amount_rtc: Amount to transfer in RTC.
             signature: Hex-encoded Ed25519 signature.
-            timestamp: Unix timestamp of the transaction.
+            public_key: Sender public key hex.
+            nonce: Unique positive transfer nonce.
+            memo: Optional transfer memo.
+            chain_id: Optional network chain id.
 
         Returns:
             Transaction result dict with tx_hash, status, etc.
         """
-        return await self._post(
-            "/transfer",
-            json_data={
-                "from": from_address,
-                "to": to_address,
-                "amount": amount,
-                "fee": fee,
-                "signature": signature,
-                "timestamp": timestamp,
-            },
-        )
+        payload = {
+            "from_address": from_address,
+            "to_address": to_address,
+            "amount_rtc": float(amount_rtc),
+            "nonce": nonce,
+            "signature": signature,
+            "public_key": public_key,
+            "memo": memo,
+        }
+        if chain_id:
+            payload["chain_id"] = chain_id
+        return await self._post("/wallet/transfer/signed", json_data=payload)
 
     # ─────────────────────────────────────────────────────────────────
     # Beacon
