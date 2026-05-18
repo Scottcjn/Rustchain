@@ -36,6 +36,12 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)
 
+
+def debug_enabled() -> bool:
+    return os.environ.get("KEEPER_EXPLORER_DEBUG", "").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
+
 # --- Faucet Logic (Integrated) ---
 
 def init_faucet_db():
@@ -404,4 +410,4 @@ RETRO_HTML = """
 if __name__ == '__main__':
     import hashlib # needed for mock hash
     print(f"[*] Starting Fossil-Punk Keeper Explorer on port {PORT}...")
-    app.run(host='0.0.0.0', port=PORT, debug=True)
+    app.run(host='0.0.0.0', port=PORT, debug=debug_enabled())
