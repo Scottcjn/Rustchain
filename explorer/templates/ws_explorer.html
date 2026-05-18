@@ -103,14 +103,15 @@ let soundEnabled = false;
 let minerHistory = [];
 const socket = io({ reconnection: true, reconnectionDelay: 2000, reconnectionAttempts: Infinity });
 
-function escapeHtml(value) {
-  return String(value ?? '').replace(/[&<>"']/g, ch => ({
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;'
-  })[ch]);
+function spanWithText(className, text) {
+  const span = document.createElement('span');
+  span.className = className;
+  span.textContent = text;
+  return span;
+}
+
+function appendText(parent, text) {
+  parent.appendChild(document.createTextNode(text));
 }
 
 // Connection status
@@ -157,12 +158,13 @@ function updateEpoch(d) {
 
 function addBlockFeed(block) {
   const feed = document.getElementById('block-feed');
-  if (feed.querySelector('.empty')) feed.innerHTML = '';
-  const hash = block.hash ? escapeHtml(String(block.hash).substring(0, 16)) + '...' : '—';
+  if (feed.querySelector('.empty')) feed.replaceChildren();
+  const hash = block.hash ? String(block.hash).substring(0, 16) + '...' : '—';
   const item = document.createElement('div');
   item.className = 'feed-item new';
-  item.innerHTML = `<span class="time">${new Date().toLocaleTimeString()}</span> · 
-    Epoch ${escapeHtml(block.epoch || '?')} · <span class="hash">${hash}</span>`;
+  item.appendChild(spanWithText('time', new Date().toLocaleTimeString()));
+  appendText(item, ` · Epoch ${block.epoch || '?'} · `);
+  item.appendChild(spanWithText('hash', hash));
   feed.insertBefore(item, feed.firstChild);
   if (feed.children.length > 50) feed.removeChild(feed.lastChild);
   setTimeout(() => item.classList.remove('new'), 2000);
@@ -179,24 +181,38 @@ function updateMiners(d) {
   // Miner grid
   if (d.miners && d.miners.length > 0) {
     const grid = document.getElementById('miner-grid');
-    grid.innerHTML = d.miners.slice(0, 12).map(m => `
-      <div class="miner-card">
-        <div class="miner-id">${escapeHtml(m.miner_id || m.miner || m.id || '?')}</div>
-        <div class="miner-hw">${escapeHtml(m.hardware || m.device_arch || m.architecture || '?')}</div>
-        <div class="miner-multi">${escapeHtml(m.multiplier || 1.0)}x</div>
-      </div>
-    `).join('');
+    const cards = d.miners.slice(0, 12).map(m => {
+      const card = document.createElement('div');
+      card.className = 'miner-card';
+
+      const id = document.createElement('div');
+      id.className = 'miner-id';
+      id.textContent = m.miner_id || m.miner || m.id || '?';
+
+      const hardware = document.createElement('div');
+      hardware.className = 'miner-hw';
+      hardware.textContent = m.hardware || m.device_arch || m.architecture || '?';
+
+      const multiplier = document.createElement('div');
+      multiplier.className = 'miner-multi';
+      multiplier.textContent = `${m.multiplier || 1.0}x`;
+
+      card.append(id, hardware, multiplier);
+      return card;
+    });
+    grid.replaceChildren(...cards);
   }
 }
 
 function updateAttestations(list) {
   const feed = document.getElementById('attest-feed');
-  if (feed.querySelector('.empty')) feed.innerHTML = '';
+  if (feed.querySelector('.empty')) feed.replaceChildren();
   for (const a of list.slice(0, 5)) {
     const item = document.createElement('div');
     item.className = 'feed-item new';
-    item.innerHTML = `<span class="time">${new Date().toLocaleTimeString()}</span> · 
-      ${escapeHtml(a.miner_id || a.miner || '?')} · ${escapeHtml(a.hardware || a.device_arch || '?')} · <span class="miner-multi">${escapeHtml(a.multiplier || 1.0)}x</span>`;
+    item.appendChild(spanWithText('time', new Date().toLocaleTimeString()));
+    appendText(item, ` · ${a.miner_id || a.miner || '?'} · ${a.hardware || a.device_arch || '?'} · `);
+    item.appendChild(spanWithText('miner-multi', `${a.multiplier || 1.0}x`));
     feed.insertBefore(item, feed.firstChild);
     if (feed.children.length > 50) feed.removeChild(feed.lastChild);
     setTimeout(() => item.classList.remove('new'), 2000);
@@ -205,8 +221,18 @@ function updateAttestations(list) {
 
 function renderSparkline() {
   const el = document.getElementById('miner-sparkline');
-  const max = Math.max(...minerHistory, 1);
-  el.innerHTML = minerHistory.map(v => `<div class="bar" style="height:${(v/max)*100}%"></div>`).join('');
+  const values = minerHistory.map(v => {
+    const num = Number(v);
+    return Number.isFinite(num) && num > 0 ? num : 0;
+  });
+  const max = Math.max(...values, 1);
+  const bars = values.map(v => {
+    const bar = document.createElement('div');
+    bar.className = 'bar';
+    bar.style.height = `${Math.min(100, (v / max) * 100)}%`;
+    return bar;
+  });
+  el.replaceChildren(...bars);
 }
 
 function toggleSound() {
