@@ -265,6 +265,48 @@ class OTCBridgeTestCase(unittest.TestCase):
         })
         self.assertEqual(r.status_code, 400)
 
+    def test_create_order_rejects_non_object_json(self):
+        r = self.app.post("/api/orders", json=["not", "an", "object"])
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("JSON object", r.get_json()["error"])
+
+    def test_create_order_rejects_non_string_wallet(self):
+        r = self.app.post("/api/orders", json={
+            "side": "buy",
+            "pair": "RTC/USDC",
+            "wallet": {"nested": "buyer"},
+            "amount_rtc": 10,
+            "price_per_rtc": 0.10,
+        })
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("wallet must be a string", r.get_json()["error"])
+
+    def test_create_order_rejects_invalid_ttl_values(self):
+        for ttl in ("soon", True, {"seconds": 3600}):
+            with self.subTest(ttl=ttl):
+                r = self.app.post("/api/orders", json={
+                    "side": "buy",
+                    "pair": "RTC/USDC",
+                    "wallet": "ttl-buyer",
+                    "amount_rtc": 10,
+                    "price_per_rtc": 0.10,
+                    "ttl_seconds": ttl,
+                })
+                self.assertEqual(r.status_code, 400)
+                self.assertIn("ttl_seconds must be an integer", r.get_json()["error"])
+
+    def test_create_order_rejects_non_string_eth_address(self):
+        r = self.app.post("/api/orders", json={
+            "side": "buy",
+            "pair": "RTC/USDC",
+            "wallet": "buyer",
+            "eth_address": ["0xabc"],
+            "amount_rtc": 10,
+            "price_per_rtc": 0.10,
+        })
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("eth_address must be a string", r.get_json()["error"])
+
     def test_amount_below_minimum(self):
         r = self.app.post("/api/orders", json={
             "side": "buy",

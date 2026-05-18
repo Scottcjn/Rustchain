@@ -118,6 +118,36 @@ def units_to_float(units, scale):
     return float(Decimal(int(units)) / Decimal(scale))
 
 
+def require_json_object(data):
+    if not isinstance(data, dict):
+        raise ValueError("JSON object body required")
+    return data
+
+
+def text_field(data, field_name, default=None, *, required=False):
+    value = data.get(field_name, default)
+    if required and (value is None or value == ""):
+        raise ValueError(f"{field_name} required")
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise ValueError(f"{field_name} must be a string")
+    value = value.strip()
+    if required and not value:
+        raise ValueError(f"{field_name} required")
+    return value
+
+
+def ttl_seconds_field(data):
+    value = data.get("ttl_seconds", ORDER_TTL_DEFAULT)
+    if isinstance(value, bool):
+        raise ValueError("ttl_seconds must be an integer")
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        raise ValueError("ttl_seconds must be an integer")
+
+
 def money_view(row):
     data = dict(row)
     if "amount_micro_rtc" in data and data.get("amount_micro_rtc") is not None:
@@ -429,17 +459,18 @@ def rtc_cancel_escrow(job_id, poster_wallet):
 @rate_limited
 def create_order():
     """Create a new buy or sell order."""
-    data = request.get_json(silent=True)
-    if not data:
-        return jsonify({"error": "JSON body required"}), 400
+    try:
+        data = require_json_object(request.get_json(silent=True))
+        side = text_field(data, "side").lower()
+        pair = text_field(data, "pair", "RTC/USDC").upper()
+        maker_wallet = text_field(data, "wallet", required=True)
+        maker_eth_address = text_field(data, "eth_address")
+        ttl = ttl_seconds_field(data)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
 
-    side = str(data.get("side", "")).strip().lower()
-    pair = str(data.get("pair", "RTC/USDC")).strip().upper()
-    maker_wallet = str(data.get("wallet", "")).strip()
     amount_rtc = data.get("amount_rtc", 0)
     price_per_rtc = data.get("price_per_rtc", 0)
-    maker_eth_address = str(data.get("eth_address", "")).strip()
-    ttl = int(data.get("ttl_seconds", ORDER_TTL_DEFAULT))
 
     # Validation
     if side not in ("buy", "sell"):
