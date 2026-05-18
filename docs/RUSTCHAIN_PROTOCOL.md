@@ -233,7 +233,7 @@ Check node health status.
 
 **Request**:
 ```bash
-curl -sk https://rustchain.org/health
+curl -sS https://rustchain.org/health
 ```
 
 **Response**:
@@ -252,7 +252,7 @@ List all active miners.
 
 **Request**:
 ```bash
-curl -sk https://rustchain.org/api/miners
+curl -sS https://rustchain.org/api/miners
 ```
 
 **Response**:
@@ -277,7 +277,7 @@ Get current epoch information.
 
 **Request**:
 ```bash
-curl -sk https://rustchain.org/epoch
+curl -sS https://rustchain.org/epoch
 ```
 
 **Response**:
@@ -297,7 +297,7 @@ Check wallet balance.
 
 **Request**:
 ```bash
-curl -sk "https://rustchain.org/wallet/balance?miner_id=scott-laptop"
+curl -sS "https://rustchain.org/wallet/balance?miner_id=scott-laptop"
 ```
 
 **Response**:
@@ -314,7 +314,7 @@ Submit hardware fingerprint (miner only).
 
 **Request**:
 ```bash
-curl -sk -X POST https://rustchain.org/attest \
+curl -sS -X POST https://rustchain.org/attest \
   -H "Content-Type: application/json" \
   -d '{
     "miner_id": "scott-laptop",
@@ -361,7 +361,7 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 ### Check Balance
 
 ```bash
-curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
+curl -sS "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
 ```
 
 ### View Explorer

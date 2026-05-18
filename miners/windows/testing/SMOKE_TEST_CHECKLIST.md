@@ -77,7 +77,7 @@
 | 4 | Attest submit works | `POST /attest/submit` accepts valid attestation | | | |
 | 5 | Custom node URL supported | `--node https://custom.node` works | | | |
 | 6 | Offline mode degrades gracefully | Clear error message when node unreachable | | | |
-| 7 | SSL certificate validation | Self-signed cert accepted or `verify=False` used | | | |
+| 7 | TLS certificate validation | Default public node validates normally; private test nodes require an explicit trust decision | | | |
 | 8 | Timeout handling | Request timeouts don't hang indefinitely | | | |
 | 9 | Retry logic present | Transient failures retry with backoff | | | |
 | 10 | Proxy support (if needed) | HTTP_PROXY/HTTPS_PROXY environment variables respected | | | |

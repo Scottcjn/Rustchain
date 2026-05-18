@@ -49,5 +49,5 @@ python3 tools/discord_leaderboard_bot.py --schedule-seconds 3600
 
 ## Notes
 
-- The node may use a self-signed certificate. The script allows that intentionally for this endpoint.
+- The public node should validate with the system certificate store; private nodes should use a trusted CA.
 - Missing per-miner balance responses are handled without crashing the run.

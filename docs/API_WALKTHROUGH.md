@@ -8,7 +8,7 @@ This guide walks you through making your first API calls to RustChain.
 https://rustchain.org
 ```
 
-> ⚠️ **Note**: The node uses a self-signed certificate. Use `-k` or `--insecure` with curl.
+> **Note**: The public node uses a standard TLS certificate. Do not use `-k` or `--insecure` for `https://rustchain.org`; fix local certificate-store or proxy issues instead.
 
 ---
 
@@ -17,7 +17,7 @@ https://rustchain.org
 The simplest way to verify the node is running:
 
 ```bash
-curl -k "https://rustchain.org/health"
+curl "https://rustchain.org/health"
 ```
 
 **Response:**
@@ -39,7 +39,7 @@ curl -k "https://rustchain.org/health"
 Query any wallet balance using the `miner_id` parameter:
 
 ```bash
-curl -k "https://rustchain.org/wallet/balance?miner_id=tomisnotcat"
+curl "https://rustchain.org/wallet/balance?miner_id=tomisnotcat"
 ```
 
 **Response:**
@@ -66,7 +66,7 @@ curl -k "https://rustchain.org/wallet/balance?miner_id=tomisnotcat"
 If you're mining, check your eligibility status:
 
 ```bash
-curl -k "https://rustchain.org/lottery/eligibility?miner_id=tomisnotcat"
+curl "https://rustchain.org/lottery/eligibility?miner_id=tomisnotcat"
 ```
 
 **Response (not eligible):**
@@ -96,7 +96,7 @@ curl -k "https://rustchain.org/lottery/eligibility?miner_id=tomisnotcat"
 ## 4. List Active Miners
 
 ```bash
-curl -k "https://rustchain.org/api/miners"
+curl "https://rustchain.org/api/miners"
 ```
 
 **Response (truncated):**
@@ -201,7 +201,7 @@ payload = {
 response = requests.post(
     "https://rustchain.org/wallet/transfer/signed",
     json=payload,
-    verify=False  # For self-signed cert
+    timeout=15
 )
 print(response.json())
 ```

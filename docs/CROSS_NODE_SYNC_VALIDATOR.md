@@ -25,6 +25,6 @@ python3 tools/node_sync_validator.py \
 
 ## Notes
 
-- Default mode uses `verify=False` to support self-signed certificates.
-- Use `--verify-ssl` to enforce certificate checks.
+- Default mode keeps certificate verification enabled for public HTTPS nodes.
+- For private nodes, install the issuing CA certificate before enabling them in scheduled checks.
 - Script is cron-friendly and can run periodically for monitoring.

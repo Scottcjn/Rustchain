@@ -2,7 +2,7 @@
 
 **Base URL:** `https://rustchain.org` (Primary Node)  
 **Authentication:** Read-only endpoints are public. Writes require Ed25519 signatures or an Admin Key.  
-**Certificate Note:** The node uses a self-signed TLS certificate. Use the `-k` flag with `curl` or disable certificate verification in your client.
+**Certificate Note:** The public `https://rustchain.org` node should validate with the system certificate store. Do not use `-k`, `--insecure`, or disabled client verification for the public hostname.
 
 ---
 
@@ -67,7 +67,7 @@ List all miners currently participating in the network with their hardware detai
 Query the RTC balance for any valid miner ID.
 
 - **Endpoint:** `GET /wallet/balance?miner_id={NAME}`
-- **Example:** `curl -sk 'https://rustchain.org/wallet/balance?miner_id=scott'`
+- **Example:** `curl -sS 'https://rustchain.org/wallet/balance?miner_id=scott'`
 - **Response:**
   ```json
   {
@@ -136,7 +136,7 @@ Wallets are **simple UTF-8 strings** (1-256 chars).
 - ❌ `4TR...` (Solana addresses must be bridged via BoTTube)
 
 ### Certificate Errors
-If using `curl`, always include `-k` to bypass the self-signed certificate warning.
+If using `curl`, keep normal TLS verification enabled. Certificate failures usually indicate a local clock, proxy, or CA trust-store problem.
 
 ---
 *Last Updated: February 2026*

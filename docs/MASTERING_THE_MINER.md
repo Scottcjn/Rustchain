@@ -41,7 +41,7 @@ Pass these flags to the `LocalMiner` class or your CLI wrapper:
 ---
 
 ## 🚀 4. Optimization Tips
-- **Python Warnings:** The miner ignores `Unverified HTTPS` warnings for self-signed node certificates. This is normal but ensure your `NODE_URL` is set to `https://rustchain.org`.
+- **Python Warnings:** Keep TLS verification enabled for the public `https://rustchain.org` node. If a private node raises certificate errors, install its issuing CA instead of disabling verification.
 - **Entropy Management:** The miner tracks `last_entropy` to ensure your PoW isn't being "pre-calculated" on a different machine.
 - **Log Leveling:** Use `color_logs.py` (if available) to visually distinguish between `[FINGERPRINT]` passes and `[PoW]` shares.
 

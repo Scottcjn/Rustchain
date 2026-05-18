@@ -236,10 +236,10 @@ python3.11 -m pip install clawrtc
 **解决方案：**
 ```bash
 # 检查节点健康
-curl -sk https://rustchain.org/health
+curl -sS https://rustchain.org/health
 
 # 检查钱包余额（替换 YOUR_WALLET）
-curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET"
+curl -sS "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET"
 
 # 如果使用旧版本，可能引用已退役的主机
 # 升级到最新版本修复
@@ -252,7 +252,7 @@ curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET"
 **解决方案：**
 ```bash
 # 使用 -sk 标志跳过证书验证（节点可能使用自签名证书）
-curl -sk https://rustchain.org/health
+curl -sS https://rustchain.org/health
 
 # 或更新系统证书
 # Ubuntu/Debian
@@ -278,7 +278,7 @@ journalctl --user -u rustchain-miner -f  # Linux
 tail -f ~/.rustchain/miner.log           # macOS/通用
 
 # 验证钱包存在
-curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET"
+curl -sS "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET"
 ```
 
 ### 6. 硬件指纹验证失败
@@ -357,20 +357,20 @@ tail -f ~/.rustchain/miner.log           # macOS
 
 ```bash
 # 等待 1-2 个 epoch（10-20 分钟）后检查余额
-curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET"
+curl -sS "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET"
 ```
 
 ### 4. 网络健康检查
 
 ```bash
 # 节点健康
-curl -sk https://rustchain.org/health | jq .
+curl -sS https://rustchain.org/health | jq .
 
 # 当前 epoch
-curl -sk https://rustchain.org/epoch | jq .
+curl -sS https://rustchain.org/epoch | jq .
 
 # 活跃矿工列表
-curl -sk https://rustchain.org/api/miners | jq .
+curl -sS https://rustchain.org/api/miners | jq .
 
 # 区块浏览器
 open https://rustchain.org/explorer

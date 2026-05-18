@@ -92,7 +92,7 @@ No authentication required. Rate limits apply.
 ### Admin Authentication
 Include the `X-Admin-Key` header:
 ```bash
-curl -sk https://rustchain.org/wallet/transfer \
+curl -sS https://rustchain.org/wallet/transfer \
   -H "X-Admin-Key: YOUR_ADMIN_KEY" \
   -H "Content-Type: application/json" \
   -d '{"from_miner": "treasury", "to_miner": "scott", "amount_rtc": 10.0}'
@@ -123,13 +123,13 @@ Ed25519 signature in request body (no admin key needed):
 
 ## HTTPS Certificate
 
-The node uses a self-signed certificate. Options:
+The public node uses a standard TLS certificate. Keep verification enabled:
 
 ```bash
-# Option 1: Skip verification (development)
-curl -sk https://rustchain.org/health
+# Public node
+curl -sS https://rustchain.org/health
 
-# Option 2: Trust the certificate
+# Private nodes: trust the issuing certificate
 openssl s_client -connect rustchain.org:443 -showcerts < /dev/null 2>/dev/null | \
   openssl x509 -outform PEM > rustchain.pem
 curl --cacert rustchain.pem https://rustchain.org/health
@@ -183,32 +183,32 @@ VALIDATION RESULTS
 
 #### Health Check
 ```bash
-curl -sk https://rustchain.org/health | jq
+curl -sS https://rustchain.org/health | jq
 ```
 
 #### Get Epoch Info
 ```bash
-curl -sk https://rustchain.org/epoch | jq
+curl -sS https://rustchain.org/epoch | jq
 ```
 
 #### List Miners
 ```bash
-curl -sk https://rustchain.org/api/miners | jq
+curl -sS https://rustchain.org/api/miners | jq
 ```
 
 #### Check Balance
 ```bash
-curl -sk "https://rustchain.org/wallet/balance?miner_id=scott" | jq
+curl -sS "https://rustchain.org/wallet/balance?miner_id=scott" | jq
 ```
 
 #### Get Transaction History
 ```bash
-curl -sk "https://rustchain.org/wallet/history?miner_id=scott&limit=10" | jq
+curl -sS "https://rustchain.org/wallet/history?miner_id=scott&limit=10" | jq
 ```
 
 #### Check Eligibility
 ```bash
-curl -sk "https://rustchain.org/lottery/eligibility?miner_id=scott" | jq
+curl -sS "https://rustchain.org/lottery/eligibility?miner_id=scott" | jq
 ```
 
 ### Python Examples
@@ -220,25 +220,24 @@ BASE_URL = "https://rustchain.org"
 
 def get_health():
     """Check node health."""
-    resp = requests.get(f"{BASE_URL}/health", verify=False)
+    resp = requests.get(f"{BASE_URL}/health")
     return resp.json()
 
 def get_epoch():
     """Get current epoch info."""
-    resp = requests.get(f"{BASE_URL}/epoch", verify=False)
+    resp = requests.get(f"{BASE_URL}/epoch")
     return resp.json()
 
 def get_miners():
     """List active miners."""
-    resp = requests.get(f"{BASE_URL}/api/miners", verify=False)
+    resp = requests.get(f"{BASE_URL}/api/miners")
     return resp.json()
 
 def get_balance(miner_id):
     """Get wallet balance."""
     resp = requests.get(
         f"{BASE_URL}/wallet/balance",
-        params={"miner_id": miner_id},
-        verify=False
+        params={"miner_id": miner_id}
     )
     return resp.json()
 
@@ -246,8 +245,7 @@ def get_history(miner_id, limit=10):
     """Get transaction history."""
     resp = requests.get(
         f"{BASE_URL}/wallet/history",
-        params={"miner_id": miner_id, "limit": limit},
-        verify=False
+        params={"miner_id": miner_id, "limit": limit}
     )
     return resp.json()
 
@@ -255,8 +253,7 @@ def check_eligibility(miner_id):
     """Check epoch eligibility."""
     resp = requests.get(
         f"{BASE_URL}/lottery/eligibility",
-        params={"miner_id": miner_id},
-        verify=False
+        params={"miner_id": miner_id}
     )
     return resp.json()
 
@@ -309,7 +306,7 @@ getBalance("scott").then(console.log);
 # RustChain API helper script
 
 BASE_URL="https://rustchain.org"
-CURL="curl -sk"
+CURL="curl -sS"
 
 get_health() {
   $CURL "$BASE_URL/health" | jq
@@ -409,7 +406,7 @@ The `swagger.html` file is self-contained and can be:
 curl https://rustchain.org/health
 
 # ✅ Correct - skip verification
-curl -sk https://rustchain.org/health
+curl -sS https://rustchain.org/health
 ```
 
 ## Response Examples

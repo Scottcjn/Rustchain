@@ -28,8 +28,8 @@ info:
     | Admin endpoints | 10/min |
     
     ## HTTPS Certificate
-    The node uses a self-signed certificate. Use `-k` flag with curl or
-    disable certificate verification in HTTP clients.
+    The public node uses a standard TLS certificate. Keep certificate
+    verification enabled in curl and HTTP clients.
   version: 2.2.1-rip200
   contact:
     name: RustChain Development

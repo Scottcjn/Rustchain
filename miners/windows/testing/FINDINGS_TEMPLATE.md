@@ -250,9 +250,9 @@
 
 **Symptom:** `SSL: CERTIFICATE_VERIFY_FAILED`
 
-**Cause:** Self-signed certificate on node server
+**Cause:** Local certificate store, proxy, or private-node trust configuration
 
-**Fix:** Ensure `verify=False` in requests or install CA certificate
+**Fix:** Keep TLS verification enabled and install the private node's CA certificate
 
 ---
 

@@ -74,6 +74,6 @@ rustchain-installer/
 ## Technical Notes
 
 - **Network:** Default node is `https://rustchain.org`.
-- **Security:** TLS verification is currently set to `verify=False` to support the node's self-signed certificate.
+- **Security:** Keep TLS verification enabled for the default `https://rustchain.org` node; only use a custom CA or explicit local override for private test nodes.
 - **Builds:** Automated Windows builds are handled via GitHub Actions (see `.github/workflows/windows-build.yml`).
 

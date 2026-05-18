@@ -279,8 +279,8 @@ With 10 miners at avg 1.5x weight:
 Your actual earnings depend on how many miners are attesting and their multipliers. Check the live epoch data:
 
 ```bash
-curl -sk https://rustchain.org/epoch
-curl -sk "https://rustchain.org/wallet/balance?miner_id=my-n64-miner"
+curl -sS https://rustchain.org/epoch
+curl -sS "https://rustchain.org/wallet/balance?miner_id=my-n64-miner"
 ```
 
 ---
@@ -339,7 +339,7 @@ The achievement bridge runs alongside the mining relay. Both use the same Pico s
 
 ### Attestation returns HTTP 500
 - Check that your wallet ID is unique (not already registered to different hardware)
-- Verify node connectivity: `curl -sk https://rustchain.org/health`
+- Verify node connectivity: `curl -sS https://rustchain.org/health`
 - Check the host relay log for error details
 
 ### N64 hash time is suspiciously fast (< 100ms)

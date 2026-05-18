@@ -14,9 +14,9 @@
 Both nodes expose identical public endpoints. Direct attestation submissions to
 the primary node; use either for read-only queries.
 
-> **Note:** The production TLS endpoint `https://rustchain.org` requires the
-> `-k` flag with curl (self-signed cert). The raw IP:port endpoints shown
-> throughout this reference are HTTP and need no `-k`.
+> **Note:** The production TLS endpoint `https://rustchain.org` should validate
+> with the system certificate store. The raw IP:port endpoints shown throughout
+> this reference are HTTP and do not use TLS.
 
 ---
 

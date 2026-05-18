@@ -20,7 +20,7 @@ Single-file browser wizard for miner onboarding.
 
 - Designed to run locally in browser and on GitHub Pages.
 - No backend required; pure client-side HTML/CSS/JS.
-- If cross-origin fetch is blocked by CORS, use terminal command checks (`curl -sk ...`).
+- If cross-origin fetch is blocked by CORS, use terminal command checks (`curl -sS ...`).
 
 ## Run locally
 

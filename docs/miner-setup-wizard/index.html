@@ -219,14 +219,14 @@ function renderPanel(){
         const r = await testNode(url);
         document.getElementById('testOut').innerHTML = r.ok
           ? `<span class='pill ok'>Reachable</span> <pre>${h(r.text)}</pre>`
-          : `<span class='pill bad'>Failed</span> <pre>${h(r.text)}</pre><p class='muted'>If this is a CORS error, test with terminal: curl -sk ${h(url.replace(/\/$/,''))}/health</p>`;
+          : `<span class='pill bad'>Failed</span> <pre>${h(r.text)}</pre><p class='muted'>If this is a CORS error, test with terminal: curl -sS ${h(url.replace(/\/$/,''))}/health</p>`;
       }
     },0);
     return;
   }
   if(active==='attest'){
     const wallet = state.address || 'RTC_YOUR_WALLET_ADDRESS';
-    const checkCmd = `curl -sk ${state.nodeUrl.replace(/\/$/,'')}/api/miners | jq`;
+    const checkCmd = `curl -sS ${state.nodeUrl.replace(/\/$/,'')}/api/miners | jq`;
     p.innerHTML=`<h3 class='h'>First Attestation</h3>
       <p class='muted'>Run miner, then verify your wallet/miner appears in <code>/api/miners</code>.</p>
       ${commandBlock(`clawrtc start`)}

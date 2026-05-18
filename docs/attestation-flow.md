@@ -406,7 +406,7 @@ Submit hardware attestation.
 
 **Request**:
 ```bash
-curl -sk -X POST https://rustchain.org/attest/submit \
+curl -sS -X POST https://rustchain.org/attest/submit \
   -H "Content-Type: application/json" \
   -d @attestation.json
 ```
@@ -437,7 +437,7 @@ Check if miner is enrolled in current epoch.
 
 **Request**:
 ```bash
-curl -sk "https://rustchain.org/lottery/eligibility?miner_id=scott"
+curl -sS "https://rustchain.org/lottery/eligibility?miner_id=scott"
 ```
 
 **Response**:

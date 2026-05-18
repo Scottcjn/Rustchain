@@ -148,10 +148,10 @@ if [ "$DRY_RUN" != true ]; then
     timeout 15 "$VENV_DIR/bin/python" -c "
 import requests
 try:
-    r = requests.get('$NODE_URL/health', verify=False, timeout=5)
+    r = requests.get('$NODE_URL/health', timeout=5)
     if r.status_code == 200:
         print('[+] Node: ONLINE')
-        r2 = requests.post('$NODE_URL/attest/challenge', json={}, verify=False, timeout=5)
+        r2 = requests.post('$NODE_URL/attest/challenge', json={}, timeout=5)
         if r2.status_code == 200: print('[+] Attestation System: READY')
 except Exception as e: print(f'[-] Node Error: {e}')" 2>/dev/null || true
 fi

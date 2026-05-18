@@ -184,22 +184,22 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 **ウォレット残高を確認：**
 ```bash
 # 注意：ノードが自己署名SSL証明書を使用している可能性があるため、-skフラグを使用
-curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
+curl -sS "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
 ```
 
 **アクティブなマイナーを一覧表示：**
 ```bash
-curl -sk https://rustchain.org/api/miners
+curl -sS https://rustchain.org/api/miners
 ```
 
 **ノードの健全性を確認：**
 ```bash
-curl -sk https://rustchain.org/health
+curl -sS https://rustchain.org/health
 ```
 
 **現在のエポックを取得：**
 ```bash
-curl -sk https://rustchain.org/epoch
+curl -sS https://rustchain.org/epoch
 ```
 
 **マイナーサービスを管理：**
@@ -331,16 +331,16 @@ RustChainエポック → コミットメントハッシュ → Ergoトランザ
 
 ```bash
 # ネットワークの健全性を確認
-curl -sk https://rustchain.org/health
+curl -sS https://rustchain.org/health
 
 # 現在のエポックを取得
-curl -sk https://rustchain.org/epoch
+curl -sS https://rustchain.org/epoch
 
 # アクティブなマイナーを一覧表示
-curl -sk https://rustchain.org/api/miners
+curl -sS https://rustchain.org/api/miners
 
 # ウォレット残高を確認
-curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET"
+curl -sS "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET"
 
 # ブロックエクスプローラー（Webブラウザ）
 open https://rustchain.org/explorer

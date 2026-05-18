@@ -15,8 +15,8 @@ Use `https://rustchain.org` for public wallet and health queries.
 If you see `Balance: (could not reach network)` from an older `clawrtc` helper build, verify the live node directly:
 
 ```bash
-curl -sk https://rustchain.org/health | jq .
-curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME" | jq .
+curl -sS https://rustchain.org/health | jq .
+curl -sS "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME" | jq .
 ```
 
 Older helper packages may still reference the retired `bulbous-bouffant.metalseed.net` host. Also note that current `clawrtc` releases do not expose a generic `clawrtc wallet show` command; the supported helper is `clawrtc wallet coinbase show`.
@@ -44,7 +44,7 @@ ping 8.8.8.8
 nslookup rustchain.org
 
 # 3. Test connectivity to node
-curl -skI https://rustchain.org/health
+curl -sSI https://rustchain.org/health
 
 # 4. Check firewall settings
 # Ensure outbound HTTPS (port 443) is allowed
@@ -63,7 +63,7 @@ curl -skI https://rustchain.org/health
 **Troubleshooting:**
 ```bash
 # 1. Check node status
-curl -sk https://rustchain.org/health | jq
+curl -sS https://rustchain.org/health | jq
 
 # 2. Wait and retry (node may be busy)
 
@@ -88,10 +88,10 @@ speedtest-cli  # or use your preferred speed test tool
 # Should be 0x + 40 hex characters for Base addresses
 
 # 2. Check if wallet exists
-curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_ADDRESS"
+curl -sS "https://rustchain.org/wallet/balance?miner_id=YOUR_ADDRESS"
 
 # 3. Check node API status
-curl -sk https://rustchain.org/api/stats | jq
+curl -sS https://rustchain.org/api/stats | jq
 ```
 
 ## Retry Strategy
