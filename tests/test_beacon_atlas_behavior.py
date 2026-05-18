@@ -268,7 +268,39 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         response2 = self.client.get('/api/bounties')
         bounties2 = json.loads(response2.data)
         # Bounty should no longer appear in open list (state changed to claimed)
-        
+
+    def test_bounty_claim_rejects_non_object_json(self):
+        """Admin bounty claim route rejects malformed JSON shapes."""
+        response = self.client.post(
+            '/api/bounties/gh_test_bounty/claim',
+            data=json.dumps(['bcn_claimer']),
+            content_type='application/json',
+            headers={'X-Admin-Key': os.environ['RC_ADMIN_KEY']},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('JSON object body required', response.get_data(as_text=True))
+
+    def test_bounty_complete_rejects_non_string_agent_id(self):
+        """Admin bounty completion route rejects non-string agent IDs."""
+        response = self.client.post(
+            '/api/bounties/gh_test_bounty/complete',
+            data=json.dumps({'agent_id': {'nested': 'bcn_claimer'}}),
+            content_type='application/json',
+            headers={'X-Admin-Key': os.environ['RC_ADMIN_KEY']},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('Missing agent_id', response.get_data(as_text=True))
+
+    def test_chat_rejects_non_string_message(self):
+        """Chat route rejects non-string message bodies before storage."""
+        response = self.client.post(
+            '/api/chat',
+            data=json.dumps({'agent_id': 'bcn_alice_test', 'message': ['hello']}),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('Missing message', response.get_data(as_text=True))
+
     def test_reputation_tracking_workflow(self):
         """Reputation is tracked and updated correctly."""
         # Insert test reputation

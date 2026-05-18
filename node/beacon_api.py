@@ -36,6 +36,20 @@ contract_store = []
 chat_sessions = {}
 
 
+def _json_object_body():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return None, jsonify({'error': 'JSON object body required'}), 400
+    return data, None, None
+
+
+def _required_text_field(data, field_name):
+    value = data.get(field_name)
+    if not isinstance(value, str) or not value.strip():
+        return None, jsonify({'error': f'Missing {field_name}'}), 400
+    return value.strip(), None, None
+
+
 def _coinbase_addresses_match(left, right):
     """Compare optional EVM-style payment addresses without case sensitivity."""
     return (left or '').strip().casefold() == (right or '').strip().casefold()
@@ -866,11 +880,12 @@ def claim_bounty(bounty_id):
         if not hmac.compare_digest(provided_key, admin_key):
             return jsonify({'error': 'Unauthorized — admin key required to claim bounties'}), 401
 
-        data = request.get_json()
-        agent_id = data.get('agent_id')
-        
-        if not agent_id:
-            return jsonify({'error': 'Missing agent_id'}), 400
+        data, body_error, status = _json_object_body()
+        if body_error:
+            return body_error, status
+        agent_id, field_error, status = _required_text_field(data, 'agent_id')
+        if field_error:
+            return field_error, status
         
         db = get_db()
         db.execute(
@@ -900,11 +915,12 @@ def complete_bounty(bounty_id):
         if not hmac.compare_digest(provided_key, admin_key):
             return jsonify({'error': 'Unauthorized — admin key required to complete bounties'}), 401
 
-        data = request.get_json()
-        agent_id = data.get('agent_id')
-        
-        if not agent_id:
-            return jsonify({'error': 'Missing agent_id'}), 400
+        data, body_error, status = _json_object_body()
+        if body_error:
+            return body_error, status
+        agent_id, field_error, status = _required_text_field(data, 'agent_id')
+        if field_error:
+            return field_error, status
         
         db = get_db()
 
@@ -1001,9 +1017,15 @@ def get_agent_reputation(agent_id):
 def chat():
     """Send message to an agent (mock response for demo)."""
     try:
-        data = request.get_json()
-        agent_id = data.get('agent_id')
-        message = data.get('message')
+        data, body_error, status = _json_object_body()
+        if body_error:
+            return body_error, status
+        agent_id, field_error, status = _required_text_field(data, 'agent_id')
+        if field_error:
+            return field_error, status
+        message, field_error, status = _required_text_field(data, 'message')
+        if field_error:
+            return field_error, status
         
         if not agent_id or not message:
             return jsonify({'error': 'Missing agent_id or message'}), 400
