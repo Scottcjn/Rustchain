@@ -520,6 +520,9 @@ class UtxoDB:
             # transaction can split one UTXO into thousands of 1-nanoRTC
             # boxes and permanently bloat the UTXO set.
             for o in outputs:
+                address = o.get('address')
+                if not isinstance(address, str) or not address.strip():
+                    return abort()
                 val = o.get('value_nrtc')
                 if (
                     isinstance(val, bool)
@@ -876,6 +879,11 @@ class UtxoDB:
             # Without this, unmineable transactions enter the mempool and lock
             # UTXOs until expiry (DoS vector).
             for o in outputs:
+                address = o.get('address')
+                if not isinstance(address, str) or not address.strip():
+                    if manage_tx:
+                        conn.execute("ROLLBACK")
+                    return False
                 val = o.get('value_nrtc')
                 if isinstance(val, bool) or not isinstance(val, int) or val < DUST_THRESHOLD:
                     if manage_tx:

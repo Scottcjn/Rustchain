@@ -1002,6 +1002,31 @@ class TestUtxoDB(unittest.TestCase):
             self.db.mempool_check_double_spend(boxes[0]['box_id'])
         )
 
+    def test_mempool_rejects_malformed_output_addresses(self):
+        """Mempool must reject missing or blank output addresses."""
+        cases = [
+            ('missing_addr', {'value_nrtc': 100 * UNIT}),
+            ('blank_addr', {'address': '   ', 'value_nrtc': 100 * UNIT}),
+            ('nonstr_addr', {'address': ['bob'], 'value_nrtc': 100 * UNIT}),
+        ]
+
+        for name, output in cases:
+            with self.subTest(name=name):
+                sender = f'alice_{name}'
+                self._apply_coinbase(sender, 100 * UNIT)
+                box = self.db.get_unspent_for_address(sender)[0]
+
+                ok = self.db.mempool_add({
+                    'tx_id': (name.replace('_', '') * 8)[:64],
+                    'tx_type': 'transfer',
+                    'inputs': [{'box_id': box['box_id']}],
+                    'outputs': [output],
+                    'fee_nrtc': 0,
+                })
+
+                self.assertFalse(ok)
+                self.assertFalse(self.db.mempool_check_double_spend(box['box_id']))
+
     # -- bounty #2819: negative / zero value outputs -------------------------
 
     def test_negative_value_output_rejected(self):
@@ -1089,6 +1114,61 @@ class TestUtxoDB(unittest.TestCase):
         self.assertFalse(ok)
         self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
         self.assertEqual(self.db.count_unspent(), 1)
+
+    def test_output_missing_address_rejected_without_crash(self):
+        """Malformed outputs must fail validation instead of raising KeyError."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        try:
+            ok = self.db.apply_transaction({
+                'tx_type': 'transfer',
+                'inputs': [{'box_id': boxes[0]['box_id'],
+                             'spending_proof': 'sig'}],
+                'outputs': [{'value_nrtc': 100 * UNIT}],
+                'fee_nrtc': 0,
+            }, block_height=10)
+        except Exception as exc:
+            self.fail(f'apply_transaction raised instead of rejecting: {exc!r}')
+
+        self.assertFalse(ok)
+        self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
+
+    def test_output_blank_address_rejected(self):
+        """Blank output addresses should not create unspendable UTXOs."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': boxes[0]['box_id'],
+                         'spending_proof': 'sig'}],
+            'outputs': [{'address': ' ', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+        }, block_height=10)
+
+        self.assertFalse(ok)
+        self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
+        self.assertEqual(self.db.get_balance(' '), 0)
+
+    def test_output_non_string_address_rejected_without_crash(self):
+        """Output addresses must be strings before proposition encoding."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        try:
+            ok = self.db.apply_transaction({
+                'tx_type': 'transfer',
+                'inputs': [{'box_id': boxes[0]['box_id'],
+                             'spending_proof': 'sig'}],
+                'outputs': [{'address': ['bob'], 'value_nrtc': 100 * UNIT}],
+                'fee_nrtc': 0,
+            }, block_height=10)
+        except Exception as exc:
+            self.fail(f'apply_transaction raised instead of rejecting: {exc!r}')
+
+        self.assertFalse(ok)
+        self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
 
     def test_float_value_nrtc_rejected(self):
         """value_nrtc must be an integer; floats cause silent truncation."""
