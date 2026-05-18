@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 from flask import Flask, request, jsonify, g, send_from_directory, send_file, abort, render_template_string, redirect, Response
 import json
 from decimal import Decimal, ROUND_HALF_UP
-from beacon_anchor import init_beacon_table, store_envelope, compute_beacon_digest, get_recent_envelopes, VALID_KINDS
+from beacon_anchor import init_beacon_table, store_envelope, compute_beacon_digest, get_recent_envelopes, normalize_beacon_pagination, VALID_KINDS
 try:
     # Deployment compatibility: production may run this file as a single script.
     from payout_preflight import validate_wallet_transfer_admin, validate_wallet_transfer_signed
@@ -8418,11 +8418,10 @@ def beacon_digest():
 
 @app.route("/beacon/envelopes", methods=["GET"])
 def beacon_envelopes_list():
-    try:
-        limit = min(int(request.args.get("limit", 50)), 50)
-        offset = max(int(request.args.get("offset", 0)), 0)
-    except (ValueError, TypeError):
-        limit, offset = 50, 0
+    limit, offset = normalize_beacon_pagination(
+        request.args.get("limit", 50),
+        request.args.get("offset", 0),
+    )
     envelopes = get_recent_envelopes(limit=limit, offset=offset, db_path=DB_PATH)
     return jsonify({"ok": True, "count": len(envelopes), "envelopes": envelopes})
 
@@ -8597,3 +8596,4 @@ def check_hardware_wallet_consistency(hardware_id, miner_wallet, conn):
             return False, f'hardware_bound_to_different_wallet:{bound_wallet[:20]}'
     
     return True, 'ok'
+    
