@@ -42,9 +42,9 @@ def client(monkeypatch, fleet_db):
     return app.test_client()
 
 
-def authed_get(client, query):
+def authed_get(client, path):
     return client.get(
-        f"/admin/fleet/scores?{query}",
+        path,
         headers={"X-Admin-Key": "secret"},
     )
 
@@ -58,21 +58,44 @@ def authed_get(client, query):
     ),
 )
 def test_fleet_scores_rejects_invalid_limits(client, query, expected_error):
-    response = authed_get(client, query)
+    response = authed_get(client, f"/admin/fleet/scores?{query}")
 
     assert response.status_code == 400
     assert response.get_json() == {"error": expected_error}
 
 
 def test_fleet_scores_caps_oversized_limit(client):
-    response = authed_get(client, "limit=5000")
+    response = authed_get(client, "/admin/fleet/scores?limit=5000")
 
     assert response.status_code == 200
     assert len(response.get_json()["scores"]) == 3
 
 
 def test_fleet_scores_respects_valid_limit(client):
-    response = authed_get(client, "limit=2")
+    response = authed_get(client, "/admin/fleet/scores?limit=2")
 
     assert response.status_code == 200
     assert [row["miner"] for row in response.get_json()["scores"]] == ["miner-a", "miner-b"]
+
+
+@pytest.mark.parametrize(
+    "query, expected_error",
+    (
+        ("epoch=abc", "epoch must be an integer"),
+        ("epoch=10.5", "epoch must be an integer"),
+        ("epoch=0", "epoch must be positive"),
+        ("epoch=-1", "epoch must be positive"),
+    ),
+)
+def test_fleet_report_rejects_invalid_epochs(client, query, expected_error):
+    response = authed_get(client, f"/admin/fleet/report?{query}")
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": expected_error}
+
+
+def test_fleet_report_respects_valid_epoch(client):
+    response = authed_get(client, "/admin/fleet/report?epoch=1")
+
+    assert response.status_code == 200
+    assert response.get_json()["epoch"] == 1
