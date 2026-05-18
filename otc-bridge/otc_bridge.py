@@ -118,6 +118,22 @@ def units_to_float(units, scale):
     return float(Decimal(int(units)) / Decimal(scale))
 
 
+def json_object_body(data):
+    if not isinstance(data, dict):
+        raise ValueError("JSON object body required")
+    return data
+
+
+def text_field(data, field_name, *, required=False):
+    value = data.get(field_name, "")
+    if not isinstance(value, str):
+        raise ValueError(f"{field_name} must be a string")
+    value = value.strip()
+    if required and not value:
+        raise ValueError(f"{field_name} required")
+    return value
+
+
 def money_view(row):
     data = dict(row)
     if "amount_micro_rtc" in data and data.get("amount_micro_rtc") is not None:
@@ -671,12 +687,12 @@ def get_order(order_id):
 @rate_limited
 def match_order(order_id):
     """Match an open order as the counterparty."""
-    data = request.get_json(silent=True) or {}
-    taker_wallet = str(data.get("wallet", "")).strip()
-    taker_eth_address = str(data.get("eth_address", "")).strip()
-
-    if not taker_wallet:
-        return jsonify({"error": "wallet required"}), 400
+    try:
+        data = json_object_body(request.get_json(silent=True))
+        taker_wallet = text_field(data, "wallet", required=True)
+        taker_eth_address = text_field(data, "eth_address")
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
 
     conn = get_db()
     try:
@@ -794,15 +810,13 @@ def match_order(order_id):
 @rate_limited
 def confirm_order(order_id):
     """Confirm settlement -- verifies HTLC preimage, releases escrow."""
-    data = request.get_json(silent=True) or {}
-    wallet = str(data.get("wallet", "")).strip()
-    quote_tx = str(data.get("quote_tx", "")).strip()
-    secret = str(data.get("secret", "")).strip()
-
-    if not wallet:
-        return jsonify({"error": "wallet required"}), 400
-    if not quote_tx:
-        return jsonify({"error": "quote_tx required"}), 400
+    try:
+        data = json_object_body(request.get_json(silent=True))
+        wallet = text_field(data, "wallet", required=True)
+        quote_tx = text_field(data, "quote_tx", required=True)
+        secret = text_field(data, "secret")
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
 
     conn = get_db()
     try:
@@ -934,11 +948,11 @@ def confirm_order(order_id):
 @rate_limited
 def cancel_order(order_id):
     """Cancel an open order and refund escrow."""
-    data = request.get_json(silent=True) or {}
-    wallet = str(data.get("wallet", "")).strip()
-
-    if not wallet:
-        return jsonify({"error": "wallet required"}), 400
+    try:
+        data = json_object_body(request.get_json(silent=True))
+        wallet = text_field(data, "wallet", required=True)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
 
     conn = get_db()
     try:

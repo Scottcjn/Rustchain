@@ -395,6 +395,31 @@ class OTCBridgeTestCase(unittest.TestCase):
         })
         self.assertEqual(r.status_code, 404)
 
+    def test_match_rejects_non_object_json(self):
+        r = self.app.post("/api/orders/otc_fake123/match", json=["wallet"])
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("JSON object body required", r.get_json()["error"])
+
+    def test_match_rejects_non_string_wallet_and_eth_address(self):
+        r1 = self.app.post("/api/orders", json={
+            "side": "buy", "pair": "RTC/USDC",
+            "wallet": "buyer1", "amount_rtc": 10, "price_per_rtc": 0.10,
+        })
+        order_id = r1.get_json()["order_id"]
+
+        r2 = self.app.post(f"/api/orders/{order_id}/match", json={
+            "wallet": {"nested": "seller"},
+        })
+        self.assertEqual(r2.status_code, 400)
+        self.assertIn("wallet must be a string", r2.get_json()["error"])
+
+        r3 = self.app.post(f"/api/orders/{order_id}/match", json={
+            "wallet": "seller",
+            "eth_address": ["0xabc"],
+        })
+        self.assertEqual(r3.status_code, 400)
+        self.assertIn("eth_address must be a string", r3.get_json()["error"])
+
     # ---------------------------------------------------------------
     # Order Cancellation
     # ---------------------------------------------------------------
@@ -424,6 +449,13 @@ class OTCBridgeTestCase(unittest.TestCase):
             "wallet": "not-owner",
         })
         self.assertEqual(r2.status_code, 403)
+
+    def test_cancel_rejects_non_string_wallet(self):
+        r = self.app.post("/api/orders/otc_fake123/cancel", json={
+            "wallet": {"owner": "nested"},
+        })
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("wallet must be a string", r.get_json()["error"])
 
     @patch("otc_bridge.rtc_get_balance", return_value=500.0)
     @patch("otc_bridge.rtc_create_escrow_job", return_value={"ok": True, "job_id": "job_cancel1"})
@@ -489,6 +521,23 @@ class OTCBridgeTestCase(unittest.TestCase):
             "quote_tx": "0x123",
         })
         self.assertEqual(r2.status_code, 409)
+
+    def test_confirm_rejects_non_string_fields(self):
+        r = self.app.post("/api/orders/otc_fake123/confirm", json={
+            "wallet": "seller",
+            "quote_tx": {"tx": "0x123"},
+            "secret": "abc",
+        })
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("quote_tx must be a string", r.get_json()["error"])
+
+        r2 = self.app.post("/api/orders/otc_fake123/confirm", json={
+            "wallet": "seller",
+            "quote_tx": "0x123",
+            "secret": ["abc"],
+        })
+        self.assertEqual(r2.status_code, 400)
+        self.assertIn("secret must be a string", r2.get_json()["error"])
 
     # ---------------------------------------------------------------
     # Stats & Trades
