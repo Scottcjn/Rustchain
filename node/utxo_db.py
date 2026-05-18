@@ -1033,27 +1033,35 @@ class UtxoDB:
                 try:
                     tx = json.loads(row['tx_data_json'])
                     input_ids = [inp['box_id'] for inp in tx.get('inputs', [])]
+                    data_inputs = self._normalize_data_inputs(
+                        tx.get('data_inputs', [])
+                    )
                 except Exception:
                     stale_tx_ids.append(tx_id)
                     continue
 
-                if not input_ids:
+                if not input_ids or data_inputs is None:
                     stale_tx_ids.append(tx_id)
                     continue
 
-                placeholders = ",".join("?" for _ in input_ids)
-                unspent_count = conn.execute(
-                    f"""SELECT COUNT(*) AS n FROM utxo_boxes
-                        WHERE box_id IN ({placeholders}) AND spent_at IS NULL""",
-                    input_ids,
-                ).fetchone()['n']
-                if unspent_count != len(set(input_ids)):
-                    stale_tx_ids.append(tx_id)
-                    continue
+                for box_ids in (input_ids, data_inputs):
+                    if not box_ids:
+                        continue
+                    placeholders = ",".join("?" for _ in box_ids)
+                    unspent_count = conn.execute(
+                        f"""SELECT COUNT(*) AS n FROM utxo_boxes
+                            WHERE box_id IN ({placeholders})
+                              AND spent_at IS NULL""",
+                        box_ids,
+                    ).fetchone()['n']
+                    if unspent_count != len(set(box_ids)):
+                        stale_tx_ids.append(tx_id)
+                        break
+                else:
+                    candidates.append(tx)
+                    if len(candidates) >= max_count:
+                        break
 
-                candidates.append(tx)
-                if len(candidates) >= max_count:
-                    break
 
             for tx_id in stale_tx_ids:
                 conn.execute(

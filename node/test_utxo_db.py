@@ -762,6 +762,34 @@ class TestUtxoDB(unittest.TestCase):
         self.assertEqual(candidates, [])
         self.assertFalse(self.db.mempool_check_double_spend(box['box_id']))
 
+    def test_mempool_block_candidates_drop_spent_data_inputs(self):
+        """Block candidates must not include txs with spent data inputs."""
+        self._apply_coinbase('oracle', 100 * UNIT, block_height=1)
+        self._apply_coinbase('alice', 100 * UNIT, block_height=2)
+        oracle_box = self.db.get_unspent_for_address('oracle')[0]
+        alice_box = self.db.get_unspent_for_address('alice')[0]
+        tx_id = 'data_stale' * 6 + '0000'
+
+        self.assertTrue(self.db.mempool_add({
+            'tx_id': tx_id,
+            'inputs': [{'box_id': alice_box['box_id']}],
+            'data_inputs': [oracle_box['box_id']],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT - 1000}],
+            'fee_nrtc': 1000,
+        }))
+
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': oracle_box['box_id'], 'spending_proof': 'sig'}],
+            'outputs': [{'address': 'oracle-next', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+        }, block_height=3)
+        self.assertTrue(ok)
+
+        candidates = self.db.mempool_get_block_candidates()
+        self.assertEqual(candidates, [])
+        self.assertFalse(self.db.mempool_check_double_spend(alice_box['box_id']))
+
     def test_mempool_nonexistent_input_rejected(self):
         tx = {
             'tx_id': 'cccc' * 16,
