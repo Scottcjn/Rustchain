@@ -70,6 +70,20 @@ _BOUNTY_RE = re.compile(
 # Marker to prevent duplicate awards.
 _AWARD_MARKER = "RTC-AutoBounty-Awarded"
 
+_ENDPOINT_UNREACHABLE_PATTERNS = (
+    "connection failed:",
+    "connection refused",
+    "connection reset",
+    "connection aborted",
+    "timed out",
+    "timeout",
+    "temporary failure in name resolution",
+    "name or service not known",
+    "no route to host",
+    "network is unreachable",
+    "host is unreachable",
+)
+
 # ---------------------------------------------------------------------------
 # Configuration helpers
 # ---------------------------------------------------------------------------
@@ -249,11 +263,16 @@ def check_already_awarded(comments: list) -> bool:
         if (
             "(dry-run)" in marker_tail
             or ":failed" in marker_tail
-            or ":manual-required" in marker_tail
         ):
             continue
         return True
     return False
+
+
+def is_endpoint_unreachable_error(error_msg: str) -> bool:
+    """Return True when transfer failed because the RustChain endpoint was unreachable."""
+    normalized = (error_msg or "").lower()
+    return any(pattern in normalized for pattern in _ENDPOINT_UNREACHABLE_PATTERNS)
 
 
 # ---------------------------------------------------------------------------
@@ -447,7 +466,7 @@ def main() -> int:
         set_output("awarded", "false")
         set_output("skip_reason", f"transfer_failed: {error_msg}")
 
-        if error_msg.lower().startswith("connection failed:"):
+        if is_endpoint_unreachable_error(error_msg):
             if cfg.post_comment:
                 manual_body = (
                     f"**RTC Auto-Bounty Manual Transfer Required**\n\n"
@@ -461,7 +480,9 @@ def main() -> int:
                     f"| From | `{cfg.from_wallet}` |\n"
                     f"| Memo | {memo} |\n\n"
                     f"Please rerun the award after the endpoint is healthy or process "
-                    f"this transfer manually.\n\n"
+                    f"this transfer manually. This marker intentionally blocks automatic "
+                    f"retries to avoid duplicate payouts; remove it only if no manual "
+                    f"transfer was completed.\n\n"
                     f"<!-- { _AWARD_MARKER }:MANUAL-REQUIRED -->"
                 )
                 if not post_pr_comment(repo, pr_number, manual_body, cfg.github_token):
