@@ -409,6 +409,44 @@ class TestUtxoDB(unittest.TestCase):
         root_after = self.db.compute_state_root()
         self.assertNotEqual(root_before, root_after)
 
+    def test_state_root_commits_to_box_contents(self):
+        """State root must change if unspent box contents are corrupted."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        box = self.db.get_unspent_for_address('alice')[0]
+        root_before = self.db.compute_state_root()
+
+        conn = self.db._conn()
+        try:
+            conn.execute(
+                "UPDATE utxo_boxes SET value_nrtc = ? WHERE box_id = ?",
+                (200 * UNIT, box['box_id']),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        root_after_value_change = self.db.compute_state_root()
+        self.assertNotEqual(root_before, root_after_value_change)
+
+        conn = self.db._conn()
+        try:
+            conn.execute(
+                """UPDATE utxo_boxes
+                   SET proposition = ?, owner_address = ?
+                   WHERE box_id = ?""",
+                (
+                    address_to_proposition('mallory'),
+                    'mallory',
+                    box['box_id'],
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        root_after_owner_change = self.db.compute_state_root()
+        self.assertNotEqual(root_after_value_change, root_after_owner_change)
+
     def test_state_root_odd_count_unique(self):
         """Odd-count UTXO sets must produce unique roots.
 

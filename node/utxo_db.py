@@ -699,7 +699,7 @@ class UtxoDB:
 
     def compute_state_root(self) -> str:
         """
-        Merkle root of all unspent box IDs (hex).
+        Merkle root of all unspent box contents (hex).
 
         Deterministic: sorted by box_id, pairwise SHA256.
         All nodes with the same UTXO set produce the same root.
@@ -716,7 +716,10 @@ class UtxoDB:
         conn = self._conn()
         try:
             rows = conn.execute(
-                """SELECT box_id FROM utxo_boxes
+                """SELECT box_id, value_nrtc, proposition, owner_address,
+                          creation_height, transaction_id, output_index,
+                          tokens_json, registers_json
+                   FROM utxo_boxes
                    WHERE spent_at IS NULL
                    ORDER BY box_id ASC"""
             ).fetchall()
@@ -726,10 +729,23 @@ class UtxoDB:
 
             # Mix element count into leaf hashes to bind tree to cardinality
             count_bytes = len(rows).to_bytes(8, 'little')
-            hashes = [
-                hashlib.sha256(count_bytes + bytes.fromhex(r['box_id'])).digest()
-                for r in rows
-            ]
+            hashes = []
+            for row in rows:
+                leaf = {
+                    'box_id': row['box_id'],
+                    'value_nrtc': row['value_nrtc'],
+                    'proposition': row['proposition'],
+                    'owner_address': row['owner_address'],
+                    'creation_height': row['creation_height'],
+                    'transaction_id': row['transaction_id'],
+                    'output_index': row['output_index'],
+                    'tokens_json': row['tokens_json'],
+                    'registers_json': row['registers_json'],
+                }
+                leaf_bytes = json.dumps(
+                    leaf, sort_keys=True, separators=(',', ':')
+                ).encode()
+                hashes.append(hashlib.sha256(count_bytes + leaf_bytes).digest())
 
             while len(hashes) > 1:
                 if len(hashes) % 2 == 1:
