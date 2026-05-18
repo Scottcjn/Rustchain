@@ -85,3 +85,14 @@ def test_paid_beacon_reputation_rejects_unverified_payment_header(tmp_path, monk
     with sqlite3.connect(db_path) as conn:
         count = conn.execute("SELECT COUNT(*) FROM x402_beacon_payments").fetchone()[0]
     assert count == 0
+
+def test_free_contract_export_handles_missing_contracts_table(tmp_path, monkeypatch):
+    client, _db_path = _make_paid_beacon_client(tmp_path, monkeypatch)
+    monkeypatch.setattr(beacon_x402, "PRICE_BEACON_CONTRACT", "0", raising=False)
+
+    response = client.get("/api/premium/contracts/export")
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["total"] == 0
+    assert body["contracts"] == []
