@@ -6032,6 +6032,21 @@ def bounty_multiplier():
 # ---------- RIP-0147a: Admin OUI Management ----------
 
 
+def _normalize_oui_payload_value(value):
+    if not isinstance(value, str):
+        return None
+    return value.lower().replace(':', '').replace('-', '')
+
+
+def _parse_oui_enforce(value):
+    if isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 @app.route("/api/nodes")
 def api_nodes():
     """Return list of all registered attestation nodes"""
@@ -6756,9 +6771,15 @@ def add_oui_deny():
 
     # Extract client IP (handle nginx proxy)
     client_ip = get_client_ip()
-    oui = data.get('oui', '').lower().replace(':', '').replace('-', '')
+    oui = _normalize_oui_payload_value(data.get('oui', ''))
+    if oui is None:
+        return jsonify({"error": "OUI must be a string"}), 400
     vendor = data.get('vendor', 'Unknown')
-    enforce = int(data.get('enforce', 0))
+    if not isinstance(vendor, str):
+        return jsonify({"error": "Vendor must be a string"}), 400
+    enforce = _parse_oui_enforce(data.get('enforce', 0))
+    if enforce is None:
+        return jsonify({"error": "enforce must be an integer"}), 400
 
     if len(oui) != 6 or not all(c in '0123456789abcdef' for c in oui):
         return jsonify({"error": "Invalid OUI (must be 6 hex chars)"}), 400
@@ -6783,7 +6804,11 @@ def remove_oui_deny():
 
     # Extract client IP (handle nginx proxy)
     client_ip = get_client_ip()
-    oui = data.get('oui', '').lower().replace(':', '').replace('-', '')
+    oui = _normalize_oui_payload_value(data.get('oui', ''))
+    if oui is None:
+        return jsonify({"error": "OUI must be a string"}), 400
+    if len(oui) != 6 or not all(c in '0123456789abcdef' for c in oui):
+        return jsonify({"error": "Invalid OUI (must be 6 hex chars)"}), 400
 
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("DELETE FROM oui_deny WHERE oui = ?", (oui,))
