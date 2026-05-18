@@ -149,8 +149,12 @@ def escape_markdown_alt(text):
 @app.route('/api/badge/create', methods=['POST'])
 def create_badge():
     init_badge_db()
-    raw_data = request.get_json(silent=True) or {}
-    data = raw_data if isinstance(raw_data, dict) else {}
+    raw_data = request.get_json(silent=True)
+    if raw_data is None:
+        return jsonify({'success': False, 'error': 'Invalid or missing JSON body'}), 400
+    if not isinstance(raw_data, dict):
+        return jsonify({'success': False, 'error': 'JSON body must be an object'}), 400
+    data = raw_data
     
     username = text_field(data, 'username')
     wallet = text_field(data, 'wallet')
