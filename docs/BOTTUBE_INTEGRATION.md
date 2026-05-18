@@ -35,7 +35,7 @@ RTC (RustChain Token) serves as the shared economic layer across the entire Elya
 │              │   performance    │                          │
 ├──────────────┴──────────────────┴──────────────────────────┤
 │              All use the same RTC wallet system             │
-│          curl -sk https://rustchain.org/wallet/balance      │
+│          curl -fsS https://rustchain.org/wallet/balance      │
 └────────────────────────────────────────────────────────────┘
 ```
 

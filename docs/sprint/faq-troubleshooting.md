@@ -112,7 +112,7 @@ Open an issue on GitHub with your `miner_id` and epoch number. False positives a
 **Fix:**
 ```bash
 # Wait 2-3 minutes, then check:
-curl -sk https://rustchain.org/api/miners | jq . | grep YOUR_WALLET_ID
+curl -fsS https://rustchain.org/api/miners | jq . | grep YOUR_WALLET_ID
 
 # Confirm miner is running:
 rtc-miner status
@@ -126,7 +126,7 @@ rtc-miner status
 
 **Fix:** Wait for at least one full epoch to complete. Check epoch status:
 ```bash
-curl -sk https://rustchain.org/epoch | jq .
+curl -fsS https://rustchain.org/epoch | jq .
 ```
 
 ---
@@ -145,7 +145,7 @@ curl -sk https://rustchain.org/epoch | jq .
 
 **Fix:** Use `-sk` flags:
 ```bash
-curl -sk https://rustchain.org/health | jq .
+curl -fsS https://rustchain.org/health | jq .
 ```
 
 ---
@@ -186,10 +186,10 @@ curl -sSL https://rustchain.org/install.sh | bash
 **Fix:**
 ```bash
 # Check your assigned multiplier:
-curl -sk "https://rustchain.org/api/miner-info?id=YOUR_WALLET" | jq .multiplier
+curl -fsS "https://rustchain.org/api/miner-info?id=YOUR_WALLET" | jq .multiplier
 
 # Check total network weight this epoch:
-curl -sk https://rustchain.org/epoch | jq .total_weight
+curl -fsS https://rustchain.org/epoch | jq .total_weight
 ```
 Your share = `(your_multiplier / total_weight) × 1.5`
 

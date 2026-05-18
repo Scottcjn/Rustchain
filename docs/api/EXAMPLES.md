@@ -18,7 +18,7 @@ Complete code examples for interacting with the RustChain REST API.
 ### Health Check
 
 ```bash
-curl -sk https://rustchain.org/health | jq
+curl -fsS https://rustchain.org/health | jq
 ```
 
 **Expected Output:**
@@ -36,7 +36,7 @@ curl -sk https://rustchain.org/health | jq
 ### Get Epoch Information
 
 ```bash
-curl -sk https://rustchain.org/epoch | jq
+curl -fsS https://rustchain.org/epoch | jq
 ```
 
 **Expected Output:**
@@ -53,17 +53,17 @@ curl -sk https://rustchain.org/epoch | jq
 ### List Active Miners
 
 ```bash
-curl -sk https://rustchain.org/api/miners | jq
+curl -fsS https://rustchain.org/api/miners | jq
 ```
 
 ### Get Wallet Balance
 
 ```bash
 # Using miner_id parameter (canonical)
-curl -sk "https://rustchain.org/wallet/balance?miner_id=scott" | jq
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=scott" | jq
 
 # Using address parameter (backward compatible)
-curl -sk "https://rustchain.org/wallet/balance?address=scott" | jq
+curl -fsS "https://rustchain.org/wallet/balance?address=scott" | jq
 ```
 
 **Expected Output:**
@@ -79,43 +79,43 @@ curl -sk "https://rustchain.org/wallet/balance?address=scott" | jq
 ### Get Transaction History
 
 ```bash
-curl -sk "https://rustchain.org/wallet/history?miner_id=scott&limit=10" | jq
+curl -fsS "https://rustchain.org/wallet/history?miner_id=scott&limit=10" | jq
 ```
 
 ### Check Epoch Eligibility
 
 ```bash
-curl -sk "https://rustchain.org/lottery/eligibility?miner_id=scott" | jq
+curl -fsS "https://rustchain.org/lottery/eligibility?miner_id=scott" | jq
 ```
 
 ### Get Network Statistics
 
 ```bash
-curl -sk https://rustchain.org/api/stats | jq
+curl -fsS https://rustchain.org/api/stats | jq
 ```
 
 ### Get Hall of Fame
 
 ```bash
-curl -sk https://rustchain.org/api/hall_of_fame | jq
+curl -fsS https://rustchain.org/api/hall_of_fame | jq
 ```
 
 ### Get Fee Pool Statistics
 
 ```bash
-curl -sk https://rustchain.org/api/fee_pool | jq
+curl -fsS https://rustchain.org/api/fee_pool | jq
 ```
 
 ### Get Settlement Data
 
 ```bash
-curl -sk https://rustchain.org/api/settlement/75 | jq
+curl -fsS https://rustchain.org/api/settlement/75 | jq
 ```
 
 ### Submit Hardware Attestation
 
 ```bash
-curl -sk -X POST https://rustchain.org/attest/submit \
+curl -fsS -X POST https://rustchain.org/attest/submit \
   -H "Content-Type: application/json" \
   -d '{
     "miner_id": "scott",
@@ -139,7 +139,7 @@ curl -sk -X POST https://rustchain.org/attest/submit \
 ### Admin Transfer
 
 ```bash
-curl -sk -X POST https://rustchain.org/wallet/transfer \
+curl -fsS -X POST https://rustchain.org/wallet/transfer \
   -H "X-Admin-Key: YOUR_ADMIN_KEY" \
   -H "Content-Type: application/json" \
   -d '{

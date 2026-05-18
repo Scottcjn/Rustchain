@@ -9,20 +9,20 @@ Run these commands before changing configuration:
 
 ```bash
 # Confirm the public node is reachable.
-curl -sk https://rustchain.org/health
+curl -fsS https://rustchain.org/health
 
 # Confirm the epoch endpoint responds.
-curl -sk https://rustchain.org/epoch
+curl -fsS https://rustchain.org/epoch
 
 # Check your wallet balance with the exact wallet name from install.
-curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
 
 # Check whether active miners are visible.
-curl -sk https://rustchain.org/api/miners
+curl -fsS https://rustchain.org/api/miners
 ```
 
-The RustChain public node currently uses a self-signed certificate, so examples
-use `curl -sk`. The miner handles this internally.
+The RustChain public node validates with the system trust store, so examples use
+normal TLS verification.
 
 ## `Wallet not found`
 
@@ -38,7 +38,7 @@ that does not match the one created during installation.
 Example balance check:
 
 ```bash
-curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_EXACT_WALLET_NAME"
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=YOUR_EXACT_WALLET_NAME"
 ```
 
 If you need a new wallet name, reinstall with an explicit value:
@@ -58,7 +58,7 @@ or a local firewall/proxy blocking outbound traffic.
 1. Confirm the public node responds:
 
    ```bash
-   curl -sk https://rustchain.org/health
+   curl -fsS https://rustchain.org/health
    ```
 
 2. Confirm your internet connection works outside RustChain.
@@ -86,7 +86,7 @@ or other balance-consuming operations can fail until the wallet has RTC.
 1. Confirm you are checking the exact wallet name used by the miner:
 
    ```bash
-   curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_EXACT_WALLET_NAME"
+   curl -fsS "https://rustchain.org/wallet/balance?miner_id=YOUR_EXACT_WALLET_NAME"
    ```
 
 2. Wait for reward settlement. Current quickstart docs describe epochs as about
@@ -95,7 +95,7 @@ or other balance-consuming operations can fail until the wallet has RTC.
 3. Confirm the miner appears in the active miner list:
 
    ```bash
-   curl -sk https://rustchain.org/api/miners
+   curl -fsS https://rustchain.org/api/miners
    ```
 
 4. Check that hardware attestation passes in the miner log. Virtual machines and
@@ -142,8 +142,8 @@ Recommended fixes:
 Use this checklist after the miner has been running for at least 20-30 minutes:
 
 - The wallet name in the command matches the wallet you are checking.
-- `curl -sk https://rustchain.org/health` returns a healthy response.
-- The miner appears in `curl -sk https://rustchain.org/api/miners`.
+- `curl -fsS https://rustchain.org/health` returns a healthy response.
+- The miner appears in `curl -fsS https://rustchain.org/api/miners`.
 - The system clock is reasonably accurate.
 - The miner is running on real hardware if you expect normal rewards.
 - Logs do not show repeated attestation or network errors.

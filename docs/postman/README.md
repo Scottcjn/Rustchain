@@ -104,7 +104,7 @@ RustChain API - Complete Collection
 ### Test Health Endpoint
 
 ```bash
-curl -sk https://rustchain.org/health | jq .
+curl -fsS https://rustchain.org/health | jq .
 ```
 
 Expected response:
@@ -122,7 +122,7 @@ Expected response:
 ### Test Epoch Endpoint
 
 ```bash
-curl -sk https://rustchain.org/epoch | jq .
+curl -fsS https://rustchain.org/epoch | jq .
 ```
 
 Expected response:
@@ -140,7 +140,7 @@ Expected response:
 ### Test Miner Balance
 
 ```bash
-curl -sk "https://rustchain.org/wallet/balance?miner_id=eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC" | jq .
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC" | jq .
 ```
 
 Expected response:
@@ -154,7 +154,7 @@ Expected response:
 ### Submit Attestation (Authenticated)
 
 ```bash
-curl -sk -X POST https://rustchain.org/attest/submit \
+curl -fsS -X POST https://rustchain.org/attest/submit \
   -H "Content-Type: application/json" \
   -H "X-Admin-Key: YOUR_ADMIN_KEY" \
   -d '{

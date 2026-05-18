@@ -1,40 +1,61 @@
 # SPDX-License-Identifier: MIT
 
-from pathlib import Path
 import re
+from pathlib import Path
 
 
-DOCS_WITH_PUBLIC_RUSTCHAIN_EXAMPLES = [
-    Path("README.md"),
-    Path("docs/API.md"),
-    Path("docs/README.md"),
-    Path("docs/zh-CN/README.md"),
-]
+ROOT = Path(__file__).resolve().parents[1]
+DOC_EXTENSIONS = {".html", ".md"}
+
+
+def read_doc(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+def docs_like_files():
+    return tuple(
+        path
+        for path in ROOT.rglob("*")
+        if path.is_file()
+        and path.suffix in DOC_EXTENSIONS
+        and ".git" not in path.parts
+    )
 
 
 def test_public_rustchain_curl_examples_keep_tls_verification_enabled():
     insecure_examples = []
+    pattern = re.compile(
+        r"curl\b[^\n`]*(?:\s-[A-Za-z]*k[A-Za-z]*|\s--insecure)\b[^\n`]*https://rustchain\.org[^\n`]*"
+    )
 
-    for doc_path in DOCS_WITH_PUBLIC_RUSTCHAIN_EXAMPLES:
-        for line_number, line in enumerate(doc_path.read_text(encoding="utf-8").splitlines(), 1):
-            if "curl" not in line or "https://rustchain.org" not in line:
-                continue
-            if re.search(r"\s-[A-Za-z]*k[A-Za-z]*\b", line):
-                insecure_examples.append(f"{doc_path}:{line_number}: {line.strip()}")
+    for path in docs_like_files():
+        text = read_doc(path)
+        insecure_examples.extend(
+            f"{path.relative_to(ROOT)}: {match.group(0)}"
+            for match in pattern.finditer(text)
+        )
 
-    assert not insecure_examples, "\n".join(insecure_examples)
+    assert insecure_examples == []
 
 
 def test_public_rustchain_python_examples_keep_tls_verification_enabled():
     insecure_examples = []
+    pattern = re.compile(
+        r"requests\.(?:get|post)\([\s\S]*?https://rustchain\.org[\s\S]*?verify=False[\s\S]*?\)"
+    )
 
-    for doc_path in DOCS_WITH_PUBLIC_RUSTCHAIN_EXAMPLES:
-        lines = doc_path.read_text(encoding="utf-8").splitlines()
-        for index, line in enumerate(lines):
-            if "https://rustchain.org" not in line:
-                continue
-            request_block = "\n".join(lines[index : index + 8])
-            if "verify=False" in request_block:
-                insecure_examples.append(f"{doc_path}:{index + 1}: {line.strip()}")
+    for path in docs_like_files():
+        text = read_doc(path)
+        insecure_examples.extend(
+            f"{path.relative_to(ROOT)}: {match.group(0).splitlines()[0]}"
+            for match in pattern.finditer(text)
+        )
 
-    assert not insecure_examples, "\n".join(insecure_examples)
+    assert insecure_examples == []
+
+
+def test_api_docs_do_not_label_public_rustchain_host_as_self_signed():
+    api_doc = read_doc(ROOT / "docs" / "API.md")
+
+    assert "The node uses a self-signed certificate" not in api_doc
+    assert "Use `verify=False` with requests" not in api_doc

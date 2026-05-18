@@ -31,7 +31,7 @@ Current `clawrtc` releases do **not** ship `wallet new`, `wallet show`, or `wall
 
 ```bash
 # Check your wallet/miner balance
-curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET"
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET"
 ```
 
 **Note:** Your RustChain wallet ID is a RustChain-specific `miner_id`. It is not an Ethereum or Solana address.
@@ -131,15 +131,17 @@ import requests
 r = requests.get(
     "https://rustchain.org/wallet/balance",
     params={"miner_id": "Ivan-houzhiwen"},
-    verify=False  # Self-signed cert
+    timeout=10,
 )
 print(r.json())
 # {"amount_rtc": 155.0, "miner_id": "Ivan-houzhiwen"}
 ```
 
-### Note on SSL
+### Note on TLS
 
-The nodes use self-signed certificates. Use `verify=False` in Python or `--insecure` in curl.
+The public `https://rustchain.org` node validates with the system trust store.
+For local or raw-IP development nodes with self-signed certificates, trust the
+development certificate explicitly instead of disabling verification.
 
 ---
 

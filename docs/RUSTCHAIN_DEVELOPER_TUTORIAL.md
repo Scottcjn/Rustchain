@@ -100,7 +100,7 @@ curl --version
 # Expected: curl X.Y.Z with SSL support
 
 # Test network connectivity to RustChain node
-curl -sk https://rustchain.org/health
+curl -fsS https://rustchain.org/health
 # Expected: {"status": "ok", ...}
 ```
 
@@ -142,10 +142,10 @@ In a new terminal:
 tail -f ~/.rustchain/miner.log
 
 # Verify your miner is visible on the network
-curl -sk https://rustchain.org/api/miners | jq '.[] | select(.miner_id contains "YOUR_WALLET_NAME")'
+curl -fsS https://rustchain.org/api/miners | jq '.[] | select(.miner_id contains "YOUR_WALLET_NAME")'
 
 # Check your balance (after a few minutes of mining)
-curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME" | jq .
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME" | jq .
 ```
 
 ### Expected Output
@@ -290,7 +290,7 @@ python -c "import requests; print(requests.__version__)"
 python -c "import fingerprint_checks; print('OK')"
 
 # 4. Test network connectivity
-curl -sk https://rustchain.org/health | jq .status
+curl -fsS https://rustchain.org/health | jq .status
 # Expected: "ok"
 ```
 
@@ -373,21 +373,21 @@ tail -f ~/.rustchain/miner.log | grep "rewards"
 
 ```bash
 # Check if your miner is registered
-curl -sk https://rustchain.org/api/miners | jq \
+curl -fsS https://rustchain.org/api/miners | jq \
   '.[] | select(.miner_id == "my-vintage-miner")'
 
 # View all active miners
-curl -sk https://rustchain.org/api/miners | jq 'length'
+curl -fsS https://rustchain.org/api/miners | jq 'length'
 
 # Check current epoch
-curl -sk https://rustchain.org/epoch | jq .
+curl -fsS https://rustchain.org/epoch | jq .
 ```
 
 #### Check Your Balance
 
 ```bash
 # Current balance
-curl -sk "https://rustchain.org/wallet/balance?miner_id=my-vintage-miner" | jq .
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=my-vintage-miner" | jq .
 
 # Expected response:
 # {
@@ -430,7 +430,7 @@ RustChain transactions are simple value transfers between wallets:
 
 ```bash
 # Send 5 RTC to another wallet
-curl -sk -X POST https://rustchain.org/api/transaction \
+curl -fsS -X POST https://rustchain.org/api/transaction \
   -H "Content-Type: application/json" \
   -d '{
     "from": "my-vintage-miner",
@@ -443,10 +443,10 @@ curl -sk -X POST https://rustchain.org/api/transaction \
 
 ```bash
 # Check transaction by ID
-curl -sk "https://rustchain.org/api/transaction/TX_ID" | jq .
+curl -fsS "https://rustchain.org/api/transaction/TX_ID" | jq .
 
 # List transactions for a wallet
-curl -sk "https://rustchain.org/api/wallet/my-vintage-miner/transactions" | jq .
+curl -fsS "https://rustchain.org/api/wallet/my-vintage-miner/transactions" | jq .
 ```
 
 ### Using the CLI Helper
@@ -486,7 +486,7 @@ Run miners on multiple vintage machines, all reporting to one wallet:
 # config.json: {"wallet_name": "vintage-farm", ...}
 
 # All rewards accumulate to "vintage-farm" wallet
-curl -sk "https://rustchain.org/wallet/balance?miner_id=vintage-farm" | jq .
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=vintage-farm" | jq .
 ```
 
 ### Example 2: Automated Monitoring Script
@@ -590,15 +590,15 @@ def get_miner_data():
     try:
         balance_resp = requests.get(
             f"{NODE}/wallet/balance?miner_id={WALLET}",
-            verify=False, timeout=5
+            timeout=5,
         )
         miners_resp = requests.get(
             f"{NODE}/api/miners",
-            verify=False, timeout=5
+            timeout=5,
         )
         epoch_resp = requests.get(
             f"{NODE}/epoch",
-            verify=False, timeout=5
+            timeout=5,
         )
         
         return {
@@ -743,10 +743,10 @@ Error: Unable to connect to node
 **Diagnosis:**
 ```bash
 # Test network connectivity
-curl -sk https://rustchain.org/health
+curl -fsS https://rustchain.org/health
 
 # Check if Python can reach the node
-python3 -c "import requests; print(requests.get('https://rustchain.org/health', verify=False).json())"
+python3 -c "import requests; print(requests.get('https://rustchain.org/health', timeout=10).json())"
 ```
 
 **Solutions:**
@@ -787,10 +787,10 @@ Pending rewards: 0.00 RTC (after hours of mining)
 **Diagnosis:**
 ```bash
 # Verify miner is visible on network
-curl -sk https://rustchain.org/api/miners | jq '.[] | select(.miner_id == "YOUR_WALLET")'
+curl -fsS https://rustchain.org/api/miners | jq '.[] | select(.miner_id == "YOUR_WALLET")'
 
 # Check epoch settlement status
-curl -sk https://rustchain.org/epoch | jq .
+curl -fsS https://rustchain.org/epoch | jq .
 ```
 
 **Solutions:**
@@ -809,7 +809,7 @@ curl: (60) SSL certificate problem: unable to get local issuer certificate
 **Solutions:**
 1. Use `-k` flag (expected for self-signed certs):
    ```bash
-   curl -sk https://rustchain.org/health
+   curl -fsS https://rustchain.org/health
    ```
 2. Or update CA certificates:
    ```bash
@@ -942,8 +942,8 @@ WALLET = "my-vintage-miner"
 
 def get_optimal_interval():
     """Adjust mining interval based on network congestion."""
-    epoch_data = requests.get(f"{NODE}/epoch", verify=False).json()
-    miners_count = len(requests.get(f"{NODE}/api/miners", verify=False).json())
+    epoch_data = requests.get(f"{NODE}/epoch", timeout=10).json()
+    miners_count = len(requests.get(f"{NODE}/api/miners", timeout=10).json())
     
     # More miners = longer intervals to reduce load
     if miners_count > 100:
@@ -980,7 +980,7 @@ def pay():
     # Verify sender has sufficient balance
     balance_resp = requests.get(
         f"{NODE}/wallet/balance?miner_id={from_wallet}",
-        verify=False
+        timeout=10,
     )
     balance = balance_resp.json().get('balance', 0)
     
@@ -991,7 +991,7 @@ def pay():
     tx_resp = requests.post(
         f"{NODE}/api/transaction",
         json={'from': from_wallet, 'to': to_wallet, 'amount': amount},
-        verify=False
+        timeout=10,
     )
     
     return jsonify(tx_resp.json())
@@ -1011,7 +1011,7 @@ if __name__ == '__main__':
 4. **Monitor for unusual activity:**
    ```bash
    # Alert on large balance changes
-   curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET" | \
+   curl -fsS "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET" | \
      jq 'if .balance < 10 then "⚠️ Low balance alert" else "OK" end'
    ```
 
@@ -1046,19 +1046,19 @@ if __name__ == '__main__':
 
 ```bash
 # Health check
-curl -sk https://rustchain.org/health | jq .
+curl -fsS https://rustchain.org/health | jq .
 
 # List miners
-curl -sk https://rustchain.org/api/miners | jq .
+curl -fsS https://rustchain.org/api/miners | jq .
 
 # Check balance
-curl -sk "https://rustchain.org/wallet/balance?miner_id=WALLET_NAME" | jq .
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=WALLET_NAME" | jq .
 
 # Current epoch
-curl -sk https://rustchain.org/epoch | jq .
+curl -fsS https://rustchain.org/epoch | jq .
 
 # Send transaction
-curl -sk -X POST https://rustchain.org/api/transaction \
+curl -fsS -X POST https://rustchain.org/api/transaction \
   -H "Content-Type: application/json" \
   -d '{"from":"SENDER","to":"RECIPIENT","amount":10}' | jq .
 ```

@@ -2,7 +2,9 @@
 
 ## Overview
 
-RustChain provides a REST API for interacting with the network. All endpoints use HTTPS with a self-signed certificate (use `-k` flag with curl).
+RustChain provides a REST API for interacting with the network. Public
+`https://rustchain.org` endpoints use HTTPS with a certificate that validates
+through the system trust store.
 
 **Base URL**: `https://rustchain.org`
 
@@ -25,7 +27,7 @@ Most endpoints are public. Admin endpoints require the `X-Admin-Key` header:
 Check node health status.
 
 ```bash
-curl -sk https://rustchain.org/health
+curl -fsS https://rustchain.org/health
 ```
 
 **Response**:
@@ -56,7 +58,7 @@ curl -sk https://rustchain.org/health
 Kubernetes-style readiness probe.
 
 ```bash
-curl -sk https://rustchain.org/ready
+curl -fsS https://rustchain.org/ready
 ```
 
 **Response**:
@@ -75,7 +77,7 @@ curl -sk https://rustchain.org/ready
 Get current epoch and slot information.
 
 ```bash
-curl -sk https://rustchain.org/epoch
+curl -fsS https://rustchain.org/epoch
 ```
 
 **Response**:
@@ -106,7 +108,7 @@ curl -sk https://rustchain.org/epoch
 List all active miners with hardware details.
 
 ```bash
-curl -sk https://rustchain.org/api/miners
+curl -fsS https://rustchain.org/api/miners
 ```
 
 **Response**:
@@ -153,7 +155,7 @@ curl -sk https://rustchain.org/api/miners
 List connected attestation nodes.
 
 ```bash
-curl -sk https://rustchain.org/api/nodes
+curl -fsS https://rustchain.org/api/nodes
 ```
 
 **Response**:
@@ -185,7 +187,7 @@ curl -sk https://rustchain.org/api/nodes
 Check RTC balance for a miner wallet.
 
 ```bash
-curl -sk "https://rustchain.org/wallet/balance?miner_id=scott"
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=scott"
 ```
 
 **Parameters**:
@@ -222,7 +224,7 @@ the sender or recipient. Returns an empty array for wallets with no history
 (non-existent wallets do not produce an error).
 
 ```bash
-curl -sk "https://rustchain.org/wallet/history?miner_id=scott&limit=10"
+curl -fsS "https://rustchain.org/wallet/history?miner_id=scott&limit=10"
 ```
 
 **Parameters**:
@@ -361,7 +363,7 @@ Invalid limit:
 Submit hardware attestation to enroll in current epoch.
 
 ```bash
-curl -sk -X POST https://rustchain.org/attest/submit \
+curl -fsS -X POST https://rustchain.org/attest/submit \
   -H "Content-Type: application/json" \
   -d '{
     "miner_id": "scott",
@@ -417,7 +419,7 @@ curl -sk -X POST https://rustchain.org/attest/submit \
 Check if miner is enrolled in current epoch.
 
 ```bash
-curl -sk "https://rustchain.org/lottery/eligibility?miner_id=scott"
+curl -fsS "https://rustchain.org/lottery/eligibility?miner_id=scott"
 ```
 
 **Response**:
@@ -454,7 +456,7 @@ Returns HTML page (not JSON).
 Query historical settlement data for a specific epoch.
 
 ```bash
-curl -sk https://rustchain.org/api/settlement/75
+curl -fsS https://rustchain.org/api/settlement/75
 ```
 
 **Response**:
@@ -488,7 +490,7 @@ These endpoints require the `X-Admin-Key` header.
 Transfer RTC between wallets (admin only).
 
 ```bash
-curl -sk -X POST https://rustchain.org/wallet/transfer \
+curl -fsS -X POST https://rustchain.org/wallet/transfer \
   -H "X-Admin-Key: YOUR_ADMIN_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -516,7 +518,7 @@ curl -sk -X POST https://rustchain.org/wallet/transfer \
 Manually trigger epoch settlement (admin only).
 
 ```bash
-curl -sk -X POST https://rustchain.org/rewards/settle \
+curl -fsS -X POST https://rustchain.org/rewards/settle \
   -H "X-Admin-Key: YOUR_ADMIN_KEY"
 ```
 
@@ -549,10 +551,10 @@ is not mounted on that host or the public prefix changed.
 | BoTTube status | `curl -sk https://bottube.ai/api/x402/status` | JSON status or x402 challenge |
 | BoTTube videos | `curl -sk https://bottube.ai/api/premium/videos` | JSON export or x402 challenge |
 | BoTTube analytics | `curl -sk https://bottube.ai/api/premium/analytics/sophia-elya` | JSON analytics or x402 challenge |
-| Beacon status | `curl -sk https://rustchain.org/beacon/api/x402/status` | JSON status or x402 challenge |
-| Beacon reputation | `curl -sk https://rustchain.org/beacon/api/premium/reputation` | JSON export or x402 challenge |
-| Beacon contracts | `curl -sk https://rustchain.org/beacon/api/premium/contracts/export` | JSON export or x402 challenge |
-| RustChain swap info | `curl -sk https://rustchain.org/wallet/swap-info` | JSON swap guidance |
+| Beacon status | `curl -fsS https://rustchain.org/beacon/api/x402/status` | JSON status or x402 challenge |
+| Beacon reputation | `curl -fsS https://rustchain.org/beacon/api/premium/reputation` | JSON export or x402 challenge |
+| Beacon contracts | `curl -fsS https://rustchain.org/beacon/api/premium/contracts/export` | JSON export or x402 challenge |
+| RustChain swap info | `curl -fsS https://rustchain.org/wallet/swap-info` | JSON swap guidance |
 
 Keep the raw `curl -skv` output when filing a deployment issue. It shows the
 HTTP status, server headers, and whether the request reached the x402 handler.
@@ -582,7 +584,7 @@ curl -sk https://bottube.ai/api/premium/analytics/scott
 USDC/wRTC swap guidance.
 
 ```bash
-curl -sk https://rustchain.org/wallet/swap-info
+curl -fsS https://rustchain.org/wallet/swap-info
 ```
 
 **Response**:
@@ -651,13 +653,14 @@ curl -sk https://rustchain.org/wallet/swap-info
 
 ## HTTPS Certificate
 
-The node uses a self-signed certificate. Options:
+The public `https://rustchain.org` node validates with the system trust store.
+For certificate pinning or local development, trust the certificate explicitly:
 
 ```bash
-# Option 1: Skip verification (development)
-curl -sk https://rustchain.org/health
+# Default public-node check
+curl -fsS https://rustchain.org/health
 
-# Option 2: Download and trust certificate
+# Optional certificate pinning
 openssl s_client -connect rustchain.org:443 -showcerts < /dev/null 2>/dev/null | \
   openssl x509 -outform PEM > rustchain.pem
 curl --cacert rustchain.pem https://rustchain.org/health
@@ -678,12 +681,12 @@ def get_balance(miner_id):
     resp = requests.get(
         f"{BASE_URL}/wallet/balance",
         params={"miner_id": miner_id},
-        verify=False  # Self-signed cert
+        timeout=10,
     )
     return resp.json()
 
 def get_epoch():
-    resp = requests.get(f"{BASE_URL}/epoch", verify=False)
+    resp = requests.get(f"{BASE_URL}/epoch", timeout=10)
     return resp.json()
 
 # Usage
@@ -721,12 +724,12 @@ BASE_URL="https://rustchain.org"
 
 # Get balance
 get_balance() {
-  curl -sk "$BASE_URL/wallet/balance?miner_id=$1" | jq
+  curl -fsS "$BASE_URL/wallet/balance?miner_id=$1" | jq
 }
 
 # Get epoch
 get_epoch() {
-  curl -sk "$BASE_URL/epoch" | jq
+  curl -fsS "$BASE_URL/epoch" | jq
 }
 
 # Usage

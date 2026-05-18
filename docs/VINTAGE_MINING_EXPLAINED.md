@@ -230,9 +230,9 @@ RustChain's live mining fleet includes:
 Verify it yourself:
 
 ```bash
-curl -sk https://rustchain.org/health
-curl -sk https://rustchain.org/api/miners
-curl -sk https://rustchain.org/epoch
+curl -fsS https://rustchain.org/health
+curl -fsS https://rustchain.org/api/miners
+curl -fsS https://rustchain.org/epoch
 ```
 
 ---

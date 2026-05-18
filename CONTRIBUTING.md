@@ -98,9 +98,9 @@ python -m pip install -e ./sdk
 python -m pytest sdk/tests/test_client_unit.py
 
 # Test against live node
-curl -sk https://rustchain.org/health
-curl -sk https://rustchain.org/api/miners
-curl -sk https://rustchain.org/epoch
+curl -fsS https://rustchain.org/health
+curl -fsS https://rustchain.org/api/miners
+curl -fsS https://rustchain.org/epoch
 ```
 
 For package-specific work, use the closest local manifest or test folder:

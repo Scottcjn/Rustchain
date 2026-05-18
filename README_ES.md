@@ -182,22 +182,22 @@ Si un problema persiste, incluye logs y detalles del SO en un nuevo issue o come
 **Verifica el balance de tu billetera:**
 ```bash
 # Nota: Usando flags -sk porque el nodo puede usar un certificado SSL autofirmado
-curl -sk "https://rustchain.org/wallet/balance?miner_id=NOMBRE_DE_TU_BILLETERA"
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=NOMBRE_DE_TU_BILLETERA"
 ```
 
 **Lista miners activos:**
 ```bash
-curl -sk https://rustchain.org/api/miners
+curl -fsS https://rustchain.org/api/miners
 ```
 
 **Verifica salud del nodo:**
 ```bash
-curl -sk https://rustchain.org/health
+curl -fsS https://rustchain.org/health
 ```
 
 **Obtén epoch actual:**
 ```bash
-curl -sk https://rustchain.org/epoch
+curl -fsS https://rustchain.org/epoch
 ```
 
 **Gestiona el servicio miner:**
@@ -338,16 +338,16 @@ Esto proporciona prueba criptográfica de que el estado de RustChain existió en
 
 ```bash
 # Verificar salud de red
-curl -sk https://rustchain.org/health
+curl -fsS https://rustchain.org/health
 
 # Obtener epoch actual
-curl -sk https://rustchain.org/epoch
+curl -fsS https://rustchain.org/epoch
 
 # Listar miners activos
-curl -sk https://rustchain.org/api/miners
+curl -fsS https://rustchain.org/api/miners
 
 # Verificar balance de billetera
-curl -sk "https://rustchain.org/wallet/balance?miner_id=TU_BILLETERA"
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=TU_BILLETERA"
 
 # Explorador de bloques (navegador web)
 open https://rustchain.org/explorer

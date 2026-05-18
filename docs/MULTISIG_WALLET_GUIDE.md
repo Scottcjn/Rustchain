@@ -184,7 +184,7 @@ clawrtc multisig create \
 
 ```bash
 # 查询多签钱包详情
-curl -sk "https://rustchain.org/api/multisig/status?address=RTCms7X8Y9Z0A1B2C3D4E5F6G..."
+curl -fsS "https://rustchain.org/api/multisig/status?address=RTCms7X8Y9Z0A1B2C3D4E5F6G..."
 ```
 
 **响应示例：**
@@ -295,7 +295,7 @@ clawrtc multisig execute \
 
 ```bash
 # 查询提案详情
-curl -sk "https://rustchain.org/api/multisig/proposal/prop_abc123def456"
+curl -fsS "https://rustchain.org/api/multisig/proposal/prop_abc123def456"
 ```
 
 **响应示例：**
@@ -419,13 +419,13 @@ clawrtc multisig cancel \
 
 ```bash
 # 每周检查多签钱包余额
-curl -sk "https://rustchain.org/wallet/balance?miner_id=RTCms7X8Y9Z0A1B2C3D4E5F6G..."
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=RTCms7X8Y9Z0A1B2C3D4E5F6G..."
 
 # 每月检查待处理提案
-curl -sk "https://rustchain.org/api/multisig/pending?address=RTCms7X8Y9Z0A1B2C3D4E5F6G..."
+curl -fsS "https://rustchain.org/api/multisig/pending?address=RTCms7X8Y9Z0A1B2C3D4E5F6G..."
 
 # 每季度审查交易历史
-curl -sk "https://rustchain.org/api/multisig/history?address=RTCms7X8Y9Z0A1B2C3D4E5F6G..."
+curl -fsS "https://rustchain.org/api/multisig/history?address=RTCms7X8Y9Z0A1B2C3D4E5F6G..."
 ```
 
 #### 告警设置
@@ -474,10 +474,10 @@ curl -sk "https://rustchain.org/api/multisig/history?address=RTCms7X8Y9Z0A1B2C3D
 **解决方案：**
 ```bash
 # 检查提案状态
-curl -sk "https://rustchain.org/api/multisig/proposal/prop_abc123def456"
+curl -fsS "https://rustchain.org/api/multisig/proposal/prop_abc123def456"
 
 # 检查多签钱包余额
-curl -sk "https://rustchain.org/wallet/balance?miner_id=RTCms7X8Y9Z0A1B2C3D4E5F6G..."
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=RTCms7X8Y9Z0A1B2C3D4E5F6G..."
 
 # 重新签名（如签名过期）
 clawrtc multisig sign --proposal prop_abc123def456 --signer signer-b --force
@@ -495,10 +495,10 @@ clawrtc multisig sign --proposal prop_abc123def456 --signer signer-b --force
 **解决方案：**
 ```bash
 # 手动查询待签名提案
-curl -sk "https://rustchain.org/api/multisig/pending-signer?address=RTC2B3C4D5E6F7G8H9I0J1K..."
+curl -fsS "https://rustchain.org/api/multisig/pending-signer?address=RTC2B3C4D5E6F7G8H9I0J1K..."
 
 # 验证签名者地址是否在多签配置中
-curl -sk "https://rustchain.org/api/multisig/status?address=RTCms7X8Y9Z0A1B2C3D4E5F6G..."
+curl -fsS "https://rustchain.org/api/multisig/status?address=RTCms7X8Y9Z0A1B2C3D4E5F6G..."
 ```
 
 #### 问题 3：交易执行后未确认
@@ -513,10 +513,10 @@ curl -sk "https://rustchain.org/api/multisig/status?address=RTCms7X8Y9Z0A1B2C3D4
 **解决方案：**
 ```bash
 # 查询交易状态
-curl -sk "https://rustchain.org/explorer/tx/tx_9876543210abcdef"
+curl -fsS "https://rustchain.org/explorer/tx/tx_9876543210abcdef"
 
 # 检查网络状态
-curl -sk "https://rustchain.org/health"
+curl -fsS "https://rustchain.org/health"
 
 # 联系节点运营商（如超过 30 分钟未确认）
 ```
@@ -576,7 +576,7 @@ clawrtc multisig create \
   --name "my-multisig"
 
 # === 查询多签状态 ===
-curl -sk "https://rustchain.org/api/multisig/status?address=RTCms..."
+curl -fsS "https://rustchain.org/api/multisig/status?address=RTCms..."
 
 # === 发起提案 ===
 clawrtc multisig propose \
@@ -601,13 +601,13 @@ clawrtc multisig cancel \
   --proposer signer-a
 
 # === 查询提案状态 ===
-curl -sk "https://rustchain.org/api/multisig/proposal/prop_abc123"
+curl -fsS "https://rustchain.org/api/multisig/proposal/prop_abc123"
 
 # === 查询待处理提案 ===
-curl -sk "https://rustchain.org/api/multisig/pending?address=RTCms..."
+curl -fsS "https://rustchain.org/api/multisig/pending?address=RTCms..."
 
 # === 查询交易历史 ===
-curl -sk "https://rustchain.org/api/multisig/history?address=RTCms..."
+curl -fsS "https://rustchain.org/api/multisig/history?address=RTCms..."
 ```
 
 ---

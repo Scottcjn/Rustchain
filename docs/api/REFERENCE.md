@@ -67,7 +67,7 @@ List all miners currently participating in the network with their hardware detai
 Query the RTC balance for any valid miner ID.
 
 - **Endpoint:** `GET /wallet/balance?miner_id={NAME}`
-- **Example:** `curl -sk 'https://rustchain.org/wallet/balance?miner_id=scott'`
+- **Example:** `curl -fsS 'https://rustchain.org/wallet/balance?miner_id=scott'`
 - **Response:**
   ```json
   {

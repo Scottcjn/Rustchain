@@ -158,8 +158,8 @@ tail -f ~/.rustchain/miner.log
 
 ### Balance Check
 ```bash
-# Note: Using -k flag because node may use self-signed SSL certificate
-curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
+# Public rustchain.org uses normal TLS verification.
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
 ```
 
 Example output:
@@ -173,17 +173,17 @@ Example output:
 
 ### Active Miners
 ```bash
-curl -sk https://rustchain.org/api/miners
+curl -fsS https://rustchain.org/api/miners
 ```
 
 ### Node Health
 ```bash
-curl -sk https://rustchain.org/health
+curl -fsS https://rustchain.org/health
 ```
 
 ### Current Epoch
 ```bash
-curl -sk https://rustchain.org/epoch
+curl -fsS https://rustchain.org/epoch
 ```
 
 ## Manual Operation
@@ -315,14 +315,14 @@ cat ~/.rustchain/miner.log
 
 **Check:**
 1. Internet connection is working
-2. Node is accessible: `curl -sk https://rustchain.org/health`
+2. Node is accessible: `curl -fsS https://rustchain.org/health`
 3. Firewall isn't blocking HTTPS (port 443)
 
 ### Miner not earning rewards
 
 **Check:**
 1. Miner is actually running: `systemctl --user status rustchain-miner` or `launchctl list | grep rustchain`
-2. Wallet balance: `curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"`
+2. Wallet balance: `curl -fsS "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"`
 3. Miner logs for errors: `journalctl --user -u rustchain-miner -f` or `tail -f ~/.rustchain/miner.log`
 4. Hardware attestation passes: Look for "fingerprint validation" messages in logs
 
@@ -359,7 +359,7 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 3. The miner runs as your user (not root)
 4. Services are user-level (systemd --user, ~/Library/LaunchAgents)
 5. All logs are stored in your home directory
-6. **SSL Certificate:** The RustChain node (rustchain.org) may use a self-signed SSL certificate. The `-k` flag in curl commands bypasses certificate verification. This is a known limitation of the current infrastructure. In production, you should verify the node's identity through other means (community consensus, explorer verification, etc.).
+6. **TLS Certificate:** The RustChain public node (`rustchain.org`) validates with the system trust store. For local or raw-IP development nodes, trust the development certificate explicitly.
 
 To view the certificate SHA-256 fingerprint:
 
@@ -367,13 +367,13 @@ To view the certificate SHA-256 fingerprint:
 openssl s_client -connect rustchain.org:443 < /dev/null 2>/dev/null | openssl x509 -fingerprint -sha256 -noout
 ```
 
-If you want to avoid using `-k`, you can save the certificate locally and pin it:
+If you want certificate pinning, save the public certificate locally and use it:
 
 ```bash
 # Save the cert once (overwrite if it changes)
 openssl s_client -connect rustchain.org:443 < /dev/null 2>/dev/null | openssl x509 > ~/.rustchain/rustchain-cert.pem
 
-# Then use it instead of -k
+# Then pin the certificate for this request
 curl --cacert ~/.rustchain/rustchain-cert.pem "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
 ```
 

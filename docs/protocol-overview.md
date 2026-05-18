@@ -207,15 +207,15 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 ### Check Balance
 
 ```bash
-curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET"
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET"
 ```
 
 ### View Network Status
 
 ```bash
-curl -sk https://rustchain.org/health
-curl -sk https://rustchain.org/epoch
-curl -sk https://rustchain.org/api/miners
+curl -fsS https://rustchain.org/health
+curl -fsS https://rustchain.org/epoch
+curl -fsS https://rustchain.org/api/miners
 ```
 
 ## Comparison with Other Consensus Mechanisms

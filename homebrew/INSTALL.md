@@ -126,7 +126,7 @@ rustchain-miner --help
 python3 -c "
 import requests
 try:
-    r = requests.get('https://rustchain.org/health', verify=False, timeout=5)
+    r = requests.get('https://rustchain.org/health', timeout=5)
     print('Node: ONLINE' if r.status_code == 200 else 'Node: OFFLINE')
 except Exception as e:
     print(f'Error: {e}')

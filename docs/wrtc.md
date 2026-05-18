@@ -280,7 +280,7 @@ Monitor the bridge UI for updates.
 
 1. Check your RustChain wallet balance
 ```bash
-curl -sk "https://rustchain.org/wallet/balance?miner_id=my-miner-id"
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=my-miner-id"
 ```
 2. Verify on [RustChain Explorer](https://rustchain.org/explorer)
 

@@ -138,22 +138,22 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 **检查钱包余额：**
 ```bash
 # 注意：使用-sk标志是因为节点可能使用自签名SSL证书
-curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
 ```
 
 **列出活跃矿工：**
 ```bash
-curl -sk https://rustchain.org/api/miners
+curl -fsS https://rustchain.org/api/miners
 ```
 
 **检查节点健康：**
 ```bash
-curl -sk https://rustchain.org/health
+curl -fsS https://rustchain.org/health
 ```
 
 **获取当前纪元：**
 ```bash
-curl -sk https://rustchain.org/epoch
+curl -fsS https://rustchain.org/epoch
 ```
 
 **管理矿工服务：**
@@ -271,16 +271,16 @@ RustChain纪元 → 承诺哈希 → Ergo交易（R4寄存器）
 
 ```bash
 # 检查网络健康
-curl -sk https://rustchain.org/health
+curl -fsS https://rustchain.org/health
 
 # 获取当前纪元
-curl -sk https://rustchain.org/epoch
+curl -fsS https://rustchain.org/epoch
 
 # 列出活跃矿工
-curl -sk https://rustchain.org/api/miners
+curl -fsS https://rustchain.org/api/miners
 
 # 检查钱包余额
-curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET"
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET"
 
 # 区块浏览器（Web浏览器）
 open https://rustchain.org/explorer
@@ -407,7 +407,7 @@ MIT许可证 - 可免费使用，但请保留版权声明和署名。
 可使用以下命令快速检查网络状态与本机挖矿状态：
 
 ```bash
-curl -sk https://rustchain.org/api/miners
-curl -sk https://rustchain.org/epoch
-curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
+curl -fsS https://rustchain.org/api/miners
+curl -fsS https://rustchain.org/epoch
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
 ```

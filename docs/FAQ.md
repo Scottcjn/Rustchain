@@ -119,7 +119,7 @@ G5 Mac (2.0×): 0.24 RTC ████████████████
 
 ```bash
 # 注意：使用 -sk 标志因为节点可能使用自签名 SSL 证书
-curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
 ```
 
 ### 如何管理矿工服务？
@@ -315,8 +315,8 @@ curl -I https://rustchain.org
 验证直接连接到节点：
 
 ```bash
-curl -sk https://rustchain.org/health
-curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
+curl -fsS https://rustchain.org/health
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
 ```
 
 **注意：** 旧版本可能仍引用已退役的 `bulbous-bouffant.metalseed.net` 主机。
@@ -325,13 +325,13 @@ curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
 
 ```bash
 # 检查节点健康
-curl -sk https://rustchain.org/health
+curl -fsS https://rustchain.org/health
 
 # 获取当前 epoch
-curl -sk https://rustchain.org/epoch
+curl -fsS https://rustchain.org/epoch
 
 # 列出活跃矿工
-curl -sk https://rustchain.org/api/miners
+curl -fsS https://rustchain.org/api/miners
 
 # 区块浏览器
 open https://rustchain.org/explorer
@@ -376,7 +376,7 @@ RustChain 使用链上治理系统：
 
 ```bash
 # 创建提案
-curl -sk -X POST https://rustchain.org/governance/propose \
+curl -fsS -X POST https://rustchain.org/governance/propose \
  -H 'Content-Type: application/json' \
  -d '{
  "wallet":"RTC...",
@@ -385,13 +385,13 @@ curl -sk -X POST https://rustchain.org/governance/propose \
  }'
 
 # 列出提案
-curl -sk https://rustchain.org/governance/proposals
+curl -fsS https://rustchain.org/governance/proposals
 
 # 提案详情
-curl -sk https://rustchain.org/governance/proposal/1
+curl -fsS https://rustchain.org/governance/proposal/1
 
 # 提交签名投票
-curl -sk -X POST https://rustchain.org/governance/vote \
+curl -fsS -X POST https://rustchain.org/governance/vote \
  -H 'Content-Type: application/json' \
  -d '{
  "proposal_id":1,

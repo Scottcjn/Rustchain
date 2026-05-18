@@ -31,7 +31,7 @@ These are the main RustChain endpoints used in this guide:
 - Wallet balance: `https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET`
 - Explorer: `https://rustchain.org/explorer/`
 
-Use `curl -sk` because the public node uses a self-signed TLS certificate.
+Use normal TLS verification for the public `https://rustchain.org` node.
 
 ## 1. Three ways to get an RTC wallet
 
@@ -149,13 +149,13 @@ What to save immediately:
 This is the most direct balance check:
 
 ```bash
-curl -sk 'https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET'
+curl -fsS 'https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET'
 ```
 
 Example:
 
 ```bash
-curl -sk 'https://rustchain.org/wallet/balance?miner_id=victus-x86-scott'
+curl -fsS 'https://rustchain.org/wallet/balance?miner_id=victus-x86-scott'
 ```
 
 Typical response:
@@ -208,9 +208,9 @@ Mining is automatic once your miner is installed and online.
 Useful checks:
 
 ```bash
-curl -sk https://rustchain.org/health
-curl -sk https://rustchain.org/api/miners
-curl -sk https://rustchain.org/epoch
+curl -fsS https://rustchain.org/health
+curl -fsS https://rustchain.org/api/miners
+curl -fsS https://rustchain.org/epoch
 ```
 
 What to expect:
@@ -333,7 +333,6 @@ payload = {
 resp = requests.post(
     f"{NODE_URL}/wallet/transfer/signed",
     json=payload,
-    verify=False,
     timeout=15,
 )
 
@@ -405,7 +404,7 @@ Try these in order:
 ```bash
 cat /opt/rustchain-miner/config.json
 ls ~/.rustchain/wallets
-curl -sk https://rustchain.org/api/miners
+curl -fsS https://rustchain.org/api/miners
 ```
 
 If you still have the secure wallet keystore or seed phrase, you can usually recover the public `RTC...` address.
@@ -424,9 +423,9 @@ Common reasons:
 Quick checks:
 
 ```bash
-curl -sk https://rustchain.org/health
-curl -sk https://rustchain.org/api/miners
-curl -sk 'https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET'
+curl -fsS https://rustchain.org/health
+curl -fsS https://rustchain.org/api/miners
+curl -fsS 'https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET'
 ```
 
 ### How long until I earn RTC?
@@ -457,14 +456,14 @@ curl -sL https://rustchain.org/install.sh | bash
 3. Check your balance:
 
 ```bash
-curl -sk 'https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET'
+curl -fsS 'https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET'
 ```
 
 4. Confirm you are live:
 
 ```bash
-curl -sk https://rustchain.org/api/miners
-curl -sk https://rustchain.org/epoch
+curl -fsS https://rustchain.org/api/miners
+curl -fsS https://rustchain.org/epoch
 ```
 
 5. If you later want to send RTC yourself, create a secure `RTC...` wallet with the secure GUI or the Python wallet module.

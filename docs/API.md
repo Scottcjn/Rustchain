@@ -2,8 +2,9 @@
 
 Base URL: `https://rustchain.org`
 
-The public API uses standard HTTPS; keep certificate verification enabled for
-`https://rustchain.org`.
+All public `https://rustchain.org` endpoints use HTTPS with a publicly trusted
+certificate. Local or raw-IP development nodes with self-signed certificates
+should be tested by trusting the development CA explicitly.
 
 ---
 

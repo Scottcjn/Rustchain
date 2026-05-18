@@ -11,7 +11,8 @@
 NODE_URL="https://rustchain.org"
 ```
 
-> ⚠️ **Self-Signed Certificate**: The node uses a self-signed TLS certificate. Always use `-k` or `--insecure` with curl.
+> **TLS**: The public node validates with the system trust store. For local or
+> raw-IP development nodes, trust the development certificate explicitly.
 
 ---
 
@@ -20,7 +21,7 @@ NODE_URL="https://rustchain.org"
 Verify the node is running:
 
 ```bash
-curl -k "$NODE_URL/health"
+curl -fsS "$NODE_URL/health"
 ```
 
 **Response:**
@@ -53,7 +54,7 @@ curl -k "$NODE_URL/health"
 Get current epoch and network stats:
 
 ```bash
-curl -k "$NODE_URL/epoch"
+curl -fsS "$NODE_URL/epoch"
 ```
 
 **Response:**
@@ -86,13 +87,13 @@ curl -k "$NODE_URL/epoch"
 Query a wallet balance with its RustChain address:
 
 ```bash
-curl -k "$NODE_URL/wallet/balance?miner_id=YOUR_RTC_ADDRESS"
+curl -fsS "$NODE_URL/wallet/balance?miner_id=YOUR_RTC_ADDRESS"
 ```
 
 A placeholder value also returns the response shape, which is useful for onboarding:
 
 ```bash
-curl -k "$NODE_URL/wallet/balance?miner_id=YOUR_WALLET_ID"
+curl -fsS "$NODE_URL/wallet/balance?miner_id=YOUR_WALLET_ID"
 ```
 
 **Tested response (2026-03-09):**
@@ -270,7 +271,6 @@ payload = {
 response = requests.post(
     f"{NODE_URL}/wallet/transfer/signed",
     json=payload,
-    verify=False,
     timeout=15,
 )
 
@@ -311,7 +311,7 @@ EOF
 SIGNATURE=$(echo -n "$MESSAGE" | openssl pkeyutl -sign -inkey private_key.pem -rawin | xxd -p -c 128)
 
 # Send transfer
-curl -k -X POST "$NODE_URL/wallet/transfer/signed" \
+curl -fsS -X POST "$NODE_URL/wallet/transfer/signed" \
   -H "Content-Type: application/json" \
   -d "{
     \"from_address\": \"${FROM_ADDRESS}\",
@@ -350,7 +350,7 @@ Before submitting your transfer:
 - [ ] Signature is 128 hex characters
 - [ ] Nonce is unique (not reused)
 - [ ] Wallet IDs are RustChain format (not ETH/SOL)
-- [ ] Using `-k` flag for self-signed cert
+- [ ] Public node calls use normal TLS verification
 
 ---
 

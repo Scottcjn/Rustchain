@@ -108,7 +108,7 @@ venv/                   # Python virtual environment
 Check the network is reachable:
 
 ```bash
-curl -sk https://rustchain.org/health
+curl -fsS https://rustchain.org/health
 ```
 
 Expected response:
@@ -182,13 +182,13 @@ Then it begins attesting to the network every few minutes:
 Rewards settle every **10 minutes** (one epoch). After your first epoch:
 
 ```bash
-curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
 ```
 
 Example:
 
 ```bash
-curl -sk "https://rustchain.org/wallet/balance?miner_id=scott-laptop"
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=scott-laptop"
 ```
 
 Response:
@@ -203,13 +203,13 @@ Response:
 ### View All Active Miners
 
 ```bash
-curl -sk https://rustchain.org/api/miners
+curl -fsS https://rustchain.org/api/miners
 ```
 
 ### Check Mining Eligibility
 
 ```bash
-curl -sk "https://rustchain.org/lottery/eligibility?miner_id=YOUR_WALLET_NAME"
+curl -fsS "https://rustchain.org/lottery/eligibility?miner_id=YOUR_WALLET_NAME"
 ```
 
 ---
@@ -234,13 +234,13 @@ Over 24 hours (144 epochs), a G4 Mac earns roughly **43 RTC** ($4.30) while a mo
 
 1. **Confirm your miner appears in the active list:**
    ```bash
-   curl -sk https://rustchain.org/api/miners
+   curl -fsS https://rustchain.org/api/miners
    ```
    Look for your wallet name in the output.
 
 2. **Confirm you are querying the right wallet:**
    ```bash
-   curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_EXACT_WALLET_NAME"
+   curl -fsS "https://rustchain.org/wallet/balance?miner_id=YOUR_EXACT_WALLET_NAME"
    ```
 
 3. **Wait for epoch settlement** — rewards settle every 10 minutes. Wait at least 2-3 epochs (20-30 minutes).
@@ -260,7 +260,7 @@ This is by design. VMs are detected by the anti-emulation fingerprint check and 
 Add `-k` to curl commands to accept the self-signed TLS certificate:
 
 ```bash
-curl -sk https://rustchain.org/health
+curl -fsS https://rustchain.org/health
 ```
 
 The miner script handles this automatically.
@@ -293,16 +293,16 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 
 ```bash
 # Node health
-curl -sk https://rustchain.org/health
+curl -fsS https://rustchain.org/health
 
 # Current epoch
-curl -sk https://rustchain.org/epoch
+curl -fsS https://rustchain.org/epoch
 
 # Active miners
-curl -sk https://rustchain.org/api/miners
+curl -fsS https://rustchain.org/api/miners
 
 # Connected nodes
-curl -sk https://rustchain.org/api/nodes
+curl -fsS https://rustchain.org/api/nodes
 
 # Block explorer (web UI)
 open https://rustchain.org/explorer

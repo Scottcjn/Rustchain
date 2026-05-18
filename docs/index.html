@@ -420,13 +420,13 @@ VPS (QEMU):
 
       <pre>
 # Check the network is alive
-curl -sk https://rustchain.org/health
+curl -fsS https://rustchain.org/health
 
 # See active miners
-curl -sk https://rustchain.org/api/miners
+curl -fsS https://rustchain.org/api/miners
 
 # Check your balance after mining
-curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET"</pre>
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET"</pre>
 
       <h3>Current Mining Fleet</h3>
       <pre>

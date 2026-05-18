@@ -94,7 +94,7 @@ venv/                   # Python virtual environment
 Check that the network is reachable:
 
 ```bash
-curl -sk https://rustchain.org/health
+curl -fsS https://rustchain.org/health
 ```
 
 You should see something like:
@@ -174,13 +174,13 @@ Rewards are distributed every **10 minutes** (one "epoch"). After your first epo
 settles, check your balance:
 
 ```bash
-curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
 ```
 
 Replace `YOUR_WALLET_NAME` with the wallet name you chose during install. Example:
 
 ```bash
-curl -sk "https://rustchain.org/wallet/balance?miner_id=scott-laptop"
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=scott-laptop"
 ```
 
 Response:
@@ -288,16 +288,16 @@ These all work from your terminal:
 
 ```bash
 # Is the network alive?
-curl -sk https://rustchain.org/health
+curl -fsS https://rustchain.org/health
 
 # Who is mining right now?
-curl -sk https://rustchain.org/api/miners
+curl -fsS https://rustchain.org/api/miners
 
 # What epoch are we in?
-curl -sk https://rustchain.org/epoch
+curl -fsS https://rustchain.org/epoch
 
 # What is my balance?
-curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
 ```
 
 The `-sk` flag tells curl to accept the self-signed TLS certificate. This is normal --
@@ -314,7 +314,7 @@ This usually means your machine cannot reach the RustChain node yet.
 1. Check whether the public node is responding:
 
 ```bash
-curl -sk https://rustchain.org/health
+curl -fsS https://rustchain.org/health
 ```
 
 2. If that fails, wait 30-60 seconds and retry. The node may be restarting.
@@ -329,7 +329,7 @@ an existing RTC balance for fees.
 1. Confirm you are using the exact wallet name from install:
 
 ```bash
-curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_EXACT_WALLET_NAME"
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=YOUR_EXACT_WALLET_NAME"
 ```
 
 2. Wait at least one full epoch after the miner first starts. Rewards settle about every
@@ -350,7 +350,7 @@ miner between different hardware.
 ### Miner Configuration Checklist
 
 - The wallet name in your command matches the wallet you want paid.
-- `curl -sk https://rustchain.org/health` returns `"ok": true`.
+- `curl -fsS https://rustchain.org/health` returns `"ok": true`.
 - Your system clock is correct; TLS and attestation windows can fail when the clock is far off.
 - You are running on real hardware if you expect normal rewards.
 - You waited at least 2-3 epochs before deciding rewards are missing.
@@ -373,7 +373,7 @@ need to install it yourself first:
 If you see errors about certificates when running `curl` commands, add `-k`:
 
 ```bash
-curl -sk https://rustchain.org/health
+curl -fsS https://rustchain.org/health
 ```
 
 The miner script handles this automatically.
@@ -383,7 +383,7 @@ The miner script handles this automatically.
 1. Confirm your miner appears in the active miners list:
 
 ```bash
-curl -sk https://rustchain.org/api/miners
+curl -fsS https://rustchain.org/api/miners
 ```
 
 Look for your wallet name in the output.
@@ -391,7 +391,7 @@ Look for your wallet name in the output.
 2. Confirm you are querying the right wallet name:
 
 ```bash
-curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_EXACT_WALLET_NAME"
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=YOUR_EXACT_WALLET_NAME"
 ```
 
 3. Rewards settle every 10 minutes. Wait at least 2-3 epochs (20-30 minutes).

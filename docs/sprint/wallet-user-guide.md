@@ -56,7 +56,7 @@ cargo build --release
 ```bash
 ./rtc-wallet balance --address RTCa3f82d9c1e4b07f5a2d6c8e9b0f1d3e2a4c5b7f8
 # Or via API:
-curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET" | jq .
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET" | jq .
 ```
 
 ### 2. Web Wallet
@@ -178,7 +178,7 @@ Simply share your public wallet address. It is safe to share publicly.
 - Check incoming transactions:
 
 ```bash
-curl -sk "https://rustchain.org/wallet/history?address=RTCa3f82..." | jq .
+curl -fsS "https://rustchain.org/wallet/history?address=RTCa3f82..." | jq .
 ```
 
 ---

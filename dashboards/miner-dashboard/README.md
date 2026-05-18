@@ -115,13 +115,13 @@ Test with known miner IDs:
 
 ```bash
 # Test with 'scott' wallet
-curl -sk "https://rustchain.org/wallet/balance?miner_id=scott"
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=scott"
 
 # Test epoch endpoint
-curl -sk "https://rustchain.org/epoch"
+curl -fsS "https://rustchain.org/epoch"
 
 # Test miners list
-curl -sk "https://rustchain.org/api/miners"
+curl -fsS "https://rustchain.org/api/miners"
 ```
 
 ## 📦 File Structure

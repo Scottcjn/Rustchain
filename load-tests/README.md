@@ -289,7 +289,7 @@ pip install -r locust-requirements.txt
 **Problem**: Connection refused
 ```bash
 # Verify TARGET_URL is accessible
-curl -sk https://rustchain.org/health
+curl -fsS https://rustchain.org/health
 
 # Check firewall/proxy settings
 ```

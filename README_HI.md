@@ -101,25 +101,25 @@ launchctl list | grep rustchain
 **वॉलेट बैलेंस जांचें:**
 
 ```bash
-curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
 ```
 
 **सक्रिय miners की सूची देखें:**
 
 ```bash
-curl -sk https://rustchain.org/api/miners
+curl -fsS https://rustchain.org/api/miners
 ```
 
 **नोड की स्थिति जांचें:**
 
 ```bash
-curl -sk https://rustchain.org/health
+curl -fsS https://rustchain.org/health
 ```
 
 **वर्तमान epoch प्राप्त करें:**
 
 ```bash
-curl -sk https://rustchain.org/epoch
+curl -fsS https://rustchain.org/epoch
 ```
 
 ### Miner सेवा प्रबंधन
