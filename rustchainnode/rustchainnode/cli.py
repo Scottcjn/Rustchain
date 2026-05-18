@@ -174,6 +174,7 @@ def cmd_status(args):
     if cfg:
         print(f"   Wallet: {cfg.get('wallet', 'not set')}")
         print(f"   Port: {cfg.get('port', 8099)}")
+        print(f"   Network: {'testnet' if cfg.get('testnet') else 'mainnet'}")
         print(f"   Arch: {cfg.get('arch_type', 'unknown')}")
         print(f"   Antiquity: {cfg.get('antiquity_multiplier', 1.0)}x")
 
@@ -209,6 +210,7 @@ def cmd_dashboard(args):
 
     wallet = cfg.get("wallet", "not configured")
     print(f"  Wallet:      {wallet}")
+    print(f"  Network:     {'testnet' if cfg.get('testnet') else 'mainnet'}")
 
     hw = detect_cpu_info()
     print(f"  CPU:         {hw['arch']} ({hw['arch_type']})")
