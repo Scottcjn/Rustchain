@@ -223,16 +223,16 @@ chmod +x install-miner.sh
 # Follow the on-screen prompts</pre>
       
       <h3>Post-Installation Setup</h3>
-      <p>After installation completes, you'll need to configure your miner:</p>
+      <p>After installation completes, the installer prints the wallet name it will use for rewards. Keep that wallet name and use the installed script to start or restart the miner:</p>
       
-      <pre># Generate your wallet address
-rustchain-wallet generate
+      <pre># Start the installed miner manually, if auto-start is not already running
+~/.rustchain/start.sh
 
-# Start the attestation service
-rustchain-attest --start
+# Or run the installed Python miner directly
+~/.rustchain/venv/bin/python ~/.rustchain/rustchain_miner.py --wallet YOUR_WALLET_NAME
 
-# Begin mining
-rustchain-miner --wallet YOUR_WALLET_ADDRESS</pre>
+# Check rewards for the wallet name printed by the installer
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"</pre>
       
       <p>The attestation service will run hardware fingerprinting tests to verify your system is genuine physical hardware. This process typically takes 2-5 minutes and only needs to run once per hardware configuration.</p>
     </div>

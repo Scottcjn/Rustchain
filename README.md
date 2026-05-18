@@ -266,6 +266,9 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --dry-run
 ```
 
+The miner is installed by this script. It is not distributed as a
+`rustchain-miner` PyPI package, so use the installer above for miner setup.
+
 Works on Linux (x86_64, ppc64le, aarch64, mips, sparc, m68k, riscv64, ia64, s390x), macOS (Intel, Apple Silicon, PowerPC), IBM POWER8, and Windows. If it runs Python, it can mine.
 
 ```bash
