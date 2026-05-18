@@ -477,6 +477,8 @@ def register_routes(app):
 
     def _finite_number_field(data, name: str, default: float = 0.0):
         value = data.get(name, default)
+        if isinstance(value, bool):
+            return None, (jsonify({"error": f"{name} must be a finite number"}), 400)
         try:
             parsed = float(value)
         except (TypeError, ValueError):

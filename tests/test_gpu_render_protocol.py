@@ -233,5 +233,34 @@ def test_gpu_protocol_pricing_check_rejects_structured_price(tmp_path, monkeypat
     assert response.get_json() == {"error": "price must be a finite number"}
 
 
+def test_gpu_protocol_escrow_rejects_boolean_amount(tmp_path, monkeypatch):
+    client = _route_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/render/escrow",
+        json={
+            "job_type": "render",
+            "from_wallet": "payer",
+            "to_wallet": "provider",
+            "amount_rtc": True,
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "amount_rtc must be a finite number"}
+
+
+def test_gpu_protocol_pricing_check_rejects_boolean_price(tmp_path, monkeypatch):
+    client = _route_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/render/pricing/check",
+        json={"job_type": "render", "price": True},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "price must be a finite number"}
+
+
 if __name__ == "__main__":
     unittest.main()
