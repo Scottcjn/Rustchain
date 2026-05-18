@@ -30,20 +30,20 @@
 
 - **Primary Node**: `https://rustchain.org`
 - **Explorer**: `https://rustchain.org/explorer/`
-- **Health Check**: `curl -sk https://rustchain.org/health`
+- **Health Check**: `curl -fsS https://rustchain.org/health`
 - **Network Status Page**: `docs/network-status.html` (GitHub Pages-hostable status dashboard)
 
 ## Current Stats
 
 ```bash
 # Check node health
-curl -sk https://rustchain.org/health | jq .
+curl -fsS https://rustchain.org/health | jq .
 
 # List active miners
-curl -sk https://rustchain.org/api/miners | jq .
+curl -fsS https://rustchain.org/api/miners | jq .
 
 # Current epoch info
-curl -sk https://rustchain.org/epoch | jq .
+curl -fsS https://rustchain.org/epoch | jq .
 ```
 
 ## Architecture Overview
