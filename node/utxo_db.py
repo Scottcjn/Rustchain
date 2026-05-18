@@ -593,7 +593,7 @@ class UtxoDB:
 
             if not _is_nonnegative_int64(fee):
                 return abort()
-            if inputs and (output_total + fee) > input_total:
+            if inputs and (output_total + fee) != input_total:
                 return abort()
 
             # -- compute output box IDs and build tx_id ----------------------
@@ -954,7 +954,7 @@ class UtxoDB:
                     input_total += row['value_nrtc']
 
             output_total = sum(o['value_nrtc'] for o in outputs)
-            if input_total > 0 and (output_total + fee) > input_total:
+            if inputs and (output_total + fee) != input_total:
                 if manage_tx:
                         conn.execute("ROLLBACK")
                 return False

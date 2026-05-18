@@ -16,7 +16,7 @@ from flask import Flask
 
 import utxo_endpoints
 from utxo_db import (
-    UtxoDB, UNIT, address_to_proposition, compute_box_id,
+    DUST_THRESHOLD, UtxoDB, UNIT, address_to_proposition, compute_box_id,
 )
 from utxo_endpoints import register_utxo_blueprint
 
@@ -90,6 +90,9 @@ class TestUtxoEndpoints(unittest.TestCase):
             'output_index': 0,
         })
         return box_id
+
+    def _rtc_float(self, amount_nrtc):
+        return float(Decimal(amount_nrtc) / Decimal(UNIT))
 
     # -- read endpoints ------------------------------------------------------
 
@@ -254,6 +257,66 @@ class TestUtxoEndpoints(unittest.TestCase):
         # 100 - 90 - 1 fee = 9 change
         self.assertEqual(data['change_rtc'], 9.0)
 
+    def test_transfer_records_absorbed_dust_as_fee(self):
+        sender = 'RTC_test_aabbccdd'
+        self._seed_coinbase(sender, 100 * UNIT + 500)
+
+        r = self.client.post('/utxo/transfer', json={
+            'from_address': sender,
+            'to_address': 'bob',
+            'amount_rtc': 100.0,
+            'public_key': 'aabbccdd' * 8,
+            'signature': 'sig' * 22,
+            'nonce': int(time.time() * 1000),
+        })
+        data = r.get_json()
+        self.assertEqual(r.status_code, 200, data)
+        self.assertTrue(data['ok'])
+        self.assertEqual(data['change_nrtc'], 0)
+        self.assertEqual(data['fee_nrtc'], 500)
+        self.assertEqual(data['fee_rtc'], self._rtc_float(500))
+        self.assertEqual(data['requested_fee_nrtc'], 0)
+        self.assertEqual(data['requested_fee_rtc'], 0.0)
+        self.assertEqual(data['absorbed_fee_nrtc'], 500)
+        self.assertEqual(data['absorbed_fee_rtc'], self._rtc_float(500))
+        self.assertEqual(self.utxo_db.get_balance(sender), 0)
+        self.assertEqual(self.utxo_db.get_balance('bob'), 100 * UNIT)
+
+        conn = self.utxo_db._conn()
+        try:
+            row = conn.execute(
+                "SELECT fee_nrtc FROM utxo_transactions WHERE tx_type = 'transfer'"
+            ).fetchone()
+            self.assertEqual(row['fee_nrtc'], 500)
+        finally:
+            conn.close()
+
+    def test_transfer_reports_requested_fee_plus_absorbed_dust(self):
+        sender = 'RTC_test_aabbccdd'
+        requested_fee_nrtc = DUST_THRESHOLD
+        absorbed_fee_nrtc = 500
+        self._seed_coinbase(sender, 100 * UNIT + requested_fee_nrtc + absorbed_fee_nrtc)
+
+        r = self.client.post('/utxo/transfer', json={
+            'from_address': sender,
+            'to_address': 'bob',
+            'amount_rtc': 100.0,
+            'fee_rtc': self._rtc_float(requested_fee_nrtc),
+            'public_key': 'aabbccdd' * 8,
+            'signature': 'sig' * 22,
+            'nonce': int(time.time() * 1000),
+        })
+        data = r.get_json()
+        self.assertEqual(r.status_code, 200, data)
+        self.assertTrue(data['ok'])
+        self.assertEqual(data['change_nrtc'], 0)
+        self.assertEqual(data['requested_fee_nrtc'], requested_fee_nrtc)
+        self.assertEqual(data['requested_fee_rtc'], self._rtc_float(requested_fee_nrtc))
+        self.assertEqual(data['absorbed_fee_nrtc'], absorbed_fee_nrtc)
+        self.assertEqual(data['absorbed_fee_rtc'], self._rtc_float(absorbed_fee_nrtc))
+        self.assertEqual(data['fee_nrtc'], requested_fee_nrtc + absorbed_fee_nrtc)
+        self.assertEqual(data['fee_rtc'], self._rtc_float(requested_fee_nrtc + absorbed_fee_nrtc))
+
     def test_transfer_float_precision(self):
         """0.1 RTC must convert to exactly 10_000_000 nanoRTC.
 
@@ -281,8 +344,8 @@ class TestUtxoEndpoints(unittest.TestCase):
                          f"Expected 10_000_000 nanoRTC, got {bob_bal} "
                          f"(float truncation bug)")
 
-    def test_transfer_preserves_three_nanortc_amount(self):
-        """Issue #4671: 0.00000003 RTC must transfer exactly 3 nanoRTC."""
+    def test_transfer_rejects_below_dust_amount(self):
+        """Recipient outputs below DUST_THRESHOLD must be rejected cleanly."""
         sender = 'RTC_test_aabbccdd'
         recipient = 'bob'
         self._seed_coinbase(sender, UNIT)
@@ -297,10 +360,51 @@ class TestUtxoEndpoints(unittest.TestCase):
         })
         data = r.get_json()
 
+        self.assertEqual(r.status_code, 400, data)
+        self.assertEqual(data['error'], 'Amount below dust threshold')
+        self.assertEqual(data['amount_nrtc'], 3)
+        self.assertEqual(data['dust_threshold_nrtc'], DUST_THRESHOLD)
+        self.assertEqual(self.utxo_db.get_balance(recipient), 0)
+        self.assertEqual(self.utxo_db.get_balance(sender), UNIT)
+
+    def test_transfer_allows_exact_dust_threshold_amount(self):
+        sender = 'RTC_test_aabbccdd'
+        recipient = 'bob'
+        self._seed_coinbase(sender, UNIT)
+
+        r = self.client.post('/utxo/transfer', json={
+            'from_address': sender,
+            'to_address': recipient,
+            'amount_rtc': self._rtc_float(DUST_THRESHOLD),
+            'public_key': 'aabbccdd' * 8,
+            'signature': 'sig' * 22,
+            'nonce': int(time.time() * 1000),
+        })
+        data = r.get_json()
         self.assertEqual(r.status_code, 200, data)
         self.assertTrue(data['ok'])
-        self.assertEqual(self.utxo_db.get_balance(recipient), 3)
-        self.assertEqual(self.utxo_db.get_balance(sender), UNIT - 3)
+        self.assertEqual(self.utxo_db.get_balance(recipient), DUST_THRESHOLD)
+        self.assertEqual(self.utxo_db.get_balance(sender), UNIT - DUST_THRESHOLD)
+
+    def test_transfer_preserves_nano_precision_above_dust_threshold(self):
+        sender = 'RTC_test_aabbccdd'
+        recipient = 'bob'
+        amount_nrtc = DUST_THRESHOLD + 3
+        self._seed_coinbase(sender, UNIT)
+
+        r = self.client.post('/utxo/transfer', json={
+            'from_address': sender,
+            'to_address': recipient,
+            'amount_rtc': self._rtc_float(amount_nrtc),
+            'public_key': 'aabbccdd' * 8,
+            'signature': 'sig' * 22,
+            'nonce': int(time.time() * 1000),
+        })
+        data = r.get_json()
+        self.assertEqual(r.status_code, 200, data)
+        self.assertTrue(data['ok'])
+        self.assertEqual(self.utxo_db.get_balance(recipient), amount_nrtc)
+        self.assertEqual(self.utxo_db.get_balance(sender), UNIT - amount_nrtc)
 
     def test_transfer_rejects_decimal_amount_not_preserved_by_signed_float(self):
         """The signed float amount must match the ledger nanoRTC amount.
