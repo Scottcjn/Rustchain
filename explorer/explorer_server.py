@@ -92,8 +92,8 @@ class ExplorerHandler(SimpleHTTPRequestHandler):
             self.send_json(data, headers={'X-Cache': 'MISS'})
         except requests.exceptions.Timeout:
             self.send_error_json(504, 'Gateway Timeout')
-        except requests.exceptions.RequestException as e:
-            self.send_error_json(502, f'Bad Gateway: {str(e)}')
+        except requests.exceptions.RequestException:
+            self.send_error_json(502, 'Bad Gateway')
         except json.JSONDecodeError:
             self.send_error_json(502, 'Invalid JSON from upstream')
     
@@ -152,7 +152,7 @@ def get_analytics_data():
                 response.raise_for_status()
                 results[endpoint] = response.json()
             except Exception as e:
-                results[endpoint] = {'error': str(e)}
+                results[endpoint] = {'error': 'Bad Gateway'}
     
     return results
 

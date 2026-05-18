@@ -9,6 +9,14 @@ app = Flask(__name__)
 API_BASE_URL = "http://localhost:8000"
 MINERS_ENDPOINT = f"{API_BASE_URL}/api/miners"
 
+
+def _connection_error_response(payload=None):
+    body = {'error': 'Connection error'}
+    if payload:
+        body.update(payload)
+    return jsonify(body), 502
+
+
 @app.route('/')
 def dashboard():
     return render_template('dashboard.html')
@@ -49,8 +57,9 @@ def get_miners():
             return jsonify(miners_data)
         else:
             return jsonify({'error': 'Failed to fetch miners data', 'miners': []}), 500
-    except requests.exceptions.RequestException as e:
-        return jsonify({'error': f'Connection error: {str(e)}', 'miners': []}), 500
+    except requests.exceptions.RequestException:
+        app.logger.warning("Failed to fetch miners data from upstream", exc_info=True)
+        return _connection_error_response({'miners': []})
 
 @app.route('/api/network/stats')
 def get_network_stats():
@@ -80,8 +89,9 @@ def get_network_stats():
             return jsonify(stats)
         else:
             return jsonify({'error': 'Failed to fetch network stats'}), 500
-    except requests.exceptions.RequestException as e:
-        return jsonify({'error': f'Connection error: {str(e)}'}), 500
+    except requests.exceptions.RequestException:
+        app.logger.warning("Failed to fetch network stats from upstream", exc_info=True)
+        return _connection_error_response()
 
 @app.route('/miner/<miner_id>')
 def miner_detail(miner_id):
@@ -122,8 +132,9 @@ def get_miner_detail(miner_id):
                 return jsonify({'error': 'Miner not found'}), 404
         else:
             return jsonify({'error': 'Failed to fetch miner data'}), 500
-    except requests.exceptions.RequestException as e:
-        return jsonify({'error': f'Connection error: {str(e)}'}), 500
+    except requests.exceptions.RequestException:
+        app.logger.warning("Failed to fetch miner detail from upstream", exc_info=True)
+        return _connection_error_response()
 
 @app.errorhandler(404)
 def not_found(error):
