@@ -14,6 +14,7 @@ import hmac
 import hashlib
 import tempfile
 import pytest
+from pathlib import Path
 
 def _test_db_path(name):
     return os.path.join(tempfile.gettempdir(), f"{name}_{os.getpid()}.db")
@@ -39,6 +40,12 @@ _remove_test_db(BRIDGE_TEST_DB_PATH)
 sys.path.insert(0, os.path.dirname(__file__))
 import bridge_api
 from bridge_api import Flask, register_bridge_routes, STATE_REQUESTED, STATE_CONFIRMED
+
+
+def test_standalone_bridge_server_does_not_enable_debugger():
+    source = Path(bridge_api.__file__).read_text(encoding="utf-8")
+    assert "debug=True" not in source
+    assert 'debug=False' in source
 
 
 def _receipt_signature(sender_wallet, amount, target_chain, target_wallet, tx_hash):
