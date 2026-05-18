@@ -55,7 +55,7 @@ rand = "0.10"
 getrandom = "0.4"
 
 # Filesystem
-dirs = "5.0"
+dirs = "6.0"
 
 # Time
 chrono = { version = "0.4", features = ["serde"] }
