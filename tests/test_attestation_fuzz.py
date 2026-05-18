@@ -254,6 +254,21 @@ def test_attest_submit_rejects_invalid_miner_id_even_when_miner_is_valid(client)
     assert response.get_json()["code"] == "INVALID_MINER"
 
 
+@pytest.mark.parametrize("bad_value", ["abc", [], {"nested": "bad"}, True])
+def test_attest_submit_rejects_non_numeric_clock_drift_cv(client, bad_value):
+    payload = _attach_live_challenge(client, _base_payload())
+    payload["fingerprint"]["checks"]["clock_drift"]["data"] = {
+        "cv": bad_value,
+        "samples": 32,
+    }
+
+    response = client.post("/attest/submit", json=payload)
+
+    assert response.status_code == 422
+    assert response.get_json()["ok"] is False
+    assert response.get_json()["code"] == "INVALID_FINGERPRINT_CLOCK_DRIFT"
+
+
 def test_validate_fingerprint_data_rejects_non_dict_input():
     passed, reason = integrated_node.validate_fingerprint_data(["not", "a", "dict"])
 
@@ -357,6 +372,23 @@ def test_attest_submit_mutation_regression_no_unhandled_exceptions(client):
         "anti_emulation": {"passed": True, "data": {"vm_indicators": []}},
         "simd_identity": {"passed": True, "data": {"x86_features": "not-a-list"}}
     }},
+    # Non-numeric nested clock drift metrics should fail validation, not raise.
+    {"checks": {
+        "anti_emulation": {"passed": True, "data": {"vm_indicators": []}},
+        "clock_drift": {"passed": True, "data": {"cv": "abc", "samples": 32}},
+    }},
+    {"checks": {
+        "anti_emulation": {"passed": True, "data": {"vm_indicators": []}},
+        "clock_drift": {"passed": True, "data": {"cv": [], "samples": 32}},
+    }},
+    {"checks": {
+        "anti_emulation": {"passed": True, "data": {"vm_indicators": []}},
+        "clock_drift": {"passed": True, "data": {"cv": {"nested": "bad"}, "samples": 32}},
+    }},
+    {"checks": {
+        "anti_emulation": {"passed": True, "data": {"vm_indicators": []}},
+        "clock_drift": {"passed": True, "data": {"cv": 0.092, "samples": "many"}},
+    }},
     # Empty/malformed checks
     {"checks": None},
     {},
@@ -364,6 +396,10 @@ def test_attest_submit_mutation_regression_no_unhandled_exceptions(client):
     "bridge_type_none", "bridge_type_int", "bridge_type_dict",
     "device_arch_none", "device_arch_int",
     "x86_features_not_list",
+    "clock_drift_cv_string",
+    "clock_drift_cv_list",
+    "clock_drift_cv_dict",
+    "clock_drift_samples_string",
     "checks_none", "checks_empty"
 ])
 def test_validate_fingerprint_data_handles_malformed_inputs_no_crash(malformed_fingerprint):

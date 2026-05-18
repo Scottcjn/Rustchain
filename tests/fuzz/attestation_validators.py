@@ -86,6 +86,18 @@ def _attest_is_valid_positive_int(value: Any, max_value: int = 4096) -> bool:
     return 1 <= coerced <= max_value
 
 
+def _attest_is_finite_number(value: Any) -> bool:
+    """Accept finite JSON numeric values while rejecting bools and nested shapes."""
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, (int, float)):
+        try:
+            return math.isfinite(float(value))
+        except (OverflowError, ValueError):
+            return False
+    return False
+
+
 def _attest_positive_int(value: Any, default: int = 1) -> int:
     """Coerce untrusted integer-like values to a safe positive integer."""
     try:
@@ -238,5 +250,27 @@ def _validate_attestation_payload_shape(data: Any):
             "INVALID_FINGERPRINT_CHECKS",
             "Field 'fingerprint.checks' must be a JSON object",
         )
+    if isinstance(fingerprint, dict) and isinstance(fingerprint.get("checks"), dict):
+        clock_check = fingerprint["checks"].get("clock_drift")
+        if isinstance(clock_check, dict):
+            clock_data = clock_check.get("data")
+            if clock_data is not None and not isinstance(clock_data, dict):
+                return _attest_field_error(
+                    "INVALID_FINGERPRINT_CLOCK_DRIFT",
+                    "Field 'fingerprint.checks.clock_drift.data' must be a JSON object",
+                    status=422,
+                )
+            if isinstance(clock_data, dict):
+                for metric_name in ("cv", "samples"):
+                    if (
+                        metric_name in clock_data
+                        and clock_data[metric_name] is not None
+                        and not _attest_is_finite_number(clock_data[metric_name])
+                    ):
+                        return _attest_field_error(
+                            "INVALID_FINGERPRINT_CLOCK_DRIFT",
+                            f"Field 'fingerprint.checks.clock_drift.data.{metric_name}' must be a finite number",
+                            status=422,
+                        )
 
     return None

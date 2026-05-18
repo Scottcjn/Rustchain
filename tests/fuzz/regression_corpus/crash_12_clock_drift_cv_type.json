@@ -1,0 +1,35 @@
+{
+  "_class": "NESTED_CLOCK_DRIFT_TYPE",
+  "_expected_error_code": "INVALID_FINGERPRINT_CLOCK_DRIFT",
+  "miner": "fuzz-miner",
+  "device": {
+    "cores": 8,
+    "device_arch": "power8"
+  },
+  "signals": {
+    "macs": [
+      "AA:BB:CC:DD:EE:10"
+    ]
+  },
+  "report": {
+    "nonce": "nonce-123",
+    "commitment": "commitment-123"
+  },
+  "fingerprint": {
+    "checks": {
+      "anti_emulation": {
+        "passed": true,
+        "data": {
+          "vm_indicators": []
+        }
+      },
+      "clock_drift": {
+        "passed": true,
+        "data": {
+          "cv": "abc",
+          "samples": 32
+        }
+      }
+    }
+  }
+}

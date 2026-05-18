@@ -244,6 +244,18 @@ def _attest_is_valid_positive_int(value, max_value=4096):
     return 1 <= coerced <= max_value
 
 
+def _attest_is_finite_number(value):
+    """Accept finite JSON numeric values while rejecting bools and nested shapes."""
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, (int, float)):
+        try:
+            return math.isfinite(float(value))
+        except (OverflowError, ValueError):
+            return False
+    return False
+
+
 def client_ip_from_request(req) -> str:
     """Return trusted client IP, honoring proxy headers only for allowlisted peers."""
     remote_addr = _normalize_client_ip(getattr(req, "remote_addr", ""))
@@ -341,6 +353,28 @@ def _validate_attestation_payload_shape(data):
     fingerprint = data.get("fingerprint")
     if isinstance(fingerprint, dict) and "checks" in fingerprint and not isinstance(fingerprint.get("checks"), dict):
         return _attest_field_error("INVALID_FINGERPRINT_CHECKS", "Field 'fingerprint.checks' must be a JSON object")
+    if isinstance(fingerprint, dict) and isinstance(fingerprint.get("checks"), dict):
+        clock_check = fingerprint["checks"].get("clock_drift")
+        if isinstance(clock_check, dict):
+            clock_data = clock_check.get("data")
+            if clock_data is not None and not isinstance(clock_data, dict):
+                return _attest_field_error(
+                    "INVALID_FINGERPRINT_CLOCK_DRIFT",
+                    "Field 'fingerprint.checks.clock_drift.data' must be a JSON object",
+                    status=422,
+                )
+            if isinstance(clock_data, dict):
+                for metric_name in ("cv", "samples"):
+                    if (
+                        metric_name in clock_data
+                        and clock_data[metric_name] is not None
+                        and not _attest_is_finite_number(clock_data[metric_name])
+                    ):
+                        return _attest_field_error(
+                            "INVALID_FINGERPRINT_CLOCK_DRIFT",
+                            f"Field 'fingerprint.checks.clock_drift.data.{metric_name}' must be a finite number",
+                            status=422,
+                        )
 
     return None
 
@@ -2686,8 +2720,17 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
         clock_data = clock_check.get("data", {})
         if not isinstance(clock_data, dict):
             clock_data = {}
+        for metric_name in ("cv", "samples"):
+            if (
+                metric_name in clock_data
+                and clock_data[metric_name] is not None
+                and not _attest_is_finite_number(clock_data[metric_name])
+            ):
+                return False, f"clock_drift_invalid_{metric_name}"
         cv = clock_data.get("cv", 0)
         samples = clock_data.get("samples", 0)
+        cv = float(cv or 0)
+        samples = float(samples or 0)
 
         # Require meaningful sample count
         if clock_check.get("passed") == True and samples == 0 and cv == 0:
