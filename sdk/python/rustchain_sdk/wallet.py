@@ -259,15 +259,11 @@ class RustChainWallet:
         if strength not in (128, 256):
             raise ValueError("Strength must be 128 (12 words) or 256 (24 words)")
 
-        # Generate random entropy
-        raw_bytes = secrets.token_bytes(strength // 8)
-
-        # Add checksum (first byte of SHA256 of entropy)
-        checksum = hashlib.sha256(raw_bytes).digest()[:1]
-        extended = raw_bytes + checksum
-
-        # Convert to words
-        words = _to_words(extended, _BIP39_WORDLIST)
+        # Generate the documented mnemonic length. ``from_seed_phrase`` accepts
+        # only 12- or 24-word phrases, so created wallets must use the same
+        # lengths to make export/import round trips possible.
+        word_count = 12 if strength == 128 else 24
+        words = [secrets.choice(_BIP39_WORDLIST) for _ in range(word_count)]
 
         # Derive seed from words
         seed = _hmac_sha512(b"mnemonic", " ".join(words).encode("utf-8"))
