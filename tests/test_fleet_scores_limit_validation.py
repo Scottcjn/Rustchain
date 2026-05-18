@@ -1,5 +1,6 @@
 import sqlite3
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -99,3 +100,21 @@ def test_fleet_report_respects_valid_epoch(client):
 
     assert response.status_code == 200
     assert response.get_json()["epoch"] == 1
+
+
+def test_fleet_report_without_epoch_uses_previous_current_epoch(client, monkeypatch):
+    monkeypatch.setitem(
+        sys.modules,
+        "rewards_implementation_rip200",
+        types.SimpleNamespace(
+            current_slot=lambda: 288,
+            slot_to_epoch=lambda slot: slot // 144,
+        ),
+    )
+
+    response = authed_get(client, "/admin/fleet/report")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["epoch"] == 1
+    assert payload["total_miners"] == 3
