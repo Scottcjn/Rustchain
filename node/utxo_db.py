@@ -821,22 +821,31 @@ class UtxoDB:
         # paths and leak the transaction-in-progress lock.
         manage_tx = True
         try:
-            # Check pool size
+            conn.execute("BEGIN IMMEDIATE")
+
+            # Check pool size under the write lock; otherwise concurrent
+            # admissions can all observe the same free slot and overfill.
             row = conn.execute(
                 "SELECT COUNT(*) AS n FROM utxo_mempool"
             ).fetchone()
             if row['n'] >= MAX_POOL_SIZE:
+                if manage_tx:
+                    conn.execute("ROLLBACK")
                 return False
 
             tx_id = tx.get('tx_id', '')
             # FIX(#2179): Reject empty/whitespace-only tx_id to prevent
             # INSERT OR IGNORE collisions that create orphan input claims.
             if not tx_id or not tx_id.strip():
+                if manage_tx:
+                    conn.execute("ROLLBACK")
                 return False
 
             inputs = tx.get('inputs', [])
             tx_type = self._normalize_tx_type(tx)
             if tx_type is None:
+                if manage_tx:
+                    conn.execute("ROLLBACK")
                 return False
             data_inputs = tx.get('data_inputs', [])
             now = int(time.time())
@@ -847,19 +856,25 @@ class UtxoDB:
             # Admitting user-supplied mining_reward txs here lets invalid mint
             # candidates occupy mempool slots and reach block candidate selection.
             if tx_type in MINTING_TX_TYPES:
+                if manage_tx:
+                    conn.execute("ROLLBACK")
                 return False
 
             if not inputs:
+                if manage_tx:
+                    conn.execute("ROLLBACK")
                 return False
 
             data_inputs = self._normalize_data_inputs(data_inputs)
             if data_inputs is None:
+                if manage_tx:
+                    conn.execute("ROLLBACK")
                 return False
             input_box_ids = [i['box_id'] for i in inputs]
             if set(input_box_ids) & set(data_inputs):
+                if manage_tx:
+                    conn.execute("ROLLBACK")
                 return False
-
-            conn.execute("BEGIN IMMEDIATE")
 
             # Check for double-spend in mempool
             for inp in inputs:
