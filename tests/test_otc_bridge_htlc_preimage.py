@@ -3,8 +3,12 @@ import hashlib
 import importlib.util
 import os
 import sys
+import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 
 def load_otc_bridge(tmp_path):
@@ -28,20 +32,73 @@ def load_otc_bridge(tmp_path):
             os.environ["OTC_DB_PATH"] = previous_db_path
 
 
-def create_buy_order(client):
-    return client.post(
-        "/api/orders",
-        json={
-            "side": "buy",
-            "pair": "RTC/USDC",
-            "wallet": "buyer1",
-            "amount_rtc": 100,
-            "price_per_rtc": 0.10,
-        },
+def make_wallet(module):
+    private_key = Ed25519PrivateKey.generate()
+    public_key_hex = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    ).hex()
+    return private_key, public_key_hex, module.rtc_address_from_public_key(public_key_hex)
+
+
+def wallet_auth(module, private_key, public_key_hex, action, order_id, wallet, **bound_fields):
+    timestamp = int(time.time())
+    message = module.wallet_auth_message(action, order_id, wallet, timestamp, bound_fields)
+    return {
+        "public_key": public_key_hex,
+        "signature": private_key.sign(message).hex(),
+        "timestamp": timestamp,
+    }
+
+
+def create_order_auth(module, private_key, public_key_hex, wallet, payload):
+    _, amount_micro_rtc = module.decimal_units(
+        payload["amount_rtc"], module.RTC_UNIT, "amount_rtc"
+    )
+    _, price_per_rtc_nano_quote = module.decimal_units(
+        payload["price_per_rtc"], module.QUOTE_PRICE_SCALE, "price_per_rtc"
+    )
+    bound_fields = module.create_order_auth_fields(
+        payload["side"],
+        payload["pair"],
+        amount_micro_rtc,
+        price_per_rtc_nano_quote,
+        payload.get("ttl_seconds", module.ORDER_TTL_DEFAULT),
+        payload.get("eth_address", ""),
+    )
+    return wallet_auth(
+        module,
+        private_key,
+        public_key_hex,
+        "create_order",
+        module.CREATE_ORDER_AUTH_ID,
+        wallet,
+        **bound_fields,
     )
 
 
-def create_sell_order(module, client):
+def signed_order_payload(module, private_key, public_key_hex, wallet, side):
+    payload = {
+        "side": side,
+        "pair": "RTC/USDC",
+        "wallet": wallet,
+        "amount_rtc": 100,
+        "price_per_rtc": "0.10",
+    }
+    payload["wallet_auth"] = create_order_auth(
+        module, private_key, public_key_hex, wallet, payload
+    )
+    return payload
+
+
+def create_buy_order(module, client, buyer_key, buyer_pub, buyer_wallet):
+    return client.post(
+        "/api/orders",
+        json=signed_order_payload(module, buyer_key, buyer_pub, buyer_wallet, "buy"),
+    )
+
+
+def create_sell_order(module, client, seller_key, seller_pub, seller_wallet):
     with patch.object(module, "rtc_get_balance", return_value=500.0), patch.object(
         module,
         "rtc_create_escrow_job",
@@ -49,17 +106,11 @@ def create_sell_order(module, client):
     ):
         return client.post(
             "/api/orders",
-            json={
-                "side": "sell",
-                "pair": "RTC/USDC",
-                "wallet": "seller1",
-                "amount_rtc": 100,
-                "price_per_rtc": 0.10,
-            },
+            json=signed_order_payload(module, seller_key, seller_pub, seller_wallet, "sell"),
         )
 
 
-def match_buy_order(module, client, order_id):
+def match_buy_order(module, client, order_id, seller_key, seller_pub, seller_wallet):
     with patch.object(module, "rtc_get_balance", return_value=500.0), patch.object(
         module,
         "rtc_create_escrow_job",
@@ -67,15 +118,27 @@ def match_buy_order(module, client, order_id):
     ):
         return client.post(
             f"/api/orders/{order_id}/match",
-            json={"wallet": "seller1"},
+            json={
+                "wallet": seller_wallet,
+                "wallet_auth": wallet_auth(
+                    module,
+                    seller_key,
+                    seller_pub,
+                    "match_order",
+                    order_id,
+                    seller_wallet,
+                    eth_address="",
+                ),
+            },
         )
 
 
 def test_sell_order_returns_seller_htlc_secret_but_public_read_hides_it(tmp_path):
     module = load_otc_bridge(tmp_path)
+    seller_key, seller_pub, seller_wallet = make_wallet(module)
 
     with module.app.test_client() as client:
-        response = create_sell_order(module, client)
+        response = create_sell_order(module, client, seller_key, seller_pub, seller_wallet)
         assert response.status_code == 201
         body = response.get_json()
 
@@ -92,14 +155,18 @@ def test_sell_order_returns_seller_htlc_secret_but_public_read_hides_it(tmp_path
 
 def test_buy_order_defers_htlc_secret_to_matching_seller(tmp_path):
     module = load_otc_bridge(tmp_path)
+    buyer_key, buyer_pub, buyer_wallet = make_wallet(module)
+    seller_key, seller_pub, seller_wallet = make_wallet(module)
 
     with module.app.test_client() as client:
-        create_response = create_buy_order(client)
+        create_response = create_buy_order(module, client, buyer_key, buyer_pub, buyer_wallet)
         order = create_response.get_json()
         assert "htlc_secret" not in order
         assert "htlc_hash" not in order
 
-        match_response = match_buy_order(module, client, order["order_id"])
+        match_response = match_buy_order(
+            module, client, order["order_id"], seller_key, seller_pub, seller_wallet
+        )
         assert match_response.status_code == 200
         match_body = match_response.get_json()
         seller_secret = match_body["htlc_secret"]
@@ -119,7 +186,7 @@ def test_buy_order_defers_htlc_secret_to_matching_seller(tmp_path):
             confirm_response = client.post(
                 f"/api/orders/{order['order_id']}/confirm",
                 json={
-                    "wallet": "seller1",
+                    "wallet": seller_wallet,
                     "quote_tx": "0xabc123def456",
                     "secret": seller_secret,
                 },
@@ -134,18 +201,22 @@ def test_buy_order_defers_htlc_secret_to_matching_seller(tmp_path):
 
 def test_buy_order_buyer_cannot_confirm_with_seller_secret(tmp_path):
     module = load_otc_bridge(tmp_path)
+    buyer_key, buyer_pub, buyer_wallet = make_wallet(module)
+    seller_key, seller_pub, seller_wallet = make_wallet(module)
 
     with module.app.test_client() as client:
-        create_response = create_buy_order(client)
+        create_response = create_buy_order(module, client, buyer_key, buyer_pub, buyer_wallet)
         order = create_response.get_json()
-        match_response = match_buy_order(module, client, order["order_id"])
+        match_response = match_buy_order(
+            module, client, order["order_id"], seller_key, seller_pub, seller_wallet
+        )
         assert match_response.status_code == 200
         seller_secret = match_response.get_json()["htlc_secret"]
 
         confirm_response = client.post(
             f"/api/orders/{order['order_id']}/confirm",
             json={
-                "wallet": "buyer1",
+                "wallet": buyer_wallet,
                 "quote_tx": "0xabc123def456",
                 "secret": seller_secret,
             },
@@ -160,18 +231,22 @@ def test_buy_order_buyer_cannot_confirm_with_seller_secret(tmp_path):
 
 def test_confirm_requires_quote_tx_before_releasing_escrow(tmp_path):
     module = load_otc_bridge(tmp_path)
+    buyer_key, buyer_pub, buyer_wallet = make_wallet(module)
+    seller_key, seller_pub, seller_wallet = make_wallet(module)
 
     with module.app.test_client() as client:
-        create_response = create_buy_order(client)
+        create_response = create_buy_order(module, client, buyer_key, buyer_pub, buyer_wallet)
         order = create_response.get_json()
-        match_response = match_buy_order(module, client, order["order_id"])
+        match_response = match_buy_order(
+            module, client, order["order_id"], seller_key, seller_pub, seller_wallet
+        )
         assert match_response.status_code == 200
         seller_secret = match_response.get_json()["htlc_secret"]
 
         with patch.object(module.requests, "post") as mock_post:
             confirm_response = client.post(
                 f"/api/orders/{order['order_id']}/confirm",
-                json={"wallet": "seller1", "secret": seller_secret},
+                json={"wallet": seller_wallet, "secret": seller_secret},
             )
 
         assert confirm_response.status_code == 400
@@ -185,17 +260,21 @@ def test_confirm_requires_quote_tx_before_releasing_escrow(tmp_path):
 
 def test_invalid_htlc_secret_returns_client_error(tmp_path):
     module = load_otc_bridge(tmp_path)
+    buyer_key, buyer_pub, buyer_wallet = make_wallet(module)
+    seller_key, seller_pub, seller_wallet = make_wallet(module)
 
     with module.app.test_client() as client:
-        create_response = create_buy_order(client)
+        create_response = create_buy_order(module, client, buyer_key, buyer_pub, buyer_wallet)
         order_id = create_response.get_json()["order_id"]
-        match_response = match_buy_order(module, client, order_id)
+        match_response = match_buy_order(
+            module, client, order_id, seller_key, seller_pub, seller_wallet
+        )
         assert match_response.status_code == 200
 
         confirm_response = client.post(
             f"/api/orders/{order_id}/confirm",
             json={
-                "wallet": "seller1",
+                "wallet": seller_wallet,
                 "quote_tx": "0xabc123def456",
                 "secret": "not-hex",
             },

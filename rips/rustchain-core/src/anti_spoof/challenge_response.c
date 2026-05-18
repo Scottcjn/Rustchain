@@ -89,47 +89,27 @@ typedef struct {
 } ValidationResult;
 
 /* Fill nonce bytes from the operating system CSPRNG. */
-static int fill_secure_random(unsigned char *buf, size_t len) {
+static int fill_secure_nonce(unsigned char *nonce, size_t len) {
 #ifdef __APPLE__
-    return SecRandomCopyBytes(kSecRandomDefault, len, buf) == errSecSuccess ? 0 : -1;
+    arc4random_buf(nonce, len);
+    return 0;
 #elif defined(__linux__)
     size_t offset = 0;
 
     while (offset < len) {
-        ssize_t got = getrandom(buf + offset, len - offset, 0);
-        if (got > 0) {
-            offset += (size_t)got;
+        ssize_t n = getrandom(nonce + offset, len - offset, 0);
+        if (n > 0) {
+            offset += (size_t)n;
             continue;
         }
-        if (got < 0 && errno == EINTR) {
+        if (n < 0 && errno == EINTR) {
             continue;
         }
         return -1;
     }
     return 0;
 #else
-    size_t offset = 0;
-    int fd = open("/dev/urandom", O_RDONLY);
-
-    if (fd < 0) {
-        return -1;
-    }
-
-    while (offset < len) {
-        ssize_t got = read(fd, buf + offset, len - offset);
-        if (got > 0) {
-            offset += (size_t)got;
-            continue;
-        }
-        if (got < 0 && errno == EINTR) {
-            continue;
-        }
-        close(fd);
-        return -1;
-    }
-
-    close(fd);
-    return 0;
+    return -1;
 #endif
 }
 /* PowerPC-specific: Read timebase register */
@@ -347,9 +327,9 @@ Challenge generate_challenge(unsigned char type) {
     c.timestamp = read_timebase();
 
     /* Generate unpredictable nonce bytes. Fail closed if the OS CSPRNG is unavailable. */
-    if (fill_secure_random(c.nonce, sizeof(c.nonce)) != 0) {
+    if (fill_secure_nonce(c.nonce, sizeof(c.nonce)) != 0) {
         fprintf(stderr, "Failed to generate secure challenge nonce\n");
-        exit(1);
+        exit(EXIT_FAILURE);
     }
 
     /* Set expected timing based on challenge type */
