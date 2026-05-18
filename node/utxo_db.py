@@ -543,6 +543,10 @@ class UtxoDB:
                 return abort()
             if fee < 0:
                 return abort()
+            if type(ts) is not int:
+                return abort()
+            if ts < 0 or ts > 2**63 - 1:
+                return abort()
             if inputs and (output_total + fee) > input_total:
                 return abort()
 

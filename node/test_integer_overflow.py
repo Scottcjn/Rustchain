@@ -16,10 +16,13 @@ import os
 import sys
 import tempfile
 import sqlite3
+import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from node.utxo_db import UtxoDB, compute_box_id, address_to_proposition
+
+TEST_TX_ID = "00" * 32
 
 
 def test_fee_overflow():
@@ -45,7 +48,7 @@ def test_fee_overflow():
         test_box_id = compute_box_id(
             1000_000_000,  # 10 RTC
             address_to_proposition('RTC_TEST'),
-            0, 'test_tx', 0
+            0, TEST_TX_ID, 0
         )
         
         conn.execute(
@@ -55,7 +58,7 @@ def test_fee_overflow():
                 created_at)
                VALUES (?,?,?,?,?,?,?,?)""",
             (test_box_id, 1000_000_000, address_to_proposition('RTC_TEST'),
-             'RTC_TEST', 0, 'test_tx', 0, 1234567890)
+             'RTC_TEST', 0, TEST_TX_ID, 0, 1234567890)
         )
         conn.commit()
         conn.close()
@@ -79,18 +82,15 @@ def test_fee_overflow():
             print(f"Transaction result: {result}")
             
             if result:
-                print("🔴 BUG: Overflow fee accepted!")
-                return False
+                raise AssertionError("Overflow fee accepted")
             else:
                 print("✅ PASS: Transaction rejected safely")
-                return True
+                return
                 
         except sqlite3.IntegrityError as e:
-            print(f"🔴 BUG: Database error (DoS): {e}")
-            return False
+            raise AssertionError(f"Database error (DoS): {e}") from e
         except Exception as e:
-            print(f"🔴 BUG: Unexpected error (DoS): {e}")
-            return False
+            raise AssertionError(f"Unexpected error (DoS): {e}") from e
             
     finally:
         if os.path.exists(db_path):
@@ -114,7 +114,7 @@ def test_timestamp_overflow():
         test_box_id = compute_box_id(
             1000_000_000,
             address_to_proposition('RTC_TEST'),
-            0, 'test_tx', 0
+            0, TEST_TX_ID, 0
         )
         
         conn.execute(
@@ -124,7 +124,7 @@ def test_timestamp_overflow():
                 created_at)
                VALUES (?,?,?,?,?,?,?,?)""",
             (test_box_id, 1000_000_000, address_to_proposition('RTC_TEST'),
-             'RTC_TEST', 0, 'test_tx', 0, 1234567890)
+             'RTC_TEST', 0, TEST_TX_ID, 0, 1234567890)
         )
         conn.commit()
         conn.close()
@@ -147,15 +147,13 @@ def test_timestamp_overflow():
             result = db.apply_transaction(malicious_tx, block_height=1)
             
             if result:
-                print("🔴 BUG: Overflow timestamp accepted!")
-                return False
+                raise AssertionError("Overflow timestamp accepted")
             else:
                 print("✅ PASS: Transaction rejected safely")
-                return True
+                return
                 
         except Exception as e:
-            print(f"🔴 BUG: Error (DoS): {e}")
-            return False
+            raise AssertionError(f"Error (DoS): {e}") from e
             
     finally:
         if os.path.exists(db_path):
@@ -179,7 +177,7 @@ def test_negative_fee():
         test_box_id = compute_box_id(
             1000_000_000,
             address_to_proposition('RTC_TEST'),
-            0, 'test_tx', 0
+            0, TEST_TX_ID, 0
         )
         
         conn.execute(
@@ -189,7 +187,7 @@ def test_negative_fee():
                 created_at)
                VALUES (?,?,?,?,?,?,?,?)""",
             (test_box_id, 1000_000_000, address_to_proposition('RTC_TEST'),
-             'RTC_TEST', 0, 'test_tx', 0, 1234567890)
+             'RTC_TEST', 0, TEST_TX_ID, 0, 1234567890)
         )
         conn.commit()
         conn.close()
@@ -212,15 +210,13 @@ def test_negative_fee():
             result = db.apply_transaction(malicious_tx, block_height=1)
             
             if result:
-                print("🔴 BUG: Negative fee accepted (fund creation)!")
-                return False
+                raise AssertionError("Negative fee accepted (fund creation)")
             else:
                 print("✅ PASS: Negative fee rejected")
-                return True
+                return
                 
         except Exception as e:
-            print(f"🔴 BUG: Error: {e}")
-            return False
+            raise AssertionError(f"Error: {e}") from e
             
     finally:
         if os.path.exists(db_path):
@@ -228,15 +224,21 @@ def test_negative_fee():
 
 
 if __name__ == '__main__':
-    import time
-    
+    def run_test(fn):
+        try:
+            fn()
+            return True
+        except AssertionError as exc:
+            print(f"🔴 BUG: {exc}")
+            return False
+
     print("=" * 60)
     print("Testing Integer Overflow Protection")
     print("=" * 60)
     
-    result1 = test_fee_overflow()
-    result2 = test_timestamp_overflow()
-    result3 = test_negative_fee()
+    result1 = run_test(test_fee_overflow)
+    result2 = run_test(test_timestamp_overflow)
+    result3 = run_test(test_negative_fee)
     
     print("\n" + "=" * 60)
     if result1 and result2 and result3:
