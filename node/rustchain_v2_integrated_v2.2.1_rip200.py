@@ -7412,6 +7412,11 @@ def void_pending():
     tx_hash = data.get('tx_hash')
     reason = data.get('reason', 'admin_void')
     voided_by = data.get('voided_by', 'admin')
+
+    if pending_id is not None and not isinstance(pending_id, (int, str)):
+        return jsonify({"error": "pending_id must be a scalar"}), 400
+    if tx_hash is not None and not isinstance(tx_hash, str):
+        return jsonify({"error": "tx_hash must be a string"}), 400
     
     if not pending_id and not tx_hash:
         return jsonify({"error": "Provide pending_id or tx_hash"}), 400
