@@ -143,6 +143,18 @@ def _max_recent_rows() -> int:
     return max(1, min(int(os.getenv("SOPHIA_GOVERNOR_MAX_RECENT", "50")), 200))
 
 
+def _parse_recent_limit(value: Any, default: int = 20) -> int:
+    if value is None or value == "":
+        return default
+    try:
+        limit = int(value)
+    except (TypeError, ValueError):
+        raise ValueError("limit must be an integer")
+    if limit <= 0:
+        raise ValueError("limit must be positive")
+    return min(limit, _max_recent_rows())
+
+
 def _parse_csv_env(name: str) -> list[str]:
     raw = os.getenv(name, "")
     if not raw:
@@ -947,11 +959,10 @@ def register_sophia_governor_endpoints(app, db_path: str | None = None) -> None:
 
     @app.route("/sophia/governor/recent", methods=["GET"])
     def sophia_governor_recent():
-        limit_raw = request.args.get("limit", 20)
         try:
-            limit = int(limit_raw)
-        except (TypeError, ValueError):
-            return jsonify({"error": "limit must be an integer"}), 400
+            limit = _parse_recent_limit(request.args.get("limit"))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
         return jsonify({
             "ok": True,
             "events": get_recent_governor_events(db_path=db, limit=limit),

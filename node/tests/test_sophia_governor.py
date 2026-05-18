@@ -193,6 +193,34 @@ def test_governor_recent_rejects_malformed_limit(client):
     assert response.get_json()["error"] == "limit must be an integer"
 
 
+@pytest.mark.parametrize("limit", ["0", "-1"])
+def test_governor_recent_rejects_non_positive_limit(client, limit):
+    response = client.get(f"/sophia/governor/recent?limit={limit}")
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "limit must be positive"
+
+
+def test_governor_recent_caps_oversized_limit(client, monkeypatch):
+    monkeypatch.setattr(sophia_governor, "_max_recent_rows", lambda: 1)
+    for amount in (1200, 1500):
+        review = client.post(
+            "/sophia/governor/review",
+            headers={"X-Admin-Key": "test-admin"},
+            json={
+                "event_type": "pending_transfer",
+                "source": "pytest.manual",
+                "payload": {"amount_rtc": amount},
+            },
+        )
+        assert review.status_code == 200
+
+    response = client.get("/sophia/governor/recent?limit=500")
+
+    assert response.status_code == 200
+    assert len(response.get_json()["events"]) == 1
+
+
 def test_governor_review_rejects_non_object_json(client):
     response = client.post(
         "/sophia/governor/review",
