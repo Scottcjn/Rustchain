@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -118,6 +119,7 @@ class Config:
 
     def __init__(self) -> None:
         self.rtc_amount: float = _env_float("INPUT_RTC_AMOUNT", 50.0)
+        self.rtc_api_url: str = _env_stripped("INPUT_RTC_API_URL")
         self.vps_host: str = _env_stripped("INPUT_RTC_VPS_HOST")
         self.admin_key: str = _env_stripped("INPUT_RTC_ADMIN_KEY")
         self.from_wallet: str = _env_stripped("INPUT_FROM_WALLET", "founder_community")
@@ -145,8 +147,8 @@ class Config:
             return "GITHUB_REPOSITORY is not set"
         if not self.pr_number:
             return "PR_NUMBER is not set"
-        if not self.dry_run and not self.vps_host:
-            return "INPUT_RTC_VPS_HOST is required (unless dry-run is enabled)"
+        if not self.dry_run and not (self.rtc_api_url or self.vps_host):
+            return "INPUT_RTC_API_URL or INPUT_RTC_VPS_HOST is required (unless dry-run is enabled)"
         if not self.dry_run and not self.admin_key:
             return "INPUT_RTC_ADMIN_KEY is required (unless dry-run is enabled)"
         if not _is_finite_amount(self.rtc_amount):
@@ -299,7 +301,7 @@ def is_endpoint_unreachable_error(error_msg: str) -> bool:
 
 
 def transfer_rtc(
-    vps_host: str,
+    transfer_url: str,
     admin_key: str,
     from_wallet: str,
     to_wallet: str,
@@ -311,12 +313,11 @@ def transfer_rtc(
 
     Returns ``(success, response_body_dict)``.
     """
-    vps_host = vps_host.strip()
+    transfer_url = build_transfer_url(transfer_url)
     admin_key = admin_key.strip()
     from_wallet = from_wallet.strip()
     to_wallet = to_wallet.strip()
 
-    url = f"http://{vps_host}:{VPS_PORT}/wallet/transfer"
     payload = {
         "from_miner": from_wallet,
         "to_miner": to_wallet,
@@ -324,7 +325,7 @@ def transfer_rtc(
         "memo": memo,
     }
     req = Request(
-        url,
+        transfer_url,
         data=json.dumps(payload).encode("utf-8"),
         headers={
             "Content-Type": "application/json",
@@ -345,6 +346,22 @@ def transfer_rtc(
         return False, result
     except URLError as e:
         return False, {"error": f"Connection failed: {e.reason}"}
+
+
+def build_transfer_url(value: str) -> str:
+    """
+    Build the wallet transfer URL.
+
+    Full URLs are used as-is, except a bare origin gets ``/wallet/transfer``
+    appended. Bare hosts keep the legacy ``http://host:8099`` behavior.
+    """
+    value = value.strip().rstrip("/")
+    parsed = urlparse(value)
+    if parsed.scheme and parsed.netloc:
+        if parsed.path and parsed.path != "/":
+            return value
+        return f"{value}/wallet/transfer"
+    return f"http://{value}:{VPS_PORT}/wallet/transfer"
 
 
 # ---------------------------------------------------------------------------
@@ -472,7 +489,7 @@ def main() -> int:
     # --- Execute transfer --------------------------------------------------
     print(f"Initiating transfer: {amount} RTC from {cfg.from_wallet} to {wallet}")
     ok, result = transfer_rtc(
-        cfg.vps_host,
+        cfg.rtc_api_url or cfg.vps_host,
         cfg.admin_key,
         cfg.from_wallet,
         wallet,

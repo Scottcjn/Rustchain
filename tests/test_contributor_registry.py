@@ -3,6 +3,7 @@ import sqlite3
 import os
 import importlib
 import tempfile
+import time
 from unittest.mock import patch, MagicMock
 
 # Module under test
@@ -13,12 +14,17 @@ import contributor_registry as cr
 def app():
     """Create a test Flask app with a temporary database."""
     db_fd, db_path = tempfile.mkstemp(suffix=".db")
+    os.close(db_fd)
     cr.DB_PATH = db_path
     cr.app.config["TESTING"] = True
     cr.init_db()
     yield cr.app
-    os.close(db_fd)
-    os.unlink(db_path)
+    for _ in range(5):
+        try:
+            os.unlink(db_path)
+            break
+        except PermissionError:
+            time.sleep(0.05)
 
 
 @pytest.fixture
@@ -123,21 +129,105 @@ class TestApiContributors:
 
 
 class TestApproveRoute:
-    def test_approve_pending_contributor(self, client):
-        """GET /approve/<username> should set status to approved."""
+    def test_approve_rejects_get_requests(self, client):
+        """Approvals are state-changing and must not be reachable by GET."""
+        response = client.get("/approve/pendinguser")
+        assert response.status_code == 405
+
+    def test_approve_fails_closed_without_admin_key(self, client, monkeypatch):
+        """Unset CONTRIBUTOR_ADMIN_KEY must not allow approval."""
+        monkeypatch.delenv("CONTRIBUTOR_ADMIN_KEY", raising=False)
         client.post("/register", data={
             "github_username": "pendinguser",
             "contributor_type": "bot",
             "rtc_wallet": "RTC0pending",
             "contribution_history": "",
         }, follow_redirects=True)
-        response = client.get("/approve/pendinguser", follow_redirects=True)
+
+        response = client.post(
+            "/approve/pendinguser",
+            headers={"X-Admin-Key": "anything"},
+            follow_redirects=True,
+        )
+
+        assert response.status_code == 401
+        with sqlite3.connect(cr.DB_PATH) as conn:
+            row = conn.execute(
+                "SELECT status FROM contributors WHERE github_username='pendinguser'"
+            ).fetchone()
+        assert row[0] == "pending"
+
+    def test_approve_rejects_wrong_admin_key(self, client, monkeypatch):
+        """Wrong admin credentials must not approve contributors."""
+        monkeypatch.setenv("CONTRIBUTOR_ADMIN_KEY", "expected-admin-key")
+        client.post("/register", data={
+            "github_username": "pendinguser",
+            "contributor_type": "bot",
+            "rtc_wallet": "RTC0pending",
+            "contribution_history": "",
+        }, follow_redirects=True)
+
+        response = client.post(
+            "/approve/pendinguser",
+            headers={"X-Admin-Key": "wrong-admin-key"},
+            follow_redirects=True,
+        )
+
+        assert response.status_code == 401
+        with sqlite3.connect(cr.DB_PATH) as conn:
+            row = conn.execute(
+                "SELECT status FROM contributors WHERE github_username='pendinguser'"
+            ).fetchone()
+        assert row[0] == "pending"
+
+    def test_approve_pending_contributor_with_admin_key(self, client, monkeypatch):
+        """POST /approve/<username> with admin key should set status to approved."""
+        monkeypatch.setenv("CONTRIBUTOR_ADMIN_KEY", "expected-admin-key")
+        client.post("/register", data={
+            "github_username": "pendinguser",
+            "contributor_type": "bot",
+            "rtc_wallet": "RTC0pending",
+            "contribution_history": "",
+        }, follow_redirects=True)
+
+        response = client.post(
+            "/approve/pendinguser",
+            headers={"X-Admin-Key": "expected-admin-key"},
+            follow_redirects=True,
+        )
+
         assert response.status_code == 200
         with sqlite3.connect(cr.DB_PATH) as conn:
             row = conn.execute(
                 "SELECT status FROM contributors WHERE github_username='pendinguser'"
             ).fetchone()
         assert row[0] == "approved"
+
+    def test_approve_uses_constant_time_admin_compare(self, client, monkeypatch):
+        """Configured admin keys are compared through hmac.compare_digest."""
+        monkeypatch.setenv("CONTRIBUTOR_ADMIN_KEY", "expected-admin-key")
+        calls = []
+
+        def spy_compare_digest(provided, expected):
+            calls.append((provided, expected))
+            return provided == expected
+
+        monkeypatch.setattr(cr.hmac, "compare_digest", spy_compare_digest)
+        client.post("/register", data={
+            "github_username": "pendinguser",
+            "contributor_type": "bot",
+            "rtc_wallet": "RTC0pending",
+            "contribution_history": "",
+        }, follow_redirects=True)
+
+        response = client.post(
+            "/approve/pendinguser",
+            headers={"X-API-Key": "expected-admin-key"},
+            follow_redirects=True,
+        )
+
+        assert response.status_code == 200
+        assert ("expected-admin-key", "expected-admin-key") in calls
 
 
 class TestDatabaseConstraints:

@@ -163,6 +163,24 @@ def _to_words(data: bytes, wordlist: List[str]) -> List[str]:
     return words
 
 
+def _expand_entropy_for_word_count(entropy: bytes, word_count: int) -> bytes:
+    """Expand entropy into the two-byte chunks consumed by _to_words."""
+    target_length = word_count * 2
+    checksum = hashlib.sha256(entropy).digest()
+    expanded = bytearray()
+    counter = 0
+
+    while len(expanded) < target_length:
+        expanded.extend(
+            hashlib.sha512(
+                entropy + checksum + counter.to_bytes(4, byteorder="big")
+            ).digest()
+        )
+        counter += 1
+
+    return bytes(expanded[:target_length])
+
+
 def _from_words(words: List[str], wordlist: List[str]) -> bytes:
     """Convert BIP39-style words back to bytes."""
     word_to_index = {w: i for i, w in enumerate(wordlist)}
@@ -261,13 +279,13 @@ class RustChainWallet:
 
         # Generate random entropy
         raw_bytes = secrets.token_bytes(strength // 8)
-
-        # Add checksum (first byte of SHA256 of entropy)
-        checksum = hashlib.sha256(raw_bytes).digest()[:1]
-        extended = raw_bytes + checksum
+        word_count = 12 if strength == 128 else 24
 
         # Convert to words
-        words = _to_words(extended, _BIP39_WORDLIST)
+        words = _to_words(
+            _expand_entropy_for_word_count(raw_bytes, word_count),
+            _BIP39_WORDLIST,
+        )
 
         # Derive seed from words
         seed = _hmac_sha512(b"mnemonic", " ".join(words).encode("utf-8"))
@@ -351,16 +369,24 @@ class RustChainWallet:
             return _hmac_sha512(self._private_key, message)[:64]
 
     def sign_transfer(
-        self, to_address: str, amount: int, fee: int = 0, memo: str = ""
+        self,
+        to_address: str,
+        amount: float,
+        fee: float = 0,
+        memo: str = "",
+        chain_id: Optional[str] = None,
+        nonce: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         Create a signed transfer payload for the RustChain network (canonical JSON format).
 
         Args:
             to_address: Recipient wallet address.
-            amount: Amount to transfer (in smallest units).
-            fee: Transaction fee (in smallest units).
-            memo: Optional transaction memo.
+            amount: Amount to transfer in RTC.
+            fee: Transaction fee in RTC.
+            memo: Optional transfer memo.
+            chain_id: Optional chain/network id.
+            nonce: Optional caller-supplied nonce. Defaults to current unix ms.
 
         Returns:
             A dict containing the transfer payload with signature.
@@ -368,27 +394,38 @@ class RustChainWallet:
         import time
         import json
 
-        nonce = int(time.time())
-        # Canonical JSON with sorted keys (node requires this format)
-        payload_dict = {
+        nonce_value = int(nonce if nonce is not None else time.time_ns() // 1_000_000)
+        amount_for_sig = float(amount)
+        fee_for_sig = float(fee)
+        tx_data = {
+            "from": self._address,
+            "to": to_address,
+            "amount": amount_for_sig,
+            "fee": fee_for_sig,
+            "memo": memo,
+            "nonce": str(nonce_value),
+        }
+        if chain_id:
+            tx_data["chain_id"] = chain_id
+        message = json.dumps(tx_data, sort_keys=True, separators=(",", ":")).encode()
+        signature = self.sign(message)
+
+        return {
             "from": self._address,
             "to": to_address,
             "amount": amount,
-            "memo": memo,
-            "nonce": nonce,
-        }
-        canonical_payload = json.dumps(payload_dict, sort_keys=True, separators=(",", ":")).encode()
-        signature = self.sign(canonical_payload)
-
-        return {
+            "fee": fee,
+            "timestamp": nonce,
             "from_address": self._address,
             "to_address": to_address,
-            "amount_rtc": amount,
-            "fee_rtc": fee,
-            "nonce": nonce,
-            "memo": memo,
-            "public_key": self.public_key_hex,
+            "amount_rtc": amount_for_sig,
+            "fee": fee_for_sig,
+            "fee_rtc": fee_for_sig,
+            "nonce": nonce_value,
             "signature": signature.hex(),
+            "public_key": self.public_key_hex,
+            "memo": memo,
+            **({"chain_id": chain_id} if chain_id else {}),
         }
 
     @property

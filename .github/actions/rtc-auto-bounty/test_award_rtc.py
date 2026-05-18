@@ -22,6 +22,7 @@ sys.path.insert(0, str(ACTION_DIR))
 
 from award_rtc import (
     Config,
+    build_transfer_url,
     resolve_wallet,
     resolve_wallet_from_pr_body,
     resolve_wallet_from_file,
@@ -174,6 +175,7 @@ class TestConfig(unittest.TestCase):
         """Create a Config with the given environment variable overrides."""
         env = {
             "INPUT_RTC_AMOUNT": "50",
+            "INPUT_RTC_API_URL": "",
             "INPUT_RTC_VPS_HOST": "1.2.3.4",
             "INPUT_RTC_ADMIN_KEY": "test-key-32-chars-long!!",
             "INPUT_FROM_WALLET": "founder_community",
@@ -204,6 +206,7 @@ class TestConfig(unittest.TestCase):
     def test_trims_scalar_inputs(self):
         cfg = self._cfg(
             INPUT_RTC_AMOUNT=" 50\n",
+            INPUT_RTC_API_URL=" https://rustchain.org/wallet/transfer\n",
             INPUT_RTC_VPS_HOST=" 1.2.3.4\n",
             INPUT_RTC_ADMIN_KEY=" test-key-32-chars-long!!\n",
             INPUT_FROM_WALLET=" founder_community\n",
@@ -221,6 +224,7 @@ class TestConfig(unittest.TestCase):
         )
 
         self.assertEqual(cfg.rtc_amount, 50.0)
+        self.assertEqual(cfg.rtc_api_url, "https://rustchain.org/wallet/transfer")
         self.assertEqual(cfg.vps_host, "1.2.3.4")
         self.assertEqual(cfg.admin_key, "test-key-32-chars-long!!")
         self.assertEqual(cfg.from_wallet, "founder_community")
@@ -251,6 +255,14 @@ class TestConfig(unittest.TestCase):
     def test_validate_missing_vps_host_in_live_mode(self):
         cfg = self._cfg(INPUT_RTC_VPS_HOST="", INPUT_DRY_RUN="false")
         self.assertIsNotNone(cfg.validate())
+
+    def test_validate_allows_api_url_without_legacy_host(self):
+        cfg = self._cfg(
+            INPUT_RTC_API_URL="https://rustchain.org/wallet/transfer",
+            INPUT_RTC_VPS_HOST="",
+            INPUT_DRY_RUN="false",
+        )
+        self.assertIsNone(cfg.validate())
 
     def test_validate_missing_admin_key_in_live_mode(self):
         cfg = self._cfg(INPUT_RTC_ADMIN_KEY="", INPUT_DRY_RUN="false")
@@ -343,13 +355,31 @@ class TestSetOutput(unittest.TestCase):
 class TestTransferRtc(unittest.TestCase):
     """Test RustChain transfer API request construction."""
 
+    def test_build_transfer_url_preserves_full_path(self):
+        self.assertEqual(
+            build_transfer_url("https://rustchain.org/wallet/transfer"),
+            "https://rustchain.org/wallet/transfer",
+        )
+
+    def test_build_transfer_url_appends_transfer_path_to_origin(self):
+        self.assertEqual(
+            build_transfer_url("https://rustchain.org"),
+            "https://rustchain.org/wallet/transfer",
+        )
+
+    def test_build_transfer_url_keeps_legacy_host_mode(self):
+        self.assertEqual(
+            build_transfer_url("1.2.3.4"),
+            "http://1.2.3.4:8099/wallet/transfer",
+        )
+
     def test_strips_scalar_request_values(self):
         mock_resp = MagicMock()
         mock_resp.read.return_value = b'{"ok": true, "tx_hash": "tx_abc"}'
 
         with patch("award_rtc.urlopen", return_value=mock_resp) as mock_urlopen:
             ok, result = transfer_rtc(
-                " 1.2.3.4\n",
+                " https://rustchain.org/wallet/transfer\n",
                 " test-admin-key\n",
                 " founder_community\n",
                 " alice\n",
@@ -361,7 +391,7 @@ class TestTransferRtc(unittest.TestCase):
         self.assertEqual(result["tx_hash"], "tx_abc")
 
         req = mock_urlopen.call_args[0][0]
-        self.assertEqual(req.full_url, "http://1.2.3.4:8099/wallet/transfer")
+        self.assertEqual(req.full_url, "https://rustchain.org/wallet/transfer")
         self.assertEqual(req.get_header("X-admin-key"), "test-admin-key")
 
         payload = json.loads(req.data.decode("utf-8"))
@@ -383,6 +413,7 @@ class TestMainFlow(unittest.TestCase):
         output_file.close()
         env = {
             "INPUT_RTC_AMOUNT": "75",
+            "INPUT_RTC_API_URL": "",
             "INPUT_RTC_VPS_HOST": "1.2.3.4",
             "INPUT_RTC_ADMIN_KEY": "test-admin-key-32chars!!",
             "INPUT_FROM_WALLET": "founder_community",
