@@ -26,6 +26,7 @@ from award_rtc import (
     resolve_wallet_from_pr_body,
     resolve_wallet_from_file,
     check_already_awarded,
+    is_endpoint_unreachable_error,
     set_output,
     transfer_rtc,
     _AWARD_MARKER,
@@ -152,6 +153,10 @@ class TestCheckAlreadyAwarded(unittest.TestCase):
         comments = [{"body": f"<!-- {_AWARD_MARKER}:FAILED -->"}]
         self.assertFalse(check_already_awarded(comments))
 
+    def test_manual_required_marker_blocks_automatic_retry_until_human_resets(self):
+        comments = [{"body": f"<!-- {_AWARD_MARKER}:MANUAL-REQUIRED -->"}]
+        self.assertTrue(check_already_awarded(comments))
+
     def test_failed_text_outside_marker_does_not_hide_success_marker(self):
         comments = [{"body": f"failed before marker\n<!-- {_AWARD_MARKER} tx=xyz -->"}]
         self.assertTrue(check_already_awarded(comments))
@@ -270,6 +275,38 @@ class TestConfig(unittest.TestCase):
     def test_validate_rejects_nan_max_amount(self):
         cfg = self._cfg(INPUT_MAX_AMOUNT="nan")
         self.assertEqual(cfg.validate(), "max-amount must be finite, got nan")
+
+
+# ---------------------------------------------------------------------------
+# Transfer error classification tests
+# ---------------------------------------------------------------------------
+
+
+class TestEndpointUnreachableError(unittest.TestCase):
+    """Test classification of network errors that require manual follow-up."""
+
+    def test_matches_common_network_failures(self):
+        samples = [
+            "Connection failed: [Errno 111] Connection refused",
+            "timed out while connecting to the RustChain endpoint",
+            "Temporary failure in name resolution",
+            "No route to host",
+            "Network is unreachable",
+            "Connection reset by peer",
+        ]
+        for sample in samples:
+            with self.subTest(sample=sample):
+                self.assertTrue(is_endpoint_unreachable_error(sample))
+
+    def test_does_not_match_business_logic_rejections(self):
+        samples = [
+            "Insufficient balance",
+            "invalid recipient wallet",
+            "amount exceeds safety cap",
+        ]
+        for sample in samples:
+            with self.subTest(sample=sample):
+                self.assertFalse(is_endpoint_unreachable_error(sample))
 
 
 # ---------------------------------------------------------------------------
@@ -462,6 +499,35 @@ class TestMainFlow(unittest.TestCase):
             with patch("award_rtc.fetch_pr_comments", return_value=[]):
                 with patch("award_rtc.transfer_rtc", return_value=(False, transfer_result)):
                     with patch("award_rtc.post_pr_comment", return_value=True):
+                        rc = main()
+        self.assertEqual(rc, 1)
+
+    def test_connection_failure_posts_manual_notice_without_failing_job(self):
+        from award_rtc import main
+        transfer_result = {
+            "ok": False,
+            "error": "Connection failed: [Errno 111] Connection refused",
+        }
+        with self._env():
+            with patch("award_rtc.fetch_pr_comments", return_value=[]):
+                with patch("award_rtc.transfer_rtc", return_value=(False, transfer_result)):
+                    with patch("award_rtc.post_pr_comment", return_value=True) as mock_post:
+                        rc = main()
+        self.assertEqual(rc, 0)
+        comment_body = mock_post.call_args[0][2]
+        self.assertIn("Manual Transfer Required", comment_body)
+        self.assertIn(":MANUAL-REQUIRED", comment_body)
+
+    def test_connection_failure_fails_when_manual_notice_cannot_be_posted(self):
+        from award_rtc import main
+        transfer_result = {
+            "ok": False,
+            "error": "Connection failed: [Errno 111] Connection refused",
+        }
+        with self._env():
+            with patch("award_rtc.fetch_pr_comments", return_value=[]):
+                with patch("award_rtc.transfer_rtc", return_value=(False, transfer_result)):
+                    with patch("award_rtc.post_pr_comment", return_value=False):
                         rc = main()
         self.assertEqual(rc, 1)
 

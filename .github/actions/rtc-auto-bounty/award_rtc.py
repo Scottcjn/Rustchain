@@ -71,6 +71,20 @@ _BOUNTY_RE = re.compile(
 # Marker to prevent duplicate awards.
 _AWARD_MARKER = "RTC-AutoBounty-Awarded"
 
+_ENDPOINT_UNREACHABLE_PATTERNS = (
+    "connection failed:",
+    "connection refused",
+    "connection reset",
+    "connection aborted",
+    "timed out",
+    "timeout",
+    "temporary failure in name resolution",
+    "name or service not known",
+    "no route to host",
+    "network is unreachable",
+    "host is unreachable",
+)
+
 # ---------------------------------------------------------------------------
 # Configuration helpers
 # ---------------------------------------------------------------------------
@@ -264,10 +278,19 @@ def check_already_awarded(comments: list) -> bool:
         if marker_end != -1:
             marker_tail = marker_tail[:marker_end]
 
-        if "(dry-run)" in marker_tail or ":failed" in marker_tail:
+        if (
+            "(dry-run)" in marker_tail
+            or ":failed" in marker_tail
+        ):
             continue
         return True
     return False
+
+
+def is_endpoint_unreachable_error(error_msg: str) -> bool:
+    """Return True when transfer failed because the RustChain endpoint was unreachable."""
+    normalized = (error_msg or "").lower()
+    return any(pattern in normalized for pattern in _ENDPOINT_UNREACHABLE_PATTERNS)
 
 
 # ---------------------------------------------------------------------------
@@ -465,6 +488,31 @@ def main() -> int:
         log_error(f"Transfer failed: {error_msg}")
         set_output("awarded", "false")
         set_output("skip_reason", f"transfer_failed: {error_msg}")
+
+        if is_endpoint_unreachable_error(error_msg):
+            if cfg.post_comment:
+                manual_body = (
+                    f"**RTC Auto-Bounty Manual Transfer Required**\n\n"
+                    f"The merged PR qualifies for an RTC award, but the RustChain "
+                    f"transfer endpoint was unreachable when the workflow ran:\n\n"
+                    f"```\n{error_msg}\n```\n\n"
+                    f"| Field | Value |\n"
+                    f"|-------|-------|\n"
+                    f"| Amount | **{amount} RTC** |\n"
+                    f"| Recipient | `{wallet}` |\n"
+                    f"| From | `{cfg.from_wallet}` |\n"
+                    f"| Memo | {memo} |\n\n"
+                    f"Please rerun the award after the endpoint is healthy or process "
+                    f"this transfer manually. This marker intentionally blocks automatic "
+                    f"retries to avoid duplicate payouts; remove it only if no manual "
+                    f"transfer was completed.\n\n"
+                    f"<!-- { _AWARD_MARKER }:MANUAL-REQUIRED -->"
+                )
+                if not post_pr_comment(repo, pr_number, manual_body, cfg.github_token):
+                    log_error("Manual transfer notice could not be posted.")
+                    set_output("skip_reason", f"manual_notice_failed: {error_msg}")
+                    return 1
+            return 0
 
         if cfg.post_comment:
             fail_body = (
