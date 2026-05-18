@@ -5,6 +5,7 @@ import sqlite3
 import os
 import secrets
 import hmac
+import re
 from datetime import datetime
 
 app = Flask(__name__)
@@ -32,6 +33,10 @@ elif SECRET_KEY == 'rustchain_contributor_secret_2024':
 app.secret_key = SECRET_KEY
 
 DB_PATH = 'contributors.db'
+CONTRIBUTOR_TYPES = {'human', 'bot', 'agent'}
+GITHUB_USERNAME_RE = re.compile(r'^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$')
+RTC_WALLET_RE = re.compile(r'^RTC[0-9A-Fa-f]{40}$')
+EVM_WALLET_RE = re.compile(r'^0x[0-9A-Fa-f]{40}$')
 
 
 def debug_enabled() -> bool:
@@ -46,6 +51,45 @@ def _contributor_admin_authorized() -> bool:
         provided_key,
         expected_key,
     )
+
+def _registration_key_status():
+    expected_key = os.environ.get('CONTRIBUTOR_REGISTRATION_KEY', '')
+    if not expected_key:
+        return False, 503
+
+    provided_key = (
+        request.headers.get('X-Registration-Key')
+        or request.form.get('registration_key', '')
+    )
+    if not provided_key:
+        return False, 401
+
+    return hmac.compare_digest(provided_key, expected_key), 401
+
+def _validate_github_username(value: str) -> str:
+    username = value.strip()
+    if not GITHUB_USERNAME_RE.fullmatch(username):
+        abort(400, description='github_username must be a valid GitHub username')
+    if '--' in username:
+        abort(400, description='github_username must not contain consecutive hyphens')
+    return username
+
+def _validate_contributor_type(value: str) -> str:
+    contributor_type = value.strip().lower()
+    if contributor_type not in CONTRIBUTOR_TYPES:
+        abort(400, description='contributor_type must be human, bot, or agent')
+    return contributor_type
+
+def _validate_wallet(value: str) -> str:
+    wallet = value.strip()
+    if not (RTC_WALLET_RE.fullmatch(wallet) or EVM_WALLET_RE.fullmatch(wallet)):
+        abort(400, description='rtc_wallet must be an RTC or 0x wallet address')
+    return wallet
+
+def _redact_wallet(wallet: str) -> str:
+    if len(wallet) <= 12:
+        return 'redacted'
+    return f'{wallet[:6]}...{wallet[-4:]}'
 
 def init_db():
     with sqlite3.connect(DB_PATH) as conn:
@@ -108,6 +152,11 @@ def index():
                 <label for="rtc_wallet">RTC Wallet Address:</label>
                 <input type="text" id="rtc_wallet" name="rtc_wallet" required>
             </div>
+
+            <div class="form-group">
+                <label for="registration_key">Registration Key:</label>
+                <input type="password" id="registration_key" name="registration_key" required>
+            </div>
             
             <div class="form-group">
                 <label for="contribution_history">Contribution History:</label>
@@ -127,7 +176,7 @@ def index():
             {% for contributor in contributors %}
             <div class="contributor status-{{ contributor[6] }}">
                 <strong>@{{ contributor[1] }}</strong> ({{ contributor[2] }})
-                <br><small>Wallet: {{ contributor[3] }}</small>
+                <br><small>Wallet: {{ redact_wallet(contributor[3]) }}</small>
                 <br><small>Registered: {{ contributor[5] }} | Status: {{ contributor[6] }}</small>
                 {% if contributor[4] %}
                     <br><em>{{ contributor[4][:200] }}{% if contributor[4]|length > 200 %}...{% endif %}</em>
@@ -145,14 +194,18 @@ def index():
         ).fetchall()
     
     from flask import render_template_string
-    return render_template_string(html, contributors=contributors)
+    return render_template_string(html, contributors=contributors, redact_wallet=_redact_wallet)
 
 @app.route('/register', methods=['POST'])
 def register():
-    github_username = request.form['github_username']
-    contributor_type = request.form['contributor_type']
-    rtc_wallet = request.form['rtc_wallet']
-    contribution_history = request.form.get('contribution_history', '')
+    authorized, status_code = _registration_key_status()
+    if not authorized:
+        abort(status_code)
+
+    github_username = _validate_github_username(request.form.get('github_username', ''))
+    contributor_type = _validate_contributor_type(request.form.get('contributor_type', ''))
+    rtc_wallet = _validate_wallet(request.form.get('rtc_wallet', ''))
+    contribution_history = request.form.get('contribution_history', '').strip()
     
     try:
         with sqlite3.connect(DB_PATH) as conn:
@@ -179,7 +232,7 @@ def api_contributors():
             {
                 'github_username': c[0],
                 'type': c[1],
-                'wallet': c[2],
+                'wallet': _redact_wallet(c[2]),
                 'registered': c[3],
                 'status': c[4]
             }
