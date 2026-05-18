@@ -87,6 +87,24 @@ def test_api_miners_requires_auth(client):
         assert response.status_code == 200
 
 
+def test_api_miners_rejects_malformed_pagination(client, monkeypatch, tmp_path):
+    """Malformed /api/miners pagination should return a client error."""
+    db_path = tmp_path / "api_miners_pagination.db"
+    _init_api_miners_db(db_path)
+    monkeypatch.setattr(integrated_node, "DB_PATH", str(db_path))
+
+    rate_info = {"limit": 100, "remaining": 99, "reset": 0, "retry_after": 0}
+    with patch('integrated_node.check_api_miners_rate_limit', return_value=(True, rate_info)):
+        limit_response = client.get('/api/miners?limit=abc')
+        offset_response = client.get('/api/miners?offset=abc')
+
+    assert limit_response.status_code == 400
+    assert limit_response.get_json() == {"ok": False, "error": "limit must be an integer"}
+
+    assert offset_response.status_code == 400
+    assert offset_response.get_json() == {"ok": False, "error": "offset must be an integer"}
+
+
 def _init_api_miners_db(path):
     with sqlite3.connect(path) as conn:
         conn.execute(
