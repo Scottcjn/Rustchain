@@ -74,7 +74,92 @@ def test_snapshot_node_fetches_stats_and_paginated_miner_totals(monkeypatch):
     assert snap.miners == ["alice", "bob"]
     assert snap.miner_total == 2
     assert snap.miner_set_hash == module.stable_miner_set_hash(["bob", "alice"])
+    assert snap.miner_pages == [{"total": 2, "limit": None, "offset": None, "count": 2, "row_count": 2}]
+    assert snap.miner_set_complete is True
     assert snap.stats == {"epoch": 7, "total_miners": 2, "total_balance": 19.5}
+
+
+def test_snapshot_node_fetches_all_miner_pages_before_hashing(monkeypatch):
+    module = load_module()
+
+    responses = {
+        "/health": {"tip_age_slots": 0},
+        "/epoch": {"epoch": 7, "slot": 99, "enrolled_miners": 4},
+        "/api/stats": {"epoch": 7, "total_miners": 4, "total_balance": 19.5},
+        "/api/miners": {
+            "miners": [{"miner": "alice"}, {"miner": "bob"}],
+            "pagination": {"total": 4, "limit": 2, "offset": 0, "count": 2},
+        },
+        "/api/miners?limit=2&offset=2": {
+            "miners": [{"miner": "carol"}, {"miner": "dave"}],
+            "pagination": {"total": 4, "limit": 2, "offset": 2, "count": 2},
+        },
+    }
+
+    def fake_get_json(node, endpoint, timeout, verify_ssl):
+        assert node == "https://node-a"
+        return responses[endpoint]
+
+    monkeypatch.setattr(module, "get_json", fake_get_json)
+
+    snap = module.snapshot_node("https://node-a", timeout=1.5, verify_ssl=False, sample_balances=0)
+
+    assert snap.miners == ["alice", "bob", "carol", "dave"]
+    assert snap.miner_total == 4
+    assert snap.miner_set_hash == module.stable_miner_set_hash(["alice", "bob", "carol", "dave"])
+    assert snap.miner_set_complete is True
+    assert snap.miner_pages == [
+        {"total": 4, "limit": 2, "offset": 0, "count": 2, "row_count": 2},
+        {"total": 4, "limit": 2, "offset": 2, "count": 2, "row_count": 2},
+    ]
+
+
+def test_paged_miner_hash_detects_divergent_second_page(monkeypatch):
+    module = load_module()
+
+    def miners_page(node, endpoint):
+        if endpoint == "/api/miners":
+            return {
+                "miners": [{"miner": "alice"}, {"miner": "bob"}],
+                "pagination": {"total": 4, "limit": 2, "offset": 0, "count": 2},
+            }
+        if node == "https://node-a":
+            return {
+                "miners": [{"miner": "carol"}, {"miner": "dave"}],
+                "pagination": {"total": 4, "limit": 2, "offset": 2, "count": 2},
+            }
+        return {
+            "miners": [{"miner": "carol"}, {"miner": "erin"}],
+            "pagination": {"total": 4, "limit": 2, "offset": 2, "count": 2},
+        }
+
+    def fake_get_json(node, endpoint, timeout, verify_ssl):
+        if endpoint == "/health":
+            return {"tip_age_slots": 0}
+        if endpoint == "/epoch":
+            return {"epoch": 7, "slot": 99, "enrolled_miners": 4}
+        if endpoint == "/api/stats":
+            return {"epoch": 7, "total_miners": 4, "total_balance": 19.5}
+        if endpoint.startswith("/api/miners"):
+            return miners_page(node, endpoint)
+        raise AssertionError(endpoint)
+
+    monkeypatch.setattr(module, "get_json", fake_get_json)
+
+    left = module.snapshot_node("https://node-a", timeout=1.5, verify_ssl=False, sample_balances=0)
+    right = module.snapshot_node("https://node-b", timeout=1.5, verify_ssl=False, sample_balances=0)
+    report = module.compare_snapshots([left, right], tip_drift_threshold=5)
+
+    assert report["discrepancies"]["miner_set_hash_mismatch"] == [
+        {
+            "https://node-a": module.stable_miner_set_hash(["alice", "bob", "carol", "dave"]),
+            "https://node-b": module.stable_miner_set_hash(["alice", "bob", "carol", "erin"]),
+        }
+    ]
+    assert report["discrepancies"]["miner_presence_diff"] == [
+        {"miner": "dave", "present_on": ["https://node-a"], "missing_on": ["https://node-b"]},
+        {"miner": "erin", "present_on": ["https://node-b"], "missing_on": ["https://node-a"]},
+    ]
 
 
 def test_compare_snapshots_records_down_nodes_without_false_discrepancies():
@@ -103,6 +188,35 @@ def test_compare_snapshots_detects_epoch_slot_and_tip_drift():
     assert report["discrepancies"]["tip_age_drift"] == [
         {"values": {"n1": 1, "n2": 9}, "drift": 8}
     ]
+
+
+def test_compare_snapshots_skips_miner_state_when_epoch_slot_differs():
+    module = load_module()
+
+    left = snapshot(module, "n1", epoch=100, slot=1, miners=["alice"])
+    left.epoch["enrolled_miners"] = 1
+    left.miner_total = 1
+    left.miner_set_hash = module.stable_miner_set_hash(left.miners)
+    left.stats = {"epoch": 100, "total_miners": 1, "total_balance": 10.0}
+
+    right = snapshot(module, "n2", epoch=101, slot=2, miners=["bob"])
+    right.epoch["enrolled_miners"] = 9
+    right.miner_total = 9
+    right.miner_set_hash = module.stable_miner_set_hash(right.miners)
+    right.stats = {"epoch": 101, "total_miners": 9, "total_balance": 99.0}
+
+    report = module.compare_snapshots([left, right], tip_drift_threshold=5)
+    discrepancies = report["discrepancies"]
+
+    assert discrepancies["epoch_mismatch"] == [{"n1": 100, "n2": 101}]
+    assert discrepancies["slot_mismatch"] == [{"n1": 1, "n2": 2}]
+    assert discrepancies["enrolled_miners_mismatch"] == []
+    assert discrepancies["miner_count_mismatch"] == []
+    assert discrepancies["miner_set_hash_mismatch"] == []
+    assert discrepancies["stats_epoch_mismatch"] == []
+    assert discrepancies["stats_total_miners_mismatch"] == []
+    assert discrepancies["stats_total_balance_mismatch"] == []
+    assert discrepancies["miner_presence_diff"] == []
 
 
 def test_compare_snapshots_reports_miner_presence_and_balance_differences():
