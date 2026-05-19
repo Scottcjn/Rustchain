@@ -1,11 +1,14 @@
 # SPDX-License-Identifier: MIT
 
 import importlib.util
+import gc
 import os
 import sqlite3
 import sys
 import tempfile
+import time
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 
@@ -28,7 +31,11 @@ class TestAttestSubmitChallengeBinding(unittest.TestCase):
         cls._tmp = tempfile.TemporaryDirectory()
         cls._prev_admin_key = os.environ.get("RC_ADMIN_KEY")
         cls._prev_db_path = os.environ.get("RUSTCHAIN_DB_PATH")
+        cls._prev_disable_p2p = os.environ.get("RUSTCHAIN_DISABLE_P2P_AUTO_START")
+        cls._loaded_modules = []
+        gc.collect()
         os.environ["RC_ADMIN_KEY"] = "0123456789abcdef0123456789abcdef"
+        os.environ["RUSTCHAIN_DISABLE_P2P_AUTO_START"] = "1"
 
         if NODE_DIR not in sys.path:
             sys.path.insert(0, NODE_DIR)
@@ -43,19 +50,78 @@ class TestAttestSubmitChallengeBinding(unittest.TestCase):
             os.environ.pop("RUSTCHAIN_DB_PATH", None)
         else:
             os.environ["RUSTCHAIN_DB_PATH"] = cls._prev_db_path
-        cls._tmp.cleanup()
+        if cls._prev_disable_p2p is None:
+            os.environ.pop("RUSTCHAIN_DISABLE_P2P_AUTO_START", None)
+        else:
+            os.environ["RUSTCHAIN_DISABLE_P2P_AUTO_START"] = cls._prev_disable_p2p
+        cls._release_loaded_modules()
+        for attempt in range(5):
+            try:
+                cls._tmp.cleanup()
+                break
+            except PermissionError:
+                if attempt == 4:
+                    raise
+                gc.collect()
+                time.sleep(0.2)
+
+    @classmethod
+    def _release_loaded_modules(cls):
+        try:
+            from prometheus_client import REGISTRY
+        except Exception:
+            cls._loaded_modules = []
+            return
+
+        for mod in cls._loaded_modules:
+            block_sync = getattr(mod, "block_sync", None)
+            if block_sync is not None:
+                stop = getattr(block_sync, "stop", None)
+                if callable(stop):
+                    stop()
+                else:
+                    block_sync.running = False
+
+            for metric_name in (
+                "withdrawal_requests",
+                "withdrawal_completed",
+                "withdrawal_failed",
+                "balance_gauge",
+                "epoch_gauge",
+                "withdrawal_queue_size",
+            ):
+                metric = getattr(mod, metric_name, None)
+                if metric is None:
+                    continue
+                try:
+                    REGISTRY.unregister(metric)
+                except (KeyError, ValueError):
+                    pass
+        cls._loaded_modules = []
+
+    def tearDown(self):
+        self._release_loaded_modules()
 
     def _db_path(self, name: str) -> str:
         return str(Path(self._tmp.name) / name)
 
     def _load_module(self, module_name: str, db_name: str):
+        self._release_loaded_modules()
         db_path = self._db_path(db_name)
         os.environ["RUSTCHAIN_DB_PATH"] = db_path
         spec = importlib.util.spec_from_file_location(module_name, MODULE_PATH)
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
-        mod.init_db()
-        with sqlite3.connect(db_path) as conn:
+        self._loaded_modules.append(mod)
+        for attempt in range(5):
+            try:
+                mod.init_db()
+                break
+            except sqlite3.OperationalError as exc:
+                if "locked" not in str(exc).lower() or attempt == 4:
+                    raise
+                time.sleep(0.2)
+        with closing(sqlite3.connect(db_path)) as conn:
             for stmt in EXTRA_SCHEMA:
                 conn.execute(stmt)
             conn.commit()
@@ -95,7 +161,7 @@ class TestAttestSubmitChallengeBinding(unittest.TestCase):
         self.assertEqual(status2, 409)
         self.assertEqual(body2["code"], "CHALLENGE_INVALID")
 
-        with sqlite3.connect(db1_path) as conn1, sqlite3.connect(db2_path) as conn2:
+        with closing(sqlite3.connect(db1_path)) as conn1, closing(sqlite3.connect(db2_path)) as conn2:
             self.assertEqual(conn1.execute("SELECT COUNT(*) FROM used_nonces").fetchone()[0], 1)
             self.assertEqual(conn2.execute("SELECT COUNT(*) FROM nonces").fetchone()[0], 0)
             self.assertEqual(conn2.execute("SELECT COUNT(*) FROM used_nonces").fetchone()[0], 0)
@@ -123,7 +189,7 @@ class TestAttestSubmitChallengeBinding(unittest.TestCase):
         self.assertEqual(status2, 409)
         self.assertEqual(body2["code"], "NONCE_REPLAY")
 
-        with sqlite3.connect(db_path) as conn:
+        with closing(sqlite3.connect(db_path)) as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM used_nonces").fetchone()[0], 1)
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM nonces").fetchone()[0], 0)
 
@@ -147,7 +213,7 @@ class TestAttestSubmitChallengeBinding(unittest.TestCase):
         self.assertEqual(status, 409)
         self.assertEqual(body["code"], "CHALLENGE_INVALID")
 
-        with sqlite3.connect(db_path) as conn:
+        with closing(sqlite3.connect(db_path)) as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM nonces").fetchone()[0], 0)
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM used_nonces").fetchone()[0], 0)
 
@@ -167,7 +233,7 @@ class TestAttestSubmitChallengeBinding(unittest.TestCase):
         self.assertEqual(status, 409)
         self.assertEqual(body["code"], "CHALLENGE_INVALID")
 
-        with sqlite3.connect(db_path) as conn:
+        with closing(sqlite3.connect(db_path)) as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM nonces").fetchone()[0], 0)
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM used_nonces").fetchone()[0], 0)
 

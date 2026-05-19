@@ -5,6 +5,7 @@ Includes RIP-0005 (Epoch Rewards), RIP-0008 (Withdrawals), RIP-0009 (Finality)
 """
 import os, time, json, secrets, hashlib, hmac, sqlite3, base64, struct, uuid, glob, logging, sys, binascii, math, re, statistics
 import ipaddress
+from contextlib import closing
 from threading import Lock
 from urllib.parse import urlparse
 from flask import Flask, request, jsonify, g, send_from_directory, send_file, abort, render_template_string, redirect, Response
@@ -1248,7 +1249,7 @@ if HAVE_BOTTUBE_FEED:
 
 def init_db():
     """Initialize all database tables"""
-    with sqlite3.connect(DB_PATH) as c:
+    with closing(sqlite3.connect(DB_PATH)) as c:
         # Core tables
         attest_ensure_tables(c)
         c.execute("CREATE TABLE IF NOT EXISTS tickets (ticket_id TEXT PRIMARY KEY, expires_at INTEGER, commitment TEXT)")
@@ -1466,6 +1467,9 @@ def init_db():
 
         # Issue #2276: Hardware fingerprint replay defense tables
         if HAVE_REPLAY_DEFENSE:
+            # The replay module opens DB_PATH in its own connection. Commit
+            # pending DDL first so SQLite does not see a same-process schema lock.
+            c.commit()
             init_replay_defense_schema()
 
         # Warthog dual-mining tables
@@ -2071,7 +2075,7 @@ PRIVACY_PEPPER = os.getenv("PRIVACY_PEPPER", "rustchain_poa_v2")
 def _epoch_salt_for_mac() -> bytes:
     """Get epoch-scoped salt for MAC hashing"""
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with closing(sqlite3.connect(DB_PATH)) as conn:
             row = conn.execute("SELECT epoch FROM epoch_enroll ORDER BY epoch DESC LIMIT 1").fetchone()
             epoch = row[0] if row else 0
     except Exception:
@@ -2090,7 +2094,7 @@ def _mac_hash(mac: str) -> str:
 
 def record_macs(miner: str, macs: list):
     now = int(time.time())
-    with sqlite3.connect(DB_PATH) as conn:
+    with closing(sqlite3.connect(DB_PATH)) as conn:
         for mac in (macs or []):
             h = _mac_hash(str(mac))
             if not h: continue
@@ -2141,7 +2145,7 @@ def auto_induct_to_hall(miner: str, device: dict):
     fingerprint_hash = hashlib.sha256(fp_data.encode()).hexdigest()[:32]
     
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with closing(sqlite3.connect(DB_PATH)) as conn:
             c = conn.cursor()
             c.execute("SELECT id, total_attestations FROM hall_of_rust WHERE fingerprint_hash = ?", 
                       (fingerprint_hash,))
@@ -2304,7 +2308,7 @@ def _write_welcome_bonus(
 def _check_welcome_bonus(miner: str):
     """Award welcome bonus on first-ever attestation. Funded from founder_community."""
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with closing(sqlite3.connect(DB_PATH)) as conn:
             # Check if this miner has ever attested before
             history_count = conn.execute(
                 "SELECT COUNT(*) FROM miner_attest_history WHERE miner = ?", (miner,)
@@ -2408,7 +2412,7 @@ def record_attestation_success(miner: str, device: dict, fingerprint_passed: boo
         if not _device.get("machine"):
             _device["machine"] = "ppc64le" if "power8" in _miner_lower else "ppc"
     verified_device = derive_verified_device(_device, fingerprint if isinstance(fingerprint, dict) else {}, fingerprint_passed)
-    with sqlite3.connect(DB_PATH) as conn:
+    with closing(sqlite3.connect(DB_PATH)) as conn:
         # Ensure signing_pubkey and fingerprint_checks_json columns exist (idempotent migrations)
         for col_stmt in [
             "ALTER TABLE miner_attest_recent ADD COLUMN signing_pubkey TEXT",
@@ -2933,7 +2937,7 @@ def check_ip_rate_limit(client_ip, miner_id):
     now = int(time.time())
     cutoff = now - ATTEST_IP_WINDOW
     
-    with sqlite3.connect(DB_PATH) as conn:
+    with closing(sqlite3.connect(DB_PATH)) as conn:
         conn.execute("DELETE FROM ip_rate_limit WHERE ts < ?", (cutoff,))
         conn.execute(
             "INSERT OR REPLACE INTO ip_rate_limit (client_ip, miner_id, ts) VALUES (?, ?, ?)",
@@ -2948,6 +2952,7 @@ def check_ip_rate_limit(client_ip, miner_id):
         if unique_count > ATTEST_IP_LIMIT:
             print(f"[RATE_LIMIT] IP {client_ip} has {unique_count} unique miners (limit {ATTEST_IP_LIMIT})")
             return False, f"ip_rate_limit:{unique_count}_miners_from_same_ip"
+        conn.commit()
     
     return True, "ok"
 
@@ -3088,7 +3093,7 @@ def _mac_oui(mac: str) -> str:
 
 def _oui_vendor(oui: str) -> Optional[str]:
     """Check if OUI is denied (VM vendor)"""
-    with sqlite3.connect(DB_PATH) as conn:
+    with closing(sqlite3.connect(DB_PATH)) as conn:
         row = conn.execute("SELECT vendor, enforce FROM oui_deny WHERE oui = ?", (oui,)).fetchone()
         if row:
             return row[0], row[1]
@@ -3413,8 +3418,9 @@ def get_challenge():
     nonce = secrets.token_hex(32)
     expires = int(time.time()) + 300  # 5 minutes
 
-    with sqlite3.connect(DB_PATH) as c:
+    with closing(sqlite3.connect(DB_PATH)) as c:
         c.execute("INSERT INTO nonces (nonce, expires_at) VALUES (?, ?)", (nonce, expires))
+        c.commit()
 
     return jsonify({
         "nonce": nonce,
@@ -3461,7 +3467,7 @@ def _check_hardware_binding(miner_id: str, device: dict, signals: dict = None, s
     """Check if hardware is already bound to a different wallet. One machine = One wallet."""
     hardware_id = _compute_hardware_id(device, signals, source_ip=source_ip)
     
-    with sqlite3.connect(DB_PATH) as conn:
+    with closing(sqlite3.connect(DB_PATH)) as conn:
         c = conn.cursor()
         
         # Check existing binding
@@ -3597,7 +3603,7 @@ def _submit_attestation_impl():
             "code": "MISSING_NONCE"
         }), 400
 
-    with sqlite3.connect(DB_PATH) as nonce_conn:
+    with closing(sqlite3.connect(DB_PATH)) as nonce_conn:
         nonce_ok, nonce_err, _ = attest_validate_and_store_nonce(
             nonce_conn,
             miner=miner,
@@ -3836,7 +3842,7 @@ def _submit_attestation_impl():
 
     temporal_review = {"score": 1.0, "review_flag": False, "reason": "insufficient_history", "flags": [], "check_scores": {}}
     try:
-        with sqlite3.connect(DB_PATH) as tconn:
+        with closing(sqlite3.connect(DB_PATH)) as tconn:
             temporal_review = validate_temporal_consistency(fetch_miner_fingerprint_sequence(tconn, miner))
     except Exception as _te:
         print(f"[TEMPORAL] Warning: {_te}")
@@ -3844,7 +3850,7 @@ def _submit_attestation_impl():
     # Update warthog_bonus in attestation record
     if warthog_bonus > 1.0:
         try:
-            with sqlite3.connect(DB_PATH) as wb_conn:
+            with closing(sqlite3.connect(DB_PATH)) as wb_conn:
                 wb_conn.execute(
                     "UPDATE miner_attest_recent SET warthog_bonus=? WHERE miner=?",
                     (warthog_bonus, miner)
@@ -3877,7 +3883,7 @@ def _submit_attestation_impl():
         hw_weight = HARDWARE_WEIGHTS.get(family, {}).get(arch_for_weight, HARDWARE_WEIGHTS.get(family, {}).get("default", 1.0))
         miner_id = _attest_valid_miner(data.get("miner_id")) or miner
 
-        with sqlite3.connect(DB_PATH) as enroll_conn:
+        with closing(sqlite3.connect(DB_PATH)) as enroll_conn:
             rotation_eval = evaluate_rotating_fingerprint_checks(
                 enroll_conn,
                 epoch,
@@ -3942,11 +3948,12 @@ def _submit_attestation_impl():
     # Generate ticket ID
     ticket_id = f"ticket_{secrets.token_hex(16)}"
 
-    with sqlite3.connect(DB_PATH) as c:
+    with closing(sqlite3.connect(DB_PATH)) as c:
         c.execute(
             "INSERT INTO tickets (ticket_id, expires_at, commitment) VALUES (?, ?, ?)",
             (ticket_id, int(time.time()) + 3600, str(report.get('commitment', '')))
         )
+        c.commit()
 
     return jsonify({
         "ok": True,
@@ -4548,7 +4555,7 @@ def _wallet_review_ui_authorized(req):
 
 def get_wallet_review_counts():
     """Return grouped wallet review counts for the operator summary surface."""
-    with sqlite3.connect(DB_PATH) as conn:
+    with closing(sqlite3.connect(DB_PATH)) as conn:
         ensure_wallet_review_tables(conn)
         rows = conn.execute(
             """
@@ -4595,7 +4602,7 @@ def get_wallet_review_entry(conn, wallet: str):
 
 
 def wallet_review_gate_response(wallet: str):
-    with sqlite3.connect(DB_PATH) as conn:
+    with closing(sqlite3.connect(DB_PATH)) as conn:
         entry = get_wallet_review_entry(conn, wallet)
     if not entry:
         return None
@@ -7995,11 +8002,15 @@ try:
         except Exception as e:
             return jsonify({"ok": False, "error": str(e)}), 400
 
-    # Start background sync
-    block_sync.start()
+    # Start background sync unless an integration test explicitly disables it.
+    if os.environ.get("RUSTCHAIN_DISABLE_P2P_AUTO_START") != "1":
+        block_sync.start()
 
     print("[P2P] [OK] Endpoints registered successfully")
-    print("[P2P] [OK] Block sync started")
+    if block_sync.running:
+        print("[P2P] [OK] Block sync started")
+    else:
+        print("[P2P] [OK] Block sync auto-start disabled")
 
 except ImportError as e:
     print(f"[P2P] Module not available: {e}")
