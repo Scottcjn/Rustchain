@@ -47,6 +47,44 @@ def test_linux_miner_run_cmd_uses_argument_list_without_shell(monkeypatch):
     assert calls == [(["nproc"], {"stdout": miner.subprocess.PIPE, "stderr": miner.subprocess.PIPE, "text": True, "timeout": 10})]
 
 
+def test_linux_miner_darwin_macs_use_stable_hardware_ports(monkeypatch):
+    miner = load_module(Path("miners/linux/rustchain_linux_miner.py"), "rustchain_linux_miner_darwin_macs")
+    instance = object.__new__(miner.LocalMiner)
+
+    networksetup_output = """
+Hardware Port: Ethernet
+Device: en0
+Ethernet Address: 1c:f6:4c:52:85:eb
+
+Hardware Port: Ethernet Adapter (en5)
+Device: en5
+Ethernet Address: f2:bb:7b:6b:52:41
+
+Hardware Port: Thunderbolt Bridge
+Device: bridge0
+Ethernet Address: 36:15:75:35:ca:00
+
+Hardware Port: Wi-Fi
+Device: en1
+Ethernet Address: 1c:f6:4c:64:8f:82
+"""
+
+    class Result:
+        stdout = networksetup_output
+
+    def fake_run(args, **kwargs):
+        assert args == ["networksetup", "-listallhardwareports"]
+        return Result()
+
+    monkeypatch.setattr(miner.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(miner.subprocess, "run", fake_run)
+
+    assert instance._get_mac_addresses() == [
+        "1c:f6:4c:52:85:eb",
+        "1c:f6:4c:64:8f:82",
+    ]
+
+
 def test_linux_miner_collects_darwin_hardware_with_sysctl(monkeypatch):
     miner = load_module(Path("miners/linux/rustchain_linux_miner.py"), "rustchain_linux_miner_darwin_hw")
     instance = object.__new__(miner.LocalMiner)

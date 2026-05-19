@@ -256,6 +256,29 @@ class LocalMiner:
     def _get_mac_addresses(self):
         """Return list of real MAC addresses present on the system."""
         macs = []
+        if platform.system() == "Darwin":
+            try:
+                output = subprocess.run(
+                    ["networksetup", "-listallhardwareports"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    text=True,
+                    timeout=5,
+                ).stdout.splitlines()
+                current_port = ""
+                stable_ports = {"ethernet", "wi-fi", "wifi"}
+                for line in output:
+                    if line.startswith("Hardware Port:"):
+                        current_port = line.split(":", 1)[1].strip().lower()
+                    elif line.startswith("Ethernet Address:") and current_port in stable_ports:
+                        mac = line.split(":", 1)[1].strip().lower()
+                        if mac and mac != "00:00:00:00:00:00" and mac not in macs:
+                            macs.append(mac)
+                if macs:
+                    return macs[:3]
+            except Exception:
+                pass
+
         # Try `ip -o link`
         try:
             output = subprocess.run(
@@ -288,12 +311,12 @@ class LocalMiner:
                     m = re.search(r"(?:ether|HWaddr)\s+([0-9a-f:]{17})", line, re.IGNORECASE)
                     if m:
                         mac = m.group(1).lower()
-                        if mac != "00:00:00:00:00:00":
+                        if mac != "00:00:00:00:00:00" and mac not in macs:
                             macs.append(mac)
             except Exception:
                 pass
 
-        return macs or ["00:00:00:00:00:01"]
+        return (macs[:3] if macs else ["00:00:00:00:00:01"])
 
     def _collect_entropy(self, cycles: int = 48, inner_loop: int = 25000):
         """
