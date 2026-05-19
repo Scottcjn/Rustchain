@@ -1209,17 +1209,19 @@ class GossipLayer:
                 except Exception as e:
                     logger.warning(f"State from {sender}: attestation merge failed: {e}")
 
-        # Phase D.2: Validate + merge epochs (GSet is additive-only; schema check only)
+        # Phase D.2: Epoch finality must not be imported from generic state sync.
+        # A valid peer signature authenticates who sent the snapshot, but it is
+        # not quorum evidence that an epoch was committed. Epochs enter
+        # epoch_crdt only through the EPOCH_COMMIT path, where votes/commit
+        # metadata are validated before marking finality.
         if "epochs" in state:
             raw = state["epochs"]
             if not isinstance(raw, dict):
                 logger.warning(f"State from {sender}: epochs not a dict, skipping")
-            else:
-                try:
-                    remote_epochs = GSet.from_dict(raw)
-                    self.epoch_crdt.merge(remote_epochs)
-                except Exception as e:
-                    logger.warning(f"State from {sender}: epochs merge failed: {e}")
+            elif raw.get("epochs") or raw.get("metadata"):
+                logger.warning(
+                    f"State from {sender}: ignoring epoch finality data in STATE sync"
+                )
 
         # Phase D.3: Scope balance PN-counter entries to sender's own namespace.
         # The sender can only contribute increments/decrements under its own
