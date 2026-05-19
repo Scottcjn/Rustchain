@@ -161,9 +161,16 @@ def _normalize_limit(value: Any, default: int = 10, maximum: int = 100) -> int:
 
 def _normalize_maintenance_limit(data: Any, default: int = 25, maximum: int = 200) -> int:
     value = data.get("limit", default) if isinstance(data, dict) else default
-    try:
-        limit = int(value)
-    except (TypeError, ValueError):
+    if isinstance(value, bool):
+        raise ValueError("limit must be an integer")
+    if isinstance(value, int):
+        limit = value
+    elif isinstance(value, str):
+        cleaned = value.strip()
+        if not re.fullmatch(r"[+-]?\d+", cleaned):
+            raise ValueError("limit must be an integer")
+        limit = int(cleaned)
+    else:
         raise ValueError("limit must be an integer")
     if limit < 1:
         raise ValueError("limit must be at least 1")
