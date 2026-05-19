@@ -51,3 +51,36 @@ def test_create_badge_accepts_valid_json_object(client):
     assert data["success"] is True
     assert "Bug%20Hunter" in data["shield_url"]
     assert _badge_count() == 1
+
+
+def test_create_badge_updates_existing_github_username(client):
+    first = client.post(
+        "/api/badge/create",
+        json={
+            "username": "dupuser",
+            "wallet": "RTCfirst",
+            "badge_type": "contributor",
+            "custom_message": "One",
+        },
+    )
+    second = client.post(
+        "/api/badge/create",
+        json={
+            "username": "dupuser",
+            "wallet": "RTCsecond",
+            "badge_type": "developer",
+            "custom_message": "Two",
+        },
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    stats = client.get("/api/badge/stats").get_json()
+    listing = client.get("/api/badge/list").get_json()["badges"]
+
+    assert stats["total_badges"] == 1
+    assert stats["total_bounties_earned"] == 3.0
+    assert len(listing) == 1
+    assert listing[0]["username"] == "dupuser"
+    assert listing[0]["type"] == "developer"
+    assert listing[0]["custom_message"] == "Two"

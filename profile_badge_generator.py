@@ -27,6 +27,18 @@ def init_badge_db():
                 custom_message TEXT
             )
         ''')
+        cursor.execute('''
+            DELETE FROM profile_badges
+            WHERE id NOT IN (
+                SELECT MAX(id)
+                FROM profile_badges
+                GROUP BY github_username
+            )
+        ''')
+        cursor.execute('''
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_profile_badges_github_username
+            ON profile_badges(github_username)
+        ''')
         conn.commit()
 
 @app.route('/badge/generator')
@@ -189,9 +201,15 @@ def create_badge():
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
         cursor.execute('''
-            INSERT OR REPLACE INTO profile_badges 
+            INSERT INTO profile_badges
             (github_username, wallet_address, badge_type, custom_message, bounty_earned)
             VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(github_username) DO UPDATE SET
+                wallet_address = excluded.wallet_address,
+                badge_type = excluded.badge_type,
+                custom_message = excluded.custom_message,
+                bounty_earned = excluded.bounty_earned,
+                created_at = CURRENT_TIMESTAMP
         ''', (username, wallet or None, badge_type, custom_message or None, 3.0))
         conn.commit()
     
