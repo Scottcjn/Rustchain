@@ -239,3 +239,34 @@ def test_ed25519_unknown_peer_rejected():
     # Unknown-peer Ed25519 must fail even though the legacy HMAC in the bundle
     # is valid; otherwise an unregistered sender can downgrade to HMAC.
     assert receiver.verify_message(msg) is False
+
+
+def test_malformed_ed25519_bundle_rejected_without_hmac_downgrade():
+    """Malformed bundled Ed25519 values fail closed instead of falling back."""
+    tmpdir = tempfile.mkdtemp()
+    sender_pk_path = tmpdir + "/sender.pem"
+    _, _ = _reload_modules("dual", sender_pk_path, tmpdir + "/reg.json")
+    from p2p_identity import LocalKeypair
+    sender_kp = LocalKeypair(sender_pk_path)
+
+    reg_path = tmpdir + "/reg.json"
+    with open(reg_path, "w") as f:
+        json.dump({"version": 1, "peers": [
+            {"node_id": "node-sender", "pubkey_hex": sender_kp.pubkey_hex}
+        ]}, f)
+
+    ident, gossip = _reload_modules("dual", sender_pk_path, reg_path)
+    sender = _make_layer(ident, gossip, "node-sender", {})
+    receiver = _make_layer(ident, gossip, "node-receiver",
+                           {"node-sender": "http://x"})
+
+    msg = sender.create_message(gossip.MessageType.PING, {"ping": 1})
+    h, e, _ = ident.unpack_signature(msg.signature)
+    assert h is not None and e is not None
+
+    for malformed_e in (True, [], {}):
+        msg.signature = json.dumps(
+            {"h": h, "e": malformed_e, "v": 1},
+            separators=(",", ":"),
+        )
+        assert receiver.verify_message(msg) is False
