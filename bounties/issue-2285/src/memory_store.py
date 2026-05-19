@@ -259,22 +259,43 @@ class AgentMemoryStore:
             params.append(min_importance)
 
         query += " ORDER BY importance_score DESC, created_at DESC"
-        query += " LIMIT ? OFFSET ?"
-        params.extend([limit, offset])
 
-        cursor.execute(query, params)
-        rows = cursor.fetchall()
+        # Fast path: no tag filtering required (SQL LIMIT/OFFSET applies directly)
+        if not tags:
+            query_with_paging = f"{query} LIMIT ? OFFSET ?"
+            cursor.execute(query_with_paging, params + [limit, offset])
+            return [self._row_to_dict(row) for row in cursor.fetchall()]
 
-        results = [self._row_to_dict(row) for row in rows]
+        # Tag filtering is currently done in Python because tags are stored as a JSON string.
+        # To keep `limit`/`offset` meaningful for tag-filtered results, we page through the
+        # ordered result set until we collect enough matches.
+        page_size = max(limit * 5, 50)
+        scan_offset = 0
+        matched_seen = 0
+        matches: List[Dict[str, Any]] = []
 
-        # Filter by tags if specified (post-filter for JSON array)
-        if tags:
-            results = [
-                r for r in results
-                if all(tag in r.get("tags", []) for tag in tags)
-            ]
+        while len(matches) < limit:
+            cursor.execute(f"{query} LIMIT ? OFFSET ?", params + [page_size, scan_offset])
+            rows = cursor.fetchall()
+            if not rows:
+                break
 
-        return results
+            for row in rows:
+                ref = self._row_to_dict(row)
+                if not all(tag in ref.get("tags", []) for tag in tags):
+                    continue
+
+                if matched_seen < offset:
+                    matched_seen += 1
+                    continue
+
+                matches.append(ref)
+                if len(matches) >= limit:
+                    break
+
+            scan_offset += page_size
+
+        return matches
 
     def search_references(
         self,
