@@ -58,6 +58,8 @@ def test_linux_miner_filters_virtual_macs_from_ip_link(monkeypatch):
             "4: tailscale0: <POINTOPOINT> mtu 1280 link/ether 66:55:44:33:22:11 brd ff:ff:ff:ff:ff:ff",
             "5: enp3s0: <BROADCAST,MULTICAST,UP> mtu 1500 link/ether 10:22:33:44:55:66 brd ff:ff:ff:ff:ff:ff",
             "6: wlan0: <BROADCAST,MULTICAST,UP> mtu 1500 link/ether 10:22:33:44:55:66 brd ff:ff:ff:ff:ff:ff",
+            "7: eth0: <BROADCAST,MULTICAST,UP> mtu 1500 link/ether 02:11:22:33:44:55 brd ff:ff:ff:ff:ff:ff",
+            "8: enp4s0: <BROADCAST,MULTICAST,UP> mtu 1500 link/ether 06:11:22:33:44:55 brd ff:ff:ff:ff:ff:ff",
         ]
     )
     calls = []

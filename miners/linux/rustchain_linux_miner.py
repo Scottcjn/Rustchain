@@ -144,6 +144,8 @@ def _is_usable_mac(mac):
     first_octet = int(value.split(":", 1)[0], 16)
     if first_octet & 1:
         return False
+    if first_octet & 0x02:
+        return False
     return not any(value.startswith(prefix) for prefix in VIRTUAL_MAC_PREFIXES)
 
 
