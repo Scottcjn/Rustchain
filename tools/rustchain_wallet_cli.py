@@ -134,7 +134,23 @@ def _load_keystore(name: str) -> dict:
 
 def _save_keystore(name: str, data: dict) -> Path:
     p = _keystore_path(name)
-    p.write_text(json.dumps(data, indent=2))
+    p.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(data, indent=2)
+    tmp = p.with_name(f".{p.name}.{secrets.token_hex(8)}.tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(fd, "w") as fh:
+            fh.write(payload)
+            fh.write("\n")
+        os.replace(tmp, p)
+        os.chmod(p, 0o600)
+    except Exception:
+        try:
+            tmp.unlink(missing_ok=True)
+        except TypeError:  # Python <3.8 compatibility
+            if tmp.exists():
+                tmp.unlink()
+        raise
     return p
 
 
