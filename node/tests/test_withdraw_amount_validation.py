@@ -7,6 +7,7 @@ import unittest
 
 NODE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 MODULE_PATH = os.path.join(NODE_DIR, "rustchain_v2_integrated_v2.2.1_rip200.py")
+MODULE_NAME = "rustchain_integrated_withdraw_validation_shared"
 
 
 class TestWithdrawAmountValidation(unittest.TestCase):
@@ -21,9 +22,13 @@ class TestWithdrawAmountValidation(unittest.TestCase):
         if NODE_DIR not in sys.path:
             sys.path.insert(0, NODE_DIR)
 
-        spec = importlib.util.spec_from_file_location("rustchain_integrated_withdraw_test", MODULE_PATH)
-        cls.mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(cls.mod)
+        if MODULE_NAME in sys.modules:
+            cls.mod = sys.modules[MODULE_NAME]
+        else:
+            spec = importlib.util.spec_from_file_location(MODULE_NAME, MODULE_PATH)
+            cls.mod = importlib.util.module_from_spec(spec)
+            sys.modules[MODULE_NAME] = cls.mod
+            spec.loader.exec_module(cls.mod)
         cls.client = cls.mod.app.test_client()
 
     @classmethod

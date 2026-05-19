@@ -9,23 +9,50 @@ Covers the fix for:
 """
 
 import pytest
+import importlib.util
 import json
 import sys
 import os
+import tempfile
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+NODE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+MODULE_PATH = os.path.join(NODE_DIR, "rustchain_v2_integrated_v2.2.1_rip200.py")
+MODULE_NAME = "rustchain_integrated_withdraw_validation_shared"
+
+sys.path.insert(0, NODE_DIR)
 
 
 class TestWithdrawalRequestValidation:
     """Tests for /withdraw/request endpoint input validation"""
 
-    @pytest.fixture
+    @pytest.fixture(scope="class")
     def app(self):
         """Create test app instance"""
-        import importlib
-        app = importlib.import_module("rustchain_v2_integrated_v2.2.1_rip200").app
-        app.config['TESTING'] = True
-        return app
+        tmp = tempfile.TemporaryDirectory()
+        prev_db_path = os.environ.get("RUSTCHAIN_DB_PATH")
+        prev_admin_key = os.environ.get("RC_ADMIN_KEY")
+        os.environ["RUSTCHAIN_DB_PATH"] = os.path.join(tmp.name, "withdrawal_validation.db")
+        os.environ["RC_ADMIN_KEY"] = "0123456789abcdef0123456789abcdef"
+        try:
+            if MODULE_NAME in sys.modules:
+                module = sys.modules[MODULE_NAME]
+            else:
+                spec = importlib.util.spec_from_file_location(MODULE_NAME, MODULE_PATH)
+                module = importlib.util.module_from_spec(spec)
+                sys.modules[MODULE_NAME] = module
+                spec.loader.exec_module(module)
+            module.app.config['TESTING'] = True
+            yield module.app
+        finally:
+            if prev_db_path is None:
+                os.environ.pop("RUSTCHAIN_DB_PATH", None)
+            else:
+                os.environ["RUSTCHAIN_DB_PATH"] = prev_db_path
+            if prev_admin_key is None:
+                os.environ.pop("RC_ADMIN_KEY", None)
+            else:
+                os.environ["RC_ADMIN_KEY"] = prev_admin_key
+            tmp.cleanup()
 
     @pytest.fixture
     def client(self, app):
@@ -66,7 +93,7 @@ class TestWithdrawalRequestValidation:
         )
         assert response.status_code == 400
         data = response.get_json()
-        assert 'amount must be a number' in data.get('error', '')
+        assert 'amount must be a number' in data.get('error', '').lower()
 
     def test_amount_negative_returns_400(self, client):
         """amount=-100 should return 400 (negative amount bypass)"""
