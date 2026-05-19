@@ -50,12 +50,13 @@ JSON_RPC_VERSION = '2.0'
 MINING_STATS_SUBSCRIPTION = 'mining_stats'
 BLOCK_SUBSCRIPTION = 'blocks'
 TRANSACTION_SUBSCRIPTION = 'transactions'
+ATTESTATION_SUBSCRIPTION = 'attestations'
 SUPPORTED_SUBSCRIPTION_CHANNELS = {
     'all',
     BLOCK_SUBSCRIPTION,
     TRANSACTION_SUBSCRIPTION,
     MINING_STATS_SUBSCRIPTION,
-    'attestations',
+    ATTESTATION_SUBSCRIPTION,
 }
 SUBSCRIPTION_CHANNEL_ALIASES = {
     'all': 'all',
@@ -70,8 +71,8 @@ SUBSCRIPTION_CHANNEL_ALIASES = {
     'new_transactions': TRANSACTION_SUBSCRIPTION,
     'newpendingtransactions': TRANSACTION_SUBSCRIPTION,
     'mining_stats': MINING_STATS_SUBSCRIPTION,
-    'attestation': 'attestations',
-    'attestations': 'attestations',
+    'attestation': ATTESTATION_SUBSCRIPTION,
+    'attestations': ATTESTATION_SUBSCRIPTION,
 }
 ADDRESS_FILTER_FIELDS = {
     'address',
@@ -348,7 +349,7 @@ class WebSocketFeed:
         self._fetch_health = fetch_health
 
     def broadcast_block(self, block: BlockEvent):
-        """Broadcast new block to all connected clients"""
+        """Broadcast new block to legacy streams and filtered subscribers."""
         if not self.socketio:
             return
         payload = block.to_dict()
@@ -364,7 +365,7 @@ class WebSocketFeed:
         self.broadcast_mining_stats()
 
     def broadcast_transaction(self, transaction: Dict[str, Any]):
-        """Broadcast a new transaction to connected and filtered subscribers."""
+        """Broadcast a new transaction to legacy streams and filtered subscribers."""
         if not self.socketio:
             return
         if not isinstance(transaction, dict):
@@ -386,15 +387,17 @@ class WebSocketFeed:
         self.broadcast_mining_stats()
 
     def broadcast_attestation(self, attestation: AttestationEvent):
-        """Broadcast new attestation to all connected clients"""
+        """Broadcast new attestation to legacy streams and filtered subscribers."""
         if not self.socketio:
             return
+        payload = attestation.to_dict()
         
         with self._lock:
             self.attestation_history.append(attestation)
             self.metrics['attestations_sent'] += 1
         
-        self.socketio.emit('attestation', attestation.to_dict(), namespace='/')
+        self.socketio.emit('attestation', payload, namespace='/')
+        self.emit_filtered_socket_subscribers(ATTESTATION_SUBSCRIPTION, 'attestation', payload)
         logger.info(f"[WebSocket] Broadcasted attestation from {attestation.miner_id[:16]}...")
 
     def broadcast_epoch_settlement(self, settlement: EpochSettlementEvent):
@@ -493,6 +496,9 @@ class WebSocketFeed:
 
         options = params[1] if len(params) > 1 else {}
         filters, error = self.normalize_subscription_filters(options if isinstance(options, dict) else {})
+        if error:
+            return self._json_rpc_error(request_id, -32602, error)
+        error = self.validate_subscription_filters(channel, filters)
         if error:
             return self._json_rpc_error(request_id, -32602, error)
 
@@ -625,6 +631,9 @@ class WebSocketFeed:
         filters, error = self.normalize_subscription_filters(filter_payload)
         if error:
             return None, error
+        error = self.validate_subscription_filters(channel, filters)
+        if error:
+            return None, error
 
         return {'channel': channel, 'filters': filters}, None
 
@@ -666,6 +675,11 @@ class WebSocketFeed:
             normalized['min_height'] = parsed_height
 
         return normalized, None
+
+    def validate_subscription_filters(self, channel: str, filters: Dict[str, Any]) -> Optional[str]:
+        if channel == BLOCK_SUBSCRIPTION and filters.get('address'):
+            return "Address filters are not supported for block subscriptions"
+        return None
 
     def add_socket_subscription(self, client_id: str, subscription: Dict[str, Any]):
         """Store a filtered SocketIO subscription for one connected client."""

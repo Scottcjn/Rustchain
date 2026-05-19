@@ -7,7 +7,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from websocket_feed import BlockEvent, WebSocketFeed
+from websocket_feed import AttestationEvent, BlockEvent, WebSocketFeed
 
 
 def test_eth_subscribe_mining_stats_returns_subscription_and_stats():
@@ -134,12 +134,35 @@ def test_eth_unsubscribe_removes_only_callers_subscription():
 
 def test_socket_subscription_normalizes_channel_and_filters():
     feed = WebSocketFeed()
+    subscription, error = feed.normalize_subscription({"channel": "newHeads", "filters": {"from_height": "0x10"}})
+
+    assert error is None
+    assert subscription == {"channel": "blocks", "filters": {"min_height": 16}}
+
+
+def test_block_subscriptions_reject_address_filters():
+    feed = WebSocketFeed()
+
     subscription, error = feed.normalize_subscription(
         {"channel": "newHeads", "filters": {"from_height": "0x10", "address": "RTCalice"}}
     )
+    response = feed.handle_json_rpc_message(
+        {
+            "jsonrpc": "2.0",
+            "id": 9,
+            "method": "eth_subscribe",
+            "params": ["newHeads", {"address": "RTCalice"}],
+        },
+        client_id="client-1",
+    )
 
-    assert error is None
-    assert subscription == {"channel": "blocks", "filters": {"address": "RTCalice", "min_height": 16}}
+    assert subscription is None
+    assert error == "Address filters are not supported for block subscriptions"
+    assert response["id"] == 9
+    assert response["error"] == {
+        "code": -32602,
+        "message": "Address filters are not supported for block subscriptions",
+    }
 
 
 def test_socket_subscription_rejects_bad_height_filter():
@@ -159,12 +182,21 @@ def test_filtered_socket_subscribers_receive_matching_envelopes_only():
     feed.broadcast_transaction({"tx_hash": "tx-1", "from": "RTCbob", "to": "RTCcarol"})
     feed.broadcast_transaction({"tx_hash": "tx-2", "from": "RTCbob", "to": "RTCalice"})
 
+    raw_events = [
+        payload
+        for event, payload, kwargs in fake_socketio.emitted
+        if event == "transaction" and kwargs.get("namespace") == "/"
+    ]
     filtered_events = [
         payload
         for event, payload, kwargs in fake_socketio.emitted
         if event == "subscription_event" and kwargs.get("to") == "client-1"
     ]
 
+    assert raw_events == [
+        {"tx_hash": "tx-1", "from": "RTCbob", "to": "RTCcarol"},
+        {"tx_hash": "tx-2", "from": "RTCbob", "to": "RTCalice"},
+    ]
     assert filtered_events == [
         {
             "channel": "transactions",
@@ -174,16 +206,68 @@ def test_filtered_socket_subscribers_receive_matching_envelopes_only():
     ]
 
 
-def test_json_rpc_block_subscription_filters_by_min_height_and_address():
+def test_filtered_socket_attestation_subscriber_receives_matching_broadcast():
+    feed = WebSocketFeed()
+    fake_socketio = FakeSocketIO()
+    feed.socketio = fake_socketio
+    feed.add_socket_subscription("client-1", {"channel": "attestations", "filters": {"address": "miner-1"}})
+
+    feed.broadcast_attestation(
+        AttestationEvent(
+            miner_id="miner-2",
+            device_arch="x86",
+            multiplier=1.0,
+            timestamp=1.0,
+            epoch=7,
+            weight=2.0,
+            ticket_id="t1",
+        )
+    )
+    feed.broadcast_attestation(
+        AttestationEvent(
+            miner_id="miner-1",
+            device_arch="x86",
+            multiplier=1.0,
+            timestamp=2.0,
+            epoch=7,
+            weight=3.0,
+            ticket_id="t2",
+        )
+    )
+
+    filtered_events = [
+        payload
+        for event, payload, kwargs in fake_socketio.emitted
+        if event == "subscription_event" and kwargs.get("to") == "client-1"
+    ]
+
+    assert filtered_events == [
+        {
+            "channel": "attestations",
+            "event": "attestation",
+            "payload": {
+                "miner_id": "miner-1",
+                "device_arch": "x86",
+                "multiplier": 1.0,
+                "timestamp": 2.0,
+                "epoch": 7,
+                "weight": 3.0,
+                "ticket_id": "t2",
+            },
+        }
+    ]
+
+
+def test_json_rpc_block_subscription_filters_by_min_height():
     feed = WebSocketFeed()
     fake_socketio = FakeSocketIO()
     feed.socketio = fake_socketio
     response = feed.handle_json_rpc_message(
         {
             "jsonrpc": "2.0",
-            "id": 9,
+            "id": 11,
             "method": "eth_subscribe",
-            "params": ["newHeads", {"from_height": 12, "address": "RTCalice"}],
+            "params": ["newHeads", {"from_height": 12}],
         },
         client_id="client-1",
     )
@@ -203,7 +287,7 @@ def test_json_rpc_block_subscription_filters_by_min_height_and_address():
     feed.broadcast_block(
         BlockEvent(
             height=12,
-            hash="wrong-miner",
+            hash="first-match",
             timestamp=2.0,
             miners_count=1,
             reward=1.0,
@@ -222,9 +306,6 @@ def test_json_rpc_block_subscription_filters_by_min_height_and_address():
             slot=3,
         )
     )
-    matching_payload = feed.block_history[-1].to_dict()
-    matching_payload["miner_id"] = "RTCalice"
-    feed.emit_json_rpc_subscribers("blocks", matching_payload)
 
     rpc_events = [
         payload
@@ -238,7 +319,31 @@ def test_json_rpc_block_subscription_filters_by_min_height_and_address():
             "method": "eth_subscription",
             "params": {
                 "subscription": subscription_id,
-                "result": matching_payload,
+                "result": {
+                    "height": 12,
+                    "hash": "first-match",
+                    "timestamp": 2.0,
+                    "miners_count": 1,
+                    "reward": 1.0,
+                    "epoch": 1,
+                    "slot": 2,
+                },
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "method": "eth_subscription",
+            "params": {
+                "subscription": subscription_id,
+                "result": {
+                    "height": 13,
+                    "hash": "matching",
+                    "timestamp": 3.0,
+                    "miners_count": 1,
+                    "reward": 1.0,
+                    "epoch": 1,
+                    "slot": 3,
+                },
             },
         }
     ]
