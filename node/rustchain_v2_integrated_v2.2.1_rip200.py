@@ -5128,6 +5128,8 @@ def request_withdrawal():
         amount = float(raw_amount)
     except (TypeError, ValueError):
         return jsonify({"error": "amount must be a number", "received": str(type(raw_amount).__name__)}), 400
+    if not math.isfinite(amount):
+        return jsonify({"error": "amount must be a finite positive number"}), 400
     if amount < 0:
         return jsonify({"error": "amount must be positive"}), 400
 

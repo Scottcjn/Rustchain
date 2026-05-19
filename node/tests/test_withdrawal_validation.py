@@ -10,10 +10,14 @@ Covers the fix for:
 
 import pytest
 import json
+import importlib.util
 import sys
 import os
+import tempfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+NODE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+MODULE_PATH = os.path.join(NODE_DIR, "rustchain_v2_integrated_v2.2.1_rip200.py")
 
 
 class TestWithdrawalRequestValidation:
@@ -22,10 +26,29 @@ class TestWithdrawalRequestValidation:
     @pytest.fixture
     def app(self):
         """Create test app instance"""
-        import importlib
-        app = importlib.import_module("rustchain_v2_integrated_v2.2.1_rip200").app
-        app.config['TESTING'] = True
-        return app
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prev_db_path = os.environ.get("RUSTCHAIN_DB_PATH")
+            prev_admin_key = os.environ.get("RC_ADMIN_KEY")
+            os.environ["RUSTCHAIN_DB_PATH"] = os.path.join(tmpdir, "withdrawal-validation.db")
+            os.environ["RC_ADMIN_KEY"] = "0123456789abcdef0123456789abcdef"
+            try:
+                spec = importlib.util.spec_from_file_location(
+                    "rustchain_integrated_withdraw_validation_test",
+                    MODULE_PATH,
+                )
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                mod.app.config['TESTING'] = True
+                yield mod.app
+            finally:
+                if prev_db_path is None:
+                    os.environ.pop("RUSTCHAIN_DB_PATH", None)
+                else:
+                    os.environ["RUSTCHAIN_DB_PATH"] = prev_db_path
+                if prev_admin_key is None:
+                    os.environ.pop("RC_ADMIN_KEY", None)
+                else:
+                    os.environ["RC_ADMIN_KEY"] = prev_admin_key
 
     @pytest.fixture
     def client(self, app):

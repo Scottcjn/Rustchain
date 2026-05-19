@@ -56,20 +56,25 @@ class TestWithdrawAmountValidation(unittest.TestCase):
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(resp.get_json().get("error"), "Invalid JSON body")
 
+    def test_top_level_array_body_rejected(self):
+        resp = self.client.post("/withdraw/request", json=["miner_pk", "amount"])
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.get_json().get("error"), "Invalid JSON body")
+
     def test_non_numeric_amount_rejected(self):
         resp = self.client.post("/withdraw/request", json=self._payload("abc"))
         self.assertEqual(resp.status_code, 400)
-        self.assertEqual(resp.get_json().get("error"), "Amount must be a number")
+        self.assertEqual(resp.get_json().get("error"), "amount must be a number")
 
     def test_nan_amount_rejected(self):
         resp = self.client.post("/withdraw/request", json=self._payload("NaN"))
         self.assertEqual(resp.status_code, 400)
-        self.assertEqual(resp.get_json().get("error"), "Amount must be a finite positive number")
+        self.assertEqual(resp.get_json().get("error"), "amount must be a finite positive number")
 
     def test_infinite_amount_rejected(self):
         resp = self.client.post("/withdraw/request", json=self._payload("inf"))
         self.assertEqual(resp.status_code, 400)
-        self.assertEqual(resp.get_json().get("error"), "Amount must be a finite positive number")
+        self.assertEqual(resp.get_json().get("error"), "amount must be a finite positive number")
 
     def test_minimum_withdrawal_check_still_applies(self):
         amount = max(0.000001, float(self.mod.MIN_WITHDRAWAL) / 2.0)
