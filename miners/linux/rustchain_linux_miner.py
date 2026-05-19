@@ -98,6 +98,128 @@ def _miner_id_from_hw(hw_info):
     return f"{arch}-{hostname}"
 
 
+VIRTUAL_INTERFACE_PREFIXES = (
+    "br-",
+    "cni",
+    "docker",
+    "flannel",
+    "kube",
+    "lxc",
+    "lxd",
+    "podman",
+    "tailscale",
+    "tap",
+    "tun",
+    "vboxnet",
+    "veth",
+    "virbr",
+    "vmnet",
+    "wg",
+    "zt",
+)
+
+VIRTUAL_MAC_PREFIXES = (
+    "00:15:5d",  # Hyper-V
+    "00:16:3e",  # Xen
+    "02:42",     # Docker bridge/veth
+    "08:00:27",  # VirtualBox
+    "52:54:00",  # QEMU/KVM
+)
+
+
+def _is_virtual_interface(name):
+    iface = str(name or "").split("@", 1)[0].strip().lower()
+    raw = str(name or "").strip().lower()
+    if not iface or iface == "lo" or "@" in raw:
+        return True
+    return any(iface.startswith(prefix) for prefix in VIRTUAL_INTERFACE_PREFIXES)
+
+
+def _is_usable_mac(mac):
+    value = str(mac or "").strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{2}(?::[0-9a-f]{2}){5}", value):
+        return False
+    if value in {"00:00:00:00:00:00", "ff:ff:ff:ff:ff:ff"}:
+        return False
+    first_octet = int(value.split(":", 1)[0], 16)
+    if first_octet & 1:
+        return False
+    return not any(value.startswith(prefix) for prefix in VIRTUAL_MAC_PREFIXES)
+
+
+def _add_unique_mac(macs, seen, iface, mac):
+    mac = str(mac or "").lower()
+    if _is_virtual_interface(iface) or not _is_usable_mac(mac) or mac in seen:
+        return
+    macs.append(mac)
+    seen.add(mac)
+
+
+def _coerce_float(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _derive_instruction_jitter_cv(data):
+    cvs = []
+    for prefix in ("int", "fp", "branch"):
+        avg = _coerce_float(data.get(f"{prefix}_avg_ns"))
+        stdev = _coerce_float(data.get(f"{prefix}_stdev"))
+        if avg and avg > 0 and stdev is not None and stdev >= 0:
+            cvs.append(stdev / avg)
+    if not cvs:
+        return None
+    return round(statistics.mean(cvs), 6)
+
+
+def _normalize_fingerprint_for_binding(fingerprint):
+    """Add node hardware-binding aliases while preserving raw check payloads."""
+    if not isinstance(fingerprint, dict):
+        return fingerprint
+    checks = fingerprint.get("checks")
+    if not isinstance(checks, dict):
+        return fingerprint
+
+    normalized = dict(fingerprint)
+    normalized_checks = dict(checks)
+    normalized["checks"] = normalized_checks
+
+    cache = normalized_checks.get("cache_timing")
+    if isinstance(cache, dict) and isinstance(cache.get("data"), dict):
+        cache_data = dict(cache["data"])
+        if "L1" not in cache_data and "l1_ns" in cache_data:
+            cache_data["L1"] = cache_data["l1_ns"]
+        if "L2" not in cache_data and "l2_ns" in cache_data:
+            cache_data["L2"] = cache_data["l2_ns"]
+        cache_entry = dict(cache)
+        cache_entry["data"] = cache_data
+        normalized_checks["cache_timing"] = cache_entry
+
+    thermal = normalized_checks.get("thermal_drift")
+    if isinstance(thermal, dict) and isinstance(thermal.get("data"), dict):
+        thermal_data = dict(thermal["data"])
+        if "ratio" not in thermal_data and "drift_ratio" in thermal_data:
+            thermal_data["ratio"] = thermal_data["drift_ratio"]
+        thermal_entry = dict(thermal)
+        thermal_entry["data"] = thermal_data
+        normalized_checks["thermal_drift"] = thermal_entry
+
+    jitter = normalized_checks.get("instruction_jitter")
+    if isinstance(jitter, dict) and isinstance(jitter.get("data"), dict):
+        jitter_data = dict(jitter["data"])
+        if "cv" not in jitter_data:
+            cv = _derive_instruction_jitter_cv(jitter_data)
+            if cv is not None:
+                jitter_data["cv"] = cv
+        jitter_entry = dict(jitter)
+        jitter_entry["data"] = jitter_data
+        normalized_checks["instruction_jitter"] = jitter_entry
+
+    return normalized
+
+
 def _request_with_network_retry(method, url, action, retries=NETWORK_RETRY_ATTEMPTS,
                                 base_delay=NETWORK_RETRY_BASE_DELAY, sleep_func=None,
                                 **kwargs):
@@ -227,7 +349,7 @@ class LocalMiner:
         try:
             passed, results = validate_all_checks()
             self.fingerprint_passed = passed
-            self.fingerprint_data = {"checks": results, "all_passed": passed}
+            self.fingerprint_data = _normalize_fingerprint_for_binding({"checks": results, "all_passed": passed})
             if passed:
                 print("[FINGERPRINT] All checks PASSED - eligible for full rewards")
             else:
@@ -256,6 +378,7 @@ class LocalMiner:
     def _get_mac_addresses(self):
         """Return list of real MAC addresses present on the system."""
         macs = []
+        seen = set()
         # Try `ip -o link`
         try:
             output = subprocess.run(
@@ -266,11 +389,13 @@ class LocalMiner:
                 timeout=5,
             ).stdout.splitlines()
             for line in output:
-                m = re.search(r"link/(?:ether|loopback)\s+([0-9a-f:]{17})", line, re.IGNORECASE)
+                m = re.match(
+                    r"\d+:\s+([^:]+):.*\blink/(?:ether|loopback)\s+([0-9a-f:]{17})",
+                    line,
+                    re.IGNORECASE,
+                )
                 if m:
-                    mac = m.group(1).lower()
-                    if mac != "00:00:00:00:00:00":
-                        macs.append(mac)
+                    _add_unique_mac(macs, seen, m.group(1), m.group(2))
         except Exception:
             pass
 
@@ -284,12 +409,13 @@ class LocalMiner:
                     text=True,
                     timeout=5,
                 ).stdout.splitlines()
+                iface = ""
                 for line in output:
+                    if line and not line[0].isspace():
+                        iface = line.split(":", 1)[0].split()[0]
                     m = re.search(r"(?:ether|HWaddr)\s+([0-9a-f:]{17})", line, re.IGNORECASE)
                     if m:
-                        mac = m.group(1).lower()
-                        if mac != "00:00:00:00:00:00":
-                            macs.append(mac)
+                        _add_unique_mac(macs, seen, iface, m.group(1))
             except Exception:
                 pass
 
@@ -455,6 +581,7 @@ class LocalMiner:
             self._run_fingerprint_checks()
 
         # Submit attestation with fingerprint data
+        fingerprint_payload = _normalize_fingerprint_for_binding(self.fingerprint_data)
         attestation = {
             "miner": self.wallet,
             "miner_id": self._miner_id(),
@@ -482,7 +609,7 @@ class LocalMiner:
                 "hostname": self.hw_info["hostname"]
             },
             # RIP-PoA hardware fingerprint attestation
-            "fingerprint": self.fingerprint_data,
+            "fingerprint": fingerprint_payload,
             # Warthog dual-mining proof (None if sidecar not active)
             "warthog": self.warthog.collect_proof() if self.warthog else None
         }

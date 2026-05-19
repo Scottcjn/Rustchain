@@ -47,6 +47,34 @@ def test_linux_miner_run_cmd_uses_argument_list_without_shell(monkeypatch):
     assert calls == [(["nproc"], {"stdout": miner.subprocess.PIPE, "stderr": miner.subprocess.PIPE, "text": True, "timeout": 10})]
 
 
+def test_linux_miner_filters_virtual_macs_from_ip_link(monkeypatch):
+    miner = load_module(Path("miners/linux/rustchain_linux_miner.py"), "rustchain_linux_miner_mac_filter")
+    instance = object.__new__(miner.LocalMiner)
+    ip_link = "\n".join(
+        [
+            "1: lo: <LOOPBACK,UP> mtu 65536 link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00",
+            "2: docker0: <BROADCAST,MULTICAST> mtu 1500 link/ether 02:42:00:12:34:56 brd ff:ff:ff:ff:ff:ff",
+            "3: veth9@if2: <BROADCAST,MULTICAST> mtu 1500 link/ether 4a:24:1f:22:33:44 brd ff:ff:ff:ff:ff:ff",
+            "4: tailscale0: <POINTOPOINT> mtu 1280 link/ether 66:55:44:33:22:11 brd ff:ff:ff:ff:ff:ff",
+            "5: enp3s0: <BROADCAST,MULTICAST,UP> mtu 1500 link/ether 10:22:33:44:55:66 brd ff:ff:ff:ff:ff:ff",
+            "6: wlan0: <BROADCAST,MULTICAST,UP> mtu 1500 link/ether 10:22:33:44:55:66 brd ff:ff:ff:ff:ff:ff",
+        ]
+    )
+    calls = []
+
+    class Result:
+        stdout = ip_link
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return Result()
+
+    monkeypatch.setattr(miner.subprocess, "run", fake_run)
+
+    assert instance._get_mac_addresses() == ["10:22:33:44:55:66"]
+    assert calls == [["ip", "-o", "link"]]
+
+
 def test_linux_miner_collects_darwin_hardware_with_sysctl(monkeypatch):
     miner = load_module(Path("miners/linux/rustchain_linux_miner.py"), "rustchain_linux_miner_darwin_hw")
     instance = object.__new__(miner.LocalMiner)
