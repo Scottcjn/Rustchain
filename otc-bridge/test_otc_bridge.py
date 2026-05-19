@@ -10,6 +10,9 @@ import time
 import unittest
 from unittest.mock import patch, MagicMock
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
 # Set an initial test DB before importing, then replace it per test.
 _fd, TEST_DB = tempfile.mkstemp(suffix=".db")
 os.close(_fd)
@@ -36,6 +39,45 @@ class OTCBridgeTestCase(unittest.TestCase):
                 os.remove(TEST_DB)
             except PermissionError:
                 pass
+
+    def signed_create_order_payload(self, payload):
+        private_key = Ed25519PrivateKey.generate()
+        public_key_hex = private_key.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw,
+        ).hex()
+        wallet = otc_bridge.rtc_address_from_public_key(public_key_hex)
+        payload = dict(payload, wallet=wallet)
+        _, amount_micro_rtc = otc_bridge.decimal_units(
+            payload["amount_rtc"], otc_bridge.RTC_UNIT, "amount_rtc"
+        )
+        _, price_per_rtc_nano_quote = otc_bridge.decimal_units(
+            payload["price_per_rtc"], otc_bridge.QUOTE_PRICE_SCALE, "price_per_rtc"
+        )
+        ttl = otc_bridge.parse_order_ttl(payload.get("ttl_seconds"))
+        ttl = min(max(ttl, 3600), otc_bridge.ORDER_TTL_MAX)
+        timestamp = int(time.time())
+        auth_fields = otc_bridge.create_order_auth_fields(
+            payload["side"],
+            payload["pair"],
+            amount_micro_rtc,
+            price_per_rtc_nano_quote,
+            ttl,
+            payload.get("eth_address", ""),
+        )
+        message = otc_bridge.wallet_auth_message(
+            "create_order",
+            otc_bridge.CREATE_ORDER_AUTH_ID,
+            wallet,
+            timestamp,
+            auth_fields,
+        )
+        payload["wallet_auth"] = {
+            "public_key": public_key_hex,
+            "signature": private_key.sign(message).hex(),
+            "timestamp": timestamp,
+        }
+        return payload
 
     def create_legacy_money_schema(self):
         """Create the pre-migration schema with REAL NOT NULL money columns."""
@@ -92,13 +134,12 @@ class OTCBridgeTestCase(unittest.TestCase):
 
     def test_create_buy_order(self):
         """Buy orders don't need escrow -- just post to order book."""
-        r = self.app.post("/api/orders", json={
+        r = self.app.post("/api/orders", json=self.signed_create_order_payload({
             "side": "buy",
             "pair": "RTC/USDC",
-            "wallet": "test-buyer",
             "amount_rtc": 100,
             "price_per_rtc": 0.10,
-        })
+        }))
         data = r.get_json()
         self.assertTrue(data["ok"])
         self.assertEqual(data["side"], "buy")
