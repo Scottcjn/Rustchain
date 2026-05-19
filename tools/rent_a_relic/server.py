@@ -60,10 +60,13 @@ def _get_json_object_or_empty() -> dict:
 
 def _optional_string_value(data: dict, key: str) -> str | None:
     value = data.get(key)
-    if value is None or value == "":
+    if value is None:
         return None
     if not isinstance(value, str):
         abort(400, description=f"{key} must be a string")
+    value = value.strip()
+    if value == "":
+        return None
     return value
 
 
@@ -268,8 +271,8 @@ def post_reserve():
     """Reserve a machine and lock RTC in escrow."""
     data = _get_json_object_or_empty()
 
-    agent_id       = data.get("agent_id", "").strip()
-    machine_id     = data.get("machine_id", "").strip()
+    agent_id       = _optional_string_value(data, "agent_id")
+    machine_id     = _optional_string_value(data, "machine_id")
     duration_hours = data.get("duration_hours")
     rtc_amount     = data.get("rtc_amount")
 
@@ -277,9 +280,11 @@ def post_reserve():
         abort(400, description="agent_id is required")
     if not machine_id:
         abort(400, description="machine_id is required")
+    if isinstance(duration_hours, bool):
+        abort(400, description="duration_hours must be one of [1, 4, 24]")
     if duration_hours not in VALID_DURATIONS_HOURS:
         abort(400, description=f"duration_hours must be one of {sorted(VALID_DURATIONS_HOURS)}")
-    if rtc_amount is None or not isinstance(rtc_amount, (int, float)) or rtc_amount <= 0:
+    if rtc_amount is None or isinstance(rtc_amount, bool) or not isinstance(rtc_amount, (int, float)) or rtc_amount <= 0:
         abort(400, description="rtc_amount must be a positive number")
 
     machine = MACHINE_REGISTRY.get(machine_id)
