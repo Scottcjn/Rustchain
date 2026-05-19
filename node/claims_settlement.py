@@ -242,6 +242,81 @@ def sign_and_broadcast_transaction(
     return True, "0x" + tx_hash, None
 
 
+def reserve_claims_for_settlement(
+    db_path: str,
+    max_claims: int,
+    batch_id: str,
+) -> List[Dict[str, Any]]:
+    """Atomically reserve approved claims for a settlement batch.
+
+    Without this claim step, concurrent workers can both read the same
+    'approved' rows, broadcast duplicate settlement transactions, and then race
+    to overwrite the final transaction hash.  SQLite serializes BEGIN IMMEDIATE
+    transactions, so each approved claim can move into at most one batch.
+    """
+    conn = sqlite3.connect(db_path, timeout=30, isolation_level=None)
+    conn.row_factory = sqlite3.Row
+    try:
+        conn.execute("PRAGMA busy_timeout = 30000")
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            rows = conn.execute("""
+                SELECT * FROM claims
+                WHERE status = 'approved'
+                ORDER BY submitted_at ASC
+                LIMIT ?
+            """, (max_claims,)).fetchall()
+
+            claim_ids = [row["claim_id"] for row in rows]
+            if not claim_ids:
+                conn.commit()
+                return []
+
+            placeholders = ",".join("?" for _ in claim_ids)
+            updated_at = int(time.time())
+            cursor = conn.execute(f"""
+                UPDATE claims
+                SET status = 'settling',
+                    settlement_batch = ?,
+                    updated_at = ?
+                WHERE status = 'approved'
+                AND claim_id IN ({placeholders})
+            """, (batch_id, updated_at, *claim_ids))
+
+            if cursor.rowcount != len(claim_ids):
+                # Another worker raced us between SELECT and UPDATE.  Re-read
+                # only rows this transaction actually reserved for this batch.
+                rows = conn.execute("""
+                    SELECT * FROM claims
+                    WHERE status = 'settling'
+                    AND settlement_batch = ?
+                    ORDER BY submitted_at ASC
+                    LIMIT ?
+                """, (batch_id, max_claims)).fetchall()
+
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+
+        return [
+            {
+                "claim_id": row["claim_id"],
+                "miner_id": row["miner_id"],
+                "epoch": row["epoch"],
+                "wallet_address": row["wallet_address"],
+                "reward_urtc": row["reward_urtc"],
+                "submitted_at": row["submitted_at"],
+            }
+            for row in rows
+        ]
+    except sqlite3.Error as e:
+        print(f"[SETTLEMENT] Error reserving claims: {e}")
+        return []
+    finally:
+        conn.close()
+
+
 def update_claims_settled(
     db_path: str,
     claim_ids: List[str],
@@ -387,7 +462,8 @@ def process_claims_batch(
         "error": None
     }
     
-    # Get pending claims
+    # Get pending claims for dry-run/batch-condition reporting.  Non-dry-run
+    # processing reserves rows atomically after the batch id is generated.
     pending_claims = get_pending_claims(db_path, max_claims)
     
     # Log stale verifying claims for manual review — NEVER auto-approve.
@@ -448,9 +524,14 @@ def process_claims_batch(
         result["error"] = "Dry run - no actual processing"
         return result
     
-    # Generate batch ID
+    # Generate batch ID and atomically reserve the rows before broadcasting.
     batch_id = generate_batch_id(db_path)
     result["batch_id"] = batch_id
+    claims_to_process = reserve_claims_for_settlement(db_path, max_claims, batch_id)
+    if not claims_to_process:
+        result["error"] = "No approved claims reserved for settlement"
+        return result
+    total_amount = sum(c["reward_urtc"] for c in claims_to_process)
     
     # Construct transaction
     tx_data = construct_settlement_transaction(claims_to_process)
