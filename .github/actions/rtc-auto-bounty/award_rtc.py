@@ -2,10 +2,11 @@
 """
 award_rtc.py — GitHub Action helper for automatic RTC bounty awards on PR merge.
 
-Reads the contributor wallet from the PR body (``wallet: <addr>`` directive)
-or a ``.rtc-wallet`` file at the repository root, calls the RustChain admin
-transfer API (``POST /wallet/transfer``), and posts a confirmation comment
-on the merged PR.
+Reads the contributor wallet from the PR body (for example
+``RTC wallet: RTCabc...`` or ``Payment: RTC | 0xabc...``) or a
+``.rtc-wallet`` file at the repository root, calls the RustChain admin
+transfer API (``POST /wallet/transfer``), and posts a confirmation
+comment on the merged PR.
 
 Designed to be invoked by the composite action
 ``.github/actions/rtc-auto-bounty/action.yml``.
@@ -51,15 +52,33 @@ GITHUB_API = "https://api.github.com"
 VPS_PORT = 8099
 
 # Wallet directive patterns in the PR body.
-# Accepted forms:
-#   wallet: RTCxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-#   Wallet: RTCxxxx...
-#   wallet: my-github-username
-#   .rtc-wallet: RTCxxxx...
+# Accepted labels include:
+#   wallet:
+#   RTC wallet:
+#   RTC payout wallet:
+#   miner id:
+#   RTC wallet/miner id:
+#   Payment:
+#   .rtc-wallet:
 _WALLET_RE = re.compile(
-    r"(?:^|\n)\s*(?:wallet|\.rtc-wallet)\s*:\s*(\S+)\s*(?:\n|$)",
-    re.IGNORECASE,
+    r"""
+    ^\s*
+    (?:
+        \.rtc-wallet
+        | rtc\s+payout\s+wallet
+        | (?:rtc\s+)?wallet(?:\s*/\s*miner\s+id)?
+        | miner\s+id
+        | payment
+    )
+    \s*:\s*
+    (?P<value>[^\n]*)
+    $
+    """,
+    re.IGNORECASE | re.MULTILINE | re.VERBOSE,
 )
+
+_VALID_WALLET_RE = re.compile(r"^(?:RTC[0-9a-fA-F]{40}|0x[0-9a-fA-F]{40})$")
+_WALLET_IN_TEXT_RE = re.compile(r"(?:RTC[0-9a-fA-F]{40}|0x[0-9a-fA-F]{40})")
 
 # Payment-amount override in the PR body (owner can specify a custom amount).
 #   bounty: 100 RTC
@@ -112,6 +131,32 @@ def _env_float(name: str, default: float = 0.0) -> float:
 
 def _is_finite_amount(value: float) -> bool:
     return math.isfinite(value)
+
+
+def _wallet_compare_key(wallet: str) -> str:
+    wallet = (wallet or "").strip()
+    if wallet.startswith("RTC"):
+        return wallet[3:].lower()
+    if wallet.startswith("0x"):
+        return wallet[2:].lower()
+    return wallet.lower()
+
+
+def _dedupe_wallets(wallets: list[str]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for wallet in wallets:
+        key = _wallet_compare_key(wallet)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(wallet)
+    return unique
+
+
+def is_valid_wallet(value: str) -> bool:
+    """Return True only for canonical RustChain payout wallet formats."""
+    return bool(_VALID_WALLET_RE.fullmatch((value or "").strip()))
 
 
 class Config:
@@ -167,12 +212,64 @@ class Config:
 # ---------------------------------------------------------------------------
 
 
+def resolve_wallet_from_pr_body_details(pr_body: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Extract a payout wallet from the PR body.
+
+    Returns ``(wallet, error_reason)`` where ``error_reason`` is ``None`` on
+    success. When multiple different wallets appear, automatic payout is
+    refused so a human can review the PR manually.
+    """
+    pr_body = pr_body or ""
+    labeled_wallets: list[str] = []
+    invalid_directives = 0
+
+    for match in _WALLET_RE.finditer(pr_body):
+        value = (match.group("value") or "").strip()
+        wallets = _dedupe_wallets(
+            [candidate for candidate in _WALLET_IN_TEXT_RE.findall(value) if is_valid_wallet(candidate)]
+        )
+        if wallets:
+            labeled_wallets.extend(wallets)
+        else:
+            invalid_directives += 1
+
+    unique_labeled_wallets = _dedupe_wallets(labeled_wallets)
+    all_wallets = _dedupe_wallets(
+        [candidate for candidate in _WALLET_IN_TEXT_RE.findall(pr_body) if is_valid_wallet(candidate)]
+    )
+
+    if invalid_directives:
+        log_warning(
+            "Found wallet-like directive(s) in the PR body, but they did not contain a valid "
+            "wallet in RTC[hex40] or 0x[hex40] format."
+        )
+
+    if len(unique_labeled_wallets) > 1:
+        log_warning(
+            "Multiple different labeled wallets found in the PR body; refusing automatic payout."
+        )
+        return None, "ambiguous_pr_wallets"
+
+    if len(all_wallets) > 1:
+        log_warning(
+            "Multiple different wallets found in the PR body; refusing automatic payout."
+        )
+        return None, "ambiguous_pr_wallets"
+
+    if unique_labeled_wallets:
+        return unique_labeled_wallets[0], None
+
+    if all_wallets:
+        return all_wallets[0], None
+
+    return None, "wallet_not_found"
+
+
 def resolve_wallet_from_pr_body(pr_body: str) -> Optional[str]:
-    """Extract wallet address from a ``wallet: <addr>`` directive in the PR body."""
-    match = _WALLET_RE.search(pr_body)
-    if match:
-        return match.group(1).strip().rstrip(",")
-    return None
+    """Extract a payout wallet from the PR body when one can be resolved safely."""
+    wallet, _ = resolve_wallet_from_pr_body_details(pr_body)
+    return wallet
 
 
 def resolve_wallet_from_file(repo_path: str) -> Optional[str]:
@@ -184,7 +281,12 @@ def resolve_wallet_from_file(repo_path: str) -> Optional[str]:
         for line in content.splitlines():
             line = line.strip()
             if line and not line.startswith("#"):
-                return line
+                candidate = line.strip("`").rstrip(",")
+                if is_valid_wallet(candidate):
+                    return candidate
+                log_warning(
+                    "Ignoring invalid wallet in .rtc-wallet; expected RTC[hex40] or 0x[hex40]."
+                )
     return None
 
 
@@ -193,17 +295,39 @@ def resolve_wallet(pr_body: str, repo_path: str) -> Optional[str]:
     Resolve the recipient wallet.
 
     Priority:
-      1. ``wallet:`` directive in the PR body
+      1. A supported wallet directive in the PR body, or the first unambiguous
+         wallet substring found in the body
       2. ``.rtc-wallet`` file at the repository root
-      3. Fallback to the PR author's GitHub username
     """
-    wallet = resolve_wallet_from_pr_body(pr_body)
+    wallet, pr_error = resolve_wallet_from_pr_body_details(pr_body)
+    if pr_error == "ambiguous_pr_wallets":
+        return None
     if wallet:
         return wallet
     wallet = resolve_wallet_from_file(repo_path)
     if wallet:
         return wallet
     return None
+
+
+def resolve_wallet_details(pr_body: str, repo_path: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Resolve the payout wallet and explain why resolution failed.
+
+    Ambiguous PR bodies intentionally block fallback to ``.rtc-wallet`` so a
+    manual payout path can inspect the conflicting addresses.
+    """
+    wallet, pr_error = resolve_wallet_from_pr_body_details(pr_body)
+    if pr_error == "ambiguous_pr_wallets":
+        return None, pr_error
+    if wallet:
+        return wallet, None
+
+    file_wallet = resolve_wallet_from_file(repo_path)
+    if file_wallet:
+        return file_wallet, None
+
+    return None, pr_error or "wallet_not_found"
 
 
 # ---------------------------------------------------------------------------
@@ -318,6 +442,14 @@ def transfer_rtc(
     from_wallet = from_wallet.strip()
     to_wallet = to_wallet.strip()
 
+    if not is_valid_wallet(to_wallet):
+        return False, {
+            "error": (
+                "Refusing transfer: recipient wallet must match RTC[hex40] or 0x[hex40]; "
+                f"got {to_wallet!r}"
+            )
+        }
+
     payload = {
         "from_miner": from_wallet,
         "to_miner": to_wallet,
@@ -427,12 +559,33 @@ def main() -> int:
         return 0
 
     # --- Resolve recipient wallet ------------------------------------------
-    wallet = resolve_wallet(cfg.pr_body, cfg.repo_path)
+    wallet, wallet_reason = resolve_wallet_details(cfg.pr_body, cfg.repo_path)
     if not wallet:
-        # Fallback: use PR author's GitHub username as the wallet identifier
-        wallet = cfg.pr_author
-        log_info(f"No wallet found in PR body or .rtc-wallet file; "
-                 f"falling back to PR author: {wallet}")
+        if wallet_reason == "ambiguous_pr_wallets":
+            message = (
+                "Multiple different payout wallets were found in the PR body. "
+                "Automatic payout is blocked; please review and process this PR manually."
+            )
+            skip_reason = "ambiguous_pr_wallets"
+        else:
+            message = (
+                "No valid payout wallet was found in the PR body or .rtc-wallet file. "
+                "Please add a wallet directive such as `RTC wallet: RTC...`, "
+                "`wallet: 0x...`, or `Payment: RTC | RTC...` and rerun the award."
+            )
+            skip_reason = "wallet_missing"
+        log_error(message)
+        set_output("awarded", "false")
+        set_output("skip_reason", skip_reason)
+        return 1
+
+    if not is_valid_wallet(wallet):
+        log_error(
+            f"Resolved recipient wallet {wallet!r} is invalid; refusing to call /wallet/transfer."
+        )
+        set_output("awarded", "false")
+        set_output("skip_reason", "invalid_recipient_wallet")
+        return 1
 
     print(f"Recipient wallet: {wallet}")
 
