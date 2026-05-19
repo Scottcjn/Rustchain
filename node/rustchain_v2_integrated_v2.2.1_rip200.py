@@ -5124,6 +5124,8 @@ def request_withdrawal():
 
     # SECURITY: Validate amount is a number (CVE-style float injection)
     raw_amount = data.get('amount', 0)
+    if isinstance(raw_amount, bool):
+        return jsonify({"error": "amount must be a number", "received": "bool"}), 400
     try:
         amount = float(raw_amount)
     except (TypeError, ValueError):
