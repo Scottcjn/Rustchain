@@ -188,8 +188,45 @@ def check_epoch_participation(
         with sqlite3.connect(db_path) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
+
+            # Primary source: epoch_enroll is the canonical per-epoch snapshot.
+            # miner_attest_recent is a rolling/latest table and may no longer
+            # retain an in-window row by the time a delayed claim is checked.
+            try:
+                cursor.execute("""
+                    SELECT miner_pk
+                    FROM epoch_enroll
+                    WHERE epoch = ? AND miner_pk = ?
+                    LIMIT 1
+                """, (epoch, miner_id))
+                enrolled = cursor.fetchone()
+            except sqlite3.OperationalError:
+                enrolled = None
+
+            if enrolled:
+                cursor.execute("""
+                    SELECT
+                        device_arch,
+                        ts_ok,
+                        fingerprint_passed,
+                        entropy_score
+                    FROM miner_attest_recent
+                    WHERE miner = ?
+                    ORDER BY ts_ok DESC
+                    LIMIT 1
+                """, (miner_id,))
+                row = cursor.fetchone()
+
+                return True, {
+                    "epoch": epoch,
+                    "attestation_ts": row["ts_ok"] if row else None,
+                    "device_arch": row["device_arch"] if row else None,
+                    "fingerprint_passed": row["fingerprint_passed"] if row and "fingerprint_passed" in row.keys() else 1,
+                    "entropy_score": row["entropy_score"] if row and "entropy_score" in row.keys() else 0.0,
+                    "source": "epoch_enroll",
+                }
             
-            # Get any attestation during epoch window (with TTL consideration)
+            # Legacy fallback: get any attestation during epoch window (with TTL consideration)
             cursor.execute("""
                 SELECT 
                     miner,
@@ -218,7 +255,8 @@ def check_epoch_participation(
                 "attestation_ts": row["ts_ok"],
                 "device_arch": row["device_arch"],
                 "fingerprint_passed": row["fingerprint_passed"] if "fingerprint_passed" in row.keys() else 1,
-                "entropy_score": row["entropy_score"] if "entropy_score" in row.keys() else 0.0
+                "entropy_score": row["entropy_score"] if "entropy_score" in row.keys() else 0.0,
+                "source": "miner_attest_recent",
             }
     except sqlite3.Error as e:
         print(f"[CLAIMS] Database error checking epoch participation: {e}")
