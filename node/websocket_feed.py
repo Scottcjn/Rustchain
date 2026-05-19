@@ -17,13 +17,15 @@ Tech Stack:
 - Compatible with static HTML frontend
 """
 
+from __future__ import annotations
+
 import os
 import json
 import time
 import threading
 import logging
 from datetime import datetime
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, asdict
 from collections import deque
 
@@ -46,6 +48,59 @@ POLL_INTERVAL = float(os.environ.get('WS_POLL_INTERVAL', '3'))
 MAX_EVENTS = int(os.environ.get('WS_MAX_EVENTS', '100'))
 JSON_RPC_VERSION = '2.0'
 MINING_STATS_SUBSCRIPTION = 'mining_stats'
+BLOCK_SUBSCRIPTION = 'blocks'
+TRANSACTION_SUBSCRIPTION = 'transactions'
+SUPPORTED_SUBSCRIPTION_CHANNELS = {
+    'all',
+    BLOCK_SUBSCRIPTION,
+    TRANSACTION_SUBSCRIPTION,
+    MINING_STATS_SUBSCRIPTION,
+    'attestations',
+}
+SUBSCRIPTION_CHANNEL_ALIASES = {
+    'all': 'all',
+    'block': BLOCK_SUBSCRIPTION,
+    'blocks': BLOCK_SUBSCRIPTION,
+    'new_block': BLOCK_SUBSCRIPTION,
+    'new_blocks': BLOCK_SUBSCRIPTION,
+    'newheads': BLOCK_SUBSCRIPTION,
+    'transaction': TRANSACTION_SUBSCRIPTION,
+    'transactions': TRANSACTION_SUBSCRIPTION,
+    'new_transaction': TRANSACTION_SUBSCRIPTION,
+    'new_transactions': TRANSACTION_SUBSCRIPTION,
+    'newpendingtransactions': TRANSACTION_SUBSCRIPTION,
+    'mining_stats': MINING_STATS_SUBSCRIPTION,
+    'attestation': 'attestations',
+    'attestations': 'attestations',
+}
+ADDRESS_FILTER_FIELDS = {
+    'address',
+    'wallet',
+    'wallet_address',
+    'walletaddress',
+    'from',
+    'from_addr',
+    'fromaddress',
+    'sender',
+    'to',
+    'to_addr',
+    'toaddress',
+    'recipient',
+    'miner',
+    'miner_id',
+    'minerid',
+    'owner',
+    'counterparty',
+}
+HEIGHT_FILTER_FIELDS = (
+    'height',
+    'block_height',
+    'block_index',
+    'blockNumber',
+    'block_number',
+    'number',
+)
+HEIGHT_FILTER_FIELD_KEYS = {field.casefold() for field in HEIGHT_FILTER_FIELDS}
 
 
 @dataclass
@@ -128,6 +183,7 @@ class WebSocketFeed:
             'settlements_sent': 0
         }
         self.json_rpc_subscriptions: Dict[str, Dict[str, Any]] = {}
+        self.socket_subscriptions: Dict[str, List[Dict[str, Any]]] = {}
         
         # Lock for thread safety
         self._lock = threading.Lock()
@@ -211,6 +267,7 @@ class WebSocketFeed:
             client_id = request.sid if request else 'unknown'
             if client_id != 'unknown':
                 removed = self.remove_json_rpc_subscriptions(client_id)
+                self.remove_socket_subscriptions(client_id)
                 if removed:
                     logger.info(f"[WebSocket] Removed {removed} JSON-RPC subscription(s) for {client_id}")
             logger.info(f"[WebSocket] Client disconnected: {client_id}")
@@ -226,17 +283,33 @@ class WebSocketFeed:
         @self.socketio.on('subscribe')
         def handle_subscribe(data):
             """Subscribe to specific event channels"""
-            room = data.get('room', 'all')
+            subscription, error = self.normalize_subscription(data)
+            if error:
+                emit('subscription_error', {'error': error})
+                return
+
+            room = subscription['channel']
             join_room(room)
-            logger.info(f"[WebSocket] Client subscribed to room: {room}")
-            emit('subscribed', {'room': room})
+            client_id = request.sid if request else None
+            if client_id:
+                self.add_socket_subscription(client_id, subscription)
+            logger.info(f"[WebSocket] Client subscribed to room: {room} filters={subscription['filters']}")
+            emit('subscribed', {
+                'room': room,
+                'channel': room,
+                'filters': subscription['filters'],
+            })
 
         @self.socketio.on('unsubscribe')
         def handle_unsubscribe(data):
             """Unsubscribe from event channels"""
-            room = data.get('room', 'all')
+            room = self.subscription_channel_from_payload(data)
             leave_room(room)
+            client_id = request.sid if request else None
+            if client_id:
+                self.remove_socket_subscriptions(client_id, room)
             logger.info(f"[WebSocket] Client unsubscribed from room: {room}")
+            emit('unsubscribed', {'room': room, 'channel': room})
 
         @self.socketio.on('request_state')
         def handle_request_state():
@@ -278,13 +351,38 @@ class WebSocketFeed:
         """Broadcast new block to all connected clients"""
         if not self.socketio:
             return
+        payload = block.to_dict()
         
         with self._lock:
             self.block_history.append(block)
             self.metrics['blocks_sent'] += 1
         
-        self.socketio.emit('block', block.to_dict(), namespace='/')
+        self.socketio.emit('block', payload, namespace='/')
+        self.emit_filtered_socket_subscribers(BLOCK_SUBSCRIPTION, 'block', payload)
+        self.emit_json_rpc_subscribers(BLOCK_SUBSCRIPTION, payload)
         logger.info(f"[WebSocket] Broadcasted block #{block.height}")
+        self.broadcast_mining_stats()
+
+    def broadcast_transaction(self, transaction: Dict[str, Any]):
+        """Broadcast a new transaction to connected and filtered subscribers."""
+        if not self.socketio:
+            return
+        if not isinstance(transaction, dict):
+            logger.warning("[WebSocket] Ignored non-dict transaction payload")
+            return
+
+        payload = dict(transaction)
+        with self._lock:
+            transactions = list(self.state.get('transactions') or [])
+            transactions.insert(0, payload)
+            self.state['transactions'] = transactions[:MAX_EVENTS]
+            self.state['last_update'] = time.time()
+            self.metrics['transactions_sent'] = self.metrics.get('transactions_sent', 0) + 1
+
+        self.socketio.emit('transaction', payload, namespace='/')
+        self.emit_filtered_socket_subscribers(TRANSACTION_SUBSCRIPTION, 'transaction', payload)
+        self.emit_json_rpc_subscribers(TRANSACTION_SUBSCRIPTION, payload)
+        logger.info(f"[WebSocket] Broadcasted transaction {payload.get('tx_hash', payload.get('id', 'unknown'))}")
         self.broadcast_mining_stats()
 
     def broadcast_attestation(self, attestation: AttestationEvent):
@@ -364,7 +462,7 @@ class WebSocketFeed:
             return dict(self.metrics)
 
     def handle_json_rpc_message(self, message: Dict, client_id: Optional[str] = None) -> Dict:
-        """Handle JSON-RPC subscription requests for mining stats."""
+        """Handle JSON-RPC subscription requests for live feed channels."""
         if not isinstance(message, dict):
             return self._json_rpc_error(None, -32600, "Invalid Request")
 
@@ -385,22 +483,38 @@ class WebSocketFeed:
         if method != 'eth_subscribe':
             return self._json_rpc_error(request_id, -32601, "Method not found")
 
-        if not isinstance(params, list) or not params or params[0] != MINING_STATS_SUBSCRIPTION:
-            return self._json_rpc_error(request_id, -32602, "Expected params ['mining_stats', options]")
+        expected_message = "Expected params ['mining_stats'|'newHeads'|'newPendingTransactions', options]"
+        if not isinstance(params, list) or not params:
+            return self._json_rpc_error(request_id, -32602, expected_message)
 
-        subscription_id = self._create_json_rpc_subscription(MINING_STATS_SUBSCRIPTION, client_id)
+        channel = self.normalize_subscription_channel(params[0])
+        if channel not in {MINING_STATS_SUBSCRIPTION, BLOCK_SUBSCRIPTION, TRANSACTION_SUBSCRIPTION}:
+            return self._json_rpc_error(request_id, -32602, expected_message)
+
+        options = params[1] if len(params) > 1 else {}
+        filters, error = self.normalize_subscription_filters(options if isinstance(options, dict) else {})
+        if error:
+            return self._json_rpc_error(request_id, -32602, error)
+
+        subscription_id = self._create_json_rpc_subscription(channel, client_id, filters)
         return {
             'jsonrpc': JSON_RPC_VERSION,
             'id': request_id,
             'result': subscription_id
         }
 
-    def _create_json_rpc_subscription(self, channel: str, client_id: Optional[str]) -> str:
+    def _create_json_rpc_subscription(
+        self,
+        channel: str,
+        client_id: Optional[str],
+        filters: Optional[Dict[str, Any]] = None,
+    ) -> str:
         with self._lock:
             subscription_id = f"{channel}:{client_id or 'anonymous'}:{len(self.json_rpc_subscriptions) + 1}"
             self.json_rpc_subscriptions[subscription_id] = {
                 'channel': channel,
                 'client_id': client_id,
+                'filters': filters or {},
                 'created_at': time.time()
             }
         return subscription_id
@@ -442,12 +556,16 @@ class WebSocketFeed:
 
     def build_mining_stats_notification(self, subscription_id: str, stats: Optional[Dict] = None) -> Dict:
         """Build an Ethereum-style eth_subscription notification."""
+        return self.build_subscription_notification(subscription_id, stats or self.get_mining_stats())
+
+    def build_subscription_notification(self, subscription_id: str, result: Dict[str, Any]) -> Dict:
+        """Build an Ethereum-style eth_subscription notification."""
         return {
             'jsonrpc': JSON_RPC_VERSION,
             'method': 'eth_subscription',
             'params': {
                 'subscription': subscription_id,
-                'result': stats or self.get_mining_stats()
+                'result': result
             }
         }
 
@@ -480,6 +598,201 @@ class WebSocketFeed:
             'uptime_s': max(0, int(time.time() - started_at))
         }
 
+    def normalize_subscription(self, data: Any) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+        """Normalize SocketIO subscribe payloads into a channel plus filters."""
+        if data is None:
+            data = {}
+        if isinstance(data, str):
+            data = {'room': data}
+        if not isinstance(data, dict):
+            return None, "Subscription payload must be an object"
+
+        channel = self.normalize_subscription_channel(
+            data.get('channel', data.get('room', data.get('type', 'all')))
+        )
+        if channel not in SUPPORTED_SUBSCRIPTION_CHANNELS:
+            requested = data.get('channel', data.get('room', data.get('type')))
+            return None, f"Unsupported subscription channel: {requested}"
+
+        filter_payload = data.get('filters', data.get('filter', {})) or {}
+        if not isinstance(filter_payload, dict):
+            return None, "Subscription filters must be an object"
+        filter_payload = dict(filter_payload)
+        for key in ('address', 'wallet', 'wallet_address', 'miner_id', 'min_height', 'from_height', 'block_height'):
+            if key in data and key not in filter_payload:
+                filter_payload[key] = data[key]
+
+        filters, error = self.normalize_subscription_filters(filter_payload)
+        if error:
+            return None, error
+
+        return {'channel': channel, 'filters': filters}, None
+
+    def subscription_channel_from_payload(self, data: Any) -> str:
+        """Return a best-effort channel name for unsubscribe payloads."""
+        if isinstance(data, str):
+            channel = data
+        elif isinstance(data, dict):
+            channel = data.get('channel', data.get('room', data.get('type', 'all')))
+        else:
+            channel = 'all'
+        normalized = self.normalize_subscription_channel(channel)
+        return normalized if normalized in SUPPORTED_SUBSCRIPTION_CHANNELS else 'all'
+
+    def normalize_subscription_channel(self, channel: Any) -> Optional[str]:
+        if not isinstance(channel, str):
+            return None
+        key = channel.strip()
+        if not key:
+            return None
+        return SUBSCRIPTION_CHANNEL_ALIASES.get(key.casefold(), SUBSCRIPTION_CHANNEL_ALIASES.get(key))
+
+    def normalize_subscription_filters(self, filters: Dict[str, Any]) -> Tuple[Dict[str, Any], Optional[str]]:
+        if not isinstance(filters, dict):
+            return {}, "Subscription filters must be an object"
+
+        normalized: Dict[str, Any] = {}
+        address = self.first_present(filters, ('address', 'wallet', 'wallet_address', 'miner_id'))
+        if address is not None:
+            if not isinstance(address, str) or not address.strip():
+                return {}, "Address filter must be a non-empty string"
+            normalized['address'] = address.strip()
+
+        min_height = self.first_present(filters, ('min_height', 'from_height', 'block_height', 'height'))
+        if min_height is not None:
+            parsed_height = self.parse_height_filter(min_height)
+            if parsed_height is None:
+                return {}, "Height filter must be a non-negative integer"
+            normalized['min_height'] = parsed_height
+
+        return normalized, None
+
+    def add_socket_subscription(self, client_id: str, subscription: Dict[str, Any]):
+        """Store a filtered SocketIO subscription for one connected client."""
+        with self._lock:
+            subscriptions = self.socket_subscriptions.setdefault(client_id, [])
+            if subscription not in subscriptions:
+                subscriptions.append(subscription)
+
+    def remove_socket_subscriptions(self, client_id: str, channel: Optional[str] = None) -> int:
+        """Remove stored SocketIO subscriptions for a client."""
+        with self._lock:
+            subscriptions = self.socket_subscriptions.get(client_id, [])
+            if channel is None or channel == 'all':
+                removed = len(subscriptions)
+                self.socket_subscriptions.pop(client_id, None)
+                return removed
+
+            kept = [subscription for subscription in subscriptions if subscription.get('channel') != channel]
+            removed = len(subscriptions) - len(kept)
+            if kept:
+                self.socket_subscriptions[client_id] = kept
+            else:
+                self.socket_subscriptions.pop(client_id, None)
+            return removed
+
+    def emit_filtered_socket_subscribers(self, channel: str, event: str, payload: Dict[str, Any]):
+        """Emit a filtered event envelope to SocketIO clients whose filters match."""
+        if not self.socketio:
+            return
+        with self._lock:
+            socket_subscriptions = [
+                (client_id, list(subscriptions))
+                for client_id, subscriptions in self.socket_subscriptions.items()
+            ]
+
+        envelope = {
+            'channel': channel,
+            'event': event,
+            'payload': payload,
+        }
+        for client_id, subscriptions in socket_subscriptions:
+            if any(self.subscription_matches(subscription, channel, payload) for subscription in subscriptions):
+                self.socketio.emit('subscription_event', envelope, to=client_id, namespace='/')
+
+    def emit_json_rpc_subscribers(self, channel: str, payload: Dict[str, Any]):
+        """Emit JSON-RPC subscription notifications for matching live-feed subscriptions."""
+        if not self.socketio:
+            return
+        with self._lock:
+            subscriptions = list(self.json_rpc_subscriptions.items())
+
+        for subscription_id, subscription in subscriptions:
+            if not self.subscription_matches(subscription, channel, payload):
+                continue
+            notification = self.build_subscription_notification(subscription_id, payload)
+            client_id = subscription.get('client_id')
+            if client_id:
+                self.socketio.emit('json_rpc', notification, to=client_id, namespace='/')
+            else:
+                self.socketio.emit('json_rpc', notification, namespace='/')
+
+    def subscription_matches(self, subscription: Dict[str, Any], channel: str, payload: Dict[str, Any]) -> bool:
+        subscription_channel = subscription.get('channel')
+        if subscription_channel not in ('all', channel):
+            return False
+
+        filters = subscription.get('filters') or {}
+        min_height = filters.get('min_height')
+        if min_height is not None:
+            payload_height = self.payload_height(payload)
+            if payload_height is None or payload_height < min_height:
+                return False
+
+        address = filters.get('address')
+        if address and not self.payload_references_address(payload, address):
+            return False
+
+        return True
+
+    def payload_height(self, payload: Any) -> Optional[int]:
+        if not isinstance(payload, dict):
+            return None
+        for key, value in payload.items():
+            if not isinstance(key, str) or key.casefold() not in HEIGHT_FILTER_FIELD_KEYS:
+                continue
+            height = self.parse_height_filter(value)
+            if height is not None:
+                return height
+        return None
+
+    def payload_references_address(self, payload: Any, address: str) -> bool:
+        target = address.casefold()
+        return any(value.casefold() == target for value in self.iter_address_values(payload))
+
+    def iter_address_values(self, payload: Any):
+        if isinstance(payload, dict):
+            for key, value in payload.items():
+                if isinstance(key, str) and key.casefold() in ADDRESS_FILTER_FIELDS and isinstance(value, str):
+                    yield value
+                if isinstance(value, (dict, list)):
+                    yield from self.iter_address_values(value)
+        elif isinstance(payload, list):
+            for item in payload:
+                yield from self.iter_address_values(item)
+
+    def first_present(self, payload: Dict[str, Any], keys: Tuple[str, ...]) -> Any:
+        for key in keys:
+            if key in payload:
+                return payload[key]
+        return None
+
+    def parse_height_filter(self, value: Any) -> Optional[int]:
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return value if value >= 0 else None
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                return None
+            try:
+                parsed = int(value, 0)
+            except ValueError:
+                return None
+            return parsed if parsed >= 0 else None
+        return None
+
     def broadcast_mining_stats(self) -> Dict:
         """Broadcast mining stats through plain SocketIO and JSON-RPC streams."""
         stats = self.get_mining_stats()
@@ -491,6 +804,8 @@ class WebSocketFeed:
             subscriptions = list(self.json_rpc_subscriptions.items())
 
         for subscription_id, subscription in subscriptions:
+            if subscription.get('channel') != MINING_STATS_SUBSCRIPTION:
+                continue
             notification = self.build_mining_stats_notification(subscription_id, stats)
             client_id = subscription.get('client_id')
             if client_id:
@@ -595,6 +910,11 @@ def broadcast_attestation(miner_id: str, device_arch: str, multiplier: float,
         ticket_id=ticket_id
     )
     ws_feed.broadcast_attestation(attestation)
+
+
+def broadcast_transaction(transaction: Dict[str, Any]):
+    """Broadcast a new transaction event."""
+    ws_feed.broadcast_transaction(transaction)
 
 
 def broadcast_epoch_settlement(epoch: int, total_blocks: int, 
