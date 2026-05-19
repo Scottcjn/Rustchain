@@ -99,6 +99,53 @@ def validate_wallet_address_format(wallet_address: str) -> bool:
     return bool(re.match(pattern, wallet_address, re.IGNORECASE))
 
 
+def get_registered_claim_public_key(db_path: str, miner_id: str) -> Optional[str]:
+    """Return the stored claim/signing public key for a miner when present."""
+    candidate_tables = (
+        ("miner_wallets", "miner_id"),
+        ("miner_attest_recent", "miner"),
+    )
+    candidate_columns = ("public_key", "signing_public_key", "claim_public_key")
+
+    try:
+        with sqlite3.connect(db_path) as conn:
+            cursor = conn.cursor()
+            for table, miner_column in candidate_tables:
+                try:
+                    cursor.execute(f"PRAGMA table_info({table})")
+                    columns = {row[1] for row in cursor.fetchall()}
+                except sqlite3.Error:
+                    continue
+
+                if miner_column not in columns:
+                    continue
+
+                key_columns = [column for column in candidate_columns if column in columns]
+                if not key_columns:
+                    continue
+
+                order_column = "created_at" if "created_at" in columns else "ts_ok" if "ts_ok" in columns else None
+                for key_column in key_columns:
+                    query = f"""
+                        SELECT {key_column}
+                        FROM {table}
+                        WHERE {miner_column} = ?
+                        AND {key_column} IS NOT NULL
+                        AND {key_column} != ''
+                    """
+                    if order_column:
+                        query += f" ORDER BY {order_column} DESC"
+                    query += " LIMIT 1"
+                    cursor.execute(query, (miner_id,))
+                    row = cursor.fetchone()
+                    if row and row[0]:
+                        return str(row[0])
+    except sqlite3.Error as e:
+        print(f"[CLAIMS] Database error getting registered public key: {e}")
+
+    return None
+
+
 def create_claim_payload(
     miner_id: str,
     epoch: int,
@@ -491,6 +538,11 @@ def submit_claim(
     registered_wallet = eligibility.get("wallet_address")
     if not registered_wallet or wallet_address.lower() != registered_wallet.lower():
         result["error"] = "wallet_address_mismatch"
+        return result
+
+    registered_public_key = get_registered_claim_public_key(db_path, miner_id)
+    if registered_public_key and public_key.lower() != registered_public_key.lower():
+        result["error"] = "public_key_mismatch"
         return result
     
     # Verify signature (unless skipped for testing)
