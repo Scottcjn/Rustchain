@@ -23,7 +23,7 @@ MINER_ARTIFACTS = {
     },
     "Darwin": {
         "url": "https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/macos/rustchain_mac_miner_v2.5.py",
-        "sha256": "42bb69840bc8723108ee13157cf1771d3af8c17f2664cbcd79c5b3077376736b",
+        "sha256": "e74348f80184e3fda844d4ff5dbd9167c7b2e59fb40136defa45a3c8c8d8c59c",
     },
     "Windows": {
         "url": "https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/windows/rustchain_windows_miner.py",

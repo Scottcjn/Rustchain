@@ -180,6 +180,62 @@ def get_mac_serial():
     return None
 
 
+def _dedupe_macs(macs, limit=3):
+    filtered = []
+    for mac in macs:
+        mac = (mac or "").strip().lower()
+        if mac and mac != "00:00:00:00:00:00" and mac not in filtered:
+            filtered.append(mac)
+            if len(filtered) >= limit:
+                break
+    return filtered
+
+
+def _parse_networksetup_macs(output):
+    macs = []
+    current_port = ""
+    stable_ports = ("ethernet", "wi-fi", "wifi")
+
+    for raw_line in output.splitlines():
+        line = raw_line.strip()
+        if line.startswith("Hardware Port:"):
+            current_port = line.split(":", 1)[1].strip().lower()
+        elif line.startswith("Ethernet Address:") and current_port in stable_ports:
+            macs.append(line.split(":", 1)[1].strip())
+
+    return _dedupe_macs(macs)
+
+
+def _parse_ifconfig_macs(output):
+    return _dedupe_macs(
+        re.findall(r'ether\s+([0-9a-f:]{17})', output, re.IGNORECASE)
+    )
+
+
+def get_mac_addresses():
+    """Return stable macOS hardware MACs without noisy bridge/adapter entries."""
+    try:
+        result = subprocess.run(
+            ['networksetup', '-listallhardwareports'],
+            capture_output=True, text=True, timeout=5
+        )
+        macs = _parse_networksetup_macs(result.stdout)
+        if macs:
+            return macs
+    except Exception:
+        pass
+
+    try:
+        result = subprocess.run(['ifconfig', '-a'], capture_output=True, text=True, timeout=5)
+        macs = _parse_ifconfig_macs(result.stdout)
+        if macs:
+            return macs
+    except Exception:
+        pass
+
+    return ["00:00:00:00:00:00"]
+
+
 def detect_hardware():
     """Auto-detect Mac hardware architecture."""
     machine = platform.machine().lower()
@@ -197,14 +253,9 @@ def detect_hardware():
         "serial": get_mac_serial()
     }
 
-    # Get MAC addresses
-    try:
-        result = subprocess.run(['ifconfig'], capture_output=True, text=True, timeout=5)
-        macs = re.findall(r'ether\s+([0-9a-f:]{17})', result.stdout, re.IGNORECASE)
-        hw_info["macs"] = macs if macs else ["00:00:00:00:00:00"]
-        hw_info["mac"] = macs[0] if macs else "00:00:00:00:00:00"
-    except Exception:
-        pass
+    macs = get_mac_addresses()
+    hw_info["macs"] = macs
+    hw_info["mac"] = macs[0]
 
     # Get memory
     try:
