@@ -430,6 +430,8 @@ class UtxoDB:
             val = out.get('value_nrtc')
             if not _is_positive_int64(val):
                 return None
+            if val < DUST_THRESHOLD:
+                return None
 
             tokens_json = out.get('tokens_json', '[]')
             registers_json = out.get('registers_json', '{}')
