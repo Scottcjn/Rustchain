@@ -441,6 +441,41 @@ class TestMempoolOutputValidation(UtxoSecurityBase):
         ok = self.db.mempool_add(tx)
         self.assertFalse(ok)
 
+    def test_mempool_rejects_sub_dust_output_value(self):
+        """Mempool admission must reject outputs below DUST_THRESHOLD."""
+        self._coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+        box_id = boxes[0]['box_id']
+
+        tx = {
+            'tx_id': 'sub_dust_1' * 6,
+            'inputs': [{'box_id': box_id}],
+            'outputs': [{'address': 'bob', 'value_nrtc': DUST_THRESHOLD - 1}],
+            'fee_nrtc': 100 * UNIT - (DUST_THRESHOLD - 1),
+        }
+        ok = self.db.mempool_add(tx)
+        self.assertFalse(ok)
+        self.assertFalse(
+            self.db.mempool_check_double_spend(box_id),
+            "Rejected sub-dust mempool tx must not leave the input locked",
+        )
+
+    def test_mempool_allows_exact_dust_threshold_output_value(self):
+        """DUST_THRESHOLD itself is the valid lower bound for outputs."""
+        self._coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+        box_id = boxes[0]['box_id']
+
+        tx = {
+            'tx_id': 'exact_dust_1' * 6,
+            'inputs': [{'box_id': box_id}],
+            'outputs': [{'address': 'bob', 'value_nrtc': DUST_THRESHOLD}],
+            'fee_nrtc': 100 * UNIT - DUST_THRESHOLD,
+        }
+        ok = self.db.mempool_add(tx)
+        self.assertTrue(ok)
+        self.assertTrue(self.db.mempool_check_double_spend(box_id))
+
     def test_mempool_rejects_float_output_value(self):
         """Float value_nrtc in mempool output must be rejected."""
         self._coinbase('alice', 100 * UNIT)
