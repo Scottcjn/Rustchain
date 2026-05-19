@@ -159,6 +159,17 @@ def _normalize_limit(value: Any, default: int = 10, maximum: int = 100) -> int:
     return max(1, min(limit, maximum))
 
 
+def _normalize_maintenance_limit(data: Any, default: int = 25, maximum: int = 200) -> int:
+    value = data.get("limit", default) if isinstance(data, dict) else default
+    try:
+        limit = int(value)
+    except (TypeError, ValueError):
+        raise ValueError("limit must be an integer")
+    if limit < 1:
+        raise ValueError("limit must be at least 1")
+    return min(limit, maximum)
+
+
 def _is_authorized(req) -> bool:
     required_admin = os.getenv("RC_ADMIN_KEY", "").strip()
     if required_admin:
@@ -645,7 +656,10 @@ def backfill_missing():
     if not _is_authorized(request):
         return jsonify({"error": "Unauthorized -- admin key or bearer required"}), 401
     data = request.get_json(silent=True) or {}
-    limit = data.get("limit", 25) if isinstance(data, dict) else 25
+    try:
+        limit = _normalize_maintenance_limit(data)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     results = backfill_missing_reviews(limit=limit)
     return jsonify({"ok": True, "updated": results, "count": len(results)})
 
@@ -656,7 +670,10 @@ def normalize_existing():
     if not _is_authorized(request):
         return jsonify({"error": "Unauthorized -- admin key or bearer required"}), 401
     data = request.get_json(silent=True) or {}
-    limit = data.get("limit", 25) if isinstance(data, dict) else 25
+    try:
+        limit = _normalize_maintenance_limit(data)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     results = normalize_existing_reviews(limit=limit)
     return jsonify({"ok": True, "updated": results, "count": len(results)})
 

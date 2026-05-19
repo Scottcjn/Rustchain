@@ -209,6 +209,30 @@ def test_backfill_missing_updates_blank_reviews(client, monkeypatch):
     assert "Assessment: repaired." in repaired["review_text"]
 
 
+@pytest.mark.parametrize(
+    ("path", "limit", "error"),
+    [
+        ("/api/sophia/governor/review/backfill-missing", "abc", "limit must be an integer"),
+        ("/api/sophia/governor/review/backfill-missing", "10.5", "limit must be an integer"),
+        ("/api/sophia/governor/review/backfill-missing", 0, "limit must be at least 1"),
+        ("/api/sophia/governor/review/backfill-missing", -1, "limit must be at least 1"),
+        ("/api/sophia/governor/review/normalize-existing", "abc", "limit must be an integer"),
+        ("/api/sophia/governor/review/normalize-existing", "10.5", "limit must be an integer"),
+        ("/api/sophia/governor/review/normalize-existing", 0, "limit must be at least 1"),
+        ("/api/sophia/governor/review/normalize-existing", -1, "limit must be at least 1"),
+    ],
+)
+def test_maintenance_routes_reject_invalid_limits(client, path, limit, error):
+    response = client.post(
+        path,
+        headers={"X-Admin-Key": "test-admin"},
+        json={"limit": limit},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == error
+
+
 def test_review_normalizes_verbose_action_reasoning(client, monkeypatch):
     monkeypatch.setattr(
         review_service,
