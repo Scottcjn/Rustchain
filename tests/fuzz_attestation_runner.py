@@ -41,6 +41,21 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+
+def _configure_console_output(streams=(sys.stdout, sys.stderr)) -> None:
+    """Avoid UnicodeEncodeError on legacy consoles while preserving UTF-8 output."""
+    for stream in streams:
+        reconfigure = getattr(stream, "reconfigure", None)
+        if not callable(reconfigure):
+            continue
+        try:
+            reconfigure(errors="replace")
+        except (OSError, ValueError):
+            continue
+
+
+_configure_console_output()
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
