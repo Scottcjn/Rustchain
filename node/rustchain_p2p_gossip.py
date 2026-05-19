@@ -301,7 +301,61 @@ class GossipMessage:
 
     @classmethod
     def from_dict(cls, data: Dict) -> 'GossipMessage':
-        return cls(**data)
+        """Validate and construct a gossip message from untrusted JSON."""
+        if not isinstance(data, dict):
+            raise ValueError("invalid gossip message: expected object")
+
+        required = {
+            "msg_type",
+            "msg_id",
+            "sender_id",
+            "timestamp",
+            "ttl",
+            "signature",
+            "payload",
+        }
+        if set(data) != required:
+            raise ValueError("invalid gossip message fields")
+
+        msg_type = data["msg_type"]
+        if not isinstance(msg_type, str) or msg_type not in {m.value for m in MessageType}:
+            raise ValueError("invalid gossip message type")
+
+        def require_string(name: str, max_len: int) -> str:
+            value = data[name]
+            if not isinstance(value, str) or not value or len(value) > max_len:
+                raise ValueError(f"invalid gossip message {name}")
+            return value
+
+        msg_id = require_string("msg_id", 128)
+        sender_id = require_string("sender_id", 128)
+        signature = require_string("signature", 4096)
+
+        timestamp = data["timestamp"]
+        if isinstance(timestamp, bool) or not isinstance(timestamp, int) or timestamp < 0:
+            raise ValueError("invalid gossip message timestamp")
+
+        ttl = data["ttl"]
+        if isinstance(ttl, bool) or not isinstance(ttl, int) or ttl < 0 or ttl > GOSSIP_TTL:
+            raise ValueError("invalid gossip message ttl")
+
+        payload = data["payload"]
+        if not isinstance(payload, dict):
+            raise ValueError("invalid gossip message payload")
+        try:
+            json.dumps(payload, sort_keys=True)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("invalid gossip message payload") from exc
+
+        return cls(
+            msg_type=msg_type,
+            msg_id=msg_id,
+            sender_id=sender_id,
+            timestamp=timestamp,
+            ttl=ttl,
+            signature=signature,
+            payload=payload,
+        )
 
     def compute_hash(self) -> str:
         """Compute hash of message content for deduplication"""
