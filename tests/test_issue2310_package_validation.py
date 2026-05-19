@@ -16,7 +16,8 @@ def test_issue2310_package_imports_from_parent_path():
         "import sys; "
         f"sys.path.insert(0, {issue_path!r}); "
         "import src; "
-        "print(src.CRTPatternGenerator.__name__)"
+        "print(src.__file__); "
+        "print(src.__all__[0])"
     )
 
     result = subprocess.run(
@@ -28,7 +29,9 @@ def test_issue2310_package_imports_from_parent_path():
     )
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "CRTPatternGenerator"
+    stdout = result.stdout.strip().splitlines()
+    assert Path(stdout[0]).resolve() == ISSUE2310_ROOT / "src" / "__init__.py"
+    assert stdout[1] == "CRTPatternGenerator"
 
 
 def test_issue2310_validator_runs_with_cp1252_stdout():
