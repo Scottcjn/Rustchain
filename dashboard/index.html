@@ -1,193 +1,620 @@
-<!DOCTYPE html>
+<!doctype html>
+<!-- SPDX-License-Identifier: MIT -->
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RustChain Live Stats</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>RustChain Live Stats Dashboard</title>
+    <meta name="description" content="Auto-refreshing RustChain dashboard showing live epoch, miners, supply, transactions, and node health.">
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            color-scheme: light;
+            --bg: #f5f7fb;
+            --surface: #ffffff;
+            --ink: #172033;
+            --muted: #647087;
+            --line: #dbe3ef;
+            --accent: #006c67;
+            --accent-2: #3957a8;
+            --good: #16803c;
+            --warn: #a15c00;
+            --bad: #c73636;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            margin: 0;
             min-height: 100vh;
+            font-family: Arial, Helvetica, sans-serif;
+            color: var(--ink);
+            background: var(--bg);
+            line-height: 1.5;
+        }
+
+        a {
+            color: var(--accent);
+        }
+
+        .shell {
+            width: min(1180px, calc(100% - 32px));
+            margin: 0 auto;
+        }
+
+        header {
+            background: var(--surface);
+            border-bottom: 1px solid var(--line);
+        }
+
+        .topbar {
             display: flex;
-            flex-direction: column;
             align-items: center;
-            padding: 20px;
-            color: #fff;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 14px 0;
         }
-        .container {
-            max-width: 800px;
-            width: 100%;
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 700;
         }
+
+        .mark {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            background: linear-gradient(135deg, var(--accent), var(--accent-2));
+        }
+
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            min-height: 30px;
+            gap: 8px;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            padding: 5px 11px;
+            color: var(--muted);
+            font-size: 14px;
+            background: #fbfcfe;
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--warn);
+        }
+
+        .dot.live {
+            background: var(--good);
+        }
+
+        .dot.error {
+            background: var(--bad);
+        }
+
+        .hero {
+            display: grid;
+            grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.8fr);
+            gap: 28px;
+            padding: 34px 0;
+        }
+
         h1 {
-            text-align: center;
-            margin-bottom: 30px;
-            font-size: 2rem;
-            background: linear-gradient(90deg, #00d4ff, #7b2cbf);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+            margin: 0;
+            font-size: clamp(34px, 5vw, 58px);
+            line-height: 1.05;
+            letter-spacing: 0;
         }
+
+        .lede {
+            max-width: 720px;
+            margin: 14px 0 0;
+            color: var(--muted);
+            font-size: 18px;
+        }
+
+        .source-card {
+            align-self: end;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 16px;
+            background: var(--surface);
+        }
+
+        .source-card h2,
+        .panel h2 {
+            margin: 0 0 12px;
+            font-size: 18px;
+        }
+
+        .source-list {
+            display: grid;
+            gap: 8px;
+            margin: 0;
+            padding: 0;
+            list-style: none;
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        main {
+            padding: 24px 0 56px;
+        }
+
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 12px;
+            margin-bottom: 18px;
+        }
+
+        .metric {
+            min-height: 124px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: var(--surface);
+            padding: 16px;
+        }
+
+        .metric .label {
+            display: block;
+            color: var(--muted);
+            font-size: 13px;
+            text-transform: uppercase;
+        }
+
+        .metric .value {
+            display: block;
+            margin-top: 10px;
+            font-size: clamp(24px, 4vw, 34px);
+            font-weight: 700;
+            line-height: 1.05;
+            overflow-wrap: anywhere;
+        }
+
+        .metric .hint {
+            display: block;
+            margin-top: 9px;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
         .grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
+            grid-template-columns: minmax(0, 1.1fr) minmax(340px, 0.9fr);
+            gap: 16px;
         }
-        .card {
-            background: rgba(255,255,255,0.05);
-            border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 12px;
-            padding: 20px;
-            text-align: center;
-            transition: transform 0.2s;
+
+        .panel {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: var(--surface);
+            padding: 16px;
+            min-width: 0;
         }
-        .card:hover {
-            transform: translateY(-5px);
-            background: rgba(255,255,255,0.08);
+
+        .table-wrap {
+            overflow-x: auto;
         }
-        .label {
-            font-size: 0.875rem;
-            color: #888;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 8px;
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
         }
-        .value {
-            font-size: 2rem;
+
+        th,
+        td {
+            padding: 10px 8px;
+            border-bottom: 1px solid var(--line);
+            text-align: left;
+            vertical-align: top;
+        }
+
+        th {
+            color: var(--muted);
             font-weight: 700;
-            color: #00d4ff;
+            text-transform: uppercase;
+            font-size: 12px;
         }
-        .status {
-            display: inline-block;
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            margin-right: 8px;
+
+        td:last-child,
+        th:last-child {
+            text-align: right;
         }
-        .status.online { background: #00ff88; box-shadow: 0 0 10px #00ff88; }
-        .status.offline { background: #ff4444; }
-        .footer {
-            text-align: center;
-            color: #666;
-            font-size: 0.875rem;
-            margin-top: auto;
-            padding-top: 30px;
+
+        .mono {
+            font-family: Consolas, Monaco, monospace;
         }
-        .footer a {
-            color: #00d4ff;
-            text-decoration: none;
+
+        .feed {
+            display: grid;
+            gap: 10px;
+            margin: 0;
+            padding: 0;
+            list-style: none;
         }
-        .refresh {
-            text-align: center;
-            color: #666;
-            font-size: 0.75rem;
-            margin-top: 10px;
+
+        .feed li {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 10px 12px;
+            background: #fbfcfe;
         }
-        .error {
-            background: rgba(255,68,68,0.1);
-            border-color: #ff4444;
-            color: #ff8888;
+
+        .feed strong {
+            display: block;
+            margin-bottom: 4px;
         }
-        @media (max-width: 600px) {
-            h1 { font-size: 1.5rem; }
-            .value { font-size: 1.5rem; }
-            .grid { grid-template-columns: 1fr; }
+
+        .feed span {
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .controls {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-top: 16px;
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        button {
+            border: 1px solid var(--accent);
+            border-radius: 8px;
+            background: var(--accent);
+            color: #ffffff;
+            min-height: 38px;
+            padding: 0 14px;
+            font: inherit;
+            cursor: pointer;
+        }
+
+        button:disabled {
+            cursor: wait;
+            opacity: 0.7;
+        }
+
+        footer {
+            padding: 22px 0;
+            border-top: 1px solid var(--line);
+            color: var(--muted);
+            background: var(--surface);
+            font-size: 14px;
+        }
+
+        @media (max-width: 900px) {
+            .hero,
+            .grid {
+                grid-template-columns: 1fr;
+            }
+
+            .metrics {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 560px) {
+            .shell {
+                width: min(100% - 20px, 1180px);
+            }
+
+            .topbar,
+            .controls {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .metrics {
+                grid-template-columns: 1fr;
+            }
+
+            .metric {
+                min-height: 104px;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>🔥 RustChain Live Stats</h1>
-        
-        <div class="grid">
-            <div class="card" id="epoch-card">
-                <div class="label">Current Epoch</div>
-                <div class="value" id="epoch">-</div>
+    <header>
+        <div class="shell">
+            <div class="topbar">
+                <div class="brand"><span class="mark" aria-hidden="true"></span> RustChain Live Stats</div>
+                <div class="status-pill"><span class="dot" id="status-dot"></span><span id="status-text">Waiting for first refresh</span></div>
             </div>
-            
-            <div class="card" id="miners-card">
-                <div class="label">Active Miners</div>
-                <div class="value" id="miners">-</div>
-            </div>
-            
-            <div class="card" id="health-card">
-                <div class="label">Network Health</div>
-                <div class="value" style="font-size: 1.25rem;">
-                    <span class="status offline" id="health-dot"></span>
-                    <span id="health">-</span>
+            <section class="hero">
+                <div>
+                    <h1>Live network dashboard</h1>
+                    <p class="lede">Auto-refreshing view of RustChain epoch, miner participation, supply, transactions, and public node health.</p>
                 </div>
-            </div>
-            
-            <div class="card">
-                <div class="label">API Endpoint</div>
-                <div class="value" style="font-size: 1rem; color: #888;">rustchain.org</div>
-            </div>
+                <aside class="source-card">
+                    <h2>Live sources</h2>
+                    <ul class="source-list">
+                        <li><a href="https://rustchain.org/epoch">/epoch</a></li>
+                        <li><a href="https://rustchain.org/api/miners">/api/miners</a></li>
+                        <li><a href="https://rustchain.org/api/transactions">/api/transactions</a></li>
+                        <li><a href="https://rustchain.org/health">/health</a></li>
+                    </ul>
+                </aside>
+            </section>
         </div>
-        
-        <div class="refresh">Auto-refreshing every 60 seconds</div>
-    </div>
-    
-    <div class="footer">
-        Powered by <a href="https://rustchain.org" target="_blank">RustChain</a> • 
-        <a href="https://github.com/Scottcjn/Rustchain" target="_blank">Open Source</a>
-    </div>
+    </header>
+
+    <main class="shell">
+        <section class="metrics" aria-label="Live RustChain metrics">
+            <article class="metric">
+                <span class="label">Current epoch</span>
+                <span class="value" id="epoch-value">--</span>
+                <span class="hint" id="slot-value">Slot --</span>
+            </article>
+            <article class="metric">
+                <span class="label">Miner count</span>
+                <span class="value" id="miners-value">--</span>
+                <span class="hint" id="miners-hint">Active public miners</span>
+            </article>
+            <article class="metric">
+                <span class="label">Supply</span>
+                <span class="value" id="supply-value">--</span>
+                <span class="hint">RTC reported by /epoch</span>
+            </article>
+            <article class="metric">
+                <span class="label">Transactions</span>
+                <span class="value" id="transactions-value">--</span>
+                <span class="hint" id="transactions-hint">Latest available count</span>
+            </article>
+        </section>
+
+        <section class="grid">
+            <article class="panel">
+                <h2>Top miners</h2>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Miner</th>
+                                <th>Arch</th>
+                                <th>Weight</th>
+                            </tr>
+                        </thead>
+                        <tbody id="miners-table">
+                            <tr><td colspan="3">Waiting for miner data...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </article>
+
+            <article class="panel">
+                <h2>Node feed</h2>
+                <ul class="feed" id="node-feed">
+                    <li><strong>Dashboard initialized</strong><span>First refresh will run automatically.</span></li>
+                </ul>
+                <div class="controls">
+                    <span id="last-updated">Never refreshed</span>
+                    <button type="button" id="refresh-button">Refresh now</button>
+                </div>
+            </article>
+        </section>
+    </main>
+
+    <footer>
+        <div class="shell">
+            Built from public RustChain endpoints. Auto-refresh interval: 60 seconds.
+        </div>
+    </footer>
 
     <script>
-        const API_BASE = 'https://rustchain.org';
-        
-        async function fetchStats() {
+        const API_BASE = "https://rustchain.org";
+        const REFRESH_MS = 60000;
+
+        const nodes = {
+            statusDot: document.getElementById("status-dot"),
+            statusText: document.getElementById("status-text"),
+            epoch: document.getElementById("epoch-value"),
+            slot: document.getElementById("slot-value"),
+            miners: document.getElementById("miners-value"),
+            minersHint: document.getElementById("miners-hint"),
+            supply: document.getElementById("supply-value"),
+            transactions: document.getElementById("transactions-value"),
+            transactionsHint: document.getElementById("transactions-hint"),
+            minersTable: document.getElementById("miners-table"),
+            feed: document.getElementById("node-feed"),
+            lastUpdated: document.getElementById("last-updated"),
+            refreshButton: document.getElementById("refresh-button")
+        };
+
+        function formatNumber(value, fractionDigits = 0) {
+            const number = Number(value);
+            if (!Number.isFinite(number)) {
+                return "--";
+            }
+            return new Intl.NumberFormat("en-US", {
+                maximumFractionDigits: fractionDigits
+            }).format(number);
+        }
+
+        function firstNumber(source, keys) {
+            if (!source || typeof source !== "object") {
+                return null;
+            }
+            for (const key of keys) {
+                const value = source[key];
+                const number = Number(value);
+                if (Number.isFinite(number)) {
+                    return number;
+                }
+            }
+            return null;
+        }
+
+        function normalizeMiners(payload) {
+            if (Array.isArray(payload)) {
+                return payload;
+            }
+            if (!payload || typeof payload !== "object") {
+                return [];
+            }
+            for (const key of ["miners", "data", "items", "results"]) {
+                if (Array.isArray(payload[key])) {
+                    return payload[key];
+                }
+            }
+            return [];
+        }
+
+        function minerName(row) {
+            if (typeof row === "string") {
+                return row;
+            }
+            return row.miner || row.miner_id || row.wallet || row.address || row.id || "unknown";
+        }
+
+        function minerArch(row) {
+            if (!row || typeof row !== "object") {
+                return "--";
+            }
+            return row.arch || row.device_arch || row.cpu_arch || row.family || row.platform || "--";
+        }
+
+        function minerWeight(row) {
+            if (!row || typeof row !== "object") {
+                return "--";
+            }
+            return formatNumber(row.weight ?? row.antiquity_multiplier ?? row.multiplier ?? row.score, 3);
+        }
+
+        async function getJson(path) {
+            const response = await fetch(`${API_BASE}${path}`, { cache: "no-store" });
+            if (!response.ok) {
+                throw new Error(`${path} returned HTTP ${response.status}`);
+            }
+            return response.json();
+        }
+
+        async function getOptionalJson(path) {
             try {
-                const [healthRes, minersRes, epochRes] = await Promise.all([
-                    fetch(`${API_BASE}/health`).catch(() => null),
-                    fetch(`${API_BASE}/api/miners`).catch(() => null),
-                    fetch(`${API_BASE}/epoch`).catch(() => null)
-                ]);
-                
-                // Health
-                const healthCard = document.getElementById('health-card');
-                const healthDot = document.getElementById('health-dot');
-                const healthText = document.getElementById('health');
-                
-                if (healthRes && healthRes.ok) {
-                    const health = await healthRes.text();
-                    healthText.textContent = 'operational';
-                    healthDot.className = 'status online';
-                    healthCard.classList.remove('error');
-                } else {
-                    healthText.textContent = 'unreachable';
-                    healthDot.className = 'status offline';
-                    healthCard.classList.add('error');
-                }
-                
-                // Miners
-                if (minersRes && minersRes.ok) {
-                    const miners = await minersRes.json();
-                    document.getElementById('miners').textContent = miners.count || miners.length || '0';
-                } else {
-                    document.getElementById('miners').textContent = '?';
-                }
-                
-                // Epoch
-                if (epochRes && epochRes.ok) {
-                    const epoch = await epochRes.text();
-                    document.getElementById('epoch').textContent = epoch.replace(/"/g, '').trim();
-                } else {
-                    document.getElementById('epoch').textContent = '?';
-                }
-                
-            } catch (err) {
-                console.error('Fetch error:', err);
-                document.getElementById('health').textContent = 'error';
-                document.getElementById('health-dot').className = 'status offline';
+                return await getJson(path);
+            } catch (error) {
+                return { unavailable: true, error: error.message };
             }
         }
-        
-        // Initial fetch
-        fetchStats();
-        
-        // Auto-refresh every 60 seconds
-        setInterval(fetchStats, 60000);
+
+        function setStatus(kind, text) {
+            nodes.statusDot.className = `dot ${kind}`;
+            nodes.statusText.textContent = text;
+        }
+
+        function appendFeed(title, detail) {
+            const item = document.createElement("li");
+            const strong = document.createElement("strong");
+            const span = document.createElement("span");
+            strong.textContent = title;
+            span.textContent = detail;
+            item.append(strong, span);
+            nodes.feed.prepend(item);
+            while (nodes.feed.children.length > 5) {
+                nodes.feed.lastElementChild.remove();
+            }
+        }
+
+        function renderMiners(miners) {
+            const rows = miners.slice(0, 8);
+            nodes.minersTable.replaceChildren();
+            if (!rows.length) {
+                const row = document.createElement("tr");
+                const cell = document.createElement("td");
+                cell.colSpan = 3;
+                cell.textContent = "No public miner rows returned.";
+                row.append(cell);
+                nodes.minersTable.append(row);
+                return;
+            }
+
+            for (const row of rows) {
+                const name = String(minerName(row));
+                const tr = document.createElement("tr");
+                const nameCell = document.createElement("td");
+                const archCell = document.createElement("td");
+                const weightCell = document.createElement("td");
+
+                nameCell.className = "mono";
+                nameCell.textContent = `${name.slice(0, 24)}${name.length > 24 ? "..." : ""}`;
+                archCell.textContent = minerArch(row);
+                weightCell.textContent = minerWeight(row);
+                tr.append(nameCell, archCell, weightCell);
+                nodes.minersTable.append(tr);
+            }
+        }
+
+        function transactionCount(transactionsPayload) {
+            if (!transactionsPayload || transactionsPayload.unavailable) {
+                return null;
+            }
+            return firstNumber(transactionsPayload, ["count", "total", "tx_count", "transaction_count"])
+                ?? normalizeMiners({
+                    miners: transactionsPayload.transactions || transactionsPayload.items || transactionsPayload.data || transactionsPayload.results
+                }).length;
+        }
+
+        function updateStats({ health, epoch, minersPayload, transactionsPayload }) {
+            const miners = normalizeMiners(minersPayload);
+            const minerCount = firstNumber(epoch, ["enrolled_miners", "total_miners", "miner_count", "active_miners"])
+                ?? firstNumber(minersPayload, ["count", "total", "total_miners"])
+                ?? miners.length;
+
+            const supply = firstNumber(epoch, ["total_supply_rtc", "total_supply", "supply", "circulating_supply"]);
+            const transactions = transactionCount(transactionsPayload);
+
+            nodes.epoch.textContent = formatNumber(firstNumber(epoch, ["epoch", "current_epoch"]));
+            nodes.slot.textContent = `Slot ${formatNumber(firstNumber(epoch, ["slot", "current_slot"]))}`;
+            nodes.miners.textContent = formatNumber(minerCount);
+            nodes.minersHint.textContent = `${formatNumber(miners.length)} miner rows returned`;
+            nodes.supply.textContent = supply === null ? "--" : `${formatNumber(supply, 6)} RTC`;
+            nodes.transactions.textContent = formatNumber(transactions);
+            nodes.transactionsHint.textContent = transactions === null
+                ? "Transaction endpoint unavailable on this node"
+                : "From /api/transactions";
+
+            renderMiners(miners);
+
+            const healthText = health && health.ok ? "Node operational" : "Node reachable";
+            const tipAge = firstNumber(health, ["tip_age_slots"]);
+            appendFeed(healthText, `Version ${health.version || "unknown"}; tip age ${formatNumber(tipAge)} slot(s).`);
+        }
+
+        async function refreshStats() {
+            nodes.refreshButton.disabled = true;
+            try {
+                const [health, epoch, minersPayload, transactionsPayload] = await Promise.all([
+                    getJson("/health"),
+                    getJson("/epoch"),
+                    getJson("/api/miners"),
+                    getOptionalJson("/api/transactions")
+                ]);
+                updateStats({ health, epoch, minersPayload, transactionsPayload });
+                const refreshedAt = new Date();
+                nodes.lastUpdated.textContent = `Last updated ${refreshedAt.toLocaleTimeString()}`;
+                setStatus("live", "Live data connected");
+            } catch (error) {
+                console.error(error);
+                setStatus("error", "Refresh failed");
+                appendFeed("Refresh failed", error.message);
+            } finally {
+                nodes.refreshButton.disabled = false;
+            }
+        }
+
+        nodes.refreshButton.addEventListener("click", refreshStats);
+        refreshStats();
+        setInterval(refreshStats, REFRESH_MS);
     </script>
 </body>
 </html>
