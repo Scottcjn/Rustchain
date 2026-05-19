@@ -8,18 +8,22 @@ Outputs JSON report + human-readable summary.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import time
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
 DEFAULT_NODES = [
-    "https://rustchain.org",
+    "https://50.28.86.131",
     "https://50.28.86.153",
     "http://76.8.228.245:8099",
 ]
+
+MINER_LIST_KEYS = ("miners", "data", "items", "results")
+MINER_ID_KEYS = ("miner", "miner_id", "id", "wallet", "address", "pubkey", "public_key")
 
 
 @dataclass
@@ -31,6 +35,9 @@ class NodeSnapshot:
     epoch: Dict[str, Any]
     miners: List[str]
     balances: Dict[str, float]
+    miner_total: Optional[int] = None
+    miner_set_hash: str = ""
+    stats: Dict[str, Any] = field(default_factory=dict)
 
 
 def get_json(base: str, endpoint: str, timeout: float, verify_ssl: bool) -> Any:
@@ -40,16 +47,74 @@ def get_json(base: str, endpoint: str, timeout: float, verify_ssl: bool) -> Any:
     return resp.json()
 
 
+def coerce_int(value: Any) -> Optional[int]:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def coerce_float(value: Any) -> Optional[float]:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def miner_id(row: Any) -> str:
+    if isinstance(row, str):
+        return row.strip()
+    if isinstance(row, dict):
+        for key in MINER_ID_KEYS:
+            value = row.get(key)
+            if value:
+                return str(value).strip()
+    return ""
+
+
+def stable_miner_set_hash(miners: List[str]) -> str:
+    payload = "\n".join(sorted(set(miners))).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def normalize_miners_response(raw: Any) -> Tuple[List[str], Optional[int], str]:
+    rows: List[Any] = []
+    total: Optional[int] = None
+
+    if isinstance(raw, list):
+        rows = raw
+    elif isinstance(raw, dict):
+        for key in MINER_LIST_KEYS:
+            value = raw.get(key)
+            if isinstance(value, list):
+                rows = value
+                break
+
+        pagination = raw.get("pagination")
+        if isinstance(pagination, dict):
+            total = coerce_int(pagination.get("total"))
+
+        if total is None:
+            for key in ("total", "total_miners", "count"):
+                total = coerce_int(raw.get(key))
+                if total is not None:
+                    break
+
+    miners = [miner_id(row) for row in rows]
+    miners = [miner for miner in miners if miner]
+    if total is None:
+        total = len(miners)
+
+    return miners, total, stable_miner_set_hash(miners)
+
+
 def snapshot_node(node: str, timeout: float, verify_ssl: bool, sample_balances: int) -> NodeSnapshot:
     try:
         health = get_json(node, "/health", timeout, verify_ssl)
         epoch = get_json(node, "/epoch", timeout, verify_ssl)
         miners_raw = get_json(node, "/api/miners", timeout, verify_ssl)
-
-        miners: List[str] = []
-        if isinstance(miners_raw, list):
-            miners = [str(m.get("miner") or m.get("miner_id") or "") for m in miners_raw]
-            miners = [m for m in miners if m]
+        stats = get_json(node, "/api/stats", timeout, verify_ssl)
+        miners, miner_total, miner_set_hash = normalize_miners_response(miners_raw)
 
         balances: Dict[str, float] = {}
         for miner in miners[:sample_balances]:
@@ -67,6 +132,9 @@ def snapshot_node(node: str, timeout: float, verify_ssl: bool, sample_balances: 
             epoch=epoch if isinstance(epoch, dict) else {},
             miners=miners,
             balances=balances,
+            miner_total=miner_total,
+            miner_set_hash=miner_set_hash,
+            stats=stats if isinstance(stats, dict) else {},
         )
     except Exception as e:
         return NodeSnapshot(
@@ -77,7 +145,15 @@ def snapshot_node(node: str, timeout: float, verify_ssl: bool, sample_balances: 
             epoch={},
             miners=[],
             balances={},
+            miner_total=0,
+            miner_set_hash=stable_miner_set_hash([]),
+            stats={},
         )
+
+
+def values_differ(values: Dict[str, Any]) -> bool:
+    comparable = [value for value in values.values() if value is not None]
+    return bool(comparable) and len(set(values.values())) > 1
 
 
 def compare_snapshots(snaps: List[NodeSnapshot], tip_drift_threshold: int) -> Dict[str, Any]:
@@ -90,6 +166,12 @@ def compare_snapshots(snaps: List[NodeSnapshot], tip_drift_threshold: int) -> Di
             "slot_mismatch": [],
             "tip_age_drift": [],
             "miner_presence_diff": [],
+            "enrolled_miners_mismatch": [],
+            "miner_count_mismatch": [],
+            "miner_set_hash_mismatch": [],
+            "stats_epoch_mismatch": [],
+            "stats_total_miners_mismatch": [],
+            "stats_total_balance_mismatch": [],
             "balance_mismatch": [],
         },
     }
@@ -110,6 +192,10 @@ def compare_snapshots(snaps: List[NodeSnapshot], tip_drift_threshold: int) -> Di
     if len(set(slot_values.values())) > 1:
         out["discrepancies"]["slot_mismatch"].append(slot_values)
 
+    enrolled_values = {s.node: coerce_int(s.epoch.get("enrolled_miners")) for s in ok_snaps}
+    if values_differ(enrolled_values):
+        out["discrepancies"]["enrolled_miners_mismatch"].append(enrolled_values)
+
     # Tip age drift
     tip_values = {s.node: int(s.health.get("tip_age_slots", -1)) for s in ok_snaps}
     valid_tip = [v for v in tip_values.values() if v >= 0]
@@ -117,6 +203,26 @@ def compare_snapshots(snaps: List[NodeSnapshot], tip_drift_threshold: int) -> Di
         drift = max(valid_tip) - min(valid_tip)
         if drift > tip_drift_threshold:
             out["discrepancies"]["tip_age_drift"].append({"values": tip_values, "drift": drift})
+
+    miner_total_values = {s.node: s.miner_total for s in ok_snaps}
+    if values_differ(miner_total_values):
+        out["discrepancies"]["miner_count_mismatch"].append(miner_total_values)
+
+    miner_hash_values = {s.node: s.miner_set_hash or stable_miner_set_hash(s.miners) for s in ok_snaps}
+    if values_differ(miner_hash_values):
+        out["discrepancies"]["miner_set_hash_mismatch"].append(miner_hash_values)
+
+    stats_epoch_values = {s.node: coerce_int(s.stats.get("epoch")) for s in ok_snaps}
+    if values_differ(stats_epoch_values):
+        out["discrepancies"]["stats_epoch_mismatch"].append(stats_epoch_values)
+
+    stats_total_miners_values = {s.node: coerce_int(s.stats.get("total_miners")) for s in ok_snaps}
+    if values_differ(stats_total_miners_values):
+        out["discrepancies"]["stats_total_miners_mismatch"].append(stats_total_miners_values)
+
+    stats_total_balance_values = {s.node: coerce_float(s.stats.get("total_balance")) for s in ok_snaps}
+    if values_differ(stats_total_balance_values):
+        out["discrepancies"]["stats_total_balance_mismatch"].append(stats_total_balance_values)
 
     # Miners present on one node but not another
     all_miners = sorted(set(m for s in ok_snaps for m in s.miners))
@@ -155,6 +261,12 @@ def build_summary(report: Dict[str, Any]) -> str:
         "slot_mismatch": len(d.get("slot_mismatch", [])),
         "tip_age_drift": len(d.get("tip_age_drift", [])),
         "miner_presence_diff": len(d.get("miner_presence_diff", [])),
+        "enrolled_miners_mismatch": len(d.get("enrolled_miners_mismatch", [])),
+        "miner_count_mismatch": len(d.get("miner_count_mismatch", [])),
+        "miner_set_hash_mismatch": len(d.get("miner_set_hash_mismatch", [])),
+        "stats_epoch_mismatch": len(d.get("stats_epoch_mismatch", [])),
+        "stats_total_miners_mismatch": len(d.get("stats_total_miners_mismatch", [])),
+        "stats_total_balance_mismatch": len(d.get("stats_total_balance_mismatch", [])),
         "balance_mismatch": len(d.get("balance_mismatch", [])),
     }
     lines.append("Discrepancy counts:")
