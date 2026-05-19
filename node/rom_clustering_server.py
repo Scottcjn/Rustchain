@@ -8,6 +8,7 @@ When multiple "different" miners report identical ROM hashes,
 they're likely VMs using the same ROM pack - flag them.
 """
 
+import json
 import sqlite3
 import time
 from typing import Dict, List, Optional, Tuple
@@ -97,7 +98,21 @@ def _ensure_rom_cluster_unique_index(conn: sqlite3.Connection):
         duplicate_ids = [row[0] for row in rows if row[0] != keep_id]
         first_detected = min(row[5] for row in rows)
         last_updated = max(row[6] for row in rows)
-        max_cluster = max(rows, key=lambda row: (row[2], row[6]))
+        merged_miners = []
+        seen_miners = set()
+        for row in rows:
+            try:
+                miners = json.loads(row[1])
+            except (TypeError, json.JSONDecodeError):
+                miners = []
+            if not isinstance(miners, list):
+                miners = []
+            for miner in miners:
+                if isinstance(miner, str) and miner not in seen_miners:
+                    merged_miners.append(miner)
+                    seen_miners.add(miner)
+        known_row = next((row for row in rows if row[4]), keep)
+        is_known_emulator_rom = max(row[3] or 0 for row in rows)
 
         cur.execute("""
             UPDATE rom_clusters
@@ -109,7 +124,8 @@ def _ensure_rom_cluster_unique_index(conn: sqlite3.Connection):
                 last_updated = ?
             WHERE cluster_id = ?
         """, (
-            max_cluster[1], max_cluster[2], max_cluster[3], max_cluster[4],
+            json.dumps(merged_miners), len(merged_miners),
+            is_known_emulator_rom, known_row[4],
             first_detected, last_updated, keep_id,
         ))
         if duplicate_ids:
