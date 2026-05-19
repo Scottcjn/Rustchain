@@ -241,8 +241,8 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         self.assertIn('error', data)
 
     def test_contract_creation_rejects_invalid_amounts(self):
-        """Contract creation rejects malformed and non-positive amounts."""
-        for amount in ('not-a-number', 0, -1):
+        """Contract creation rejects non-positive amounts."""
+        for amount in (0, -1):
             contract_data = {
                 'from': 'bcn_alice_test',
                 'to': 'bcn_bob_test',
@@ -269,6 +269,114 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
                 json.loads(response.data)['error'],
                 'amount must be a positive number',
             )
+
+    def test_contract_create_rejects_non_object_json_body(self):
+        """Contract creation returns 400 for non-object JSON bodies."""
+        response = self.client.post(
+            '/api/contracts',
+            data=json.dumps(['not', 'an', 'object']),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('error', json.loads(response.data))
+
+    def test_contract_create_rejects_structured_string_fields(self):
+        """Contract creation rejects object values for string fields."""
+        invalid_data = {
+            'from': {'agent': 'bcn_alice_test'},
+            'to': 'bcn_bob_test',
+            'type': 'rent',
+            'amount': 50,
+            'term': '30d',
+        }
+
+        response = self.client.post(
+            '/api/contracts',
+            data=json.dumps(invalid_data),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(json.loads(response.data)['error'], 'from must be a string')
+
+    def test_contract_create_rejects_malformed_amount(self):
+        """Contract creation rejects non-numeric amount values with 400."""
+        for malformed_amount in ({}, 'not-a-number'):
+            invalid_data = {
+                'from': 'bcn_test_from',
+                'to': 'bcn_test_to',
+                'type': 'rent',
+                'amount': malformed_amount,
+                'term': '7d',
+            }
+            create_body = json.dumps(invalid_data)
+
+            response = self.client.post(
+                '/api/contracts',
+                data=create_body,
+                content_type='application/json',
+                headers=self._signed_headers('bcn_test_from', 'POST', '/api/contracts', create_body),
+            )
+
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(json.loads(response.data)['error'], 'amount must be a number')
+
+    def test_contract_create_defaults_null_currency(self):
+        """Contract creation normalizes null currency to the RTC default."""
+        contract_data = {
+            'from': 'bcn_test_from',
+            'to': 'bcn_test_to',
+            'type': 'rent',
+            'amount': 25,
+            'currency': None,
+            'term': '7d',
+        }
+        create_body = json.dumps(contract_data)
+
+        response = self.client.post(
+            '/api/contracts',
+            data=create_body,
+            content_type='application/json',
+            headers=self._signed_headers('bcn_test_from', 'POST', '/api/contracts', create_body),
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(json.loads(response.data)['currency'], 'RTC')
+
+    def test_contract_update_rejects_structured_state(self):
+        """Contract update returns 400 when state is not a string."""
+        contract_data = {
+            'from': 'bcn_test_from',
+            'to': 'bcn_test_to',
+            'type': 'rent',
+            'amount': 25,
+            'term': '7d',
+        }
+        create_body = json.dumps(contract_data)
+        create_response = self.client.post(
+            '/api/contracts',
+            data=create_body,
+            content_type='application/json',
+            headers=self._signed_headers('bcn_test_from', 'POST', '/api/contracts', create_body),
+        )
+        contract_id = json.loads(create_response.data)['id']
+
+        update_body = json.dumps({'state': {'next': 'active'}})
+        response = self.client.put(
+            f'/api/contracts/{contract_id}',
+            data=update_body,
+            content_type='application/json',
+            headers=self._signed_headers(
+                'bcn_test_to',
+                'PUT',
+                f'/api/contracts/{contract_id}',
+                update_body,
+            ),
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(json.loads(response.data)['error'], 'state must be a string')
 
     def test_bounty_lifecycle_workflow(self):
         """Full bounty lifecycle: create, claim, complete."""
@@ -304,35 +412,84 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
 
     def test_bounty_claim_rejects_non_object_json(self):
         """Admin bounty claim route rejects malformed JSON shapes."""
-        response = self.client.post(
-            '/api/bounties/gh_test_bounty/claim',
-            data=json.dumps(['bcn_claimer']),
-            content_type='application/json',
-            headers={'X-Admin-Key': os.environ['RC_ADMIN_KEY']},
-        )
+        with sqlite3.connect(self.test_db_path) as conn:
+            conn.execute("""
+                INSERT INTO beacon_bounties
+                (id, title, reward_rtc, difficulty, state, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, ('gh_bad_claim', 'Bad Claim (5 RTC)', 5.0, 'EASY', 'open', int(time.time())))
+            conn.commit()
+
+        with patch.dict(os.environ, {'RC_ADMIN_KEY': 'test-admin'}, clear=False):
+            response = self.client.post(
+                '/api/bounties/gh_bad_claim/claim',
+                data=json.dumps(['bcn_claimer']),
+                content_type='application/json',
+                headers={'X-Admin-Key': 'test-admin'},
+            )
+
         self.assertEqual(response.status_code, 400)
-        self.assertIn('JSON object body required', response.get_data(as_text=True))
+        self.assertEqual(json.loads(response.data)['error'], 'JSON object body required')
+
+    def test_bounty_claim_rejects_non_string_agent_id(self):
+        """Bounty claim returns 400 when agent_id is not a string."""
+        with sqlite3.connect(self.test_db_path) as conn:
+            conn.execute("""
+                INSERT INTO beacon_bounties
+                (id, title, reward_rtc, difficulty, state, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, ('gh_bad_claim_type', 'Bad Claim Type (5 RTC)', 5.0, 'EASY', 'open', int(time.time())))
+            conn.commit()
+
+        with patch.dict(os.environ, {'RC_ADMIN_KEY': 'test-admin'}, clear=False):
+            response = self.client.post(
+                '/api/bounties/gh_bad_claim_type/claim',
+                data=json.dumps({'agent_id': {'id': 'bcn_claimer'}}),
+                content_type='application/json',
+                headers={'X-Admin-Key': 'test-admin'},
+            )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(json.loads(response.data)['error'], 'agent_id must be a string')
 
     def test_bounty_complete_rejects_non_string_agent_id(self):
-        """Admin bounty completion route rejects non-string agent IDs."""
-        response = self.client.post(
-            '/api/bounties/gh_test_bounty/complete',
-            data=json.dumps({'agent_id': {'nested': 'bcn_claimer'}}),
-            content_type='application/json',
-            headers={'X-Admin-Key': os.environ['RC_ADMIN_KEY']},
-        )
-        self.assertEqual(response.status_code, 400)
-        self.assertIn('Missing agent_id', response.get_data(as_text=True))
+        """Bounty complete returns 400 when agent_id is not a string."""
+        with sqlite3.connect(self.test_db_path) as conn:
+            conn.execute("""
+                INSERT INTO beacon_bounties
+                (id, title, reward_rtc, difficulty, state, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, ('gh_bad_complete', 'Bad Complete (5 RTC)', 5.0, 'EASY', 'claimed', int(time.time())))
+            conn.commit()
 
-    def test_chat_rejects_non_string_message(self):
-        """Chat route rejects non-string message bodies before storage."""
-        response = self.client.post(
+        with patch.dict(os.environ, {'RC_ADMIN_KEY': 'test-admin'}, clear=False):
+            response = self.client.post(
+                '/api/bounties/gh_bad_complete/complete',
+                data=json.dumps({'agent_id': {'id': 'bcn_completer'}}),
+                content_type='application/json',
+                headers={'X-Admin-Key': 'test-admin'},
+            )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(json.loads(response.data)['error'], 'agent_id must be a string')
+
+    def test_chat_rejects_malformed_json_field_types(self):
+        """Chat returns 400 for non-object bodies and structured string fields."""
+        non_object = self.client.post(
             '/api/chat',
-            data=json.dumps({'agent_id': 'bcn_alice_test', 'message': ['hello']}),
+            data=json.dumps(['bcn_agent', 'hello']),
             content_type='application/json',
         )
-        self.assertEqual(response.status_code, 400)
-        self.assertIn('Missing message', response.get_data(as_text=True))
+        self.assertEqual(non_object.status_code, 400)
+
+        structured_message = self.client.post(
+            '/api/chat',
+            data=json.dumps({'agent_id': 'bcn_agent', 'message': {'text': 'hello'}}),
+            content_type='application/json',
+        )
+
+        self.assertEqual(structured_message.status_code, 400)
+        self.assertEqual(json.loads(structured_message.data)['error'], 'message must be a string')
 
     def test_reputation_tracking_workflow(self):
         """Reputation is tracked and updated correctly."""

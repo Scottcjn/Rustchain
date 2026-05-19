@@ -37,6 +37,11 @@ contract_store = []
 chat_sessions = {}
 
 
+def _coinbase_addresses_match(left, right):
+    """Compare optional EVM-style payment addresses without case sensitivity."""
+    return (left or '').strip().casefold() == (right or '').strip().casefold()
+
+
 def _json_object_body():
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
@@ -46,9 +51,14 @@ def _json_object_body():
 
 def _required_text_field(data, field_name):
     value = data.get(field_name)
-    if not isinstance(value, str) or not value.strip():
+    if value is None or value == '':
         return None, jsonify({'error': f'Missing {field_name}'}), 400
-    return value.strip(), None, None
+    if not isinstance(value, str):
+        return None, jsonify({'error': f'{field_name} must be a string'}), 400
+    stripped = value.strip()
+    if not stripped:
+        return None, jsonify({'error': f'Missing {field_name}'}), 400
+    return stripped, None, None
 
 
 def _positive_float_field(data, field_name):
@@ -62,9 +72,29 @@ def _positive_float_field(data, field_name):
     return number, None, None
 
 
-def _coinbase_addresses_match(left, right):
-    """Compare optional EVM-style payment addresses without case sensitivity."""
-    return (left or '').strip().casefold() == (right or '').strip().casefold()
+def _validate_string_fields(data, fields, optional=()):
+    for field in fields:
+        if field in data and not isinstance(data[field], str):
+            return jsonify({'error': f'{field} must be a string'}), 400
+    for field in optional:
+        if field in data and data[field] is not None and not isinstance(data[field], str):
+            return jsonify({'error': f'{field} must be a string'}), 400
+    return None
+
+
+def _required_number_field(data, field_name):
+    value = data.get(field_name)
+    if value is None:
+        return None, jsonify({'error': f'Missing field: {field_name}'}), 400
+    if isinstance(value, bool):
+        return None, jsonify({'error': f'{field_name} must be a number'}), 400
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None, jsonify({'error': f'{field_name} must be a number'}), 400
+    if not math.isfinite(number):
+        return None, jsonify({'error': f'{field_name} must be a finite number'}), 400
+    return number, None, None
 
 
 def get_db():
@@ -571,15 +601,22 @@ def create_contract():
     """
     try:
         body_bytes = request.get_data(cache=True)
-        data = request.get_json(silent=True)
-        if not isinstance(data, dict):
-            return jsonify({'error': 'Invalid or missing JSON body'}), 400
+        data, body_error, status = _json_object_body()
+        if body_error:
+            return body_error, status
         
         # Validate required fields
         required = ['from', 'to', 'type', 'amount', 'term']
         for field in required:
             if field not in data:
                 return jsonify({'error': f'Missing field: {field}'}), 400
+        type_error = _validate_string_fields(data, ['from', 'to', 'type', 'term'], optional=['currency'])
+        if type_error:
+            return type_error
+        amount, amount_error, status = _required_number_field(data, 'amount')
+        if amount_error:
+            return amount_error, status
+        currency = data.get('currency') or 'RTC'
         
         from_agent = data['from']
         
@@ -611,7 +648,7 @@ def create_contract():
             'to': data['to'],
             'type': data['type'],
             'amount': amount,
-            'currency': data.get('currency', 'RTC'),
+            'currency': currency,
             'term': data['term'],
             'state': 'offered',  # Initial state
             'created_at': int(time.time()),
@@ -644,13 +681,15 @@ def update_contract(contract_id):
     """
     try:
         body_bytes = request.get_data(cache=True)
-        data = request.get_json(silent=True)
-        if not isinstance(data, dict):
-            return jsonify({'error': 'Invalid or missing JSON body'}), 400
+        data, body_error, status = _json_object_body()
+        if body_error:
+            return body_error, status
         new_state = data.get('state')
         
         if not new_state:
             return jsonify({'error': 'Missing state field'}), 400
+        if not isinstance(new_state, str):
+            return jsonify({'error': 'state must be a string'}), 400
         
         valid_states = {'offered', 'active', 'renewed', 'completed', 'breached', 'expired', 'rejected'}
         if new_state not in valid_states:
@@ -1042,9 +1081,6 @@ def chat():
         message, field_error, status = _required_text_field(data, 'message')
         if field_error:
             return field_error, status
-        
-        if not agent_id or not message:
-            return jsonify({'error': 'Missing agent_id or message'}), 400
         safe_agent_id = html.escape(str(agent_id), quote=True)
         safe_message = html.escape(str(message), quote=True)
         
