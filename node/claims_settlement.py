@@ -533,12 +533,25 @@ def process_claims_batch(
         return result
     total_amount = sum(c["reward_urtc"] for c in claims_to_process)
     
-    # Construct transaction
-    tx_data = construct_settlement_transaction(claims_to_process)
-    tx_data["batch_id"] = batch_id
-    
-    # Sign and broadcast
-    success, tx_hash, error = sign_and_broadcast_transaction(tx_data, db_path)
+    try:
+        # Construct transaction
+        tx_data = construct_settlement_transaction(claims_to_process)
+        tx_data["batch_id"] = batch_id
+
+        # Sign and broadcast.  Broadcaster implementations may raise for
+        # wallet/client/network failures; reserved rows must not remain stuck
+        # in 'settling' if that happens before a success response is returned.
+        success, tx_hash, error = sign_and_broadcast_transaction(tx_data, db_path)
+    except Exception as exc:
+        error = str(exc) or exc.__class__.__name__
+        failed_count = update_claims_failed(
+            db_path,
+            [c["claim_id"] for c in claims_to_process],
+            error
+        )
+        result["failed_count"] = failed_count
+        result["error"] = error
+        return result
     
     if not success:
         # Mark claims as failed
