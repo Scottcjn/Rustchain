@@ -18,6 +18,7 @@ def test_linux_miner_parses_lscpu_and_free_output():
     assert miner._parse_free_memory_gb("       total used free\nMem:      31    1   30\nSwap:      0    0    0\n") == 31
     assert miner._parse_int_output("10\n") == 10
     assert miner._parse_memory_bytes_to_gb("17179869184\n") == 16
+    assert miner._parse_wmic_value("Name=Intel Core i5-10400F\n\n", "Name") == "Intel Core i5-10400F"
 
 
 def test_power8_miner_parses_lscpu_proc_cpuinfo_and_free_output():
@@ -94,6 +95,31 @@ def test_linux_miner_darwin_hardware_falls_back_when_sysctl_missing(monkeypatch)
     assert hw["cpu"] == "Unknown"
     assert hw["cores"] == 8
     assert hw["memory_gb"] == 32
+
+
+def test_linux_miner_windows_hardware_warns_and_uses_wmic_fallbacks(monkeypatch):
+    miner = load_module(Path("miners/linux/rustchain_linux_miner.py"), "rustchain_linux_miner_windows_hw")
+    instance = object.__new__(miner.LocalMiner)
+    command_output = {
+        ("wmic", "cpu", "get", "Name", "/value"): "Name=Intel Core i5-10400F @ 2.90GHz\n",
+        ("wmic", "cpu", "get", "NumberOfLogicalProcessors", "/value"): "NumberOfLogicalProcessors=12\n",
+        ("wmic", "computersystem", "get", "TotalPhysicalMemory", "/value"): "TotalPhysicalMemory=34359738368\n",
+    }
+
+    monkeypatch.setattr(miner.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(miner.platform, "machine", lambda: "AMD64")
+    monkeypatch.setattr(miner.socket, "gethostname", lambda: "GTX1660super")
+    monkeypatch.setattr(miner, "get_linux_serial", lambda: None)
+    monkeypatch.setattr(miner.LocalMiner, "_get_mac_addresses", lambda self: ["aa:bb:cc:dd:ee:ff"])
+    monkeypatch.setattr(miner.LocalMiner, "_run_cmd", lambda self, args: command_output.get(tuple(args), ""))
+
+    hw = instance._get_hw_info()
+
+    assert hw["platform"] == "Windows"
+    assert hw["cpu"] == "Intel Core i5-10400F @ 2.90GHz"
+    assert hw["cores"] == 12
+    assert hw["memory_gb"] == 32
+    assert "not a primary supported platform" in hw["probe_warning"]
 
 
 def test_power8_miner_run_cmd_uses_argument_list_without_shell(monkeypatch):
