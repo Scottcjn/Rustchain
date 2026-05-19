@@ -89,14 +89,35 @@ def load_projects_from_json():
         with open(json_file, 'r') as f:
             projects_data = json.load(f)
         
+        deduped_projects = {}
+        for index, project in enumerate(projects_data.get('projects', [])):
+            github_repo = project.get('github_repo')
+            if not github_repo:
+                continue
+            created_at = project.get('created_at') or ''
+            candidate_key = (created_at, index)
+            current = deduped_projects.get(github_repo)
+            if current is None or candidate_key > current[0]:
+                deduped_projects[github_repo] = (candidate_key, project)
+
         conn = sqlite3.connect(DATABASE)
         c = conn.cursor()
         
-        for project in projects_data.get('projects', []):
+        for _, project in deduped_projects.values():
             c.execute('''
-                INSERT OR REPLACE INTO projects 
-                (name, url, github_repo, bcos_tier, latest_sha, sbom_hash, review_note, category)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO projects
+                (name, url, github_repo, bcos_tier, latest_sha, sbom_hash, review_note, category, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP))
+                ON CONFLICT(github_repo) DO UPDATE SET
+                    name = excluded.name,
+                    url = excluded.url,
+                    bcos_tier = excluded.bcos_tier,
+                    latest_sha = excluded.latest_sha,
+                    sbom_hash = excluded.sbom_hash,
+                    review_note = excluded.review_note,
+                    category = excluded.category,
+                    created_at = excluded.created_at
+                WHERE datetime(excluded.created_at) >= datetime(projects.created_at)
             ''', (
                 project.get('name'),
                 project.get('url'),
@@ -105,7 +126,8 @@ def load_projects_from_json():
                 project.get('latest_sha'),
                 project.get('sbom_hash'),
                 project.get('review_note'),
-                project.get('category')
+                project.get('category'),
+                project.get('created_at')
             ))
         
         conn.commit()
