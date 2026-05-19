@@ -64,9 +64,15 @@ def init_db():
     c.execute('''
         DELETE FROM projects
         WHERE id NOT IN (
-            SELECT MAX(id)
-            FROM projects
-            GROUP BY github_repo
+            SELECT keep.id
+            FROM projects AS keep
+            WHERE keep.id = (
+                SELECT candidate.id
+                FROM projects AS candidate
+                WHERE candidate.github_repo = keep.github_repo
+                ORDER BY datetime(candidate.created_at) DESC, candidate.id DESC
+                LIMIT 1
+            )
         )
     ''')
     c.execute('''

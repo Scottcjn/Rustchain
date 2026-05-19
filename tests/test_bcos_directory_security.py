@@ -91,11 +91,11 @@ def test_bcos_directory_init_deduplicates_existing_projects_before_unique_index(
         ''')
         conn.executemany('''
             INSERT INTO projects
-            (name, url, github_repo, bcos_tier, latest_sha, sbom_hash, review_note, category)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (name, url, github_repo, bcos_tier, latest_sha, sbom_hash, review_note, category, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', [
-            ('Old RustChain', 'https://old.example', 'Scottcjn/Rustchain', 'L1', 'old', None, None, 'chain'),
-            ('New RustChain', 'https://new.example', 'Scottcjn/Rustchain', 'L2', 'new', None, None, 'chain'),
+            ('New RustChain', 'https://new.example', 'Scottcjn/Rustchain', 'L2', 'new', None, None, 'chain', '2026-01-02 00:00:00'),
+            ('Old RustChain', 'https://old.example', 'Scottcjn/Rustchain', 'L1', 'old', None, None, 'chain', '2026-01-01 00:00:00'),
         ])
 
     bcos_directory.init_db()
