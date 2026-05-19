@@ -40,7 +40,7 @@ If any "Fail condition" occurs, the corresponding claim is falsified.
 | C3: Miner enrollment + multipliers are transparent | Miner list endpoint | `curl -sk https://rustchain.org/api/miners \| jq .` | Active miners listed with hardware fields and `antiquity_multiplier` | Missing/opaque miner state or absent multiplier disclosure |
 | C4: Signed transfer replay is blocked | Nonce replay protection | Send the same signed payload (same nonce/signature) to `/wallet/transfer/signed` twice | First request accepted; second request rejected as replay/duplicate | Same signed payload executes twice |
 | C5: Signature checks are enforced | Signature verification | Submit intentionally invalid signature to `/wallet/transfer/signed` | Transfer rejected with validation error | Invalid signature accepted and state mutates |
-| C6: Cross-node reads can be compared for drift | API consistency | Compare `/health`, `/epoch`, `/api/miners` across live nodes (131, 153, 245) | Differences stay within expected propagation window and reconcile | Persistent divergence with no reconciliation |
+| C6: Cross-node reads can be compared for drift | API consistency | Run `python3 tools/node_sync_validator.py` to compare `/health`, `/epoch`, full paginated `/api/miners`, and `/api/stats` across live nodes (131, 153, 245), including enrolled miners, miner totals, full miner ID set hash, pagination metadata, and aggregate stats | Differences stay within expected propagation window and reconcile; same-epoch/same-slot nodes do not disagree on miner state or aggregate stats | Persistent divergence with no reconciliation, or same-epoch/same-slot nodes exposing incompatible miner state |
 
 ## 3) One-Page Test Run Template
 
