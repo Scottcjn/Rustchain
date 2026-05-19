@@ -111,6 +111,10 @@ if not _P2P_SECRET_RAW or _P2P_SECRET_RAW.lower() in _INSECURE_DEFAULTS:
 
 P2P_SECRET = _P2P_SECRET_RAW
 GOSSIP_TTL = 3
+MAX_GOSSIP_PAYLOAD_BYTES = 65536
+MAX_GOSSIP_PAYLOAD_KEYS = 256
+MAX_GOSSIP_PAYLOAD_DEPTH = 16
+MAX_GOSSIP_PAYLOAD_STRING_LENGTH = 4096
 SYNC_INTERVAL = 30
 MESSAGE_EXPIRY = 300  # 5 minutes
 MAX_INV_BATCH = 1000
@@ -342,10 +346,7 @@ class GossipMessage:
         payload = data["payload"]
         if not isinstance(payload, dict):
             raise ValueError("invalid gossip message payload")
-        try:
-            json.dumps(payload, sort_keys=True)
-        except (TypeError, ValueError) as exc:
-            raise ValueError("invalid gossip message payload") from exc
+        cls._validate_payload(payload)
 
         return cls(
             msg_type=msg_type,
@@ -356,6 +357,42 @@ class GossipMessage:
             signature=signature,
             payload=payload,
         )
+
+    @staticmethod
+    def _validate_payload(payload: object, depth: int = 0) -> None:
+        if depth > MAX_GOSSIP_PAYLOAD_DEPTH:
+            raise ValueError("gossip payload exceeds maximum nesting depth")
+
+        try:
+            if len(json.dumps(payload, sort_keys=True)) > MAX_GOSSIP_PAYLOAD_BYTES:
+                raise ValueError("gossip payload exceeds maximum serialized size")
+        except (TypeError, ValueError) as exc:
+            if isinstance(exc, ValueError) and str(exc).startswith("gossip payload"):
+                raise
+            raise ValueError("invalid gossip message payload") from exc
+
+        if isinstance(payload, str):
+            if len(payload) > MAX_GOSSIP_PAYLOAD_STRING_LENGTH:
+                raise ValueError("gossip payload string exceeds maximum length")
+            return
+
+        if isinstance(payload, dict):
+            if len(payload) > MAX_GOSSIP_PAYLOAD_KEYS:
+                raise ValueError("gossip payload has too many keys")
+            for key, value in payload.items():
+                GossipMessage._validate_payload(key, depth + 1)
+                GossipMessage._validate_payload(value, depth + 1)
+            return
+
+        if isinstance(payload, list):
+            if len(payload) > MAX_GOSSIP_PAYLOAD_KEYS:
+                raise ValueError("gossip payload list has too many items")
+            for value in payload:
+                GossipMessage._validate_payload(value, depth + 1)
+            return
+
+        if payload is not None and not isinstance(payload, (bool, int, float)):
+            raise ValueError("invalid gossip message payload")
 
     def compute_hash(self) -> str:
         """Compute hash of message content for deduplication"""
