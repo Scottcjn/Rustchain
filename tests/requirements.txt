@@ -13,6 +13,6 @@ pycryptodome>=3.20.0
 # Needed by CI collection for hardware visualizer and PSE analysis tests.
 matplotlib>=3.8.0
 # Needed by benchmarks/pse/analyze_results.py during CI collection.
-seaborn>=0.13.0
+seaborn>=0.13.2
 # Needed by node/rustchain_dashboard.py during dashboard security tests.
 psutil>=5.9.0
