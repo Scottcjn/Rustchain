@@ -82,12 +82,12 @@ class TestLimitValidation(unittest.TestCase):
         self.assertEqual(mock_db.execute.call_args.args[1], ("pending", 1))
 
     def test_beacon_envelopes_clamps_negative_limit(self):
-        with patch.object(self.mod, "get_recent_envelopes", return_value=[]):
+        with patch.object(self.mod, "get_recent_envelopes", return_value=[]) as get_recent_envelopes:
             resp = self.client.get("/beacon/envelopes?limit=-1&offset=-5")
 
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json(), {"ok": True, "count": 0, "envelopes": []})
-        self.mod.get_recent_envelopes.assert_called_once_with(
+        get_recent_envelopes.assert_called_once_with(
             limit=1, offset=0, db_path=self.mod.DB_PATH
         )
 
