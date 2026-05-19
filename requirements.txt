@@ -16,7 +16,7 @@ mnemonic>=0.21
 # For EIP-55 Ethereum address checksum validation (faucet_service):
 pycryptodome>=3.20.0
 # For benchmark and visualization tests:
-matplotlib>=3.8.0
+matplotlib>=3.10.9
 seaborn>=0.13.2
 # For running tests:
 pytest>=7.4.4
