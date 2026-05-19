@@ -35,11 +35,17 @@ def print_info(text):
 
 def check_file_exists(filepath, description):
     """Check if a file exists"""
+    display_path = filepath
+    try:
+        display_path = str(Path(filepath).resolve().relative_to(Path(__file__).parent.resolve()))
+    except ValueError:
+        pass
+
     if os.path.exists(filepath):
-        print_success(f"{description}: {filepath}")
+        print_success(f"{description}: {display_path}")
         return True
     else:
-        print_error(f"{description} missing: {filepath}")
+        print_error(f"{description} missing: {display_path}")
         return False
 
 def check_file_content(filepath, patterns, description):
