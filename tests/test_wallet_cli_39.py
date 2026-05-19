@@ -1,4 +1,5 @@
 import json
+import os
 import stat
 from types import SimpleNamespace
 
@@ -11,7 +12,8 @@ def test_save_keystore_uses_owner_only_permissions(tmp_path, monkeypatch):
     path = cli._save_keystore("secure-wallet", {"address": "RTC" + "a" * 40})
 
     assert path.exists()
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    if os.name == "posix":
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert json.loads(path.read_text())["address"] == "RTC" + "a" * 40
 
 
