@@ -243,6 +243,7 @@ class PayoutWorker:
                     SELECT withdrawal_id, miner_pk, amount, fee
                     FROM withdrawals
                     WHERE status = 'processing'
+                    AND (tx_hash IS NULL OR tx_hash = '')
                 """).fetchall()
 
                 for row in rows:
