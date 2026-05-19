@@ -293,12 +293,13 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=$INSTALL_DIR
-ExecStart=$PYTHON $INSTALL_DIR/rustchain_linux_miner.py
+ExecStart=$PYTHON -u $INSTALL_DIR/rustchain_linux_miner.py --wallet $WALLET_NAME
 Restart=on-failure
 RestartSec=30
 Environment="WALLET_NAME=$WALLET_NAME"
 Environment="NODE_URL=$NODE_URL"
 Environment="THREADS=$RECOMMENDED_THREADS"
+Environment="PYTHONUNBUFFERED=1"
 
 [Install]
 WantedBy=default.target
@@ -321,7 +322,10 @@ SVCEOF
   <key>ProgramArguments</key>
   <array>
     <string>$PYTHON</string>
+    <string>-u</string>
     <string>$INSTALL_DIR/rustchain_linux_miner.py</string>
+    <string>--wallet</string>
+    <string>$WALLET_NAME</string>
   </array>
   <key>RunAtLoad</key>    <true/>
   <key>KeepAlive</key>    <true/>
@@ -331,6 +335,7 @@ SVCEOF
     <key>WALLET_NAME</key> <string>$WALLET_NAME</string>
     <key>NODE_URL</key>    <string>$NODE_URL</string>
     <key>THREADS</key>     <string>$RECOMMENDED_THREADS</string>
+    <key>PYTHONUNBUFFERED</key> <string>1</string>
   </dict>
   <key>StandardOutPath</key>  <string>$INSTALL_DIR/miner.log</string>
   <key>StandardErrorPath</key> <string>$INSTALL_DIR/miner-error.log</string>
@@ -359,10 +364,10 @@ summary() {
   echo -e "  Multiplier:${GREEN} ${MULTIPLIER}x${NC}"
   echo ""
   echo -e "  ${BOLD}To start mining:${NC}"
-  echo -e "  cd $INSTALL_DIR && $PYTHON rustchain_linux_miner.py"
+  echo -e "  cd $INSTALL_DIR && $PYTHON -u rustchain_linux_miner.py --wallet $WALLET_NAME"
   echo ""
   echo -e "  ${BOLD}Check your balance:${NC}"
-  echo -e "  curl -sk '$NODE_URL/wallet/$WALLET_NAME' | python3 -m json.tool"
+  echo -e "  curl -sk '$NODE_URL/wallet/balance?miner_id=$WALLET_NAME' | python3 -m json.tool"
   echo ""
   echo -e "  ${BOLD}Join the community:${NC}"
   echo -e "  Discord: https://discord.gg/rustchain"
