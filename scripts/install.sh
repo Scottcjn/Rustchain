@@ -353,7 +353,8 @@ Type=simple
 User=$(whoami)
 WorkingDirectory=${INSTALL_DIR}
 Environment="RUSTCHAIN_WALLET=${wallet}"
-ExecStart=${py} ${INSTALL_DIR}/rustchain_linux_miner.py
+Environment="PYTHONUNBUFFERED=1"
+ExecStart=${py} -u ${INSTALL_DIR}/rustchain_linux_miner.py --wallet ${wallet}
 Restart=always
 RestartSec=30
 StandardOutput=append:/var/log/rustchain-miner.log
@@ -389,12 +390,17 @@ create_launchd_plist() {
     <key>ProgramArguments</key>
     <array>
         <string>${py}</string>
+        <string>-u</string>
         <string>${INSTALL_DIR}/rustchain_linux_miner.py</string>
+        <string>--wallet</string>
+        <string>${wallet}</string>
     </array>
     <key>EnvironmentVariables</key>
     <dict>
         <key>RUSTCHAIN_WALLET</key>
         <string>${wallet}</string>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
     </dict>
     <key>WorkingDirectory</key>
     <string>${INSTALL_DIR}</string>
