@@ -342,6 +342,19 @@ class PeerRegistry:
 # ---------------------------------------------------------------------------
 # Signature bundle: JSON-encoded dual signature (or legacy hex)
 # ---------------------------------------------------------------------------
+_INVALID_SIGNATURE = "__rustchain_invalid_signature__"
+
+
+def _signature_bundle_value(bundle: Dict, key: str) -> Optional[str]:
+    """Return a string bundle value, or a verifier-failing sentinel."""
+    if key not in bundle:
+        return None
+    value = bundle[key]
+    if not isinstance(value, str) or not value:
+        return _INVALID_SIGNATURE
+    return value
+
+
 def pack_signature(hmac_sig: Optional[str], ed25519_sig: Optional[str], key_version: int = 1) -> str:
     """Pack one or two signatures into the wire-format signature field.
 
@@ -364,14 +377,21 @@ def unpack_signature(sig_field: str) -> Tuple[Optional[str], Optional[str], int]
     Returns (hmac_sig, ed25519_sig, key_version). Either sig may be None if not present.
     Treats raw-hex strings as legacy HMAC-only with version 1.
     """
-    if not sig_field:
+    if not isinstance(sig_field, str) or not sig_field:
         return None, None, 1
     stripped = sig_field.strip()
     if stripped.startswith("{"):
         try:
             bundle = json.loads(stripped)
-            return bundle.get("h"), bundle.get("e"), bundle.get("v", 1)
-        except json.JSONDecodeError:
+            if not isinstance(bundle, dict):
+                return None, None, 1
+            hmac_sig = _signature_bundle_value(bundle, "h")
+            ed25519_sig = _signature_bundle_value(bundle, "e")
+            key_version = bundle.get("v", 1)
+            if isinstance(key_version, bool) or not isinstance(key_version, int):
+                key_version = 1
+            return hmac_sig, ed25519_sig, key_version
+        except (json.JSONDecodeError, TypeError):
             return None, None, 1
     # Legacy hex — assume HMAC, version 1
     return stripped, None, 1
@@ -395,5 +415,5 @@ def verify_ed25519(pubkey_hex: str, signature_hex: str, data: bytes) -> bool:
         pub = Ed25519PublicKey.from_public_bytes(bytes.fromhex(pubkey_hex))
         pub.verify(bytes.fromhex(signature_hex), data)
         return True
-    except (InvalidSignature, ValueError):
+    except (InvalidSignature, TypeError, ValueError):
         return False

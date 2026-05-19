@@ -673,9 +673,10 @@ class GossipLayer:
         part of the signed content — any post-sign flip of those fields
         fails verification.
 
-        Phase F: if an Ed25519 signature is present AND the sender is a
-        registered peer, verify it against their pubkey. HMAC path is a
-        fallback per the current signing mode.
+        Phase F: if an Ed25519 signature is present in a migration-mode
+        bundle, require the sender to be registered and the Ed25519 signature
+        to verify. HMAC remains a legacy fallback only for HMAC-only messages
+        outside strict mode.
         """
         if abs(time.time() - msg.timestamp) > MESSAGE_EXPIRY:
             return False
@@ -687,14 +688,16 @@ class GossipLayer:
         from p2p_identity import unpack_signature, verify_ed25519
         hmac_sig, ed25519_sig, _key_version = unpack_signature(msg.signature)
 
-        # 1) Try Ed25519 if available AND peer is registered.
-        if ed25519_sig and self._peer_registry is not None:
-            pubkey = self._peer_registry.get_pubkey(msg.sender_id)
-            if pubkey and verify_ed25519(pubkey, ed25519_sig, message.encode()):
-                return True
-            # In strict mode, Ed25519 must succeed — no fallback.
-            if mode == "strict":
+        # 1) Try Ed25519 if available. A bundled Ed25519 signature must not
+        # silently downgrade to HMAC when the sender is unregistered or the
+        # signature fails.
+        if ed25519_sig and mode in ("dual", "ed25519", "strict"):
+            if self._peer_registry is None:
                 return False
+            pubkey = self._peer_registry.get_pubkey(msg.sender_id)
+            if pubkey is None:
+                return False
+            return verify_ed25519(pubkey, ed25519_sig, message.encode())
 
         # 2) HMAC fallback (unless strict).
         if mode == "strict":
