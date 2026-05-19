@@ -61,6 +61,18 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    c.execute('''
+        DELETE FROM projects
+        WHERE id NOT IN (
+            SELECT MAX(id)
+            FROM projects
+            GROUP BY github_repo
+        )
+    ''')
+    c.execute('''
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_github_repo
+        ON projects(github_repo)
+    ''')
     conn.commit()
     conn.close()
 
