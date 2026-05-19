@@ -244,19 +244,34 @@ class TestConservationLawEdgeCases(UtxoSecurityBase):
         self.assertFalse(ok)
         self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
 
-    def test_entire_input_as_fee(self):
-        """All input consumed as fee (outputs=1 nRTC) must succeed."""
+    def test_nearly_entire_input_as_fee_keeps_non_dust_output(self):
+        """Fee may consume the surplus as long as every output is non-dust."""
         self._coinbase('alice', 100 * UNIT)
         boxes = self.db.get_unspent_for_address('alice')
 
         ok = self.db.apply_transaction({
             'tx_type': 'transfer',
             'inputs': [{'box_id': boxes[0]['box_id'], 'spending_proof': 'sig'}],
-            'outputs': [{'address': 'bob', 'value_nrtc': 1}],
-            'fee_nrtc': 100 * UNIT - 1,
+            'outputs': [{'address': 'bob', 'value_nrtc': DUST_THRESHOLD}],
+            'fee_nrtc': 100 * UNIT - DUST_THRESHOLD,
         }, block_height=10)
         self.assertTrue(ok)
-        self.assertEqual(self.db.get_balance('bob'), 1)
+        self.assertEqual(self.db.get_balance('bob'), DUST_THRESHOLD)
+
+    def test_sub_dust_output_rejected_even_when_fee_preserves_conservation(self):
+        """Conservation alone is not enough: transaction outputs must be non-dust."""
+        self._coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': boxes[0]['box_id'], 'spending_proof': 'sig'}],
+            'outputs': [{'address': 'bob', 'value_nrtc': DUST_THRESHOLD - 1}],
+            'fee_nrtc': 100 * UNIT - (DUST_THRESHOLD - 1),
+        }, block_height=10)
+        self.assertFalse(ok)
+        self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
+        self.assertEqual(self.db.get_balance('bob'), 0)
 
 
 # ============================================================================
