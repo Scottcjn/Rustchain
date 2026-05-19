@@ -61,6 +61,24 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    c.execute('''
+        DELETE FROM projects
+        WHERE id NOT IN (
+            SELECT keep.id
+            FROM projects AS keep
+            WHERE keep.id = (
+                SELECT candidate.id
+                FROM projects AS candidate
+                WHERE candidate.github_repo = keep.github_repo
+                ORDER BY datetime(candidate.created_at) DESC, candidate.id DESC
+                LIMIT 1
+            )
+        )
+    ''')
+    c.execute('''
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_github_repo
+        ON projects(github_repo)
+    ''')
     conn.commit()
     conn.close()
 
