@@ -704,6 +704,14 @@ def register_sophia_endpoints(app, db_path: str = None):
         got = req.headers.get("X-Admin-Key", "") or req.headers.get("X-API-Key", "")
         return bool(need and got and hmac.compare_digest(got, need))
 
+    def _json_object_body():
+        data = request.get_json(silent=True)
+        if data is None:
+            return {}, None
+        if not isinstance(data, dict):
+            return None, (jsonify({"error": "JSON object required"}), 400)
+        return data, None
+
     @app.route("/sophia/status/<miner_id>", methods=["GET"])
     def sophia_status_miner(miner_id):
         result = get_latest_verdict(miner_id, db_path=db)
@@ -733,7 +741,9 @@ def register_sophia_endpoints(app, db_path: str = None):
     def sophia_inspect():
         if not _is_admin(request):
             return jsonify({"error": "Unauthorized -- admin key required"}), 401
-        data = request.get_json(force=True, silent=True) or {}
+        data, error = _json_object_body()
+        if error:
+            return error
         miner_id = data.get("miner_id")
         if not miner_id:
             return jsonify({"error": "miner_id required"}), 400
