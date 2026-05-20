@@ -16,38 +16,14 @@ Key Changes:
 import hashlib
 import json
 import logging
-import random
 import sqlite3
 import time
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import List, Tuple, Dict
 
+from rip_309_measurement_rotation import get_epoch_measurement_config
+
 logger = logging.getLogger(__name__)
-
-ROTATING_FINGERPRINT_CHECKS = (
-    "clock_drift",
-    "cache_timing",
-    "simd_bias",
-    "thermal_drift",
-    "instruction_jitter",
-    "anti_emulation",
-)
-ACTIVE_FINGERPRINT_CHECK_COUNT = 4
-
-
-def derive_measurement_nonce(previous_epoch_block_hash: str) -> str:
-    previous_epoch_block_hash = (previous_epoch_block_hash or ("0" * 64)).strip().lower()
-    seed = f"rip-309:{previous_epoch_block_hash}".encode()
-    return hashlib.sha256(seed).hexdigest()
-
-
-def select_active_fingerprint_checks(previous_epoch_block_hash: str, active_count: int = ACTIVE_FINGERPRINT_CHECK_COUNT) -> Tuple[str, ...]:
-    nonce = derive_measurement_nonce(previous_epoch_block_hash)
-    ranked = sorted(
-        ROTATING_FINGERPRINT_CHECKS,
-        key=lambda name: hashlib.sha256(f"{nonce}:{name}".encode()).hexdigest(),
-    )
-    return tuple(ranked[:active_count])
 
 # Genesis timestamp (adjust to actual genesis block timestamp)
 GENESIS_TIMESTAMP = 1764706927  # First actual block (Dec 2, 2025)
@@ -600,17 +576,10 @@ def calculate_epoch_rewards_time_aged(
     Returns:
         Dict of {miner_id: reward_urtc}
     """
-    # RIP-309: Rotating fingerprint checks (4-of-6 per epoch)
-    fp_checks = ['clock_drift', 'cache_timing', 'simd_identity',
-                 'thermal_drift', 'instruction_jitter', 'anti_emulation']
-    if prev_block_hash:
-        nonce = hashlib.sha256(prev_block_hash + b"measurement_nonce").digest()
-        seed = int.from_bytes(nonce[:4], 'big')
-        active_checks = set(random.Random(seed).sample(fp_checks, 4))
-    else:
-        # Fallback when no prev_block_hash provided: all checks active (backward compat)
-        active_checks = set(fp_checks)
-    print(f"[RIP-309] Epoch {epoch} active checks: {sorted(active_checks)} (seed derived from prev_block_hash)")
+    # RIP-309: Canonical fingerprint check rotation (4-of-6 per epoch)
+    prev_hash_hex = prev_block_hash.hex() if prev_block_hash else ""
+    rip309_config = get_epoch_measurement_config(prev_hash_hex, epoch)
+    active_checks = set(rip309_config["active_fingerprints"])
 
     chain_age_years = get_chain_age_years(current_slot)
 
