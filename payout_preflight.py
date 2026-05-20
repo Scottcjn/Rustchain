@@ -11,6 +11,7 @@ from typing import Any, Dict, Optional, Tuple
 
 
 MICRO_RTC = Decimal("1000000")
+MAX_I64 = 2**63 - 1
 
 
 @dataclass(frozen=True)
@@ -40,6 +41,15 @@ def _amount_i64(amount_rtc: Decimal) -> int:
     return int((amount_rtc * MICRO_RTC).to_integral_value(rounding=ROUND_DOWN))
 
 
+def _validate_amount_i64(amount_rtc: Decimal) -> Tuple[Optional[int], str]:
+    amount_i64 = _amount_i64(amount_rtc)
+    if amount_i64 <= 0:
+        return None, "amount_too_small_after_quantization"
+    if amount_i64 > MAX_I64:
+        return None, "amount_exceeds_i64"
+    return amount_i64, ""
+
+
 def validate_wallet_transfer_admin(payload: Any) -> PreflightResult:
     """Validate POST /wallet/transfer payload shape (admin transfer)."""
     data, err = _as_dict(payload)
@@ -56,13 +66,15 @@ def validate_wallet_transfer_admin(payload: Any) -> PreflightResult:
         return PreflightResult(ok=False, error=aerr, details={})
     if amount_rtc is None or amount_rtc <= 0:
         return PreflightResult(ok=False, error="amount_must_be_positive", details={})
-    amount_i64 = _amount_i64(amount_rtc)
-    if amount_i64 <= 0:
+    amount_i64, ierr = _validate_amount_i64(amount_rtc)
+    if ierr == "amount_too_small_after_quantization":
         return PreflightResult(
             ok=False,
             error="amount_too_small_after_quantization",
             details={"amount_rtc": float(amount_rtc), "min_rtc": 0.000001},
         )
+    if ierr:
+        return PreflightResult(ok=False, error=ierr, details={})
 
     return PreflightResult(
         ok=True,
@@ -94,13 +106,15 @@ def validate_wallet_transfer_signed(payload: Any) -> PreflightResult:
         return PreflightResult(ok=False, error=aerr, details={})
     if amount_rtc is None or amount_rtc <= 0:
         return PreflightResult(ok=False, error="amount_must_be_positive", details={})
-    amount_i64 = _amount_i64(amount_rtc)
-    if amount_i64 <= 0:
+    amount_i64, ierr = _validate_amount_i64(amount_rtc)
+    if ierr == "amount_too_small_after_quantization":
         return PreflightResult(
             ok=False,
             error="amount_too_small_after_quantization",
             details={"amount_rtc": float(amount_rtc), "min_rtc": 0.000001},
         )
+    if ierr:
+        return PreflightResult(ok=False, error=ierr, details={})
 
     if not (from_address.startswith("RTC") and len(from_address) == 43):
         return PreflightResult(ok=False, error="invalid_from_address_format", details={})

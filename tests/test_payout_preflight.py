@@ -205,6 +205,15 @@ class TestValidateWalletTransferAdmin:
                 assert result.ok is True
                 assert result.details["amount_rtc"] == 5.5
 
+      def test_amount_above_i64_rejected(self):
+                result = validate_wallet_transfer_admin({
+                              "from_miner": "miner_alpha",
+                              "to_miner": "miner_beta",
+                              "amount_rtc": "9223372036854.775808",
+                })
+                assert result.ok is False
+                assert result.error == "amount_exceeds_i64"
+
 
 class TestValidateWalletTransferSigned:
       @staticmethod
@@ -301,6 +310,12 @@ class TestValidateWalletTransferSigned:
                 result = validate_wallet_transfer_signed(None)
                 assert result.ok is False
                 assert result.error == "invalid_json_body"
+
+      def test_amount_above_i64_rejected(self):
+                payload = self._valid_payload(amount_rtc="9223372036854.775808")
+                result = validate_wallet_transfer_signed(payload)
+                assert result.ok is False
+                assert result.error == "amount_exceeds_i64"
 
 
 class TestPreflightResult:
