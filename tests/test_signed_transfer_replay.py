@@ -3,6 +3,7 @@ import sys
 import time
 import uuid
 import json
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -335,7 +336,7 @@ def test_pending_confirm_updates_fresh_init_db_legacy_balances(monkeypatch):
     amount_i64 = 1_250_000
     now = int(time.time())
 
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         balance_cols = {row[1] for row in conn.execute("PRAGMA table_info(balances)")}
         ledger_cols = {row[1] for row in conn.execute("PRAGMA table_info(ledger)")}
         assert {"miner_pk", "balance_rtc"}.issubset(balance_cols)
@@ -374,7 +375,7 @@ def test_pending_confirm_updates_fresh_init_db_legacy_balances(monkeypatch):
     assert body["confirmed_ids"] == [1]
     assert body["errors"] is None
 
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         balances = dict(conn.execute("SELECT miner_pk, balance_rtc FROM balances").fetchall())
         (status, confirmed_at) = conn.execute(
             "SELECT status, confirmed_at FROM pending_ledger WHERE id = 1"
@@ -415,7 +416,7 @@ def test_pending_confirm_rolls_back_balance_changes_when_ledger_write_fails(monk
     amount_i64 = 1_250_000
     now = int(time.time())
 
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         conn.execute(
             "INSERT INTO balances (miner_pk, balance_rtc) VALUES (?, ?)",
             (from_wallet, 2.0),
@@ -449,7 +450,7 @@ def test_pending_confirm_rolls_back_balance_changes_when_ledger_write_fails(monk
     assert body["confirmed_ids"] == []
     assert body["errors"][0]["id"] == 1
 
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         balances = dict(conn.execute("SELECT miner_pk, balance_rtc FROM balances").fetchall())
         (status, confirmed_at) = conn.execute(
             "SELECT status, confirmed_at FROM pending_ledger WHERE id = 1"
