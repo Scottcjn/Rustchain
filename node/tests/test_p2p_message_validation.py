@@ -122,6 +122,15 @@ def test_from_dict_rejects_payload_with_large_array():
         gossip.GossipMessage.from_dict(raw)
 
 
+@pytest.mark.parametrize("number", [float("nan"), float("inf"), float("-inf")])
+def test_from_dict_rejects_payload_with_non_finite_number(number):
+    raw = _valid_message_dict()
+    raw["payload"] = {"value": number}
+
+    with pytest.raises(ValueError, match="payload number"):
+        gossip.GossipMessage.from_dict(raw)
+
+
 def test_from_dict_rejects_payload_over_serialized_size_limit():
     raw = _valid_message_dict()
     value = "x" * (gossip.MAX_GOSSIP_PAYLOAD_STRING_LENGTH // 2)

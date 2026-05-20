@@ -14,6 +14,7 @@ Designed for 3+ nodes with no single point of failure.
 import hashlib
 import hmac
 import json
+import math
 import os
 import secrets
 import sqlite3
@@ -213,10 +214,12 @@ def _validate_gossip_payload_bounds(payload: Dict[str, Any]) -> None:
 
         if isinstance(value, str) and len(value) > MAX_GOSSIP_PAYLOAD_STRING_LENGTH:
             raise ValueError("invalid gossip message payload string")
+        if isinstance(value, float) and not math.isfinite(value):
+            raise ValueError("invalid gossip message payload number")
 
     visit(payload, 0)
     try:
-        encoded = json.dumps(payload, sort_keys=True)
+        encoded = json.dumps(payload, sort_keys=True, allow_nan=False)
     except (TypeError, ValueError) as exc:
         raise ValueError("invalid gossip message payload") from exc
     if len(encoded.encode("utf-8")) > MAX_GOSSIP_PAYLOAD_BYTES:
