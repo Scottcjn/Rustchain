@@ -11,7 +11,7 @@
 
 ## Executive Summary
 
-This audit expands upon the existing red team report (by @B1tor) and header-presence-bypass finding (by @maelrx). This report identifies **4 new vulnerabilities** across the x402 module surface.
+This audit expands upon the existing red team report (by @B1tor) and header-presence-bypass finding (by @maelrx). This report identifies **5 new findings** across the x402 module surface.
 
 | ID | Severity | Title | Component |
 |----|----------|-------|-----------|
