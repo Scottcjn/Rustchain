@@ -33,7 +33,7 @@ async function load(){
   document.getElementById('miners').textContent=(d.miners||[]).length;
   document.getElementById('epoch').textContent=d.epoch?.epoch ?? '-';
   document.getElementById('txcount').textContent=(d.transactions||[]).length;
-  document.getElementById('minersTbl').innerHTML=(d.miners||[]).slice(0,20).map(m=>`<tr><td>${displayValue(m.miner_id??m.wallet)}</td><td>${displayValue(m.score??m.attestation_score)}</td><td>${displayValue(m.multiplier??m.antiquity_multiplier)}</td></tr>`).join('');
+  document.getElementById('minersTbl').innerHTML=(d.miners||[]).slice(0,20).map(m=>`<tr><td>${displayValue(m.miner_id??m.wallet??m.miner)}</td><td>${displayValue(m.score??m.attestation_score??m.entropy_score)}</td><td>${displayValue(m.multiplier??m.antiquity_multiplier)}</td></tr>`).join('');
   document.getElementById('txTbl').innerHTML=(d.transactions||[]).slice(0,30).map(t=>`<tr><td>${escapeHtml(fmtTs(t.timestamp??t.created_at??t.time))}</td><td>${displayValue(t.from??t.sender)}</td><td>${displayValue(t.to??t.recipient)}</td><td>${displayValue(t.amount??t.value)}</td></tr>`).join('');
 }
 load(); setInterval(load, 30000);

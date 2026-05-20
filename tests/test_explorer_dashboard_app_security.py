@@ -27,8 +27,8 @@ def test_dashboard_table_rows_escape_api_fields_before_inner_html():
 
     assert "function escapeHtml(value)" in source
     assert "function displayValue(value)" in source
-    assert "${displayValue(m.miner_id??m.wallet)}" in source
-    assert "${displayValue(m.score??m.attestation_score)}" in source
+    assert "${displayValue(m.miner_id??m.wallet??m.miner)}" in source
+    assert "${displayValue(m.score??m.attestation_score??m.entropy_score)}" in source
     assert "${displayValue(m.multiplier??m.antiquity_multiplier)}" in source
     assert "${escapeHtml(fmtTs(t.timestamp??t.created_at??t.time))}" in source
     assert "${displayValue(t.from??t.sender)}" in source
@@ -88,7 +88,10 @@ const dashboardPayload = {{
   base: 'https://node.example',
   health: {{ status: 'ok' }},
   epoch: {{ epoch: 0 }},
-  miners: [{{ miner_id: 'miner-zero', score: 0, attestation_score: 7, multiplier: 0, antiquity_multiplier: 3 }}],
+      miners: [
+        {{ miner_id: 'miner-zero', score: 0, attestation_score: 7, multiplier: 0, antiquity_multiplier: 3 }},
+        {{ miner: 'alice', entropy_score: 0, antiquity_multiplier: 1.2 }},
+      ],
   transactions: [{{ timestamp: 0, created_at: 1779250000, from: 'alice', to: 'bob', amount: 0, value: 9 }}],
 }};
 const context = {{
@@ -117,12 +120,14 @@ context.load().then(() => {{
     result = subprocess.run(
         ["node", "-e", probe],
         text=True,
+        encoding="utf-8",
         capture_output=True,
         check=True,
     )
     rendered = json.loads(result.stdout)
 
     assert "<td>0</td><td>0</td>" in rendered["miners"]
+    assert "<td>alice</td><td>0</td><td>1.2</td>" in rendered["miners"]
     assert "<td>0</td>" in rendered["txs"]
     assert "<td>7</td>" not in rendered["miners"]
     assert "<td>9</td>" not in rendered["txs"]
