@@ -629,10 +629,24 @@ def channel_8f_vm_detection(device: torch.device) -> ChannelResult:
         )
         pci_id = result.stdout.strip()
         if pci_id:
-            # Normalise to domain:bus:slot.func
-            pci_short = pci_id.lower().replace("0000:", "")
-            # Check the kernel driver bound to this PCI device
-            driver_link = f"/sys/bus/pci/devices/0000:{pci_short}/driver"
+            # nvidia-smi can return either 4-digit domain (0000:01:00.0) or
+            # 8-digit domain (00000000:65:00.0).  Linux sysfs always uses
+            # the 4-digit form: /sys/bus/pci/devices/0000:65:00.0/driver.
+            # Parse into components and normalise to 4-digit domain.
+            pci_lower = pci_id.lower()
+            parts = pci_lower.split(":")
+            if len(parts) == 3:
+                # Format: DDDD:BB:SS.F or DDDDDDDD:BB:SS.F
+                domain_raw = parts[0]
+                # Take last 4 hex chars of domain (handles both 4 and 8 digit)
+                domain = domain_raw[-4:] if len(domain_raw) >= 4 else domain_raw.zfill(4)
+                bus_slot_func = f"{parts[1]}:{parts[2]}"
+                sysfs_addr = f"{domain}:{bus_slot_func}"
+            else:
+                # Unexpected format — use as-is
+                sysfs_addr = pci_lower
+
+            driver_link = f"/sys/bus/pci/devices/{sysfs_addr}/driver"
             try:
                 driver_target = os.path.basename(os.readlink(driver_link))
                 if driver_target == "vfio-pci":
