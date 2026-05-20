@@ -221,6 +221,16 @@ def _relay_scott_notification(payload: dict[str, Any]) -> tuple[int, dict[str, A
     return response.status_code, body if isinstance(body, dict) else {"status": "error", "error": "invalid_response"}
 
 
+def _response_json_object(response: Any) -> dict[str, Any]:
+    try:
+        body = response.json()
+    except ValueError as exc:
+        raise RuntimeError(f"Ollama returned invalid JSON: {_text_excerpt(exc, 200)}") from exc
+    if not isinstance(body, dict):
+        raise RuntimeError(f"Ollama returned {type(body).__name__} JSON, expected object")
+    return body
+
+
 def _coerce_entry(data: dict[str, Any]) -> dict[str, Any]:
     entry = data.get("entry")
     return entry if isinstance(entry, dict) else {}
@@ -432,7 +442,7 @@ def _call_ollama(prompt: str) -> tuple[str, str]:
         timeout=(5, 90),
     )
     response.raise_for_status()
-    body = response.json()
+    body = _response_json_object(response)
     review_text = _text_excerpt(body.get("response", ""), 4000)
     if review_text:
         return review_text, OLLAMA_MODEL
@@ -558,7 +568,7 @@ def _rebuild_review_row(review_id: int, request_json: str, db_path: str | None =
     try:
         raw_review_text, model_used = _call_ollama(prompt)
         review_text = _normalize_review_text(raw_review_text, data)
-    except Exception as exc:
+    except Exception:
         review_text = _normalize_review_text(_fallback_review_text(data), data)
         model_used = f"{OLLAMA_MODEL}@error"
     recommended_resolution = _build_recommended_resolution(review_text, data)
