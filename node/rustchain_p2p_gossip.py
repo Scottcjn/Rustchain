@@ -1110,12 +1110,18 @@ class GossipLayer:
                 f"({accept_count}/{total_nodes} accept)"
             )
             self.epoch_crdt.add(epoch, {"proposal_hash": proposal_hash, "finalized": True})
-            # Broadcast commit message
+            # Broadcast commit message with only accept voters. Reject votes are
+            # not quorum evidence for finality and must not be advertised as
+            # commit voters.
+            accept_voters = [
+                voter for voter, voter_vote in votes_for_proposal.items()
+                if voter_vote == "accept"
+            ]
             commit_msg = self.create_message(MessageType.EPOCH_COMMIT, {
                 "epoch": epoch,
                 "proposal_hash": proposal_hash,
                 "accept_count": accept_count,
-                "voters": list(votes_for_proposal.keys())
+                "voters": accept_voters
             })
             self.broadcast(commit_msg)
             return {"status": "committed", "epoch": epoch, "accept_count": accept_count}
@@ -1128,11 +1134,11 @@ class GossipLayer:
         return {"status": "ok", "epoch": epoch, "votes_so_far": len(votes_for_proposal)}
 
     def _handle_epoch_commit(self, msg: GossipMessage) -> Dict:
-        """Handle finalized epoch commit broadcast.
+        """Handle finalized epoch commits only when backed by local votes.
 
-        Commits are only accepted when they carry quorum-shaped metadata from
-        known voters. This keeps epoch finality on the commit path while
-        restoring liveness for peers that did not locally reach quorum first.
+        A commit sender's signature authenticates the committer, not every
+        listed voter. Finality is accepted only when the receiver has already
+        validated accept votes from a quorum of the claimed known voters.
         """
         payload = msg.payload if isinstance(msg.payload, dict) else {}
         epoch = payload.get("epoch")
@@ -1142,29 +1148,48 @@ class GossipLayer:
 
         if epoch is None or not proposal_hash:
             return {"status": "error", "reason": "missing_commit_fields"}
+        if not isinstance(epoch, int) or not isinstance(proposal_hash, str):
+            return {"status": "error", "reason": "invalid_commit_fields"}
+        if not isinstance(accept_count, int) or accept_count < 0:
+            return {"status": "error", "reason": "invalid_accept_count"}
         if not isinstance(voters, list):
             return {"status": "error", "reason": "invalid_voters"}
 
         known_nodes = set(self.peers.keys()) | {self.node_id}
         voter_set = {v for v in voters if isinstance(v, str)}
+        if len(voter_set) != len(voters):
+            return {"status": "error", "reason": "invalid_voters"}
         if not voter_set.issubset(known_nodes):
             return {"status": "error", "reason": "unknown_voter"}
 
         total_nodes = len(self.peers) + 1
         quorum = max(3, (total_nodes // 2) + 1)
-        if not isinstance(accept_count, int):
-            return {"status": "error", "reason": "invalid_accept_count"}
         if accept_count < quorum or len(voter_set) < quorum:
             return {"status": "error", "reason": "insufficient_quorum"}
+
+        votes_for_proposal = self._epoch_votes.get((epoch, proposal_hash), {})
+        accepted_voters = {
+            voter for voter, vote in votes_for_proposal.items()
+            if vote == "accept"
+        }
+        unverified_voters = voter_set - accepted_voters
+        if unverified_voters:
+            return {
+                "status": "error",
+                "reason": "unverified_voters",
+                "voters": sorted(unverified_voters),
+            }
+        if len(accepted_voters) < quorum:
+            return {"status": "error", "reason": "insufficient_local_quorum"}
 
         self.epoch_crdt.add(epoch, {
             "proposal_hash": proposal_hash,
             "finalized": True,
-            "accept_count": accept_count,
-            "voters": sorted(voter_set),
+            "accept_count": len(accepted_voters),
+            "voters": sorted(accepted_voters),
             "committer": msg.sender_id,
         })
-        return {"status": "committed", "epoch": epoch, "accept_count": accept_count}
+        return {"status": "committed", "epoch": epoch, "accept_count": len(accepted_voters)}
 
     def _handle_get_state(self, msg: GossipMessage) -> Dict:
         """Handle state request - return full CRDT state with signature"""
