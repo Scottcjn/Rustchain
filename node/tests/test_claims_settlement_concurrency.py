@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """
 Regression test for #5745: concurrent claims settlement race condition.
 
