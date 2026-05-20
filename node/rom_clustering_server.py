@@ -8,6 +8,7 @@ When multiple "different" miners report identical ROM hashes,
 they're likely VMs using the same ROM pack - flag them.
 """
 
+import json
 import sqlite3
 import time
 from typing import Dict, List, Optional, Tuple
@@ -67,11 +68,85 @@ def init_rom_tables(db_path: str):
     """Initialize ROM clustering tables in the database."""
     conn = sqlite3.connect(db_path)
     conn.executescript(ROM_CLUSTERING_SCHEMA)
+    _ensure_rom_cluster_unique_index(conn)
     conn.commit()
     conn.close()
 
 
+def _ensure_rom_cluster_unique_index(conn: sqlite3.Connection):
+    """Deduplicate legacy cluster rows, then enforce one row per ROM hash/type."""
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT rom_hash, hash_type, COUNT(*)
+        FROM rom_clusters
+        GROUP BY rom_hash, hash_type
+        HAVING COUNT(*) > 1
+    """)
+    duplicate_keys = [(row[0], row[1]) for row in cur.fetchall()]
+
+    for rom_hash, hash_type in duplicate_keys:
+        cur.execute("""
+            SELECT cluster_id, miners, cluster_size, is_known_emulator_rom,
+                   known_rom_info, first_detected, last_updated
+            FROM rom_clusters
+            WHERE rom_hash = ? AND hash_type = ?
+            ORDER BY last_updated DESC, cluster_size DESC, cluster_id DESC
+        """, (rom_hash, hash_type))
+        rows = cur.fetchall()
+        keep = rows[0]
+        keep_id = keep[0]
+        duplicate_ids = [row[0] for row in rows if row[0] != keep_id]
+        first_detected = min(row[5] for row in rows)
+        last_updated = max(row[6] for row in rows)
+        merged_miners = []
+        seen_miners = set()
+        for row in rows:
+            try:
+                miners = json.loads(row[1])
+            except (TypeError, json.JSONDecodeError):
+                miners = []
+            if not isinstance(miners, list):
+                miners = []
+            for miner in miners:
+                if isinstance(miner, str) and miner not in seen_miners:
+                    merged_miners.append(miner)
+                    seen_miners.add(miner)
+        known_row = next((row for row in rows if row[4]), keep)
+        is_known_emulator_rom = max(row[3] or 0 for row in rows)
+
+        cur.execute("""
+            UPDATE rom_clusters
+            SET miners = ?,
+                cluster_size = ?,
+                is_known_emulator_rom = ?,
+                known_rom_info = ?,
+                first_detected = ?,
+                last_updated = ?
+            WHERE cluster_id = ?
+        """, (
+            json.dumps(merged_miners), len(merged_miners),
+            is_known_emulator_rom, known_row[4],
+            first_detected, last_updated, keep_id,
+        ))
+        if duplicate_ids:
+            placeholders = ",".join("?" for _ in duplicate_ids)
+            cur.execute(f"""
+                UPDATE miner_rom_flags
+                SET cluster_id = ?
+                WHERE cluster_id IN ({placeholders})
+            """, (keep_id, *duplicate_ids))
+        cur.execute("""
+            DELETE FROM rom_clusters
+            WHERE rom_hash = ? AND hash_type = ? AND cluster_id != ?
+        """, (rom_hash, hash_type, keep_id))
+
+    cur.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_rom_clusters_hash_type
+        ON rom_clusters(rom_hash, hash_type)
+    """)
+
 class ROMClusteringServer:
+
     """
     Server-side ROM clustering detection.
 
@@ -156,7 +231,7 @@ class ROMClusteringServer:
                 INSERT INTO rom_clusters
                 (rom_hash, hash_type, miners, cluster_size, first_detected, last_updated)
                 VALUES (?, ?, ?, ?, ?, ?)
-                ON CONFLICT DO UPDATE SET
+                ON CONFLICT(rom_hash, hash_type) DO UPDATE SET
                     miners = excluded.miners,
                     cluster_size = excluded.cluster_size,
                     last_updated = excluded.last_updated
@@ -166,7 +241,11 @@ class ROMClusteringServer:
                 now, now
             ))
 
-            cluster_id = cur.lastrowid
+            cur.execute("""
+                SELECT cluster_id FROM rom_clusters
+                WHERE rom_hash = ? AND hash_type = ?
+            """, (rom_hash_lower, hash_type))
+            cluster_id = cur.fetchone()[0]
 
             # Flag all miners in the cluster
             for m in all_miners:
