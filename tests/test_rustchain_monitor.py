@@ -41,7 +41,10 @@ def test_request_helpers_call_expected_endpoints(rustchain_monitor_module, monke
     calls = []
     responses = {
         "https://node.example/health": {"ok": True},
-        "https://node.example/api/miners": [{"miner": "alice"}],
+        "https://node.example/api/miners": {
+            "items": [{"miner": "alice"}],
+            "pagination": {"total": 1},
+        },
         "https://node.example/epoch": {"epoch": 7},
     }
 
@@ -60,6 +63,18 @@ def test_request_helpers_call_expected_endpoints(rustchain_monitor_module, monke
         ("https://node.example/api/miners", 10),
         ("https://node.example/epoch", 10),
     ]
+
+
+def test_normalize_miners_payload_preserves_unexpected_shapes(rustchain_monitor_module):
+    assert rustchain_monitor_module.normalize_miners_payload([{"miner": "alice"}]) == [
+        {"miner": "alice"}
+    ]
+    assert rustchain_monitor_module.normalize_miners_payload(
+        {"miners": [{"miner": "bob"}]}
+    ) == [{"miner": "bob"}]
+    assert rustchain_monitor_module.normalize_miners_payload(
+        {"pagination": {"total": 0}}
+    ) == {"pagination": {"total": 0}}
 
 
 def test_request_helpers_return_error_dict_on_failure(rustchain_monitor_module, monkeypatch):

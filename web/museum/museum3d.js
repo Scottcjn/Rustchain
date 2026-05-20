@@ -375,6 +375,18 @@ import { OrbitControls } from './vendor/OrbitControls.js';
     return await r.json();
   }
 
+  function normalizeMinerRows(payload) {
+    const rows = Array.isArray(payload) ? payload : (payload?.miners || payload?.data || payload?.items || []);
+    if (!Array.isArray(rows)) return [];
+    return rows
+      .filter((m) => m && typeof m === 'object')
+      .map((m) => ({
+        ...m,
+        miner: m.miner || m.miner_id || m.id || m.name || '',
+      }))
+      .filter((m) => m.miner);
+  }
+
   function placeMachines(miners) {
     // deterministic layout within each wing
     const byWing = { vintage: [], modern: [], other: [] };
@@ -544,7 +556,7 @@ import { OrbitControls } from './vendor/OrbitControls.js';
   async function refresh() {
     try {
       const miners = await api('/api/miners');
-      const list = Array.isArray(miners) ? miners : (miners?.miners || []);
+      const list = normalizeMinerRows(miners);
       placeMachines(list);
 
       const now = Date.now() / 1000;

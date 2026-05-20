@@ -4,14 +4,12 @@ Provides async access to the RustChain network RPC API.
 """
 
 import httpx
-import json
 from typing import Dict, List, Any, Optional
 
 from .exceptions import (
     RustChainError,
     ConnectionError as RCConnectionError,
     APIError,
-    ValidationError,
 )
 
 
@@ -214,7 +212,12 @@ class RustChainClient:
         result = await self._get("/miners")
         if isinstance(result, list):
             return result
-        return result.get("miners", [])
+        if isinstance(result, dict):
+            for key in ("miners", "data", "items"):
+                miners = result.get(key)
+                if isinstance(miners, list):
+                    return miners
+        return []
 
     async def get_attestation_status(self, miner_public_key: str) -> Dict[str, Any]:
         """

@@ -130,3 +130,29 @@ def test_refresh_stale_cache_entries_stores_recalculated_result(monkeypatch):
     refreshed, timestamp = engine._cache["agent-a"]
     assert refreshed == {"agent_id": "agent-a", "reputation_score": 99}
     assert timestamp > 0
+
+
+def test_reputation_hardware_check_accepts_miner_envelopes(monkeypatch):
+    wallet = "agent-miner-wallet"
+    engine = agent_reputation.ReputationEngine(db_path="/tmp/does-not-exist.db")
+
+    def fake_fetch(path):
+        if path.startswith("/agent/jobs"):
+            return {"jobs": []}
+        if path == "/api/miners":
+            return {
+                "items": [
+                    {
+                        "miner": wallet,
+                        "hardware_type": "PowerPC G5",
+                    }
+                ],
+                "pagination": {"total": 1},
+            }
+        return None
+
+    monkeypatch.setattr(engine, "_fetch", fake_fetch)
+    result = engine.calculate(wallet)
+
+    assert result["hardware_verified"] is True
+    assert result["reputation_score"] == 10

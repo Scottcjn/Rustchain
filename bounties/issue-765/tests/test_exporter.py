@@ -326,6 +326,36 @@ class TestRustChainNodeClient:
         assert miners[0].antiquity_multiplier == 2.5
 
     @patch('rustchain_exporter.requests.Session')
+    def test_get_miners_accepts_enveloped_payload(self, mock_session_class, config):
+        """Test miners fetch with paginated envelope payloads."""
+        mock_session = MagicMock()
+        mock_session_class.return_value = mock_session
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            'items': [
+                {
+                    'miner': 'live_miner_001',
+                    'hardware_type': 'PowerPC G5',
+                    'device_arch': 'ppc64',
+                    'antiquity_multiplier': 3.0,
+                }
+            ],
+            'pagination': {'total': 1, 'limit': 100, 'offset': 0},
+        }
+        mock_response.raise_for_status.return_value = None
+        mock_session.get.return_value = mock_response
+
+        client = RustChainNodeClient(config)
+        miners = client.get_miners()
+
+        assert len(miners) == 1
+        assert miners[0].miner_id == 'live_miner_001'
+        assert miners[0].hardware_type == 'PowerPC G5'
+        assert miners[0].device_arch == 'ppc64'
+        assert miners[0].antiquity_multiplier == 3.0
+
+    @patch('rustchain_exporter.requests.Session')
     def test_retry_logic(self, mock_session_class, config):
         """Test request retry logic."""
         mock_session = MagicMock()

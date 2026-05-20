@@ -65,6 +65,12 @@ def test_check_nodes_records_success_and_failure_without_network(tmp_path, monke
     assert history[0]["nodes"] == results
 
 
+def test_default_data_file_lives_next_to_static_dashboard():
+    monitor = load_monitor_module()
+
+    assert Path(monitor.DATA_FILE) == MODULE_PATH.with_name("node_status.json")
+
+
 def test_check_nodes_appends_history_and_keeps_recent_entries(tmp_path, monkeypatch):
     monitor = load_monitor_module()
     data_file = tmp_path / "node_status.json"

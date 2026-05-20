@@ -16,8 +16,8 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from claims_settlement import (
     process_claims_batch,
-    reserve_pending_claims,
-    unreserve_claims,
+    reserve_claims_for_settlement,
+    release_reserved_claims_for_settlement,
     generate_batch_id,
 )
 
@@ -85,8 +85,8 @@ class TestConcurrentSettlement(unittest.TestCase):
         batch_a = generate_batch_id(self.db_path)
         batch_b = generate_batch_id(self.db_path)
 
-        reserved_a = reserve_pending_claims(self.db_path, batch_a, max_claims=10)
-        reserved_b = reserve_pending_claims(self.db_path, batch_b, max_claims=10)
+        reserved_a = reserve_claims_for_settlement(self.db_path, 10, batch_a)
+        reserved_b = reserve_claims_for_settlement(self.db_path, 10, batch_b)
 
         ids_a = {c["claim_id"] for c in reserved_a}
         ids_b = {c["claim_id"] for c in reserved_b}
@@ -105,7 +105,7 @@ class TestConcurrentSettlement(unittest.TestCase):
         def worker(name):
             try:
                 batch = generate_batch_id(self.db_path)
-                claims = reserve_pending_claims(self.db_path, batch, max_claims=10)
+                claims = reserve_claims_for_settlement(self.db_path, 10, batch)
                 results[name] = [c["claim_id"] for c in claims]
             except Exception as e:
                 errors.append((name, e))
@@ -129,25 +129,30 @@ class TestConcurrentSettlement(unittest.TestCase):
         self.assertEqual(total, 5, f"Expected 5 total claims, got {total}")
 
     def test_unreserve_makes_claims_available(self):
-        """unreserve_claims resets 'settling' back to 'approved'."""
+        """release_reserved_claims_for_settlement resets 'settling' back to 'approved'."""
         batch = generate_batch_id(self.db_path)
-        reserved = reserve_pending_claims(self.db_path, batch, max_claims=10)
+        reserved = reserve_claims_for_settlement(self.db_path, 10, batch)
         self.assertEqual(len(reserved), 5)
 
-        # Simulate broadcast failure — unreserve
-        unreserve_claims(self.db_path, [c["claim_id"] for c in reserved])
+        # Simulate broadcast failure — release back to approved
+        release_reserved_claims_for_settlement(
+            self.db_path,
+            [c["claim_id"] for c in reserved],
+            batch,
+            "test broadcast failure",
+        )
 
         # Now another reservation should succeed
         batch2 = generate_batch_id(self.db_path)
-        reserved2 = reserve_pending_claims(self.db_path, batch2, max_claims=10)
-        self.assertEqual(len(reserved2), 5, "Unreserved claims should be available again")
+        reserved2 = reserve_claims_for_settlement(self.db_path, 10, batch2)
+        self.assertEqual(len(reserved2), 5, "Released claims should be available again")
 
     def test_settling_status_blocks_second_read(self):
         """Claims in 'settling' status are invisible to get_pending_claims."""
         from claims_settlement import get_pending_claims
 
         batch = generate_batch_id(self.db_path)
-        reserve_pending_claims(self.db_path, batch, max_claims=10)
+        reserve_claims_for_settlement(self.db_path, 10, batch)
 
         # get_pending_claims only reads 'approved' — settling should be invisible
         pending = get_pending_claims(self.db_path, max_claims=10)
