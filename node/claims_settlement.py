@@ -540,15 +540,13 @@ def process_claims_batch(
     success, tx_hash, error = sign_and_broadcast_transaction(tx_data, db_path)
 
     if not success:
-        failed_count = update_claims_failed(
-            db_path,
-            [c["claim_id"] for c in claims_to_process],
-            error or "Transaction failed"
-        )
-        # Reset 'settling' back to 'approved' so another worker can retry
+        # Unreserve claims back to approved for retry.
+        # We do NOT call update_claims_failed() here because
+        # that moves status to failed, making unreserve_claims()
+        # a no-op (it only updates WHERE status=settling).
         unreserve_claims(db_path, [c["claim_id"] for c in claims_to_process])
-        result["failed_count"] = failed_count
-        result["error"] = error
+        result["failed_count"] = len(claims_to_process)
+        result["error"] = error or "Transaction broadcast failed"
         return result
 
         # Update claims to settled
