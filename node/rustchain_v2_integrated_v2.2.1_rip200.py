@@ -4681,6 +4681,8 @@ def admin_create_wallet_review_hold():
         return jsonify({"ok": False, "error": "forbidden"}), 403
     data = request.get_json(force=True, silent=True)
     if data is None:
+        if request.get_data(cache=True):
+            return jsonify({"ok": False, "error": "invalid_json_body"}), 400
         data = {}
     if not isinstance(data, dict):
         return jsonify({"ok": False, "error": "invalid_json_body"}), 400
@@ -4714,6 +4716,8 @@ def admin_resolve_wallet_review_hold(hold_id: int):
         return jsonify({"ok": False, "error": "forbidden"}), 403
     data = request.get_json(force=True, silent=True)
     if data is None:
+        if request.get_data(cache=True):
+            return jsonify({"ok": False, "error": "invalid_json_body"}), 400
         data = {}
     if not isinstance(data, dict):
         return jsonify({"ok": False, "error": "invalid_json_body"}), 400

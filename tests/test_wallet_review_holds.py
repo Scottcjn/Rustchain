@@ -209,6 +209,37 @@ def test_wallet_review_admin_routes_reject_non_object_json(client, path):
     assert response.get_json() == {"ok": False, "error": "invalid_json_body"}
 
 
+def test_wallet_review_resolve_rejects_malformed_json_without_releasing(client):
+    test_client, db_path = client
+    with sqlite3.connect(db_path) as conn:
+        integrated_node.ensure_wallet_review_tables(conn)
+        cur = conn.execute(
+            """
+            INSERT INTO wallet_review_holds(wallet, status, reason, coach_note, reviewer_note, created_at, reviewed_at)
+            VALUES (?, 'needs_review', ?, ?, '', 1000, 0)
+            """,
+            ("review-miner", "manual review", "retry after review"),
+        )
+        hold_id = cur.lastrowid
+        conn.commit()
+
+    response = test_client.post(
+        f"/admin/wallet-review-holds/{hold_id}/resolve",
+        data="{",
+        content_type="application/json",
+        headers={"X-Admin-Key": "0" * 32},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"ok": False, "error": "invalid_json_body"}
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT status, reviewer_note, reviewed_at FROM wallet_review_holds WHERE id = ?",
+            (hold_id,),
+        ).fetchone()
+    assert row == ("needs_review", "", 0)
+
+
 def test_wallet_review_escalation_hard_blocks_attestation(client):
     test_client, db_path = client
     with sqlite3.connect(db_path) as conn:
