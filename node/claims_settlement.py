@@ -548,7 +548,7 @@ def process_claims_batch(
         result["error"] = error or "Transaction broadcast failed"
         return result
 
-        # Update claims to settled
+    # Update claims to settled
     settled_count = update_claims_settled(
         db_path,
         [c["claim_id"] for c in claims_to_process],
