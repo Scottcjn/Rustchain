@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MIT
+import asyncio
 import importlib.util
 import sys
 from pathlib import Path
@@ -88,3 +89,42 @@ def test_error_text_prefers_internal_error_then_api_error():
     assert telegram_bot._error_text({"_error": "node down", "error": "ignored"}) == "node down"
     assert telegram_bot._error_text({"error": "bad wallet"}) == "bad wallet"
     assert telegram_bot._error_text({"ok": True}) == ""
+
+
+def test_cmd_miners_uses_paginated_total_and_miner_id(monkeypatch):
+    async def fake_miners():
+        return {
+            "miners": [
+                {"miner_id": "alice-id", "device_arch": "G4", "antiquity_multiplier": 3},
+                {"miner": "bob", "hardware_type": "SPARC", "antiquity_multiplier": 2},
+            ],
+            "pagination": {"total": 18, "limit": 2, "offset": 0, "count": 2},
+        }
+
+    class AlwaysAllowed:
+        def is_allowed(self, _user_id):
+            return True
+
+    replies = []
+
+    class FakeMessage:
+        async def reply_text(self, text, **kwargs):
+            replies.append((text, kwargs))
+
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=123),
+        message=FakeMessage(),
+    )
+
+    monkeypatch.setattr(telegram_bot, "api", SimpleNamespace(miners=fake_miners))
+    monkeypatch.setattr(telegram_bot, "rate_limiter", AlwaysAllowed())
+
+    asyncio.run(telegram_bot.cmd_miners(update, SimpleNamespace()))
+
+    assert len(replies) == 1
+    text, kwargs = replies[0]
+    assert kwargs == {"parse_mode": "MarkdownV2"}
+    assert "*Active Miners: 18*" in text
+    assert "`alice\\-id`" in text
+    assert "`bob`" in text
+    assert "_\\.\\.\\.and 16 more_" in text
