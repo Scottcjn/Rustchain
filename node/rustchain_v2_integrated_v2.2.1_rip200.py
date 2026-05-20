@@ -1434,6 +1434,62 @@ def init_db():
         c.execute("CREATE INDEX IF NOT EXISTS idx_wallet_review_wallet ON wallet_review_holds(wallet, created_at DESC)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_wallet_review_status ON wallet_review_holds(status, created_at DESC)")
         c.execute("""
+            CREATE TABLE IF NOT EXISTS blocked_wallets(
+                wallet TEXT PRIMARY KEY,
+                reason TEXT
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS ip_rate_limit(
+                client_ip TEXT NOT NULL,
+                miner_id TEXT NOT NULL,
+                ts INTEGER NOT NULL,
+                PRIMARY KEY (client_ip, miner_id)
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS miner_attest_recent(
+                miner TEXT PRIMARY KEY,
+                ts_ok INTEGER NOT NULL,
+                device_family TEXT,
+                device_arch TEXT,
+                entropy_score REAL DEFAULT 0.0,
+                fingerprint_passed INTEGER DEFAULT 0,
+                source_ip TEXT,
+                warthog_bonus REAL DEFAULT 1.0,
+                signing_pubkey TEXT,
+                fingerprint_checks_json TEXT DEFAULT '{}'
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS miner_macs(
+                miner TEXT NOT NULL,
+                mac_hash TEXT NOT NULL,
+                first_ts INTEGER NOT NULL,
+                last_ts INTEGER NOT NULL,
+                count INTEGER DEFAULT 1,
+                PRIMARY KEY (miner, mac_hash)
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS hardware_bindings(
+                hardware_id TEXT PRIMARY KEY,
+                bound_miner TEXT NOT NULL,
+                device_arch TEXT,
+                device_model TEXT,
+                bound_at INTEGER NOT NULL,
+                attestation_count INTEGER DEFAULT 0
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS oui_deny(
+                oui TEXT PRIMARY KEY,
+                vendor TEXT,
+                added_ts INTEGER,
+                enforce INTEGER DEFAULT 0
+            )
+        """)
+        c.execute("""
             CREATE TABLE IF NOT EXISTS headers(
                 slot INTEGER PRIMARY KEY,
                 header_json TEXT NOT NULL
