@@ -31,9 +31,7 @@ from flask import Flask, jsonify, request, abort
 from tools.rent_a_relic.models import (
     MACHINE_REGISTRY,
     VALID_DURATIONS_HOURS,
-    EscrowStatus,
     EscrowTransaction,
-    Machine,
     Reservation,
     ReservationStatus,
 )
@@ -64,6 +62,16 @@ def _optional_string_value(data: dict, key: str) -> str | None:
         return None
     if not isinstance(value, str):
         abort(400, description=f"{key} must be a string")
+    return value
+
+
+def _required_string_value(data: dict, key: str) -> str:
+    value = data.get(key)
+    if not isinstance(value, str):
+        abort(400, description=f"{key} must be a string")
+    value = value.strip()
+    if not value:
+        abort(400, description=f"{key} is required")
     return value
 
 
@@ -268,15 +276,11 @@ def post_reserve():
     """Reserve a machine and lock RTC in escrow."""
     data = _get_json_object_or_empty()
 
-    agent_id       = data.get("agent_id", "").strip()
-    machine_id     = data.get("machine_id", "").strip()
+    agent_id       = _required_string_value(data, "agent_id")
+    machine_id     = _required_string_value(data, "machine_id")
     duration_hours = data.get("duration_hours")
     rtc_amount     = data.get("rtc_amount")
 
-    if not agent_id:
-        abort(400, description="agent_id is required")
-    if not machine_id:
-        abort(400, description="machine_id is required")
     if duration_hours not in VALID_DURATIONS_HOURS:
         abort(400, description=f"duration_hours must be one of {sorted(VALID_DURATIONS_HOURS)}")
     if rtc_amount is None or not isinstance(rtc_amount, (int, float)) or rtc_amount <= 0:
