@@ -113,6 +113,30 @@ def normalize_miner_rows(payload: Any) -> list[dict[str, Any]]:
     return [row for row in rows if isinstance(row, dict)]
 
 
+def parse_positive_int_arg(
+    args: dict[str, Any],
+    name: str,
+    default: int,
+) -> tuple[Optional[int], Optional[dict[str, str]]]:
+    value = args.get(name, default)
+    if isinstance(value, bool):
+        return None, {"error": f"{name} must be a positive integer"}
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return None, {"error": f"{name} must be a positive integer"}
+        try:
+            value = int(value)
+        except ValueError:
+            return None, {"error": f"{name} must be a positive integer"}
+    elif not isinstance(value, int):
+        return None, {"error": f"{name} must be a positive integer"}
+
+    if value < 1:
+        return None, {"error": f"{name} must be a positive integer"}
+    return value, None
+
+
 @dataclass
 class BlockInfo:
     epoch: int
@@ -750,7 +774,9 @@ class RustChainMCP:
 
     async def _tool_get_active_miners(self, args: dict[str, Any]) -> dict[str, Any]:
         """Get active miners."""
-        limit = args.get("limit", 50)
+        limit, error = parse_positive_int_arg(args, "limit", 50)
+        if error:
+            return error
         hardware_type = args.get("hardware_type")
         min_score = args.get("min_score")
 
