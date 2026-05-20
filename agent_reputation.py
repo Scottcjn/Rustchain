@@ -173,9 +173,21 @@ class ReputationEngine:
             # Try via API /api/miners
             miners_data = self._fetch("/api/miners")
             if miners_data:
-                miners = miners_data if isinstance(miners_data, list) else miners_data.get("miners", [])
+                miners = miners_data if isinstance(miners_data, list) else []
+                if isinstance(miners_data, dict):
+                    for key in ("miners", "data", "items"):
+                        rows = miners_data.get(key)
+                        if isinstance(rows, list):
+                            miners = rows
+                            break
                 for m in miners:
-                    if m.get("wallet_name") == wallet or m.get("wallet") == wallet:
+                    miner_id = (
+                        m.get("wallet_name")
+                        or m.get("wallet")
+                        or m.get("miner")
+                        or m.get("miner_id")
+                    )
+                    if miner_id == wallet:
                         hardware_verified = True
                         break
 
@@ -417,7 +429,7 @@ if __name__ == "__main__":
     print(f"  Level:          {result['level'].upper()} — {result['level_description']}")
     print(f"  Max Job Value:  {result['max_job_value_rtc']} RTC")
     print(f"  Can Post Jobs:  {'✓' if result['can_post_jobs'] else '✗'}")
-    print(f"")
+    print("")
     print(f"  Jobs Completed: {result['jobs_completed']}")
     print(f"  Jobs Accepted:  {result['jobs_accepted']}")
     print(f"  Jobs Disputed:  {result['jobs_disputed']}")
