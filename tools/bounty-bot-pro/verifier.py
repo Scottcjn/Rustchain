@@ -3,10 +3,8 @@
 import os
 import re
 import json
-import time
 import requests
-import yaml
-from typing import List, Dict, Any, Optional
+from typing import Dict, Any, Optional
 from github import Github, GithubException
 import google.generativeai as genai
 from dotenv import load_dotenv
@@ -69,7 +67,10 @@ class BountyVerifier:
             )
             if resp.status_code == 200:
                 data = resp.json()
-                return {"exists": True, "balance": data.get("balance", 0)}
+                if not isinstance(data, dict):
+                    return {"exists": False, "error": "wallet_response_not_object"}
+                balance = data.get("balance", data.get("amount_rtc", 0))
+                return {"exists": True, "balance": balance}
             return {"exists": False, "error": resp.status_code}
         except Exception as e:
             return {"exists": False, "error": str(e)}
@@ -101,8 +102,10 @@ class BountyVerifier:
         wallet_info = self.verify_wallet(wallet)
         
         payout = stars["count"] * CONFIG["star_reward"]
-        if follows: payout += CONFIG["follow_reward"]
-        if stars["is_star_king"]: payout += CONFIG["star_king_bonus"]
+        if follows:
+            payout += CONFIG["follow_reward"]
+        if stars["is_star_king"]:
+            payout += CONFIG["star_king_bonus"]
         
         report = f"## 🤖 Automated Verification for @{username}\n\n"
         report += "| Check | Result |\n"
