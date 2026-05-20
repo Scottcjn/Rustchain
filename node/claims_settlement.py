@@ -317,6 +317,60 @@ def reserve_claims_for_settlement(
         conn.close()
 
 
+def release_reserved_claims_for_settlement(
+    db_path: str,
+    claim_ids: List[str],
+    batch_id: str,
+    reason: str,
+) -> int:
+    """Return a reserved batch to approved when settlement cannot proceed.
+
+    Reservation happens before broadcast so concurrent workers cannot process
+    the same rows. If a post-reservation invariant check fails, such as the
+    rewards pool not covering the actual reserved batch, release those rows for
+    a later retry instead of leaving them stuck in ``settling``.
+    """
+    if not claim_ids:
+        return 0
+
+    placeholders = ",".join("?" for _ in claim_ids)
+    updated_at = int(time.time())
+    try:
+        with sqlite3.connect(db_path) as conn:
+            cursor = conn.execute(f"""
+                UPDATE claims
+                SET status = 'approved',
+                    settlement_batch = NULL,
+                    updated_at = ?,
+                    settlement_error = ?
+                WHERE status = 'settling'
+                AND settlement_batch = ?
+                AND claim_id IN ({placeholders})
+            """, (updated_at, reason, batch_id, *claim_ids))
+            return cursor.rowcount
+    except sqlite3.OperationalError:
+        # Some legacy/test schemas do not have settlement_error. Preserve the
+        # safety invariant anyway: release the exact reserved batch rows.
+        try:
+            with sqlite3.connect(db_path) as conn:
+                cursor = conn.execute(f"""
+                    UPDATE claims
+                    SET status = 'approved',
+                        settlement_batch = NULL,
+                        updated_at = ?
+                    WHERE status = 'settling'
+                    AND settlement_batch = ?
+                    AND claim_id IN ({placeholders})
+                """, (updated_at, batch_id, *claim_ids))
+                return cursor.rowcount
+        except sqlite3.Error as e:
+            print(f"[SETTLEMENT] Error releasing reserved claims: {e}")
+            return 0
+    except sqlite3.Error as e:
+        print(f"[SETTLEMENT] Error releasing reserved claims: {e}")
+        return 0
+
+
 def update_claims_settled(
     db_path: str,
     claim_ids: List[str],
@@ -507,14 +561,11 @@ def process_claims_batch(
         result["error"] = "Batch conditions not met"
         return result
     
-    # Calculate total amount
+    # Calculate preview total for dry-run reporting only. The authoritative
+    # funds check for real settlement must run after reservation against the
+    # actual reserved rows; otherwise a concurrent worker can change the batch
+    # between this snapshot and broadcast.
     total_amount = sum(c["reward_urtc"] for c in claims_to_process)
-    
-    # Check rewards pool balance
-    sufficient, balance = check_rewards_pool_balance(db_path, total_amount)
-    if not sufficient:
-        result["error"] = f"Insufficient funds: need {total_amount}, have {balance}"
-        return result
     
     if dry_run:
         result["processed"] = True
@@ -532,6 +583,19 @@ def process_claims_batch(
         result["error"] = "No approved claims reserved for settlement"
         return result
     total_amount = sum(c["reward_urtc"] for c in claims_to_process)
+
+    sufficient, balance = check_rewards_pool_balance(db_path, total_amount)
+    if not sufficient:
+        error = f"Insufficient funds: need {total_amount}, have {balance}"
+        released_count = release_reserved_claims_for_settlement(
+            db_path,
+            [c["claim_id"] for c in claims_to_process],
+            batch_id,
+            error,
+        )
+        result["released_count"] = released_count
+        result["error"] = error
+        return result
     
     try:
         # Construct transaction
