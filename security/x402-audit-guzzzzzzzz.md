@@ -1,4 +1,4 @@
-# x402 Payment Protocol — Red Team Security Audit Report
+# x402 Payment Protocol — Red Team Security Audit Report (v2)
 
 **Bounty:** Scottcjn/rustchain-bounties#66 (100 RTC)
 **Auditor:** @Guzzzzzzzz
@@ -11,156 +11,142 @@
 
 ## Executive Summary
 
-This audit expands upon the existing red team report (by @B1tor) and header-presence-bypass finding (by @maelrx). While those reports identified the x402 payment bypass in `_check_x402_payment()`, **several additional vulnerabilities remain unpatched and unreported** across the x402 module surface.
+This audit expands upon the existing red team report (by @B1tor) and header-presence-bypass finding (by @maelrx). This report identifies **4 new vulnerabilities** across the x402 module surface.
 
-This report identifies **5 new vulnerabilities** not covered by previous audits, plus confirms 2 of the 6 original findings remain unfixed on `main`.
+| ID | Severity | Title | Component |
+|----|----------|-------|-----------|
+| GZ-01 | HIGH | Wallet Address Overwrite Without Audit Trail | `rustchain_x402.py` |
+| GZ-02 | HIGH | Agent Wallet Overwrite — No Immutability or Ownership Check | `beacon_x402.py` |
+| GZ-03 | MEDIUM | Default Free-Mode Pricing Lacks Operator Warning | `x402_config.py` |
+| GZ-04 | MEDIUM | sys.path Injection via Hardcoded /root/shared Import | both x402 modules |
+| GZ-05 | LOW | SQLite Connection Not Managed via Context Manager | `rustchain_x402.py` |
 
-| ID | Severity | Title | Component | Status |
-|----|----------|-------|-----------|--------|
-| GZ-01 | CRITICAL | Wallet Takeover via Unrestricted Coinbase Address Overwrite | `rustchain_x402.py` | **NEW** |
-| GZ-02 | HIGH | Agent Wallet Hijack — No Ownership Verification | `beacon_x402.py` | **NEW** |
-| GZ-03 | HIGH | Payment Verification Fail-Open when Config Loaded but Prices Zero | `beacon_x402.py` + `x402_config.py` | **NEW** |
-| GZ-04 | MEDIUM | sys.path Injection via Hardcoded /root/shared Import | `rustchain_x402.py`, `beacon_x402.py` | **NEW** |
-| GZ-05 | MEDIUM | Unclosed SQLite Connections in Error Paths | `rustchain_x402.py` | **NEW** |
-| CONF-01 | CRITICAL | x402 Header Presence Bypass Still Unfixed on main | `beacon_x402.py` | CONFIRMED UNFIXED |
-| CONF-02 | HIGH | No Payment Replay Protection | `beacon_x402.py` | CONFIRMED UNFIXED |
+> **Note on threat model:** GZ-01 and GZ-02 assume a compromised admin key. These modules correctly return 503 when `RC_ADMIN_KEY` / `BEACON_ADMIN_KEY` is unset (no default fallback). The risk is post-compromise privilege escalation, not unauthenticated access.
 
 ---
 
-## GZ-01 — CRITICAL: Wallet Takeover via Unrestricted Coinbase Address Overwrite
+## GZ-01 — HIGH: Wallet Address Overwrite Without Audit Trail
 
 **Component:** `node/rustchain_x402.py:97-147` — `/wallet/link-coinbase`
-**CVSS:** 9.1 (Critical)
-**CWE:** CWE-284 (Improper Access Control)
+**CVSS:** 7.1 (High)
+**CWE:** CWE-778 (Insufficient Logging), CWE-284 (Improper Access Control)
 
 ### Description
 
-The `/wallet/link-coinbase` endpoint allows an admin to **overwrite any miner's coinbase_address without consent or notification**. There is no:
+The `/wallet/link-coinbase` endpoint allows an admin to **overwrite any miner's coinbase_address** with no:
 
-1. Confirmation from the miner whose wallet is being changed
-2. Audit log of the previous address
-3. Rate limiting on address changes
-4. Notification mechanism to the affected miner
+1. Audit log recording the previous address value
+2. Rate limiting on address changes per miner
+3. Notification mechanism to the affected miner
+4. Confirmation step or cooldown period
 
-An attacker who obtains (or brute-forces, see RC-04/RC-05) the admin key can silently redirect **all future x402 payments** for any miner to their own Base address.
+If an admin key is compromised (e.g., via leaked environment variables, log exposure, or the RC-05 timing attack from @B1tor's report), the attacker can silently redirect payment destinations.
 
 ### Vulnerable Code
 
 ```python
-@app.route("/wallet/link-coinbase", methods=["PATCH", "POST"])
-def wallet_link_coinbase():
-    # Admin key check only — no miner consent
-    admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    # ...
-    conn.execute(
-        "UPDATE balances SET coinbase_address = ? WHERE miner_id = ?",
-        (coinbase_address, actual_id),  # Overwrites without recording old address
-    )
+conn.execute(
+    "UPDATE balances SET coinbase_address = ? WHERE miner_id = ?",
+    (coinbase_address, actual_id),
+)
+# BUG: old coinbase_address is lost — no audit record
 ```
 
 ### Impact
 
-- Silent fund redirection: admin (or compromised admin key) redirects all x402 payments
-- No audit trail: the old coinbase_address is lost forever after overwrite
-- Combined with RC-05 (hardcoded admin key default), this is **remotely exploitable on default deployments**
+- **Post-compromise escalation:** A compromised admin key enables silent fund redirection
+- **No forensics:** Without an audit table, operators cannot detect or revert unauthorized changes
+- **No rate limiting:** Attacker can rapidly cycle through all miners
 
 ### Proof of Concept
 
 ```python
-import requests
+# With a valid admin key, overwrite any miner's wallet:
+resp1 = client.post('/wallet/link-coinbase',
+    json={"miner_id": "victim", "coinbase_address": "0x" + "11" * 20},
+    headers={"X-Admin-Key": ADMIN_KEY})
+# resp1.status_code == 200, legitimate address set
 
-# Attacker uses default or leaked admin key
-headers = {"X-Admin-Key": "rustchain_admin_key_2025_secure64"}
-payload = {
-    "miner_id": "victim_miner",
-    "coinbase_address": "0xAttackerAddress0000000000000000000000"
-}
-resp = requests.post(
-    "https://target-node/wallet/link-coinbase",
-    json=payload, headers=headers, verify=False
-)
-# All future x402 payments for victim_miner now go to attacker
+resp2 = client.post('/wallet/link-coinbase',
+    json={"miner_id": "victim", "coinbase_address": "0x" + "AA" * 20},
+    headers={"X-Admin-Key": ADMIN_KEY})
+# resp2.status_code == 200, silently overwritten — no trace of old address
 ```
 
 ### Remediation
 
-1. Log the old address before overwriting (audit table)
-2. Require miner signature for address changes
-3. Rate limit: max 1 address change per 24 hours per miner
-4. Make address immutable after first set, or require multi-party confirmation
+1. Create `coinbase_address_audit` table recording old/new addresses with timestamp
+2. Log all address changes at WARNING level
+3. Add a rate limit (max 1 change per 24h per miner)
+4. Consider requiring miner signature for address changes
 
 ---
 
-## GZ-02 — HIGH: Agent Wallet Hijack — No Ownership Verification
+## GZ-02 — HIGH: Agent Wallet Overwrite — No Immutability or Ownership Check
 
 **Component:** `node/beacon_x402.py:182-220` — `/api/agents/<agent_id>/wallet`
-**CVSS:** 7.5 (High)
+**CVSS:** 6.8 (High)
 **CWE:** CWE-639 (Authorization Bypass Through User-Controlled Key)
 
 ### Description
 
-The `set_agent_wallet` endpoint accepts **any `agent_id` in the URL path** and overwrites their wallet address. The admin key grants unrestricted access to modify any agent's wallet — there is no check that the admin is authorized to modify that specific agent.
-
-The `ON CONFLICT ... DO UPDATE` clause means a second call with a different address **silently overwrites** the existing wallet. No immutability protection exists.
+The `set_agent_wallet` endpoint uses `ON CONFLICT(agent_id) DO UPDATE` which allows **unlimited silent overwrites** of any agent's wallet address. A single compromised admin key can redirect payments for all agents.
 
 ### Vulnerable Code
 
 ```python
-@app.route("/api/agents/<agent_id>/wallet", methods=["POST", "OPTIONS"])
-def set_agent_wallet(agent_id):
-    # Only checks admin key, not agent ownership
-    db.execute(
-        "INSERT INTO beacon_wallets ... ON CONFLICT(agent_id) DO UPDATE SET coinbase_address = ...",
-        (agent_id, address, time.time()),
-    )
+db.execute(
+    """INSERT INTO beacon_wallets (agent_id, coinbase_address, created_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT(agent_id) DO UPDATE SET coinbase_address = excluded.coinbase_address""",
+    (agent_id, address, time.time()),
+)
 ```
 
 ### Impact
 
-- Admin can silently hijack any agent's payment destination
-- No audit trail of address changes
-- Combined with the default admin key (RC-05), any attacker can redirect agent payments
+- No immutability: wallet address can be changed unlimited times
+- No ownership verification: admin can modify any agent's wallet
+- No audit trail of changes
 
 ### Remediation
 
-1. Make coinbase_address immutable after first set (remove ON CONFLICT DO UPDATE)
-2. Require agent signature (via Ed25519 from relay_agents.pubkey_hex)
-3. Add audit logging for all wallet changes
+1. Make `coinbase_address` immutable after initial set (use `INSERT OR IGNORE` instead of `ON CONFLICT DO UPDATE`)
+2. For updates, require a separate admin-approved migration endpoint with audit logging
+3. Add agent signature verification for wallet changes
 
 ---
 
-## GZ-03 — HIGH: Payment Verification Fail-Open when Config Loaded but Prices Zero
+## GZ-03 — MEDIUM: Default Free-Mode Pricing Lacks Operator Warning
 
-**Component:** `node/beacon_x402.py:119-161` + `node/x402_config.py:33-42`
-**CVSS:** 7.2 (High)
-**CWE:** CWE-287 (Improper Authentication)
+**Component:** `node/x402_config.py:33-42`
+**CVSS:** 4.3 (Medium)
+**CWE:** CWE-1188 (Insecure Default Initialization of Resource)
 
 ### Description
 
-The `is_free()` function treats ALL prices set to `"0"` as free. Since `x402_config.py` ships with ALL prices hardcoded to `"0"`, and `_check_x402_payment()` short-circuits when `is_free()` returns True, **all premium endpoints are free by default** even when `X402_CONFIG_OK = True`.
+All prices in `x402_config.py` default to `"0"` (free). While this is **documented** as intentional beta/development pricing, and `/api/x402/status` reports `pricing_mode: free`, there is no startup log warning to alert operators that payment gates are inactive.
+
+An operator who deploys with `X402_CONFIG_OK=True` (config imported successfully) might assume payments are enforced, but `is_free("0")` bypasses all payment checks silently.
+
+> **Clarification from v1:** This is an operational hardening recommendation, not a payment bypass vulnerability. The free pricing is intentional and documented.
+
+### Current Behavior
 
 ```python
-# x402_config.py — ALL defaults are "0":
-PRICE_BEACON_CONTRACT = "0"
-PRICE_REPUTATION_EXPORT = "0"
+# x402_config.py — documented as free beta pricing:
+PRICE_BEACON_CONTRACT = "0"     # Future: "10000"  = $0.01
 
-# beacon_x402.py — short-circuits on free:
-def _check_x402_payment(price_str, action_name):
-    if not X402_CONFIG_OK or is_free(price_str):
-        return True, None  # BYPASS
+# _check_x402_payment short-circuits:
+if not X402_CONFIG_OK or is_free(price_str):
+    return True, None  # silently bypasses — no log entry
 ```
-
-### Impact
-
-- All "premium" endpoints are free on any deployment using default config
-- The x402 payment infrastructure provides zero protection
-- Operators may believe payments are active when they are not
 
 ### Remediation
 
-1. Add startup warning when prices are "0" in non-dev environments
-2. Require explicit `RC_X402_FREE_MODE=1` to enable free mode
-3. Log every time `is_free()` bypasses a payment check
+1. Add startup log at WARNING level: `"x402 prices are $0 (free mode) — payment gates inactive"`
+2. Log each `is_free()` bypass at DEBUG level for observability
+3. Consider requiring `RC_X402_FREE_MODE=1` env var to explicitly opt into free mode
 
 ---
 
@@ -179,76 +165,64 @@ sys.path.insert(0, "/root/shared")
 from x402_config import SWAP_INFO, WRTC_BASE, ...
 ```
 
-If an attacker can write to `/root/shared/`, they can plant a malicious `x402_config.py` that redirects treasury addresses, disables payment gates, or executes arbitrary code at startup.
+On multi-tenant or containerized deployments where `/root/shared` is writable by other processes, an attacker can plant a malicious `x402_config.py` that:
+
+1. Overrides `BEACON_TREASURY` to redirect payments
+2. Makes `is_free()` always return `True`
+3. Executes arbitrary code at server startup
 
 ### Impact
 
-- On multi-tenant/containerized deployments, `/root/shared` may be writable
-- Treasury address silently redirected
-- Arbitrary code execution at server startup
+- Module imported at startup — malicious code executes with server privileges
+- Treasury address can be silently redirected
+- Requires write access to `/root/shared/` (secondary prerequisite)
 
 ### Remediation
 
-Use environment variable for config path instead of hardcoded path. Validate file integrity via hash before import.
+Use environment variable for config path:
+```python
+config_path = os.environ.get("RC_X402_CONFIG_PATH", "")
+```
 
 ---
 
-## GZ-05 — MEDIUM: Unclosed SQLite Connections in Error Paths
+## GZ-05 — LOW: SQLite Connection Not Managed via Context Manager
 
 **Component:** `node/rustchain_x402.py:121-140` — `wallet_link_coinbase()`
-**CVSS:** 4.3 (Medium)
+**CVSS:** 3.1 (Low)
 **CWE:** CWE-404 (Improper Resource Shutdown)
 
 ### Description
 
-The `wallet_link_coinbase` endpoint creates a raw `sqlite3.connect()` connection but has multiple early-return and exception paths that skip `conn.close()`. Under sustained load, leaked connections cause SQLite locking errors and denial of service.
+The `wallet_link_coinbase` endpoint creates a raw `sqlite3.connect()` connection without using a context manager. While the 404 path explicitly calls `conn.close()`, an unexpected exception between `connect()` and `close()` would leak the connection.
 
-### Vulnerable Pattern
+> **Clarification from v1:** The explicit `conn.close()` calls on both the 404 and success paths handle normal flows correctly. This is a defensive coding recommendation, not a demonstrated leak.
+
+### Current Code
 
 ```python
 conn = sqlite3.connect(db_path)
-row = conn.execute(...).fetchone()
-if not row:
-    conn.close()  # Only closed on 404 path
-    return jsonify({"error": ...}), 404
-
-# If exception occurs here, conn is NEVER closed
-conn.execute("UPDATE ...")
-conn.commit()
-conn.close()  # Only closed on success path
+# ... multiple operations ...
+conn.close()  # present on both 404 and success paths
 ```
 
 ### Remediation
 
-Use `with sqlite3.connect(db_path) as conn:` context manager.
-
----
-
-## Confirmed Unfixed Vulnerabilities
-
-### CONF-01: x402 Header Presence Bypass (Still on main)
-
-The `_check_x402_payment()` in `beacon_x402.py` still only checks header presence. Original finding by @maelrx — confirmed unfixed on commit `09cd06f9`.
-
-### CONF-02: No Payment Replay Protection
-
-No `tx_hash` deduplication exists. The `x402_beacon_payments` table stores records but never checks for duplicates. Original finding by @B1tor (RC-03) — confirmed unfixed.
+Use `with sqlite3.connect(db_path) as conn:` for automatic cleanup on any exception.
 
 ---
 
 ## Summary
 
-| Finding | Severity | Status |
-|---------|----------|--------|
-| GZ-01: Wallet Takeover | CRITICAL | NEW |
-| GZ-02: Agent Wallet Hijack | HIGH | NEW |
-| GZ-03: Default Prices Bypass | HIGH | NEW |
-| GZ-04: sys.path Injection | MEDIUM | NEW |
-| GZ-05: Connection Leak DoS | MEDIUM | NEW |
-| CONF-01: Header Bypass | HIGH | CONFIRMED |
-| CONF-02: No Replay Protection | HIGH | CONFIRMED |
+| Finding | Severity | Category |
+|---------|----------|----------|
+| GZ-01: Wallet Overwrite No Audit | HIGH | Post-compromise escalation |
+| GZ-02: Agent Wallet No Immutability | HIGH | Post-compromise escalation |
+| GZ-03: Free-Mode No Warning | MEDIUM | Operational hardening |
+| GZ-04: sys.path Injection | MEDIUM | Supply chain risk |
+| GZ-05: Connection Management | LOW | Defensive coding |
 
-**Total new findings: 5** (1 Critical, 2 High, 2 Medium)
+**Threat model note:** GZ-01 and GZ-02 require a compromised admin key. These modules do NOT have hardcoded default keys — they return 503 when the key is not configured.
 
 ---
 
