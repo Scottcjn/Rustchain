@@ -149,8 +149,12 @@
         return Array.isArray(value) ? value : [];
     }
 
+    function isPlainObject(value) {
+        return value && typeof value === 'object' && !Array.isArray(value);
+    }
+
     function safeObject(value) {
-        return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+        return isPlainObject(value) ? value : {};
     }
 
     function formatTimestamp(value) {
@@ -181,7 +185,7 @@
             // Update node status
             const statusDiv = document.getElementById('nodeStatus');
             statusDiv.innerHTML = '';
-            safeArray(data.bridge_nodes).map(safeObject).forEach(node => {
+            safeArray(data.bridge_nodes).filter(isPlainObject).forEach(node => {
                 const pill = document.createElement('span');
                 const status = safeClassToken(node.status, ['up', 'down'], 'down');
                 pill.className = `status-pill ${status === 'up' ? 'online' : ''}`;
@@ -192,7 +196,7 @@
             // Update transactions
             const body = document.getElementById('txBody');
             body.innerHTML = '';
-            safeArray(data.recent_transactions).map(safeObject).forEach(tx => {
+            safeArray(data.recent_transactions).filter(isPlainObject).forEach(tx => {
                 const row = document.createElement('tr');
                 const lockId = escapeHtml(String(tx.lock_id ?? '').substring(0, 12));
                 const targetChain = safeClassToken(tx.target_chain, ['solana', 'base'], 'solana');

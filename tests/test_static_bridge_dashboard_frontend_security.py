@@ -88,6 +88,7 @@ def test_bridge_dashboard_defines_payload_safety_helpers():
     assert "function safeClassToken(value, allowed, fallback)" in html
     assert "function safeNumber(value, fallback = 0)" in html
     assert "function safeArray(value)" in html
+    assert "function isPlainObject(value)" in html
     assert "function safeObject(value)" in html
     assert "function formatTimestamp(value)" in html
     assert "function renderFallback()" in html
@@ -157,17 +158,14 @@ def test_bridge_dashboard_safely_renders_malformed_nodes_and_transactions():
             ],
         },
         """
-        if (nodeStatus.children.length !== 2) {
-            throw new Error('expected two status pills');
+        if (nodeStatus.children.length !== 1) {
+            throw new Error('expected one valid status pill');
         }
         if (nodeStatus.children[0].className !== 'status-pill online') {
             throw new Error('up node status did not use safe online class');
         }
-        if (!nodeStatus.children[1].innerText.includes('Unknown: DOWN')) {
-            throw new Error('malformed node did not render fallback text');
-        }
-        if (txBody.children.length !== 2) {
-            throw new Error('expected two transaction rows');
+        if (txBody.children.length !== 1) {
+            throw new Error('expected one valid transaction row');
         }
         if (!txBody.children[0].innerHTML.includes('&lt;script&gt;alert(1)&lt;/script&gt;')) {
             throw new Error('sender wallet was not escaped');
@@ -177,6 +175,24 @@ def test_bridge_dashboard_safely_renders_malformed_nodes_and_transactions():
         }
         if (!txBody.children[0].innerHTML.includes('PENDING')) {
             throw new Error('state did not fall back to safe token');
+        }
+        """,
+    )
+
+
+def test_bridge_dashboard_filters_fully_malformed_rows():
+    run_bridge_dashboard_probe(
+        {
+            "timestamp": "2026-05-20T00:01:00Z",
+            "bridge_nodes": [None],
+            "recent_transactions": [None],
+        },
+        """
+        if (nodeStatus.children.length !== 0) {
+            throw new Error('malformed node row should be filtered');
+        }
+        if (txBody.children.length !== 0) {
+            throw new Error('malformed transaction row should be filtered');
         }
         """,
     )
