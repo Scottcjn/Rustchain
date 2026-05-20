@@ -8,7 +8,6 @@ Tests for 4-of-6 rotating fingerprint checks per epoch.
 import hashlib
 import json
 import os
-import random
 import sqlite3
 import sys
 import tempfile
@@ -17,6 +16,7 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from rip_200_round_robin_1cpu1vote import calculate_epoch_rewards_time_aged, GENESIS_TIMESTAMP, BLOCK_TIME
+from rip_309_measurement_rotation import get_epoch_measurement_config
 
 
 def _init_db(conn):
@@ -132,10 +132,8 @@ class TestRip309Rotation(unittest.TestCase):
 
         for i in range(1000):
             h = hashlib.sha256(str(i).encode()).digest()
-            fp_checks = ['clock_drift', 'cache_timing', 'simd_identity',
-                         'thermal_drift', 'instruction_jitter', 'anti_emulation']
-            seed = int.from_bytes(hashlib.sha256(h + b"measurement_nonce").digest()[:4], 'big')
-            active = set(random.Random(seed).sample(fp_checks, 4))
+            config = get_epoch_measurement_config(h.hex(), 1)
+            active = set(config["active_fingerprints"])
             if "anti_emulation" not in active:
                 rewards = calculate_epoch_rewards_time_aged(db_path, 1, 1_000_000, 200, h)
                 self.assertGreater(rewards.get("alice", 0), 0,
@@ -160,10 +158,8 @@ class TestRip309Rotation(unittest.TestCase):
 
         for i in range(1000):
             h = hashlib.sha256(str(i).encode()).digest()
-            fp_checks = ['clock_drift', 'cache_timing', 'simd_identity',
-                         'thermal_drift', 'instruction_jitter', 'anti_emulation']
-            seed = int.from_bytes(hashlib.sha256(h + b"measurement_nonce").digest()[:4], 'big')
-            active = set(random.Random(seed).sample(fp_checks, 4))
+            config = get_epoch_measurement_config(h.hex(), 1)
+            active = set(config["active_fingerprints"])
             if "anti_emulation" in active:
                 rewards = calculate_epoch_rewards_time_aged(db_path, 1, 1_000_000, 200, h)
                 self.assertEqual(rewards.get("alice", 0), 0,
