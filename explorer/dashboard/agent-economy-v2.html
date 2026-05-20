@@ -446,8 +446,8 @@
     let currentStatus = 'all';
     let allJobs = [];
     let allActivity = [];
-    const allowedStatuses = ['open', 'claimed', 'delivered', 'completed'];
-    const allowedCategories = ['code', 'research', 'writing', 'video', 'audio', 'design', 'data', 'testing', 'other'];
+    const allowedStatuses = ['open', 'claimed', 'delivered', 'completed', 'unknown'];
+    const allowedCategories = ['code', 'research', 'writing', 'translation', 'video', 'audio', 'design', 'data', 'testing', 'other'];
     const allowedTrustLevels = ['legendary', 'trusted', 'neutral', 'risky', 'unknown'];
 
     function safeNumber(value, fallback = 0) {
@@ -461,7 +461,7 @@
     }
 
     function safeStatus(value) {
-        return safeToken(value, allowedStatuses, 'open');
+        return safeToken(value, allowedStatuses, 'unknown');
     }
 
     function safeCategory(value) {

@@ -139,7 +139,83 @@ console.log(JSON.stringify({{ html: elements['jobs-grid'].innerHTML }}));
     assert "&lt;b&gt;worker&lt;/b&gt;" in html
     assert "&lt;i&gt;poster&lt;/i&gt;" in html
     assert "&lt;svg onload=alert(1)&gt;" in html
-    assert "badge badge-open" in html
+    assert "badge badge-unknown" in html
+    assert "badge badge-open" not in html
     assert ">other<" in html
     assert "<img src=x onerror=alert(1)>" not in html
     assert "<script>alert(1)</script>" not in html
+
+
+def test_agent_economy_v2_keeps_translation_jobs_filterable():
+    script = re.search(
+        r"<script>(?P<script>.*?)</script>",
+        _source(),
+        flags=re.DOTALL,
+    ).group("script")
+    translation_jobs_json = json.dumps(
+        [
+            {
+                "job_id": "translation-1",
+                "title": "Translate docs",
+                "description": "Translate user guide",
+                "category": "translation",
+                "status": "open",
+                "reward_rtc": 3,
+                "poster_wallet": "alice",
+                "created_at": 1_700_000_000,
+            }
+        ]
+    )
+
+    probe = f"""
+const vm = require('vm');
+const script = {json.dumps(script)};
+const translationJobs = {translation_jobs_json};
+const elements = {{}};
+const htmlEscape = (value) => String(value)
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;');
+const element = (id) => ({{
+  id,
+  value: '',
+  classList: {{ add() {{}}, remove() {{}} }},
+  addEventListener() {{}},
+  textContent: '',
+  get innerHTML() {{ return this._innerHTML || htmlEscape(this.textContent); }},
+  set innerHTML(value) {{ this._innerHTML = value; }},
+}});
+elements['category-filter'] = element('category-filter');
+elements['category-filter'].value = 'translation';
+const context = {{
+  console: {{ log() {{}} }},
+  setInterval() {{}},
+  fetch: async () => ({{ ok: false, json: async () => ({{}}) }}),
+  document: {{
+    createElement: element,
+    querySelectorAll() {{ return []; }},
+    addEventListener() {{}},
+    getElementById(id) {{
+      if (!elements[id]) elements[id] = element(id);
+      return elements[id];
+    }},
+  }},
+  alert() {{}},
+}};
+context.translationJobs = translationJobs;
+vm.createContext(context);
+vm.runInContext(script, context);
+vm.runInContext('allJobs = translationJobs; currentStatus = "open"; renderJobs();', context);
+console.log(JSON.stringify({{ html: elements['jobs-grid'].innerHTML }}));
+"""
+    result = subprocess.run(
+        ["node", "-e", probe],
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    html = json.loads(result.stdout)["html"]
+
+    assert "Translate docs" in html
+    assert ">translation<" in html
+    assert "No jobs found" not in html
