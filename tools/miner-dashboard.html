@@ -226,6 +226,22 @@
                 loadMinerData();
             }
         };
+
+        function appendTextCell(row, text, className) {
+            const cell = row.insertCell();
+            if (className) cell.className = className;
+            cell.textContent = String(text ?? '');
+            return cell;
+        }
+
+        function renderEmptyRow(tbody, colSpan, message) {
+            const row = tbody.insertRow();
+            const cell = row.insertCell();
+            cell.colSpan = colSpan;
+            cell.style.textAlign = 'center';
+            cell.style.color = '#999';
+            cell.textContent = message;
+        }
         
         async function loadMinerData() {
             const minerId = document.getElementById('minerId').value.trim();
@@ -258,15 +274,13 @@
                 if (data.rewards && data.rewards.length > 0) {
                     data.rewards.forEach(reward => {
                         const row = rewardTable.insertRow();
-                        row.innerHTML = `
-                            <td>${reward.epoch}</td>
-                            <td>${reward.amount}</td>
-                            <td>${new Date(reward.timestamp).toLocaleString()}</td>
-                            <td class="status-success">✓ Confirmed</td>
-                        `;
+                        appendTextCell(row, reward.epoch);
+                        appendTextCell(row, reward.amount);
+                        appendTextCell(row, new Date(reward.timestamp).toLocaleString());
+                        appendTextCell(row, '✓ Confirmed', 'status-success');
                     });
                 } else {
-                    rewardTable.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #999;">No rewards yet</td></tr>';
+                    renderEmptyRow(rewardTable, 4, 'No rewards yet');
                 }
                 
                 // Update activity history
@@ -275,14 +289,12 @@
                 if (data.activity && data.activity.length > 0) {
                     data.activity.forEach(activity => {
                         const row = activityTable.insertRow();
-                        row.innerHTML = `
-                            <td>${activity.type}</td>
-                            <td>${activity.details}</td>
-                            <td>${new Date(activity.timestamp).toLocaleString()}</td>
-                        `;
+                        appendTextCell(row, activity.type);
+                        appendTextCell(row, activity.details);
+                        appendTextCell(row, new Date(activity.timestamp).toLocaleString());
                     });
                 } else {
-                    activityTable.innerHTML = '<tr><td colspan="3" style="text-align: center; color: #999;">No recent activity</td></tr>';
+                    renderEmptyRow(activityTable, 3, 'No recent activity');
                 }
                 
                 document.getElementById('dashboard').style.display = 'block';
