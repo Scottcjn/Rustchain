@@ -89,11 +89,12 @@ def test_bridge_dashboard_defines_payload_safety_helpers():
     assert "function safeNumber(value, fallback = 0)" in html
     assert "function safeArray(value)" in html
     assert "function safeObject(value)" in html
+    assert "function formatTimestamp(value)" in html
 
 
 def test_bridge_dashboard_handles_empty_or_malformed_payloads():
     run_bridge_dashboard_probe(
-        {"not": "bridge status"},
+        {"not": "bridge status", "timestamp": "not-a-date"},
         """
         if (lockedRtc.innerText !== '0 RTC') {
             throw new Error('locked RTC fallback did not render');

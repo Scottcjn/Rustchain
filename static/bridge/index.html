@@ -153,6 +153,12 @@
         return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
     }
 
+    function formatTimestamp(value) {
+        if (!value) return 'unavailable';
+        const date = new Date(value);
+        return Number.isNaN(date.getTime()) ? 'unavailable' : date.toLocaleTimeString();
+    }
+
     async function refresh() {
         try {
             const resp = await fetch('bridge_status.json');
@@ -193,8 +199,7 @@
                 body.appendChild(row);
             });
 
-            const latestTime = data.timestamp ? new Date(data.timestamp).toLocaleTimeString() : 'unavailable';
-            document.getElementById('lastUpdate').innerText = 'LAST_SYNC: ' + latestTime;
+            document.getElementById('lastUpdate').innerText = 'LAST_SYNC: ' + formatTimestamp(data.timestamp);
         } catch (e) {
             console.error(e);
         }
