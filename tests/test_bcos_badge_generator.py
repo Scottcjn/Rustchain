@@ -439,6 +439,51 @@ class TestFlaskIntegration(unittest.TestCase):
         self.assertTrue(data['success'])
         self.assertIn('cert_id', data)
 
+    def test_generate_badge_rejects_non_json_body(self):
+        """Non-JSON bodies should return JSON 400 responses, not HTML errors."""
+        response = self.client.post(
+            '/api/badge/generate',
+            data='not json',
+            headers={
+                'X-Admin-Key': self.admin_key,
+                'Content-Type': 'text/plain',
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.data)
+        self.assertFalse(data['success'])
+        self.assertEqual(data['error'], 'JSON object body required')
+
+    def test_generate_badge_rejects_non_object_json_body(self):
+        """JSON arrays should fail validation before route code calls .get()."""
+        response = self.client.post(
+            '/api/badge/generate',
+            json=['test/repo', 'L1'],
+            headers={'X-Admin-Key': self.admin_key},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.data)
+        self.assertFalse(data['success'])
+        self.assertEqual(data['error'], 'JSON object body required')
+
+    def test_generate_badge_rejects_scalar_repo_and_tier_fields(self):
+        """Scalar field validation should reject non-strings without 500s."""
+        cases = [
+            ({'repo_name': ['test/repo'], 'tier': 'L1'}, 'Repository name must be a string'),
+            ({'repo_name': 'test/repo', 'tier': True}, 'Tier must be a string'),
+        ]
+
+        for payload, error in cases:
+            with self.subTest(payload=payload):
+                response = self.post_generate_badge(payload)
+
+                self.assertEqual(response.status_code, 200)
+                data = json.loads(response.data)
+                self.assertFalse(data['success'])
+                self.assertEqual(data['error'], error)
+
     def test_generate_badge_missing_repo(self):
         """Test badge generation with missing repo name."""
         response = self.post_generate_badge(
