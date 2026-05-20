@@ -4301,7 +4301,10 @@ def miner_set_header_key():
         return jsonify({"ok":False,"error":"unauthorized"}), 403
 
     body = request.get_json(force=True, silent=True) or {}
-    miner_id   = str(body.get("miner_id","")).strip()
+    raw_miner_id = body.get("miner_id", "")
+    if not isinstance(raw_miner_id, str):
+        return jsonify({"ok":False,"error":"invalid miner_id or pubkey_hex"}), 400
+    miner_id   = raw_miner_id.strip()
     pubkey_hex = str(body.get("pubkey_hex","")).strip().lower()
     if not miner_id or len(pubkey_hex) != 64:
         return jsonify({"ok":False,"error":"invalid miner_id or pubkey_hex"}), 400
