@@ -335,7 +335,13 @@ def transfer_rtc(
     )
     try:
         resp = urlopen(req, timeout=30)
-        result = json.loads(resp.read().decode())
+        body = resp.read().decode(errors="replace")
+        try:
+            result = json.loads(body)
+        except (json.JSONDecodeError, ValueError):
+            return False, {"error": "Invalid JSON response from transfer endpoint"}
+        if not isinstance(result, dict):
+            return False, {"error": "Transfer endpoint response must be a JSON object"}
         return result.get("ok", False), result
     except HTTPError as e:
         body = e.read().decode(errors="replace")
