@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """
 PoC Test Suite for x402 Red Team Audit — Findings GZ-01 through GZ-05
 Bounty #66 | Auditor: @Guzzzzzzzz
