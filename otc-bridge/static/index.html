@@ -758,7 +758,8 @@
             if (!data.ok) return;
 
             const el = document.getElementById('orders-list');
-            const orders = Array.isArray(data.orders) ? data.orders : [];
+            const rawOrders = Array.isArray(data.orders) ? data.orders : [];
+            const orders = rawOrders.filter(o => o && typeof o === 'object' && String(o.order_id ?? '').trim() !== '');
             const total = safeNumber(data.total, orders.length);
             document.getElementById('order-count').textContent = `${total} orders`;
             document.getElementById('nav-orders').textContent = total;
@@ -771,7 +772,7 @@
             const quote = pair.split('/')[1];
             openOrdersById = new Map();
             el.innerHTML = orders.map(o => {
-                const order = o && typeof o === 'object' ? o : {};
+                const order = o;
                 const orderId = String(order.order_id ?? '');
                 openOrdersById.set(orderId, order);
                 const age = timeSince(order.created_at);
