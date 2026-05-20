@@ -92,12 +92,20 @@ def test_print_miners_renders_lists_unexpected_and_errors(capsys):
         {"miner": "alice", "hardware_type": "PowerPC", "antiquity_multiplier": 1.5, "last_attest": 0},
         {"miner": "bob", "hardware_type": "x86", "antiquity_multiplier": 1.0, "last_attest": 60},
     ])
+    module.print_miners({
+        "miners": [
+            {"miner": "carol", "hardware_type": "ARM", "antiquity_multiplier": 1.2, "last_attest": 0},
+        ],
+        "pagination": {"total": 1},
+    })
     module.print_miners({"unexpected": True})
     module.print_miners({"error": "down"})
 
     output = capsys.readouterr().out
     assert "Active miners: 2" in output
+    assert "Active miners: 1" in output
     assert "alice" in output
+    assert "carol" in output
     assert "never" in output
     assert "Unexpected response" in output
     assert "Failed to fetch miners: down" in output

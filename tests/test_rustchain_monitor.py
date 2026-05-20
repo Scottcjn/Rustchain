@@ -114,11 +114,13 @@ def test_print_miners_limits_rows_and_formats_last_attest(
     monkeypatch.setattr(rustchain_monitor_module, "datetime", FixedDatetime)
 
     rustchain_monitor_module.print_miners(miners)
+    rustchain_monitor_module.print_miners({"miners": miners[:2], "pagination": {"total": 12}})
     rustchain_monitor_module.print_miners({"unexpected": True})
     rustchain_monitor_module.print_miners({"error": "bad gateway"})
 
     output = capsys.readouterr().out
     assert "Active miners: 12" in output
+    assert "Active miners: 2" in output
     assert "miner-0" in output
     assert "HW: PowerPC" in output
     assert "Multiplier: 2.5" in output

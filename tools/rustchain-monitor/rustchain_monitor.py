@@ -58,6 +58,8 @@ def print_miners(data):
     if "error" in data:
         print(f"❌ Failed to fetch miners: {data['error']}")
         return
+    if isinstance(data, dict) and isinstance(data.get("miners"), list):
+        data = data["miners"]
     if not isinstance(data, list):
         print(f"⚠ Unexpected response: {data}")
         return
