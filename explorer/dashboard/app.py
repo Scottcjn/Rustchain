@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 import os, requests
 from flask import Flask, jsonify, render_template_string, request
 
@@ -23,16 +24,38 @@ HTML = """
 <h3>Recent Transactions</h3><table><thead><tr><th>Time</th><th>From</th><th>To</th><th>Amount</th></tr></thead><tbody id='txTbl'></tbody></table>
 <script>
 async function j(u){const r=await fetch(u);return await r.json();}
+function asObject(v){return v&&typeof v==='object'&&!Array.isArray(v)?v:{};}
+function asArray(v){return Array.isArray(v)?v.filter(x=>x&&typeof x==='object'):[];}
+function text(v,f='-'){return v===undefined||v===null||v===''?f:String(v);}
 function fmtTs(v){if(!v) return '-'; const n=Number(v); if(!Number.isFinite(n)) return String(v); const ms=n>1e12?n:n*1000; return new Date(ms).toLocaleString();}
+function td(v){const cell=document.createElement('td');cell.textContent=text(v);return cell;}
+function renderRows(tbodyId,rows,limit,mapper,emptyText){
+  const tbody=document.getElementById(tbodyId);
+  const body=asArray(rows).slice(0,limit).map(row=>{
+    const tr=document.createElement('tr');
+    tr.append(...mapper(row).map(td));
+    return tr;
+  });
+  if(body.length===0){
+    const tr=document.createElement('tr');
+    const cell=td(emptyText);
+    cell.colSpan=mapper({}).length;
+    tr.appendChild(cell);
+    body.push(tr);
+  }
+  tbody.replaceChildren(...body);
+}
 async function load(){
-  const d=await j('/api/dashboard');
-  document.getElementById('base').textContent=d.base;
-  document.getElementById('network').textContent=d.health?.status||'unknown';
-  document.getElementById('miners').textContent=(d.miners||[]).length;
-  document.getElementById('epoch').textContent=d.epoch?.epoch ?? '-';
-  document.getElementById('txcount').textContent=(d.transactions||[]).length;
-  document.getElementById('minersTbl').innerHTML=(d.miners||[]).slice(0,20).map(m=>`<tr><td>${m.miner_id||m.wallet||'-'}</td><td>${m.score||m.attestation_score||'-'}</td><td>${m.multiplier||m.antiquity_multiplier||'-'}</td></tr>`).join('');
-  document.getElementById('txTbl').innerHTML=(d.transactions||[]).slice(0,30).map(t=>`<tr><td>${fmtTs(t.timestamp||t.created_at||t.time)}</td><td>${t.from||t.sender||'-'}</td><td>${t.to||t.recipient||'-'}</td><td>${t.amount||t.value||'-'}</td></tr>`).join('');
+  const d=asObject(await j('/api/dashboard'));
+  const miners=asArray(d.miners);
+  const transactions=asArray(d.transactions);
+  document.getElementById('base').textContent=text(d.base);
+  document.getElementById('network').textContent=text(asObject(d.health).status,'unknown');
+  document.getElementById('miners').textContent=miners.length;
+  document.getElementById('epoch').textContent=text(asObject(d.epoch).epoch);
+  document.getElementById('txcount').textContent=transactions.length;
+  renderRows('minersTbl',miners,20,m=>[m.miner_id||m.wallet,m.score||m.attestation_score,m.multiplier||m.antiquity_multiplier],'No miners');
+  renderRows('txTbl',transactions,30,t=>[fmtTs(t.timestamp||t.created_at||t.time),t.from||t.sender,t.to||t.recipient,t.amount||t.value],'No transactions');
 }
 load(); setInterval(load, 30000);
 </script></body></html>
