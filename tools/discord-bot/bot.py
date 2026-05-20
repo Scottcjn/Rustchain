@@ -126,6 +126,25 @@ class RustChainBot(commands.Bot):
 bot = RustChainBot()
 
 
+def normalize_miners_payload(data: dict | list) -> tuple[list, int]:
+    if isinstance(data, list):
+        return data, len(data)
+    if not isinstance(data, dict):
+        return [], 0
+
+    miners = data.get("miners") or data.get("data") or []
+    if not isinstance(miners, list):
+        miners = []
+
+    pagination = data.get("pagination") if isinstance(data.get("pagination"), dict) else {}
+    total = pagination.get("total", data.get("total", len(miners)))
+    try:
+        total = int(total)
+    except (TypeError, ValueError):
+        total = len(miners)
+    return miners, max(total, len(miners))
+
+
 # ---------------------------------------------------------------------------
 # /health
 # ---------------------------------------------------------------------------
@@ -224,8 +243,7 @@ async def cmd_miners(interaction: discord.Interaction):
         await interaction.followup.send("Could not fetch miner list.", ephemeral=True)
         return
 
-    miners = data if isinstance(data, list) else data.get("miners", [])
-    total = len(miners)
+    miners, total = normalize_miners_payload(data)
 
     # Show up to 20 miners in embed fields
     display = miners[:20]
@@ -236,7 +254,7 @@ async def cmd_miners(interaction: discord.Interaction):
     )
 
     for m in display:
-        name = m.get("miner", "unknown")
+        name = m.get("miner") or m.get("miner_id") or "unknown"
         arch = m.get("device_arch", "?")
         family = m.get("device_family", "?")
         multiplier = m.get("antiquity_multiplier", 1.0)
@@ -246,8 +264,8 @@ async def cmd_miners(interaction: discord.Interaction):
             inline=False,
         )
 
-    if total > 20:
-        embed.set_footer(text=f"Showing 20 of {total} miners | {RUSTCHAIN_URL}")
+    if total > len(display):
+        embed.set_footer(text=f"Showing {len(display)} of {total} miners | {RUSTCHAIN_URL}")
     else:
         embed.set_footer(text=RUSTCHAIN_URL)
 
