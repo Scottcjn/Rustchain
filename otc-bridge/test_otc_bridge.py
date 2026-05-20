@@ -495,6 +495,15 @@ class OTCBridgeTestCase(unittest.TestCase):
         })
         self.assertEqual(r2.status_code, 409)
 
+    def test_confirm_rejects_non_object_json(self):
+        r = self.app.post("/api/orders/otc_fake123/confirm", json=[
+            "seller1",
+            "0xabc123",
+            "secret",
+        ])
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.get_json(), {"error": "JSON object required"})
+
     # ---------------------------------------------------------------
     # Stats & Trades
     # ---------------------------------------------------------------
