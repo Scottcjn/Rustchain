@@ -366,14 +366,25 @@ def update_claim_status(
             # Update claim status
             cursor.execute("""
                 UPDATE claims
-                SET status = ?, updated_at = ?, verified_at = ?
+                SET status = ?,
+                    updated_at = ?,
+                    verified_at = CASE
+                        WHEN ? IN ('approved', 'rejected') THEN ?
+                        ELSE verified_at
+                    END
                 WHERE claim_id = ?
             """, (
                 status,
                 current_ts,
-                current_ts if status in ['approved', 'rejected'] else None,
+                status,
+                current_ts,
                 claim_id
             ))
+            status_updated = cursor.rowcount > 0
+
+            if not status_updated:
+                conn.rollback()
+                return False
             
             # Add details if provided
             if details:
@@ -411,7 +422,7 @@ def update_claim_status(
             ))
             
             conn.commit()
-            return cursor.rowcount > 0
+            return True
     except sqlite3.Error as e:
         print(f"[CLAIMS] Error updating status: {e}")
         return False

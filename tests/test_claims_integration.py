@@ -255,6 +255,7 @@ class TestEndToEndClaimFlow:
         assert final_status["status"] == "settled"
         assert final_status["transaction_hash"] == settlement_result["transaction_hash"]
         assert final_status["settled_at"] is not None
+        assert final_status["verified_at"] is not None
         
         # 8. Verify claim history
         history = get_claim_history(integration_db, miner_id)
@@ -313,6 +314,76 @@ class TestEndToEndClaimFlow:
         
         # Should still show pending claim exists (rejected claims don't block)
         # This depends on business logic - adjust as needed
+
+    def test_settlement_preserves_verification_timestamp(self, integration_db, current_ts, current_slot):
+        """Settling an approved claim must not erase its verification timestamp."""
+
+        test_epoch = max(0, current_slot // 144 - 3)
+        miner_id = "test-miner-preserve-verified"
+        wallet = "RTC1VerifiedWallet123456789"
+        setup_test_miner(integration_db, miner_id, "g4", wallet, current_ts, epoch=test_epoch)
+
+        claim_result = submit_claim(
+            db_path=integration_db,
+            miner_id=miner_id,
+            epoch=test_epoch,
+            wallet_address=wallet,
+            signature="mock_signature",
+            public_key="mock_public_key",
+            current_slot=current_slot,
+            current_ts=current_ts,
+            skip_signature_verify=True
+        )
+
+        claim_id = claim_result["claim_id"]
+        assert update_claim_status(integration_db, claim_id, "approved") is True
+
+        approved_status = get_claim_status(integration_db, claim_id)
+        assert approved_status["verified_at"] is not None
+
+        assert update_claim_status(
+            integration_db,
+            claim_id,
+            "settled",
+            details={
+                "transaction_hash": "0xsettlement",
+                "settlement_batch": "batch_test"
+            }
+        ) is True
+
+        settled_status = get_claim_status(integration_db, claim_id)
+        assert settled_status["status"] == "settled"
+        assert settled_status["verified_at"] == approved_status["verified_at"]
+        assert settled_status["settled_at"] is not None
+
+    def test_missing_claim_status_update_does_not_audit_success(self, integration_db):
+        """Missing claim updates should fail without creating misleading audit rows."""
+
+        missing_claim_id = "claim_missing"
+
+        with sqlite3.connect(integration_db) as conn:
+            before = conn.execute(
+                "SELECT COUNT(*) FROM claims_audit WHERE claim_id = ?",
+                (missing_claim_id,)
+            ).fetchone()[0]
+
+        assert update_claim_status(
+            db_path=integration_db,
+            claim_id=missing_claim_id,
+            status="settled",
+            details={
+                "transaction_hash": "0xmissing",
+                "settlement_batch": "batch_missing"
+            }
+        ) is False
+
+        with sqlite3.connect(integration_db) as conn:
+            after = conn.execute(
+                "SELECT COUNT(*) FROM claims_audit WHERE claim_id = ?",
+                (missing_claim_id,)
+            ).fetchone()[0]
+
+        assert after == before
     
     def test_multiple_miners_batch_settlement(self, integration_db, current_ts, current_slot):
         """Test batch settlement with multiple miners"""
