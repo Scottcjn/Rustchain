@@ -13,9 +13,11 @@ ADMIN_HEADERS = {"X-Admin-Key": "0" * 32}
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setenv("RC_ADMIN_KEY", "0" * 32)
+    integrated_node._ADMIN_RATE_LIMIT_BUCKETS.clear()
     integrated_node.app.config["TESTING"] = True
     with integrated_node.app.test_client() as c:
         yield c
+    integrated_node._ADMIN_RATE_LIMIT_BUCKETS.clear()
 
 
 @pytest.mark.parametrize("path", ["/admin/oui_deny/add", "/admin/oui_deny/remove"])
