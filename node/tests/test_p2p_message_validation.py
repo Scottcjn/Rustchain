@@ -76,3 +76,57 @@ def test_from_dict_rejects_malformed_field_types(field, value, message):
 
     with pytest.raises(ValueError, match=message):
         gossip.GossipMessage.from_dict(raw)
+
+
+def test_from_dict_rejects_payload_with_too_many_keys():
+    raw = _valid_message_dict()
+    raw["payload"] = {
+        f"k{i}": i for i in range(gossip.MAX_GOSSIP_PAYLOAD_KEYS + 1)
+    }
+
+    with pytest.raises(ValueError, match="payload keys"):
+        gossip.GossipMessage.from_dict(raw)
+
+
+def test_from_dict_rejects_payload_with_deep_nesting():
+    raw = _valid_message_dict()
+    payload = {}
+    current = payload
+    for _ in range(gossip.MAX_GOSSIP_PAYLOAD_DEPTH + 1):
+        child = {}
+        current["child"] = child
+        current = child
+    raw["payload"] = payload
+
+    with pytest.raises(ValueError, match="payload depth"):
+        gossip.GossipMessage.from_dict(raw)
+
+
+def test_from_dict_rejects_payload_with_large_string():
+    raw = _valid_message_dict()
+    raw["payload"] = {
+        "blob": "x" * (gossip.MAX_GOSSIP_PAYLOAD_STRING_LENGTH + 1)
+    }
+
+    with pytest.raises(ValueError, match="payload string"):
+        gossip.GossipMessage.from_dict(raw)
+
+
+def test_from_dict_rejects_payload_with_large_array():
+    raw = _valid_message_dict()
+    raw["payload"] = {
+        "items": list(range(gossip.MAX_GOSSIP_PAYLOAD_ARRAY_ITEMS + 1))
+    }
+
+    with pytest.raises(ValueError, match="payload array"):
+        gossip.GossipMessage.from_dict(raw)
+
+
+def test_from_dict_rejects_payload_over_serialized_size_limit():
+    raw = _valid_message_dict()
+    value = "x" * (gossip.MAX_GOSSIP_PAYLOAD_STRING_LENGTH // 2)
+    item_count = (gossip.MAX_GOSSIP_PAYLOAD_BYTES // len(value)) + 1
+    raw["payload"] = {f"k{i}": value for i in range(item_count)}
+
+    with pytest.raises(ValueError, match="payload size"):
+        gossip.GossipMessage.from_dict(raw)
