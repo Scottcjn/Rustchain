@@ -1137,16 +1137,16 @@ def generate_badge():
     raw_cert = data.get('cert_id', '')
 
     if not isinstance(raw_repo, str):
-        return jsonify({'success': False, 'error': 'repo_name must be a string'})
+        return jsonify({'success': False, 'error': 'repo_name must be a string'}), 400
     if not isinstance(raw_tier, str):
-        return jsonify({'success': False, 'error': 'tier must be a string'})
-    if not isinstance(raw_cert, str):
-        return jsonify({'success': False, 'error': 'Invalid certificate ID. Use BCOS- followed by letters, numbers, underscores, or hyphens.'})
+        return jsonify({'success': False, 'error': 'tier must be a string'}), 400
+    if raw_cert is not None and not isinstance(raw_cert, str):
+        return jsonify({'success': False, 'error': 'cert_id must be a string or null'}), 400
 
     repo_name = raw_repo.strip()
     tier = raw_tier.upper()
     raw_trust_score = data.get('trust_score', 75)
-    cert_id = raw_cert
+    cert_id = raw_cert or ''
     include_qr = data.get('include_qr', False)
 
     # Validation
