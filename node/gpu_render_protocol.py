@@ -35,6 +35,17 @@ from functools import wraps
 
 logger = logging.getLogger("gpu_render_protocol")
 
+VALID_JOB_TYPES = ("render", "tts", "stt", "llm")
+
+
+def _normalize_job_type(job_type):
+    """Return a canonical job type or None when the value is unsupported."""
+    if not isinstance(job_type, str):
+        return None
+    normalized = job_type.strip().lower()
+    return normalized if normalized in VALID_JOB_TYPES else None
+
+
 # ---------------------------------------------------------------------------
 # Database schema
 # ---------------------------------------------------------------------------
@@ -232,12 +243,15 @@ class GPURenderProtocol:
 
     def list_gpu_nodes(self, job_type=None, device_arch=None) -> list:
         """List active GPU nodes, optionally filtered by capability or arch."""
+        normalized_job_type = _normalize_job_type(job_type) if job_type else None
+        if job_type and normalized_job_type is None:
+            return []
         conn = self._get_conn()
         try:
             query = "SELECT * FROM gpu_attestations WHERE status='active'"
             params = []
-            if job_type:
-                col = f"supports_{job_type}"
+            if normalized_job_type:
+                col = f"supports_{normalized_job_type}"
                 query += f" AND {col}=1"
             if device_arch:
                 query += " AND device_arch=?"
@@ -255,15 +269,15 @@ class GPURenderProtocol:
     def create_escrow(self, job_type: str, from_wallet: str, to_wallet: str,
                       amount_rtc: float, metadata: dict = None) -> dict:
         """Lock RTC in escrow for a compute job."""
-        valid_types = ("render", "tts", "stt", "llm")
-        if job_type not in valid_types:
-            return {"error": f"job_type must be one of {valid_types}"}
+        normalized_job_type = _normalize_job_type(job_type)
+        if normalized_job_type is None:
+            return {"error": f"job_type must be one of {VALID_JOB_TYPES}"}
         if amount_rtc <= 0:
             return {"error": "amount_rtc must be positive"}
         if from_wallet == to_wallet:
             return {"error": "from_wallet and to_wallet must differ"}
 
-        job_id = f"{job_type}-{uuid.uuid4().hex[:12]}"
+        job_id = f"{normalized_job_type}-{uuid.uuid4().hex[:12]}"
         escrow_secret = secrets.token_hex(16)
         conn = self._get_conn()
         try:
@@ -272,7 +286,7 @@ class GPURenderProtocol:
                    (job_id, job_type, from_wallet, to_wallet, amount_rtc,
                     status, created_at, escrow_secret_hash, metadata)
                    VALUES (?,?,?,?,?,'locked',?,?,?)""",
-                (job_id, job_type, from_wallet, to_wallet, amount_rtc,
+                (job_id, normalized_job_type, from_wallet, to_wallet, amount_rtc,
                  int(time.time()), self._hash_escrow_secret(escrow_secret),
                  json.dumps(metadata or {})),
             )
@@ -280,7 +294,7 @@ class GPURenderProtocol:
             return {
                 "status": "locked",
                 "job_id": job_id,
-                "job_type": job_type,
+                "job_type": normalized_job_type,
                 "amount_rtc": amount_rtc,
                 "from_wallet": from_wallet,
                 "to_wallet": to_wallet,
@@ -382,6 +396,9 @@ class GPURenderProtocol:
 
     def get_fair_market_rates(self, job_type=None) -> dict:
         """Calculate fair market rates from active GPU node pricing."""
+        normalized_job_type = _normalize_job_type(job_type) if job_type else None
+        if job_type and normalized_job_type is None:
+            return {"error": f"job_type must be one of {VALID_JOB_TYPES}", "rates": {}}
         conn = self._get_conn()
         try:
             nodes = conn.execute(
@@ -398,7 +415,7 @@ class GPURenderProtocol:
                 "llm": "price_llm_1k_tokens",
             }
 
-            types_to_check = [job_type] if job_type else list(price_fields.keys())
+            types_to_check = [normalized_job_type] if normalized_job_type else list(price_fields.keys())
             rates = {}
 
             for jt in types_to_check:
@@ -431,11 +448,14 @@ class GPURenderProtocol:
 
     def detect_price_manipulation(self, job_type: str, proposed_price: float) -> dict:
         """Check if a proposed price deviates significantly from market rates."""
-        rates = self.get_fair_market_rates(job_type)
-        if "error" in rates or job_type not in rates.get("rates", {}):
+        normalized_job_type = _normalize_job_type(job_type)
+        if normalized_job_type is None:
+            return {"error": f"job_type must be one of {VALID_JOB_TYPES}"}
+        rates = self.get_fair_market_rates(normalized_job_type)
+        if "error" in rates or normalized_job_type not in rates.get("rates", {}):
             return {"manipulated": False, "reason": "insufficient data"}
 
-        r = rates["rates"][job_type]
+        r = rates["rates"][normalized_job_type]
         # Flag if price is >3x the average or <0.1x the minimum
         if proposed_price > r["avg"] * 3:
             return {"manipulated": True, "reason": "price_too_high",

@@ -3,14 +3,11 @@ Unit tests for RustChain Client (with mocked responses)
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from rustchain import RustChainClient
 from rustchain.exceptions import (
     ConnectionError,
     ValidationError,
-    APIError,
-    AttestationError,
-    TransferError,
 )
 
 
@@ -162,6 +159,27 @@ class TestMinersEndpoint:
             miners = client.miners()
 
         assert miners == []
+
+    @patch("requests.Session.request")
+    def test_miners_envelope_response(self, mock_request):
+        """Test miners endpoint returning an envelope."""
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "data": [
+                {
+                    "miner": "miner-envelope",
+                    "hardware_type": "PowerPC G4",
+                }
+            ],
+            "pagination": {"total": 1},
+        }
+        mock_response.raise_for_status = Mock()
+        mock_request.return_value = mock_response
+
+        with RustChainClient("https://rustchain.org") as client:
+            miners = client.miners()
+
+        assert miners == [{"miner": "miner-envelope", "hardware_type": "PowerPC G4"}]
 
 
 class TestBalanceEndpoint:

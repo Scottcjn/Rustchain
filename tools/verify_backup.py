@@ -43,12 +43,31 @@ def query_one(conn: sqlite3.Connection, sql: str) -> str:
     return "" if row is None or row[0] is None else str(row[0])
 
 
+def table_exists(conn: sqlite3.Connection, table: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?;",
+        (table,),
+    ).fetchone()
+    return row is not None
+
+
+def column_names(conn: sqlite3.Connection, table: str) -> set[str]:
+    return {str(row[1]) for row in conn.execute(f"PRAGMA table_info({table});")}
+
+
 def count_rows(conn: sqlite3.Connection, table: str) -> int:
     return int(query_one(conn, f"SELECT COUNT(*) FROM {table};") or 0)
 
 
 def positive_balances(conn: sqlite3.Connection) -> int:
-    return int(query_one(conn, "SELECT COUNT(*) FROM balances WHERE amount > 0;" ) or 0)
+    columns = column_names(conn, "balances")
+    for column in ("amount", "balance_rtc", "balance", "amount_i64"):
+        if column in columns:
+            return int(query_one(conn, f"SELECT COUNT(*) FROM balances WHERE {column} > 0;") or 0)
+    raise sqlite3.OperationalError(
+        "balances table has no supported positive-balance column "
+        "(expected amount, balance_rtc, balance, or amount_i64)"
+    )
 
 
 def epoch_max(conn: sqlite3.Connection) -> int:
@@ -76,6 +95,13 @@ def verify(live_db: str, backup_file: str) -> CheckResult:
                 return CheckResult(False, lines + [log("RESULT: FAIL")])
 
             for t in REQUIRED_TABLES:
+                if not table_exists(bconn, t):
+                    lines.append(log(f"{t}: missing in backup ❌"))
+                    return CheckResult(False, lines + [log("RESULT: FAIL")])
+                if not table_exists(lconn, t):
+                    lines.append(log(f"{t}: missing in live db ❌"))
+                    return CheckResult(False, lines + [log("RESULT: FAIL")])
+
                 b_count = count_rows(bconn, t)
                 l_count = count_rows(lconn, t)
                 table_ok = b_count > 0 and (l_count - b_count) <= max(1, int(l_count * 0.05))
@@ -98,6 +124,9 @@ def verify(live_db: str, backup_file: str) -> CheckResult:
                 return CheckResult(False, lines + [log("RESULT: FAIL")])
 
             return CheckResult(True, lines + [log("RESULT: PASS")])
+        except sqlite3.Error as exc:
+            lines.append(log(f"SQLite error: {exc}"))
+            return CheckResult(False, lines + [log("RESULT: FAIL")])
         finally:
             bconn.close()
             lconn.close()

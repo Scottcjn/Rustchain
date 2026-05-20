@@ -309,6 +309,18 @@ def _extract_json_object(text: str) -> dict[str, Any] | None:
         return None
 
 
+def _response_json_object(response: Any) -> dict[str, Any]:
+    try:
+        body = response.json()
+    except ValueError as exc:
+        log.warning("Governor LLM returned invalid JSON: %s", exc)
+        return {}
+    if not isinstance(body, dict):
+        log.warning("Governor LLM returned %s JSON, expected object", type(body).__name__)
+        return {}
+    return body
+
+
 def _try_ollama_generate(base_url: str, prompt: str) -> tuple[str | None, str | None]:
     if requests is None:
         return None, None
@@ -324,7 +336,7 @@ def _try_ollama_generate(base_url: str, prompt: str) -> tuple[str | None, str | 
         timeout=(4, 12),
     )
     if response.status_code == 200:
-        body = response.json()
+        body = _response_json_object(response)
         return body.get("response", ""), model
     return None, None
 
@@ -339,7 +351,7 @@ def _try_llama_completion(base_url: str, prompt: str) -> tuple[str | None, str |
         timeout=(4, 12),
     )
     if response.status_code == 200:
-        body = response.json()
+        body = _response_json_object(response)
         return body.get("content", ""), model
     return None, None
 
@@ -359,7 +371,7 @@ def _try_openai_completion(base_url: str, prompt: str) -> tuple[str | None, str 
         timeout=(4, 12),
     )
     if response.status_code == 200:
-        body = response.json()
+        body = _response_json_object(response)
         choices = body.get("choices") or []
         if choices:
             return choices[0].get("text", ""), model

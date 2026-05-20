@@ -280,7 +280,9 @@ def rust_leaderboard():
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         
-        limit = request.args.get('limit', 50, type=int)
+        limit, error_response = _parse_limit_arg()
+        if error_response:
+            return error_response
         
         c.execute("""
             SELECT fingerprint_hash, miner_id, device_arch, device_model,

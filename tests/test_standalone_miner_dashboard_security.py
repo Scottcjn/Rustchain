@@ -28,3 +28,22 @@ def test_fleet_rows_do_not_render_api_fields_with_inner_html():
     assert "appendTextCell(tr, m.machine);" in html
     assert "appendTextCell(tr, m.arch);" in html
     assert 'appendTextCell(tr, m.badge || "-");' in html
+
+
+def test_miner_dashboard_normalizes_miner_payload_envelopes():
+    html = DASHBOARD_HTML.read_text(encoding="utf-8")
+
+    assert "function normalizeMinerRows(payload)" in html
+    assert "Array.isArray(payload?.miners)" in html
+    assert "Array.isArray(payload?.data)" in html
+    assert "Array.isArray(payload?.items)" in html
+    assert "const miners = normalizeMinerRows(minersRes);" in html
+
+
+def test_miner_dashboard_normalizes_miner_row_ids_before_lookup():
+    html = DASHBOARD_HTML.read_text(encoding="utf-8")
+
+    assert "const miner = row.miner || row.miner_id || row.id;" in html
+    assert 'return Object.assign({}, row, { miner: String(miner) });' in html
+    assert "}).filter(Boolean);" in html
+    assert 'String(m.miner || "").toLowerCase() === minerId.toLowerCase()' in html

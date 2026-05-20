@@ -107,9 +107,20 @@ def _verify_commitment(report_json_str: str, claimed_commitment: str) -> bool:
     """Recompute BLAKE2b commitment and compare."""
     try:
         report = json.loads(report_json_str)
+        if not isinstance(report, dict):
+            return False
         return hmac.compare_digest(_report_commitment(report), claimed_commitment)
     except Exception:
         return False
+
+
+def _load_report_object(report_json_str: str):
+    """Load a stored BCOS report only when it is a JSON object."""
+    try:
+        report = json.loads(report_json_str)
+    except (TypeError, json.JSONDecodeError):
+        return None
+    return report if isinstance(report, dict) else None
 
 
 def _verify_ed25519(commitment: str, signature_hex: str, pubkey_hex: str) -> bool:
@@ -304,7 +315,7 @@ def bcos_attest():
         })
     except sqlite3.IntegrityError:
         return jsonify({"error": f"Certificate {cert_id} already exists"}), 409
-    except Exception as e:
+    except Exception:
         import logging
         logging.exception("bcos_handler failed")
         return jsonify({"error": "internal_error"}), 500
@@ -328,10 +339,14 @@ def bcos_verify(cert_id):
                 "hint": "Check the cert_id format: BCOS-xxxxxxxx",
             }), 404
 
-        # Recompute commitment from stored report
-        report = json.loads(row["report_json"])
-        recomputed = _report_commitment(report)
-        commitment_valid = hmac.compare_digest(recomputed, row["commitment"])
+        # Recompute commitment from stored report when it is still parseable.
+        report = _load_report_object(row["report_json"])
+        if report is None:
+            report = {}
+            commitment_valid = False
+        else:
+            recomputed = _report_commitment(report)
+            commitment_valid = hmac.compare_digest(recomputed, row["commitment"])
 
         # Verify Ed25519 signature if present
         sig_valid = None
@@ -361,7 +376,7 @@ def bcos_verify(cert_id):
             "badge_url": _bcos_public_url(f"/bcos/badge/{cert_id}.svg"),
             "pdf_url": _bcos_public_url(f"/bcos/cert/{cert_id}.pdf"),
         })
-    except Exception as e:
+    except Exception:
         import logging
         logging.exception("bcos_handler failed")
         return jsonify({"error": "internal_error"}), 500
@@ -385,7 +400,13 @@ def bcos_certificate_pdf(cert_id):
             return jsonify({"error": f"Certificate {cert_id} not found"}), 404
 
         # Build attestation dict for PDF generator
-        report = json.loads(row["report_json"])
+        report = _load_report_object(row["report_json"])
+        if report is None:
+            return jsonify({
+                "error": "invalid_report",
+                "message": "Stored report JSON is not an object",
+            }), 422
+
         attestation = {
             **report,
             "cert_id": row["cert_id"],
@@ -403,7 +424,7 @@ def bcos_certificate_pdf(cert_id):
             as_attachment=True,
             download_name=f"{cert_id}.pdf",
         )
-    except Exception as e:
+    except Exception:
         import logging
         logging.exception("bcos_handler failed")
         return jsonify({"error": "internal_error"}), 500
@@ -431,7 +452,7 @@ def bcos_badge_svg(cert_id):
 
         return Response(svg, mimetype="image/svg+xml",
                         headers={"Cache-Control": "max-age=300"})
-    except Exception as e:
+    except Exception:
         return Response(
             _generate_badge_svg("ERR", 0),
             mimetype="image/svg+xml",
@@ -494,7 +515,7 @@ def bcos_directory():
             "offset": offset,
             "certificates": certs,
         })
-    except Exception as e:
+    except Exception:
         import logging
         logging.exception("bcos_handler failed")
         return jsonify({"error": "internal_error"}), 500

@@ -6,7 +6,6 @@ Allows G4 to connect via different port
 
 from flask import Flask, request, jsonify
 import requests
-import json
 from urllib.parse import quote
 
 app = Flask(__name__)
@@ -67,9 +66,11 @@ def proxy(path):
                 return response.json(), response.status_code
             except ValueError:
                 return _generic_upstream_error(response, "invalid json")
-        else:
-            # Non-JSON response (e.g., HTML error page), return as-is with text
-            return response.text, response.status_code
+        if response.status_code >= 400:
+            return _generic_upstream_error(response, "non-json error response")
+
+        # Successful non-JSON response (for example, plain health text).
+        return response.text, response.status_code
 
     except requests.exceptions.Timeout:
         return jsonify({'error': 'Local server timeout'}), 504
@@ -94,7 +95,7 @@ def home():
     })
 
 if __name__ == '__main__':
-    print(f"Starting RustChain proxy on port 8089...")
+    print("Starting RustChain proxy on port 8089...")
     print(f"Forwarding to: {LOCAL_SERVER}")
-    print(f"G4 can connect to: https://rustchain.org:8089")
+    print("G4 can connect to: https://rustchain.org:8089")
     app.run(host='0.0.0.0', port=8089, debug=False)

@@ -307,13 +307,20 @@ class RustChainNodeClient:
     def get_miners(self) -> List[MinerInfo]:
         """Fetch active miners."""
         data = self._fetch_json('/api/miners')
+        if isinstance(data, dict):
+            for key in ('miners', 'data', 'items'):
+                miners = data.get(key)
+                if isinstance(miners, list):
+                    data = miners
+                    break
+
         if not data or not isinstance(data, list):
             return []
 
         miners = []
         for item in data:
             miner = MinerInfo(
-                miner_id=item.get('miner_id', item.get('id', '')),
+                miner_id=item.get('miner_id', item.get('miner', item.get('id', ''))),
                 hardware_type=item.get('hardware_type', 'Unknown'),
                 device_arch=item.get('device_arch', item.get('arch', 'Unknown')),
                 antiquity_multiplier=item.get('antiquity_multiplier', 1.0),

@@ -92,9 +92,12 @@ def _get(path: str, params: dict | None = None, timeout: float | None = None):
             timeout=timeout or REQUEST_TIMEOUT,
         )
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        if isinstance(data, dict):
+            return data
     except Exception:
         return None
+    return None
 
 
 def _post(path: str, json_body: dict | None = None, timeout: float | None = None):
@@ -106,9 +109,12 @@ def _post(path: str, json_body: dict | None = None, timeout: float | None = None
             timeout=timeout or REQUEST_TIMEOUT,
         )
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        if isinstance(data, dict):
+            return data
     except Exception:
         return None
+    return None
 
 
 def _positive_int_arg(name: str, default: int, max_value: int | None = None):

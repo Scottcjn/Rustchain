@@ -30,6 +30,7 @@ from anti_double_mining import (
     select_representative_miner,
     get_epoch_miner_groups,
     calculate_anti_double_mining_rewards,
+    _calculate_anti_double_mining_rewards_conn,
     setup_test_scenario,
     GENESIS_TIMESTAMP
 )
@@ -379,6 +380,84 @@ class TestAntiDoubleMiningRewards(unittest.TestCase):
         # Machine B is unique, should be rewarded
         self.assertIn("miner-b1", rewards)
         self.assertGreater(rewards["miner-b1"], 0, "Unique machine should receive positive reward")
+
+
+class TestAntiDoubleMiningEnrolledWeights(unittest.TestCase):
+    """Reward weights must match the canonical epoch_enroll snapshot."""
+
+    def setUp(self):
+        self.test_db = _test_db_path("test_1449_enrolled_weights")
+        if os.path.exists(self.test_db):
+            os.remove(self.test_db)
+
+        self.conn = sqlite3.connect(self.test_db)
+        self.conn.executescript("""
+            CREATE TABLE epoch_enroll (
+                epoch INTEGER NOT NULL,
+                miner_pk TEXT NOT NULL,
+                weight REAL NOT NULL,
+                PRIMARY KEY(epoch, miner_pk)
+            );
+            CREATE TABLE miner_attest_recent (
+                miner TEXT PRIMARY KEY,
+                device_arch TEXT,
+                ts_ok INTEGER,
+                fingerprint_passed INTEGER DEFAULT 1,
+                entropy_score REAL DEFAULT 0.5,
+                warthog_bonus REAL DEFAULT 1.0
+            );
+            CREATE TABLE miner_fingerprint_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                miner TEXT NOT NULL,
+                ts INTEGER NOT NULL,
+                profile_json TEXT NOT NULL
+            );
+        """)
+
+        # Same device_arch but different enrolled weights.  The anti-double-mining
+        # path should preserve the canonical epoch_enroll split, not recompute a
+        # fresh equal arch-based split.
+        epoch_start_ts = GENESIS_TIMESTAMP + (7 * 144 * 600)
+        for miner, weight, serial in [
+            ("miner-heavy", 100.0, "ADM-WEIGHT-A"),
+            ("miner-light", 1.0, "ADM-WEIGHT-B"),
+        ]:
+            self.conn.execute(
+                "INSERT INTO epoch_enroll(epoch, miner_pk, weight) VALUES (7, ?, ?)",
+                (miner, weight),
+            )
+            self.conn.execute("""
+                INSERT INTO miner_attest_recent
+                    (miner, device_arch, ts_ok, fingerprint_passed, entropy_score, warthog_bonus)
+                VALUES (?, 'modern', ?, 1, 0.5, 1.0)
+            """, (miner, epoch_start_ts))
+            profile = json.dumps({
+                "checks": {"cpu_serial": {"data": {"serial": serial}}}
+            })
+            self.conn.execute(
+                "INSERT INTO miner_fingerprint_history(miner, ts, profile_json) VALUES (?, ?, ?)",
+                (miner, epoch_start_ts, profile),
+            )
+        self.conn.commit()
+
+    def tearDown(self):
+        self.conn.close()
+        if os.path.exists(self.test_db):
+            os.remove(self.test_db)
+
+    def test_path_opening_own_connection_uses_enrolled_weights(self):
+        rewards, _ = calculate_anti_double_mining_rewards(
+            self.test_db, epoch=7, total_reward_urtc=10_100, current_slot=7 * 144 + 1
+        )
+
+        self.assertEqual(rewards, {"miner-heavy": 10_000, "miner-light": 100})
+
+    def test_existing_connection_path_uses_enrolled_weights(self):
+        rewards, _ = _calculate_anti_double_mining_rewards_conn(
+            self.conn, epoch=7, total_reward_urtc=10_100, current_slot=7 * 144 + 1
+        )
+
+        self.assertEqual(rewards, {"miner-heavy": 10_000, "miner-light": 100})
 
 
 class TestIdempotency(unittest.TestCase):

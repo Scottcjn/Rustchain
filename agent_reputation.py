@@ -180,13 +180,21 @@ class ReputationEngine:
                 if isinstance(miners_data, list):
                     miners = miners_data
                 elif isinstance(miners_data, dict):
-                    raw_miners = miners_data.get("miners", [])
-                    if isinstance(raw_miners, list):
-                        miners = raw_miners
+                    for key in ("miners", "data", "items"):
+                        raw_miners = miners_data.get(key)
+                        if isinstance(raw_miners, list):
+                            miners = raw_miners
+                            break
                 for m in miners:
                     if not isinstance(m, dict):
                         continue
-                    if m.get("wallet_name") == wallet or m.get("wallet") == wallet:
+                    miner_id = (
+                        m.get("wallet_name")
+                        or m.get("wallet")
+                        or m.get("miner")
+                        or m.get("miner_id")
+                    )
+                    if miner_id == wallet:
                         hardware_verified = True
                         break
 
@@ -352,7 +360,8 @@ def check_eligibility():
         return jsonify({"error": "agent_id required"}), 400
 
     try:
-        job_value = float(request.args.get("job_value", 0))
+        raw_job_value = request.args.get("job_value")
+        job_value = float(raw_job_value) if raw_job_value not in (None, "") else 0
     except (ValueError, TypeError):
         return jsonify({"error": "job_value must be a number"}), 400
     if not math.isfinite(job_value) or job_value < 0:
@@ -391,7 +400,8 @@ def leaderboard():
     Returns top agents by reputation (from cache).
     """
     try:
-        limit = min(int(request.args.get("limit", 20)), 100)
+        raw_limit = request.args.get("limit")
+        limit = min(int(raw_limit), 100) if raw_limit not in (None, "") else 20
     except (ValueError, TypeError):
         return jsonify({"error": "limit must be an integer"}), 400
     if limit < 1:

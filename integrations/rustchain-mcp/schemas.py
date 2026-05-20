@@ -13,17 +13,18 @@ from typing import Any, Optional
 @dataclass
 class HealthStatus:
     """Response from /api/health endpoint."""
+
     status: str
     timestamp: int
     service: str
     version: Optional[str] = None
     uptime_s: Optional[int] = None
-    
+
     @property
     def is_healthy(self) -> bool:
         """Check if service is healthy."""
         return self.status.lower() in ("ok", "healthy", "running")
-    
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "HealthStatus":
         """Create from API response dict."""
@@ -39,6 +40,7 @@ class HealthStatus:
 @dataclass
 class EpochInfo:
     """Response from /epoch endpoint."""
+
     epoch: int
     slot: int
     height: int
@@ -47,7 +49,7 @@ class EpochInfo:
     active_miners: Optional[int] = None
     total_rewards: Optional[float] = None
     status: Optional[str] = None
-    
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "EpochInfo":
         """Create from API response dict."""
@@ -66,18 +68,19 @@ class EpochInfo:
 @dataclass
 class WalletBalance:
     """Response from /wallet/balance endpoint."""
+
     miner_id: str
     amount_rtc: float
     amount_i64: int
     pending: Optional[float] = None
     staked: Optional[float] = None
     last_updated: Optional[int] = None
-    
+
     @property
     def total_rtc(self) -> float:
         """Total balance including staked."""
         return self.amount_rtc + (self.staked or 0)
-    
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "WalletBalance":
         """Create from API response dict."""
@@ -94,12 +97,13 @@ class WalletBalance:
 @dataclass
 class QueryResult:
     """Generic query result for /api/query endpoint."""
+
     success: bool
     data: Any = field(default_factory=dict)
     error: Optional[str] = None
     count: Optional[int] = None
     query_type: Optional[str] = None
-    
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "QueryResult":
         """Create from API response dict."""
@@ -115,6 +119,7 @@ class QueryResult:
 @dataclass
 class MinerInfo:
     """Miner information from /api/miners endpoint."""
+
     miner_id: str
     wallet: str
     hardware: str
@@ -124,14 +129,17 @@ class MinerInfo:
     status: str
     antiquity_multiplier: Optional[float] = None
     last_attest: Optional[int] = None
-    
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "MinerInfo":
         """Create from API response dict."""
         return cls(
-            miner_id=data.get("miner_id", data.get("id", "")),
-            wallet=data.get("wallet", ""),
-            hardware=data.get("hardware", ""),
+            miner_id=data.get(
+                "miner_id",
+                data.get("miner", data.get("id", data.get("name", ""))),
+            ),
+            wallet=data.get("wallet", data.get("miner_id", data.get("miner", ""))),
+            hardware=data.get("hardware", data.get("hardware_type", "")),
             score=data.get("score", 0),
             epochs_mined=data.get("epochs_mined", 0),
             last_seen=data.get("last_seen", 0),
@@ -144,13 +152,14 @@ class MinerInfo:
 @dataclass
 class NetworkStats:
     """Network statistics from /api/stats endpoint."""
+
     current_epoch: int
     total_miners: int
     active_miners: int
     total_supply: float
     network_hashrate: Optional[float] = None
     avg_block_time: Optional[float] = None
-    
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "NetworkStats":
         """Create from API response dict."""
@@ -167,11 +176,12 @@ class NetworkStats:
 @dataclass
 class APIError(Exception):
     """Standardized API error."""
+
     code: str
     message: str
     status_code: int = 500
     details: Optional[dict[str, Any]] = None
-    
+
     @classmethod
     def from_response(cls, status: int, body: dict[str, Any]) -> "APIError":
         """Create from API error response."""
@@ -181,7 +191,7 @@ class APIError(Exception):
             status_code=status,
             details=body.get("details"),
         )
-    
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dict."""
         return {

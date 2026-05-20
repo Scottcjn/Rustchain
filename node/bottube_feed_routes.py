@@ -46,6 +46,13 @@ def _get_base_url() -> str:
     return request.host_url.rstrip("/")
 
 
+def _parse_feed_limit(default: int = 20, maximum: int = 100) -> int:
+    raw_limit = request.args.get("limit")
+    if raw_limit in (None, ""):
+        return default
+    return max(1, min(int(raw_limit), maximum))
+
+
 def _get_db_connection():
     """Get database connection from Flask app config."""
     db_path = current_app.config.get("DB_PATH")
@@ -226,7 +233,7 @@ def rss_feed():
     """
     try:
         # Parse parameters
-        limit = max(1, min(int(request.args.get("limit", 20)), 100))
+        limit = _parse_feed_limit()
         agent = request.args.get("agent")
         cursor = request.args.get("cursor")
         
@@ -280,7 +287,7 @@ def atom_feed():
     """
     try:
         # Parse parameters
-        limit = max(1, min(int(request.args.get("limit", 20)), 100))
+        limit = _parse_feed_limit()
         agent = request.args.get("agent")
         cursor = request.args.get("cursor")
         
@@ -342,7 +349,7 @@ def feed_index():
     
     # Parse parameters
     try:
-        limit = max(1, min(int(request.args.get("limit", 20)), 100))
+        limit = _parse_feed_limit()
     except ValueError:
         return jsonify({"error": "Invalid limit parameter"}), 400
     
