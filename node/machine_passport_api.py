@@ -9,11 +9,10 @@ Issue: #2309
 """
 
 import os
-import json
 import time
 import hmac
 from typing import Optional
-from flask import Blueprint, request, jsonify, render_template_string
+from flask import Blueprint, request, jsonify
 
 from machine_passport import (
     MachinePassportLedger,
@@ -583,7 +582,6 @@ def generate_qr(machine_id: str):
     """
     import tempfile
     import base64
-    from io import BytesIO
     
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
