@@ -855,7 +855,7 @@ def register_bridge_routes(app):
             return jsonify({"error": "unauthorized"}), 401
         
         data = request.get_json(silent=True)
-        if not data:
+        if not isinstance(data, dict) or not data:
             return jsonify({"error": "Request body required"}), 400
         
         tx_hash = data.get("tx_hash")
@@ -886,7 +886,7 @@ def register_bridge_routes(app):
             return jsonify({"error": "Unauthorized"}), 401
         
         data = request.get_json(silent=True)
-        if not data:
+        if not isinstance(data, dict) or not data:
             return jsonify({"error": "Request body required"}), 400
         
         tx_hash = data.get("tx_hash")
