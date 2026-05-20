@@ -446,6 +446,36 @@
     let currentStatus = 'all';
     let allJobs = [];
     let allActivity = [];
+    const allowedStatuses = ['open', 'claimed', 'delivered', 'completed'];
+    const allowedCategories = ['code', 'research', 'writing', 'video', 'audio', 'design', 'data', 'testing', 'other'];
+    const allowedTrustLevels = ['legendary', 'trusted', 'neutral', 'risky', 'unknown'];
+
+    function safeNumber(value, fallback = 0) {
+        const n = Number(value);
+        return Number.isFinite(n) ? n : fallback;
+    }
+
+    function safeToken(value, allowed, fallback) {
+        const token = String(value || fallback).toLowerCase();
+        return allowed.includes(token) ? token : fallback;
+    }
+
+    function safeStatus(value) {
+        return safeToken(value, allowedStatuses, 'open');
+    }
+
+    function safeCategory(value) {
+        return safeToken(value, allowedCategories, 'other');
+    }
+
+    function safeTrustLevel(value) {
+        return safeToken(value, allowedTrustLevels, 'unknown');
+    }
+
+    function normalizeJobs(payload) {
+        const rows = Array.isArray(payload) ? payload : (Array.isArray(payload?.jobs) ? payload.jobs : []);
+        return rows.filter(j => j && typeof j === 'object');
+    }
 
     // Tab switching
     function switchTab(name) {
@@ -474,10 +504,10 @@
         let filtered = allJobs;
 
         if (currentStatus !== 'all') {
-            filtered = filtered.filter(j => j.status === currentStatus);
+            filtered = filtered.filter(j => safeStatus(j.status) === currentStatus);
         }
         if (cat) {
-            filtered = filtered.filter(j => j.category === cat);
+            filtered = filtered.filter(j => safeCategory(j.category) === cat);
         }
 
         if (filtered.length === 0) {
@@ -487,27 +517,31 @@
 
         grid.innerHTML = filtered.map(j => {
             const age = timeSince(j.created_at);
+            const status = safeStatus(j.status);
+            const category = safeCategory(j.category);
+            const reward = safeNumber(j.reward_rtc).toFixed(1);
             let tags = [];
             try { tags = JSON.parse(j.tags || '[]'); } catch(e) {}
+            if (!Array.isArray(tags)) tags = [];
 
             return `<div class="job-card">
                 <div style="display:flex; justify-content:space-between; align-items:start;">
                     <div class="job-title">${esc(j.title)}</div>
-                    <span class="badge badge-${j.status}">${j.status}</span>
+                    <span class="badge badge-${status}">${esc(status)}</span>
                 </div>
                 <div class="job-meta">
-                    <span class="job-reward">${j.reward_rtc} RTC</span>
-                    <span>${j.category}</span>
-                    <span>${age}</span>
-                    ${j.worker_wallet ? `<span>Worker: <span class="activity-wallet">${j.worker_wallet}</span></span>` : ''}
+                    <span class="job-reward">${esc(reward)} RTC</span>
+                    <span>${esc(category)}</span>
+                    <span>${esc(age)}</span>
+                    ${j.worker_wallet ? `<span>Worker: <span class="activity-wallet">${esc(j.worker_wallet)}</span></span>` : ''}
                 </div>
                 <div class="job-desc">${esc(j.description || '')}</div>
                 <div class="job-tags">
                     ${tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}
                 </div>
                 <div style="margin-top:8px; font-size:11px; color:var(--text3);">
-                    Posted by <span class="activity-wallet">${j.poster_wallet}</span>
-                    &bull; ID: ${j.job_id}
+                    Posted by <span class="activity-wallet">${esc(j.poster_wallet)}</span>
+                    &bull; ID: ${esc(j.job_id)}
                 </div>
             </div>`;
         }).join('');
@@ -525,8 +559,8 @@
                         .catch(() => ({jobs: []}))
                 )
             );
-            allJobs = results.flatMap(r => r.jobs || []);
-            allJobs.sort((a, b) => b.created_at - a.created_at);
+            allJobs = results.flatMap(r => normalizeJobs(r));
+            allJobs.sort((a, b) => safeNumber(b.created_at) - safeNumber(a.created_at));
             renderJobs();
         } catch (e) {
             document.getElementById('jobs-grid').innerHTML =
@@ -540,12 +574,12 @@
             const r = await fetch(`${NODE}/agent/stats`);
             const data = await r.json();
             if (!data.ok) return;
-            const s = data.stats;
-            document.getElementById('h-volume').textContent = s.total_rtc_volume.toFixed(0);
-            document.getElementById('h-jobs').textContent = s.total_jobs;
-            document.getElementById('h-agents').textContent = s.active_agents;
-            document.getElementById('h-escrow').textContent = s.escrow_balance_rtc.toFixed(1);
-            document.getElementById('h-fees').textContent = s.total_fees_collected.toFixed(1);
+            const s = data.stats || {};
+            document.getElementById('h-volume').textContent = safeNumber(s.total_rtc_volume).toFixed(0);
+            document.getElementById('h-jobs').textContent = safeNumber(s.total_jobs);
+            document.getElementById('h-agents').textContent = safeNumber(s.active_agents);
+            document.getElementById('h-escrow').textContent = safeNumber(s.escrow_balance_rtc).toFixed(1);
+            document.getElementById('h-fees').textContent = safeNumber(s.total_fees_collected).toFixed(1);
         } catch (e) {}
     }
 
@@ -557,23 +591,23 @@
             const r = await fetch(`${NODE}/agent/jobs?status=completed&limit=100`);
             const data = await r.json();
             const wallets = new Set();
-            (data.jobs || []).forEach(j => {
-                if (j.poster_wallet) wallets.add(j.poster_wallet);
-                if (j.worker_wallet) wallets.add(j.worker_wallet);
+            normalizeJobs(data).forEach(j => {
+                if (j.poster_wallet) wallets.add(String(j.poster_wallet));
+                if (j.worker_wallet) wallets.add(String(j.worker_wallet));
             });
 
             // Also get from open jobs
             const r2 = await fetch(`${NODE}/agent/jobs?status=open&limit=100`);
             const data2 = await r2.json();
-            (data2.jobs || []).forEach(j => {
-                if (j.poster_wallet) wallets.add(j.poster_wallet);
+            normalizeJobs(data2).forEach(j => {
+                if (j.poster_wallet) wallets.add(String(j.poster_wallet));
             });
 
             // Fetch reputation for each
             const reps = await Promise.all(
                 [...wallets].map(async w => {
                     try {
-                        const rr = await fetch(`${NODE}/agent/reputation/${w}`);
+                        const rr = await fetch(`${NODE}/agent/reputation/${encodeURIComponent(w)}`);
                         const rd = await rr.json();
                         if (rd.reputation) return { wallet: w, ...rd.reputation };
                         return { wallet: w, trust_score: 50, trust_level: 'neutral',
@@ -595,24 +629,28 @@
             body.innerHTML = sorted.map((a, i) => {
                 const rank = i + 1;
                 const rankClass = rank <= 3 ? `rank-${rank}` : 'rank-other';
-                const trustColor = a.trust_score >= 90 ? 'var(--gold)' :
-                                   a.trust_score >= 70 ? 'var(--green)' :
-                                   a.trust_score >= 40 ? 'var(--blue)' : 'var(--red)';
-                const jobs = (a.jobs_completed_as_worker || 0) + (a.jobs_completed_as_poster || 0);
+                const trustScore = Math.min(Math.max(safeNumber(a.trust_score, 50), 0), 100);
+                const trustLevel = safeTrustLevel(a.trust_level);
+                const totalEarned = safeNumber(a.total_rtc_earned);
+                const avgRating = safeNumber(a.avg_rating);
+                const trustColor = trustScore >= 90 ? 'var(--gold)' :
+                                   trustScore >= 70 ? 'var(--green)' :
+                                   trustScore >= 40 ? 'var(--blue)' : 'var(--red)';
+                const jobs = safeNumber(a.jobs_completed_as_worker) + safeNumber(a.jobs_completed_as_poster);
 
                 return `<tr>
                     <td><span class="rank-badge ${rankClass}">${rank}</span></td>
-                    <td><span class="activity-wallet">${a.wallet}</span></td>
+                    <td><span class="activity-wallet">${esc(a.wallet)}</span></td>
                     <td>
-                        <span style="color:${trustColor}; font-weight:600;">${a.trust_score || 50}</span>
+                        <span style="color:${trustColor}; font-weight:600;">${esc(trustScore)}</span>
                         <div class="trust-bar">
-                            <div class="trust-fill" style="width:${a.trust_score || 50}%; background:${trustColor};"></div>
+                            <div class="trust-fill" style="width:${trustScore}%; background:${trustColor};"></div>
                         </div>
                     </td>
-                    <td><span class="badge badge-${(a.trust_level||'neutral') === 'legendary' ? 'completed' : 'open'}">${a.trust_level || 'neutral'}</span></td>
-                    <td>${jobs}</td>
-                    <td><span style="color:var(--gold); font-family:monospace;">${(a.total_rtc_earned || 0).toFixed(1)}</span> RTC</td>
-                    <td>${a.avg_rating ? `${a.avg_rating.toFixed(1)} ★` : '--'}</td>
+                    <td><span class="badge badge-${trustLevel === 'legendary' ? 'completed' : 'open'}">${esc(trustLevel)}</span></td>
+                    <td>${esc(jobs)}</td>
+                    <td><span style="color:var(--gold); font-family:monospace;">${esc(totalEarned.toFixed(1))}</span> RTC</td>
+                    <td>${avgRating ? `${esc(avgRating.toFixed(1))} ★` : '--'}</td>
                 </tr>`;
             }).join('');
         } catch (e) {
@@ -625,28 +663,28 @@
         try {
             const r = await fetch(`${NODE}/agent/stats`);
             const data = await r.json();
-            const s = data.stats;
+            const s = data.stats || {};
 
             document.getElementById('escrow-balance').textContent =
-                s.escrow_balance_rtc.toFixed(2);
+                safeNumber(s.escrow_balance_rtc).toFixed(2);
 
             document.getElementById('escrow-stats').innerHTML = `
                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; font-size:13px;">
                     <div>
                         <div style="color:var(--text3);">Open Jobs</div>
-                        <div style="font-size:20px; font-weight:700;">${s.open_jobs}</div>
+                        <div style="font-size:20px; font-weight:700;">${esc(safeNumber(s.open_jobs))}</div>
                     </div>
                     <div>
                         <div style="color:var(--text3);">Completed</div>
-                        <div style="font-size:20px; font-weight:700; color:var(--green);">${s.completed_jobs}</div>
+                        <div style="font-size:20px; font-weight:700; color:var(--green);">${esc(safeNumber(s.completed_jobs))}</div>
                     </div>
                     <div>
                         <div style="color:var(--text3);">Total Volume</div>
-                        <div style="font-size:20px; font-weight:700; color:var(--gold);">${s.total_rtc_volume.toFixed(0)} RTC</div>
+                        <div style="font-size:20px; font-weight:700; color:var(--gold);">${esc(safeNumber(s.total_rtc_volume).toFixed(0))} RTC</div>
                     </div>
                     <div>
                         <div style="color:var(--text3);">Platform Fees</div>
-                        <div style="font-size:20px; font-weight:700; color:var(--purple);">${s.total_fees_collected.toFixed(1)} RTC</div>
+                        <div style="font-size:20px; font-weight:700; color:var(--purple);">${esc(safeNumber(s.total_fees_collected).toFixed(1))} RTC</div>
                     </div>
                 </div>
             `;
@@ -657,7 +695,7 @@
                 fetch(`${NODE}/agent/jobs?status=claimed&limit=20`).then(r => r.json()),
             ]);
 
-            const escrowJobs = [...(openR.jobs||[]), ...(claimedR.jobs||[])];
+            const escrowJobs = [...normalizeJobs(openR), ...normalizeJobs(claimedR)];
             if (escrowJobs.length === 0) {
                 document.getElementById('escrow-jobs').innerHTML =
                     '<div style="color:var(--text3); text-align:center;">No active escrows</div>';
@@ -670,13 +708,13 @@
                     <div>
                         <div style="font-weight:600; font-size:13px;">${esc(j.title)}</div>
                         <div style="font-size:11px; color:var(--text3);">
-                            ${j.job_id} &bull; ${j.poster_wallet}
+                            ${esc(j.job_id)} &bull; ${esc(j.poster_wallet)}
                         </div>
                     </div>
                     <div style="text-align:right;">
-                        <span class="badge badge-${j.status}">${j.status}</span>
+                        <span class="badge badge-${safeStatus(j.status)}">${esc(safeStatus(j.status))}</span>
                         <div style="color:var(--gold); font-family:monospace; font-size:14px; font-weight:600;">
-                            ${j.reward_rtc} RTC
+                            ${esc(safeNumber(j.reward_rtc).toFixed(1))} RTC
                         </div>
                     </div>
                 </div>
@@ -699,27 +737,27 @@
 
             const activities = [];
 
-            (compR.jobs || []).forEach(j => {
+            normalizeJobs(compR).forEach(j => {
                 activities.push({
                     type: 'complete', time: j.completed_at || j.created_at,
                     title: j.title, poster: j.poster_wallet, worker: j.worker_wallet,
                     reward: j.reward_rtc
                 });
             });
-            (delR.jobs || []).forEach(j => {
+            normalizeJobs(delR).forEach(j => {
                 activities.push({
                     type: 'deliver', time: j.delivered_at || j.created_at,
                     title: j.title, worker: j.worker_wallet, reward: j.reward_rtc
                 });
             });
-            (claimR.jobs || []).forEach(j => {
+            normalizeJobs(claimR).forEach(j => {
                 activities.push({
                     type: 'claim', time: j.claimed_at || j.created_at,
                     title: j.title, worker: j.worker_wallet, reward: j.reward_rtc
                 });
             });
 
-            activities.sort((a, b) => b.time - a.time);
+            activities.sort((a, b) => safeNumber(b.time) - safeNumber(a.time));
 
             if (activities.length === 0) {
                 feed.innerHTML = '<div style="color:var(--text3); text-align:center;">No activity yet</div>';
@@ -729,15 +767,15 @@
             feed.innerHTML = activities.slice(0, 30).map(a => {
                 const icons = { complete: '&#9989;', deliver: '&#128230;', claim: '&#9997;', post: '&#128203;' };
                 const labels = {
-                    complete: `<span class="activity-wallet">${a.worker}</span> completed "${esc(a.title)}" for <span style="color:var(--gold)">${a.reward} RTC</span>`,
-                    deliver: `<span class="activity-wallet">${a.worker}</span> delivered "${esc(a.title)}"`,
-                    claim: `<span class="activity-wallet">${a.worker}</span> claimed "${esc(a.title)}"`,
+                    complete: `<span class="activity-wallet">${esc(a.worker)}</span> completed "${esc(a.title)}" for <span style="color:var(--gold)">${esc(safeNumber(a.reward).toFixed(1))} RTC</span>`,
+                    deliver: `<span class="activity-wallet">${esc(a.worker)}</span> delivered "${esc(a.title)}"`,
+                    claim: `<span class="activity-wallet">${esc(a.worker)}</span> claimed "${esc(a.title)}"`,
                 };
                 return `<div class="activity-item">
-                    <div class="activity-icon ${a.type}">${icons[a.type]}</div>
+                    <div class="activity-icon ${esc(a.type)}">${icons[a.type]}</div>
                     <div>
                         <div class="activity-text">${labels[a.type]}</div>
-                        <div class="activity-time">${timeSince(a.time)}</div>
+                        <div class="activity-time">${esc(timeSince(a.time))}</div>
                     </div>
                 </div>`;
             }).join('');
@@ -751,28 +789,33 @@
         try {
             const r = await fetch(`${NODE}/agent/stats`);
             const data = await r.json();
-            const s = data.stats;
+            const s = data.stats || {};
 
             // Category chart
-            const cats = s.categories || [];
-            const maxJobs = Math.max(...cats.map(c => c.jobs), 1);
+            const cats = Array.isArray(s.categories) ? s.categories.filter(c => c && typeof c === 'object') : [];
+            const maxJobs = Math.max(...cats.map(c => safeNumber(c.jobs)), 1);
             const colors = ['var(--gold)', 'var(--green)', 'var(--blue)', 'var(--purple)',
                            'var(--cyan)', 'var(--red)', '#ff7b72', '#d2a8ff', '#79c0ff'];
 
             document.getElementById('category-chart').innerHTML = cats.map((c, i) => {
-                const pct = (c.jobs / maxJobs * 100).toFixed(0);
+                const jobs = safeNumber(c.jobs);
+                const total = safeNumber(c.total_rtc);
+                const pct = Math.min(Math.max(jobs / maxJobs * 100, 0), 100).toFixed(0);
                 return `<div class="category-bar">
-                    <span class="category-label">${c.category}</span>
+                    <span class="category-label">${esc(safeCategory(c.category))}</span>
                     <div class="category-track">
                         <div class="category-fill" style="width:${pct}%; background:${colors[i % colors.length]};">
-                            ${c.jobs} jobs (${c.total_rtc.toFixed(0)} RTC)
+                            ${esc(jobs)} jobs (${esc(total.toFixed(0))} RTC)
                         </div>
                     </div>
                 </div>`;
             }).join('');
 
             // Platform metrics
-            const avgReward = s.total_rtc_volume / Math.max(s.completed_jobs, 1);
+            const totalVolume = safeNumber(s.total_rtc_volume);
+            const totalJobs = safeNumber(s.total_jobs);
+            const completedJobs = safeNumber(s.completed_jobs);
+            const avgReward = totalVolume / Math.max(completedJobs, 1);
             document.getElementById('platform-metrics').innerHTML = `
                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
                     <div>
@@ -784,19 +827,19 @@
                     <div>
                         <div style="color:var(--text3); font-size:12px;">Completion Rate</div>
                         <div style="font-size:20px; font-weight:700; color:var(--green); font-family:monospace;">
-                            ${(s.completed_jobs / Math.max(s.total_jobs, 1) * 100).toFixed(0)}%
+                            ${(completedJobs / Math.max(totalJobs, 1) * 100).toFixed(0)}%
                         </div>
                     </div>
                     <div>
                         <div style="color:var(--text3); font-size:12px;">Fee Rate</div>
                         <div style="font-size:20px; font-weight:700; font-family:monospace;">
-                            ${s.platform_fee_rate}
+                            ${esc(s.platform_fee_rate)}
                         </div>
                     </div>
                     <div>
                         <div style="color:var(--text3); font-size:12px;">Est. USD Volume</div>
                         <div style="font-size:20px; font-weight:700; color:var(--cyan); font-family:monospace;">
-                            $${(s.total_rtc_volume * 0.10).toFixed(0)}
+                            $${(totalVolume * 0.10).toFixed(0)}
                         </div>
                     </div>
                 </div>
@@ -808,7 +851,7 @@
 
     // Helpers
     function timeSince(ts) {
-        const s = Math.floor(Date.now() / 1000 - ts);
+        const s = Math.max(Math.floor(Date.now() / 1000 - safeNumber(ts, Date.now() / 1000)), 0);
         if (s < 60) return 'just now';
         if (s < 3600) return `${Math.floor(s/60)}m ago`;
         if (s < 86400) return `${Math.floor(s/3600)}h ago`;
@@ -816,7 +859,7 @@
     }
     function esc(s) {
         const d = document.createElement('div');
-        d.textContent = s;
+        d.textContent = String(s ?? '');
         return d.innerHTML;
     }
 
