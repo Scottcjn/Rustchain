@@ -7,6 +7,7 @@ import json
 import os
 import hashlib
 import secrets
+from datetime import datetime, timezone
 
 app = Flask(__name__)
 
@@ -42,6 +43,28 @@ def server_port() -> int:
 app.config['SECRET_KEY'] = load_secret_key()
 
 DATABASE = 'bcos_directory.db'
+
+
+def _project_created_at_sort_key(created_at):
+    """Return a stable timestamp key matching SQLite's datetime ordering."""
+    if not created_at:
+        return (0, 0.0)
+    if not isinstance(created_at, str):
+        created_at = str(created_at)
+
+    normalized = created_at.strip()
+    if normalized.endswith('Z'):
+        normalized = f'{normalized[:-1]}+00:00'
+
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return (-1, normalized)
+
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    return (1, parsed.timestamp())
+
 
 def init_db():
     """Initialize the database with projects table"""
@@ -94,8 +117,7 @@ def load_projects_from_json():
             github_repo = project.get('github_repo')
             if not github_repo:
                 continue
-            created_at = project.get('created_at') or ''
-            candidate_key = (created_at, index)
+            candidate_key = (_project_created_at_sort_key(project.get('created_at')), index)
             current = deduped_projects.get(github_repo)
             if current is None or candidate_key > current[0]:
                 deduped_projects[github_repo] = (candidate_key, project)

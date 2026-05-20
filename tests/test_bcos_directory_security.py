@@ -157,3 +157,65 @@ def test_bcos_directory_project_load_deduplicates_json_projects_by_timestamp(tmp
         'security',
         '2026-01-02 00:00:00',
     )]
+
+
+def test_bcos_directory_project_load_deduplicates_mixed_timestamp_formats(tmp_path, monkeypatch):
+    db_path = tmp_path / 'bcos_directory.db'
+    data_dir = tmp_path / 'data'
+    data_dir.mkdir()
+    (data_dir / 'projects.json').write_text(json.dumps({
+        'projects': [
+            {
+                'name': 'New RustChain',
+                'url': 'https://new.example/rustchain',
+                'github_repo': 'Scottcjn/Rustchain',
+                'bcos_tier': 'L2',
+                'latest_sha': 'new-sha',
+                'sbom_hash': 'new-hash',
+                'review_note': 'new review',
+                'category': 'security',
+                'created_at': '2026-01-02 00:00:00',
+            },
+            {
+                'name': 'Old RustChain',
+                'url': 'https://old.example/rustchain',
+                'github_repo': 'Scottcjn/Rustchain',
+                'bcos_tier': 'L1',
+                'latest_sha': 'old-sha',
+                'sbom_hash': 'old-hash',
+                'review_note': 'old review',
+                'category': 'chain',
+                'created_at': '2026-01-01T00:00:00Z',
+            },
+            {
+                'name': 'Invalid RustChain',
+                'url': 'https://invalid.example/rustchain',
+                'github_repo': 'Scottcjn/Rustchain',
+                'bcos_tier': 'L3',
+                'latest_sha': 'invalid-sha',
+                'sbom_hash': 'invalid-hash',
+                'review_note': 'invalid review',
+                'category': 'invalid',
+                'created_at': 'not-a-timestamp-z-would-sort-last',
+            },
+        ]
+    }))
+    monkeypatch.setattr(bcos_directory, 'DATABASE', str(db_path))
+    monkeypatch.chdir(tmp_path)
+
+    bcos_directory.init_db()
+    bcos_directory.load_projects_from_json()
+
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            'SELECT name, github_repo, latest_sha, sbom_hash, category, created_at FROM projects'
+        ).fetchall()
+
+    assert rows == [(
+        'New RustChain',
+        'Scottcjn/Rustchain',
+        'new-sha',
+        'new-hash',
+        'security',
+        '2026-01-02 00:00:00',
+    )]
