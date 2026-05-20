@@ -431,6 +431,16 @@ def main() -> int:
         skip_reason = "recipient_wallet_missing"
         log_error("No recipient wallet found in PR body or .rtc-wallet file; "
                   "skipping automatic RTC transfer.")
+        if cfg.post_comment:
+            missing_wallet_body = (
+                f"**RTC Auto-Bounty Skipped**\n\n"
+                f"No recipient wallet was found, so no RTC transfer was attempted.\n\n"
+                f"To receive this award, add a line such as "
+                f"`wallet: RTC...` to the PR body or add a `.rtc-wallet` file "
+                f"at the repository root, then rerun the award workflow.\n\n"
+                f"<!-- { _AWARD_MARKER }:FAILED recipient_wallet_missing -->"
+            )
+            post_pr_comment(repo, pr_number, missing_wallet_body, cfg.github_token)
         set_output("awarded", "false")
         set_output("skip_reason", skip_reason)
         return 1
