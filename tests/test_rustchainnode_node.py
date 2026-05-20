@@ -104,6 +104,23 @@ def test_health_and_epoch_return_json_from_node_url(monkeypatch, tmp_path):
     ]
 
 
+def test_health_and_epoch_reject_non_object_json(monkeypatch, tmp_path):
+    module = load_node_module()
+
+    def fake_urlopen(url, timeout):
+        return FakeResponse(["not", "an", "object"])
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    node = module.RustChainNode(
+        wallet="wallet-1",
+        config_dir=tmp_path,
+        node_url="https://node.example",
+    )
+
+    assert node.health() == {"ok": False, "error": "JSON response must be an object"}
+    assert node.epoch() == {"error": "JSON response must be an object"}
+
+
 def test_health_reports_urlopen_errors(monkeypatch, tmp_path):
     module = load_node_module()
 

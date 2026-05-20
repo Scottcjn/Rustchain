@@ -5,13 +5,13 @@ Tests for Ergo Anchor Chain Proof Verifier
 Run: python -m pytest tools/anchor-verifier/test_verify_anchors.py -v
 """
 
-import hashlib
 import json
 import os
 import sqlite3
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from verify_anchors import (
@@ -100,6 +100,44 @@ class TestErgoClient(unittest.TestCase):
     def setUp(self):
         self.client = ErgoClient("http://localhost:9053")
 
+    def test_get_transaction_rejects_non_object_json(self):
+        class FakeResponse:
+            def read(self):
+                return b"[]"
+
+        with patch("urllib.request.urlopen", return_value=FakeResponse()):
+            result = self.client.get_transaction("tx-array")
+
+        self.assertIsNone(result)
+
+    def test_get_transaction_uses_unconfirmed_object_after_malformed_confirmed(self):
+        class FakeResponse:
+            def __init__(self, payload: bytes):
+                self.payload = payload
+
+            def read(self):
+                return self.payload
+
+        responses = [
+            FakeResponse(b"[]"),
+            FakeResponse(b'{"id":"tx-unconfirmed","outputs":[]}'),
+        ]
+
+        with patch("urllib.request.urlopen", side_effect=responses):
+            result = self.client.get_transaction("tx-unconfirmed")
+
+        self.assertEqual(result, {"id": "tx-unconfirmed", "outputs": []})
+
+    def test_get_box_by_id_rejects_non_object_json(self):
+        class FakeResponse:
+            def read(self):
+                return b'"not-a-box"'
+
+        with patch("urllib.request.urlopen", return_value=FakeResponse()):
+            result = self.client.get_box_by_id("box-scalar")
+
+        self.assertIsNone(result)
+
     def test_extract_commitment_r5(self):
         """Test extracting commitment from R5 register."""
         commitment = "a" * 64
@@ -140,6 +178,23 @@ class TestErgoClient(unittest.TestCase):
         tx = {}
         result = self.client.extract_commitment_from_tx(tx)
         self.assertIsNone(result)
+
+    def test_extract_ignores_malformed_outputs_shape(self):
+        tx = {"outputs": {"additionalRegisters": {"R5": f"{R5_PREFIX}{'d' * 64}"}}}
+        result = self.client.extract_commitment_from_tx(tx)
+        self.assertIsNone(result)
+
+    def test_extract_skips_non_object_outputs_and_registers(self):
+        commitment = "e" * 64
+        tx = {
+            "outputs": [
+                ["not", "an", "output"],
+                {"additionalRegisters": ["not", "registers"]},
+                {"additionalRegisters": {"R5": f"{R5_PREFIX}{commitment}"}},
+            ]
+        }
+        result = self.client.extract_commitment_from_tx(tx)
+        self.assertEqual(result, commitment)
 
     def test_extract_wrong_prefix(self):
         tx = {

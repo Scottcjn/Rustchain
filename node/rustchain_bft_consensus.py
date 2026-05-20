@@ -1034,6 +1034,9 @@ def create_bft_routes(app, bft: BFTConsensus):
     def _missing_fields(data: Dict, required: Iterable[str]) -> List[str]:
         return [field for field in required if field not in data]
 
+    def _internal_error_response(message: str, status_code: int):
+        return jsonify({'error': message}), status_code
+
     @app.route('/bft/status', methods=['GET'])
     def bft_status():
         """Get BFT consensus status"""
@@ -1058,9 +1061,9 @@ def create_bft_routes(app, bft: BFTConsensus):
 
             bft.receive_message(msg_data)
             return jsonify({'status': 'ok'})
-        except Exception as e:
-            logging.error(f"BFT message error: {e}")
-            return jsonify({'error': str(e)}), 400
+        except Exception:
+            logging.exception("BFT message error")
+            return _internal_error_response('BFT message processing failed', 400)
 
     @app.route('/bft/view_change', methods=['POST'])
     def bft_view_change():
@@ -1081,9 +1084,9 @@ def create_bft_routes(app, bft: BFTConsensus):
             if not ok:
                 return jsonify({'error': error}), status_code
             return jsonify({'status': 'ok'})
-        except Exception as e:
-            logging.error(f"BFT view change error: {e}")
-            return jsonify({'error': str(e)}), 400
+        except Exception:
+            logging.exception("BFT view change error")
+            return _internal_error_response('BFT view change processing failed', 400)
 
     @app.route('/bft/propose', methods=['POST'])
     def bft_propose():
@@ -1108,9 +1111,9 @@ def create_bft_routes(app, bft: BFTConsensus):
                 return jsonify({'status': 'proposed', 'digest': msg.digest})
             else:
                 return jsonify({'error': 'not_leader_or_already_committed'}), 400
-        except Exception as e:
-            logging.error(f"BFT propose error: {e}")
-            return jsonify({'error': str(e)}), 500
+        except Exception:
+            logging.exception("BFT propose error")
+            return _internal_error_response('BFT proposal failed', 500)
 
 
 # ============================================================================

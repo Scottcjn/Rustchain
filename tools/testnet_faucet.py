@@ -152,7 +152,7 @@ def _transfer(wallet: str, amount: float, cfg: dict[str, Any]) -> tuple[bool, di
 
     resp = requests.post(cfg["ADMIN_TRANSFER_URL"], json=payload, headers=headers, timeout=15)
     if resp.status_code >= 300:
-        return False, {"error": f"transfer_failed_{resp.status_code}", "body": resp.text}
+        return False, {"error": f"transfer_failed_{resp.status_code}"}
     try:
         return True, resp.json()
     except Exception:

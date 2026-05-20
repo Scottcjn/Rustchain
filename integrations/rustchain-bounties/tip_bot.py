@@ -188,6 +188,19 @@ def github_post_comment(repo: str, issue_number: int, body: str, token: str) -> 
     return resp.status_code == 201
 
 
+def _github_content_sha(resp) -> Optional[str]:
+    if resp.status_code != 200:
+        return None
+    try:
+        body = resp.json()
+    except ValueError:
+        return None
+    if not isinstance(body, dict):
+        return None
+    sha = body.get("sha")
+    return sha if isinstance(sha, str) and sha else None
+
+
 def github_commit_state(repo: str, state_file: str, token: str) -> bool:
     """
     Commit the updated state file back to the repository.
@@ -209,7 +222,7 @@ def github_commit_state(repo: str, state_file: str, token: str) -> bool:
 
     # Get current SHA (needed for updates)
     resp = requests.get(url, headers=headers, timeout=15)
-    sha = resp.json().get("sha") if resp.status_code == 200 else None
+    sha = _github_content_sha(resp)
 
     payload: dict = {
         "message": "chore: update tip state [skip ci]",

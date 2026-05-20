@@ -888,6 +888,13 @@ class TestLedgerEndpoint:
         assert resp.status_code == 400
         assert resp.get_json()["error"] == "limit and offset must be integers"
 
+    def test_ledger_uses_defaults_for_empty_pagination(self, client):
+        resp = client.get("/bridge/ledger?limit=&offset=")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["limit"] == 50
+        assert data["offset"] == 0
+
     def test_ledger_clamps_negative_limit_and_offset(self, client):
         tx_hash = f"rtc-lock-ledger-limit-{int(time.time())}"
         payload = {

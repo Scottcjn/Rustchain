@@ -119,7 +119,7 @@ VALID_BRIDGE_TYPES = {"bottube", "internal", "custom"}
 
 def validate_bridge_request(data: Optional[Dict]) -> ValidationResult:
     """Validate bridge transfer request payload."""
-    if not data:
+    if not isinstance(data, dict):
         return ValidationResult(ok=False, error="Request body is required")
     if not isinstance(data, dict):
         return ValidationResult(ok=False, error="Request body must be a JSON object")
@@ -855,7 +855,7 @@ def register_bridge_routes(app):
             return jsonify({"error": "unauthorized"}), 401
         
         data = request.get_json(silent=True)
-        if not data:
+        if not isinstance(data, dict):
             return jsonify({"error": "Request body required"}), 400
         
         tx_hash = data.get("tx_hash")
@@ -886,7 +886,7 @@ def register_bridge_routes(app):
             return jsonify({"error": "Unauthorized"}), 401
         
         data = request.get_json(silent=True)
-        if not data:
+        if not isinstance(data, dict):
             return jsonify({"error": "Request body required"}), 400
         
         tx_hash = data.get("tx_hash")

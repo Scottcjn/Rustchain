@@ -158,6 +158,30 @@ class TestGPURenderProtocol(unittest.TestCase):
         self.assertTrue(check["manipulated"])
         self.assertEqual(check["reason"], "price_too_high")
 
+    def test_price_manipulation_detection_normalizes_job_type(self):
+        self.proto.attest_gpu("miner-1", {
+            "gpu_model": "RTX 4090", "vram_gb": 24, "device_arch": "nvidia_gpu",
+            "price_render_minute": 0.5,
+        })
+
+        for job_type in ("RENDER", " render "):
+            check = self.proto.detect_price_manipulation(job_type, 10.0)
+            self.assertTrue(check["manipulated"])
+            self.assertEqual(check["reason"], "price_too_high")
+
+    def test_job_type_filters_are_allowlisted_and_normalized(self):
+        self.proto.attest_gpu("miner-1", {
+            "gpu_model": "RTX 4090",
+            "vram_gb": 24,
+            "device_arch": "nvidia_gpu",
+            "supports_render": 1,
+        })
+
+        self.assertEqual(len(self.proto.list_gpu_nodes(" RENDER ")), 1)
+        self.assertEqual(self.proto.list_gpu_nodes("render;DROP TABLE gpu_attestations"), [])
+        rates = self.proto.get_fair_market_rates("render;DROP TABLE gpu_attestations")
+        self.assertIn("error", rates)
+
     def test_voice_escrow_types(self):
         for jt in ("tts", "stt"):
             result = self.proto.create_escrow(jt, "a", "b", 2.0)
@@ -260,6 +284,29 @@ def test_gpu_protocol_pricing_check_rejects_boolean_price(tmp_path, monkeypatch)
 
     assert response.status_code == 400
     assert response.get_json() == {"error": "price must be a finite number"}
+
+
+def test_gpu_protocol_pricing_check_normalizes_job_type(tmp_path, monkeypatch):
+    client = _route_client(tmp_path, monkeypatch)
+    client.post(
+        "/gpu/attest",
+        json={
+            "miner_id": "miner-1",
+            "gpu_model": "RTX 4090",
+            "vram_gb": 24,
+            "device_arch": "nvidia_gpu",
+            "price_render_minute": 0.5,
+        },
+    )
+
+    response = client.post(
+        "/render/pricing/check",
+        json={"job_type": " RENDER ", "price": 10.0},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["manipulated"] is True
+    assert response.get_json()["reason"] == "price_too_high"
 
 
 if __name__ == "__main__":

@@ -412,6 +412,38 @@ def get_epoch_miner_groups(
     return groups
 
 
+def _get_epoch_enrolled_weights(conn: sqlite3.Connection, epoch: int) -> Dict[str, float]:
+    """Return canonical per-epoch weights from epoch_enroll when available.
+
+    Older test/legacy schemas only have (epoch, miner_pk).  In that case this
+    returns an empty map and callers fall back to the historical arch-derived
+    multiplier path.
+    """
+    try:
+        cols = conn.execute("PRAGMA table_info(epoch_enroll)").fetchall()
+    except sqlite3.Error:
+        return {}
+
+    if not any(col[1] == "weight" for col in cols):
+        return {}
+
+    try:
+        rows = conn.execute(
+            "SELECT miner_pk, weight FROM epoch_enroll WHERE epoch = ?",
+            (epoch,),
+        ).fetchall()
+    except sqlite3.Error:
+        return {}
+
+    weights: Dict[str, float] = {}
+    for miner_pk, weight in rows:
+        try:
+            weights[miner_pk] = max(float(weight or 0.0), 0.0)
+        except (TypeError, ValueError):
+            weights[miner_pk] = 0.0
+    return weights
+
+
 # =============================================================================
 # ANTI-DOUBLE-MINING REWARD CALCULATION
 # =============================================================================
@@ -488,6 +520,7 @@ def calculate_anti_double_mining_rewards(
         
         # Get device arch for each representative miner
         cursor = conn.cursor()
+        enrolled_weights = _get_epoch_enrolled_weights(conn, epoch)
         machine_data = []
         
         for identity_hash, miner_id in representative_map.items():
@@ -510,6 +543,12 @@ def calculate_anti_double_mining_rewards(
             if fingerprint_ok == 0:
                 weight = 0.0
                 logger.info(f"[REWARD] {miner_id[:20]}... fingerprint=FAIL -> weight=0")
+            elif miner_id in enrolled_weights:
+                # Preserve the canonical per-epoch weight snapshot used by the
+                # normal settlement path.  Recomputing from device_arch here can
+                # change the payout split for delayed settlements or RIP-309
+                # filtered weights.
+                weight = enrolled_weights[miner_id]
             else:
                 weight = get_time_aged_multiplier(device_arch, chain_age_years)
             
@@ -756,6 +795,7 @@ def _calculate_anti_double_mining_rewards_conn(
             representative_map[identity_hash] = miner_ids[0]
 
     cursor = conn.cursor()
+    enrolled_weights = _get_epoch_enrolled_weights(conn, epoch)
     machine_data = []
 
     for identity_hash, miner_id in representative_map.items():
@@ -776,6 +816,12 @@ def _calculate_anti_double_mining_rewards_conn(
     for miner_id, device_arch, fingerprint_ok, identity_hash in machine_data:
         if fingerprint_ok == 0:
             weight = 0.0
+        elif miner_id in enrolled_weights:
+            # Preserve the canonical per-epoch weight snapshot used by the
+            # normal settlement path.  Recomputing from device_arch here can
+            # change the payout split for delayed settlements or RIP-309
+            # filtered weights.
+            weight = enrolled_weights[miner_id]
         else:
             weight = get_time_aged_multiplier(device_arch, chain_age_years)
 

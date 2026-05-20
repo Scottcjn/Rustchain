@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: MIT
 
 import importlib
+import json
+import urllib.request
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -133,3 +135,34 @@ def test_status_keeps_custom_production_node_url(monkeypatch, tmp_path, capsys):
         ("health", "https://node.example"),
         ("epoch", "https://node.example"),
     ]
+
+
+class FakeResponse:
+    def __init__(self, payload):
+        self.payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        return False
+
+    def read(self):
+        return json.dumps(self.payload).encode()
+
+
+def test_cli_health_and_epoch_reject_non_object_json(monkeypatch, tmp_path):
+    module = load_cli_module(monkeypatch, tmp_path)
+
+    def fake_urlopen(url, timeout):
+        return FakeResponse(["not", "an", "object"])
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    assert module._check_health("https://node.example") == {
+        "ok": False,
+        "error": "JSON response must be an object",
+    }
+    assert module._check_epoch("https://node.example") == {
+        "error": "JSON response must be an object",
+    }

@@ -18,7 +18,6 @@ import hashlib
 import argparse
 import hmac
 import logging
-import traceback
 from typing import Optional, Tuple, Dict, List
 
 try:
@@ -128,7 +127,7 @@ def _try_ollama_api(ep: str, prompt: str) -> Optional[str]:
     }
     resp = requests.post(url, json=payload, timeout=(10, OLLAMA_TIMEOUT))
     if resp.status_code == 200:
-        return resp.json().get("response", "")
+        return _response_json_object(resp).get("response", "")
     return None
 
 
@@ -147,7 +146,7 @@ def _try_llamaserver_api(ep: str, prompt: str) -> Optional[str]:
     }
     resp = requests.post(url, json=payload, timeout=(10, OLLAMA_TIMEOUT))
     if resp.status_code == 200:
-        return resp.json().get("content", "")
+        return _response_json_object(resp).get("content", "")
     return None
 
 
@@ -161,10 +160,23 @@ def _try_openai_api(ep: str, prompt: str) -> Optional[str]:
     }
     resp = requests.post(url, json=payload, timeout=OLLAMA_TIMEOUT)
     if resp.status_code == 200:
-        choices = resp.json().get("choices", [])
+        choices = _response_json_object(resp).get("choices", [])
         if choices:
             return choices[0].get("text", "")
     return None
+
+
+def _response_json_object(resp) -> Dict:
+    """Return a response JSON object, or an empty dict for invalid/non-object JSON."""
+    try:
+        body = resp.json()
+    except ValueError as exc:
+        log.warning("LLM returned invalid JSON: %s", exc)
+        return {}
+    if not isinstance(body, dict):
+        log.warning("LLM returned %s JSON, expected object", type(body).__name__)
+        return {}
+    return body
 
 
 def _call_ollama(prompt: str, endpoint: str = None) -> Optional[str]:
@@ -235,7 +247,7 @@ def _call_deep_model(prompt: str) -> Optional[str]:
         log.info("Escalating to GPT-OSS 120B on POWER8 for deep analysis...")
         resp = requests.post(url, json=payload, timeout=DEEP_TIMEOUT)
         if resp.status_code == 200:
-            body = resp.json()
+            body = _response_json_object(resp)
             # llama-server returns choices[0].text for /v1/completions
             choices = body.get("choices", [])
             if choices:
