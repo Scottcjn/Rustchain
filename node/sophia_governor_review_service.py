@@ -193,6 +193,15 @@ def _is_authorized(req) -> bool:
     return False
 
 
+def _json_object_body() -> tuple[Optional[dict[str, Any]], Optional[tuple[Any, int]]]:
+    data = request.get_json(silent=True)
+    if data is None:
+        return {}, None
+    if not isinstance(data, dict):
+        return None, (jsonify({"error": "JSON object required"}), 400)
+    return data, None
+
+
 def _relay_scott_notification(payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
     if requests is None:
         return 503, {"status": "error", "error": "requests_unavailable"}
@@ -662,7 +671,9 @@ def recent():
 def backfill_missing():
     if not _is_authorized(request):
         return jsonify({"error": "Unauthorized -- admin key or bearer required"}), 401
-    data = request.get_json(silent=True) or {}
+    data, error = _json_object_body()
+    if error:
+        return error
     try:
         limit = _normalize_maintenance_limit(data)
     except ValueError as exc:
@@ -676,7 +687,9 @@ def backfill_missing():
 def normalize_existing():
     if not _is_authorized(request):
         return jsonify({"error": "Unauthorized -- admin key or bearer required"}), 401
-    data = request.get_json(silent=True) or {}
+    data, error = _json_object_body()
+    if error:
+        return error
     try:
         limit = _normalize_maintenance_limit(data)
     except ValueError as exc:
@@ -691,9 +704,9 @@ def review():
     if not _is_authorized(request):
         return jsonify({"error": "Unauthorized -- admin key or bearer required"}), 401
 
-    data = request.get_json(silent=True) or {}
-    if not isinstance(data, dict):
-        return jsonify({"error": "JSON object required"}), 400
+    data, error = _json_object_body()
+    if error:
+        return error
 
     prompt = _build_prompt(data)
     try:
@@ -727,9 +740,9 @@ def queue_scott_notification():
     if not _is_authorized(request):
         return jsonify({"error": "Unauthorized -- admin key or bearer required"}), 401
 
-    data = request.get_json(silent=True) or {}
-    if not isinstance(data, dict):
-        return jsonify({"error": "JSON object required"}), 400
+    data, error = _json_object_body()
+    if error:
+        return error
 
     status_code, body = _relay_scott_notification(data)
     return jsonify(body), status_code
