@@ -4305,8 +4305,15 @@ def miner_set_header_key():
     if not isinstance(raw_miner_id, str):
         return jsonify({"ok":False,"error":"invalid miner_id or pubkey_hex"}), 400
     miner_id   = raw_miner_id.strip()
-    pubkey_hex = str(body.get("pubkey_hex","")).strip().lower()
-    if not miner_id or len(pubkey_hex) != 64:
+    raw_pubkey_hex = body.get("pubkey_hex", "")
+    if not isinstance(raw_pubkey_hex, str):
+        return jsonify({"ok":False,"error":"invalid miner_id or pubkey_hex"}), 400
+    pubkey_hex = raw_pubkey_hex.strip().lower()
+    try:
+        pubkey_bytes = bytes.fromhex(pubkey_hex)
+    except ValueError:
+        pubkey_bytes = b""
+    if not miner_id or len(pubkey_bytes) != 32:
         return jsonify({"ok":False,"error":"invalid miner_id or pubkey_hex"}), 400
     with sqlite3.connect(DB_PATH) as db:
         db.execute("INSERT INTO miner_header_keys(miner_id,pubkey_hex) VALUES(?,?) ON CONFLICT(miner_id) DO UPDATE SET pubkey_hex=excluded.pubkey_hex", (miner_id, pubkey_hex))
