@@ -70,6 +70,10 @@ class TTLCache:
             if len(self._cache) >= self._max_size:
                 self._cache.popitem(last=False)
             self._cache[key] = time.time()
+
+    def discard(self, key: str) -> None:
+        """Remove key if present."""
+        self._cache.pop(key, None)
     
     def _cleanup_expired(self) -> None:
         """Remove expired entries."""
@@ -790,6 +794,7 @@ class GossipLayer:
     def handle_message(self, msg: GossipMessage) -> Optional[Dict]:
         """Handle received gossip message"""
         # Deduplication (Issue #2271: DB-backed persistent dedup)
+        used_memory_dedup = False
         try:
             with sqlite3.connect(self.db_path) as conn:
                 now = int(time.time())
@@ -807,16 +812,21 @@ class GossipLayer:
                 if self.seen_messages.contains(msg.msg_id):
                     return {"status": "duplicate"}
                 self.seen_messages.add(msg.msg_id)
+                used_memory_dedup = True
 
         # Verify signature
         if not self.verify_message(msg):
             logger.warning(f"Invalid signature from {msg.sender_id}")
-            try:
-                with sqlite3.connect(self.db_path) as conn:
-                    conn.execute("DELETE FROM p2p_seen_messages WHERE msg_id = ?", (msg.msg_id,))
-                    conn.commit()
-            except Exception as e:
-                logger.error(f"P2P dedup rollback DB error: {e}")
+            if used_memory_dedup:
+                with self.lock:
+                    self.seen_messages.discard(msg.msg_id)
+            else:
+                try:
+                    with sqlite3.connect(self.db_path) as conn:
+                        conn.execute("DELETE FROM p2p_seen_messages WHERE msg_id = ?", (msg.msg_id,))
+                        conn.commit()
+                except Exception as e:
+                    logger.error(f"P2P dedup rollback DB error: {e}")
             return {"status": "invalid_signature"}
 
         # TTLCache handles automatic eviction (TTL + LRU)
