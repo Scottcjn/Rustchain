@@ -59,6 +59,17 @@ def test_api_get_builds_url_and_parses_json(agent_economy_cli_module, monkeypatc
     assert timeout == 15
 
 
+def test_api_get_rejects_non_object_json_response(agent_economy_cli_module, monkeypatch):
+    def fake_urlopen(request, context, timeout):
+        return FakeResponse(b'["not", "an", "object"]')
+
+    monkeypatch.setattr(agent_economy_cli_module, "BASE_URL", "https://node.example")
+    monkeypatch.setattr(agent_economy_cli_module.urllib.request, "urlopen", fake_urlopen)
+
+    with pytest.raises(ValueError, match="node response must be a JSON object"):
+        agent_economy_cli_module.api_get("/agent/jobs?status=open")
+
+
 def test_api_post_sends_json_and_parses_success(agent_economy_cli_module, monkeypatch):
     calls = []
 
@@ -85,6 +96,16 @@ def test_api_post_sends_json_and_parses_success(agent_economy_cli_module, monkey
     assert timeout == 15
 
 
+def test_api_post_rejects_non_object_json_response(agent_economy_cli_module, monkeypatch):
+    def fake_urlopen(request, context, timeout):
+        return FakeResponse(b'["not", "an", "object"]')
+
+    monkeypatch.setattr(agent_economy_cli_module.urllib.request, "urlopen", fake_urlopen)
+
+    with pytest.raises(ValueError, match="node response must be a JSON object"):
+        agent_economy_cli_module.api_post("/agent/jobs/job-1/claim", {})
+
+
 def test_api_post_parses_http_error_body(agent_economy_cli_module, monkeypatch):
     def fake_urlopen(_request, context, timeout):
         assert context is agent_economy_cli_module.SSL_CTX
@@ -102,6 +123,22 @@ def test_api_post_parses_http_error_body(agent_economy_cli_module, monkeypatch):
     assert agent_economy_cli_module.api_post("/agent/jobs/job-1/claim", {}) == {
         "error": "already claimed"
     }
+
+
+def test_api_post_rejects_non_object_http_error_body(agent_economy_cli_module, monkeypatch):
+    def fake_urlopen(_request, context, timeout):
+        raise HTTPError(
+            "https://node.example/agent/jobs/job-1/claim",
+            400,
+            "Bad Request",
+            {},
+            BytesIO(b'["bad", "error"]'),
+        )
+
+    monkeypatch.setattr(agent_economy_cli_module.urllib.request, "urlopen", fake_urlopen)
+
+    with pytest.raises(ValueError, match="node response must be a JSON object"):
+        agent_economy_cli_module.api_post("/agent/jobs/job-1/claim", {})
 
 
 def test_cmd_list_formats_dict_response_and_empty_response(
