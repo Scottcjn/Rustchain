@@ -53,7 +53,7 @@ class TestBadgeJsonValidation(unittest.TestCase):
     def test_array_body_returns_400(self):
         """A JSON array body should return 400, not 500."""
         r = self.post(['repo_name'])
-        self.assertIn(r.status_code, (400, 200))
+        self.assertEqual(r.status_code, 400)
         data = json.loads(r.data)
         self.assertFalse(data.get('success', False))
 
@@ -61,14 +61,14 @@ class TestBadgeJsonValidation(unittest.TestCase):
     def test_non_string_repo_name(self):
         """repo_name as list should not crash."""
         r = self.post({'repo_name': ['owner', 'repo'], 'tier': 'L1', 'trust_score': 75})
-        self.assertIn(r.status_code, (400, 200))
+        self.assertEqual(r.status_code, 400)
         data = json.loads(r.data)
         self.assertFalse(data.get('success', False))
 
     def test_non_string_tier(self):
         """tier as dict should not crash."""
         r = self.post({'repo_name': 'test/repo', 'tier': {'level': 1}, 'trust_score': 75})
-        self.assertIn(r.status_code, (400, 200))
+        self.assertEqual(r.status_code, 400)
         data = json.loads(r.data)
         self.assertFalse(data.get('success', False))
 
@@ -76,14 +76,14 @@ class TestBadgeJsonValidation(unittest.TestCase):
     def test_dict_trust_score(self):
         """trust_score as dict should not crash."""
         r = self.post({'repo_name': 'test/repo', 'tier': 'L1', 'trust_score': {'high': True}})
-        self.assertIn(r.status_code, (400, 200))
+        self.assertEqual(r.status_code, 400)
         data = json.loads(r.data)
         self.assertFalse(data.get('success', False))
 
     def test_list_trust_score(self):
         """trust_score as list should not crash."""
         r = self.post({'repo_name': 'test/repo', 'tier': 'L1', 'trust_score': [75]})
-        self.assertIn(r.status_code, (400, 200))
+        self.assertEqual(r.status_code, 400)
         data = json.loads(r.data)
         self.assertFalse(data.get('success', False))
 
