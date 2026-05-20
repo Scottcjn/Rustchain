@@ -287,6 +287,28 @@ def test_fetch_helpers_parse_success_and_errors(miner_alerts_module, monkeypatch
     monkeypatch.setattr(
         miner_alerts_module.requests,
         "get",
+        lambda *_args, **_kwargs: FakeResponse(
+            {"data": [{"miner_id": "miner-b", "online": False}]}
+        ),
+    )
+    assert miner_alerts_module.fetch_miners() == [
+        {"miner_id": "miner-b", "online": False}
+    ]
+
+    monkeypatch.setattr(
+        miner_alerts_module.requests,
+        "get",
+        lambda *_args, **_kwargs: FakeResponse(
+            {"items": [{"miner_id": "miner-c", "online": True}]}
+        ),
+    )
+    assert miner_alerts_module.fetch_miners() == [
+        {"miner_id": "miner-c", "online": True}
+    ]
+
+    monkeypatch.setattr(
+        miner_alerts_module.requests,
+        "get",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("offline")),
     )
     assert miner_alerts_module.fetch_miners() == []
