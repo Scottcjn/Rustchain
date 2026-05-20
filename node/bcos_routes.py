@@ -243,7 +243,7 @@ def bcos_attest():
     try:
         trust_score = _parse_trust_score(raw_trust_score)
     except ValueError as e:
-        return jsonify({"error": "invalid_trust_score", "message": "internal_error"}), 400
+        return jsonify({"error": "invalid_trust_score", "message": str(e)}), 400
     report["trust_score"] = trust_score
 
     # Auth: admin key OR valid Ed25519 signature
