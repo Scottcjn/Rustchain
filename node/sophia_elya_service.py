@@ -4,6 +4,7 @@ RustChain v2 - RIP-0005 Epoch Pro-Rata Rewards
 Production Anti-Spoof System with Fair Distribution
 Issue #2295: Added WebSocket real-time feed for Block Explorer
 """
+import math
 import os, time, json, secrets, hashlib, sqlite3
 from decimal import Decimal, ROUND_HALF_UP
 from flask import Flask, request, jsonify
@@ -33,6 +34,7 @@ LAST_EPOCH = None
 # Database setup
 DB_PATH = "./rustchain_v2.db"
 RTC_MICRO_UNITS = 1_000_000
+MAX_EPOCH_WEIGHT_COMPONENT = 1_000_000.0
 
 def _rtc_to_micro(amount_rtc):
     """Convert public RTC values to canonical integer micro-RTC units."""
@@ -159,12 +161,53 @@ def get_balance(miner_pk):
 
 def get_hardware_weight(device):
     """Get hardware multiplier from device info"""
+    if not isinstance(device, dict):
+        return 1.0
+
     family = device.get("family", "default")
     arch = device.get("arch", "default")
+    if not isinstance(family, str):
+        family = "default"
+    if not isinstance(arch, str):
+        arch = "default"
 
     if family in HARDWARE_WEIGHTS:
         return HARDWARE_WEIGHTS[family].get(arch, HARDWARE_WEIGHTS[family].get("default", 1.0))
     return 1.0
+
+
+def _parse_epoch_slot(value):
+    """Parse a non-negative integer slot without bool/truncation surprises."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value >= 0 else None
+    if isinstance(value, str):
+        value = value.strip()
+        if not value or not value.isdecimal():
+            return None
+        parsed = int(value)
+        return parsed if parsed >= 0 else None
+    return None
+
+
+def _parse_weight_component(value, default=1.0):
+    """Parse a bounded finite epoch weight multiplier."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    if (
+        not math.isfinite(parsed)
+        or parsed < 0
+        or parsed > MAX_EPOCH_WEIGHT_COMPONENT
+    ):
+        return None
+    return parsed
 
 def consume_ticket(ticket_id):
     """Consume a ticket (mark as used)"""
@@ -248,19 +291,28 @@ def epoch_enroll():
     if not miner_pk or not ticket_id:
         return jsonify({"ok": False, "reason": "missing_params"}), 400
 
+    # Parse bounded numeric fields before consuming the one-use ticket.
+    slot = _parse_epoch_slot(data.get("slot", int(time.time() // BLOCK_TIME)))
+    if slot is None:
+        return jsonify({"ok": False, "reason": "invalid_slot"}), 400
+    temporal = _parse_weight_component(weights.get("temporal", 1.0))
+    rtc = _parse_weight_component(weights.get("rtc", 1.0))
+    if temporal is None or rtc is None:
+        return jsonify({"ok": False, "reason": "invalid_weights"}), 400
+
     # Consume ticket (anti-replay)
     if not consume_ticket(ticket_id):
         return jsonify({"ok": False, "reason": "ticket_invalid"}), 400
 
     # Compute epoch
-    slot = int(data.get("slot", int(time.time() // BLOCK_TIME)))
+    slot = int(slot)
     epoch = slot_to_epoch(slot)
 
     # Calculate weight = temporal × rtc × hardware
-    temporal = float(weights.get("temporal", 1.0))
-    rtc = float(weights.get("rtc", 1.0))
     hw = get_hardware_weight(device)
     total_weight = temporal * rtc * hw
+    if not math.isfinite(total_weight):
+        return jsonify({"ok": False, "reason": "invalid_weights"}), 400
 
     # Enroll
     enroll_epoch(epoch, miner_pk, total_weight)
@@ -400,13 +452,21 @@ def api_submit_block():
 
     # Validate Silicon Ticket if enforced
     ticket = ext.get("ticket", {})
+    if ticket is None:
+        ticket = {}
+    if not isinstance(ticket, dict):
+        return jsonify({"error": "invalid_ticket"}), 400
     ticket_id = ticket.get("ticket_id")
+    if ticket_id is not None and not isinstance(ticket_id, str):
+        return jsonify({"error": "invalid_ticket"}), 400
 
     if ENFORCE and ticket_id and ticket_id not in tickets_db:
         return jsonify({"error": "invalid_ticket"}), 400
 
     # Epoch rollover & accounting
-    slot = int(header.get("slot", 0))
+    slot = _parse_epoch_slot(header.get("slot", 0))
+    if slot is None:
+        return jsonify({"error": "invalid_slot"}), 400
     epoch = slot_to_epoch(slot)
 
     if LAST_EPOCH is None:
