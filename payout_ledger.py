@@ -232,6 +232,13 @@ def _require_admin_key():
     return None
 
 
+def _json_object_body():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return None, (jsonify({"error": "JSON object required"}), 400)
+    return data, None
+
+
 # ── Flask route registration ───────────────────────────────────
 def register_ledger_routes(app):
     """Register /ledger/* routes on the given Flask app."""
@@ -275,7 +282,9 @@ def register_ledger_routes(app):
         if auth_error:
             return auth_error
         init_payout_ledger_tables()
-        data = request.get_json(force=True)
+        data, body_error = _json_object_body()
+        if body_error:
+            return body_error
         required = ["bounty_id", "contributor", "amount_rtc"]
         for field in required:
             if field not in data:
@@ -300,7 +309,9 @@ def register_ledger_routes(app):
         if auth_error:
             return auth_error
         init_payout_ledger_tables()
-        data = request.get_json(force=True)
+        data, body_error = _json_object_body()
+        if body_error:
+            return body_error
         new_status = data.get("status")
         if not new_status:
             return jsonify({"error": "missing status"}), 400

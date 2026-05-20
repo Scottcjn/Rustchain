@@ -98,6 +98,41 @@ def test_ledger_status_update_requires_admin_key_before_mutation(tmp_path, monke
     assert record["tx_hash"] == ""
 
 
+def test_ledger_create_rejects_non_object_json(tmp_path, monkeypatch):
+    client, db_path = _make_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/ledger",
+        headers={"X-Admin-Key": ADMIN_KEY},
+        json=["bounty_id", "contributor", "amount_rtc"],
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "JSON object required"}
+    assert _table_exists(db_path)
+    with sqlite3.connect(db_path) as conn:
+        count = conn.execute("SELECT COUNT(*) FROM payout_ledger").fetchone()[0]
+    assert count == 0
+
+
+def test_ledger_status_update_rejects_non_object_json_before_mutation(tmp_path, monkeypatch):
+    client, _db_path = _make_client(tmp_path, monkeypatch)
+    payout_ledger.init_payout_ledger_tables()
+    record_id = payout_ledger.ledger_create("bug-1", "alice", 25)
+
+    response = client.patch(
+        f"/api/ledger/{record_id}/status",
+        headers={"X-Admin-Key": ADMIN_KEY},
+        json=["status"],
+    )
+
+    record = payout_ledger.ledger_get(record_id)
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "JSON object required"}
+    assert record["status"] == "queued"
+    assert record["tx_hash"] == ""
+
+
 def test_admin_key_allows_create_read_summary_and_status_update(tmp_path, monkeypatch):
     client, _db_path = _make_client(tmp_path, monkeypatch)
     headers = {"X-Admin-Key": ADMIN_KEY}
