@@ -7399,6 +7399,7 @@ def wallet_transfer_v2():
     from_miner = pre.details["from_miner"]
     to_miner = pre.details["to_miner"]
     amount_rtc = pre.details["amount_rtc"]
+    amount_i64 = int(pre.details["amount_i64"])
     reason = str((data or {}).get('reason', 'admin_transfer'))
     idempotency_key = ""
     raw_idempotency_key = (data or {}).get("idempotency_key")
@@ -7409,7 +7410,6 @@ def wallet_transfer_v2():
         if not re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", idempotency_key):
             return jsonify({"error": "invalid_idempotency_key"}), 400
     
-    amount_i64 = int(amount_rtc * 1000000)
     now = int(time.time())
     confirms_at = now + CONFIRMATION_DELAY_SECONDS
     current_epoch = current_slot()

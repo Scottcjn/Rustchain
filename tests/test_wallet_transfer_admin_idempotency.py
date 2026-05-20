@@ -104,6 +104,35 @@ def test_admin_transfer_idempotency_key_reuses_pending_transfer(admin_transfer_c
     assert pending_total == 1_000_000
 
 
+def test_admin_transfer_uses_preflight_amount_i64_without_float_loss(admin_transfer_client):
+    client, db_path = admin_transfer_client
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?)",
+            ("founder_community", 1_000_000),
+        )
+        conn.commit()
+
+    response = client.post(
+        "/wallet/transfer",
+        json={
+            "from_miner": "founder_community",
+            "to_miner": "contributor",
+            "amount_rtc": "0.000249",
+        },
+        headers={"X-Admin-Key": "a" * 32},
+    )
+    assert response.status_code == 200
+
+    with sqlite3.connect(db_path) as conn:
+        (pending_amount,) = conn.execute(
+            "SELECT amount_i64 FROM pending_ledger"
+        ).fetchone()
+
+    assert pending_amount == 249
+
+
 def test_admin_transfer_idempotency_key_rejects_changed_transfer(admin_transfer_client):
     client, db_path = admin_transfer_client
 
