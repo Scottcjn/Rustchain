@@ -25,7 +25,7 @@ HTML = """
 async function j(u){const r=await fetch(u);return await r.json();}
 function escapeHtml(value){const d=document.createElement('div');d.textContent=String(value ?? '');return d.innerHTML;}
 function displayValue(value){return value === undefined || value === null || value === '' ? '-' : escapeHtml(value);}
-function fmtTs(v){if(!v) return '-'; const n=Number(v); if(!Number.isFinite(n)) return String(v); const ms=n>1e12?n:n*1000; return new Date(ms).toLocaleString();}
+function fmtTs(v){if(v === undefined || v === null || v === '') return '-'; const n=Number(v); if(!Number.isFinite(n)) return String(v); const ms=n>1e12?n:n*1000; return new Date(ms).toLocaleString();}
 async function load(){
   const d=await j('/api/dashboard');
   document.getElementById('base').textContent=d.base;
@@ -33,8 +33,8 @@ async function load(){
   document.getElementById('miners').textContent=(d.miners||[]).length;
   document.getElementById('epoch').textContent=d.epoch?.epoch ?? '-';
   document.getElementById('txcount').textContent=(d.transactions||[]).length;
-  document.getElementById('minersTbl').innerHTML=(d.miners||[]).slice(0,20).map(m=>`<tr><td>${displayValue(m.miner_id||m.wallet)}</td><td>${displayValue(m.score||m.attestation_score)}</td><td>${displayValue(m.multiplier||m.antiquity_multiplier)}</td></tr>`).join('');
-  document.getElementById('txTbl').innerHTML=(d.transactions||[]).slice(0,30).map(t=>`<tr><td>${escapeHtml(fmtTs(t.timestamp||t.created_at||t.time))}</td><td>${displayValue(t.from||t.sender)}</td><td>${displayValue(t.to||t.recipient)}</td><td>${displayValue(t.amount||t.value)}</td></tr>`).join('');
+  document.getElementById('minersTbl').innerHTML=(d.miners||[]).slice(0,20).map(m=>`<tr><td>${displayValue(m.miner_id??m.wallet)}</td><td>${displayValue(m.score??m.attestation_score)}</td><td>${displayValue(m.multiplier??m.antiquity_multiplier)}</td></tr>`).join('');
+  document.getElementById('txTbl').innerHTML=(d.transactions||[]).slice(0,30).map(t=>`<tr><td>${escapeHtml(fmtTs(t.timestamp??t.created_at??t.time))}</td><td>${displayValue(t.from??t.sender)}</td><td>${displayValue(t.to??t.recipient)}</td><td>${displayValue(t.amount??t.value)}</td></tr>`).join('');
 }
 load(); setInterval(load, 30000);
 </script></body></html>
