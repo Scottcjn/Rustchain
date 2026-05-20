@@ -9,7 +9,6 @@ import json
 import time
 import math
 from typing import Optional, Dict, List, Any, Tuple
-from collections import defaultdict
 from contextlib import contextmanager
 
 
@@ -98,7 +97,7 @@ class InteractionTracker:
         if from_agent == to_agent:
             raise ValueError("from_agent and to_agent must be different")
 
-        meta_json = json.dumps(metadata) if metadata else None
+        meta_json = json.dumps(metadata) if metadata is not None else None
         ts = time.time()
 
         with self._conn() as conn:
