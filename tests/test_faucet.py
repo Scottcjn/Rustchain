@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-
 import pytest
 
 from tools import testnet_faucet as faucet
@@ -104,3 +102,35 @@ def test_github_old_account_gets_2rtc_limit(tmp_path, monkeypatch):
     assert r1.status_code == 200
     assert r2.status_code == 200
     assert r3.status_code == 429
+
+
+def test_transfer_failure_does_not_expose_upstream_body(tmp_path, monkeypatch):
+    db_path = tmp_path / "faucet.db"
+    monkeypatch.setattr(faucet, "github_account_age_days", lambda *_args, **_kwargs: 30)
+
+    class FailedTransfer:
+        status_code = 500
+        text = "admin token=super-secret path=/srv/rustchain/private.db"
+
+    def fake_post(url, json, headers, timeout):
+        return FailedTransfer()
+
+    monkeypatch.setattr(faucet.requests, "post", fake_post)
+    app = faucet.create_app({"DB_PATH": str(db_path), "DRY_RUN": False})
+    app.config.update(TESTING=True)
+
+    r = app.test_client().post(
+        "/faucet/drip",
+        json={"wallet": "rtc_wallet_1", "github_username": "alice"},
+    )
+    body = r.get_json()
+
+    assert r.status_code == 502
+    assert body == {
+        "ok": False,
+        "error": "transfer_failed",
+        "details": {"error": "transfer_failed_500"},
+    }
+    response_text = r.get_data(as_text=True)
+    assert "super-secret" not in response_text
+    assert "/srv/rustchain/private.db" not in response_text
