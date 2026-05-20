@@ -4,7 +4,7 @@ RustChain Client
 Main client for interacting with RustChain node API.
 """
 
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Any
 import requests
 import json
 from rustchain.exceptions import (
@@ -92,7 +92,7 @@ class RustChainClient:
             # Parse JSON response
             try:
                 return response.json()
-            except json.JSONDecodeError as e:
+            except json.JSONDecodeError:
                 return {"raw_response": response.text}
 
         except requests.exceptions.ConnectionError as e:
@@ -170,7 +170,14 @@ class RustChainClient:
             >>> print(f"Total miners: {len(miners)}")
         """
         result = self._request("GET", "/api/miners")
-        return result if isinstance(result, list) else []
+        if isinstance(result, list):
+            return result
+        if isinstance(result, dict):
+            for key in ("miners", "data", "items"):
+                miners = result.get(key)
+                if isinstance(miners, list):
+                    return miners
+        return []
 
     def balance(self, miner_id: str) -> Dict[str, Any]:
         """
