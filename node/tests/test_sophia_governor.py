@@ -175,6 +175,58 @@ def test_inbox_url_fallback_is_used_for_phone_home(tmp_db, monkeypatch):
     assert calls == ["https://example.com/api/sophia/governor/ingest"]
 
 
+def test_local_llm_fallback_continues_after_non_object_json(monkeypatch):
+    calls = []
+
+    class DummyResponse:
+        status_code = 200
+
+        def __init__(self, payload):
+            self._payload = payload
+
+        def json(self):
+            return self._payload
+
+    def fake_post(url, json=None, timeout=None):
+        calls.append(url)
+        if url.endswith("/completion"):
+            return DummyResponse(["not", "an", "object"])
+        if url.endswith("/api/generate"):
+            return DummyResponse(
+                {
+                    "response": (
+                        '{"stance": "watch", "risk_level": "medium", '
+                        '"needs_escalation": true, "message": "fallback ok"}'
+                    )
+                }
+            )
+        return DummyResponse({})
+
+    monkeypatch.setenv("SOPHIA_GOVERNOR_ENABLE_LLM", "1")
+    monkeypatch.setenv("SOPHIA_GOVERNOR_LLM_URL", "http://llm.local")
+    monkeypatch.setattr(
+        "sophia_governor.requests",
+        types.SimpleNamespace(post=fake_post),
+        raising=False,
+    )
+
+    result = sophia_governor._query_local_llm(
+        "pending_transfer",
+        {"amount_rtc": 1250},
+        {"route": ROUTE_LOCAL_ONLY, "stance": "watch", "risk_level": "medium"},
+    )
+
+    assert result == {
+        "provider": "http://llm.local",
+        "model": "elyan-sophia:7b-q4_K_M",
+        "stance": "watch",
+        "risk_level": "medium",
+        "needs_escalation": True,
+        "message": "fallback ok",
+    }
+    assert calls == ["http://llm.local/completion", "http://llm.local/api/generate"]
+
+
 def test_governor_endpoints_require_admin_for_manual_review(client):
     response = client.post(
         "/sophia/governor/review",

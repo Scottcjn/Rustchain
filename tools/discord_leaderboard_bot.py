@@ -80,8 +80,19 @@ def rewards_for_epoch(session: requests.Session, base: str, epoch: int, timeout:
     return out
 
 
+def normalize_miners_payload(data):
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        for key in ("miners", "data", "items"):
+            miners = data.get(key)
+            if isinstance(miners, list):
+                return miners
+    return []
+
+
 def collect_data(session: requests.Session, base: str, timeout: float):
-    miners = get_json(session, f"{base}/api/miners", timeout)
+    miners = normalize_miners_payload(get_json(session, f"{base}/api/miners", timeout))
     epoch = get_json(session, f"{base}/epoch", timeout)
     health = get_json(session, f"{base}/health", timeout)
 

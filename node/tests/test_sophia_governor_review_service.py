@@ -168,6 +168,24 @@ def test_call_ollama_sends_top_level_think_false(monkeypatch):
     assert captured["json"]["think"] is False
 
 
+def test_call_ollama_rejects_non_object_json(monkeypatch):
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return ["not", "an", "object"]
+
+    monkeypatch.setattr(
+        review_service,
+        "requests",
+        SimpleNamespace(post=lambda *args, **kwargs: FakeResponse()),
+    )
+
+    with pytest.raises(RuntimeError, match="Ollama returned list JSON, expected object"):
+        review_service._call_ollama("prompt")
+
+
 def test_review_endpoint_falls_back_when_model_returns_thinking_only(client, monkeypatch):
     def fake_call(prompt):
         raise RuntimeError("Ollama returned thinking without final answer for model glm-test")

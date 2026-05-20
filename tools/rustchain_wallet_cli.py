@@ -260,16 +260,25 @@ def _safe_json(r: "requests.Response") -> "tuple[dict | list | None, int]":
         return None, 1
 
 
+def _safe_json_object(r: "requests.Response") -> "tuple[dict | None, int]":
+    data, rc = _safe_json(r)
+    if data is None:
+        return None, rc
+    if not isinstance(data, dict):
+        print("Error: Server returned JSON but not an object", file=sys.stderr)
+        return None, 1
+    return data, rc
+
+
 def cmd_balance(args):
     url = f"{NODE_URL}/wallet/balance"
     r = requests.get(url, params={"miner_id": args.wallet_id}, timeout=12, verify=VERIFY_SSL)
-    data, rc = _safe_json(r)
+    data, rc = _safe_json_object(r)
     if data is None:
         return rc
-    if isinstance(data, dict):
-        if "amount_rtc" not in data and "balance_rtc" in data:
-            data["amount_rtc"] = data.get("balance_rtc")
-        data["wallet_id"] = args.wallet_id
+    if "amount_rtc" not in data and "balance_rtc" in data:
+        data["amount_rtc"] = data.get("balance_rtc")
+    data["wallet_id"] = args.wallet_id
     print(json.dumps(data, indent=2))
     return rc
 
@@ -284,7 +293,7 @@ def cmd_send(args):
 
     url = f"{NODE_URL}/wallet/transfer/signed"
     r = requests.post(url, json=payload, timeout=20, verify=VERIFY_SSL)
-    data, rc = _safe_json(r)
+    data, rc = _safe_json_object(r)
     if data is not None:
         print(json.dumps(data, indent=2))
     return rc
@@ -312,7 +321,7 @@ def cmd_miners(args):
 
 def cmd_epoch(args):
     r = requests.get(f"{NODE_URL}/epoch", timeout=12, verify=VERIFY_SSL)
-    data, rc = _safe_json(r)
+    data, rc = _safe_json_object(r)
     if data is not None:
         print(json.dumps(data, indent=2))
     return rc

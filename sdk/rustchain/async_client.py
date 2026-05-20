@@ -178,7 +178,14 @@ class AsyncRustChainClient:
                 - last_attest (int): Last attestation timestamp
         """
         result = await self._request("GET", "/api/miners")
-        return result if isinstance(result, list) else []
+        if isinstance(result, list):
+            return result
+        if isinstance(result, dict):
+            for key in ("miners", "data", "items"):
+                miners = result.get(key)
+                if isinstance(miners, list):
+                    return miners
+        return []
 
     async def balance(self, miner_id: str) -> Dict[str, Any]:
         """

@@ -173,9 +173,21 @@ class ReputationEngine:
             # Try via API /api/miners
             miners_data = self._fetch("/api/miners")
             if miners_data:
-                miners = miners_data if isinstance(miners_data, list) else miners_data.get("miners", [])
+                miners = miners_data if isinstance(miners_data, list) else []
+                if isinstance(miners_data, dict):
+                    for key in ("miners", "data", "items"):
+                        rows = miners_data.get(key)
+                        if isinstance(rows, list):
+                            miners = rows
+                            break
                 for m in miners:
-                    if m.get("wallet_name") == wallet or m.get("wallet") == wallet:
+                    miner_id = (
+                        m.get("wallet_name")
+                        or m.get("wallet")
+                        or m.get("miner")
+                        or m.get("miner_id")
+                    )
+                    if miner_id == wallet:
                         hardware_verified = True
                         break
 
@@ -341,7 +353,8 @@ def check_eligibility():
         return jsonify({"error": "agent_id required"}), 400
 
     try:
-        job_value = float(request.args.get("job_value", 0))
+        raw_job_value = request.args.get("job_value")
+        job_value = float(raw_job_value) if raw_job_value not in (None, "") else 0
     except (ValueError, TypeError):
         return jsonify({"error": "job_value must be a number"}), 400
     if not math.isfinite(job_value) or job_value < 0:
@@ -380,7 +393,8 @@ def leaderboard():
     Returns top agents by reputation (from cache).
     """
     try:
-        limit = min(int(request.args.get("limit", 20)), 100)
+        raw_limit = request.args.get("limit")
+        limit = min(int(raw_limit), 100) if raw_limit not in (None, "") else 20
     except (ValueError, TypeError):
         return jsonify({"error": "limit must be an integer"}), 400
     if limit < 1:
@@ -417,7 +431,7 @@ if __name__ == "__main__":
     print(f"  Level:          {result['level'].upper()} — {result['level_description']}")
     print(f"  Max Job Value:  {result['max_job_value_rtc']} RTC")
     print(f"  Can Post Jobs:  {'✓' if result['can_post_jobs'] else '✗'}")
-    print(f"")
+    print("")
     print(f"  Jobs Completed: {result['jobs_completed']}")
     print(f"  Jobs Accepted:  {result['jobs_accepted']}")
     print(f"  Jobs Disputed:  {result['jobs_disputed']}")

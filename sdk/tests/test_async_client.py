@@ -253,6 +253,39 @@ class TestAsyncMinersEndpoint:
 
             assert miners == []
 
+    @pytest.mark.asyncio
+    async def test_miners_envelope_response(self):
+        """Test miners endpoint returning an envelope."""
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value={
+            "items": [
+                {
+                    "miner": "miner-envelope",
+                    "hardware_type": "PowerPC G4",
+                }
+            ],
+            "pagination": {"total": 1},
+        })
+        mock_response.reason = "OK"
+
+        mock_cm = AsyncContextManager(mock_response)
+
+        with patch('aiohttp.ClientSession') as mock_session_class:
+            mock_request = Mock(return_value=mock_cm)
+            mock_session = Mock()
+            mock_session.request = mock_request
+            mock_session.closed = False
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=None)
+            mock_session.close = AsyncMock()
+            mock_session_class.return_value = mock_session
+
+            async with AsyncRustChainClient("https://rustchain.org") as client:
+                miners = await client.miners()
+
+            assert miners == [{"miner": "miner-envelope", "hardware_type": "PowerPC G4"}]
+
 
 class TestAsyncBalanceEndpoint:
     """Test /wallet/balance endpoint"""
