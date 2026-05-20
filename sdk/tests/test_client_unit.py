@@ -3,14 +3,12 @@ Unit tests for RustChain Client (with mocked responses)
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from rustchain import RustChainClient
 from rustchain.exceptions import (
     ConnectionError,
     ValidationError,
     APIError,
-    AttestationError,
-    TransferError,
 )
 
 
@@ -88,6 +86,18 @@ class TestHealthEndpoint:
                 client.health()
 
         assert "Failed to connect" in str(exc_info.value)
+
+    @patch("requests.Session.request")
+    def test_health_rejects_non_object_json(self, mock_request):
+        """Object-returning endpoints reject array/scalar JSON payloads."""
+        mock_response = Mock()
+        mock_response.json.return_value = ["not", "an", "object"]
+        mock_response.raise_for_status = Mock()
+        mock_request.return_value = mock_response
+
+        with pytest.raises(APIError, match="Expected JSON object response"):
+            with RustChainClient("https://rustchain.org") as client:
+                client.health()
 
 
 class TestEpochEndpoint:

@@ -4,7 +4,7 @@ RustChain Client
 Main client for interacting with RustChain node API.
 """
 
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Any
 import requests
 import json
 from rustchain.exceptions import (
@@ -92,7 +92,7 @@ class RustChainClient:
             # Parse JSON response
             try:
                 return response.json()
-            except json.JSONDecodeError as e:
+            except json.JSONDecodeError:
                 return {"raw_response": response.text}
 
         except requests.exceptions.ConnectionError as e:
@@ -101,6 +101,25 @@ class RustChainClient:
             raise ConnectionError(f"Request timeout to {url}: {e}") from e
         except requests.exceptions.RequestException as e:
             raise ConnectionError(f"Request failed: {e}") from e
+
+    def _request_object(
+        self,
+        method: str,
+        endpoint: str,
+        params: Dict = None,
+        data: Dict = None,
+        json_payload: Dict = None,
+    ) -> Dict[str, Any]:
+        result = self._request(
+            method=method,
+            endpoint=endpoint,
+            params=params,
+            data=data,
+            json_payload=json_payload,
+        )
+        if not isinstance(result, dict):
+            raise APIError("Expected JSON object response")
+        return result
 
     def health(self) -> Dict[str, Any]:
         """
@@ -123,7 +142,7 @@ class RustChainClient:
             >>> print(health["version"])
             '2.2.1-rip200'
         """
-        return self._request("GET", "/health")
+        return self._request_object("GET", "/health")
 
     def epoch(self) -> Dict[str, Any]:
         """
@@ -146,7 +165,7 @@ class RustChainClient:
             >>> epoch = client.epoch()
             >>> print(f"Current epoch: {epoch['epoch']}")
         """
-        return self._request("GET", "/epoch")
+        return self._request_object("GET", "/epoch")
 
     def miners(self) -> List[Dict[str, Any]]:
         """
@@ -199,7 +218,7 @@ class RustChainClient:
         if not miner_id or not isinstance(miner_id, str):
             raise ValidationError("miner_id must be a non-empty string")
 
-        return self._request("GET", "/wallet/balance", params={"miner_id": miner_id})
+        return self._request_object("GET", "/wallet/balance", params={"miner_id": miner_id})
 
     def transfer(
         self,
@@ -260,7 +279,7 @@ class RustChainClient:
             payload["signature"] = signature
 
         try:
-            result = self._request("POST", "/wallet/transfer/signed", json_payload=payload)
+            result = self._request_object("POST", "/wallet/transfer/signed", json_payload=payload)
 
             if not result.get("success", False):
                 error_msg = result.get("error", "Transfer failed")
@@ -354,7 +373,7 @@ class RustChainClient:
                 raise ValidationError(f"Missing required field: {field}")
 
         try:
-            result = self._request("POST", "/attest/submit", json_payload=payload)
+            result = self._request_object("POST", "/attest/submit", json_payload=payload)
 
             if not result.get("success", False):
                 error_msg = result.get("error", "Attestation failed")
@@ -393,7 +412,7 @@ class RustChainClient:
             raise ValidationError("miner_id must be a non-empty string")
 
         try:
-            result = self._request("POST", "/enroll", json_payload={"miner_id": miner_id})
+            result = self._request_object("POST", "/enroll", json_payload={"miner_id": miner_id})
             return result
 
         except APIError as e:
