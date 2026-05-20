@@ -78,6 +78,7 @@ class RustChainData:
         self.health: Dict[str, Any] = {}
         self.epoch: Dict[str, Any] = {}
         self.miners: List[Dict[str, Any]] = []
+        self.miner_total: int = 0
         self.tip: Dict[str, Any] = {}
         self.price: Dict[str, Any] = {}
         self.last_refresh: Optional[datetime] = None
@@ -93,10 +94,19 @@ class RustChainData:
         miners_raw = fetch_json(f"{self.base}/api/miners")
         if isinstance(miners_raw, list):
             self.miners = miners_raw
+            self.miner_total = len(miners_raw)
         elif isinstance(miners_raw, dict):
-            self.miners = miners_raw.get("miners", miners_raw.get("data", []))
+            miners = miners_raw.get("miners", miners_raw.get("data", []))
+            self.miners = miners if isinstance(miners, list) else []
+            pagination = miners_raw.get("pagination") if isinstance(miners_raw.get("pagination"), dict) else {}
+            total = pagination.get("total", miners_raw.get("total", len(self.miners)))
+            try:
+                self.miner_total = max(int(total), len(self.miners))
+            except (TypeError, ValueError):
+                self.miner_total = len(self.miners)
         else:
             self.miners = []
+            self.miner_total = 0
 
         tip = fetch_json(f"{self.base}/headers/tip") or {}
         if tip and tip != self.tip:
@@ -241,7 +251,7 @@ def build_miners_panel(data: RustChainData) -> Panel:
         table.add_row("No miners available", "", "", "")
     else:
         for m in miners:
-            miner_id = str(m.get("miner_id", m.get("id", "?")))
+            miner_id = str(m.get("miner_id") or m.get("miner") or m.get("id", "?"))
             if len(miner_id) > 24:
                 miner_id = miner_id[:21] + "..."
             hw = str(m.get("hardware_type", m.get("hardware", "?")))
@@ -253,7 +263,7 @@ def build_miners_panel(data: RustChainData) -> Panel:
                 mult_str = str(mult)
             table.add_row(miner_id, hw, arch, mult_str)
 
-    count = len(data.miners)
+    count = data.miner_total
     title = f"[bold]Active Miners[/bold] [dim]({count} total)[/dim]"
     return Panel(table, title=title, border_style="magenta")
 
