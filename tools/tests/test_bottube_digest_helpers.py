@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: MIT
-import json
 import sys
 from pathlib import Path
 
@@ -8,7 +7,7 @@ TOOLS_DIR = ROOT / "tools"
 if str(TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(TOOLS_DIR))
 
-import bottube_digest
+import bottube_digest  # noqa: E402
 
 
 def test_fmt_number_adds_commas_and_preserves_invalid_values():
@@ -76,6 +75,58 @@ def test_fetch_platform_data_falls_back_per_endpoint(monkeypatch):
     assert data["agents"] == bottube_digest.MOCK_AGENTS
     assert data["stats"] == responses["stats"]
     assert data["using_mock"] == ["agents"]
+
+
+def test_fetch_platform_data_filters_malformed_rows_and_stats(monkeypatch):
+    responses = {
+        "videos": {"videos": [{"title": "API video", "views": 1}, ["bad"]]},
+        "agents": [{"name": "Agent"}, "bad"],
+        "stats": ["bad"],
+    }
+
+    def fake_fetch_json(url):
+        if url.endswith("/api/videos?weeks=2"):
+            return responses["videos"]
+        if url.endswith("/api/agents?weeks=2"):
+            return responses["agents"]
+        if url.endswith("/api/stats?weeks=2"):
+            return responses["stats"]
+        raise AssertionError(f"unexpected URL: {url}")
+
+    monkeypatch.setattr(bottube_digest, "fetch_json", fake_fetch_json)
+
+    data = bottube_digest.fetch_platform_data("https://example.test/", weeks=2)
+
+    assert data["videos"] == [{"title": "API video", "views": 1}]
+    assert data["agents"] == [{"name": "Agent"}]
+    assert data["stats"] == bottube_digest.MOCK_STATS
+    assert data["using_mock"] == ["stats"]
+
+
+def test_fetch_platform_data_falls_back_for_non_list_rows(monkeypatch):
+    responses = {
+        "videos": {"videos": {"bad": "shape"}},
+        "agents": {"agents": None},
+        "stats": {"milestones": []},
+    }
+
+    def fake_fetch_json(url):
+        if url.endswith("/api/videos?weeks=1"):
+            return responses["videos"]
+        if url.endswith("/api/agents?weeks=1"):
+            return responses["agents"]
+        if url.endswith("/api/stats?weeks=1"):
+            return responses["stats"]
+        raise AssertionError(f"unexpected URL: {url}")
+
+    monkeypatch.setattr(bottube_digest, "fetch_json", fake_fetch_json)
+
+    data = bottube_digest.fetch_platform_data("https://example.test/", weeks=1)
+
+    assert data["videos"] == bottube_digest.MOCK_VIDEOS
+    assert data["agents"] == bottube_digest.MOCK_AGENTS
+    assert data["stats"] == responses["stats"]
+    assert data["using_mock"] == ["videos", "agents"]
 
 
 def test_build_newsletter_mentions_mock_data_when_fallback_used(monkeypatch):
