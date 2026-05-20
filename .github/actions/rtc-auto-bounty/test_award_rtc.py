@@ -588,7 +588,7 @@ class TestMainFlow(unittest.TestCase):
         call_args = mock_tx.call_args
         self.assertEqual(call_args[0][4], 200.0)  # amount parameter
 
-    def test_fallback_to_pr_author_when_no_wallet(self):
+    def test_missing_wallet_fails_without_transfer(self):
         from award_rtc import main
         transfer_result = {
             "ok": True,
@@ -602,10 +602,8 @@ class TestMainFlow(unittest.TestCase):
                 with patch("award_rtc.transfer_rtc", return_value=(True, transfer_result)) as mock_tx:
                     with patch("award_rtc.post_pr_comment", return_value=True):
                         rc = main()
-        self.assertEqual(rc, 0)
-        # Should use PR author as wallet
-        call_args = mock_tx.call_args
-        self.assertEqual(call_args[0][3], "bob")  # to_wallet parameter
+        self.assertEqual(rc, 1)
+        mock_tx.assert_not_called()
 
 
 if __name__ == "__main__":

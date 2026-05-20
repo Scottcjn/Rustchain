@@ -190,12 +190,11 @@ def resolve_wallet_from_file(repo_path: str) -> Optional[str]:
 
 def resolve_wallet(pr_body: str, repo_path: str) -> Optional[str]:
     """
-    Resolve the recipient wallet.
+    Resolve the explicitly declared recipient wallet.
 
     Priority:
       1. ``wallet:`` directive in the PR body
       2. ``.rtc-wallet`` file at the repository root
-      3. Fallback to the PR author's GitHub username
     """
     wallet = resolve_wallet_from_pr_body(pr_body)
     if wallet:
@@ -429,10 +428,12 @@ def main() -> int:
     # --- Resolve recipient wallet ------------------------------------------
     wallet = resolve_wallet(cfg.pr_body, cfg.repo_path)
     if not wallet:
-        # Fallback: use PR author's GitHub username as the wallet identifier
-        wallet = cfg.pr_author
-        log_info(f"No wallet found in PR body or .rtc-wallet file; "
-                 f"falling back to PR author: {wallet}")
+        skip_reason = "recipient_wallet_missing"
+        log_error("No recipient wallet found in PR body or .rtc-wallet file; "
+                  "skipping automatic RTC transfer.")
+        set_output("awarded", "false")
+        set_output("skip_reason", skip_reason)
+        return 1
 
     print(f"Recipient wallet: {wallet}")
 
