@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import math
 import os
 import sqlite3
 import time
@@ -284,7 +285,13 @@ def post_reserve():
         abort(400, description="duration_hours must be one of [1, 4, 24]")
     if duration_hours not in VALID_DURATIONS_HOURS:
         abort(400, description=f"duration_hours must be one of {sorted(VALID_DURATIONS_HOURS)}")
-    if rtc_amount is None or isinstance(rtc_amount, bool) or not isinstance(rtc_amount, (int, float)) or rtc_amount <= 0:
+    if (
+        rtc_amount is None
+        or isinstance(rtc_amount, bool)
+        or not isinstance(rtc_amount, (int, float))
+        or not math.isfinite(rtc_amount)
+        or rtc_amount <= 0
+    ):
         abort(400, description="rtc_amount must be a positive number")
 
     machine = MACHINE_REGISTRY.get(machine_id)

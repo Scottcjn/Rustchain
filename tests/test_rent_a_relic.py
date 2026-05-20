@@ -330,6 +330,17 @@ class TestReservationFlow:
         assert resp.status_code == 400
         assert resp.json["error"] == "rtc_amount must be a positive number"
 
+    def test_reserve_rejects_non_finite_rtc_amount(self, app):
+        for amount in (float("nan"), float("inf"), float("-inf")):
+            resp = app.post("/relic/reserve", json={
+                "agent_id": "finite-rtc",
+                "machine_id": "g3-beige",
+                "duration_hours": 1,
+                "rtc_amount": amount,
+            })
+            assert resp.status_code == 400
+            assert resp.json["error"] == "rtc_amount must be a positive number"
+
 
 class TestEscrow:
     def test_escrow_locked_on_reserve(self, app):
