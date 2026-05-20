@@ -24,7 +24,7 @@ pending_ops = _load_pending_ops()
 
 
 class FakeResponse:
-    def __init__(self, payload: dict):
+    def __init__(self, payload):
         self.payload = payload
 
     def __enter__(self):
@@ -83,6 +83,20 @@ def test_req_uses_unverified_context_when_insecure(monkeypatch):
 
     assert pending_ops._req("GET", "https://node.test/pending/list", "key", insecure=True) == {"ok": True}
     assert seen["context"] is marker
+
+
+def test_req_rejects_non_object_json_response(monkeypatch):
+    def fake_urlopen(req, timeout, context):
+        return FakeResponse(["not", "an", "object"])
+
+    monkeypatch.setattr(pending_ops.urllib.request, "urlopen", fake_urlopen)
+
+    try:
+        pending_ops._req("GET", "https://node.test/pending/list", "key", insecure=False)
+    except ValueError as exc:
+        assert str(exc) == "node response must be a JSON object"
+    else:
+        raise AssertionError("_req accepted a non-object JSON response")
 
 
 def test_cmd_list_formats_url_and_prints_response(monkeypatch, capsys):
