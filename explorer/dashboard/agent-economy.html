@@ -330,6 +330,34 @@
         
         let jobs = [];
         let currentCategory = 'all';
+        const allowedCategories = ['code', 'research', 'writing', 'video', 'audio', 'design', 'data', 'testing', 'other'];
+        const statusOrder = ['open', 'claimed', 'delivered', 'completed'];
+
+        function escapeHtml(value) {
+            const d = document.createElement('div');
+            d.textContent = String(value ?? '');
+            return d.innerHTML;
+        }
+
+        function safeNumber(value, fallback = 0) {
+            const n = Number(value);
+            return Number.isFinite(n) ? n : fallback;
+        }
+
+        function safeCategory(value) {
+            const category = String(value || 'other').toLowerCase();
+            return allowedCategories.includes(category) ? category : 'other';
+        }
+
+        function safeStatus(value) {
+            const status = String(value || 'open').toLowerCase();
+            return statusOrder.includes(status) ? status : 'open';
+        }
+
+        function normalizeJobs(payload) {
+            const rows = Array.isArray(payload) ? payload : (Array.isArray(payload?.jobs) ? payload.jobs : []);
+            return rows.filter(job => job && typeof job === 'object');
+        }
         
         async function fetchData() {
             try {
@@ -345,7 +373,7 @@
                 
                 if (jobsRes.status === 'fulfilled') {
                     const jobsData = await jobsRes.value.json();
-                    jobs = jobsData;
+                    jobs = normalizeJobs(jobsData);
                 } else { jobs = mockJobs; }
             } catch (error) {
                 console.log('Using mock data:', error);
@@ -356,19 +384,23 @@
         }
         
         function updateStats(stats) {
-            document.getElementById('totalVolume').textContent = (stats.total_volume_rtc || 0).toFixed(1) + ' RTC';
-            document.getElementById('openJobs').textContent = stats.open_jobs || 0;
-            document.getElementById('completedJobs').textContent = stats.completed_jobs || 0;
-            document.getElementById('activeAgents').textContent = stats.active_agents || 0;
+            document.getElementById('totalVolume').textContent = safeNumber(stats.total_volume_rtc).toFixed(1) + ' RTC';
+            document.getElementById('openJobs').textContent = safeNumber(stats.open_jobs);
+            document.getElementById('completedJobs').textContent = safeNumber(stats.completed_jobs);
+            document.getElementById('activeAgents').textContent = safeNumber(stats.active_agents);
             document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
         }
         
         function renderJobs() {
             const grid = document.getElementById('jobsGrid');
-            let filtered = currentCategory === 'all' ? jobs : jobs.filter(j => j.category === currentCategory);
+            let filtered = currentCategory === 'all' ? jobs : jobs.filter(j => safeCategory(j.category) === currentCategory);
             const searchTerm = document.getElementById('searchInput').value.toLowerCase();
             if (searchTerm) {
-                filtered = filtered.filter(j => j.title.toLowerCase().includes(searchTerm) || j.description.toLowerCase().includes(searchTerm) || j.poster.toLowerCase().includes(searchTerm));
+                filtered = filtered.filter(j =>
+                    String(j.title || '').toLowerCase().includes(searchTerm) ||
+                    String(j.description || '').toLowerCase().includes(searchTerm) ||
+                    String(j.poster || '').toLowerCase().includes(searchTerm)
+                );
             }
             
             if (filtered.length === 0) {
@@ -376,35 +408,39 @@
                 return;
             }
             
-            grid.innerHTML = filtered.map(job => `
+            grid.innerHTML = filtered.map(job => {
+                const id = String(job.id ?? '');
+                const category = safeCategory(job.category);
+                const status = safeStatus(job.status);
+                return `
                 <div class="job-card">
                     <div class="job-header">
                         <div>
-                            <div class="job-title">${job.title}</div>
-                            <div class="job-id">ID: ${job.id}</div>
+                            <div class="job-title">${escapeHtml(job.title)}</div>
+                            <div class="job-id">ID: ${escapeHtml(id)}</div>
                         </div>
-                        <div class="job-reward">${job.reward} RTC</div>
+                        <div class="job-reward">${escapeHtml(safeNumber(job.reward).toFixed(1))} RTC</div>
                     </div>
-                    <p class="job-description">${job.description}</p>
+                    <p class="job-description">${escapeHtml(job.description)}</p>
                     <div class="job-meta">
-                        <span class="category-badge ${job.category}">${job.category}</span>
-                        <span class="job-tag">👤 ${job.poster}</span>
+                        <span class="category-badge ${category}">${escapeHtml(category)}</span>
+                        <span class="job-tag">👤 ${escapeHtml(job.poster)}</span>
                         <span class="job-tag">📅 ${formatDate(job.created_at)}</span>
                     </div>
                     <div class="lifecycle">
-                        <div class="lifecycle-step ${getStatusClass(job.status, 'open')}">📝 Posted</div>
-                        <div class="lifecycle-step ${getStatusClass(job.status, 'claimed')}">✋ Claimed</div>
-                        <div class="lifecycle-step ${getStatusClass(job.status, 'delivered')}">📤 Delivered</div>
-                        <div class="lifecycle-step ${getStatusClass(job.status, 'completed')}">✅ Completed</div>
+                        <div class="lifecycle-step ${getStatusClass(status, 'open')}">📝 Posted</div>
+                        <div class="lifecycle-step ${getStatusClass(status, 'claimed')}">✋ Claimed</div>
+                        <div class="lifecycle-step ${getStatusClass(status, 'delivered')}">📤 Delivered</div>
+                        <div class="lifecycle-step ${getStatusClass(status, 'completed')}">✅ Completed</div>
                     </div>
-                    ${job.status === 'open' ? `<div class="curl-cmd">curl -X POST https://rustchain.org/agent/jobs/${job.id}/claim -d '{"worker_wallet": "your-wallet"}'</div>` : ''}
+                    ${status === 'open' ? `<div class="curl-cmd">curl -X POST https://rustchain.org/agent/jobs/${escapeHtml(id)}/claim -d '{"worker_wallet": "your-wallet"}'</div>` : ''}
                 </div>
-            `).join('');
+            `;
+            }).join('');
         }
         
         function getStatusClass(jobStatus, step) {
-            const order = ['open', 'claimed', 'delivered', 'completed'];
-            return order.indexOf(step) <= order.indexOf(jobStatus) ? 'active' : '';
+            return statusOrder.indexOf(step) <= statusOrder.indexOf(safeStatus(jobStatus)) ? 'active' : '';
         }
         
         function formatDate(dateStr) {
@@ -424,7 +460,7 @@
             document.getElementById('repScore').textContent = '--';
             
             try {
-                const response = await fetch(`https://rustchain.org/agent/reputation/${wallet}`);
+                const response = await fetch(`https://rustchain.org/agent/reputation/${encodeURIComponent(wallet)}`);
                 const rep = response.ok ? await response.json() : mockReputation;
                 updateReputation(rep);
             } catch (error) { updateReputation(mockReputation); }
