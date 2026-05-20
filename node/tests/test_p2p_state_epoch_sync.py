@@ -5,9 +5,37 @@ import sys
 from pathlib import Path
 
 os.environ.setdefault("RC_P2P_SECRET", "a" * 64)
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "node"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import rustchain_p2p_gossip as p2p
 from rustchain_p2p_gossip import GossipLayer, MessageType
+
+
+def _cluster_node(tmp_path, node_id):
+    all_nodes = {
+        "victim": "https://victim.example",
+        "peer1": "https://peer1.example",
+        "peer2": "https://peer2.example",
+        "peer3": "https://peer3.example",
+    }
+    return GossipLayer(
+        node_id=node_id,
+        peers={peer_id: url for peer_id, url in all_nodes.items() if peer_id != node_id},
+        db_path=str(tmp_path / f"{node_id}.db"),
+    )
+
+
+def _accept_vote(node, epoch=7, proposal_hash="proposal-a"):
+    return node.create_message(
+        MessageType.EPOCH_VOTE,
+        {
+            "epoch": epoch,
+            "proposal_hash": proposal_hash,
+            "vote": "accept",
+            "voter": node.node_id,
+        },
+        ttl=0,
+    )
 
 
 def test_signed_state_sync_cannot_inject_epoch_finality(tmp_path, monkeypatch):
@@ -172,6 +200,103 @@ def test_epoch_commit_accepts_quorum_backed_by_local_votes(tmp_path, monkeypatch
     assert victim.epoch_crdt.contains(7)
     assert victim.epoch_crdt.metadata[7]["proposal_hash"] == "proposal-a"
     assert victim.epoch_crdt.metadata[7]["voters"] == ["peer1", "peer2", "peer3"]
+
+
+def test_epoch_commit_accepts_quorum_backed_by_vote_certificate(tmp_path, monkeypatch):
+    monkeypatch.setenv("RC_P2P_SECRET", "a" * 64)
+    victim = _cluster_node(tmp_path, "victim")
+    peer1 = _cluster_node(tmp_path, "peer1")
+    peer2 = _cluster_node(tmp_path, "peer2")
+    peer3 = _cluster_node(tmp_path, "peer3")
+
+    vote_certificate = [
+        _accept_vote(peer1).to_dict(),
+        _accept_vote(peer2).to_dict(),
+        _accept_vote(peer3).to_dict(),
+    ]
+    msg = peer1.create_message(
+        MessageType.EPOCH_COMMIT,
+        {
+            "epoch": 7,
+            "proposal_hash": "proposal-a",
+            "accept_count": 3,
+            "voters": ["peer1", "peer2", "peer3"],
+            "vote_certificate": vote_certificate,
+        },
+        ttl=0,
+    )
+
+    result = victim.handle_message(msg)
+
+    assert result["status"] == "committed"
+    assert victim.epoch_crdt.contains(7)
+    assert victim.epoch_crdt.metadata[7]["proposal_hash"] == "proposal-a"
+    assert victim.epoch_crdt.metadata[7]["voters"] == ["peer1", "peer2", "peer3"]
+    assert victim.epoch_crdt.metadata[7]["certificate"] is True
+
+
+def test_epoch_commit_certificate_allows_stale_votes_for_offline_catchup(tmp_path, monkeypatch):
+    monkeypatch.setenv("RC_P2P_SECRET", "a" * 64)
+    now = p2p.time.time()
+    victim = _cluster_node(tmp_path, "victim")
+    peer1 = _cluster_node(tmp_path, "peer1")
+    peer2 = _cluster_node(tmp_path, "peer2")
+    peer3 = _cluster_node(tmp_path, "peer3")
+
+    vote_certificate = [
+        _accept_vote(peer1).to_dict(),
+        _accept_vote(peer2).to_dict(),
+        _accept_vote(peer3).to_dict(),
+    ]
+    monkeypatch.setattr(p2p.time, "time", lambda: now + p2p.MESSAGE_EXPIRY + 30)
+    msg = peer1.create_message(
+        MessageType.EPOCH_COMMIT,
+        {
+            "epoch": 7,
+            "proposal_hash": "proposal-a",
+            "accept_count": 3,
+            "voters": ["peer1", "peer2", "peer3"],
+            "vote_certificate": vote_certificate,
+        },
+        ttl=0,
+    )
+
+    result = victim.handle_message(msg)
+
+    assert result["status"] == "committed"
+    assert victim.epoch_crdt.contains(7)
+
+
+def test_epoch_commit_rejects_tampered_vote_certificate(tmp_path, monkeypatch):
+    monkeypatch.setenv("RC_P2P_SECRET", "a" * 64)
+    victim = _cluster_node(tmp_path, "victim")
+    peer1 = _cluster_node(tmp_path, "peer1")
+    peer2 = _cluster_node(tmp_path, "peer2")
+    peer3 = _cluster_node(tmp_path, "peer3")
+
+    vote_certificate = [
+        _accept_vote(peer1).to_dict(),
+        _accept_vote(peer2).to_dict(),
+        _accept_vote(peer3).to_dict(),
+    ]
+    vote_certificate[1]["payload"]["proposal_hash"] = "proposal-b"
+    msg = peer1.create_message(
+        MessageType.EPOCH_COMMIT,
+        {
+            "epoch": 7,
+            "proposal_hash": "proposal-a",
+            "accept_count": 3,
+            "voters": ["peer1", "peer2", "peer3"],
+            "vote_certificate": vote_certificate,
+        },
+        ttl=0,
+    )
+
+    result = victim.handle_message(msg)
+
+    assert result["status"] == "error"
+    assert result["reason"] == "invalid_vote_certificate_signature"
+    assert not victim.epoch_crdt.contains(7)
 
 
 def test_epoch_commit_rejects_without_quorum(tmp_path, monkeypatch):
