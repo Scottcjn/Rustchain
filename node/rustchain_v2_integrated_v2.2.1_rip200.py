@@ -6145,11 +6145,13 @@ def api_miners():
     
     # Pagination args
     try:
-        limit = int(request.args.get("limit", 100))
+        raw_limit = request.args.get("limit")
+        limit = int(raw_limit) if raw_limit not in (None, "") else 100
     except (ValueError, TypeError):
         return jsonify({"ok": False, "error": "limit must be an integer"}), 400
     try:
-        offset = int(request.args.get("offset", 0))
+        raw_offset = request.args.get("offset")
+        offset = int(raw_offset) if raw_offset not in (None, "") else 0
     except (ValueError, TypeError):
         return jsonify({"ok": False, "error": "offset must be an integer"}), 400
     limit = min(max(limit, 1), 1000)
