@@ -371,6 +371,25 @@ def release_reserved_claims_for_settlement(
         return 0
 
 
+def settlement_batch_conditions_met(
+    claims_to_process: List[Dict[str, Any]],
+    min_batch_size: int,
+    max_wait_seconds: int,
+    current_time: Optional[int] = None,
+) -> bool:
+    """Return whether a concrete batch satisfies settlement trigger rules."""
+    if not claims_to_process:
+        return False
+
+    if len(claims_to_process) >= min_batch_size:
+        return True
+
+    if current_time is None:
+        current_time = int(time.time())
+    oldest_claim_time = min(c["submitted_at"] for c in claims_to_process)
+    return current_time - oldest_claim_time >= max_wait_seconds
+
+
 def update_claims_settled(
     db_path: str,
     claim_ids: List[str],
@@ -546,18 +565,13 @@ def process_claims_batch(
     
     claims_to_process = unique_claims[:max_claims]
     
-    # Check if we should process this batch
     current_time = int(time.time())
-    oldest_claim_time = min((c["submitted_at"] for c in claims_to_process), default=current_time)
-    wait_time = current_time - oldest_claim_time
-    
-    should_process = (
-        len(claims_to_process) >= min_batch_size or
-        wait_time >= max_wait_seconds or
-        len(claims_to_process) > 0
-    )
-    
-    if not should_process or len(claims_to_process) == 0:
+    if not settlement_batch_conditions_met(
+        claims_to_process,
+        min_batch_size,
+        max_wait_seconds,
+        current_time,
+    ):
         result["error"] = "Batch conditions not met"
         return result
     
@@ -582,6 +596,26 @@ def process_claims_batch(
     if not claims_to_process:
         result["error"] = "No approved claims reserved for settlement"
         return result
+
+    # Re-check the trigger against the exact rows this worker reserved. A
+    # concurrent worker can consume most of the pre-reservation snapshot; the
+    # remaining rows must not bypass min_batch_size/max_wait_seconds simply
+    # because the earlier snapshot looked processable.
+    if not settlement_batch_conditions_met(
+        claims_to_process,
+        min_batch_size,
+        max_wait_seconds,
+    ):
+        released_count = release_reserved_claims_for_settlement(
+            db_path,
+            [c["claim_id"] for c in claims_to_process],
+            batch_id,
+            "Batch conditions not met after reservation",
+        )
+        result["released_count"] = released_count
+        result["error"] = "Batch conditions not met after reservation"
+        return result
+
     total_amount = sum(c["reward_urtc"] for c in claims_to_process)
 
     sufficient, balance = check_rewards_pool_balance(db_path, total_amount)
