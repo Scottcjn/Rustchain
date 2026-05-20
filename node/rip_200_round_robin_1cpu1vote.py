@@ -19,6 +19,7 @@ import logging
 import random
 import sqlite3
 import time
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import List, Tuple, Dict
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,83 @@ def select_active_fingerprint_checks(previous_epoch_block_hash: str, active_coun
 GENESIS_TIMESTAMP = 1764706927  # First actual block (Dec 2, 2025)
 BLOCK_TIME = 600  # 10 minutes
 ATTESTATION_TTL = 86400  # 24 hours - ancient hardware needs longer TTL  # 10 minutes
+EPOCH_WEIGHT_SCALE = 1_000_000_000
+MAX_EPOCH_WEIGHT = 10_000
+MAX_EPOCH_WEIGHT_UNITS = MAX_EPOCH_WEIGHT * EPOCH_WEIGHT_SCALE
+
+
+def _weight_to_units(weight) -> int:
+    try:
+        value = Decimal(str(weight))
+    except (InvalidOperation, TypeError, ValueError):
+        return 0
+    if not value.is_finite() or value <= 0:
+        return 0
+
+    units = int(
+        (value * Decimal(EPOCH_WEIGHT_SCALE)).to_integral_value(
+            rounding=ROUND_HALF_UP
+        )
+    )
+    return min(units, MAX_EPOCH_WEIGHT_UNITS)
+
+
+def _normalize_epoch_weight_units(raw_weight) -> int:
+    if isinstance(raw_weight, int):
+        return min(max(raw_weight, 0), MAX_EPOCH_WEIGHT_UNITS)
+    return _weight_to_units(raw_weight)
+
+
+def _apply_warthog_bonus(weight_units: int, warthog_bonus) -> int:
+    if weight_units <= 0:
+        return 0
+    try:
+        bonus = Decimal(str(warthog_bonus))
+    except (InvalidOperation, TypeError, ValueError):
+        return weight_units
+    if not bonus.is_finite() or bonus <= 1:
+        return weight_units
+
+    adjusted = int(
+        (Decimal(weight_units) * bonus).to_integral_value(
+            rounding=ROUND_HALF_UP
+        )
+    )
+    return min(adjusted, MAX_EPOCH_WEIGHT_UNITS)
+
+
+def _distribute_reward_by_weight(
+    weighted_miners: List[Tuple[str, int]], total_reward_urtc: int
+) -> Dict[str, int]:
+    eligible_miners = [(m, int(w)) for m, w in weighted_miners if int(w) > 0]
+    if not eligible_miners:
+        return {}
+
+    total_reward = max(int(total_reward_urtc), 0)
+    if total_reward == 0:
+        return {miner_id: 0 for miner_id, _ in eligible_miners}
+
+    total_weight = sum(weight for _, weight in eligible_miners)
+    if total_weight <= 0:
+        return {}
+
+    allocated = 0
+    allocations = []
+    for order, (miner_id, weight) in enumerate(eligible_miners):
+        product = total_reward * weight
+        share, remainder = divmod(product, total_weight)
+        allocated += share
+        allocations.append([miner_id, share, remainder, order])
+
+    leftover = total_reward - allocated
+    if leftover > 0:
+        for allocation in sorted(
+            allocations,
+            key=lambda row: (-row[2], row[3]),
+        )[:leftover]:
+            allocation[1] += 1
+
+    return {miner_id: share for miner_id, share, _remainder, _order in allocations}
 
 # Antiquity base multipliers
 ANTIQUITY_MULTIPLIERS = {
@@ -622,9 +700,11 @@ def calculate_epoch_rewards_time_aged(
     if not epoch_miners:
         return {}
 
-    # Calculate time-aged weights
+    # Calculate time-aged weights as capped fixed-point integers.  The
+    # integrated settlement path stores epoch_enroll.weight this way; keeping
+    # it integer here avoids float precision loss for large miner sets.
     weighted_miners = []
-    total_weight = 0.0
+    total_weight = 0
 
     for row in epoch_miners:
         miner_id, device_arch = row[0], row[1]
@@ -646,21 +726,19 @@ def calculate_epoch_rewards_time_aged(
 
         # STRICT: VMs/emulators with failed fingerprint get ZERO weight
         if fingerprint_ok == 0:
-            weight = 0.0  # No rewards for failed fingerprint
+            weight = 0  # No rewards for failed fingerprint
             print(f"[REWARD] {miner_id[:20]}... fingerprint=FAIL -> weight=0")
         elif enrolled_weight is not None:
-            weight = max(float(enrolled_weight or 0.0), 0.0)
+            weight = _normalize_epoch_weight_units(enrolled_weight)
         else:
-            weight = get_time_aged_multiplier(device_arch, chain_age_years)
+            weight = _weight_to_units(
+                get_time_aged_multiplier(device_arch, chain_age_years)
+            )
 
         # Apply Warthog dual-mining bonus (1.0x/1.1x/1.15x)
         # Double-gated: fingerprint must pass (weight>0) AND fingerprint_ok==1
         if weight > 0 and fingerprint_ok == 1:
-            try:
-                if warthog_bonus and warthog_bonus > 1.0:
-                    weight *= warthog_bonus
-            except Exception:
-                pass  # Column may not exist on older schemas
+            weight = _apply_warthog_bonus(weight, warthog_bonus)
 
         weighted_miners.append((miner_id, weight))
         total_weight += weight
@@ -676,24 +754,7 @@ def calculate_epoch_rewards_time_aged(
         )
         return {}
 
-    # Filter out zero-weight miners — they should receive nothing
-    eligible_miners = [(m, w) for m, w in weighted_miners if w > 0]
-
-    # Distribute rewards proportionally by weight
-    rewards = {}
-    remaining = total_reward_urtc
-
-    for i, (miner_id, weight) in enumerate(eligible_miners):
-        if i == len(eligible_miners) - 1:
-            # Last miner gets remainder (prevents rounding issues)
-            share = remaining
-        else:
-            share = 0 if total_weight == 0 else int((weight / total_weight) * total_reward_urtc)
-            remaining -= share
-
-        rewards[miner_id] = share
-
-    return rewards
+    return _distribute_reward_by_weight(weighted_miners, total_reward_urtc)
 
 
 # Example usage and testing
