@@ -792,23 +792,6 @@ class GossipLayer:
         # Deduplication (Issue #2271: DB-backed persistent dedup)
         try:
             with sqlite3.connect(self.db_path) as conn:
-                res = conn.execute("SELECT 1 FROM p2p_seen_messages WHERE msg_id = ?", (msg.msg_id,)).fetchone()
-                if res:
-                    return {"status": "duplicate"}
-        except Exception as e:
-            logger.error(f"P2P dedup DB error: {e}")
-            # Fallback to memory if DB fails
-            if self.seen_messages.contains(msg.msg_id):
-                return {"status": "duplicate"}
-
-        # Verify signature
-        if not self.verify_message(msg):
-            logger.warning(f"Invalid signature from {msg.sender_id}")
-            return {"status": "invalid_signature"}
-
-        # Record as seen (Issue #2271: Persistent storage)
-        try:
-            with sqlite3.connect(self.db_path) as conn:
                 now = int(time.time())
                 conn.execute("INSERT OR IGNORE INTO p2p_seen_messages (msg_id, ts) VALUES (?, ?)",
                              (msg.msg_id, now))
@@ -818,11 +801,17 @@ class GossipLayer:
                 conn.execute("DELETE FROM p2p_seen_messages WHERE ts < ?", (now - 3600,))
                 conn.commit()
         except Exception as e:
-            logger.error(f"P2P save seen DB error: {e}")
+            logger.error(f"P2P dedup DB error: {e}")
+            # Fallback to memory if DB fails
             with self.lock:
                 if self.seen_messages.contains(msg.msg_id):
                     return {"status": "duplicate"}
                 self.seen_messages.add(msg.msg_id)
+
+        # Verify signature
+        if not self.verify_message(msg):
+            logger.warning(f"Invalid signature from {msg.sender_id}")
+            return {"status": "invalid_signature"}
 
         # TTLCache handles automatic eviction (TTL + LRU)
 

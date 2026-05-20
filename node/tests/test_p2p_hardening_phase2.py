@@ -17,7 +17,9 @@ from pathlib import Path
 
 os.environ.setdefault("RC_P2P_SECRET", "unit-test-secret-0123456789abcdef")
 
-MODULE_PATH = Path(__file__).resolve().parents[1] / "rustchain_p2p_gossip.py"
+NODE_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(NODE_DIR))
+MODULE_PATH = NODE_DIR / "rustchain_p2p_gossip.py"
 spec = importlib.util.spec_from_file_location("rustchain_p2p_gossip", MODULE_PATH)
 mod = importlib.util.module_from_spec(spec)
 sys.modules["rustchain_p2p_gossip"] = mod
@@ -87,21 +89,16 @@ def test_p2p_dedup_insert_race_returns_duplicate():
     sender = _mk_layer("node2", db_path=target.db_path)
     sender.broadcast = lambda *args, **kwargs: None
 
-    msg = sender.create_message(mod.MessageType.PING, {"ping": 1})
-    original_verify = target.verify_message
+    first = sender.create_message(mod.MessageType.PING, {"ping": 1})
+    duplicate = mod.GossipMessage.from_dict(first.to_dict())
 
-    def racing_verify(message):
-        verified = original_verify(message)
-        with sqlite3.connect(target.db_path) as conn:
-            conn.execute(
-                "INSERT OR IGNORE INTO p2p_seen_messages (msg_id, ts) VALUES (?, ?)",
-                (message.msg_id, int(time.time())),
-            )
-        return verified
+    assert target.handle_message(first)["status"] == "ok"
 
-    target.verify_message = racing_verify
+    def fail_verify(message):
+        raise AssertionError("duplicate should return before signature verification")
 
-    result = target.handle_message(msg)
+    target.verify_message = fail_verify
+    result = target.handle_message(duplicate)
     assert result["status"] == "duplicate"
     assert "pong" not in result
 
