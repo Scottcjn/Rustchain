@@ -46,6 +46,14 @@ def test_api_helpers_fetch_expected_endpoints_and_return_json():
     assert all(call.kwargs["timeout"] == 10 for call in get.call_args_list)
 
 
+def test_api_helpers_reject_non_object_health_and_epoch_payloads():
+    module = load_module()
+
+    with patch.object(module.requests, "get", return_value=response(["not", "object"])):
+        assert module.check_health() == {"error": "unexpected health response shape"}
+        assert module.get_epoch() == {"error": "unexpected epoch response shape"}
+
+
 def test_api_helpers_return_error_dict_on_request_failure():
     module = load_module()
 
@@ -76,6 +84,7 @@ def test_print_health_renders_success_and_error(capsys):
         "db_rw": True,
     })
     module.print_health({"error": "offline"})
+    module.print_health(["not", "object"])
 
     output = capsys.readouterr().out
     assert "Node is healthy" in output
@@ -83,6 +92,7 @@ def test_print_health_renders_success_and_error(capsys):
     assert "Uptime: 7200s (2.0 hours)" in output
     assert "Backup age: 1.25 hours" in output
     assert "Health check failed: offline" in output
+    assert "Health check failed: unexpected response" in output
 
 
 def test_print_miners_renders_lists_unexpected_and_errors(capsys):
@@ -90,6 +100,7 @@ def test_print_miners_renders_lists_unexpected_and_errors(capsys):
 
     module.print_miners([
         {"miner": "alice", "hardware_type": "PowerPC", "antiquity_multiplier": 1.5, "last_attest": 0},
+        None,
         {"miner": "bob", "hardware_type": "x86", "antiquity_multiplier": 1.0, "last_attest": 60},
     ])
     module.print_miners({"unexpected": True})
@@ -98,6 +109,7 @@ def test_print_miners_renders_lists_unexpected_and_errors(capsys):
     output = capsys.readouterr().out
     assert "Active miners: 2" in output
     assert "alice" in output
+    assert "bob" in output
     assert "never" in output
     assert "Unexpected response" in output
     assert "Failed to fetch miners: down" in output
@@ -115,9 +127,11 @@ def test_print_epoch_renders_success_and_error(capsys):
         "enrolled_miners": 7,
     })
     module.print_epoch({"error": "unavailable"})
+    module.print_epoch(["not", "object"])
 
     output = capsys.readouterr().out
     assert "Epoch: 9" in output
     assert "Slot: 12" in output
     assert "Epoch pot: 1.5 RTC" in output
     assert "Failed to fetch epoch: unavailable" in output
+    assert "Failed to fetch epoch: unexpected response" in output

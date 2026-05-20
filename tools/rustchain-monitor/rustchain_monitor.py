@@ -18,21 +18,29 @@ from datetime import datetime
 NODE_URL = "https://rustchain.org"
 
 def normalize_miners_payload(data):
+    def valid_rows(rows):
+        return [row for row in rows if isinstance(row, dict)]
+
     if isinstance(data, list):
-        return data
+        return valid_rows(data)
     if isinstance(data, dict):
         for key in ("miners", "data", "items"):
             miners = data.get(key)
             if isinstance(miners, list):
-                return miners
+                return valid_rows(miners)
     return data
+
+def require_object_payload(data, endpoint):
+    if isinstance(data, dict):
+        return data
+    return {"error": f"unexpected {endpoint} response shape"}
 
 def check_health():
     try:
         resp = requests.get(f"{NODE_URL}/health", timeout=10)
         resp.raise_for_status()
         data = resp.json()
-        return data
+        return require_object_payload(data, "health")
     except Exception as e:
         return {"error": str(e)}
 
@@ -48,11 +56,14 @@ def get_epoch():
     try:
         resp = requests.get(f"{NODE_URL}/epoch", timeout=10)
         resp.raise_for_status()
-        return resp.json()
+        return require_object_payload(resp.json(), "epoch")
     except Exception as e:
         return {"error": str(e)}
 
 def print_health(data):
+    if not isinstance(data, dict):
+        print(f"❌ Health check failed: unexpected response: {data}")
+        return
     if "error" in data:
         print(f"❌ Health check failed: {data['error']}")
         return
@@ -69,6 +80,7 @@ def print_miners(data):
     if not isinstance(data, list):
         print(f"⚠ Unexpected response: {data}")
         return
+    data = [entry for entry in data if isinstance(entry, dict)]
     print(f"📊 Active miners: {len(data)}")
     print("   Recent miners:")
     for entry in data[:10]:
@@ -85,6 +97,9 @@ def print_miners(data):
         print(f"   ... and {len(data)-10} more")
 
 def print_epoch(data):
+    if not isinstance(data, dict):
+        print(f"❌ Failed to fetch epoch: unexpected response: {data}")
+        return
     if "error" in data:
         print(f"❌ Failed to fetch epoch: {data['error']}")
         return
