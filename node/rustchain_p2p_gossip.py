@@ -114,6 +114,13 @@ GOSSIP_TTL = 3
 SYNC_INTERVAL = 30
 MESSAGE_EXPIRY = 300  # 5 minutes
 MAX_INV_BATCH = 1000
+MAX_GOSSIP_REQUEST_BYTES = 1024 * 1024
+MAX_GOSSIP_PAYLOAD_SERIALIZED_BYTES = 256 * 1024
+MAX_GOSSIP_PAYLOAD_DEPTH = 16
+MAX_GOSSIP_PAYLOAD_OBJECT_KEYS = 256
+MAX_GOSSIP_PAYLOAD_TOTAL_KEYS = 2048
+MAX_GOSSIP_PAYLOAD_LIST_ITEMS = 2048
+MAX_GOSSIP_PAYLOAD_STRING_BYTES = 8192
 DB_PATH = os.environ.get("RUSTCHAIN_DB", "/root/rustchain/rustchain_v2.db")
 
 
@@ -234,6 +241,82 @@ def handshake_mismatches(
         if field in remote and local_values[field] != remote_values[field]
     }
 
+
+def _validate_gossip_payload_value(
+    value: Any,
+    *,
+    depth: int = 0,
+    counters: Optional[Dict[str, int]] = None,
+) -> None:
+    """Reject oversized JSON payload trees before signature serialization."""
+    if counters is None:
+        counters = {"keys": 0}
+    if depth > MAX_GOSSIP_PAYLOAD_DEPTH:
+        raise ValueError("gossip payload exceeds maximum depth")
+
+    if isinstance(value, dict):
+        if len(value) > MAX_GOSSIP_PAYLOAD_OBJECT_KEYS:
+            raise ValueError("gossip payload object has too many keys")
+        counters["keys"] += len(value)
+        if counters["keys"] > MAX_GOSSIP_PAYLOAD_TOTAL_KEYS:
+            raise ValueError("gossip payload has too many keys")
+        for key, child in value.items():
+            if not isinstance(key, str):
+                raise ValueError("gossip payload keys must be strings")
+            if len(key.encode("utf-8")) > MAX_GOSSIP_PAYLOAD_STRING_BYTES:
+                raise ValueError("gossip payload key is too large")
+            _validate_gossip_payload_value(
+                child,
+                depth=depth + 1,
+                counters=counters,
+            )
+        return
+
+    if isinstance(value, list):
+        if len(value) > MAX_GOSSIP_PAYLOAD_LIST_ITEMS:
+            raise ValueError("gossip payload list is too large")
+        for child in value:
+            _validate_gossip_payload_value(
+                child,
+                depth=depth + 1,
+                counters=counters,
+            )
+        return
+
+    if isinstance(value, str):
+        if len(value.encode("utf-8")) > MAX_GOSSIP_PAYLOAD_STRING_BYTES:
+            raise ValueError("gossip payload string is too large")
+        return
+
+    if isinstance(value, bool) or value is None or isinstance(value, int):
+        return
+
+    if isinstance(value, float):
+        if not (float("-inf") < value < float("inf")):
+            raise ValueError("gossip payload float must be finite")
+        return
+
+    raise ValueError("gossip payload contains unsupported JSON value")
+
+
+def validate_gossip_payload(payload: Any) -> str:
+    """Validate an untrusted gossip payload and return canonical JSON."""
+    if not isinstance(payload, dict):
+        raise ValueError("invalid gossip message payload")
+    _validate_gossip_payload_value(payload)
+    try:
+        payload_json = json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError("invalid gossip message payload") from exc
+    if len(payload_json.encode("utf-8")) > MAX_GOSSIP_PAYLOAD_SERIALIZED_BYTES:
+        raise ValueError("gossip payload exceeds maximum serialized size")
+    return payload_json
+
 # TLS verification: defaults to True (secure).
 # Set RUSTCHAIN_TLS_VERIFY=false only for local development with self-signed certs.
 # Prefer RUSTCHAIN_CA_BUNDLE to point at a pinned CA/cert file instead of disabling.
@@ -340,12 +423,7 @@ class GossipMessage:
             raise ValueError("invalid gossip message ttl")
 
         payload = data["payload"]
-        if not isinstance(payload, dict):
-            raise ValueError("invalid gossip message payload")
-        try:
-            json.dumps(payload, sort_keys=True)
-        except (TypeError, ValueError) as exc:
-            raise ValueError("invalid gossip message payload") from exc
+        validate_gossip_payload(payload)
 
         return cls(
             msg_type=msg_type,
@@ -1659,9 +1737,20 @@ def register_p2p_endpoints(app, p2p_node: RustChainP2PNode):
         if not _gossip_rate_check(remote_ip):
             return jsonify({"error": "rate_limited", "limit": f"{GOSSIP_RATE_LIMIT}/{GOSSIP_RATE_WINDOW_S}s"}), 429
 
+        if (
+            request.content_length is not None
+            and request.content_length > MAX_GOSSIP_REQUEST_BYTES
+        ):
+            return jsonify({"error": "gossip request too large"}), 413
+
         data = request.get_json(silent=True)
         if not isinstance(data, dict):
             return jsonify({"error": "JSON object required"}), 400
+        if "payload" in data:
+            try:
+                validate_gossip_payload(data["payload"])
+            except ValueError as exc:
+                return jsonify({"error": str(exc)}), 400
         result = p2p_node.handle_gossip(data)
         return jsonify(result)
 
