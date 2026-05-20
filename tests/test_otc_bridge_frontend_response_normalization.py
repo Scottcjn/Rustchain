@@ -14,6 +14,9 @@ def test_otc_bridge_normalizes_response_arrays_before_rendering():
     assert "const bids = Array.isArray(data.bids) ? data.bids : [];" in html
     assert "const orders = Array.isArray(data.orders) ? data.orders : [];" in html
     assert "const trades = Array.isArray(data.trades) ? data.trades : [];" in html
+    assert "const order = o && typeof o === 'object' ? o : {};" in html
+    assert "${escapeHtml(order.maker_wallet)}" in html
+    assert "${escapeHtml(o.maker_wallet)}" not in html
 
 
 def test_otc_bridge_formats_api_numbers_through_safe_helpers():

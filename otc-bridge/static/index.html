@@ -785,7 +785,7 @@
                     <div class="order-info">
                         <div class="order-amount">${formatNumber(amount, 2)} RTC @ ${formatNumber(price, 4)} ${escapeHtml(quote)}</div>
                         <div class="order-price">Total: ${formatNumber(total, 4)} ${escapeHtml(quote)} ${escrowed}</div>
-                        <div class="order-wallet">${escapeHtml(o.maker_wallet)} &bull; ${escapeHtml(age)}</div>
+                        <div class="order-wallet">${escapeHtml(order.maker_wallet)} &bull; ${escapeHtml(age)}</div>
                     </div>
                     <div class="order-actions">
                         <button class="btn-sm btn-match" data-order-id="${escapeHtml(orderId)}">Match</button>
