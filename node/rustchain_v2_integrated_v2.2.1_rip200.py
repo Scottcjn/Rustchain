@@ -6656,9 +6656,17 @@ def add_oui_deny():
 
     # Extract client IP (handle nginx proxy)
     client_ip = get_client_ip()
-    oui = data.get('oui', '').lower().replace(':', '').replace('-', '')
+    raw_oui = data.get('oui', '')
+    if not isinstance(raw_oui, str):
+        return jsonify({"error": "OUI must be a string"}), 400
+    oui = raw_oui.lower().replace(':', '').replace('-', '')
     vendor = data.get('vendor', 'Unknown')
-    enforce = int(data.get('enforce', 0))
+    if not isinstance(vendor, str):
+        return jsonify({"error": "Vendor must be a string"}), 400
+    raw_enforce = data.get('enforce', 0)
+    if isinstance(raw_enforce, bool) or not isinstance(raw_enforce, int):
+        return jsonify({"error": "enforce must be an integer"}), 400
+    enforce = raw_enforce
 
     if len(oui) != 6 or not all(c in '0123456789abcdef' for c in oui):
         return jsonify({"error": "Invalid OUI (must be 6 hex chars)"}), 400
@@ -6683,7 +6691,10 @@ def remove_oui_deny():
 
     # Extract client IP (handle nginx proxy)
     client_ip = get_client_ip()
-    oui = data.get('oui', '').lower().replace(':', '').replace('-', '')
+    raw_oui = data.get('oui', '')
+    if not isinstance(raw_oui, str):
+        return jsonify({"error": "OUI must be a string"}), 400
+    oui = raw_oui.lower().replace(':', '').replace('-', '')
 
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("DELETE FROM oui_deny WHERE oui = ?", (oui,))
