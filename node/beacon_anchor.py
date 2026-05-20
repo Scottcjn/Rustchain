@@ -10,6 +10,7 @@ import hashlib
 import json
 import sqlite3
 import time
+from contextlib import closing
 from hashlib import blake2b
 
 try:
@@ -116,7 +117,7 @@ def verify_envelope_signature(envelope: dict) -> tuple[bool, str]:
 
 def init_beacon_table(db_path=DB_PATH):
     """Create beacon_envelopes table if it doesn't exist."""
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS beacon_envelopes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

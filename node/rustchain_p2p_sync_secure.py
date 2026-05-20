@@ -24,6 +24,7 @@ import threading
 import hmac
 import hashlib
 import secrets
+from contextlib import closing
 from datetime import datetime
 from typing import List, Dict, Optional, Callable
 from functools import wraps
@@ -352,7 +353,7 @@ class SecurePeerManager:
 
     def _init_peer_db(self):
         """Create peer tracking table with reputation"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS peers (
                     peer_url TEXT PRIMARY KEY,
@@ -377,7 +378,7 @@ class SecurePeerManager:
 
         with self.lock:
             try:
-                with sqlite3.connect(self.db_path) as conn:
+                with closing(sqlite3.connect(self.db_path)) as conn:
                     conn.execute("""
                         INSERT OR REPLACE INTO peers
                         (peer_url, peer_host, peer_port, last_seen, last_block_height, added_at)
@@ -396,7 +397,7 @@ class SecurePeerManager:
 
     def get_active_peers(self) -> List[str]:
         """Get list of active, non-banned peers"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.execute("""
                 SELECT peer_url FROM peers
                 WHERE is_active = 1 AND is_banned = 0
@@ -405,7 +406,7 @@ class SecurePeerManager:
 
     def get_network_stats(self):
         """Get P2P network statistics"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.execute("""
                 SELECT
                     COUNT(*) as total_peers,
@@ -440,13 +441,25 @@ class SecureBlockSync:
         self.db_path = db_path
         self.sync_interval = 30  # seconds
         self.running = False
+        self._stop_event = threading.Event()
+        self._sync_thread = None
 
     def start(self):
         """Start background sync thread"""
+        if self.running:
+            return
         self.running = True
-        sync_thread = threading.Thread(target=self._sync_loop, daemon=True)
-        sync_thread.start()
+        self._stop_event.clear()
+        self._sync_thread = threading.Thread(target=self._sync_loop, daemon=True)
+        self._sync_thread.start()
         logging.info("Secure block sync started")
+
+    def stop(self, timeout: float = 2.0):
+        """Stop background sync and wait briefly for open resources to close."""
+        self.running = False
+        self._stop_event.set()
+        if self._sync_thread and self._sync_thread is not threading.current_thread():
+            self._sync_thread.join(timeout=timeout)
 
     def _sync_loop(self):
         """Main sync loop"""
@@ -456,7 +469,8 @@ class SecureBlockSync:
             except Exception as e:
                 logging.error(f"Sync error: {e}")
 
-            time.sleep(self.sync_interval)
+            if self._stop_event.wait(self.sync_interval):
+                break
 
     def sync_from_peers(self):
         """Fetch and validate blocks from peers"""
@@ -509,7 +523,7 @@ class SecureBlockSync:
 
     def get_blocks_for_sync(self, start_height, limit=100):
         """Get RustChain headers formatted as validator-compatible block records."""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.execute("""
                 SELECT slot, miner_id, message_hex, signature_hex, pubkey_hex, ts
                 FROM headers
