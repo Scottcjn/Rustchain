@@ -15,12 +15,11 @@ Usage:
 """
 
 import argparse
-import hashlib
 import json
 import os
 import sys
 from datetime import datetime
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional
 
 
 class SubmissionValidator:
@@ -44,26 +43,31 @@ class SubmissionValidator:
             result["message"] = f"Photo file not found: {photo_path}"
             return result
         
+        warning_messages = []
+
         # Check file size (should be reasonable)
         file_size = os.path.getsize(photo_path)
         if file_size < 10000:  # Less than 10KB
-            result["status"] = "WARN"
-            result["message"] = f"Photo file seems too small: {file_size} bytes"
+            warning_messages.append(f"Photo file seems too small: {file_size} bytes")
             self.warnings.append("Photo file is unusually small")
         
         # Check file extension
         ext = os.path.splitext(photo_path)[1].lower()
         if ext not in ['.jpg', '.jpeg', '.png', '.gif', '.bmp']:
-            result["status"] = "WARN"
-            result["message"] = f"Unusual photo format: {ext}"
+            warning_messages.append(f"Unusual photo format: {ext}")
+            self.warnings.append(f"Unusual photo format: {ext}")
         
         # In production, would check:
         # - EXIF timestamp
         # - Image content (machine + monitor)
         # - Metadata consistency
         
-        result["status"] = "PASS"
-        result["message"] = "Photo file exists and appears valid"
+        if warning_messages:
+            result["status"] = "WARN"
+            result["message"] = "; ".join(warning_messages)
+        else:
+            result["status"] = "PASS"
+            result["message"] = "Photo file exists and appears valid"
         result["checks"] = {
             "file_exists": True,
             "file_size_bytes": file_size,
@@ -90,9 +94,11 @@ class SubmissionValidator:
         if file_size < 1000:  # Less than 1KB
             result["status"] = "WARN"
             result["message"] = f"Screenshot file seems too small: {file_size} bytes"
+            self.warnings.append("Screenshot file is unusually small")
+        else:
+            result["status"] = "PASS"
+            result["message"] = "Screenshot file exists"
         
-        result["status"] = "PASS"
-        result["message"] = "Screenshot file exists"
         result["checks"] = {
             "file_exists": True,
             "file_size_bytes": file_size
@@ -263,7 +269,7 @@ class SubmissionValidator:
             sys.path.insert(0, 'vintage_miner')
             from hardware_profiles import get_bounty
             return get_bounty(device_arch)
-        except:
+        except Exception:
             # Default bounty
             return 100
     
@@ -322,7 +328,7 @@ class SubmissionValidator:
                 try:
                     from hardware_profiles import get_era
                     results["era"] = get_era(device_arch)
-                except:
+                except Exception:
                     results["era"] = "Unknown"
         
         if writeup_path:

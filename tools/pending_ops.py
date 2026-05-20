@@ -30,7 +30,10 @@ def _req(method: str, url: str, admin_key: str, payload: dict | None = None, *, 
     req.add_header("X-Admin-Key", admin_key)
     ctx = ssl._create_unverified_context() if insecure else None
     with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+        body = json.loads(resp.read().decode("utf-8"))
+        if not isinstance(body, dict):
+            raise ValueError("node response must be a JSON object")
+        return body
 
 
 def cmd_list(args: argparse.Namespace) -> int:

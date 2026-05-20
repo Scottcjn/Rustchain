@@ -643,10 +643,16 @@
         return response.json();
       }
 
+      function normalizeMinerRows(payload) {
+        const rows = Array.isArray(payload) ? payload : (payload?.miners || payload?.data || payload?.items || []);
+        if (!Array.isArray(rows)) return [];
+        return rows.filter((item) => item && typeof item === "object");
+      }
+
       async function getMinerIds() {
         const data = await fetchJson("/api/miners");
-        const list = Array.isArray(data) ? data : data.miners || [];
-        const ids = list.map((item) => item.miner).filter(Boolean);
+        const list = normalizeMinerRows(data);
+        const ids = list.map((item) => item.miner || item.miner_id || item.id || item.name).filter(Boolean);
         return [...new Set([...ids, ...Object.keys(FOUNDER_WALLETS)])];
       }
 

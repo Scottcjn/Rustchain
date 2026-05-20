@@ -32,18 +32,16 @@ import os
 import re
 import secrets
 import sqlite3
-import subprocess
 import sys
 import time
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict
 
 # Try to import Flask, provide helpful error if missing
 try:
-    from flask import Flask, render_template_string, request, jsonify, send_from_directory
+    from flask import Flask, render_template_string, request, jsonify
 except ImportError:
     print("Flask not installed. Install with: pip install flask", file=sys.stderr)
     sys.exit(1)
@@ -113,6 +111,17 @@ def is_valid_cert_id(cert_id: object) -> bool:
     if not isinstance(cert_id, str):
         return False
     return bool(CERT_ID_PATTERN.fullmatch(cert_id))
+
+
+def _load_metadata_object(raw_metadata: str) -> Dict:
+    """Return stored metadata when it is valid JSON object data."""
+    if not raw_metadata:
+        return {}
+    try:
+        metadata = json.loads(raw_metadata)
+    except json.JSONDecodeError:
+        return {}
+    return metadata if isinstance(metadata, dict) else {}
 
 # ── Database Functions ──────────────────────────────────────────────
 
@@ -430,7 +439,7 @@ def verify_certificate(cert_id: str, use_cache: bool = True) -> Dict:
             'commitment': result[4],
             'reviewer': result[5],
             'generated_at': result[6],
-            'metadata': json.loads(result[7]) if result[7] else {},
+            'metadata': _load_metadata_object(result[7]),
         }
 
         # Cache the result
@@ -1124,10 +1133,22 @@ def generate_badge():
     if auth_error:
         return auth_error
 
-    data = request.get_json()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({
+            'success': False,
+            'error': 'JSON object body required',
+        }), 400
 
-    repo_name = data.get('repo_name', '').strip()
-    tier = data.get('tier', 'L1').upper()
+    raw_repo_name = data.get('repo_name', '')
+    if not isinstance(raw_repo_name, str):
+        return jsonify({'success': False, 'error': 'Repository name must be a string'})
+    repo_name = raw_repo_name.strip()
+
+    raw_tier = data.get('tier', 'L1')
+    if not isinstance(raw_tier, str):
+        return jsonify({'success': False, 'error': 'Tier must be a string'})
+    tier = raw_tier.upper()
     raw_trust_score = data.get('trust_score', 75)
     cert_id = data.get('cert_id', '')
     include_qr = data.get('include_qr', False)
@@ -1233,7 +1254,7 @@ def serve_badge_svg(cert_id):
         return 'Badge not found', 404
 
     repo_name, tier, trust_score, metadata = result
-    metadata_dict = json.loads(metadata) if metadata else {}
+    metadata_dict = _load_metadata_object(metadata)
 
     # Increment download count
     increment_download_count(cert_id)

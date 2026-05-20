@@ -252,7 +252,8 @@ def get_dashboard_transactions():
 
     state_filter = request.args.get("state", "").strip() or None
     try:
-        limit = int(request.args.get("limit", 50))
+        raw_limit = request.args.get("limit")
+        limit = int(raw_limit) if raw_limit not in (None, "") else 50
     except (TypeError, ValueError):
         return jsonify({"error": "limit must be an integer"}), 400
     limit = max(1, min(limit, 200))

@@ -26,9 +26,8 @@ import json
 import os
 import sqlite3
 import sys
-import time
-from dataclasses import dataclass, field, asdict
-from typing import List, Optional, Tuple, Dict, Any
+from dataclasses import dataclass, asdict
+from typing import List, Optional
 
 # ── Configuration ────────────────────────────────────────────────
 DEFAULT_DB = os.environ.get(
@@ -87,6 +86,13 @@ class ErgoClient:
     def __init__(self, base_url: str):
         self.base_url = base_url.rstrip("/")
 
+    @staticmethod
+    def _json_object(raw: bytes) -> dict:
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            raise ValueError("Ergo node response must be a JSON object")
+        return data
+
     def get_transaction(self, tx_id: str) -> Optional[dict]:
         """Fetch transaction by ID."""
         try:
@@ -94,14 +100,14 @@ class ErgoClient:
             url = f"{self.base_url}/blockchain/transaction/byId/{tx_id}"
             req = urllib.request.Request(url, headers={"Accept": "application/json"})
             resp = urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT)
-            return json.loads(resp.read())
+            return self._json_object(resp.read())
         except Exception:
             # Try unconfirmed pool
             try:
                 url = f"{self.base_url}/transactions/unconfirmed/byTransactionId/{tx_id}"
                 req = urllib.request.Request(url, headers={"Accept": "application/json"})
                 resp = urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT)
-                return json.loads(resp.read())
+                return self._json_object(resp.read())
             except Exception:
                 return None
 
@@ -112,14 +118,22 @@ class ErgoClient:
             url = f"{self.base_url}/blockchain/box/byId/{box_id}"
             req = urllib.request.Request(url, headers={"Accept": "application/json"})
             resp = urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT)
-            return json.loads(resp.read())
+            return self._json_object(resp.read())
         except Exception:
             return None
 
     def extract_commitment_from_tx(self, tx: dict) -> Optional[str]:
         """Extract commitment hash from R5 register of transaction outputs."""
-        for output in tx.get("outputs", []):
+        outputs = tx.get("outputs", [])
+        if not isinstance(outputs, list):
+            return None
+
+        for output in outputs:
+            if not isinstance(output, dict):
+                continue
             registers = output.get("additionalRegisters", {})
+            if not isinstance(registers, dict):
+                continue
 
             # R5 contains commitment hash (0e40 prefix = Coll[Byte] 32 bytes)
             r5 = registers.get("R5", "")

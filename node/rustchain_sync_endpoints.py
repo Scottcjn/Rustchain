@@ -98,6 +98,16 @@ def register_sync_endpoints(app, db_path, admin_key):
 
         return decorated
 
+    def _parse_sync_int_arg(name, default, minimum, maximum):
+        raw_value = request.args.get(name)
+        if raw_value is None or raw_value == "":
+            return default, None
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError):
+            return None, f"{name} must be an integer"
+        return max(minimum, min(value, maximum)), None
+
     @app.route("/api/sync/status", methods=["GET"])
     @require_admin
     def sync_status():
@@ -121,14 +131,12 @@ def register_sync_endpoints(app, db_path, admin_key):
         - offset: row offset (default 0)
         """
         table = request.args.get("table", "").strip()
-        try:
-            limit = int(request.args.get("limit", 200))
-            offset = int(request.args.get("offset", 0))
-        except ValueError:
-            return jsonify({"error": "limit/offset must be integers"}), 400
-
-        limit = max(1, min(limit, 1000))
-        offset = max(0, offset)
+        limit, error = _parse_sync_int_arg("limit", 200, 1, 1000)
+        if error:
+            return jsonify({"error": error}), 400
+        offset, error = _parse_sync_int_arg("offset", 0, 0, 10**12)
+        if error:
+            return jsonify({"error": error}), 400
 
         tables = sync_manager.SYNC_TABLES
         if table:

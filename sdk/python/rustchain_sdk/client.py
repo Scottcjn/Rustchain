@@ -234,9 +234,10 @@ class RustChainClient:
         if isinstance(result, list):
             return result
         if isinstance(result, dict):
-            miners = result.get("miners", [])
-            if isinstance(miners, list):
-                return miners
+            for key in ("miners", "data", "items"):
+                miners = result.get(key)
+                if isinstance(miners, list):
+                    return miners
         return []
 
     async def get_attestation_status(self, miner_public_key: str) -> Dict[str, Any]:

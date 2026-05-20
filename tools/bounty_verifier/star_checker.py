@@ -19,6 +19,18 @@ logger = logging.getLogger(__name__)
 RUSTCHAIN_NODE_URL = "https://50.28.86.131"
 
 
+def _response_json_list(resp) -> list:
+    try:
+        body = resp.json()
+    except ValueError as exc:
+        logger.warning("GitHub API returned invalid JSON: %s", exc)
+        return []
+    if not isinstance(body, list):
+        logger.warning("GitHub API returned %s JSON, expected list", type(body).__name__)
+        return []
+    return [item for item in body if isinstance(item, dict)]
+
+
 def check_user_starred_repo(
     username: str,
     owner: str,
@@ -52,7 +64,7 @@ def check_user_starred_repo(
                 )
                 return False
 
-            stargazers = resp.json()
+            stargazers = _response_json_list(resp)
             if not stargazers:
                 break
 
@@ -100,10 +112,10 @@ def count_user_stars(
                 resp = requests.get(url, headers=headers, timeout=10)
                 if resp.status_code != 200:
                     break
-                data = resp.json()
+                data = _response_json_list(resp)
                 if not data:
                     break
-                repos.extend(r["name"] for r in data)
+                repos.extend(r["name"] for r in data if isinstance(r.get("name"), str))
                 if len(data) < 100:
                     break
                 page += 1

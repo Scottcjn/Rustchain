@@ -157,6 +157,35 @@ class TestRustChainClientMiners:
             miners = await client.get_miners()
         assert miners == []
 
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_get_miners_handles_data_envelope(self):
+        """get_miners handles compatible data envelopes."""
+        route = respx.get(f"{DEFAULT_NODE_URL}/miners").mock(
+            return_value=httpx.Response(200, json={
+                "data": [{"public_key": "pk1", "score": 100}],
+                "pagination": {"total": 1},
+            })
+        )
+        async with RustChainClient() as client:
+            miners = await client.get_miners()
+        assert miners == [{"public_key": "pk1", "score": 100}]
+        assert route.called
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_get_miners_handles_items_envelope(self):
+        """get_miners handles compatible items envelopes."""
+        route = respx.get(f"{DEFAULT_NODE_URL}/miners").mock(
+            return_value=httpx.Response(200, json={
+                "items": [{"public_key": "pk2", "score": 90}]
+            })
+        )
+        async with RustChainClient() as client:
+            miners = await client.get_miners()
+        assert miners == [{"public_key": "pk2", "score": 90}]
+        assert route.called
+
 
 class TestRustChainClientBalance:
     """Test balance endpoints."""
