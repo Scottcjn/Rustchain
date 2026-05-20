@@ -19,6 +19,19 @@ WRTC_MINT = "wRTCxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 
 DATA_FILE = "bridge_status.json"
 
+def safe_dict(value):
+    return value if isinstance(value, dict) else {}
+
+def safe_list(value):
+    return value if isinstance(value, list) else []
+
+def safe_number(value, fallback=0):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return fallback
+    return number if number == number else fallback
+
 def get_bridge_stats():
     results = {
         "timestamp": datetime.now().isoformat(),
@@ -33,12 +46,14 @@ def get_bridge_stats():
         try:
             resp = requests.get(node["url"], timeout=10, verify=os.path.expanduser("~/.rustchain/node_cert.pem") if os.path.exists(os.path.expanduser("~/.rustchain/node_cert.pem")) else True)
             if resp.status_code == 200:
-                data = resp.json()
+                data = safe_dict(resp.json())
+                all_time = safe_dict(data.get("all_time"))
+                solana_stats = safe_dict(safe_dict(data.get("by_chain")).get("solana"))
                 node_stats = {
                     "name": node["name"],
                     "status": "up",
-                    "total_locked": data.get("all_time", {}).get("total_rtc_locked", 0),
-                    "completed_count": data.get("by_chain", {}).get("solana", {}).get("bridged_count", 0)
+                    "total_locked": safe_number(all_time.get("total_rtc_locked")),
+                    "completed_count": safe_number(solana_stats.get("bridged_count"))
                 }
                 results["bridge_nodes"].append(node_stats)
                 # Take max locked value from healthy nodes as source of truth
@@ -54,7 +69,7 @@ def get_bridge_stats():
             ledger_url = node["url"].replace("/stats", "/ledger?limit=10")
             resp = requests.get(ledger_url, timeout=10, verify=os.path.expanduser("~/.rustchain/node_cert.pem") if os.path.exists(os.path.expanduser("~/.rustchain/node_cert.pem")) else True)
             if resp.status_code == 200:
-                results["recent_transactions"] = resp.json().get("locks", [])
+                results["recent_transactions"] = safe_list(safe_dict(resp.json()).get("locks"))
                 break
         except: continue
 
