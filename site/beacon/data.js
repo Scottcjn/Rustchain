@@ -521,6 +521,23 @@ function minerToAtlas(m) {
   };
 }
 
+function normalizeMinerRows(payload) {
+  const rows = Array.isArray(payload)
+    ? payload
+    : (Array.isArray(payload?.miners)
+      ? payload.miners
+      : (Array.isArray(payload?.data)
+        ? payload.data
+        : (Array.isArray(payload?.items) ? payload.items : [])));
+
+  return rows.map(row => {
+    if (!row || typeof row !== 'object') return null;
+    const miner = row.miner || row.miner_id || row.id;
+    if (!miner) return null;
+    return { ...row, miner: String(miner) };
+  }).filter(Boolean);
+}
+
 // ============================================================
 // fetchAllAgents() — main data loader called from boot
 // Fetches from all APIs, merges by name, tags sources
@@ -631,8 +648,7 @@ export async function fetchAllAgents(apiBase) {
   try {
     const resp = await fetch('https://rustchain.org/api/miners');
     if (resp.ok) {
-      const miners = await resp.json();
-      const minerList = miners.miners || miners;
+      const minerList = normalizeMinerRows(await resp.json());
       runtime.__rustchain = { miners: minerList, count: minerList.length };
       for (const m of minerList) {
         const canonicalId = resolveFromAliasMap(aliasMap, m.miner);
