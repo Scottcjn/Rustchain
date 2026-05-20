@@ -240,6 +240,36 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         data = json.loads(response.data)
         self.assertIn('error', data)
 
+    def test_contract_creation_rejects_invalid_amounts(self):
+        """Contract creation rejects malformed and non-positive amounts."""
+        for amount in ('not-a-number', 0, -1):
+            contract_data = {
+                'from': 'bcn_alice_test',
+                'to': 'bcn_bob_test',
+                'type': 'rent',
+                'amount': amount,
+                'term': '30d',
+            }
+            create_body = json.dumps(contract_data)
+
+            response = self.client.post(
+                '/api/contracts',
+                data=create_body,
+                content_type='application/json',
+                headers=self._signed_headers(
+                    'bcn_alice_test',
+                    'POST',
+                    '/api/contracts',
+                    create_body,
+                ),
+            )
+
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(
+                json.loads(response.data)['error'],
+                'amount must be a positive number',
+            )
+
     def test_bounty_lifecycle_workflow(self):
         """Full bounty lifecycle: create, claim, complete."""
         # Insert a test bounty directly

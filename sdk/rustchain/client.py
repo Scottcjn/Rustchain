@@ -189,7 +189,14 @@ class RustChainClient:
             >>> print(f"Total miners: {len(miners)}")
         """
         result = self._request("GET", "/api/miners")
-        return result if isinstance(result, list) else []
+        if isinstance(result, list):
+            return result
+        if isinstance(result, dict):
+            for key in ("miners", "data", "items"):
+                miners = result.get(key)
+                if isinstance(miners, list):
+                    return miners
+        return []
 
     def balance(self, miner_id: str) -> Dict[str, Any]:
         """

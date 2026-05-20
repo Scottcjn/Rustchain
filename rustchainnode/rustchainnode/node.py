@@ -3,9 +3,6 @@ RustChain Node — programmatic API for the rustchainnode package.
 """
 
 import json
-import os
-import time
-import threading
 import logging
 from pathlib import Path
 from typing import Optional
@@ -14,6 +11,13 @@ log = logging.getLogger("rustchainnode")
 
 DEFAULT_PORT = 8099
 DEFAULT_CONFIG_DIR = Path.home() / ".rustchainnode"
+
+
+def _loads_json_object(raw: bytes | str) -> dict:
+    data = json.loads(raw)
+    if not isinstance(data, dict):
+        raise ValueError("JSON response must be an object")
+    return data
 
 
 class RustChainNode:
@@ -63,7 +67,7 @@ class RustChainNode:
         try:
             import urllib.request
             with urllib.request.urlopen(f"{self.node_url}/health", timeout=5) as r:
-                return json.loads(r.read())
+                return _loads_json_object(r.read())
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -72,7 +76,7 @@ class RustChainNode:
         try:
             import urllib.request
             with urllib.request.urlopen(f"{self.node_url}/epoch", timeout=5) as r:
-                return json.loads(r.read())
+                return _loads_json_object(r.read())
         except Exception as e:
             return {"error": str(e)}
 

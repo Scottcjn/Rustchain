@@ -3,6 +3,7 @@ import time
 import json
 import os
 from datetime import datetime
+from pathlib import Path
 
 # Configuration
 # Note: Production bridge APIs might be on different nodes or ports
@@ -17,7 +18,7 @@ BRIDGE_NODES = [
 # wRTC Mint Address on Solana (Hypothetical for now)
 WRTC_MINT = "wRTCxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 
-DATA_FILE = "bridge_status.json"
+DATA_FILE = str(Path(__file__).with_name("bridge_status.json"))
 
 def get_bridge_stats():
     results = {

@@ -18,19 +18,16 @@ Architecture:
 """
 
 import argparse
-import hashlib
-import json
 import logging
 import os
 import smtplib
 import sqlite3
-import sys
 import time
 from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional
 
 import requests
 from dotenv import load_dotenv
@@ -484,8 +481,11 @@ def fetch_miners() -> List[dict]:
         data = resp.json()
         if isinstance(data, list):
             return data
-        if isinstance(data, dict) and isinstance(data.get("miners"), list):
-            return data["miners"]
+        if isinstance(data, dict):
+            for key in ("miners", "data", "items"):
+                miners = data.get(key)
+                if isinstance(miners, list):
+                    return miners
         return []
     except Exception as e:
         logger.error(f"Failed to fetch miners: {e}")

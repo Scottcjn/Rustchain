@@ -134,12 +134,14 @@ def client(monkeypatch):
     monkeypatch.setattr(integrated_node, "current_slot", lambda: 12345)
     monkeypatch.setattr(integrated_node, "slot_to_epoch", lambda slot: 85)
     monkeypatch.setattr(integrated_node, "HAVE_REPLAY_DEFENSE", False, raising=False)
+    integrated_node._ADMIN_RATE_LIMIT_BUCKETS.clear()
     integrated_node.init_db()
 
     integrated_node.app.config["TESTING"] = True
     with integrated_node.app.test_client() as test_client:
         yield test_client, db_path
 
+    integrated_node._ADMIN_RATE_LIMIT_BUCKETS.clear()
     if db_path.exists():
         try:
             db_path.unlink()
@@ -193,6 +195,51 @@ def test_wallet_review_release_restores_attestation_flow(client):
     assert response.get_json()["ok"] is True
 
 
+@pytest.mark.parametrize("path", ["/admin/wallet-review-holds", "/admin/wallet-review-holds/1/resolve"])
+def test_wallet_review_admin_routes_reject_non_object_json(client, path):
+    test_client, _db_path = client
+
+    response = test_client.post(
+        path,
+        json=["not", "object"],
+        headers={"X-Admin-Key": "0" * 32},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"ok": False, "error": "invalid_json_body"}
+
+
+def test_wallet_review_resolve_rejects_malformed_json_without_releasing(client):
+    test_client, db_path = client
+    with sqlite3.connect(db_path) as conn:
+        integrated_node.ensure_wallet_review_tables(conn)
+        cur = conn.execute(
+            """
+            INSERT INTO wallet_review_holds(wallet, status, reason, coach_note, reviewer_note, created_at, reviewed_at)
+            VALUES (?, 'needs_review', ?, ?, '', 1000, 0)
+            """,
+            ("review-miner", "manual review", "retry after review"),
+        )
+        hold_id = cur.lastrowid
+        conn.commit()
+
+    response = test_client.post(
+        f"/admin/wallet-review-holds/{hold_id}/resolve",
+        data="{",
+        content_type="application/json",
+        headers={"X-Admin-Key": "0" * 32},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"ok": False, "error": "invalid_json_body"}
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT status, reviewer_note, reviewed_at FROM wallet_review_holds WHERE id = ?",
+            (hold_id,),
+        ).fetchone()
+    assert row == ("needs_review", "", 0)
+
+
 def test_wallet_review_escalation_hard_blocks_attestation(client):
     test_client, db_path = client
     with sqlite3.connect(db_path) as conn:
@@ -234,6 +281,31 @@ def test_wallet_review_ui_lists_entries_and_accepts_query_admin_key(client):
     assert "RustChain Wallet Review Holds" in html
     assert "review-miner" in html
     assert "retry from the intended box" in html
+
+
+def test_wallet_review_ui_post_redirects_after_create(client):
+    test_client, db_path = client
+
+    response = test_client.post(
+        "/admin/wallet-review-holds/ui?admin_key=" + ("0" * 32),
+        data={
+            "form_action": "create",
+            "wallet": "review-miner",
+            "reason": "manual review",
+            "coach_note": "retry from intended hardware",
+            "review_status": "needs_review",
+        },
+        headers={"X-Admin-Key": "0" * 32},
+    )
+
+    assert response.status_code == 303
+    assert response.headers["Location"].startswith("/admin/wallet-review-holds/ui")
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT status, reason, coach_note FROM wallet_review_holds WHERE wallet = ?",
+            ("review-miner",),
+        ).fetchone()
+    assert row == ("needs_review", "manual review", "retry from intended hardware")
 
 
 def test_admin_operator_ui_links_to_wallet_review_surface(client):

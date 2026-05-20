@@ -336,8 +336,8 @@ launchctl start com.rustchain.miner     # macOS
 clawrtc --version
 
 # 运行干跑测试
-# Linux/macOS/WSL only: current Windows clawrtc releases do not support miner dry-run.
-clawrtc mine --dry-run
+# 当前 clawrtc mine 子命令不接受 --dry-run；使用安装器预览路径。
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --dry-run
 
 # 预期：所有 6 项硬件指纹检查执行成功
 ```
@@ -416,7 +416,7 @@ open https://rustchain.org/explorer
 - [ ] 已停止当前矿工
 - [ ] 已下载/安装新版本
 - [ ] 已验证安装（`clawrtc --version`）
-- [ ] 已运行干跑测试（Linux/macOS/WSL: `clawrtc mine --dry-run`）
+- [ ] 已运行干跑测试（Linux/macOS/WSL: `install-miner.sh --dry-run`）
 - [ ] 已启动新矿工
 - [ ] 已验证挖矿状态
 - [ ] 已检查钱包余额（1-2 epoch 后）

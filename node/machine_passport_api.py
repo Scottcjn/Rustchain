@@ -9,11 +9,10 @@ Issue: #2309
 """
 
 import os
-import json
 import time
 import hmac
 from typing import Optional
-from flask import Blueprint, request, jsonify, render_template_string
+from flask import Blueprint, request, jsonify
 
 from machine_passport import (
     MachinePassportLedger,
@@ -251,7 +250,9 @@ def create_passport():
     if auth_error is not None:
         return auth_error
     
-    data = request.get_json()
+    data, error = get_optional_json_object()
+    if error:
+        return error
     if not data:
         return jsonify({
             'ok': False,
@@ -339,7 +340,9 @@ def update_passport(machine_id: str):
     if not passport:
         return jsonify({'ok': False, 'error': 'passport_not_found'}), 404
     
-    data = request.get_json()
+    data, error = get_optional_json_object()
+    if error:
+        return error
     if not data:
         return jsonify({
             'ok': False,
@@ -579,7 +582,6 @@ def generate_qr(machine_id: str):
     """
     import tempfile
     import base64
-    from io import BytesIO
     
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
@@ -671,7 +673,9 @@ def compute_machine_id_endpoint():
     
     Request Body: Hardware fingerprint data (same as attestation)
     """
-    data = request.get_json()
+    data, error = get_optional_json_object()
+    if error:
+        return error
     if not data:
         return jsonify({
             'ok': False,

@@ -298,6 +298,13 @@ class TestDashboardTransactions:
         # Should cap at 200
         assert len(data['transactions']) <= 200
 
+    def test_transactions_uses_default_for_empty_limit(self, client):
+        """Test transactions limit treats blank optional values as omitted."""
+        response = client.get('/bridge/dashboard/transactions?limit=')
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert 'transactions' in data
+
     def test_transactions_rejects_non_integer_limit(self, client):
         """Test transactions limit rejects malformed values."""
         response = client.get('/bridge/dashboard/transactions?limit=abc')

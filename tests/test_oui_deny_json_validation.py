@@ -13,9 +13,11 @@ ADMIN_HEADERS = {"X-Admin-Key": "0" * 32}
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setenv("RC_ADMIN_KEY", "0" * 32)
+    integrated_node._ADMIN_RATE_LIMIT_BUCKETS.clear()
     integrated_node.app.config["TESTING"] = True
     with integrated_node.app.test_client() as c:
         yield c
+    integrated_node._ADMIN_RATE_LIMIT_BUCKETS.clear()
 
 
 @pytest.mark.parametrize("path", ["/admin/oui_deny/add", "/admin/oui_deny/remove"])
@@ -24,6 +26,29 @@ def test_oui_deny_rejects_non_object_json(client, path):
 
     assert response.status_code == 400
     assert response.get_json() == {"error": "Invalid JSON body"}
+
+
+def test_oui_enforce_rejects_non_object_json(client):
+    response = client.post("/admin/oui_deny/enforce", headers=ADMIN_HEADERS, json=["not", "object"])
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "Invalid JSON body"}
+
+
+def test_oui_enforce_rejects_malformed_json_without_changing_state(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(integrated_node, "DB_PATH", str(tmp_path / "oui.sqlite3"))
+    integrated_node.kv_set("oui_enforce", 1)
+
+    response = client.post(
+        "/admin/oui_deny/enforce",
+        headers=ADMIN_HEADERS,
+        data="{",
+        content_type="application/json",
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "Invalid JSON body"}
+    assert integrated_node.kv_get("oui_enforce") == "1"
 
 
 @pytest.mark.parametrize("path", ["/admin/oui_deny/add", "/admin/oui_deny/remove"])
