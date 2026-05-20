@@ -154,7 +154,8 @@ def fetch_miners(
             complete = False
             break
 
-        page_raw = get_json(node, f"/api/miners?limit={page_limit}&offset={next_offset}", timeout, verify_ssl)
+        requested_offset = next_offset
+        page_raw = get_json(node, f"/api/miners?limit={page_limit}&offset={requested_offset}", timeout, verify_ssl)
         page_miners, page_total, page_metadata = normalize_miners_page(page_raw)
         pages.append(page_metadata)
         miners.extend(page_miners)
@@ -167,7 +168,13 @@ def fetch_miners(
             complete = False
             break
         current_offset = page_metadata.get("offset")
+        if current_offset is not None and current_offset != requested_offset:
+            complete = False
+            break
         next_offset = (current_offset if current_offset is not None else next_offset) + row_count
+        if next_offset <= requested_offset:
+            complete = False
+            break
 
     return miners, total, stable_miner_set_hash(miners), pages, complete
 
