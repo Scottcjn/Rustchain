@@ -4632,6 +4632,9 @@ def admin_oui_enforce():
         return jsonify({"ok": False, "error": "forbidden"}), 403
     body = request.get_json(force=True, silent=True)
     if body is None:
+        raw_body = request.get_data(cache=True) or b""
+        if raw_body.strip():
+            return jsonify({"error": "Invalid JSON body"}), 400
         body = {}
     if not isinstance(body, dict):
         return jsonify({"error": "Invalid JSON body"}), 400

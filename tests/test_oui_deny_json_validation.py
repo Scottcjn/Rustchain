@@ -33,6 +33,22 @@ def test_oui_enforce_rejects_non_object_json(client):
     assert response.get_json() == {"error": "Invalid JSON body"}
 
 
+def test_oui_enforce_rejects_malformed_json_without_changing_state(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(integrated_node, "DB_PATH", str(tmp_path / "oui.sqlite3"))
+    integrated_node.kv_set("oui_enforce", 1)
+
+    response = client.post(
+        "/admin/oui_deny/enforce",
+        headers=ADMIN_HEADERS,
+        data="{",
+        content_type="application/json",
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "Invalid JSON body"}
+    assert integrated_node.kv_get("oui_enforce") == "1"
+
+
 @pytest.mark.parametrize("path", ["/admin/oui_deny/add", "/admin/oui_deny/remove"])
 def test_oui_deny_rejects_non_string_oui(client, path):
     response = client.post(path, headers=ADMIN_HEADERS, json={"oui": ["aa", "bb", "cc"]})
