@@ -103,6 +103,22 @@ def test_p2p_dedup_insert_race_returns_duplicate():
     assert "pong" not in result
 
 
+
+def test_p2p_invalid_signature_does_not_poison_dedup():
+    """Invalid packets must not mark a msg_id as seen before a valid copy arrives."""
+    target = _mk_layer("node1", {"node2": "http://n2"})
+    sender = _mk_layer("node2", db_path=target.db_path)
+    sender.broadcast = lambda *args, **kwargs: None
+
+    valid = sender.create_message(mod.MessageType.PING, {"ping": 1})
+    spoof = mod.GossipMessage.from_dict(valid.to_dict())
+    spoof.signature = "bad-signature"
+
+    assert target.handle_message(spoof)["status"] == "invalid_signature"
+    result = target.handle_message(valid)
+    assert result["status"] == "ok"
+    assert "pong" in result
+
 # Phase B regression
 def test_phase_b_rr_delegate_gate_rejects_non_leader():
     """Phase B: only the scheduled RR-delegate can propose for an epoch."""

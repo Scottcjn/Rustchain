@@ -811,6 +811,12 @@ class GossipLayer:
         # Verify signature
         if not self.verify_message(msg):
             logger.warning(f"Invalid signature from {msg.sender_id}")
+            try:
+                with sqlite3.connect(self.db_path) as conn:
+                    conn.execute("DELETE FROM p2p_seen_messages WHERE msg_id = ?", (msg.msg_id,))
+                    conn.commit()
+            except Exception as e:
+                logger.error(f"P2P dedup rollback DB error: {e}")
             return {"status": "invalid_signature"}
 
         # TTLCache handles automatic eviction (TTL + LRU)
