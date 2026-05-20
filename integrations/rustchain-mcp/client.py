@@ -238,13 +238,22 @@ class RustChainClient:
         params = {"limit": limit}
         data = await self._request("GET", "/api/miners", params=params)
 
-        miners_data = data.get("miners", [])
+        if isinstance(data, list):
+            miners_data = data
+        elif isinstance(data, dict):
+            miners_data = (
+                data.get("miners") or data.get("data") or data.get("items") or []
+            )
+        else:
+            miners_data = []
+
+        if not isinstance(miners_data, list):
+            miners_data = []
+
         miners = [MinerInfo.from_dict(m) for m in miners_data]
 
         if hardware_type:
-            miners = [
-                m for m in miners if hardware_type.lower() in m.hardware.lower()
-            ]
+            miners = [m for m in miners if hardware_type.lower() in m.hardware.lower()]
         if min_score is not None:
             miners = [m for m in miners if m.score >= min_score]
 
@@ -276,6 +285,7 @@ class RustChainClient:
 
 # Convenience functions for simple usage
 
+
 async def get_health(base_url: Optional[str] = None) -> HealthStatus:
     """Get API health status."""
     async with RustChainClient(base_url=base_url) as client:
@@ -290,9 +300,7 @@ async def get_epoch(
         return await client.epoch(epoch_number)
 
 
-async def get_balance(
-    miner_id: str, base_url: Optional[str] = None
-) -> WalletBalance:
+async def get_balance(miner_id: str, base_url: Optional[str] = None) -> WalletBalance:
     """Get wallet balance."""
     async with RustChainClient(base_url=base_url) as client:
         return await client.balance(miner_id)
