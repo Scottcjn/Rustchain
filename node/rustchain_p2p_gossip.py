@@ -763,6 +763,32 @@ class GossipLayer:
         ).hexdigest()
         return hmac.compare_digest(hmac_sig, expected)
 
+    def _has_trusted_ed25519_identity(self, msg: GossipMessage) -> bool:
+        """Return True only when msg has a valid trusted Ed25519 signature."""
+        from p2p_identity import unpack_signature, verify_ed25519
+
+        _hmac_sig, ed25519_sig, _key_version = unpack_signature(msg.signature)
+        if not ed25519_sig:
+            return False
+
+        pubkey = None
+        if self._peer_registry is not None:
+            pubkey = self._peer_registry.get_pubkey(msg.sender_id)
+        if pubkey is None and msg.sender_id == self.node_id and self._keypair is not None:
+            pubkey = self._keypair.pubkey_hex
+        if pubkey is None:
+            return False
+
+        content = self._signed_content(
+            msg.msg_type,
+            msg.sender_id,
+            msg.msg_id,
+            msg.ttl,
+            msg.payload,
+        )
+        message = f"{content}:{msg.timestamp}"
+        return verify_ed25519(pubkey, ed25519_sig, message.encode())
+
     def broadcast(self, msg: GossipMessage, exclude_peer: str = None):
         """Broadcast message to all peers"""
         for peer_id, peer_url in self.peers.items():
@@ -1080,9 +1106,11 @@ class GossipLayer:
         Requires at least 3 of 4 nodes (or majority of known nodes)
         to agree before finalizing an epoch reward distribution.
 
-        SECURITY (#2256 Phase A + C):
+        SECURITY (#2256 Phase A + C + Ed25519 binding):
         - Voter identity bound to msg.sender_id (not payload["voter"]).
-          sender_id itself is now HMAC-covered (see Phase A changes above).
+          Consensus votes require a registered Ed25519 identity because the
+          shared HMAC only proves cluster-secret possession, not which peer
+          sent the vote.
         - Votes indexed by (epoch, proposal_hash), not just epoch. Mixed
           votes for different proposals cannot aggregate into a false quorum;
           only the specific proposal_hash that reached quorum finalizes.
@@ -1109,6 +1137,17 @@ class GossipLayer:
                 f"authenticated sender {voter}; rejecting vote"
             )
             return {"status": "error", "reason": "voter_identity_mismatch"}
+
+        known_nodes = set(self.peers.keys()) | {self.node_id}
+        if voter not in known_nodes:
+            return {"status": "error", "reason": "unknown_voter"}
+
+        if not self._has_trusted_ed25519_identity(msg):
+            logger.warning(
+                f"Epoch {epoch}: rejecting vote from {voter}; "
+                "trusted Ed25519 identity required for consensus votes"
+            )
+            return {"status": "error", "reason": "epoch_vote_requires_ed25519"}
 
         # Phase C: index by (epoch, proposal_hash) — not just epoch.
         key = (epoch, proposal_hash)
