@@ -2,6 +2,7 @@ import requests
 import time
 import json
 import os
+import math
 from datetime import datetime
 
 # Configuration
@@ -30,7 +31,7 @@ def safe_number(value, fallback=0):
         number = float(value)
     except (TypeError, ValueError):
         return fallback
-    return number if number == number else fallback
+    return number if math.isfinite(number) else fallback
 
 def get_bridge_stats():
     results = {

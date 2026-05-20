@@ -119,3 +119,37 @@ def test_get_bridge_stats_normalizes_numeric_and_ledger_payload_shapes(tmp_path,
     assert result["bridge_nodes"] == [
         {"name": "Node 1", "status": "up", "total_locked": 12.5, "completed_count": 4.0}
     ]
+
+
+def test_get_bridge_stats_rejects_non_finite_numeric_strings(tmp_path, monkeypatch):
+    stats = load_update_stats_module()
+    data_file = tmp_path / "bridge_status.json"
+    monkeypatch.setattr(stats, "DATA_FILE", str(data_file))
+    monkeypatch.setattr(
+        stats,
+        "BRIDGE_NODES",
+        [{"name": "Node 1", "url": "https://node-1/bridge/stats"}],
+    )
+    monkeypatch.setattr(stats.os.path, "exists", Mock(return_value=False))
+
+    def fake_get(url, timeout, verify):
+        if url == "https://node-1/bridge/stats":
+            return response(200, {
+                "all_time": {"total_rtc_locked": "Infinity"},
+                "by_chain": {"solana": {"bridged_count": "-Infinity"}},
+            })
+        if url == "https://node-1/bridge/ledger?limit=10":
+            return response(200, {"locks": []})
+        raise AssertionError(f"unexpected URL: {url}")
+
+    monkeypatch.setattr(stats.requests, "get", Mock(side_effect=fake_get))
+
+    result = stats.get_bridge_stats()
+
+    assert result["total_locked_rtc"] == 0
+    assert result["bridge_nodes"] == [
+        {"name": "Node 1", "status": "up", "total_locked": 0, "completed_count": 0}
+    ]
+    raw_json = data_file.read_text()
+    assert "Infinity" not in raw_json
+    assert json.loads(raw_json) == result
