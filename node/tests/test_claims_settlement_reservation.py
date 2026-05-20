@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Regression tests for claims settlement reservation safety."""
 
+import concurrent.futures
 import os
 import sqlite3
 import sys
@@ -24,7 +25,18 @@ def _init_db(path):
                 status TEXT,
                 settlement_batch TEXT,
                 settlement_error TEXT,
+                verified_at INTEGER,
+                transaction_hash TEXT,
+                settled_at INTEGER,
                 updated_at INTEGER
+            );
+            CREATE TABLE claims_audit (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                claim_id TEXT,
+                action TEXT,
+                actor TEXT,
+                details TEXT,
+                timestamp INTEGER
             );
             CREATE TABLE rewards_pool (
                 pool_name TEXT PRIMARY KEY,
@@ -129,3 +141,65 @@ def test_post_reservation_pool_check_includes_settlement_fee(tmp_path, monkeypat
         None,
         "Insufficient funds: need 2100 (1000 claims + 1100 fee), have 1000",
     )
+
+
+def test_concurrent_workers_atomically_reserve_rewards_pool_funds(tmp_path, monkeypatch):
+    db_path = str(tmp_path / "claims.db")
+    _init_db(db_path)
+    _insert_claim(db_path, "claim-0", 1000, 1)
+    _insert_claim(db_path, "claim-1", 1000, 2)
+
+    with sqlite3.connect(db_path) as conn:
+        # One single-claim batch costs 1000 output + 1100 fee. The pool can
+        # cover exactly one worker, not two concurrent disjoint reservations.
+        conn.execute(
+            "INSERT INTO rewards_pool (pool_name, balance_urtc) VALUES ('epoch_rewards', 2100)"
+        )
+
+    broadcasts = []
+
+    def fake_broadcast(tx_data, db_path):
+        broadcasts.append((tuple(tx_data["claim_ids"]), tx_data["total_amount_urtc"], tx_data["fee_urtc"]))
+        return True, f"0xtx{len(broadcasts)}", None
+
+    monkeypatch.setattr(claims_settlement, "sign_and_broadcast_transaction", fake_broadcast)
+
+    def run_worker():
+        return claims_settlement.process_claims_batch(
+            db_path,
+            max_claims=1,
+            min_batch_size=1,
+            max_wait_seconds=0,
+        )
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(lambda _: run_worker(), range(2)))
+
+    processed = [result for result in results if result["processed"]]
+    rejected = [result for result in results if not result["processed"]]
+    assert len(processed) == 1
+    assert len(rejected) == 1
+    assert rejected[0]["error"] == "Insufficient funds: need 2100 (1000 claims + 1100 fee), have 0"
+    assert rejected[0]["released_count"] == 1
+    assert len(broadcasts) == 1
+
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT claim_id, status, settlement_batch, settlement_error FROM claims ORDER BY claim_id"
+        ).fetchall()
+        pool_balance = conn.execute(
+            "SELECT balance_urtc FROM rewards_pool WHERE pool_name = 'epoch_rewards'"
+        ).fetchone()[0]
+
+    assert pool_balance == 0
+    statuses = {row[0]: row[1:] for row in rows}
+    assert sorted(status[0] for status in statuses.values()) == ["approved", "settled"]
+    approved_rows = [row for row in rows if row[1] == "approved"]
+    assert approved_rows == [
+        (
+            approved_rows[0][0],
+            "approved",
+            None,
+            "Insufficient funds: need 2100 (1000 claims + 1100 fee), have 0",
+        )
+    ]

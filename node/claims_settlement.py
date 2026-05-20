@@ -162,6 +162,86 @@ def check_rewards_pool_balance(
         return True, required_urtc  # Assume sufficient on error
 
 
+def reserve_rewards_pool_funds(
+    db_path: str,
+    required_urtc: int,
+) -> Tuple[bool, int]:
+    """Atomically debit settlement funds from the rewards pool.
+
+    A read-only pool check is not enough once claim batches are reserved before
+    broadcast: two workers can reserve disjoint claims, both observe the same
+    balance, and both broadcast batches that overspend the pool. This update
+    runs under ``BEGIN IMMEDIATE`` and only succeeds when the concrete reserved
+    batch can be debited from the current pool balance.
+
+    Returns:
+        (reserved: bool, balance_before_debit_or_current_balance: int)
+    """
+    conn = sqlite3.connect(db_path, timeout=30, isolation_level=None)
+    try:
+        conn.execute("PRAGMA busy_timeout = 30000")
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            row = conn.execute("""
+                SELECT balance_urtc FROM rewards_pool
+                WHERE pool_name = 'epoch_rewards'
+            """).fetchone()
+            balance = row[0] if row else 0
+            if balance < required_urtc:
+                conn.rollback()
+                return False, balance
+
+            conn.execute("""
+                UPDATE rewards_pool
+                SET balance_urtc = balance_urtc - ?
+                WHERE pool_name = 'epoch_rewards'
+                AND balance_urtc >= ?
+            """, (required_urtc, required_urtc))
+            conn.commit()
+            return True, balance
+        except Exception:
+            conn.rollback()
+            raise
+    except sqlite3.OperationalError as e:
+        if "no such table" in str(e).lower():
+            # Match check_rewards_pool_balance()'s legacy/test behavior: when
+            # no pool table exists, the treasury integration is external and
+            # this local reservation is a no-op.
+            return True, required_urtc * 10
+        print(f"[SETTLEMENT] Error reserving pool funds: {e}")
+        return False, 0
+    except sqlite3.Error as e:
+        print(f"[SETTLEMENT] Error reserving pool funds: {e}")
+        return False, 0
+    finally:
+        conn.close()
+
+
+def release_rewards_pool_funds(
+    db_path: str,
+    amount_urtc: int,
+) -> bool:
+    """Return a previously reserved settlement amount to the rewards pool."""
+    if amount_urtc <= 0:
+        return True
+    try:
+        with sqlite3.connect(db_path) as conn:
+            cursor = conn.execute("""
+                UPDATE rewards_pool
+                SET balance_urtc = balance_urtc + ?
+                WHERE pool_name = 'epoch_rewards'
+            """, (amount_urtc,))
+            return cursor.rowcount > 0
+    except sqlite3.OperationalError as e:
+        if "no such table" in str(e).lower():
+            return True
+        print(f"[SETTLEMENT] Error releasing pool funds: {e}")
+        return False
+    except sqlite3.Error as e:
+        print(f"[SETTLEMENT] Error releasing pool funds: {e}")
+        return False
+
+
 def construct_settlement_transaction(
     claims: List[Dict[str, Any]]
 ) -> Dict[str, Any]:
@@ -620,8 +700,8 @@ def process_claims_batch(
     fee_urtc = calculate_settlement_fee(len(claims_to_process))
     required_amount = total_amount + fee_urtc
 
-    sufficient, balance = check_rewards_pool_balance(db_path, required_amount)
-    if not sufficient:
+    pool_reserved, balance = reserve_rewards_pool_funds(db_path, required_amount)
+    if not pool_reserved:
         error = (
             f"Insufficient funds: need {required_amount} "
             f"({total_amount} claims + {fee_urtc} fee), have {balance}"
@@ -646,6 +726,7 @@ def process_claims_batch(
         # in 'settling' if that happens before a success response is returned.
         success, tx_hash, error = sign_and_broadcast_transaction(tx_data, db_path)
     except Exception as exc:
+        release_rewards_pool_funds(db_path, required_amount)
         error = str(exc) or exc.__class__.__name__
         failed_count = update_claims_failed(
             db_path,
@@ -657,6 +738,7 @@ def process_claims_batch(
         return result
     
     if not success:
+        release_rewards_pool_funds(db_path, required_amount)
         # Mark claims as failed
         failed_count = update_claims_failed(
             db_path,
