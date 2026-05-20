@@ -94,6 +94,30 @@ async def fetch_price_data() -> dict | None:
         return None
 
 
+def normalize_miners_payload(data: dict | list) -> tuple[list, int] | None:
+    """Return miner rows and advertised total from legacy lists or API envelopes."""
+    if isinstance(data, list):
+        return data, len(data)
+    if not isinstance(data, dict):
+        return None
+
+    miners = data.get("miners") or data.get("data") or []
+    if not isinstance(miners, list):
+        miners = []
+
+    pagination = data.get("pagination") if isinstance(data.get("pagination"), dict) else {}
+    total = pagination.get("total", data.get("total", len(miners)))
+    try:
+        total = int(total)
+    except (TypeError, ValueError):
+        total = len(miners)
+    return miners, max(total, len(miners))
+
+
+def miner_name(row: dict) -> str:
+    return row.get("miner") or row.get("miner_id") or "?"
+
+
 # ---------------------------------------------------------------------------
 # Command handlers
 # ---------------------------------------------------------------------------
@@ -132,18 +156,20 @@ async def cmd_price(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_miners(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
-        miners = await fetch_rustchain("/api/miners")
-        if not isinstance(miners, list):
+        payload = await fetch_rustchain("/api/miners")
+        normalized = normalize_miners_payload(payload)
+        if normalized is None:
             await update.message.reply_text("Unexpected response from /api/miners.")
             return
-        lines = [f"*Active Miners: {len(miners)}*\n"]
+        miners, total = normalized
+        lines = [f"*Active Miners: {total}*\n"]
         for m in miners[:15]:
-            name = m.get("miner", "?")
+            name = miner_name(m)
             hw = m.get("hardware_type", m.get("device_arch", ""))
             mult = m.get("antiquity_multiplier", "")
             lines.append(f"  `{name}` — {hw} (x{mult})")
-        if len(miners) > 15:
-            lines.append(f"\n_…and {len(miners) - 15} more_")
+        if total > len(miners[:15]):
+            lines.append(f"\n_…and {total - len(miners[:15])} more_")
         await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
     except Exception as e:
         logger.error("cmd_miners: %s", e)
@@ -241,9 +267,11 @@ async def mining_alert_loop(app: Application):
     await asyncio.sleep(5)
     while True:
         try:
-            miners = await fetch_rustchain("/api/miners")
-            if isinstance(miners, list):
-                current = {m.get("miner", "") for m in miners}
+            payload = await fetch_rustchain("/api/miners")
+            normalized = normalize_miners_payload(payload)
+            if normalized is not None:
+                miners, _total = normalized
+                current = {miner_name(m) for m in miners if miner_name(m) != "?"}
                 if _last_known_miners:
                     for name in current - _last_known_miners:
                         msg = f"*New Miner Joined!*\n`{name}` is now mining on RustChain."
@@ -335,8 +363,9 @@ async def inline_query(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     if not query or "miners" in query:
         try:
-            miners = await fetch_rustchain("/api/miners")
-            count = len(miners) if isinstance(miners, list) else "?"
+            payload = await fetch_rustchain("/api/miners")
+            normalized = normalize_miners_payload(payload)
+            count = normalized[1] if normalized is not None else "?"
             results.append(
                 InlineQueryResultArticle(
                     id="miners",
