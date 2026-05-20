@@ -77,7 +77,7 @@ class TestGZ01WalletTakeover:
     def test_overwrite_existing_coinbase_address(self, client_rustchain, db_path):
         """An admin can overwrite a miner's coinbase address silently."""
         headers = {'X-Admin-Key': 'test-admin-key-12345'}
-        
+
         # First link: legitimate address
         resp1 = client_rustchain.post('/wallet/link-coinbase',
             data=json.dumps({
@@ -87,7 +87,7 @@ class TestGZ01WalletTakeover:
             content_type='application/json',
             headers=headers)
         assert resp1.status_code == 200
-        
+
         # Second link: attacker overwrites with their address
         resp2 = client_rustchain.post('/wallet/link-coinbase',
             data=json.dumps({
@@ -97,7 +97,7 @@ class TestGZ01WalletTakeover:
             content_type='application/json',
             headers=headers)
         assert resp2.status_code == 200  # BUG: should fail or require confirmation
-        
+
         # Verify the address was overwritten
         conn = sqlite3.connect(db_path)
         row = conn.execute("SELECT coinbase_address FROM balances WHERE miner_id = 'victim_miner'").fetchone()
