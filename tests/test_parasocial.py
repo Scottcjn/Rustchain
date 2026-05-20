@@ -121,6 +121,17 @@ class TestViewerPattern(unittest.TestCase):
         finally:
             os.unlink(db)
 
+    def test_pattern_preserves_explicit_epoch_timestamp(self):
+        t, db = _fresh()
+        try:
+            t.track_view("epoch_viewer", "v1", 300, watched_at=0, total_video_secs=600)
+            p = t.get_viewer_pattern("epoch_viewer")
+            self.assertEqual(p["peak_hour"], 0)
+            self.assertEqual(p["first_seen"], "1970-01-01T00:00:00+00:00")
+            self.assertEqual(p["last_seen"], "1970-01-01T00:00:00+00:00")
+        finally:
+            os.unlink(db)
+
     def test_engagement_trend_rising(self):
         t, db = _fresh()
         try:
