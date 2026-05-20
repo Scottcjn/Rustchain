@@ -32,7 +32,7 @@ def _create_schema(conn):
     """)
 
 
-def test_recover_orphans_refunds_processing_withdrawal_without_tx_hash(tmp_path):
+def test_recover_orphans_flags_ambiguous_processing_withdrawal_without_refund(tmp_path):
     db_path = tmp_path / "payout.db"
     with sqlite3.connect(db_path) as conn:
         _create_schema(conn)
@@ -55,9 +55,9 @@ def test_recover_orphans_refunds_processing_withdrawal_without_tx_hash(tmp_path)
             "SELECT status, error_msg FROM withdrawals WHERE withdrawal_id = 'wd-1'"
         ).fetchone()
 
-    assert balance == 100.0
-    assert status == "failed"
-    assert error_msg == "Orphaned processing state recovered"
+    assert balance == 89.0
+    assert status == "processing"
+    assert error_msg == "Processing without tx_hash; manual reconciliation required before refund"
 
 
 def test_recover_orphans_does_not_refund_broadcast_withdrawal_requiring_reconciliation(tmp_path):

@@ -282,38 +282,44 @@ class PayoutWorker:
             return False
 
     def recover_orphans(self):
-        """Recover withdrawals stuck in processing state (e.g. from a crash during execute_withdrawal)."""
+        """Flag withdrawals stuck in processing without assuming safe refund.
+
+        A ``processing`` row with no tx_hash is ambiguous: the worker may have
+        crashed before broadcast, or it may have crashed after a successful
+        broadcast but before persisting the tx_hash. Automatically refunding
+        that state can double-pay the miner, so keep the debit in place and
+        require explicit reconciliation evidence before any refund.
+        """
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute("BEGIN IMMEDIATE")
                 rows = conn.execute("""
-                    SELECT withdrawal_id, miner_pk, amount, fee
+                    SELECT withdrawal_id
                     FROM withdrawals
                     WHERE status = 'processing'
                     AND (tx_hash IS NULL OR tx_hash = '')
                 """).fetchall()
 
-                for row in rows:
-                    withdrawal_id, miner_pk, amount, fee = row
-                    total_refund = amount + (fee or 0)
-
-                    logger.warning(f"Recovering orphaned withdrawal {withdrawal_id} (refunding {total_refund} to {miner_pk})")
-
-                    # Refund the balance
-                    conn.execute(
-                        "UPDATE accounts SET balance = balance + ? WHERE public_key = ?",
-                        (total_refund, miner_pk)
+                for (withdrawal_id,) in rows:
+                    logger.warning(
+                        "Withdrawal %s is processing without tx_hash; "
+                        "leaving debit intact for manual reconciliation",
+                        withdrawal_id,
                     )
-
-                    # Mark as failed
                     conn.execute(
-                        "UPDATE withdrawals SET status = 'failed', error_msg = 'Orphaned processing state recovered' WHERE withdrawal_id = ?",
-                        (withdrawal_id,)
+                        """
+                        UPDATE withdrawals
+                        SET error_msg = 'Processing without tx_hash; manual reconciliation required before refund'
+                        WHERE withdrawal_id = ?
+                        AND status = 'processing'
+                        AND (tx_hash IS NULL OR tx_hash = '')
+                        """,
+                        (withdrawal_id,),
                     )
                 conn.execute("COMMIT")
                 
                 if rows:
-                    logger.info(f"Recovered {len(rows)} orphaned withdrawals.")
+                    logger.info(f"Flagged {len(rows)} ambiguous processing withdrawals for reconciliation.")
                     
         except Exception as e:
             logger.error(f"Failed to recover orphans: {e}")
