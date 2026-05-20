@@ -23,6 +23,8 @@ HTML = """
 <h3>Recent Transactions</h3><table><thead><tr><th>Time</th><th>From</th><th>To</th><th>Amount</th></tr></thead><tbody id='txTbl'></tbody></table>
 <script>
 async function j(u){const r=await fetch(u);return await r.json();}
+function escapeHtml(value){const d=document.createElement('div');d.textContent=String(value ?? '');return d.innerHTML;}
+function displayValue(value){return value === undefined || value === null || value === '' ? '-' : escapeHtml(value);}
 function fmtTs(v){if(!v) return '-'; const n=Number(v); if(!Number.isFinite(n)) return String(v); const ms=n>1e12?n:n*1000; return new Date(ms).toLocaleString();}
 async function load(){
   const d=await j('/api/dashboard');
@@ -31,8 +33,8 @@ async function load(){
   document.getElementById('miners').textContent=(d.miners||[]).length;
   document.getElementById('epoch').textContent=d.epoch?.epoch ?? '-';
   document.getElementById('txcount').textContent=(d.transactions||[]).length;
-  document.getElementById('minersTbl').innerHTML=(d.miners||[]).slice(0,20).map(m=>`<tr><td>${m.miner_id||m.wallet||'-'}</td><td>${m.score||m.attestation_score||'-'}</td><td>${m.multiplier||m.antiquity_multiplier||'-'}</td></tr>`).join('');
-  document.getElementById('txTbl').innerHTML=(d.transactions||[]).slice(0,30).map(t=>`<tr><td>${fmtTs(t.timestamp||t.created_at||t.time)}</td><td>${t.from||t.sender||'-'}</td><td>${t.to||t.recipient||'-'}</td><td>${t.amount||t.value||'-'}</td></tr>`).join('');
+  document.getElementById('minersTbl').innerHTML=(d.miners||[]).slice(0,20).map(m=>`<tr><td>${displayValue(m.miner_id||m.wallet)}</td><td>${displayValue(m.score||m.attestation_score)}</td><td>${displayValue(m.multiplier||m.antiquity_multiplier)}</td></tr>`).join('');
+  document.getElementById('txTbl').innerHTML=(d.transactions||[]).slice(0,30).map(t=>`<tr><td>${escapeHtml(fmtTs(t.timestamp||t.created_at||t.time))}</td><td>${displayValue(t.from||t.sender)}</td><td>${displayValue(t.to||t.recipient)}</td><td>${displayValue(t.amount||t.value)}</td></tr>`).join('');
 }
 load(); setInterval(load, 30000);
 </script></body></html>
@@ -46,6 +48,13 @@ def fetch_json(path):
     except Exception:
         return {}
 
+def as_list(payload, key):
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, dict) and isinstance(payload.get(key), list):
+        return payload[key]
+    return []
+
 @app.get('/')
 def home():
     return render_template_string(HTML)
@@ -55,9 +64,9 @@ def dashboard():
     return jsonify({
       'base': API_BASE,
       'health': fetch_json('/health'),
-      'miners': fetch_json('/api/miners') or [],
+      'miners': as_list(fetch_json('/api/miners'), 'miners'),
       'epoch': fetch_json('/epoch'),
-      'transactions': fetch_json('/api/transactions') or []
+      'transactions': as_list(fetch_json('/api/transactions'), 'transactions')
     })
 
 if __name__ == '__main__':
