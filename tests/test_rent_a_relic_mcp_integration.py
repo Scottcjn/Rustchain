@@ -13,11 +13,11 @@ from tools.rent_a_relic import mcp_integration as mcp
 
 
 class FakeResponse:
-    def __init__(self, payload: dict, status_error: Exception | None = None) -> None:
+    def __init__(self, payload: object, status_error: Exception | None = None) -> None:
         self._payload = payload
         self._status_error = status_error
 
-    def json(self) -> dict:
+    def json(self) -> object:
         return self._payload
 
     def raise_for_status(self) -> None:
@@ -89,6 +89,26 @@ def test_client_uses_env_base_url_and_filters_listed_relics(monkeypatch) -> None
         "machines": [{"machine_id": "cheap-ppc", "arch": "ppc32", "rtc_per_hour": 4}],
         "count": 1,
     }
+
+
+def test_client_list_relics_ignores_non_object_json(monkeypatch) -> None:
+    monkeypatch.setattr(
+        mcp.requests,
+        "get",
+        lambda *args, **kwargs: FakeResponse(["not", "an", "object"]),
+    )
+
+    assert mcp.RelicMCPClient().list_relics() == {"machines": [], "count": 0}
+
+
+def test_client_list_relics_ignores_non_list_machines(monkeypatch) -> None:
+    monkeypatch.setattr(
+        mcp.requests,
+        "get",
+        lambda *args, **kwargs: FakeResponse({"machines": {"machine_id": "g3"}}),
+    )
+
+    assert mcp.RelicMCPClient().list_relics() == {"machines": [], "count": 0}
 
 
 def test_client_posts_reservation_and_dispatches_tools(monkeypatch) -> None:
@@ -216,3 +236,28 @@ def test_beacon_handler_surfaces_http_error_response_body() -> None:
     assert result["beacon_id"] == "beacon-conflict"
     assert result["success"] is False
     assert result["error"] == "machine already reserved"
+
+
+def test_beacon_handler_http_error_non_object_body_falls_back_to_exception() -> None:
+    class FailingClient:
+        def reserve_relic(self, **kwargs: object) -> dict:
+            response = FakeResponse(["not", "an", "object"])
+            raise requests.HTTPError("409 Client Error", response=response)
+
+    handler = mcp.BeaconReservationHandler(client=FailingClient())
+
+    result = handler.handle(
+        {
+            "type": "relic_reserve_request",
+            "beacon_id": "beacon-conflict",
+            "agent_id": "agent-a",
+            "machine_id": "g3-beige",
+            "duration_hours": 1,
+            "rtc_amount": 4.0,
+        }
+    )
+
+    assert result["type"] == "relic_error"
+    assert result["beacon_id"] == "beacon-conflict"
+    assert result["success"] is False
+    assert result["error"] == "409 Client Error"

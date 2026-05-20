@@ -24,6 +24,18 @@ def _get_base_url() -> str:
     return os.environ.get("RENT_A_RELIC_BASE_URL", DEFAULT_BASE_URL)
 
 
+def _response_json_object(resp: Any) -> dict:
+    try:
+        body = resp.json()
+    except ValueError as exc:
+        log.warning("Rent-a-Relic API returned invalid JSON: %s", exc)
+        return {}
+    if not isinstance(body, dict):
+        log.warning("Rent-a-Relic API returned %s JSON, expected object", type(body).__name__)
+        return {}
+    return body
+
+
 MCP_TOOLS: list[dict] = [
     {
         "name": "list_relics",
@@ -102,7 +114,10 @@ class RelicMCPClient:
     def list_relics(self, arch_filter: str | None = None, max_rtc_per_hour: float | None = None) -> dict:
         resp = requests.get(f"{self.base_url}/relic/available", timeout=self.timeout)
         resp.raise_for_status()
-        machines = resp.json().get("machines", [])
+        machines = _response_json_object(resp).get("machines", [])
+        if not isinstance(machines, list):
+            machines = []
+        machines = [m for m in machines if isinstance(m, dict)]
         if arch_filter:
             machines = [m for m in machines if m.get("arch") == arch_filter]
         if max_rtc_per_hour is not None:
@@ -196,7 +211,7 @@ class BeaconReservationHandler:
         except requests.HTTPError as exc:
             body = {}
             try:
-                body = exc.response.json()
+                body = _response_json_object(exc.response)
             except Exception:
                 pass
             return self._error_response(beacon_id, body.get("error", str(exc)))

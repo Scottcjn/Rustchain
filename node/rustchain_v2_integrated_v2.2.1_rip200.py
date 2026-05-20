@@ -1434,9 +1434,71 @@ def init_db():
         c.execute("CREATE INDEX IF NOT EXISTS idx_wallet_review_wallet ON wallet_review_holds(wallet, created_at DESC)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_wallet_review_status ON wallet_review_holds(status, created_at DESC)")
         c.execute("""
+            CREATE TABLE IF NOT EXISTS blocked_wallets(
+                wallet TEXT PRIMARY KEY,
+                reason TEXT
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS ip_rate_limit(
+                client_ip TEXT NOT NULL,
+                miner_id TEXT NOT NULL,
+                ts INTEGER NOT NULL,
+                PRIMARY KEY (client_ip, miner_id)
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS miner_attest_recent(
+                miner TEXT PRIMARY KEY,
+                ts_ok INTEGER NOT NULL,
+                device_family TEXT,
+                device_arch TEXT,
+                entropy_score REAL DEFAULT 0.0,
+                fingerprint_passed INTEGER DEFAULT 0,
+                source_ip TEXT,
+                warthog_bonus REAL DEFAULT 1.0,
+                signing_pubkey TEXT,
+                fingerprint_checks_json TEXT DEFAULT '{}'
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS miner_macs(
+                miner TEXT NOT NULL,
+                mac_hash TEXT NOT NULL,
+                first_ts INTEGER NOT NULL,
+                last_ts INTEGER NOT NULL,
+                count INTEGER DEFAULT 1,
+                PRIMARY KEY (miner, mac_hash)
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS hardware_bindings(
+                hardware_id TEXT PRIMARY KEY,
+                bound_miner TEXT NOT NULL,
+                device_arch TEXT,
+                device_model TEXT,
+                bound_at INTEGER NOT NULL,
+                attestation_count INTEGER DEFAULT 0
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS oui_deny(
+                oui TEXT PRIMARY KEY,
+                vendor TEXT,
+                added_ts INTEGER,
+                enforce INTEGER DEFAULT 0
+            )
+        """)
+        c.execute("""
             CREATE TABLE IF NOT EXISTS headers(
                 slot INTEGER PRIMARY KEY,
                 header_json TEXT NOT NULL
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS miner_header_keys(
+                miner_id TEXT PRIMARY KEY,
+                pubkey_hex TEXT NOT NULL
             )
         """)
         c.execute("""
@@ -4300,7 +4362,9 @@ def miner_set_header_key():
     if not admin_key or not hmac.compare_digest(provided_key, admin_key):
         return jsonify({"ok":False,"error":"unauthorized"}), 403
 
-    body = request.get_json(force=True, silent=True) or {}
+    body = request.get_json(force=True, silent=True)
+    if not isinstance(body, dict):
+        return jsonify({"ok":False,"error":"invalid_json_body"}), 400
     raw_miner_id = body.get("miner_id", "")
     if not isinstance(raw_miner_id, str):
         return jsonify({"ok":False,"error":"invalid miner_id or pubkey_hex"}), 400
@@ -4344,13 +4408,15 @@ def ingest_signed_header():
       5) on success: validate header continuity, persist, update tip, bump metrics
     """
     start = time.time()
-    body = request.get_json(force=True, silent=True) or {}
+    body = request.get_json(force=True, silent=True)
+    if not isinstance(body, dict):
+        return jsonify({"ok":False,"error":"invalid_json_body"}), 400
 
-    miner_id = (body.get("miner_id") or "").strip()
+    miner_id = str(body.get("miner_id") or "").strip()
     header   = body.get("header") or {}
-    msg_hex  = (body.get("message") or "").strip().lower()
-    sig_hex  = (body.get("signature") or "").strip().lower()
-    inline_pk= (body.get("pubkey") or "").strip().lower()
+    msg_hex  = str(body.get("message") or "").strip().lower()
+    sig_hex  = str(body.get("signature") or "").strip().lower()
+    inline_pk= str(body.get("pubkey") or "").strip().lower()
 
     if not miner_id or not sig_hex or (not header and not msg_hex):
         return jsonify({"ok":False,"error":"missing fields"}), 400
@@ -4646,7 +4712,14 @@ def admin_oui_enforce():
     """Toggle OUI enforcement (admin only)"""
     if not is_admin(request):
         return jsonify({"ok": False, "error": "forbidden"}), 403
-    body = request.get_json(force=True, silent=True) or {}
+    body = request.get_json(force=True, silent=True)
+    if body is None:
+        raw_body = request.get_data(cache=True) or b""
+        if raw_body.strip():
+            return jsonify({"error": "Invalid JSON body"}), 400
+        body = {}
+    if not isinstance(body, dict):
+        return jsonify({"error": "Invalid JSON body"}), 400
     enforce = 1 if str(body.get("enforce", "0")).strip() in ("1", "true", "True", "yes") else 0
     kv_set("oui_enforce", enforce)
     return jsonify({"ok": True, "enforce": enforce})
@@ -4695,7 +4768,13 @@ def admin_create_wallet_review_hold():
     """Create a wallet review hold instead of hard-blocking by default."""
     if not is_admin(request):
         return jsonify({"ok": False, "error": "forbidden"}), 403
-    data = request.get_json(force=True, silent=True) or {}
+    data = request.get_json(force=True, silent=True)
+    if data is None:
+        if request.get_data(cache=True):
+            return jsonify({"ok": False, "error": "invalid_json_body"}), 400
+        data = {}
+    if not isinstance(data, dict):
+        return jsonify({"ok": False, "error": "invalid_json_body"}), 400
     wallet = _attest_valid_miner(data.get("wallet") or data.get("miner") or "")
     reason = str(data.get("reason") or "manual review required").strip()
     coach_note = str(data.get("coach_note") or "").strip()
@@ -4724,7 +4803,13 @@ def admin_resolve_wallet_review_hold(hold_id: int):
     """Resolve a wallet review hold with explicit release/escalation actions."""
     if not is_admin(request):
         return jsonify({"ok": False, "error": "forbidden"}), 403
-    data = request.get_json(force=True, silent=True) or {}
+    data = request.get_json(force=True, silent=True)
+    if data is None:
+        if request.get_data(cache=True):
+            return jsonify({"ok": False, "error": "invalid_json_body"}), 400
+        data = {}
+    if not isinstance(data, dict):
+        return jsonify({"ok": False, "error": "invalid_json_body"}), 400
     action = str(data.get("action") or "release").strip().lower()
     reviewer_note = str(data.get("reviewer_note") or "").strip()
     coach_note = str(data.get("coach_note") or "").strip()
@@ -4886,6 +4971,7 @@ def admin_wallet_review_holds_ui():
                             (new_status, reviewer_note, coach_note or row["coach_note"], now, hold_id),
                         )
                         conn.commit()
+        parts = []
         query = ""
         if active_status:
             parts.append(f"status={active_status}")
@@ -7118,8 +7204,16 @@ def api_rewards_settle():
     if not hmac.compare_digest(admin_key, admin_key_env):
         return jsonify({"ok": False, "reason": "admin_required"}), 401
 
-    body = request.get_json(force=True, silent=True) or {}
-    epoch = int(body.get("epoch", -1))
+    body = request.get_json(force=True, silent=True)
+    if body is None:
+        body = {}
+    if not isinstance(body, dict):
+        return jsonify({"ok": False, "error": "JSON object required"}), 400
+
+    epoch_raw = body.get("epoch", -1)
+    if isinstance(epoch_raw, bool) or not isinstance(epoch_raw, int):
+        return jsonify({"ok": False, "error": "epoch must be an integer"}), 400
+    epoch = epoch_raw
     if epoch < 0:
         return jsonify({"ok": False, "error": "epoch required"}), 400
 
@@ -8570,7 +8664,7 @@ BEACON_RATE_LIMIT  = 60
 @app.route("/beacon/submit", methods=["POST"])
 def beacon_submit():
     data = request.get_json(silent=True)
-    if not data:
+    if not isinstance(data, dict) or not data:
         return jsonify({"ok": False, "error": "invalid_json"}), 400
     agent_id = data.get("agent_id", "")
     kind = data.get("kind", "")

@@ -153,7 +153,7 @@ def faucet_drip():
 
 # --- Fossil-punk UI Template ---
 
-RETRO_HTML = """
+RETRO_HTML = r"""
 <!DOCTYPE html>
 <html lang="en">
 <head>

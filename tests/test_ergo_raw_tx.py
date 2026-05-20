@@ -7,6 +7,29 @@ import pytest
 from node.ergo_raw_tx import RawTxBuilder, encode_coll_byte, encode_int_reg
 
 
+class FakeResponse:
+    def __init__(self, payload, status_code=200, text=""):
+        self._payload = payload
+        self.status_code = status_code
+        self.text = text
+
+    def json(self):
+        return self._payload
+
+
+class FakeSession:
+    def __init__(self, *, get_response=None, post_responses=None):
+        self.headers = {}
+        self.get_response = get_response
+        self.post_responses = list(post_responses or [])
+
+    def get(self, *_args, **_kwargs):
+        return self.get_response
+
+    def post(self, *_args, **_kwargs):
+        return self.post_responses.pop(0)
+
+
 def test_encode_coll_byte_handles_empty_and_short_payloads():
     assert encode_coll_byte("") == "0e00"
     assert encode_coll_byte("deadbeef") == "0e04deadbeef"
@@ -70,3 +93,47 @@ def test_compute_commitment_handles_empty_miner_list():
 
     assert len(commitment) == 64
     assert commitment == builder.compute_commitment([])
+
+
+def test_get_unspent_box_ignores_non_list_json():
+    builder = RawTxBuilder()
+    builder.session = FakeSession(get_response=FakeResponse({"box": {"value": 9_000_000}}))
+
+    assert builder.get_unspent_box() is None
+
+
+def test_get_unspent_box_skips_malformed_entries():
+    valid_box = {"box": {"value": 3_000_000, "boxId": "box-1"}}
+    builder = RawTxBuilder()
+    builder.session = FakeSession(
+        get_response=FakeResponse(["not-a-box", {"box": "not-an-object"}, valid_box])
+    )
+
+    assert builder.get_unspent_box() == valid_box
+
+
+def test_get_current_height_defaults_for_non_object_json():
+    builder = RawTxBuilder()
+    builder.session = FakeSession(get_response=FakeResponse(["not", "an", "object"]))
+
+    assert builder.get_current_height() == 0
+
+
+def test_anchor_miners_rejects_non_object_signed_transaction(monkeypatch):
+    builder = RawTxBuilder()
+    builder.session = FakeSession(post_responses=[FakeResponse(["signed"]), FakeResponse("tx-id")])
+    monkeypatch.setattr(
+        builder,
+        "get_recent_miners",
+        lambda limit=10: [{"miner": "alice", "device_arch": "x86", "ts_ok": 1}],
+    )
+    monkeypatch.setattr(
+        builder,
+        "get_unspent_box",
+        lambda min_value=3000000: {
+            "box": {"value": 4_000_000, "boxId": "box-1", "ergoTree": "tree"}
+        },
+    )
+    monkeypatch.setattr(builder, "get_current_height", lambda: 100)
+
+    assert builder.anchor_miners() == {"success": False, "error": "Sign: invalid response"}

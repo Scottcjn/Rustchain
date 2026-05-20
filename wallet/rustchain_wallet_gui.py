@@ -223,7 +223,10 @@ class RustChainWallet:
                     resp = requests.post(url, json=data, verify=VERIFY_SSL, timeout=timeout)
                 
                 resp.raise_for_status()
-                return resp.json(), None
+                payload = resp.json()
+                if not isinstance(payload, dict):
+                    return None, "API returned JSON but not an object"
+                return payload, None
                 
             except ConnectionError as e:
                 last_error = str(e)

@@ -63,6 +63,12 @@ def test_get_bridge_stats_uses_max_locked_value_and_first_ledger(tmp_path, monke
     assert json.loads(data_file.read_text()) == result
 
 
+def test_default_data_file_lives_next_to_static_bridge_dashboard():
+    stats = load_update_stats_module()
+
+    assert Path(stats.DATA_FILE) == MODULE_PATH.with_name("bridge_status.json")
+
+
 def test_get_bridge_stats_records_down_nodes_and_empty_ledger(tmp_path, monkeypatch):
     stats = load_update_stats_module()
     data_file = tmp_path / "bridge_status.json"

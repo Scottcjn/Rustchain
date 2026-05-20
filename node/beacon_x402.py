@@ -121,6 +121,18 @@ def _is_base_address(value: str) -> bool:
     )
 
 
+def _require_beacon_admin():
+    expected = os.environ.get("BEACON_ADMIN_KEY", "")
+    if not expected:
+        return _cors_json({"error": "Admin key not configured"}, 503)
+
+    admin_key = request.headers.get("X-Admin-Key", "")
+    if not hmac.compare_digest(admin_key, expected):
+        return _cors_json({"error": "Unauthorized - admin key required"}, 401)
+
+    return None
+
+
 # ---------------------------------------------------------------------------
 # x402 payment check
 # ---------------------------------------------------------------------------
@@ -200,12 +212,9 @@ def init_app(app, get_db_func):
             return _cors_json({"ok": True})
 
         # Simple admin check ? require admin key in header
-        admin_key = request.headers.get("X-Admin-Key", "")
-        expected = os.environ.get("BEACON_ADMIN_KEY", "")
-        if not expected:
-            return _cors_json({"error": "Admin key not configured"}, 503)
-        if not hmac.compare_digest(admin_key, expected):
-            return _cors_json({"error": "Unauthorized ? admin key required"}, 401)
+        admin_error = _require_beacon_admin()
+        if admin_error:
+            return admin_error
 
         data, error_response = _json_object_body()
         if error_response:
@@ -360,6 +369,10 @@ def init_app(app, get_db_func):
         """View x402 payment history for beacon."""
         if request.method == "OPTIONS":
             return _cors_json({"ok": True})
+
+        admin_error = _require_beacon_admin()
+        if admin_error:
+            return admin_error
 
         db = get_db_func()
         try:

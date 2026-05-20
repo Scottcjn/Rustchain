@@ -108,6 +108,23 @@ def fetch_json(url: str) -> Optional[dict]:
         return None
 
 
+def _rows_from_payload(payload, key: str) -> Optional[list]:
+    if isinstance(payload, list):
+        rows = payload
+    elif isinstance(payload, dict):
+        rows = payload.get(key, payload)
+    else:
+        return None
+
+    if not isinstance(rows, list):
+        return None
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def _stats_from_payload(payload) -> Optional[dict]:
+    return payload if isinstance(payload, dict) else None
+
+
 def fetch_platform_data(base_url: str, weeks: int) -> dict:
     """
     Fetch videos, agents, and stats from the BoTTube API.
@@ -124,26 +141,23 @@ def fetch_platform_data(base_url: str, weeks: int) -> dict:
 
     using_mock = []
 
-    if videos_raw is None:
+    videos = _rows_from_payload(videos_raw, "videos")
+    if videos is None:
         print("[bottube-digest] /api/videos unreachable — using mock data", file=sys.stderr)
         videos = MOCK_VIDEOS
         using_mock.append("videos")
-    else:
-        videos = videos_raw.get("videos", videos_raw) if isinstance(videos_raw, dict) else videos_raw
 
-    if agents_raw is None:
+    agents = _rows_from_payload(agents_raw, "agents")
+    if agents is None:
         print("[bottube-digest] /api/agents unreachable — using mock data", file=sys.stderr)
         agents = MOCK_AGENTS
         using_mock.append("agents")
-    else:
-        agents = agents_raw.get("agents", agents_raw) if isinstance(agents_raw, dict) else agents_raw
 
-    if stats_raw is None:
+    stats = _stats_from_payload(stats_raw)
+    if stats is None:
         print("[bottube-digest] /api/stats unreachable — using mock data", file=sys.stderr)
         stats = MOCK_STATS
         using_mock.append("stats")
-    else:
-        stats = stats_raw
 
     return {
         "videos": videos,

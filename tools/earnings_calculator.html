@@ -200,11 +200,24 @@
 
         let networkSum = 20.0; // Fallback sum if API fails
 
+        function normalizeMinerRows(payload) {
+            const rows = Array.isArray(payload)
+                ? payload
+                : (Array.isArray(payload?.miners)
+                    ? payload.miners
+                    : (Array.isArray(payload?.data)
+                        ? payload.data
+                        : (Array.isArray(payload?.items) ? payload.items : [])));
+
+            return rows.filter(row => row && typeof row === 'object');
+        }
+
         async function init() {
             try {
                 const res = await fetch(API_MINERS);
-                const miners = await res.json();
-                networkSum = miners.reduce((acc, m) => acc + m.antiquity_multiplier, 0);
+                const miners = normalizeMinerRows(await res.json());
+                const liveNetworkSum = miners.reduce((acc, m) => acc + (Number(m.antiquity_multiplier) || 0), 0);
+                if (liveNetworkSum > 0) networkSum = liveNetworkSum;
                 document.getElementById('loading-bar').style.display = 'none';
             } catch (e) {
                 document.getElementById('loading-bar').innerHTML = "⚠️ Using cached network stats (Node unreachable)";

@@ -9,11 +9,12 @@ Run with:
 
 import json
 import os
+import sqlite3
 import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -350,6 +351,23 @@ class TestFlaskIntegration(unittest.TestCase):
             content_type='application/json',
         )
 
+    def insert_badge_with_metadata(self, cert_id, metadata):
+        """Insert a badge row with caller-provided raw metadata."""
+        import tools.bcos_badge_generator as bg
+
+        conn = sqlite3.connect(bg.DATABASE)
+        try:
+            conn.execute(
+                '''
+                INSERT INTO badges (cert_id, repo_name, github_url, tier, trust_score, metadata)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ''',
+                (cert_id, 'test/repo', 'https://github.com/test/repo', 'L1', 75, metadata),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
     def test_index_page(self):
         """Test index page loads."""
         response = self.client.get('/')
@@ -438,6 +456,51 @@ class TestFlaskIntegration(unittest.TestCase):
         data = json.loads(response.data)
         self.assertTrue(data['success'])
         self.assertIn('cert_id', data)
+
+    def test_generate_badge_rejects_non_json_body(self):
+        """Non-JSON bodies should return JSON 400 responses, not HTML errors."""
+        response = self.client.post(
+            '/api/badge/generate',
+            data='not json',
+            headers={
+                'X-Admin-Key': self.admin_key,
+                'Content-Type': 'text/plain',
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.data)
+        self.assertFalse(data['success'])
+        self.assertEqual(data['error'], 'JSON object body required')
+
+    def test_generate_badge_rejects_non_object_json_body(self):
+        """JSON arrays should fail validation before route code calls .get()."""
+        response = self.client.post(
+            '/api/badge/generate',
+            json=['test/repo', 'L1'],
+            headers={'X-Admin-Key': self.admin_key},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.data)
+        self.assertFalse(data['success'])
+        self.assertEqual(data['error'], 'JSON object body required')
+
+    def test_generate_badge_rejects_scalar_repo_and_tier_fields(self):
+        """Scalar field validation should reject non-strings without 500s."""
+        cases = [
+            ({'repo_name': ['test/repo'], 'tier': 'L1'}, 'Repository name must be a string'),
+            ({'repo_name': 'test/repo', 'tier': True}, 'Tier must be a string'),
+        ]
+
+        for payload, error in cases:
+            with self.subTest(payload=payload):
+                response = self.post_generate_badge(payload)
+
+                self.assertEqual(response.status_code, 200)
+                data = json.loads(response.data)
+                self.assertFalse(data['success'])
+                self.assertEqual(data['error'], error)
 
     def test_generate_badge_missing_repo(self):
         """Test badge generation with missing repo name."""
@@ -598,6 +661,17 @@ class TestFlaskIntegration(unittest.TestCase):
         data = json.loads(response.data)
         self.assertFalse(data['valid'])
 
+    def test_verify_tolerates_corrupt_stored_metadata(self):
+        """Corrupt legacy metadata should not break badge verification."""
+        self.insert_badge_with_metadata('BCOS-CORRUPTVERIFY', '{bad-json')
+
+        response = self.client.get('/api/badge/verify/BCOS-CORRUPTVERIFY')
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertTrue(data['valid'])
+        self.assertEqual(data['data']['metadata'], {})
+
     def test_serve_badge_svg(self):
         """Test serving badge SVG."""
         # Generate a badge first
@@ -619,6 +693,16 @@ class TestFlaskIntegration(unittest.TestCase):
         """Test serving non-existent badge."""
         response = self.client.get('/badge/BCOS-NOTFOUND.svg')
         self.assertEqual(response.status_code, 404)
+
+    def test_serve_badge_svg_tolerates_corrupt_stored_metadata(self):
+        """Corrupt legacy metadata should not break badge SVG rendering."""
+        self.insert_badge_with_metadata('BCOS-CORRUPTSVG', 'not-json')
+
+        response = self.client.get('/badge/BCOS-CORRUPTSVG.svg')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content_type, 'image/svg+xml')
+        self.assertIn(b'<svg', response.data)
 
 
 class TestEdgeCases(unittest.TestCase):

@@ -5,6 +5,7 @@ Provides endpoints for agents, contracts, bounties, reputation, and chat.
 """
 import json
 import html
+import math
 import os
 import time
 import hashlib
@@ -48,6 +49,17 @@ def _required_text_field(data, field_name):
     if not isinstance(value, str) or not value.strip():
         return None, jsonify({'error': f'Missing {field_name}'}), 400
     return value.strip(), None, None
+
+
+def _positive_float_field(data, field_name):
+    value = data.get(field_name)
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None, jsonify({'error': f'{field_name} must be a positive number'}), 400
+    if not math.isfinite(number) or number <= 0:
+        return None, jsonify({'error': f'{field_name} must be a positive number'}), 400
+    return number, None, None
 
 
 def _coinbase_addresses_match(left, right):
@@ -589,12 +601,16 @@ def create_contract():
         # Generate contract ID
         contract_id = f"ctr_{int(time.time())}_{hashlib.blake2b(str(time.time()).encode(), digest_size=4).hexdigest()}"
         
+        amount, amount_error, amount_status = _positive_float_field(data, 'amount')
+        if amount_error:
+            return amount_error, amount_status
+
         contract = {
             'id': contract_id,
             'from': data['from'],
             'to': data['to'],
             'type': data['type'],
-            'amount': float(data['amount']),
+            'amount': amount,
             'currency': data.get('currency', 'RTC'),
             'term': data['term'],
             'state': 'offered',  # Initial state
