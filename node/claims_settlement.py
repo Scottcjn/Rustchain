@@ -9,7 +9,7 @@ Integrates with RIP-0200 epoch reward distribution.
 
 Usage:
     from claims_settlement import process_claims_batch
-    
+
     result = process_claims_batch(
         db_path="/path/to/node.db",
         max_claims=100,
@@ -29,7 +29,7 @@ try:
 except ImportError:
     def update_claim_status(*args, **kwargs):
         return False
-    
+
     def get_claim_status(*args, **kwargs):
         return None
 
@@ -55,7 +55,7 @@ def get_pending_claims(
 ) -> List[Dict[str, Any]]:
     """
     Get approved claims ready for settlement
-    
+
     Returns:
         List of claim records sorted by submission time
     """
@@ -63,14 +63,14 @@ def get_pending_claims(
         with sqlite3.connect(db_path) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            
+
             cursor.execute("""
                 SELECT * FROM claims
                 WHERE status = 'approved'
                 ORDER BY submitted_at ASC
                 LIMIT ?
             """, (max_claims,))
-            
+
             claims = []
             for row in cursor.fetchall():
                 claims.append({
@@ -81,12 +81,11 @@ def get_pending_claims(
                     "reward_urtc": row["reward_urtc"],
                     "submitted_at": row["submitted_at"]
                 })
-            
+
             return claims
     except sqlite3.Error as e:
         print(f"[SETTLEMENT] Error getting pending claims: {e}")
         return []
-
 
 
 def reserve_pending_claims(
@@ -112,7 +111,6 @@ def reserve_pending_claims(
 
         cursor.execute("BEGIN IMMEDIATE")
         try:
-            # Select approved claims while holding the write lock
             cursor.execute("""
                 SELECT claim_id, miner_id, epoch, wallet_address,
                        reward_urtc, submitted_at
@@ -128,11 +126,8 @@ def reserve_pending_claims(
                 conn.close()
                 return []
 
-            # Atomically move them to 'settling' so no other worker can
-            # pick them up.
-            claim_ids = [row["claim_id"] for row in rows]
             now = int(time.time())
-            for cid in claim_ids:
+            for row in rows:
                 cursor.execute("""
                     UPDATE claims
                     SET status = 'settling',
@@ -140,7 +135,7 @@ def reserve_pending_claims(
                         updated_at = ?
                     WHERE claim_id = ?
                       AND status = 'approved'
-                """, (batch_id, now, cid))
+                """, (batch_id, now, row["claim_id"]))
 
             conn.commit()
         except Exception:
@@ -148,7 +143,6 @@ def reserve_pending_claims(
             conn.close()
             raise
 
-        # Build result list from the rows we just reserved
         claims = []
         for row in rows:
             claims.append({
@@ -167,29 +161,47 @@ def reserve_pending_claims(
         return []
 
 
+def unreserve_claims(db_path: str, claim_ids: List[str]) -> None:
+    """
+    Reset 'settling' claims back to 'approved' on broadcast failure.
+    """
+    try:
+        with sqlite3.connect(db_path) as conn:
+            for cid in claim_ids:
+                conn.execute(
+                    "UPDATE claims SET status = 'approved', "
+                    "settlement_batch = NULL, updated_at = ? "
+                    "WHERE claim_id = ? AND status = 'settling'",
+                    (int(time.time()), cid),
+                )
+            conn.commit()
+    except sqlite3.Error as e:
+        print(f"[SETTLEMENT] Warning: could not unreserve claims: {e}")
+
+
 def get_verifying_claims(
     db_path: str,
     older_than_seconds: int = 300
 ) -> List[Dict[str, Any]]:
     """
     Get claims stuck in 'verifying' status for too long
-    
+
     These should be auto-approved or flagged for manual review.
     """
     threshold = int(time.time()) - older_than_seconds
-    
+
     try:
         with sqlite3.connect(db_path) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            
+
             cursor.execute("""
                 SELECT * FROM claims
                 WHERE status = 'verifying'
                 AND submitted_at < ?
                 ORDER BY submitted_at ASC
             """, (threshold,))
-            
+
             claims = []
             for row in cursor.fetchall():
                 claims.append({
@@ -200,7 +212,7 @@ def get_verifying_claims(
                     "reward_urtc": row["reward_urtc"],
                     "submitted_at": row["submitted_at"]
                 })
-            
+
             return claims
     except sqlite3.Error as e:
         print(f"[SETTLEMENT] Error getting verifying claims: {e}")
@@ -213,14 +225,14 @@ def check_rewards_pool_balance(
 ) -> Tuple[bool, int]:
     """
     Check if rewards pool has sufficient balance
-    
+
     Returns:
         (sufficient: bool, current_balance_urtc: int)
     """
     try:
         with sqlite3.connect(db_path) as conn:
             cursor = conn.cursor()
-            
+
             # Try to get rewards pool balance
             # This assumes a 'rewards_pool' or 'treasury' table exists
             try:
@@ -234,7 +246,7 @@ def check_rewards_pool_balance(
                 # Table doesn't exist, assume sufficient funds for now
                 # In production, this should integrate with actual treasury
                 balance = required_urtc * 10  # Assume 10x buffer
-            
+
             return balance >= required_urtc, balance
     except sqlite3.Error as e:
         print(f"[SETTLEMENT] Error checking pool balance: {e}")
@@ -246,20 +258,20 @@ def construct_settlement_transaction(
 ) -> Dict[str, Any]:
     """
     Construct multi-output settlement transaction
-    
+
     Returns:
         Transaction details ready for signing and broadcast
     """
     outputs = []
     total_amount = 0
-    
+
     for claim in claims:
         outputs.append({
             "address": claim["wallet_address"],
             "amount_urtc": claim["reward_urtc"]
         })
         total_amount += claim["reward_urtc"]
-    
+
     return {
         "type": "multi_output_transfer",
         "outputs": outputs,
@@ -273,11 +285,11 @@ def construct_settlement_transaction(
 def calculate_settlement_fee(num_outputs: int) -> int:
     """
     Calculate transaction fee for settlement
-    
+
     Fee structure:
     - Base fee: 1000 uRTC
     - Per output: 100 uRTC
-    
+
     Returns:
         Fee in uRTC
     """
@@ -329,12 +341,12 @@ def update_claims_settled(
 ) -> int:
     """
     Update multiple claims to 'settled' status
-    
+
     Returns:
         Number of claims updated
     """
     updated = 0
-    
+
     for claim_id in claim_ids:
         success = update_claim_status(
             db_path=db_path,
@@ -347,7 +359,7 @@ def update_claims_settled(
         )
         if success:
             updated += 1
-    
+
     return updated
 
 
@@ -358,12 +370,12 @@ def update_claims_failed(
 ) -> int:
     """
     Update multiple claims to 'failed' status
-    
+
     Returns:
         Number of claims updated
     """
     updated = 0
-    
+
     for claim_id in claim_ids:
         success = update_claim_status(
             db_path=db_path,
@@ -373,7 +385,7 @@ def update_claims_failed(
         )
         if success:
             updated += 1
-    
+
     return updated
 
 
@@ -433,14 +445,14 @@ def process_claims_batch(
 ) -> Dict[str, Any]:
     """
     Process a batch of approved claims
-    
+
     Args:
         db_path: Path to node SQLite database
         max_claims: Maximum claims to process in one batch
         min_batch_size: Minimum claims needed to trigger batch (unless max_wait exceeded)
         max_wait_seconds: Maximum time to wait before processing regardless of batch size
         dry_run: If True, don't actually process, just report what would be done
-    
+
     Returns:
         {
             "processed": bool,
@@ -465,11 +477,7 @@ def process_claims_batch(
         "failed_count": 0,
         "error": None
     }
-    
-    # Generate batch ID early so we can use it for atomic reservation
-    batch_id = generate_batch_id(db_path)
-    result["batch_id"] = batch_id
-    
+
     # Log stale verifying claims for manual review — NEVER auto-approve.
     # Auto-approving claims that failed verification is a fund-theft vector:
     # an attacker submits a fraudulent claim and waits for the timeout.
@@ -485,106 +493,87 @@ def process_claims_batch(
                 details={"reason": "verification_timeout", "auto_approved": False}
             )
 
-    # Only process properly approved claims
-    all_claims = pending_claims
-    seen = set()
-    unique_claims = []
-    for claim in all_claims:
-        if claim["claim_id"] not in seen:
-            seen.add(claim["claim_id"])
-            unique_claims.append(claim)
-    
-    claims_to_process = unique_claims[:max_claims]
-    
-    # Check if we should process this batch
-    current_time = int(time.time())
-    oldest_claim_time = min((c["submitted_at"] for c in claims_to_process), default=current_time)
-    wait_time = current_time - oldest_claim_time
-    
-    should_process = (
-        len(claims_to_process) >= min_batch_size or
-        wait_time >= max_wait_seconds or
-        len(claims_to_process) > 0
-    )
-    
-    if not should_process or len(claims_to_process) == 0:
-        result["error"] = "Batch conditions not met"
-        return result
-    
-    # Calculate total amount
-    total_amount = sum(c["reward_urtc"] for c in claims_to_process)
-    
-    # Check rewards pool balance
-    sufficient, balance = check_rewards_pool_balance(db_path, total_amount)
-    if not sufficient:
-        result["error"] = f"Insufficient funds: need {total_amount}, have {balance}"
-        return result
-    
+    # --- DRY RUN: peek at approved claims without reserving ---
     if dry_run:
+        preview = get_pending_claims(db_path, max_claims)
+        if not preview:
+            result["error"] = "No approved claims"
+            return result
+        total_amount = sum(c["reward_urtc"] for c in preview)
         result["processed"] = True
-        result["claims_count"] = len(claims_to_process)
+        result["claims_count"] = len(preview)
         result["total_amount_urtc"] = total_amount
         result["total_amount_rtc"] = total_amount / 100_000_000
         result["error"] = "Dry run - no actual processing"
         return result
-    
-    # Generate batch ID
+
+    # Generate batch ID *before* reservation so the atomic UPDATE can
+    # stamp each reserved row with this batch.
     batch_id = generate_batch_id(db_path)
     result["batch_id"] = batch_id
-    
+
+    # Atomically reserve approved claims for this batch.
+    # BEGIN IMMEDIATE prevents two concurrent workers from selecting the
+    # same rows: the first worker moves them to 'settling' inside the
+    # write lock, so the second worker's SELECT sees zero 'approved' rows.
+    claims_to_process = reserve_pending_claims(db_path, batch_id, max_claims)
+
+    if not claims_to_process:
+        result["error"] = "No approved claims available (may be reserved by another worker)"
+        return result
+
+    # Calculate total amount
+    total_amount = sum(c["reward_urtc"] for c in claims_to_process)
+
+    # Check rewards pool balance
+    sufficient, balance = check_rewards_pool_balance(db_path, total_amount)
+    if not sufficient:
+        unreserve_claims(db_path, [c["claim_id"] for c in claims_to_process])
+        result["error"] = f"Insufficient funds: need {total_amount}, have {balance}"
+        return result
+
     # Construct transaction
     tx_data = construct_settlement_transaction(claims_to_process)
     tx_data["batch_id"] = batch_id
-    
+
     # Sign and broadcast
     success, tx_hash, error = sign_and_broadcast_transaction(tx_data, db_path)
-    
+
     if not success:
-        # Mark claims as failed and reset to approved for retry
         failed_count = update_claims_failed(
             db_path,
             [c["claim_id"] for c in claims_to_process],
             error or "Transaction failed"
         )
-        # Also unreserve — reset 'settling' back to 'approved' so another
-        # worker can retry them.
-        try:
-            with sqlite3.connect(db_path) as conn:
-                for c in claims_to_process:
-                    conn.execute(
-                        "UPDATE claims SET status = 'approved', settlement_batch = NULL WHERE claim_id = ? AND status = 'settling'",
-                        (c["claim_id"],)
-                    )
-                conn.commit()
-        except sqlite3.Error:
-            pass  # Best-effort unreserve
+        # Reset 'settling' back to 'approved' so another worker can retry
+        unreserve_claims(db_path, [c["claim_id"] for c in claims_to_process])
         result["failed_count"] = failed_count
         result["error"] = error
         return result
-    
-    # Update claims to settled
+
+        # Update claims to settled
     settled_count = update_claims_settled(
         db_path,
         [c["claim_id"] for c in claims_to_process],
         tx_hash,
         batch_id
     )
-    
+
     # NOTE: Stale verifying claims are flagged for manual review above.
     # They are NOT auto-approved — that was a fund-theft vector.
-    
+
     result["processed"] = True
     result["claims_count"] = len(claims_to_process)
     result["total_amount_urtc"] = total_amount
     result["total_amount_rtc"] = total_amount / 100_000_000
     result["transaction_hash"] = tx_hash
     result["success_count"] = settled_count
-    
+
     print(f"[SETTLEMENT] Batch {batch_id} processed:")
     print(f"  Claims: {settled_count}")
     print(f"  Total: {total_amount / 100_000_000:.6f} RTC")
     print(f"  TX Hash: {tx_hash}")
-    
+
     return result
 
 
@@ -594,16 +583,16 @@ def get_settlement_stats(
 ) -> Dict[str, Any]:
     """
     Get settlement statistics for the last N days
-    
+
     Returns:
         Settlement statistics
     """
     threshold = int(time.time()) - (days * 24 * 3600)
-    
+
     try:
         with sqlite3.connect(db_path) as conn:
             cursor = conn.cursor()
-            
+
             # Total settled claims
             cursor.execute("""
                 SELECT COUNT(*), SUM(reward_urtc)
@@ -614,7 +603,7 @@ def get_settlement_stats(
             row = cursor.fetchone()
             settled_count = row[0] or 0
             settled_amount = row[1] or 0
-            
+
             # Total failed claims
             cursor.execute("""
                 SELECT COUNT(*)
@@ -623,7 +612,7 @@ def get_settlement_stats(
                 AND updated_at >= ?
             """, (threshold,))
             failed_count = cursor.fetchone()[0] or 0
-            
+
             # Average settlement time
             cursor.execute("""
                 SELECT AVG(settled_at - submitted_at)
@@ -633,7 +622,7 @@ def get_settlement_stats(
                 AND settled_at IS NOT NULL
             """, (threshold,))
             avg_time = cursor.fetchone()[0] or 0
-            
+
             # Unique batches
             cursor.execute("""
                 SELECT COUNT(DISTINCT settlement_batch)
@@ -642,7 +631,7 @@ def get_settlement_stats(
                 AND settled_at >= ?
             """, (threshold,))
             batch_count = cursor.fetchone()[0] or 0
-            
+
             return {
                 "period_days": days,
                 "settled_claims": settled_count,
@@ -665,13 +654,13 @@ def get_settlement_stats(
 # Example usage and testing
 if __name__ == "__main__":
     print("=== RIP-305 Claims Settlement Test ===\n")
-    
+
     # Create test database
     test_db = ":memory:"
-    
+
     with sqlite3.connect(test_db) as conn:
         cursor = conn.cursor()
-        
+
         # Create claims table
         cursor.execute("""
             CREATE TABLE claims (
@@ -695,10 +684,10 @@ if __name__ == "__main__":
                 updated_at INTEGER
             )
         """)
-        
+
         # Insert test claims
         current_ts = int(time.time())
-        
+
         for i in range(15):
             cursor.execute("""
                 INSERT INTO claims
@@ -715,9 +704,9 @@ if __name__ == "__main__":
                 current_ts - (i * 60),
                 current_ts - (i * 60)
             ))
-        
+
         conn.commit()
-    
+
     # Test batch processing (dry run)
     result = process_claims_batch(
         db_path=test_db,
@@ -726,13 +715,13 @@ if __name__ == "__main__":
         max_wait_seconds=1800,
         dry_run=True
     )
-    
+
     print(f"Dry Run Result:")
     print(f"  Processed: {result['processed']}")
     print(f"  Claims: {result['claims_count']}")
     print(f"  Total: {result['total_amount_rtc']:.6f} RTC")
     print(f"  Error: {result['error']}")
-    
+
     # Test actual processing
     print(f"\nActual Processing:")
     result = process_claims_batch(
@@ -742,18 +731,18 @@ if __name__ == "__main__":
         max_wait_seconds=1800,
         dry_run=False
     )
-    
+
     print(f"  Processed: {result['processed']}")
     print(f"  Batch ID: {result['batch_id']}")
     print(f"  Claims: {result['claims_count']}")
     print(f"  Success: {result['success_count']}")
     print(f"  TX Hash: {result['transaction_hash']}")
-    
+
     # Test statistics
     stats = get_settlement_stats(test_db, days=7)
     print(f"\nSettlement Stats (7 days):")
     print(f"  Settled Claims: {stats.get('settled_claims', 0)}")
     print(f"  Settled Amount: {stats.get('settled_amount_rtc', 0):.6f} RTC")
     print(f"  Success Rate: {stats.get('success_rate', 0):.1%}")
-    
+
     print("\n=== Test Complete ===")
