@@ -135,3 +135,24 @@ def test_proxy_hides_invalid_json_response_details(monkeypatch):
     assert response.get_json() == {"error": "Local server unavailable"}
     assert "super-secret" not in response.get_data(as_text=True)
     assert "/srv/rustchain/private.db" not in response.get_data(as_text=True)
+
+
+def test_proxy_hides_non_json_client_error_details(monkeypatch):
+    proxy = load_server_proxy()
+
+    class FakeResponse:
+        status_code = 404
+        text = "not found token=super-secret path=/srv/rustchain/private.db"
+        headers = {"Content-Type": "text/html"}
+
+    def fake_get(url, timeout):
+        return FakeResponse()
+
+    monkeypatch.setattr(proxy.requests, "get", fake_get)
+
+    response = proxy.app.test_client().get("/api/missing")
+
+    assert response.status_code == 502
+    assert response.get_json() == {"error": "Local server unavailable"}
+    assert "super-secret" not in response.get_data(as_text=True)
+    assert "/srv/rustchain/private.db" not in response.get_data(as_text=True)
