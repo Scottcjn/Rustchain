@@ -159,6 +159,14 @@
         return Number.isNaN(date.getTime()) ? 'unavailable' : date.toLocaleTimeString();
     }
 
+    function renderFallback() {
+        document.getElementById('lockedRtc').innerText = '0 RTC';
+        document.getElementById('circulatingWrtc').innerText = '0 wRTC';
+        document.getElementById('nodeStatus').innerHTML = '';
+        document.getElementById('txBody').innerHTML = '';
+        document.getElementById('lastUpdate').innerText = 'LAST_SYNC: unavailable';
+    }
+
     async function refresh() {
         try {
             const resp = await fetch('bridge_status.json');
@@ -202,6 +210,7 @@
             document.getElementById('lastUpdate').innerText = 'LAST_SYNC: ' + formatTimestamp(data.timestamp);
         } catch (e) {
             console.error(e);
+            renderFallback();
         }
     }
 

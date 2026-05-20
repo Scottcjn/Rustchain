@@ -8,7 +8,7 @@ from pathlib import Path
 PAGE = Path(__file__).resolve().parents[1] / "static" / "bridge" / "index.html"
 
 
-def run_bridge_dashboard_probe(payload, assertions: str) -> None:
+def run_bridge_dashboard_probe(payload, assertions: str, *, ok: bool = True, status: int = 200) -> None:
     script = f"""
     const fs = require('fs');
     const vm = require('vm');
@@ -55,8 +55,8 @@ def run_bridge_dashboard_probe(payload, assertions: str) -> None:
             createElement: makeElement
         }},
         fetch: async () => ({{
-            ok: true,
-            status: 200,
+            ok: {json.dumps(ok)},
+            status: {status},
             json: async () => ({json.dumps(payload)})
         }}),
         console: {{ error() {{}} }},
@@ -90,6 +90,7 @@ def test_bridge_dashboard_defines_payload_safety_helpers():
     assert "function safeArray(value)" in html
     assert "function safeObject(value)" in html
     assert "function formatTimestamp(value)" in html
+    assert "function renderFallback()" in html
 
 
 def test_bridge_dashboard_handles_empty_or_malformed_payloads():
@@ -109,6 +110,28 @@ def test_bridge_dashboard_handles_empty_or_malformed_payloads():
             throw new Error('missing unavailable timestamp');
         }
         """,
+    )
+
+
+def test_bridge_dashboard_handles_fetch_failures():
+    run_bridge_dashboard_probe(
+        {},
+        """
+        if (lockedRtc.innerText !== '0 RTC') {
+            throw new Error('locked RTC fallback did not render');
+        }
+        if (circulatingWrtc.innerText !== '0 wRTC') {
+            throw new Error('wRTC fallback did not render');
+        }
+        if (nodeStatus.children.length !== 0 || txBody.children.length !== 0) {
+            throw new Error('failed fetch should render empty node and tx lists');
+        }
+        if (lastUpdate.innerText !== 'LAST_SYNC: unavailable') {
+            throw new Error('missing unavailable timestamp');
+        }
+        """,
+        ok=False,
+        status=404,
     )
 
 
