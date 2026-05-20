@@ -541,9 +541,8 @@ def process_claims_batch(
 
     if not success:
         # Unreserve claims back to approved for retry.
-        # We do NOT call update_claims_failed() here because
-        # that moves status to failed, making unreserve_claims()
-        # a no-op (it only updates WHERE status=settling).
+        # Do NOT call update_claims_failed() here — that moves status
+        # to failed, making unreserve_claims() a no-op.
         unreserve_claims(db_path, [c["claim_id"] for c in claims_to_process])
         result["failed_count"] = len(claims_to_process)
         result["error"] = error or "Transaction broadcast failed"
