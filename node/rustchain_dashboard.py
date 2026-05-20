@@ -599,7 +599,7 @@ def api_stats():
             'active_miners': [],
             'recent_blocks': [],
             'system_stats': {},
-            'error': 'stats_unavailable'
+            'error': str(e)
         }), 500
 
 @app.route('/api/wallet/<wallet_address>')
@@ -683,7 +683,9 @@ def api_wallet_lookup(wallet_address):
 
     except Exception as e:
         print(f"Error in wallet lookup: {e}")
-        return jsonify({'error': 'wallet_lookup_unavailable'}), 500
+        import logging
+        logging.exception("Internal error in endpoint")
+        return jsonify({"error": "internal_error"}), 500
 
 def format_uptime(seconds):
     """Format uptime in human-readable format"""
