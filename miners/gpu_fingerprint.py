@@ -616,7 +616,10 @@ def channel_8f_vm_detection(device: torch.device) -> ChannelResult:
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
         pass
 
-    # --- Check 5: IOMMU group (vfio-pci passthrough leaves traces) ---
+    # --- Check 5: IOMMU group with vfio-pci driver (passthrough) ---
+    # Note: merely being in an IOMMU group is normal on bare-metal hosts
+    # with IOMMU enabled.  We only flag when the device driver is actually
+    # vfio-pci, which indicates GPU passthrough to a VM.
     dev_idx = device.index or 0
     try:
         result = subprocess.run(
@@ -626,16 +629,16 @@ def channel_8f_vm_detection(device: torch.device) -> ChannelResult:
         )
         pci_id = result.stdout.strip()
         if pci_id:
-            # Check if this PCI device is in an IOMMU group
-            iommu_base = "/sys/kernel/iommu_groups"
-            if os.path.exists(iommu_base):
-                for group in os.listdir(iommu_base):
-                    devs_path = os.path.join(iommu_base, group, "devices")
-                    if os.path.exists(devs_path):
-                        devs = os.listdir(devs_path)
-                        for d in devs:
-                            if pci_id.lower().replace("0000:", "") in d.lower():
-                                indicators.append(f"iommu_group:{group}")
+            # Normalise to domain:bus:slot.func
+            pci_short = pci_id.lower().replace("0000:", "")
+            # Check the kernel driver bound to this PCI device
+            driver_link = f"/sys/bus/pci/devices/0000:{pci_short}/driver"
+            try:
+                driver_target = os.path.basename(os.readlink(driver_link))
+                if driver_target == "vfio-pci":
+                    indicators.append(f"vfio_passthrough:driver={driver_target}")
+            except (OSError, ValueError):
+                pass
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
         pass
 
@@ -739,17 +742,31 @@ def cross_validate_gpu(device: torch.device) -> ChannelResult:
                 mismatches.append(f"ld_preload_suspicious: {ld_preload}")
                 break
 
-    validated = len(mismatches) == 0
+    # Track whether we actually checked at least one independent source
+    independent_source_checked = os_gpu_name is not None
+
+    validated = len(mismatches) == 0 and independent_source_checked
+    if not independent_source_checked:
+        status = "INCONCLUSIVE"
+        status_detail = "no independent OS hardware source available"
+    elif validated:
+        status = "VALIDATED"
+        status_detail = f"{len(mismatches)} discrepancies"
+    else:
+        status = "MISMATCH"
+        status_detail = f"{len(mismatches)} discrepancies"
+
     return ChannelResult(
         name="8g: Hardware Cross-Validation",
-        passed=validated,
+        passed=True,  # Informational — always passes, attestation server decides
         data={
             "torch_gpu_name": torch_name,
             "os_gpu_name": os_gpu_name or "unavailable",
             "validated": validated,
+            "independent_source_checked": independent_source_checked,
             "mismatches": mismatches,
         },
-        notes=f"{'VALIDATED' if validated else 'MISMATCH'}: {len(mismatches)} discrepancies",
+        notes=f"{status}: {status_detail}",
     )
 
 # ---------------------------------------------------------------------------
