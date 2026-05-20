@@ -39,6 +39,7 @@ def test_miner_dashboard_uses_safe_class_tokens_and_current_api_fields():
     assert "miner.device_arch || miner.device_family" in source
     assert "miner.multiplier ?? miner.antiquity_multiplier" in source
     assert "miner.lastAttestation ?? miner.last_attestation ?? miner.last_seen ?? miner.last_attest" in source
+    assert "miners = Array.isArray(data) ? data : (data.miners || []);" in source
 
     assert "miner.arch.toLowerCase().replace(' ', '-')" not in source
     assert 'class="status-badge ${miner.status}"' not in source
