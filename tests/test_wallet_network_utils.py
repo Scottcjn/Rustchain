@@ -182,6 +182,29 @@ class TestFetchWithRetry(unittest.TestCase):
         self.assertIsNotNone(error)
         self.assertIn("timeout", error.lower())
 
+
+    @patch('requests.get')
+    def test_fetch_with_retry_reports_api_redirect_before_json_parse(self, mock_get):
+        """HTTP redirects from the public API should surface as API response issues."""
+        mock_response = MagicMock()
+        mock_response.status_code = 307
+        mock_response.headers = {"Location": "http://redirect.netprotect.mk/passthrough"}
+        mock_response.is_redirect = True
+        mock_response.raise_for_status = MagicMock()
+        mock_get.return_value = mock_response
+
+        data, error = self.wallet._fetch_with_retry("https://rustchain.org/wallet/balance")
+
+        self.assertIsNone(data)
+        self.assertIn("API redirected: HTTP 307", error)
+        self.assertIn("redirect.netprotect.mk", error)
+        mock_get.assert_called_once_with(
+            "https://rustchain.org/wallet/balance",
+            verify=True,
+            timeout=15,
+            allow_redirects=False,
+        )
+
     @patch('requests.get')
     def test_fetch_with_retry_http_error(self, mock_get):
         """Test HTTP error handling (e.g., 404, 500)."""

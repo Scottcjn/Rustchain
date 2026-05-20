@@ -304,10 +304,17 @@ class SecureFounderWallet:
         for attempt in range(1, max_retries + 1):
             try:
                 if method == "GET":
-                    resp = requests.get(url, verify=VERIFY_SSL, timeout=timeout)
+                    resp = requests.get(url, verify=VERIFY_SSL, timeout=timeout, allow_redirects=False)
                 else:
-                    resp = requests.post(url, json=data, verify=VERIFY_SSL, timeout=timeout)
-                
+                    resp = requests.post(url, json=data, verify=VERIFY_SSL, timeout=timeout, allow_redirects=False)
+
+                status_code = getattr(resp, "status_code", None)
+                if isinstance(status_code, int) and (
+                    getattr(resp, "is_redirect", False) or 300 <= status_code < 400
+                ):
+                    location = resp.headers.get("Location", "")
+                    return None, f"API redirected: HTTP {status_code} to {location or 'unknown location'}"
+
                 resp.raise_for_status()
                 payload = resp.json()
                 if not isinstance(payload, dict):
