@@ -7174,8 +7174,16 @@ def api_rewards_settle():
     if not hmac.compare_digest(admin_key, admin_key_env):
         return jsonify({"ok": False, "reason": "admin_required"}), 401
 
-    body = request.get_json(force=True, silent=True) or {}
-    epoch = int(body.get("epoch", -1))
+    body = request.get_json(force=True, silent=True)
+    if body is None:
+        body = {}
+    if not isinstance(body, dict):
+        return jsonify({"ok": False, "error": "JSON object required"}), 400
+
+    epoch_raw = body.get("epoch", -1)
+    if isinstance(epoch_raw, bool) or not isinstance(epoch_raw, int):
+        return jsonify({"ok": False, "error": "epoch must be an integer"}), 400
+    epoch = epoch_raw
     if epoch < 0:
         return jsonify({"ok": False, "error": "epoch required"}), 400
 
