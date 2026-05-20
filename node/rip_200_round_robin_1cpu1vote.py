@@ -13,7 +13,6 @@ Key Changes:
 4. Time-aging: Vintage hardware advantage decays over blockchain lifetime
 """
 
-import hashlib
 import json
 import logging
 import sqlite3
