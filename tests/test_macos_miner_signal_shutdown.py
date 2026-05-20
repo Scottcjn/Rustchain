@@ -51,3 +51,41 @@ def test_shutdown_sleep_helper_returns_after_shutdown_request(monkeypatch):
         assert sleeps, "expected {} to sleep in short checkpoints".format(miner_path)
         assert max(sleeps) <= 1.0
         assert miner.shutdown_requested
+
+
+def test_macos_v25_fingerprint_adds_hardware_binding_entropy_aliases():
+    module = load_miner_module(ROOT / "miners" / "macos" / "rustchain_mac_miner_v2.5.py")
+
+    fingerprint = {
+        "checks": {
+            "cache_timing": {
+                "data": {
+                    "l1_ns": 12.5,
+                    "l2_ns": 24.0,
+                },
+            },
+            "thermal_drift": {
+                "data": {
+                    "drift_ratio": 1.08,
+                },
+            },
+            "instruction_jitter": {
+                "data": {
+                    "int_avg_ns": 100.0,
+                    "int_stdev": 5.0,
+                    "fp_avg_ns": 200.0,
+                    "fp_stdev": 20.0,
+                    "branch_avg_ns": 400.0,
+                    "branch_stdev": 40.0,
+                },
+            },
+        },
+        "all_passed": True,
+    }
+
+    result = module.add_binding_entropy_aliases(fingerprint)
+
+    assert result["checks"]["cache_timing"]["data"]["L1"] == 12.5
+    assert result["checks"]["cache_timing"]["data"]["L2"] == 24.0
+    assert result["checks"]["thermal_drift"]["data"]["ratio"] == 1.08
+    assert result["checks"]["instruction_jitter"]["data"]["cv"] > 0

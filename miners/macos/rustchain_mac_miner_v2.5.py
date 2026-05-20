@@ -337,6 +337,34 @@ def collect_entropy(cycles=48, inner_loop=25000):
     }
 
 
+def add_binding_entropy_aliases(fingerprint_data):
+    """Add node-side hardware-binding aliases to local fingerprint output."""
+    checks = fingerprint_data.get("checks", {}) if isinstance(fingerprint_data, dict) else {}
+
+    cache_data = checks.get("cache_timing", {}).get("data", {})
+    if "L1" not in cache_data and cache_data.get("l1_ns"):
+        cache_data["L1"] = cache_data["l1_ns"]
+    if "L2" not in cache_data and cache_data.get("l2_ns"):
+        cache_data["L2"] = cache_data["l2_ns"]
+
+    thermal_data = checks.get("thermal_drift", {}).get("data", {})
+    if "ratio" not in thermal_data and thermal_data.get("drift_ratio"):
+        thermal_data["ratio"] = thermal_data["drift_ratio"]
+
+    jitter_data = checks.get("instruction_jitter", {}).get("data", {})
+    if "cv" not in jitter_data:
+        cvs = []
+        for prefix in ("int", "fp", "branch"):
+            avg = float(jitter_data.get("{}_avg_ns".format(prefix), 0) or 0)
+            stdev = float(jitter_data.get("{}_stdev".format(prefix), 0) or 0)
+            if avg > 0 and stdev > 0:
+                cvs.append(stdev / avg)
+        if cvs:
+            jitter_data["cv"] = sum(cvs) / len(cvs)
+
+    return fingerprint_data
+
+
 # ── Miner Class ─────────────────────────────────────────────────────
 
 class MacMiner:
@@ -408,7 +436,9 @@ class MacMiner:
         try:
             passed, results = validate_all_checks()
             self.fingerprint_passed = passed
-            self.fingerprint_data = {"checks": results, "all_passed": passed}
+            self.fingerprint_data = add_binding_entropy_aliases(
+                {"checks": results, "all_passed": passed}
+            )
             if passed:
                 print(success("[FINGERPRINT] All checks PASSED - eligible for full rewards"))
             else:
