@@ -383,6 +383,50 @@ class TestFlaskIntegration(unittest.TestCase):
         self.assertIn('markdown', data)
         self.assertIn('html', data)
 
+    def test_generate_badge_rejects_non_object_json(self):
+        """Badge generation should reject non-object JSON bodies without 500s."""
+        response = self.client.post(
+            '/api/badge/generate',
+            data=json.dumps(['repo_name']),
+            headers={'X-Admin-Key': self.admin_key},
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.data)
+        self.assertFalse(data['success'])
+        self.assertEqual(data['error'], 'JSON object required')
+
+    def test_generate_badge_rejects_non_string_repo_name(self):
+        """repo_name must be a string before the route calls .strip()."""
+        response = self.post_generate_badge(
+            {
+                'repo_name': ['test', 'repo'],
+                'tier': 'L1',
+                'trust_score': 75,
+            }
+        )
+
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.data)
+        self.assertFalse(data['success'])
+        self.assertEqual(data['error'], 'repo_name must be a string')
+
+    def test_generate_badge_rejects_non_string_tier(self):
+        """tier must be a string before the route calls .upper()."""
+        response = self.post_generate_badge(
+            {
+                'repo_name': 'test/repo',
+                'tier': {'level': 'L1'},
+                'trust_score': 75,
+            }
+        )
+
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.data)
+        self.assertFalse(data['success'])
+        self.assertEqual(data['error'], 'tier must be a string')
+
     def test_generate_badge_requires_admin_key(self):
         """Badge generation should reject requests without an admin key."""
         response = self.client.post(
@@ -438,6 +482,22 @@ class TestFlaskIntegration(unittest.TestCase):
         data = json.loads(response.data)
         self.assertTrue(data['success'])
         self.assertIn('cert_id', data)
+
+    def test_generate_badge_treats_null_cert_id_as_omitted(self):
+        """The browser sends null for a blank optional cert ID field."""
+        response = self.post_generate_badge(
+            {
+                'repo_name': 'test/repo',
+                'tier': 'L1',
+                'trust_score': 75,
+                'cert_id': None,
+            }
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertTrue(data['success'])
+        self.assertRegex(data['cert_id'], r'^BCOS-[0-9a-f]{8}$')
 
     def test_generate_badge_missing_repo(self):
         """Test badge generation with missing repo name."""
@@ -532,7 +592,7 @@ class TestFlaskIntegration(unittest.TestCase):
                     }
                 )
 
-                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.status_code, 400)
                 data = json.loads(response.data)
                 self.assertFalse(data['success'])
                 self.assertIn('Invalid certificate ID', data['error'])

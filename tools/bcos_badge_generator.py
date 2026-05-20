@@ -1124,13 +1124,34 @@ def generate_badge():
     if auth_error:
         return auth_error
 
-    data = request.get_json()
+    data = request.get_json(silent=True)
 
-    repo_name = data.get('repo_name', '').strip()
-    tier = data.get('tier', 'L1').upper()
+    if data is None:
+        return jsonify({'success': False, 'error': 'JSON body required'}), 400
+    if not isinstance(data, dict):
+        return jsonify({'success': False, 'error': 'JSON object required'}), 400
+
+    raw_repo_name = data.get('repo_name', '')
+    raw_tier = data.get('tier', 'L1')
     raw_trust_score = data.get('trust_score', 75)
-    cert_id = data.get('cert_id', '')
+    raw_cert_id = data.get('cert_id')
     include_qr = data.get('include_qr', False)
+
+    if not isinstance(raw_repo_name, str):
+        return jsonify({'success': False, 'error': 'repo_name must be a string'}), 400
+    if not isinstance(raw_tier, str):
+        return jsonify({'success': False, 'error': 'tier must be a string'}), 400
+    if raw_cert_id is None:
+        raw_cert_id = ''
+    elif not isinstance(raw_cert_id, str):
+        return jsonify({
+            'success': False,
+            'error': 'Invalid certificate ID. Use BCOS- followed by letters, numbers, underscores, or hyphens.',
+        }), 400
+
+    repo_name = raw_repo_name.strip()
+    tier = raw_tier.upper()
+    cert_id = raw_cert_id
 
     # Validation
     if not repo_name:
