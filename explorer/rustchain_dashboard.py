@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """
 RustChain Mining Dashboard - Enhanced
 --------------------------------------
@@ -189,59 +190,100 @@ DASHBOARD_HTML = """
         .sys-stat .value { font-size: 1.8em; font-weight: bold; }
     </style>
     <script>
-        function escapeHtml(s) {
-            return String(s)
-                .replaceAll('&', '&amp;')
-                .replaceAll('<', '&lt;')
-                .replaceAll('>', '&gt;')
-                .replaceAll('\"', '&quot;')
-                .replaceAll(\"'\", '&#39;');
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, ch => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;',
+            }[ch]));
+        }
+
+        function safeToken(value, allowed, fallback = 'unknown') {
+            const token = String(value ?? '').toLowerCase();
+            return allowed.includes(token) ? token : fallback;
+        }
+
+        function safeNumber(value, fallback = 0) {
+            const number = Number(value);
+            return Number.isFinite(number) ? number : fallback;
+        }
+
+        function displayText(value, fallback = '') {
+            if (value === undefined || value === null || value === '') return fallback;
+            return String(value);
+        }
+
+        function asArray(value) {
+            return Array.isArray(value) ? value.filter(item => item && typeof item === 'object') : [];
+        }
+
+        function asObject(value) {
+            return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
         }
 
         function updateDashboard() {
             fetch('/api/stats')
                 .then(r => r.json())
                 .then(data => {
+                    data = asObject(data);
                     // Update mining stats
-                    document.getElementById('enrolled-miners').textContent = data.enrolled_miners;
-                    document.getElementById('current-epoch').textContent = data.current_epoch;
-                    document.getElementById('epoch-pot').textContent = data.epoch_pot.toFixed(2);
-                    document.getElementById('total-balance').textContent = data.total_balance.toFixed(2);
+                    document.getElementById('enrolled-miners').textContent = safeNumber(data.enrolled_miners);
+                    document.getElementById('current-epoch').textContent = safeNumber(data.current_epoch);
+                    document.getElementById('epoch-pot').textContent = safeNumber(data.epoch_pot).toFixed(2);
+                    document.getElementById('total-balance').textContent = safeNumber(data.total_balance).toFixed(2);
 
                     // Update system stats
-                    if (data.system_stats) {
-                        document.getElementById('sys-cpu').textContent = data.system_stats.cpu + '%';
-                        document.getElementById('sys-mem').textContent = data.system_stats.memory + '%';
-                        document.getElementById('sys-disk').textContent = data.system_stats.disk + '%';
-                        document.getElementById('sys-uptime').textContent = data.system_stats.uptime;
-                        document.getElementById('sys-load').textContent = data.system_stats.load_avg;
+                    const systemStats = asObject(data.system_stats);
+                    if (Object.keys(systemStats).length) {
+                        document.getElementById('sys-cpu').textContent = safeNumber(systemStats.cpu) + '%';
+                        document.getElementById('sys-mem').textContent = safeNumber(systemStats.memory) + '%';
+                        document.getElementById('sys-disk').textContent = safeNumber(systemStats.disk) + '%';
+                        document.getElementById('sys-uptime').textContent = displayText(systemStats.uptime);
+                        document.getElementById('sys-load').textContent = displayText(systemStats.load_avg);
                     }
 
                     // Update miners table
                     const minersTable = document.getElementById('miners-tbody');
-                    minersTable.innerHTML = data.active_miners.map(m => `
-                        <tr>
-                            <td class="mono">${escapeHtml(m.wallet_short)}...</td>
-                            <td><span class="badge badge-${m.arch}">${m.arch.toUpperCase()}</span></td>
-                            <td><strong>${m.weight}x</strong></td>
-                            <td class="green">${m.balance.toFixed(6)} RTC</td>
-                            <td class="mono">${escapeHtml(m.last_seen)}</td>
-                            <td class="blue">${escapeHtml(m.age_on_network || 'New')}</td>
-                            <td><span class="badge badge-active pulse">ACTIVE</span></td>
-                        </tr>
-                    `).join('');
+                    const archTokens = ['active', 'classic', 'retro', 'ancient', 'modern'];
+                    const activeMiners = asArray(data.active_miners);
+                    if (activeMiners.length === 0) {
+                        minersTable.innerHTML = '<tr><td colspan="7">No active miners</td></tr>';
+                    } else {
+                        minersTable.innerHTML = activeMiners.map(m => {
+                            const archToken = safeToken(m.arch, archTokens, 'modern');
+                            const balance = safeNumber(m.balance).toFixed(6);
+                            return `
+                                <tr>
+                                    <td class="mono">${escapeHtml(m.wallet_short)}...</td>
+                                    <td><span class="badge badge-${archToken}">${escapeHtml(m.arch || 'unknown').toUpperCase()}</span></td>
+                                    <td><strong>${escapeHtml(m.weight)}x</strong></td>
+                                    <td class="green">${balance} RTC</td>
+                                    <td class="mono">${escapeHtml(m.last_seen)}</td>
+                                    <td class="blue">${escapeHtml(m.age_on_network || 'New')}</td>
+                                    <td><span class="badge badge-active pulse">ACTIVE</span></td>
+                                </tr>
+                            `;
+                        }).join('');
+                    }
 
                     // Update recent blocks
                     const blocksTable = document.getElementById('blocks-tbody');
-                    blocksTable.innerHTML = data.recent_blocks.map(b => `
-                        <tr>
-                            <td><strong>${b.height}</strong></td>
-                            <td class="mono">${escapeHtml(b.hash_short)}...</td>
-                            <td>${escapeHtml(b.timestamp)}</td>
-                            <td><span class="badge">${b.miners_count} miners</span></td>
-                            <td class="green">${b.reward} RTC</td>
-                        </tr>
-                    `).join('');
+                    const recentBlocks = asArray(data.recent_blocks);
+                    if (recentBlocks.length === 0) {
+                        blocksTable.innerHTML = '<tr><td colspan="5">No recent blocks</td></tr>';
+                    } else {
+                        blocksTable.innerHTML = recentBlocks.map(b => `
+                            <tr>
+                                <td><strong>${escapeHtml(b.height)}</strong></td>
+                                <td class="mono">${escapeHtml(b.hash_short)}...</td>
+                                <td>${escapeHtml(b.timestamp)}</td>
+                                <td><span class="badge">${escapeHtml(b.miners_count)} miners</span></td>
+                                <td class="green">${escapeHtml(b.reward)} RTC</td>
+                            </tr>
+                        `).join('');
+                    }
 
                     document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
                 });
@@ -251,16 +293,18 @@ DASHBOARD_HTML = """
             const wallet = document.getElementById('wallet-search').value.trim();
             if (!wallet) return;
 
-            fetch(`/api/wallet/${wallet}`)
+            fetch(`/api/wallet/${encodeURIComponent(wallet)}`)
                 .then(r => r.json())
                 .then(data => {
+                    data = asObject(data);
                     const resultDiv = document.getElementById('search-result');
                     if (data.found) {
+                        const tierToken = safeToken(data.tier, ['classic', 'retro', 'ancient', 'modern'], 'modern');
                         resultDiv.innerHTML = `
                             <h3>✅ Wallet Found</h3>
                             <p><strong>Address:</strong> <span class="mono">${escapeHtml(data.wallet)}</span></p>
                             <p><strong>Balance:</strong> <span class="green">${escapeHtml(data.balance)} RTC</span></p>
-                            <p><strong>Weight:</strong> ${escapeHtml(data.weight)}x (${escapeHtml(data.tier)})</p>
+                            <p><strong>Weight:</strong> ${escapeHtml(data.weight)}x (<span class="badge badge-${tierToken}">${escapeHtml(data.tier)}</span>)</p>
                             <p><strong>Age on Network:</strong> ${escapeHtml(data.age_on_network || 'Unknown')}</p>
                             <p><strong>Status:</strong> ${data.enrolled ? '✅ Enrolled in current epoch' : '⏸️ Not currently enrolled'}</p>
                             <p><strong>Last Seen:</strong> ${escapeHtml(data.last_seen || 'Never')}</p>
@@ -274,7 +318,8 @@ DASHBOARD_HTML = """
                     resultDiv.style.display = 'block';
                 })
                 .catch(err => {
-                    document.getElementById('search-result').innerHTML = `<h3>❌ Error</h3><p>${escapeHtml(err)}</p>`;
+                    err = escapeHtml(err.message || err);
+                    document.getElementById('search-result').innerHTML = `<h3>❌ Error</h3><p>${err}</p>`;
                     document.getElementById('search-result').style.display = 'block';
                 });
         }
@@ -740,7 +785,7 @@ def api_stats():
             'active_miners': [],
             'recent_blocks': [],
             'system_stats': {},
-            'error': str(e)
+            'error': 'stats_unavailable'
         }), 500
 
 @app.route('/api/wallet/<wallet_address>')
@@ -824,7 +869,7 @@ def api_wallet_lookup(wallet_address):
 
     except Exception as e:
         print(f"Error in wallet lookup: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'wallet_lookup_unavailable'}), 500
 
 
 @app.route('/reward-analytics')
