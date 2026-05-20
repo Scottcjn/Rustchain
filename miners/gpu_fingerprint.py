@@ -30,6 +30,9 @@ import hashlib
 import statistics
 import sys
 import time
+import os
+import platform
+import subprocess
 from dataclasses import asdict, dataclass, field
 from typing import Optional
 
@@ -341,8 +344,7 @@ def channel_8d_thermal_ramp(device: torch.device, duration_s: float = 10.0) -> C
             return torch.cuda.temperature(torch.device(f"cuda:{dev_idx}"))
         except Exception:
             pass
-        # Method 2: nvidia-smi
-        import subprocess
+        # Method 2: nvidia-smi (NVIDIA)
         try:
             result = subprocess.run(
                 ["nvidia-smi", "--query-gpu=temperature.gpu", "--format=csv,noheader,nounits",
@@ -352,7 +354,23 @@ def channel_8d_thermal_ramp(device: torch.device, duration_s: float = 10.0) -> C
             val = result.stdout.strip()
             if val.isdigit():
                 return int(val)
-        except Exception:
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            pass
+        # Method 3: rocm-smi (AMD ROCm)
+        try:
+            result = subprocess.run(
+                ["rocm-smi", "--showtemp", "--csv"],
+                capture_output=True, text=True, timeout=5
+            )
+            for line in result.stdout.strip().split("\n")[1:]:
+                parts = line.split(",")
+                if len(parts) >= 2:
+                    val = parts[1].strip()
+                    try:
+                        return int(float(val))
+                    except ValueError:
+                        pass
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
             pass
         return None
 
@@ -524,11 +542,221 @@ def channel_8e_bus_bandwidth(device: torch.device, samples: int = 50) -> Channel
     )
 
 
+
+
+# ---------------------------------------------------------------------------
+# Channel 8f: VM / GPU Passthrough Detection
+# ---------------------------------------------------------------------------
+# GPU passthrough (vfio-pci) allows a VM to directly access a physical GPU.
+# While the GPU fingerprint channels (8a-8e) will show real silicon data,
+# the VM layer introduces detectable artifacts:
+#   - Hypervisor presence in CPUID / DMI
+#   - IOMMU group assignments visible in sysfs
+#   - PCI device tree anomalies (missing root complex)
+#   - nvidia-smi reports "Default" compute mode in bare metal vs "Exclusive"
+#
+# This channel flags VM environments so the attestation server can apply
+# additional scrutiny (e.g., requiring multiple epochs of stable fingerprints).
+# ---------------------------------------------------------------------------
+
+def channel_8f_vm_detection(device: torch.device) -> ChannelResult:
+    """Detect VM/container GPU passthrough environments."""
+    indicators = []
+
+    # --- Check 1: DMI / sysfs for hypervisor strings ---
+    dmi_paths = [
+        "/sys/class/dmi/id/product_name",
+        "/sys/class/dmi/id/sys_vendor",
+        "/sys/class/dmi/id/board_vendor",
+        "/sys/class/dmi/id/bios_vendor",
+    ]
+    vm_strings = [
+        "vmware", "virtualbox", "kvm", "qemu", "xen",
+        "hyperv", "hyper-v", "parallels", "bhyve",
+        "amazon", "google", "microsoft corporation", "azure",
+        "digitalocean", "linode", "vultr", "hetzner",
+        "oracle", "alibaba", "bochs", "innotek", "seabios",
+    ]
+    for path in dmi_paths:
+        try:
+            with open(path, "r") as f:
+                val = f.read().strip().lower()
+                for vs in vm_strings:
+                    if vs in val:
+                        indicators.append(f"dmi:{path}={vs}")
+        except (OSError, PermissionError):
+            pass
+
+    # --- Check 2: /sys/hypervisor ---
+    try:
+        if os.path.exists("/sys/hypervisor/type"):
+            with open("/sys/hypervisor/type", "r") as f:
+                hv = f.read().strip().lower()
+                if hv and hv != "none":
+                    indicators.append(f"hypervisor_type:{hv}")
+    except (OSError, PermissionError):
+        pass
+
+    # --- Check 3: CPU hypervisor flag ---
+    try:
+        with open("/proc/cpuinfo", "r") as f:
+            if "hypervisor" in f.read().lower():
+                indicators.append("cpuinfo:hypervisor_flag")
+    except (OSError, PermissionError):
+        pass
+
+    # --- Check 4: systemd-detect-virt ---
+    try:
+        result = subprocess.run(
+            ["systemd-detect-virt"], capture_output=True, text=True, timeout=5
+        )
+        vtype = result.stdout.strip().lower()
+        if vtype and vtype != "none":
+            indicators.append(f"systemd:{vtype}")
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        pass
+
+    # --- Check 5: IOMMU group (vfio-pci passthrough leaves traces) ---
+    dev_idx = device.index or 0
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", f"--id={dev_idx}", "--query-gpu=pci.bus_id",
+             "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=5
+        )
+        pci_id = result.stdout.strip()
+        if pci_id:
+            # Check if this PCI device is in an IOMMU group
+            iommu_base = "/sys/kernel/iommu_groups"
+            if os.path.exists(iommu_base):
+                for group in os.listdir(iommu_base):
+                    devs_path = os.path.join(iommu_base, group, "devices")
+                    if os.path.exists(devs_path):
+                        devs = os.listdir(devs_path)
+                        for d in devs:
+                            if pci_id.lower().replace("0000:", "") in d.lower():
+                                indicators.append(f"iommu_group:{group}")
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        pass
+
+    # --- Check 6: Container environment variables ---
+    container_env = ["KUBERNETES_SERVICE_HOST", "DOCKER_HOST", "container",
+                     "AWS_EXECUTION_ENV", "ECS_CONTAINER_METADATA_URI",
+                     "GOOGLE_CLOUD_PROJECT", "AZURE_FUNCTIONS_ENVIRONMENT"]
+    for key in container_env:
+        if key in os.environ:
+            indicators.append(f"env:{key}")
+
+    is_vm = len(indicators) > 0
+    # VM detection is informational — it flags but doesn't fail
+    # The attestation server decides policy
+    return ChannelResult(
+        name="8f: VM/Passthrough Detection",
+        passed=True,  # Informational — always passes
+        data={
+            "is_vm": is_vm,
+            "indicators": indicators,
+            "indicator_count": len(indicators),
+        },
+        notes=f"{'VM DETECTED' if is_vm else 'Bare metal'}: {len(indicators)} indicators",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Hardware Cross-Validation (Anti-Spoofing)
+# ---------------------------------------------------------------------------
+# PyTorch reports GPU info from the CUDA driver. An attacker could spoof
+# environment variables or LD_PRELOAD a fake libcuda. Cross-validate the
+# GPU identity against OS-level hardware info that bypasses the CUDA stack.
+# ---------------------------------------------------------------------------
+
+def cross_validate_gpu(device: torch.device) -> ChannelResult:
+    """Cross-validate GPU identity against OS-level hardware info."""
+    torch_name = torch.cuda.get_device_name(device).lower()
+    torch_vram = torch.cuda.get_device_properties(device).total_memory
+    mismatches = []
+    os_gpu_name = None
+
+    # Method 1: nvidia-smi (reads from NVML, separate from CUDA runtime)
+    dev_idx = device.index or 0
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", f"--id={dev_idx}",
+             "--query-gpu=name,memory.total",
+             "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=5
+        )
+        parts = result.stdout.strip().split(", ")
+        if len(parts) >= 2:
+            os_gpu_name = parts[0].strip().lower()
+            os_vram_mb = int(parts[1].strip())
+            torch_vram_mb = torch_vram // (1024 * 1024)
+            # Name check (fuzzy — driver versions report slightly different names)
+            name_words_os = set(os_gpu_name.split())
+            name_words_torch = set(torch_name.split())
+            common = name_words_os & name_words_torch
+            if len(common) < 2:
+                mismatches.append(
+                    f"name: torch='{torch_name}' vs nvml='{os_gpu_name}'"
+                )
+            # VRAM check (allow 5% tolerance for reserved memory)
+            if abs(torch_vram_mb - os_vram_mb) > os_vram_mb * 0.05:
+                mismatches.append(
+                    f"vram: torch={torch_vram_mb}MB vs nvml={os_vram_mb}MB"
+                )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        pass  # nvidia-smi not available
+
+    # Method 2: /proc/driver/nvidia/gpus/ (Linux kernel driver)
+    try:
+        nvidia_proc = "/proc/driver/nvidia/gpus/"
+        if os.path.exists(nvidia_proc):
+            gpu_dirs = sorted(os.listdir(nvidia_proc))
+            if dev_idx < len(gpu_dirs):
+                info_path = os.path.join(nvidia_proc, gpu_dirs[dev_idx], "information")
+                with open(info_path, "r") as f:
+                    for line in f:
+                        if "Model:" in line:
+                            kernel_name = line.split(":", 1)[1].strip().lower()
+                            if kernel_name and kernel_name not in torch_name:
+                                # Check overlap
+                                kw = set(kernel_name.split())
+                                tw = set(torch_name.split())
+                                if len(kw & tw) < 2:
+                                    mismatches.append(
+                                        f"kernel_driver: '{kernel_name}' vs torch='{torch_name}'"
+                                    )
+    except (OSError, PermissionError, IndexError):
+        pass
+
+    # Method 3: Check for LD_PRELOAD (common spoofing vector)
+    ld_preload = os.environ.get("LD_PRELOAD", "")
+    if ld_preload:
+        # Flag if LD_PRELOAD contains anything GPU-related
+        suspicious = ["cuda", "nvidia", "gpu", "nvcuda", "libcuda"]
+        for s in suspicious:
+            if s in ld_preload.lower():
+                mismatches.append(f"ld_preload_suspicious: {ld_preload}")
+                break
+
+    validated = len(mismatches) == 0
+    return ChannelResult(
+        name="8g: Hardware Cross-Validation",
+        passed=validated,
+        data={
+            "torch_gpu_name": torch_name,
+            "os_gpu_name": os_gpu_name or "unavailable",
+            "validated": validated,
+            "mismatches": mismatches,
+        },
+        notes=f"{'VALIDATED' if validated else 'MISMATCH'}: {len(mismatches)} discrepancies",
+    )
+
 # ---------------------------------------------------------------------------
 # Main fingerprint runner
 # ---------------------------------------------------------------------------
 
-def run_gpu_fingerprint(device_index: int = 0, samples: int = 200) -> GPUFingerprint:
+def run_gpu_fingerprint(device_index: int = 0, samples: int = 200, epoch_salt: str = "") -> GPUFingerprint:
     """Run all GPU fingerprint channels and return results."""
     device = torch.device(f"cuda:{device_index}")
 
@@ -540,7 +768,7 @@ def run_gpu_fingerprint(device_index: int = 0, samples: int = 200) -> GPUFingerp
     driver = torch.version.cuda or "unknown"
 
     print(f"\n{'='*60}")
-    print(f"  GPU Fingerprint — Proof of Physical AI (Channel 8)")
+    print(f"  GPU Fingerprint — Proof of Physical AI (Channels 8a-8g)")
     print(f"  Device: {gpu_name}")
     print(f"  VRAM: {vram_mb} MB | Compute: sm_{cap} | CUDA: {driver}")
     print(f"{'='*60}\n")
@@ -548,50 +776,70 @@ def run_gpu_fingerprint(device_index: int = 0, samples: int = 200) -> GPUFingerp
     channels = []
 
     # Channel 8a: Memory Hierarchy
-    print("[8a/5] Memory Hierarchy Latency Profile...", end=" ", flush=True)
+    print("[8a/7] Memory Hierarchy Latency Profile...", end=" ", flush=True)
     ch8a = channel_8a_memory_latency(device, samples=samples)
     print(f"{'PASS' if ch8a.passed else 'FAIL'}")
     print(f"       {ch8a.notes}")
     channels.append(ch8a)
 
     # Channel 8b: Compute Asymmetry
-    print("[8b/5] Compute Throughput Asymmetry...", end=" ", flush=True)
+    print("[8b/7] Compute Throughput Asymmetry...", end=" ", flush=True)
     ch8b = channel_8b_compute_asymmetry(device, samples=min(samples, 100))
     print(f"{'PASS' if ch8b.passed else 'FAIL'}")
     print(f"       {ch8b.notes}")
     channels.append(ch8b)
 
     # Channel 8c: Warp Jitter
-    print("[8c/5] Warp Scheduling Jitter...", end=" ", flush=True)
+    print("[8c/7] Warp Scheduling Jitter...", end=" ", flush=True)
     ch8c = channel_8c_warp_jitter(device, samples=samples)
     print(f"{'PASS' if ch8c.passed else 'FAIL'}")
     print(f"       {ch8c.notes}")
     channels.append(ch8c)
 
     # Channel 8d: Thermal Ramp
-    print("[8d/5] Thermal Ramp Signature...", end=" ", flush=True)
+    print("[8d/7] Thermal Ramp Signature...", end=" ", flush=True)
     ch8d = channel_8d_thermal_ramp(device, duration_s=10.0)
     print(f"{'PASS' if ch8d.passed else 'FAIL'}")
     print(f"       {ch8d.notes}")
     channels.append(ch8d)
 
     # Channel 8e: Bus Bandwidth
-    print("[8e/5] PCIe/Bus Bandwidth Profile...", end=" ", flush=True)
+    print("[8e/7] PCIe/Bus Bandwidth Profile...", end=" ", flush=True)
     ch8e = channel_8e_bus_bandwidth(device, samples=min(samples, 50))
     print(f"{'PASS' if ch8e.passed else 'FAIL'}")
     print(f"       {ch8e.notes}")
     channels.append(ch8e)
 
+    # Channel 8f: VM Detection
+    print("[8f/7] VM/Passthrough Detection...", end=" ", flush=True)
+    ch8f = channel_8f_vm_detection(device)
+    print(f"{'PASS' if ch8f.passed else 'FAIL'}")
+    print(f"       {ch8f.notes}")
+    channels.append(ch8f)
+
+    # Channel 8g: Hardware Cross-Validation
+    print("[8g/7] Hardware Cross-Validation...", end=" ", flush=True)
+    ch8g = cross_validate_gpu(device)
+    print(f"{'PASS' if ch8g.passed else 'FAIL'}")
+    print(f"       {ch8g.notes}")
+    channels.append(ch8g)
+
     all_passed = all(ch.passed for ch in channels)
 
     # Compute composite fingerprint hash from all channel data
     composite = json.dumps({ch.name: ch.data for ch in channels}, sort_keys=True)
-    fingerprint_hash = hashlib.sha256(composite.encode()).hexdigest()
+    # Epoch salt prevents cross-epoch fingerprint correlation (privacy)
+    salted = composite + epoch_salt
+    fingerprint_hash = hashlib.sha256(salted.encode()).hexdigest()
 
     print(f"\n{'='*60}")
     print(f"  RESULT: {'ALL CHANNELS PASSED' if all_passed else 'SOME CHANNELS FAILED'}")
     print(f"  Fingerprint: {fingerprint_hash[:32]}...")
-    print(f"  Passed: {sum(1 for ch in channels if ch.passed)}/5")
+    passed_count = sum(1 for ch in channels if ch.passed)
+    total_count = len(channels)
+    print(f"  Passed: {passed_count}/{total_count}")
+    if epoch_salt:
+        print(f"  Epoch Salt: {epoch_salt[:16]}...")
     print(f"{'='*60}\n")
 
     return GPUFingerprint(
@@ -615,16 +863,18 @@ if __name__ == "__main__":
     parser.add_argument("--device", type=int, default=0, help="CUDA device index")
     parser.add_argument("--samples", type=int, default=200, help="Samples per channel")
     parser.add_argument("--json", action="store_true", help="Output JSON only")
+    parser.add_argument("--epoch-salt", type=str, default="",
+                        help="Epoch salt for privacy (prevents cross-epoch correlation)")
     args = parser.parse_args()
 
     if args.json:
         # Suppress banner output for clean JSON
         import io, contextlib
         with contextlib.redirect_stdout(io.StringIO()):
-            fp = run_gpu_fingerprint(device_index=args.device, samples=args.samples)
+            fp = run_gpu_fingerprint(device_index=args.device, samples=args.samples, epoch_salt=args.epoch_salt)
         print(json.dumps(fp.to_dict(), indent=2))
     else:
-        fp = run_gpu_fingerprint(device_index=args.device, samples=args.samples)
+        fp = run_gpu_fingerprint(device_index=args.device, samples=args.samples, epoch_salt=args.epoch_salt)
         # Print channel summary
         print("Channel Details:")
         for ch in fp.channels:
