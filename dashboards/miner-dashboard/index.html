@@ -420,8 +420,13 @@
             });
             if (!response.ok) throw new Error('Failed to fetch miners');
             const payload = await response.json();
-            const miners = Array.isArray(payload) ? payload : (payload.miners || payload.data || []);
-            return miners.find(m => m.miner === minerId) || null;
+            const miners = normalizeMinerRows(payload);
+            return miners.find((m) => (m.miner || m.miner_id || m.id || m.name) === minerId) || null;
+        }
+
+        function normalizeMinerRows(payload) {
+            const rows = Array.isArray(payload) ? payload : (payload?.miners || payload?.data || payload?.items || []);
+            return Array.isArray(rows) ? rows.filter((item) => item && typeof item === 'object') : [];
         }
 
         async function fetchEpochData() {
