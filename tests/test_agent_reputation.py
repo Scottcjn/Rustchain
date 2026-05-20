@@ -30,6 +30,7 @@ class StubReputationEngine:
 def reputation_client(monkeypatch):
     engine = StubReputationEngine(
         {
+            "newcomer-agent": ("newcomer", 10, 5),
             "trusted-agent": ("trusted", 60, math.inf),
             "veteran-agent": ("veteran", 90, math.inf),
         }
@@ -65,6 +66,18 @@ def test_trusted_agent_cannot_claim_jobs_above_high_value_threshold(reputation_c
     assert payload["eligible"] is False
     assert payload["can_post_high_value"] is False
     assert "trusted level agents cannot claim high-value jobs" in payload["reason"]
+
+
+def test_level_cap_denial_uses_level_cap_reason(reputation_client):
+    response = reputation_client.get(
+        "/agent/reputation/check-eligibility",
+        query_string={"agent_id": "newcomer-agent", "job_value": "5.01"},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["eligible"] is False
+    assert payload["reason"] == "newcomer level agents can only claim jobs up to 5 RTC"
 
 
 def test_veteran_agent_can_claim_high_value_jobs(reputation_client):

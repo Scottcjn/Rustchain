@@ -345,11 +345,15 @@ def check_eligibility():
     max_val = rep["max_job_value_rtc"]
     level = rep["level"]
     eligible = job_value <= max_val
+    reason = None
 
     # High-value job gate: jobs above HIGH_VALUE_THRESHOLD require veteran level
     if eligible and job_value > HIGH_VALUE_THRESHOLD:
         if level not in CAN_POST_HIGH_VALUE:
             eligible = False
+            reason = f"{level} level agents cannot claim high-value jobs (>{HIGH_VALUE_THRESHOLD} RTC)"
+    elif not eligible:
+        reason = f"{level} level agents can only claim jobs up to {max_val:g} RTC"
 
     return jsonify({
         "agent_id": agent_id,
@@ -359,7 +363,7 @@ def check_eligibility():
         "level": level,
         "can_post_high_value": level in CAN_POST_HIGH_VALUE,
         "max_job_value_rtc": max_val,
-        "reason": None if eligible else f"{level} level agents cannot claim high-value jobs (>{HIGH_VALUE_THRESHOLD} RTC)",
+        "reason": reason,
     })
 
 
