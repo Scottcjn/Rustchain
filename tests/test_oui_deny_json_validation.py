@@ -26,6 +26,13 @@ def test_oui_deny_rejects_non_object_json(client, path):
     assert response.get_json() == {"error": "Invalid JSON body"}
 
 
+def test_oui_enforce_rejects_non_object_json(client):
+    response = client.post("/admin/oui_deny/enforce", headers=ADMIN_HEADERS, json=["not", "object"])
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "Invalid JSON body"}
+
+
 @pytest.mark.parametrize("path", ["/admin/oui_deny/add", "/admin/oui_deny/remove"])
 def test_oui_deny_rejects_non_string_oui(client, path):
     response = client.post(path, headers=ADMIN_HEADERS, json={"oui": ["aa", "bb", "cc"]})
