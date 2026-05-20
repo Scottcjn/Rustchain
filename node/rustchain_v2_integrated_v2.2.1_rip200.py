@@ -6232,7 +6232,9 @@ def api_miners():
 
 def _explorer_int_arg(name, default, minimum, maximum):
     """Parse bounded integer query args for public explorer endpoints."""
-    raw = request.args.get(name, str(default))
+    raw = request.args.get(name)
+    if raw in (None, ""):
+        return default, None, None
     try:
         value = int(raw)
     except (TypeError, ValueError):
