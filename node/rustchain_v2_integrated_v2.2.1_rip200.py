@@ -1434,6 +1434,12 @@ def init_db():
             )
         """)
         c.execute("""
+            CREATE TABLE IF NOT EXISTS miner_header_keys(
+                miner_id TEXT PRIMARY KEY,
+                pubkey_hex TEXT NOT NULL
+            )
+        """)
+        c.execute("""
             CREATE TABLE IF NOT EXISTS schema_version(
                 version INTEGER PRIMARY KEY,
                 applied_at INTEGER NOT NULL
