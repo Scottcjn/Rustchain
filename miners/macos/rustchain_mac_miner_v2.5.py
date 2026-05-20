@@ -588,7 +588,7 @@ class MacMiner:
         try:
             resp = self.transport.get(
                 "/lottery/eligibility",
-                params={"miner_id": self.miner_id},
+                params={"miner_id": self.wallet},
                 timeout=10,
             )
             if resp.status_code == 200:
@@ -600,17 +600,18 @@ class MacMiner:
     def submit_header(self, slot):
         """Submit header for slot."""
         try:
-            message = "slot:{}:miner:{}:ts:{}".format(slot, self.miner_id, int(time.time()))
+            chain_miner_id = self.wallet
+            message = "slot:{}:miner:{}:ts:{}".format(slot, chain_miner_id, int(time.time()))
             message_hex = message.encode().hex()
             sig_data = hashlib.sha512(
                 "{}{}".format(message, self.wallet).encode()
             ).hexdigest()
 
             header_payload = {
-                "miner_id": self.miner_id,
+                "miner_id": chain_miner_id,
                 "header": {
                     "slot": slot,
-                    "miner": self.miner_id,
+                    "miner": chain_miner_id,
                     "timestamp": int(time.time())
                 },
                 "message": message_hex,
