@@ -285,17 +285,23 @@ class ReputationEngine:
             else:
                 self._cache.clear()
 
+    def _refresh_stale_cache_entries(self):
+        now = time.time()
+        with self._lock:
+            stale = [
+                w for w, (_, ts) in self._cache.items()
+                if now - ts > CACHE_TTL_S
+            ]
+        for w in stale:
+            refreshed = self.calculate(w)
+            with self._lock:
+                if w in self._cache:
+                    self._cache[w] = (refreshed, time.time())
+
     def _refresh_loop(self):
         while True:
             time.sleep(CACHE_TTL_S)
-            with self._lock:
-                stale = [w for w, (_, ts) in self._cache.items()
-                         if time.time() - ts > CACHE_TTL_S]
-            for w in stale:
-                self.calculate(w)
-                with self._lock:
-                    if w in self._cache:
-                        self._cache[w] = (self._cache[w][0], time.time())
+            self._refresh_stale_cache_entries()
 
     def start_cache_refresh(self):
         t = threading.Thread(target=self._refresh_loop, daemon=True)

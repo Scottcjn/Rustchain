@@ -113,3 +113,20 @@ def test_leaderboard_rejects_non_positive_limits(reputation_client, limit):
 
     assert response.status_code == 400
     assert response.get_json()["error"] == "limit must be between 1 and 100"
+
+
+def test_refresh_stale_cache_entries_stores_recalculated_result(monkeypatch):
+    engine = agent_reputation.ReputationEngine(db_path="/tmp/does-not-exist.db")
+    engine._cache["agent-a"] = ({"reputation_score": 1}, 0)
+
+    monkeypatch.setattr(
+        engine,
+        "calculate",
+        lambda wallet: {"agent_id": wallet, "reputation_score": 99},
+    )
+
+    engine._refresh_stale_cache_entries()
+
+    refreshed, timestamp = engine._cache["agent-a"]
+    assert refreshed == {"agent_id": "agent-a", "reputation_score": 99}
+    assert timestamp > 0
