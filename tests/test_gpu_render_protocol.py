@@ -1,5 +1,6 @@
 """Tests for GPU Render Protocol (Bounty #30)."""
 import os
+import sqlite3
 import sys
 import tempfile
 import unittest
@@ -57,6 +58,30 @@ class TestGPURenderProtocol(unittest.TestCase):
         nvidia = self.proto.list_gpu_nodes(device_arch="nvidia_gpu")
         self.assertEqual(len(nvidia), 1)
         self.assertEqual(nvidia[0]["gpu_model"], "RTX 4090")
+
+    def test_list_nodes_rejects_job_type_sql_predicate_injection(self):
+        self.proto.attest_gpu("active-node", {
+            "gpu_model": "RTX 4090", "vram_gb": 24, "device_arch": "nvidia_gpu",
+            "supports_render": 1, "benchmark_score": 95,
+        })
+        self.proto.attest_gpu("offline-node", {
+            "gpu_model": "M2 Ultra", "vram_gb": 192, "device_arch": "apple_gpu",
+            "supports_render": 0, "benchmark_score": 80,
+        })
+        conn = sqlite3.connect(self.db)
+        try:
+            conn.execute(
+                "UPDATE gpu_attestations SET status='offline' WHERE miner_id='offline-node'"
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        nodes = self.proto.list_gpu_nodes("render")
+        self.assertEqual([node["miner_id"] for node in nodes], ["active-node"])
+
+        with self.assertRaisesRegex(ValueError, "job_type must be one of"):
+            self.proto.list_gpu_nodes("render=1 OR 1=1 --")
 
     def test_escrow_lifecycle(self):
         # Create
@@ -260,6 +285,28 @@ def test_gpu_protocol_pricing_check_rejects_boolean_price(tmp_path, monkeypatch)
 
     assert response.status_code == 400
     assert response.get_json() == {"error": "price must be a finite number"}
+
+
+def test_gpu_nodes_rejects_invalid_job_type_query(tmp_path, monkeypatch):
+    client = _route_client(tmp_path, monkeypatch)
+
+    response = client.get("/gpu/nodes?job_type=render%3D1%20OR%201%3D1%20--")
+
+    assert response.status_code == 400
+    assert response.get_json() == {
+        "error": "job_type must be one of render, tts, stt, llm"
+    }
+
+
+def test_gpu_pricing_rejects_invalid_job_type_query(tmp_path, monkeypatch):
+    client = _route_client(tmp_path, monkeypatch)
+
+    response = client.get("/render/pricing?job_type=render%3D1%20OR%201%3D1%20--")
+
+    assert response.status_code == 400
+    assert response.get_json() == {
+        "error": "job_type must be one of render, tts, stt, llm"
+    }
 
 
 if __name__ == "__main__":

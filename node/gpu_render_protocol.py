@@ -35,6 +35,20 @@ from functools import wraps
 
 logger = logging.getLogger("gpu_render_protocol")
 
+GPU_JOB_TYPE_COLUMNS = {
+    "render": "supports_render",
+    "tts": "supports_tts",
+    "stt": "supports_stt",
+    "llm": "supports_llm",
+}
+
+GPU_PRICE_FIELDS = {
+    "render": "price_render_minute",
+    "tts": "price_tts_1k_chars",
+    "stt": "price_stt_minute",
+    "llm": "price_llm_1k_tokens",
+}
+
 # ---------------------------------------------------------------------------
 # Database schema
 # ---------------------------------------------------------------------------
@@ -134,6 +148,17 @@ class GPURenderProtocol:
     def _hash_escrow_secret(secret: str) -> str:
         return hashlib.sha256((secret or "").encode("utf-8")).hexdigest()
 
+    @staticmethod
+    def _normalize_job_type(job_type: str | None) -> str | None:
+        if job_type is None or job_type == "":
+            return None
+        if not isinstance(job_type, str):
+            raise ValueError("job_type must be a string")
+        normalized = job_type.strip().lower()
+        if normalized not in GPU_JOB_TYPE_COLUMNS:
+            raise ValueError("job_type must be one of render, tts, stt, llm")
+        return normalized
+
     def _authorize_escrow_action(self, row, actor_wallet: str, escrow_secret: str, required_wallet: str):
         if not actor_wallet or not escrow_secret:
             return {"error": "actor_wallet and escrow_secret are required"}
@@ -232,12 +257,13 @@ class GPURenderProtocol:
 
     def list_gpu_nodes(self, job_type=None, device_arch=None) -> list:
         """List active GPU nodes, optionally filtered by capability or arch."""
+        job_type = self._normalize_job_type(job_type)
         conn = self._get_conn()
         try:
             query = "SELECT * FROM gpu_attestations WHERE status='active'"
             params = []
             if job_type:
-                col = f"supports_{job_type}"
+                col = GPU_JOB_TYPE_COLUMNS[job_type]
                 query += f" AND {col}=1"
             if device_arch:
                 query += " AND device_arch=?"
@@ -382,6 +408,7 @@ class GPURenderProtocol:
 
     def get_fair_market_rates(self, job_type=None) -> dict:
         """Calculate fair market rates from active GPU node pricing."""
+        job_type = self._normalize_job_type(job_type)
         conn = self._get_conn()
         try:
             nodes = conn.execute(
@@ -391,18 +418,11 @@ class GPURenderProtocol:
             if not nodes:
                 return {"error": "No active GPU nodes", "rates": {}}
 
-            price_fields = {
-                "render": "price_render_minute",
-                "tts": "price_tts_1k_chars",
-                "stt": "price_stt_minute",
-                "llm": "price_llm_1k_tokens",
-            }
-
-            types_to_check = [job_type] if job_type else list(price_fields.keys())
+            types_to_check = [job_type] if job_type else list(GPU_PRICE_FIELDS.keys())
             rates = {}
 
             for jt in types_to_check:
-                field = price_fields[jt]
+                field = GPU_PRICE_FIELDS[jt]
                 prices = [dict(n)[field] for n in nodes if dict(n)[field] > 0]
                 if prices:
                     rates[jt] = {
@@ -539,7 +559,10 @@ def register_routes(app):
     def gpu_nodes():
         job_type = request.args.get("job_type")
         device_arch = request.args.get("device_arch")
-        nodes = protocol.list_gpu_nodes(job_type, device_arch)
+        try:
+            nodes = protocol.list_gpu_nodes(job_type, device_arch)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
         return jsonify({"nodes": nodes, "count": len(nodes)})
 
     @app.route("/render/escrow", methods=["POST"])
@@ -637,7 +660,10 @@ def register_routes(app):
     @app.route("/render/pricing", methods=["GET"])
     def get_pricing():
         job_type = request.args.get("job_type")
-        result = protocol.get_fair_market_rates(job_type)
+        try:
+            result = protocol.get_fair_market_rates(job_type)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
         return jsonify(result)
 
     @app.route("/render/pricing/check", methods=["POST"])
@@ -651,10 +677,13 @@ def register_routes(app):
         price, error_response = _finite_number_field(data, "price")
         if error_response is not None:
             return error_response
-        result = protocol.detect_price_manipulation(
-            job_type,
-            price,
-        )
+        try:
+            result = protocol.detect_price_manipulation(
+                job_type,
+                price,
+            )
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
         return jsonify(result)
 
     logger.info("GPU Render Protocol routes registered")
