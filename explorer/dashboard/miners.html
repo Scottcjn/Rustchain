@@ -482,13 +482,18 @@
             if (value.includes('g4')) return 'g4';
             return 'modern';
         }
+
+        function normalizeMinerRows(payload) {
+            const rows = Array.isArray(payload) ? payload : (Array.isArray(payload?.miners) ? payload.miners : []);
+            return rows.filter(row => row && typeof row === 'object');
+        }
         
         async function fetchMiners() {
             try {
                 const response = await fetch('https://explorer.rustchain.org/api/miners');
                 if (!response.ok) throw new Error('API not available');
                 const data = await response.json();
-                miners = Array.isArray(data) ? data : (data.miners || []);
+                miners = normalizeMinerRows(data);
             } catch (error) {
                 console.log('Using mock data:', error.message);
                 miners = mockMiners;
