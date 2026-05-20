@@ -4294,7 +4294,9 @@ def miner_set_header_key():
     if not admin_key or not hmac.compare_digest(provided_key, admin_key):
         return jsonify({"ok":False,"error":"unauthorized"}), 403
 
-    body = request.get_json(force=True, silent=True) or {}
+    body = request.get_json(force=True, silent=True)
+    if not isinstance(body, dict):
+        return jsonify({"ok":False,"error":"invalid_json_body"}), 400
     miner_id   = str(body.get("miner_id","")).strip()
     pubkey_hex = str(body.get("pubkey_hex","")).strip().lower()
     if not miner_id or len(pubkey_hex) != 64:
@@ -4328,13 +4330,15 @@ def ingest_signed_header():
       5) on success: validate header continuity, persist, update tip, bump metrics
     """
     start = time.time()
-    body = request.get_json(force=True, silent=True) or {}
+    body = request.get_json(force=True, silent=True)
+    if not isinstance(body, dict):
+        return jsonify({"ok":False,"error":"invalid_json_body"}), 400
 
-    miner_id = (body.get("miner_id") or "").strip()
+    miner_id = str(body.get("miner_id") or "").strip()
     header   = body.get("header") or {}
-    msg_hex  = (body.get("message") or "").strip().lower()
-    sig_hex  = (body.get("signature") or "").strip().lower()
-    inline_pk= (body.get("pubkey") or "").strip().lower()
+    msg_hex  = str(body.get("message") or "").strip().lower()
+    sig_hex  = str(body.get("signature") or "").strip().lower()
+    inline_pk= str(body.get("pubkey") or "").strip().lower()
 
     if not miner_id or not sig_hex or (not header and not msg_hex):
         return jsonify({"ok":False,"error":"missing fields"}), 400
