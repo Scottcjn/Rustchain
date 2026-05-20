@@ -62,8 +62,10 @@ def check_nodes():
     if os.path.exists(DATA_FILE):
         try:
             with open(DATA_FILE, 'r') as f:
-                history = json.load(f)
-        except: pass
+                loaded_history = json.load(f)
+                history = loaded_history if isinstance(loaded_history, list) else []
+        except (OSError, json.JSONDecodeError):
+            pass
     
     history.append({"time": datetime.now().isoformat(), "nodes": results})
     # Keep last 1440 entries (24 hours at 1/min)
