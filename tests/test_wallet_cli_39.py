@@ -1,4 +1,5 @@
-import json
+from types import SimpleNamespace
+
 from tools import rustchain_wallet_cli as cli
 
 
@@ -45,3 +46,32 @@ def test_balance_normalization():
     if "amount_rtc" not in payload and "balance_rtc" in payload:
         payload["amount_rtc"] = payload.get("balance_rtc")
     assert payload["amount_rtc"] == 9.5
+
+
+class FakeResponse:
+    def __init__(self, payload, ok=True, status_code=200):
+        self.payload = payload
+        self.ok = ok
+        self.status_code = status_code
+
+    def json(self):
+        return self.payload
+
+
+def test_safe_json_object_rejects_array_payload(capsys):
+    data, rc = cli._safe_json_object(FakeResponse([{"amount_rtc": 1.0}]))
+
+    assert data is None
+    assert rc == 1
+    assert "not an object" in capsys.readouterr().err
+
+
+def test_cmd_balance_rejects_non_object_json(monkeypatch, capsys):
+    monkeypatch.setattr(cli.requests, "get", lambda *args, **kwargs: FakeResponse(["bad"]))
+
+    rc = cli.cmd_balance(SimpleNamespace(wallet_id="RTCabc"))
+
+    assert rc == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "not an object" in captured.err
