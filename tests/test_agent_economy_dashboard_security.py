@@ -113,6 +113,7 @@ console.log(JSON.stringify({{ html: elements.jobsGrid.innerHTML }}));
     result = subprocess.run(
         ["node", "-e", probe],
         text=True,
+        encoding="utf-8",
         capture_output=True,
         check=True,
     )
@@ -122,5 +123,89 @@ console.log(JSON.stringify({{ html: elements.jobsGrid.innerHTML }}));
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
     assert "&lt;b&gt;attacker&lt;/b&gt;" in html
     assert 'class="category-badge other"' in html
+    assert "curl -X POST" not in html
     assert '<img src=x onerror=alert(1)>' not in html
     assert '<script>alert(1)</script>' not in html
+
+
+def test_agent_economy_malformed_jobs_do_not_render_claim_commands():
+    script = re.search(
+        r"<script>(?P<script>.*?)</script>",
+        _source(),
+        flags=re.DOTALL,
+    ).group("script")
+    malformed_jobs_json = json.dumps(
+        [
+            {"title": "Missing status and id", "category": "code", "reward": 7},
+            {
+                "id": "",
+                "title": "Invalid status",
+                "category": "code",
+                "reward": 7,
+                "status": "badstatus",
+            },
+            {
+                "id": "   ",
+                "title": "Blank id",
+                "category": "code",
+                "reward": 7,
+                "status": "open",
+            },
+        ]
+    )
+
+    probe = f"""
+const vm = require('vm');
+const script = {json.dumps(script)};
+const malformedJobs = {malformed_jobs_json};
+const elements = {{}};
+const htmlEscape = (value) => String(value)
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;');
+const element = (id) => ({{
+  id,
+  value: '',
+  dataset: {{}},
+  classList: {{ add() {{}}, remove() {{}} }},
+  addEventListener() {{}},
+  textContent: '',
+  get innerHTML() {{ return this._innerHTML || htmlEscape(this.textContent); }},
+  set innerHTML(value) {{ this._innerHTML = value; }},
+}});
+const queryElements = [element('tab-all')];
+queryElements[0].dataset.category = 'all';
+const context = {{
+  console: {{ log() {{}} }},
+  setInterval() {{}},
+  fetch: async () => ({{ ok: false, json: async () => ({{}}) }}),
+  document: {{
+    createElement: element,
+    querySelectorAll() {{ return queryElements; }},
+    getElementById(id) {{
+      if (!elements[id]) elements[id] = element(id);
+      return elements[id];
+    }},
+  }},
+  alert() {{}},
+}};
+context.malformedJobs = malformedJobs;
+vm.createContext(context);
+vm.runInContext(script, context);
+vm.runInContext('jobs = malformedJobs; renderJobs();', context);
+console.log(JSON.stringify({{ html: elements.jobsGrid.innerHTML }}));
+"""
+    result = subprocess.run(
+        ["node", "-e", probe],
+        text=True,
+        encoding="utf-8",
+        capture_output=True,
+        check=True,
+    )
+    html = json.loads(result.stdout)["html"]
+
+    assert "Missing status and id" in html
+    assert "Invalid status" in html
+    assert "Blank id" in html
+    assert "curl -X POST" not in html
+    assert "/agent/jobs//claim" not in html

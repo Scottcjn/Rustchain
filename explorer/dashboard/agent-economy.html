@@ -350,8 +350,8 @@
         }
 
         function safeStatus(value) {
-            const status = String(value || 'open').toLowerCase();
-            return statusOrder.includes(status) ? status : 'open';
+            const status = String(value || '').toLowerCase();
+            return statusOrder.includes(status) ? status : 'unknown';
         }
 
         function normalizeJobs(payload) {
@@ -409,7 +409,7 @@
             }
             
             grid.innerHTML = filtered.map(job => {
-                const id = String(job.id ?? '');
+                const id = String(job.id ?? '').trim();
                 const category = safeCategory(job.category);
                 const status = safeStatus(job.status);
                 return `
@@ -433,7 +433,7 @@
                         <div class="lifecycle-step ${getStatusClass(status, 'delivered')}">📤 Delivered</div>
                         <div class="lifecycle-step ${getStatusClass(status, 'completed')}">✅ Completed</div>
                     </div>
-                    ${status === 'open' ? `<div class="curl-cmd">curl -X POST https://rustchain.org/agent/jobs/${escapeHtml(id)}/claim -d '{"worker_wallet": "your-wallet"}'</div>` : ''}
+                    ${status === 'open' && id ? `<div class="curl-cmd">curl -X POST https://rustchain.org/agent/jobs/${escapeHtml(id)}/claim -d '{"worker_wallet": "your-wallet"}'</div>` : ''}
                 </div>
             `;
             }).join('');
