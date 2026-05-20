@@ -17,7 +17,8 @@ import utxo_db as utxo_db_module
 from utxo_db import (
     UtxoDB, coin_select, compute_box_id, address_to_proposition,
     proposition_to_address, UNIT, DUST_THRESHOLD, MAX_COINBASE_OUTPUT_NRTC,
-    MAX_OUTPUTS, MAX_SQLITE_INT64,
+    MAX_OUTPUTS, MAX_SQLITE_INT64, MAX_UTXO_ADDRESS_BYTES,
+    MAX_UTXO_METADATA_BYTES, MAX_MEMPOOL_TX_ID_BYTES,
 )
 
 
@@ -1441,6 +1442,84 @@ class TestUtxoDB(unittest.TestCase):
                 self.assertFalse(ok)
                 self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
                 self.assertEqual(self.db.get_balance('bob'), 0)
+
+    def test_mempool_rejects_oversized_tx_id_without_locking_input(self):
+        """Public mempool tx ids must be bounded before persistence."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        box = self.db.get_unspent_for_address('alice')[0]
+
+        ok = self.db.mempool_add({
+            'tx_id': 'x' * (MAX_MEMPOOL_TX_ID_BYTES + 1),
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': box['box_id']}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+        })
+
+        self.assertFalse(ok)
+        self.assertEqual(self.db.mempool_get_block_candidates(), [])
+        self.assertFalse(self.db.mempool_check_double_spend(box['box_id']))
+
+    def test_mempool_rejects_oversized_output_text_without_locking_input(self):
+        """Reject oversized output fields before storing tx_data_json."""
+        cases = [
+            {'address': 'R' * (MAX_UTXO_ADDRESS_BYTES + 1),
+             'value_nrtc': 100 * UNIT},
+            {'address': 'bob',
+             'value_nrtc': 100 * UNIT,
+             'tokens_json': json.dumps(['x' * (MAX_UTXO_METADATA_BYTES + 1)])},
+            {'address': 'bob',
+             'value_nrtc': 100 * UNIT,
+             'registers_json': json.dumps({
+                 'R4': 'x' * (MAX_UTXO_METADATA_BYTES + 1),
+             })},
+        ]
+
+        for idx, output in enumerate(cases):
+            with self.subTest(output=output):
+                db = UtxoDB(self.tmp.name)
+                self.assertTrue(db.apply_transaction({
+                    'tx_type': 'mining_reward',
+                    'inputs': [],
+                    'outputs': [
+                        {'address': f'alice_big_{idx}',
+                         'value_nrtc': 100 * UNIT}
+                    ],
+                    'fee_nrtc': 0,
+                    'timestamp': int(time.time()) + idx,
+                    '_allow_minting': True,
+                }, block_height=idx + 1))
+                box = db.get_unspent_for_address(f'alice_big_{idx}')[0]
+
+                ok = db.mempool_add({
+                    'tx_id': f'oversized{idx}',
+                    'tx_type': 'transfer',
+                    'inputs': [{'box_id': box['box_id']}],
+                    'outputs': [output],
+                    'fee_nrtc': 0,
+                })
+
+                self.assertFalse(ok)
+                self.assertEqual(db.mempool_get_block_candidates(), [])
+                self.assertFalse(db.mempool_check_double_spend(box['box_id']))
+
+    def test_apply_transaction_rejects_oversized_output_text(self):
+        """Direct block application must reject oversized persisted fields."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        box = self.db.get_unspent_for_address('alice')[0]
+
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': box['box_id'], 'spending_proof': 'sig'}],
+            'outputs': [{
+                'address': 'R' * (MAX_UTXO_ADDRESS_BYTES + 1),
+                'value_nrtc': 100 * UNIT,
+            }],
+            'fee_nrtc': 0,
+        }, block_height=10)
+
+        self.assertFalse(ok)
+        self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
 
     # -- bounty #2819: negative / zero value outputs -------------------------
 
