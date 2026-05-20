@@ -116,7 +116,7 @@ class MinerData:
         hw_type = data.get("hardware_type", "Unknown/Other")
         style = ARCH_STYLES.get(hw_type, ARCH_STYLES["Unknown/Other"])
         return cls(
-            miner_id=data.get("miner", "unknown"),
+            miner_id=data.get("miner") or data.get("miner_id") or data.get("id") or "unknown",
             device_arch=data.get("device_arch", "unknown"),
             device_family=data.get("device_family", "unknown"),
             hardware_type=hw_type,
@@ -147,7 +147,14 @@ def fetch_miners() -> list[MinerData]:
     """Fetch active miners from RustChain API."""
     resp = requests.get(f"{RUSTCHAIN_API}/api/miners", verify=False, timeout=30)
     resp.raise_for_status()
-    return [MinerData.from_api(m) for m in resp.json()]
+    payload = resp.json()
+    if isinstance(payload, list):
+        miners = payload
+    elif isinstance(payload, dict):
+        miners = payload.get("miners") or payload.get("data") or []
+    else:
+        miners = []
+    return [MinerData.from_api(m) for m in miners if isinstance(m, dict)]
 
 
 def fetch_epoch() -> dict:
