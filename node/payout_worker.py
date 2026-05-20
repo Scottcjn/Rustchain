@@ -126,7 +126,8 @@ class PayoutWorker:
                     else:
                         conn.execute("""
                             UPDATE withdrawals
-                            SET error_msg = 'Broadcast transaction not found or failed; manual refund required'
+                            SET status = 'failed',
+                                error_msg = 'Broadcast transaction not found or failed; manual refund required'
                             WHERE withdrawal_id = ?
                             AND status = 'processing'
                             AND tx_hash = ?
