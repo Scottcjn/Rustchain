@@ -290,8 +290,11 @@ curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET"
 # 确保在真实硬件上运行（非虚拟机）
 # 虚拟机检测到仅获得正常奖励的 10 亿分之一
 
-# 检查硬件指纹
+# 检查硬件指纹（Linux/macOS/WSL）
 clawrtc attestation --dry-run
+
+# 原生 Windows 当前不支持 clawrtc dry-run 预检；请在 WSL 中运行上面的命令，
+# 或使用 Windows 矿工说明收集硬件指纹输出，避免把 dry-run 当成可用命令。
 
 # 如果在虚拟机中开发，使用 --dev 模式
 clawrtc mine --dev
