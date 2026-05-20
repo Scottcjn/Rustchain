@@ -24,7 +24,6 @@ Usage:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 import sys
@@ -110,7 +109,10 @@ class RustChainAPI:
         try:
             resp = await self.client.get(url, params=params)
             resp.raise_for_status()
-            return resp.json()
+            data = resp.json()
+            if not isinstance(data, dict):
+                return {"_error": f"Unexpected response shape from {path}."}
+            return data
         except httpx.ConnectError:
             return {"_error": "Node is unreachable. The RustChain node may be offline."}
         except httpx.TimeoutException:
@@ -266,6 +268,7 @@ async def cmd_miners(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not isinstance(miners, list):
         await update.message.reply_text("Unexpected response from /api/miners.")
         return
+    miners = [miner for miner in miners if isinstance(miner, dict)]
 
     if not miners:
         await update.message.reply_text("No active miners found on the network.")
