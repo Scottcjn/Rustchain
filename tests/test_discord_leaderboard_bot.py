@@ -62,6 +62,54 @@ def test_rewards_for_epoch_sorts_rewards_and_returns_empty_on_fetch_failure(monk
     assert discord_leaderboard_bot.rewards_for_epoch(object(), "https://node", 7, 1) == []
 
 
+def test_collect_data_normalizes_paginated_miners_payload(monkeypatch):
+    payloads = {
+        "https://node/api/miners": {
+            "miners": [
+                {
+                    "miner": "alice-miner",
+                    "device_arch": "G4",
+                    "antiquity_multiplier": 2.5,
+                },
+                {
+                    "miner_id": "bob-miner",
+                    "device_family": "PowerPC",
+                    "antiquity_multiplier": 1.5,
+                },
+            ],
+            "pagination": {"total": 2, "limit": 100, "offset": 0, "count": 2},
+        },
+        "https://node/epoch": {"epoch": 12},
+        "https://node/health": {"ok": True},
+        "https://node/wallet/balance?miner_id=alice-miner": {"amount_rtc": 3.0},
+        "https://node/wallet/balance?miner_id=bob-miner": {"amount_rtc": 5.0},
+    }
+
+    monkeypatch.setattr(
+        discord_leaderboard_bot,
+        "get_json",
+        lambda session, url, timeout: payloads[url],
+    )
+
+    rows, epoch, health = discord_leaderboard_bot.collect_data(object(), "https://node", 1)
+
+    assert epoch == {"epoch": 12}
+    assert health == {"ok": True}
+    assert rows == [
+        {"miner": "bob-miner", "balance_rtc": 5.0, "arch": "PowerPC", "multiplier": 1.5},
+        {"miner": "alice-miner", "balance_rtc": 3.0, "arch": "G4", "multiplier": 2.5},
+    ]
+
+
+def test_normalize_miners_payload_accepts_common_envelopes():
+    rows = [{"miner": "alice"}]
+
+    assert discord_leaderboard_bot.normalize_miners_payload(rows) == rows
+    assert discord_leaderboard_bot.normalize_miners_payload({"data": rows}) == rows
+    assert discord_leaderboard_bot.normalize_miners_payload({"items": rows}) == rows
+    assert discord_leaderboard_bot.normalize_miners_payload({"pagination": {}}) == []
+
+
 def test_render_payload_includes_top_miners_rewards_and_architecture(monkeypatch):
     monkeypatch.setattr(
         discord_leaderboard_bot,
