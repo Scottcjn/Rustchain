@@ -23,7 +23,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import platform
 import ssl
 import sys
 import time
@@ -103,7 +102,8 @@ def check_health(base: str, timeout: int) -> Dict[str, Any]:
         result["db_rw"] = data.get("db_rw")
         result["tip_age_slots"] = data.get("tip_age_slots")
     elif ok:
-        result["ok"] = True
+        result["ok"] = False
+        result["error"] = "invalid health payload"
         result["raw"] = str(data)[:200]
     else:
         result["ok"] = False
@@ -177,8 +177,10 @@ def _fmt_uptime(secs: Optional[int]) -> str:
     h, rem = divmod(rem, 3600)
     m, _ = divmod(rem, 60)
     parts = []
-    if d: parts.append(f"{d}d")
-    if h: parts.append(f"{h}h")
+    if d:
+        parts.append(f"{d}d")
+    if h:
+        parts.append(f"{h}h")
     parts.append(f"{m}m")
     return " ".join(parts)
 
