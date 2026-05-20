@@ -1476,6 +1476,14 @@ def init_db():
             )
         """)
         c.execute("""
+            CREATE TABLE IF NOT EXISTS oui_deny(
+                oui TEXT PRIMARY KEY,
+                vendor TEXT,
+                added_ts INTEGER,
+                enforce INTEGER DEFAULT 0
+            )
+        """)
+        c.execute("""
             CREATE TABLE IF NOT EXISTS headers(
                 slot INTEGER PRIMARY KEY,
                 header_json TEXT NOT NULL
