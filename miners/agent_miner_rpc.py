@@ -35,15 +35,20 @@ Ref: Issue #535 — Autonomous Agent Miner Node Support
 
 import argparse
 import hashlib
+import ipaddress
 import json
 import logging
 import os
 import platform
+import re
+import secrets
 import sys
 import threading
 import time
 import uuid
 from datetime import datetime, timezone
+from functools import wraps
+from urllib.parse import urlparse
 
 # ---------------------------------------------------------------------------
 # Optional dependency: Flask (used by node/rustchain_dashboard.py already)
@@ -68,6 +73,90 @@ logging.basicConfig(
     datefmt="%Y-%m-%dT%H:%M:%S",
 )
 logger = logging.getLogger("agent_miner_rpc")
+
+# ---------------------------------------------------------------------------
+# Authentication
+# ---------------------------------------------------------------------------
+# The API token is loaded from --auth-token CLI arg, or AGENT_MINER_AUTH_TOKEN
+# environment variable.  When set, all mutating endpoints require:
+#   Authorization: Bearer <token>
+# Read-only endpoints (/health, GET /api/mining/status) are available without
+# auth but return redacted data (wallet/balance fields omitted).
+# ---------------------------------------------------------------------------
+
+_auth_token = None  # Set at boot from CLI/env
+
+
+def _is_authenticated():
+    """Check if the current request has a valid bearer token."""
+    if _auth_token is None:
+        return True  # Auth not configured — all requests pass
+    auth_header = flask_request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        return secrets.compare_digest(auth_header[7:], _auth_token)
+    return False
+
+
+def require_auth(f):
+    """Decorator: reject requests without a valid bearer token (401/403)."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if _auth_token is None:
+            return f(*args, **kwargs)
+        if not _is_authenticated():
+            return jsonify({
+                "ok": False,
+                "error": "Authentication required. Provide: Authorization: Bearer <token>",
+            }), 401
+        return f(*args, **kwargs)
+    return decorated
+
+
+# ---------------------------------------------------------------------------
+# Webhook SSRF Protection
+# ---------------------------------------------------------------------------
+
+def _is_safe_webhook_url(url):
+    """Reject webhook URLs that target internal/link-local/RFC1918 hosts.
+
+    Returns (is_safe: bool, reason: str).
+    """
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return False, "Invalid URL"
+
+    # Only allow http and https schemes
+    if parsed.scheme not in ("http", "https"):
+        return False, "Only http:// and https:// webhook URLs are allowed"
+
+    hostname = parsed.hostname
+    if not hostname:
+        return False, "Missing hostname in webhook URL"
+
+    # Block known dangerous hostnames
+    blocked_hostnames = {
+        "localhost", "metadata.google.internal",
+        "metadata", "instance-data",
+    }
+    if hostname.lower() in blocked_hostnames:
+        return False, "Blocked hostname: {}".format(hostname)
+
+    # Block IP addresses in private/link-local/loopback ranges
+    try:
+        addr = ipaddress.ip_address(hostname)
+        if addr.is_loopback:
+            return False, "Loopback addresses are blocked"
+        if addr.is_private:
+            return False, "RFC1918 private addresses are blocked"
+        if addr.is_link_local:
+            return False, "Link-local addresses (169.254.x.x) are blocked"
+        if addr.is_reserved:
+            return False, "Reserved addresses are blocked"
+    except ValueError:
+        pass  # hostname is a domain name, not an IP — that's fine
+
+    return True, "OK"
 
 # ---------------------------------------------------------------------------
 # Mining Controller — wraps the miner lifecycle
@@ -287,6 +376,12 @@ class MiningController:
         """Register a webhook URL for event callbacks."""
         if not url:
             return False, "webhook_url is required"
+
+        # SSRF protection: reject internal/loopback/RFC1918 targets
+        safe, reason = _is_safe_webhook_url(url)
+        if not safe:
+            return False, "Webhook URL rejected: {}".format(reason)
+
         valid_events = [
             "mining_started", "mining_stopped", "epoch_enrolled",
             "payout_received", "node_error", "block_found",
@@ -373,6 +468,7 @@ def health():
 
 
 @app.route("/api/mining/start", methods=["POST"])
+@require_auth
 def api_mining_start():
     """Start mining with the given wallet and thread count."""
     body = flask_request.get_json(silent=True) or {}
@@ -397,6 +493,7 @@ def api_mining_start():
 
 
 @app.route("/api/mining/stop", methods=["POST"])
+@require_auth
 def api_mining_stop():
     """Stop the active mining loop."""
     ok, msg = controller.stop()
@@ -406,11 +503,21 @@ def api_mining_stop():
 
 @app.route("/api/mining/status", methods=["GET"])
 def api_mining_status():
-    """Return machine-readable mining status."""
-    return jsonify(controller.status())
+    """Return machine-readable mining status.
+
+    When auth is configured but the caller is unauthenticated, sensitive
+    fields (wallet, balance) are redacted.
+    """
+    status = controller.status()
+    if _auth_token is not None and not _is_authenticated():
+        # Redact sensitive fields for unauthenticated callers
+        status.pop("wallet", None)
+        status.pop("last_balance_rtc", None)
+    return jsonify(status)
 
 
 @app.route("/api/mining/threads", methods=["POST"])
+@require_auth
 def api_mining_threads():
     """Adjust thread/intensity count on the fly."""
     body = flask_request.get_json(silent=True) or {}
@@ -423,6 +530,7 @@ def api_mining_threads():
 
 
 @app.route("/api/webhooks/register", methods=["POST"])
+@require_auth
 def api_webhooks_register():
     """Register a webhook URL for event callbacks."""
     body = flask_request.get_json(silent=True) or {}
@@ -435,12 +543,14 @@ def api_webhooks_register():
 
 
 @app.route("/api/webhooks", methods=["GET"])
+@require_auth
 def api_webhooks_list():
     """List all registered webhooks."""
     return jsonify({"webhooks": controller.list_webhooks()})
 
 
 @app.route("/api/webhooks", methods=["DELETE"])
+@require_auth
 def api_webhooks_delete():
     """Remove a webhook by URL."""
     body = flask_request.get_json(silent=True) or {}
@@ -479,7 +589,30 @@ if __name__ == "__main__":
         "--threads", type=int, default=1,
         help="Initial thread count when auto-starting (default: 1)",
     )
+    parser.add_argument(
+        "--auth-token", type=str, default=None,
+        help="Bearer token for API authentication (or set AGENT_MINER_AUTH_TOKEN env)",
+    )
     args = parser.parse_args()
+
+    # Resolve auth token: CLI flag takes precedence over env var
+    _auth_token = args.auth_token or os.environ.get("AGENT_MINER_AUTH_TOKEN")
+
+    # Fail-closed: refuse to bind to non-loopback without auth
+    is_loopback = args.host in ("127.0.0.1", "::1", "localhost")
+    if not is_loopback and _auth_token is None:
+        logger.error(
+            "SECURITY: Refusing to bind to %s without --auth-token. "
+            "A headless mining RPC exposed on the network without authentication "
+            "is a remote-control surface. Set --auth-token or bind to 127.0.0.1.",
+            args.host,
+        )
+        sys.exit(1)
+
+    if _auth_token:
+        logger.info("Authentication enabled (bearer token configured)")
+    else:
+        logger.info("Authentication disabled (loopback-only)")
 
     logger.info("Agent Miner RPC starting on %s:%d", args.host, args.port)
 
