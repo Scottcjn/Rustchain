@@ -240,6 +240,59 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         data = json.loads(response.data)
         self.assertIn('error', data)
 
+    def test_contract_create_rejects_non_string_fields_before_db_work(self):
+        """Malformed contract fields return 400 instead of reaching DB binding errors."""
+        response = self.client.post(
+            '/api/contracts',
+            data=json.dumps({
+                'from': ['bcn_alice_test'],
+                'to': 'bcn_bob_test',
+                'type': 'rent',
+                'amount': 100.0,
+                'term': '30d',
+            }),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('Missing from', response.get_data(as_text=True))
+
+    def test_contract_create_rejects_unknown_recipient_agent(self):
+        """Contracts cannot be offered to an agent absent from the Beacon atlas."""
+        response = self.client.post(
+            '/api/contracts',
+            data=json.dumps({
+                'from': 'bcn_alice_test',
+                'to': 'bcn_missing_agent',
+                'type': 'rent',
+                'amount': 100.0,
+                'term': '30d',
+            }),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('to_agent not found: bcn_missing_agent', response.get_data(as_text=True))
+
+    def test_contract_create_rejects_non_positive_or_non_finite_amounts(self):
+        """Contract amounts must be finite positive values."""
+        for amount in (0, -1, 'NaN', 'Infinity', True):
+            with self.subTest(amount=amount):
+                response = self.client.post(
+                    '/api/contracts',
+                    data=json.dumps({
+                        'from': 'bcn_alice_test',
+                        'to': 'bcn_bob_test',
+                        'type': 'rent',
+                        'amount': amount,
+                        'term': '30d',
+                    }),
+                    content_type='application/json',
+                )
+
+                self.assertEqual(response.status_code, 400)
+                self.assertIn('Invalid amount', response.get_data(as_text=True))
+
     def test_bounty_lifecycle_workflow(self):
         """Full bounty lifecycle: create, claim, complete."""
         # Insert a test bounty directly

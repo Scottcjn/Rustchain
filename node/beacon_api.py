@@ -5,6 +5,7 @@ Provides endpoints for agents, contracts, bounties, reputation, and chat.
 """
 import json
 import html
+import math
 import os
 import time
 import hashlib
@@ -48,6 +49,18 @@ def _required_text_field(data, field_name):
     if not isinstance(value, str) or not value.strip():
         return None, jsonify({'error': f'Missing {field_name}'}), 400
     return value.strip(), None, None
+
+
+def _contract_amount(value):
+    if isinstance(value, bool):
+        return None, jsonify({'error': 'Invalid amount: must be a positive finite number'}), 400
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        return None, jsonify({'error': 'Invalid amount: must be a positive finite number'}), 400
+    if not math.isfinite(amount) or amount <= 0:
+        return None, jsonify({'error': 'Invalid amount: must be a positive finite number'}), 400
+    return amount, None, None
 
 
 def _coinbase_addresses_match(left, right):
@@ -563,14 +576,25 @@ def create_contract():
         if not isinstance(data, dict):
             return jsonify({'error': 'Invalid or missing JSON body'}), 400
         
-        # Validate required fields
-        required = ['from', 'to', 'type', 'amount', 'term']
-        for field in required:
-            if field not in data:
-                return jsonify({'error': f'Missing field: {field}'}), 400
-        
-        from_agent = data['from']
-        
+        # Validate required fields before DB/auth work.
+        from_agent, resp, status = _required_text_field(data, 'from')
+        if resp:
+            return resp, status
+        to_agent, resp, status = _required_text_field(data, 'to')
+        if resp:
+            return resp, status
+        contract_type, resp, status = _required_text_field(data, 'type')
+        if resp:
+            return resp, status
+        term, resp, status = _required_text_field(data, 'term')
+        if resp:
+            return resp, status
+        if 'amount' not in data:
+            return jsonify({'error': 'Missing amount'}), 400
+        amount, resp, status = _contract_amount(data.get('amount'))
+        if resp:
+            return resp, status
+
         # Verify from_agent exists in relay_agents table
         db = get_db()
         existing = db.execute(
@@ -580,6 +604,14 @@ def create_contract():
         if not existing:
             return jsonify({
                 'error': f'from_agent not found: {from_agent}'
+            }), 400
+        recipient = db.execute(
+            "SELECT agent_id FROM relay_agents WHERE agent_id = ?",
+            (to_agent,)
+        ).fetchone()
+        if not recipient:
+            return jsonify({
+                'error': f'to_agent not found: {to_agent}'
             }), 400
 
         _, auth_error = _authenticate_contract_agent(db, [from_agent], body_bytes)
@@ -591,12 +623,12 @@ def create_contract():
         
         contract = {
             'id': contract_id,
-            'from': data['from'],
-            'to': data['to'],
-            'type': data['type'],
-            'amount': float(data['amount']),
+            'from': from_agent,
+            'to': to_agent,
+            'type': contract_type,
+            'amount': amount,
             'currency': data.get('currency', 'RTC'),
-            'term': data['term'],
+            'term': term,
             'state': 'offered',  # Initial state
             'created_at': int(time.time()),
         }
