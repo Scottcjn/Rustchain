@@ -432,6 +432,9 @@
         };
 
         function formatNumber(value, fractionDigits = 0) {
+            if (value === null || value === undefined || value === "") {
+                return "--";
+            }
             const number = Number(value);
             if (!Number.isFinite(number)) {
                 return "--";
@@ -447,6 +450,9 @@
             }
             for (const key of keys) {
                 const value = source[key];
+                if (value === null || value === undefined || value === "") {
+                    continue;
+                }
                 const number = Number(value);
                 if (Number.isFinite(number)) {
                     return number;
