@@ -9,11 +9,12 @@ Run with:
 
 import json
 import os
+import sqlite3
 import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -350,6 +351,23 @@ class TestFlaskIntegration(unittest.TestCase):
             content_type='application/json',
         )
 
+    def insert_badge_with_metadata(self, cert_id, metadata):
+        """Insert a badge row with caller-provided raw metadata."""
+        import tools.bcos_badge_generator as bg
+
+        conn = sqlite3.connect(bg.DATABASE)
+        try:
+            conn.execute(
+                '''
+                INSERT INTO badges (cert_id, repo_name, github_url, tier, trust_score, metadata)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ''',
+                (cert_id, 'test/repo', 'https://github.com/test/repo', 'L1', 75, metadata),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
     def test_index_page(self):
         """Test index page loads."""
         response = self.client.get('/')
@@ -598,6 +616,17 @@ class TestFlaskIntegration(unittest.TestCase):
         data = json.loads(response.data)
         self.assertFalse(data['valid'])
 
+    def test_verify_tolerates_corrupt_stored_metadata(self):
+        """Corrupt legacy metadata should not break badge verification."""
+        self.insert_badge_with_metadata('BCOS-CORRUPTVERIFY', '{bad-json')
+
+        response = self.client.get('/api/badge/verify/BCOS-CORRUPTVERIFY')
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertTrue(data['valid'])
+        self.assertEqual(data['data']['metadata'], {})
+
     def test_serve_badge_svg(self):
         """Test serving badge SVG."""
         # Generate a badge first
@@ -619,6 +648,16 @@ class TestFlaskIntegration(unittest.TestCase):
         """Test serving non-existent badge."""
         response = self.client.get('/badge/BCOS-NOTFOUND.svg')
         self.assertEqual(response.status_code, 404)
+
+    def test_serve_badge_svg_tolerates_corrupt_stored_metadata(self):
+        """Corrupt legacy metadata should not break badge SVG rendering."""
+        self.insert_badge_with_metadata('BCOS-CORRUPTSVG', 'not-json')
+
+        response = self.client.get('/badge/BCOS-CORRUPTSVG.svg')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content_type, 'image/svg+xml')
+        self.assertIn(b'<svg', response.data)
 
 
 class TestEdgeCases(unittest.TestCase):
