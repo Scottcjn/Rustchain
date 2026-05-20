@@ -1,5 +1,6 @@
 import math
 import threading
+from unittest.mock import MagicMock, patch
 
 import pytest
 from flask import Flask
@@ -130,3 +131,29 @@ def test_refresh_stale_cache_entries_stores_recalculated_result(monkeypatch):
     refreshed, timestamp = engine._cache["agent-a"]
     assert refreshed == {"agent_id": "agent-a", "reputation_score": 99}
     assert timestamp > 0
+
+
+def test_fetch_ignores_scalar_json_response():
+    engine = agent_reputation.ReputationEngine(db_path="/tmp/does-not-exist.db")
+    response = MagicMock()
+    response.read.return_value = b'"not-an-object-or-list"'
+    response.__enter__.return_value = response
+
+    with patch("agent_reputation.urllib.request.urlopen", return_value=response):
+        assert engine._fetch("/health") is None
+
+
+def test_calculate_ignores_malformed_miners_api_payload(monkeypatch):
+    engine = agent_reputation.ReputationEngine(db_path="/tmp/does-not-exist.db")
+
+    def fetch(path):
+        if path.startswith("/agent/jobs"):
+            return {"jobs": []}
+        return "not-a-miner-payload"
+
+    monkeypatch.setattr(engine, "_fetch", fetch)
+
+    result = engine.calculate("agent-a")
+
+    assert result["agent_id"] == "agent-a"
+    assert result["hardware_verified"] is False

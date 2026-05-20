@@ -88,7 +88,10 @@ class ReputationEngine:
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "rustchain-reputation/1.0"})
             with urllib.request.urlopen(req, timeout=8, context=CTX) as r:
-                return json.loads(r.read().decode())
+                data = json.loads(r.read().decode())
+                if isinstance(data, (dict, list)):
+                    return data
+                return None
         except Exception:
             return None
 
@@ -173,8 +176,16 @@ class ReputationEngine:
             # Try via API /api/miners
             miners_data = self._fetch("/api/miners")
             if miners_data:
-                miners = miners_data if isinstance(miners_data, list) else miners_data.get("miners", [])
+                miners = []
+                if isinstance(miners_data, list):
+                    miners = miners_data
+                elif isinstance(miners_data, dict):
+                    raw_miners = miners_data.get("miners", [])
+                    if isinstance(raw_miners, list):
+                        miners = raw_miners
                 for m in miners:
+                    if not isinstance(m, dict):
+                        continue
                     if m.get("wallet_name") == wallet or m.get("wallet") == wallet:
                         hardware_verified = True
                         break
@@ -417,7 +428,7 @@ if __name__ == "__main__":
     print(f"  Level:          {result['level'].upper()} — {result['level_description']}")
     print(f"  Max Job Value:  {result['max_job_value_rtc']} RTC")
     print(f"  Can Post Jobs:  {'✓' if result['can_post_jobs'] else '✗'}")
-    print(f"")
+    print("")
     print(f"  Jobs Completed: {result['jobs_completed']}")
     print(f"  Jobs Accepted:  {result['jobs_accepted']}")
     print(f"  Jobs Disputed:  {result['jobs_disputed']}")
