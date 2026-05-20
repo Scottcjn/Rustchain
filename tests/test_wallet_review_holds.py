@@ -236,6 +236,31 @@ def test_wallet_review_ui_lists_entries_and_accepts_query_admin_key(client):
     assert "retry from the intended box" in html
 
 
+def test_wallet_review_ui_post_redirects_after_create(client):
+    test_client, db_path = client
+
+    response = test_client.post(
+        "/admin/wallet-review-holds/ui?admin_key=" + ("0" * 32),
+        data={
+            "form_action": "create",
+            "wallet": "review-miner",
+            "reason": "manual review",
+            "coach_note": "retry from intended hardware",
+            "review_status": "needs_review",
+        },
+        headers={"X-Admin-Key": "0" * 32},
+    )
+
+    assert response.status_code == 303
+    assert response.headers["Location"].startswith("/admin/wallet-review-holds/ui")
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT status, reason, coach_note FROM wallet_review_holds WHERE wallet = ?",
+            ("review-miner",),
+        ).fetchone()
+    assert row == ("needs_review", "manual review", "retry from intended hardware")
+
+
 def test_admin_operator_ui_links_to_wallet_review_surface(client):
     test_client, db_path = client
     with sqlite3.connect(db_path) as conn:

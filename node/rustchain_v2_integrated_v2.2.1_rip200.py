@@ -4870,6 +4870,7 @@ def admin_wallet_review_holds_ui():
                             (new_status, reviewer_note, coach_note or row["coach_note"], now, hold_id),
                         )
                         conn.commit()
+        parts = []
         query = ""
         if active_status:
             parts.append(f"status={active_status}")
