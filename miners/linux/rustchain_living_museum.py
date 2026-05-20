@@ -42,6 +42,9 @@ BADGE_EMOJIS = {
     "Corroded Knight": "\U0001F6E1", "Tarnished Squire": "\U0001F4DC", "Fresh Metal": "\U00002728"
 }
 
+NL = "\n"
+# Newline constant for f-string compatibility (Python < 3.12)
+
 def log(msg):
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{ts}] [MUSEUM] {msg}", flush=True)
@@ -104,19 +107,22 @@ def format_leaderboard_tweet(data, stats, fact):
     top3 = data.get('leaderboard', [])[:3]
     total = stats.get('total_machines', 0) if stats else '?'
 
-    tweet = "\U0001F980 HALL OF RUST - Top 3\n\n"
+    crab = "\U0001F980"
+    tweet = f"{crab} HALL OF RUST - Top 3" + "\n\n"
     for m in top3:
         arch = m.get('device_arch', '?')
         emoji = ARCH_EMOJIS.get(arch, "\U0001F527")
         tweet += f"{emoji} #{m['rank']} {arch} ({m.get('manufacture_year', '?')}) - Score: {m['rust_score']:.0f}\n"
 
-    tweet += f"\n\U0001F3DB {total} machines in the Living Museum"
+    museum = "\U0001F3DB"
+    tweet += f"\n{museum} {total} machines in the Living Museum"
 
     if fact:
         remaining = 280 - len(tweet) - 5
         fact_text = fact.get('fact', '')[:remaining]
         if len(fact_text) > 20:
-            tweet += f"\n\n\U0001F4A1 {fact_text}"
+            bulb = "\U0001F4A1"
+            tweet += f"\n\n{bulb} {fact_text}"
 
     return tweet
 
@@ -154,7 +160,8 @@ def format_fleet_tweet(breakdown, stats):
     if not breakdown:
         return None
 
-    tweet = "\U0001F3DB RustChain Living Museum - Fleet Report\n\n"
+    museum = "\U0001F3DB"
+    tweet = f"{museum} RustChain Living Museum - Fleet Report" + "\n\n"
 
     for arch_data in breakdown.get('breakdown', [])[:4]:
         arch = arch_data['architecture']
@@ -165,7 +172,8 @@ def format_fleet_tweet(breakdown, stats):
 
     if stats:
         total = stats.get('total_machines', 0)
-        tweet += f"\n\U0001F5A5 Total: {total} machines"
+        desktop = "\U0001F5A5"
+        tweet += f"\n{desktop} Total: {total} machines"
 
     tweet += "\n\n#VintageComputing #RustChain"
 
@@ -180,7 +188,8 @@ def format_timeline_tweet(timeline):
     if not entries:
         return None
 
-    tweet = "\U0001F4C5 Hall of Rust - Recent Inductions\n\n"
+    calendar = "\U0001F4C5"
+    tweet = f"{calendar} Hall of Rust - Recent Inductions" + "\n\n"
 
     for entry in entries:
         date = entry['date']
@@ -280,7 +289,8 @@ class LivingMuseumBot(discord.Client):
             year = m.get('manufacture_year', '?')
 
             if rank == 1:
-                leaderboard_text += f"\U0001F451 **#{rank}** `{miner_short}`\n"
+                crown = "\U0001F451"
+                leaderboard_text += f"{crown} **#{rank}** `{miner_short}`\n"
                 leaderboard_text += f"    {arch_emoji} {arch} | Score: **{score:.0f}** | Year: {year}\n\n"
             else:
                 leaderboard_text += f"**#{rank}** `{miner_short}`\n"
@@ -401,7 +411,9 @@ class LivingMuseumBot(discord.Client):
             avg_score = arch_data['avg_rust_score']
 
             fleet_text += f"{emoji} **{arch}:** {count} machines\n"
-            fleet_text += f"    \U0001F4C5 Oldest: {oldest} | \U0001F980 Avg Score: {avg_score:.0f}\n"
+            cal = "\U0001F4C5"
+            crab_emoji = "\U0001F980"
+            fleet_text += f"    {cal} Oldest: {oldest} | {crab_emoji} Avg Score: {avg_score:.0f}\n"
 
         embed.add_field(name="\U0001F4CA Fleet Composition", value=fleet_text[:1024], inline=False)
 
