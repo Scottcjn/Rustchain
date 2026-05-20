@@ -1638,10 +1638,10 @@ def evaluate_rotating_fingerprint_checks(conn, epoch: int, fingerprint: dict) ->
 def _claimed_family_and_arch(device: dict) -> tuple:
     """
     Extract the claimed device family and architecture from a device dict.
-    
+
     Args:
         device: Device information dict with family/arch fields.
-    
+
     Returns:
         tuple: (family, arch) strings. Defaults to ('x86', 'default') if not provided.
     """
@@ -1653,10 +1653,10 @@ def _claimed_family_and_arch(device: dict) -> tuple:
 def _cpu_brand_string(device: dict) -> str:
     """
     Build a lowercase CPU brand string from available device fields.
-    
+
     Args:
         device: Device information dict with cpu/model/brand fields.
-    
+
     Returns:
         str: Concatenated brand string in lowercase, or empty string if no fields.
     """
@@ -1948,7 +1948,7 @@ def derive_verified_device(device: dict, fingerprint: dict, fingerprint_passed: 
         # If CPU brand contains PowerPC/IBM/POWER identifiers, trust the claim
         ppc_brands = {"powerpc", "power8", "power9", "ibm power", "altivec", "970", "7450", "g3", "g4", "g5"}
         brand_matches = _has_any_token(cpu_brand, ppc_brands)
-        
+
         if brand_matches:
             # CPU brand confirms PowerPC — determine specific arch
             ppc_arch = arch.upper() if arch.lower() in ("g3", "g4", "g5", "power8", "power9") else "default"
@@ -1962,7 +1962,7 @@ def derive_verified_device(device: dict, fingerprint: dict, fingerprint_passed: 
                 ppc_arch = "G4"
             print(f"[PPC_DETECT] brand_match: {cpu_brand[:40]} -> PowerPC/{ppc_arch}")
             return {"device_family": "PowerPC", "device_arch": ppc_arch}
-        
+
         # Claims PowerPC but brand doesn't confirm — strict validation
         if fingerprint_passed and _powerpc_cpu_brand_matches(device) and _has_powerpc_simd_evidence(fingerprint) and _has_powerpc_cache_profile(fingerprint):
             return {"device_family": "PowerPC", "device_arch": arch.upper()}
@@ -2043,19 +2043,19 @@ def auto_induct_to_hall(miner: str, device: dict):
     model = device.get("device_model", device.get("model", "Unknown"))
     arch = device.get("device_arch", device.get("arch", "modern"))
     family = device.get("device_family", device.get("family", "unknown"))
-    
+
     fp_data = f"{model}{arch}{hw_serial}"
     fingerprint_hash = hashlib.sha256(fp_data.encode()).hexdigest()[:32]
-    
+
     try:
         with sqlite3.connect(DB_PATH) as conn:
             c = conn.cursor()
-            c.execute("SELECT id, total_attestations FROM hall_of_rust WHERE fingerprint_hash = ?", 
+            c.execute("SELECT id, total_attestations FROM hall_of_rust WHERE fingerprint_hash = ?",
                       (fingerprint_hash,))
             existing = c.fetchone()
-            
+
             now = int(time.time())
-            
+
             if existing:
                 # Update attestation count and recalculate rust_score
                 new_attest = existing[1] + 1
@@ -2079,10 +2079,10 @@ def auto_induct_to_hall(miner: str, device: dict):
                 elif "power10" in arch_lower: mfg_year = 2021
                 elif "apple_silicon" in arch_lower: mfg_year = 2020
                 elif "retro" in arch_lower: mfg_year = 2010
-                
+
                 c.execute("INSERT INTO hall_of_rust (fingerprint_hash, miner_id, device_family, device_arch, device_model, manufacture_year, first_attestation, last_attestation, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (fingerprint_hash, miner, family, arch, model, mfg_year, now, now, now))
-                
+
                 # Calculate initial rust_score
                 machine_id = c.lastrowid
                 rust_score = calculate_rust_score_inline(mfg_year, arch, 1, machine_id)
@@ -2216,13 +2216,13 @@ def _check_welcome_bonus(miner: str):
             history_count = conn.execute(
                 "SELECT COUNT(*) FROM miner_attest_history WHERE miner = ?", (miner,)
             ).fetchone()[0]
-            
+
             if history_count <= 1:  # First attestation (just recorded)
                 ledger_cols = _table_columns(conn, "ledger")
                 balance_cols = _table_columns(conn, "balances")
                 # Check if welcome bonus already paid
                 already_paid = _welcome_bonus_already_paid(conn, miner, ledger_cols)
-                
+
                 if not already_paid:
                     bonus_i64 = int(WELCOME_BONUS_RTC * 1_000_000)
                     _write_welcome_bonus(conn, miner, bonus_i64, ledger_cols, balance_cols)
@@ -2241,29 +2241,29 @@ def _get_streak_bonus(miner: str) -> float:
                 "SELECT ts_ok FROM miner_attest_history WHERE miner = ? ORDER BY ts_ok DESC LIMIT 1000",
                 (miner,)
             ).fetchall()
-            
+
             if not rows:
                 return 0.0
-            
+
             # Count consecutive days with at least one attestation
             from datetime import datetime, timedelta
             attest_dates = set()
             for row in rows:
                 dt = datetime.utcfromtimestamp(row[0])
                 attest_dates.add(dt.date())
-            
+
             if not attest_dates:
                 return 0.0
-            
+
             # Walk backwards from today counting consecutive days
             today = datetime.utcnow().date()
             streak = 0
             check_date = today
-            
+
             while check_date in attest_dates and streak < STREAK_MAX_DAYS:
                 streak += 1
                 check_date -= timedelta(days=1)
-            
+
             # Also check if yesterday was the last day (grace period)
             if streak == 0:
                 yesterday = today - timedelta(days=1)
@@ -2273,7 +2273,7 @@ def _get_streak_bonus(miner: str) -> float:
                     while check_date in attest_dates and streak < STREAK_MAX_DAYS:
                         streak += 1
                         check_date -= timedelta(days=1)
-            
+
             bonus = min(streak * STREAK_BONUS_PER_DAY, STREAK_MAX_DAYS * STREAK_BONUS_PER_DAY)
             return round(bonus, 4)
     except Exception as e:
@@ -2286,7 +2286,7 @@ def _projected_multiplier_growth(current_mult: float, device_arch: str) -> dict:
     # All hardware eventually becomes vintage
     years_ahead = [1, 2, 5, 10]
     projections = {}
-    
+
     # Base multiplier stays the same (hardware doesn't change)
     # But streak bonus grows, and eventually the hardware tier may upgrade
     for y in years_ahead:
@@ -2295,7 +2295,7 @@ def _projected_multiplier_growth(current_mult: float, device_arch: str) -> dict:
         # Future multiplier = current hardware mult + streak bonus
         future = current_mult + streak_at_max
         projections[f"{y}y"] = round(future, 2)
-    
+
     return {
         "current": current_mult,
         "with_max_streak": round(current_mult + STREAK_MAX_DAYS * STREAK_BONUS_PER_DAY, 2),
@@ -2566,7 +2566,7 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
     Handles BOTH formats:
     - New Python format: {"checks": {"clock_drift": {"passed": true, "data": {...}}}}
     - C miner format: {"checks": {"clock_drift": true}}
-    
+
     FIX #1147: Added defensive type checking for all nested access to prevent crashes
     from malformed payloads.
     """
@@ -2839,7 +2839,7 @@ def check_ip_rate_limit(client_ip, miner_id):
     """Rate limit attestations per source IP using SQLite (shared across workers)."""
     now = int(time.time())
     cutoff = now - ATTEST_IP_WINDOW
-    
+
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("DELETE FROM ip_rate_limit WHERE ts < ?", (cutoff,))
         conn.execute(
@@ -2851,11 +2851,11 @@ def check_ip_rate_limit(client_ip, miner_id):
             (client_ip, cutoff)
         ).fetchone()
         unique_count = row[0] if row else 0
-        
+
         if unique_count > ATTEST_IP_LIMIT:
             print(f"[RATE_LIMIT] IP {client_ip} has {unique_count} unique miners (limit {ATTEST_IP_LIMIT})")
             return False, f"ip_rate_limit:{unique_count}_miners_from_same_ip"
-    
+
     return True, "ok"
 
 
@@ -2960,7 +2960,7 @@ def check_enrollment_requirements(miner: str) -> tuple:
                 return False, {"error": "no_recent_attestation", "ttl_s": ENROLL_TICKET_TTL_S}
             if (int(time.time()) - row[0]) > ENROLL_TICKET_TTL_S:
                 return False, {"error": "attestation_expired", "ttl_s": ENROLL_TICKET_TTL_S}
-            
+
             # RIP-PoA Phase 2: Check fingerprint passed (returns status for weight calculation)
             fingerprint_passed = row[1] if len(row) > 1 else 1  # Default to passed for legacy
             if not fingerprint_passed:
@@ -3112,15 +3112,15 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
         zero_weight_miners = [pk for pk, w in miners if w == 0]
         if zero_weight_miners:
             print(f"[SECURITY] Excluding {len(zero_weight_miners)} miners with 0 weight (VM/emulator)")
-        
+
         # Recalculate total weight with valid miners only
         miners = valid_miners
         total_weight = sum(w for _, w in miners)
-        
+
         if total_weight == 0:
             print(f"[SECURITY] No valid miners for epoch {epoch} after filtering")
             return
-        
+
         # RIP-309: Determine active fingerprint checks for this epoch
         fp_checks = ['clock_drift', 'cache_timing', 'simd_identity',
                      'thermal_drift', 'instruction_jitter', 'anti_emulation']
@@ -3333,55 +3333,55 @@ def get_challenge():
 # ============= HARDWARE BINDING (Anti Multi-Wallet Attack) =============
 def _compute_hardware_id(device: dict, signals: dict = None, source_ip: str = None) -> str:
     """Compute hardware ID from device info + network identity.
-    
+
     HARDENED 2026-02-02: cpu_serial is NO LONGER trusted as primary key.
     Hardware ID now includes source IP to prevent multi-wallet from same machine.
     MACs included when available as secondary signal.
     """
     signals = signals or {}
-    
+
     model = device.get('device_model') or device.get('model', 'unknown')
     arch = device.get('device_arch') or device.get('arch', 'modern')
     family = device.get('device_family') or device.get('family', 'unknown')
     cores = str(device.get('cores', 1))
-    
+
     # cpu_serial is UNTRUSTED (client can fake it) - use only as secondary entropy
     cpu_serial = device.get('cpu_serial') or device.get('hardware_id', '')
-    
+
     # Primary binding: IP + arch + model + cores (cannot be faked from same machine)
     # Note: This means miners behind same NAT share an IP binding pool.
     # That's acceptable - home networks rarely have 5+ mining rigs.
     ip_component = source_ip or 'unknown_ip'
-    
+
     # MACs as additional entropy (when available)
     macs = signals.get('macs', [])
     mac_str = ','.join(sorted(macs)) if macs else ''
-    
+
     hw_fields = [ip_component, model, arch, family, cores, mac_str, cpu_serial]
     hw_id = hashlib.sha256('|'.join(str(f) for f in hw_fields).encode()).hexdigest()[:32]
-    
+
     print(f"[HW_ID] {hw_id[:16]} = IP:{ip_component} arch:{arch} model:{model} cores:{cores} macs:{len(macs)}")
-    
+
     return hw_id
 
 def _check_hardware_binding(miner_id: str, device: dict, signals: dict = None, source_ip: str = None):
     """Check if hardware is already bound to a different wallet. One machine = One wallet."""
     hardware_id = _compute_hardware_id(device, signals, source_ip=source_ip)
-    
+
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
-        
+
         # Check existing binding
         c.execute('SELECT bound_miner, attestation_count FROM hardware_bindings WHERE hardware_id = ?',
                   (hardware_id,))
         row = c.fetchone()
-        
+
         now = int(time.time())
-        
+
         if row is None:
             # No binding - create one
             try:
-                c.execute("""INSERT INTO hardware_bindings 
+                c.execute("""INSERT INTO hardware_bindings
                     (hardware_id, bound_miner, device_arch, device_model, bound_at, attestation_count)
                     VALUES (?, ?, ?, ?, ?, 1)""",
                     (hardware_id, miner_id, device.get('device_arch'), device.get('device_model'), now))
@@ -3389,9 +3389,9 @@ def _check_hardware_binding(miner_id: str, device: dict, signals: dict = None, s
             except:
                 pass  # Race condition - another thread created it
             return True, 'Hardware bound', miner_id
-        
+
         bound_miner, _ = row
-        
+
         if bound_miner == miner_id:
             # Same wallet - allow
             c.execute('UPDATE hardware_bindings SET attestation_count = attestation_count + 1 WHERE hardware_id = ?',
@@ -3547,7 +3547,7 @@ def _submit_attestation_impl():
     cores = _attest_positive_int(device.get('cores'), default=1)
     arch = _attest_text(device.get('arch')) or _attest_text(device.get('device_arch')) or 'modern'
     macs = _attest_string_list(signals.get('macs'))
-    
+
     if HW_BINDING_V2 and serial:
         hw_ok, hw_msg, hw_details = bind_hardware_v2(
             serial=serial,
@@ -3590,13 +3590,13 @@ def _submit_attestation_impl():
     replay_blocked = False
     replay_reason = "not_checked"
     replay_details = None
-    
+
     if HAVE_REPLAY_DEFENSE and fingerprint:
         # Compute fingerprint and entropy hashes
         fp_hash = compute_fingerprint_hash(fingerprint)
         entropy_hash = compute_entropy_profile_hash(fingerprint)
         hw_id = _compute_hardware_id(device, signals, source_ip=client_ip) if device and signals else None
-        
+
         # Check 1: Fingerprint replay detection
         is_replay, replay_msg, replay_info = check_fingerprint_replay(
             fingerprint_hash=fp_hash,
@@ -3604,7 +3604,7 @@ def _submit_attestation_impl():
             wallet_address=miner,
             miner_id=miner
         )
-        
+
         if is_replay:
             replay_blocked = True
             replay_reason = replay_msg
@@ -3612,7 +3612,7 @@ def _submit_attestation_impl():
             print(f"[REPLAY_DEFENSE #2276] BLOCKED: {miner[:20]}... - {replay_msg}")
             if replay_info:
                 print(f"[REPLAY_DEFENSE #2276] Details: {replay_info}")
-        
+
         # Check 2: Entropy collision detection (if not already blocked)
         if not replay_blocked:
             is_collision, coll_msg, coll_info = check_entropy_collision(
@@ -3620,7 +3620,7 @@ def _submit_attestation_impl():
                 wallet_address=miner,
                 miner_id=miner
             )
-            
+
             if is_collision:
                 replay_blocked = True
                 replay_reason = coll_msg
@@ -3628,20 +3628,20 @@ def _submit_attestation_impl():
                 print(f"[REPLAY_DEFENSE #2276] BLOCKED: {miner[:20]}... - entropy collision detected")
                 if coll_info:
                     print(f"[REPLAY_DEFENSE #2276] Collision: {coll_info}")
-        
+
         # Check 3: Rate limiting (if not already blocked)
         if not replay_blocked:
             rate_ok, rate_msg, rate_info = check_fingerprint_rate_limit(
                 hardware_id=hw_id,
                 wallet_address=miner
             )
-            
+
             if not rate_ok:
                 replay_blocked = True
                 replay_reason = rate_msg
                 replay_details = rate_info
                 print(f"[REPLAY_DEFENSE #2276] RATE LIMITED: {miner[:20]}... - {rate_msg}")
-        
+
         # Check 4: Anomaly detection (logging only, doesn't block)
         if fingerprint_passed and not replay_blocked:
             has_anomalies, anomalies = detect_fingerprint_anomalies(
@@ -3649,13 +3649,13 @@ def _submit_attestation_impl():
                 wallet_address=miner,
                 fingerprint_hash=fp_hash
             )
-            
+
             if has_anomalies:
                 print(f"[REPLAY_DEFENSE #2276] ANOMALY DETECTED: {miner[:20]}...")
                 for anomaly in anomalies:
                     print(f"[REPLAY_DEFENSE #2276]   - {anomaly.get('type')}: {anomaly.get('description', '')}")
                 # Record anomaly for monitoring (doesn't block attestation)
-        
+
         # Record submission for future replay detection (if not blocked)
         if not replay_blocked:
             record_fingerprint_submission(
@@ -3666,7 +3666,7 @@ def _submit_attestation_impl():
                 hardware_id=hw_id,
                 attestation_valid=fingerprint_passed
             )
-    
+
     # Return error if replay detected
     if replay_blocked:
         return jsonify({
@@ -4178,7 +4178,7 @@ def lottery_eligibility():
     # Import round-robin check
     from rip_200_round_robin_1cpu1vote import check_eligibility_round_robin
     result = check_eligibility_round_robin(DB_PATH, miner_id, current, current_ts)
-    
+
     # Add slot for compatibility
     result['slot'] = current
     return jsonify(result)
@@ -4318,12 +4318,12 @@ def ingest_signed_header():
         current_epoch = slot // EPOCH_SLOTS
         epoch_start = current_epoch * EPOCH_SLOTS
         epoch_end = (current_epoch + 1) * EPOCH_SLOTS
-        
+
         blocks_in_epoch = db.execute(
             "SELECT COUNT(*) FROM headers WHERE slot >= ? AND slot < ?",
             (epoch_start, epoch_end)
         ).fetchone()[0]
-        
+
         if blocks_in_epoch >= EPOCH_SLOTS:
             # Check if already settled
             settled_row = db.execute("SELECT 1 FROM epoch_rewards WHERE epoch=?", (current_epoch,)).fetchone()
@@ -5978,7 +5978,7 @@ def api_nodes():
                 })
     except Exception as e:
         print(f"Error fetching nodes: {e}")
-    
+
     # Also add live status check
     # SECURITY: Only probe URLs that are NOT internal/private to prevent SSRF
     import requests
@@ -5998,7 +5998,7 @@ def api_nodes():
         if (not _is_admin()) and raw_url and _should_redact_url(raw_url):
             node["url"] = None
             node["url_redacted"] = True
-    
+
     return jsonify({"nodes": nodes, "count": len(nodes)})
 
 
@@ -6020,7 +6020,7 @@ def api_miners():
         })
         add_rate_limit_headers(response, rate_info)
         return response, 429
-    
+
     # Pagination args
     try:
         limit = min(max(int(request.args.get("limit", 100)), 1), 1000)
@@ -6032,13 +6032,13 @@ def api_miners():
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
-        
+
         # Get total count for metadata
         total_count = c.execute("SELECT COUNT(*) FROM miner_attest_recent WHERE ts_ok > ?", (now - 3600,)).fetchone()[0]
-        
+
         # Get paginated miners with their first attestation time (optimized subquery)
         rows = c.execute("""
-            SELECT 
+            SELECT
                 r.miner, r.ts_ok, r.device_family, r.device_arch, r.entropy_score,
                 (SELECT MIN(h.ts_ok) FROM miner_attest_history h WHERE h.miner = r.miner) as first_ts
             FROM miner_attest_recent r
@@ -6046,12 +6046,12 @@ def api_miners():
             ORDER BY r.ts_ok DESC
             LIMIT ? OFFSET ?
         """, (now - 3600, limit, offset)).fetchall()
-        
+
         miners = []
         for r in rows:
             arch = (r["device_arch"] or "unknown").lower()
             fam = (r["device_family"] or "unknown").lower()
-            
+
             # Calculate antiquity multiplier from HARDWARE_WEIGHTS (single source of truth)
             title_fam = r["device_family"] or "unknown"
             title_arch = r["device_arch"] or "unknown"
@@ -6090,7 +6090,7 @@ def api_miners():
                 "entropy_score": r["entropy_score"] or 0.0,
                 "antiquity_multiplier": mult
             })
-    
+
     response = jsonify({
         "miners": miners,
         "pagination": {
@@ -6378,22 +6378,22 @@ def api_miner_streak(miner_id: str):
     """Get miner's streak bonus and projected multiplier growth."""
     miner_id = miner_id.strip()
     streak_bonus = _get_streak_bonus(miner_id)
-    
+
     # Get current hardware multiplier
     with sqlite3.connect(DB_PATH) as conn:
         row = conn.execute(
             "SELECT device_family, device_arch FROM miner_attest_recent WHERE miner = ?",
             (miner_id,)
         ).fetchone()
-    
+
     if not row:
         return jsonify({"error": "Miner not found"}), 404
-    
+
     fam, arch = row[0] or "x86", row[1] or "modern"
     hw_mult = HARDWARE_WEIGHTS.get(fam, {}).get(arch, HARDWARE_WEIGHTS.get(fam, {}).get("default", 1.0))
-    
+
     projections = _projected_multiplier_growth(hw_mult, arch)
-    
+
     return jsonify({
         "miner_id": miner_id,
         "hardware_multiplier": hw_mult,
@@ -7208,13 +7208,13 @@ def send_sophiacheck_alert(alert_type, message, data):
     webhook_url = os.environ.get("RC_SOPHIACHECK_WEBHOOK")
     if not webhook_url:
         return
-    
+
     colors = {
         "warning": 16776960,   # Yellow
         "critical": 16711680,  # Red
         "info": 3447003        # Blue
     }
-    
+
     embed = {
         "title": f"🔐 SophiaCheck {alert_type.upper()}",
         "description": message,
@@ -7225,7 +7225,7 @@ def send_sophiacheck_alert(alert_type, message, data):
         ],
         "timestamp": datetime.utcnow().isoformat()
     }
-    
+
     try:
         requests.post(webhook_url, json={"embeds": [embed]}, timeout=5)
     except Exception as e:
@@ -7264,36 +7264,36 @@ def wallet_transfer_v2():
     to_miner = pre.details["to_miner"]
     amount_rtc = pre.details["amount_rtc"]
     reason = str((data or {}).get('reason', 'admin_transfer'))
-    
+
     amount_i64 = int(amount_rtc * 1000000)
     now = int(time.time())
     confirms_at = now + CONFIRMATION_DELAY_SECONDS
     current_epoch = current_slot()
-    
+
     # Generate transaction hash
     tx_data = f"{from_miner}:{to_miner}:{amount_i64}:{now}:{os.urandom(8).hex()}"
     tx_hash = hashlib.sha256(tx_data.encode()).hexdigest()[:32]
-    
+
     conn = sqlite3.connect(DB_PATH)
     try:
         c = conn.cursor()
-        
+
         # SECURITY: Acquire write lock BEFORE reading balance to prevent
         # concurrent transfers from both passing the balance check.
         c.execute("BEGIN IMMEDIATE")
-        
+
         # Check sender balance
         row = c.execute("SELECT amount_i64 FROM balances WHERE miner_id = ?", (from_miner,)).fetchone()
         sender_balance = row[0] if row else 0
-        
+
         # Calculate pending debits (uncommitted outgoing transfers)
         pending_debits = c.execute("""
-            SELECT COALESCE(SUM(amount_i64), 0) FROM pending_ledger 
+            SELECT COALESCE(SUM(amount_i64), 0) FROM pending_ledger
             WHERE from_miner = ? AND status = 'pending'
         """, (from_miner,)).fetchone()[0]
-        
+
         available_balance = sender_balance - pending_debits
-        
+
         if available_balance < amount_i64:
             return jsonify({
                 "error": "Insufficient available balance",
@@ -7302,17 +7302,17 @@ def wallet_transfer_v2():
                 "available_rtc": available_balance / 1000000,
                 "requested_rtc": amount_rtc
             }), 400
-        
+
         # Insert into pending_ledger (NOT direct balance update!)
         c.execute("""
-            INSERT INTO pending_ledger 
+            INSERT INTO pending_ledger
             (ts, epoch, from_miner, to_miner, amount_i64, reason, status, created_at, confirms_at, tx_hash)
             VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
         """, (now, current_epoch, from_miner, to_miner, amount_i64, reason, now, confirms_at, tx_hash))
-        
+
         pending_id = c.lastrowid
         conn.commit()
-        
+
         # Alert if over threshold
         if amount_i64 >= ALERT_THRESHOLD_CRITICAL:
             send_sophiacheck_alert("critical", f"Large transfer pending: {amount_rtc} RTC", {
@@ -7329,7 +7329,7 @@ def wallet_transfer_v2():
                 "amount_rtc": amount_rtc,
                 "tx_hash": tx_hash
             })
-        
+
         return jsonify({
             "ok": True,
             "phase": "pending",
@@ -7342,7 +7342,7 @@ def wallet_transfer_v2():
             "confirms_in_hours": CONFIRMATION_DELAY_SECONDS / 3600,
             "message": f"Transfer pending. Will confirm in {CONFIRMATION_DELAY_SECONDS // 3600} hours unless voided."
         })
-    
+
     finally:
         conn.close()
 
@@ -7363,11 +7363,11 @@ def list_pending():
     except (TypeError, ValueError):
         return jsonify({"ok": False, "error": "limit must be an integer"}), 400
     limit = max(1, min(limit, 500))
-    
+
     with sqlite3.connect(DB_PATH) as db:
         if status_filter == 'all':
             rows = db.execute("""
-                SELECT id, ts, from_miner, to_miner, amount_i64, reason, status, 
+                SELECT id, ts, from_miner, to_miner, amount_i64, reason, status,
                        confirms_at, voided_by, voided_reason, tx_hash
                 FROM pending_ledger ORDER BY id DESC LIMIT ?
             """, (limit,)).fetchall()
@@ -7377,7 +7377,7 @@ def list_pending():
                        confirms_at, voided_by, voided_reason, tx_hash
                 FROM pending_ledger WHERE status = ? ORDER BY id DESC LIMIT ?
             """, (status_filter, limit)).fetchall()
-    
+
     items = []
     for r in rows:
         items.append({
@@ -7393,7 +7393,7 @@ def list_pending():
             "voided_reason": r[9],
             "tx_hash": r[10]
         })
-    
+
     return jsonify({"ok": True, "count": len(items), "pending": items})
 
 
@@ -7406,7 +7406,7 @@ def void_pending():
     admin_key = request.headers.get("X-Admin-Key", "")
     if not hmac.compare_digest(admin_key, admin_key_env):
         return jsonify({"error": "Unauthorized"}), 401
-    
+
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({"error": "Invalid JSON body"}), 400
@@ -7414,46 +7414,46 @@ def void_pending():
     tx_hash = data.get('tx_hash')
     reason = data.get('reason', 'admin_void')
     voided_by = data.get('voided_by', 'admin')
-    
+
     if not pending_id and not tx_hash:
         return jsonify({"error": "Provide pending_id or tx_hash"}), 400
-    
+
     conn = sqlite3.connect(DB_PATH)
     try:
         c = conn.cursor()
-        
+
         # Find the pending entry
         if pending_id:
             row = c.execute("""
-                SELECT id, status, from_miner, to_miner, amount_i64 
+                SELECT id, status, from_miner, to_miner, amount_i64
                 FROM pending_ledger WHERE id = ?
             """, (pending_id,)).fetchone()
         else:
             row = c.execute("""
-                SELECT id, status, from_miner, to_miner, amount_i64 
+                SELECT id, status, from_miner, to_miner, amount_i64
                 FROM pending_ledger WHERE tx_hash = ?
             """, (tx_hash,)).fetchone()
-        
+
         if not row:
             return jsonify({"error": "Pending transfer not found"}), 404
-        
+
         pid, status, from_m, to_m, amount = row
-        
+
         if status != 'pending':
             return jsonify({
                 "error": f"Cannot void - status is '{status}'",
                 "hint": "Only pending transfers can be voided"
             }), 400
-        
+
         # Void the entry
         c.execute("""
-            UPDATE pending_ledger 
+            UPDATE pending_ledger
             SET status = 'voided', voided_by = ?, voided_reason = ?
             WHERE id = ?
         """, (voided_by, reason, pid))
-        
+
         conn.commit()
-        
+
         send_sophiacheck_alert("info", f"Transfer VOIDED by {voided_by}", {
             "pending_id": pid,
             "from": from_m,
@@ -7461,7 +7461,7 @@ def void_pending():
             "amount_rtc": amount / 1000000,
             "reason": reason
         })
-        
+
         return jsonify({
             "ok": True,
             "voided_id": pid,
@@ -7471,7 +7471,7 @@ def void_pending():
             "voided_by": voided_by,
             "reason": reason
         })
-    
+
     finally:
         conn.close()
 
@@ -7485,86 +7485,86 @@ def confirm_pending():
     admin_key = request.headers.get("X-Admin-Key", "")
     if not hmac.compare_digest(admin_key, admin_key_env):
         return jsonify({"error": "Unauthorized"}), 401
-    
+
     now = int(time.time())
     confirmed_count = 0
     confirmed_ids = []
     errors = []
-    
+
     conn = sqlite3.connect(DB_PATH)
     try:
         c = conn.cursor()
-        
+
         # Get all pending transfers ready for confirmation
         ready = c.execute("""
             SELECT id, from_miner, to_miner, amount_i64, reason, epoch, tx_hash
-            FROM pending_ledger 
+            FROM pending_ledger
             WHERE status = 'pending' AND confirms_at <= ?
             ORDER BY id ASC
         """, (now,)).fetchall()
-        
+
         for row in ready:
             pid, from_m, to_m, amount, reason, epoch, tx_hash = row
-            
+
             try:
                 # Check sender still has sufficient balance
                 bal = c.execute("SELECT amount_i64 FROM balances WHERE miner_id = ?", (from_m,)).fetchone()
                 sender_balance = bal[0] if bal else 0
-                
+
                 if sender_balance < amount:
                     # Mark as voided due to insufficient funds
                     c.execute("""
-                        UPDATE pending_ledger 
+                        UPDATE pending_ledger
                         SET status = 'voided', voided_by = 'system', voided_reason = 'insufficient_balance_at_confirm'
                         WHERE id = ?
                     """, (pid,))
                     errors.append({"id": pid, "error": "insufficient_balance"})
                     continue
-                
+
                 # Execute the actual transfer
                 c.execute("INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)", (to_m,))
                 c.execute("UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ?", (amount, from_m))
                 c.execute("UPDATE balances SET amount_i64 = amount_i64 + ?, balance_rtc = (amount_i64 + ?) / 1000000.0 WHERE miner_id = ?", (amount, amount, to_m))
-                
+
                 # Log to IMMUTABLE ledger (the real chain!)
                 c.execute("""
                     INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason)
                     VALUES (?, ?, ?, ?, ?)
                 """, (now, epoch, from_m, -amount, f"transfer_out:{to_m}:{tx_hash}"))
-                
+
                 c.execute("""
                     INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason)
                     VALUES (?, ?, ?, ?, ?)
                 """, (now, epoch, to_m, amount, f"transfer_in:{from_m}:{tx_hash}"))
-                
+
                 # Mark as confirmed
                 c.execute("""
-                    UPDATE pending_ledger 
+                    UPDATE pending_ledger
                     SET status = 'confirmed', confirmed_at = ?
                     WHERE id = ?
                 """, (now, pid))
-                
+
                 confirmed_count += 1
                 confirmed_ids.append(pid)
-                
+
             except Exception as e:
                 errors.append({"id": pid, "error": str(e)})
-        
+
         conn.commit()
-        
+
         if confirmed_count > 0:
             send_sophiacheck_alert("info", f"Confirmed {confirmed_count} pending transfer(s)", {
                 "confirmed_ids": str(confirmed_ids[:10]),  # First 10
                 "errors": len(errors)
             })
-        
+
         return jsonify({
             "ok": True,
             "confirmed_count": confirmed_count,
             "confirmed_ids": confirmed_ids,
             "errors": errors if errors else None
         })
-    
+
     finally:
         conn.close()
 
@@ -7584,23 +7584,23 @@ def check_integrity():
         ledger_sums = dict(db.execute("""
             SELECT miner_id, SUM(delta_i64) FROM ledger GROUP BY miner_id
         """).fetchall())
-        
+
         # Get all balances
         balances = dict(db.execute("""
             SELECT miner_id, amount_i64 FROM balances
         """).fetchall())
-        
+
         # Check for pending transactions
         pending = dict(db.execute("""
-            SELECT from_miner, SUM(amount_i64) 
+            SELECT from_miner, SUM(amount_i64)
             FROM pending_ledger WHERE status = 'pending'
             GROUP BY from_miner
         """).fetchall())
-    
+
     mismatches = []
     for miner_id, balance in balances.items():
         ledger_sum = ledger_sums.get(miner_id, 0)
-        
+
         # Balance should equal ledger sum (pending doesn't affect balance yet)
         if balance != ledger_sum:
             mismatches.append({
@@ -7609,15 +7609,15 @@ def check_integrity():
                 "ledger_sum_rtc": ledger_sum / 1000000,
                 "diff_rtc": (balance - ledger_sum) / 1000000
             })
-    
+
     integrity_ok = len(mismatches) == 0
-    
+
     if not integrity_ok:
         send_sophiacheck_alert("critical", f"INTEGRITY CHECK FAILED: {len(mismatches)} mismatch(es)", {
             "mismatches": len(mismatches),
             "first_mismatch": str(mismatches[0]) if mismatches else "none"
         })
-    
+
     return jsonify({
         "ok": integrity_ok,
         "total_miners_checked": len(balances),
@@ -8055,7 +8055,7 @@ BEACON_ATLAS_DB = "/root/beacon/beacon_atlas.db"
 def resolve_bcn_wallet(bcn_id: str) -> dict:
     """
     Resolve a bcn_ beacon ID to its registered public key and metadata.
-    
+
     Returns dict with:
       - found: bool
       - agent_id: str
@@ -8067,7 +8067,7 @@ def resolve_bcn_wallet(bcn_id: str) -> dict:
     """
     if not bcn_id or not bcn_id.startswith("bcn_"):
         return {"found": False, "error": "not_a_beacon_id"}
-    
+
     try:
         conn = sqlite3.connect(BEACON_ATLAS_DB)
         conn.row_factory = sqlite3.Row
@@ -8076,16 +8076,16 @@ def resolve_bcn_wallet(bcn_id: str) -> dict:
             (bcn_id,)
         ).fetchone()
         conn.close()
-        
+
         if not row:
             return {"found": False, "error": "beacon_id_not_registered"}
-        
+
         if row["status"] != "active":
             return {"found": False, "error": f"beacon_agent_status:{row['status']}"}
-        
+
         pubkey_hex = row["pubkey_hex"]
         rtc_addr = address_from_pubkey(pubkey_hex)
-        
+
         return {
             "found": True,
             "agent_id": row["agent_id"],
@@ -8107,27 +8107,27 @@ def is_bcn_address(addr: str) -> bool:
 def wallet_resolve():
     """
     Resolve a bcn_ beacon ID to its RTC wallet address and public key.
-    
+
     This lets anyone look up the cryptographic identity behind a beacon wallet.
     The pubkey is needed to verify signed transfers FROM this address.
-    
+
     Query params:
       - address: The bcn_ beacon ID to resolve
-    
+
     Returns:
       - agent_id, pubkey_hex, rtc_address, name
     """
     address = request.args.get("address", "").strip()
     if not address:
         return jsonify({"ok": False, "error": "address parameter required"}), 400
-    
+
     if not is_bcn_address(address):
         return jsonify({
             "ok": False,
             "error": "not_a_beacon_address",
             "hint": "Only bcn_ prefixed addresses can be resolved. Regular wallet IDs are used directly."
         }), 400
-    
+
     result = resolve_bcn_wallet(address)
     if not result["found"]:
         return jsonify({
@@ -8135,7 +8135,7 @@ def wallet_resolve():
             "error": result["error"],
             "hint": "Register your agent with the Beacon Atlas first: beacon atlas register"
         }), 404
-    
+
     return jsonify({
         "ok": True,
         "beacon_id": result["agent_id"],
@@ -8150,7 +8150,7 @@ def wallet_resolve():
 def wallet_transfer_signed():
     """
     Transfer RTC with Ed25519 signature verification.
-    
+
     Requires:
     - from_address: sender RTC address (RTC...)
     - to_address: recipient RTC address
@@ -8167,7 +8167,7 @@ def wallet_transfer_signed():
 
     # Extract client IP (handle nginx proxy)
     client_ip = get_client_ip()
-    
+
     from_address = pre.details["from_address"]
     to_address = pre.details["to_address"]
     nonce_int = pre.details["nonce"]
@@ -8210,7 +8210,7 @@ def wallet_transfer_signed():
                 "expected": expected_address,
                 "got": from_address
             }), 400
-    
+
     nonce = str(nonce_int)
 
     # Recreate the signed message (must match client signing format)
@@ -8224,13 +8224,13 @@ def wallet_transfer_signed():
     if chain_id:
         tx_data["chain_id"] = chain_id
     message = json.dumps(tx_data, sort_keys=True, separators=(",", ":")).encode()
-    
+
     # Verify Ed25519 signature
     if not verify_rtc_signature(public_key, message, signature):
         return jsonify({"error": "Invalid signature"}), 401
-    
+
     # Signature valid - process the transfer (2-phase commit + replay protection).
-    
+
     # SECURITY/HARDENING: signed transfers should follow the same 2-phase commit
     # semantics as admin transfers (pending_ledger + delayed confirmation). This
     # prevents bypassing the 24h pending window via the signed endpoint.
@@ -8546,12 +8546,12 @@ def check_hardware_wallet_consistency(hardware_id, miner_wallet, conn):
     c = conn.cursor()
     c.execute('SELECT bound_miner FROM hardware_bindings WHERE hardware_id = ?', (hardware_id,))
     row = c.fetchone()
-    
+
     if row:
         bound_wallet = row[0]
         if bound_wallet != miner_wallet:
             # DOUBLE-SPEND ATTEMPT DETECTED!
             print(f'[SECURITY] DOUBLE-SPEND BLOCKED: Hardware {hardware_id[:16]} tried to switch from {bound_wallet[:20]} to {miner_wallet[:20]}')
             return False, f'hardware_bound_to_different_wallet:{bound_wallet[:20]}'
-    
+
     return True, 'ok'
