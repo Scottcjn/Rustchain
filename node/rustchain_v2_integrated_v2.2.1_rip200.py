@@ -8464,7 +8464,7 @@ def wallet_transfer_signed():
     # SECURITY/HARDENING: signed transfers should follow the same 2-phase commit
     # semantics as admin transfers (pending_ledger + delayed confirmation). This
     # prevents bypassing the 24h pending window via the signed endpoint.
-    amount_i64 = int(amount_rtc * 1000000)
+    amount_i64 = int(pre.details["amount_i64"])
     now = int(time.time())
     confirms_at = now + CONFIRMATION_DELAY_SECONDS
     current_epoch = current_slot()

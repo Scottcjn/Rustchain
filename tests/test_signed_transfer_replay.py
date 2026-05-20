@@ -151,6 +151,30 @@ def test_insufficient_balance_does_not_burn_nonce(signed_transfer_client):
     assert pending_count == 1
 
 
+def test_signed_transfer_uses_preflight_amount_i64_without_float_loss(signed_transfer_client):
+    client, db_path = signed_transfer_client
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?)",
+            ("RTC" + "a" * 40, 1_000_000),
+        )
+        conn.commit()
+
+    response = client.post(
+        "/wallet/transfer/signed",
+        json=_payload(amount_rtc="0.000249", nonce=1733420011111),
+    )
+    assert response.status_code == 200
+
+    with sqlite3.connect(db_path) as conn:
+        (pending_amount,) = conn.execute(
+            "SELECT amount_i64 FROM pending_ledger"
+        ).fetchone()
+
+    assert pending_amount == 249
+
+
 def test_signed_transfer_rejects_nonzero_fee_until_fee_settlement(
     signed_transfer_client,
     monkeypatch,
