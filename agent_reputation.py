@@ -353,7 +353,8 @@ def check_eligibility():
         return jsonify({"error": "agent_id required"}), 400
 
     try:
-        job_value = float(request.args.get("job_value", 0))
+        raw_job_value = request.args.get("job_value")
+        job_value = float(raw_job_value) if raw_job_value not in (None, "") else 0
     except (ValueError, TypeError):
         return jsonify({"error": "job_value must be a number"}), 400
     if not math.isfinite(job_value) or job_value < 0:
@@ -392,7 +393,8 @@ def leaderboard():
     Returns top agents by reputation (from cache).
     """
     try:
-        limit = min(int(request.args.get("limit", 20)), 100)
+        raw_limit = request.args.get("limit")
+        limit = min(int(raw_limit), 100) if raw_limit not in (None, "") else 20
     except (ValueError, TypeError):
         return jsonify({"error": "limit must be an integer"}), 400
     if limit < 1:

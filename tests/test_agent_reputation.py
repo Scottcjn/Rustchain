@@ -93,6 +93,18 @@ def test_veteran_agent_can_claim_high_value_jobs(reputation_client):
     assert payload["reason"] is None
 
 
+def test_check_eligibility_uses_default_for_empty_job_value(reputation_client):
+    response = reputation_client.get(
+        "/agent/reputation/check-eligibility",
+        query_string={"agent_id": "trusted-agent", "job_value": ""},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["job_value_rtc"] == 0
+    assert payload["eligible"] is True
+
+
 @pytest.mark.parametrize("job_value", ["-1", "nan", "inf", "-inf"])
 def test_check_eligibility_rejects_invalid_job_values(reputation_client, job_value):
     response = reputation_client.get(
@@ -113,6 +125,16 @@ def test_leaderboard_rejects_non_positive_limits(reputation_client, limit):
 
     assert response.status_code == 400
     assert response.get_json()["error"] == "limit must be between 1 and 100"
+
+
+def test_leaderboard_uses_default_for_empty_limit(reputation_client):
+    response = reputation_client.get(
+        "/agent/reputation/leaderboard",
+        query_string={"limit": ""},
+    )
+
+    assert response.status_code == 200
+    assert len(response.get_json()["leaderboard"]) == 2
 
 
 def test_refresh_stale_cache_entries_stores_recalculated_result(monkeypatch):
