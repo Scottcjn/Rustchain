@@ -438,7 +438,7 @@ def main() -> int:
                 f"To receive this award, add a line such as "
                 f"`wallet: RTC...` to the PR body or add a `.rtc-wallet` file "
                 f"at the repository root, then rerun the award workflow.\n\n"
-                f"<!-- { _AWARD_MARKER }:FAILED recipient_wallet_missing -->"
+                f"<!-- {_AWARD_MARKER}:FAILED recipient_wallet_missing -->"
             )
             post_pr_comment(repo, pr_number, missing_wallet_body, cfg.github_token)
         set_output("awarded", "false")
@@ -492,7 +492,7 @@ def main() -> int:
                 f"| From | `{cfg.from_wallet}` |\n"
                 f"| Memo | {memo} |\n\n"
                 f"This is a **dry-run** — no actual transfer was made.\n\n"
-                f"<!-- { _AWARD_MARKER } (dry-run) -->"
+                f"<!-- {_AWARD_MARKER} (dry-run) -->"
             )
             post_pr_comment(repo, pr_number, dry_body, cfg.github_token)
         return 0
@@ -534,7 +534,7 @@ def main() -> int:
                     f"this transfer manually. This marker intentionally blocks automatic "
                     f"retries to avoid duplicate payouts; remove it only if no manual "
                     f"transfer was completed.\n\n"
-                    f"<!-- { _AWARD_MARKER }:MANUAL-REQUIRED -->"
+                    f"<!-- {_AWARD_MARKER}:MANUAL-REQUIRED -->"
                 )
                 if not post_pr_comment(repo, pr_number, manual_body, cfg.github_token):
                     log_error("Manual transfer notice could not be posted.")
@@ -549,7 +549,7 @@ def main() -> int:
                 f"but the transfer was rejected:\n\n"
                 f"```\n{error_msg}\n```\n\n"
                 f"Please process this award manually.\n\n"
-                f"<!-- { _AWARD_MARKER }:FAILED -->"
+                f"<!-- {_AWARD_MARKER}:FAILED -->"
             )
             post_pr_comment(repo, pr_number, fail_body, cfg.github_token)
         return 1
@@ -585,7 +585,7 @@ def main() -> int:
             {confirms_info}
             Transfer recorded on RustChain.
 
-            <!-- { _AWARD_MARKER } tx_hash={tx_hash} pending_id={pending_id} -->
+            <!-- {_AWARD_MARKER} tx_hash={tx_hash} pending_id={pending_id} -->
         """)
         posted = post_pr_comment(repo, pr_number, confirm_body, cfg.github_token)
         if not posted:
