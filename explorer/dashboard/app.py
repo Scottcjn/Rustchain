@@ -26,6 +26,7 @@ HTML = """
 async function j(u){const r=await fetch(u);return await r.json();}
 function asObject(v){return v&&typeof v==='object'&&!Array.isArray(v)?v:{};}
 function asArray(v){return Array.isArray(v)?v.filter(x=>x&&typeof x==='object'&&!Array.isArray(x)):[];}
+function asRows(v,key){return Array.isArray(v)?asArray(v):asArray(asObject(v)[key]);}
 function firstPresent(...values){return values.find(v=>v!==undefined&&v!==null&&v!=='');}
 function text(v,f='-'){return v===undefined||v===null||v===''?f:String(v);}
 function fmtTs(v){if(!v) return '-'; const n=Number(v); if(!Number.isFinite(n)) return String(v); const ms=n>1e12?n:n*1000; return new Date(ms).toLocaleString();}
@@ -48,14 +49,14 @@ function renderRows(tbodyId,rows,limit,mapper,emptyText){
 }
 async function load(){
   const d=asObject(await j('/api/dashboard'));
-  const miners=asArray(d.miners);
-  const transactions=asArray(d.transactions);
+  const miners=asRows(d.miners,'miners');
+  const transactions=asRows(d.transactions,'transactions');
   document.getElementById('base').textContent=text(d.base);
   document.getElementById('network').textContent=text(asObject(d.health).status,'unknown');
   document.getElementById('miners').textContent=miners.length;
   document.getElementById('epoch').textContent=text(asObject(d.epoch).epoch);
   document.getElementById('txcount').textContent=transactions.length;
-  renderRows('minersTbl',miners,20,m=>[firstPresent(m.miner_id,m.wallet),firstPresent(m.score,m.attestation_score),firstPresent(m.multiplier,m.antiquity_multiplier)],'No miners');
+  renderRows('minersTbl',miners,20,m=>[firstPresent(m.miner_id,m.wallet,m.miner),firstPresent(m.score,m.attestation_score,m.entropy_score),firstPresent(m.multiplier,m.antiquity_multiplier)],'No miners');
   renderRows('txTbl',transactions,30,t=>[fmtTs(firstPresent(t.timestamp,t.created_at,t.time)),firstPresent(t.from,t.sender),firstPresent(t.to,t.recipient),firstPresent(t.amount,t.value)],'No transactions');
 }
 load(); setInterval(load, 30000);
