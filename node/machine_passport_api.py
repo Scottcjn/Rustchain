@@ -251,7 +251,9 @@ def create_passport():
     if auth_error is not None:
         return auth_error
     
-    data = request.get_json()
+    data, error = get_optional_json_object()
+    if error:
+        return error
     if not data:
         return jsonify({
             'ok': False,
@@ -339,7 +341,9 @@ def update_passport(machine_id: str):
     if not passport:
         return jsonify({'ok': False, 'error': 'passport_not_found'}), 404
     
-    data = request.get_json()
+    data, error = get_optional_json_object()
+    if error:
+        return error
     if not data:
         return jsonify({
             'ok': False,
@@ -671,7 +675,9 @@ def compute_machine_id_endpoint():
     
     Request Body: Hardware fingerprint data (same as attestation)
     """
-    data = request.get_json()
+    data, error = get_optional_json_object()
+    if error:
+        return error
     if not data:
         return jsonify({
             'ok': False,
