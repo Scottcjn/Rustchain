@@ -4702,7 +4702,14 @@ def admin_oui_enforce():
     """Toggle OUI enforcement (admin only)"""
     if not is_admin(request):
         return jsonify({"ok": False, "error": "forbidden"}), 403
-    body = request.get_json(force=True, silent=True) or {}
+    body = request.get_json(force=True, silent=True)
+    if body is None:
+        raw_body = request.get_data(cache=True) or b""
+        if raw_body.strip():
+            return jsonify({"error": "Invalid JSON body"}), 400
+        body = {}
+    if not isinstance(body, dict):
+        return jsonify({"error": "Invalid JSON body"}), 400
     enforce = 1 if str(body.get("enforce", "0")).strip() in ("1", "true", "True", "yes") else 0
     kv_set("oui_enforce", enforce)
     return jsonify({"ok": True, "enforce": enforce})
