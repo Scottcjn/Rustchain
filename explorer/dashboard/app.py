@@ -25,7 +25,8 @@ HTML = """
 <script>
 async function j(u){const r=await fetch(u);return await r.json();}
 function asObject(v){return v&&typeof v==='object'&&!Array.isArray(v)?v:{};}
-function asArray(v){return Array.isArray(v)?v.filter(x=>x&&typeof x==='object'):[];}
+function asArray(v){return Array.isArray(v)?v.filter(x=>x&&typeof x==='object'&&!Array.isArray(x)):[];}
+function firstPresent(...values){return values.find(v=>v!==undefined&&v!==null&&v!=='');}
 function text(v,f='-'){return v===undefined||v===null||v===''?f:String(v);}
 function fmtTs(v){if(!v) return '-'; const n=Number(v); if(!Number.isFinite(n)) return String(v); const ms=n>1e12?n:n*1000; return new Date(ms).toLocaleString();}
 function td(v){const cell=document.createElement('td');cell.textContent=text(v);return cell;}
@@ -54,8 +55,8 @@ async function load(){
   document.getElementById('miners').textContent=miners.length;
   document.getElementById('epoch').textContent=text(asObject(d.epoch).epoch);
   document.getElementById('txcount').textContent=transactions.length;
-  renderRows('minersTbl',miners,20,m=>[m.miner_id||m.wallet,m.score||m.attestation_score,m.multiplier||m.antiquity_multiplier],'No miners');
-  renderRows('txTbl',transactions,30,t=>[fmtTs(t.timestamp||t.created_at||t.time),t.from||t.sender,t.to||t.recipient,t.amount||t.value],'No transactions');
+  renderRows('minersTbl',miners,20,m=>[firstPresent(m.miner_id,m.wallet),firstPresent(m.score,m.attestation_score),firstPresent(m.multiplier,m.antiquity_multiplier)],'No miners');
+  renderRows('txTbl',transactions,30,t=>[fmtTs(firstPresent(t.timestamp,t.created_at,t.time)),firstPresent(t.from,t.sender),firstPresent(t.to,t.recipient),firstPresent(t.amount,t.value)],'No transactions');
 }
 load(); setInterval(load, 30000);
 </script></body></html>
