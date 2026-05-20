@@ -32,6 +32,7 @@ def test_init_db_creates_attestation_submit_tables(tmp_path, monkeypatch):
     assert "ip_rate_limit" in tables
     assert "miner_attest_recent" in tables
     assert "miner_macs" in tables
+    assert "hardware_bindings" in tables
 
 
 def test_fresh_db_attestation_submit_does_not_crash_on_missing_schema(
@@ -45,7 +46,6 @@ def test_fresh_db_attestation_submit_does_not_crash_on_missing_schema(
     monkeypatch.setattr(integrated_node, "HAVE_UTXO", False)
     monkeypatch.setattr(integrated_node, "HW_BINDING_V2", False)
     monkeypatch.setattr(integrated_node, "HW_PROOF_AVAILABLE", False)
-    monkeypatch.setattr(integrated_node, "_check_hardware_binding", lambda *args, **kwargs: (True, "ok", None))
     monkeypatch.setattr(integrated_node, "_check_oui_gate", lambda *args, **kwargs: (True, {}))
     monkeypatch.setattr(integrated_node, "auto_induct_to_hall", lambda *args, **kwargs: None)
 
