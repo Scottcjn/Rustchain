@@ -15,21 +15,20 @@ import hashlib
 import hmac
 import json
 import os
-import tempfile
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from auth import RateLimiter, is_authorized_sender, verify_webhook_signature
 from state import TipState
 from tip_bot import (
-    ParseResult,
     TipCommand,
     build_duplicate_comment,
     build_failure_comment,
     build_success_comment,
     build_unauthorized_comment,
+    github_commit_state,
     main,
     parse_tip_command,
     process_event,
@@ -513,6 +512,53 @@ class TestProcessEvent:
         event = make_event("/tip @alice 10 RTC", sender="attacker")
         process_event(event, config, state, "token", "org/repo")
         assert self.mock_commit.call_count == 0
+
+
+# ---------------------------------------------------------------------------
+# GitHub API helper tests
+# ---------------------------------------------------------------------------
+
+class TestGitHubApiHelpers:
+
+    class Response:
+        def __init__(self, status_code, payload):
+            self.status_code = status_code
+            self._payload = payload
+
+        def json(self):
+            if isinstance(self._payload, Exception):
+                raise self._payload
+            return self._payload
+
+    def test_commit_state_uses_existing_file_sha(self, tmp_path):
+        state_file = tmp_path / "tip_state.json"
+        state_file.write_text('{"tip_log": []}', encoding="utf-8")
+        puts = []
+
+        def fake_put(url, headers, json, timeout):
+            puts.append(json)
+            return self.Response(200, {})
+
+        with patch("tip_bot.requests.get", return_value=self.Response(200, {"sha": "abc123"})), \
+             patch("tip_bot.requests.put", side_effect=fake_put):
+            assert github_commit_state("org/repo", str(state_file), "token") is True
+
+        assert puts[0]["sha"] == "abc123"
+
+    def test_commit_state_ignores_malformed_existing_file_sha(self, tmp_path):
+        state_file = tmp_path / "tip_state.json"
+        state_file.write_text('{"tip_log": []}', encoding="utf-8")
+        puts = []
+
+        def fake_put(url, headers, json, timeout):
+            puts.append(json)
+            return self.Response(201, {})
+
+        with patch("tip_bot.requests.get", return_value=self.Response(200, [])), \
+             patch("tip_bot.requests.put", side_effect=fake_put):
+            assert github_commit_state("org/repo", str(state_file), "token") is True
+
+        assert "sha" not in puts[0]
 
 
 # ---------------------------------------------------------------------------
