@@ -44,6 +44,13 @@ def get_epoch():
     except Exception as e:
         return {"error": str(e)}
 
+def normalize_miners_payload(data):
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict) and isinstance(data.get("miners"), list):
+        return data["miners"]
+    return None
+
 def print_health(data):
     if "error" in data:
         print(f"❌ Health check failed: {data['error']}")
@@ -58,12 +65,15 @@ def print_miners(data):
     if "error" in data:
         print(f"❌ Failed to fetch miners: {data['error']}")
         return
-    if not isinstance(data, list):
+    miners = normalize_miners_payload(data)
+    if miners is None:
         print(f"⚠ Unexpected response: {data}")
         return
-    print(f"📊 Active miners: {len(data)}")
+    print(f"📊 Active miners: {len(miners)}")
     print("   Recent miners:")
-    for entry in data[:10]:
+    for entry in miners[:10]:
+        if not isinstance(entry, dict):
+            entry = {}
         miner = entry.get('miner', 'unknown')
         hw = entry.get('hardware_type', 'unknown')
         mult = entry.get('antiquity_multiplier', 0)
@@ -73,8 +83,8 @@ def print_miners(data):
         else:
             last_str = 'never'
         print(f"   - {miner:<40} HW: {hw:<25} Multiplier: {mult:<5} Last: {last_str}")
-    if len(data) > 10:
-        print(f"   ... and {len(data)-10} more")
+    if len(miners) > 10:
+        print(f"   ... and {len(miners)-10} more")
 
 def print_epoch(data):
     if "error" in data:
