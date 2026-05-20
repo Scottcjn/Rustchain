@@ -1247,6 +1247,22 @@ if HAVE_BOTTUBE_FEED:
     except Exception as e:
         print(f"[BoTTube Feed] Failed to register feed endpoints: {e}")
 
+
+def _ensure_transfer_ledger_table(db):
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS ledger (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts INTEGER NOT NULL,
+            epoch INTEGER NOT NULL,
+            miner_id TEXT NOT NULL,
+            delta_i64 INTEGER NOT NULL,
+            reason TEXT
+        )
+        """
+    )
+
+
 def init_db():
     """Initialize all database tables"""
     with closing(sqlite3.connect(DB_PATH)) as c:
@@ -1259,6 +1275,7 @@ def init_db():
         c.execute("CREATE TABLE IF NOT EXISTS epoch_enroll (epoch INTEGER, miner_pk TEXT, weight INTEGER, PRIMARY KEY (epoch, miner_pk))")
         ensure_epoch_enroll_integer_weights(c)
         c.execute("CREATE TABLE IF NOT EXISTS balances (miner_pk TEXT PRIMARY KEY, balance_rtc REAL DEFAULT 0)")
+        _ensure_transfer_ledger_table(c)
         ensure_fingerprint_history_table(c)
         ensure_epoch_fingerprint_rotation_table(c)
 
@@ -7748,6 +7765,8 @@ def confirm_pending():
     conn = sqlite3.connect(DB_PATH)
     try:
         c = conn.cursor()
+        _ensure_transfer_ledger_table(c)
+        balance_cols = _balance_columns(c)
         
         # Get all pending transfers ready for confirmation
         ready = c.execute("""
@@ -7759,11 +7778,13 @@ def confirm_pending():
         
         for row in ready:
             pid, from_m, to_m, amount, reason, epoch, tx_hash = row
+            savepoint = f"confirm_pending_{int(pid)}"
             
             try:
+                c.execute(f"SAVEPOINT {savepoint}")
+
                 # Check sender still has sufficient balance
-                bal = c.execute("SELECT amount_i64 FROM balances WHERE miner_id = ?", (from_m,)).fetchone()
-                sender_balance = bal[0] if bal else 0
+                sender_balance = _balance_i64_for_wallet(c, from_m)
                 
                 if sender_balance < amount:
                     # Mark as voided due to insufficient funds
@@ -7773,12 +7794,12 @@ def confirm_pending():
                         WHERE id = ?
                     """, (pid,))
                     errors.append({"id": pid, "error": "insufficient_balance"})
+                    c.execute(f"RELEASE SAVEPOINT {savepoint}")
                     continue
                 
                 # Execute the actual transfer
-                c.execute("INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)", (to_m,))
-                c.execute("UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ?", (amount, from_m))
-                c.execute("UPDATE balances SET amount_i64 = amount_i64 + ?, balance_rtc = (amount_i64 + ?) / 1000000.0 WHERE miner_id = ?", (amount, amount, to_m))
+                _apply_wallet_balance_delta(c, from_m, -amount, balance_cols)
+                _apply_wallet_balance_delta(c, to_m, amount, balance_cols)
                 
                 # Log to IMMUTABLE ledger (the real chain!)
                 c.execute("""
@@ -7797,11 +7818,18 @@ def confirm_pending():
                     SET status = 'confirmed', confirmed_at = ?
                     WHERE id = ?
                 """, (now, pid))
+
+                c.execute(f"RELEASE SAVEPOINT {savepoint}")
                 
                 confirmed_count += 1
                 confirmed_ids.append(pid)
                 
             except Exception as e:
+                try:
+                    c.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+                    c.execute(f"RELEASE SAVEPOINT {savepoint}")
+                except Exception:
+                    pass
                 errors.append({"id": pid, "error": str(e)})
         
         conn.commit()
@@ -8319,6 +8347,85 @@ def _balance_i64_for_wallet(c: sqlite3.Cursor, wallet_id: str) -> int:
             continue
 
     return 0
+
+
+def _balance_columns(c: sqlite3.Cursor) -> set:
+    return {row[1] for row in c.execute("PRAGMA table_info(balances)").fetchall()}
+
+
+def _ensure_wallet_balance_row(c: sqlite3.Cursor, wallet_id: str, balance_cols: set) -> None:
+    if {"miner_id", "amount_i64"}.issubset(balance_cols):
+        if "balance_rtc" in balance_cols:
+            c.execute(
+                "INSERT OR IGNORE INTO balances (miner_id, amount_i64, balance_rtc) VALUES (?, 0, 0)",
+                (wallet_id,),
+            )
+        else:
+            c.execute(
+                "INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)",
+                (wallet_id,),
+            )
+        return
+
+    if {"miner_pk", "balance_rtc"}.issubset(balance_cols):
+        c.execute(
+            "INSERT OR IGNORE INTO balances (miner_pk, balance_rtc) VALUES (?, 0)",
+            (wallet_id,),
+        )
+        return
+
+    if {"miner_id", "balance_rtc"}.issubset(balance_cols):
+        c.execute(
+            "INSERT OR IGNORE INTO balances (miner_id, balance_rtc) VALUES (?, 0)",
+            (wallet_id,),
+        )
+        return
+
+    raise RuntimeError("unsupported balances schema for wallet transfer")
+
+
+def _apply_wallet_balance_delta(
+    c: sqlite3.Cursor,
+    wallet_id: str,
+    delta_i64: int,
+    balance_cols: set,
+) -> None:
+    _ensure_wallet_balance_row(c, wallet_id, balance_cols)
+
+    if {"miner_id", "amount_i64"}.issubset(balance_cols):
+        if "balance_rtc" in balance_cols:
+            c.execute(
+                """
+                UPDATE balances
+                SET amount_i64 = amount_i64 + ?,
+                    balance_rtc = (amount_i64 + ?) / 1000000.0
+                WHERE miner_id = ?
+                """,
+                (delta_i64, delta_i64, wallet_id),
+            )
+        else:
+            c.execute(
+                "UPDATE balances SET amount_i64 = amount_i64 + ? WHERE miner_id = ?",
+                (delta_i64, wallet_id),
+            )
+        return
+
+    delta_rtc = delta_i64 / ACCOUNT_UNIT
+    if {"miner_pk", "balance_rtc"}.issubset(balance_cols):
+        c.execute(
+            "UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk = ?",
+            (delta_rtc, wallet_id),
+        )
+        return
+
+    if {"miner_id", "balance_rtc"}.issubset(balance_cols):
+        c.execute(
+            "UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_id = ?",
+            (delta_rtc, wallet_id),
+        )
+        return
+
+    raise RuntimeError("unsupported balances schema for wallet transfer")
 
 
 
