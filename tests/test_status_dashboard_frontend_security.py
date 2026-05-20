@@ -8,7 +8,7 @@ from pathlib import Path
 PAGE = Path(__file__).resolve().parents[1] / "static" / "status" / "index.html"
 
 
-def run_status_dashboard_probe(payload, assertions: str) -> None:
+def run_status_dashboard_probe(payload, assertions: str, *, ok: bool = True, status: int = 200) -> None:
     script = f"""
     const fs = require('fs');
     const vm = require('vm');
@@ -60,8 +60,8 @@ def run_status_dashboard_probe(payload, assertions: str) -> None:
             createElement: makeElement
         }},
         fetch: async () => ({{
-            ok: true,
-            status: 200,
+            ok: {json.dumps(ok)},
+            status: {status},
             json: async () => ({json.dumps(payload)})
         }}),
         console: {{ error() {{}} }},
@@ -91,6 +91,9 @@ def test_status_dashboard_defines_render_safety_helpers():
     assert "function safeNumber(value, fallback = '--')" in html
     assert "function safeArray(value)" in html
     assert "function safeObject(value)" in html
+    assert "function isValidNode(value)" in html
+    assert "function formatTimestamp(value)" in html
+    assert "function renderUnavailable(grid)" in html
 
 
 def test_status_dashboard_escapes_node_status_fields_before_inner_html():
@@ -150,8 +153,10 @@ def test_status_dashboard_handles_malformed_history_rows():
         [
             {"time": "2026-05-20T00:00:00Z", "nodes": None},
             {
-                "time": "2026-05-20T00:01:00Z",
+                "time": "bad",
                 "nodes": [
+                    None,
+                    ["bad"],
                     {
                         "name": "<img src=x onerror=alert(1)>",
                         "url": "https://node.example/health",
@@ -171,5 +176,27 @@ def test_status_dashboard_handles_malformed_history_rows():
         if (!nodeGrid.children[0].innerHTML.includes('status-dot up')) {
             throw new Error('safe status class was not rendered');
         }
+        if (lastUpdate.innerText !== 'LAST_UPDATE: unavailable') {
+            throw new Error('invalid timestamp should render unavailable');
+        }
         """,
+    )
+
+
+def test_status_dashboard_renders_empty_state_for_fetch_failures():
+    run_status_dashboard_probe(
+        {},
+        """
+        if (nodeGrid.children.length !== 1) {
+            throw new Error('expected one empty-state card');
+        }
+        if (nodeGrid.children[0].textContent !== 'No node status data available') {
+            throw new Error('missing empty-state message');
+        }
+        if (lastUpdate.innerText !== 'LAST_UPDATE: unavailable') {
+            throw new Error('missing unavailable timestamp');
+        }
+        """,
+        ok=False,
+        status=404,
     )
