@@ -43,6 +43,9 @@ MAX_POOL_SIZE = 10_000
 # Anti-UTXO-bloat: maximum outputs per transaction
 # Without this, a single tx creates unlimited outputs, bloating the UTXO set.
 MAX_OUTPUTS = 100
+MAX_UTXO_ADDRESS_BYTES = 256
+MAX_UTXO_METADATA_BYTES = 8_192
+MAX_MEMPOOL_TX_ID_BYTES = 128
 MAX_TX_AGE_SECONDS = 3_600  # 1 hour mempool expiry
 MAX_SQLITE_INT64 = 2**63 - 1
 P2PK_PREFIX = b'\x00\x08'   # Pay-to-Public-Key proposition prefix
@@ -62,6 +65,14 @@ def _is_nonnegative_int64(value: Any) -> bool:
 def _is_positive_int64(value: Any) -> bool:
     """Return True only for positive int64 amounts."""
     return type(value) is int and 0 < value <= MAX_SQLITE_INT64
+
+
+def _utf8_len(value: str) -> Optional[int]:
+    """Return UTF-8 byte length, or None for unencodable text."""
+    try:
+        return len(value.encode('utf-8'))
+    except UnicodeEncodeError:
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -412,6 +423,9 @@ class UtxoDB:
             address = out.get('address')
             if not isinstance(address, str) or not address.strip():
                 return None
+            address_len = _utf8_len(address)
+            if address_len is None or address_len > MAX_UTXO_ADDRESS_BYTES:
+                return None
 
             val = out.get('value_nrtc')
             if not _is_positive_int64(val):
@@ -422,6 +436,12 @@ class UtxoDB:
             if not isinstance(tokens_json, str):
                 return None
             if not isinstance(registers_json, str):
+                return None
+            tokens_len = _utf8_len(tokens_json)
+            registers_len = _utf8_len(registers_json)
+            if tokens_len is None or tokens_len > MAX_UTXO_METADATA_BYTES:
+                return None
+            if registers_len is None or registers_len > MAX_UTXO_METADATA_BYTES:
                 return None
             try:
                 tokens = json.loads(tokens_json)
@@ -848,7 +868,13 @@ class UtxoDB:
             tx_id = tx.get('tx_id', '')
             # FIX(#2179): Reject empty/whitespace-only tx_id to prevent
             # INSERT OR IGNORE collisions that create orphan input claims.
-            if not tx_id or not tx_id.strip():
+            tx_id_len = _utf8_len(tx_id) if isinstance(tx_id, str) else None
+            if (
+                not isinstance(tx_id, str)
+                or not tx_id.strip()
+                or tx_id_len is None
+                or tx_id_len > MAX_MEMPOOL_TX_ID_BYTES
+            ):
                 if manage_tx:
                     conn.execute("ROLLBACK")
                 return False
