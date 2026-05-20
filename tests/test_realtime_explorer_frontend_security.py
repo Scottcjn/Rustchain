@@ -28,3 +28,19 @@ def test_epoch_notification_does_not_interpolate_websocket_payload_html():
     assert "<strong>Miners:</strong> ${data.miners" not in html
     assert "document.createTextNode(` ${data.total_rtc || 0} RTC`)" in html
     assert "document.createTextNode(` ${data.miners || 0}`)" in html
+
+
+def test_api_numeric_fields_are_formatted_safely():
+    html = REALTIME_EXPLORER.read_text()
+
+    assert "function safeNumber(value, fallback = 0)" in html
+    assert "function formatNumber(value, decimals)" in html
+    assert "${esc(formatNumber(miner.earnings || miner.total_earned, 2))} RTC" in html
+    assert (
+        "document.getElementById('epoch-pot').textContent = "
+        "formatNumber(epoch.pot || epoch.pot_rtc, 2);"
+    ) in html
+    assert "${esc(formatNumber(block.reward, 4))} RTC" in html
+    assert "(miner.earnings || miner.total_earned || 0).toFixed(2)" not in html
+    assert "(epoch.pot || epoch.pot_rtc || 0).toFixed(2)" not in html
+    assert "(block.reward || 0).toFixed(4)" not in html
