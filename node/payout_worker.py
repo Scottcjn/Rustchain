@@ -87,6 +87,54 @@ class PayoutWorker:
                 record_error,
             )
 
+    def lookup_withdrawal_status(self, tx_hash: str) -> Optional[bool]:
+        """Return True if tx is confirmed, False if known failed, None if unknown.
+
+        Production nodes should replace this hook with their chain lookup RPC.
+        Keeping the default as None preserves manual reconciliation semantics
+        without incorrectly marking broadcast withdrawals failed.
+        """
+        return None
+
+    def reconcile_broadcast_withdrawals(self):
+        """Resolve broadcast withdrawals that are waiting on chain reconciliation."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                rows = conn.execute("""
+                    SELECT withdrawal_id, tx_hash
+                    FROM withdrawals
+                    WHERE status = 'processing'
+                    AND tx_hash IS NOT NULL
+                    AND tx_hash != ''
+                """).fetchall()
+
+            for withdrawal_id, tx_hash in rows:
+                chain_status = self.lookup_withdrawal_status(tx_hash)
+                if chain_status is None:
+                    continue
+                with sqlite3.connect(self.db_path) as conn:
+                    if chain_status:
+                        conn.execute("""
+                            UPDATE withdrawals
+                            SET status = 'completed',
+                                processed_at = ?,
+                                error_msg = NULL
+                            WHERE withdrawal_id = ?
+                            AND status = 'processing'
+                            AND tx_hash = ?
+                        """, (int(time.time()), withdrawal_id, tx_hash))
+                    else:
+                        conn.execute("""
+                            UPDATE withdrawals
+                            SET status = 'failed',
+                                error_msg = 'Broadcast transaction not found or failed; manual refund required'
+                            WHERE withdrawal_id = ?
+                            AND status = 'processing'
+                            AND tx_hash = ?
+                        """, (withdrawal_id, tx_hash))
+        except Exception as e:
+            logger.error(f"Failed to reconcile broadcast withdrawals: {e}")
+
     def execute_withdrawal(self, withdrawal: Dict) -> Optional[str]:
         """Execute withdrawal transaction"""
         if MOCK_MODE:
@@ -235,37 +283,44 @@ class PayoutWorker:
             return False
 
     def recover_orphans(self):
-        """Recover withdrawals stuck in processing state (e.g. from a crash during execute_withdrawal)."""
+        """Flag withdrawals stuck in processing without assuming safe refund.
+
+        A ``processing`` row with no tx_hash is ambiguous: the worker may have
+        crashed before broadcast, or it may have crashed after a successful
+        broadcast but before persisting the tx_hash. Automatically refunding
+        that state can double-pay the miner, so keep the debit in place and
+        require explicit reconciliation evidence before any refund.
+        """
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute("BEGIN IMMEDIATE")
                 rows = conn.execute("""
-                    SELECT withdrawal_id, miner_pk, amount, fee
+                    SELECT withdrawal_id
                     FROM withdrawals
                     WHERE status = 'processing'
+                    AND (tx_hash IS NULL OR tx_hash = '')
                 """).fetchall()
 
-                for row in rows:
-                    withdrawal_id, miner_pk, amount, fee = row
-                    total_refund = amount + (fee or 0)
-
-                    logger.warning(f"Recovering orphaned withdrawal {withdrawal_id} (refunding {total_refund} to {miner_pk})")
-
-                    # Refund the balance
-                    conn.execute(
-                        "UPDATE accounts SET balance = balance + ? WHERE public_key = ?",
-                        (total_refund, miner_pk)
+                for (withdrawal_id,) in rows:
+                    logger.warning(
+                        "Withdrawal %s is processing without tx_hash; "
+                        "leaving debit intact for manual reconciliation",
+                        withdrawal_id,
                     )
-
-                    # Mark as failed
                     conn.execute(
-                        "UPDATE withdrawals SET status = 'failed', error_msg = 'Orphaned processing state recovered' WHERE withdrawal_id = ?",
-                        (withdrawal_id,)
+                        """
+                        UPDATE withdrawals
+                        SET error_msg = 'Processing without tx_hash; manual reconciliation required before refund'
+                        WHERE withdrawal_id = ?
+                        AND status = 'processing'
+                        AND (tx_hash IS NULL OR tx_hash = '')
+                        """,
+                        (withdrawal_id,),
                     )
                 conn.execute("COMMIT")
                 
                 if rows:
-                    logger.info(f"Recovered {len(rows)} orphaned withdrawals.")
+                    logger.info(f"Flagged {len(rows)} ambiguous processing withdrawals for reconciliation.")
                     
         except Exception as e:
             logger.error(f"Failed to recover orphans: {e}")
@@ -299,8 +354,11 @@ class PayoutWorker:
 
         while True:
             try:
-                # Recover orphans before processing new batches to prevent stranded funds
+                # Recover pre-broadcast orphans before processing new batches to prevent stranded funds
                 self.recover_orphans()
+
+                # Reconcile already-broadcast withdrawals that were left in processing state
+                self.reconcile_broadcast_withdrawals()
 
                 # Process batch
                 processed = self.process_batch()
