@@ -16,7 +16,6 @@ import sqlite3
 import math
 import re
 import time
-from datetime import datetime, timezone
 from collections import Counter
 from typing import List, Dict, Optional, Tuple
 
@@ -304,13 +303,14 @@ class VideoDiscovery:
         rows = self._conn.execute(
             """
             SELECT * FROM videos
-            WHERE ',' || tags || ',' LIKE ?
             ORDER BY created_at DESC
-            LIMIT ?
             """,
-            (f"%,{tag},%", limit),
         ).fetchall()
-        return [dict(r) for r in rows]
+        return [
+            dict(r)
+            for r in rows
+            if tag in {t for t in r["tags"].split(",") if t}
+        ][:limit]
 
     def get_by_agent(self, agent_id: str, limit: int = 20) -> List[Dict]:
         """Return videos uploaded by *agent_id*."""
