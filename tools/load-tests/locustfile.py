@@ -12,8 +12,11 @@ Usage:
         locust -f locustfile.py --host https://50.28.86.131
 """
 
-from locust import HttpUser, task, between, events
-import urllib3, time, json, os
+import json
+import os
+
+import urllib3
+from locust import HttpUser, between, events, task
 
 # The production node uses a self-signed cert
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -22,6 +25,18 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # Optional: miner ID for the balance endpoint (override via env var)
 # ---------------------------------------------------------------------------
 MINER_ID = os.getenv("RUSTCHAIN_MINER_ID", "Ivan-houzhiwen")
+
+
+def _json_or_fail(response):
+    try:
+        body = response.json()
+    except ValueError:
+        response.failure("invalid JSON response")
+        return None
+    if not isinstance(body, dict):
+        response.failure("JSON response must be an object")
+        return None
+    return body
 
 
 class RustChainUser(HttpUser):
@@ -36,8 +51,8 @@ class RustChainUser(HttpUser):
     def health(self):
         with self.client.get("/health", verify=False, catch_response=True) as r:
             if r.status_code == 200:
-                body = r.json()
-                if body.get("ok") is not True:
+                body = _json_or_fail(r)
+                if body is not None and body.get("ok") is not True:
                     r.failure("health.ok is not True")
             else:
                 r.failure(f"status {r.status_code}")
@@ -49,8 +64,8 @@ class RustChainUser(HttpUser):
     def epoch(self):
         with self.client.get("/epoch", verify=False, catch_response=True) as r:
             if r.status_code == 200:
-                body = r.json()
-                if "epoch" not in body:
+                body = _json_or_fail(r)
+                if body is not None and "epoch" not in body:
                     r.failure("missing 'epoch' key")
             else:
                 r.failure(f"status {r.status_code}")
@@ -84,8 +99,8 @@ class RustChainUser(HttpUser):
             catch_response=True,
         ) as r:
             if r.status_code == 200:
-                body = r.json()
-                if "amount_rtc" not in body:
+                body = _json_or_fail(r)
+                if body is not None and "amount_rtc" not in body:
                     r.failure("missing 'amount_rtc' key")
             else:
                 r.failure(f"status {r.status_code}")
