@@ -398,16 +398,33 @@ class RustChainPoller:
 
     def _check_miners(self):
         miners_data = self._get("/api/miners")
-        if miners_data is None or not isinstance(miners_data, list):
+        if isinstance(miners_data, list):
+            miners = miners_data
+        elif isinstance(miners_data, dict):
+            miners = miners_data.get("miners") or miners_data.get("data") or []
+        else:
             return
-        current_miners = {m["miner"] for m in miners_data if "miner" in m}
+        if not isinstance(miners, list):
+            return
+        current_miners = {
+            miner_id
+            for miner_id in ((m.get("miner") or m.get("miner_id") or m.get("id")) for m in miners if isinstance(m, dict))
+            if miner_id
+        }
 
         if self._prev_miners:
             joined = current_miners - self._prev_miners
             left = self._prev_miners - current_miners
 
             for miner_id in joined:
-                miner_info = next((m for m in miners_data if m.get("miner") == miner_id), {})
+                miner_info = next(
+                    (
+                        m for m in miners
+                        if isinstance(m, dict)
+                        and (m.get("miner") or m.get("miner_id") or m.get("id")) == miner_id
+                    ),
+                    {},
+                )
                 dispatch_event(WebhookEvent(
                     event_type="miner_joined",
                     timestamp=time.time(),
