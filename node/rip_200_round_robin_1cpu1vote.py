@@ -13,10 +13,10 @@ Key Changes:
 4. Time-aging: Vintage hardware advantage decays over blockchain lifetime
 """
 
+import contextlib
 import json
 import logging
 import sqlite3
-import time
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import List, Tuple, Dict
 
@@ -587,7 +587,7 @@ def calculate_epoch_rewards_time_aged(
     epoch_start_ts = GENESIS_TIMESTAMP + (epoch_start_slot * BLOCK_TIME)
     epoch_end_ts = GENESIS_TIMESTAMP + (epoch_end_slot * BLOCK_TIME)
 
-    with sqlite3.connect(db_path) as conn:
+    with contextlib.closing(sqlite3.connect(db_path)) as conn:
         cursor = conn.cursor()
 
         # Schema compatibility: detect whether fingerprint_checks_json column exists
@@ -746,7 +746,7 @@ if __name__ == "__main__":
         g5_share = 0 if total_weight == 0 else (g5_mult / total_weight) * total_reward
         modern_share = 0 if total_weight == 0 else (modern_mult / total_weight) * total_reward
 
-        print(f"\nReward distribution (1.5 RTC total):")
+        print("\nReward distribution (1.5 RTC total):")
         print(f"  G4: {g4_share / 100_000_000:.6f} RTC ({g4_share/total_reward*100:.1f}%)")
         print(f"  G5: {g5_share / 100_000_000:.6f} RTC ({g5_share/total_reward*100:.1f}%)")
         print(f"  Modern: {modern_share / 100_000_000:.6f} RTC ({modern_share/total_reward*100:.1f}%)")
