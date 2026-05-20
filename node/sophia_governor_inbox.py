@@ -215,11 +215,28 @@ def _review_health_targets() -> list[str]:
     return deduped
 
 
-def _bearer_tokens() -> set[str]:
+def _bearer_tokens() -> list[str]:
     raw = os.getenv("SOPHIA_GOVERNOR_INBOX_BEARER", "").strip()
     if not raw:
-        return set()
-    return {token.strip() for token in raw.split(",") if token.strip()}
+        return []
+    tokens: list[str] = []
+    seen: set[str] = set()
+    for part in raw.split(","):
+        token = part.strip()
+        if token and token not in seen:
+            tokens.append(token)
+            seen.add(token)
+    return tokens
+
+
+def _matches_bearer_token(provided_bearer: str, required_bearers: list[str]) -> bool:
+    if not provided_bearer or not required_bearers:
+        return False
+    matched = False
+    for required_bearer in required_bearers:
+        if hmac.compare_digest(provided_bearer, required_bearer):
+            matched = True
+    return matched
 
 
 def _is_authorized(req) -> bool:
@@ -233,7 +250,7 @@ def _is_authorized(req) -> bool:
     auth_header = (req.headers.get("Authorization") or "").strip()
     if auth_header.lower().startswith("bearer "):
         provided_bearer = auth_header.split(" ", 1)[1].strip()
-        if provided_bearer and provided_bearer in required_bearers:
+        if _matches_bearer_token(provided_bearer, required_bearers):
             return True
 
     return False

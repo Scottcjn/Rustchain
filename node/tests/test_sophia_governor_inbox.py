@@ -156,6 +156,39 @@ def test_admin_auth_uses_constant_time_compare(client, monkeypatch):
     ]
 
 
+def test_bearer_auth_uses_constant_time_compare(client, monkeypatch):
+    """Bearer-gated inbox endpoints compare configured tokens with hmac.compare_digest."""
+    calls = []
+
+    def spy_compare_digest(provided, expected):
+        calls.append((provided, expected))
+        return provided == expected
+
+    monkeypatch.setenv("SOPHIA_GOVERNOR_INBOX_BEARER", "review-token, other-token")
+    monkeypatch.setattr(sophia_governor_inbox.hmac, "compare_digest", spy_compare_digest)
+
+    denied = client.post(
+        "/api/sophia/governor/ingest",
+        headers={"Authorization": "Bearer wrong-token"},
+        json=_sample_envelope(),
+    )
+    assert denied.status_code == 401
+
+    accepted = client.post(
+        "/api/sophia/governor/ingest",
+        headers={"Authorization": "Bearer review-token"},
+        json=_sample_envelope(),
+    )
+    assert accepted.status_code == 202
+
+    assert calls == [
+        ("wrong-token", "review-token"),
+        ("wrong-token", "other-token"),
+        ("review-token", "review-token"),
+        ("review-token", "other-token"),
+    ]
+
+
 def test_ingest_and_list_endpoints(client):
     response = client.post(
         "/api/sophia/governor/ingest",
