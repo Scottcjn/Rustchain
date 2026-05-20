@@ -8554,7 +8554,7 @@ BEACON_RATE_LIMIT  = 60
 @app.route("/beacon/submit", methods=["POST"])
 def beacon_submit():
     data = request.get_json(silent=True)
-    if not data:
+    if not isinstance(data, dict) or not data:
         return jsonify({"ok": False, "error": "invalid_json"}), 400
     agent_id = data.get("agent_id", "")
     kind = data.get("kind", "")
