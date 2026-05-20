@@ -23,7 +23,7 @@ MINER_ARTIFACTS = {
     },
     "Darwin": {
         "url": "https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/macos/rustchain_mac_miner_v2.5.py",
-        "sha256": "dbc02277fb8ed6b9272532f882f2f7cc7b0f54abeb30ad25d01c457abff046b6",
+        "sha256": "163fafcf751d8fbd41bf936facaeb366c042f467fa34b79f2c4c0a45472ef70f",
     },
     "Windows": {
         "url": "https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/windows/rustchain_windows_miner.py",
@@ -87,7 +87,7 @@ class MinerSetup:
                 result = subprocess.run(["sysctl", "hw.memsize"], capture_output=True, text=True)
                 if result.returncode == 0:
                     hardware_info["memory_mb"] = int(result.stdout.split(":")[1].strip()) // (1024 * 1024)
-        except:
+        except Exception:
             pass
             
         # Basic GPU detection
@@ -100,7 +100,7 @@ class MinerSetup:
                 result = subprocess.run(["wmic", "path", "win32_VideoController", "get", "name"], capture_output=True, text=True)
                 if result.returncode == 0 and len(result.stdout.strip().split('\n')) > 2:
                     hardware_info["gpu_available"] = True
-        except:
+        except Exception:
             pass
             
         self.log(f"CPU Cores: {hardware_info['cpu_cores']}")
