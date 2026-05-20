@@ -1,11 +1,29 @@
 #!/usr/bin/env python3
 """Raw Ergo TX builder - simplified version."""
-import os, json, sqlite3, time, requests
+import json
+import os
+import sqlite3
 from hashlib import blake2b
+
+import requests
 
 ERGO_NODE = "http://localhost:9053"
 ERGO_API_KEY = os.environ.get("ERGO_API_KEY", "")
 DB_PATH = "/root/rustchain/rustchain_v2.db"
+
+def response_json_object(resp):
+    try:
+        body = resp.json()
+    except ValueError:
+        return {}
+    return body if isinstance(body, dict) else {}
+
+def response_json_list(resp):
+    try:
+        body = resp.json()
+    except ValueError:
+        return []
+    return body if isinstance(body, list) else []
 
 def encode_coll_byte(hex_str):
     data = bytes.fromhex(hex_str)
@@ -34,14 +52,19 @@ class RawTxBuilder:
     def get_unspent_box(self, min_value=2000000):
         resp = self.session.get(ERGO_NODE + "/wallet/boxes/unspent?minConfirmations=0")
         if resp.status_code == 200:
-            for b in resp.json():
-                if b.get("box", {}).get("value", 0) >= min_value:
+            for b in response_json_list(resp):
+                if not isinstance(b, dict):
+                    continue
+                box = b.get("box", {})
+                if not isinstance(box, dict):
+                    continue
+                if box.get("value", 0) >= min_value:
                     return b
         return None
     
     def get_current_height(self):
         resp = self.session.get(ERGO_NODE + "/info")
-        return resp.json().get("fullHeight", 0) if resp.status_code == 200 else 0
+        return response_json_object(resp).get("fullHeight", 0) if resp.status_code == 200 else 0
     
     def get_recent_miners(self, limit=10):
         conn = sqlite3.connect(DB_PATH)
@@ -82,9 +105,6 @@ class RawTxBuilder:
         print("Total out+fee: " + str(min_box + change_value + fee))
         print("Commitment: " + commitment[:32] + "...")
         
-        # Minimal registers
-        miner_str = ",".join(m.get("miner", "")[:6] for m in miners[:5])
-        
         registers = {
             "R4": encode_coll_byte(commitment),
             "R5": encode_int_reg(len(miners))
@@ -116,7 +136,9 @@ class RawTxBuilder:
         if sign_resp.status_code != 200:
             return {"success": False, "error": "Sign: " + sign_resp.text[:100]}
         
-        signed_tx = sign_resp.json()
+        signed_tx = response_json_object(sign_resp)
+        if not signed_tx:
+            return {"success": False, "error": "Sign: invalid response"}
         
         # Debug: print signed tx values
         print("Signed TX outputs:")
