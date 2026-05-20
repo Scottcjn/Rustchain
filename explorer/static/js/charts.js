@@ -79,8 +79,18 @@ class ChartRenderer {
         return this.asArray(this.data).map(value => this.numericValue(value));
     }
 
+    isSliceObject(item) {
+        return item && typeof item === 'object' && !Array.isArray(item);
+    }
+
     getSliceValue(item) {
-        return Math.max(0, this.numericValue(item && item.value));
+        if (!this.isSliceObject(item)) return 0;
+        return Math.max(0, this.numericValue(item.value));
+    }
+
+    getSliceLabel(item) {
+        if (!this.isSliceObject(item) || item.label == null) return '';
+        return String(item.label);
     }
 
     /**
@@ -92,7 +102,7 @@ class ChartRenderer {
         if (this.options.animation) {
             this.animate();
         } else {
-            this.data = newData;
+            this.data = this.targetData;
             this.render();
         }
     }
@@ -395,7 +405,7 @@ class ChartRenderer {
             this.ctx.font = '12px sans-serif';
             this.ctx.textAlign = 'center';
             this.ctx.textBaseline = 'middle';
-            this.ctx.fillText(item.label || '', labelX, labelY);
+            this.ctx.fillText(this.getSliceLabel(item), labelX, labelY);
 
             startAngle += sliceAngle;
         });
@@ -446,23 +456,30 @@ class ChartRenderer {
         const itemHeight = 20;
         const itemWidth = 100;
 
-        if (!this.data.length || !this.data[0].label) return;
+        const items = this.asArray(this.data);
+        const legendItems = items
+            .map((item, index) => ({
+                label: this.getSliceLabel(item),
+                colorIndex: index
+            }))
+            .filter(item => item.label);
+        if (legendItems.length === 0) return;
 
         this.ctx.font = '12px sans-serif';
         
-        this.data.forEach((item, index) => {
+        legendItems.forEach((item, index) => {
             const x = padding;
             const y = padding + index * (itemHeight + 5);
             
             // Draw color box
-            this.ctx.fillStyle = colors[index % colors.length];
+            this.ctx.fillStyle = colors[item.colorIndex % colors.length];
             this.ctx.fillRect(x, y, 12, 12);
             
             // Draw label
             this.ctx.fillStyle = '#e8eaed';
             this.ctx.textAlign = 'left';
             this.ctx.textBaseline = 'middle';
-            this.ctx.fillText(item.label || '', x + 18, y + 6);
+            this.ctx.fillText(item.label, x + 18, y + 6);
         });
     }
 
