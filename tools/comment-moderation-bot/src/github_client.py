@@ -75,6 +75,75 @@ class GitHubClient:
             )
             return response
 
+    @staticmethod
+    def _json_object(data: Any, context: str) -> dict[str, Any]:
+        if not isinstance(data, dict):
+            raise ValueError(f"{context} response must be a JSON object")
+        return data
+
+    @staticmethod
+    def _json_list(data: Any, context: str) -> list[Any]:
+        if not isinstance(data, list):
+            raise ValueError(f"{context} response must be a JSON array")
+        return data
+
+    @staticmethod
+    def _required_str(data: dict[str, Any], field: str, context: str) -> str:
+        value = data.get(field)
+        if not isinstance(value, str):
+            raise ValueError(f"{context} response field {field!r} must be a string")
+        return value
+
+    @staticmethod
+    def _required_int(data: dict[str, Any], field: str, context: str) -> int:
+        value = data.get(field)
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise ValueError(f"{context} response field {field!r} must be an integer")
+        return value
+
+    @classmethod
+    def _parse_comment(cls, data: Any, context: str) -> CommentData:
+        obj = cls._json_object(data, context)
+        user = cls._json_object(obj.get("user"), context)
+        body = obj.get("body")
+        if body is None:
+            body = ""
+        elif not isinstance(body, str):
+            raise ValueError(f"{context} response field 'body' must be a string or null")
+
+        return CommentData(
+            id=cls._required_int(obj, "id", context),
+            body=body,
+            author_login=cls._required_str(user, "login", context),
+            author_association=cls._required_str(obj, "author_association", context),
+            created_at=cls._required_str(obj, "created_at", context),
+            updated_at=cls._required_str(obj, "updated_at", context),
+            issue_url=cls._required_str(obj, "issue_url", context),
+            html_url=cls._required_str(obj, "html_url", context),
+        )
+
+    @classmethod
+    def _parse_issue(cls, data: Any, context: str) -> IssueData:
+        obj = cls._json_object(data, context)
+        labels = cls._json_list(obj.get("labels", []), context)
+        label_names = []
+        for label in labels:
+            label_obj = cls._json_object(label, context)
+            label_names.append(cls._required_str(label_obj, "name", context))
+
+        comments_count = obj.get("comments", 0)
+        if not isinstance(comments_count, int) or isinstance(comments_count, bool):
+            raise ValueError(f"{context} response field 'comments' must be an integer")
+
+        return IssueData(
+            number=cls._required_int(obj, "number", context),
+            title=cls._required_str(obj, "title", context),
+            state=cls._required_str(obj, "state", context),
+            labels=label_names,
+            created_at=cls._required_str(obj, "created_at", context),
+            comments_count=comments_count,
+        )
+
     async def get_comment(
         self, repo_owner: str, repo_name: str, comment_id: int, installation_id: int
     ) -> CommentData:
@@ -95,16 +164,7 @@ class GitHubClient:
         response.raise_for_status()
         data = response.json()
 
-        return CommentData(
-            id=data["id"],
-            body=data["body"] or "",
-            author_login=data["user"]["login"],
-            author_association=data["author_association"],
-            created_at=data["created_at"],
-            updated_at=data["updated_at"],
-            issue_url=data["issue_url"],
-            html_url=data["html_url"],
-        )
+        return self._parse_comment(data, "GitHub comment")
 
     async def delete_comment(
         self, repo_owner: str, repo_name: str, comment_id: int, installation_id: int
@@ -147,14 +207,7 @@ class GitHubClient:
         response.raise_for_status()
         data = response.json()
 
-        return IssueData(
-            number=data["number"],
-            title=data["title"],
-            state=data["state"],
-            labels=[label["name"] for label in data.get("labels", [])],
-            created_at=data["created_at"],
-            comments_count=data.get("comments", 0),
-        )
+        return self._parse_issue(data, "GitHub issue")
 
     async def get_issue_comments(
         self,
@@ -189,24 +242,13 @@ class GitHubClient:
                 params={"per_page": per_page, "page": page},
             )
             response.raise_for_status()
-            page_data = response.json()
+            page_data = self._json_list(response.json(), "GitHub issue comments")
 
             if not page_data:
                 break
 
             for data in page_data:
-                comments.append(
-                    CommentData(
-                        id=data["id"],
-                        body=data["body"] or "",
-                        author_login=data["user"]["login"],
-                        author_association=data["author_association"],
-                        created_at=data["created_at"],
-                        updated_at=data["updated_at"],
-                        issue_url=data["issue_url"],
-                        html_url=data["html_url"],
-                    )
-                )
+                comments.append(self._parse_comment(data, "GitHub issue comment"))
 
             page += 1
 
@@ -231,8 +273,15 @@ class GitHubClient:
         if response.status_code != 200:
             return []
 
-        data = response.json()
-        return [org["login"] for org in data]
+        data = self._json_list(response.json(), "GitHub user organizations")
+        return [
+            self._required_str(
+                self._json_object(org, "GitHub user organization"),
+                "login",
+                "GitHub user organization",
+            )
+            for org in data
+        ]
 
     async def check_user_permission_level(
         self,
@@ -261,5 +310,5 @@ class GitHubClient:
         if response.status_code != 200:
             return "none"
 
-        data = response.json()
+        data = self._json_object(response.json(), "GitHub permission")
         return data.get("permission", "none")

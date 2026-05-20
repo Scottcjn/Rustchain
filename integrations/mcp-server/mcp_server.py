@@ -102,6 +102,17 @@ class MinerInfo:
     status: str
 
 
+def normalize_miner_rows(payload: Any) -> list[dict[str, Any]]:
+    """Return miner rows from current and legacy /api/miners response shapes."""
+    if isinstance(payload, list):
+        rows = payload
+    elif isinstance(payload, dict):
+        rows = payload.get("miners") or payload.get("data") or payload.get("items") or []
+    else:
+        return []
+    return [row for row in rows if isinstance(row, dict)]
+
+
 @dataclass
 class BlockInfo:
     epoch: int
@@ -660,14 +671,16 @@ class RustChainMCP:
             if resp.status != 200:
                 return {"error": f"API error: {resp.status}", "miner_id": miner_id}
 
-            miners = await resp.json()
+            miners = normalize_miner_rows(await resp.json())
 
             # Search for matching miner
-            for miner in miners.get("miners", []):
+            for miner in miners:
                 if (
-                    miner.get("miner_id") == miner_id
+                    miner.get("miner") == miner_id
+                    or miner.get("miner_id") == miner_id
                     or miner.get("wallet") == miner_id
                     or miner.get("id") == miner_id
+                    or miner.get("name") == miner_id
                 ):
                     return {"found": True, "miner": miner}
 
@@ -753,14 +766,14 @@ class RustChainMCP:
             if resp.status != 200:
                 return {"error": f"API error: {resp.status}"}
 
-            data = await resp.json()
-            miners = data.get("miners", [])
+            miners = normalize_miner_rows(await resp.json())
 
             # Apply filters
             if hardware_type:
 
                 def matches_hardware(m):
-                    return hardware_type.lower() in m.get("hardware", "").lower()
+                    hardware = m.get("hardware") or m.get("hardware_type") or ""
+                    return hardware_type.lower() in str(hardware).lower()
 
                 miners = [m for m in miners if matches_hardware(m)]
 

@@ -12,12 +12,20 @@ Usage:
 """
 
 import argparse
-import json
-import sys
 import requests
 from datetime import datetime
 
 NODE_URL = "https://rustchain.org"
+
+def normalize_miners_payload(data):
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        for key in ("miners", "data", "items"):
+            miners = data.get(key)
+            if isinstance(miners, list):
+                return miners
+    return data
 
 def check_health():
     try:
@@ -32,7 +40,7 @@ def get_miners():
     try:
         resp = requests.get(f"{NODE_URL}/api/miners", timeout=10)
         resp.raise_for_status()
-        return resp.json()
+        return normalize_miners_payload(resp.json())
     except Exception as e:
         return {"error": str(e)}
 
@@ -48,7 +56,7 @@ def print_health(data):
     if "error" in data:
         print(f"❌ Health check failed: {data['error']}")
         return
-    print(f"✅ Node is healthy")
+    print("✅ Node is healthy")
     print(f"   Version: {data.get('version')}")
     print(f"   Uptime: {data.get('uptime_s')}s ({data.get('uptime_s')/3600:.1f} hours)")
     print(f"   Backup age: {data.get('backup_age_hours'):.2f} hours")
@@ -100,12 +108,14 @@ def main():
     if args.health or show_all:
         health = check_health()
         print_health(health)
-        if show_all: print()
+        if show_all:
+            print()
 
     if args.miners or show_all:
         miners = get_miners()
         print_miners(miners)
-        if show_all: print()
+        if show_all:
+            print()
 
     if args.epoch or show_all:
         epoch = get_epoch()

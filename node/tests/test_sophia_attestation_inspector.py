@@ -10,6 +10,40 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import sophia_attestation_inspector
 
 
+class _FakeResponse:
+    status_code = 200
+
+    def __init__(self, payload):
+        self._payload = payload
+
+    def json(self):
+        return self._payload
+
+
+def test_llm_fallback_continues_after_non_object_json(monkeypatch):
+    posts = iter([
+        _FakeResponse(["not", "an", "object"]),
+        _FakeResponse({"response": "approved"}),
+    ])
+
+    def fake_post(*args, **kwargs):
+        return next(posts)
+
+    monkeypatch.setattr(sophia_attestation_inspector.requests, "post", fake_post)
+
+    assert sophia_attestation_inspector._call_ollama("inspect", endpoint="http://llm") == "approved"
+
+
+def test_deep_model_rejects_non_object_json(monkeypatch):
+    monkeypatch.setattr(
+        sophia_attestation_inspector.requests,
+        "post",
+        lambda *args, **kwargs: _FakeResponse([{"text": "not an object"}]),
+    )
+
+    assert sophia_attestation_inspector._call_deep_model("inspect deeply") is None
+
+
 def test_sophia_inspector_admin_auth_uses_constant_time_compare(monkeypatch):
     app = Flask(__name__)
     app.config["TESTING"] = True

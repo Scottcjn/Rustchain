@@ -107,6 +107,18 @@
       return escapeHtml(value ?? fallback);
     }
 
+    function normalizeMinerRows(payload) {
+      const rows = Array.isArray(payload)
+        ? payload
+        : (payload?.miners || payload?.data || payload?.items || []);
+
+      return rows.filter(row => row && typeof row === 'object');
+    }
+
+    function minerArch(row) {
+      return row.device_arch || row.arch || row.device_family || row.family || row.machine || 'unknown';
+    }
+
     async function fetchJson(url) {
       const r = await fetch(url, { cache: 'no-store' });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -287,12 +299,12 @@
 
       try {
         const miners = await fetchJson(`${base}/api/miners`);
-        const list = Array.isArray(miners) ? miners : (miners.miners || []);
+        const list = normalizeMinerRows(miners);
         document.getElementById('minerCount').textContent = String(list.length);
 
         const counts = {};
         for (const m of list) {
-          const key = m.arch || m.family || m.machine || 'unknown';
+          const key = minerArch(m);
           counts[key] = (counts[key] || 0) + 1;
         }
         const total = list.length || 1;

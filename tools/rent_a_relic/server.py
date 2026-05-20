@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import math
 import os
 import sqlite3
 import time
@@ -58,10 +59,13 @@ def _get_json_object_or_empty() -> dict:
 
 def _optional_string_value(data: dict, key: str) -> str | None:
     value = data.get(key)
-    if value is None or value == "":
+    if value is None:
         return None
     if not isinstance(value, str):
         abort(400, description=f"{key} must be a string")
+    value = value.strip()
+    if value == "":
+        return None
     return value
 
 
@@ -281,9 +285,17 @@ def post_reserve():
     duration_hours = data.get("duration_hours")
     rtc_amount     = data.get("rtc_amount")
 
+    if isinstance(duration_hours, bool):
+        abort(400, description="duration_hours must be one of [1, 4, 24]")
     if duration_hours not in VALID_DURATIONS_HOURS:
         abort(400, description=f"duration_hours must be one of {sorted(VALID_DURATIONS_HOURS)}")
-    if rtc_amount is None or not isinstance(rtc_amount, (int, float)) or rtc_amount <= 0:
+    if (
+        rtc_amount is None
+        or isinstance(rtc_amount, bool)
+        or not isinstance(rtc_amount, (int, float))
+        or not math.isfinite(rtc_amount)
+        or rtc_amount <= 0
+    ):
         abort(400, description="rtc_amount must be a positive number")
 
     machine = MACHINE_REGISTRY.get(machine_id)

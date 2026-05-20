@@ -3,6 +3,7 @@ import time
 import json
 import os
 from datetime import datetime
+from pathlib import Path
 
 # Node configuration
 NODES = [
@@ -12,7 +13,7 @@ NODES = [
     {"name": "Node 4", "url": "http://38.76.217.189:8099/health", "location": "Hong Kong"},
 ]
 
-DATA_FILE = "node_status.json"
+DATA_FILE = str(Path(__file__).with_name("node_status.json"))
 
 def check_nodes():
     results = []

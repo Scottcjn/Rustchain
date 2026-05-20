@@ -111,3 +111,45 @@ def test_bcos_attest_stores_matching_commitment(tmp_path, monkeypatch):
     verify_response = app.test_client().get("/bcos/verify/BCOS-valid")
     assert verify_response.status_code == 200
     assert verify_response.get_json()["commitment_valid"] is True
+
+
+def test_bcos_verify_tolerates_corrupt_stored_report(tmp_path):
+    db_path = tmp_path / "bcos.db"
+    with sqlite3.connect(db_path) as conn:
+        init_bcos_table(conn)
+        conn.execute(
+            """
+            INSERT INTO bcos_attestations (
+                cert_id, commitment, repo, commit_sha, tier, trust_score,
+                reviewer, report_json, signature, signer_pubkey, anchored_epoch, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "BCOS-corrupt",
+                "0" * 64,
+                "Scottcjn/Rustchain",
+                "abcdef1234567890",
+                "L1",
+                75,
+                "codex-reviewer",
+                "{not-json",
+                None,
+                None,
+                1,
+                1234567890,
+            ),
+        )
+
+    app = Flask(__name__)
+    register_bcos_routes(app, str(db_path))
+    app.config["TESTING"] = True
+
+    verify_response = app.test_client().get("/bcos/verify/BCOS-corrupt")
+
+    assert verify_response.status_code == 200
+    body = verify_response.get_json()
+    assert body["ok"] is True
+    assert body["verified"] is False
+    assert body["commitment_valid"] is False
+    assert body["score_breakdown"] == {}
+    assert body["checks"] == {}

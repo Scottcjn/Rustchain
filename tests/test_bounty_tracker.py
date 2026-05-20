@@ -29,6 +29,17 @@ def make_tracker(tmp_path):
     return module, tracker
 
 
+class FakeResponse:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def json(self):
+        return self._payload
+
+    def raise_for_status(self):
+        return None
+
+
 def test_bounty_round_trips_through_dict():
     module = load_bounty_tracker_module()
     bounty = module.Bounty(
@@ -67,6 +78,57 @@ def test_parse_reward_falls_back_to_bounty_labels(tmp_path):
     assert tracker._parse_reward("", [{"name": "bounty-standard"}]) == 50.0
     assert tracker._parse_reward("", [{"name": "bounty-micro"}]) == 10.0
     assert tracker._parse_reward("", [{"name": "bounty"}]) == 25.0
+
+
+def test_parse_reward_defaults_when_labels_empty(tmp_path):
+    _module, tracker = make_tracker(tmp_path)
+
+    assert tracker._parse_reward("", []) == 25.0
+
+
+def test_scan_bounties_ignores_non_object_search_response(tmp_path):
+    _module, tracker = make_tracker(tmp_path)
+
+    class FakeSession:
+        def get(self, *args, **kwargs):
+            return FakeResponse(["not", "a", "search", "object"])
+
+    tracker.session = FakeSession()
+
+    assert tracker.scan_bounties() == []
+
+
+def test_scan_bounties_skips_malformed_items(tmp_path):
+    module, tracker = make_tracker(tmp_path)
+
+    class FakeSession:
+        def get(self, *args, **kwargs):
+            return FakeResponse(
+                {
+                    "items": [
+                        "bad-row",
+                        {"number": "not-int", "title": "Bad number"},
+                        {
+                            "number": 12,
+                            "title": "Valid bounty",
+                            "body": None,
+                            "labels": [{"name": "bounty-micro"}, "custom-label"],
+                        },
+                    ]
+                }
+            )
+
+    tracker.session = FakeSession()
+
+    assert tracker.scan_bounties() == [
+        module.Bounty(
+            issue_number=12,
+            title="Valid bounty",
+            description="",
+            reward_rtc=10.0,
+            labels=["bounty-micro", "custom-label"],
+        )
+    ]
 
 
 def test_state_transitions_are_persisted(tmp_path):

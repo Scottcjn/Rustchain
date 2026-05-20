@@ -83,3 +83,29 @@ def test_validate_genesis_rejects_mismatched_fingerprint(tmp_path):
     )
 
     assert module.validate_genesis(genesis_path) is False
+
+
+def test_validate_genesis_rejects_non_object_json_without_raising(tmp_path):
+    module = load_module()
+    genesis_path = tmp_path / "genesis.json"
+    genesis_path.write_text(json.dumps(["not", "an", "object"]), encoding="utf-8")
+
+    assert module.validate_genesis(genesis_path) is False
+
+
+def test_validate_genesis_rejects_non_string_fields_without_raising(tmp_path):
+    module = load_module()
+    genesis_path = tmp_path / "genesis.json"
+    genesis_path.write_text(
+        json.dumps({
+            "device": {"model": "PowerMac G4"},
+            "timestamp": ["Mon Jan 01 00:00:00 2001"],
+            "message": "retro proof",
+            "mac_address": 393,
+            "cpu": None,
+            "fingerprint": True,
+        }),
+        encoding="utf-8",
+    )
+
+    assert module.validate_genesis(genesis_path) is False
