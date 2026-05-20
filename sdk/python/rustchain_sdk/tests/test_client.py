@@ -63,7 +63,7 @@ class TestRustChainClientHealth:
     @respx.mock
     async def test_health_returns_dict(self):
         """Health returns a dict."""
-        route = respx.get(f"{DEFAULT_NODE_URL}/health").mock(
+        respx.get(f"{DEFAULT_NODE_URL}/health").mock(
             return_value=httpx.Response(200, json={"status": "ok", "version": "1.0.0"})
         )
         async with RustChainClient() as client:
@@ -75,11 +75,22 @@ class TestRustChainClientHealth:
     @respx.mock
     async def test_health_raises_on_connection_error(self):
         """Connection error raises RustChainError."""
-        route = respx.get(f"{DEFAULT_NODE_URL}/health").mock(
+        respx.get(f"{DEFAULT_NODE_URL}/health").mock(
             side_effect=httpx.ConnectError("Connection refused")
         )
         async with RustChainClient() as client:
             with pytest.raises(ConnectionError):
+                await client.health()
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_health_rejects_non_object_json(self):
+        """Health rejects non-object JSON responses."""
+        respx.get(f"{DEFAULT_NODE_URL}/health").mock(
+            return_value=httpx.Response(200, json=["not", "an", "object"])
+        )
+        async with RustChainClient() as client:
+            with pytest.raises(APIError, match="Expected JSON object response"):
                 await client.health()
 
 
@@ -90,7 +101,7 @@ class TestRustChainClientEpoch:
     @respx.mock
     async def test_get_epoch_returns_dict(self):
         """get_epoch returns epoch info dict."""
-        route = respx.get(f"{DEFAULT_NODE_URL}/epoch").mock(
+        respx.get(f"{DEFAULT_NODE_URL}/epoch").mock(
             return_value=httpx.Response(200, json={
                 "epoch_number": 42,
                 "start_time": 1700000000,
@@ -110,7 +121,7 @@ class TestRustChainClientMiners:
     @respx.mock
     async def test_get_miners_returns_list(self):
         """get_miners returns a list of miner dicts."""
-        route = respx.get(f"{DEFAULT_NODE_URL}/miners").mock(
+        respx.get(f"{DEFAULT_NODE_URL}/miners").mock(
             return_value=httpx.Response(200, json=[
                 {"public_key": "pk1", "score": 100},
                 {"public_key": "pk2", "score": 90},
@@ -125,7 +136,7 @@ class TestRustChainClientMiners:
     @respx.mock
     async def test_get_miners_handles_dict_response(self):
         """get_miners handles miners nested in dict response."""
-        route = respx.get(f"{DEFAULT_NODE_URL}/miners").mock(
+        respx.get(f"{DEFAULT_NODE_URL}/miners").mock(
             return_value=httpx.Response(200, json={
                 "miners": [{"public_key": "pk1", "score": 100}]
             })
@@ -135,6 +146,17 @@ class TestRustChainClientMiners:
         assert isinstance(miners, list)
         assert len(miners) == 1
 
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_get_miners_returns_empty_for_scalar_response(self):
+        """get_miners ignores malformed scalar JSON responses."""
+        respx.get(f"{DEFAULT_NODE_URL}/miners").mock(
+            return_value=httpx.Response(200, json="not-a-list")
+        )
+        async with RustChainClient() as client:
+            miners = await client.get_miners()
+        assert miners == []
+
 
 class TestRustChainClientBalance:
     """Test balance endpoints."""
@@ -143,7 +165,7 @@ class TestRustChainClientBalance:
     @respx.mock
     async def test_get_balance_returns_dict(self):
         """get_balance returns balance info dict."""
-        route = respx.get(f"{DEFAULT_NODE_URL}/wallet/balance").mock(
+        respx.get(f"{DEFAULT_NODE_URL}/wallet/balance").mock(
             return_value=httpx.Response(200, json={
                 "address": "RTCabc123",
                 "balance": 1000,
@@ -222,7 +244,7 @@ class TestRustChainClientTransfer:
     @respx.mock
     async def test_transfer_signed_raises_on_api_error(self):
         """API error raises APIError with status code."""
-        route = respx.post(f"{DEFAULT_NODE_URL}/wallet/transfer/signed").mock(
+        respx.post(f"{DEFAULT_NODE_URL}/wallet/transfer/signed").mock(
             return_value=httpx.Response(400, json={"message": "Invalid signature"})
         )
         async with RustChainClient() as client:
@@ -240,7 +262,7 @@ class TestRustChainClientExplorer:
     @respx.mock
     async def test_explorer_blocks_returns_list(self):
         """explorer_blocks returns list of blocks."""
-        route = respx.get(f"{DEFAULT_NODE_URL}/explorer/blocks").mock(
+        respx.get(f"{DEFAULT_NODE_URL}/explorer/blocks").mock(
             return_value=httpx.Response(200, json=[
                 {"height": 100, "hash": "0x1"},
                 {"height": 99, "hash": "0x2"},
@@ -272,7 +294,7 @@ class TestRustChainClientGovernance:
     @respx.mock
     async def test_list_governance_proposals(self):
         """list_governance_proposals returns list."""
-        route = respx.get(f"{DEFAULT_NODE_URL}/governance/proposals").mock(
+        respx.get(f"{DEFAULT_NODE_URL}/governance/proposals").mock(
             return_value=httpx.Response(200, json=[
                 {"id": 1, "type": "param_change", "status": "active"},
             ])
@@ -286,7 +308,7 @@ class TestRustChainClientGovernance:
     @respx.mock
     async def test_governance_vote_success(self):
         """governance_vote returns vote result."""
-        route = respx.post(f"{DEFAULT_NODE_URL}/governance/vote").mock(
+        respx.post(f"{DEFAULT_NODE_URL}/governance/vote").mock(
             return_value=httpx.Response(200, json={
                 "proposal_id": 1,
                 "vote": "yes",
@@ -310,7 +332,7 @@ class TestRustChainClientAttestation:
     @respx.mock
     async def test_attest_challenge_returns_challenge(self):
         """attest_challenge returns challenge string."""
-        route = respx.post(f"{DEFAULT_NODE_URL}/attestation/challenge").mock(
+        respx.post(f"{DEFAULT_NODE_URL}/attestation/challenge").mock(
             return_value=httpx.Response(200, json={
                 "challenge": "random-challenge-string",
                 "expires_at": 1700010000,
@@ -324,7 +346,7 @@ class TestRustChainClientAttestation:
     @respx.mock
     async def test_attest_submit_success(self):
         """attest_submit returns submission result."""
-        route = respx.post(f"{DEFAULT_NODE_URL}/attestation/submit").mock(
+        respx.post(f"{DEFAULT_NODE_URL}/attestation/submit").mock(
             return_value=httpx.Response(200, json={
                 "status": "attested",
                 "miner_public_key": "pk-hex",
