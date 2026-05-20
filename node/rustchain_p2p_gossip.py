@@ -14,6 +14,7 @@ Designed for 3+ nodes with no single point of failure.
 import hashlib
 import hmac
 import json
+import math
 import os
 import secrets
 import sqlite3
@@ -115,6 +116,12 @@ SYNC_INTERVAL = 30
 MESSAGE_EXPIRY = 300  # 5 minutes
 MAX_INV_BATCH = 1000
 DB_PATH = os.environ.get("RUSTCHAIN_DB", "/root/rustchain/rustchain_v2.db")
+MAX_GOSSIP_PAYLOAD_BYTES = 1024 * 1024
+MAX_GOSSIP_PAYLOAD_KEYS = 1024
+MAX_GOSSIP_PAYLOAD_ARRAY_ITEMS = 1024
+MAX_GOSSIP_PAYLOAD_DEPTH = 12
+MAX_GOSSIP_PAYLOAD_STRING_LENGTH = 8192
+MAX_GOSSIP_PAYLOAD_NODES = 10000
 
 
 MIN_P2P_PROTOCOL_VERSION = 1
@@ -171,6 +178,52 @@ _HANDSHAKE_FIELDS = (
     "ping_interval",
     "timeout",
 )
+
+
+def _validate_gossip_payload_bounds(payload: Dict[str, Any]) -> None:
+    """Validate payload shape before canonical signature serialization."""
+    nodes_seen = 0
+
+    def visit(value: Any, depth: int) -> None:
+        nonlocal nodes_seen
+        nodes_seen += 1
+        if nodes_seen > MAX_GOSSIP_PAYLOAD_NODES:
+            raise ValueError("invalid gossip message payload nodes")
+        if depth > MAX_GOSSIP_PAYLOAD_DEPTH:
+            raise ValueError("invalid gossip message payload depth")
+
+        if isinstance(value, dict):
+            if len(value) > MAX_GOSSIP_PAYLOAD_KEYS:
+                raise ValueError("invalid gossip message payload keys")
+            for key, child in value.items():
+                if (
+                    not isinstance(key, str)
+                    or not key
+                    or len(key) > MAX_GOSSIP_PAYLOAD_STRING_LENGTH
+                ):
+                    raise ValueError("invalid gossip message payload key")
+                visit(child, depth + 1)
+            return
+
+        if isinstance(value, list):
+            if len(value) > MAX_GOSSIP_PAYLOAD_ARRAY_ITEMS:
+                raise ValueError("invalid gossip message payload array")
+            for child in value:
+                visit(child, depth + 1)
+            return
+
+        if isinstance(value, str) and len(value) > MAX_GOSSIP_PAYLOAD_STRING_LENGTH:
+            raise ValueError("invalid gossip message payload string")
+        if isinstance(value, float) and not math.isfinite(value):
+            raise ValueError("invalid gossip message payload number")
+
+    visit(payload, 0)
+    try:
+        encoded = json.dumps(payload, sort_keys=True, allow_nan=False)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("invalid gossip message payload") from exc
+    if len(encoded.encode("utf-8")) > MAX_GOSSIP_PAYLOAD_BYTES:
+        raise ValueError("invalid gossip message payload size")
 
 
 def local_handshake_params() -> Dict[str, int]:
@@ -342,10 +395,7 @@ class GossipMessage:
         payload = data["payload"]
         if not isinstance(payload, dict):
             raise ValueError("invalid gossip message payload")
-        try:
-            json.dumps(payload, sort_keys=True)
-        except (TypeError, ValueError) as exc:
-            raise ValueError("invalid gossip message payload") from exc
+        _validate_gossip_payload_bounds(payload)
 
         return cls(
             msg_type=msg_type,
