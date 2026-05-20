@@ -221,7 +221,8 @@ def test_check_helpers_handle_raw_dict_and_error_edges(
     assert rustchain_health_module.check_health("https://node.example", 5) == {
         "reachable": True,
         "latency_ms": 10.0,
-        "ok": True,
+        "ok": False,
+        "error": "invalid health payload",
         "raw": "plain health",
     }
     assert rustchain_health_module.check_epoch("https://node.example", 5) == {
@@ -343,4 +344,19 @@ def test_render_reports_healthy_and_unhealthy_snapshots(rustchain_health_module)
 
     assert "UNHEALTHY" in output
     assert "Error: node offline" in output
+    assert "STATUS: ISSUES DETECTED" in output
+
+    malformed_health = copy.deepcopy(snapshot)
+    malformed_health["health"] = {
+        "reachable": True,
+        "latency_ms": 12.2,
+        "ok": False,
+        "error": "invalid health payload",
+        "raw": "plain health",
+    }
+
+    output = rustchain_health_module.render(malformed_health)
+
+    assert "UNHEALTHY" in output
+    assert "Error: invalid health payload" in output
     assert "STATUS: ISSUES DETECTED" in output
