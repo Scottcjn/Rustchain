@@ -1151,6 +1151,38 @@ class TestBridgeCallbackAuth:
         assert response.status_code == 400
         assert response.get_json()["error"] == "Request body required"
 
+    def test_void_bridge_rejects_non_object_json(
+        self, setup_test_db, monkeypatch
+    ):
+        bridge_api = setup_test_db["bridge_api"]
+        client = self._client(bridge_api)
+        monkeypatch.setenv("RC_ADMIN_KEY", "expected-key")
+
+        response = client.post(
+            "/api/bridge/void",
+            headers={"X-Admin-Key": "expected-key"},
+            json=["not", "object"],
+        )
+
+        assert response.status_code == 400
+        assert response.get_json()["error"] == "Request body required"
+
+    def test_update_external_rejects_non_object_json(
+        self, setup_test_db, monkeypatch
+    ):
+        bridge_api = setup_test_db["bridge_api"]
+        client = self._client(bridge_api)
+        monkeypatch.setenv("RC_BRIDGE_API_KEY", "expected-key")
+
+        response = client.post(
+            "/api/bridge/update-external",
+            headers={"X-API-Key": "expected-key"},
+            json=["not", "object"],
+        )
+
+        assert response.status_code == 400
+        assert response.get_json()["error"] == "Request body required"
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
