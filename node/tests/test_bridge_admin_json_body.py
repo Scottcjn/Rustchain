@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """
 Regression test for issue #5766:
 Bridge admin callbacks crash on non-object JSON bodies.
