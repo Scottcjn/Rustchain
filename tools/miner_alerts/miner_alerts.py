@@ -483,10 +483,17 @@ def fetch_miners() -> List[dict]:
         resp.raise_for_status()
         data = resp.json()
         if isinstance(data, list):
-            return data
-        if isinstance(data, dict) and isinstance(data.get("miners"), list):
-            return data["miners"]
-        return []
+            rows = data
+        elif isinstance(data, dict):
+            rows = []
+            for key in ("miners", "data", "items"):
+                value = data.get(key)
+                if isinstance(value, list):
+                    rows = value
+                    break
+        else:
+            rows = []
+        return [row for row in rows if isinstance(row, dict)]
     except Exception as e:
         logger.error(f"Failed to fetch miners: {e}")
         return []
