@@ -13,7 +13,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -452,6 +452,30 @@ class TestFlaskIntegration(unittest.TestCase):
         self.assertFalse(data['success'])
         self.assertIn('error', data)
 
+    def test_generate_badge_rejects_non_object_json(self):
+        """Badge generation should reject JSON arrays without raising 500."""
+        response = self.post_generate_badge(['not', 'an', 'object'])
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertFalse(data['success'])
+        self.assertEqual(data['error'], 'JSON object body is required')
+
+    def test_generate_badge_rejects_non_string_repo_name(self):
+        """Non-string repo names should fail validation instead of raising 500."""
+        response = self.post_generate_badge(
+            {
+                'repo_name': {'owner': 'test', 'repo': 'repo'},
+                'tier': 'L1',
+                'trust_score': 75,
+            }
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertFalse(data['success'])
+        self.assertEqual(data['error'], 'Repository name is required')
+
     def test_generate_badge_invalid_tier(self):
         """Test badge generation with invalid tier."""
         response = self.post_generate_badge(
@@ -465,6 +489,21 @@ class TestFlaskIntegration(unittest.TestCase):
         data = json.loads(response.data)
         self.assertFalse(data['success'])
         self.assertIn('error', data)
+
+    def test_generate_badge_rejects_non_string_tier(self):
+        """Non-string tiers should fail validation instead of raising 500."""
+        response = self.post_generate_badge(
+            {
+                'repo_name': 'test/repo',
+                'tier': ['L1'],
+                'trust_score': 75,
+            }
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertFalse(data['success'])
+        self.assertEqual(data['error'], 'Invalid tier. Must be L0, L1, or L2')
 
     def test_generate_badge_invalid_score(self):
         """Test badge generation with invalid trust score."""

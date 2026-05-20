@@ -32,18 +32,16 @@ import os
 import re
 import secrets
 import sqlite3
-import subprocess
 import sys
 import time
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict
 
 # Try to import Flask, provide helpful error if missing
 try:
-    from flask import Flask, render_template_string, request, jsonify, send_from_directory
+    from flask import Flask, render_template_string, request, jsonify
 except ImportError:
     print("Flask not installed. Install with: pip install flask", file=sys.stderr)
     sys.exit(1)
@@ -1124,10 +1122,14 @@ def generate_badge():
     if auth_error:
         return auth_error
 
-    data = request.get_json()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'success': False, 'error': 'JSON object body is required'})
 
-    repo_name = data.get('repo_name', '').strip()
-    tier = data.get('tier', 'L1').upper()
+    raw_repo_name = data.get('repo_name', '')
+    repo_name = raw_repo_name.strip() if isinstance(raw_repo_name, str) else ''
+    raw_tier = data.get('tier', 'L1')
+    tier = raw_tier.upper() if isinstance(raw_tier, str) else ''
     raw_trust_score = data.get('trust_score', 75)
     cert_id = data.get('cert_id', '')
     include_qr = data.get('include_qr', False)
