@@ -381,7 +381,7 @@ Rustchain/
 │   └── fingerprint_checks.py       # 硬件验证
 ├── miners/
 │   ├── linux/rustchain_linux_miner.py            # Linux 矿工
-│   └── macos/rustchain_mac_miner_v2.4.py         # macOS 矿工
+│   └── macos/rustchain_mac_miner_v2.5.py         # macOS 矿工
 ├── docs/
 │   ├── RustChain_Whitepaper_*.pdf  # 技术白皮书
 │   └── chain_architecture.md       # 架构文档

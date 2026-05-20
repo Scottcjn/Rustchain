@@ -3,7 +3,7 @@
 ## Supported Platforms
 
 ### Apple Silicon (M1/M2/M3)
-- `rustchain_mac_miner_v2.4.py` - Universal miner with fingerprint attestation
+- `rustchain_mac_miner_v2.5.py` - Universal miner with fingerprint attestation and legacy TLS fallback
 - Multiplier: 0.8x (modern)
 
 ### Intel Mac
