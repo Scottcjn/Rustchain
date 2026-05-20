@@ -622,10 +622,11 @@ function renderSearchResults() {
         return;
     }
     
-    const matchingMiners = state.miners.filter(m => 
-        (m.miner_id || '').toLowerCase().includes(query) ||
-        (m.device_arch || '').toLowerCase().includes(query)
-    );
+    const matchingMiners = state.miners.filter(m => {
+        const minerId = String(m.miner_id ?? '').toLowerCase();
+        const arch = String(m.device_arch ?? '').toLowerCase();
+        return minerId.includes(query) || arch.includes(query);
+    });
     
     if (matchingMiners.length === 0) {
         container.innerHTML = `

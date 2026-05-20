@@ -21,11 +21,20 @@ def test_explorer_helpers_tolerate_malformed_miner_fields():
     probe = f"""
 const vm = require('vm');
 const script = {json.dumps(JS)};
+const elements = {{}};
+const element = () => ({{
+  innerHTML: '',
+  addEventListener() {{}},
+  dataset: {{}},
+}});
 const context = {{
   window: {{ EXPLORER_API_BASE: 'https://example.test' }},
   document: {{
     addEventListener() {{}},
-    getElementById() {{ return null; }},
+    getElementById(id) {{
+      if (!elements[id]) elements[id] = element();
+      return elements[id];
+    }},
     querySelectorAll() {{ return []; }},
   }},
   setInterval() {{}},
@@ -38,12 +47,15 @@ const context = {{
 vm.createContext(context);
 vm.runInContext(script, context);
 const payload = {{ miners: [null, 'bad', {{ miner_id: {{ id: 'm' }}, device_arch: ['G4'], balance: 'NaN' }}] }};
+context.payload = payload;
 const result = {{
   miners: vm.runInContext('normalizeMinersResponse', context)(payload),
   address: vm.runInContext('shortenAddress', context)({{ id: 'm' }}),
   tier: vm.runInContext('getArchitectureTier', context)(['G4']),
   number: vm.runInContext('formatNumber', context)('NaN', 2),
 }};
+vm.runInContext('state.miners = normalizeMinersResponse(payload); state.searchQuery = "g4"; renderSearchResults();', context);
+result.searchHtml = elements['search-results'].innerHTML;
 console.log(JSON.stringify(result));
 """
     result = subprocess.run(
@@ -58,3 +70,4 @@ console.log(JSON.stringify(result));
     assert data["address"] == "[objec...bject]"
     assert data["tier"] == "vintage"
     assert data["number"] == "0"
+    assert "Search Results: 1 found" in data["searchHtml"]
