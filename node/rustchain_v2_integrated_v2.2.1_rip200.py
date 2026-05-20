@@ -5,13 +5,11 @@ Includes RIP-0005 (Epoch Rewards), RIP-0008 (Withdrawals), RIP-0009 (Finality)
 """
 import os, time, json, secrets, hashlib, hmac, sqlite3, base64, struct, uuid, glob, logging, sys, binascii, math, re, statistics
 import ipaddress
-from contextlib import closing
-from threading import Lock
 from urllib.parse import urlparse
 from flask import Flask, request, jsonify, g, send_from_directory, send_file, abort, render_template_string, redirect, Response
 import json
 from decimal import Decimal, ROUND_HALF_UP
-from beacon_anchor import init_beacon_table, store_envelope, compute_beacon_digest, get_recent_envelopes, normalize_beacon_pagination, VALID_KINDS
+from beacon_anchor import init_beacon_table, store_envelope, compute_beacon_digest, get_recent_envelopes, VALID_KINDS
 try:
     # Deployment compatibility: production may run this file as a single script.
     from payout_preflight import validate_wallet_transfer_admin, validate_wallet_transfer_signed
@@ -186,86 +184,6 @@ MUSEUM_DIR = os.path.join(REPO_ROOT, "web", "museum")
 HOF_DIR = os.path.join(REPO_ROOT, "web", "hall-of-fame")
 DASHBOARD_DIR = os.path.join(REPO_ROOT, "tools", "miner_dashboard")
 EXPLORER_DIR = os.path.join(REPO_ROOT, "tools", "explorer")
-
-ADMIN_RATE_LIMIT_MAX = int(os.environ.get("RC_ADMIN_RATE_LIMIT_MAX", "12"))
-ADMIN_RATE_LIMIT_WINDOW = int(os.environ.get("RC_ADMIN_RATE_LIMIT_WINDOW_SECONDS", "60"))
-_ADMIN_RATE_LIMIT_BUCKETS = {}
-_ADMIN_RATE_LIMIT_LOCK = Lock()
-_ADMIN_RATE_LIMIT_PREFIXES = (
-    "/admin/",
-    "/gov/rotate/",
-    "/pending/",
-)
-_ADMIN_RATE_LIMIT_PATHS = {
-    "/api/balances",
-    "/api/bridge/void",
-    "/api/lock/forfeit",
-    "/api/lock/release",
-    "/genesis/export",
-    "/miner/headerkey",
-    "/ops/attest/debug",
-    "/rewards/settle",
-    "/wallet/balances/all",
-    "/wallet/ledger",
-    "/wallet/link-coinbase",
-    "/wallet/transfer",
-    "/wallet/transfer_OLD_DISABLED",
-    "/withdraw/register",
-}
-
-
-def _admin_rate_limit_bucket_path(path: str) -> Optional[str]:
-    if path in _ADMIN_RATE_LIMIT_PATHS:
-        return path
-    if path.startswith("/api/miner/") and path.endswith("/attestations"):
-        return "/api/miner/:miner_id/attestations"
-    if path.startswith("/api/bridge/lock/"):
-        if path.endswith("/confirm"):
-            return "/api/bridge/lock/:lock_id/confirm"
-        if path.endswith("/release"):
-            return "/api/bridge/lock/:lock_id/release"
-    if path.startswith("/withdraw/history/"):
-        return "/withdraw/history/:miner_pk"
-    for prefix in _ADMIN_RATE_LIMIT_PREFIXES:
-        if path.startswith(prefix):
-            return f"{prefix.rstrip('/')}/*"
-    return None
-
-
-def _is_admin_rate_limited_path(path: str) -> bool:
-    return _admin_rate_limit_bucket_path(path) is not None
-
-
-def _check_admin_rate_limit(client_ip: str, route_key: str, now_ts: Optional[int] = None):
-    """Bound repeated admin endpoint attempts per client IP and route."""
-    if ADMIN_RATE_LIMIT_MAX <= 0:
-        return True, 0
-    now_ts = int(time.time()) if now_ts is None else int(now_ts)
-    window = max(1, ADMIN_RATE_LIMIT_WINDOW)
-    cutoff = now_ts - window
-    key = (client_ip or "unknown", route_key)
-    with _ADMIN_RATE_LIMIT_LOCK:
-        attempts = [ts for ts in _ADMIN_RATE_LIMIT_BUCKETS.get(key, []) if ts > cutoff]
-        if len(attempts) >= ADMIN_RATE_LIMIT_MAX:
-            _ADMIN_RATE_LIMIT_BUCKETS[key] = attempts
-            retry_after = max(1, window - (now_ts - attempts[0]))
-            return False, retry_after
-        attempts.append(now_ts)
-        _ADMIN_RATE_LIMIT_BUCKETS[key] = attempts
-        return True, 0
-
-
-def _admin_rate_limit_response(retry_after: int):
-    response = jsonify({
-        "ok": False,
-        "error": "rate_limited",
-        "code": "ADMIN_RATE_LIMIT",
-        "limit": ADMIN_RATE_LIMIT_MAX,
-        "window_seconds": ADMIN_RATE_LIMIT_WINDOW,
-    })
-    response.status_code = 429
-    response.headers["Retry-After"] = str(retry_after)
-    return response
 
 
 def _attest_mapping(value):
@@ -579,11 +497,6 @@ except Exception as e:
 def _start_timer():
     g._ts = time.time()
     g.request_id = request.headers.get("X-Request-Id") or uuid.uuid4().hex
-    rate_limit_path = _admin_rate_limit_bucket_path(request.path)
-    if rate_limit_path:
-        allowed, retry_after = _check_admin_rate_limit(get_client_ip(), rate_limit_path)
-        if not allowed:
-            return _admin_rate_limit_response(retry_after)
 
 def _normalize_client_ip(raw_value) -> str:
     """Normalize a peer/header IP string down to the first address token."""
@@ -1134,7 +1047,7 @@ GOVERNANCE_ACTIVE_MINER_WINDOW_SECONDS = 3600
 EPOCH_WEIGHT_SCALE = 1_000_000_000
 MAX_EPOCH_WEIGHT = 10_000
 MAX_EPOCH_WEIGHT_UNITS = MAX_EPOCH_WEIGHT * EPOCH_WEIGHT_SCALE
-FAILED_FINGERPRINT_WEIGHT_UNITS = 0
+MIN_FAILED_FINGERPRINT_WEIGHT_UNITS = 1
 
 
 def epoch_weight_to_units(weight) -> int:
@@ -1249,7 +1162,7 @@ if HAVE_BOTTUBE_FEED:
 
 def init_db():
     """Initialize all database tables"""
-    with closing(sqlite3.connect(DB_PATH)) as c:
+    with sqlite3.connect(DB_PATH) as c:
         # Core tables
         attest_ensure_tables(c)
         c.execute("CREATE TABLE IF NOT EXISTS tickets (ticket_id TEXT PRIMARY KEY, expires_at INTEGER, commitment TEXT)")
@@ -1467,9 +1380,6 @@ def init_db():
 
         # Issue #2276: Hardware fingerprint replay defense tables
         if HAVE_REPLAY_DEFENSE:
-            # The replay module opens DB_PATH in its own connection. Commit
-            # pending DDL first so SQLite does not see a same-process schema lock.
-            c.commit()
             init_replay_defense_schema()
 
         # Warthog dual-mining tables
@@ -2075,7 +1985,7 @@ PRIVACY_PEPPER = os.getenv("PRIVACY_PEPPER", "rustchain_poa_v2")
 def _epoch_salt_for_mac() -> bytes:
     """Get epoch-scoped salt for MAC hashing"""
     try:
-        with closing(sqlite3.connect(DB_PATH)) as conn:
+        with sqlite3.connect(DB_PATH) as conn:
             row = conn.execute("SELECT epoch FROM epoch_enroll ORDER BY epoch DESC LIMIT 1").fetchone()
             epoch = row[0] if row else 0
     except Exception:
@@ -2094,7 +2004,7 @@ def _mac_hash(mac: str) -> str:
 
 def record_macs(miner: str, macs: list):
     now = int(time.time())
-    with closing(sqlite3.connect(DB_PATH)) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         for mac in (macs or []):
             h = _mac_hash(str(mac))
             if not h: continue
@@ -2111,18 +2021,11 @@ def _current_utc_year():
     return time.gmtime().tm_year
 
 
-def calculate_rust_score_inline(mfg_year, arch, attestations, machine_id, current_year=None):
-    """Calculate rust score for a machine.
-
-    `current_year` is injectable for deterministic testing. Defaults to the
-    current UTC year via `_current_utc_year()`. The age bonus is clamped to
-    a non-negative value so that a future-dated `mfg_year` (sensor error,
-    misconfigured firmware) cannot reduce the score below the no-age baseline.
-    """
+def calculate_rust_score_inline(mfg_year, arch, attestations, machine_id):
+    """Calculate rust score for a machine."""
     score = 0
-    current_year = current_year if current_year is not None else _current_utc_year()
     if mfg_year:
-        score += max(0, current_year - int(mfg_year)) * 10  # age bonus
+        score += (_current_utc_year() - mfg_year) * 10  # age bonus
     score += attestations * 0.001  # attestation bonus
     if machine_id <= 100:
         score += 50  # early adopter
@@ -2145,7 +2048,7 @@ def auto_induct_to_hall(miner: str, device: dict):
     fingerprint_hash = hashlib.sha256(fp_data.encode()).hexdigest()[:32]
     
     try:
-        with closing(sqlite3.connect(DB_PATH)) as conn:
+        with sqlite3.connect(DB_PATH) as conn:
             c = conn.cursor()
             c.execute("SELECT id, total_attestations FROM hall_of_rust WHERE fingerprint_hash = ?", 
                       (fingerprint_hash,))
@@ -2308,7 +2211,7 @@ def _write_welcome_bonus(
 def _check_welcome_bonus(miner: str):
     """Award welcome bonus on first-ever attestation. Funded from founder_community."""
     try:
-        with closing(sqlite3.connect(DB_PATH)) as conn:
+        with sqlite3.connect(DB_PATH) as conn:
             # Check if this miner has ever attested before
             history_count = conn.execute(
                 "SELECT COUNT(*) FROM miner_attest_history WHERE miner = ?", (miner,)
@@ -2412,7 +2315,7 @@ def record_attestation_success(miner: str, device: dict, fingerprint_passed: boo
         if not _device.get("machine"):
             _device["machine"] = "ppc64le" if "power8" in _miner_lower else "ppc"
     verified_device = derive_verified_device(_device, fingerprint if isinstance(fingerprint, dict) else {}, fingerprint_passed)
-    with closing(sqlite3.connect(DB_PATH)) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         # Ensure signing_pubkey and fingerprint_checks_json columns exist (idempotent migrations)
         for col_stmt in [
             "ALTER TABLE miner_attest_recent ADD COLUMN signing_pubkey TEXT",
@@ -2937,7 +2840,7 @@ def check_ip_rate_limit(client_ip, miner_id):
     now = int(time.time())
     cutoff = now - ATTEST_IP_WINDOW
     
-    with closing(sqlite3.connect(DB_PATH)) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         conn.execute("DELETE FROM ip_rate_limit WHERE ts < ?", (cutoff,))
         conn.execute(
             "INSERT OR REPLACE INTO ip_rate_limit (client_ip, miner_id, ts) VALUES (?, ?, ?)",
@@ -2952,7 +2855,6 @@ def check_ip_rate_limit(client_ip, miner_id):
         if unique_count > ATTEST_IP_LIMIT:
             print(f"[RATE_LIMIT] IP {client_ip} has {unique_count} unique miners (limit {ATTEST_IP_LIMIT})")
             return False, f"ip_rate_limit:{unique_count}_miners_from_same_ip"
-        conn.commit()
     
     return True, "ok"
 
@@ -3093,7 +2995,7 @@ def _mac_oui(mac: str) -> str:
 
 def _oui_vendor(oui: str) -> Optional[str]:
     """Check if OUI is denied (VM vendor)"""
-    with closing(sqlite3.connect(DB_PATH)) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         row = conn.execute("SELECT vendor, enforce FROM oui_deny WHERE oui = ?", (oui,)).fetchone()
         if row:
             return row[0], row[1]
@@ -3418,9 +3320,8 @@ def get_challenge():
     nonce = secrets.token_hex(32)
     expires = int(time.time()) + 300  # 5 minutes
 
-    with closing(sqlite3.connect(DB_PATH)) as c:
+    with sqlite3.connect(DB_PATH) as c:
         c.execute("INSERT INTO nonces (nonce, expires_at) VALUES (?, ?)", (nonce, expires))
-        c.commit()
 
     return jsonify({
         "nonce": nonce,
@@ -3467,7 +3368,7 @@ def _check_hardware_binding(miner_id: str, device: dict, signals: dict = None, s
     """Check if hardware is already bound to a different wallet. One machine = One wallet."""
     hardware_id = _compute_hardware_id(device, signals, source_ip=source_ip)
     
-    with closing(sqlite3.connect(DB_PATH)) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         
         # Check existing binding
@@ -3603,7 +3504,7 @@ def _submit_attestation_impl():
             "code": "MISSING_NONCE"
         }), 400
 
-    with closing(sqlite3.connect(DB_PATH)) as nonce_conn:
+    with sqlite3.connect(DB_PATH) as nonce_conn:
         nonce_ok, nonce_err, _ = attest_validate_and_store_nonce(
             nonce_conn,
             miner=miner,
@@ -3842,7 +3743,7 @@ def _submit_attestation_impl():
 
     temporal_review = {"score": 1.0, "review_flag": False, "reason": "insufficient_history", "flags": [], "check_scores": {}}
     try:
-        with closing(sqlite3.connect(DB_PATH)) as tconn:
+        with sqlite3.connect(DB_PATH) as tconn:
             temporal_review = validate_temporal_consistency(fetch_miner_fingerprint_sequence(tconn, miner))
     except Exception as _te:
         print(f"[TEMPORAL] Warning: {_te}")
@@ -3850,7 +3751,7 @@ def _submit_attestation_impl():
     # Update warthog_bonus in attestation record
     if warthog_bonus > 1.0:
         try:
-            with closing(sqlite3.connect(DB_PATH)) as wb_conn:
+            with sqlite3.connect(DB_PATH) as wb_conn:
                 wb_conn.execute(
                     "UPDATE miner_attest_recent SET warthog_bonus=? WHERE miner=?",
                     (warthog_bonus, miner)
@@ -3883,14 +3784,14 @@ def _submit_attestation_impl():
         hw_weight = HARDWARE_WEIGHTS.get(family, {}).get(arch_for_weight, HARDWARE_WEIGHTS.get(family, {}).get("default", 1.0))
         miner_id = _attest_valid_miner(data.get("miner_id")) or miner
 
-        with closing(sqlite3.connect(DB_PATH)) as enroll_conn:
+        with sqlite3.connect(DB_PATH) as enroll_conn:
             rotation_eval = evaluate_rotating_fingerprint_checks(
                 enroll_conn,
                 epoch,
                 fingerprint if isinstance(fingerprint, dict) else {},
             )
             if not fingerprint_passed:
-                enroll_weight_units = FAILED_FINGERPRINT_WEIGHT_UNITS
+                enroll_weight_units = MIN_FAILED_FINGERPRINT_WEIGHT_UNITS
             else:
                 enroll_weight_units = epoch_weight_to_units(hw_weight * rotation_eval["active_ratio"])
             enroll_weight = epoch_weight_units_to_display(enroll_weight_units)
@@ -3948,12 +3849,11 @@ def _submit_attestation_impl():
     # Generate ticket ID
     ticket_id = f"ticket_{secrets.token_hex(16)}"
 
-    with closing(sqlite3.connect(DB_PATH)) as c:
+    with sqlite3.connect(DB_PATH) as c:
         c.execute(
             "INSERT INTO tickets (ticket_id, expires_at, commitment) VALUES (?, ?, ?)",
             (ticket_id, int(time.time()) + 3600, str(report.get('commitment', '')))
         )
-        c.commit()
 
     return jsonify({
         "ok": True,
@@ -4138,7 +4038,8 @@ def enroll_epoch():
     arch = device.get('arch', 'default')
     hw_weight = HARDWARE_WEIGHTS.get(family, {}).get(arch, 1.0)
 
-    # RIP-PoA Phase 2: failed fingerprints are tracked but receive zero rewards.
+    # RIP-PoA Phase 2: VM miners get minimal (but non-zero) weight
+    # VMs can technically earn RTC, but it's economically pointless (1e-9 vs 1.0-2.5 for real hardware)
     fingerprint_failed = check_result.get('fingerprint_failed', False)
 
     with sqlite3.connect(DB_PATH) as c:
@@ -4148,9 +4049,9 @@ def enroll_epoch():
             data.get('fingerprint') if isinstance(data.get('fingerprint'), dict) else {},
         )
         if fingerprint_failed:
-            weight_units = FAILED_FINGERPRINT_WEIGHT_UNITS
+            weight_units = MIN_FAILED_FINGERPRINT_WEIGHT_UNITS
             weight = epoch_weight_units_to_display(weight_units)
-            print(f"[ENROLL] Miner {miner_pk[:16]}... fingerprint FAILED - weight: {weight}")
+            print(f"[ENROLL] Miner {miner_pk[:16]}... fingerprint FAILED - VM weight: {weight}")
         else:
             weight_units = epoch_weight_to_units(hw_weight * rotation_eval['active_ratio'])
             weight = epoch_weight_units_to_display(weight_units)
@@ -4232,11 +4133,10 @@ def vrf_is_selected(miner_pk: str, slot: int) -> bool:
             "SELECT miner_pk, weight FROM epoch_enroll WHERE epoch = ?",
             (epoch,)
         ).fetchall()
-        all_miners = []
-        for pk, stored_weight in raw_miners:
-            normalized_weight = normalize_epoch_weight_units(stored_weight)
-            if normalized_weight > 0:
-                all_miners.append((pk, normalized_weight))
+        all_miners = [
+            (pk, normalize_epoch_weight_units(stored_weight))
+            for pk, stored_weight in raw_miners
+        ]
 
     if not all_miners:
         return False
@@ -4542,20 +4442,15 @@ def _wallet_review_ui_authorized(req):
         # Store session_id on request for template rendering
         req._admin_session_id = sid  # type: ignore
         return True
-    # Legacy operator UI links and tests use query-string admin_key for GET-only
-    # HTML pages. Mutating requests still require header/session or POST body.
+    # Legacy fallback: admin_key via POST body only (not URL query params)
     need = os.environ.get("RC_ADMIN_KEY", "")
-    got = str(
-        (req.args.get("admin_key") if req.method == "GET" else "")
-        or req.form.get("admin_key")
-        or ""
-    ).strip()
+    got = str(req.form.get("admin_key") or "").strip()
     return bool(need and got and hmac.compare_digest(need, got))
 
 
 def get_wallet_review_counts():
     """Return grouped wallet review counts for the operator summary surface."""
-    with closing(sqlite3.connect(DB_PATH)) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         ensure_wallet_review_tables(conn)
         rows = conn.execute(
             """
@@ -4602,7 +4497,7 @@ def get_wallet_review_entry(conn, wallet: str):
 
 
 def wallet_review_gate_response(wallet: str):
-    with closing(sqlite3.connect(DB_PATH)) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         entry = get_wallet_review_entry(conn, wallet)
     if not entry:
         return None
@@ -5018,7 +4913,7 @@ def admin_wallet_review_holds_ui():
         """,
         entries=entries,
         active_status=active_status,
-        sid=sid,
+        admin_key=admin_key,
         statuses=["needs_review", "held", "escalated", "blocked", "released", "dismissed"],
     )
 
@@ -5131,14 +5026,10 @@ def request_withdrawal():
 
     # SECURITY: Validate amount is a number (CVE-style float injection)
     raw_amount = data.get('amount', 0)
-    if isinstance(raw_amount, bool):
-        return jsonify({"error": "amount must be a number", "received": "bool"}), 400
     try:
         amount = float(raw_amount)
     except (TypeError, ValueError):
         return jsonify({"error": "amount must be a number", "received": str(type(raw_amount).__name__)}), 400
-    if not math.isfinite(amount):
-        return jsonify({"error": "amount must be a finite positive number"}), 400
     if amount < 0:
         return jsonify({"error": "amount must be positive"}), 400
 
@@ -5553,7 +5444,9 @@ def gov_rotate_approve():
             sig = bytes.fromhex(sig_hex.replace("0x",""))
             nacl.signing.VerifyKey(pk).verify(msg, sig)
         except Exception as e:
-            return jsonify({"ok": False, "reason": "bad_signature", "error": str(e)}), 400
+            import logging
+            logging.exception("Internal error in endpoint")
+            return jsonify({"ok": False, "reason": "bad_signature", "error": "internal_error"}), 400
 
         db.execute("""INSERT OR IGNORE INTO gov_rotation_approvals
                       (epoch_effective, signer_id, sig_hex, approved_ts)
@@ -6043,21 +5936,6 @@ def bounty_multiplier():
 # ---------- RIP-0147a: Admin OUI Management ----------
 
 
-def _normalize_oui_payload_value(value):
-    if not isinstance(value, str):
-        return None
-    return value.lower().replace(':', '').replace('-', '')
-
-
-def _parse_oui_enforce(value):
-    if isinstance(value, bool):
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
 @app.route("/api/nodes")
 def api_nodes():
     """Return list of all registered attestation nodes"""
@@ -6145,15 +6023,11 @@ def api_miners():
     
     # Pagination args
     try:
-        limit = int(request.args.get("limit", 100))
+        limit = min(max(int(request.args.get("limit", 100)), 1), 1000)
+        offset = max(int(request.args.get("offset", 0)), 0)
     except (ValueError, TypeError):
-        return jsonify({"ok": False, "error": "limit must be an integer"}), 400
-    try:
-        offset = int(request.args.get("offset", 0))
-    except (ValueError, TypeError):
-        return jsonify({"ok": False, "error": "offset must be an integer"}), 400
-    limit = min(max(limit, 1), 1000)
-    offset = max(offset, 0)
+        limit = 100
+        offset = 0
 
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
@@ -6782,15 +6656,9 @@ def add_oui_deny():
 
     # Extract client IP (handle nginx proxy)
     client_ip = get_client_ip()
-    oui = _normalize_oui_payload_value(data.get('oui', ''))
-    if oui is None:
-        return jsonify({"error": "OUI must be a string"}), 400
+    oui = data.get('oui', '').lower().replace(':', '').replace('-', '')
     vendor = data.get('vendor', 'Unknown')
-    if not isinstance(vendor, str):
-        return jsonify({"error": "Vendor must be a string"}), 400
-    enforce = _parse_oui_enforce(data.get('enforce', 0))
-    if enforce is None:
-        return jsonify({"error": "enforce must be an integer"}), 400
+    enforce = int(data.get('enforce', 0))
 
     if len(oui) != 6 or not all(c in '0123456789abcdef' for c in oui):
         return jsonify({"error": "Invalid OUI (must be 6 hex chars)"}), 400
@@ -6815,11 +6683,7 @@ def remove_oui_deny():
 
     # Extract client IP (handle nginx proxy)
     client_ip = get_client_ip()
-    oui = _normalize_oui_payload_value(data.get('oui', ''))
-    if oui is None:
-        return jsonify({"error": "OUI must be a string"}), 400
-    if len(oui) != 6 or not all(c in '0123456789abcdef' for c in oui):
-        return jsonify({"error": "Invalid OUI (must be 6 hex chars)"}), 400
+    oui = data.get('oui', '').lower().replace(':', '').replace('-', '')
 
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("DELETE FROM oui_deny WHERE oui = ?", (oui,))
@@ -7399,26 +7263,15 @@ def wallet_transfer_v2():
     from_miner = pre.details["from_miner"]
     to_miner = pre.details["to_miner"]
     amount_rtc = pre.details["amount_rtc"]
-    amount_i64 = int(pre.details["amount_i64"])
     reason = str((data or {}).get('reason', 'admin_transfer'))
-    idempotency_key = ""
-    raw_idempotency_key = (data or {}).get("idempotency_key")
-    if raw_idempotency_key not in (None, ""):
-        if not isinstance(raw_idempotency_key, str):
-            return jsonify({"error": "invalid_idempotency_key"}), 400
-        idempotency_key = raw_idempotency_key.strip()
-        if not re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", idempotency_key):
-            return jsonify({"error": "invalid_idempotency_key"}), 400
     
+    amount_i64 = int(amount_rtc * 1000000)
     now = int(time.time())
     confirms_at = now + CONFIRMATION_DELAY_SECONDS
     current_epoch = current_slot()
     
     # Generate transaction hash
-    if idempotency_key:
-        tx_data = f"wallet_transfer_idempotency:{idempotency_key}"
-    else:
-        tx_data = f"{from_miner}:{to_miner}:{amount_i64}:{now}:{os.urandom(8).hex()}"
+    tx_data = f"{from_miner}:{to_miner}:{amount_i64}:{now}:{os.urandom(8).hex()}"
     tx_hash = hashlib.sha256(tx_data.encode()).hexdigest()[:32]
     
     conn = sqlite3.connect(DB_PATH)
@@ -7428,40 +7281,6 @@ def wallet_transfer_v2():
         # SECURITY: Acquire write lock BEFORE reading balance to prevent
         # concurrent transfers from both passing the balance check.
         c.execute("BEGIN IMMEDIATE")
-
-        if idempotency_key:
-            existing = c.execute("""
-                SELECT id, from_miner, to_miner, amount_i64, reason, status, confirms_at
-                FROM pending_ledger
-                WHERE tx_hash = ?
-            """, (tx_hash,)).fetchone()
-            if existing:
-                pending_id, existing_from, existing_to, existing_amount, existing_reason, status, existing_confirms_at = existing
-                if (
-                    existing_from != from_miner or
-                    existing_to != to_miner or
-                    int(existing_amount) != amount_i64 or
-                    str(existing_reason or "") != reason
-                ):
-                    conn.rollback()
-                    return jsonify({
-                        "error": "idempotency_key_conflict",
-                        "tx_hash": tx_hash,
-                    }), 409
-
-                conn.rollback()
-                return jsonify({
-                    "ok": True,
-                    "phase": status or "pending",
-                    "pending_id": pending_id,
-                    "tx_hash": tx_hash,
-                    "from_miner": from_miner,
-                    "to_miner": to_miner,
-                    "amount_rtc": amount_rtc,
-                    "confirms_at": existing_confirms_at,
-                    "confirms_in_hours": CONFIRMATION_DELAY_SECONDS / 3600,
-                    "message": "Transfer already pending for idempotency key."
-                })
         
         # Check sender balance
         row = c.execute("SELECT amount_i64 FROM balances WHERE miner_id = ?", (from_miner,)).fetchone()
@@ -7595,11 +7414,6 @@ def void_pending():
     tx_hash = data.get('tx_hash')
     reason = data.get('reason', 'admin_void')
     voided_by = data.get('voided_by', 'admin')
-
-    if pending_id is not None and not isinstance(pending_id, (int, str)):
-        return jsonify({"error": "pending_id must be a scalar"}), 400
-    if tx_hash is not None and not isinstance(tx_hash, str):
-        return jsonify({"error": "tx_hash must be a string"}), 400
     
     if not pending_id and not tx_hash:
         return jsonify({"error": "Provide pending_id or tx_hash"}), 400
@@ -7988,7 +7802,9 @@ try:
             blocks = block_sync.get_blocks_for_sync(start_height, limit)
             return jsonify({"ok": True, "blocks": blocks})
         except Exception as e:
-            return jsonify({"ok": False, "error": str(e)}), 400
+            import logging
+            logging.exception("Internal error in endpoint")
+            return jsonify({"ok": False, "error": "internal_error"}), 400
 
     @app.route('/p2p/add_peer', methods=['POST'])
     @require_peer_auth
@@ -8004,17 +7820,15 @@ try:
             success = peer_manager.add_peer(peer_url)
             return jsonify({"ok": success})
         except Exception as e:
-            return jsonify({"ok": False, "error": str(e)}), 400
+            import logging
+            logging.exception("Internal error in endpoint")
+            return jsonify({"ok": False, "error": "internal_error"}), 400
 
-    # Start background sync unless an integration test explicitly disables it.
-    if os.environ.get("RUSTCHAIN_DISABLE_P2P_AUTO_START") != "1":
-        block_sync.start()
+    # Start background sync
+    block_sync.start()
 
     print("[P2P] [OK] Endpoints registered successfully")
-    if block_sync.running:
-        print("[P2P] [OK] Block sync started")
-    else:
-        print("[P2P] [OK] Block sync auto-start disabled")
+    print("[P2P] [OK] Block sync started")
 
 except ImportError as e:
     print(f"[P2P] Module not available: {e}")
@@ -8038,7 +7852,9 @@ def download_installer():
             mimetype="application/x-bat"
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 404
+        import logging
+        logging.exception("Internal error in endpoint")
+        return jsonify({"error": "internal_error"}), 404
 
 @app.route("/download/miner")
 def download_miner():
@@ -8051,7 +7867,9 @@ def download_miner():
             mimetype="text/x-python"
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 404
+        import logging
+        logging.exception("Internal error in endpoint")
+        return jsonify({"error": "internal_error"}), 404
 
 
 @app.route("/download/uninstaller")
@@ -8105,39 +7923,6 @@ def address_from_pubkey(public_key_hex: str) -> str:
     """Generate RTC address from public key: RTC + first 40 chars of SHA256(pubkey)"""
     pubkey_hash = hashlib.sha256(bytes.fromhex(public_key_hex)).hexdigest()[:40]
     return f"RTC{pubkey_hash}"
-
-def _wallet_transfer_signed_messages(
-    from_address,
-    to_address,
-    amount_rtc,
-    fee_rtc,
-    memo,
-    nonce,
-    chain_id=None,
-):
-    """Build current and legacy canonical messages for signed transfers."""
-    tx_data = {
-        "from": from_address,
-        "to": to_address,
-        "amount": amount_rtc,
-        "fee": fee_rtc,
-        "memo": memo,
-        "nonce": nonce,
-    }
-    tx_data_legacy = {
-        "from": from_address,
-        "to": to_address,
-        "amount": amount_rtc,
-        "memo": memo,
-        "nonce": nonce,
-    }
-    if chain_id:
-        tx_data["chain_id"] = chain_id
-        tx_data_legacy["chain_id"] = chain_id
-    return (
-        json.dumps(tx_data, sort_keys=True, separators=(",", ":")).encode(),
-        json.dumps(tx_data_legacy, sort_keys=True, separators=(",", ":")).encode(),
-    )
 
 def _ensure_governance_tables(c: sqlite3.Cursor) -> None:
     c.execute("""
@@ -8391,7 +8176,6 @@ def wallet_transfer_signed():
     public_key = str(data.get("public_key", "")).strip()
     memo = str(data.get("memo", ""))
     amount_rtc = pre.details["amount_rtc"]
-    fee_rtc = pre.details["fee_rtc"]
 
     if chain_id and chain_id != CHAIN_ID:
         return jsonify({
@@ -8429,42 +8213,28 @@ def wallet_transfer_signed():
     
     nonce = str(nonce_int)
 
-    # Recreate the signed message (must match client signing format).
-    message, legacy_message = _wallet_transfer_signed_messages(
-        from_address,
-        to_address,
-        amount_rtc,
-        fee_rtc,
-        memo,
-        nonce,
-        chain_id,
-    )
-
-    if verify_rtc_signature(public_key, message, signature):
-        pass
-    elif verify_rtc_signature(public_key, legacy_message, signature):
-        if fee_rtc != 0:
-            return jsonify({
-                "error": "Legacy signature format cannot authorize nonzero fee",
-                "code": "LEGACY_SIGNATURE_FEE_UNBOUND",
-            }), 401
-        message = legacy_message
-    else:
+    # Recreate the signed message (must match client signing format)
+    tx_data = {
+        "from": from_address,
+        "to": to_address,
+        "amount": amount_rtc,
+        "memo": memo,
+        "nonce": nonce
+    }
+    if chain_id:
+        tx_data["chain_id"] = chain_id
+    message = json.dumps(tx_data, sort_keys=True, separators=(",", ":")).encode()
+    
+    # Verify Ed25519 signature
+    if not verify_rtc_signature(public_key, message, signature):
         return jsonify({"error": "Invalid signature"}), 401
-
-    if fee_rtc != 0:
-        return jsonify({
-            "error": "Nonzero signed transfer fees are not supported until fee settlement is implemented",
-            "code": "SIGNED_TRANSFER_FEE_UNSETTLED",
-            "fee_rtc": fee_rtc,
-        }), 400
     
     # Signature valid - process the transfer (2-phase commit + replay protection).
     
     # SECURITY/HARDENING: signed transfers should follow the same 2-phase commit
     # semantics as admin transfers (pending_ledger + delayed confirmation). This
     # prevents bypassing the 24h pending window via the signed endpoint.
-    amount_i64 = int(pre.details["amount_i64"])
+    amount_i64 = int(amount_rtc * 1000000)
     now = int(time.time())
     confirms_at = now + CONFIRMATION_DELAY_SECONDS
     current_epoch = current_slot()
@@ -8604,10 +8374,11 @@ def beacon_digest():
 
 @app.route("/beacon/envelopes", methods=["GET"])
 def beacon_envelopes_list():
-    limit, offset = normalize_beacon_pagination(
-        request.args.get("limit", 50),
-        request.args.get("offset", 0),
-    )
+    try:
+        limit = min(int(request.args.get("limit", 50)), 50)
+        offset = max(int(request.args.get("offset", 0)), 0)
+    except (ValueError, TypeError):
+        limit, offset = 50, 0
     envelopes = get_recent_envelopes(limit=limit, offset=offset, db_path=DB_PATH)
     return jsonify({"ok": True, "count": len(envelopes), "envelopes": envelopes})
 
@@ -8713,7 +8484,9 @@ def download_test_bat():
                 h.update(chunk)
         expected_sha256 = h.hexdigest().upper()
     except Exception as e:
-        return jsonify({"error": str(e)}), 404
+        import logging
+        logging.exception("Internal error in endpoint")
+        return jsonify({"error": "internal_error"}), 404
 
     # Keep legacy HTTP download URL, but verify hash before running.
     bat = f"""@echo off
@@ -8782,4 +8555,3 @@ def check_hardware_wallet_consistency(hardware_id, miner_wallet, conn):
             return False, f'hardware_bound_to_different_wallet:{bound_wallet[:20]}'
     
     return True, 'ok'
-    
