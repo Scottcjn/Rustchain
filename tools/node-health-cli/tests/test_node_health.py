@@ -8,7 +8,7 @@ import json
 import unittest
 from io import StringIO
 from unittest.mock import patch, MagicMock
-from urllib.error import URLError, HTTPError
+from urllib.error import URLError
 from pathlib import Path
 
 import sys
@@ -18,8 +18,23 @@ from node_health import (
     HealthStatus, EpochStatus, ReachabilityStatus, CheckResult,
     fetch_json, check_health, check_epoch, check_reachability,
     run_checks, format_text, format_json, format_uptime,
-    EXIT_OK, EXIT_HEALTH_FAIL, EXIT_EPOCH_FAIL, EXIT_REACHABILITY_FAIL, EXIT_MULTI_FAIL
+    EXIT_OK, EXIT_HEALTH_FAIL, EXIT_MULTI_FAIL
 )
+
+
+class TestFetchJson(unittest.TestCase):
+    """Test JSON fetch helper validation"""
+
+    @patch('node_health.urlopen')
+    def test_fetch_json_rejects_non_object_response(self, mock_urlopen):
+        """Node health endpoints must return JSON objects."""
+        mock_response = MagicMock()
+        mock_response.read.return_value = b'["not", "an", "object"]'
+        mock_response.__enter__.return_value = mock_response
+        mock_urlopen.return_value = mock_response
+
+        with self.assertRaisesRegex(Exception, "JSON response must be an object"):
+            fetch_json("https://rustchain.org/health", timeout=10)
 
 
 class TestHealthStatus(unittest.TestCase):
