@@ -70,11 +70,32 @@ def test_normalize_miners_payload_preserves_unexpected_shapes(rustchain_monitor_
         {"miner": "alice"}
     ]
     assert rustchain_monitor_module.normalize_miners_payload(
-        {"miners": [{"miner": "bob"}]}
+        [{"miner": "alice"}, None, "bad"]
+    ) == [{"miner": "alice"}]
+    assert rustchain_monitor_module.normalize_miners_payload(
+        {"miners": [{"miner": "bob"}, None]}
     ) == [{"miner": "bob"}]
     assert rustchain_monitor_module.normalize_miners_payload(
         {"pagination": {"total": 0}}
     ) == {"pagination": {"total": 0}}
+
+
+def test_object_payload_helpers_reject_non_object_health_and_epoch(
+    rustchain_monitor_module,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        rustchain_monitor_module.requests,
+        "get",
+        lambda *_args, **_kwargs: FakeResponse(["not", "object"]),
+    )
+
+    assert rustchain_monitor_module.check_health() == {
+        "error": "unexpected health response shape"
+    }
+    assert rustchain_monitor_module.get_epoch() == {
+        "error": "unexpected epoch response shape"
+    }
 
 
 def test_request_helpers_return_error_dict_on_failure(rustchain_monitor_module, monkeypatch):
@@ -99,6 +120,7 @@ def test_print_health_formats_success_and_error(rustchain_monitor_module, capsys
         }
     )
     rustchain_monitor_module.print_health({"error": "offline"})
+    rustchain_monitor_module.print_health(["not", "object"])
 
     output = capsys.readouterr().out
     assert "Node is healthy" in output
@@ -107,6 +129,7 @@ def test_print_health_formats_success_and_error(rustchain_monitor_module, capsys
     assert "Backup age: 1.25 hours" in output
     assert "DB RW: True" in output
     assert "Health check failed: offline" in output
+    assert "Health check failed: unexpected response" in output
 
 
 def test_print_miners_limits_rows_and_formats_last_attest(
@@ -129,6 +152,7 @@ def test_print_miners_limits_rows_and_formats_last_attest(
     monkeypatch.setattr(rustchain_monitor_module, "datetime", FixedDatetime)
 
     rustchain_monitor_module.print_miners(miners)
+    rustchain_monitor_module.print_miners([{"miner": "valid"}, None])
     rustchain_monitor_module.print_miners({"unexpected": True})
     rustchain_monitor_module.print_miners({"error": "bad gateway"})
 
@@ -139,6 +163,7 @@ def test_print_miners_limits_rows_and_formats_last_attest(
     assert "Multiplier: 2.5" in output
     assert "Last: 06:30" in output
     assert "... and 2 more" in output
+    assert "valid" in output
     assert "Unexpected response" in output
     assert "Failed to fetch miners: bad gateway" in output
 
@@ -155,6 +180,7 @@ def test_print_epoch_formats_success_and_error(rustchain_monitor_module, capsys)
         }
     )
     rustchain_monitor_module.print_epoch({"error": "timeout"})
+    rustchain_monitor_module.print_epoch(["not", "object"])
 
     output = capsys.readouterr().out
     assert "Epoch: 12" in output
@@ -164,3 +190,4 @@ def test_print_epoch_formats_success_and_error(rustchain_monitor_module, capsys)
     assert "Epoch pot: 7.5 RTC" in output
     assert "Enrolled miners: 9" in output
     assert "Failed to fetch epoch: timeout" in output
+    assert "Failed to fetch epoch: unexpected response" in output
