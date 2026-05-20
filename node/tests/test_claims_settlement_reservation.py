@@ -73,7 +73,7 @@ def test_insufficient_pool_check_runs_after_reservation_and_releases_batch(tmp_p
     )
 
     assert result["processed"] is False
-    assert result["error"] == "Insufficient funds: need 125, have 50"
+    assert result["error"] == "Insufficient funds: need 1325 (125 claims + 1200 fee), have 50"
     assert result["released_count"] == 2
     assert broadcasts == []
 
@@ -83,6 +83,49 @@ def test_insufficient_pool_check_runs_after_reservation_and_releases_batch(tmp_p
         ).fetchall()
 
     assert rows == [
-        ("approved", None, "Insufficient funds: need 125, have 50"),
-        ("approved", None, "Insufficient funds: need 125, have 50"),
+        ("approved", None, "Insufficient funds: need 1325 (125 claims + 1200 fee), have 50"),
+        ("approved", None, "Insufficient funds: need 1325 (125 claims + 1200 fee), have 50"),
     ]
+
+
+def test_post_reservation_pool_check_includes_settlement_fee(tmp_path, monkeypatch):
+    db_path = str(tmp_path / "claims.db")
+    _init_db(db_path)
+    _insert_claim(db_path, "claim-1", 1000, 1)
+
+    with sqlite3.connect(db_path) as conn:
+        # The pool covers the claim output but not output + settlement fee
+        # (1000 + base 1000 + one output 100 = 2100).
+        conn.execute(
+            "INSERT INTO rewards_pool (pool_name, balance_urtc) VALUES ('epoch_rewards', 1000)"
+        )
+
+    broadcasts = []
+    monkeypatch.setattr(
+        claims_settlement,
+        "sign_and_broadcast_transaction",
+        lambda tx_data, db_path: broadcasts.append(tx_data) or (True, "0xabc", None),
+    )
+
+    result = claims_settlement.process_claims_batch(
+        db_path,
+        max_claims=1,
+        min_batch_size=1,
+        max_wait_seconds=0,
+    )
+
+    assert result["processed"] is False
+    assert result["error"] == "Insufficient funds: need 2100 (1000 claims + 1100 fee), have 1000"
+    assert result["released_count"] == 1
+    assert broadcasts == []
+
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT status, settlement_batch, settlement_error FROM claims WHERE claim_id = 'claim-1'"
+        ).fetchone()
+
+    assert row == (
+        "approved",
+        None,
+        "Insufficient funds: need 2100 (1000 claims + 1100 fee), have 1000",
+    )

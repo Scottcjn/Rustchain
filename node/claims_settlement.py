@@ -617,10 +617,15 @@ def process_claims_batch(
         return result
 
     total_amount = sum(c["reward_urtc"] for c in claims_to_process)
+    fee_urtc = calculate_settlement_fee(len(claims_to_process))
+    required_amount = total_amount + fee_urtc
 
-    sufficient, balance = check_rewards_pool_balance(db_path, total_amount)
+    sufficient, balance = check_rewards_pool_balance(db_path, required_amount)
     if not sufficient:
-        error = f"Insufficient funds: need {total_amount}, have {balance}"
+        error = (
+            f"Insufficient funds: need {required_amount} "
+            f"({total_amount} claims + {fee_urtc} fee), have {balance}"
+        )
         released_count = release_reserved_claims_for_settlement(
             db_path,
             [c["claim_id"] for c in claims_to_process],
