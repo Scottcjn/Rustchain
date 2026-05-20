@@ -4,6 +4,7 @@ RustChain Miner Setup Script
 Automated setup for RustChain Universal Miner
 """
 
+import argparse
 import os
 import sys
 import subprocess
@@ -23,7 +24,7 @@ MINER_ARTIFACTS = {
     },
     "Darwin": {
         "url": "https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/macos/rustchain_mac_miner_v2.5.py",
-        "sha256": "dbc02277fb8ed6b9272532f882f2f7cc7b0f54abeb30ad25d01c457abff046b6",
+        "sha256": "163fafcf751d8fbd41bf936facaeb366c042f467fa34b79f2c4c0a45472ef70f",
     },
     "Windows": {
         "url": "https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/windows/rustchain_windows_miner.py",
@@ -405,6 +406,14 @@ WantedBy=multi-user.target
             self.log(f"Setup failed: {e}")
             sys.exit(1)
 
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        description="Set up the RustChain Universal Miner."
+    )
+    return parser.parse_args(argv)
+
+
 if __name__ == "__main__":
+    parse_args()
     setup = MinerSetup()
     setup.run_setup()
