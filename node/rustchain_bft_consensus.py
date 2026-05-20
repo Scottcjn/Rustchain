@@ -1060,7 +1060,9 @@ def create_bft_routes(app, bft: BFTConsensus):
             return jsonify({'status': 'ok'})
         except Exception as e:
             logging.error(f"BFT message error: {e}")
-            return jsonify({'error': str(e)}), 400
+            import logging
+            logging.exception("Internal error in endpoint")
+            return jsonify({"error": "internal_error"}), 400
 
     @app.route('/bft/view_change', methods=['POST'])
     def bft_view_change():
@@ -1083,7 +1085,9 @@ def create_bft_routes(app, bft: BFTConsensus):
             return jsonify({'status': 'ok'})
         except Exception as e:
             logging.error(f"BFT view change error: {e}")
-            return jsonify({'error': str(e)}), 400
+            import logging
+            logging.exception("Internal error in endpoint")
+            return jsonify({"error": "internal_error"}), 400
 
     @app.route('/bft/propose', methods=['POST'])
     def bft_propose():
@@ -1110,7 +1114,9 @@ def create_bft_routes(app, bft: BFTConsensus):
                 return jsonify({'error': 'not_leader_or_already_committed'}), 400
         except Exception as e:
             logging.error(f"BFT propose error: {e}")
-            return jsonify({'error': str(e)}), 500
+            import logging
+            logging.exception("Internal error in endpoint")
+            return jsonify({"error": "internal_error"}), 500
 
 
 # ============================================================================
