@@ -88,6 +88,85 @@ def get_pending_claims(
         return []
 
 
+
+def reserve_pending_claims(
+    db_path: str,
+    batch_id: str,
+    max_claims: int = 100
+) -> List[Dict[str, Any]]:
+    """
+    Atomically reserve approved claims for settlement.
+
+    Uses BEGIN IMMEDIATE to prevent two workers from reserving the same
+    claims.  The selected rows are moved from 'approved' to 'settling'
+    in a single transaction so no other worker can read them.
+
+    Returns:
+        List of reserved claim records (now in 'settling' status)
+    """
+    try:
+        conn = sqlite3.connect(db_path, timeout=30)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA busy_timeout = 30000")
+        cursor = conn.cursor()
+
+        cursor.execute("BEGIN IMMEDIATE")
+        try:
+            # Select approved claims while holding the write lock
+            cursor.execute("""
+                SELECT claim_id, miner_id, epoch, wallet_address,
+                       reward_urtc, submitted_at
+                FROM claims
+                WHERE status = 'approved'
+                ORDER BY submitted_at ASC
+                LIMIT ?
+            """, (max_claims,))
+            rows = cursor.fetchall()
+
+            if not rows:
+                conn.rollback()
+                conn.close()
+                return []
+
+            # Atomically move them to 'settling' so no other worker can
+            # pick them up.
+            claim_ids = [row["claim_id"] for row in rows]
+            now = int(time.time())
+            for cid in claim_ids:
+                cursor.execute("""
+                    UPDATE claims
+                    SET status = 'settling',
+                        settlement_batch = ?,
+                        updated_at = ?
+                    WHERE claim_id = ?
+                      AND status = 'approved'
+                """, (batch_id, now, cid))
+
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            conn.close()
+            raise
+
+        # Build result list from the rows we just reserved
+        claims = []
+        for row in rows:
+            claims.append({
+                "claim_id": row["claim_id"],
+                "miner_id": row["miner_id"],
+                "epoch": row["epoch"],
+                "wallet_address": row["wallet_address"],
+                "reward_urtc": row["reward_urtc"],
+                "submitted_at": row["submitted_at"],
+            })
+
+        conn.close()
+        return claims
+    except sqlite3.Error as e:
+        print(f"[SETTLEMENT] Error reserving claims: {e}")
+        return []
+
+
 def get_verifying_claims(
     db_path: str,
     older_than_seconds: int = 300
@@ -387,8 +466,9 @@ def process_claims_batch(
         "error": None
     }
     
-    # Get pending claims
-    pending_claims = get_pending_claims(db_path, max_claims)
+    # Generate batch ID early so we can use it for atomic reservation
+    batch_id = generate_batch_id(db_path)
+    result["batch_id"] = batch_id
     
     # Log stale verifying claims for manual review — NEVER auto-approve.
     # Auto-approving claims that failed verification is a fund-theft vector:
@@ -460,12 +540,24 @@ def process_claims_batch(
     success, tx_hash, error = sign_and_broadcast_transaction(tx_data, db_path)
     
     if not success:
-        # Mark claims as failed
+        # Mark claims as failed and reset to approved for retry
         failed_count = update_claims_failed(
             db_path,
             [c["claim_id"] for c in claims_to_process],
             error or "Transaction failed"
         )
+        # Also unreserve — reset 'settling' back to 'approved' so another
+        # worker can retry them.
+        try:
+            with sqlite3.connect(db_path) as conn:
+                for c in claims_to_process:
+                    conn.execute(
+                        "UPDATE claims SET status = 'approved', settlement_batch = NULL WHERE claim_id = ? AND status = 'settling'",
+                        (c["claim_id"],)
+                    )
+                conn.commit()
+        except sqlite3.Error:
+            pass  # Best-effort unreserve
         result["failed_count"] = failed_count
         result["error"] = error
         return result
