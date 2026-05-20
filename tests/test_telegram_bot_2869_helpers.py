@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MIT
+import asyncio
 import importlib.util
 import sys
 from pathlib import Path
@@ -88,3 +89,73 @@ def test_error_text_prefers_internal_error_then_api_error():
     assert telegram_bot._error_text({"_error": "node down", "error": "ignored"}) == "node down"
     assert telegram_bot._error_text({"error": "bad wallet"}) == "bad wallet"
     assert telegram_bot._error_text({"ok": True}) == ""
+
+
+class FakeResponse:
+    def __init__(self, data):
+        self._data = data
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return self._data
+
+
+class FakeClient:
+    def __init__(self, data):
+        self._data = data
+
+    async def get(self, _url, params=None):
+        return FakeResponse(self._data)
+
+
+def test_api_get_rejects_non_object_json_payloads():
+    async def run():
+        api = telegram_bot.RustChainAPI("https://rustchain.org")
+        api.client = FakeClient(["not", "an", "object"])
+
+        result = await api.health()
+
+        assert result == {"_error": "Unexpected response shape from /health."}
+
+    asyncio.run(run())
+
+
+def test_miners_command_skips_malformed_miner_rows():
+    class FakeApi:
+        async def miners(self):
+            return {"miners": [{"miner": "alice"}, None, "bad", {"miner": "bob"}]}
+
+    class FakeMessage:
+        def __init__(self):
+            self.replies = []
+
+        async def reply_text(self, text, **kwargs):
+            self.replies.append((text, kwargs))
+
+    async def run():
+        old_api = telegram_bot.api
+        old_limiter = telegram_bot.rate_limiter
+        try:
+            telegram_bot.api = FakeApi()
+            telegram_bot.rate_limiter = telegram_bot.RateLimiter(window=0)
+            message = FakeMessage()
+            update = SimpleNamespace(
+                effective_user=SimpleNamespace(id=123),
+                message=message,
+            )
+
+            await telegram_bot.cmd_miners(update, SimpleNamespace())
+
+            assert len(message.replies) == 1
+            text, kwargs = message.replies[0]
+            assert "Active Miners: 2" in text
+            assert "alice" in text
+            assert "bob" in text
+            assert kwargs["parse_mode"] == "MarkdownV2"
+        finally:
+            telegram_bot.api = old_api
+            telegram_bot.rate_limiter = old_limiter
+
+    asyncio.run(run())
