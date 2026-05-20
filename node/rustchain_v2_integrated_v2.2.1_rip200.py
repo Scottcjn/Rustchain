@@ -4758,7 +4758,13 @@ def admin_create_wallet_review_hold():
     """Create a wallet review hold instead of hard-blocking by default."""
     if not is_admin(request):
         return jsonify({"ok": False, "error": "forbidden"}), 403
-    data = request.get_json(force=True, silent=True) or {}
+    data = request.get_json(force=True, silent=True)
+    if data is None:
+        if request.get_data(cache=True):
+            return jsonify({"ok": False, "error": "invalid_json_body"}), 400
+        data = {}
+    if not isinstance(data, dict):
+        return jsonify({"ok": False, "error": "invalid_json_body"}), 400
     wallet = _attest_valid_miner(data.get("wallet") or data.get("miner") or "")
     reason = str(data.get("reason") or "manual review required").strip()
     coach_note = str(data.get("coach_note") or "").strip()
@@ -4787,7 +4793,13 @@ def admin_resolve_wallet_review_hold(hold_id: int):
     """Resolve a wallet review hold with explicit release/escalation actions."""
     if not is_admin(request):
         return jsonify({"ok": False, "error": "forbidden"}), 403
-    data = request.get_json(force=True, silent=True) or {}
+    data = request.get_json(force=True, silent=True)
+    if data is None:
+        if request.get_data(cache=True):
+            return jsonify({"ok": False, "error": "invalid_json_body"}), 400
+        data = {}
+    if not isinstance(data, dict):
+        return jsonify({"ok": False, "error": "invalid_json_body"}), 400
     action = str(data.get("action") or "release").strip().lower()
     reviewer_note = str(data.get("reviewer_note") or "").strip()
     coach_note = str(data.get("coach_note") or "").strip()

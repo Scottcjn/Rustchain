@@ -134,12 +134,14 @@ def client(monkeypatch):
     monkeypatch.setattr(integrated_node, "current_slot", lambda: 12345)
     monkeypatch.setattr(integrated_node, "slot_to_epoch", lambda slot: 85)
     monkeypatch.setattr(integrated_node, "HAVE_REPLAY_DEFENSE", False, raising=False)
+    integrated_node._ADMIN_RATE_LIMIT_BUCKETS.clear()
     integrated_node.init_db()
 
     integrated_node.app.config["TESTING"] = True
     with integrated_node.app.test_client() as test_client:
         yield test_client, db_path
 
+    integrated_node._ADMIN_RATE_LIMIT_BUCKETS.clear()
     if db_path.exists():
         try:
             db_path.unlink()
@@ -191,6 +193,51 @@ def test_wallet_review_release_restores_attestation_flow(client):
     response = test_client.post("/attest/submit", json=_attach_live_challenge(test_client, _base_payload()))
     assert response.status_code == 200
     assert response.get_json()["ok"] is True
+
+
+@pytest.mark.parametrize("path", ["/admin/wallet-review-holds", "/admin/wallet-review-holds/1/resolve"])
+def test_wallet_review_admin_routes_reject_non_object_json(client, path):
+    test_client, _db_path = client
+
+    response = test_client.post(
+        path,
+        json=["not", "object"],
+        headers={"X-Admin-Key": "0" * 32},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"ok": False, "error": "invalid_json_body"}
+
+
+def test_wallet_review_resolve_rejects_malformed_json_without_releasing(client):
+    test_client, db_path = client
+    with sqlite3.connect(db_path) as conn:
+        integrated_node.ensure_wallet_review_tables(conn)
+        cur = conn.execute(
+            """
+            INSERT INTO wallet_review_holds(wallet, status, reason, coach_note, reviewer_note, created_at, reviewed_at)
+            VALUES (?, 'needs_review', ?, ?, '', 1000, 0)
+            """,
+            ("review-miner", "manual review", "retry after review"),
+        )
+        hold_id = cur.lastrowid
+        conn.commit()
+
+    response = test_client.post(
+        f"/admin/wallet-review-holds/{hold_id}/resolve",
+        data="{",
+        content_type="application/json",
+        headers={"X-Admin-Key": "0" * 32},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"ok": False, "error": "invalid_json_body"}
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT status, reviewer_note, reviewed_at FROM wallet_review_holds WHERE id = ?",
+            (hold_id,),
+        ).fetchone()
+    assert row == ("needs_review", "", 0)
 
 
 def test_wallet_review_escalation_hard_blocks_attestation(client):
