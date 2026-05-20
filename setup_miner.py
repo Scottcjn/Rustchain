@@ -23,7 +23,7 @@ MINER_ARTIFACTS = {
     },
     "Darwin": {
         "url": "https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/macos/rustchain_mac_miner_v2.5.py",
-        "sha256": "dbc02277fb8ed6b9272532f882f2f7cc7b0f54abeb30ad25d01c457abff046b6",
+        "sha256": "163fafcf751d8fbd41bf936facaeb366c042f467fa34b79f2c4c0a45472ef70f",
     },
     "Windows": {
         "url": "https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/windows/rustchain_windows_miner.py",
@@ -405,6 +405,33 @@ WantedBy=multi-user.target
             self.log(f"Setup failed: {e}")
             sys.exit(1)
 
-if __name__ == "__main__":
+def print_help():
+    """Print setup usage without running any setup steps."""
+    print("""RustChain Miner Setup
+
+Usage:
+  python setup_miner.py [--help]
+
+Options:
+  -h, --help    Show this help message and exit.
+
+Run without options to install and configure the RustChain miner.
+""")
+
+
+def main():
+    if len(sys.argv) > 1:
+        if sys.argv[1] in ("-h", "--help"):
+            print_help()
+            return 0
+        print(f"Unknown argument: {sys.argv[1]}", file=sys.stderr)
+        print("Use --help for usage.", file=sys.stderr)
+        return 2
+
     setup = MinerSetup()
     setup.run_setup()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

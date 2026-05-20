@@ -34,3 +34,24 @@ def test_setup_miner_downloads_current_verified_artifact():
     assert "urlparse(miner_url)" in source
     assert "hashlib.sha256(content).hexdigest()" in source
     assert "create_local_miner(miner_file)" not in source
+
+
+def test_setup_miner_help_exits_before_setup(monkeypatch, capsys):
+    calls = []
+
+    for name in (
+        "check_requirements",
+        "detect_hardware",
+        "create_directories",
+        "download_miner",
+        "create_config",
+        "create_start_script",
+        "install_service",
+    ):
+        monkeypatch.setattr(setup_miner.MinerSetup, name, lambda self, _name=name: calls.append(_name))
+
+    monkeypatch.setattr(setup_miner.sys, "argv", ["setup_miner.py", "--help"])
+
+    assert setup_miner.main() == 0
+    assert calls == []
+    assert "RustChain Miner Setup" in capsys.readouterr().out
