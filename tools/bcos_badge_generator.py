@@ -1124,10 +1124,22 @@ def generate_badge():
     if auth_error:
         return auth_error
 
-    data = request.get_json()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({
+            'success': False,
+            'error': 'JSON object body required',
+        }), 400
 
-    repo_name = data.get('repo_name', '').strip()
-    tier = data.get('tier', 'L1').upper()
+    raw_repo_name = data.get('repo_name', '')
+    if not isinstance(raw_repo_name, str):
+        return jsonify({'success': False, 'error': 'Repository name must be a string'})
+    repo_name = raw_repo_name.strip()
+
+    raw_tier = data.get('tier', 'L1')
+    if not isinstance(raw_tier, str):
+        return jsonify({'success': False, 'error': 'Tier must be a string'})
+    tier = raw_tier.upper()
     raw_trust_score = data.get('trust_score', 75)
     cert_id = data.get('cert_id', '')
     include_qr = data.get('include_qr', False)
