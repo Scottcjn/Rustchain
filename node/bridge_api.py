@@ -648,7 +648,7 @@ def update_external_confirmation(
     
     if transfer["status"] in ("completed", "failed", "voided"):
         return False, {
-            "error": f"Cannot update completed/failed/voided transfer",
+            "error": "Cannot update completed/failed/voided transfer",
             "current_status": transfer["status"]
         }
     
@@ -738,6 +738,14 @@ def update_external_confirmation(
 def register_bridge_routes(app):
     """Register bridge API routes with Flask app."""
     from flask import request, jsonify
+
+    def _body_string_field(data: Dict[str, Any], name: str, default: Optional[str] = None):
+        value = data.get(name, default)
+        if value is None:
+            return default, None
+        if not isinstance(value, str):
+            return None, f"{name} must be a string"
+        return value.strip(), None
     
     @app.route('/api/bridge/initiate', methods=['POST'])
     def initiate_bridge():
@@ -858,9 +866,15 @@ def register_bridge_routes(app):
         if not isinstance(data, dict):
             return jsonify({"error": "Request body required"}), 400
         
-        tx_hash = data.get("tx_hash")
-        reason = data.get("reason", "admin_void")
-        voided_by = data.get("voided_by", "admin")
+        tx_hash, error = _body_string_field(data, "tx_hash")
+        if error:
+            return jsonify({"error": error}), 400
+        reason, error = _body_string_field(data, "reason", "admin_void")
+        if error:
+            return jsonify({"error": error}), 400
+        voided_by, error = _body_string_field(data, "voided_by", "admin")
+        if error:
+            return jsonify({"error": error}), 400
         
         if not tx_hash:
             return jsonify({"error": "tx_hash required"}), 400
@@ -889,10 +903,24 @@ def register_bridge_routes(app):
         if not isinstance(data, dict):
             return jsonify({"error": "Request body required"}), 400
         
-        tx_hash = data.get("tx_hash")
-        external_tx_hash = data.get("external_tx_hash")
-        confirmations = data.get("confirmations", 0)
-        required_confirmations = data.get("required_confirmations")
+        tx_hash, error = _body_string_field(data, "tx_hash")
+        if error:
+            return jsonify({"error": error}), 400
+        external_tx_hash, error = _body_string_field(data, "external_tx_hash")
+        if error:
+            return jsonify({"error": error}), 400
+        confirmations, error = _parse_non_negative_int_arg(data.get("confirmations"), "confirmations", 0)
+        if error:
+            return jsonify({"error": error}), 400
+        required_confirmations = None
+        if data.get("required_confirmations") is not None:
+            required_confirmations, error = _parse_non_negative_int_arg(
+                data.get("required_confirmations"),
+                "required_confirmations",
+                0,
+            )
+            if error:
+                return jsonify({"error": error}), 400
         
         if not tx_hash or not external_tx_hash:
             return jsonify({"error": "tx_hash and external_tx_hash required"}), 400
