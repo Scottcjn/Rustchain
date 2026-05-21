@@ -7,11 +7,8 @@ and configuring the glitch engine.
 """
 
 from flask import Blueprint, jsonify, request, Response
-from typing import Dict, Any
 import hmac
-import json
 import os
-import time
 
 try:
     from .glitch_engine import GlitchEngine, GlitchConfig
@@ -183,10 +180,28 @@ def register_agent(agent_id: str) -> Response:
     template = data.get("template")
     personality_data = data.get("personality")
     
-    from .personality import PersonalityProfile
-    
     personality = None
+    if personality_data is not None and not isinstance(personality_data, dict):
+        return jsonify({"error": "personality must be an object"}), 400
     if personality_data:
+        try:
+            from .personality import CommunicationStyle, EmotionalRange, PersonalityProfile
+        except ImportError:
+            from personality import CommunicationStyle, EmotionalRange, PersonalityProfile
+
+        for nested_key in ("traits", "response_characteristics", "quirks", "metadata"):
+            if nested_key in personality_data and not isinstance(personality_data[nested_key], dict):
+                return jsonify({"error": f"personality.{nested_key} must be an object"}), 400
+        if (
+            "communication_style" in personality_data
+            and personality_data["communication_style"] not in {style.value for style in CommunicationStyle}
+        ):
+            return jsonify({"error": "invalid communication_style"}), 400
+        if (
+            "emotional_range" in personality_data
+            and personality_data["emotional_range"] not in {value.value for value in EmotionalRange}
+        ):
+            return jsonify({"error": "invalid emotional_range"}), 400
         personality = PersonalityProfile.from_dict(personality_data)
     
     persona = engine.register_agent(agent_id, personality, template)

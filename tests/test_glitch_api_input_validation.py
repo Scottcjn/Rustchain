@@ -118,3 +118,26 @@ def test_process_accepts_valid_json_body(client):
         "processed": "processed:hello",
         "glitch_occurred": False,
     }
+
+
+@pytest.mark.parametrize(
+    "personality, expected_error",
+    (
+        (["bad"], "personality must be an object"),
+        ("bad", "personality must be an object"),
+        ({"traits": []}, "personality.traits must be an object"),
+        ({"response_characteristics": []}, "personality.response_characteristics must be an object"),
+        ({"quirks": []}, "personality.quirks must be an object"),
+        ({"metadata": []}, "personality.metadata must be an object"),
+        ({"communication_style": "bogus"}, "invalid communication_style"),
+        ({"emotional_range": "bogus"}, "invalid emotional_range"),
+    ),
+)
+def test_register_rejects_malformed_personality_payloads(client, personality, expected_error):
+    response = client.post(
+        "/api/glitch/agents/test-agent/register",
+        json={"personality": personality},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": expected_error}
