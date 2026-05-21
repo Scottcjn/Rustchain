@@ -7,6 +7,7 @@ import json
 import os
 import hashlib
 import secrets
+from datetime import datetime, timezone
 
 app = Flask(__name__)
 
@@ -42,6 +43,39 @@ def server_port() -> int:
 app.config['SECRET_KEY'] = load_secret_key()
 
 DATABASE = 'bcos_directory.db'
+
+
+def _canonical_project_created_at(created_at):
+    """Return a strict UTC timestamp string for project ordering, or None."""
+    if not created_at:
+        return None
+    if not isinstance(created_at, str):
+        created_at = str(created_at)
+
+    normalized = created_at.strip()
+    if not normalized:
+        return None
+    if normalized.endswith('Z'):
+        normalized = f'{normalized[:-1]}+00:00'
+
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    return parsed.strftime('%Y-%m-%d %H:%M:%S')
+
+
+def _project_created_at_sort_key(created_at):
+    """Return a stable timestamp key using strict Python-side parsing."""
+    canonical = _canonical_project_created_at(created_at)
+    if canonical is None:
+        return (0, 0.0)
+    parsed = datetime.fromisoformat(canonical)
+    return (1, parsed.timestamp())
+
 
 def init_db():
     """Initialize the database with projects table"""
@@ -89,14 +123,37 @@ def load_projects_from_json():
         with open(json_file, 'r') as f:
             projects_data = json.load(f)
         
+        deduped_projects = {}
+        for index, project in enumerate(projects_data.get('projects', [])):
+            github_repo = project.get('github_repo')
+            if not github_repo:
+                continue
+            canonical_created_at = _canonical_project_created_at(project.get('created_at'))
+            project = {**project, 'created_at': canonical_created_at}
+            candidate_key = _project_created_at_sort_key(canonical_created_at)
+            current = deduped_projects.get(github_repo)
+            if current is None or candidate_key > current[0]:
+                deduped_projects[github_repo] = (candidate_key, index, project)
+
         conn = sqlite3.connect(DATABASE)
         c = conn.cursor()
         
-        for project in projects_data.get('projects', []):
+        for _, _, project in deduped_projects.values():
             c.execute('''
-                INSERT OR REPLACE INTO projects 
-                (name, url, github_repo, bcos_tier, latest_sha, sbom_hash, review_note, category)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO projects
+                (name, url, github_repo, bcos_tier, latest_sha, sbom_hash, review_note, category, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(github_repo) DO UPDATE SET
+                    name = excluded.name,
+                    url = excluded.url,
+                    bcos_tier = excluded.bcos_tier,
+                    latest_sha = excluded.latest_sha,
+                    sbom_hash = excluded.sbom_hash,
+                    review_note = excluded.review_note,
+                    category = excluded.category,
+                    created_at = excluded.created_at
+                WHERE excluded.created_at IS NOT NULL
+                    AND (projects.created_at IS NULL OR excluded.created_at >= projects.created_at)
             ''', (
                 project.get('name'),
                 project.get('url'),
@@ -105,7 +162,8 @@ def load_projects_from_json():
                 project.get('latest_sha'),
                 project.get('sbom_hash'),
                 project.get('review_note'),
-                project.get('category')
+                project.get('category'),
+                project.get('created_at')
             ))
         
         conn.commit()
