@@ -158,6 +158,10 @@ def _error_text(data: dict[str, Any]) -> str:
     return ""
 
 
+def _valid_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
 # ---------------------------------------------------------------------------
 # Command: /start
 # ---------------------------------------------------------------------------
@@ -377,13 +381,14 @@ async def cmd_price(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     # Get supply from epoch for market cap
     epoch_data = await api.epoch()
     supply = epoch_data.get("total_supply_rtc", 0) if "_error" not in epoch_data else 0
-    mcap = price * supply if isinstance(supply, (int, float)) and supply else 0
+    supply_display = f"{supply:,}" if _valid_number(supply) else "N/A"
+    mcap = price * supply if _valid_number(supply) and supply else 0
 
     text = (
         f"💲 *RTC Price*\n\n"
         f"Price: *${price:.4f}*\n"
         f"Source: `{source}`\n"
-        f"Total Supply: `{supply:,} RTC`\n"
+        f"Total Supply: `{supply_display} RTC`\n"
         f"Market Cap: `${mcap:,.2f}`"
     )
     await update.message.reply_text(text, parse_mode="Markdown")

@@ -88,3 +88,45 @@ def test_error_text_prefers_internal_error_then_api_error():
     assert telegram_bot._error_text({"_error": "node down", "error": "ignored"}) == "node down"
     assert telegram_bot._error_text({"error": "bad wallet"}) == "bad wallet"
     assert telegram_bot._error_text({"ok": True}) == ""
+
+
+def test_price_command_handles_null_epoch_supply(monkeypatch):
+    class FakeApi:
+        async def swap_info(self):
+            return {"reference_price_usd": 0.25}
+
+        async def epoch(self):
+            return {"total_supply_rtc": None}
+
+    class FakeDxClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return False
+
+        async def get(self, *_args, **_kwargs):
+            return SimpleNamespace(status_code=503, json=lambda: {})
+
+    class FakeMessage:
+        def __init__(self):
+            self.replies = []
+
+        async def reply_text(self, text, **kwargs):
+            self.replies.append((text, kwargs))
+
+    message = FakeMessage()
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=99), message=message)
+    ctx = SimpleNamespace()
+
+    monkeypatch.setattr(telegram_bot, "api", FakeApi())
+    monkeypatch.setattr(telegram_bot.rate_limiter, "is_allowed", lambda user_id: True)
+    monkeypatch.setattr(telegram_bot.httpx, "AsyncClient", lambda *args, **kwargs: FakeDxClient())
+
+    import asyncio
+
+    asyncio.run(telegram_bot.cmd_price(update, ctx))
+
+    assert message.replies
+    assert "Total Supply: `N/A RTC`" in message.replies[0][0]
+    assert "Market Cap: `$0.00`" in message.replies[0][0]
