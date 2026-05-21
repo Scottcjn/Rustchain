@@ -203,3 +203,46 @@ def test_concurrent_workers_atomically_reserve_rewards_pool_funds(tmp_path, monk
             "Insufficient funds: need 2100 (1000 claims + 1100 fee), have 0",
         )
     ]
+
+
+def test_negative_max_claims_does_not_reserve_unbounded_batch(tmp_path, monkeypatch):
+    db_path = str(tmp_path / "claims.db")
+    _init_db(db_path)
+    _insert_claim(db_path, "claim-0", 1000, 1)
+    _insert_claim(db_path, "claim-1", 1000, 2)
+    _insert_claim(db_path, "claim-2", 1000, 3)
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO rewards_pool (pool_name, balance_urtc) VALUES ('epoch_rewards', 10000)"
+        )
+
+    broadcasts = []
+    monkeypatch.setattr(
+        claims_settlement,
+        "sign_and_broadcast_transaction",
+        lambda tx_data, db_path: broadcasts.append(tx_data) or (True, "0xabc", None),
+    )
+
+    result = claims_settlement.process_claims_batch(
+        db_path,
+        max_claims=-1,
+        min_batch_size=1,
+        max_wait_seconds=0,
+    )
+
+    assert result["processed"] is False
+    assert result["error"] == "Batch conditions not met"
+    assert result["batch_id"] is None
+    assert broadcasts == []
+
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT claim_id, status, settlement_batch FROM claims ORDER BY submitted_at"
+        ).fetchall()
+
+    assert rows == [
+        ("claim-0", "approved", None),
+        ("claim-1", "approved", None),
+        ("claim-2", "approved", None),
+    ]
