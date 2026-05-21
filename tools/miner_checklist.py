@@ -11,7 +11,11 @@ def preflight():
     ok &= check("Python 3.8+", __import__("sys").version_info >= (3, 8))
     ok &= check("clawrtc installed", shutil.which("clawrtc") is not None)
     ok &= check("Wallet exists", os.path.exists(os.path.expanduser("~/.clawrtc/wallets")))
-    ok &= check("Disk > 1GB free", shutil.disk_usage("/").free > 1e9)
+    try:
+        disk_ok = shutil.disk_usage("/").free > 1e9
+    except OSError:
+        disk_ok = False
+    ok &= check("Disk > 1GB free", disk_ok)
     try:
         ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
         urllib.request.urlopen("https://rustchain.org/health", timeout=5, context=ctx)

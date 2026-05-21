@@ -75,6 +75,25 @@ def test_preflight_reports_failures_when_dependencies_are_missing(capsys):
     assert "Fix issues above first." in output
 
 
+def test_preflight_reports_disk_failure_when_disk_usage_errors(capsys):
+    module = load_module()
+
+    with (
+        patch.object(module.shutil, "which", return_value="/usr/local/bin/clawrtc"),
+        patch.object(module.os.path, "exists", return_value=True),
+        patch.object(module.shutil, "disk_usage", side_effect=OSError("disk unavailable")),
+        patch.object(module.urllib.request, "urlopen", return_value=object()),
+    ):
+        module.preflight()
+
+    output = capsys.readouterr().out
+    assert "[PASS] clawrtc installed" in output
+    assert "[PASS] Wallet exists" in output
+    assert "[FAIL] Disk > 1GB free" in output
+    assert "[PASS] Node reachable" in output
+    assert "Fix issues above first." in output
+
+
 def test_preflight_calls_health_endpoint_with_timeout_and_context():
     module = load_module()
     urlopen_calls = []
