@@ -79,6 +79,22 @@ def test_fleet_scores_respects_valid_limit(client):
     assert [row["miner"] for row in response.get_json()["scores"]] == ["miner-a", "miner-b"]
 
 
+def test_fleet_scores_filtered_by_miner_preserves_columns(client):
+    response = authed_get(client, "/admin/fleet/scores?miner=miner-b")
+
+    assert response.status_code == 200
+    assert response.get_json()["scores"] == [
+        {
+            "miner": "miner-b",
+            "epoch": 1,
+            "fleet_score": 0.7,
+            "ip_signal": 0.6,
+            "timing_signal": 0.5,
+            "fingerprint_signal": 0.4,
+        }
+    ]
+
+
 @pytest.mark.parametrize(
     "query, expected_error",
     (
