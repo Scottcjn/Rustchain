@@ -66,6 +66,12 @@ def validate_wallet_transfer_admin(payload: Any) -> PreflightResult:
 
     if not from_miner or not to_miner:
         return PreflightResult(ok=False, error="missing_from_or_to", details={})
+    if not isinstance(from_miner, str) or not isinstance(to_miner, str):
+        return PreflightResult(ok=False, error="invalid_from_or_to_type", details={})
+    from_miner = from_miner.strip()
+    to_miner = to_miner.strip()
+    if not from_miner or not to_miner:
+        return PreflightResult(ok=False, error="missing_from_or_to", details={})
     if aerr:
         return PreflightResult(ok=False, error=aerr, details={})
     if amount_rtc is None or amount_rtc <= 0:
@@ -84,8 +90,8 @@ def validate_wallet_transfer_admin(payload: Any) -> PreflightResult:
         ok=True,
         error="",
         details={
-            "from_miner": str(from_miner),
-            "to_miner": str(to_miner),
+            "from_miner": from_miner,
+            "to_miner": to_miner,
             "amount_rtc": float(amount_rtc),
             "amount_i64": amount_i64,
         },
