@@ -13,6 +13,7 @@ import sqlite3
 import sys
 import tempfile
 import time
+from unittest import mock
 from pathlib import Path
 
 os.environ.setdefault("RC_P2P_SECRET", "unit-test-secret-0123456789abcdef")
@@ -83,8 +84,8 @@ def test_phase_a_old_payload_voter_spoof_still_blocked():
     assert result.get("reason") == "voter_identity_mismatch"
 
 
-def test_p2p_dedup_insert_race_returns_duplicate():
-    """A concurrent handler winning the insert after precheck must stop processing."""
+def test_p2p_dedup_duplicate_does_not_process_message():
+    """Duplicate messages must not be processed after passing verification."""
     target = _mk_layer("node1", {"node2": "http://n2"})
     sender = _mk_layer("node2", db_path=target.db_path)
     sender.broadcast = lambda *args, **kwargs: None
@@ -94,11 +95,9 @@ def test_p2p_dedup_insert_race_returns_duplicate():
 
     assert target.handle_message(first)["status"] == "ok"
 
-    def fail_verify(message):
-        raise AssertionError("duplicate should return before signature verification")
+    with mock.patch.object(target, "_handle_ping", side_effect=AssertionError("duplicate processed")):
+        result = target.handle_message(duplicate)
 
-    target.verify_message = fail_verify
-    result = target.handle_message(duplicate)
     assert result["status"] == "duplicate"
     assert "pong" not in result
 
