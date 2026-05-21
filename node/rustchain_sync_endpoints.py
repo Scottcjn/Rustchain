@@ -179,11 +179,17 @@ def register_sync_endpoints(app, db_path, admin_key):
         if not data or not isinstance(data, dict):
             return jsonify({"error": "Invalid payload"}), 400
 
+        valid_tables = set(sync_manager.SYNC_TABLES)
+        for table, rows in data.items():
+            if table not in valid_tables:
+                return jsonify({"error": f"invalid table: {table}"}), 400
+            if not isinstance(rows, list):
+                return jsonify({"error": f"{table} rows must be an array"}), 400
+            if any(not isinstance(row, dict) for row in rows):
+                return jsonify({"error": f"{table} rows must be objects"}), 400
+
         success = True
         for table, rows in data.items():
-            if not isinstance(rows, list):
-                success = False
-                continue
             if not sync_manager.apply_sync_payload(table, rows):
                 success = False
 
