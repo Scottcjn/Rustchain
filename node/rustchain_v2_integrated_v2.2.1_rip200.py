@@ -424,6 +424,26 @@ def _validate_attestation_payload_shape(data):
     if isinstance(fingerprint, dict) and "checks" in fingerprint and not isinstance(fingerprint.get("checks"), dict):
         return _attest_field_error("INVALID_FINGERPRINT_CHECKS", "Field 'fingerprint.checks' must be a JSON object")
 
+    required_sections = (
+        ("device", "MISSING_DEVICE", "Field 'device' must include hardware metadata"),
+        ("signals", "MISSING_SIGNALS", "Field 'signals' must include hardware signal metadata"),
+    )
+    for field_name, code, message in required_sections:
+        section = data.get(field_name)
+        if not isinstance(section, dict) or not section:
+            return _attest_field_error(code, message, status=422)
+
+    if (
+        not isinstance(fingerprint, dict)
+        or not isinstance(fingerprint.get("checks"), dict)
+        or not fingerprint.get("checks")
+    ):
+        return _attest_field_error(
+            "MISSING_FINGERPRINT",
+            "Field 'fingerprint.checks' must include hardware fingerprint checks",
+            status=422,
+        )
+
     return None
 
 
