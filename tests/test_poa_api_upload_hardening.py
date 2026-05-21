@@ -66,6 +66,30 @@ def test_validate_rejects_oversized_upload_before_validation(monkeypatch):
     assert called is False
 
 
+def test_validate_limits_file_bytes_not_multipart_envelope(monkeypatch):
+    module = load_poa_api(monkeypatch)
+    module.MAX_UPLOAD_BYTES = 2
+    called = False
+
+    def fake_validate(path):
+        nonlocal called
+        called = True
+        assert Path(path).read_bytes() == b"{}"
+        return {"valid": True}
+
+    module.validate_genesis = fake_validate
+
+    response = module.app.test_client().post(
+        "/validate",
+        data={"file": (io.BytesIO(b"{}"), "proof.json")},
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 200
+    assert response.get_json() == {"valid": True}
+    assert called is True
+
+
 def test_validate_uses_generic_error_and_cleans_temp_file(monkeypatch):
     module = load_poa_api(monkeypatch)
     seen_path = {}
