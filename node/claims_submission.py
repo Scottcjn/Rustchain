@@ -616,6 +616,13 @@ def get_claim_history(
         }
     """
     try:
+        limit = int(limit)
+    except (TypeError, ValueError):
+        limit = 20
+    if limit < 0:
+        limit = 0
+
+    try:
         with sqlite3.connect(db_path) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
