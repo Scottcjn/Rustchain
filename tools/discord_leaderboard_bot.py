@@ -32,6 +32,13 @@ def fmt_rtc(value: float) -> str:
     return f"{value:.6f}"
 
 
+def safe_int(value, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def short_id(s: str, keep: int = 14) -> str:
     if len(s) <= keep:
         return s
@@ -126,7 +133,7 @@ def render_payload(session, base: str, timeout: float, rows, epoch, health, top_
     total_balance = sum(x["balance_rtc"] for x in rows)
     dist = architecture_distribution(rows)
     top_table = build_leaderboard_lines(rows, top_n)
-    current_epoch = int(epoch.get("epoch", -1))
+    current_epoch = safe_int(epoch.get("epoch"), -1)
 
     rewards = []
     rewards_text = "No reward rows available for current epoch."
@@ -143,7 +150,7 @@ def render_payload(session, base: str, timeout: float, rows, epoch, health, top_
         arch_lines.append(f"- {arch}: {n} ({pct:.1f}%)")
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-    uptime_s = int(health.get("uptime_s", 0))
+    uptime_s = safe_int(health.get("uptime_s"), 0)
     node_ok = bool(health.get("ok", False))
 
     content = (
