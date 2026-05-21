@@ -69,6 +69,7 @@ class ArticleChecker:
                 return False, details
 
             # Optional author check (best-effort)
+            expected_author = expected_author.strip() if expected_author else None
             if expected_author:
                 author_found = expected_author.lower() in text
                 details["author_found"] = str(author_found)
