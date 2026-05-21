@@ -115,6 +115,26 @@ def test_ledger_create_rejects_non_object_json(tmp_path, monkeypatch):
     assert count == 0
 
 
+def test_ledger_create_rejects_zero_amount(tmp_path, monkeypatch):
+    client, db_path = _make_client(tmp_path, monkeypatch)
+    payload = _create_payload()
+    payload["amount_rtc"] = 0
+
+    response = client.post(
+        "/api/ledger",
+        headers={"X-Admin-Key": ADMIN_KEY},
+        json=payload,
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {
+        "error": "amount_rtc must be a positive finite decimal value"
+    }
+    with sqlite3.connect(db_path) as conn:
+        count = conn.execute("SELECT COUNT(*) FROM payout_ledger").fetchone()[0]
+    assert count == 0
+
+
 def test_ledger_status_update_rejects_non_object_json_before_mutation(tmp_path, monkeypatch):
     client, _db_path = _make_client(tmp_path, monkeypatch)
     payout_ledger.init_payout_ledger_tables()

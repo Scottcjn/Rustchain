@@ -52,8 +52,8 @@ def _rtc_to_micro(amount_rtc) -> int:
     except (InvalidOperation, ValueError) as exc:
         raise ValueError("amount_rtc must be a decimal value") from exc
 
-    if not value.is_finite() or value < 0:
-        raise ValueError("amount_rtc must be a non-negative finite decimal value")
+    if not value.is_finite() or value <= 0:
+        raise ValueError("amount_rtc must be a positive finite decimal value")
 
     micro = value * MICRO_RTC_PER_RTC
     if micro != micro.to_integral_value():
