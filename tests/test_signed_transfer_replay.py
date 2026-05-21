@@ -1,9 +1,11 @@
 import sqlite3
 import sys
+import threading
 import time
 import uuid
 import json
 from contextlib import closing
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -547,6 +549,114 @@ def test_pending_confirm_keeps_transfer_pending_on_unsupported_balance_schema(mo
     assert status == "pending"
     assert voided_reason is None
     assert confirmed_at is None
+
+    if db_path.exists():
+        db_path.unlink()
+
+
+def test_pending_confirm_concurrent_workers_claim_each_transfer_once(monkeypatch):
+    local_tmp_dir = Path(__file__).parent / ".tmp_signed_transfer"
+    local_tmp_dir.mkdir(exist_ok=True)
+    db_path = local_tmp_dir / f"{uuid.uuid4().hex}.sqlite3"
+    _init_signed_transfer_db(db_path)
+
+    admin_key = "test-admin-key"
+    monkeypatch.setattr(integrated_node, "DB_PATH", str(db_path))
+    monkeypatch.setattr(integrated_node, "send_sophiacheck_alert", lambda *args, **kwargs: None)
+    monkeypatch.setenv("RC_ADMIN_KEY", admin_key)
+    integrated_node.app.config["TESTING"] = True
+
+    from_wallet = "RTC" + "a" * 40
+    to_wallet = "RTC" + "b" * 40
+    amount_i64 = 1_000_000
+    now = int(time.time())
+
+    with closing(sqlite3.connect(db_path)) as conn:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute(
+            "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?)",
+            (from_wallet, 3_000_000),
+        )
+        conn.execute(
+            "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?)",
+            (to_wallet, 0),
+        )
+        conn.execute(
+            """
+            INSERT INTO pending_ledger
+                (ts, epoch, from_miner, to_miner, amount_i64, reason, created_at, confirms_at, tx_hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                now - 10,
+                7,
+                from_wallet,
+                to_wallet,
+                amount_i64,
+                "signed_wallet_transfer:concurrent-confirm",
+                now - 10,
+                now - 1,
+                "concurrent-confirm-tx",
+            ),
+        )
+        conn.commit()
+
+    start = threading.Event()
+    first_debit_entered = threading.Event()
+    second_debit_entered = threading.Event()
+    debit_calls = 0
+    debit_lock = threading.Lock()
+    original_apply_delta = integrated_node._apply_wallet_balance_delta
+
+    def delayed_apply_delta(cursor, wallet, delta_i64, balance_cols):
+        nonlocal debit_calls
+        if wallet == from_wallet and delta_i64 == -amount_i64:
+            with debit_lock:
+                debit_calls += 1
+                call_index = debit_calls
+                if call_index == 1:
+                    first_debit_entered.set()
+                elif call_index == 2:
+                    second_debit_entered.set()
+            if call_index == 1:
+                second_debit_entered.wait(timeout=0.75)
+                if second_debit_entered.is_set():
+                    time.sleep(0.05)
+        return original_apply_delta(cursor, wallet, delta_i64, balance_cols)
+
+    monkeypatch.setattr(integrated_node, "_apply_wallet_balance_delta", delayed_apply_delta)
+
+    def post_confirm():
+        start.wait(timeout=2)
+        with integrated_node.app.test_client() as client:
+            return client.post("/pending/confirm", headers={"X-Admin-Key": admin_key}).get_json()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(post_confirm) for _ in range(2)]
+        start.set()
+        results = [future.result(timeout=5) for future in futures]
+
+    assert first_debit_entered.is_set()
+    assert sum(result["confirmed_count"] for result in results) == 1
+    assert [result["errors"] for result in results] == [None, None]
+
+    with closing(sqlite3.connect(db_path)) as conn:
+        balances = dict(conn.execute("SELECT miner_id, amount_i64 FROM balances").fetchall())
+        (status, confirmed_at) = conn.execute(
+            "SELECT status, confirmed_at FROM pending_ledger WHERE id = 1"
+        ).fetchone()
+        ledger_rows = conn.execute(
+            "SELECT miner_id, delta_i64, reason FROM ledger ORDER BY id"
+        ).fetchall()
+
+    assert balances[from_wallet] == 2_000_000
+    assert balances[to_wallet] == 1_000_000
+    assert status == "confirmed"
+    assert confirmed_at is not None
+    assert ledger_rows == [
+        (from_wallet, -amount_i64, f"transfer_out:{to_wallet}:concurrent-confirm-tx"),
+        (to_wallet, amount_i64, f"transfer_in:{from_wallet}:concurrent-confirm-tx"),
+    ]
 
     if db_path.exists():
         db_path.unlink()

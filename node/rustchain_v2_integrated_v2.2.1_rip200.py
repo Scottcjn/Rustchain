@@ -7782,6 +7782,14 @@ def confirm_pending():
             
             try:
                 c.execute(f"SAVEPOINT {savepoint}")
+                c.execute("""
+                    UPDATE pending_ledger
+                    SET status = 'confirming'
+                    WHERE id = ? AND status = 'pending' AND confirms_at <= ?
+                """, (pid, now))
+                if c.rowcount != 1:
+                    c.execute(f"RELEASE SAVEPOINT {savepoint}")
+                    continue
 
                 if not _supports_wallet_balance_updates(balance_cols):
                     raise RuntimeError("unsupported balances schema for wallet transfer")
@@ -7794,7 +7802,7 @@ def confirm_pending():
                     c.execute("""
                         UPDATE pending_ledger 
                         SET status = 'voided', voided_by = 'system', voided_reason = 'insufficient_balance_at_confirm'
-                        WHERE id = ?
+                        WHERE id = ? AND status = 'confirming'
                     """, (pid,))
                     errors.append({"id": pid, "error": "insufficient_balance"})
                     c.execute(f"RELEASE SAVEPOINT {savepoint}")
@@ -7819,7 +7827,7 @@ def confirm_pending():
                 c.execute("""
                     UPDATE pending_ledger 
                     SET status = 'confirmed', confirmed_at = ?
-                    WHERE id = ?
+                    WHERE id = ? AND status = 'confirming'
                 """, (now, pid))
 
                 c.execute(f"RELEASE SAVEPOINT {savepoint}")
