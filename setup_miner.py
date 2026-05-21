@@ -4,6 +4,7 @@ RustChain Miner Setup Script
 Automated setup for RustChain Universal Miner
 """
 
+import argparse
 import os
 import sys
 import subprocess
@@ -15,6 +16,8 @@ import hashlib
 import time
 from urllib.parse import urlparse
 from pathlib import Path
+
+DESCRIPTION = "Automated setup for RustChain Universal Miner."
 
 MINER_ARTIFACTS = {
     "Linux": {
@@ -405,6 +408,17 @@ WantedBy=multi-user.target
             self.log(f"Setup failed: {e}")
             sys.exit(1)
 
+def build_parser():
+    parser = argparse.ArgumentParser(description=DESCRIPTION)
+    parser.set_defaults(func=lambda _args: MinerSetup().run_setup())
+    return parser
+
+
+def main(argv=None):
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    args.func(args)
+
+
 if __name__ == "__main__":
-    setup = MinerSetup()
-    setup.run_setup()
+    main()
