@@ -352,21 +352,23 @@ def _attest_metric_is_valid(value):
     return math.isfinite(coerced)
 
 
+FINGERPRINT_METRIC_PATHS = (
+    ("clock_drift", "cv"),
+    ("clock_drift", "samples"),
+    ("thermal_entropy", "variance"),
+    ("thermal_drift", "variance"),
+    ("instruction_jitter", "cv"),
+    ("instruction_jitter", "stddev_ns"),
+    ("cache_timing", "hierarchy_ratio"),
+)
+
+
 def _validate_fingerprint_metric_shapes(fingerprint):
     checks = fingerprint.get("checks") if isinstance(fingerprint, dict) else None
     if not isinstance(checks, dict):
         return None
 
-    metric_paths = (
-        ("clock_drift", "cv"),
-        ("clock_drift", "samples"),
-        ("thermal_entropy", "variance"),
-        ("thermal_drift", "variance"),
-        ("instruction_jitter", "cv"),
-        ("instruction_jitter", "stddev_ns"),
-        ("cache_timing", "hierarchy_ratio"),
-    )
-    for check_name, metric_name in metric_paths:
+    for check_name, metric_name in FINGERPRINT_METRIC_PATHS:
         check = checks.get(check_name)
         if not isinstance(check, dict):
             continue

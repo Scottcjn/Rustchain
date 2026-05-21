@@ -414,6 +414,23 @@ def test_attest_submit_rejects_malformed_clock_drift_metric(client):
     assert body["code"] == "INVALID_FINGERPRINT_METRIC"
 
 
+@pytest.mark.parametrize("check_name,metric_name", integrated_node.FINGERPRINT_METRIC_PATHS)
+def test_attest_submit_rejects_malformed_metric_paths(client, check_name, metric_name):
+    payload = _attach_live_challenge(client, _base_payload())
+    checks = payload["fingerprint"]["checks"]
+    check = checks.setdefault(check_name, {"passed": True, "data": {}})
+    data = check.setdefault("data", {})
+    data[metric_name] = {"not": "numeric"}
+
+    response = client.post("/attest/submit", json=payload)
+
+    assert response.status_code == 422
+    body = response.get_json()
+    assert body["ok"] is False
+    assert body["code"] == "INVALID_FINGERPRINT_METRIC"
+    assert f"fingerprint.checks.{check_name}.data.{metric_name}" in body["message"]
+
+
 def test_extract_temporal_profile_defaults_malformed_optional_metrics():
     profile = integrated_node.extract_temporal_profile({
         "checks": {
