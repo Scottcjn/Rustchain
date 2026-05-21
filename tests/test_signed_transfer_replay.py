@@ -54,6 +54,45 @@ def _init_signed_transfer_db(db_path: Path) -> None:
     conn.close()
 
 
+def _init_signed_transfer_legacy_balance_db(db_path: Path) -> None:
+    conn = sqlite3.connect(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE balances (
+            miner_pk TEXT PRIMARY KEY,
+            balance_rtc REAL DEFAULT 0
+        );
+
+        CREATE TABLE pending_ledger (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts INTEGER NOT NULL,
+            epoch INTEGER NOT NULL,
+            from_miner TEXT NOT NULL,
+            to_miner TEXT NOT NULL,
+            amount_i64 INTEGER NOT NULL,
+            reason TEXT,
+            status TEXT DEFAULT 'pending',
+            created_at INTEGER NOT NULL,
+            confirms_at INTEGER NOT NULL,
+            tx_hash TEXT,
+            voided_by TEXT,
+            voided_reason TEXT,
+            confirmed_at INTEGER
+        );
+
+        CREATE TABLE transfer_nonces (
+            from_address TEXT NOT NULL,
+            nonce TEXT NOT NULL,
+            used_at INTEGER NOT NULL,
+            PRIMARY KEY (from_address, nonce)
+        );
+
+        CREATE UNIQUE INDEX idx_pending_ledger_tx_hash ON pending_ledger(tx_hash);
+        """
+    )
+    conn.commit()
+    conn.close()
+
 @pytest.fixture
 def signed_transfer_client(monkeypatch):
     local_tmp_dir = Path(__file__).parent / ".tmp_signed_transfer"
@@ -276,3 +315,38 @@ def test_signed_transfer_keeps_legacy_zero_fee_signature_compatible(
     assert response.status_code == 200
     assert "fee" in seen_messages[0]
     assert "fee" not in seen_messages[1]
+
+
+def test_signed_transfer_accepts_legacy_balance_schema(signed_transfer_client, monkeypatch):
+    local_tmp_dir = Path(__file__).parent / ".tmp_signed_transfer"
+    local_tmp_dir.mkdir(exist_ok=True)
+    db_path = local_tmp_dir / f"{uuid.uuid4().hex}.sqlite3"
+    _init_signed_transfer_legacy_balance_db(db_path)
+
+    monkeypatch.setattr(integrated_node, "DB_PATH", str(db_path))
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO balances (miner_pk, balance_rtc) VALUES (?, ?)",
+            ("RTC" + "a" * 40, 10.0),
+        )
+        conn.commit()
+
+    client, _ = signed_transfer_client
+    response = client.post(
+        "/wallet/transfer/signed",
+        json=_payload(amount_rtc=1.5, nonce=1733420022222),
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["ok"] is True
+
+    with sqlite3.connect(db_path) as conn:
+        pending_amount = conn.execute(
+            "SELECT amount_i64 FROM pending_ledger"
+        ).fetchone()[0]
+
+    assert pending_amount == 1_500_000
+
+    if db_path.exists():
+        db_path.unlink()
