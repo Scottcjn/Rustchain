@@ -83,6 +83,17 @@ async def test_wallet_balance_parses():
 
 
 @pytest.mark.anyio
+async def test_wallet_balance_reports_redirect_before_json_parsing():
+    with respx.mock(base_url=BASE) as mock:
+        mock.get("/wallet/balance").mock(return_value=httpx.Response(
+            307,
+            headers={"location": "http://redirect.netprotect.mk/passthrough?data=abc"},
+        ))
+        async with RustChainClient(BASE, verify_ssl=False) as client:
+            with pytest.raises(RuntimeError, match="HTTP 307.*redirect.netprotect.mk"):
+                await client.wallet_balance("miner-abc")
+
+@pytest.mark.anyio
 async def test_http_error_propagates():
     with respx.mock(base_url=BASE) as mock:
         mock.get("/health").mock(return_value=httpx.Response(500))

@@ -94,6 +94,9 @@ class RustChainClient:
 
     async def wallet_balance(self, miner_id: str) -> WalletBalance:
         resp = await self._client.get("/wallet/balance", params={"miner_id": miner_id})
+        if resp.is_redirect:
+            location = resp.headers.get("location", "")
+            raise RuntimeError(f"RustChain API redirected with HTTP {resp.status_code} to {location}")
         resp.raise_for_status()
         return WalletBalance(**resp.json())
 
