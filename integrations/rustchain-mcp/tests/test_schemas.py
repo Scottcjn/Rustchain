@@ -223,6 +223,14 @@ class TestAPIError:
         assert error.message == "Miner not found"
         assert error.status_code == 404
 
+    def test_from_response_with_non_object_body(self):
+        """Test non-object error response bodies still become APIError."""
+        error = APIError.from_response(502, ["bad gateway"])
+
+        assert error.code == "UNKNOWN_ERROR"
+        assert error.message == "['bad gateway']"
+        assert error.status_code == 502
+
     def test_to_dict(self):
         """Test converting APIError to dict."""
         error = APIError(
