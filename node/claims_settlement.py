@@ -49,6 +49,15 @@ class TransactionFailedError(SettlementError):
     pass
 
 
+def _normalize_claim_limit(max_claims: int, default: int = 100) -> int:
+    """Return a non-negative SQLite LIMIT value for claim batch queries."""
+    try:
+        max_claims = int(max_claims)
+    except (TypeError, ValueError):
+        max_claims = default
+    return max(0, max_claims)
+
+
 def get_pending_claims(
     db_path: str,
     max_claims: int = 100
@@ -59,6 +68,8 @@ def get_pending_claims(
     Returns:
         List of claim records sorted by submission time
     """
+    max_claims = _normalize_claim_limit(max_claims)
+
     try:
         with sqlite3.connect(db_path) as conn:
             conn.row_factory = sqlite3.Row
@@ -334,6 +345,8 @@ def reserve_claims_for_settlement(
     to overwrite the final transaction hash.  SQLite serializes BEGIN IMMEDIATE
     transactions, so each approved claim can move into at most one batch.
     """
+    max_claims = _normalize_claim_limit(max_claims)
+
     conn = sqlite3.connect(db_path, timeout=30, isolation_level=None)
     conn.row_factory = sqlite3.Row
     try:
@@ -614,6 +627,8 @@ def process_claims_batch(
         "failed_count": 0,
         "error": None
     }
+
+    max_claims = _normalize_claim_limit(max_claims)
     
     # Get pending claims for dry-run/batch-condition reporting.  Non-dry-run
     # processing reserves rows atomically after the batch id is generated.
