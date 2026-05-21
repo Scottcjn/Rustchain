@@ -93,6 +93,18 @@ def _parse_bounded_int_arg(name: str, default: int, maximum: int):
     return min(value, maximum), None, None
 
 
+def _string_report_field(report: dict, name: str, default: str = "", *, required: bool = False):
+    raw = report.get(name, default)
+    if raw is None:
+        raw = default
+    if not isinstance(raw, str):
+        raise ValueError(f"{name} must be a string")
+    value = raw.strip()
+    if required and not value:
+        raise ValueError(f"{name} required")
+    return value
+
+
 def _report_commitment(report: dict) -> str:
     """Compute the canonical BCOS report commitment."""
     report_copy = {
@@ -236,15 +248,25 @@ def bcos_attest():
     report = data.get("report", data)
     if not isinstance(report, dict):
         return jsonify({"error": "report must be an object"}), 400
-    cert_id = report.get("cert_id")
-    commitment = report.get("commitment")
-    repo = report.get("repo_name", report.get("repo", ""))
-    commit_sha = report.get("commit_sha", "")
-    tier = report.get("tier", "L1")
+    try:
+        cert_id = _string_report_field(report, "cert_id")
+        commitment = _string_report_field(report, "commitment")
+        if "repo_name" in report:
+            repo = _string_report_field(report, "repo_name")
+        else:
+            repo = _string_report_field(report, "repo")
+        commit_sha = _string_report_field(report, "commit_sha")
+        tier = _string_report_field(report, "tier", "L1")
+        reviewer = _string_report_field(report, "reviewer")
+        signature = _string_report_field(data, "signature") if "signature" in data else _string_report_field(report, "signature")
+        signer_pubkey = (
+            _string_report_field(data, "signer_pubkey")
+            if "signer_pubkey" in data
+            else _string_report_field(report, "signer_pubkey")
+        )
+    except ValueError as e:
+        return jsonify({"error": "invalid_report_field", "message": str(e)}), 400
     raw_trust_score = report.get("trust_score", 0)
-    reviewer = report.get("reviewer", "")
-    signature = data.get("signature", report.get("signature", ""))
-    signer_pubkey = data.get("signer_pubkey", report.get("signer_pubkey", ""))
 
     # Validation
     if not cert_id or not commitment:
