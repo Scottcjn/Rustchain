@@ -202,6 +202,56 @@ def test_epoch_commit_accepts_quorum_backed_by_local_votes(tmp_path, monkeypatch
     assert victim.epoch_crdt.metadata[7]["voters"] == ["peer1", "peer2", "peer3"]
 
 
+def test_epoch_vote_omits_partial_certificate_after_vote_reload(tmp_path, monkeypatch):
+    monkeypatch.setenv("RC_P2P_SECRET", "a" * 64)
+    node = _cluster_node(tmp_path, "victim")
+    peer3 = _cluster_node(tmp_path, "peer3")
+    key = (7, "proposal-a")
+    node._epoch_votes[key] = {
+        "peer1": "accept",
+        "peer2": "accept",
+    }
+    broadcasted = []
+    monkeypatch.setattr(node, "broadcast", lambda msg: broadcasted.append(msg))
+
+    result = node.handle_message(_accept_vote(peer3))
+
+    assert result["status"] == "committed"
+    assert len(broadcasted) == 1
+    assert "vote_certificate" not in broadcasted[0].payload
+    assert broadcasted[0].payload["voters"] == ["peer1", "peer2", "peer3"]
+
+
+def test_epoch_commit_partial_certificate_falls_back_to_local_votes(tmp_path, monkeypatch):
+    monkeypatch.setenv("RC_P2P_SECRET", "a" * 64)
+    victim = _cluster_node(tmp_path, "victim")
+    peer1 = _cluster_node(tmp_path, "peer1")
+    peer3 = _cluster_node(tmp_path, "peer3")
+    victim._epoch_votes[(7, "proposal-a")] = {
+        "peer1": "accept",
+        "peer2": "accept",
+        "peer3": "accept",
+    }
+    msg = peer1.create_message(
+        MessageType.EPOCH_COMMIT,
+        {
+            "epoch": 7,
+            "proposal_hash": "proposal-a",
+            "accept_count": 3,
+            "voters": ["peer1", "peer2", "peer3"],
+            "vote_certificate": [_accept_vote(peer3).to_dict()],
+        },
+        ttl=0,
+    )
+
+    result = victim.handle_message(msg)
+
+    assert result["status"] == "committed"
+    assert victim.epoch_crdt.contains(7)
+    assert victim.epoch_crdt.metadata[7]["voters"] == ["peer1", "peer2", "peer3"]
+    assert "certificate" not in victim.epoch_crdt.metadata[7]
+
+
 def test_epoch_commit_accepts_quorum_backed_by_vote_certificate(tmp_path, monkeypatch):
     monkeypatch.setenv("RC_P2P_SECRET", "a" * 64)
     victim = _cluster_node(tmp_path, "victim")

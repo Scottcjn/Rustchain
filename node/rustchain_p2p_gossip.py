@@ -1331,13 +1331,15 @@ class GossipLayer:
                 for voter in accept_voters
                 if voter in self._epoch_vote_messages.get(key, {})
             ]
-            commit_msg = self.create_message(MessageType.EPOCH_COMMIT, {
+            commit_payload = {
                 "epoch": epoch,
                 "proposal_hash": proposal_hash,
                 "accept_count": accept_count,
                 "voters": accept_voters,
-                "vote_certificate": vote_certificate
-            })
+            }
+            if len(vote_certificate) == len(accept_voters):
+                commit_payload["vote_certificate"] = vote_certificate
+            commit_msg = self.create_message(MessageType.EPOCH_COMMIT, commit_payload)
             self.broadcast(commit_msg)
             return {"status": "committed", "epoch": epoch, "accept_count": accept_count}
 
@@ -1354,7 +1356,7 @@ class GossipLayer:
         epoch: int,
         proposal_hash: str,
         known_nodes: Set[str],
-    ) -> Tuple[Optional[Set[str]], Optional[str]]:
+    ) -> Tuple[Optional[Set[str]], Dict[str, GossipMessage], Optional[str]]:
         """Verify signed accept-vote messages attached to an epoch commit."""
         accepted_voters: Set[str] = set()
         verified_messages: Dict[str, GossipMessage] = {}
@@ -1363,37 +1365,31 @@ class GossipLayer:
             try:
                 vote_msg = GossipMessage.from_dict(entry)
             except (TypeError, ValueError):
-                return None, "invalid_vote_certificate"
+                return None, {}, "invalid_vote_certificate"
 
             if vote_msg.msg_type != MessageType.EPOCH_VOTE.value:
-                return None, "invalid_vote_certificate"
+                return None, {}, "invalid_vote_certificate"
             if vote_msg.sender_id not in known_nodes:
-                return None, "unknown_certificate_voter"
+                return None, {}, "unknown_certificate_voter"
             if not self._verify_message_signature(vote_msg, check_freshness=False):
-                return None, "invalid_vote_certificate_signature"
+                return None, {}, "invalid_vote_certificate_signature"
 
             vote_payload = vote_msg.payload if isinstance(vote_msg.payload, dict) else {}
             if vote_payload.get("epoch") != epoch:
-                return None, "certificate_epoch_mismatch"
+                return None, {}, "certificate_epoch_mismatch"
             if vote_payload.get("proposal_hash") != proposal_hash:
-                return None, "certificate_proposal_mismatch"
+                return None, {}, "certificate_proposal_mismatch"
             if vote_payload.get("vote") != "accept":
-                return None, "certificate_non_accept_vote"
+                return None, {}, "certificate_non_accept_vote"
 
             payload_voter = vote_payload.get("voter")
             if payload_voter is not None and payload_voter != vote_msg.sender_id:
-                return None, "certificate_voter_mismatch"
+                return None, {}, "certificate_voter_mismatch"
 
             accepted_voters.add(vote_msg.sender_id)
             verified_messages[vote_msg.sender_id] = vote_msg
 
-        key = (epoch, proposal_hash)
-        self._epoch_votes.setdefault(key, {}).update({
-            voter: "accept" for voter in accepted_voters
-        })
-        self._epoch_vote_messages.setdefault(key, {}).update(verified_messages)
-
-        return accepted_voters, None
+        return accepted_voters, verified_messages, None
 
     def _handle_epoch_commit(self, msg: GossipMessage) -> Dict:
         """Handle finalized epoch commits when backed by votes or certificate.
@@ -1434,30 +1430,45 @@ class GossipLayer:
         if vote_certificate is not None:
             if not isinstance(vote_certificate, list):
                 return {"status": "error", "reason": "invalid_vote_certificate"}
-            accepted_voters, certificate_error = self._verify_epoch_vote_certificate(
-                vote_certificate,
-                epoch,
-                proposal_hash,
-                known_nodes,
+            (
+                certificate_voters,
+                verified_messages,
+                certificate_error,
+            ) = self._verify_epoch_vote_certificate(vote_certificate, epoch, proposal_hash, known_nodes)
+            certificate_is_complete = (
+                certificate_error is None
+                and certificate_voters is not None
+                and len(certificate_voters) >= quorum
+                and voter_set.issubset(certificate_voters)
+                and accept_count <= len(certificate_voters)
             )
-            if certificate_error:
-                return {"status": "error", "reason": certificate_error}
-            if accepted_voters is None or len(accepted_voters) < quorum:
-                return {"status": "error", "reason": "insufficient_certificate_quorum"}
-            if not voter_set.issubset(accepted_voters):
-                return {"status": "error", "reason": "certificate_voter_mismatch"}
-            if accept_count > len(accepted_voters):
-                return {"status": "error", "reason": "certificate_accept_count_mismatch"}
+            if certificate_is_complete:
+                key = (epoch, proposal_hash)
+                self._epoch_votes.setdefault(key, {}).update({
+                    voter: "accept" for voter in certificate_voters
+                })
+                self._epoch_vote_messages.setdefault(key, {}).update(verified_messages)
+                self.epoch_crdt.add(epoch, {
+                    "proposal_hash": proposal_hash,
+                    "finalized": True,
+                    "accept_count": len(certificate_voters),
+                    "voters": sorted(certificate_voters),
+                    "committer": msg.sender_id,
+                    "certificate": True,
+                })
+                return {
+                    "status": "committed",
+                    "epoch": epoch,
+                    "accept_count": len(certificate_voters),
+                }
 
-            self.epoch_crdt.add(epoch, {
-                "proposal_hash": proposal_hash,
-                "finalized": True,
-                "accept_count": len(accepted_voters),
-                "voters": sorted(accepted_voters),
-                "committer": msg.sender_id,
-                "certificate": True,
-            })
-            return {"status": "committed", "epoch": epoch, "accept_count": len(accepted_voters)}
+            if certificate_error is None:
+                if certificate_voters is None or len(certificate_voters) < quorum:
+                    certificate_error = "insufficient_certificate_quorum"
+                elif not voter_set.issubset(certificate_voters):
+                    certificate_error = "certificate_voter_mismatch"
+                elif accept_count > len(certificate_voters):
+                    certificate_error = "certificate_accept_count_mismatch"
 
         votes_for_proposal = self._epoch_votes.get((epoch, proposal_hash), {})
         accepted_voters = {
@@ -1466,12 +1477,16 @@ class GossipLayer:
         }
         unverified_voters = voter_set - accepted_voters
         if unverified_voters:
+            if vote_certificate is not None and certificate_error:
+                return {"status": "error", "reason": certificate_error}
             return {
                 "status": "error",
                 "reason": "unverified_voters",
                 "voters": sorted(unverified_voters),
             }
         if len(accepted_voters) < quorum:
+            if vote_certificate is not None and certificate_error:
+                return {"status": "error", "reason": certificate_error}
             return {"status": "error", "reason": "insufficient_local_quorum"}
 
         self.epoch_crdt.add(epoch, {
