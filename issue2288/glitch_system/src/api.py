@@ -7,11 +7,8 @@ and configuring the glitch engine.
 """
 
 from flask import Blueprint, jsonify, request, Response
-from typing import Dict, Any
 import hmac
-import json
 import os
-import time
 
 try:
     from .glitch_engine import GlitchEngine, GlitchConfig
@@ -135,8 +132,15 @@ def process_message() -> Response:
     message = data.get("message", "")
     context = data.get("context", {})
     
-    if not agent_id or not message:
+    if (
+        not isinstance(agent_id, str)
+        or not isinstance(message, str)
+        or not agent_id
+        or not message
+    ):
         return jsonify({"error": "agent_id and message are required"}), 400
+    if not isinstance(context, dict):
+        return jsonify({"error": "context must be a JSON object"}), 400
     
     processed, glitch_event = engine.process_message(agent_id, message, context)
     

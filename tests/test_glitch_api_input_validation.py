@@ -118,3 +118,18 @@ def test_process_accepts_valid_json_body(client):
         "processed": "processed:hello",
         "glitch_occurred": False,
     }
+
+
+@pytest.mark.parametrize(
+    ("payload", "error"),
+    (
+        ({"agent_id": ["bot"], "message": "hello"}, "agent_id and message are required"),
+        ({"agent_id": "bot", "message": ["hello"]}, "agent_id and message are required"),
+        ({"agent_id": "bot", "message": "hello", "context": ["bad"]}, "context must be a JSON object"),
+    ),
+)
+def test_process_rejects_structured_payload_fields(client, payload, error):
+    response = client.post("/api/glitch/process", json=payload)
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": error}
