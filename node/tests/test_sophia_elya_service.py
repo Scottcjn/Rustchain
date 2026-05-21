@@ -102,3 +102,21 @@ def test_elya_epoch_enroll_rejects_non_numeric_weights_before_ticket_use():
     assert resp.status_code == 400
     assert resp.get_json()["reason"] == "invalid_weight"
     assert "ticket-weight-bad" in elya.tickets_db
+
+def test_elya_epoch_enroll_rejects_non_finite_weights_before_ticket_use():
+    client = _client()
+    elya.tickets_db["ticket-weight-nan"] = {"expires_at": elya.time.time() + 60}
+
+    resp = client.post(
+        "/epoch/enroll",
+        json={
+            "miner_pubkey": "miner-a",
+            "ticket_id": "ticket-weight-nan",
+            "weights": {"temporal": "nan"},
+            "device": {},
+        },
+    )
+
+    assert resp.status_code == 400
+    assert resp.get_json()["reason"] == "invalid_weight"
+    assert "ticket-weight-nan" in elya.tickets_db

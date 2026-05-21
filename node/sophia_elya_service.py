@@ -4,7 +4,7 @@ RustChain v2 - RIP-0005 Epoch Pro-Rata Rewards
 Production Anti-Spoof System with Fair Distribution
 Issue #2295: Added WebSocket real-time feed for Block Explorer
 """
-import os, time, json, secrets, hashlib, sqlite3
+import os, time, json, secrets, hashlib, sqlite3, math
 from decimal import Decimal, ROUND_HALF_UP
 from flask import Flask, request, jsonify
 from datetime import datetime
@@ -294,9 +294,10 @@ def _json_object_body():
 
 def _optional_float(mapping, key, default):
     try:
-        return float(mapping.get(key, default))
+        value = float(mapping.get(key, default))
     except (TypeError, ValueError):
         return None
+    return value if math.isfinite(value) else None
 
 
 @app.post("/api/register")
