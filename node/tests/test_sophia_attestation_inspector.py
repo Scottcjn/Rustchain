@@ -108,3 +108,53 @@ def test_sophia_inspect_rejects_non_object_json_before_inspection(monkeypatch):
     assert response.status_code == 400
     assert response.get_json() == {"error": "JSON object required"}
     assert inspect_calls == []
+
+
+def test_sophia_inspect_rejects_structured_miner_id(monkeypatch):
+    app = Flask(__name__)
+    app.config["TESTING"] = True
+    monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
+    sophia_attestation_inspector.register_sophia_endpoints(app, ":memory:")
+
+    inspect_calls = []
+
+    def fake_inspect(*args, **kwargs):
+        inspect_calls.append((args, kwargs))
+        return {"ok": True}
+
+    monkeypatch.setattr(sophia_attestation_inspector, "inspect_miner", fake_inspect)
+
+    response = app.test_client().post(
+        "/sophia/inspect",
+        headers={"X-Admin-Key": "expected-admin"},
+        json={"miner_id": ["alice"]},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "miner_id must be a string"}
+    assert inspect_calls == []
+
+
+def test_sophia_inspect_trims_miner_id(monkeypatch):
+    app = Flask(__name__)
+    app.config["TESTING"] = True
+    monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
+    sophia_attestation_inspector.register_sophia_endpoints(app, ":memory:")
+
+    inspect_calls = []
+
+    def fake_inspect(*args, **kwargs):
+        inspect_calls.append((args, kwargs))
+        return {"ok": True, "miner": args[0]}
+
+    monkeypatch.setattr(sophia_attestation_inspector, "inspect_miner", fake_inspect)
+
+    response = app.test_client().post(
+        "/sophia/inspect",
+        headers={"X-Admin-Key": "expected-admin"},
+        json={"miner_id": " alice "},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json() == {"ok": True, "miner": "alice"}
+    assert inspect_calls[0][0][0] == "alice"
