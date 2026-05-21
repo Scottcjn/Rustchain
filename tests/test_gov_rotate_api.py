@@ -7,8 +7,28 @@ def _admin_headers():
     return {"X-API-Key": "test-admin-key"}
 
 
+def _x_admin_headers():
+    return {"X-Admin-Key": "test-admin-key"}
+
+
 def _member(signer_id=1):
     return {"signer_id": signer_id, "pubkey_hex": "aa"}
+
+
+def test_admin_required_accepts_x_admin_key_alias(monkeypatch):
+    monkeypatch.setattr(integrated_node, "ADMIN_KEY", "test-admin-key")
+    integrated_node.app.config["TESTING"] = True
+
+    with integrated_node.app.test_client() as client:
+        resp = client.post(
+            "/gov/rotate/stage",
+            headers=_x_admin_headers(),
+            json=["not", "an", "object"],
+        )
+
+    assert resp.status_code != 401
+    assert resp.status_code == 400
+    assert resp.get_json()["reason"] == "json_object_required"
 
 
 def test_gov_rotate_stage_requires_json_object(monkeypatch):

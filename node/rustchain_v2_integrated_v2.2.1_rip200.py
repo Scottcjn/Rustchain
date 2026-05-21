@@ -5516,7 +5516,7 @@ def admin_required(f):
     from functools import wraps
     @wraps(f)
     def decorated(*args, **kwargs):
-        key = request.headers.get("X-API-Key") or ""
+        key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
         if not hmac.compare_digest(key, ADMIN_KEY or ""):
             return jsonify({"ok": False, "reason": "admin_required"}), 401
         return f(*args, **kwargs)
