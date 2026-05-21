@@ -43,6 +43,24 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN", "")
 API_TIMEOUT = float(os.getenv("API_TIMEOUT", "10"))
 
 
+def _format_uptime(value) -> str:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return "N/A"
+    return f"{value:,}s (~{value // 3600}h)"
+
+
+def _format_count(value) -> str:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return "N/A"
+    return f"{value:,}"
+
+
+def _format_rtc(value) -> str:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return "N/A"
+    return f"{value:.6f} RTC"
+
+
 # ---------------------------------------------------------------------------
 # API client
 # ---------------------------------------------------------------------------
@@ -148,7 +166,7 @@ async def cmd_health(interaction: discord.Interaction):
     )
     embed.add_field(name="Status", value="Online" if ok else "Offline", inline=True)
     embed.add_field(name="Version", value=version, inline=True)
-    embed.add_field(name="Uptime", value=f"{uptime:,}s (~{uptime // 3600}h)", inline=True)
+    embed.add_field(name="Uptime", value=_format_uptime(uptime), inline=True)
     embed.timestamp = datetime.now(timezone.utc)
     embed.set_footer(text=RUSTCHAIN_URL)
     await interaction.followup.send(embed=embed)
@@ -168,15 +186,15 @@ async def cmd_epoch(interaction: discord.Interaction):
 
     embed = discord.Embed(title="RustChain Epoch", color=discord.Color.blue())
     embed.add_field(name="Epoch", value=str(data.get("epoch", "?")), inline=True)
-    embed.add_field(name="Slot", value=f"{data.get('slot', 0):,}", inline=True)
-    embed.add_field(name="Height", value=f"{data.get('height', 0):,}", inline=True)
+    embed.add_field(name="Slot", value=_format_count(data.get("slot")), inline=True)
+    embed.add_field(name="Height", value=_format_count(data.get("height")), inline=True)
 
     if "blocks_per_epoch" in data:
         embed.add_field(name="Blocks/Epoch", value=str(data["blocks_per_epoch"]), inline=True)
     if "enrolled_miners" in data:
         embed.add_field(name="Enrolled Miners", value=str(data["enrolled_miners"]), inline=True)
     if "epoch_pot" in data:
-        embed.add_field(name="Epoch Pot", value=f"{data['epoch_pot']:.6f} RTC", inline=True)
+        embed.add_field(name="Epoch Pot", value=_format_rtc(data["epoch_pot"]), inline=True)
 
     embed.timestamp = datetime.now(timezone.utc)
     embed.set_footer(text=RUSTCHAIN_URL)
@@ -206,7 +224,7 @@ async def cmd_balance(interaction: discord.Interaction, miner_id: str):
 
     embed = discord.Embed(title="Wallet Balance", color=discord.Color.gold())
     embed.add_field(name="Miner", value=mid, inline=True)
-    embed.add_field(name="Balance", value=f"{amount:.6f} RTC", inline=True)
+    embed.add_field(name="Balance", value=_format_rtc(amount), inline=True)
     embed.timestamp = datetime.now(timezone.utc)
     embed.set_footer(text=RUSTCHAIN_URL)
     await interaction.followup.send(embed=embed)
