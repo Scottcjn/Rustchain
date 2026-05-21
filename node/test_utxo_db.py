@@ -17,7 +17,7 @@ import utxo_db as utxo_db_module
 from utxo_db import (
     UtxoDB, coin_select, compute_box_id, address_to_proposition,
     proposition_to_address, UNIT, DUST_THRESHOLD, MAX_COINBASE_OUTPUT_NRTC,
-    MAX_OUTPUTS, MAX_SQLITE_INT64, MAX_UTXO_ADDRESS_BYTES,
+    MAX_OUTPUTS, MAX_DATA_INPUTS, MAX_SQLITE_INT64, MAX_UTXO_ADDRESS_BYTES,
     MAX_UTXO_METADATA_BYTES, MAX_MEMPOOL_TX_ID_BYTES,
 )
 
@@ -45,6 +45,21 @@ class TestUtxoDB(unittest.TestCase):
             'timestamp': int(time.time()),
             '_allow_minting': True,
         }, block_height=block_height)
+
+    def _create_data_input_refs(self, count: int, start_height: int = 2) -> list:
+        refs = []
+        for idx in range(count):
+            address = f'data_ref_{idx}'
+            self.assertTrue(self.db.apply_transaction({
+                'tx_type': 'mining_reward',
+                'inputs': [],
+                'outputs': [{'address': address, 'value_nrtc': UNIT}],
+                'fee_nrtc': 0,
+                'timestamp': int(time.time()) + idx,
+                '_allow_minting': True,
+            }, block_height=start_height + idx))
+            refs.append(self.db.get_unspent_for_address(address)[0]['box_id'])
+        return refs
 
     # -- box operations ------------------------------------------------------
 
@@ -480,6 +495,33 @@ class TestUtxoDB(unittest.TestCase):
         self.assertEqual(self.db.get_balance('bob'), 0)
         self.assertIsNone(self.db.get_box(alice_box['box_id'])['spent_at'])
 
+    def test_too_many_data_inputs_rejected_before_history_write(self):
+        """Bound read-only data-input fan-out before persisting tx history."""
+        self._apply_coinbase('alice', 100 * UNIT, block_height=1)
+        alice_box = self.db.get_unspent_for_address('alice')[0]
+        data_inputs = self._create_data_input_refs(MAX_DATA_INPUTS + 1)
+
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': alice_box['box_id'], 'spending_proof': 'sig'}],
+            'data_inputs': data_inputs,
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+        }, block_height=MAX_DATA_INPUTS + 10)
+
+        self.assertFalse(ok)
+        self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
+        self.assertEqual(self.db.get_balance('bob'), 0)
+        conn = self.db._conn()
+        try:
+            row = conn.execute(
+                """SELECT COUNT(*) AS n FROM utxo_transactions
+                   WHERE tx_type = 'transfer'"""
+            ).fetchone()
+            self.assertEqual(row['n'], 0)
+        finally:
+            conn.close()
+
     # -- state root ----------------------------------------------------------
 
     def test_empty_state_root(self):
@@ -858,6 +900,33 @@ class TestUtxoDB(unittest.TestCase):
         ok = self.db.mempool_add(tx)
         self.assertFalse(ok)
         self.assertFalse(self.db.mempool_check_double_spend(box['box_id']))
+
+    def test_mempool_rejects_too_many_data_inputs_without_locking_input(self):
+        """Bound data-input fan-out before storing mempool payloads."""
+        self._apply_coinbase('alice', 100 * UNIT, block_height=1)
+        box = self.db.get_unspent_for_address('alice')[0]
+        data_inputs = self._create_data_input_refs(MAX_DATA_INPUTS + 1)
+
+        tx = {
+            'tx_id': 'datacap' * 8,
+            'inputs': [{'box_id': box['box_id']}],
+            'data_inputs': data_inputs,
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+        }
+        ok = self.db.mempool_add(tx)
+
+        self.assertFalse(ok)
+        self.assertFalse(self.db.mempool_check_double_spend(box['box_id']))
+        self.assertEqual(self.db.mempool_get_block_candidates(), [])
+        conn = self.db._conn()
+        try:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM utxo_mempool"
+            ).fetchone()
+            self.assertEqual(row['n'], 0)
+        finally:
+            conn.close()
 
     def test_mempool_rejects_data_input_overlap_without_locking_input(self):
         """Mempool rejects txs that consume their read-only context."""
