@@ -15,10 +15,28 @@ from requests.exceptions import ConnectionError, Timeout, HTTPError
 # Import the functions we're testing
 import sys
 from pathlib import Path
+from types import ModuleType
 wallet_dir = Path(__file__).parent.parent / "wallet"
 sys.path.insert(0, str(wallet_dir))
 
-from rustchain_wallet_secure import SecureFounderWallet
+if 'tkinter' not in sys.modules:
+    tk = ModuleType('tkinter')
+    tk.END = 'end'
+    ttk = ModuleType('tkinter.ttk')
+    messagebox = ModuleType('tkinter.messagebox')
+    simpledialog = ModuleType('tkinter.simpledialog')
+    filedialog = ModuleType('tkinter.filedialog')
+    tk.ttk = ttk
+    tk.messagebox = messagebox
+    tk.simpledialog = simpledialog
+    tk.filedialog = filedialog
+    sys.modules['tkinter'] = tk
+    sys.modules['tkinter.ttk'] = ttk
+    sys.modules['tkinter.messagebox'] = messagebox
+    sys.modules['tkinter.simpledialog'] = simpledialog
+    sys.modules['tkinter.filedialog'] = filedialog
+
+from rustchain_wallet_secure import SecureFounderWallet, VERIFY_SSL, NETWORK_TIMEOUT
 
 
 class TestNetworkConnectivity(unittest.TestCase):
@@ -112,6 +130,7 @@ class TestFetchWithRetry(unittest.TestCase):
     def test_fetch_with_retry_success_first_attempt(self, mock_get):
         """Test successful fetch on first attempt."""
         mock_response = MagicMock()
+        mock_response.is_redirect = False
         mock_response.json.return_value = {"balance": 100.5}
         mock_response.raise_for_status = MagicMock()
         mock_get.return_value = mock_response
@@ -127,6 +146,7 @@ class TestFetchWithRetry(unittest.TestCase):
     def test_fetch_with_retry_rejects_non_object_json(self, mock_get):
         """Test successful non-object JSON is rejected before GUI callers use it."""
         mock_response = MagicMock()
+        mock_response.is_redirect = False
         mock_response.json.return_value = [{"balance": 100.5}]
         mock_response.raise_for_status = MagicMock()
         mock_get.return_value = mock_response
@@ -137,11 +157,34 @@ class TestFetchWithRetry(unittest.TestCase):
         self.assertEqual(error, "API returned JSON but not an object")
 
     @patch('requests.get')
+    def test_fetch_with_retry_reports_api_redirect_before_json_parse(self, mock_get):
+        """Test API redirects are shown as diagnostics instead of hidden by JSON parsing."""
+        mock_response = MagicMock()
+        mock_response.is_redirect = True
+        mock_response.status_code = 307
+        mock_response.headers = {"Location": "http://redirect.netprotect.mk/passthrough"}
+        mock_get.return_value = mock_response
+
+        data, error = self.wallet._fetch_with_retry("https://rustchain.org/wallet/balance")
+
+        self.assertIsNone(data)
+        self.assertEqual(error, "API redirected: HTTP 307 to http://redirect.netprotect.mk/passthrough")
+        mock_response.raise_for_status.assert_not_called()
+        mock_response.json.assert_not_called()
+        mock_get.assert_called_once_with(
+            "https://rustchain.org/wallet/balance",
+            verify=VERIFY_SSL,
+            timeout=NETWORK_TIMEOUT,
+            allow_redirects=False,
+        )
+
+    @patch('requests.get')
     @patch('time.sleep')
     def test_fetch_with_retry_success_after_retry(self, mock_sleep, mock_get):
         """Test successful fetch after one retry."""
         # First call fails, second succeeds
         mock_response = MagicMock()
+        mock_response.is_redirect = False
         mock_response.json.return_value = {"balance": 100.5}
         mock_response.raise_for_status = MagicMock()
         
@@ -202,6 +245,7 @@ class TestFetchWithRetry(unittest.TestCase):
     def test_fetch_with_retry_post_method(self, mock_post):
         """Test POST request with retry."""
         mock_response = MagicMock()
+        mock_response.is_redirect = False
         mock_response.json.return_value = {"ok": True}
         mock_response.raise_for_status = MagicMock()
         mock_post.return_value = mock_response
