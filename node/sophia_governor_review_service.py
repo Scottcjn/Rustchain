@@ -236,6 +236,22 @@ def _coerce_entry(data: dict[str, Any]) -> dict[str, Any]:
     return entry if isinstance(entry, dict) else {}
 
 
+def _validate_optional_string_field(values: dict[str, Any], field: str, error_field: str | None = None) -> None:
+    if field not in values or values[field] is None:
+        return
+    if not isinstance(values[field], str):
+        raise ValueError(f"{error_field or field}_must_be_string")
+
+
+def _validate_review_request(data: dict[str, Any]) -> None:
+    for field in ("review_prompt", "event_type", "risk_level", "stance", "source", "summary"):
+        _validate_optional_string_field(data, field)
+
+    entry = _coerce_entry(data)
+    for field in ("event_type", "risk_level", "stance", "source", "remote_agent", "remote_instance"):
+        _validate_optional_string_field(entry, field, f"entry_{field}")
+
+
 def _review_summary(data: dict[str, Any], entry: dict[str, Any], event_type: str) -> str:
     if data.get("summary"):
         return str(data["summary"]).strip()
@@ -704,6 +720,10 @@ def review():
     data = request.get_json(silent=True) or {}
     if not isinstance(data, dict):
         return jsonify({"error": "JSON object required"}), 400
+    try:
+        _validate_review_request(data)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
     prompt = _build_prompt(data)
     try:
