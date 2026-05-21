@@ -23,6 +23,7 @@ This draft adds a headless wallet tool:
 - KDF: **PBKDF2-HMAC-SHA256** with **100,000 iterations**
 - Address derivation: `RTC` + `SHA256(pubkey)[:40]`
 - Transfer signing: Ed25519 over canonical payload used by `/wallet/transfer/signed`
+- Keystore files are written atomically with owner-only `0600` permissions
 
 ## Dependency
 
