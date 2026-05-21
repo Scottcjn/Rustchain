@@ -253,8 +253,12 @@ class TestAPI:
             (["bad"], "machine_id must be a non-empty string"),
             ({}, "machine_id must be a non-empty string"),
             ("", "machine_id must be a non-empty string"),
+            ("   ", "machine_id must be a non-empty string"),
             ("../escape", "machine_id cannot contain path separators"),
             ("nested\\escape", "machine_id cannot contain path separators"),
+            ("bad\x00id", "machine_id contains invalid characters"),
+            ("bad\x7fid", "machine_id contains invalid characters"),
+            ("bad\u0085id", "machine_id contains invalid characters"),
         )
 
         for machine_id, error in invalid_payloads:
@@ -263,6 +267,16 @@ class TestAPI:
             assert resp.get_json() == {"error": error}
 
         assert not (tmp_path.parent / "escape.json").exists()
+        assert not (tmp_path / ".json").exists()
+
+    def test_api_create_trims_machine_id(self, client):
+        resp = client.post("/api/passport", json={"machine_id": "  trim-test  ", "name": "Trimmed"})
+        assert resp.status_code == 201
+        assert resp.get_json()["machine_id"] == "trim-test"
+
+        get_resp = client.get("/api/passport/trim-test")
+        assert get_resp.status_code == 200
+        assert get_resp.get_json()["machine_id"] == "trim-test"
 
     def test_api_json_routes_reject_non_object_bodies(self, client):
         client.post("/api/passport", json={"machine_id": "json-test", "name": "JSON Test"})

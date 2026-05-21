@@ -8,6 +8,7 @@ Deployable at rustchain.org/passport/<machine_id>
 """
 
 import os
+import unicodedata
 from datetime import datetime
 from typing import Any, Dict
 
@@ -27,15 +28,22 @@ def get_json_object() -> Dict[str, Any]:
 
 
 def get_machine_id(data: Dict[str, Any]) -> str:
-    """Return a safe machine_id from a JSON payload."""
+    """Return a safe machine_id for ledger filename use."""
     if "machine_id" not in data:
         raise ValueError("machine_id required")
 
     machine_id = data["machine_id"]
-    if not isinstance(machine_id, str) or not machine_id:
+    if not isinstance(machine_id, str):
+        raise ValueError("machine_id must be a non-empty string")
+
+    machine_id = machine_id.strip()
+    if not machine_id:
         raise ValueError("machine_id must be a non-empty string")
     if "/" in machine_id or "\\" in machine_id:
         raise ValueError("machine_id cannot contain path separators")
+    if any(unicodedata.category(char).startswith("C") for char in machine_id):
+        raise ValueError("machine_id contains invalid characters")
+
     return machine_id
 
 
@@ -95,6 +103,8 @@ def api_create():
         machine_id = get_machine_id(data)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
+
+    data = {**data, "machine_id": machine_id}
 
     # Check if exists (update) or new (create)
     existing = ledger.get(machine_id)
