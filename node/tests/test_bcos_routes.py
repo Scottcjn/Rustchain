@@ -56,6 +56,87 @@ def test_bcos_attest_rejects_non_object_report(tmp_path, monkeypatch):
     assert response.get_json()["error"] == "report must be an object"
 
 
+def test_bcos_attest_rejects_structured_cert_id(tmp_path, monkeypatch):
+    monkeypatch.setenv("RC_ADMIN_KEY", "test-admin")
+    app = Flask(__name__)
+    register_bcos_routes(app, str(tmp_path / "bcos.db"))
+    app.config["TESTING"] = True
+
+    report = _with_commitment({
+        "cert_id": ["BCOS-structured"],
+        "repo": "Scottcjn/Rustchain",
+        "commit_sha": "abcdef1234567890",
+        "tier": "L1",
+        "trust_score": 75,
+    })
+
+    response = app.test_client().post(
+        "/bcos/attest",
+        headers={"X-Admin-Key": "test-admin"},
+        json=report,
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {
+        "error": "invalid_report_field",
+        "message": "cert_id must be a string",
+    }
+
+
+def test_bcos_attest_rejects_structured_repo(tmp_path, monkeypatch):
+    monkeypatch.setenv("RC_ADMIN_KEY", "test-admin")
+    app = Flask(__name__)
+    register_bcos_routes(app, str(tmp_path / "bcos.db"))
+    app.config["TESTING"] = True
+
+    report = _with_commitment({
+        "cert_id": "BCOS-structured-repo",
+        "repo": {"owner": "Scottcjn", "name": "Rustchain"},
+        "commit_sha": "abcdef1234567890",
+        "tier": "L1",
+        "trust_score": 75,
+    })
+
+    response = app.test_client().post(
+        "/bcos/attest",
+        headers={"X-Admin-Key": "test-admin"},
+        json=report,
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {
+        "error": "invalid_report_field",
+        "message": "repo must be a string",
+    }
+
+
+def test_bcos_attest_rejects_structured_signature(tmp_path, monkeypatch):
+    monkeypatch.setenv("RC_ADMIN_KEY", "test-admin")
+    app = Flask(__name__)
+    register_bcos_routes(app, str(tmp_path / "bcos.db"))
+    app.config["TESTING"] = True
+
+    report = _with_commitment({
+        "cert_id": "BCOS-structured-signature",
+        "repo": "Scottcjn/Rustchain",
+        "commit_sha": "abcdef1234567890",
+        "tier": "L1",
+        "trust_score": 75,
+    })
+
+    response = app.test_client().post(
+        "/bcos/attest",
+        headers={"X-Admin-Key": "test-admin"},
+        json={**report, "signature": ["not", "text"]},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {
+        "error": "invalid_report_field",
+        "message": "signature must be a string",
+    }
+
+
 def test_bcos_attest_rejects_mismatched_commitment(tmp_path, monkeypatch):
     monkeypatch.setenv("RC_ADMIN_KEY", "test-admin")
     app = Flask(__name__)
