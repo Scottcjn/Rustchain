@@ -185,7 +185,7 @@ class RustChainMiner:
         try:
             with open(config_file, 'r') as f:
                 return json.load(f)
-        except:
+        except Exception:
             return {
                 "threads": 1,
                 "wallet_address": "RTC_DEFAULT_WALLET",
