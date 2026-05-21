@@ -6,6 +6,7 @@ Automated setup for RustChain Universal Miner
 
 import os
 import sys
+import argparse
 import subprocess
 import platform
 import json
@@ -30,6 +31,15 @@ MINER_ARTIFACTS = {
         "sha256": "5b69ebc210e4e8e32975b711dcb1ca08e07b731ddfe4f9f2f9a7e68c1e246a9d",
     },
 }
+
+
+def build_arg_parser():
+    """Build the setup script CLI parser."""
+    return argparse.ArgumentParser(
+        prog="setup_miner.py",
+        description="Install and configure a RustChain miner for the current platform.",
+    )
+
 
 class MinerSetup:
     def __init__(self):
@@ -405,6 +415,13 @@ WantedBy=multi-user.target
             self.log(f"Setup failed: {e}")
             sys.exit(1)
 
-if __name__ == "__main__":
+def main(argv=None):
+    parser = build_arg_parser()
+    parser.parse_args(sys.argv[1:] if argv is None else argv)
     setup = MinerSetup()
     setup.run_setup()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

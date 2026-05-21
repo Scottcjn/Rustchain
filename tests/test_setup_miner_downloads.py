@@ -1,5 +1,8 @@
 import hashlib
+import os
 from pathlib import Path
+import subprocess
+import sys
 
 import setup_miner
 
@@ -34,3 +37,35 @@ def test_setup_miner_downloads_current_verified_artifact():
     assert "urlparse(miner_url)" in source
     assert "hashlib.sha256(content).hexdigest()" in source
     assert "create_local_miner(miner_file)" not in source
+
+
+def test_setup_miner_help_is_non_mutating(tmp_path):
+    env = os.environ.copy()
+    env["HOME"] = str(tmp_path)
+
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "setup_miner.py"), "--help"],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert result.returncode == 0
+    assert "usage: setup_miner.py" in result.stdout
+    assert not (tmp_path / "rustchain_miner").exists()
+
+
+def test_setup_miner_rejects_unknown_args_before_setup(tmp_path):
+    env = os.environ.copy()
+    env["HOME"] = str(tmp_path)
+
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "setup_miner.py"), "--unknown"],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert result.returncode == 2
+    assert "unrecognized arguments: --unknown" in result.stderr
+    assert not (tmp_path / "rustchain_miner").exists()
