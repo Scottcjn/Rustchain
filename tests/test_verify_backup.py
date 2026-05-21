@@ -65,6 +65,18 @@ def test_verify_fail_when_epoch_too_old(tmp_path):
     assert any("RESULT: FAIL" in line for line in result.lines)
 
 
+def test_verify_reports_missing_backup_file_without_crashing(tmp_path):
+    live = tmp_path / "live.db"
+    missing_backup = tmp_path / "missing.db"
+    _make_db(live, rows=5, epoch=10)
+
+    result = verify(str(live), str(missing_backup))
+
+    assert result.ok is False
+    assert any("backup file missing" in line for line in result.lines)
+    assert any("RESULT: FAIL" in line for line in result.lines)
+
+
 def test_verify_reports_missing_table_without_crashing(tmp_path):
     live = tmp_path / "live.db"
     bak = tmp_path / "bak.db"
