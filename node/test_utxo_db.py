@@ -1460,6 +1460,49 @@ class TestUtxoDB(unittest.TestCase):
         self.assertEqual(self.db.mempool_get_block_candidates(), [])
         self.assertFalse(self.db.mempool_check_double_spend(box['box_id']))
 
+    def test_mempool_canonicalizes_payload_before_persistence(self):
+        """Ignored caller fields must not bypass mempool payload limits."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        box = self.db.get_unspent_for_address('alice')[0]
+        blob = 'x' * 200_000
+
+        ok = self.db.mempool_add({
+            'tx_id': 'canon' * 16,
+            'tx_type': 'transfer',
+            'inputs': [{
+                'box_id': box['box_id'],
+                'ignored_proof_blob': blob,
+            }],
+            'outputs': [{
+                'address': 'bob',
+                'value_nrtc': 100 * UNIT,
+                'ignored_output_blob': blob,
+            }],
+            'fee_nrtc': 0,
+            'ignored_top_level_blob': blob,
+        })
+
+        self.assertTrue(ok)
+        candidates = self.db.mempool_get_block_candidates()
+        self.assertEqual(len(candidates), 1)
+        self.assertNotIn('ignored_top_level_blob', candidates[0])
+        self.assertNotIn('ignored_proof_blob', candidates[0]['inputs'][0])
+        self.assertNotIn('ignored_output_blob', candidates[0]['outputs'][0])
+
+        conn = self.db._conn()
+        try:
+            row = conn.execute(
+                "SELECT tx_data_json FROM utxo_mempool WHERE tx_id = ?",
+                ('canon' * 16,),
+            ).fetchone()
+            self.assertIsNotNone(row)
+            self.assertLess(
+                len(row['tx_data_json'].encode('utf-8')),
+                len(blob),
+            )
+        finally:
+            conn.close()
+
     def test_mempool_rejects_oversized_output_text_without_locking_input(self):
         """Reject oversized output fields before storing tx_data_json."""
         cases = [

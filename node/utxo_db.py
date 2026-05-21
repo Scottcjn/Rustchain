@@ -46,6 +46,7 @@ MAX_OUTPUTS = 100
 MAX_UTXO_ADDRESS_BYTES = 256
 MAX_UTXO_METADATA_BYTES = 8_192
 MAX_MEMPOOL_TX_ID_BYTES = 128
+MAX_MEMPOOL_TX_JSON_BYTES = 2_000_000
 MAX_TX_AGE_SECONDS = 3_600  # 1 hour mempool expiry
 MAX_SQLITE_INT64 = 2**63 - 1
 P2PK_PREFIX = b'\x00\x08'   # Pay-to-Public-Key proposition prefix
@@ -479,6 +480,50 @@ class UtxoDB:
                 return False
 
         return True
+
+    def _canonical_mempool_tx(self, tx: dict, tx_type: str,
+                              inputs: List[dict], outputs: List[dict],
+                              data_inputs: List[str], fee: int,
+                              timestamp: int) -> Optional[dict]:
+        """Return the bounded transaction shape persisted in the mempool."""
+        canonical_inputs = []
+        for inp in inputs:
+            if not isinstance(inp, dict):
+                return None
+            box_id = inp.get('box_id')
+            if not isinstance(box_id, str) or not box_id.strip():
+                return None
+            canonical_inputs.append({'box_id': box_id})
+
+        if len(canonical_inputs) != len({i['box_id'] for i in canonical_inputs}):
+            return None
+
+        canonical_outputs = [
+            {
+                'address': out['address'],
+                'value_nrtc': out['value_nrtc'],
+                'tokens_json': out.get('tokens_json', '[]'),
+                'registers_json': out.get('registers_json', '{}'),
+            }
+            for out in outputs
+        ]
+
+        canonical_tx = {
+            'tx_id': tx['tx_id'],
+            'tx_type': tx_type,
+            'inputs': canonical_inputs,
+            'outputs': canonical_outputs,
+            'data_inputs': data_inputs,
+            'fee_nrtc': fee,
+            'timestamp': timestamp,
+        }
+        encoded = json.dumps(
+            canonical_tx, sort_keys=True, separators=(',', ':')
+        )
+        encoded_len = _utf8_len(encoded)
+        if encoded_len is None or encoded_len > MAX_MEMPOOL_TX_JSON_BYTES:
+            return None
+        return canonical_tx
 
     # -- transaction application ---------------------------------------------
 
@@ -987,6 +1032,14 @@ class UtxoDB:
                         conn.execute("ROLLBACK")
                 return False
 
+            canonical_tx = self._canonical_mempool_tx(
+                tx, tx_type, inputs, outputs, data_inputs, fee, timestamp
+            )
+            if canonical_tx is None:
+                if manage_tx:
+                        conn.execute("ROLLBACK")
+                return False
+
             # Insert into mempool
             # FIX(#2179): Use INSERT OR ABORT instead of INSERT OR IGNORE.
             # With IGNORE, a duplicate tx_id silently skips the insert but
@@ -998,8 +1051,8 @@ class UtxoDB:
                    VALUES (?,?,?,?,?)""",
                 (
                     tx_id,
-                    json.dumps(tx),
-                    tx.get('fee_nrtc', 0),
+                    json.dumps(canonical_tx, sort_keys=True, separators=(',', ':')),
+                    fee,
                     now,
                     now + MAX_TX_AGE_SECONDS,
                 ),
