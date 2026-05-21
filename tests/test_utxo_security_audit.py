@@ -244,19 +244,34 @@ class TestConservationLawEdgeCases(UtxoSecurityBase):
         self.assertFalse(ok)
         self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
 
-    def test_entire_input_as_fee(self):
-        """All input consumed as fee (outputs=1 nRTC) must succeed."""
+    def test_nearly_entire_input_as_fee_keeps_non_dust_output(self):
+        """Fee may consume the surplus as long as every output is non-dust."""
         self._coinbase('alice', 100 * UNIT)
         boxes = self.db.get_unspent_for_address('alice')
 
         ok = self.db.apply_transaction({
             'tx_type': 'transfer',
             'inputs': [{'box_id': boxes[0]['box_id'], 'spending_proof': 'sig'}],
-            'outputs': [{'address': 'bob', 'value_nrtc': 1}],
-            'fee_nrtc': 100 * UNIT - 1,
+            'outputs': [{'address': 'bob', 'value_nrtc': DUST_THRESHOLD}],
+            'fee_nrtc': 100 * UNIT - DUST_THRESHOLD,
         }, block_height=10)
         self.assertTrue(ok)
-        self.assertEqual(self.db.get_balance('bob'), 1)
+        self.assertEqual(self.db.get_balance('bob'), DUST_THRESHOLD)
+
+    def test_sub_dust_output_rejected_even_when_fee_preserves_conservation(self):
+        """Conservation alone is not enough: transaction outputs must be non-dust."""
+        self._coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': boxes[0]['box_id'], 'spending_proof': 'sig'}],
+            'outputs': [{'address': 'bob', 'value_nrtc': DUST_THRESHOLD - 1}],
+            'fee_nrtc': 100 * UNIT - (DUST_THRESHOLD - 1),
+        }, block_height=10)
+        self.assertFalse(ok)
+        self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
+        self.assertEqual(self.db.get_balance('bob'), 0)
 
 
 # ============================================================================
@@ -425,6 +440,41 @@ class TestMempoolOutputValidation(UtxoSecurityBase):
         }
         ok = self.db.mempool_add(tx)
         self.assertFalse(ok)
+
+    def test_mempool_rejects_sub_dust_output_value(self):
+        """Mempool admission must reject outputs below DUST_THRESHOLD."""
+        self._coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+        box_id = boxes[0]['box_id']
+
+        tx = {
+            'tx_id': 'sub_dust_1' * 6,
+            'inputs': [{'box_id': box_id}],
+            'outputs': [{'address': 'bob', 'value_nrtc': DUST_THRESHOLD - 1}],
+            'fee_nrtc': 100 * UNIT - (DUST_THRESHOLD - 1),
+        }
+        ok = self.db.mempool_add(tx)
+        self.assertFalse(ok)
+        self.assertFalse(
+            self.db.mempool_check_double_spend(box_id),
+            "Rejected sub-dust mempool tx must not leave the input locked",
+        )
+
+    def test_mempool_allows_exact_dust_threshold_output_value(self):
+        """DUST_THRESHOLD itself is the valid lower bound for outputs."""
+        self._coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+        box_id = boxes[0]['box_id']
+
+        tx = {
+            'tx_id': 'exact_dust_1' * 6,
+            'inputs': [{'box_id': box_id}],
+            'outputs': [{'address': 'bob', 'value_nrtc': DUST_THRESHOLD}],
+            'fee_nrtc': 100 * UNIT - DUST_THRESHOLD,
+        }
+        ok = self.db.mempool_add(tx)
+        self.assertTrue(ok)
+        self.assertTrue(self.db.mempool_check_double_spend(box_id))
 
     def test_mempool_rejects_float_output_value(self):
         """Float value_nrtc in mempool output must be rejected."""
