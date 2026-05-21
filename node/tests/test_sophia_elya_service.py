@@ -61,6 +61,7 @@ def test_elya_epoch_enroll_rejects_invalid_values_before_ticket_consumption():
         ({"weights": {"temporal": -0.25}}, "invalid_weights"),
         ({"weights": {"temporal": 0}}, "invalid_weights"),
         ({"weights": {"rtc": "nan"}}, "invalid_weights"),
+        ({"weights": {"temporal": 1e308, "rtc": 1e308}}, "invalid_weights"),
         ({"miner_pubkey": ["miner"]}, "missing_params"),
         ({"ticket_id": ["ticket"]}, "missing_params"),
     ]

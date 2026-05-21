@@ -291,6 +291,10 @@ def epoch_enroll():
     rtc = _positive_finite_float(weights.get("rtc", 1.0))
     if temporal is None or rtc is None:
         return jsonify({"ok": False, "reason": "invalid_weights"}), 400
+    hw = get_hardware_weight(device)
+    total_weight = temporal * rtc * hw
+    if not math.isfinite(total_weight) or total_weight <= 0:
+        return jsonify({"ok": False, "reason": "invalid_weights"}), 400
 
     # Consume ticket (anti-replay)
     if not consume_ticket(ticket_id):
@@ -300,8 +304,6 @@ def epoch_enroll():
     epoch = slot_to_epoch(slot)
 
     # Calculate weight = temporal × rtc × hardware
-    hw = get_hardware_weight(device)
-    total_weight = temporal * rtc * hw
 
     # Enroll
     enroll_epoch(epoch, miner_pk, total_weight)
