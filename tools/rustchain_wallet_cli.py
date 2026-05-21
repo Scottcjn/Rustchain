@@ -20,6 +20,7 @@ import getpass
 import hashlib
 import hmac
 import json
+import math
 import os
 import secrets
 import sys
@@ -64,6 +65,19 @@ def _derive_ed25519_from_mnemonic(mnemonic_phrase: str, passphrase: str = "") ->
 
 def _address_from_pubkey_hex(pub_hex: str) -> str:
     return "RTC" + hashlib.sha256(bytes.fromhex(pub_hex)).hexdigest()[:40]
+
+
+def _is_valid_rtc_address(value: str) -> bool:
+    if not isinstance(value, str) or len(value) != 43 or not value.startswith("RTC"):
+        return False
+    return all(c in "0123456789abcdefABCDEF" for c in value[3:])
+
+
+def _normalize_transfer_amount(amount: float) -> float:
+    amount_rtc = float(amount)
+    if not math.isfinite(amount_rtc) or amount_rtc <= 0:
+        raise ValueError("Amount must be a positive finite RTC value")
+    return amount_rtc
 
 
 def _pbkdf2_key(password: str, salt: bytes, iterations: int = 100_000) -> bytes:
@@ -284,12 +298,21 @@ def cmd_balance(args):
 
 
 def cmd_send(args):
+    amount_rtc = _normalize_transfer_amount(args.amount)
+    if not _is_valid_rtc_address(args.to):
+        print("Error: recipient must be an RTC address in the form RTC + 40 hex chars", file=sys.stderr)
+        return 2
+
     ks = _load_keystore(args.from_wallet)
+    from_addr = ks["address"]
+    if not _is_valid_rtc_address(from_addr):
+        print("Error: keystore contains an invalid RTC address", file=sys.stderr)
+        return 2
+
     password = _read_password("Wallet password: ", "RUSTCHAIN_WALLET_PASSWORD")
     priv_hex = _decrypt_private_key(ks["crypto"], password)
-    from_addr = ks["address"]
     nonce = int(time.time())
-    payload = _sign_transfer(priv_hex, from_addr, args.to, float(args.amount), args.memo or "", nonce)
+    payload = _sign_transfer(priv_hex, from_addr, args.to, amount_rtc, args.memo or "", nonce)
 
     url = f"{NODE_URL}/wallet/transfer/signed"
     r = requests.post(url, json=payload, timeout=20, verify=VERIFY_SSL)

@@ -1,4 +1,7 @@
+import math
 from types import SimpleNamespace
+
+import pytest
 
 from tools import rustchain_wallet_cli as cli
 
@@ -28,6 +31,23 @@ def test_address_format_from_pubkey():
     addr = cli._address_from_pubkey_hex(pub)
     assert addr.startswith("RTC")
     assert len(addr) == 43
+    assert cli._is_valid_rtc_address(addr)
+
+
+def test_rtc_address_validation_rejects_malformed_values():
+    assert not cli._is_valid_rtc_address("RTC" + "g" * 40)
+    assert not cli._is_valid_rtc_address("RTC" + "1" * 39)
+    assert not cli._is_valid_rtc_address("ETH" + "1" * 40)
+
+
+@pytest.mark.parametrize("amount", [0, -1, math.inf, -math.inf, math.nan])
+def test_transfer_amount_must_be_positive_and_finite(amount):
+    with pytest.raises(ValueError, match="positive finite"):
+        cli._normalize_transfer_amount(amount)
+
+
+def test_transfer_amount_normalizes_valid_input():
+    assert cli._normalize_transfer_amount("1.25") == 1.25
 
 
 def test_sign_transfer_shape():
