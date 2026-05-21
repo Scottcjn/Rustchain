@@ -12,6 +12,7 @@ from typing import Any, Dict, Optional, Tuple
 
 MICRO_RTC = Decimal("1000000")
 MAX_I64 = 2**63 - 1
+_RTC_ADDRESS_RE = re.compile(r"RTC[0-9A-Fa-f]{40}")
 
 
 @dataclass(frozen=True)
@@ -19,6 +20,10 @@ class PreflightResult:
     ok: bool
     error: str
     details: Dict[str, Any]
+
+
+def _is_rtc_address(value: str) -> bool:
+    return bool(_RTC_ADDRESS_RE.fullmatch(value))
 
 
 def _as_dict(payload: Any) -> Tuple[Optional[Dict[str, Any]], str]:
@@ -127,9 +132,9 @@ def validate_wallet_transfer_signed(payload: Any) -> PreflightResult:
     if ierr:
         return PreflightResult(ok=False, error=ierr, details={})
 
-    if not (from_address.startswith("RTC") and len(from_address) == 43):
+    if not _is_rtc_address(from_address):
         return PreflightResult(ok=False, error="invalid_from_address_format", details={})
-    if not (to_address.startswith("RTC") and len(to_address) == 43):
+    if not _is_rtc_address(to_address):
         return PreflightResult(ok=False, error="invalid_to_address_format", details={})
     if from_address == to_address:
         return PreflightResult(ok=False, error="from_to_must_differ", details={})
