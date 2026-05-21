@@ -173,6 +173,18 @@ def test_main_rejects_missing_admin_key(monkeypatch, capsys):
     assert "missing --admin-key or RC_ADMIN_KEY" in captured.err
 
 
+def test_main_rejects_non_positive_list_limit(capsys):
+    try:
+        pending_ops.main(["--admin-key", "secret", "list", "--limit", "0"])
+    except SystemExit as exc:
+        assert exc.code == 2
+    else:
+        raise AssertionError("non-positive limit was accepted")
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "limit must be a positive integer" in captured.err
+
+
 def test_main_prints_http_error_body(monkeypatch, capsys):
     class FakeHTTPError(urllib.error.HTTPError):
         def read(self):
