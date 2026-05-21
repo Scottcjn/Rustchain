@@ -27,18 +27,20 @@ def normalize_miners_payload(data):
                 return miners
     return data
 
+def fetch_miners_page(limit=1000, offset=0):
+    url = f"{NODE_URL}/api/miners"
+    if offset:
+        url = f"{url}?limit={limit}&offset={offset}"
+    resp = requests.get(url, timeout=10)
+    resp.raise_for_status()
+    return resp.json()
+
 def fetch_all_miners():
     miners = []
     limit = 1000
     offset = 0
     while True:
-        resp = requests.get(
-            f"{NODE_URL}/api/miners",
-            params={"limit": limit, "offset": offset},
-            timeout=10,
-        )
-        resp.raise_for_status()
-        data = resp.json()
+        data = fetch_miners_page(limit=limit, offset=offset)
         page = normalize_miners_payload(data)
         if not isinstance(page, list):
             return data
