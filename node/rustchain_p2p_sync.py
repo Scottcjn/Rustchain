@@ -438,6 +438,13 @@ def add_p2p_endpoints(app, peer_manager, block_sync, tx_gossip):
             return jsonify({"ok": False, "error": "JSON object required"}), 400
 
         peer_url = data.get('peer_url')
+        if peer_url is None:
+            return jsonify({"ok": False, "error": "peer_url required"}), 400
+
+        if not isinstance(peer_url, str):
+            return jsonify({"ok": False, "error": "peer_url must be a string"}), 400
+
+        peer_url = peer_url.strip()
 
         if peer_url:
             success = peer_manager.add_peer(peer_url)
