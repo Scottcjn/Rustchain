@@ -1,7 +1,11 @@
 import sqlite3
 import sys
+import threading
+import time
 import uuid
 import json
+from contextlib import closing
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -50,6 +54,44 @@ def _init_signed_transfer_db(db_path: Path) -> None:
         CREATE UNIQUE INDEX idx_pending_ledger_tx_hash ON pending_ledger(tx_hash);
         """
     )
+    conn.commit()
+    conn.close()
+
+
+def _init_legacy_pending_confirm_db(
+    db_path: Path,
+    ledger_sql: str | None = None,
+) -> None:
+    conn = sqlite3.connect(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE balances (
+            miner_pk TEXT PRIMARY KEY,
+            balance_rtc REAL DEFAULT 0
+        );
+
+        CREATE TABLE pending_ledger (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts INTEGER NOT NULL,
+            epoch INTEGER NOT NULL,
+            from_miner TEXT NOT NULL,
+            to_miner TEXT NOT NULL,
+            amount_i64 INTEGER NOT NULL,
+            reason TEXT,
+            status TEXT DEFAULT 'pending',
+            created_at INTEGER NOT NULL,
+            confirms_at INTEGER NOT NULL,
+            tx_hash TEXT,
+            voided_by TEXT,
+            voided_reason TEXT,
+            confirmed_at INTEGER
+        );
+
+        CREATE UNIQUE INDEX idx_pending_ledger_tx_hash ON pending_ledger(tx_hash);
+        """
+    )
+    if ledger_sql:
+        conn.execute(ledger_sql)
     conn.commit()
     conn.close()
 
@@ -276,3 +318,345 @@ def test_signed_transfer_keeps_legacy_zero_fee_signature_compatible(
     assert response.status_code == 200
     assert "fee" in seen_messages[0]
     assert "fee" not in seen_messages[1]
+
+
+def test_pending_confirm_updates_fresh_init_db_legacy_balances(monkeypatch):
+    local_tmp_dir = Path(__file__).parent / ".tmp_signed_transfer"
+    local_tmp_dir.mkdir(exist_ok=True)
+    db_path = local_tmp_dir / f"{uuid.uuid4().hex}.sqlite3"
+
+    admin_key = "test-admin-key"
+    monkeypatch.setattr(integrated_node, "DB_PATH", str(db_path))
+    monkeypatch.setattr(integrated_node, "send_sophiacheck_alert", lambda *args, **kwargs: None)
+    monkeypatch.setenv("RC_ADMIN_KEY", admin_key)
+    integrated_node.app.config["TESTING"] = True
+    integrated_node.app.config["DB_PATH"] = str(db_path)
+    integrated_node.init_db()
+
+    from_wallet = "RTC" + "a" * 40
+    to_wallet = "RTC" + "b" * 40
+    amount_i64 = 1_250_000
+    now = int(time.time())
+
+    with closing(sqlite3.connect(db_path)) as conn:
+        balance_cols = {row[1] for row in conn.execute("PRAGMA table_info(balances)")}
+        ledger_cols = {row[1] for row in conn.execute("PRAGMA table_info(ledger)")}
+        assert {"miner_pk", "balance_rtc"}.issubset(balance_cols)
+        assert "amount_i64" not in balance_cols
+        assert {"ts", "epoch", "miner_id", "delta_i64", "reason"}.issubset(ledger_cols)
+        conn.execute(
+            "INSERT INTO balances (miner_pk, balance_rtc) VALUES (?, ?)",
+            (from_wallet, 2.0),
+        )
+        conn.execute(
+            """
+            INSERT INTO pending_ledger
+                (ts, epoch, from_miner, to_miner, amount_i64, reason, created_at, confirms_at, tx_hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                now - 10,
+                7,
+                from_wallet,
+                to_wallet,
+                amount_i64,
+                "signed_wallet_transfer:legacy",
+                now - 10,
+                now - 1,
+                "legacy-confirm-tx",
+            ),
+        )
+        conn.commit()
+
+    with integrated_node.app.test_client() as client:
+        response = client.post("/pending/confirm", headers={"X-Admin-Key": admin_key})
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["confirmed_count"] == 1
+    assert body["confirmed_ids"] == [1]
+    assert body["errors"] is None
+
+    with closing(sqlite3.connect(db_path)) as conn:
+        balances = dict(conn.execute("SELECT miner_pk, balance_rtc FROM balances").fetchall())
+        (status, confirmed_at) = conn.execute(
+            "SELECT status, confirmed_at FROM pending_ledger WHERE id = 1"
+        ).fetchone()
+        ledger_rows = conn.execute(
+            "SELECT miner_id, delta_i64, reason FROM ledger ORDER BY id"
+        ).fetchall()
+
+    assert balances[from_wallet] == pytest.approx(0.75)
+    assert balances[to_wallet] == pytest.approx(1.25)
+    assert status == "confirmed"
+    assert confirmed_at is not None
+    assert ledger_rows == [
+        (from_wallet, -amount_i64, f"transfer_out:{to_wallet}:legacy-confirm-tx"),
+        (to_wallet, amount_i64, f"transfer_in:{from_wallet}:legacy-confirm-tx"),
+    ]
+
+    if db_path.exists():
+        db_path.unlink()
+
+
+def test_pending_confirm_rolls_back_balance_changes_when_ledger_write_fails(monkeypatch):
+    local_tmp_dir = Path(__file__).parent / ".tmp_signed_transfer"
+    local_tmp_dir.mkdir(exist_ok=True)
+    db_path = local_tmp_dir / f"{uuid.uuid4().hex}.sqlite3"
+    _init_legacy_pending_confirm_db(
+        db_path,
+        ledger_sql="CREATE TABLE ledger (id INTEGER PRIMARY KEY AUTOINCREMENT, from_miner TEXT NOT NULL)",
+    )
+
+    admin_key = "test-admin-key"
+    monkeypatch.setattr(integrated_node, "DB_PATH", str(db_path))
+    monkeypatch.setenv("RC_ADMIN_KEY", admin_key)
+    integrated_node.app.config["TESTING"] = True
+
+    from_wallet = "RTC" + "a" * 40
+    to_wallet = "RTC" + "b" * 40
+    amount_i64 = 1_250_000
+    now = int(time.time())
+
+    with closing(sqlite3.connect(db_path)) as conn:
+        conn.execute(
+            "INSERT INTO balances (miner_pk, balance_rtc) VALUES (?, ?)",
+            (from_wallet, 2.0),
+        )
+        conn.execute(
+            """
+            INSERT INTO pending_ledger
+                (ts, epoch, from_miner, to_miner, amount_i64, reason, created_at, confirms_at, tx_hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                now - 10,
+                7,
+                from_wallet,
+                to_wallet,
+                amount_i64,
+                "signed_wallet_transfer:legacy",
+                now - 10,
+                now - 1,
+                "legacy-confirm-rollback-tx",
+            ),
+        )
+        conn.commit()
+
+    with integrated_node.app.test_client() as client:
+        response = client.post("/pending/confirm", headers={"X-Admin-Key": admin_key})
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["confirmed_count"] == 0
+    assert body["confirmed_ids"] == []
+    assert body["errors"][0]["id"] == 1
+
+    with closing(sqlite3.connect(db_path)) as conn:
+        balances = dict(conn.execute("SELECT miner_pk, balance_rtc FROM balances").fetchall())
+        (status, confirmed_at) = conn.execute(
+            "SELECT status, confirmed_at FROM pending_ledger WHERE id = 1"
+        ).fetchone()
+
+    assert balances == {from_wallet: 2.0}
+    assert status == "pending"
+    assert confirmed_at is None
+
+    if db_path.exists():
+        db_path.unlink()
+
+
+def test_pending_confirm_keeps_transfer_pending_on_unsupported_balance_schema(monkeypatch):
+    local_tmp_dir = Path(__file__).parent / ".tmp_signed_transfer"
+    local_tmp_dir.mkdir(exist_ok=True)
+    db_path = local_tmp_dir / f"{uuid.uuid4().hex}.sqlite3"
+
+    with closing(sqlite3.connect(db_path)) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE balances (
+                wallet TEXT PRIMARY KEY,
+                credits INTEGER DEFAULT 0
+            );
+
+            CREATE TABLE pending_ledger (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts INTEGER NOT NULL,
+                epoch INTEGER NOT NULL,
+                from_miner TEXT NOT NULL,
+                to_miner TEXT NOT NULL,
+                amount_i64 INTEGER NOT NULL,
+                reason TEXT,
+                status TEXT DEFAULT 'pending',
+                created_at INTEGER NOT NULL,
+                confirms_at INTEGER NOT NULL,
+                tx_hash TEXT,
+                voided_by TEXT,
+                voided_reason TEXT,
+                confirmed_at INTEGER
+            );
+
+            CREATE UNIQUE INDEX idx_pending_ledger_tx_hash ON pending_ledger(tx_hash);
+            """
+        )
+
+    admin_key = "test-admin-key"
+    monkeypatch.setattr(integrated_node, "DB_PATH", str(db_path))
+    monkeypatch.setenv("RC_ADMIN_KEY", admin_key)
+    integrated_node.app.config["TESTING"] = True
+
+    from_wallet = "RTC" + "a" * 40
+    to_wallet = "RTC" + "b" * 40
+    now = int(time.time())
+
+    with closing(sqlite3.connect(db_path)) as conn:
+        conn.execute(
+            """
+            INSERT INTO pending_ledger
+                (ts, epoch, from_miner, to_miner, amount_i64, reason, created_at, confirms_at, tx_hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                now - 10,
+                7,
+                from_wallet,
+                to_wallet,
+                1_250_000,
+                "signed_wallet_transfer:unsupported-schema",
+                now - 10,
+                now - 1,
+                "unsupported-schema-tx",
+            ),
+        )
+        conn.commit()
+
+    with integrated_node.app.test_client() as client:
+        response = client.post("/pending/confirm", headers={"X-Admin-Key": admin_key})
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["confirmed_count"] == 0
+    assert body["confirmed_ids"] == []
+    assert body["errors"] == [
+        {"id": 1, "error": "unsupported balances schema for wallet transfer"}
+    ]
+
+    with closing(sqlite3.connect(db_path)) as conn:
+        (status, voided_reason, confirmed_at) = conn.execute(
+            "SELECT status, voided_reason, confirmed_at FROM pending_ledger WHERE id = 1"
+        ).fetchone()
+
+    assert status == "pending"
+    assert voided_reason is None
+    assert confirmed_at is None
+
+    if db_path.exists():
+        db_path.unlink()
+
+
+def test_pending_confirm_concurrent_workers_claim_each_transfer_once(monkeypatch):
+    local_tmp_dir = Path(__file__).parent / ".tmp_signed_transfer"
+    local_tmp_dir.mkdir(exist_ok=True)
+    db_path = local_tmp_dir / f"{uuid.uuid4().hex}.sqlite3"
+    _init_signed_transfer_db(db_path)
+
+    admin_key = "test-admin-key"
+    monkeypatch.setattr(integrated_node, "DB_PATH", str(db_path))
+    monkeypatch.setattr(integrated_node, "send_sophiacheck_alert", lambda *args, **kwargs: None)
+    monkeypatch.setenv("RC_ADMIN_KEY", admin_key)
+    integrated_node.app.config["TESTING"] = True
+
+    from_wallet = "RTC" + "a" * 40
+    to_wallet = "RTC" + "b" * 40
+    amount_i64 = 1_000_000
+    now = int(time.time())
+
+    with closing(sqlite3.connect(db_path)) as conn:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute(
+            "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?)",
+            (from_wallet, 3_000_000),
+        )
+        conn.execute(
+            "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?)",
+            (to_wallet, 0),
+        )
+        conn.execute(
+            """
+            INSERT INTO pending_ledger
+                (ts, epoch, from_miner, to_miner, amount_i64, reason, created_at, confirms_at, tx_hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                now - 10,
+                7,
+                from_wallet,
+                to_wallet,
+                amount_i64,
+                "signed_wallet_transfer:concurrent-confirm",
+                now - 10,
+                now - 1,
+                "concurrent-confirm-tx",
+            ),
+        )
+        conn.commit()
+
+    start = threading.Event()
+    first_debit_entered = threading.Event()
+    second_debit_entered = threading.Event()
+    debit_calls = 0
+    debit_lock = threading.Lock()
+    original_apply_delta = integrated_node._apply_wallet_balance_delta
+
+    def delayed_apply_delta(cursor, wallet, delta_i64, balance_cols):
+        nonlocal debit_calls
+        if wallet == from_wallet and delta_i64 == -amount_i64:
+            with debit_lock:
+                debit_calls += 1
+                call_index = debit_calls
+                if call_index == 1:
+                    first_debit_entered.set()
+                elif call_index == 2:
+                    second_debit_entered.set()
+            if call_index == 1:
+                second_debit_entered.wait(timeout=0.75)
+                if second_debit_entered.is_set():
+                    time.sleep(0.05)
+        return original_apply_delta(cursor, wallet, delta_i64, balance_cols)
+
+    monkeypatch.setattr(integrated_node, "_apply_wallet_balance_delta", delayed_apply_delta)
+
+    def post_confirm():
+        start.wait(timeout=2)
+        with integrated_node.app.test_client() as client:
+            return client.post("/pending/confirm", headers={"X-Admin-Key": admin_key}).get_json()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(post_confirm) for _ in range(2)]
+        start.set()
+        results = [future.result(timeout=5) for future in futures]
+
+    assert first_debit_entered.is_set()
+    assert sum(result["confirmed_count"] for result in results) == 1
+    assert [result["errors"] for result in results] == [None, None]
+
+    with closing(sqlite3.connect(db_path)) as conn:
+        balances = dict(conn.execute("SELECT miner_id, amount_i64 FROM balances").fetchall())
+        (status, confirmed_at) = conn.execute(
+            "SELECT status, confirmed_at FROM pending_ledger WHERE id = 1"
+        ).fetchone()
+        ledger_rows = conn.execute(
+            "SELECT miner_id, delta_i64, reason FROM ledger ORDER BY id"
+        ).fetchall()
+
+    assert balances[from_wallet] == 2_000_000
+    assert balances[to_wallet] == 1_000_000
+    assert status == "confirmed"
+    assert confirmed_at is not None
+    assert ledger_rows == [
+        (from_wallet, -amount_i64, f"transfer_out:{to_wallet}:concurrent-confirm-tx"),
+        (to_wallet, amount_i64, f"transfer_in:{from_wallet}:concurrent-confirm-tx"),
+    ]
+
+    if db_path.exists():
+        db_path.unlink()
