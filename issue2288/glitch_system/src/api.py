@@ -10,6 +10,7 @@ from flask import Blueprint, jsonify, request, Response
 from typing import Dict, Any
 import hmac
 import json
+import math
 import os
 import time
 
@@ -433,13 +434,23 @@ def update_config() -> Response:
     engine = get_engine()
     
     if "enabled" in data:
+        if not isinstance(data["enabled"], bool):
+            return jsonify({"error": "enabled must be a boolean"}), 400
         if data["enabled"]:
             engine.enable()
         else:
             engine.disable()
     
     if "base_probability" in data:
-        engine.set_probability(data["base_probability"])
+        if isinstance(data["base_probability"], bool):
+            return jsonify({"error": "base_probability must be a finite number"}), 400
+        try:
+            base_probability = float(data["base_probability"])
+        except (TypeError, ValueError):
+            return jsonify({"error": "base_probability must be a finite number"}), 400
+        if not math.isfinite(base_probability):
+            return jsonify({"error": "base_probability must be a finite number"}), 400
+        engine.set_probability(base_probability)
     
     return jsonify({
         "success": True,

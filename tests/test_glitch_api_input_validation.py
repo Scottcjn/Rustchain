@@ -118,3 +118,39 @@ def test_process_accepts_valid_json_body(client):
         "processed": "processed:hello",
         "glitch_occurred": False,
     }
+
+
+def test_config_accepts_valid_typed_fields(client, monkeypatch):
+    monkeypatch.setenv("GLITCH_ADMIN_KEY", "secret")
+
+    response = client.put(
+        "/api/glitch/config",
+        headers={"X-Admin-Key": "secret"},
+        json={"enabled": False, "base_probability": "0.25"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["config"] == {"enabled": False, "base_probability": 0.25}
+
+
+@pytest.mark.parametrize(
+    ("payload", "error"),
+    (
+        ({"enabled": "false"}, "enabled must be a boolean"),
+        ({"enabled": 1}, "enabled must be a boolean"),
+        ({"base_probability": "not-a-number"}, "base_probability must be a finite number"),
+        ({"base_probability": "inf"}, "base_probability must be a finite number"),
+        ({"base_probability": True}, "base_probability must be a finite number"),
+    ),
+)
+def test_config_rejects_malformed_fields(client, monkeypatch, payload, error):
+    monkeypatch.setenv("GLITCH_ADMIN_KEY", "secret")
+
+    response = client.put(
+        "/api/glitch/config",
+        headers={"X-Admin-Key": "secret"},
+        json=payload,
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": error}
