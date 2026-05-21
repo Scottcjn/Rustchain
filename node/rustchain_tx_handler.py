@@ -33,6 +33,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+SQLITE_INT64_MAX = 9_223_372_036_854_775_807
+
 
 # =============================================================================
 # DATABASE SCHEMA UPGRADES
@@ -833,6 +835,8 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
             
             if offset < 0:
                 offset = 0
+            if offset > SQLITE_INT64_MAX:
+                return jsonify({"error": "offset exceeds SQLite integer maximum"}), 400
 
             with sqlite3.connect(tx_pool.db_path) as conn:
                 conn.row_factory = sqlite3.Row
