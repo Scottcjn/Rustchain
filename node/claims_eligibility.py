@@ -65,7 +65,7 @@ except ImportError:
 try:
     from rewards_implementation_rip200 import PER_EPOCH_URTC
 except ImportError:
-    PER_EPOCH_URTC = 150_000_000  # 1.5 RTC in uRTC (default)
+    PER_EPOCH_URTC = 1_500_000  # 1.5 RTC in uRTC (default)
 
 URTC_PER_RTC = 1_000_000
 
