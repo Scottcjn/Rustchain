@@ -105,6 +105,11 @@ class BridgeEscrowConfig:
             return False
         if self.per_tx_limit > self.daily_mint_cap:
             return False
+        if self.total_supply_cap is not None:
+            if self.total_supply_cap <= 0:
+                return False
+            if self.per_tx_limit > self.total_supply_cap:
+                return False
         return True
 
 
