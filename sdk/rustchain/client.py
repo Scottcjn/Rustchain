@@ -78,7 +78,15 @@ class RustChainClient:
                 json=json_payload,
                 headers=headers,
                 timeout=self.timeout,
+                allow_redirects=False,
             )
+
+            if 300 <= response.status_code < 400:
+                location = response.headers.get("Location", "")
+                raise APIError(
+                    f"API redirected: HTTP {response.status_code} to {location}",
+                    status_code=response.status_code,
+                )
 
             # Check for HTTP errors
             try:
