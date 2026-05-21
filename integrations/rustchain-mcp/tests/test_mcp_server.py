@@ -194,6 +194,14 @@ class TestResourceTemplates:
         assert "balance_rtc" in data
 
     @pytest.mark.asyncio
+    async def test_read_resource_wallet_requires_id(self, server):
+        """Test wallet resource rejects a missing miner id."""
+        with pytest.raises(ValueError) as exc_info:
+            await server._read_resource_impl("rustchain://wallet/")
+
+        assert "miner_id is required" in str(exc_info.value)
+
+    @pytest.mark.asyncio
     async def test_read_resource_docs(self, server):
         """Test reading rustchain://docs/api resource."""
         content, mime_type = await server._read_resource_impl(

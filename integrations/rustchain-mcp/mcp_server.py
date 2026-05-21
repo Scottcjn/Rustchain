@@ -408,6 +408,8 @@ class RustChainMCP:
 
         elif uri.startswith("rustchain://wallet/"):
             miner_id = uri.split("/")[-1]
+            if not miner_id:
+                raise ValueError("miner_id is required")
             balance = await self.client.balance(miner_id)
             data = {
                 "miner_id": balance.miner_id,
