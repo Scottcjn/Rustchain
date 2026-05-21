@@ -6,6 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import claims_eligibility
 from claims_eligibility import (
     BLOCK_TIME,
     GENESIS_TIMESTAMP,
@@ -114,3 +115,38 @@ def test_is_epoch_settled_uses_database_state_when_present(tmp_path):
 
     assert is_epoch_settled(str(db), 3, current_slot=10_000) is False
     assert is_epoch_settled(str(db), 4, current_slot=10_000) is True
+
+
+def test_check_claim_eligibility_reports_rtc_with_urtc_unit(monkeypatch):
+    monkeypatch.setattr(claims_eligibility, "is_epoch_settled", lambda *args, **kwargs: True)
+    monkeypatch.setattr(
+        claims_eligibility,
+        "get_miner_attestation",
+        lambda *args, **kwargs: {
+            "last_seen_ts": GENESIS_TIMESTAMP,
+            "device_arch": "modern",
+        },
+    )
+    monkeypatch.setattr(claims_eligibility, "get_chain_age_years", lambda current_slot: 0)
+    monkeypatch.setattr(claims_eligibility, "get_time_aged_multiplier", lambda *args: 1.0)
+    monkeypatch.setattr(
+        claims_eligibility,
+        "check_epoch_participation",
+        lambda *args, **kwargs: (True, {"fingerprint_passed": 1, "entropy_score": 0.5}),
+    )
+    monkeypatch.setattr(claims_eligibility, "get_wallet_address", lambda *args: "RTC" + "A" * 20)
+    monkeypatch.setattr(claims_eligibility, "check_pending_claim", lambda *args: False)
+    monkeypatch.setattr(claims_eligibility, "HAVE_FLEET_IMMUNE", False)
+    monkeypatch.setattr(claims_eligibility, "calculate_epoch_reward", lambda *args: 1_500_000)
+
+    result = claims_eligibility.check_claim_eligibility(
+        db_path="unused.db",
+        miner_id="miner1",
+        epoch=1,
+        current_slot=10_000,
+        current_ts=GENESIS_TIMESTAMP,
+    )
+
+    assert result["eligible"] is True
+    assert result["reward_urtc"] == 1_500_000
+    assert result["reward_rtc"] == 1.5
