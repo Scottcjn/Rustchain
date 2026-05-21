@@ -10,13 +10,19 @@ import datetime
 VALID_MAC_PREFIXES = ["00:03:93", "00:0a:27", "00:05:02", "00:0d:93"]
 
 def is_valid_mac(mac):
+    if not isinstance(mac, str):
+        return False
     prefix = mac.lower()[0:8]
     return any(prefix.startswith(p.lower()) for p in VALID_MAC_PREFIXES)
 
 def is_valid_cpu(cpu):
+    if not isinstance(cpu, str):
+        return False
     return any(kw in cpu.lower() for kw in ["powerpc", "g3", "g4", "7400", "7450"])
 
 def is_reasonable_timestamp(ts):
+    if not isinstance(ts, str):
+        return False
     try:
         parsed = datetime.datetime.strptime(ts.strip(), "%a %b %d %H:%M:%S %Y")
         now = datetime.datetime.now()
