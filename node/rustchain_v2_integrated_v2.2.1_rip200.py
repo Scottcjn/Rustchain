@@ -326,6 +326,62 @@ def _attest_is_valid_positive_int(value, max_value=4096):
     return 1 <= coerced <= max_value
 
 
+def _attest_metric_float(value, default=0.0):
+    """Coerce optional attestation metrics without accepting hostile JSON shapes."""
+    if value is None or value == "":
+        return default
+    if isinstance(value, bool):
+        return default
+    try:
+        coerced = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return default
+    return coerced if math.isfinite(coerced) else default
+
+
+def _attest_metric_is_valid(value):
+    """Return whether an optional attestation metric can be safely parsed."""
+    if value is None or value == "":
+        return True
+    if isinstance(value, bool):
+        return False
+    try:
+        coerced = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return False
+    return math.isfinite(coerced)
+
+
+def _validate_fingerprint_metric_shapes(fingerprint):
+    checks = fingerprint.get("checks") if isinstance(fingerprint, dict) else None
+    if not isinstance(checks, dict):
+        return None
+
+    metric_paths = (
+        ("clock_drift", "cv"),
+        ("clock_drift", "samples"),
+        ("thermal_entropy", "variance"),
+        ("thermal_drift", "variance"),
+        ("instruction_jitter", "cv"),
+        ("instruction_jitter", "stddev_ns"),
+        ("cache_timing", "hierarchy_ratio"),
+    )
+    for check_name, metric_name in metric_paths:
+        check = checks.get(check_name)
+        if not isinstance(check, dict):
+            continue
+        data = check.get("data", {})
+        if not isinstance(data, dict) or metric_name not in data:
+            continue
+        if not _attest_metric_is_valid(data.get(metric_name)):
+            return _attest_field_error(
+                "INVALID_FINGERPRINT_METRIC",
+                f"Field 'fingerprint.checks.{check_name}.data.{metric_name}' must be a finite number",
+                status=422,
+            )
+    return None
+
+
 def client_ip_from_request(req) -> str:
     """Return trusted client IP, honoring proxy headers only for allowlisted peers."""
     remote_addr = _normalize_client_ip(getattr(req, "remote_addr", ""))
@@ -423,6 +479,9 @@ def _validate_attestation_payload_shape(data):
     fingerprint = data.get("fingerprint")
     if isinstance(fingerprint, dict) and "checks" in fingerprint and not isinstance(fingerprint.get("checks"), dict):
         return _attest_field_error("INVALID_FINGERPRINT_CHECKS", "Field 'fingerprint.checks' must be a JSON object")
+    fingerprint_metric_error = _validate_fingerprint_metric_shapes(fingerprint)
+    if fingerprint_metric_error:
+        return fingerprint_metric_error
 
     return None
 
@@ -2577,10 +2636,10 @@ def extract_temporal_profile(fingerprint: dict) -> dict:
     cache = _check_data("cache_timing")
 
     return {
-        "clock_drift_cv": float(clock.get("cv", 0.0) or 0.0),
-        "thermal_variance": float(thermal.get("variance", 0.0) or 0.0),
-        "jitter_cv": float(jitter.get("cv", 0.0) or jitter.get("stddev_ns", 0.0) or 0.0),
-        "cache_hierarchy_ratio": float(cache.get("hierarchy_ratio", 0.0) or 0.0),
+        "clock_drift_cv": _attest_metric_float(clock.get("cv", 0.0)),
+        "thermal_variance": _attest_metric_float(thermal.get("variance", 0.0)),
+        "jitter_cv": _attest_metric_float(jitter.get("cv", jitter.get("stddev_ns", 0.0))),
+        "cache_hierarchy_ratio": _attest_metric_float(cache.get("hierarchy_ratio", 0.0)),
     }
 
 
@@ -2851,8 +2910,12 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
         clock_data = clock_check.get("data", {})
         if not isinstance(clock_data, dict):
             clock_data = {}
-        cv = clock_data.get("cv", 0)
-        samples = clock_data.get("samples", 0)
+        if "cv" in clock_data and not _attest_metric_is_valid(clock_data.get("cv")):
+            return False, "clock_drift_invalid_metric:cv"
+        if "samples" in clock_data and not _attest_metric_is_valid(clock_data.get("samples")):
+            return False, "clock_drift_invalid_metric:samples"
+        cv = _attest_metric_float(clock_data.get("cv", 0))
+        samples = _attest_metric_float(clock_data.get("samples", 0))
 
         # Require meaningful sample count
         if clock_check.get("passed") == True and samples == 0 and cv == 0:

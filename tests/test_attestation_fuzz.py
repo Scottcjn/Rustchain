@@ -399,6 +399,39 @@ def test_attest_submit_no_500_on_malformed_fingerprint(client):
     assert "ok" in data or "error" in data
 
 
+def test_attest_submit_rejects_malformed_clock_drift_metric(client):
+    payload = _attach_live_challenge(client, _base_payload())
+    payload["fingerprint"]["checks"]["clock_drift"]["data"] = {
+        "cv": ["not", "numeric"],
+        "samples": 25,
+    }
+
+    response = client.post("/attest/submit", json=payload)
+
+    assert response.status_code in (400, 422)
+    body = response.get_json()
+    assert body["ok"] is False
+    assert body["code"] == "INVALID_FINGERPRINT_METRIC"
+
+
+def test_extract_temporal_profile_defaults_malformed_optional_metrics():
+    profile = integrated_node.extract_temporal_profile({
+        "checks": {
+            "clock_drift": {"data": {"cv": "0.125"}},
+            "thermal_entropy": {"data": {"variance": {"bad": "shape"}}},
+            "instruction_jitter": {"data": {"cv": ["bad"], "stddev_ns": "nan"}},
+            "cache_timing": {"data": {"hierarchy_ratio": True}},
+        }
+    })
+
+    assert profile == {
+        "clock_drift_cv": 0.125,
+        "thermal_variance": 0.0,
+        "jitter_cv": 0.0,
+        "cache_hierarchy_ratio": 0.0,
+    }
+
+
 def test_attest_submit_no_500_on_edge_case_architectures(client):
     """
     FIX #1147: Edge case device architectures should not cause crashes.
