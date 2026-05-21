@@ -177,11 +177,11 @@ class ExplorerState:
 
         new_attestations = {}
         for m in miners:
-            wallet = m.get("wallet_name", m.get("wallet", m.get("wallet_address", "")))
+            wallet = m.get("wallet_name", m.get("wallet", m.get("wallet_address", m.get("miner", ""))))
             ts = m.get("last_attestation_time", m.get("last_attest", m.get("last_seen", 0)))
-            arch = m.get("hardware_type", m.get("arch", m.get("architecture", "unknown")))
+            arch = m.get("hardware_type", m.get("device_arch", m.get("arch", m.get("architecture", "unknown"))))
             mult = m.get("multiplier", m.get("rtc_multiplier", m.get("antiquity_multiplier", 1.0)))
-            miner_id = m.get("miner_id", m.get("id", wallet))
+            miner_id = m.get("miner_id", m.get("id", m.get("miner", wallet)))
             if wallet:
                 new_attestations[wallet] = (ts, arch, mult, miner_id)
 
