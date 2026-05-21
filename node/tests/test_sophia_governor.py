@@ -284,6 +284,35 @@ def test_governor_review_rejects_non_object_json(client):
     assert response.get_json()["error"] == "JSON object required"
 
 
+def test_governor_review_rejects_structured_event_type(client):
+    response = client.post(
+        "/sophia/governor/review",
+        headers={"X-Admin-Key": "test-admin"},
+        json={
+            "event_type": ["pending_transfer"],
+            "payload": {"amount_rtc": 50},
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "event_type must be a string"
+
+
+def test_governor_review_rejects_structured_source(client):
+    response = client.post(
+        "/sophia/governor/review",
+        headers={"X-Admin-Key": "test-admin"},
+        json={
+            "event_type": "pending_transfer",
+            "source": {"name": "pytest.manual"},
+            "payload": {"amount_rtc": 50},
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "source must be a string"
+
+
 def test_governor_admin_auth_uses_constant_time_compare(client, monkeypatch):
     """Admin-gated governor endpoints compare configured keys with hmac.compare_digest."""
     calls = []
