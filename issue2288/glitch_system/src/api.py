@@ -583,6 +583,13 @@ def trigger_glitch() -> Response:
     engine = get_engine()
     agent_id = data.get("agent_id", "test_agent")
     message = data.get("message", "Test message for glitch")
+    if (
+        not isinstance(agent_id, str)
+        or not isinstance(message, str)
+        or not agent_id
+        or not message
+    ):
+        return jsonify({"error": "agent_id and message must be non-empty strings"}), 400
     
     # Auto-register if needed
     if not engine.get_persona(agent_id):
