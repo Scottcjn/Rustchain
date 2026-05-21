@@ -88,3 +88,47 @@ def test_generate_checklist_preserves_string_urls():
 
     assert checklist[0]["url"] == "https://rustchain.org/health"
     assert checklist[0]["has_examples"] is False
+
+
+def test_generate_checklist_skips_malformed_items_and_defaults_bad_shapes():
+    collection = {
+        "item": [
+            "not an item",
+            {
+                "name": "Broken folder",
+                "item": "not a list",
+            },
+            {
+                "name": "Bad request",
+                "request": "not an object",
+                "response": {"name": "not a list"},
+            },
+            {
+                "name": "Bad path",
+                "request": {
+                    "method": "POST",
+                    "url": {"path": "api/stats"},
+                },
+                "response": [{"name": "ok"}],
+            },
+        ]
+    }
+
+    checklist = postman_validator.generate_checklist(collection)
+
+    assert checklist == [
+        {
+            "folder": "",
+            "name": "Bad request",
+            "method": "GET",
+            "url": "N/A",
+            "has_examples": False,
+        },
+        {
+            "folder": "",
+            "name": "Bad path",
+            "method": "POST",
+            "url": "N/A",
+            "has_examples": True,
+        },
+    ]
