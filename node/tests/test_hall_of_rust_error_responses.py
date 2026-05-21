@@ -57,6 +57,34 @@ def test_induct_rejects_non_object_json(tmp_path):
     assert response.get_json() == {"error": "JSON object required"}
 
 
+def test_induct_rejects_structured_device_model(tmp_path):
+    db_path = tmp_path / "hall.db"
+    hall_of_rust.init_hall_tables(str(db_path))
+    client = _client_for(db_path)
+
+    response = client.post(
+        "/hall/induct",
+        json={"device_model": {"name": "PowerBook G4"}},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "device_model must be a string"}
+
+
+def test_induct_rejects_structured_miner_id(tmp_path):
+    db_path = tmp_path / "hall.db"
+    hall_of_rust.init_hall_tables(str(db_path))
+    client = _client_for(db_path)
+
+    response = client.post(
+        "/hall/induct",
+        json={"miner_id": ["miner-1"]},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "miner_id must be a string"}
+
+
 def test_eulogy_rejects_non_object_json(tmp_path):
     db_path = tmp_path / "hall.db"
     hall_of_rust.init_hall_tables(str(db_path))
@@ -66,6 +94,34 @@ def test_eulogy_rejects_non_object_json(tmp_path):
 
     assert response.status_code == 400
     assert response.get_json() == {"error": "JSON object required"}
+
+
+def test_eulogy_rejects_structured_nickname(tmp_path):
+    db_path = tmp_path / "hall.db"
+    hall_of_rust.init_hall_tables(str(db_path))
+    client = _client_for(db_path)
+
+    response = client.post(
+        "/hall/eulogy/fingerprint-1",
+        json={"nickname": {"name": "Old Reliable"}},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "nickname must be a string"}
+
+
+def test_eulogy_rejects_structured_eulogy(tmp_path):
+    db_path = tmp_path / "hall.db"
+    hall_of_rust.init_hall_tables(str(db_path))
+    client = _client_for(db_path)
+
+    response = client.post(
+        "/hall/eulogy/fingerprint-1",
+        json={"eulogy": ["served", "well"]},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "eulogy must be a string"}
 
 
 def test_calculate_rust_score_uses_current_year_for_age_weight():

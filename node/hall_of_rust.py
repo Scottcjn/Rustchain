@@ -12,8 +12,8 @@ from datetime import datetime, timezone
 import sqlite3
 import hashlib
 import time
-import json
 import logging
+import random
 
 hall_bp = Blueprint('hall_of_rust', __name__)
 logger = logging.getLogger(__name__)
@@ -160,12 +160,31 @@ def induct_machine():
     data, error_response = _json_object_or_empty()
     if error_response:
         return error_response
+
+    miner_id, error_response = _optional_text_field(data, 'miner_id', 128, 'anonymous')
+    if error_response:
+        return error_response
+    device_family, error_response = _optional_text_field(data, 'device_family', 128, 'Unknown')
+    if error_response:
+        return error_response
+    model, error_response = _optional_text_field(data, 'device_model', 256, 'Unknown')
+    if error_response:
+        return error_response
+    arch, error_response = _optional_text_field(data, 'device_arch', 128, 'modern')
+    if error_response:
+        return error_response
+    hw_serial, error_response = _optional_text_field(data, 'cpu_serial', 256)
+    if error_response:
+        return error_response
+    if hw_serial is None:
+        hw_serial, error_response = _optional_text_field(data, 'hardware_id', 256, 'unknown')
+        if error_response:
+            return error_response
     
     # Generate fingerprint hash from hardware identifiers
     # SECURITY FIX: Fingerprint based on HARDWARE ONLY (not wallet ID)
     # This prevents multiple wallets on same machine from getting multiple Hall entries
-    hw_serial = data.get('cpu_serial', data.get('hardware_id', 'unknown'))
-    fp_data = f"{data.get('device_model', '')}{data.get('device_arch', '')}{hw_serial}"
+    fp_data = f"{model}{arch}{hw_serial}"
     fingerprint_hash = hashlib.sha256(fp_data.encode()).hexdigest()[:32]
     
     try:
@@ -180,9 +199,6 @@ def induct_machine():
         existing = c.fetchone()
         
         now = int(time.time())
-        model = data.get('device_model', 'Unknown')
-        arch = data.get('device_arch', 'modern')
-        
         if existing:
             # Update attestation count
             c.execute("""
@@ -210,8 +226,8 @@ def induct_machine():
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             fingerprint_hash,
-            data.get('miner_id', 'anonymous'),
-            data.get('device_family', 'Unknown'),
+            miner_id,
+            device_family,
             arch,
             model,
             mfg_year,
@@ -317,6 +333,13 @@ def set_eulogy(fingerprint):
     data, error_response = _json_object_or_empty()
     if error_response:
         return error_response
+
+    nickname, error_response = _optional_text_field(data, 'nickname', 64)
+    if error_response:
+        return error_response
+    eulogy, error_response = _optional_text_field(data, 'eulogy', 500)
+    if error_response:
+        return error_response
     
     try:
         from flask import current_app
@@ -329,11 +352,11 @@ def set_eulogy(fingerprint):
         
         if 'nickname' in data:
             updates.append('nickname = ?')
-            params.append(data['nickname'][:64])
+            params.append(nickname)
         
         if 'eulogy' in data:
             updates.append('eulogy = ?')
-            params.append(data['eulogy'][:500])
+            params.append(eulogy)
         
         if 'is_deceased' in data and data['is_deceased']:
             updates.append('is_deceased = 1')
@@ -474,6 +497,17 @@ def _json_object_or_empty():
     if not isinstance(data, dict):
         return None, (jsonify({'error': 'JSON object required'}), 400)
     return data, None
+
+
+def _optional_text_field(data, name, limit, default=None):
+    if name not in data:
+        return default, None
+    value = data[name]
+    if value is None:
+        return default if default is not None else "", None
+    if not isinstance(value, str):
+        return None, (jsonify({'error': f'{name} must be a string'}), 400)
+    return value[:limit], None
 
 
 def _internal_error_response(context):
@@ -673,8 +707,6 @@ def register_hall_endpoints(app, db_path):
     print("[HALL OF RUST] Endpoints registered - The machines will be remembered!")
 
 # ============== ENHANCED STATS ==============
-
-import random
 
 # Fun facts about vintage hardware
 VINTAGE_FACTS = [
