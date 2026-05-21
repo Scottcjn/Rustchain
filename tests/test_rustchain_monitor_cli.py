@@ -43,8 +43,23 @@ def test_api_helpers_fetch_expected_endpoints_and_return_json():
         f"{module.NODE_URL}/api/miners",
         f"{module.NODE_URL}/epoch",
     ]
+    assert get.call_args_list[1].kwargs["params"] == {"limit": 1000, "offset": 0}
     assert all(call.kwargs["timeout"] == 10 for call in get.call_args_list)
 
+
+def test_get_miners_fetches_all_paginated_pages():
+    module = load_module()
+
+    with patch.object(module.requests, "get", side_effect=[
+        response({"miners": [{"miner": "m1"}], "pagination": {"total": 2, "count": 1}}),
+        response({"miners": [{"miner": "m2"}], "pagination": {"total": 2, "count": 1}}),
+    ]) as get:
+        assert module.get_miners() == [{"miner": "m1"}, {"miner": "m2"}]
+
+    assert [call.kwargs["params"] for call in get.call_args_list] == [
+        {"limit": 1000, "offset": 0},
+        {"limit": 1000, "offset": 1},
+    ]
 
 def test_api_helpers_return_error_dict_on_request_failure():
     module = load_module()

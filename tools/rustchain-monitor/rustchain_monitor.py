@@ -27,6 +27,31 @@ def normalize_miners_payload(data):
                 return miners
     return data
 
+def fetch_all_miners():
+    miners = []
+    limit = 1000
+    offset = 0
+    while True:
+        resp = requests.get(
+            f"{NODE_URL}/api/miners",
+            params={"limit": limit, "offset": offset},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        page = normalize_miners_payload(data)
+        if not isinstance(page, list):
+            return data
+        miners.extend(page)
+        pagination = data.get("pagination", {}) if isinstance(data, dict) else {}
+        total = pagination.get("total")
+        count = pagination.get("count", len(page))
+        if not page or (isinstance(total, int) and len(miners) >= total):
+            return miners
+        if not isinstance(total, int) and count < limit:
+            return miners
+        offset += count
+
 def check_health():
     try:
         resp = requests.get(f"{NODE_URL}/health", timeout=10)
@@ -38,9 +63,7 @@ def check_health():
 
 def get_miners():
     try:
-        resp = requests.get(f"{NODE_URL}/api/miners", timeout=10)
-        resp.raise_for_status()
-        return normalize_miners_payload(resp.json())
+        return fetch_all_miners()
     except Exception as e:
         return {"error": str(e)}
 
