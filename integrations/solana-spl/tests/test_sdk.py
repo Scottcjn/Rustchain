@@ -128,6 +128,19 @@ class TestWRtcBridge:
         quote2 = bridge.get_bridge_quote(amount, "wRTC", "RTC", slippage_bps=100)
         assert quote2.slippage_bps == 100
         assert quote2.min_receive < quote1.min_receive  # Higher slippage = lower min
+
+    def test_negative_bridge_quote_rejected(self, bridge):
+        """Test negative bridge quote amount is rejected."""
+        with pytest.raises(ValueError, match="Bridge amount"):
+            bridge.get_bridge_quote(-1, "wRTC", "RTC")
+
+    def test_invalid_slippage_rejected(self, bridge):
+        """Test out-of-range slippage is rejected."""
+        with pytest.raises(ValueError, match="Slippage"):
+            bridge.get_bridge_quote(1000, "wRTC", "RTC", slippage_bps=-1)
+
+        with pytest.raises(ValueError, match="Slippage"):
+            bridge.get_bridge_quote(1000, "wRTC", "RTC", slippage_bps=10001)
     
     def test_initiate_bridge(self, bridge):
         """Test initiating bridge transaction."""
@@ -137,6 +150,11 @@ class TestWRtcBridge:
         assert tx.status == "pending"
         assert tx.from_amount == amount
         assert tx.to_amount < amount  # Fee deducted
+
+    def test_negative_initiate_bridge_rejected(self, bridge):
+        """Test negative bridge transaction amount is rejected."""
+        with pytest.raises(ValueError, match="Bridge amount"):
+            bridge.initiate_bridge(-1, "wRTC", "RustChainAddress")
 
 
 class TestWRtcSDK:
