@@ -6,7 +6,7 @@ Implements machine-to-machine payments using the x402 protocol (HTTP 402 Payment
 
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 import hashlib
 import time
@@ -216,7 +216,7 @@ class PaymentProcessor:
             raise ValidationError("client must have agent_id configured")
         
         intent_id = f"intent_{hashlib.sha256(f'{from_agent}:{to_agent}:{time.time()}'.encode()).hexdigest()[:12]}"
-        expires_at = datetime.utcnow().replace(second=0, microsecond=0)
+        expires_at = datetime.utcnow().replace(second=0, microsecond=0) + timedelta(minutes=15)
         
         intent = PaymentIntent(
             intent_id=intent_id,
