@@ -18,10 +18,18 @@ class ChallengeStub:
     expires_at = 400
 
 
+class AttestationResultStub:
+    status = "verified"
+
+    def to_dict(self):
+        return {"status": self.status, "miner_id": "miner-1"}
+
+
 class ProofOfIronStub:
     def __init__(self, *args, **kwargs):
         self.issued_for = None
         self.revoked = None
+        self.enrolled = None
 
     def issue_challenge(self, miner_id):
         self.issued_for = miner_id
@@ -32,7 +40,8 @@ class ProofOfIronStub:
         return True
 
     def capture_and_enroll(self, miner_id, audio_file):
-        raise AssertionError("invalid uploads should be rejected before enrollment")
+        self.enrolled = (miner_id, audio_file, Path(audio_file).exists())
+        return AttestationResultStub()
 
     def submit_proof(self, proof, audio_data):
         raise AssertionError("invalid uploads should be rejected before proof submission")
@@ -170,6 +179,23 @@ def test_audio_upload_rejects_files_larger_than_configured_limit(client, api_mod
 
     assert response.status_code == 413
     assert response.get_json() == {"error": "file too large"}
+
+
+def test_enroll_removes_temporary_audio_file(client, api_module):
+    response = client.post(
+        "/api/v1/enroll",
+        data={
+            "miner_id": "miner-1",
+            "audio": (io.BytesIO(b"RIFFxxxxWAVE"), "proof.wav", "audio/wav"),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 200
+    miner_id, audio_file, existed_during_enroll = api_module.poi_system.enrolled
+    assert miner_id == "miner-1"
+    assert existed_during_enroll is True
+    assert not Path(audio_file).exists()
 
 
 @pytest.mark.parametrize("duration", ("0", "-1", "30.01", "inf", "not-a-number"))

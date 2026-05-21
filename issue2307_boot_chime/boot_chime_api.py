@@ -8,7 +8,6 @@ Integrates with RustChain node for miner attestation.
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import io
-import json
 import math
 import os
 import time
@@ -22,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
 from acoustic_fingerprint import AcousticFingerprint
 from boot_chime_capture import BootChimeCapture, AudioCaptureConfig
-from proof_of_iron import ProofOfIron, ProofOfIronError, AttestationStatus
+from proof_of_iron import ProofOfIron, AttestationStatus
 
 
 app = Flask(__name__)
@@ -324,8 +323,15 @@ def enroll_miner():
             with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp:
                 audio.save(tmp)
                 audio_file = tmp.name
-        
-        result = poi_system.capture_and_enroll(miner_id, audio_file)
+
+        try:
+            result = poi_system.capture_and_enroll(miner_id, audio_file)
+        finally:
+            if audio_file:
+                try:
+                    os.unlink(audio_file)
+                except FileNotFoundError:
+                    pass
         
         status_code = 200 if result.status == AttestationStatus.VERIFIED else 400
         
@@ -561,7 +567,7 @@ def internal_error(error):
 # ============= Main =============
 
 if __name__ == '__main__':
-    print(f"Starting Boot Chime Proof-of-Iron API...")
+    print("Starting Boot Chime Proof-of-Iron API...")
     print(f"  Host: {API_HOST}")
     print(f"  Port: {API_PORT}")
     print(f"  DB: {DB_PATH}")
