@@ -248,6 +248,12 @@ def epoch_enroll():
     if not miner_pk or not ticket_id:
         return jsonify({"ok": False, "reason": "missing_params"}), 400
 
+    # Calculate weight = temporal × rtc × hardware
+    temporal = _optional_float(weights, "temporal", 1.0)
+    rtc = _optional_float(weights, "rtc", 1.0)
+    if temporal is None or rtc is None:
+        return jsonify({"ok": False, "reason": "invalid_weight"}), 400
+
     # Consume ticket (anti-replay)
     if not consume_ticket(ticket_id):
         return jsonify({"ok": False, "reason": "ticket_invalid"}), 400
@@ -256,9 +262,6 @@ def epoch_enroll():
     slot = int(data.get("slot", int(time.time() // BLOCK_TIME)))
     epoch = slot_to_epoch(slot)
 
-    # Calculate weight = temporal × rtc × hardware
-    temporal = float(weights.get("temporal", 1.0))
-    rtc = float(weights.get("rtc", 1.0))
     hw = get_hardware_weight(device)
     total_weight = temporal * rtc * hw
 
@@ -288,6 +291,12 @@ def _json_object_body():
     if not isinstance(data, dict):
         return None, (jsonify({"error": "json_object_required"}), 400)
     return data, None
+
+def _optional_float(mapping, key, default):
+    try:
+        return float(mapping.get(key, default))
+    except (TypeError, ValueError):
+        return None
 
 
 @app.post("/api/register")

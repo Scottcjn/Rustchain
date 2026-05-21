@@ -83,3 +83,22 @@ def test_elya_submit_block_rejects_invalid_header_shapes():
     assert header_resp.get_json()["error"] == "invalid_header"
     assert ext_resp.status_code == 400
     assert ext_resp.get_json()["error"] == "invalid_header_ext"
+
+
+def test_elya_epoch_enroll_rejects_non_numeric_weights_before_ticket_use():
+    client = _client()
+    elya.tickets_db["ticket-weight-bad"] = {"expires_at": elya.time.time() + 60}
+
+    resp = client.post(
+        "/epoch/enroll",
+        json={
+            "miner_pubkey": "miner-a",
+            "ticket_id": "ticket-weight-bad",
+            "weights": {"temporal": "not-a-number"},
+            "device": {},
+        },
+    )
+
+    assert resp.status_code == 400
+    assert resp.get_json()["reason"] == "invalid_weight"
+    assert "ticket-weight-bad" in elya.tickets_db
