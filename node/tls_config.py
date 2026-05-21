@@ -19,9 +19,16 @@ def get_tls_verify() -> Union[str, bool]:
     """Return the appropriate TLS verify parameter for requests/httpx.
 
     Returns:
-        str: Path to pinned cert file if it exists.
-        bool: True to use system CA bundle as fallback.
+        str: Path to explicit CA bundle or pinned cert file if available.
+        bool: False for explicit local opt-out, otherwise True for system CA.
     """
+    tls_verify_env = os.environ.get("RUSTCHAIN_TLS_VERIFY", "true").strip().lower()
+    ca_bundle = os.environ.get("RUSTCHAIN_CA_BUNDLE", "").strip()
+
+    if tls_verify_env in ("false", "0", "no"):
+        return False
+    if ca_bundle:
+        return ca_bundle
     if os.path.exists(_CERT_PATH):
         return _CERT_PATH
     return True
