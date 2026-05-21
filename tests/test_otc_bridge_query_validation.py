@@ -201,6 +201,16 @@ class ExplodingConnection:
         pass
 
 
+def test_confirm_rejects_non_object_json(tmp_path, monkeypatch):
+    otc_bridge = load_otc_bridge(tmp_path)
+    monkeypatch.setattr(otc_bridge, "check_rate_limit", lambda _ip: True)
+
+    client = otc_bridge.app.test_client()
+    response = client.post("/api/orders/otc_test/confirm", json=["seller", "0xabc", "secret"])
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "JSON body must be an object"}
+
 def test_mutating_order_errors_do_not_leak_exception_details(tmp_path, monkeypatch):
     otc_bridge = load_otc_bridge(tmp_path)
     monkeypatch.setattr(otc_bridge, "check_rate_limit", lambda _ip: True)
