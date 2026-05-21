@@ -257,6 +257,48 @@ def test_maintenance_routes_reject_invalid_limits(client, path, limit, error):
     assert response.get_json()["error"] == error
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/sophia/governor/review/backfill-missing",
+        "/api/sophia/governor/review/normalize-existing",
+        "/api/sophia/governor/review",
+        "/api/sophia/governor/scott-notifications/queue",
+    ],
+)
+@pytest.mark.parametrize("payload", [[], ["unexpected"], False, "not-object"])
+def test_post_routes_reject_non_object_json_bodies(client, path, payload):
+    response = client.post(
+        path,
+        headers={"X-Admin-Key": "test-admin"},
+        json=payload,
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "JSON object required"
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/sophia/governor/review/backfill-missing",
+        "/api/sophia/governor/review/normalize-existing",
+        "/api/sophia/governor/review",
+        "/api/sophia/governor/scott-notifications/queue",
+    ],
+)
+def test_post_routes_reject_malformed_json_bodies(client, path):
+    response = client.post(
+        path,
+        headers={"X-Admin-Key": "test-admin"},
+        data='{"bad"',
+        content_type="application/json",
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "JSON object required"
+
+
 def test_review_normalizes_verbose_action_reasoning(client, monkeypatch):
     monkeypatch.setattr(
         review_service,
