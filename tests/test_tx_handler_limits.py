@@ -130,6 +130,14 @@ def test_history_offset_exceeding_records(app_context):
     data = json.loads(response.data)
     assert len(data["transactions"]) == 0
 
+def test_history_offset_exceeding_sqlite_integer_range(app_context):
+    """Scenario: Offset beyond SQLite int64 range returns validation error."""
+    huge_offset = "9223372036854775808"
+    response = app_context.get(f'/wallet/test_addr/history?offset={huge_offset}')
+    assert response.status_code == 400
+    data = json.loads(response.data)
+    assert data["error"] == "offset exceeds SQLite integer maximum"
+
 def test_history_non_integer_params(app_context):
     """Scenario: Non-integer limit or offset parameter (expect 400)"""
     assert app_context.get('/wallet/test_addr/history?limit=five').status_code == 400
