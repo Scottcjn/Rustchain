@@ -112,6 +112,53 @@ class TestRewardsSettleRace(unittest.TestCase):
             rip200.ANTI_DOUBLE_MINING_AVAILABLE = orig_adm
 
 
+    def test_settle_preserves_epoch_state_metadata(self) -> None:
+        try:
+            import rewards_implementation_rip200 as rip200
+        except ImportError:
+            import node.rewards_implementation_rip200 as rip200
+
+        orig_adm = rip200.ANTI_DOUBLE_MINING_AVAILABLE
+        rip200.ANTI_DOUBLE_MINING_AVAILABLE = False
+        rip200.calculate_epoch_rewards_time_aged = lambda *_a, **_k: {"m1": 100}
+        rip200.get_chain_age_years = lambda *_a, **_k: 1.0
+        rip200.get_time_aged_multiplier = lambda *_a, **_k: 1.0
+
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                db_path = os.path.join(td, "test.db")
+                with sqlite3.connect(db_path) as db:
+                    db.executescript(
+                        """
+                        CREATE TABLE epoch_state (
+                            epoch INTEGER PRIMARY KEY,
+                            settled INTEGER DEFAULT 0,
+                            settled_ts INTEGER,
+                            accepted_blocks INTEGER DEFAULT 0,
+                            finalized INTEGER DEFAULT 0
+                        );
+                        CREATE TABLE balances (miner_id TEXT PRIMARY KEY, amount_i64 INTEGER NOT NULL);
+                        CREATE TABLE ledger (ts INTEGER, epoch INTEGER, miner_id TEXT, delta_i64 INTEGER, reason TEXT);
+                        CREATE TABLE epoch_rewards (epoch INTEGER, miner_id TEXT, share_i64 INTEGER);
+                        CREATE TABLE miner_attest_recent (miner TEXT, device_arch TEXT);
+                        """
+                    )
+                    db.execute(
+                        "INSERT INTO epoch_state(epoch, settled, settled_ts, accepted_blocks, finalized) VALUES (0, 0, 0, 42, 1)"
+                    )
+                    db.execute("INSERT INTO miner_attest_recent (miner, device_arch) VALUES ('m1', 'x86_64')")
+
+                result = rip200.settle_epoch_rip200(db_path, 0)
+                self.assertTrue(result.get("ok"))
+
+                with sqlite3.connect(db_path) as db:
+                    row = db.execute(
+                        "SELECT settled, accepted_blocks, finalized FROM epoch_state WHERE epoch=0"
+                    ).fetchone()
+                    self.assertEqual(row, (1, 42, 1))
+        finally:
+            rip200.ANTI_DOUBLE_MINING_AVAILABLE = orig_adm
+
 class TestFutureEpochRejection(unittest.TestCase):
     """Settling a future epoch must be rejected outright.
 

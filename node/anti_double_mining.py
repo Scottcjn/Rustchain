@@ -720,11 +720,19 @@ def settle_epoch_with_anti_double_mining(
                 "device_arch": device_arch
             })
 
-        # Mark epoch as settled
-        db.execute(
-            "INSERT OR REPLACE INTO epoch_state (epoch, settled, settled_ts) VALUES (?, 1, ?)",
-            (epoch, ts_now)
-        )
+        # Mark epoch as settled without replacing the whole row.
+        # INSERT OR REPLACE deletes any existing epoch_state metadata columns
+        # (for example finalized/accepted_blocks/pot) before inserting the
+        # narrow settlement row. Preserve unrelated epoch state fields.
+        updated = db.execute(
+            "UPDATE epoch_state SET settled = 1, settled_ts = ? WHERE epoch = ?",
+            (ts_now, epoch)
+        ).rowcount
+        if updated == 0:
+            db.execute(
+                "INSERT INTO epoch_state (epoch, settled, settled_ts) VALUES (?, 1, ?)",
+                (epoch, ts_now)
+            )
 
         if own_conn:
             db.commit()
