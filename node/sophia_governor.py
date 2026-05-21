@@ -988,8 +988,14 @@ def register_sophia_governor_endpoints(app, db_path: str | None = None) -> None:
         if data is not None and not isinstance(data, dict):
             return jsonify({"error": "JSON object required"}), 400
         data = data or {}
-        event_type = str(data.get("event_type", "")).strip()
-        source = str(data.get("source", "manual")).strip() or "manual"
+        event_type_value = data.get("event_type", "")
+        if event_type_value is not None and not isinstance(event_type_value, str):
+            return jsonify({"error": "event_type must be a string"}), 400
+        event_type = (event_type_value or "").strip()
+        source_value = data.get("source", "manual")
+        if source_value is not None and not isinstance(source_value, str):
+            return jsonify({"error": "source must be a string"}), 400
+        source = (source_value or "manual").strip() or "manual"
         payload = data.get("payload") if isinstance(data.get("payload"), dict) else {}
         if not event_type:
             return jsonify({"error": "event_type required"}), 400
