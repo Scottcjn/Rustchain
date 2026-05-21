@@ -4,16 +4,20 @@ RustChain v2 - RIP-0005 Epoch Pro-Rata Rewards
 Production Anti-Spoof System with Fair Distribution
 Issue #2295: Added WebSocket real-time feed for Block Explorer
 """
-import os, time, json, secrets, hashlib, sqlite3
+import hashlib
+import json
+import math
+import secrets
+import sqlite3
+import time
 from decimal import Decimal, ROUND_HALF_UP
 from flask import Flask, request, jsonify
-from datetime import datetime
 
 app = Flask(__name__)
 
 # WebSocket Feed Integration (Issue #2295)
 try:
-    from websocket_feed import init_websocket, broadcast_block, broadcast_attestation, broadcast_epoch_settlement, get_ws_feed
+    from websocket_feed import init_websocket, broadcast_block, broadcast_attestation, broadcast_epoch_settlement
     WS_ENABLED = True
     ws_feed = init_websocket(app)
     print("[WebSocket] Real-time feed enabled for Block Explorer")
@@ -166,6 +170,35 @@ def get_hardware_weight(device):
         return HARDWARE_WEIGHTS[family].get(arch, HARDWARE_WEIGHTS[family].get("default", 1.0))
     return 1.0
 
+def _non_negative_int(value):
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value >= 0 else None
+    if isinstance(value, float):
+        return int(value) if math.isfinite(value) and value >= 0 and value.is_integer() else None
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return None
+        try:
+            parsed = float(value)
+        except ValueError:
+            return None
+        return int(parsed) if math.isfinite(parsed) and parsed >= 0 and parsed.is_integer() else None
+    return None
+
+def _positive_finite_float(value):
+    if isinstance(value, bool):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(parsed) or parsed <= 0:
+        return None
+    return parsed
+
 def consume_ticket(ticket_id):
     """Consume a ticket (mark as used)"""
     if ticket_id in tickets_db:
@@ -245,20 +278,28 @@ def epoch_enroll():
     if not isinstance(device, dict):
         return jsonify({"ok": False, "reason": "invalid_device"}), 400
 
-    if not miner_pk or not ticket_id:
+    if not isinstance(miner_pk, str) or not miner_pk.strip():
         return jsonify({"ok": False, "reason": "missing_params"}), 400
+    if not isinstance(ticket_id, str) or not ticket_id.strip():
+        return jsonify({"ok": False, "reason": "missing_params"}), 400
+
+    # Validate epoch inputs before consuming the one-shot ticket.
+    slot = _non_negative_int(data.get("slot", int(time.time() // BLOCK_TIME)))
+    if slot is None:
+        return jsonify({"ok": False, "reason": "invalid_slot"}), 400
+    temporal = _positive_finite_float(weights.get("temporal", 1.0))
+    rtc = _positive_finite_float(weights.get("rtc", 1.0))
+    if temporal is None or rtc is None:
+        return jsonify({"ok": False, "reason": "invalid_weights"}), 400
 
     # Consume ticket (anti-replay)
     if not consume_ticket(ticket_id):
         return jsonify({"ok": False, "reason": "ticket_invalid"}), 400
 
     # Compute epoch
-    slot = int(data.get("slot", int(time.time() // BLOCK_TIME)))
     epoch = slot_to_epoch(slot)
 
     # Calculate weight = temporal × rtc × hardware
-    temporal = float(weights.get("temporal", 1.0))
-    rtc = float(weights.get("rtc", 1.0))
     hw = get_hardware_weight(device)
     total_weight = temporal * rtc * hw
 
