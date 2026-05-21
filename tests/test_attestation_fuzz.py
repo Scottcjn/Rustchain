@@ -379,6 +379,19 @@ def test_validate_fingerprint_data_handles_malformed_inputs_no_crash(malformed_f
     assert passed is False
 
 
+
+
+@pytest.mark.parametrize("bad_signature", [True, -1, 1.5])
+def test_attest_submit_rejects_non_string_signature_without_500(client, bad_signature):
+    payload = _base_payload()
+    payload["signature"] = bad_signature
+    payload["public_key"] = "a" * 64
+
+    response = client.post("/attest/submit", json=payload)
+
+    assert response.status_code == 400
+    assert response.get_json()["code"] == "INVALID_SIGNATURE_TYPE"
+
 def test_attest_submit_no_500_on_malformed_fingerprint(client):
     """
     FIX #1147: The /attest/submit endpoint must never return 500,
