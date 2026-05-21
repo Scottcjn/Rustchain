@@ -917,6 +917,9 @@ def match_order(order_id):
 def confirm_order(order_id):
     """Confirm settlement -- verifies HTLC preimage, releases escrow."""
     data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        return jsonify({"error": "JSON object required"}), 400
+
     wallet = str(data.get("wallet", "")).strip()
     quote_tx = str(data.get("quote_tx", "")).strip()
     secret = str(data.get("secret", "")).strip()

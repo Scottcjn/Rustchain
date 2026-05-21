@@ -258,3 +258,13 @@ def test_escrow_helper_returns_generic_error_on_exception(tmp_path, monkeypatch)
     )
 
     assert result == {"ok": False, "error": otc_bridge.GENERIC_INTERNAL_ERROR}
+
+def test_confirm_order_rejects_non_object_json(tmp_path, monkeypatch):
+    otc_bridge = load_otc_bridge(tmp_path)
+    monkeypatch.setattr(otc_bridge, "check_rate_limit", lambda _ip: True)
+
+    client = otc_bridge.app.test_client()
+    response = client.post("/api/orders/otc_test/confirm", json=["seller", "0xabc", "secret"])
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "JSON object required"}
