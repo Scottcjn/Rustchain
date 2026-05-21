@@ -1,3 +1,4 @@
+import pytest
 from flask import Flask
 
 from node.rustchain_bft_consensus import create_bft_routes
@@ -39,6 +40,27 @@ def test_bft_propose_requires_epoch_field():
 
     assert resp.status_code == 400
     assert resp.get_json()["error"] == "Missing epoch field"
+
+
+@pytest.mark.parametrize("epoch", [True, "1", 1.5])
+def test_bft_propose_rejects_non_integer_epoch(epoch):
+    resp = _client().post(
+        "/bft/propose",
+        json={"epoch": epoch, "miners": [], "distribution": {}},
+    )
+
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "epoch must be an integer"
+
+
+def test_bft_propose_rejects_negative_epoch():
+    resp = _client().post(
+        "/bft/propose",
+        json={"epoch": -1, "miners": [], "distribution": {}},
+    )
+
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "epoch must be non-negative"
 
 
 def test_bft_propose_rejects_invalid_collection_fields():

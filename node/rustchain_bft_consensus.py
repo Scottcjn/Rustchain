@@ -1101,6 +1101,10 @@ def create_bft_routes(app, bft: BFTConsensus):
 
             if epoch is None:
                 return jsonify({'error': 'Missing epoch field'}), 400
+            if isinstance(epoch, bool) or not isinstance(epoch, int):
+                return jsonify({'error': 'epoch must be an integer'}), 400
+            if epoch < 0:
+                return jsonify({'error': 'epoch must be non-negative'}), 400
             if not isinstance(miners, list):
                 return jsonify({'error': 'miners must be a list'}), 400
             if not isinstance(distribution, dict):
