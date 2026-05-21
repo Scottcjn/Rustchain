@@ -183,11 +183,15 @@ def learn_key_from_envelope(
     if not agent_id or not pubkey_hex:
         return False, "missing_agent_id_or_pubkey"
 
-    # Verify agent_id is consistent with declared pubkey
+    # Verify agent_id is consistent with a valid Ed25519 public key.
     try:
-        expected_id = agent_id_from_pubkey(bytes.fromhex(pubkey_hex))
-    except ValueError:
+        pubkey_bytes = bytes.fromhex(pubkey_hex)
+    except (TypeError, ValueError):
         return False, "invalid_pubkey_encoding"
+    if len(pubkey_bytes) != 32:
+        return False, "invalid_pubkey_length"
+
+    expected_id = agent_id_from_pubkey(pubkey_bytes)
 
     if expected_id != agent_id:
         return False, "agent_id_pubkey_mismatch"
