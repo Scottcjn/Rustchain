@@ -23,9 +23,7 @@ Author: NOX Ventures (noxxxxybot-sketch)
 Date: 2026-03-07
 """
 
-import hashlib
 import hmac
-import json
 import logging
 import sqlite3
 import time
@@ -254,7 +252,7 @@ def _sophia_evaluate(proposal: dict) -> str:
 
     param_key = proposal.get("parameter_key") or ""
     analysis_lines = [
-        f"**Sophia AI Evaluation** (auto-generated, non-binding)",
+        "**Sophia AI Evaluation** (auto-generated, non-binding)",
         f"- Proposal type: `{ptype}`",
         f"- Risk level: **{risk_level}**",
     ]
@@ -344,7 +342,10 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
         if error_response:
             return error_response
         parameter_key = parameter_key or None
-        parameter_value = str(data.get("parameter_value", "")).strip() or None
+        parameter_value, error_response = _string_field(data, "parameter_value")
+        if error_response:
+            return error_response
+        parameter_value = parameter_value or None
 
         # Validation
         if not miner_id:
