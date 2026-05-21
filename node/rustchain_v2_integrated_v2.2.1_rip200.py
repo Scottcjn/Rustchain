@@ -7783,6 +7783,9 @@ def confirm_pending():
             try:
                 c.execute(f"SAVEPOINT {savepoint}")
 
+                if not _supports_wallet_balance_updates(balance_cols):
+                    raise RuntimeError("unsupported balances schema for wallet transfer")
+
                 # Check sender still has sufficient balance
                 sender_balance = _balance_i64_for_wallet(c, from_m)
                 
@@ -8351,6 +8354,17 @@ def _balance_i64_for_wallet(c: sqlite3.Cursor, wallet_id: str) -> int:
 
 def _balance_columns(c: sqlite3.Cursor) -> set:
     return {row[1] for row in c.execute("PRAGMA table_info(balances)").fetchall()}
+
+
+def _supports_wallet_balance_updates(balance_cols: set) -> bool:
+    return any(
+        required.issubset(balance_cols)
+        for required in (
+            {"miner_id", "amount_i64"},
+            {"miner_pk", "balance_rtc"},
+            {"miner_id", "balance_rtc"},
+        )
+    )
 
 
 def _ensure_wallet_balance_row(c: sqlite3.Cursor, wallet_id: str, balance_cols: set) -> None:

@@ -462,3 +462,91 @@ def test_pending_confirm_rolls_back_balance_changes_when_ledger_write_fails(monk
 
     if db_path.exists():
         db_path.unlink()
+
+
+def test_pending_confirm_keeps_transfer_pending_on_unsupported_balance_schema(monkeypatch):
+    local_tmp_dir = Path(__file__).parent / ".tmp_signed_transfer"
+    local_tmp_dir.mkdir(exist_ok=True)
+    db_path = local_tmp_dir / f"{uuid.uuid4().hex}.sqlite3"
+
+    with closing(sqlite3.connect(db_path)) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE balances (
+                wallet TEXT PRIMARY KEY,
+                credits INTEGER DEFAULT 0
+            );
+
+            CREATE TABLE pending_ledger (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts INTEGER NOT NULL,
+                epoch INTEGER NOT NULL,
+                from_miner TEXT NOT NULL,
+                to_miner TEXT NOT NULL,
+                amount_i64 INTEGER NOT NULL,
+                reason TEXT,
+                status TEXT DEFAULT 'pending',
+                created_at INTEGER NOT NULL,
+                confirms_at INTEGER NOT NULL,
+                tx_hash TEXT,
+                voided_by TEXT,
+                voided_reason TEXT,
+                confirmed_at INTEGER
+            );
+
+            CREATE UNIQUE INDEX idx_pending_ledger_tx_hash ON pending_ledger(tx_hash);
+            """
+        )
+
+    admin_key = "test-admin-key"
+    monkeypatch.setattr(integrated_node, "DB_PATH", str(db_path))
+    monkeypatch.setenv("RC_ADMIN_KEY", admin_key)
+    integrated_node.app.config["TESTING"] = True
+
+    from_wallet = "RTC" + "a" * 40
+    to_wallet = "RTC" + "b" * 40
+    now = int(time.time())
+
+    with closing(sqlite3.connect(db_path)) as conn:
+        conn.execute(
+            """
+            INSERT INTO pending_ledger
+                (ts, epoch, from_miner, to_miner, amount_i64, reason, created_at, confirms_at, tx_hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                now - 10,
+                7,
+                from_wallet,
+                to_wallet,
+                1_250_000,
+                "signed_wallet_transfer:unsupported-schema",
+                now - 10,
+                now - 1,
+                "unsupported-schema-tx",
+            ),
+        )
+        conn.commit()
+
+    with integrated_node.app.test_client() as client:
+        response = client.post("/pending/confirm", headers={"X-Admin-Key": admin_key})
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["confirmed_count"] == 0
+    assert body["confirmed_ids"] == []
+    assert body["errors"] == [
+        {"id": 1, "error": "unsupported balances schema for wallet transfer"}
+    ]
+
+    with closing(sqlite3.connect(db_path)) as conn:
+        (status, voided_reason, confirmed_at) = conn.execute(
+            "SELECT status, voided_reason, confirmed_at FROM pending_ledger WHERE id = 1"
+        ).fetchone()
+
+    assert status == "pending"
+    assert voided_reason is None
+    assert confirmed_at is None
+
+    if db_path.exists():
+        db_path.unlink()
