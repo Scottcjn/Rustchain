@@ -10,8 +10,13 @@ set -euo pipefail
 
 RC_NODE_PRIMARY="https://50.28.86.131"
 RC_NODE_BACKUP="https://50.28.86.153"
-RC_MINER_URL="https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/linux/rustchain_linux_miner.py"
-RC_FP_URL="https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/linux/fingerprint_checks.py"
+RC_REPO_REF="${RUSTCHAIN_REF:-main}"
+RC_BASE_URL="https://raw.githubusercontent.com/Scottcjn/Rustchain/${RC_REPO_REF}"
+RC_MINER_PATH=""
+RC_FP_PATH=""
+RC_MINER_URL=""
+RC_FP_URL=""
+MINER_SCRIPT="rustchain_miner.py"
 INSTALL_DIR="$HOME/.rustchain"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; BOLD='\033[1m'; NC='\033[0m'
@@ -69,10 +74,21 @@ detect_platform() {
   ARCH="$(uname -m)"
 
   case "$OS" in
-    Linux*)   PLATFORM="linux" ;;
-    Darwin*)  PLATFORM="macos" ;;
+    Linux*)
+      PLATFORM="linux"
+      RC_MINER_PATH="miners/linux/rustchain_linux_miner.py"
+      RC_FP_PATH="miners/linux/fingerprint_checks.py"
+      ;;
+    Darwin*)
+      PLATFORM="macos"
+      RC_MINER_PATH="miners/macos/rustchain_mac_miner_v2.5.py"
+      RC_FP_PATH="miners/macos/fingerprint_checks.py"
+      ;;
     *)        error "Unsupported OS: $OS" ;;
   esac
+
+  RC_MINER_URL="${RC_BASE_URL}/${RC_MINER_PATH}"
+  RC_FP_URL="${RC_BASE_URL}/${RC_FP_PATH}"
 
   # CPU architecture and antiquity multiplier
   case "$ARCH" in
@@ -162,8 +178,8 @@ download_files() {
 
   mkdir -p "$INSTALL_DIR"
 
-  info "Downloading rustchain_linux_miner.py..."
-  download_file "$RC_MINER_URL" "$INSTALL_DIR/rustchain_linux_miner.py" "miner"
+  info "Downloading ${RC_MINER_PATH##*/}..."
+  download_file "$RC_MINER_URL" "$INSTALL_DIR/$MINER_SCRIPT" "miner"
 
   info "Downloading fingerprint_checks.py..."
   download_file "$RC_FP_URL" "$INSTALL_DIR/fingerprint_checks.py" "fingerprint checks"
@@ -293,7 +309,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=$INSTALL_DIR
-ExecStart=$PYTHON -u $INSTALL_DIR/rustchain_linux_miner.py --wallet $WALLET_NAME
+ExecStart=$PYTHON -u $INSTALL_DIR/$MINER_SCRIPT --wallet $WALLET_NAME
 Restart=on-failure
 RestartSec=30
 Environment="WALLET_NAME=$WALLET_NAME"
@@ -323,7 +339,7 @@ SVCEOF
   <array>
     <string>$PYTHON</string>
     <string>-u</string>
-    <string>$INSTALL_DIR/rustchain_linux_miner.py</string>
+    <string>$INSTALL_DIR/$MINER_SCRIPT</string>
     <string>--wallet</string>
     <string>$WALLET_NAME</string>
   </array>
@@ -364,7 +380,7 @@ summary() {
   echo -e "  Multiplier:${GREEN} ${MULTIPLIER}x${NC}"
   echo ""
   echo -e "  ${BOLD}To start mining:${NC}"
-  echo -e "  cd $INSTALL_DIR && $PYTHON -u rustchain_linux_miner.py --wallet $WALLET_NAME"
+  echo -e "  cd $INSTALL_DIR && $PYTHON -u $MINER_SCRIPT --wallet $WALLET_NAME"
   echo ""
   echo -e "  ${BOLD}Check your balance:${NC}"
   echo -e "  curl -sk '$NODE_URL/wallet/balance?miner_id=$WALLET_NAME' | python3 -m json.tool"
