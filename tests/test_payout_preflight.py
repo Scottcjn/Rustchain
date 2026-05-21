@@ -140,41 +140,41 @@ class TestValidateWalletTransferAdmin:
                 assert result.details["amount_i64"] == 10_000_000
 
       def test_miner_ids_are_trimmed(self):
-                result = validate_wallet_transfer_admin({
-                              "from_miner": " miner_alpha ",
-                              "to_miner": " miner_beta ",
-                              "amount_rtc": 10.0,
-                })
-                assert result.ok is True
-                assert result.details["from_miner"] == "miner_alpha"
-                assert result.details["to_miner"] == "miner_beta"
+          result = validate_wallet_transfer_admin({
+              "from_miner": " miner_alpha ",
+              "to_miner": " miner_beta ",
+              "amount_rtc": 10.0,
+          })
+          assert result.ok is True
+          assert result.details["from_miner"] == "miner_alpha"
+          assert result.details["to_miner"] == "miner_beta"
 
       def test_structured_from_miner_rejected(self):
-                result = validate_wallet_transfer_admin({
-                              "from_miner": ["miner_alpha"],
-                              "to_miner": "miner_beta",
-                              "amount_rtc": 10.0,
-                })
-                assert result.ok is False
-                assert result.error == "invalid_from_or_to_type"
+          result = validate_wallet_transfer_admin({
+              "from_miner": ["miner_alpha"],
+              "to_miner": "miner_beta",
+              "amount_rtc": 10.0,
+          })
+          assert result.ok is False
+          assert result.error == "invalid_from_or_to_type"
 
       def test_structured_to_miner_rejected(self):
-                result = validate_wallet_transfer_admin({
-                              "from_miner": "miner_alpha",
-                              "to_miner": {"id": "miner_beta"},
-                              "amount_rtc": 10.0,
-                })
-                assert result.ok is False
-                assert result.error == "invalid_from_or_to_type"
+          result = validate_wallet_transfer_admin({
+              "from_miner": "miner_alpha",
+              "to_miner": {"id": "miner_beta"},
+              "amount_rtc": 10.0,
+          })
+          assert result.ok is False
+          assert result.error == "invalid_from_or_to_type"
 
       def test_blank_miner_id_rejected_after_trim(self):
-                result = validate_wallet_transfer_admin({
-                              "from_miner": "   ",
-                              "to_miner": "miner_beta",
-                              "amount_rtc": 10.0,
-                })
-                assert result.ok is False
-                assert result.error == "missing_from_or_to"
+          result = validate_wallet_transfer_admin({
+              "from_miner": "   ",
+              "to_miner": "miner_beta",
+              "amount_rtc": 10.0,
+          })
+          assert result.ok is False
+          assert result.error == "missing_from_or_to"
 
       def test_missing_from_miner(self):
                 result = validate_wallet_transfer_admin({
