@@ -916,8 +916,12 @@ def match_order(order_id):
 @rate_limited
 def confirm_order(order_id):
     """Confirm settlement -- verifies HTLC preimage, releases escrow."""
-    data = request.get_json(silent=True) or {}
-    if not isinstance(data, dict):
+    data = request.get_json(silent=True)
+    if data is None:
+        if request.is_json and request.get_data(cache=True).strip():
+            return jsonify({"error": "JSON object required"}), 400
+        data = {}
+    elif not isinstance(data, dict):
         return jsonify({"error": "JSON object required"}), 400
 
     wallet = str(data.get("wallet", "")).strip()
