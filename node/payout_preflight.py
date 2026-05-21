@@ -54,18 +54,29 @@ def _validate_amount_i64(amount_rtc: Decimal) -> Tuple[Optional[int], str]:
     return amount_i64, ""
 
 
+def _miner_id_field(value: Any) -> Tuple[Optional[str], str]:
+    if value is None or value == "":
+        return None, "missing_from_or_to"
+    if not isinstance(value, str):
+        return None, "invalid_from_or_to_type"
+    value = value.strip()
+    if not value:
+        return None, "missing_from_or_to"
+    return value, ""
+
+
 def validate_wallet_transfer_admin(payload: Any) -> PreflightResult:
     """Validate POST /wallet/transfer payload shape (admin transfer)."""
     data, err = _as_dict(payload)
     if err:
         return PreflightResult(ok=False, error=err, details={})
 
-    from_miner = data.get("from_miner")
-    to_miner = data.get("to_miner")
+    from_miner, from_err = _miner_id_field(data.get("from_miner"))
+    to_miner, to_err = _miner_id_field(data.get("to_miner"))
     amount_rtc, aerr = _safe_decimal(data.get("amount_rtc", 0))
 
-    if not from_miner or not to_miner:
-        return PreflightResult(ok=False, error="missing_from_or_to", details={})
+    if from_err or to_err:
+        return PreflightResult(ok=False, error=from_err or to_err, details={})
     if aerr:
         return PreflightResult(ok=False, error=aerr, details={})
     if amount_rtc is None or amount_rtc <= 0:
@@ -84,8 +95,8 @@ def validate_wallet_transfer_admin(payload: Any) -> PreflightResult:
         ok=True,
         error="",
         details={
-            "from_miner": str(from_miner),
-            "to_miner": str(to_miner),
+            "from_miner": from_miner,
+            "to_miner": to_miner,
             "amount_rtc": float(amount_rtc),
             "amount_i64": amount_i64,
         },

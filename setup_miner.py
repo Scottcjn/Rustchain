@@ -87,7 +87,7 @@ class MinerSetup:
                 result = subprocess.run(["sysctl", "hw.memsize"], capture_output=True, text=True)
                 if result.returncode == 0:
                     hardware_info["memory_mb"] = int(result.stdout.split(":")[1].strip()) // (1024 * 1024)
-        except:
+        except Exception:
             pass
             
         # Basic GPU detection
@@ -100,7 +100,7 @@ class MinerSetup:
                 result = subprocess.run(["wmic", "path", "win32_VideoController", "get", "name"], capture_output=True, text=True)
                 if result.returncode == 0 and len(result.stdout.strip().split('\n')) > 2:
                     hardware_info["gpu_available"] = True
-        except:
+        except Exception:
             pass
             
         self.log(f"CPU Cores: {hardware_info['cpu_cores']}")
