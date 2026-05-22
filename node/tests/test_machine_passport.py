@@ -849,6 +849,17 @@ class TestIntegration(unittest.TestCase):
         self.assertEqual(updated.name, 'Old Faithful (Upgraded)')
 
 
+
+class TestMachinePassportPdfRobustness(unittest.TestCase):
+    """Regression tests for PDF export input robustness."""
+
+    def test_format_repair_date_handles_malformed_values(self):
+        from machine_passport import _format_repair_date
+
+        self.assertEqual(_format_repair_date('not-a-timestamp'), 'Unknown')
+        self.assertEqual(_format_repair_date(None), 'Unknown')
+        self.assertEqual(_format_repair_date(0), '1970-01-01')
+
 def run_tests():
     """Run all tests and return results."""
     loader = unittest.TestLoader()
@@ -860,6 +871,7 @@ def run_tests():
     suite.addTests(loader.loadTestsFromTestCase(TestMachinePassportLedger))
     suite.addTests(loader.loadTestsFromTestCase(TestQRCodeGeneration))
     suite.addTests(loader.loadTestsFromTestCase(TestPDFGeneration))
+    suite.addTests(loader.loadTestsFromTestCase(TestMachinePassportPdfRobustness))
     suite.addTests(loader.loadTestsFromTestCase(TestAPIEndpoints))
     suite.addTests(loader.loadTestsFromTestCase(TestIntegration))
     
