@@ -8,6 +8,7 @@ Covers:
 - Phase E: _handle_attestation future-ts + schema validation
 """
 import importlib.util
+import json
 import os
 import sqlite3
 import sys
@@ -47,6 +48,34 @@ def _mk_layer(node_id, peers_dict=None, db_path=None):
     return layer
 
 
+def _trusted_layer_factory(tmp_path, monkeypatch, node_ids):
+    import p2p_identity
+
+    registry_path = tmp_path / "peer-registry.json"
+    key_paths = {}
+    peers = []
+
+    monkeypatch.setattr(p2p_identity, "SIGNING_MODE", "dual")
+    for node_id in node_ids:
+        key_path = tmp_path / f"{node_id}-identity.pem"
+        key_paths[node_id] = key_path
+        peers.append({
+            "node_id": node_id,
+            "pubkey_hex": p2p_identity.LocalKeypair(key_path).pubkey_hex,
+        })
+
+    registry_path.write_text(json.dumps({"version": 1, "peers": peers}))
+
+    def make(node_id, peers_dict=None, db_path=None):
+        monkeypatch.setenv("RC_P2P_PRIVKEY_PATH", str(key_paths[node_id]))
+        layer = _mk_layer(node_id, peers_dict, db_path)
+        layer._peer_registry = p2p_identity.PeerRegistry(str(registry_path))
+        layer._peer_registry.load()
+        return layer
+
+    return make
+
+
 # Phase A regression
 def test_phase_a_sender_id_flip_fails_verification():
     """After Phase A, flipping sender_id post-sign invalidates the signature."""
@@ -63,11 +92,12 @@ def test_phase_a_sender_id_flip_fails_verification():
 
 
 # Phase A + old spoof regression
-def test_phase_a_old_payload_voter_spoof_still_blocked():
+def test_phase_a_old_payload_voter_spoof_still_blocked(tmp_path, monkeypatch):
     """The original PR #2257 dedup still holds under Phase A."""
-    target = _mk_layer("node1", {"node2": "http://n2", "node3": "http://n3", "node4": "http://n4"})
-    attacker = _mk_layer("node2", db_path=target.db_path)
-    attacker.broadcast = lambda *args, **kwargs: None
+    peers = {"node2": "http://n2", "node3": "http://n3", "node4": "http://n4"}
+    make_layer = _trusted_layer_factory(tmp_path, monkeypatch, {"node1", "node2", "node3", "node4"})
+    target = make_layer("node1", peers)
+    attacker = make_layer("node2", db_path=target.db_path)
 
     first = attacker.create_message(
         mod.MessageType.EPOCH_VOTE,
@@ -158,12 +188,12 @@ def test_phase_b_rr_delegate_gate_rejects_non_leader():
 
 
 # Phase C regression
-def test_phase_c_mixed_proposals_dont_aggregate_to_quorum():
+def test_phase_c_mixed_proposals_dont_aggregate_to_quorum(tmp_path, monkeypatch):
     """Phase C: two different proposal_hashes get separate quorum counts."""
-    target = _mk_layer("node1", {"node2": "http://n2", "node3": "http://n3", "node4": "http://n4"})
-    voters = [_mk_layer(nid, db_path=target.db_path) for nid in ("node2", "node3", "node4")]
-    for v in voters:
-        v.broadcast = lambda *args, **kwargs: None
+    peers = {"node2": "http://n2", "node3": "http://n3", "node4": "http://n4"}
+    make_layer = _trusted_layer_factory(tmp_path, monkeypatch, {"node1", "node2", "node3", "node4"})
+    target = make_layer("node1", peers)
+    voters = [make_layer(nid, db_path=target.db_path) for nid in ("node2", "node3", "node4")]
 
     # node2 votes accept on proposal_hash="A"
     # node3 votes accept on proposal_hash="B"
@@ -187,12 +217,12 @@ def test_phase_c_mixed_proposals_dont_aggregate_to_quorum():
     assert len(target._epoch_votes[(9, "B")]) == 1
 
 
-def test_epoch_votes_survive_restart_and_reject_retransmit():
+def test_epoch_votes_survive_restart_and_reject_retransmit(tmp_path, monkeypatch):
     """Persisted votes prevent restart from accepting a fresh duplicate vote."""
     peers = {"node2": "http://n2", "node3": "http://n3", "node4": "http://n4"}
-    target = _mk_layer("node1", peers)
-    voter = _mk_layer("node2", db_path=target.db_path)
-    voter.broadcast = lambda *args, **kwargs: None
+    make_layer = _trusted_layer_factory(tmp_path, monkeypatch, {"node1", "node2", "node3", "node4"})
+    target = make_layer("node1", peers)
+    voter = make_layer("node2", db_path=target.db_path)
 
     first = voter.create_message(
         mod.MessageType.EPOCH_VOTE,
@@ -200,7 +230,7 @@ def test_epoch_votes_survive_restart_and_reject_retransmit():
     )
     assert target.handle_message(first)["status"] == "ok"
 
-    restarted = _mk_layer("node1", peers, db_path=target.db_path)
+    restarted = make_layer("node1", peers, db_path=target.db_path)
     key = (12, "persisted-proposal")
     assert restarted._epoch_votes[key] == {"node2": "accept"}
 
