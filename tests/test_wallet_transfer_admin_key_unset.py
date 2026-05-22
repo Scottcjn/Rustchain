@@ -48,6 +48,13 @@ ADMIN_GATED_ENDPOINTS = [
     ("GET", "/wallet/balances/all", None),
 ]
 
+MODULE_ADMIN_KEY_ENDPOINTS = [
+    ("GET", "/api/miner/test-miner/attestations", None),
+    ("GET", "/api/balances", None),
+    ("POST", "/gov/rotate/stage", {"epoch_effective": 1, "threshold": 1, "members": []}),
+    ("GET", "/genesis/export", None),
+]
+
 
 def _request(client, method, path, body):
     if method == "GET":
@@ -117,3 +124,32 @@ def test_wallet_transfer_does_not_authenticate_empty_to_empty(monkeypatch, clien
         headers={"X-Admin-Key": "anything"},
     )
     assert resp3.status_code == 503
+
+
+@pytest.mark.parametrize("method,path,body", MODULE_ADMIN_KEY_ENDPOINTS)
+def test_module_admin_key_routes_reject_empty_module_admin_key(
+    monkeypatch, client, method, path, body
+):
+    """Admin routes must not authenticate an empty module-level admin key."""
+    monkeypatch.setenv("RC_ADMIN_KEY", "a" * 32)
+    monkeypatch.setattr(integrated_node, "ADMIN_KEY", "")
+
+    resp = _request(client, method, path, body)
+
+    assert resp.status_code == 401, (
+        f"{method} {path}: expected 401 when module ADMIN_KEY is empty, "
+        f"got {resp.status_code} (body={resp.get_data(as_text=True)[:200]})"
+    )
+
+
+def test_ops_readiness_does_not_show_details_with_empty_module_admin_key(
+    monkeypatch, client
+):
+    """Readiness remains public, but empty module keys must not unlock details."""
+    monkeypatch.setattr(integrated_node, "ADMIN_KEY", "")
+
+    resp = client.get("/ops/readiness")
+
+    assert resp.status_code in {200, 503}
+    payload = resp.get_json() or {}
+    assert "checks" not in payload
