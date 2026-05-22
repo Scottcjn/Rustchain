@@ -3,6 +3,7 @@
 
 from flask import Flask, request, jsonify, render_template_string
 import html as html_utils
+import os
 import sqlite3
 import json
 import urllib.parse
@@ -12,6 +13,15 @@ from datetime import datetime
 app = Flask(__name__)
 
 DB_PATH = "rustchain.db"
+
+
+def debug_enabled() -> bool:
+    return os.environ.get("RUSTCHAIN_PROFILE_BADGE_DEBUG", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 def init_badge_db():
     with sqlite3.connect(DB_PATH) as conn:
@@ -268,4 +278,4 @@ def list_badges():
 
 if __name__ == '__main__':
     init_badge_db()
-    app.run(debug=True, port=5003)
+    app.run(debug=debug_enabled(), port=5003)
