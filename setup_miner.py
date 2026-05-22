@@ -4,6 +4,7 @@ RustChain Miner Setup Script
 Automated setup for RustChain Universal Miner
 """
 
+import argparse
 import os
 import sys
 import subprocess
@@ -405,6 +406,13 @@ WantedBy=multi-user.target
             self.log(f"Setup failed: {e}")
             sys.exit(1)
 
-if __name__ == "__main__":
+def main():
+    parser = argparse.ArgumentParser(description="RustChain Miner Setup")
+    parser.parse_args()
+
     setup = MinerSetup()
     setup.run_setup()
+
+
+if __name__ == "__main__":
+    main()
