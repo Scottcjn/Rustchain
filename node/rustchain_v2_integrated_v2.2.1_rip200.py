@@ -8124,6 +8124,21 @@ try:
         local_port=8099
     )
 
+    def _parse_p2p_blocks_int_arg(raw_value, name, default, minimum=None, maximum=None):
+        if raw_value is None or raw_value == "":
+            value = default
+        else:
+            try:
+                value = int(raw_value)
+            except (TypeError, ValueError):
+                raise ValueError(f"{name} must be an integer")
+
+        if minimum is not None and value < minimum:
+            raise ValueError(f"{name} must be >= {minimum}")
+        if maximum is not None and value > maximum:
+            return maximum
+        return value
+
     # P2P Endpoints
     @app.route('/p2p/stats', methods=['GET'])
     def p2p_stats():
@@ -8141,8 +8156,12 @@ try:
     def p2p_get_blocks():
         """Get blocks for sync"""
         try:
-            start_height = int(request.args.get('start', 0))
-            limit = min(int(request.args.get('limit', 100)), 1000)
+            start_height = _parse_p2p_blocks_int_arg(
+                request.args.get('start'), "start", 0, minimum=0
+            )
+            limit = _parse_p2p_blocks_int_arg(
+                request.args.get('limit'), "limit", 100, minimum=1, maximum=1000
+            )
 
             blocks = block_sync.get_blocks_for_sync(start_height, limit)
             return jsonify({"ok": True, "blocks": blocks})
