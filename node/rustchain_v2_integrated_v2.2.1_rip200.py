@@ -4120,6 +4120,17 @@ def enroll_epoch():
     # unauthorized-enrollment / miner_id-hijack vector.
     # Unsigned enrollment is rejected by default. Operators running private
     # legacy migrations can temporarily set ENROLL_ALLOW_UNSIGNED_LEGACY=1.
+    for field_name, code in (
+        ("signature", "INVALID_SIGNATURE_TYPE"),
+        ("public_key", "INVALID_PUBLIC_KEY_TYPE"),
+    ):
+        if field_name in data and data[field_name] is not None and not isinstance(data[field_name], str):
+            return jsonify({
+                "ok": False,
+                "error": code.lower(),
+                "message": f"Field '{field_name}' must be a string",
+                "code": code,
+            }), 400
     sig_hex = (data.get('signature') or '').strip().lower()
     pubkey_hex = (data.get('public_key') or '').strip().lower()
     epoch = slot_to_epoch(current_slot())

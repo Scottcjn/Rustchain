@@ -499,6 +499,40 @@ class TestEnrollSignatureVerification(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertEqual(body["code"], "INCOMPLETE_SIGNATURE")
 
+    def test_enrollment_rejects_non_string_signature_before_crash(self):
+        """Non-string enrollment signatures must be validation failures, not exceptions."""
+        mod, _ = self._load_module("rustchain_enroll_sig_type_guard", "enroll_sig_type_guard.db")
+
+        status, body = self._enroll(
+            mod,
+            {
+                "miner_pubkey": "RTC_ENROLL_SIG_TYPE",
+                "miner_id": "miner_sig_type",
+                "signature": True,
+                "public_key": "00" * 32,
+            },
+        )
+
+        self.assertEqual(status, 400)
+        self.assertEqual(body["code"], "INVALID_SIGNATURE_TYPE")
+
+    def test_enrollment_rejects_non_string_public_key_before_crash(self):
+        """Non-string enrollment public keys must be validation failures, not exceptions."""
+        mod, _ = self._load_module("rustchain_enroll_pubkey_type_guard", "enroll_pubkey_type_guard.db")
+
+        status, body = self._enroll(
+            mod,
+            {
+                "miner_pubkey": "RTC_ENROLL_PUBKEY_TYPE",
+                "miner_id": "miner_pubkey_type",
+                "signature": "00" * 64,
+                "public_key": ["not", "a", "key"],
+            },
+        )
+
+        self.assertEqual(status, 400)
+        self.assertEqual(body["code"], "INVALID_PUBLIC_KEY_TYPE")
+
     @unittest.skipUnless(HAVE_NACL, "pynacl not installed")
     def test_enrollment_pubkey_mismatch_with_attacker_key(self):
         """Attacker cannot enroll victim's pubkey using attacker's signing key."""
