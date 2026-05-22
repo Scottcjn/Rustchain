@@ -97,6 +97,25 @@ def test_governance_vote_rejects_invalid_proposal_id():
     )
 
 
+def test_governance_vote_rejects_malformed_public_key_before_address_decode():
+    integrated_node.app.config["TESTING"] = True
+    with integrated_node.app.test_client() as client:
+        resp = client.post(
+            "/governance/vote",
+            json={
+                "proposal_id": 1,
+                "wallet": "RTC-test",
+                "vote": "yes",
+                "nonce": "n-1",
+                "signature": "ab" * 64,
+                "public_key": ["not", "hex"],
+            },
+        )
+
+    assert resp.status_code == 400
+    assert resp.get_json() == {"ok": False, "error": "invalid_public_key"}
+
+
 def test_governance_vote_flow_and_lifecycle_finalization():
     with _temporary_directory() as td:
         db_path = str(Path(td) / "gov.db")
