@@ -52,6 +52,88 @@ def test_p2p_sync_flask_routes_use_flask_request_and_jsonify(tmp_path):
     ]
 
 
+def test_p2p_blocks_reads_canonical_block_schema(tmp_path):
+    """The P2P blocks endpoint should work against the node block table."""
+    db_path = tmp_path / "rustchain.db"
+    peer_manager = rustchain_p2p_sync.PeerManager(str(db_path), "127.0.0.1")
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE blocks (
+                height INTEGER PRIMARY KEY,
+                block_hash TEXT UNIQUE NOT NULL,
+                prev_hash TEXT NOT NULL,
+                timestamp INTEGER NOT NULL,
+                merkle_root TEXT NOT NULL,
+                state_root TEXT NOT NULL,
+                attestations_hash TEXT NOT NULL,
+                producer TEXT NOT NULL,
+                producer_sig TEXT NOT NULL,
+                tx_count INTEGER NOT NULL,
+                attestation_count INTEGER NOT NULL,
+                body_json TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO blocks (
+                height, block_hash, prev_hash, timestamp, merkle_root, state_root,
+                attestations_hash, producer, producer_sig, tx_count, attestation_count,
+                body_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                2,
+                "canonical-hash",
+                "parent-hash",
+                1234567890,
+                "merkle-root",
+                "state-root",
+                "attestations-hash",
+                "miner-1",
+                "sig-1",
+                3,
+                4,
+                '{"transactions": ["tx-1"]}',
+                1234567899,
+            ),
+        )
+        conn.commit()
+
+    app = Flask(__name__)
+    rustchain_p2p_sync.add_p2p_endpoints(app, peer_manager, None, None)
+    client = app.test_client()
+
+    response = client.get("/api/blocks?start=2&limit=1")
+
+    assert response.status_code == 200
+    assert response.get_json()["blocks"] == [
+        {
+            "height": 2,
+            "hash": "canonical-hash",
+            "data": {
+                "header": {
+                    "prev_hash": "parent-hash",
+                    "timestamp": 1234567890,
+                    "merkle_root": "merkle-root",
+                    "state_root": "state-root",
+                    "attestations_hash": "attestations-hash",
+                    "producer": "miner-1",
+                    "producer_sig": "sig-1",
+                },
+                "body": {
+                    "tx_count": 3,
+                    "attestation_count": 4,
+                    "transactions": ["tx-1"],
+                },
+            },
+        }
+    ]
+
+
 @pytest.mark.parametrize(
     ("query", "message"),
     [

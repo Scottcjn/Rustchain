@@ -36,6 +36,44 @@ def _parse_int_query_arg(
     return value
 
 
+def _block_table_columns(conn: sqlite3.Connection) -> set[str]:
+    return {row[1] for row in conn.execute("PRAGMA table_info(blocks)").fetchall()}
+
+
+def _json_dict_or_empty(raw_value) -> Dict:
+    if raw_value in (None, ""):
+        return {}
+    if isinstance(raw_value, dict):
+        return raw_value
+    try:
+        decoded = json.loads(raw_value)
+    except (TypeError, json.JSONDecodeError):
+        return {}
+    return decoded if isinstance(decoded, dict) else {}
+
+
+def _canonical_block_data(row: sqlite3.Row) -> Dict:
+    header = {}
+    for field in (
+        "prev_hash",
+        "timestamp",
+        "merkle_root",
+        "state_root",
+        "attestations_hash",
+        "producer",
+        "producer_sig",
+    ):
+        if field in row.keys() and row[field] is not None:
+            header[field] = row[field]
+
+    body = _json_dict_or_empty(row["body_json"] if "body_json" in row.keys() else None)
+    for field in ("tx_count", "attestation_count"):
+        if field in row.keys() and row[field] is not None:
+            body.setdefault(field, row[field])
+
+    return {"header": header, "body": body}
+
+
 # ============================================================================
 # PEER DISCOVERY & MANAGEMENT
 # ============================================================================
@@ -469,17 +507,54 @@ def add_p2p_endpoints(app, peer_manager, block_sync, tx_gossip):
 
         # Fetch blocks from database
         with sqlite3.connect(peer_manager.db_path) as conn:
-            rows = conn.execute("""
-                SELECT height, hash, data FROM blocks
-                WHERE height >= ?
-                ORDER BY height ASC
-                LIMIT ?
-            """, (start, limit)).fetchall()
+            conn.row_factory = sqlite3.Row
+            columns = _block_table_columns(conn)
+            blocks = []
 
-            blocks = [
-                {"height": row[0], "hash": row[1], "data": json.loads(row[2])}
-                for row in rows
-            ]
+            if {"height", "hash", "data"}.issubset(columns):
+                rows = conn.execute("""
+                    SELECT height, hash, data FROM blocks
+                    WHERE height >= ?
+                    ORDER BY height ASC
+                    LIMIT ?
+                """, (start, limit)).fetchall()
+
+                blocks = [
+                    {"height": row["height"], "hash": row["hash"], "data": _json_dict_or_empty(row["data"])}
+                    for row in rows
+                ]
+            elif {"height", "block_hash"}.issubset(columns):
+                select_columns = ["height", "block_hash AS hash"]
+                for optional in (
+                    "prev_hash",
+                    "timestamp",
+                    "merkle_root",
+                    "state_root",
+                    "attestations_hash",
+                    "producer",
+                    "producer_sig",
+                    "tx_count",
+                    "attestation_count",
+                    "body_json",
+                ):
+                    if optional in columns:
+                        select_columns.append(optional)
+
+                rows = conn.execute(f"""
+                    SELECT {", ".join(select_columns)} FROM blocks
+                    WHERE height >= ?
+                    ORDER BY height ASC
+                    LIMIT ?
+                """, (start, limit)).fetchall()
+
+                blocks = [
+                    {
+                        "height": row["height"],
+                        "hash": row["hash"],
+                        "data": _canonical_block_data(row),
+                    }
+                    for row in rows
+                ]
 
         return jsonify({"ok": True, "blocks": blocks, "count": len(blocks)})
 
