@@ -856,6 +856,43 @@ class GossipLayer:
         ).hexdigest()
         return hmac.compare_digest(hmac_sig, expected)
 
+    def _has_trusted_ed25519_identity(
+        self,
+        msg: GossipMessage,
+        *,
+        check_freshness: bool = True,
+    ) -> bool:
+        """Return True only when msg is signed by the sender's trusted Ed25519 key."""
+        if check_freshness and abs(time.time() - msg.timestamp) > MESSAGE_EXPIRY:
+            return False
+
+        from p2p_identity import PeerRegistry, unpack_signature, verify_ed25519
+
+        _hmac_sig, ed25519_sig, _key_version = unpack_signature(msg.signature)
+        if not ed25519_sig:
+            return False
+
+        registry = self._peer_registry
+        if registry is None:
+            registry = PeerRegistry()
+            registry.load()
+
+        pubkey = registry.get_pubkey(msg.sender_id)
+        if pubkey is None and msg.sender_id == self.node_id and self._keypair is not None:
+            pubkey = self._keypair.pubkey_hex
+        if pubkey is None:
+            return False
+
+        content = self._signed_content(
+            msg.msg_type,
+            msg.sender_id,
+            msg.msg_id,
+            msg.ttl,
+            msg.payload,
+        )
+        message = f"{content}:{msg.timestamp}"
+        return verify_ed25519(pubkey, ed25519_sig, message.encode())
+
     def verify_message(self, msg: GossipMessage) -> bool:
         """Verify message signature and freshness."""
         return self._verify_message_signature(msg, check_freshness=True)
@@ -1373,6 +1410,8 @@ class GossipLayer:
                 return None, {}, "unknown_certificate_voter"
             if not self._verify_message_signature(vote_msg, check_freshness=False):
                 return None, {}, "invalid_vote_certificate_signature"
+            if not self._has_trusted_ed25519_identity(vote_msg):
+                return None, {}, "certificate_requires_ed25519_identity"
 
             vote_payload = vote_msg.payload if isinstance(vote_msg.payload, dict) else {}
             if vote_payload.get("epoch") != epoch:

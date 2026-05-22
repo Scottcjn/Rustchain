@@ -3,6 +3,7 @@
 import os
 import sys
 from pathlib import Path
+import json
 
 os.environ.setdefault("RC_P2P_SECRET", "a" * 64)
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -23,6 +24,44 @@ def _cluster_node(tmp_path, node_id):
         peers={peer_id: url for peer_id, url in all_nodes.items() if peer_id != node_id},
         db_path=str(tmp_path / f"{node_id}.db"),
     )
+
+
+def _ed25519_cluster_node_factory(tmp_path, monkeypatch):
+    import p2p_identity
+
+    all_nodes = {
+        "victim": "https://victim.example",
+        "peer1": "https://peer1.example",
+        "peer2": "https://peer2.example",
+        "peer3": "https://peer3.example",
+    }
+    registry_path = tmp_path / "peer-registry.json"
+    key_paths = {}
+    peers = []
+
+    monkeypatch.setattr(p2p_identity, "SIGNING_MODE", "dual")
+    for node_id in all_nodes:
+        key_path = tmp_path / f"{node_id}-identity.pem"
+        key_paths[node_id] = key_path
+        peers.append({
+            "node_id": node_id,
+            "pubkey_hex": p2p_identity.LocalKeypair(key_path).pubkey_hex,
+        })
+
+    registry_path.write_text(json.dumps({"version": 1, "peers": peers}))
+
+    def make(node_id):
+        monkeypatch.setenv("RC_P2P_PRIVKEY_PATH", str(key_paths[node_id]))
+        node = GossipLayer(
+            node_id=node_id,
+            peers={peer_id: url for peer_id, url in all_nodes.items() if peer_id != node_id},
+            db_path=str(tmp_path / f"{node_id}.db"),
+        )
+        node._peer_registry = p2p_identity.PeerRegistry(str(registry_path))
+        node._peer_registry.load()
+        return node
+
+    return make
 
 
 def _accept_vote(node, epoch=7, proposal_hash="proposal-a"):
@@ -204,8 +243,9 @@ def test_epoch_commit_accepts_quorum_backed_by_local_votes(tmp_path, monkeypatch
 
 def test_epoch_vote_omits_partial_certificate_after_vote_reload(tmp_path, monkeypatch):
     monkeypatch.setenv("RC_P2P_SECRET", "a" * 64)
-    node = _cluster_node(tmp_path, "victim")
-    peer3 = _cluster_node(tmp_path, "peer3")
+    make_node = _ed25519_cluster_node_factory(tmp_path, monkeypatch)
+    node = make_node("victim")
+    peer3 = make_node("peer3")
     key = (7, "proposal-a")
     node._epoch_votes[key] = {
         "peer1": "accept",
@@ -224,9 +264,10 @@ def test_epoch_vote_omits_partial_certificate_after_vote_reload(tmp_path, monkey
 
 def test_epoch_commit_partial_certificate_falls_back_to_local_votes(tmp_path, monkeypatch):
     monkeypatch.setenv("RC_P2P_SECRET", "a" * 64)
-    victim = _cluster_node(tmp_path, "victim")
-    peer1 = _cluster_node(tmp_path, "peer1")
-    peer3 = _cluster_node(tmp_path, "peer3")
+    make_node = _ed25519_cluster_node_factory(tmp_path, monkeypatch)
+    victim = make_node("victim")
+    peer1 = make_node("peer1")
+    peer3 = make_node("peer3")
     victim._epoch_votes[(7, "proposal-a")] = {
         "peer1": "accept",
         "peer2": "accept",
@@ -252,12 +293,44 @@ def test_epoch_commit_partial_certificate_falls_back_to_local_votes(tmp_path, mo
     assert "certificate" not in victim.epoch_crdt.metadata[7]
 
 
-def test_epoch_commit_accepts_quorum_backed_by_vote_certificate(tmp_path, monkeypatch):
+def test_epoch_commit_rejects_hmac_only_vote_certificate(tmp_path, monkeypatch):
     monkeypatch.setenv("RC_P2P_SECRET", "a" * 64)
     victim = _cluster_node(tmp_path, "victim")
     peer1 = _cluster_node(tmp_path, "peer1")
     peer2 = _cluster_node(tmp_path, "peer2")
     peer3 = _cluster_node(tmp_path, "peer3")
+
+    vote_certificate = [
+        _accept_vote(peer1).to_dict(),
+        _accept_vote(peer2).to_dict(),
+        _accept_vote(peer3).to_dict(),
+    ]
+    msg = peer1.create_message(
+        MessageType.EPOCH_COMMIT,
+        {
+            "epoch": 7,
+            "proposal_hash": "proposal-a",
+            "accept_count": 3,
+            "voters": ["peer1", "peer2", "peer3"],
+            "vote_certificate": vote_certificate,
+        },
+        ttl=0,
+    )
+
+    result = victim.handle_message(msg)
+
+    assert result["status"] == "error"
+    assert result["reason"] == "certificate_requires_ed25519_identity"
+    assert not victim.epoch_crdt.contains(7)
+
+
+def test_epoch_commit_accepts_quorum_backed_by_vote_certificate(tmp_path, monkeypatch):
+    monkeypatch.setenv("RC_P2P_SECRET", "a" * 64)
+    make_node = _ed25519_cluster_node_factory(tmp_path, monkeypatch)
+    victim = make_node("victim")
+    peer1 = make_node("peer1")
+    peer2 = make_node("peer2")
+    peer3 = make_node("peer3")
 
     vote_certificate = [
         _accept_vote(peer1).to_dict(),
@@ -288,10 +361,11 @@ def test_epoch_commit_accepts_quorum_backed_by_vote_certificate(tmp_path, monkey
 def test_epoch_commit_certificate_allows_stale_votes_for_offline_catchup(tmp_path, monkeypatch):
     monkeypatch.setenv("RC_P2P_SECRET", "a" * 64)
     now = p2p.time.time()
-    victim = _cluster_node(tmp_path, "victim")
-    peer1 = _cluster_node(tmp_path, "peer1")
-    peer2 = _cluster_node(tmp_path, "peer2")
-    peer3 = _cluster_node(tmp_path, "peer3")
+    make_node = _ed25519_cluster_node_factory(tmp_path, monkeypatch)
+    victim = make_node("victim")
+    peer1 = make_node("peer1")
+    peer2 = make_node("peer2")
+    peer3 = make_node("peer3")
 
     vote_certificate = [
         _accept_vote(peer1).to_dict(),
@@ -319,10 +393,11 @@ def test_epoch_commit_certificate_allows_stale_votes_for_offline_catchup(tmp_pat
 
 def test_epoch_commit_rejects_tampered_vote_certificate(tmp_path, monkeypatch):
     monkeypatch.setenv("RC_P2P_SECRET", "a" * 64)
-    victim = _cluster_node(tmp_path, "victim")
-    peer1 = _cluster_node(tmp_path, "peer1")
-    peer2 = _cluster_node(tmp_path, "peer2")
-    peer3 = _cluster_node(tmp_path, "peer3")
+    make_node = _ed25519_cluster_node_factory(tmp_path, monkeypatch)
+    victim = make_node("victim")
+    peer1 = make_node("peer1")
+    peer2 = make_node("peer2")
+    peer3 = make_node("peer3")
 
     vote_certificate = [
         _accept_vote(peer1).to_dict(),
