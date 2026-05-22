@@ -91,3 +91,16 @@ def test_verify_accepts_balance_rtc_column(tmp_path):
     result = verify(str(live), str(bak))
     assert result.ok is True
     assert any("balances (amount>0): 1" in line for line in result.lines)
+
+
+def test_verify_returns_failed_check_result_when_backup_missing(tmp_path):
+    """Regression: verify() must not raise when backup file disappears before copy2()."""
+    live = tmp_path / "live.db"
+    bak = tmp_path / "bak.db"
+    _make_db(live, rows=3, epoch=10)
+    # bak does not exist on disk
+
+    result = verify(str(live), str(bak))
+    assert result.ok is False
+    assert any("backup file missing" in line for line in result.lines)
+    assert any("RESULT: FAIL" in line for line in result.lines)
