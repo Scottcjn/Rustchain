@@ -239,6 +239,29 @@ class TestUtxoEndpoints(unittest.TestCase):
         data = r.get_json()
         self.assertIn('does not match', data['error'])
 
+    def test_transfer_rejects_malformed_public_key(self):
+        """Malformed public keys must not escape as endpoint exceptions."""
+        old_addr_from_pk = utxo_endpoints._addr_from_pk_fn
+
+        def malformed_public_key(_pubkey_hex):
+            raise ValueError("non-hexadecimal number found in fromhex() arg")
+
+        try:
+            utxo_endpoints._addr_from_pk_fn = malformed_public_key
+            r = self.client.post('/utxo/transfer', json={
+                'from_address': 'RTC_test_aabbccdd',
+                'to_address': 'bob',
+                'amount_rtc': 10.0,
+                'public_key': 'not-hex',
+                'signature': 'sig' * 22,
+                'nonce': 123,
+            })
+        finally:
+            utxo_endpoints._addr_from_pk_fn = old_addr_from_pk
+
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.get_json()['error'], 'Invalid public_key')
+
     def test_transfer_with_fee(self):
         self._seed_coinbase('RTC_test_aabbccdd', 100 * UNIT)
 

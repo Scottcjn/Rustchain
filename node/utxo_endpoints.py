@@ -450,8 +450,13 @@ def utxo_transfer():
             'dust_threshold_nrtc': DUST_THRESHOLD,
         }), 400
 
-    # Verify pubkey → address
-    expected_addr = _addr_from_pk_fn(public_key)
+    # Verify pubkey -> address.  The production converter decodes hex key
+    # material, so malformed public_key values must stay on the validation path
+    # rather than becoming endpoint 500s.
+    try:
+        expected_addr = _addr_from_pk_fn(public_key)
+    except Exception:
+        return jsonify({'error': 'Invalid public_key'}), 400
     if from_address != expected_addr:
         return jsonify({
             'error': 'Public key does not match from_address',
