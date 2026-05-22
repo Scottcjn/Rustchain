@@ -5501,7 +5501,14 @@ def withdrawal_history(miner_pk):
     admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
     if not admin_key or not hmac.compare_digest(admin_key, ADMIN_KEY or ""):
         return jsonify({"error": "Unauthorized - admin key required"}), 401
-    limit = request.args.get('limit', 50, type=int)
+    raw_limit = request.args.get('limit', '50')
+    if raw_limit == '':
+        raw_limit = '50'
+    try:
+        limit = int(raw_limit)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "limit must be an integer"}), 400
+    limit = max(1, min(limit, 500))
 
     with sqlite3.connect(DB_PATH) as c:
         rows = c.execute("""

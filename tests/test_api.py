@@ -161,3 +161,12 @@ def test_attest_debug_fails_closed_when_admin_key_unconfigured(client, monkeypat
 
     assert response.status_code == 503
     assert response.get_json()["error"] == "Admin key not configured"
+
+def test_withdraw_history_rejects_malformed_limit(client):
+    response = client.get(
+        '/withdraw/history/miner_abc?limit=abc',
+        headers={'X-Admin-Key': '0' * 32},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"ok": False, "error": "limit must be an integer"}
