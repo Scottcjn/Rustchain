@@ -8153,17 +8153,33 @@ try:
     @require_peer_auth
     def p2p_add_peer():
         """Add a new peer to the network"""
-        try:
-            data = request.json
-            peer_url = data.get('peer_url')
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({"ok": False, "error": "JSON object required"}), 400
 
-            if not peer_url:
-                return jsonify({"ok": False, "error": "peer_url required"}), 400
+        peer_url = data.get('peer_url')
+        if peer_url is None:
+            return jsonify({"ok": False, "error": "peer_url required"}), 400
+        if not isinstance(peer_url, str):
+            return jsonify({"ok": False, "error": "peer_url must be a string"}), 400
 
-            success = peer_manager.add_peer(peer_url)
-            return jsonify({"ok": success})
-        except Exception as e:
-            return jsonify({"ok": False, "error": str(e)}), 400
+        peer_url = peer_url.strip()
+        if not peer_url:
+            return jsonify({"ok": False, "error": "peer_url required"}), 400
+
+        result = peer_manager.add_peer(peer_url)
+        if isinstance(result, tuple):
+            success, message = result
+        else:
+            success, message = bool(result), None
+
+        if not success:
+            return jsonify({"ok": False, "error": message or "peer add failed"}), 400
+
+        response = {"ok": True}
+        if message:
+            response["message"] = message
+        return jsonify(response)
 
     # Start background sync unless an integration test explicitly disables it.
     if os.environ.get("RUSTCHAIN_DISABLE_P2P_AUTO_START") != "1":
