@@ -106,12 +106,15 @@ def cmd_status(args):
 def cmd_miners(args):
     """List active miners."""
     data = fetch_api("/api/miners")
+    miners = data.get("miners", []) if isinstance(data, dict) else data
+    if not isinstance(miners, list):
+        miners = []
     
     if args.count:
         if args.json:
-            print(json.dumps({"count": len(data)}, indent=2))
+            print(json.dumps({"count": len(miners)}, indent=2))
         else:
-            print(f"Active miners: {len(data)}")
+            print(f"Active miners: {len(miners)}")
         return
     
     if args.json:
@@ -121,15 +124,15 @@ def cmd_miners(args):
     # Format as table
     headers = ["Miner ID", "Architecture", "Last Attestation"]
     rows = []
-    for miner in data[:20]:  # Show top 20
-        miner_id = miner.get('miner_id', 'N/A')[:20]
-        arch = miner.get('arch', 'N/A')
+    for miner in miners[:20]:  # Show top 20
+        miner_id = miner.get('miner_id', miner.get('miner', 'N/A'))[:20]
+        arch = miner.get('arch', miner.get('device_arch', 'N/A'))
         last_attest = miner.get('last_attest', 'N/A')
         if isinstance(last_attest, (int, float)):
             last_attest = datetime.fromtimestamp(last_attest).strftime('%Y-%m-%d %H:%M')
         rows.append([miner_id, arch, str(last_attest)])
     
-    print(f"Active Miners ({len(data)} total, showing 20)\n")
+    print(f"Active Miners ({len(miners)} total, showing 20)\n")
     print(format_table(headers, rows))
 
 def cmd_balance(args):
