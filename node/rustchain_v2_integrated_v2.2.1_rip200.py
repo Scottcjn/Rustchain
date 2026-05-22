@@ -4589,17 +4589,44 @@ def kv_set(key, val):
             db.execute("INSERT INTO settings(key,val) VALUES(?,?)", (key, str(val)))
         db.commit()
 
+def _configured_admin_key():
+    if "ADMIN_KEY" in globals():
+        return str(globals().get("ADMIN_KEY") or "")
+    return str(os.environ.get("RC_ADMIN_KEY", "") or "")
+
+
 def is_admin(req):
     """Check if request has valid admin API key.
 
     Uses hmac.compare_digest for constant-time comparison to prevent
     timing side-channel attacks that could leak the admin key byte-by-byte.
     """
-    need = os.environ.get("RC_ADMIN_KEY", "")
+    need = _configured_admin_key()
     got = req.headers.get("X-Admin-Key", "") or req.headers.get("X-API-Key", "")
     if not need or not got:
         return False
     return hmac.compare_digest(need, got)
+
+
+def _admin_key_unset_response():
+    return jsonify({
+        "ok": False,
+        "error": "Admin key not configured",
+        "reason": "admin_key_unset",
+        "code": "ADMIN_KEY_UNSET",
+    }), 503
+
+
+def _admin_required_response():
+    return jsonify({"ok": False, "reason": "admin_required"}), 401
+
+
+def _require_admin_request(req):
+    if not _configured_admin_key():
+        return _admin_key_unset_response()
+    if not is_admin(req):
+        return _admin_required_response()
+    return None
 
 
 def ensure_wallet_review_tables(conn):
@@ -5183,9 +5210,9 @@ def reject_v1_mine():
 @app.route('/withdraw/register', methods=['POST'])
 def register_withdrawal_key():
     # SECURITY: Registering withdrawal keys allows fund extraction; require admin key.
-    admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    if not admin_key or not hmac.compare_digest(admin_key, ADMIN_KEY or ""):
-        return jsonify({"error": "Unauthorized - admin key required"}), 401
+    admin_error = _require_admin_request(request)
+    if admin_error:
+        return admin_error
     """Register sr25519 public key for withdrawals"""
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
@@ -5498,9 +5525,9 @@ def withdrawal_status(withdrawal_id):
 def withdrawal_history(miner_pk):
     """Get withdrawal history for miner"""
     # SECURITY FIX 2026-02-15: Require admin key - exposes withdrawal history
-    admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    if not admin_key or not hmac.compare_digest(admin_key, ADMIN_KEY or ""):
-        return jsonify({"error": "Unauthorized - admin key required"}), 401
+    admin_error = _require_admin_request(request)
+    if admin_error:
+        return admin_error
     limit = request.args.get('limit', 50, type=int)
 
     with sqlite3.connect(DB_PATH) as c:
@@ -5553,9 +5580,9 @@ def admin_required(f):
     from functools import wraps
     @wraps(f)
     def decorated(*args, **kwargs):
-        key = request.headers.get("X-API-Key") or ""
-        if not hmac.compare_digest(key, ADMIN_KEY or ""):
-            return jsonify({"ok": False, "reason": "admin_required"}), 401
+        admin_error = _require_admin_request(request)
+        if admin_error:
+            return admin_error
         return f(*args, **kwargs)
     return decorated
 
@@ -6787,9 +6814,9 @@ def api_miner_dashboard(miner_id):
 def api_miner_attestations(miner_id: str):
     """Best-effort attestation history for a single miner (museum detail view)."""
     # SECURITY FIX 2026-02-15: Require admin key - exposes miner attestation history/timing
-    admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    if not hmac.compare_digest(admin_key, ADMIN_KEY or ""):
-        return jsonify({"error": "Unauthorized - admin key required"}), 401
+    admin_error = _require_admin_request(request)
+    if admin_error:
+        return admin_error
     try:
         limit = int(request.args.get("limit", "120") or 120)
     except (TypeError, ValueError):
@@ -6833,9 +6860,9 @@ def api_miner_attestations(miner_id: str):
 def api_balances():
     """Return wallet balances (best-effort across schema variants)."""
     # SECURITY FIX 2026-02-15: Require admin key - dumps all wallet balances
-    admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    if not hmac.compare_digest(admin_key, ADMIN_KEY or ""):
-        return jsonify({"error": "Unauthorized - admin key required"}), 401
+    admin_error = _require_admin_request(request)
+    if admin_error:
+        return admin_error
     try:
         limit = int(request.args.get("limit", "2000") or 2000)
     except (TypeError, ValueError):
@@ -7005,11 +7032,9 @@ def metrics_mac():
 def attest_debug():
     """Debug endpoint: show miner's enrollment eligibility"""
     # SECURITY FIX 2026-02-15: Require admin key - exposes internal config + MAC hashes
-    admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    if not ADMIN_KEY:
-        return jsonify({"error": "Admin key not configured"}), 503
-    if not hmac.compare_digest(admin_key, ADMIN_KEY):
-        return jsonify({"error": "Unauthorized - admin key required"}), 401
+    admin_error = _require_admin_request(request)
+    if admin_error:
+        return admin_error
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({"error": "Invalid JSON body"}), 400
@@ -7127,8 +7152,7 @@ METRICS_SNAPSHOT = {}
 def ops_readiness():
     """Single PASS/FAIL aggregator for all go/no-go checks"""
     # SECURITY FIX 2026-02-15: Only show detailed checks to admin
-    admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    is_admin = hmac.compare_digest(admin_key, ADMIN_KEY or "")
+    admin_view = is_admin(request)
     out = {"ok": True, "checks": []}
 
     # Health check
@@ -7184,7 +7208,7 @@ def ops_readiness():
         out["ok"] = False
 
     # Strip detailed checks for non-admin requests
-    if not is_admin:
+    if not admin_view:
         return jsonify({"ok": out["ok"]}), (200 if out["ok"] else 503)
     return jsonify(out), (200 if out["ok"] else 503)
 
