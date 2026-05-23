@@ -29,7 +29,11 @@ That is it. No GPU required. No special hardware. No account signup.
 
 ## Step 1: Install the Miner
 
-Open a terminal (on macOS: search for "Terminal"; on Windows: use PowerShell) and run:
+Choose the instructions for your operating system.
+
+### Linux, macOS, Raspberry Pi, or Windows with WSL/Git Bash
+
+Open a terminal and run:
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash
@@ -51,6 +55,29 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 ```bash
 curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --dry-run
 ```
+
+### Windows PowerShell
+
+Do not run the Bash one-liner in plain PowerShell. It is for Linux, macOS,
+Raspberry Pi, WSL, and Git Bash. For native Windows installs, use the Windows
+miner files under `miners/windows/`:
+
+```powershell
+git clone https://github.com/Scottcjn/Rustchain.git
+cd Rustchain\miners\windows\installer
+python -m pip install -r requirements.txt
+python build_miner.py
+```
+
+This builds `dist\RustChainMiner.exe`. To build the full Windows installer,
+install Inno Setup 6 and run:
+
+```cmd
+iscc rustchain_setup.iss
+```
+
+See `miners/windows/README.md` and `miners/windows/installer/README.md` for the
+Windows build and install guide.
 
 ### Pick a Wallet Name
 
