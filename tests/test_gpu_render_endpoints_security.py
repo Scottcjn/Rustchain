@@ -49,7 +49,8 @@ def _init_db(db_path):
 
 def _balance(db_path, wallet):
     with sqlite3.connect(db_path) as conn:
-        return conn.execute("SELECT balance_rtc FROM balances WHERE miner_pk = ?", (wallet,)).fetchone()[0]
+        row = conn.execute("SELECT balance_rtc FROM balances WHERE miner_pk = ?", (wallet,)).fetchone()
+        return row[0] if row else None
 
 
 def _escrow_payload():
@@ -115,6 +116,39 @@ def test_gpu_admin_can_create_and_release_escrow(tmp_path):
     released = client.post(
         "/api/gpu/release",
         json={"job_id": "job-1", "actor_wallet": "victim", "escrow_secret": escrow_secret},
+        headers={"X-Admin-Key": ADMIN_KEY},
+    )
+
+    assert released.status_code == 200
+    assert released.get_json() == {"ok": True, "status": "released"}
+    assert _balance(db_path, "victim") == 20.0
+    assert _balance(db_path, "attacker") == 5.0
+
+
+def test_gpu_escrow_release_preserves_funds_for_new_provider_wallet(tmp_path):
+    db_path = tmp_path / "gpu.db"
+    _init_db(db_path)
+    client = _create_app(db_path).test_client()
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("DELETE FROM balances WHERE miner_pk = ?", ("attacker",))
+
+    created = client.post(
+        "/api/gpu/escrow",
+        json=_escrow_payload(),
+        headers={"X-Admin-Key": ADMIN_KEY},
+    )
+    assert created.status_code == 200
+    assert _balance(db_path, "victim") == 20.0
+    assert _balance(db_path, "attacker") == 0.0
+
+    released = client.post(
+        "/api/gpu/release",
+        json={
+            "job_id": "job-1",
+            "actor_wallet": "victim",
+            "escrow_secret": created.get_json()["escrow_secret"],
+        },
         headers={"X-Admin-Key": ADMIN_KEY},
     )
 

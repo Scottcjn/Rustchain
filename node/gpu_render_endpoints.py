@@ -65,6 +65,12 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
         except sqlite3.Error:
             pass
 
+    def _ensure_balance_row(db, wallet):
+        db.execute(
+            "INSERT OR IGNORE INTO balances (miner_pk, balance_rtc) VALUES (?, 0.0)",
+            (wallet,),
+        )
+
     # 1. GPU Node Attestation (Extension)
     @app.route("/api/gpu/attest", methods=["POST"])
     def gpu_attest():
@@ -154,6 +160,7 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
             res = db.execute("SELECT balance_rtc FROM balances WHERE miner_pk = ?", (from_wallet,)).fetchone()
             if not res or res[0] < amount:
                 return jsonify({"error": "Insufficient balance for escrow"}), 400
+            _ensure_balance_row(db, to_wallet)
 
             # Lock funds
             db.execute("UPDATE balances SET balance_rtc = balance_rtc - ? WHERE miner_pk = ?", (amount, from_wallet))
@@ -226,7 +233,13 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
                 return jsonify({"error": "Job was already processed"}), 409
 
             # Transfer to provider
-            db.execute("UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk = ?", (job["amount_rtc"], job["to_wallet"]))
+            credited = db.execute(
+                "UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk = ?",
+                (job["amount_rtc"], job["to_wallet"]),
+            )
+            if credited.rowcount != 1:
+                db.rollback()
+                return jsonify({"error": "escrow recipient wallet missing"}), 409
             db.commit()
             return jsonify({"ok": True, "status": "released"})
         except sqlite3.Error as e:
@@ -284,7 +297,13 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
                 return jsonify({"error": "Job was already processed"}), 409
 
             # Refund to original requester
-            db.execute("UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk = ?", (job["amount_rtc"], job["from_wallet"]))
+            credited = db.execute(
+                "UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk = ?",
+                (job["amount_rtc"], job["from_wallet"]),
+            )
+            if credited.rowcount != 1:
+                db.rollback()
+                return jsonify({"error": "escrow payer wallet missing"}), 409
             db.commit()
             return jsonify({"ok": True, "status": "refunded"})
         except sqlite3.Error as e:
