@@ -5501,7 +5501,11 @@ def withdrawal_history(miner_pk):
     admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
     if not admin_key or not hmac.compare_digest(admin_key, ADMIN_KEY or ""):
         return jsonify({"error": "Unauthorized - admin key required"}), 401
-    limit = request.args.get('limit', 50, type=int)
+    try:
+        limit = int(request.args.get('limit', '50') or 50)
+    except (TypeError, ValueError):
+        return jsonify({"error": "limit must be an integer"}), 400
+    limit = max(1, min(limit, 200))
 
     with sqlite3.connect(DB_PATH) as c:
         rows = c.execute("""
@@ -8141,8 +8145,19 @@ try:
     def p2p_get_blocks():
         """Get blocks for sync"""
         try:
-            start_height = int(request.args.get('start', 0))
-            limit = min(int(request.args.get('limit', 100)), 1000)
+            try:
+                start_height = int(request.args.get('start', 0))
+            except (TypeError, ValueError):
+                return jsonify({"ok": False, "error": "start must be an integer"}), 400
+            try:
+                limit = int(request.args.get('limit', 100))
+            except (TypeError, ValueError):
+                return jsonify({"ok": False, "error": "limit must be an integer"}), 400
+            if start_height < 0:
+                return jsonify({"ok": False, "error": "start must be >= 0"}), 400
+            if limit < 1:
+                return jsonify({"ok": False, "error": "limit must be >= 1"}), 400
+            limit = min(limit, 1000)
 
             blocks = block_sync.get_blocks_for_sync(start_height, limit)
             return jsonify({"ok": True, "blocks": blocks})
@@ -8154,14 +8169,19 @@ try:
     def p2p_add_peer():
         """Add a new peer to the network"""
         try:
-            data = request.json
+            data = request.get_json(silent=True)
+            if not isinstance(data, dict):
+                return jsonify({"ok": False, "error": "JSON body must be an object"}), 400
             peer_url = data.get('peer_url')
 
-            if not peer_url:
+            if not isinstance(peer_url, str) or not peer_url.strip():
                 return jsonify({"ok": False, "error": "peer_url required"}), 400
 
-            success = peer_manager.add_peer(peer_url)
-            return jsonify({"ok": success})
+            result = peer_manager.add_peer(peer_url)
+            if isinstance(result, tuple):
+                success, message = result
+                return jsonify({"ok": bool(success), "message": message})
+            return jsonify({"ok": bool(result)})
         except Exception as e:
             return jsonify({"ok": False, "error": str(e)}), 400
 
