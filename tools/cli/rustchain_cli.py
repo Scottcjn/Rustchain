@@ -87,6 +87,17 @@ def format_table(headers, rows):
     
     return "\n".join(lines)
 
+
+def normalize_miners_payload(data):
+    """Normalize /api/miners response across legacy and paginated envelopes."""
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        miners = data.get("miners")
+        if isinstance(miners, list):
+            return miners
+    raise RustChainAPIError("Unexpected /api/miners response format")
+
 def cmd_status(args):
     """Show node health and status."""
     data = fetch_api("/health")
@@ -106,12 +117,13 @@ def cmd_status(args):
 def cmd_miners(args):
     """List active miners."""
     data = fetch_api("/api/miners")
+    miners = normalize_miners_payload(data)
     
     if args.count:
         if args.json:
-            print(json.dumps({"count": len(data)}, indent=2))
+            print(json.dumps({"count": len(miners)}, indent=2))
         else:
-            print(f"Active miners: {len(data)}")
+            print(f"Active miners: {len(miners)}")
         return
     
     if args.json:
@@ -121,15 +133,20 @@ def cmd_miners(args):
     # Format as table
     headers = ["Miner ID", "Architecture", "Last Attestation"]
     rows = []
-    for miner in data[:20]:  # Show top 20
-        miner_id = miner.get('miner_id', 'N/A')[:20]
-        arch = miner.get('arch', 'N/A')
-        last_attest = miner.get('last_attest', 'N/A')
+    for miner in miners[:20]:  # Show top 20
+        miner_id = str(miner.get("miner_id") or miner.get("miner") or "N/A")[:20]
+        arch = miner.get("arch") or miner.get("device_arch") or "N/A"
+        last_attest = (
+            miner.get("last_attest")
+            or miner.get("last_attestation")
+            or miner.get("last_seen")
+            or "N/A"
+        )
         if isinstance(last_attest, (int, float)):
             last_attest = datetime.fromtimestamp(last_attest).strftime('%Y-%m-%d %H:%M')
         rows.append([miner_id, arch, str(last_attest)])
     
-    print(f"Active Miners ({len(data)} total, showing 20)\n")
+    print(f"Active Miners ({len(miners)} total, showing 20)\n")
     print(format_table(headers, rows))
 
 def cmd_balance(args):
