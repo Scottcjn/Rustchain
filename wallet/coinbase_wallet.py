@@ -8,6 +8,11 @@ Install with: pip install clawrtc[coinbase]
 import json
 import os
 import sys
+import socket
+import time
+from urllib.parse import urlparse
+
+import requests
 
 # ANSI colors (match cli.py)
 CYAN = "\033[36m"
@@ -22,6 +27,8 @@ NC = "\033[0m"
 # metalseed hostname, which can surface as a false "could not reach network"
 # error even when the public node is healthy.
 NODE_URL = "https://rustchain.org"
+INITIAL_RETRY_DELAY = 0.5
+MAX_RETRY_DELAY = 8.0
 
 SWAP_INFO = {
     "wrtc_contract": "0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6",
@@ -34,6 +41,87 @@ SWAP_INFO = {
 
 INSTALL_DIR = os.path.join(os.path.expanduser("~"), ".clawrtc")
 COINBASE_FILE = os.path.join(INSTALL_DIR, "coinbase_wallet.json")
+
+
+def _check_network_connectivity(url):
+    """Best-effort DNS + TCP connectivity check for diagnostics."""
+    parsed = urlparse(url)
+    host = parsed.hostname
+    if not host:
+        return False, "Invalid URL host"
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+
+    try:
+        socket.gethostbyname(host)
+    except socket.gaierror:
+        return False, f"DNS resolution failed for {host}"
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(2.0)
+    try:
+        result = sock.connect_ex((host, port))
+    finally:
+        sock.close()
+
+    if result != 0:
+        return False, f"Cannot connect to {host}:{port} (error {result})"
+    return True, ""
+
+
+def _fetch_with_retry(url, method="GET", data=None, max_retries=3, timeout=10, verify=True):
+    """Fetch JSON with retry/backoff and readable failure reasons."""
+    delay = INITIAL_RETRY_DELAY
+    last_error = None
+
+    for attempt in range(max_retries):
+        try:
+            if method == "POST":
+                response = requests.post(url, json=data, timeout=timeout, verify=verify)
+            else:
+                response = requests.get(url, timeout=timeout, verify=verify)
+            response.raise_for_status()
+            payload = response.json()
+            if not isinstance(payload, dict):
+                return None, "API returned JSON but not an object"
+            return payload, None
+        except requests.exceptions.Timeout:
+            last_error = f"Request timeout after {timeout}s"
+        except requests.exceptions.HTTPError as exc:
+            status = getattr(exc.response, "status_code", "unknown")
+            return None, f"API error ({status})"
+        except requests.exceptions.ConnectionError as exc:
+            reachable, diag = _check_network_connectivity(url)
+            if not reachable:
+                return None, f"Network unreachable: {diag}"
+            last_error = str(exc)
+        except Exception as exc:
+            reachable, diag = _check_network_connectivity(url)
+            if not reachable:
+                return None, f"Network unreachable: {diag}"
+            last_error = str(exc)
+
+        if attempt < max_retries - 1:
+            time.sleep(min(delay, MAX_RETRY_DELAY))
+            delay = min(delay * 2, MAX_RETRY_DELAY)
+
+    return None, f"Request failed after {max_retries} attempts: {last_error}"
+
+
+def _get_wallet_balance_from_node(address):
+    """Get wallet balance from RustChain node."""
+    url = f"{NODE_URL}/wallet/balance/{address}"
+    payload, error = _fetch_with_retry(url)
+    if error:
+        return None, error
+
+    for field in ("balance", "amount_rtc", "amount"):
+        if field in payload:
+            try:
+                return float(payload[field]), None
+            except (TypeError, ValueError):
+                return None, "Invalid balance format"
+
+    return None, "Invalid balance format"
 
 
 def _load_coinbase_wallet():
@@ -150,6 +238,15 @@ def coinbase_show(args):
     print(f"  {DIM}Created:{NC}    {DIM}{wallet.get('created', 'unknown')}{NC}")
     print(f"  {DIM}Method:{NC}     {DIM}{wallet.get('method', 'unknown')}{NC}")
     print(f"  {DIM}Key File:{NC}   {DIM}{COINBASE_FILE}{NC}")
+
+    balance, error = _get_wallet_balance_from_node(wallet["address"])
+    if error:
+        print(f"  {YELLOW}Unable to fetch balance:{NC} {error}")
+        print(f"  {DIM}Troubleshooting:{NC}")
+        print(f"    - Verify internet access and DNS resolution")
+        print(f"    - Check RustChain node availability at {NODE_URL}")
+    else:
+        print(f"  {DIM}Balance:{NC}    {GREEN}{balance:.8f} RTC{NC}")
     print()
 
 
