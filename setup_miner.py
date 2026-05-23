@@ -13,6 +13,7 @@ import urllib.request
 import urllib.error
 import hashlib
 import time
+import argparse
 from urllib.parse import urlparse
 from pathlib import Path
 
@@ -405,6 +406,19 @@ WantedBy=multi-user.target
             self.log(f"Setup failed: {e}")
             sys.exit(1)
 
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        description="Install and configure a RustChain Universal Miner."
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version="RustChain miner setup 1.0.0",
+    )
+    return parser.parse_args(argv)
+
+
 if __name__ == "__main__":
+    parse_args()
     setup = MinerSetup()
     setup.run_setup()
