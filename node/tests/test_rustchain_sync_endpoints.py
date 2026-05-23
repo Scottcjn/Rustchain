@@ -1,10 +1,13 @@
 # SPDX-License-Identifier: MIT
 
+import hashlib
+import hmac
+import json
 import os
 import sys
 
-from flask import Flask
 import pytest
+from flask import Flask
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
@@ -25,6 +28,13 @@ class DummySyncManager:
     def get_table_data(self, table, limit=200, offset=0):
         self.calls.append((table, limit, offset))
         return [{"table": table, "limit": limit, "offset": offset}]
+
+    def apply_sync_payload(self, table, rows):
+        self.calls.append((table, rows))
+        return True
+
+    def get_merkle_root(self):
+        return "test-merkle-root"
 
 
 def test_require_admin_uses_constant_time_compare(monkeypatch, tmp_path):
@@ -184,3 +194,59 @@ def test_sync_pull_rejects_unknown_table(monkeypatch, tmp_path):
 
     assert response.status_code == 400
     assert response.get_json() == {"error": "invalid table: unknown"}
+
+
+def _signed_sync_headers(body: bytes, secret: str = "sync-secret"):
+    peer_id = "peer-a"
+    timestamp = 1_700_000_000
+    nonce = hashlib.sha256(body).hexdigest()[:16]
+    body_hash = hashlib.sha256(body).hexdigest()
+    signing_payload = f"{peer_id}\n{timestamp}\n{nonce}\n{body_hash}".encode("utf-8")
+    signature = hmac.new(
+        secret.encode("utf-8"),
+        signing_payload,
+        hashlib.sha256,
+    ).hexdigest()
+    return {
+        "X-Admin-Key": secret,
+        "X-Peer-ID": peer_id,
+        "X-Sync-Timestamp": str(timestamp),
+        "X-Sync-Nonce": nonce,
+        "X-Sync-Signature": signature,
+    }
+
+
+def _post_sync_push(client, payload):
+    body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    return client.post(
+        "/api/sync/push",
+        data=body,
+        content_type="application/json",
+        headers=_signed_sync_headers(body),
+    )
+
+
+@pytest.mark.parametrize(
+    ("payload", "error"),
+    [
+        ({"unknown": []}, "invalid table: unknown"),
+        ({"headers": {"bad": "shape"}}, "headers rows must be an array"),
+        ({"headers": ["not-a-row"]}, "headers rows must be objects"),
+    ],
+)
+def test_sync_push_rejects_malformed_table_payloads(monkeypatch, tmp_path, payload, error):
+    monkeypatch.setattr(rustchain_sync_endpoints, "RustChainSyncManager", DummySyncManager)
+    monkeypatch.setattr(rustchain_sync_endpoints.time, "time", lambda: 1_700_000_000.0)
+
+    app = Flask(__name__)
+    rustchain_sync_endpoints.register_sync_endpoints(
+        app,
+        str(tmp_path / "rustchain.db"),
+        "sync-secret",
+    )
+    client = app.test_client()
+
+    response = _post_sync_push(client, payload)
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": error}

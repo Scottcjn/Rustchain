@@ -113,6 +113,8 @@ class TestAttestSubmitChallengeBinding(unittest.TestCase):
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
         self._loaded_modules.append(mod)
+        mod.HAVE_REPLAY_DEFENSE = False
+        mod.HAVE_WARTHOG = False
         for attempt in range(5):
             try:
                 mod.init_db()
@@ -137,6 +139,24 @@ class TestAttestSubmitChallengeBinding(unittest.TestCase):
         with mod.app.test_request_context("/attest/submit", method="POST", json=payload):
             return self._response_payload(mod._submit_attestation_impl())
 
+    def _fingerprint(self):
+        return {
+            "checks": {
+                "anti_emulation": {"passed": True, "data": {"vm_indicators": []}},
+                "clock_drift": {"passed": True, "data": {"cv": 0.05, "samples": 64}},
+            },
+            "all_passed": True,
+        }
+
+    def _attestation_payload(self, nonce):
+        return {
+            "miner": "RTC_REPLAY_POC_MINER",
+            "report": {"nonce": nonce, "commitment": "deadbeef"},
+            "device": {"family": "x86_64", "arch": "default", "model": "poc-box", "cores": 4},
+            "signals": {"hostname": "poc-host", "macs": []},
+            "fingerprint": self._fingerprint(),
+        }
+
     def test_same_challenge_nonce_rejected_on_different_node(self):
         mod1, db1_path = self._load_module("rustchain_attest_node1", "node1.db")
         mod2, db2_path = self._load_module("rustchain_attest_node2", "node2.db")
@@ -145,13 +165,7 @@ class TestAttestSubmitChallengeBinding(unittest.TestCase):
             challenge_resp = mod1.get_challenge()
         challenge = challenge_resp.get_json()
 
-        payload = {
-            "miner": "RTC_REPLAY_POC_MINER",
-            "report": {"nonce": challenge["nonce"], "commitment": "deadbeef"},
-            "device": {"family": "x86_64", "arch": "default", "model": "poc-box", "cores": 4},
-            "signals": {"hostname": "poc-host", "macs": []},
-            "fingerprint": {},
-        }
+        payload = self._attestation_payload(challenge["nonce"])
 
         status1, body1 = self._submit(mod1, payload)
         status2, body2 = self._submit(mod2, payload)
@@ -173,13 +187,7 @@ class TestAttestSubmitChallengeBinding(unittest.TestCase):
             challenge_resp = mod.get_challenge()
         challenge = challenge_resp.get_json()
 
-        payload = {
-            "miner": "RTC_REPLAY_POC_MINER",
-            "report": {"nonce": challenge["nonce"], "commitment": "deadbeef"},
-            "device": {"family": "x86_64", "arch": "default", "model": "poc-box", "cores": 4},
-            "signals": {"hostname": "poc-host", "macs": []},
-            "fingerprint": {},
-        }
+        payload = self._attestation_payload(challenge["nonce"])
 
         status1, body1 = self._submit(mod, payload)
         status2, body2 = self._submit(mod, payload)
@@ -196,17 +204,8 @@ class TestAttestSubmitChallengeBinding(unittest.TestCase):
     def test_client_timestamp_cannot_bypass_challenge_validation(self):
         mod, db_path = self._load_module("rustchain_attest_node_bypass", "bypass.db")
 
-        payload = {
-            "miner": "RTC_REPLAY_POC_MINER",
-            "report": {
-                "nonce": "b" * 64,
-                "commitment": "deadbeef",
-                "server_time": 1700000000,
-            },
-            "device": {"family": "x86_64", "arch": "default", "model": "poc-box", "cores": 4},
-            "signals": {"hostname": "poc-host", "macs": []},
-            "fingerprint": {},
-        }
+        payload = self._attestation_payload("b" * 64)
+        payload["report"]["server_time"] = 1700000000
 
         status, body = self._submit(mod, payload)
 
@@ -220,13 +219,7 @@ class TestAttestSubmitChallengeBinding(unittest.TestCase):
     def test_submit_rejects_arbitrary_nonce_without_server_challenge(self):
         mod, db_path = self._load_module("rustchain_attest_node_plain", "plain.db")
 
-        payload = {
-            "miner": "RTC_REPLAY_POC_MINER",
-            "report": {"nonce": "legacy-local-nonce", "commitment": "deadbeef"},
-            "device": {"family": "x86_64", "arch": "default", "model": "poc-box", "cores": 4},
-            "signals": {"hostname": "poc-host", "macs": []},
-            "fingerprint": {},
-        }
+        payload = self._attestation_payload("legacy-local-nonce")
 
         status, body = self._submit(mod, payload)
 
@@ -236,6 +229,59 @@ class TestAttestSubmitChallengeBinding(unittest.TestCase):
         with closing(sqlite3.connect(db_path)) as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM nonces").fetchone()[0], 0)
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM used_nonces").fetchone()[0], 0)
+
+    def test_missing_required_attestation_evidence_does_not_consume_nonce(self):
+        mod, db_path = self._load_module("rustchain_attest_required_evidence", "required_evidence.db")
+
+        cases = [
+            ("device", "MISSING_DEVICE"),
+            ("signals", "MISSING_SIGNALS"),
+            ("fingerprint", "MISSING_FINGERPRINT"),
+        ]
+        for missing_field, expected_code in cases:
+            with self.subTest(missing_field=missing_field):
+                with mod.app.test_request_context("/attest/challenge", method="POST", json={}):
+                    challenge_resp = mod.get_challenge()
+                challenge = challenge_resp.get_json()
+                payload = self._attestation_payload(challenge["nonce"])
+                payload.pop(missing_field)
+
+                status, body = self._submit(mod, payload)
+
+                self.assertEqual(status, 422)
+                self.assertEqual(body["code"], expected_code)
+                with sqlite3.connect(db_path) as conn:
+                    self.assertEqual(
+                        conn.execute("SELECT COUNT(*) FROM nonces WHERE nonce = ?", (challenge["nonce"],)).fetchone()[0],
+                        1,
+                    )
+                    self.assertEqual(
+                        conn.execute("SELECT COUNT(*) FROM used_nonces WHERE nonce = ?", (challenge["nonce"],)).fetchone()[0],
+                        0,
+                    )
+
+    def test_non_string_signature_does_not_consume_nonce(self):
+        mod, db_path = self._load_module("rustchain_attest_signature_type", "signature_type.db")
+
+        with mod.app.test_request_context("/attest/challenge", method="POST", json={}):
+            challenge_resp = mod.get_challenge()
+        challenge = challenge_resp.get_json()
+        payload = self._attestation_payload(challenge["nonce"])
+        payload["signature"] = True
+
+        status, body = self._submit(mod, payload)
+
+        self.assertEqual(status, 400)
+        self.assertEqual(body["code"], "INVALID_SIGNATURE_TYPE")
+        with sqlite3.connect(db_path) as conn:
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) FROM nonces WHERE nonce = ?", (challenge["nonce"],)).fetchone()[0],
+                1,
+            )
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) FROM used_nonces WHERE nonce = ?", (challenge["nonce"],)).fetchone()[0],
+                0,
+            )
 
 
 if __name__ == "__main__":

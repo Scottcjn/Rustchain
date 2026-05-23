@@ -16,8 +16,6 @@ Endpoints:
     POST /utxo/transfer            - UTXO-native signed transfer
 """
 
-import decimal
-import hashlib
 import json
 import logging
 import sqlite3
@@ -29,7 +27,6 @@ from flask import Blueprint, request, jsonify
 from utxo_db import (
     DUST_THRESHOLD,
     UtxoDB,
-    address_to_proposition,
     coin_select,
     UNIT,
 )
@@ -173,6 +170,15 @@ def _missing_transfer_nonce(nonce) -> bool:
         or not isinstance(nonce, (int, str))
         or (isinstance(nonce, str) and nonce.strip() == '')
     )
+
+
+def _transfer_string_field(data: dict, field: str):
+    value = data.get(field)
+    if value is None:
+        return '', None
+    if not isinstance(value, str):
+        return None, (jsonify({'error': f'{field} must be a string'}), 400)
+    return value.strip(), None
 
 
 def register_utxo_blueprint(app, utxo_db: UtxoDB, db_path: str,
@@ -382,10 +388,18 @@ def utxo_transfer():
     if not isinstance(data, dict):
         return jsonify({'error': 'JSON object body required'}), 400
 
-    from_address = (data.get('from_address') or '').strip()
-    to_address = (data.get('to_address') or '').strip()
-    public_key = (data.get('public_key') or '').strip()
-    signature = (data.get('signature') or '').strip()
+    from_address, error_response = _transfer_string_field(data, 'from_address')
+    if error_response:
+        return error_response
+    to_address, error_response = _transfer_string_field(data, 'to_address')
+    if error_response:
+        return error_response
+    public_key, error_response = _transfer_string_field(data, 'public_key')
+    if error_response:
+        return error_response
+    signature, error_response = _transfer_string_field(data, 'signature')
+    if error_response:
+        return error_response
     nonce = data.get('nonce')
     memo = data.get('memo', '')
     if not isinstance(memo, str):

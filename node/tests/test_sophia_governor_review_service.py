@@ -123,6 +123,63 @@ def test_review_endpoint_calls_model_and_stores(client, monkeypatch):
     assert recent_body["reviews"][0]["recommended_resolution"]["target_inbox_status"] == "resolved"
 
 
+@pytest.mark.parametrize(
+    ("field", "value", "error"),
+    [
+        ("review_prompt", {"prompt": "review this"}, "review_prompt_must_be_string"),
+        ("event_type", ["pending_transfer"], "event_type_must_be_string"),
+        ("risk_level", {"level": "high"}, "risk_level_must_be_string"),
+        ("stance", ["watch"], "stance_must_be_string"),
+        ("summary", {"text": "Large manual bridge override requested."}, "summary_must_be_string"),
+    ],
+)
+def test_review_endpoint_rejects_structured_top_level_text_fields(client, monkeypatch, field, value, error):
+    model_calls = []
+
+    def fake_call(prompt):
+        model_calls.append(prompt)
+        return "Assessment: ok.\nRisk: low.\nNext step: approve.", "glm-test"
+
+    monkeypatch.setattr(review_service, "_call_ollama", fake_call)
+    payload = _payload()
+    payload[field] = value
+
+    response = client.post("/review", headers={"X-Admin-Key": "test-admin"}, json=payload)
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == error
+    assert model_calls == []
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "error"),
+    [
+        ("event_type", ["pending_transfer"], "entry_event_type_must_be_string"),
+        ("source", {"service": "wallet.transfer"}, "entry_source_must_be_string"),
+        ("remote_agent", ["sophia-rustchain-governor"], "entry_remote_agent_must_be_string"),
+        ("remote_instance", {"node": "node-1"}, "entry_remote_instance_must_be_string"),
+    ],
+)
+def test_review_endpoint_rejects_structured_entry_identity_fields(client, monkeypatch, field, value, error):
+    model_calls = []
+
+    def fake_call(prompt):
+        model_calls.append(prompt)
+        return "Assessment: ok.\nRisk: low.\nNext step: approve.", "glm-test"
+
+    monkeypatch.setattr(review_service, "_call_ollama", fake_call)
+    payload = _payload()
+    payload["entry"][field] = value
+    if field == "event_type":
+        payload.pop("event_type")
+
+    response = client.post("/review", headers={"X-Admin-Key": "test-admin"}, json=payload)
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == error
+    assert model_calls == []
+
+
 @pytest.mark.parametrize("limit", ["abc", "10.5"])
 def test_recent_rejects_malformed_limit(client, limit):
     response = client.get(

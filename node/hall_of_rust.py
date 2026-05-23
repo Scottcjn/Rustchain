@@ -12,8 +12,8 @@ from datetime import datetime, timezone
 import sqlite3
 import hashlib
 import time
-import json
 import logging
+import random
 
 hall_bp = Blueprint('hall_of_rust', __name__)
 logger = logging.getLogger(__name__)
@@ -317,6 +317,13 @@ def set_eulogy(fingerprint):
     data, error_response = _json_object_or_empty()
     if error_response:
         return error_response
+
+    nickname, error_response = _optional_text_field(data, 'nickname', 64)
+    if error_response:
+        return error_response
+    eulogy, error_response = _optional_text_field(data, 'eulogy', 500)
+    if error_response:
+        return error_response
     
     try:
         from flask import current_app
@@ -329,11 +336,11 @@ def set_eulogy(fingerprint):
         
         if 'nickname' in data:
             updates.append('nickname = ?')
-            params.append(data['nickname'][:64])
+            params.append(nickname)
         
         if 'eulogy' in data:
             updates.append('eulogy = ?')
-            params.append(data['eulogy'][:500])
+            params.append(eulogy)
         
         if 'is_deceased' in data and data['is_deceased']:
             updates.append('is_deceased = 1')
@@ -474,6 +481,17 @@ def _json_object_or_empty():
     if not isinstance(data, dict):
         return None, (jsonify({'error': 'JSON object required'}), 400)
     return data, None
+
+
+def _optional_text_field(data, name, limit):
+    if name not in data:
+        return None, None
+    value = data[name]
+    if value is None:
+        return "", None
+    if not isinstance(value, str):
+        return None, (jsonify({'error': f'{name} must be a string'}), 400)
+    return value[:limit], None
 
 
 def _internal_error_response(context):
@@ -673,8 +691,6 @@ def register_hall_endpoints(app, db_path):
     print("[HALL OF RUST] Endpoints registered - The machines will be remembered!")
 
 # ============== ENHANCED STATS ==============
-
-import random
 
 # Fun facts about vintage hardware
 VINTAGE_FACTS = [

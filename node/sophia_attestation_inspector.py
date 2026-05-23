@@ -759,6 +759,11 @@ def register_sophia_endpoints(app, db_path: str = None):
         miner_id = data.get("miner_id")
         if not miner_id:
             return jsonify({"error": "miner_id required"}), 400
+        if not isinstance(miner_id, str):
+            return jsonify({"error": "miner_id must be a string"}), 400
+        miner_id = miner_id.strip()
+        if not miner_id:
+            return jsonify({"error": "miner_id required"}), 400
         device = data.get("device")
         fingerprint = data.get("fingerprint")
         result = inspect_miner(miner_id, device=device, fingerprint=fingerprint, db_path=db)

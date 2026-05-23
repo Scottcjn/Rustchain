@@ -1,6 +1,20 @@
+import json
+import os
+import stat
 from types import SimpleNamespace
 
 from tools import rustchain_wallet_cli as cli
+
+
+def test_save_keystore_uses_owner_only_permissions(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "KEYSTORE_DIR", tmp_path)
+
+    path = cli._save_keystore("secure-wallet", {"address": "RTC" + "a" * 40})
+
+    assert path.exists()
+    if os.name == "posix":
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert json.loads(path.read_text())["address"] == "RTC" + "a" * 40
 
 
 def test_encrypt_decrypt_roundtrip():

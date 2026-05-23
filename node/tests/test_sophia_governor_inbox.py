@@ -156,6 +156,48 @@ def test_admin_auth_uses_constant_time_compare(client, monkeypatch):
     ]
 
 
+@pytest.mark.parametrize(
+    ("field", "value", "error"),
+    [
+        ("event_type", ["pending_transfer"], "event_type_must_be_string"),
+        ("source", {"service": "wallet.transfer"}, "source_must_be_string"),
+    ],
+)
+def test_ingest_rejects_structured_envelope_identity_fields(client, field, value, error):
+    envelope = _sample_envelope()
+    envelope[field] = value
+
+    response = client.post(
+        "/api/sophia/governor/ingest",
+        headers={"X-Admin-Key": "test-admin"},
+        json=envelope,
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == error
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "error"),
+    [
+        ("agent", ["sophia-rustchain-governor"], "governor_agent_must_be_string"),
+        ("instance", {"node": "node-1"}, "governor_instance_must_be_string"),
+    ],
+)
+def test_ingest_rejects_structured_governor_identity_fields(client, field, value, error):
+    envelope = _sample_envelope()
+    envelope["governor"][field] = value
+
+    response = client.post(
+        "/api/sophia/governor/ingest",
+        headers={"X-Admin-Key": "test-admin"},
+        json=envelope,
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == error
+
+
 def test_ingest_and_list_endpoints(client):
     response = client.post(
         "/api/sophia/governor/ingest",

@@ -67,6 +67,8 @@ try:
 except ImportError:
     PER_EPOCH_URTC = 150_000_000  # 1.5 RTC in uRTC (default)
 
+URTC_PER_RTC = 1_000_000
+
 
 class ClaimsEligibilityError(Exception):
     """Base exception for claims eligibility errors"""
@@ -612,7 +614,7 @@ def check_claim_eligibility(
     # Calculate reward amount
     reward_urtc = calculate_epoch_reward(db_path, miner_id, epoch, current_slot)
     result["reward_urtc"] = reward_urtc
-    result["reward_rtc"] = reward_urtc / 100_000_000
+    result["reward_rtc"] = reward_urtc / URTC_PER_RTC
     
     # All checks passed
     result["eligible"] = True
@@ -727,7 +729,7 @@ def get_eligible_epochs(
         "miner_id": miner_id,
         "epochs": eligible_epochs,
         "total_unclaimed_urtc": total_unclaimed,
-        "total_unclaimed_rtc": total_unclaimed / 100_000_000
+        "total_unclaimed_rtc": total_unclaimed / URTC_PER_RTC
     }
 
 

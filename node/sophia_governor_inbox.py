@@ -260,6 +260,20 @@ def _normalize_limit(value: Any, default: int = 20, maximum: int = 200) -> int:
     return max(1, min(limit, maximum))
 
 
+def _normalize_string_field(
+    values: dict[str, Any],
+    field: str,
+    default: str,
+    error_field: str | None = None,
+) -> str:
+    value = values.get(field, default)
+    if value is None:
+        value = default
+    if not isinstance(value, str):
+        raise ValueError(f"{error_field or field}_must_be_string")
+    return value.strip()
+
+
 def _normalize_envelope(envelope: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(envelope, dict):
         raise ValueError("envelope_must_be_object")
@@ -280,8 +294,8 @@ def _normalize_envelope(envelope: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(governor, dict):
         governor = {}
 
-    event_type = str(envelope.get("event_type", "")).strip()
-    source = str(envelope.get("source", "unknown")).strip() or "unknown"
+    event_type = _normalize_string_field(envelope, "event_type", "")
+    source = _normalize_string_field(envelope, "source", "unknown") or "unknown"
     if not event_type:
         raise ValueError("event_type_required")
 
@@ -289,8 +303,11 @@ def _normalize_envelope(envelope: dict[str, Any]) -> dict[str, Any]:
     remote_created_at = _coerce_int(envelope.get("created_at"))
     risk_level = _normalize_risk_level(decision.get("risk_level"))
     stance = _normalize_stance(decision.get("stance"))
-    remote_agent = str(governor.get("agent", "sophia-rustchain-governor")).strip() or "sophia-rustchain-governor"
-    remote_instance = str(governor.get("instance", "unknown")).strip() or "unknown"
+    remote_agent = (
+        _normalize_string_field(governor, "agent", "sophia-rustchain-governor", "governor_agent")
+        or "sophia-rustchain-governor"
+    )
+    remote_instance = _normalize_string_field(governor, "instance", "unknown", "governor_instance") or "unknown"
 
     fingerprint_seed = {
         "remote_event_id": remote_event_id,

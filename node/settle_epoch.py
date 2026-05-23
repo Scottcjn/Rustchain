@@ -4,12 +4,23 @@ import time
 
 NODE_URL = "http://localhost:8099"
 
+def _previous_settleable_epoch(epoch_info):
+    if not isinstance(epoch_info, dict):
+        raise ValueError("/epoch response must be a JSON object")
+
+    current_epoch = epoch_info.get("epoch")
+    if not isinstance(current_epoch, int) or isinstance(current_epoch, bool):
+        raise ValueError("/epoch response field 'epoch' must be an integer")
+    if current_epoch <= 0:
+        raise ValueError("/epoch response field 'epoch' must be greater than zero")
+
+    return current_epoch - 1
+
 def trigger_settlement():
     try:
         resp = requests.get(f"{NODE_URL}/epoch", timeout=10)
         epoch_info = resp.json()
-        current_epoch = epoch_info.get("epoch", 0)
-        prev_epoch = current_epoch - 1
+        prev_epoch = _previous_settleable_epoch(epoch_info)
         
         resp = requests.post(f"{NODE_URL}/rewards/settle", 
                            json={"epoch": prev_epoch}, 

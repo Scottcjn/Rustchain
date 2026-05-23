@@ -104,7 +104,7 @@ def _prepare_attestation_db(node, db_path: Path, miner: str, epoch: int, nonce: 
         conn.commit()
 
 
-def test_missing_fingerprint_attestation_cannot_receive_epoch_reward(tmp_path):
+def test_missing_fingerprint_attestation_rejected_before_nonce_consumption(tmp_path):
     db_path = tmp_path / "missing_fingerprint_reward.sqlite3"
     node = _load_integrated_node(db_path)
 
@@ -125,21 +125,10 @@ def test_missing_fingerprint_attestation_cannot_receive_epoch_reward(tmp_path):
     with node.app.test_client() as client:
         response = client.post("/attest/submit", json=payload)
 
-    assert response.status_code == 200
-    assert response.get_json()["fingerprint_passed"] is False
+    assert response.status_code == 422
+    assert response.get_json()["code"] == "MISSING_FINGERPRINT"
 
     with sqlite3.connect(db_path) as conn:
-        recent = conn.execute(
-            "SELECT fingerprint_passed, fingerprint_checks_json FROM miner_attest_recent WHERE miner=?",
-            (miner,),
-        ).fetchone()
-        assert recent == (0, "{}")
-
-    node.finalize_epoch(epoch, node.PER_BLOCK_RTC, prev_block_hash=b"")
-
-    with sqlite3.connect(db_path) as conn:
-        balance = conn.execute(
-            "SELECT amount_i64, balance_rtc FROM balances WHERE miner_id=?",
-            (miner,),
-        ).fetchone()
-        assert balance == (0, 0.0)
+        assert conn.execute("SELECT COUNT(*) FROM nonces WHERE nonce=?", (nonce,)).fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM used_nonces WHERE nonce=?", (nonce,)).fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM miner_attest_recent WHERE miner=?", (miner,)).fetchone()[0] == 0
