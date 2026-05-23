@@ -46,6 +46,22 @@ def test_legacy_faucet_rejects_unknown_wallet_prefix(client):
     assert response.get_json() == {"ok": False, "error": "Invalid wallet address"}
 
 
+@pytest.mark.parametrize(
+    "wallet",
+    [
+        "0x1234567890",
+        "0xabcdefghij",
+        "0x9d7caca3039130d3b26d41f7343d8f4ef45923",
+        "0x9d7caca3039130d3b26d41f7343d8f4ef45923600",
+    ],
+)
+def test_legacy_faucet_rejects_malformed_ethereum_wallet(client, wallet):
+    response = client.post("/faucet/drip", json={"wallet": wallet})
+
+    assert response.status_code == 400
+    assert response.get_json() == {"ok": False, "error": "Invalid wallet address"}
+
+
 def test_legacy_faucet_rejects_malformed_native_rtc_wallet(client):
     response = client.post("/faucet/drip", json={"wallet": "RTCzzzzzzzzzz"})
 
@@ -55,6 +71,17 @@ def test_legacy_faucet_rejects_malformed_native_rtc_wallet(client):
 
 def test_legacy_faucet_accepts_native_rtc_wallet(client):
     wallet = "RTC9d7caca3039130d3b26d41f7343d8f4ef4592360"
+
+    response = client.post("/faucet/drip", json={"wallet": wallet})
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["ok"] is True
+    assert data["wallet"] == wallet
+
+
+def test_legacy_faucet_accepts_ethereum_wallet(client):
+    wallet = "0x9d7caca3039130d3b26d41f7343d8f4ef4592360"
 
     response = client.post("/faucet/drip", json={"wallet": wallet})
 
