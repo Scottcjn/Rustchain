@@ -4590,9 +4590,12 @@ def kv_set(key, val):
         db.commit()
 
 def _configured_admin_key():
+    raw_key = os.environ.get("RC_ADMIN_KEY")
     if "ADMIN_KEY" in globals():
-        return str(globals().get("ADMIN_KEY") or "")
-    return str(os.environ.get("RC_ADMIN_KEY", "") or "")
+        raw_key = globals().get("ADMIN_KEY")
+    if not isinstance(raw_key, str):
+        return ""
+    return raw_key.strip()
 
 
 def is_admin(req):
@@ -4623,8 +4626,19 @@ def _admin_required_response():
 
 def _require_admin_request(req):
     if not _configured_admin_key():
+        app.logger.warning(
+            "admin route hit with no key configured: %s %s",
+            req.method,
+            req.path,
+        )
         return _admin_key_unset_response()
     if not is_admin(req):
+        app.logger.warning(
+            "admin auth failure from %s: %s %s",
+            req.remote_addr,
+            req.method,
+            req.path,
+        )
         return _admin_required_response()
     return None
 

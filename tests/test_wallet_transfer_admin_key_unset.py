@@ -126,3 +126,48 @@ def test_wallet_transfer_does_not_authenticate_empty_to_empty(monkeypatch, clien
         headers={"X-Admin-Key": "anything"},
     )
     assert resp3.status_code == 503
+
+
+@pytest.mark.parametrize("configured_key", ["", "   ", 0, True, object()])
+def test_withdraw_register_rejects_invalid_configured_admin_key(
+    monkeypatch,
+    client,
+    configured_key,
+):
+    """Whitespace-only and non-string admin keys are treated as unset, not coerced."""
+    monkeypatch.setattr(integrated_node, "ADMIN_KEY", configured_key)
+
+    resp = client.post(
+        "/withdraw/register",
+        json={"miner_pk": "a", "pubkey_sr25519": "00"},
+        headers={"X-Admin-Key": str(configured_key).strip()},
+    )
+
+    assert resp.status_code == 503
+    payload = resp.get_json() or {}
+    assert payload.get("code") == "ADMIN_KEY_UNSET"
+
+
+def test_withdraw_register_logs_unset_admin_key(monkeypatch, client, caplog):
+    monkeypatch.setattr(integrated_node, "ADMIN_KEY", " ")
+
+    with caplog.at_level("WARNING"):
+        client.post(
+            "/withdraw/register",
+            json={"miner_pk": "a", "pubkey_sr25519": "00"},
+        )
+
+    assert "admin route hit with no key configured" in caplog.text
+
+
+def test_withdraw_register_logs_wrong_admin_key(monkeypatch, client, caplog):
+    monkeypatch.setattr(integrated_node, "ADMIN_KEY", "a" * 32)
+
+    with caplog.at_level("WARNING"):
+        client.post(
+            "/withdraw/register",
+            json={"miner_pk": "a", "pubkey_sr25519": "00"},
+            headers={"X-Admin-Key": "wrong"},
+        )
+
+    assert "admin auth failure" in caplog.text
