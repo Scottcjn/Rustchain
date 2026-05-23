@@ -3654,8 +3654,25 @@ def _submit_attestation_impl():
     # signature + public_key at the top level.  If both fields are present we
     # MUST verify — this prevents an MITM from changing the miner (wallet) field
     # in transit and claiming another miner's hardware rewards (wallet hijack).
-    sig_hex = (data.get('signature') or '').strip().lower()
-    pubkey_hex = (data.get('public_key') or '').strip().lower()
+    raw_signature = data.get('signature')
+    raw_public_key = data.get('public_key')
+    if raw_signature is not None and not isinstance(raw_signature, str):
+        return jsonify({
+            "ok": False,
+            "error": "invalid_signature_type",
+            "message": "signature must be a string when provided",
+            "code": "INVALID_SIGNATURE_TYPE",
+        }), 400
+    if raw_public_key is not None and not isinstance(raw_public_key, str):
+        return jsonify({
+            "ok": False,
+            "error": "invalid_public_key_type",
+            "message": "public_key must be a string when provided",
+            "code": "INVALID_PUBLIC_KEY_TYPE",
+        }), 400
+
+    sig_hex = (raw_signature or '').strip().lower()
+    pubkey_hex = (raw_public_key or '').strip().lower()
     miner_id_raw = _attest_valid_miner(data.get('miner_id')) or miner
     commitment = report.get('commitment') or ''
     if sig_hex and pubkey_hex:
@@ -4120,8 +4137,25 @@ def enroll_epoch():
     # unauthorized-enrollment / miner_id-hijack vector.
     # Unsigned enrollment is rejected by default. Operators running private
     # legacy migrations can temporarily set ENROLL_ALLOW_UNSIGNED_LEGACY=1.
-    sig_hex = (data.get('signature') or '').strip().lower()
-    pubkey_hex = (data.get('public_key') or '').strip().lower()
+    raw_signature = data.get('signature')
+    raw_public_key = data.get('public_key')
+    if raw_signature is not None and not isinstance(raw_signature, str):
+        return jsonify({
+            "ok": False,
+            "error": "invalid_signature_type",
+            "message": "signature must be a string when provided",
+            "code": "INVALID_SIGNATURE_TYPE",
+        }), 400
+    if raw_public_key is not None and not isinstance(raw_public_key, str):
+        return jsonify({
+            "ok": False,
+            "error": "invalid_public_key_type",
+            "message": "public_key must be a string when provided",
+            "code": "INVALID_PUBLIC_KEY_TYPE",
+        }), 400
+
+    sig_hex = (raw_signature or '').strip().lower()
+    pubkey_hex = (raw_public_key or '').strip().lower()
     epoch = slot_to_epoch(current_slot())
 
     if sig_hex and pubkey_hex:
