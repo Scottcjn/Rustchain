@@ -124,3 +124,53 @@ def test_p2p_blocks_caps_oversized_limit(tmp_path):
     assert body["count"] == 1000
     assert body["blocks"][0]["height"] == 1
     assert body["blocks"][-1]["height"] == 1000
+
+
+def test_p2p_blocks_supports_canonical_block_schema(tmp_path):
+    db_path = tmp_path / "rustchain.db"
+    peer_manager = rustchain_p2p_sync.PeerManager(str(db_path), "127.0.0.1")
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE blocks (
+                height INTEGER,
+                block_hash TEXT,
+                prev_hash TEXT,
+                timestamp INTEGER,
+                merkle_root TEXT,
+                state_root TEXT,
+                attestations_hash TEXT,
+                producer TEXT,
+                producer_sig TEXT,
+                tx_count INTEGER,
+                attestation_count INTEGER,
+                body_json TEXT,
+                created_at INTEGER
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO blocks (
+                height, block_hash, prev_hash, timestamp, merkle_root, state_root,
+                attestations_hash, producer, producer_sig, tx_count,
+                attestation_count, body_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                1, "canonical-hash-1", "prev-hash-0", 1, "merkle", "state",
+                "att-hash", "miner", "sig", 1, 0, '{"ok": true, "tx": 1}', 1
+            ),
+        )
+        conn.commit()
+
+    app = Flask(__name__)
+    rustchain_p2p_sync.add_p2p_endpoints(app, peer_manager, None, None)
+    client = app.test_client()
+
+    response = client.get("/api/blocks?start=1&limit=1")
+    assert response.status_code == 200
+    assert response.get_json()["blocks"] == [
+        {"height": 1, "hash": "canonical-hash-1", "data": {"ok": True, "tx": 1}}
+    ]

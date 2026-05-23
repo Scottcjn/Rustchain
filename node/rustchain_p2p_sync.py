@@ -467,17 +467,31 @@ def add_p2p_endpoints(app, peer_manager, block_sync, tx_gossip):
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
 
-        # Fetch blocks from database
+        # Fetch blocks from database (supports legacy and canonical schemas)
         with sqlite3.connect(peer_manager.db_path) as conn:
-            rows = conn.execute("""
-                SELECT height, hash, data FROM blocks
+            columns = {
+                row[1]
+                for row in conn.execute("PRAGMA table_info(blocks)").fetchall()
+            }
+            hash_column = "hash" if "hash" in columns else "block_hash"
+            data_column = "data" if "data" in columns else "body_json"
+
+            rows = conn.execute(
+                f"""
+                SELECT height, {hash_column}, {data_column} FROM blocks
                 WHERE height >= ?
                 ORDER BY height ASC
                 LIMIT ?
-            """, (start, limit)).fetchall()
+                """,
+                (start, limit),
+            ).fetchall()
 
             blocks = [
-                {"height": row[0], "hash": row[1], "data": json.loads(row[2])}
+                {
+                    "height": row[0],
+                    "hash": row[1],
+                    "data": json.loads(row[2]) if isinstance(row[2], str) else row[2],
+                }
                 for row in rows
             ]
 
