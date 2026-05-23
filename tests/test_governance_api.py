@@ -76,6 +76,25 @@ def test_governance_vote_rejects_non_object_json():
     assert resp.get_json()["error"] == "JSON object required"
 
 
+
+def test_governance_vote_rejects_malformed_public_key():
+    integrated_node.app.config["TESTING"] = True
+    with integrated_node.app.test_client() as client:
+        resp = client.post(
+            "/governance/vote",
+            json={
+                "proposal_id": 1,
+                "wallet": "RTC-test",
+                "vote": "yes",
+                "nonce": "n-1",
+                "signature": "ab" * 64,
+                "public_key": ["not", "hex"],
+            },
+        )
+
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "invalid_public_key"
+
 def test_governance_vote_rejects_invalid_proposal_id():
     integrated_node.app.config["TESTING"] = True
     with integrated_node.app.test_client() as client:

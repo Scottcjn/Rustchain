@@ -5911,7 +5911,10 @@ def governance_vote():
     vote = str(data.get('vote', '')).strip().lower()
     nonce = str(data.get('nonce', '')).strip()
     signature = str(data.get('signature', '')).strip()
-    public_key = str(data.get('public_key', '')).strip()
+    public_key_raw = data.get('public_key', '')
+    if not isinstance(public_key_raw, str):
+        return jsonify({"ok": False, "error": "invalid_public_key"}), 400
+    public_key = public_key_raw.strip()
 
     if not all([proposal_id, wallet, vote in ('yes', 'no'), nonce, signature, public_key]):
         return jsonify({
@@ -5919,7 +5922,10 @@ def governance_vote():
             "error": "proposal_id, wallet, vote(yes/no), nonce, signature, public_key are required",
         }), 400
 
-    expected_wallet = address_from_pubkey(public_key)
+    try:
+        expected_wallet = address_from_pubkey(public_key)
+    except ValueError:
+        return jsonify({"ok": False, "error": "invalid_public_key"}), 400
     if wallet != expected_wallet:
         return jsonify({
             "ok": False,
