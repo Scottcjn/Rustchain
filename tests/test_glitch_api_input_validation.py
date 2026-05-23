@@ -118,3 +118,25 @@ def test_process_accepts_valid_json_body(client):
         "processed": "processed:hello",
         "glitch_occurred": False,
     }
+
+
+@pytest.mark.parametrize(
+    "payload",
+    (
+        {"agent_id": ["bot"], "message": "hello"},
+        {"agent_id": "bot", "message": ["hello"]},
+        {"agent_id": "", "message": "hello"},
+        {"agent_id": "bot", "message": ""},
+    ),
+)
+def test_trigger_rejects_structured_payload_fields(client, monkeypatch, payload):
+    monkeypatch.setenv("GLITCH_ADMIN_KEY", "secret")
+
+    response = client.post(
+        "/api/glitch/trigger",
+        headers={"X-Admin-Key": "secret"},
+        json=payload,
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "agent_id and message must be non-empty strings"}
