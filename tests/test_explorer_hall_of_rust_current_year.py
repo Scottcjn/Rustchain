@@ -96,6 +96,16 @@ def test_explorer_hall_induct_rejects_non_object_json(tmp_path):
     assert response.get_json() == {"error": "JSON object required"}
 
 
+def test_explorer_hall_induct_rejects_empty_array_json(tmp_path):
+    hall = load_explorer_hall()
+    client = client_for(hall, tmp_path / "hall.db")
+
+    response = client.post("/hall/induct", json=[])
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "JSON object required"}
+
+
 def test_explorer_hall_induct_rejects_json_null(tmp_path):
     hall = load_explorer_hall()
     client = client_for(hall, tmp_path / "hall.db")
@@ -111,6 +121,16 @@ def test_explorer_hall_eulogy_rejects_non_object_json(tmp_path):
     client = client_for(hall, tmp_path / "hall.db")
 
     response = client.post("/hall/eulogy/fp-1", json=["nickname"])
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "JSON object required"}
+
+
+def test_explorer_hall_eulogy_rejects_empty_array_json(tmp_path):
+    hall = load_explorer_hall()
+    client = client_for(hall, tmp_path / "hall.db")
+
+    response = client.post("/hall/eulogy/fp-1", json=[])
 
     assert response.status_code == 400
     assert response.get_json() == {"error": "JSON object required"}
