@@ -103,15 +103,25 @@ def cmd_status(args):
     print(f"Tip Age:     {data.get('tip_age_slots', 0)} slots")
     print(f"Backup Age:  {data.get('backup_age_hours', 0):.1f} hours")
 
+def normalize_miners_payload(data):
+    """Return miner rows from either the legacy list or current enveloped API shape."""
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict) and isinstance(data.get("miners"), list):
+        return data["miners"]
+    return []
+
+
 def cmd_miners(args):
     """List active miners."""
     data = fetch_api("/api/miners")
+    miners = normalize_miners_payload(data)
     
     if args.count:
         if args.json:
-            print(json.dumps({"count": len(data)}, indent=2))
+            print(json.dumps({"count": len(miners)}, indent=2))
         else:
-            print(f"Active miners: {len(data)}")
+            print(f"Active miners: {len(miners)}")
         return
     
     if args.json:
@@ -121,15 +131,15 @@ def cmd_miners(args):
     # Format as table
     headers = ["Miner ID", "Architecture", "Last Attestation"]
     rows = []
-    for miner in data[:20]:  # Show top 20
-        miner_id = miner.get('miner_id', 'N/A')[:20]
-        arch = miner.get('arch', 'N/A')
+    for miner in miners[:20]:  # Show top 20
+        miner_id = miner.get('miner_id', miner.get('miner', 'N/A'))[:20]
+        arch = miner.get('arch', miner.get('device_arch', 'N/A'))
         last_attest = miner.get('last_attest', 'N/A')
         if isinstance(last_attest, (int, float)):
             last_attest = datetime.fromtimestamp(last_attest).strftime('%Y-%m-%d %H:%M')
         rows.append([miner_id, arch, str(last_attest)])
     
-    print(f"Active Miners ({len(data)} total, showing 20)\n")
+    print(f"Active Miners ({len(miners)} total, showing 20)\n")
     print(format_table(headers, rows))
 
 def cmd_balance(args):
