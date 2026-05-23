@@ -131,6 +131,23 @@ def _payload(amount_rtc: float = 1.5, nonce: int = 1733420000000) -> dict:
     }
 
 
+
+def test_signed_transfer_rejects_malformed_public_key(signed_transfer_client, monkeypatch):
+    client, _ = signed_transfer_client
+
+    def raise_on_unvalidated_public_key(public_key):
+        raise ValueError("non-hex public key")
+
+    monkeypatch.setattr(integrated_node, "address_from_pubkey", raise_on_unvalidated_public_key)
+
+    payload = _payload(nonce=1733420005555)
+    payload["public_key"] = ["not", "hex"]
+
+    response = client.post("/wallet/transfer/signed", json=payload)
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "invalid_public_key"
+
 def test_signed_transfer_rejects_duplicate_nonce(signed_transfer_client):
     client, db_path = signed_transfer_client
 

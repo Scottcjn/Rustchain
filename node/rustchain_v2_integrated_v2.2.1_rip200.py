@@ -8668,7 +8668,10 @@ def wallet_transfer_signed():
             }), 400
         public_key = atlas_pubkey  # Use Atlas pubkey for verification
     else:
-        expected_address = address_from_pubkey(public_key)
+        try:
+            expected_address = address_from_pubkey(public_key)
+        except (TypeError, ValueError):
+            return jsonify({"error": "invalid_public_key"}), 400
         if from_address != expected_address:
             return jsonify({
                 "error": "Public key does not match from_address",
