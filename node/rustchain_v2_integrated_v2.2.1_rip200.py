@@ -326,6 +326,22 @@ def _attest_is_valid_positive_int(value, max_value=4096):
     return 1 <= coerced <= max_value
 
 
+def _parse_p2p_blocks_pagination(args):
+    try:
+        start_height = int(args.get('start', 0))
+    except (ValueError, TypeError):
+        return None, ("start must be an integer", 400)
+    try:
+        limit = int(args.get('limit', 100))
+    except (ValueError, TypeError):
+        return None, ("limit must be an integer", 400)
+    if start_height < 0:
+        return None, ("start must be >= 0", 400)
+    if limit < 1:
+        return None, ("limit must be >= 1", 400)
+    return (start_height, min(limit, 1000)), None
+
+
 def client_ip_from_request(req) -> str:
     """Return trusted client IP, honoring proxy headers only for allowlisted peers."""
     remote_addr = _normalize_client_ip(getattr(req, "remote_addr", ""))
@@ -8141,8 +8157,11 @@ try:
     def p2p_get_blocks():
         """Get blocks for sync"""
         try:
-            start_height = int(request.args.get('start', 0))
-            limit = min(int(request.args.get('limit', 100)), 1000)
+            pagination, error_response = _parse_p2p_blocks_pagination(request.args)
+            if error_response:
+                message, status_code = error_response
+                return jsonify({"ok": False, "error": message}), status_code
+            start_height, limit = pagination
 
             blocks = block_sync.get_blocks_for_sync(start_height, limit)
             return jsonify({"ok": True, "blocks": blocks})
