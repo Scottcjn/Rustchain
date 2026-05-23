@@ -50,3 +50,13 @@ def test_badge_generator_preview_uses_dom_api_not_returned_html():
     assert "previewImage.alt = data.alt_text || 'RustChain Badge';" in source
     assert "badgePreview.appendChild(previewImage);" in source
     assert "badgePreview').innerHTML = data.preview_html" not in source
+
+
+def test_debug_mode_requires_explicit_environment_opt_in(tmp_path, monkeypatch):
+    module = load_profile_badge_module(tmp_path)
+
+    monkeypatch.delenv("RUSTCHAIN_PROFILE_BADGE_DEBUG", raising=False)
+    assert module.debug_enabled() is False
+
+    monkeypatch.setenv("RUSTCHAIN_PROFILE_BADGE_DEBUG", "true")
+    assert module.debug_enabled() is True
