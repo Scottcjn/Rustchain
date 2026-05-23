@@ -84,3 +84,23 @@ def test_explorer_machine_of_the_day_uses_current_year_for_age(tmp_path, monkeyp
 
     assert response.status_code == 200
     assert response.get_json()["age_years"] == 23
+
+
+def test_explorer_hall_induct_rejects_non_object_json(tmp_path):
+    hall = load_explorer_hall()
+    client = client_for(hall, tmp_path / "hall.db")
+
+    response = client.post("/hall/induct", json=["not", "an", "object"])
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "JSON object required"}
+
+
+def test_explorer_hall_eulogy_rejects_non_object_json(tmp_path):
+    hall = load_explorer_hall()
+    client = client_for(hall, tmp_path / "hall.db")
+
+    response = client.post("/hall/eulogy/fp-1", json=["nickname"])
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "JSON object required"}
