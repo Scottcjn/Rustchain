@@ -8154,14 +8154,23 @@ try:
     def p2p_add_peer():
         """Add a new peer to the network"""
         try:
-            data = request.json
+            data = request.get_json(silent=True)
+            if not isinstance(data, dict):
+                return jsonify({"ok": False, "error": "JSON object required"}), 400
+
             peer_url = data.get('peer_url')
 
             if not peer_url:
                 return jsonify({"ok": False, "error": "peer_url required"}), 400
 
-            success = peer_manager.add_peer(peer_url)
-            return jsonify({"ok": success})
+            result = peer_manager.add_peer(peer_url)
+            if isinstance(result, tuple):
+                success, message = result
+                if success:
+                    return jsonify({"ok": True, "message": message})
+                return jsonify({"ok": False, "error": message}), 400
+
+            return jsonify({"ok": bool(result)})
         except Exception as e:
             return jsonify({"ok": False, "error": str(e)}), 400
 
