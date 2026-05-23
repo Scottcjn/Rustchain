@@ -98,6 +98,26 @@ class TestIntegratedP2PBlocksPagination(unittest.TestCase):
         self.assertEqual(response.get_json(), {"ok": False, "error": "limit must be >= 1"})
         self.assertEqual(self.block_sync.calls, [])
 
+    def test_blocks_rejects_non_integer_start(self):
+        response = self.get_blocks("start=abc")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.get_json(),
+            {"ok": False, "error": "start must be an integer"},
+        )
+        self.assertEqual(self.block_sync.calls, [])
+
+    def test_blocks_rejects_non_integer_limit(self):
+        response = self.get_blocks("limit=notanumber")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.get_json(),
+            {"ok": False, "error": "limit must be an integer"},
+        )
+        self.assertEqual(self.block_sync.calls, [])
+
     def test_blocks_caps_oversized_limit_before_sync(self):
         response = self.get_blocks("start=7&limit=5000")
 

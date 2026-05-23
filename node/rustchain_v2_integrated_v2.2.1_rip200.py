@@ -8162,7 +8162,10 @@ try:
             limit = _parse_p2p_blocks_int_arg(
                 request.args.get('limit'), "limit", 100, minimum=1, maximum=1000
             )
+        except ValueError as e:
+            return jsonify({"ok": False, "error": str(e)}), 400
 
+        try:
             blocks = block_sync.get_blocks_for_sync(start_height, limit)
             return jsonify({"ok": True, "blocks": blocks})
         except Exception as e:
