@@ -8637,7 +8637,10 @@ def wallet_transfer_signed():
     nonce_int = pre.details["nonce"]
     chain_id = pre.details.get("chain_id")
     signature = str(data.get("signature", "")).strip()
-    public_key = str(data.get("public_key", "")).strip()
+    raw_public_key = data.get("public_key", "")
+    if not isinstance(raw_public_key, str):
+        return jsonify({"error": "invalid_public_key"}), 400
+    public_key = raw_public_key.strip()
     memo = str(data.get("memo", ""))
     amount_rtc = pre.details["amount_rtc"]
     fee_rtc = pre.details["fee_rtc"]
@@ -8668,7 +8671,10 @@ def wallet_transfer_signed():
             }), 400
         public_key = atlas_pubkey  # Use Atlas pubkey for verification
     else:
-        expected_address = address_from_pubkey(public_key)
+        try:
+            expected_address = address_from_pubkey(public_key)
+        except Exception:
+            return jsonify({"error": "invalid_public_key"}), 400
         if from_address != expected_address:
             return jsonify({
                 "error": "Public key does not match from_address",
