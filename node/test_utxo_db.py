@@ -1028,6 +1028,46 @@ class TestUtxoDB(unittest.TestCase):
         self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
         self.assertEqual(self.db.get_balance('attacker'), 0)
 
+    def test_malformed_inputs_rejected_without_exception(self):
+        """Malformed spend inputs should fail closed instead of raising."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        box_id = self.db.get_unspent_for_address('alice')[0]['box_id']
+
+        malformed_inputs = [
+            'not-a-list',
+            [{}],
+            [{'box_id': ''}],
+            [{'box_id': box_id}, {'missing_box_id': box_id}],
+        ]
+
+        for inputs in malformed_inputs:
+            with self.subTest(inputs=inputs):
+                ok = self.db.apply_transaction({
+                    'tx_type': 'transfer',
+                    'inputs': inputs,
+                    'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+                    'fee_nrtc': 0,
+                }, block_height=10)
+                self.assertFalse(ok)
+
+        self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
+        self.assertEqual(self.db.get_balance('bob'), 0)
+
+    def test_mempool_malformed_inputs_rejected_without_locking(self):
+        """Malformed mempool inputs should not create orphan input locks."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        box_id = self.db.get_unspent_for_address('alice')[0]['box_id']
+
+        ok = self.db.mempool_add({
+            'tx_id': 'bad-input-shape',
+            'inputs': [{'missing_box_id': box_id}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+        })
+
+        self.assertFalse(ok)
+        self.assertFalse(self.db.mempool_check_double_spend(box_id))
+
     def test_self_transfer(self):
         """Self-transfer (from == to) must work correctly."""
         self._apply_coinbase('alice', 100 * UNIT)

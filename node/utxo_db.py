@@ -399,6 +399,27 @@ class UtxoDB:
 
         return normalized
 
+    def _normalize_inputs(self, inputs: Any) -> Optional[List[dict]]:
+        """Return spend inputs with validated box IDs, or None on invalid input."""
+        if not isinstance(inputs, list):
+            return None
+
+        normalized = []
+        for inp in inputs:
+            if not isinstance(inp, dict):
+                return None
+
+            box_id = inp.get('box_id')
+            if not isinstance(box_id, str) or not box_id.strip():
+                return None
+
+            normalized.append({
+                'box_id': box_id,
+                'spending_proof': inp.get('spending_proof', ''),
+            })
+
+        return normalized
+
     def _normalize_tx_type(self, tx: dict) -> Optional[str]:
         """Return a supported transaction type, defaulting only when absent."""
         if 'tx_type' not in tx:
@@ -517,6 +538,9 @@ class UtxoDB:
         # on-chain auditability, but cryptographic verification is the sole
         # responsibility of the caller (utxo_endpoints.py).
         inputs = tx.get('inputs', [])
+        inputs = self._normalize_inputs(inputs)
+        if inputs is None:
+            return False
         outputs = tx.get('outputs', [])
         fee = tx.get('fee_nrtc', 0)
         tx_type = self._normalize_tx_type(tx)
@@ -882,6 +906,11 @@ class UtxoDB:
                 return False
 
             inputs = tx.get('inputs', [])
+            inputs = self._normalize_inputs(inputs)
+            if inputs is None:
+                if manage_tx:
+                    conn.execute("ROLLBACK")
+                return False
             tx_type = self._normalize_tx_type(tx)
             if tx_type is None:
                 if manage_tx:
