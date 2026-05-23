@@ -132,8 +132,8 @@ def cmd_miners(args):
     headers = ["Miner ID", "Architecture", "Last Attestation"]
     rows = []
     for miner in miners[:20]:  # Show top 20
-        miner_id = miner.get('miner_id', miner.get('miner', 'N/A'))[:20]
-        arch = miner.get('arch', miner.get('device_arch', 'N/A'))
+        miner_id = str(miner.get('miner_id') or miner.get('miner') or 'N/A')[:20]
+        arch = miner.get('arch') or miner.get('device_arch') or 'N/A'
         last_attest = miner.get('last_attest', 'N/A')
         if isinstance(last_attest, (int, float)):
             last_attest = datetime.fromtimestamp(last_attest).strftime('%Y-%m-%d %H:%M')

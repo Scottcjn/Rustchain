@@ -59,8 +59,32 @@ def test_cmd_miners_table_accepts_current_field_names(monkeypatch, capsys):
     )
 
     rustchain_cli.cmd_miners(types.SimpleNamespace(count=False, json=False))
-
     out = capsys.readouterr().out
     assert "Active Miners (1 total, showing 20)" in out
     assert "RTC14f06ee294f327f" in out
     assert "M4" in out
+
+
+def test_cmd_miners_table_handles_null_miner_fields(monkeypatch, capsys):
+    monkeypatch.setattr(
+        rustchain_cli,
+        "fetch_api",
+        lambda endpoint: {
+            "miners": [
+                {
+                    "miner_id": None,
+                    "miner": None,
+                    "arch": None,
+                    "device_arch": None,
+                    "last_attest": "N/A",
+                }
+            ],
+            "pagination": {"total": 1},
+        },
+    )
+
+    rustchain_cli.cmd_miners(types.SimpleNamespace(count=False, json=False))
+    out = capsys.readouterr().out
+    assert "Active Miners (1 total, showing 20)" in out
+    assert "N/A" in out
+
