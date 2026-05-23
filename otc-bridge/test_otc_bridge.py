@@ -495,6 +495,36 @@ class OTCBridgeTestCase(unittest.TestCase):
         })
         self.assertEqual(r2.status_code, 409)
 
+    def test_confirm_rejects_non_object_json(self):
+        r = self.app.post("/api/orders/otc_fake123/confirm", json=[
+            "seller1",
+            "0xabc123",
+            "secret",
+        ])
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.get_json(), {"error": "JSON object required"})
+
+    def test_confirm_rejects_falsey_non_object_json(self):
+        payloads = [
+            [],
+            False,
+            0,
+            "",
+        ]
+        for payload in payloads:
+            with self.subTest(payload=payload):
+                r = self.app.post("/api/orders/otc_fake123/confirm", json=payload)
+                self.assertEqual(r.status_code, 400)
+                self.assertEqual(r.get_json(), {"error": "JSON object required"})
+
+        r = self.app.post(
+            "/api/orders/otc_fake123/confirm",
+            data="null",
+            content_type="application/json",
+        )
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.get_json(), {"error": "JSON object required"})
+
     # ---------------------------------------------------------------
     # Stats & Trades
     # ---------------------------------------------------------------
