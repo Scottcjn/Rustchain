@@ -10,6 +10,7 @@ import hashlib
 import json
 import sqlite3
 import time
+from contextlib import closing
 from hashlib import blake2b
 
 try:
@@ -121,7 +122,7 @@ def verify_envelope_signature(envelope: dict) -> tuple[bool, str]:
 
 def init_beacon_table(db_path=DB_PATH):
     """Create beacon_envelopes table if it doesn't exist."""
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS beacon_envelopes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -280,8 +281,23 @@ def mark_anchored(envelope_ids: list, db_path=DB_PATH):
         conn.commit()
 
 
+def normalize_beacon_pagination(limit=50, offset=0, max_limit=50):
+    """Clamp Beacon envelope pagination before values reach SQLite."""
+    try:
+        normalized_limit = int(limit)
+    except (TypeError, ValueError):
+        normalized_limit = max_limit
+    try:
+        normalized_offset = int(offset)
+    except (TypeError, ValueError):
+        normalized_offset = 0
+
+    return max(1, min(normalized_limit, max_limit)), max(0, normalized_offset)
+
+
 def get_recent_envelopes(limit=50, offset=0, db_path=DB_PATH) -> list:
     """Return recent envelopes, newest first."""
+    limit, offset = normalize_beacon_pagination(limit, offset)
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
