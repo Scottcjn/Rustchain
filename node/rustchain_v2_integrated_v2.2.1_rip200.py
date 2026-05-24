@@ -8141,8 +8141,21 @@ try:
     def p2p_get_blocks():
         """Get blocks for sync"""
         try:
-            start_height = int(request.args.get('start', 0))
-            limit = min(int(request.args.get('limit', 100)), 1000)
+            raw_start = request.args.get('start', '0')
+            raw_limit = request.args.get('limit', '100')
+            try:
+                start_height = int(raw_start)
+            except (ValueError, TypeError):
+                return jsonify({"ok": False, "error": "start must be an integer"}), 400
+            try:
+                limit = int(raw_limit)
+            except (ValueError, TypeError):
+                return jsonify({"ok": False, "error": "limit must be an integer"}), 400
+            if start_height < 0:
+                return jsonify({"ok": False, "error": "start must be >= 0"}), 400
+            if limit < 1:
+                return jsonify({"ok": False, "error": "limit must be >= 1"}), 400
+            limit = min(limit, 1000)
 
             blocks = block_sync.get_blocks_for_sync(start_height, limit)
             return jsonify({"ok": True, "blocks": blocks})
@@ -8155,13 +8168,18 @@ try:
         """Add a new peer to the network"""
         try:
             data = request.json
+            if not isinstance(data, dict):
+                return jsonify({"ok": False, "error": "Request body must be a JSON object"}), 400
             peer_url = data.get('peer_url')
 
-            if not peer_url:
-                return jsonify({"ok": False, "error": "peer_url required"}), 400
+            if not peer_url or not isinstance(peer_url, str) or not peer_url.strip():
+                return jsonify({"ok": False, "error": "peer_url is required and must be a non-blank string"}), 400
 
-            success = peer_manager.add_peer(peer_url)
-            return jsonify({"ok": success})
+            result = peer_manager.add_peer(peer_url.strip())
+            if isinstance(result, tuple):
+                success, message = result
+                return jsonify({"ok": bool(success), "message": message})
+            return jsonify({"ok": bool(result)})
         except Exception as e:
             return jsonify({"ok": False, "error": str(e)}), 400
 
