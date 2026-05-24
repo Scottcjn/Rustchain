@@ -92,8 +92,21 @@ def test_create_badge_missing_username(client):
         "badge_type": "contributor"
     })
     data = resp.get_json()
+    assert resp.status_code == 400
     assert data["success"] is False
     assert "error" in data
+
+
+def test_create_badge_blank_username(client):
+    resp = client.post("/api/badge/create", json={
+        "username": "   ",
+        "wallet": "RTCabc123",
+        "badge_type": "contributor"
+    })
+    data = resp.get_json()
+    assert resp.status_code == 400
+    assert data["success"] is False
+    assert data["error"] == "Username required"
 
 
 def test_create_badge_default_type(client):
