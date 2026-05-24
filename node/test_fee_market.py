@@ -66,6 +66,17 @@ class TestFeeMarket(unittest.TestCase):
         self.assertEqual(breakdown.priority_tip_nrtc, 5_000)
         self.assertEqual(breakdown.total_fee_nrtc, 5_000)
 
+    def test_legacy_fee_breakdown_preserves_remainder_in_total_fields(self):
+        breakdown = legacy_fee_breakdown(10, gas_limit=3)
+
+        self.assertEqual(breakdown.priority_fee_per_gas_nrtc, 3)
+        self.assertEqual(breakdown.priority_tip_nrtc, 10)
+        self.assertEqual(breakdown.total_fee_nrtc, 10)
+        self.assertNotEqual(
+            breakdown.priority_fee_per_gas_nrtc * breakdown.gas_limit,
+            breakdown.priority_tip_nrtc,
+        )
+
     def test_legacy_fee_can_be_split_once_base_fee_is_known(self):
         breakdown = legacy_fee_breakdown(
             5_000,

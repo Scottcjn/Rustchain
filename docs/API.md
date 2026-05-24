@@ -311,6 +311,10 @@ EIP-1559-compatible fee math for new callers and block builders:
 
 - Legacy transfers may continue to provide `fee_rtc`; that fixed fee is treated
   as a priority tip until a block context supplies a base fee.
+- Legacy fixed fees preserve the exact total in `priority_tip_nrtc` and
+  `total_fee_nrtc`; if a fee is not evenly divisible by `gas_limit`,
+  `priority_fee_per_gas_nrtc` rounds down and should not be used to
+  reconstruct the total by multiplication.
 - EIP-1559-style callers can split fees into a burned base fee and a
   priority tip using `base_fee_per_gas_nrtc`, `max_fee_per_gas_nrtc`,
   `max_priority_fee_per_gas_nrtc`, and `gas_limit`.
