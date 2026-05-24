@@ -26,6 +26,7 @@
 pub mod client;
 pub mod error;
 pub mod keys;
+pub mod multisig;
 pub mod nonce_store;
 pub mod storage;
 pub mod transaction;
@@ -33,6 +34,7 @@ pub mod transaction;
 pub use client::RustChainClient;
 pub use error::{Result, WalletError};
 pub use keys::KeyPair;
+pub use multisig::{MultiSigConfig, MultiSigProposal, MultiSigSigner};
 pub use nonce_store::NonceStore;
 pub use storage::WalletStorage;
 pub use transaction::{Transaction, TransactionBuilder};
