@@ -96,6 +96,6 @@ def test_base_chain_still_works():
     assert ok, f"Expected valid Base address, got: {msg}"
 
 def test_rustchain_chain_still_works():
-    addr = "RTC1A2b3c4d5e6f7g8h9"
+    addr = "RTC" + "a" * 40  # Proper RTC format: RTC + 40 hex chars
     ok, msg = validate_chain_address_format("rustchain", addr)
     assert ok, f"Expected valid RustChain address, got: {msg}"
