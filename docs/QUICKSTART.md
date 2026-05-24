@@ -29,16 +29,32 @@ That is it. No GPU required. No special hardware. No account signup.
 
 ## Step 1: Install the Miner
 
-Open a terminal (on macOS: search for "Terminal"; on Windows: use PowerShell) and run:
+**Linux / macOS:**
+
+Open a terminal (on macOS: search for "Terminal") and run:
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash
 ```
 
-**What this does:**
+**Windows:**
+
+The one-line installer above requires Bash and is designed for Linux/macOS.
+Windows users should use the dedicated Windows miner installer instead:
+
+1. Install [Python 3.8+](https://python.org/downloads) and check "Add to PATH" during setup
+2. Download the Windows miner from the [`miners/windows/`](../miners/windows/) directory
+3. Run `rustchain_miner_setup.bat` or follow the instructions in
+   [`miners/windows/README.md`](../miners/windows/README.md)
+
+**Windows users with WSL or Git Bash** can also use the Linux one-liner above, but note
+that the anti-emulation fingerprint check detects WSL and assigns near-zero rewards.
+For full rewards, run the miner on bare-metal Windows using the native installer.
+
+**What the installer does (Linux/macOS):**
 
 1. Detects your operating system and CPU architecture
-2. Installs Python 3 if you do not have it (Linux only -- macOS/Windows users need Python
+2. Installs Python 3 if you do not have it (Linux only -- macOS users need Python
    pre-installed)
 3. Downloads the miner script to `~/.rustchain/`
 4. Creates a Python virtual environment with dependencies

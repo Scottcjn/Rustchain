@@ -61,7 +61,11 @@ detect_platform() {
         Darwin)
             [ "$arch" != "x86_64" ] && [ "$arch" != "arm64" ] && { echo -e "${RED}[!] Unsupported macOS architecture: $arch (Supported: x86_64, arm64)${NC}"; exit 1; }
             echo "macos" ;;
-        *) echo "unknown"; exit 1 ;;
+ MINGW*|MSYS*|CYGWIN*)
+ echo "windows"
+ echo -e "${YELLOW}[!] Detected Windows via MSYS/Git Bash. For full hardware rewards, use the native Windows miner instead.${NC}"
+ echo -e "${YELLOW}[!] See miners/windows/README.md for the recommended installer.${NC}" ;;
+ *) echo "unknown"; exit 1 ;;
     esac
 }
 
