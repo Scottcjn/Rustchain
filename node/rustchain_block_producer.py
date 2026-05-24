@@ -766,7 +766,17 @@ def create_block_api_routes(app, producer: BlockProducer, validator: BlockValida
             return jsonify({"error": "Block not found"}), 404
 
     def _randomness_response(row):
-        proof = json.loads(row["randomness_proof_json"])
+        try:
+            proof = json.loads(row["randomness_proof_json"])
+        except (TypeError, ValueError, json.JSONDecodeError):
+            logger.exception(
+                "Stored randomness proof is invalid for block height %s",
+                row["height"],
+            )
+            return {
+                "ok": False,
+                "error": "Stored randomness proof is invalid",
+            }, 500
         randomness = row["randomness_beacon"]
         return {
             "ok": True,
@@ -776,6 +786,13 @@ def create_block_api_routes(app, producer: BlockProducer, validator: BlockValida
             "proof": proof,
             "verified": verify_randomness_record(randomness, proof),
         }
+
+    def _jsonify_randomness_response(row):
+        response = _randomness_response(row)
+        if isinstance(response, tuple):
+            body, status_code = response
+            return jsonify(body), status_code
+        return jsonify(response)
 
     @app.route('/block/randomness/latest', methods=['GET'])
     @app.route('/api/randomness/latest', methods=['GET'])
@@ -796,7 +813,7 @@ def create_block_api_routes(app, producer: BlockProducer, validator: BlockValida
                 return jsonify({"ok": False, "error": "Block database unavailable"}), 500
         if not row:
             return jsonify({"ok": False, "error": "No blocks found"}), 404
-        return jsonify(_randomness_response(row))
+        return _jsonify_randomness_response(row)
 
     @app.route('/block/randomness/<int:height>', methods=['GET'])
     @app.route('/api/randomness/<int:height>', methods=['GET'])
@@ -817,7 +834,7 @@ def create_block_api_routes(app, producer: BlockProducer, validator: BlockValida
                 return jsonify({"ok": False, "error": "Block database unavailable"}), 500
         if not row:
             return jsonify({"ok": False, "error": "Block not found"}), 404
-        return jsonify(_randomness_response(row))
+        return _jsonify_randomness_response(row)
 
     @app.route('/v1/blocks/batch', methods=['POST'])
     @app.route('/api/blocks/batch', methods=['POST'])
