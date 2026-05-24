@@ -304,6 +304,21 @@ curl -sk -X POST https://rustchain.org/wallet/transfer/signed \
 }
 ```
 
+### Fee market compatibility
+
+RustChain keeps legacy signed-transfer fees backward compatible while exposing
+EIP-1559-compatible fee math for new callers and block builders:
+
+- Legacy transfers may continue to provide `fee_rtc`; that fixed fee is treated
+  as a priority tip until a block context supplies a base fee.
+- EIP-1559-style callers can split fees into a burned base fee and a
+  priority tip using `base_fee_per_gas_nrtc`, `max_fee_per_gas_nrtc`,
+  `max_priority_fee_per_gas_nrtc`, and `gas_limit`.
+- The next base fee follows the bounded EIP-1559 adjustment formula:
+  `parent_base_fee + parent_base_fee * gas_delta / target_gas / 8` when the
+  parent block is above target gas, and the corresponding subtraction when it
+  is below target gas.
+
 ---
 
 ## Attestation
