@@ -231,7 +231,20 @@ impl MultiSigProposal {
 
     /// Deserialize a proposal from JSON.
     pub fn from_json(json: &str) -> Result<Self> {
-        Ok(serde_json::from_str(json)?)
+        let proposal: Self = serde_json::from_str(json)?;
+        let config = MultiSigConfig::new(proposal.config.threshold, proposal.config.signers)?;
+        let mut validated = MultiSigProposal::new(config, proposal.transaction)?;
+
+        for signer_address in proposal.signatures.keys() {
+            if !validated.config.contains_signer(signer_address) {
+                return Err(WalletError::Transaction(
+                    "Signature is from an unconfigured multisig signer".to_string(),
+                ));
+            }
+        }
+
+        validated.signatures = proposal.signatures;
+        Ok(validated)
     }
 }
 
@@ -369,5 +382,46 @@ mod tests {
             loaded.valid_signature_count().unwrap(),
             proposal.valid_signature_count().unwrap()
         );
+    }
+
+    #[test]
+    fn test_multisig_proposal_from_json_revalidates_config() {
+        let tx = Transaction::new(
+            "malformed-multisig".to_string(),
+            "recipient".to_string(),
+            1,
+            1,
+            1,
+        );
+        let json = serde_json::to_string(&MultiSigProposal {
+            config: MultiSigConfig {
+                threshold: 0,
+                signers: vec![],
+            },
+            transaction: tx,
+            signatures: BTreeMap::new(),
+        })
+        .unwrap();
+
+        let err = MultiSigProposal::from_json(&json).unwrap_err();
+        assert!(matches!(
+            err,
+            WalletError::Transaction(ref message)
+                if message == "Multisig threshold must be greater than 0"
+        ));
+    }
+
+    #[test]
+    fn test_multisig_proposal_from_json_revalidates_transaction_sender() {
+        let (config, _) = config_and_keys(2);
+        let tx = Transaction::new("wrong-sender".to_string(), "recipient".to_string(), 1, 1, 1);
+        let json = serde_json::to_string(&MultiSigProposal {
+            config,
+            transaction: tx,
+            signatures: BTreeMap::new(),
+        })
+        .unwrap();
+
+        assert!(MultiSigProposal::from_json(&json).is_err());
     }
 }
