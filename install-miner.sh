@@ -61,11 +61,19 @@ detect_platform() {
         Darwin)
             [ "$arch" != "x86_64" ] && [ "$arch" != "arm64" ] && { echo -e "${RED}[!] Unsupported macOS architecture: $arch (Supported: x86_64, arm64)${NC}"; exit 1; }
             echo "macos" ;;
+        MINGW*|MSYS*|CYGWIN*) echo "windows" ;;
         *) echo "unknown"; exit 1 ;;
     esac
 }
 
 PLATFORM=$(detect_platform)
+if [ "$PLATFORM" = "windows" ]; then
+    echo -e "${YELLOW}[!] Windows shell detected.${NC}"
+    echo -e "${YELLOW}    Use the native Windows installer instead:${NC}"
+    echo -e "${CYAN}    https://github.com/Scottcjn/Rustchain/blob/main/miners/windows/README.md${NC}"
+    echo -e "${CYAN}    or run miners/windows/rustchain_miner_setup.bat${NC}"
+    exit 1
+fi
 echo -e "${GREEN}[+] Platform: $PLATFORM ($(uname -m))${NC}"
 
 # Python Auto-Install
