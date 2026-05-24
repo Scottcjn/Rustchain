@@ -421,6 +421,11 @@ class BlockProducer:
 
     def save_block(self, block: Block) -> bool:
         """Save a block to database"""
+        with self._lock:
+            return self._save_block_unlocked(block)
+
+    def _save_block_unlocked(self, block: Block) -> bool:
+        """Save a block while the producer lock is already held."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
 
