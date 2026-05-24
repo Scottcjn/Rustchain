@@ -91,12 +91,16 @@ def format_table(headers, rows):
 def normalize_miners_payload(data):
     """Normalize /api/miners response across legacy and paginated envelopes."""
     if isinstance(data, list):
-        return data
-    if isinstance(data, dict):
+        miners = data
+    elif isinstance(data, dict):
         miners = data.get("miners")
-        if isinstance(miners, list):
-            return miners
-    raise RustChainAPIError("Unexpected /api/miners response format")
+        if not isinstance(miners, list):
+            raise RustChainAPIError("Unexpected /api/miners response format")
+    else:
+        raise RustChainAPIError("Unexpected /api/miners response format")
+    if not all(isinstance(entry, dict) for entry in miners):
+        raise RustChainAPIError("Unexpected /api/miners entry format")
+    return miners
 
 def cmd_status(args):
     """Show node health and status."""

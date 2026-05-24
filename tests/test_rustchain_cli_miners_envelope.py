@@ -54,3 +54,9 @@ def test_miners_rejects_invalid_non_list_payload(monkeypatch):
     monkeypatch.setattr(rustchain_cli, "fetch_api", lambda endpoint: {"unexpected": "shape"})
     with pytest.raises(rustchain_cli.RustChainAPIError, match="Unexpected /api/miners response format"):
         rustchain_cli.cmd_miners(argparse.Namespace(count=True, json=False))
+
+
+def test_miners_rejects_non_object_entries(monkeypatch):
+    monkeypatch.setattr(rustchain_cli, "fetch_api", lambda endpoint: {"miners": ["bad-entry"]})
+    with pytest.raises(rustchain_cli.RustChainAPIError, match="Unexpected /api/miners entry format"):
+        rustchain_cli.cmd_miners(argparse.Namespace(count=True, json=False))
