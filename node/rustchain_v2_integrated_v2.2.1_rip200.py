@@ -3654,8 +3654,24 @@ def _submit_attestation_impl():
     # signature + public_key at the top level.  If both fields are present we
     # MUST verify — this prevents an MITM from changing the miner (wallet) field
     # in transit and claiming another miner's hardware rewards (wallet hijack).
-    sig_hex = (data.get('signature') or '').strip().lower()
-    pubkey_hex = (data.get('public_key') or '').strip().lower()
+    signature_raw = data.get('signature')
+    if signature_raw is not None and not isinstance(signature_raw, str):
+        return jsonify({
+            "ok": False,
+            "error": "invalid_attestation_signature",
+            "message": "signature must be non-empty string when provided",
+            "code": "INVALID_SIGNATURE",
+        }), 400
+    pubkey_raw = data.get('public_key')
+    if pubkey_raw is not None and not isinstance(pubkey_raw, str):
+        return jsonify({
+            "ok": False,
+            "error": "invalid_public_key",
+            "message": "public_key must be non-empty string when provided",
+            "code": "INVALID_PUBLIC_KEY",
+        }), 400
+    sig_hex = (signature_raw or '').strip().lower()
+    pubkey_hex = (pubkey_raw or '').strip().lower()
     miner_id_raw = _attest_valid_miner(data.get('miner_id')) or miner
     commitment = report.get('commitment') or ''
     if sig_hex and pubkey_hex:
