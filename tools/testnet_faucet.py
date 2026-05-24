@@ -77,9 +77,9 @@ def github_account_age_days(username: str, token: str | None = None) -> int | No
 
 
 def _limit_for_identity(github_username: str | None, account_age_days: int | None) -> float:
-    if not github_username:
+    if not github_username or account_age_days is None:
         return 0.5
-    if account_age_days is not None and account_age_days >= 365:
+    if account_age_days >= 365:
         return 2.0
     return 1.0
 
@@ -195,12 +195,13 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
             return jsonify({"ok": False, "error": "wallet_required"}), 400
 
         age_days = github_account_age_days(github_username or "", cfg.get("GITHUB_TOKEN")) if github_username else None
-        daily_limit = _limit_for_identity(github_username, age_days)
-        drip_amount = 1.0 if github_username else 0.5
+        verified_github_username = github_username if age_days is not None else None
+        daily_limit = _limit_for_identity(verified_github_username, age_days)
+        drip_amount = 1.0 if verified_github_username else 0.5
 
         conn = sqlite3.connect(cfg["DB_PATH"])
         try:
-            used = _sum_last_24h(conn, github_username, ip)
+            used = _sum_last_24h(conn, verified_github_username, ip)
             if used + drip_amount > daily_limit:
                 return jsonify(
                     {
@@ -208,7 +209,7 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
                         "error": "rate_limited",
                         "daily_limit": daily_limit,
                         "used": round(used, 3),
-                        "next_available": _next_available(conn, github_username, ip),
+                        "next_available": _next_available(conn, verified_github_username, ip),
                     }
                 ), 429
 
@@ -219,7 +220,7 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
             now = _utcnow().isoformat()
             cur = conn.execute(
                 "INSERT INTO faucet_claims(wallet, github_username, ip, amount, created_at) VALUES(?,?,?,?,?)",
-                (wallet, github_username, ip, drip_amount, now),
+                (wallet, verified_github_username, ip, drip_amount, now),
             )
             conn.commit()
 

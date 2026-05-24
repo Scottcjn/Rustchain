@@ -21,7 +21,7 @@ def app(tmp_path, monkeypatch):
     [
         (None, None, 0.5),
         ("", None, 0.5),
-        ("alice", None, 1.0),
+        ("alice", None, 0.5),
         ("alice", 364, 1.0),
         ("alice", 365, 2.0),
     ],
@@ -102,6 +102,32 @@ def test_github_old_account_gets_2rtc_limit(tmp_path, monkeypatch):
     assert r1.status_code == 200
     assert r2.status_code == 200
     assert r3.status_code == 429
+
+
+def test_unverified_github_names_share_ip_only_limit(tmp_path, monkeypatch):
+    db_path = tmp_path / "faucet.db"
+    monkeypatch.setattr(faucet, "github_account_age_days", lambda *_args, **_kwargs: None)
+    app = faucet.create_app({"DB_PATH": str(db_path), "DRY_RUN": True})
+    app.config.update(TESTING=True)
+    c = app.test_client()
+    headers = {"X-Forwarded-For": "203.0.113.9"}
+
+    r1 = c.post(
+        "/faucet/drip",
+        json={"wallet": "w1", "github_username": "ghost-user-1"},
+        headers=headers,
+    )
+    r2 = c.post(
+        "/faucet/drip",
+        json={"wallet": "w2", "github_username": "ghost-user-2"},
+        headers=headers,
+    )
+
+    assert r1.status_code == 200
+    assert r1.get_json()["amount"] == 0.5
+    assert r2.status_code == 429
+    assert r2.get_json()["error"] == "rate_limited"
+    assert r2.get_json()["daily_limit"] == 0.5
 
 
 def test_transfer_failure_does_not_expose_upstream_body(tmp_path, monkeypatch):
