@@ -8141,7 +8141,7 @@ try:
     def p2p_get_blocks():
         """Get blocks for sync"""
         try:
-            start_height = int(request.args.get('start', 0))
+                    start_height = max(0, int(request.args.get('start', 0))
             limit = min(int(request.args.get('limit', 100)), 1000)
 
             blocks = block_sync.get_blocks_for_sync(start_height, limit)
