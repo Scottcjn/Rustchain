@@ -5911,10 +5911,9 @@ def governance_vote():
     vote = str(data.get('vote', '')).strip().lower()
     nonce = str(data.get('nonce', '')).strip()
     signature = str(data.get('signature', '')).strip()
-    raw_public_key = data.get('public_key', '')
-    if not isinstance(raw_public_key, str):
+    public_key = _validated_public_key(data.get('public_key', ''))
+    if public_key is None:
         return jsonify({"ok": False, "error": "invalid_public_key"}), 400
-    public_key = raw_public_key.strip()
 
     if not all([proposal_id, wallet, vote in ('yes', 'no'), nonce, signature, public_key]):
         return jsonify({
@@ -8270,6 +8269,18 @@ def address_from_pubkey(public_key_hex: str) -> str:
     """Generate RTC address from public key: RTC + first 40 chars of SHA256(pubkey)"""
     pubkey_hash = hashlib.sha256(bytes.fromhex(public_key_hex)).hexdigest()[:40]
     return f"RTC{pubkey_hash}"
+
+
+def _validated_public_key(raw_public_key):
+    """Return normalized Ed25519 public key hex or ``None`` when invalid."""
+    if not isinstance(raw_public_key, str):
+        return None
+    public_key = raw_public_key.strip().lower()
+    if len(public_key) != 64:
+        return None
+    if not re.fullmatch(r"[0-9a-f]{64}", public_key):
+        return None
+    return public_key
 
 def _wallet_transfer_signed_messages(
     from_address,
