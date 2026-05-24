@@ -12,7 +12,6 @@ from flask import Flask, request, jsonify, g, send_from_directory, send_file, ab
 import json
 from decimal import Decimal, ROUND_HALF_UP
 from beacon_anchor import init_beacon_table, store_envelope, compute_beacon_digest, get_recent_envelopes, normalize_beacon_pagination, VALID_KINDS
-from audit_event_log import append_audit_event_safely, ensure_audit_event_log
 try:
     # Deployment compatibility: production may run this file as a single script.
     from payout_preflight import validate_wallet_transfer_admin, validate_wallet_transfer_signed
@@ -30,6 +29,18 @@ except ImportError:
 # App versioning and uptime tracking
 APP_VERSION = "2.2.1-rip200"
 APP_START_TS = time.time()
+
+
+def ensure_audit_event_log(conn):
+    from audit_event_log import ensure_audit_event_log as _ensure_audit_event_log
+
+    return _ensure_audit_event_log(conn)
+
+
+def append_audit_event_safely(conn, *args, **kwargs):
+    from audit_event_log import append_audit_event_safely as _append_audit_event_safely
+
+    return _append_audit_event_safely(conn, *args, **kwargs)
 
 # Rewards system
 try:
