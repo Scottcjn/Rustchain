@@ -6120,6 +6120,179 @@ def _sqlite_table_columns(conn, table_name):
     return {row[1] for row in rows}
 
 
+ATTESTATION_POOL_ACTIVE_WINDOW_SECONDS = 3600
+ATTESTATION_POOL_HISTORY_WINDOW_SECONDS = 86400
+
+
+def _table_exists(conn, table_name: str) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        (table_name,),
+    ).fetchone() is not None
+
+
+def _attestation_pool_snapshot(now_ts: Optional[int] = None) -> dict:
+    """Aggregate current and recent attestation-pool health for dashboards."""
+    now_ts = int(time.time()) if now_ts is None else int(now_ts)
+    active_cutoff = now_ts - ATTESTATION_POOL_ACTIVE_WINDOW_SECONDS
+    history_cutoff = now_ts - ATTESTATION_POOL_HISTORY_WINDOW_SECONDS
+    snapshot = {
+        "ok": True,
+        "generated_at": now_ts,
+        "windows": {
+            "active_seconds": ATTESTATION_POOL_ACTIVE_WINDOW_SECONDS,
+            "history_seconds": ATTESTATION_POOL_HISTORY_WINDOW_SECONDS,
+        },
+        "pool": {
+            "active_miners": 0,
+            "stale_miners": 0,
+            "known_miners": 0,
+            "recent_attestations_24h": 0,
+            "fingerprint_passed_active": 0,
+            "avg_entropy_active": 0.0,
+            "oldest_active_attest": None,
+            "newest_active_attest": None,
+        },
+        "by_device_arch": [],
+        "history": [],
+        "tables": {
+            "miner_attest_recent": False,
+            "miner_attest_history": False,
+        },
+    }
+
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        has_recent = _table_exists(conn, "miner_attest_recent")
+        has_history = _table_exists(conn, "miner_attest_history")
+        snapshot["tables"]["miner_attest_recent"] = has_recent
+        snapshot["tables"]["miner_attest_history"] = has_history
+        if not has_recent:
+            return snapshot
+
+        recent_cols = _sqlite_table_columns(conn, "miner_attest_recent")
+        if "ts_ok" not in recent_cols:
+            return snapshot
+        fp_expr = "COALESCE(fingerprint_passed, 0)" if "fingerprint_passed" in recent_cols else "0"
+        entropy_expr = "COALESCE(entropy_score, 0.0)" if "entropy_score" in recent_cols else "0.0"
+
+        row = conn.execute(
+            f"""
+            SELECT
+                COUNT(*) AS known_miners,
+                SUM(CASE WHEN ts_ok >= ? THEN 1 ELSE 0 END) AS active_miners,
+                SUM(CASE WHEN ts_ok < ? THEN 1 ELSE 0 END) AS stale_miners,
+                SUM(CASE WHEN ts_ok >= ? AND {fp_expr} THEN 1 ELSE 0 END) AS fingerprint_passed_active,
+                AVG(CASE WHEN ts_ok >= ? THEN {entropy_expr} ELSE NULL END) AS avg_entropy_active,
+                MIN(CASE WHEN ts_ok >= ? THEN ts_ok ELSE NULL END) AS oldest_active_attest,
+                MAX(CASE WHEN ts_ok >= ? THEN ts_ok ELSE NULL END) AS newest_active_attest
+            FROM miner_attest_recent
+            """,
+            (active_cutoff, active_cutoff, active_cutoff, active_cutoff, active_cutoff, active_cutoff),
+        ).fetchone()
+        if row:
+            snapshot["pool"].update({
+                "known_miners": int(row["known_miners"] or 0),
+                "active_miners": int(row["active_miners"] or 0),
+                "stale_miners": int(row["stale_miners"] or 0),
+                "fingerprint_passed_active": int(row["fingerprint_passed_active"] or 0),
+                "avg_entropy_active": round(float(row["avg_entropy_active"] or 0.0), 6),
+                "oldest_active_attest": int(row["oldest_active_attest"]) if row["oldest_active_attest"] else None,
+                "newest_active_attest": int(row["newest_active_attest"]) if row["newest_active_attest"] else None,
+            })
+
+        if "device_arch" in recent_cols:
+            arch_rows = conn.execute(
+                """
+                SELECT COALESCE(NULLIF(device_arch, ''), 'unknown') AS device_arch, COUNT(*) AS miners
+                FROM miner_attest_recent
+                WHERE ts_ok >= ?
+                GROUP BY COALESCE(NULLIF(device_arch, ''), 'unknown')
+                ORDER BY miners DESC, device_arch ASC
+                LIMIT 20
+                """,
+                (active_cutoff,),
+            ).fetchall()
+            snapshot["by_device_arch"] = [
+                {"device_arch": r["device_arch"], "active_miners": int(r["miners"] or 0)}
+                for r in arch_rows
+            ]
+
+        if has_history:
+            history_cols = _sqlite_table_columns(conn, "miner_attest_history")
+            if "ts_ok" not in history_cols:
+                return snapshot
+            hist_rows = conn.execute(
+                """
+                SELECT CAST((ts_ok / 3600) AS INTEGER) AS hour_bucket, COUNT(*) AS attestations
+                FROM miner_attest_history
+                WHERE ts_ok >= ?
+                GROUP BY hour_bucket
+                ORDER BY hour_bucket ASC
+                """,
+                (history_cutoff,),
+            ).fetchall()
+            snapshot["history"] = [
+                {
+                    "hour_bucket": int(r["hour_bucket"]),
+                    "attestations": int(r["attestations"] or 0),
+                }
+                for r in hist_rows
+            ]
+            snapshot["pool"]["recent_attestations_24h"] = sum(
+                bucket["attestations"] for bucket in snapshot["history"]
+            )
+
+    return snapshot
+
+
+def _prom_label_value(value) -> str:
+    return str(value).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+
+def _attestation_pool_prometheus_text(now_ts: Optional[int] = None) -> str:
+    try:
+        snap = _attestation_pool_snapshot(now_ts=now_ts)
+    except Exception:
+        return "rustchain_attestation_pool_scrape_ok 0\nrustchain_attestation_pool_scrape_error 1\n"
+
+    pool = snap["pool"]
+    lines = [
+        "# HELP rustchain_attestation_pool_active_miners Active miners with a recent attestation.",
+        "# TYPE rustchain_attestation_pool_active_miners gauge",
+        f"rustchain_attestation_pool_active_miners {pool['active_miners']}",
+        "# HELP rustchain_attestation_pool_stale_miners Miners whose latest attestation is outside the active window.",
+        "# TYPE rustchain_attestation_pool_stale_miners gauge",
+        f"rustchain_attestation_pool_stale_miners {pool['stale_miners']}",
+        "# HELP rustchain_attestation_pool_known_miners Miners tracked in the attestation pool.",
+        "# TYPE rustchain_attestation_pool_known_miners gauge",
+        f"rustchain_attestation_pool_known_miners {pool['known_miners']}",
+        "# HELP rustchain_attestation_pool_recent_attestations_24h Attestation history entries in the last 24 hours.",
+        "# TYPE rustchain_attestation_pool_recent_attestations_24h gauge",
+        f"rustchain_attestation_pool_recent_attestations_24h {pool['recent_attestations_24h']}",
+        "# HELP rustchain_attestation_pool_fingerprint_passed_active Active miners whose latest attestation passed fingerprint checks.",
+        "# TYPE rustchain_attestation_pool_fingerprint_passed_active gauge",
+        f"rustchain_attestation_pool_fingerprint_passed_active {pool['fingerprint_passed_active']}",
+        "# HELP rustchain_attestation_pool_avg_entropy_active Average entropy score for active miners.",
+        "# TYPE rustchain_attestation_pool_avg_entropy_active gauge",
+        f"rustchain_attestation_pool_avg_entropy_active {pool['avg_entropy_active']}",
+    ]
+    for row in snap["by_device_arch"]:
+        arch = _prom_label_value(row["device_arch"])
+        lines.append(
+            f'rustchain_attestation_pool_active_miners_by_arch{{device_arch="{arch}"}} {row["active_miners"]}'
+        )
+    lines.append("rustchain_attestation_pool_scrape_ok 1")
+    lines.append("")
+    return "\n".join(lines)
+
+
+@app.route("/api/attestation-pool", methods=["GET"])
+def api_attestation_pool():
+    """Aggregate attestation-pool monitoring for dashboards."""
+    return jsonify(_attestation_pool_snapshot())
+
+
 def _json_object_or_none(raw):
     if not raw:
         return None
@@ -6950,7 +7123,11 @@ def api_ready():
 @app.route('/api/metrics', methods=['GET'])
 def metrics():
     """Prometheus metrics endpoint"""
-    return Response(generate_latest(), content_type=CONTENT_TYPE_LATEST)
+    payload = generate_latest()
+    if isinstance(payload, str):
+        payload = payload.encode("utf-8")
+    payload += _attestation_pool_prometheus_text().encode("utf-8")
+    return Response(payload, content_type=CONTENT_TYPE_LATEST)
 
 
 @app.route('/rewards/settle', methods=['POST'])
