@@ -394,7 +394,7 @@ class GPURenderProtocol:
     # Pricing Oracle
     # -------------------------------------------------------------------
 
-    def get_fair_market_rates(self, job_type=None) -> dict:
+    def get_fair_market_rates(self, job_type=None, *, record_history: bool = False) -> dict:
         """Calculate fair market rates from active GPU node pricing."""
         normalized_job_type = _normalize_job_type(job_type) if job_type else None
         if job_type and normalized_job_type is None:
@@ -431,20 +431,25 @@ class GPURenderProtocol:
                                 "RTC/1k_chars" if jt == "tts" else "RTC/1k_tokens",
                     }
 
-                    # Record to pricing history
-                    conn.execute(
-                        """INSERT INTO pricing_history
-                           (job_type, device_arch, avg_price, min_price,
-                            max_price, sample_count, recorded_at)
-                           VALUES (?,?,?,?,?,?,?)""",
-                        (jt, "all", rates[jt]["avg"], rates[jt]["min"],
-                         rates[jt]["max"], len(prices), int(time.time())),
-                    )
+                    if record_history:
+                        conn.execute(
+                            """INSERT INTO pricing_history
+                               (job_type, device_arch, avg_price, min_price,
+                                max_price, sample_count, recorded_at)
+                               VALUES (?,?,?,?,?,?,?)""",
+                            (jt, "all", rates[jt]["avg"], rates[jt]["min"],
+                             rates[jt]["max"], len(prices), int(time.time())),
+                        )
 
-            conn.commit()
+            if record_history:
+                conn.commit()
             return {"rates": rates, "timestamp": int(time.time())}
         finally:
             conn.close()
+
+    def record_fair_market_rates_snapshot(self, job_type=None) -> dict:
+        """Calculate current rates and append one explicit pricing history snapshot."""
+        return self.get_fair_market_rates(job_type, record_history=True)
 
     def detect_price_manipulation(self, job_type: str, proposed_price: float) -> dict:
         """Check if a proposed price deviates significantly from market rates."""

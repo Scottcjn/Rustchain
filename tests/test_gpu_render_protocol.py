@@ -1,6 +1,7 @@
 """Tests for GPU Render Protocol (Bounty #30)."""
 import os
 import sys
+import sqlite3
 import tempfile
 import unittest
 
@@ -143,6 +144,53 @@ class TestGPURenderProtocol(unittest.TestCase):
         self.assertAlmostEqual(r["avg"], 0.5, places=2)
         self.assertAlmostEqual(r["min"], 0.3)
         self.assertAlmostEqual(r["max"], 0.7)
+
+    def test_pricing_reads_do_not_append_history(self):
+        self.proto.attest_gpu("miner-1", {
+            "gpu_model": "RTX 4090",
+            "vram_gb": 24,
+            "device_arch": "nvidia_gpu",
+            "price_render_minute": 0.5,
+        })
+
+        for _ in range(5):
+            rates = self.proto.get_fair_market_rates("render")
+            self.assertIn("render", rates["rates"])
+
+        with sqlite3.connect(self.db) as conn:
+            count = conn.execute("SELECT COUNT(*) FROM pricing_history").fetchone()[0]
+        self.assertEqual(count, 0)
+
+    def test_explicit_pricing_snapshot_appends_one_history_row(self):
+        self.proto.attest_gpu("miner-1", {
+            "gpu_model": "RTX 4090",
+            "vram_gb": 24,
+            "device_arch": "nvidia_gpu",
+            "price_render_minute": 0.5,
+        })
+
+        rates = self.proto.record_fair_market_rates_snapshot("render")
+
+        self.assertIn("render", rates["rates"])
+        with sqlite3.connect(self.db) as conn:
+            count = conn.execute("SELECT COUNT(*) FROM pricing_history").fetchone()[0]
+        self.assertEqual(count, 1)
+
+    def test_price_checks_do_not_append_pricing_history(self):
+        self.proto.attest_gpu("miner-1", {
+            "gpu_model": "RTX 4090",
+            "vram_gb": 24,
+            "device_arch": "nvidia_gpu",
+            "price_render_minute": 0.5,
+        })
+
+        for _ in range(5):
+            check = self.proto.detect_price_manipulation("render", 0.6)
+            self.assertFalse(check["manipulated"])
+
+        with sqlite3.connect(self.db) as conn:
+            count = conn.execute("SELECT COUNT(*) FROM pricing_history").fetchone()[0]
+        self.assertEqual(count, 0)
 
     def test_price_manipulation_detection(self):
         self.proto.attest_gpu("miner-1", {
