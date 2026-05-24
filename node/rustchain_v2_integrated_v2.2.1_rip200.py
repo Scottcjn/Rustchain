@@ -8142,7 +8142,13 @@ try:
         """Get blocks for sync"""
         try:
             start_height = int(request.args.get('start', 0))
-            limit = min(int(request.args.get('limit', 100)), 1000)
+            if start_height < 0:
+                return jsonify({"ok": False, "error": "start_must_be_non_negative"}), 400
+
+            limit = int(request.args.get('limit', 100))
+            if limit < 1:
+                return jsonify({"ok": False, "error": "limit_must_be_positive"}), 400
+            limit = min(limit, 1000)
 
             blocks = block_sync.get_blocks_for_sync(start_height, limit)
             return jsonify({"ok": True, "blocks": blocks})
