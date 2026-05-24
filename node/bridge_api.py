@@ -222,6 +222,9 @@ def validate_bridge_request(data: Optional[Dict]) -> ValidationResult:
     )
 
 
+BASE58_ALPHABET = set("123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz")
+
+
 def validate_chain_address_format(chain: str, address: str) -> Tuple[bool, str]:
     """Validate address format for specific chain."""
     if not address:
@@ -237,6 +240,8 @@ def validate_chain_address_format(chain: str, address: str) -> Tuple[bool, str]:
         # Solana addresses are base58, 32-44 chars
         if len(address) < 32 or len(address) > 44:
             return False, "Invalid Solana address length"
+        if not all(c in BASE58_ALPHABET for c in address):
+            return False, "Invalid Solana address: contains non-base58 characters"
     
     elif chain == "ergo":
         # Ergo addresses start with '9' or '3'
