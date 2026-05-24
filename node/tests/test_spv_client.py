@@ -73,6 +73,27 @@ def test_spv_client_rejects_non_extending_header():
         )
 
 
+def test_spv_client_rejects_non_genesis_header_without_previous_hash():
+    client = SPVClient()
+
+    with pytest.raises(ValueError, match="previous hash"):
+        client.add_header({"height": 5, "hash": "f" * 64, "merkle_root": "0" * 64})
+
+
+def test_spv_client_rejects_header_without_known_previous_height():
+    client = SPVClient()
+
+    with pytest.raises(ValueError, match="does not extend"):
+        client.add_header(
+            {
+                "height": 5,
+                "hash": "f" * 64,
+                "prev_hash": "e" * 64,
+                "merkle_root": "0" * 64,
+            }
+        )
+
+
 def test_bloom_filter_matches_watched_items_and_round_trips():
     bloom = BloomFilter(size_bits=256, hash_count=5)
     bloom.add("RTC-wallet-address")

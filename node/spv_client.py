@@ -143,9 +143,11 @@ class SPVClient:
         block_hash = _header_hash(header)
         prev_hash = _header_prev_hash(header)
 
-        if height > 0 and prev_hash:
+        if height > 0:
+            if not prev_hash:
+                raise ValueError("non-genesis header must include previous hash")
             previous = self.headers_by_height.get(height - 1)
-            if previous and _header_hash(previous) != prev_hash:
+            if previous is None or _header_hash(previous) != prev_hash:
                 raise ValueError("header does not extend the known chain")
 
         self.headers_by_height[height] = dict(header)
