@@ -528,7 +528,7 @@
     </main>
 
     <script>
-        const API_BASE = 'https://50.28.86.131';
+        const API_BASE = window.location.origin;
         
         function switchView(viewName) {
             document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
@@ -579,11 +579,11 @@
                 const overviewTable = document.getElementById('miners-table');
                 overviewTable.innerHTML = minerList.slice(0, 10).map(miner => `
                     <tr>
-                        <td><strong>${esc(miner.miner_id || 'Unknown')}</strong></td>
+                        <td><strong>${esc(miner.miner || miner.miner_id || 'Unknown')}</strong></td>
                         <td><span class="arch-badge">${esc(miner.architecture || miner.device_arch || 'Unknown')}</span></td>
-                        <td><span class="multiplier">x${esc(miner.multiplier || miner.antiquity_multiplier || '1.0')}</span></td>
+                        <td><span class="multiplier">x${esc(miner.antiquity_multiplier || miner.multiplier || '1.0')}</span></td>
                         <td><span class="badge badge-success">Online</span></td>
-                        <td>${esc(formatTime(miner.last_attestation || miner.last_seen))}</td>
+                        <td>${esc(formatTime(miner.last_attest || miner.last_attestation || miner.last_seen))}</td>
                         <td>${esc((miner.earnings || miner.total_earned || 0).toFixed(2))} RTC</td>
                     </tr>
                 `).join('');
@@ -591,11 +591,11 @@
                 const allMinersTable = document.getElementById('all-miners-table');
                 allMinersTable.innerHTML = minerList.map(miner => `
                     <tr>
-                        <td><strong>${esc(miner.miner_id || 'Unknown')}</strong></td>
+                        <td><strong>${esc(miner.miner || miner.miner_id || 'Unknown')}</strong></td>
                         <td><span class="arch-badge">${esc(miner.architecture || miner.device_arch || 'Unknown')}</span></td>
-                        <td><span class="multiplier">x${esc(miner.multiplier || miner.antiquity_multiplier || '1.0')}</span></td>
+                        <td><span class="multiplier">x${esc(miner.antiquity_multiplier || miner.multiplier || '1.0')}</span></td>
                         <td><span class="badge badge-success">Online</span></td>
-                        <td>${esc(formatTime(miner.last_attestation || miner.last_seen))}</td>
+                        <td>${esc(formatTime(miner.last_attest || miner.last_attestation || miner.last_seen))}</td>
                         <td><code>${esc(miner.wallet || miner.wallet_address || 'N/A')}</code></td>
                         <td>${esc((miner.earnings || miner.total_earned || 0).toFixed(2))} RTC</td>
                     </tr>
