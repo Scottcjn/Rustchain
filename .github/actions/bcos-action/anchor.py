@@ -6,9 +6,13 @@ Anchors the BCOS attestation to the RustChain blockchain.
 """
 
 import json
+import logging
 import os
-from urllib.request import Request, urlopen
 from urllib.error import HTTPError
+from urllib.request import Request, urlopen
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+logger = logging.getLogger(__name__)
 
 
 def main():
@@ -22,7 +26,7 @@ def main():
     merged_commit = os.environ.get("MERGED_COMMIT", "")
     
     if not all([cert_id, commitment, repo, pr_number, merged_commit]):
-        print("⚠️ Missing required environment variables. Skipping anchor.")
+        logger.warning("Missing required environment variables. Skipping anchor.")
         return
     
     # Build attestation payload
@@ -50,17 +54,17 @@ def main():
     
     try:
         response = urlopen(req)
-        result = json.loads(response.read().decode('utf-8'))
-        print(f"✅ Attestation anchored successfully!")
-        print(f"Transaction: {result.get('tx_hash', 'N/A')}")
-        print(f"Block: {result.get('block_number', 'N/A')}")
+        result = json.loads(response.read().decode("utf-8"))
+        logger.info("Attestation anchored successfully.")
+        logger.info("Transaction: %s", result.get("tx_hash", "N/A"))
+        logger.info("Block: %s", result.get("block_number", "N/A"))
     except HTTPError as e:
         error_body = e.read().decode() if e.fp else ""
-        print(f"⚠️ Failed to anchor: {e.code}")
+        logger.warning("Failed to anchor: %s", e.code)
         if error_body:
-            print(f"Response: {error_body}")
+            logger.warning("Response: %s", error_body)
     except Exception as e:
-        print(f"⚠️ Anchor skipped (node may be unavailable): {e}")
+        logger.warning("Anchor skipped (node may be unavailable): %s", e)
 
 
 if __name__ == "__main__":
