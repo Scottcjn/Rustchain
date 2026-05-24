@@ -266,7 +266,7 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --dry-run
 ```
 
-Works on Linux (x86_64, ppc64le, aarch64, mips, sparc, m68k, riscv64, ia64, s390x), macOS (Intel, Apple Silicon, PowerPC), IBM POWER8, and Windows. If it runs Python, it can mine.
+Use the Bash installer on Linux, macOS, WSL, and Git Bash. For native Windows PowerShell, run `miners/windows/rustchain_miner_setup.bat` instead. If it runs Python, it can mine.
 
 ```bash
 # Install with a specific wallet name
