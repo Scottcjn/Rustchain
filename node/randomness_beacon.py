@@ -5,7 +5,6 @@ import json
 from hashlib import blake2b
 from typing import Dict
 
-
 GENESIS_RANDOMNESS = "0" * 64
 RANDOMNESS_DOMAIN = "rustchain:onchain-randomness:v1"
 
