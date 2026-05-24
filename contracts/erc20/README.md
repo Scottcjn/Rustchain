@@ -30,6 +30,7 @@ Complete ERC-20 token contract deployment package for RustChain Token (wRTC) on 
 This package provides the complete infrastructure for deploying and managing the RustChain Token (wRTC) as an ERC-20 token on Base:
 
 - **Smart Contract**: OpenZeppelin-based ERC-20 with extensions
+- **NFT Contract**: OpenZeppelin-based ERC-721 metadata contract for RustChain collectibles
 - **Deployment Scripts**: Hardhat-based deployment to Base mainnet/testnet
 - **Verification**: Automated BaseScan verification
 - **Interaction Tools**: CLI for common token operations
@@ -45,6 +46,16 @@ This package provides the complete infrastructure for deploying and managing the
 | **Network** | Base (eip155:8453) |
 | **Standard** | ERC-20 + EIP-2612 (Permit) |
 | **Extensions** | Burnable, Pausable, Ownable |
+
+### NFT Specifications
+
+| Property | Value |
+|----------|-------|
+| **Name** | RustChain Relic NFT |
+| **Symbol** | RCNFT |
+| **Network** | Base (eip155:8453) |
+| **Standard** | ERC-721 + metadata URI storage |
+| **Controls** | Owner-managed NFT minters, pausable transfers |
 
 ---
 
@@ -117,6 +128,27 @@ npm run verify:base <CONTRACT_ADDRESS>
 | **ReentrancyGuard** | Reentrancy protection | Bridge operations |
 | **Bridge Operators** | Multi-sig bridge support | Cross-chain minting/burning |
 
+### NFT Operations
+
+The package also includes `RustChainNFT`, an ERC-721-compatible contract for RustChain badges, relics, and other metadata-backed collectibles:
+
+```solidity
+// Owner or approved NFT minter can mint a new metadata-backed NFT
+function mint(address to, string calldata tokenURI_) external returns (uint256)
+
+// Owner or approved NFT minter can update token metadata
+function setTokenURI(uint256 tokenId, string calldata tokenURI_) external
+```
+
+The inherited ERC-721 interface provides standard ownership, approvals, and transfers:
+
+```solidity
+function ownerOf(uint256 tokenId) external view returns (address)
+function transferFrom(address from, address to, uint256 tokenId) external
+function approve(address to, uint256 tokenId) external
+function tokenURI(uint256 tokenId) external view returns (string memory)
+```
+
 ### Bridge Operations
 
 The contract supports bridge operations for cross-chain transfers:
@@ -174,6 +206,7 @@ npm run compile
 | `BASE_SEPOLIA_RPC_URL` | ❌ | Custom Sepolia RPC | `https://...` |
 | `INITIAL_SUPPLY` | ❌ | Initial token supply | `1000000` |
 | `BRIDGE_OPERATOR` | ❌ | Bridge operator address | `0x...` |
+| `NFT_MINTER` | ❌ | Initial NFT minter address | `0x...` |
 
 ### Network Configuration
 
@@ -212,6 +245,16 @@ npx hardhat run scripts/deploy.js --network baseSepolia
 
 # With custom initial supply
 INITIAL_SUPPLY=500000 npx hardhat run scripts/deploy.js --network baseSepolia
+```
+
+### Deploy NFT Contract
+
+```bash
+# Deploy RustChainNFT to Base Sepolia
+NFT_MINTER=0xYourMinterAddress npm run deploy:nft:base-sepolia
+
+# Deploy RustChainNFT to Base mainnet
+NFT_MINTER=0xYourMinterAddress npm run deploy:nft:base
 ```
 
 ### Deploy to Mainnet
