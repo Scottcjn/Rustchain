@@ -3890,6 +3890,41 @@ def get_epoch():
         "total_supply_rtc": TOTAL_SUPPLY_RTC
     })
 
+@app.route('/epoch/proposer-duty-calendar', methods=['GET'])
+def get_proposer_duty_calendar():
+    """Return the deterministic round-robin proposer duty calendar."""
+    from proposer_duty_calendar import build_proposer_duty_calendar, parse_peer_config
+
+    slot = current_slot()
+    epoch = slot_to_epoch(slot)
+    node_id = os.environ.get("RC_NODE_ID", "node1")
+    peers = parse_peer_config(os.environ.get("RC_P2P_PEERS", ""))
+
+    try:
+        lookahead = int(request.args.get("lookahead", 12))
+    except (TypeError, ValueError):
+        return jsonify({"error": "lookahead must be an integer"}), 400
+    try:
+        history_limit = int(request.args.get("history_limit", 8))
+    except (TypeError, ValueError):
+        return jsonify({"error": "history_limit must be an integer"}), 400
+
+    if lookahead < 0 or lookahead > 256:
+        return jsonify({"error": "lookahead must be between 0 and 256"}), 400
+    if history_limit < 0 or history_limit > 256:
+        return jsonify({"error": "history_limit must be between 0 and 256"}), 400
+
+    return jsonify(
+        build_proposer_duty_calendar(
+            current_epoch=epoch,
+            node_id=node_id,
+            peers=peers,
+            db_path=DB_PATH,
+            lookahead=lookahead,
+            history_limit=history_limit,
+        )
+    )
+
 @app.route('/epoch/enroll', methods=['POST'])
 def enroll_epoch():
     """Enroll in current epoch"""
