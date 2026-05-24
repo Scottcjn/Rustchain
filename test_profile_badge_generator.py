@@ -3,29 +3,18 @@
 and the /api/badge/create, /api/badge/stats, /api/badge/list endpoints."""
 
 import json
-import os
 import sqlite3
-import tempfile
 import pytest
 
-# We need to import the module; patch DB_PATH before import so tests use a temp DB
-_test_db = tempfile.mktemp(suffix=".db")
-os.environ["PROFILE_BADGE_TEST_DB"] = _test_db
-
 import profile_badge_generator as pbg
-pbg.DB_PATH = _test_db
 
 
 @pytest.fixture(autouse=True)
-def fresh_db():
-    """Re-init the DB before each test for isolation."""
+def fresh_db(tmp_path):
+    """Use a fresh per-test badge database for isolation on every platform."""
+    pbg.DB_PATH = str(tmp_path / "profile_badges.db")
     pbg.init_badge_db()
     yield
-    # cleanup
-    try:
-        os.unlink(_test_db)
-    except FileNotFoundError:
-        pass
 
 
 # ─── text_field ────────────────────────────────────────────────────
