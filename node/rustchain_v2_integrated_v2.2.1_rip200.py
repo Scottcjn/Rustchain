@@ -10,6 +10,7 @@ from flask import Flask, request, jsonify, g, send_from_directory, send_file, ab
 import json
 from decimal import Decimal, ROUND_HALF_UP
 from beacon_anchor import init_beacon_table, store_envelope, compute_beacon_digest, get_recent_envelopes, VALID_KINDS
+from audit_event_log import append_audit_event_safely, ensure_audit_event_log
 try:
     # Deployment compatibility: production may run this file as a single script.
     from payout_preflight import validate_wallet_transfer_admin, validate_wallet_transfer_signed
@@ -1165,6 +1166,7 @@ def init_db():
     with sqlite3.connect(DB_PATH) as c:
         # Core tables
         attest_ensure_tables(c)
+        ensure_audit_event_log(c)
         c.execute("CREATE TABLE IF NOT EXISTS tickets (ticket_id TEXT PRIMARY KEY, expires_at INTEGER, commitment TEXT)")
 
         # Epoch tables
@@ -2360,6 +2362,22 @@ def record_attestation_success(miner: str, device: dict, fingerprint_passed: boo
             INSERT INTO miner_attest_history (miner, ts_ok, device_family, device_arch, entropy_score, fingerprint_passed, fingerprint_checks_json)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (miner, now, verified_device["device_family"], verified_device["device_arch"], entropy_score, new_fp, fingerprint_checks_json))
+        append_audit_event_safely(
+            conn,
+            event_type="miner_attestation_recorded",
+            subject_type="miner",
+            subject_id=miner,
+            actor_id=miner,
+            ts=now,
+            payload={
+                "device_family": verified_device["device_family"],
+                "device_arch": verified_device["device_arch"],
+                "entropy_score": entropy_score,
+                "fingerprint_passed": bool(fingerprint_passed),
+                "source_ip_present": bool(source_ip),
+                "fingerprint_checks": fp_checks_map,
+            },
+        )
         conn.commit()
 
         # RIP-201: Record fleet immune system signals
@@ -3217,6 +3235,20 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
                 "UPDATE epoch_state SET settled = 1, settled_ts = ? WHERE epoch = ? AND settled = 0",
                 (int(time.time()), epoch)
             )
+            if result.rowcount:
+                append_audit_event_safely(
+                    conn,
+                    event_type="epoch_finalized",
+                    subject_type="epoch",
+                    subject_id=str(epoch),
+                    epoch=epoch,
+                    payload={
+                        "miner_count": len(miners),
+                        "total_weight": total_weight,
+                        "total_reward_rtc": str(total_reward),
+                        "excluded_zero_weight_miners": len(zero_weight_miners),
+                    },
+                )
 
             # Commit transaction atomically
             c.execute("COMMIT")
@@ -3803,10 +3835,28 @@ def _submit_attestation_impl():
             # low-weight (e.g. fingerprint-failed) attestation from overwriting
             # a prior high-weight enrollment within the same epoch. This avoids
             # "attestation overwrite causes prior-epoch reward loss".
-            enroll_conn.execute(
+            enroll_cursor = enroll_conn.execute(
                 "INSERT OR IGNORE INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)",
                 (epoch, miner, enroll_weight_units)
             )
+            if enroll_cursor.rowcount:
+                append_audit_event_safely(
+                    enroll_conn,
+                    event_type="miner_epoch_enrolled",
+                    subject_type="miner",
+                    subject_id=miner,
+                    actor_id=miner,
+                    epoch=epoch,
+                    payload={
+                        "weight_units": enroll_weight_units,
+                        "weight": enroll_weight,
+                        "device_family": family,
+                        "device_arch": arch_for_weight,
+                        "auto_enroll": True,
+                        "active_fingerprint_pass_count": rotation_eval["active_pass_count"],
+                        "active_fingerprint_total": rotation_eval["active_total"],
+                    },
+                )
             header_pubkey = _valid_ed25519_pubkey_hex(pubkey_hex) or _valid_ed25519_pubkey_hex(miner)
             if header_pubkey:
                 enroll_conn.execute(
@@ -4070,10 +4120,28 @@ def enroll_epoch():
         # attacker could overwrite a legitimate miner's weight (e.g. 2.5) with
         # a near-zero value (1e-9) by calling this endpoint with failed-fingerprint
         # or default device data.
-        c.execute(
+        enroll_cursor = c.execute(
             "INSERT OR IGNORE INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)",
             (epoch, miner_pk, weight_units)
         )
+        if enroll_cursor.rowcount:
+            append_audit_event_safely(
+                c,
+                event_type="miner_epoch_enrolled",
+                subject_type="miner",
+                subject_id=miner_pk,
+                actor_id=miner_id,
+                epoch=epoch,
+                payload={
+                    "weight_units": weight_units,
+                    "weight": weight,
+                    "device_family": family,
+                    "device_arch": arch,
+                    "auto_enroll": False,
+                    "active_fingerprint_pass_count": rotation_eval["active_pass_count"],
+                    "active_fingerprint_total": rotation_eval["active_total"],
+                },
+            )
 
         # Register a real Ed25519 pubkey for block-header verification when available.
         header_pubkey = _valid_ed25519_pubkey_hex(pubkey_hex) or _valid_ed25519_pubkey_hex(miner_pk)

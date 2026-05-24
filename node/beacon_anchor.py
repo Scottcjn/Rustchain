@@ -13,6 +13,11 @@ import time
 from hashlib import blake2b
 
 try:
+    from audit_event_log import append_audit_event_safely, ensure_audit_event_log
+except ImportError:
+    from node.audit_event_log import append_audit_event_safely, ensure_audit_event_log
+
+try:
     from nacl.signing import VerifyKey
     from nacl.exceptions import BadSignatureError
     NACL_AVAILABLE = True
@@ -140,6 +145,7 @@ def init_beacon_table(db_path=DB_PATH):
             ON beacon_envelopes(agent_id, created_at)
         """)
         _ensure_payload_hash_version_column(conn)
+        ensure_audit_event_log(conn)
         conn.commit()
 
 
@@ -187,8 +193,23 @@ def store_envelope(envelope: dict, db_path=DB_PATH) -> dict:
                              CURRENT_PAYLOAD_HASH_VERSION,
                              now,
                          ))
-            conn.commit()
             row_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            append_audit_event_safely(
+                conn,
+                event_type="beacon_envelope_stored",
+                subject_type="beacon_agent",
+                subject_id=agent_id,
+                actor_id=agent_id,
+                ts=now,
+                payload={
+                    "beacon_envelope_id": row_id,
+                    "kind": kind,
+                    "nonce": nonce,
+                    "payload_hash": payload_hash,
+                    "payload_hash_version": CURRENT_PAYLOAD_HASH_VERSION,
+                },
+            )
+            conn.commit()
         return {
             "ok": True,
             "id": row_id,
