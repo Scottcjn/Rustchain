@@ -146,10 +146,10 @@ function safeScore(v){
 (async()=>{
   const id=q('id')||q('machine');
   if(!id){ document.getElementById('status').innerHTML='<span class="err">Missing machine id. Use ?id=&lt;fingerprint_hash&gt;.</span>'; return; }
-  const res=await fetch('/api/hall_of_fame/machine?id='+encodeURIComponent(id));
+  const res=await fetch('/hall/machine/'+encodeURIComponent(id));
   if(!res.ok){ document.getElementById('status').innerHTML='<span class="err">Not found or unavailable.</span>'; return; }
   const data=await res.json();
-  const m=data.machine||{};
+  const m=data.machine||data||{};
   document.getElementById('status').style.display='none';
   const profile=document.getElementById('profile');
   profile.style.display='block';
