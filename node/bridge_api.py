@@ -804,7 +804,15 @@ def register_bridge_routes(app):
     @app.route('/api/bridge/status/<tx_hash>', methods=['GET'])
     @app.route('/api/bridge/status', methods=['GET'])
     def get_bridge_status(tx_hash: Optional[str] = None):
-        """Get bridge transfer status by tx_hash or id."""
+        """Get bridge transfer status by tx_hash or id. Requires admin key."""
+        # SECURITY: Bridge transfer details include source/dest addresses and amounts
+        admin_key = request.headers.get("X-Admin-Key", "")
+        expected_admin_key = os.environ.get("RC_ADMIN_KEY", "")
+        if not expected_admin_key:
+            return jsonify({"error": "RC_ADMIN_KEY not configured — endpoint disabled"}), 503
+        if not hmac.compare_digest(admin_key, expected_admin_key):
+            return jsonify({"error": "unauthorized"}), 401
+
         if not tx_hash:
             tx_hash = request.args.get("id") or request.args.get("tx_hash")
         
@@ -826,7 +834,15 @@ def register_bridge_routes(app):
     
     @app.route('/api/bridge/list', methods=['GET'])
     def list_bridges():
-        """List bridge transfers with filters."""
+        """List bridge transfers with filters. Requires admin key."""
+        # SECURITY: Bridge transfers expose source/dest addresses and amounts
+        admin_key = request.headers.get("X-Admin-Key", "")
+        expected_admin_key = os.environ.get("RC_ADMIN_KEY", "")
+        if not expected_admin_key:
+            return jsonify({"error": "RC_ADMIN_KEY not configured — endpoint disabled"}), 503
+        if not hmac.compare_digest(admin_key, expected_admin_key):
+            return jsonify({"error": "unauthorized"}), 401
+
         status = request.args.get("status")
         source = request.args.get("source_address")
         dest = request.args.get("dest_address")
