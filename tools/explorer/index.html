@@ -249,6 +249,28 @@
       <div id="empty" class="empty" style="display:none;">No miners matched the current filter.</div>
     </div>
 
+    <h2 class="section-title">Mempool</h2>
+    <p class="section-sub">Pending UTXO transactions, fee pressure, and expiry window.</p>
+
+    <div class="card-grid" id="mempoolCards"></div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Transaction</th>
+            <th>Type</th>
+            <th>Inputs</th>
+            <th>Outputs</th>
+            <th>Fee (RTC)</th>
+            <th>Age</th>
+            <th>Expires In</th>
+          </tr>
+        </thead>
+        <tbody id="mempoolRows"></tbody>
+      </table>
+      <div id="mempoolEmpty" class="empty" style="display:none;">No pending mempool transactions.</div>
+    </div>
+
     <h2 class="section-title">Agent Economy Marketplace</h2>
     <p class="section-sub">Open jobs, lifecycle state, market stats, and reputation lookup.</p>
 
@@ -312,6 +334,7 @@
       agentJobs: [],
       jobCategoryFilter: "all",
       reputation: null,
+      mempool: null,
     };
 
     function nowSeconds() {
@@ -357,6 +380,18 @@
       const res = await fetch(path);
       if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
       return await res.json();
+    }
+
+    function normalizeMinerRows(payload) {
+      const rows = Array.isArray(payload) ? payload : (payload?.miners || payload?.data || payload?.items || []);
+      if (!Array.isArray(rows)) return [];
+      return rows
+        .filter((m) => m && typeof m === "object")
+        .map((m) => ({
+          ...m,
+          miner: m.miner || m.miner_id || m.id || m.name || "",
+        }))
+        .filter((m) => m.miner);
     }
 
     function applyFiltersAndSort() {
@@ -533,6 +568,46 @@
       `;
     }
 
+    function normalizeMempoolPayload(payload) {
+      const rows = Array.isArray(payload?.transactions) ? payload.transactions : [];
+      const metrics = payload?.metrics || {};
+      return {
+        metrics,
+        transactions: rows.filter((row) => row && typeof row === "object"),
+      };
+    }
+
+    function renderMempool() {
+      const payload = state.mempool || { metrics: {}, transactions: [] };
+      const metrics = payload.metrics || {};
+      const txs = payload.transactions || [];
+      const cards = [
+        { label: "Pending TX", value: metrics.mempool_size ?? txs.length },
+        { label: "Visible", value: metrics.visible_transactions ?? txs.length },
+        { label: "Fees (RTC)", value: Number(metrics.total_fee_rtc || 0).toFixed(6) },
+        { label: "Max Fee (nRTC)", value: metrics.max_fee_nrtc ?? 0 },
+      ];
+      document.getElementById("mempoolCards").innerHTML = cards.map((c) => `
+        <div class="card">
+          <div class="label">${safeText(c.label)}</div>
+          <div class="value">${safeText(c.value)}</div>
+        </div>
+      `).join("");
+
+      document.getElementById("mempoolRows").innerHTML = txs.map((tx) => `
+        <tr>
+          <td class="mono">${safeText(tx.tx_id || "-")}</td>
+          <td>${safeText(tx.tx_type || "unknown")}</td>
+          <td>${safeText(tx.input_count ?? 0)}</td>
+          <td>${safeText(tx.output_count ?? 0)}</td>
+          <td>${Number(tx.fee_rtc || 0).toFixed(6)}</td>
+          <td class="mono">${tx.age_seconds == null ? "-" : `${safeText(tx.age_seconds)}s`}</td>
+          <td class="mono">${tx.expires_in_seconds == null ? "-" : `${safeText(tx.expires_in_seconds)}s`}</td>
+        </tr>
+      `).join("");
+      document.getElementById("mempoolEmpty").style.display = txs.length ? "none" : "block";
+    }
+
     async function lookupReputation() {
       const wallet = document.getElementById("repWallet").value.trim();
       if (!wallet) return;
@@ -546,19 +621,22 @@
 
     async function refresh() {
       try {
-        const [health, epoch, miners, agentStats, agentJobs] = await Promise.all([
+        const [health, epoch, miners, agentStats, agentJobs, mempool] = await Promise.all([
           fetchJson("/health"),
           fetchJson("/epoch"),
           fetchJson("/api/miners"),
           fetchJson("/agent/stats").catch(() => ({ stats: {} })),
           fetchJson("/agent/jobs").catch(() => ({ jobs: [] })),
+          fetchJson("/api/mempool").catch(() => fetchJson("/utxo/mempool").catch(() => ({ transactions: [] }))),
         ]);
-        state.miners = Array.isArray(miners) ? miners : (miners.miners || miners.data || []);
+        state.miners = normalizeMinerRows(miners);
         state.agentStats = agentStats;
         state.agentJobs = Array.isArray(agentJobs.jobs) ? agentJobs.jobs : [];
+        state.mempool = normalizeMempoolPayload(mempool);
         renderTopCards(health, epoch);
         setupFilters();
         renderMinerTable();
+        renderMempool();
         renderAgentCards();
         renderLifecycle();
         setupJobCategoryFilter();
