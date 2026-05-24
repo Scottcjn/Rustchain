@@ -8265,6 +8265,18 @@ def address_from_pubkey(public_key_hex: str) -> str:
     pubkey_hash = hashlib.sha256(bytes.fromhex(public_key_hex)).hexdigest()[:40]
     return f"RTC{pubkey_hash}"
 
+
+def _validated_public_key(raw_public_key):
+    """Return normalized Ed25519 public key hex or ``None`` when invalid."""
+    if not isinstance(raw_public_key, str):
+        return None
+    public_key = raw_public_key.strip().lower()
+    if len(public_key) != 64:
+        return None
+    if not re.fullmatch(r"[0-9a-f]{64}", public_key):
+        return None
+    return public_key
+
 def _wallet_transfer_signed_messages(
     from_address,
     to_address,
@@ -8638,9 +8650,9 @@ def wallet_transfer_signed():
     chain_id = pre.details.get("chain_id")
     signature = str(data.get("signature", "")).strip()
     raw_public_key = data.get("public_key", "")
-    if not isinstance(raw_public_key, str):
+    public_key = _validated_public_key(raw_public_key)
+    if not is_bcn_address(from_address) and public_key is None:
         return jsonify({"error": "invalid_public_key"}), 400
-    public_key = raw_public_key.strip()
     memo = str(data.get("memo", ""))
     amount_rtc = pre.details["amount_rtc"]
     fee_rtc = pre.details["fee_rtc"]
@@ -8663,6 +8675,8 @@ def wallet_transfer_signed():
             }), 404
         # Use the Atlas pubkey — client may omit public_key for bcn_ wallets
         atlas_pubkey = bcn_info["pubkey_hex"]
+        if isinstance(raw_public_key, str) and raw_public_key.strip() and public_key is None:
+            return jsonify({"error": "invalid_public_key"}), 400
         if public_key and public_key != atlas_pubkey:
             return jsonify({
                 "error": "Public key does not match Beacon Atlas registration",

@@ -169,6 +169,16 @@ def test_signed_transfer_rejects_non_string_public_key(signed_transfer_client):
     assert response.get_json()["error"] == "invalid_public_key"
 
 
+def test_signed_transfer_rejects_non_hex_public_key_string(signed_transfer_client):
+    client, db_path = signed_transfer_client
+    payload = _payload()
+    payload["public_key"] = "not-a-hex-key"
+
+    response = client.post("/wallet/transfer/signed", json=payload)
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "invalid_public_key"
+
+
 def test_insufficient_balance_does_not_burn_nonce(signed_transfer_client):
     client, db_path = signed_transfer_client
     payload = _payload(amount_rtc=5.0, nonce=1733420009999)
