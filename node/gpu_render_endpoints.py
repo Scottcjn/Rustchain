@@ -297,6 +297,7 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
                 return jsonify({"error": "Job was already processed"}), 409
 
             # Refund to original requester
+            _ensure_balance_row(db, job["from_wallet"])
             credited = db.execute(
                 "UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk = ?",
                 (job["amount_rtc"], job["from_wallet"]),

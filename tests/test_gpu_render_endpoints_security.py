@@ -158,6 +158,37 @@ def test_gpu_escrow_release_preserves_funds_for_new_provider_wallet(tmp_path):
     assert _balance(db_path, "attacker") == 5.0
 
 
+def test_gpu_refund_materializes_missing_payer_wallet(tmp_path):
+    db_path = tmp_path / "gpu.db"
+    _init_db(db_path)
+    client = _create_app(db_path).test_client()
+
+    created = client.post(
+        "/api/gpu/escrow",
+        json=_escrow_payload(),
+        headers={"X-Admin-Key": ADMIN_KEY},
+    )
+    assert created.status_code == 200
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("DELETE FROM balances WHERE miner_pk = ?", ("victim",))
+
+    refunded = client.post(
+        "/api/gpu/refund",
+        json={
+            "job_id": "job-1",
+            "actor_wallet": "attacker",
+            "escrow_secret": created.get_json()["escrow_secret"],
+        },
+        headers={"X-Admin-Key": ADMIN_KEY},
+    )
+
+    assert refunded.status_code == 200
+    assert refunded.get_json() == {"ok": True, "status": "refunded"}
+    assert _balance(db_path, "victim") == 5.0
+    assert _balance(db_path, "attacker") == 0.0
+
+
 def test_gpu_admin_endpoints_fail_closed_without_configured_key(tmp_path):
     db_path = tmp_path / "gpu.db"
     _init_db(db_path)
