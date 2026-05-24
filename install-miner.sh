@@ -63,8 +63,8 @@ detect_platform() {
             echo "macos" ;;
  MINGW*|MSYS*|CYGWIN*)
  echo "windows"
- echo -e "${YELLOW}[!] Detected Windows via MSYS/Git Bash. For full hardware rewards, use the native Windows miner instead.${NC}"
- echo -e "${YELLOW}[!] See miners/windows/README.md for the recommended installer.${NC}" ;;
+ echo -e "${YELLOW}[!] Detected Windows via MSYS/Git Bash. For full hardware rewards, use the native Windows miner instead.${NC}" >&2
+ echo -e "${YELLOW}[!] See miners/windows/README.md for the recommended installer.${NC}" >&2 ;;
  *) echo "unknown"; exit 1 ;;
     esac
 }
