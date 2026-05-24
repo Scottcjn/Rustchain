@@ -25,5 +25,5 @@ PYTHONPATH=node .venv-bounty-validation/bin/python -m pytest -q node/tests/test_
 Expected result:
 
 ```text
-3 passed
+4 passed
 ```
