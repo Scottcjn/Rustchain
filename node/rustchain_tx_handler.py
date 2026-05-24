@@ -84,6 +84,9 @@ CREATE TABLE IF NOT EXISTS wallet_pubkeys (
 -- Index for faster queries
 CREATE INDEX IF NOT EXISTS idx_pending_from ON pending_transactions(from_addr);
 CREATE INDEX IF NOT EXISTS idx_pending_nonce ON pending_transactions(from_addr, nonce);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pending_wallet_nonce_unique
+    ON pending_transactions(from_addr, nonce)
+    WHERE status = 'pending';
 CREATE INDEX IF NOT EXISTS idx_history_from ON transaction_history(from_addr);
 CREATE INDEX IF NOT EXISTS idx_history_to ON transaction_history(to_addr);
 CREATE INDEX IF NOT EXISTS idx_history_block ON transaction_history(block_height);
@@ -393,6 +396,10 @@ class TransactionPool:
         # both pass the balance check before either is recorded.
         with self._get_connection() as conn:
             cursor = conn.cursor()
+            # Take SQLite's write lock before reading wallet nonce/pending rows.
+            # The Python lock only serializes one TransactionPool instance; RPC
+            # workers can create separate pools against the same database file.
+            cursor.execute("BEGIN IMMEDIATE")
 
             # SECURITY FIX #2019: Enforce per-wallet pending TX limit
             cursor.execute(
