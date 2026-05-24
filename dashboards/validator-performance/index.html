@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<!-- SPDX-License-Identifier: MIT -->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain Validator Performance</title>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --panel: #161b22;
+            --card: #21262d;
+            --border: #30363d;
+            --text: #f0f6fc;
+            --muted: #8b949e;
+            --accent: #58a6ff;
+            --ok: #3fb950;
+            --warn: #d29922;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: var(--bg);
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1180px;
+            margin: 0 auto;
+        }
+
+        header,
+        section {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 22px;
+        }
+
+        header {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        h1,
+        h2 {
+            margin: 0;
+            color: var(--accent);
+        }
+
+        h1 {
+            font-size: 2rem;
+        }
+
+        .subtitle,
+        .status,
+        th {
+            color: var(--muted);
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.95rem;
+        }
+
+        .dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--warn);
+        }
+
+        .dot.live {
+            background: var(--ok);
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+            gap: 16px;
+        }
+
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 18px;
+            min-height: 120px;
+        }
+
+        .label {
+            color: var(--muted);
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        .value {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-top: 12px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 16px;
+        }
+
+        th,
+        td {
+            border-bottom: 1px solid var(--border);
+            padding: 10px 8px;
+            text-align: left;
+        }
+
+        .toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            border: 0;
+            border-radius: 8px;
+            background: var(--accent);
+            color: white;
+            cursor: pointer;
+            font-weight: 700;
+            padding: 10px 14px;
+        }
+
+        button:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+        }
+
+        .error {
+            color: var(--warn);
+            min-height: 1.4em;
+        }
+
+        @media (max-width: 640px) {
+            body {
+                padding: 12px;
+            }
+
+            header,
+            section {
+                padding: 18px;
+            }
+
+            h1 {
+                font-size: 1.5rem;
+            }
+
+            .value {
+                font-size: 1.6rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <main class="container">
+        <header>
+            <div>
+                <h1>RustChain Validator Performance</h1>
+                <div class="subtitle">Live validator metrics and recent samples</div>
+            </div>
+            <div class="status">
+                <span class="dot" id="statusDot"></span>
+                <span id="statusText">Connecting...</span>
+            </div>
+        </header>
+
+        <section>
+            <div class="grid">
+                <div class="card">
+                    <div class="label">Active Validators</div>
+                    <div class="value" id="activeValidators">--</div>
+                </div>
+                <div class="card">
+                    <div class="label">Average Attestations</div>
+                    <div class="value" id="avgAttestations">--</div>
+                </div>
+                <div class="card">
+                    <div class="label">Average Latency</div>
+                    <div class="value" id="avgLatency">--</div>
+                </div>
+                <div class="card">
+                    <div class="label">Top Validator</div>
+                    <div class="value" id="topValidator">--</div>
+                </div>
+            </div>
+        </section>
+
+        <section>
+            <div class="toolbar">
+                <h2>Validator History</h2>
+                <button id="refreshButton" type="button">Refresh</button>
+            </div>
+            <div class="error" id="errorText"></div>
+            <table aria-label="Validator performance history">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Active</th>
+                        <th>Avg Attestations</th>
+                        <th>Avg Latency</th>
+                    </tr>
+                </thead>
+                <tbody id="historyBody">
+                    <tr>
+                        <td colspan="4">No samples yet</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+    </main>
+
+    <script>
+        const API_BASE = "https://rustchain.org";
+        const REFRESH_INTERVAL_MS = 30000;
+        const MAX_HISTORY_SAMPLES = 20;
+        const validatorHistory = [];
+
+        document.addEventListener("DOMContentLoaded", () => {
+            document.getElementById("refreshButton").addEventListener("click", loadValidatorMetrics);
+            loadValidatorMetrics();
+            setInterval(loadValidatorMetrics, REFRESH_INTERVAL_MS);
+        });
+
+        async function loadValidatorMetrics() {
+            const button = document.getElementById("refreshButton");
+            button.disabled = true;
+
+            try {
+                const payload = await fetchJson(`${API_BASE}/api/miners`);
+                const minerRows = normalizeMinerRows(payload);
+                const metrics = computeValidatorMetrics(minerRows);
+                updateDashboard(metrics);
+                setStatus(true, "Live");
+                setError("");
+            } catch (error) {
+                setStatus(false, "Connection error");
+                setError(`Failed to load validators: ${error.message}`);
+            } finally {
+                button.disabled = false;
+            }
+        }
+
+        async function fetchJson(url) {
+            const response = await fetch(url, { headers: { Accept: "application/json" } });
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            return response.json();
+        }
+
+        function normalizeMinerRows(payload) {
+            const rows = Array.isArray(payload) ? payload : (payload?.miners || payload?.data || payload?.items || []);
+            return Array.isArray(rows) ? rows.filter((item) => item && typeof item === "object") : [];
+        }
+
+        function readNumber(row, fields) {
+            for (const field of fields) {
+                const value = Number(row?.[field]);
+                if (Number.isFinite(value)) {
+                    return value;
+                }
+            }
+            return null;
+        }
+
+        function isActiveValidator(row) {
+            const status = String(row?.status || row?.state || "").toLowerCase();
+            return row?.active === true
+                || row?.online === true
+                || status === "active"
+                || status === "online"
+                || status === "up"
+                || Boolean(row?.last_attest || row?.last_attestation || row?.last_seen);
+        }
+
+        function validatorName(row) {
+            return String(row?.miner || row?.miner_id || row?.id || row?.wallet || "unknown");
+        }
+
+        function computeValidatorMetrics(minerRows) {
+            const activeRows = minerRows.filter(isActiveValidator);
+            const attestationValues = minerRows
+                .map((row) => readNumber(row, ["attestations", "attestation_count", "total_attestations", "attest_count"]))
+                .filter((value) => value !== null);
+            const latencyValues = minerRows
+                .map((row) => readNumber(row, ["latency_ms", "avg_latency_ms", "response_time_ms", "last_latency_ms"]))
+                .filter((value) => value !== null);
+            const scoredRows = minerRows
+                .map((row) => ({
+                    name: validatorName(row),
+                    score: readNumber(row, ["performance_score", "score", "antiquity_score", "attestations", "attestation_count"])
+                }))
+                .filter((row) => row.score !== null)
+                .sort((a, b) => b.score - a.score);
+
+            return {
+                activeValidators: activeRows.length,
+                averageAttestations: average(attestationValues),
+                averageLatencyMs: average(latencyValues),
+                topValidator: scoredRows[0]?.name || "--"
+            };
+        }
+
+        function average(values) {
+            if (!values.length) return null;
+            return values.reduce((sum, value) => sum + value, 0) / values.length;
+        }
+
+        function updateDashboard(metrics) {
+            setText("activeValidators", formatNumber(metrics.activeValidators));
+            setText("avgAttestations", formatNullableNumber(metrics.averageAttestations));
+            setText("avgLatency", metrics.averageLatencyMs === null ? "--" : `${formatNumber(metrics.averageLatencyMs)}ms`);
+            setText("topValidator", metrics.topValidator);
+
+            validatorHistory.push({
+                time: new Date(),
+                activeValidators: metrics.activeValidators,
+                averageAttestations: metrics.averageAttestations,
+                averageLatencyMs: metrics.averageLatencyMs
+            });
+            if (validatorHistory.length > MAX_HISTORY_SAMPLES) {
+                validatorHistory.shift();
+            }
+            renderHistory();
+        }
+
+        function renderHistory() {
+            const tbody = document.getElementById("historyBody");
+            tbody.textContent = "";
+
+            validatorHistory.slice().reverse().forEach((sample) => {
+                const row = document.createElement("tr");
+                appendTextCell(row, sample.time.toLocaleTimeString());
+                appendTextCell(row, formatNumber(sample.activeValidators));
+                appendTextCell(row, formatNullableNumber(sample.averageAttestations));
+                appendTextCell(row, sample.averageLatencyMs === null ? "--" : `${formatNumber(sample.averageLatencyMs)}ms`);
+                tbody.appendChild(row);
+            });
+        }
+
+        function appendTextCell(row, text) {
+            const cell = document.createElement("td");
+            cell.textContent = text;
+            row.appendChild(cell);
+        }
+
+        function setText(id, text) {
+            document.getElementById(id).textContent = text;
+        }
+
+        function setStatus(isLive, text) {
+            document.getElementById("statusDot").className = isLive ? "dot live" : "dot";
+            setText("statusText", text);
+        }
+
+        function setError(text) {
+            setText("errorText", text);
+        }
+
+        function formatNumber(num) {
+            if (typeof num !== "number") return "--";
+            return num.toLocaleString("en-US", { maximumFractionDigits: 2 });
+        }
+
+        function formatNullableNumber(num) {
+            return typeof num === "number" ? formatNumber(num) : "--";
+        }
+    </script>
+</body>
+</html>
