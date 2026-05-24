@@ -174,7 +174,7 @@ def create_badge():
     custom_message = text_field(data, 'custom_message')
     
     if not username:
-        return jsonify({'success': False, 'error': 'Username required'})
+        return jsonify({'success': False, 'error': 'Username required'}), 400
     
     badge_colors = {
         'contributor': 'blue',
