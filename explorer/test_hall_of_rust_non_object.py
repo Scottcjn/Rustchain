@@ -68,14 +68,13 @@ class TestInductNonObjectJSON:
         resp = client.post("/hall/induct", json=42)
         assert resp.status_code == 400
 
-    def test_induct_null_body_returns_400_or_empty(self, client):
-        """Null JSON body should be handled gracefully."""
-        # request.get_json(silent=True) returns None for null
+    def test_induct_null_body_falls_back_to_empty_dict(self, client):
+        """Null JSON body falls back to empty dict (backward compatible)."""
         resp = client.post("/hall/induct",
-                          data="null",
-                          content_type="application/json")
-        # None is not a dict, so should get 400
-        assert resp.status_code == 400
+                           data="null",
+                           content_type="application/json")
+        # None is converted to {} before isinstance check, preserving backward compat
+        assert resp.status_code == 200
 
     def test_induct_valid_object_works(self, client):
         """Valid JSON object should be accepted (even if it creates an entry)."""
@@ -100,15 +99,12 @@ class TestEulogyNonObjectJSON:
 
     def test_eulogy_array_body_returns_400(self, client):
         """Array JSON body should be rejected."""
-        # First induct a machine so the fingerprint exists
         client.post("/hall/induct", json={
             "device_model": "PowerBook5,1",
             "device_arch": "G4",
             "cpu_serial": "eulogy-test-serial",
             "miner_id": "eulogy-tester"
         })
-        # Need to figure out what fingerprint hash was generated
-        # For this test we just need the endpoint to reject bad JSON
         resp = client.post("/hall/eulogy/anyfingerprint", json=["nickname"])
         assert resp.status_code == 400
         data = resp.get_json()
@@ -126,14 +122,38 @@ class TestEulogyNonObjectJSON:
 
     def test_eulogy_valid_object_works(self, client):
         """Valid JSON object should be accepted."""
-        # Even if fingerprint doesn't exist, the endpoint should not crash
         resp = client.post("/hall/eulogy/nonexistent", json={
             "nickname": "Old Reliable"
         })
-        # Should return 200 (no rows updated is OK, just not crash)
         assert resp.status_code == 200
 
     def test_eulogy_empty_object_works(self, client):
         """Empty JSON object should be accepted (no-op update)."""
         resp = client.post("/hall/eulogy/somefp", json={})
+        assert resp.status_code == 200
+
+
+# ---- No-body / missing content-type tests ----
+
+class TestNoBodyRequests:
+    """POST requests with no body or no JSON content-type should be handled gracefully."""
+
+    def test_induct_no_body_returns_200_with_defaults(self, client):
+        """POST with no body at all should fall back to empty dict and use defaults."""
+        resp = client.post("/hall/induct", content_type="application/json")
+        assert resp.status_code == 200
+
+    def test_induct_no_content_type_returns_200_with_defaults(self, client):
+        """POST with no Content-Type should also fall back to empty dict."""
+        resp = client.post("/hall/induct")
+        assert resp.status_code == 200
+
+    def test_eulogy_no_body_returns_200(self, client):
+        """POST /hall/eulogy with no body should fall back to empty dict (no-op update)."""
+        resp = client.post("/hall/eulogy/somefp", content_type="application/json")
+        assert resp.status_code == 200
+
+    def test_eulogy_no_content_type_returns_200(self, client):
+        """POST /hall/eulogy with no Content-Type should also fall back to empty dict."""
+        resp = client.post("/hall/eulogy/somefp")
         assert resp.status_code == 200
