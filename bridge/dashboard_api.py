@@ -6,6 +6,7 @@ Extends bridge_api.py with dashboard-specific endpoints:
 - GET /bridge/dashboard/metrics - Aggregated metrics for dashboard
 - GET /bridge/dashboard/health - Bridge health status
 - GET /bridge/dashboard/transactions - Recent transactions with filtering
+- GET /bridge/dashboard/history - Bucketed bridge volume and transaction history
 - GET /bridge/dashboard/price - wRTC price data from Raydium/DexScreener
 - GET /bridge/dashboard/chart - Historical price chart data
 
@@ -323,6 +324,121 @@ def get_dashboard_transactions():
         "wrap_count": wrap_count,
         "unwrap_count": unwrap_count,
         "total_volume_24h": round(total_volume_24h, 2),
+    })
+
+
+@dashboard_bp.route("/history", methods=["GET"])
+def get_bridge_history():
+    """
+    Get bucketed bridge history for monitoring charts.
+
+    Query params:
+    - period: '1h' | '24h' | '7d' | '30d' (default: '24h')
+    - bucket: '5m' | '15m' | '1h' | '1d' (default chosen from period)
+
+    Returns:
+    {
+        "period": "24h",
+        "bucket": "1h",
+        "start_time": int,
+        "end_time": int,
+        "points": [
+            {
+                "timestamp": int,
+                "completed_count": int,
+                "total_volume_rtc": float,
+                "wrap_volume_rtc": float,
+                "unwrap_volume_rtc": float,
+                "wrap_count": int,
+                "unwrap_count": int
+            }
+        ]
+    }
+    """
+    periods = {
+        "1h": 3600,
+        "24h": 86400,
+        "7d": 604800,
+        "30d": 2592000,
+    }
+    buckets = {
+        "5m": 300,
+        "15m": 900,
+        "1h": 3600,
+        "1d": 86400,
+    }
+    default_buckets = {
+        "1h": "5m",
+        "24h": "1h",
+        "7d": "1d",
+        "30d": "1d",
+    }
+
+    period = request.args.get("period", "24h").lower()
+    if period not in periods:
+        return jsonify({"error": "period must be one of: 1h, 24h, 7d, 30d"}), 400
+
+    bucket = request.args.get("bucket", default_buckets[period]).lower()
+    if bucket not in buckets:
+        return jsonify({"error": "bucket must be one of: 5m, 15m, 1h, 1d"}), 400
+
+    period_seconds = periods[period]
+    bucket_seconds = buckets[bucket]
+    if bucket_seconds > period_seconds:
+        return jsonify({"error": "bucket cannot be larger than period"}), 400
+    if period_seconds // bucket_seconds > 720:
+        return jsonify({"error": "too many history buckets requested"}), 400
+
+    end_time = int(time.time())
+    start_time = end_time - period_seconds
+    first_bucket = (start_time // bucket_seconds) * bucket_seconds
+    bucket_count = ((end_time - first_bucket) // bucket_seconds) + 1
+
+    points = []
+    for index in range(bucket_count):
+        timestamp = first_bucket + (index * bucket_seconds)
+        points.append({
+            "timestamp": timestamp,
+            "completed_count": 0,
+            "total_volume_rtc": 0.0,
+            "wrap_volume_rtc": 0.0,
+            "unwrap_volume_rtc": 0.0,
+            "wrap_count": 0,
+            "unwrap_count": 0,
+        })
+
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT created_at, amount_rtc, target_chain
+            FROM bridge_locks
+            WHERE state = ? AND created_at >= ? AND created_at <= ?
+            ORDER BY created_at ASC
+            """,
+            (STATE_COMPLETE, start_time, end_time),
+        ).fetchall()
+
+    for row in rows:
+        index = int((row["created_at"] - first_bucket) // bucket_seconds)
+        if index < 0 or index >= len(points):
+            continue
+        amount = _amount_from_base(row["amount_rtc"])
+        point = points[index]
+        point["completed_count"] += 1
+        point["total_volume_rtc"] = round(point["total_volume_rtc"] + amount, 6)
+        if row["target_chain"] == "solana":
+            point["wrap_count"] += 1
+            point["wrap_volume_rtc"] = round(point["wrap_volume_rtc"] + amount, 6)
+        elif row["target_chain"] == "base":
+            point["unwrap_count"] += 1
+            point["unwrap_volume_rtc"] = round(point["unwrap_volume_rtc"] + amount, 6)
+
+    return jsonify({
+        "period": period,
+        "bucket": bucket,
+        "start_time": start_time,
+        "end_time": end_time,
+        "points": points,
     })
 
 
