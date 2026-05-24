@@ -112,6 +112,41 @@ def test_signed_transfer_rejects_duplicate_nonce(signed_transfer_client):
     assert pending_count == 1
 
 
+def test_signed_transfer_rejects_out_of_order_nonce(signed_transfer_client):
+    client, db_path = signed_transfer_client
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?)",
+            ("RTC" + "a" * 40, 10_000_000),
+        )
+        conn.commit()
+
+    first = client.post(
+        "/wallet/transfer/signed",
+        json=_payload(nonce=1733420000002),
+    )
+    assert first.status_code == 200
+
+    stale = client.post(
+        "/wallet/transfer/signed",
+        json=_payload(nonce=1733420000001),
+    )
+    assert stale.status_code == 400
+    body = stale.get_json()
+    assert body["code"] == "OUT_OF_ORDER_NONCE"
+    assert body["latest_nonce"] == 1733420000002
+
+    with sqlite3.connect(db_path) as conn:
+        nonces = conn.execute(
+            "SELECT nonce FROM transfer_nonces ORDER BY nonce"
+        ).fetchall()
+        pending_count = conn.execute("SELECT COUNT(*) FROM pending_ledger").fetchone()[0]
+
+    assert nonces == [("1733420000002",)]
+    assert pending_count == 1
+
+
 def test_insufficient_balance_does_not_burn_nonce(signed_transfer_client):
     client, db_path = signed_transfer_client
     payload = _payload(amount_rtc=5.0, nonce=1733420009999)
