@@ -491,6 +491,18 @@ REWARD_ANALYTICS_HTML = """
         }
         .panel h3 { margin: 0 0 8px 0; font-size: 16px; }
         .hint { font-size: 12px; opacity: 0.8; margin-top: 8px; }
+        .transition-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        .transition-table th,
+        .transition-table td {
+            border-bottom: 1px solid rgba(255,255,255,0.12);
+            padding: 8px 6px;
+            text-align: left;
+        }
+        .transition-table th { opacity: 0.75; font-weight: 600; }
         a { color: #9ad1ff; }
         @media (max-width: 900px) {
             .grid { grid-template-columns: 1fr; }
@@ -507,6 +519,8 @@ REWARD_ANALYTICS_HTML = """
             <div class="card"><div class="k">Epoch Pot (RTC)</div><div class="v" id="m-pot">-</div></div>
             <div class="card"><div class="k">Tracked Epochs</div><div class="v" id="m-epochs">-</div></div>
             <div class="card"><div class="k">Tracked Miners</div><div class="v" id="m-miners">-</div></div>
+            <div class="card"><div class="k">Epoch Transitions</div><div class="v" id="m-transitions">-</div></div>
+            <div class="card"><div class="k">Avg Transition</div><div class="v" id="m-transition-avg">-</div></div>
         </div>
         <div class="hint"><a href="/">Back to mining dashboard</a></div>
     </div>
@@ -529,6 +543,21 @@ REWARD_ANALYTICS_HTML = """
             <canvas id="multiplierChart"></canvas>
             <div class="hint">Compares equal-share baseline vs weight-adjusted share from current enrollment.</div>
         </div>
+        <div class="panel">
+            <h3>Epoch Transition History</h3>
+            <table class="transition-table">
+                <thead>
+                    <tr>
+                        <th>From</th>
+                        <th>To</th>
+                        <th>Transition Time</th>
+                        <th>Interval</th>
+                    </tr>
+                </thead>
+                <tbody id="transition-tbody"></tbody>
+            </table>
+            <div class="hint">Uses the local epoch start history to show observed transitions and timing gaps.</div>
+        </div>
     </div>
 </div>
 
@@ -547,6 +576,21 @@ function shortMiner(id) {
     return id.length > 14 ? id.slice(0, 12) + '..' : id;
 }
 
+function formatSeconds(seconds) {
+    if (!seconds && seconds !== 0) return '-';
+    const value = Number(seconds);
+    if (!Number.isFinite(value)) return '-';
+    if (value < 60) return `${Math.round(value)}s`;
+    if (value < 3600) return `${Math.round(value / 60)}m`;
+    return `${(value / 3600).toFixed(1)}h`;
+}
+
+function formatTimestamp(ts) {
+    if (!ts) return '-';
+    const date = new Date(Number(ts) * 1000);
+    return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString();
+}
+
 async function refresh() {
     const res = await fetch('/api/reward-analytics');
     const data = await res.json();
@@ -556,6 +600,8 @@ async function refresh() {
     document.getElementById('m-pot').textContent = (data.epoch_pot_rtc ?? 0).toFixed(3);
     document.getElementById('m-epochs').textContent = (data.epoch_distribution || []).length;
     document.getElementById('m-miners').textContent = (data.miner_series || []).length;
+    document.getElementById('m-transitions').textContent = data.epoch_transition_metrics?.transition_count ?? 0;
+    document.getElementById('m-transition-avg').textContent = formatSeconds(data.epoch_transition_metrics?.average_interval_seconds);
 
     const epochLabels = (data.epoch_distribution || []).map(x => `E${x.epoch}`);
     const epochVals = (data.epoch_distribution || []).map(x => x.reward_rtc);
@@ -583,6 +629,17 @@ async function refresh() {
     multiplierChart.data.datasets[0].data = (data.multiplier_impact || []).map(x => x.base_share_rtc);
     multiplierChart.data.datasets[1].data = (data.multiplier_impact || []).map(x => x.weighted_share_rtc);
     multiplierChart.update();
+
+    const transitionRows = data.epoch_transition_history || [];
+    const transitionBody = document.getElementById('transition-tbody');
+    transitionBody.innerHTML = transitionRows.map(row => `
+        <tr>
+            <td>E${row.from_epoch}</td>
+            <td>E${row.to_epoch}</td>
+            <td>${formatTimestamp(row.transition_at)}</td>
+            <td>${formatSeconds(row.interval_seconds)}</td>
+        </tr>
+    `).join('') || '<tr><td colspan="4">No epoch transition history available</td></tr>';
 }
 
 refresh();
@@ -833,6 +890,61 @@ def reward_analytics_dashboard():
     return render_template_string(REWARD_ANALYTICS_HTML)
 
 
+def build_epoch_transition_analytics(conn, limit=20):
+    """Build observed epoch transition history from local epoch start rows."""
+    try:
+        rows = conn.execute(
+            """
+            SELECT epoch, start_time
+            FROM epochs
+            WHERE start_time IS NOT NULL
+            ORDER BY epoch DESC
+            LIMIT ?
+            """,
+            (limit + 1,),
+        ).fetchall()
+    except Exception:
+        return [], {
+            "transition_count": 0,
+            "average_interval_seconds": None,
+            "last_transition_at": None,
+            "last_from_epoch": None,
+            "last_to_epoch": None,
+        }
+
+    ordered = list(reversed(rows))
+    transitions = []
+    intervals = []
+
+    for previous, current in zip(ordered, ordered[1:]):  # noqa: B905 - Python 3.9 runtime
+        from_epoch = int(previous["epoch"])
+        to_epoch = int(current["epoch"])
+        previous_start = int(previous["start_time"])
+        current_start = int(current["start_time"])
+        interval = max(0, current_start - previous_start)
+        intervals.append(interval)
+        transitions.append(
+            {
+                "from_epoch": from_epoch,
+                "to_epoch": to_epoch,
+                "transition_at": current_start,
+                "interval_seconds": interval,
+            }
+        )
+
+    transitions = transitions[-limit:]
+    last_transition = transitions[-1] if transitions else {}
+    average_interval = round(sum(intervals) / len(intervals), 2) if intervals else None
+
+    return transitions, {
+        "transition_count": len(transitions),
+        "average_interval_seconds": average_interval,
+        "last_transition_at": last_transition.get("transition_at"),
+        "last_from_epoch": last_transition.get("from_epoch"),
+        "last_to_epoch": last_transition.get("to_epoch"),
+    }
+
+
 @app.route('/api/reward-analytics')
 def api_reward_analytics():
     """Reward analytics from epoch rewards + enrollment weight model."""
@@ -854,6 +966,7 @@ def api_reward_analytics():
             miner_series = []
             architecture_breakdown = []
             multiplier_impact = []
+            epoch_transition_history, epoch_transition_metrics = build_epoch_transition_analytics(conn)
 
             # 1) Reward distribution per epoch.
             try:
@@ -970,6 +1083,8 @@ def api_reward_analytics():
                 "miner_series": miner_series,
                 "architecture_breakdown": architecture_breakdown,
                 "multiplier_impact": multiplier_impact,
+                "epoch_transition_history": epoch_transition_history,
+                "epoch_transition_metrics": epoch_transition_metrics,
                 "generated_at": int(time.time()),
             }
         )
