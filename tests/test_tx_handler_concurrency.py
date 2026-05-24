@@ -134,3 +134,71 @@ def test_pending_wallet_nonce_unique_index_blocks_direct_duplicates(tmp_path):
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 ("tx-b", *row[1:]),
             )
+
+
+def test_schema_upgrade_rejects_legacy_duplicate_pending_nonces(tmp_path):
+    db_path = tmp_path / "tx.db"
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """CREATE TABLE balances (
+                   wallet TEXT PRIMARY KEY,
+                   balance_urtc INTEGER NOT NULL DEFAULT 0,
+                   wallet_nonce INTEGER DEFAULT 0
+               )"""
+        )
+        conn.execute(
+            """CREATE TABLE pending_transactions (
+                   tx_hash TEXT PRIMARY KEY,
+                   from_addr TEXT NOT NULL,
+                   to_addr TEXT NOT NULL,
+                   amount_urtc INTEGER NOT NULL,
+                   nonce INTEGER NOT NULL,
+                   timestamp INTEGER NOT NULL,
+                   memo TEXT DEFAULT '',
+                   signature TEXT NOT NULL,
+                   public_key TEXT NOT NULL,
+                   created_at INTEGER NOT NULL,
+                   status TEXT DEFAULT 'pending'
+               )"""
+        )
+        rows = [
+            ("tx-newer", "sender", "receiver", 100, 7, 20, "", "sig", "00", 200, "pending"),
+            ("tx-oldest", "sender", "receiver", 100, 7, 10, "", "sig", "00", 100, "pending"),
+            ("tx-other-nonce", "sender", "receiver", 100, 8, 30, "", "sig", "00", 300, "pending"),
+        ]
+        conn.executemany(
+            """INSERT INTO pending_transactions
+               (tx_hash, from_addr, to_addr, amount_urtc, nonce, timestamp,
+                memo, signature, public_key, created_at, status)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            rows,
+        )
+
+    tx_handler.TransactionPool(str(db_path))
+
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            """SELECT tx_hash, status
+               FROM pending_transactions
+               WHERE from_addr = 'sender' AND nonce = 7
+               ORDER BY tx_hash"""
+        ).fetchall()
+        assert rows == [("tx-newer", "rejected"), ("tx-oldest", "pending")]
+
+        pending_rows = conn.execute(
+            """SELECT tx_hash, nonce
+               FROM pending_transactions
+               WHERE status = 'pending'
+               ORDER BY nonce"""
+        ).fetchall()
+        assert pending_rows == [("tx-oldest", 7), ("tx-other-nonce", 8)]
+
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                """INSERT INTO pending_transactions
+                   (tx_hash, from_addr, to_addr, amount_urtc, nonce,
+                    timestamp, memo, signature, public_key, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                ("tx-after-upgrade", "sender", "receiver", 100, 7, 40, "", "sig", "00", 400),
+            )

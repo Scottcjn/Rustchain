@@ -163,6 +163,8 @@ class TransactionPool:
                 except sqlite3.OperationalError as e:
                     logger.warning(f"Balance CHECK constraint migration skipped: {e}")
 
+            self._dedupe_pending_nonce_conflicts(cursor)
+
             # Create other tables
             for statement in SCHEMA_UPGRADE_SQL.split(';'):
                 statement = statement.strip()
@@ -174,6 +176,47 @@ class TransactionPool:
                             logger.warning(f"Schema statement failed: {e}")
 
             conn.commit()
+
+    def _dedupe_pending_nonce_conflicts(self, cursor) -> None:
+        """Resolve legacy duplicate pending nonces before adding the unique index."""
+        cursor.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='pending_transactions'"
+        )
+        if cursor.fetchone() is None:
+            return
+
+        cursor.execute(
+            """SELECT from_addr, nonce, COUNT(*) as duplicate_count
+               FROM pending_transactions
+               WHERE status = 'pending'
+               GROUP BY from_addr, nonce
+               HAVING COUNT(*) > 1"""
+        )
+        duplicate_groups = cursor.fetchall()
+
+        for from_addr, nonce, duplicate_count in duplicate_groups:
+            cursor.execute(
+                """SELECT tx_hash
+                   FROM pending_transactions
+                   WHERE from_addr = ? AND nonce = ? AND status = 'pending'
+                   ORDER BY created_at ASC, timestamp ASC, tx_hash ASC""",
+                (from_addr, nonce)
+            )
+            tx_hashes = [row[0] for row in cursor.fetchall()]
+            keep_hash, reject_hashes = tx_hashes[0], tx_hashes[1:]
+            cursor.executemany(
+                """UPDATE pending_transactions
+                   SET status = 'rejected'
+                   WHERE tx_hash = ?""",
+                [(tx_hash,) for tx_hash in reject_hashes]
+            )
+            logger.warning(
+                "Rejected %s duplicate pending tx(s) for %s nonce %s; kept %s",
+                duplicate_count - 1,
+                from_addr,
+                nonce,
+                keep_hash,
+            )
 
     def _recover_interrupted_balances_migration(self, cursor) -> None:
         """Recover balances after a crash between SQLite table renames."""
