@@ -536,13 +536,35 @@ def beacon_atlas():
 
 @beacon_api.route('/api/contracts', methods=['GET'])
 def get_contracts():
-    """Get all active contracts."""
+    """Get all active contracts. Requires admin key or agent signature."""
     try:
-        db = get_db()
-        rows = db.execute(
-            "SELECT * FROM beacon_contracts ORDER BY created_at DESC"
-        ).fetchall()
-        
+        import hmac
+        # SECURITY: Contracts contain financial terms (amounts, parties, terms)
+        # Require authentication to prevent contract surveillance
+        admin_key = os.environ.get("RC_ADMIN_KEY", "")
+        if not admin_key:
+            return jsonify({'error': 'RC_ADMIN_KEY not configured — endpoint disabled'}), 503
+        provided_key = request.headers.get("X-Admin-Key", "")
+        admin_auth = hmac.compare_digest(provided_key, admin_key)
+
+        # Also allow agents to query their own contracts via signature
+        if not admin_auth:
+            _, auth_error = _authenticate_contract_agent(get_db(), [], request.get_data(cache=True) or b'')
+            if auth_error:
+                return jsonify({'error': 'Unauthorized — admin key or agent signature required'}), 401
+            # Agent-auth'd — only return contracts where agent is a party
+            agent_id = request.headers.get('X-Agent-Id', '')
+            db = get_db()
+            rows = db.execute(
+                "SELECT * FROM beacon_contracts WHERE from_agent = ? OR to_agent = ? ORDER BY created_at DESC",
+                (agent_id, agent_id)
+            ).fetchall()
+        else:
+            db = get_db()
+            rows = db.execute(
+                "SELECT * FROM beacon_contracts ORDER BY created_at DESC"
+            ).fetchall()
+
         contracts = []
         for row in rows:
             contracts.append({
