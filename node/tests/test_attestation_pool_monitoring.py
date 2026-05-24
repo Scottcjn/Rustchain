@@ -169,6 +169,20 @@ class TestAttestationPoolMonitoring(unittest.TestCase):
             ],
         )
 
+    def test_attestation_history_schema_has_timestamp_index(self):
+        self.mod.init_db()
+
+        with sqlite3.connect(self.mod.DB_PATH) as conn:
+            indexes = {
+                row[1]: [
+                    col[2]
+                    for col in conn.execute(f"PRAGMA index_info({row[1]})").fetchall()
+                ]
+                for row in conn.execute("PRAGMA index_list(miner_attest_history)").fetchall()
+            }
+
+        self.assertEqual(indexes["idx_attest_history_ts_only"], ["ts_ok"])
+
     def test_prometheus_metrics_include_attestation_pool_lines(self):
         now = 1_800_000_000
         with sqlite3.connect(self.mod.DB_PATH) as conn:
@@ -185,14 +199,14 @@ class TestAttestationPoolMonitoring(unittest.TestCase):
             )
             conn.execute(
                 "INSERT INTO miner_attest_recent VALUES (?, ?, ?, ?, ?)",
-                ("alice", now - 10, 'riscv"dev', 0.5, 1),
+                ("alice", now - 10, 'riscv"dev\\gpu\nrack', 0.5, 1),
             )
 
         text = self.mod._attestation_pool_prometheus_text(now_ts=now)
 
         self.assertIn("rustchain_attestation_pool_active_miners 1", text)
         self.assertIn("rustchain_attestation_pool_stale_miners 0", text)
-        self.assertIn('device_arch="riscv\\"dev"', text)
+        self.assertIn('device_arch="riscv\\"dev\\\\gpu\\nrack"', text)
         self.assertIn("rustchain_attestation_pool_scrape_ok 1", text)
 
 

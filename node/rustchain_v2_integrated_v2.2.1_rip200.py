@@ -1377,6 +1377,7 @@ def init_db():
         )""")
         c.execute("CREATE INDEX IF NOT EXISTS idx_attest_history_miner ON miner_attest_history(miner)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_attest_history_ts ON miner_attest_history(miner, ts_ok)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_attest_history_ts_only ON miner_attest_history(ts_ok)")
 
         # Issue #2276: Hardware fingerprint replay defense tables
         if HAVE_REPLAY_DEFENSE:
