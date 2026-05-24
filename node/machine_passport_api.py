@@ -101,11 +101,15 @@ def _parse_non_negative_int_arg(name: str, default: int, max_value: Optional[int
 @machine_passport_bp.route('/<machine_id>', methods=['GET'])
 def get_passport(machine_id: str):
     """
-    Get a machine passport by ID.
-    
+    Get a machine passport by ID. Requires admin key.
+
     Returns complete passport data including repair log,
     attestation history, benchmark signatures, and lineage notes.
     """
+    auth_error = require_admin()
+    if auth_error is not None:
+        return auth_error
+
     ledger = get_ledger()
     data = ledger.export_passport_full(machine_id)
     
@@ -125,16 +129,20 @@ def get_passport(machine_id: str):
 @machine_passport_bp.route('', methods=['GET'])
 def list_passports():
     """
-    List machine passports with optional filtering.
-    
+    List machine passports with optional filtering. Requires admin key.
+
     Query Parameters:
     - owner: Filter by owner miner ID
     - architecture: Filter by CPU architecture
     - limit: Maximum results (default: 100, max: 500)
     - offset: Pagination offset (default: 0)
     """
+    auth_error = require_admin()
+    if auth_error is not None:
+        return auth_error
+
     ledger = get_ledger()
-    
+
     owner = request.args.get('owner')
     architecture = request.args.get('architecture')
     limit, error_response, status = _parse_non_negative_int_arg('limit', 100, max_value=500)
@@ -163,13 +171,17 @@ def list_passports():
 
 @machine_passport_bp.route('/<machine_id>/repair-log', methods=['GET'])
 def get_repair_log(machine_id: str):
-    """Get repair log for a machine."""
+    """Get repair log for a machine. Requires admin key."""
+    auth_error = require_admin()
+    if auth_error is not None:
+        return auth_error
+
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
-    
+
     if not passport:
         return jsonify({'ok': False, 'error': 'passport_not_found'}), 404
-    
+
     return jsonify({
         'ok': True,
         'machine_id': machine_id,
@@ -179,13 +191,17 @@ def get_repair_log(machine_id: str):
 
 @machine_passport_bp.route('/<machine_id>/attestations', methods=['GET'])
 def get_attestations(machine_id: str):
-    """Get attestation history for a machine."""
+    """Get attestation history for a machine. Requires admin key."""
+    auth_error = require_admin()
+    if auth_error is not None:
+        return auth_error
+
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
-    
+
     if not passport:
         return jsonify({'ok': False, 'error': 'passport_not_found'}), 404
-    
+
     return jsonify({
         'ok': True,
         'machine_id': machine_id,
@@ -195,13 +211,17 @@ def get_attestations(machine_id: str):
 
 @machine_passport_bp.route('/<machine_id>/benchmarks', methods=['GET'])
 def get_benchmarks(machine_id: str):
-    """Get benchmark signatures for a machine."""
+    """Get benchmark signatures for a machine. Requires admin key."""
+    auth_error = require_admin()
+    if auth_error is not None:
+        return auth_error
+
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
-    
+
     if not passport:
         return jsonify({'ok': False, 'error': 'passport_not_found'}), 404
-    
+
     return jsonify({
         'ok': True,
         'machine_id': machine_id,
@@ -211,10 +231,14 @@ def get_benchmarks(machine_id: str):
 
 @machine_passport_bp.route('/<machine_id>/lineage', methods=['GET'])
 def get_lineage(machine_id: str):
-    """Get lineage notes for a machine."""
+    """Get lineage notes for a machine. Requires admin key."""
+    auth_error = require_admin()
+    if auth_error is not None:
+        return auth_error
+
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
-    
+
     if not passport:
         return jsonify({'ok': False, 'error': 'passport_not_found'}), 404
     
@@ -576,13 +600,17 @@ def add_lineage_note(machine_id: str):
 @machine_passport_bp.route('/<machine_id>/qr', methods=['GET'])
 def generate_qr(machine_id: str):
     """
-    Generate a QR code for the machine passport.
-    
+    Generate a QR code for the machine passport. Requires admin key.
+
     Returns PNG image or error if library not available.
     """
+    auth_error = require_admin()
+    if auth_error is not None:
+        return auth_error
+
     import tempfile
     import base64
-    
+
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
     
@@ -624,12 +652,16 @@ def generate_qr(machine_id: str):
 @machine_passport_bp.route('/<machine_id>/pdf', methods=['GET'])
 def generate_pdf(machine_id: str):
     """
-    Generate a printable PDF passport.
-    
+    Generate a printable PDF passport. Requires admin key.
+
     Returns PDF file or error if library not available.
     """
+    auth_error = require_admin()
+    if auth_error is not None:
+        return auth_error
+
     import tempfile
-    
+
     ledger = get_ledger()
     data = ledger.export_passport_full(machine_id)
     
