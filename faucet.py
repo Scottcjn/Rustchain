@@ -21,6 +21,7 @@ app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 DATABASE = 'faucet.db'
 RTC_WALLET_RE = re.compile(r'^RTC[0-9a-fA-F]{40}$')
+ETH_WALLET_RE = re.compile(r'^0x[0-9a-fA-F]{40}$')
 
 # Rate limiting settings (per 24 hours)
 MAX_DRIP_AMOUNT = 0.5  # RTC
@@ -176,9 +177,9 @@ def try_record_drip(wallet, ip_address, amount):
 
 def is_valid_wallet_address(wallet):
     """Accept legacy Ethereum-style wallets and native RTC wallets."""
-    return (wallet.startswith('0x') and len(wallet) >= 10) or bool(
-        RTC_WALLET_RE.fullmatch(wallet)
-    )
+    if not isinstance(wallet, str):
+        return False
+    return bool(ETH_WALLET_RE.fullmatch(wallet) or RTC_WALLET_RE.fullmatch(wallet))
 
 
 # HTML Template
