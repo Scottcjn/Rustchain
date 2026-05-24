@@ -25,6 +25,50 @@ def client_for(module, db_path):
     return app.test_client()
 
 
+def test_induct_rejects_non_object_json(tmp_path):
+    hall = load_explorer_hall()
+    client = client_for(hall, tmp_path / "hall.db")
+
+    response = client.post("/hall/induct", json=["not", "an", "object"])
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "JSON object required"}
+
+
+def test_eulogy_rejects_non_object_json_without_mutating(tmp_path):
+    hall = load_explorer_hall()
+    db_path = tmp_path / "hall.db"
+    hall.init_hall_tables(str(db_path))
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        """
+        INSERT INTO hall_of_rust (
+            fingerprint_hash, miner_id, device_arch, device_model,
+            manufacture_year, first_attestation, last_attestation,
+            rust_score, nickname, eulogy, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        ("fp-1", "miner-1", "G4", "PowerMac3,6", 2003, 1, 1, 101, "Old", "Original", 1),
+    )
+    conn.commit()
+    conn.close()
+    client = client_for(hall, db_path)
+
+    response = client.post("/hall/eulogy/fp-1", json=["nickname"])
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "JSON object required"}
+
+    conn = sqlite3.connect(db_path)
+    row = conn.execute(
+        "SELECT nickname, eulogy, is_deceased FROM hall_of_rust WHERE fingerprint_hash = ?",
+        ("fp-1",),
+    ).fetchone()
+    conn.close()
+    assert row == ("Old", "Original", 0)
+
+
 def test_explorer_rust_score_uses_current_year_for_age_bonus(monkeypatch):
     hall = load_explorer_hall()
     monkeypatch.setattr(hall, "current_utc_year", lambda: 2026)
