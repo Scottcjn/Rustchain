@@ -2,7 +2,7 @@
 import sqlite3
 import time
 
-from node.state_pruning import prune_state
+from node.state_pruning import SPENT_UTXO_ARCHIVE_SCHEMA, prune_state
 
 
 def _seed_db(path):
@@ -98,6 +98,73 @@ def test_state_pruning_archives_only_old_spent_utxos_and_keeps_current_state(tmp
         assert boxes["recent-spent"] is not None
         archived = conn.execute("SELECT box_id FROM archive_utxo_boxes").fetchall()
         assert archived == [("old-spent",)]
+
+
+def test_state_pruning_refreshes_existing_archive_row_before_delete(tmp_path):
+    db_path = tmp_path / "rustchain.db"
+    _seed_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(SPENT_UTXO_ARCHIVE_SCHEMA)
+        conn.execute(
+            """
+            INSERT INTO archive_utxo_boxes (
+                box_id, value_nrtc, proposition, owner_address, creation_height,
+                transaction_id, output_index, tokens_json, registers_json, created_at,
+                spent_at, spent_by_tx
+            )
+            VALUES ('old-spent', 999, 'stale', 'stale-owner', 0, 'stale-tx', 99, '["stale"]', '{"stale": true}', 1, 2, 'stale-spend')
+            """
+        )
+
+    prune_state(str(db_path), retain_blocks=100, dry_run=False, archive=True)
+
+    with sqlite3.connect(db_path) as conn:
+        archived = conn.execute(
+            """
+            SELECT value_nrtc, proposition, owner_address, creation_height,
+                   transaction_id, output_index, tokens_json, registers_json,
+                   spent_by_tx
+            FROM archive_utxo_boxes
+            WHERE box_id = 'old-spent'
+            """
+        ).fetchone()
+        assert archived == (1, "00", "alice", 10, "tx-old", 0, "[]", "{}", "spend-old")
+        assert conn.execute("SELECT COUNT(*) FROM utxo_boxes WHERE box_id = 'old-spent'").fetchone()[0] == 0
+
+
+def test_state_pruning_enables_foreign_key_enforcement_on_prune_connection(tmp_path, monkeypatch):
+    db_path = tmp_path / "rustchain.db"
+    _seed_db(db_path)
+    real_connect = sqlite3.connect
+    pragma_calls = []
+
+    class TrackingConnection:
+        def __init__(self, inner):
+            self._inner = inner
+
+        def __enter__(self):
+            self._inner.__enter__()
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return self._inner.__exit__(exc_type, exc, tb)
+
+        def execute(self, sql, *args, **kwargs):
+            if str(sql).strip().upper() == "PRAGMA FOREIGN_KEYS=ON":
+                pragma_calls.append(sql)
+            return self._inner.execute(sql, *args, **kwargs)
+
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
+    def tracking_connect(*args, **kwargs):
+        return TrackingConnection(real_connect(*args, **kwargs))
+
+    monkeypatch.setattr("node.state_pruning.sqlite3.connect", tracking_connect)
+
+    prune_state(str(db_path), retain_blocks=100, dry_run=True)
+
+    assert pragma_calls == ["PRAGMA foreign_keys=ON"]
 
 
 def test_state_pruning_removes_expired_mempool_inputs_with_parent(tmp_path):

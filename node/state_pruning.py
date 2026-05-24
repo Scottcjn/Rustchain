@@ -105,7 +105,7 @@ def _archive_spent_utxos(conn: sqlite3.Connection, prune_before_height: int) -> 
     conn.execute(SPENT_UTXO_ARCHIVE_SCHEMA)
     conn.execute(
         """
-        INSERT OR IGNORE INTO archive_utxo_boxes (
+        INSERT INTO archive_utxo_boxes (
             box_id, value_nrtc, proposition, owner_address, creation_height,
             transaction_id, output_index, tokens_json, registers_json, created_at,
             spent_at, spent_by_tx
@@ -117,6 +117,19 @@ def _archive_spent_utxos(conn: sqlite3.Connection, prune_before_height: int) -> 
         FROM utxo_boxes
         WHERE spent_at IS NOT NULL
           AND creation_height < ?
+        ON CONFLICT(box_id) DO UPDATE SET
+            value_nrtc = excluded.value_nrtc,
+            proposition = excluded.proposition,
+            owner_address = excluded.owner_address,
+            creation_height = excluded.creation_height,
+            transaction_id = excluded.transaction_id,
+            output_index = excluded.output_index,
+            tokens_json = excluded.tokens_json,
+            registers_json = excluded.registers_json,
+            created_at = excluded.created_at,
+            spent_at = excluded.spent_at,
+            spent_by_tx = excluded.spent_by_tx,
+            archived_at = strftime('%s', 'now')
         """,
         (prune_before_height,),
     )
@@ -172,6 +185,7 @@ def prune_state(
         raise FileNotFoundError(db_path)
 
     with sqlite3.connect(path) as conn:
+        conn.execute("PRAGMA foreign_keys=ON")
         height = _current_height(conn)
         prune_before_height = max(0, height - retain_blocks)
         spent_utxo_rows = _count_spent_utxos(conn, prune_before_height)
