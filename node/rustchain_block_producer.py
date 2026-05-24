@@ -35,6 +35,11 @@ from rustchain_crypto import (
     blake2b256_hex,
     canonical_json
 )
+from randomness_beacon import (
+    GENESIS_RANDOMNESS,
+    build_randomness_record,
+    verify_randomness_record,
+)
 from rustchain_tx_handler import TransactionPool
 
 logging.basicConfig(
@@ -440,9 +445,29 @@ class BlockProducer:
                         tx_count INTEGER NOT NULL,
                         attestation_count INTEGER NOT NULL,
                         body_json TEXT NOT NULL,
+                        randomness_beacon TEXT,
+                        randomness_proof_json TEXT,
                         created_at INTEGER NOT NULL
                     )
                 """)
+                _ensure_block_randomness_columns(conn)
+
+                prev_randomness = _latest_randomness(conn)
+                randomness_record = build_randomness_record(
+                    height=block.height,
+                    block_hash=block.hash,
+                    prev_hash=block.header.prev_hash,
+                    prev_randomness=prev_randomness,
+                    merkle_root=block.header.merkle_root,
+                    attestations_hash=block.header.attestations_hash,
+                    producer=block.header.producer,
+                    timestamp=block.header.timestamp,
+                )
+                randomness_proof_json = json.dumps(
+                    randomness_record["proof"],
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
 
                 # Insert block
                 cursor.execute("""
@@ -450,8 +475,8 @@ class BlockProducer:
                         height, block_hash, prev_hash, timestamp,
                         merkle_root, state_root, attestations_hash,
                         producer, producer_sig, tx_count, attestation_count,
-                        body_json, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        body_json, randomness_beacon, randomness_proof_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     block.height,
                     block.hash,
@@ -465,6 +490,8 @@ class BlockProducer:
                     len(block.body.transactions),
                     len(block.body.attestations),
                     json.dumps(block.body.to_dict()),
+                    randomness_record["randomness"],
+                    randomness_proof_json,
                     int(time.time())
                 ))
 
@@ -649,6 +676,11 @@ def _row_to_block(row: sqlite3.Row) -> Dict:
             block["body"] = json.loads(block["body_json"])
         except (TypeError, ValueError):
             pass
+    if block.get("randomness_proof_json"):
+        try:
+            block["randomness_proof"] = json.loads(block["randomness_proof_json"])
+        except (TypeError, ValueError):
+            pass
     return block
 
 
@@ -669,6 +701,30 @@ def _blocks_table_missing(exc: sqlite3.Error) -> bool:
         isinstance(exc, sqlite3.OperationalError)
         and "no such table: blocks" in str(exc).lower()
     )
+
+
+def _sqlite_table_columns(conn: sqlite3.Connection, table: str) -> set:
+    return {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+
+
+def _ensure_block_randomness_columns(conn: sqlite3.Connection):
+    columns = _sqlite_table_columns(conn, "blocks")
+    if "randomness_beacon" not in columns:
+        conn.execute("ALTER TABLE blocks ADD COLUMN randomness_beacon TEXT")
+    if "randomness_proof_json" not in columns:
+        conn.execute("ALTER TABLE blocks ADD COLUMN randomness_proof_json TEXT")
+
+
+def _latest_randomness(conn: sqlite3.Connection) -> str:
+    try:
+        row = conn.execute(
+            "SELECT randomness_beacon FROM blocks "
+            "WHERE randomness_beacon IS NOT NULL "
+            "ORDER BY height DESC LIMIT 1"
+        ).fetchone()
+    except sqlite3.Error:
+        return GENESIS_RANDOMNESS
+    return row[0] if row and row[0] else GENESIS_RANDOMNESS
 
 
 def create_block_api_routes(app, producer: BlockProducer, validator: BlockValidator):
@@ -708,6 +764,60 @@ def create_block_api_routes(app, producer: BlockProducer, validator: BlockValida
             if row:
                 return jsonify(dict(row))
             return jsonify({"error": "Block not found"}), 404
+
+    def _randomness_response(row):
+        proof = json.loads(row["randomness_proof_json"])
+        randomness = row["randomness_beacon"]
+        return {
+            "ok": True,
+            "height": row["height"],
+            "block_hash": row["block_hash"],
+            "randomness": randomness,
+            "proof": proof,
+            "verified": verify_randomness_record(randomness, proof),
+        }
+
+    @app.route('/block/randomness/latest', methods=['GET'])
+    @app.route('/api/randomness/latest', methods=['GET'])
+    def get_latest_randomness():
+        """Return the latest stored on-chain randomness beacon."""
+        with sqlite3.connect(producer.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            try:
+                row = conn.execute(
+                    "SELECT height, block_hash, randomness_beacon, randomness_proof_json "
+                    "FROM blocks WHERE randomness_beacon IS NOT NULL "
+                    "ORDER BY height DESC LIMIT 1"
+                ).fetchone()
+            except sqlite3.Error as exc:
+                if _blocks_table_missing(exc):
+                    return jsonify({"ok": False, "error": "No blocks found"}), 404
+                logger.exception("Randomness lookup failed")
+                return jsonify({"ok": False, "error": "Block database unavailable"}), 500
+        if not row:
+            return jsonify({"ok": False, "error": "No blocks found"}), 404
+        return jsonify(_randomness_response(row))
+
+    @app.route('/block/randomness/<int:height>', methods=['GET'])
+    @app.route('/api/randomness/<int:height>', methods=['GET'])
+    def get_randomness_by_height(height: int):
+        """Return the stored on-chain randomness beacon for a block height."""
+        with sqlite3.connect(producer.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            try:
+                row = conn.execute(
+                    "SELECT height, block_hash, randomness_beacon, randomness_proof_json "
+                    "FROM blocks WHERE height = ? AND randomness_beacon IS NOT NULL",
+                    (height,),
+                ).fetchone()
+            except sqlite3.Error as exc:
+                if _blocks_table_missing(exc):
+                    return jsonify({"ok": False, "error": "Block not found"}), 404
+                logger.exception("Randomness lookup failed")
+                return jsonify({"ok": False, "error": "Block database unavailable"}), 500
+        if not row:
+            return jsonify({"ok": False, "error": "Block not found"}), 404
+        return jsonify(_randomness_response(row))
 
     @app.route('/v1/blocks/batch', methods=['POST'])
     @app.route('/api/blocks/batch', methods=['POST'])
