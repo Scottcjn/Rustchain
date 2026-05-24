@@ -12,15 +12,16 @@ Phase 1 & 2 Implementation:
 Implements secure block production for Proof of Antiquity consensus.
 """
 
-import sqlite3
-import time
-import threading
-import logging
 import json
+import logging
 import os
+import sqlite3
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
-from dataclasses import dataclass, field
 
 try:
     import redis
@@ -29,11 +30,11 @@ except ImportError:  # pragma: no cover - Redis is optional for local nodes/test
 
 from rustchain_crypto import (
     CanonicalBlockHeader,
+    Ed25519Signer,
     MerkleTree,
     SignedTransaction,
-    Ed25519Signer,
     blake2b256_hex,
-    canonical_json
+    canonical_json,
 )
 from rustchain_tx_handler import TransactionPool
 
@@ -54,6 +55,7 @@ MAX_TXS_PER_BLOCK = 1000
 ATTESTATION_TTL = 600  # 10 minutes
 MAX_BATCH_BLOCKS = 100
 BLOCK_BATCH_CACHE_TTL_SECONDS = 30
+MIN_PARALLEL_SIGNATURE_CHECKS = 16
 
 
 # =============================================================================
@@ -144,6 +146,10 @@ class Block:
         """Get block height"""
         return self.header.height
 
+    @staticmethod
+    def _verify_transaction_signature(tx: SignedTransaction) -> bool:
+        return tx.verify()
+
     def to_dict(self) -> Dict:
         """Convert to dictionary"""
         return {
@@ -178,9 +184,40 @@ class Block:
             return False, "Attestations hash mismatch"
 
         # Check all transaction signatures
-        for tx in self.body.transactions:
-            if not tx.verify():
-                return False, f"Invalid transaction signature: {tx.tx_hash}"
+        is_valid, invalid_hash = self._validate_transaction_signatures()
+        if not is_valid:
+            return False, f"Invalid transaction signature: {invalid_hash}"
+
+        return True, ""
+
+    def _validate_transaction_signatures(self) -> Tuple[bool, str]:
+        """
+        Verify transaction signatures, using parallel workers for larger blocks.
+
+        Signature checks are independent and can be safely evaluated out of
+        order. Results are consumed in transaction order so error reporting
+        stays deterministic.
+        """
+        transactions = self.body.transactions
+        tx_count = len(transactions)
+        if tx_count < MIN_PARALLEL_SIGNATURE_CHECKS:
+            for tx in transactions:
+                if not tx.verify():
+                    return False, tx.tx_hash
+            return True, ""
+
+        max_workers = min(tx_count, os.cpu_count() or 1)
+        if max_workers <= 1:
+            for tx in transactions:
+                if not tx.verify():
+                    return False, tx.tx_hash
+            return True, ""
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            results = executor.map(self._verify_transaction_signature, transactions)
+            for index, ok in enumerate(results):
+                if not ok:
+                    return False, transactions[index].tx_hash
 
         return True, ""
 
