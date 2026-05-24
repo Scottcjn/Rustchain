@@ -356,6 +356,7 @@ class GossipLayer:
         self.balance_crdt = PNCounter()
         self.epoch_crdt = GSet()
         self._epoch_votes: Dict[Tuple[int, str], Dict[str, str]] = {}
+        self._slashed_validators: Dict[str, Dict[str, Any]] = {}
 
         # Phase F (#2256): per-peer Ed25519 identity, dual-mode signing.
         # Only loaded/generated when needed by the current signing mode;
@@ -401,6 +402,15 @@ class GossipLayer:
                     )
                 """)
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_p2p_epoch_votes_epoch ON p2p_epoch_votes(epoch)")
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS p2p_slashed_validators (
+                        validator TEXT PRIMARY KEY,
+                        first_epoch INTEGER NOT NULL,
+                        reason TEXT NOT NULL,
+                        evidence TEXT NOT NULL,
+                        ts INTEGER NOT NULL
+                    )
+                """)
                 conn.commit()
 
                 # Load attestations
@@ -431,9 +441,22 @@ class GossipLayer:
                     key = (epoch, proposal_hash)
                     self._epoch_votes.setdefault(key, {})[voter] = vote
 
+                rows = conn.execute("""
+                    SELECT validator, first_epoch, reason, evidence, ts
+                    FROM p2p_slashed_validators
+                """).fetchall()
+                for validator, first_epoch, reason, evidence, ts in rows:
+                    self._slashed_validators[validator] = {
+                        "first_epoch": first_epoch,
+                        "reason": reason,
+                        "evidence": evidence,
+                        "ts": ts,
+                    }
+
                 logger.info(f"Loaded {len(self.attestation_crdt.data)} attestations, "
                            f"{len(self.epoch_crdt.items)} settled epochs, "
-                           f"{sum(len(votes) for votes in self._epoch_votes.values())} epoch votes")
+                           f"{sum(len(votes) for votes in self._epoch_votes.values())} epoch votes, "
+                           f"{len(self._slashed_validators)} slashed validators")
         except Exception as e:
             logger.error(f"Failed to load state from DB: {e}")
 
@@ -864,6 +887,45 @@ class GossipLayer:
         self.broadcast(vote)
         return {"status": "voted", "vote": "reject", "reason": reason}
 
+    def _find_conflicting_epoch_vote(
+        self,
+        epoch: int,
+        proposal_hash: str,
+        voter: str,
+    ) -> Optional[Tuple[str, str]]:
+        """Return an existing same-epoch vote for a different proposal."""
+        for (seen_epoch, seen_proposal), votes in self._epoch_votes.items():
+            if seen_epoch == epoch and seen_proposal != proposal_hash and voter in votes:
+                return seen_proposal, votes[voter]
+        return None
+
+    def _slash_validator(
+        self,
+        validator: str,
+        epoch: int,
+        reason: str,
+        evidence: Dict[str, Any],
+    ) -> None:
+        """Persist local slashing evidence and quarantine the validator."""
+        ts = int(time.time())
+        evidence_json = json.dumps(evidence, sort_keys=True)
+        self._slashed_validators.setdefault(validator, {
+            "first_epoch": epoch,
+            "reason": reason,
+            "evidence": evidence_json,
+            "ts": ts,
+        })
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO p2p_slashed_validators
+                (validator, first_epoch, reason, evidence, ts)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (validator, epoch, reason, evidence_json, ts),
+            )
+            conn.commit()
+
     def _handle_epoch_vote(self, msg: GossipMessage) -> Dict:
         """Handle epoch vote - collect votes and commit when quorum reached.
 
@@ -878,6 +940,9 @@ class GossipLayer:
           only the specific proposal_hash that reached quorum finalizes.
         - Idempotent per (epoch, proposal_hash, voter) — duplicate votes
           silently ignored.
+        - Same-epoch votes by one voter for different proposals are slashing
+          evidence. The validator is quarantined locally before the conflicting
+          vote can influence quorum.
         """
         payload = msg.payload
         epoch = payload.get("epoch")
@@ -899,6 +964,39 @@ class GossipLayer:
                 f"authenticated sender {voter}; rejecting vote"
             )
             return {"status": "error", "reason": "voter_identity_mismatch"}
+
+        if voter in self._slashed_validators:
+            return {
+                "status": "error",
+                "reason": "validator_slashed",
+                "voter": voter,
+            }
+
+        conflicting_vote = self._find_conflicting_epoch_vote(epoch, proposal_hash, voter)
+        if conflicting_vote is not None:
+            previous_proposal, previous_vote = conflicting_vote
+            evidence = {
+                "epoch": epoch,
+                "validator": voter,
+                "previous_proposal_hash": previous_proposal,
+                "previous_vote": previous_vote,
+                "conflicting_proposal_hash": proposal_hash,
+                "conflicting_vote": vote,
+            }
+            try:
+                self._slash_validator(voter, epoch, "epoch_vote_equivocation", evidence)
+            except Exception as e:
+                logger.error(f"Failed to persist slashing evidence for {voter}: {e}")
+                return {"status": "error", "reason": "slash_persist_failed"}
+            logger.warning(
+                f"Epoch {epoch}: slashed {voter} for voting on conflicting "
+                f"proposals {previous_proposal[:12]} and {proposal_hash[:12]}"
+            )
+            return {
+                "status": "slashed",
+                "reason": "epoch_vote_equivocation",
+                "voter": voter,
+            }
 
         # Phase C: index by (epoch, proposal_hash) — not just epoch.
         key = (epoch, proposal_hash)

@@ -180,6 +180,70 @@ def test_epoch_votes_survive_restart_and_reject_retransmit():
     assert restarted._epoch_votes[key] == {"node2": "accept"}
 
 
+def test_same_epoch_conflicting_vote_slashes_validator():
+    """A voter cannot vote on two different proposals for the same epoch."""
+    peers = {"node2": "http://n2", "node3": "http://n3", "node4": "http://n4"}
+    target = _mk_layer("node1", peers)
+    voter = _mk_layer("node2", db_path=target.db_path)
+    voter.broadcast = lambda *args, **kwargs: None
+
+    first = voter.create_message(
+        mod.MessageType.EPOCH_VOTE,
+        {"epoch": 13, "proposal_hash": "proposal-a", "vote": "accept"},
+    )
+    conflict = voter.create_message(
+        mod.MessageType.EPOCH_VOTE,
+        {"epoch": 13, "proposal_hash": "proposal-b", "vote": "accept"},
+    )
+
+    assert target.handle_message(first)["status"] == "ok"
+    result = target.handle_message(conflict)
+
+    assert result["status"] == "slashed"
+    assert result["reason"] == "epoch_vote_equivocation"
+    assert target._epoch_votes[(13, "proposal-a")] == {"node2": "accept"}
+    assert (13, "proposal-b") not in target._epoch_votes
+    assert target._slashed_validators["node2"]["reason"] == "epoch_vote_equivocation"
+
+    with sqlite3.connect(target.db_path) as conn:
+        row = conn.execute(
+            "SELECT first_epoch, reason, evidence "
+            "FROM p2p_slashed_validators WHERE validator = ?",
+            ("node2",),
+        ).fetchone()
+    assert row[0] == 13
+    assert row[1] == "epoch_vote_equivocation"
+    assert '"previous_proposal_hash": "proposal-a"' in row[2]
+    assert '"conflicting_proposal_hash": "proposal-b"' in row[2]
+
+
+def test_slashed_validator_stays_quarantined_after_restart():
+    """Persisted slashing evidence blocks future epoch votes after restart."""
+    peers = {"node2": "http://n2", "node3": "http://n3", "node4": "http://n4"}
+    target = _mk_layer("node1", peers)
+    voter = _mk_layer("node2", db_path=target.db_path)
+    voter.broadcast = lambda *args, **kwargs: None
+
+    assert target.handle_message(voter.create_message(
+        mod.MessageType.EPOCH_VOTE,
+        {"epoch": 14, "proposal_hash": "proposal-a", "vote": "accept"},
+    ))["status"] == "ok"
+    assert target.handle_message(voter.create_message(
+        mod.MessageType.EPOCH_VOTE,
+        {"epoch": 14, "proposal_hash": "proposal-b", "vote": "reject"},
+    ))["status"] == "slashed"
+
+    restarted = _mk_layer("node1", peers, db_path=target.db_path)
+    future_vote = voter.create_message(
+        mod.MessageType.EPOCH_VOTE,
+        {"epoch": 15, "proposal_hash": "proposal-c", "vote": "accept"},
+    )
+    result = restarted.handle_message(future_vote)
+
+    assert restarted._slashed_validators["node2"]["reason"] == "epoch_vote_equivocation"
+    assert result["status"] == "error"
+    assert result["reason"] == "validator_slashed"
+
 # Phase E regression
 def test_phase_e_future_timestamp_attestation_rejected():
     """Phase E: attestations with ts_ok far in the future are rejected."""
