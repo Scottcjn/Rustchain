@@ -223,20 +223,21 @@ def validate_bridge_request(data: Optional[Dict]) -> ValidationResult:
 
 
 def validate_chain_address_format(chain: str, address: str) -> Tuple[bool, str]:
-    """Validate address format for specific chain."""
-    if not address:
-        return False, "Address is required"
-    
-    if chain == "rustchain":
-        if not address.startswith("RTC"):
-            return False, "RustChain addresses must start with 'RTC'"
-        if len(address) < 10:
-            return False, "RustChain address too short"
-    
-    elif chain == "solana":
-        # Solana addresses are base58, 32-44 chars
-        if len(address) < 32 or len(address) > 44:
-            return False, "Invalid Solana address length"
+ """Validate address format for specific chain."""
+ if not address:
+ return False, "Address is required"
+ 
+ if chain == "rustchain":
+ if not re.match(r"^RTC[0-9a-fA-F]{40}$", address):
+ return False, "RustChain address must be RTC + 40 hex characters"
+ 
+ elif chain == "solana":
+ # Solana addresses are base58, 32-44 chars
+ BASE58_ALPHABET = set("123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz")
+ if len(address) < 32 or len(address) > 44:
+ return False, "Invalid Solana address length"
+ if not all(c in BASE58_ALPHABET for c in address):
+ return False, "Invalid Solana address: contains non-base58 characters"
     
     elif chain == "ergo":
         # Ergo addresses start with '9' or '3'
