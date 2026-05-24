@@ -42,18 +42,31 @@ def proxy(path):
         return jsonify({'error': 'Invalid API path'}), 400
 
     try:
+        # SECURITY: Forward auth and identity headers to preserve admin checks
+        # on the backend. Without these, requests through the proxy bypass
+        # admin authentication on all protected endpoints.
+        SAFE_HEADERS = (
+            'content-type', 'accept', 'authorization',
+            'x-admin-key', 'x-api-key', 'x-agent-id', 'x-agent-key',
+            'x-agent-signature', 'x-agent-pubkey', 'x-agent-timestamp',
+            'x-agent-nonce',
+        )
+        forward_headers = {
+            k: v for k, v in request.headers.items()
+            if k.lower() in SAFE_HEADERS
+        }
+
         if request.method == 'POST':
             # Forward POST requests with JSON data
-            headers = {'Content-Type': 'application/json'}
             response = requests.post(
                 url,
                 json=request.json,
-                headers=headers,
+                headers=forward_headers,
                 timeout=10
             )
         else:
-            # Forward GET requests
-            response = requests.get(url, timeout=10)
+            # Forward GET requests with auth headers
+            response = requests.get(url, headers=forward_headers, timeout=10)
 
         # Return the response from local server
         if response.status_code >= 500:
