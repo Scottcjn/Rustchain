@@ -12,33 +12,33 @@ Phase 1 & 2 Implementation:
 Implements secure block production for Proof of Antiquity consensus.
 """
 
-import sqlite3
-import time
-import threading
-import logging
 import json
+import logging
 import os
+import sqlite3
+import threading
+import time
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
-from dataclasses import dataclass, field
 
 try:
     import redis
 except ImportError:  # pragma: no cover - Redis is optional for local nodes/tests.
     redis = None
 
-from rustchain_crypto import (
-    CanonicalBlockHeader,
-    MerkleTree,
-    SignedTransaction,
-    Ed25519Signer,
-    blake2b256_hex,
-    canonical_json
-)
 from randomness_beacon import (
     GENESIS_RANDOMNESS,
     build_randomness_record,
     verify_randomness_record,
+)
+from rustchain_crypto import (
+    CanonicalBlockHeader,
+    Ed25519Signer,
+    MerkleTree,
+    SignedTransaction,
+    blake2b256_hex,
+    canonical_json,
 )
 from rustchain_tx_handler import TransactionPool
 
@@ -589,7 +589,7 @@ class BlockValidator:
                 )
                 result = cursor.fetchone()
                 if result and result[0] != block.header.prev_hash:
-                    return False, f"Invalid prev_hash"
+                    return False, "Invalid prev_hash"
 
         # 5. Validate producer signature (if we have pubkey)
         if producer_pubkey:
@@ -729,7 +729,7 @@ def _latest_randomness(conn: sqlite3.Connection) -> str:
 
 def create_block_api_routes(app, producer: BlockProducer, validator: BlockValidator):
     """Create Flask routes for block API"""
-    from flask import request, jsonify
+    from flask import jsonify, request
 
     @app.route('/block/latest', methods=['GET'])
     def get_latest_block():
@@ -978,8 +978,8 @@ def create_block_api_routes(app, producer: BlockProducer, validator: BlockValida
 # =============================================================================
 
 if __name__ == "__main__":
-    import tempfile
     import os
+    import tempfile
 
     print("=" * 70)
     print("RustChain Block Producer - Test Suite")
@@ -999,7 +999,7 @@ if __name__ == "__main__":
         addr, pub, priv = generate_wallet_keypair()
         signer = Ed25519Signer(bytes.fromhex(priv))
 
-        print(f"\n=== Test Wallet ===")
+        print("\n=== Test Wallet ===")
         print(f"Address: {addr}")
 
         # Seed balance
@@ -1031,14 +1031,14 @@ if __name__ == "__main__":
             wallet_address=addr
         )
 
-        print(f"\n=== Slot Info ===")
+        print("\n=== Slot Info ===")
         slot = producer.get_current_slot()
         print(f"Current slot: {slot}")
         print(f"Expected producer: {producer.get_round_robin_producer(slot)}")
         print(f"Is my turn: {producer.is_my_turn()}")
 
         # Create a test transaction
-        print(f"\n=== Creating Test Transaction ===")
+        print("\n=== Creating Test Transaction ===")
         addr2, _, _ = generate_wallet_keypair()
 
         tx = SignedTransaction(
@@ -1055,7 +1055,7 @@ if __name__ == "__main__":
         print(f"TX submitted: {success}, {result}")
 
         # Produce block
-        print(f"\n=== Producing Block ===")
+        print("\n=== Producing Block ===")
         block = producer.produce_block()
 
         if block:
@@ -1067,12 +1067,12 @@ if __name__ == "__main__":
             print(f"Attestation count: {len(block.body.attestations)}")
 
             # Save block
-            print(f"\n=== Saving Block ===")
+            print("\n=== Saving Block ===")
             saved = producer.save_block(block)
             print(f"Saved: {saved}")
 
             # Validate
-            print(f"\n=== Validating Block ===")
+            print("\n=== Validating Block ===")
             validator = BlockValidator(db_path)
             # Need to fake the expected producer since we only have one attester
             is_valid, error = block.validate_structure()
@@ -1080,7 +1080,7 @@ if __name__ == "__main__":
 
             # Check block in DB
             latest = producer.get_latest_block()
-            print(f"\n=== Latest Block in DB ===")
+            print("\n=== Latest Block in DB ===")
             print(f"Height: {latest['height']}")
             print(f"Hash: {latest['block_hash'][:32]}...")
 
