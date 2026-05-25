@@ -81,13 +81,18 @@ def _utf8_len(value: str) -> Optional[int]:
 
 def compute_box_id(value_nrtc: int, proposition: str, creation_height: int,
                    transaction_id: str, output_index: int) -> str:
-    """Deterministic box ID from contents. Returns hex string."""
+    """Deterministic box ID from contents. Returns hex string.
+
+    Uses big-endian (network byte order) for integer encodings to match
+    the endianness of hex-encoded strings (proposition, transaction_id),
+    ensuring cross-platform deterministic hashing.
+    """
     h = hashlib.sha256()
-    h.update(value_nrtc.to_bytes(8, 'little'))
+    h.update(value_nrtc.to_bytes(8, 'big'))
     h.update(bytes.fromhex(proposition))
-    h.update(creation_height.to_bytes(8, 'little'))
+    h.update(creation_height.to_bytes(8, 'big'))
     h.update(bytes.fromhex(transaction_id) if transaction_id else b'\x00' * 32)
-    h.update(output_index.to_bytes(2, 'little'))
+    h.update(output_index.to_bytes(2, 'big'))
     return h.hexdigest()
 
 
