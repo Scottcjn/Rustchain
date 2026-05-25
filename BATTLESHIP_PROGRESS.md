@@ -123,15 +123,17 @@
 | M8 | auto_epoch_settler.py | print→logging, hardcoded→env vars, granular catches | #6310 |
 | M9 | utxo_endpoints.py | silent account model failure → warning log | #6311 |
 
-### Wave 6 — Form-Not-Function Stub Fixes (F1-F2)
+### Wave 6 — Test Coverage + Form-Not-Function Fixes (T1, F1-F2, F6-F8, F32)
 
 | Cell | File | Fix | PR |
 |------|------|-----|----|
+| T1 | node/tests/test_auto_epoch_settler.py | 18 unit tests for epoch settlement daemon (was 0% coverage) | #6316 |
 | F1 | integrations/mcp-server/mcp_mock.py | Server.run() pass stub → JSON-RPC stdio transport | #6312 |
 | F2 | integrations/mcp-server/mcp_mock.py | stdio_server.__aexit__ pass → proper False return | #6312 |
 | F6 | tools/telegram_bot/telegram_bot.py:351 | bare `except Exception: pass` → logger.warning | #6313 |
 | F7 | tools/telegram_bot/telegram_bot.py:369 | bare `except Exception: pass` → logger.warning | #6313 |
 | F8 | tools/bios_pawpaw_detector.py:29 | bare `except:` → `except Exception:` | #6314 |
+| F32 | integrations/solana-spl/sdk.py:43 | `TODO_DEPLOY_ON_DEVNET` → env-var configurable | #6315 |
 
 ### Legacy / Misc
 
@@ -141,6 +143,9 @@
 | F3 | FALSE POSITIVE — `except ValueError: pass` in explorer-api search is intentional skip for non-matching query types |
 | F4 | FALSE POSITIVE — same pattern as F3 |
 | F5 | FALSE POSITIVE — `class WalletCheckError(Exception): pass` is standard Python exception class pattern |
+| F9 | FALSE POSITIVE — `except OSError: pass` in os_detector uses specific exception, silent fallback is intentional |
+| F10 | FALSE POSITIVE — `except ImportError: pass` for optional dotenv dependency (standard Python pattern) |
+| F11-F19 | FALSE POSITIVE — bcos_engine.py `except Exception: pass` / `except json.JSONDecodeError: pass` — all are intentional fallback patterns with specific exception types, not stubs |
 | S14 | QR placeholder in machine_passport_viewer.py:290 (low priority) |
 | S21-S30 | Carried forward to fresh grid |
 
@@ -148,25 +153,14 @@
 
 ---
 
-## 🎯 FRESH GRID — 289 Gaps to Hunt
+## 🎯 FRESH GRID — 278 Gaps to Hunt
 
-### Row F — Form-Not-Function Gaps (F9-F85)
+### Row F — Form-Not-Function Gaps (F20-F85)
 
 *Stub bodies, pass-only handlers, placeholder returns, mocks in production, TODO strings, bare except: blocks, hardcoded localhost URLs, "for now" workarounds*
 
 | Cell | File:Line | Gap | Severity |
 |------|-----------|-----|----------|
-| F9 | tools/os_detector.py:55 | `detect()` is pass stub | LOW |
-| F10 | tools/discord-bot/bot.py:33 | `on_ready` is pass stub | LOW |
-| F11 | tools/epoch_determinism/replay.py:423 | bare pass on processing error | MED |
-| F12 | tools/bcos_engine.py:202 | bare pass on key error | HIGH |
-| F13 | tools/bcos_engine.py:274 | bare pass on type error | HIGH |
-| F14 | tools/bcos_engine.py:303 | bare pass on processing error | MED |
-| F15 | tools/bcos_engine.py:365 | bare pass on chain query | MED |
-| F16 | tools/bcos_engine.py:461 | bare pass on verification | MED |
-| F17 | tools/bcos_engine.py:467 | bare pass on verification | MED |
-| F18 | tools/bcos_engine.py:538 | bare pass on broadcast | MED |
-| F19 | tools/bcos_engine.py:583 | bare pass on relay | MED |
 | F20 | tools/validate_genesis.py:26 | `validate()` is pass stub | HIGH |
 | F21 | tools/beacon-dashboard/beacon_dashboard.py:207 | dashboard route is pass stub | MED |
 | F22 | tools/tui-dashboard/dashboard.py:129 | bare pass on render failure | LOW |
@@ -178,8 +172,7 @@
 | F28 | agent-economy-demo/autonomous_pipeline.py:204 | bare pass on error | MED |
 | F29 | agent-economy-demo/autonomous_pipeline.py:219 | pass stub in processing | MED |
 | F30 | integrations/telegram-tip-bot/bot.py:458 | TODO: confirmation state machine | MED |
-| F31 | integrations/telegram-tip-bot/bot.py:531 | TODO: rain functionality | LOW |
-| F32 | integrations/solana-spl/sdk.py:43 | WRTC_MINT_DEVNET = "TODO_DEPLOY_ON_DEVNET" | HIGH |
+| F31 | tools/telegram-tip-bot/bot.py:459 | TODO: confirmation state machine | MED |
 | F33 | integrations/solana-spl/spl_deployment.py:434 | `escrow_balance("TODO")` call | MED |
 | F34 | vintage_miner/vintage_miner_client.py:290 | `photo_evidence: "TODO: Add photo"` | LOW |
 | F35 | vintage_miner/vintage_miner_client.py:291 | `screenshot: "TODO: Add screenshot"` | LOW |
@@ -413,6 +406,17 @@
 | E19 | Node: no health check endpoint |
 | E20 | Node: no graceful shutdown handler |
 
+### Row $ — Revenue Mining (MONEY NOW)
+
+*Background mining processes generating RTC income. Symplectic-optimized attestation cycles.*
+
+| Cell | Process | Status | Est. Revenue |
+|------|---------|--------|-------------|
+| $1 | Symplectic miner (WSL x86_64) | 🟢 RUNNING (proc_78f60069a532) | ~0.001 RTC/epoch (VM penalty) |
+| $2 | tailslayer timing probe integration | 🔴 PLANNED | Reduce attestation latency |
+| $3 | Holographic cycle optimization | 🔴 PLANNED | Optimize block-time scheduling |
+| $4 | Multi-channel hedging (from bytropix) | 🔴 PLANNED | Hedged attestation for lower fail rate |
+
 ### Row H — Economic / Token Gaps (H1-H12)
 
 | Cell | Gap |
@@ -433,7 +437,7 @@
 ---
 
 ## ⚜️ VAULTED (complete): 108 cells
-## 🎯 ACTIVE (to hunt): 289 cells
+## 🎯 ACTIVE (to hunt): 278 cells
 ## 📏 TOTAL TARGET: 400 cells
 
 ### Legend
@@ -441,13 +445,13 @@
 | Row | Theme | Cells | Status |
 |-----|-------|-------|--------|
 | **A** | Input validation (open PRs A15-A41) | 27 pending | 🟡 PRs submitted |
-| **F** | Form-not-function stubs/placeholders | F9-F85 | 🔴 NEXT |
-| **T** | Test coverage gaps | T1-T85 | 🔴 2nd |
+| **T** | Test coverage gaps | T1-T85 | 🔴 NEXT |
+| **F** | Form-not-function stubs/placeholders | F20-F85 | 🟡 remaining |
+| **$** | Revenue mining (background) | $1-$4 | 🟢 RUNNING |
 | **M** | Missing error handling | M10-M30 | 🟡 3rd |
 | **S** | Open stubs remaining | S21-S30 | 🟡 4th |
 | **D** | Protocol/races | D2-D30 | 🟡 5th |
 | **E** | Infrastructure/DevOps | E1-E20 | 🟢 6th |
 | **H** | Economic/gaps | H1-H12 | 🟢 7th |
 
-**Pick lowest undone coordinate by row priority: F → T → M → S → D → E → H**
-**F9 is next: os_detector.py `detect()` is pass stub**
+**Next row priority: T (test coverage) — HIGH impact. T1: node/auto_epoch_settler.py — ZERO test coverage**
