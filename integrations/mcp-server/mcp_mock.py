@@ -1,4 +1,19 @@
-"""Mock mcp module for testing on Python 3.9."""
+"""Mock mcp module for testing on Python 3.9.
+
+Provides mock MCP server types with JSON-serializable dict conversion
+(to_dict) and proper MCP response envelope shapes.
+
+Usage:
+    server = mcp.Server("test")
+    @server.list_tools()
+    async def list_tools():
+        return [mcp.types.Tool(
+            name="greet",
+            description="Say hello",
+            inputSchema={"type": "object", "properties": {"name": {"type": "string"}}}
+        )]
+    # run() will auto-wrap in {"tools": [...]}
+"""
 
 import json
 
@@ -49,9 +64,19 @@ class Server:
             return func
         return decorator
 
+    @staticmethod
+    def _normalize(obj):
+        """Convert mock types to dicts recursively for JSON serialization."""
+        if hasattr(obj, "to_dict"):
+            return obj.to_dict()
+        if isinstance(obj, dict):
+            return {k: Server._normalize(v) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple)):
+            return [Server._normalize(item) for item in obj]
+        return obj
+
     async def run(self, read_stream, write_stream, options):
         """Process JSON-RPC messages from read_stream, dispatching to registered handlers."""
-        # Send server info on the initialized notification
         while True:
             line = await read_stream.readline()
             if not line:
@@ -67,9 +92,7 @@ class Server:
             params = msg.get("params", {})
 
             # Notifications have no id — skip response
-            if method == "notifications/initialized":
-                continue
-            if method == "notifications/cancelled":
+            if method in ("notifications/initialized", "notifications/cancelled"):
                 continue
 
             try:
@@ -87,35 +110,40 @@ class Server:
 
                 elif method == "tools/list":
                     if self._list_tools_handler:
-                        result = await self._list_tools_handler()
+                        raw = await self._list_tools_handler()
                     else:
-                        result = []
+                        raw = []
+                    result = {"tools": self._normalize(raw)}
 
                 elif method == "resources/list":
                     if self._list_resources_handler:
-                        result = await self._list_resources_handler()
+                        raw = await self._list_resources_handler()
                     else:
-                        result = []
+                        raw = []
+                    result = {"resources": self._normalize(raw)}
 
                 elif method == "resources/templates/list":
                     if self._list_resource_templates_handler:
-                        result = await self._list_resource_templates_handler()
+                        raw = await self._list_resource_templates_handler()
                     else:
-                        result = []
+                        raw = []
+                    result = {"resourceTemplates": self._normalize(raw)}
 
                 elif method == "prompts/list":
                     if self._list_prompts_handler:
-                        result = await self._list_prompts_handler()
+                        raw = await self._list_prompts_handler()
                     else:
-                        result = []
+                        raw = []
+                    result = {"prompts": self._normalize(raw)}
 
                 elif method == "tools/call":
                     if self._call_tool_handler:
-                        result = await self._call_tool_handler(
+                        raw = await self._call_tool_handler(
                             params.get("name"), params.get("arguments", {})
                         )
                     else:
-                        result = []
+                        raw = []
+                    result = {"content": self._normalize(raw) if not isinstance(raw, dict) else raw}
 
                 elif method == "resources/read":
                     if self._read_resource_handler:
@@ -172,30 +200,79 @@ class types:
             self.name = name
             self.description = description
             self.arguments = arguments or []
-    
+
+        def to_dict(self):
+            return {
+                "name": self.name,
+                "description": self.description,
+                "arguments": [
+                    a.to_dict() if hasattr(a, "to_dict") else a
+                    for a in self.arguments
+                ],
+            }
+
+    class PromptArgument:
+        def __init__(self, name, description=None, required=False):
+            self.name = name
+            self.description = description
+            self.required = required
+
+        def to_dict(self):
+            d = {"name": self.name}
+            if self.description:
+                d["description"] = self.description
+            if self.required:
+                d["required"] = True
+            return d
+
     class Resource:
         def __init__(self, uri, name, description, mimeType):
             self.uri = uri
             self.name = name
             self.description = description
             self.mimeType = mimeType
-    
+
+        def to_dict(self):
+            return {
+                "uri": self.uri,
+                "name": self.name,
+                "description": self.description,
+                "mimeType": self.mimeType,
+            }
+
     class ResourceTemplate:
         def __init__(self, uriTemplate, name, description):
             self.uriTemplate = uriTemplate
             self.name = name
             self.description = description
-    
+
+        def to_dict(self):
+            return {
+                "uriTemplate": self.uriTemplate,
+                "name": self.name,
+                "description": self.description,
+            }
+
     class TextContent:
         def __init__(self, type, text):
             self.type = type
             self.text = text
-    
+
+        def to_dict(self):
+            return {"type": self.type, "text": self.text}
+
     class Tool:
         def __init__(self, name, description, inputSchema):
             self.name = name
             self.description = description
             self.inputSchema = inputSchema
+
+        def to_dict(self):
+            return {
+                "name": self.name,
+                "description": self.description,
+                "inputSchema": self.inputSchema,
+            }
 
 
 class server:
@@ -205,6 +282,7 @@ class server:
 
 class types_module:
     Prompt = types.Prompt
+    PromptArgument = types.PromptArgument
     Resource = types.Resource
     ResourceTemplate = types.ResourceTemplate
     TextContent = types.TextContent
