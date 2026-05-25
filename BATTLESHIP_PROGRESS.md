@@ -82,7 +82,7 @@
 | S12 | tools/cli/rustchain_cli.py:567 | x402 payment not implemented | LOW | ✅ #9 |
 | S13 | payout_worker.py:22 | MOCK_MODE default → safe mock (False→True) | HIGH | ✅ #6290 |
 | S14 | machine_passport_viewer.py:290 | QR code is placeholder div — no real QR gen | LOW |
-| S15 | bottube_embed.py:708 | _get_mock_video() fallback — no real DB query | MED |
+| S15 | bottube_embed.py:708 | _get_mock_video() fallback → persistent DB | MED | ✅ #11 |
 | S16 | bottube_feed_routes.py:80 | pagination cursor not implemented in mock | MED |
 | S17 | ed25519_config.py:27 | TESTNET_ALLOW_MOCK_SIG → env-var-driven, prevents monkey-patching | HIGH | ✅ #6291 |
 | S18 | bridge_api.py | no rate limiting on any endpoint → per-IP sliding window | MED | ✅ #6292 |
