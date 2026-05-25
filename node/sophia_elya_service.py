@@ -345,6 +345,42 @@ def get_epoch():
         "epoch_pot": PER_BLOCK_RTC * blocks
     })
 
+
+@app.get("/epoch/history")
+def get_epoch_history():
+    """Get recent epoch history (last 50 epochs)"""
+    now_slot = int(time.time() // BLOCK_TIME)
+    current_epoch = slot_to_epoch(now_slot)
+    min_epoch = max(0, current_epoch - 50)
+
+    with sqlite3.connect(DB_PATH) as c:
+        rows = c.execute("""
+            SELECT e.epoch, e.accepted_blocks, e.finalized,
+                   COALESCE(COUNT(en.miner_pk), 0) as enrolled_miners,
+                   COALESCE(SUM(en.weight), 0) as total_weight
+            FROM epoch_state e
+            LEFT JOIN epoch_enroll en ON en.epoch = e.epoch
+            WHERE e.epoch >= ?
+            GROUP BY e.epoch
+            ORDER BY e.epoch DESC
+        """, (min_epoch,)).fetchall()
+
+    return jsonify({
+        "epochs": [
+            {
+                "epoch": int(r[0]),
+                "accepted_blocks": int(r[1]),
+                "finalized": bool(r[2]),
+                "enrolled_miners": int(r[3]),
+                "total_weight": float(r[4]),
+                "epoch_pot": PER_BLOCK_RTC * int(r[1])
+            }
+            for r in rows
+        ],
+        "current_epoch": current_epoch,
+        "count": len(rows)
+    })
+
 @app.post("/epoch/enroll")
 def epoch_enroll():
     """Enroll miner in current epoch"""

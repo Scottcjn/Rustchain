@@ -203,9 +203,32 @@ def cmd_balance(args):
 def cmd_epoch(args):
     """Show epoch information."""
     if args.history:
-        # Note: This would need a history endpoint
-        print("Epoch history not yet implemented.", file=sys.stderr)
-        print("Tip: Check /epoch endpoint for current epoch info.")
+        data = fetch_api("/epoch/history")
+        epochs = data.get("epochs", [])
+        if args.json:
+            print(json.dumps(data, indent=2))
+            return
+        
+        if not epochs:
+            print("No epoch history available.")
+            return
+        
+        headers = ["Epoch", "Blocks", "Miners", "Weight", "Finalized", "Pot (RTC)"]
+        rows = []
+        for ep in epochs:
+            rows.append([
+                str(ep["epoch"]),
+                str(ep["accepted_blocks"]),
+                str(ep["enrolled_miners"]),
+                f"{ep['total_weight']:.1f}",
+                "✅" if ep["finalized"] else "⋯",
+                f"{ep['epoch_pot']:,.0f}"
+            ])
+        
+        print(f"=== Epoch History (last {data['count']}) ===")
+        print(f"Current Epoch: {data['current_epoch']}")
+        print()
+        print(format_table(headers, rows))
         return
     
     data = fetch_api("/epoch")
