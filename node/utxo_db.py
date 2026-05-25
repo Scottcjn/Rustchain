@@ -47,6 +47,7 @@ MAX_UTXO_ADDRESS_BYTES = 256
 MAX_UTXO_METADATA_BYTES = 8_192
 MAX_MEMPOOL_TX_ID_BYTES = 128
 MAX_TX_AGE_SECONDS = 3_600  # 1 hour mempool expiry
+MAX_TX_DATA_JSON_BYTES = 262_144  # 256KB max serialized tx size
 MAX_SQLITE_INT64 = 2**63 - 1
 P2PK_PREFIX = b'\x00\x08'   # Pay-to-Public-Key proposition prefix
 SUPPORTED_TX_TYPES = {'transfer', 'mining_reward'}
@@ -992,13 +993,18 @@ class UtxoDB:
             # With IGNORE, a duplicate tx_id silently skips the insert but
             # execution continues to claim inputs — creating orphan entries
             # that lock UTXOs with no corresponding mempool transaction.
+            tx_data_json = json.dumps(tx)
+            if len(tx_data_json) > MAX_TX_DATA_JSON_BYTES:
+                if manage_tx:
+                    conn.execute("ROLLBACK")
+                return False
             cursor = conn.execute(
                 """INSERT OR ABORT INTO utxo_mempool
                    (tx_id, tx_data_json, fee_nrtc, submitted_at, expires_at)
                    VALUES (?,?,?,?,?)""",
                 (
                     tx_id,
-                    json.dumps(tx),
+                    tx_data_json,
                     tx.get('fee_nrtc', 0),
                     now,
                     now + MAX_TX_AGE_SECONDS,
