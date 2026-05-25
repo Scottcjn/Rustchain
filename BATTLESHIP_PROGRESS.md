@@ -123,6 +123,13 @@
 | M8 | auto_epoch_settler.py | print→logging, hardcoded→env vars, granular catches | #6310 |
 | M9 | utxo_endpoints.py | silent account model failure → warning log | #6311 |
 
+### Wave 6 — Form-Not-Function Stub Fixes (F1-F2)
+
+| Cell | File | Fix | PR |
+|------|------|-----|----|
+| F1 | integrations/mcp-server/mcp_mock.py | Server.run() pass stub → JSON-RPC stdio transport | #6312 |
+| F2 | integrations/mcp-server/mcp_mock.py | stdio_server.__aexit__ pass → proper False return | #6312 |
+
 ### Legacy / Misc
 
 | Item | Status |
@@ -131,20 +138,18 @@
 | S14 | QR placeholder in machine_passport_viewer.py:290 (low priority) |
 | S21-S30 | Carried forward to fresh grid |
 
-**103 cells vaulted. 47 PRs submitted. 6 jaxint-approved. 1 MolhamHamwi-approved.**
+**105 cells vaulted. 48 PRs submitted. 6 jaxint-approved. 1 MolhamHamwi-approved.**
 
 ---
 
-## 🎯 FRESH GRID — 297 Gaps to Hunt
+## 🎯 FRESH GRID — 295 Gaps to Hunt
 
-### Row F — Form-Not-Function Gaps (F1-F85)
+### Row F — Form-Not-Function Gaps (F3-F85)
 
 *Stub bodies, pass-only handlers, placeholder returns, mocks in production, TODO strings, bare except: blocks, hardcoded localhost URLs, "for now" workarounds*
 
 | Cell | File:Line | Gap | Severity |
 |------|-----------|-----|----------|
-| F1 | tools/mcp-server/mcp_mock.py:38 | `run()` is pass stub | HIGH |
-| F2 | tools/mcp-server/mcp_mock.py:48 | `__aexit__` is pass stub | HIGH |
 | F3 | tools/explorer-api/api.py:353 | `search` route handler is pass | HIGH |
 | F4 | tools/explorer-api/api.py:376 | `health` route handler is pass | HIGH |
 | F5 | tools/bounty_verifier/verifier.py:29 | WalletCheckError bare pass | MED |
@@ -427,8 +432,8 @@
 
 ---
 
-## ⚜️ VAULTED (complete): 103 cells
-## 🎯 ACTIVE (to hunt): 297 cells
+## ⚜️ VAULTED (complete): 105 cells
+## 🎯 ACTIVE (to hunt): 295 cells
 ## 📏 TOTAL TARGET: 400 cells
 
 ### Legend
@@ -436,7 +441,7 @@
 | Row | Theme | Cells | Status |
 |-----|-------|-------|--------|
 | **A** | Input validation (open PRs A15-A41) | 27 pending | 🟡 PRs submitted |
-| **F** | Form-not-function stubs/placeholders | F1-F85 | 🔴 NEXT |
+| **F** | Form-not-function stubs/placeholders | F3-F85 | 🔴 NEXT |
 | **T** | Test coverage gaps | T1-T85 | 🔴 2nd |
 | **M** | Missing error handling | M10-M30 | 🟡 3rd |
 | **S** | Open stubs remaining | S21-S30 | 🟡 4th |
@@ -445,4 +450,4 @@
 | **H** | Economic/gaps | H1-H12 | 🟢 7th |
 
 **Pick lowest undone coordinate by row priority: F → T → M → S → D → E → H**
-**F1 is next: mcp_mock.py `run()` is a pass stub**
+**F3 is next: explorer-api/api.py `search` route handler is pass stub**
