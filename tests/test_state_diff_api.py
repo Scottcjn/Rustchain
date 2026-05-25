@@ -7,7 +7,6 @@ import sys
 
 import pytest
 
-
 integrated_node = sys.modules["integrated_node"]
 
 
@@ -139,3 +138,30 @@ def test_state_diff_reports_missing_boundary_block(client):
         "error": "block_range_boundary_missing",
         "missing_blocks": [9],
     }
+
+
+def test_state_diff_reports_partial_diff_for_missing_interior_block(client):
+    flask_client, db_path = client
+    _seed_blocks(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("DELETE FROM blocks WHERE height = ?", (11,))
+        conn.execute(
+            """
+            INSERT INTO blocks (height, block_hash, state_root, body_json)
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                12,
+                "hash12",
+                "state12",
+                json.dumps({"transactions": []}),
+            ),
+        )
+
+    response = flask_client.get("/api/state/diff?start=10&end=12")
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["ok"] is True
+    assert body["block_count"] == 2
+    assert body["missing_blocks"] == [11]
