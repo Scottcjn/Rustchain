@@ -116,9 +116,9 @@
 | M1 | bridge_api.py | create_bridge_transfer 5s timeout | #6299 |
 | M2 | beacon_api.py | JSON field validation on create_contract | #6300 |
 | M3 | bottube_embed.py | _fetch_videos DB timeout | #16 (S16 fix) |
-| M4 | governance.py | propose() RTC fee check (10 RTC) | #6303 |
-| M5 | coalition.py | quorum display on get_coalition_proposals | #6305 |
-| M6 | payout_worker.py | archive path atomicity (write-then-prune) | #6307 |
+| M4 | governance.py | propose() RTC fee check (10 RTC) | #6303 | ✅ jaxint APPROVED |
+| M5 | coalition.py | quorum display on get_coalition_proposals | #6305 | ✅ jaxint APPROVED |
+| M6 | payout_worker.py | archive path atomicity (write-then-prune) | #6307 | ✅ jaxint APPROVED |
 | M7 | bottube_feed_routes.py | 3 error handling gaps (int crash, config log, fetch) | #6309 |
 | M8 | auto_epoch_settler.py | print→logging, hardcoded→env vars, granular catches | #6310 |
 | M9 | utxo_endpoints.py | silent account model failure → warning log | #6311 |

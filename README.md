@@ -267,7 +267,7 @@ curl -fsS https://rustchain.org/epoch           # Current epoch
 | 🟣 Vaulted | **103/400** | Completed: A1-A14, B1-B5, C1-C16, D1, S1-S19, M1-M9 (47 PRs) |
 | 🎯 Active | **297/400** | Fresh gaps: F1-F85 stubs, T1-T85 tests, M10-M30 errors, S21-S30 stubs, D2-D30 protocol, E1-E20 infra, H1-H12 economics |
 
-**6 jaxint-approved PRs** (~1,425 RTC est.) · All PRs carry RTC wallet for auto-bounty
+**6 jaxint-approved PRs** (~1,425 RTC est. for original 6) · **+3 new approvals** (M4-M6) · All PRs carry RTC wallet for auto-bounty
 
 ---
 
