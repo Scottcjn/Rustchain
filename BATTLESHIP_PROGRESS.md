@@ -20,6 +20,7 @@
 | A22 | lock_ledger.py | miner_id/release_tx_hash/reason | #6265 | Open |
 | A23 | rustchain_sync_endpoints.py | X-Peer-ID/X-Sync-Nonce/X-Sync-Signature/table | #6266 | Open |
 | A24 | bridge/bridge_api.py | sender_wallet/target_wallet/tx_hash/receipt_signature/proof_ref/notes/release_tx | #6267 | Open |
+| A25 | faucet.py | wallet | #6268 | Open |
 
 ## Exhausted cells (grid complete)
 | Cell | File | Vulnerability | PR |
