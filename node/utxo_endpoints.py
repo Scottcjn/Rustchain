@@ -451,7 +451,18 @@ def utxo_transfer():
         }), 400
 
     # Verify pubkey → address
-    expected_addr = _addr_from_pk_fn(public_key)
+    # FIX(#6114): catch malformed hex in public_key before converter blows up
+    try:
+        if len(public_key) != 64 or not all(c in "0123456789abcdefABCDEF" for c in public_key):
+            return jsonify({
+                "error": "public_key must be 64 hex characters (32-byte Ed25519 key)",
+                "got": public_key[:20] + ("..." if len(public_key) > 20 else ""),
+            }), 400
+        expected_addr = _addr_from_pk_fn(public_key)
+    except (ValueError, Exception) as e:
+        return jsonify({
+            "error": f"Invalid public_key: {e}",
+        }), 400
     if from_address != expected_addr:
         return jsonify({
             'error': 'Public key does not match from_address',
