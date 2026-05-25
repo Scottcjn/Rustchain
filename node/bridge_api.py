@@ -739,6 +739,27 @@ def register_bridge_routes(app):
     """Register bridge API routes with Flask app."""
     from flask import request, jsonify
 
+    # ── In-memory rate limiter (no external deps) ────────────────
+    class _RateLimiter:
+        """Sliding-window rate limiter keyed by (endpoint, ip)."""
+        def __init__(self):
+            self._buckets: dict[tuple[str, str], list[float]] = {}
+
+        def check(self, endpoint: str, max_requests: int,
+                  window_seconds: int = 60) -> tuple[bool, int]:
+            key = (endpoint, request.remote_addr or "unknown")
+            now = time.time()
+            hits = [t for t in self._buckets.get(key, [])
+                    if t > now - window_seconds]
+            if len(hits) >= max_requests:
+                retry_after = int(hits[0] + window_seconds - now)
+                return False, retry_after
+            hits.append(now)
+            self._buckets[key] = hits
+            return True, 0
+
+    limiter = _RateLimiter()
+
     def _body_string_field(data: Dict[str, Any], name: str, default: Optional[str] = None):
         value = data.get(name, default)
         if value is None:
@@ -750,6 +771,9 @@ def register_bridge_routes(app):
     @app.route('/api/bridge/initiate', methods=['POST'])
     def initiate_bridge():
         """Initiate a new bridge transfer."""
+        allowed, retry = limiter.check("initiate", max_requests=10)
+        if not allowed:
+            return jsonify({"error": "Rate limited", "retry_after_seconds": retry}), 429
         data = request.get_json(silent=True)
         
         # Validate request
@@ -804,7 +828,10 @@ def register_bridge_routes(app):
     @app.route('/api/bridge/status/<tx_hash>', methods=['GET'])
     @app.route('/api/bridge/status', methods=['GET'])
     def get_bridge_status(tx_hash: Optional[str] = None):
-        """Get bridge transfer status by tx_hash or id."""
+        """Query bridge transfer status."""
+        allowed, retry = limiter.check("status", max_requests=30)
+        if not allowed:
+            return jsonify({"error": "Rate limited", "retry_after_seconds": retry}), 429
         if not tx_hash:
             tx_hash = request.args.get("id") or request.args.get("tx_hash")
         
@@ -827,6 +854,9 @@ def register_bridge_routes(app):
     @app.route('/api/bridge/list', methods=['GET'])
     def list_bridges():
         """List bridge transfers with filters."""
+        allowed, retry = limiter.check("list", max_requests=20)
+        if not allowed:
+            return jsonify({"error": "Rate limited", "retry_after_seconds": retry}), 429
         status = request.args.get("status")
         source = request.args.get("source_address")
         dest = request.args.get("dest_address")
@@ -857,6 +887,9 @@ def register_bridge_routes(app):
     @app.route('/api/bridge/void', methods=['POST'])
     def void_bridge():
         """Admin: Void a bridge transfer."""
+        allowed, retry = limiter.check("void", max_requests=5)
+        if not allowed:
+            return jsonify({"error": "Rate limited", "retry_after_seconds": retry}), 429
         admin_key = request.headers.get("X-Admin-Key", "")
         expected_key = os.environ.get("RC_ADMIN_KEY", "")
         if not admin_key or not expected_key or not hmac.compare_digest(admin_key, expected_key):
@@ -891,7 +924,10 @@ def register_bridge_routes(app):
     
     @app.route('/api/bridge/update-external', methods=['POST'])
     def update_external():
-        """Update external confirmation data (for bridge service callbacks)."""
+        """Update external transaction confirmation data."""
+        allowed, retry = limiter.check("update_external", max_requests=10)
+        if not allowed:
+            return jsonify({"error": "Rate limited", "retry_after_seconds": retry}), 429
         api_key = request.headers.get("X-API-Key", "")
         expected_key = os.environ.get("RC_BRIDGE_API_KEY", "")
         if not expected_key:
