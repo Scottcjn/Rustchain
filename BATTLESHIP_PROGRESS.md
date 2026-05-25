@@ -7,7 +7,7 @@
 | C14 | machine_passport_api.py | offset | #6256 | Open |
 | C15 | ergo_anchor.py | offset | #6257 | Open |
 
-## Unbounded TEXT / input (Row A, Col 15-19)
+## Unbounded TEXT / input (Row A, Col 15-20)
 | Cell | File | Field | PR | Status |
 |------|------|-------|----|--------|
 | A15 | bottube_feed_routes.py | Host header | #6258 | Open, fix pushed |
@@ -15,6 +15,7 @@
 | A17 | gpu_render_endpoints.py | pricing | #6260 | Open |
 | A18 | bcos_routes.py | cert_id/repo/commit_sha/reviewer | #6261 | Open |
 | A19 | beacon_api.py | agent_id/pubkey/name/type/term/currency | #6262 | Open |
+| A20 | bridge_api.py | source_address/dest_address | #6263 | Open |
 
 ## Exhausted cells (grid complete)
 | Cell | File | Vulnerability | PR |
