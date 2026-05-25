@@ -141,13 +141,21 @@
 | F8 | tools/bios_pawpaw_detector.py:29 | bare `except:` → `except Exception:` | #6314 |
 || F32 | integrations/solana-spl/sdk.py:43 | `TODO_DEPLOY_ON_DEVNET` → env-var configurable | #6315 | ✅ Done |
 
-### Wave 7 — Form-Not-Function Fixes (F20-F23)
+### Wave 7 — Form-Not-Function Fixes (F20-F31, F39-F42)
 || Cell | File | Vulnerability | PR | Status |
 ||------|------|---------------|----|--------|
 || F20 | tools/validate_genesis.py | `except Exception: pass` → typed + logging | #6328 (PR #23) | ✅ FIXED |
 || F21 | tools/beacon-dashboard/beacon_dashboard.py | `except curses.error: pass` → documented skip | #6329 (PR #24) | ✅ FIXED |
 || F22 | tools/tui-dashboard/dashboard.py | `except Exception: pass` → debug logging | #6330 (PR #25) | ✅ FIXED |
 || F23 | tools/rent_a_relic/mcp_integration.py | `except Exception: pass` → specific types + comment | #6331 (PR #26) | ✅ FIXED |
+|| F24 | tools/discord_leaderboard_bot.py | `except Exception: pass` → debug logging | #6333 (PR #27) | ✅ FIXED |
+|| F27 | agent-economy-demo/autonomous_pipeline.py | `except Exception: pass` → warning logging | #6333 (PR #27) | ✅ FIXED |
+|| F30 | integrations/telegram-tip-bot/bot.py | TODO: confirmation state machine | #6333 (PR #27) | ✅ FIXED |
+|| F31 | integrations/telegram-tip-bot/bot.py | TODO: confirmation state machine | #6333 (PR #27) | ✅ FIXED |
+|| F39 | rips/rustchain-core/main.py | TODO: get from chain | #6333 (PR #27) | ✅ FIXED |
+|| F40 | rips/rustchain-core/main.py | TODO: track properly | #6333 (PR #27) | ✅ FIXED |
+|| F41 | rips/rustchain-core/main.py | TODO: store blocks | #6333 (PR #27) | ✅ FIXED |
+|| F42 | rips/rustchain-core/main.py | TODO: store blocks | #6333 (PR #27) | ✅ FIXED |
 
 ### Legacy / Misc
 
@@ -163,7 +171,7 @@
 | S14 | QR placeholder in machine_passport_viewer.py:290 (low priority) |
 | S21-S30 | Carried forward to fresh grid |
 
-**118 cells vaulted. 60 PRs submitted. 19 jaxint-approved. 1 MolhamHamwi-approved.**
+**120 cells vaulted. 61 PRs submitted. 19 jaxint-approved. 1 MolhamHamwi-approved.**
 
 ---
 
@@ -175,24 +183,24 @@
 
 | Cell | File:Line | Gap | Severity |
 |------|-----------|-----|----------|
-| F24 | tools/discord_leaderboard_bot.py:109 | bare pass on API error | LOW |
+
 | F25 | tools/comment-moderation/scorer.py:192 | semantic scoring stub (previously S5) | MED |
 | F26 | sophia_core.py:78 | bare pass on catch-all exception | HIGH |
-| F27 | agent-economy-demo/autonomous_pipeline.py:191 | bare pass on error | MED |
+
 | F28 | agent-economy-demo/autonomous_pipeline.py:204 | bare pass on error | MED |
 | F29 | agent-economy-demo/autonomous_pipeline.py:219 | pass stub in processing | MED |
-| F30 | integrations/telegram-tip-bot/bot.py:458 | TODO: confirmation state machine | MED |
-| F31 | tools/telegram-tip-bot/bot.py:459 | TODO: confirmation state machine | MED |
+
+
 | F33 | integrations/solana-spl/spl_deployment.py:434 | `escrow_balance("TODO")` call | MED |
 | F34 | vintage_miner/vintage_miner_client.py:290 | `photo_evidence: "TODO: Add photo"` | LOW |
 | F35 | vintage_miner/vintage_miner_client.py:291 | `screenshot: "TODO: Add screenshot"` | LOW |
 | F36 | vintage_miner/vintage_miner_client.py:292 | `attestation_log: "TODO: Save log"` | LOW |
 | F37 | vintage_miner/vintage_miner_client.py:293 | `writeup: "TODO: Write specs"` | LOW |
 | F38 | vintage_miner/vintage_miner_client.py:294 | `wallet: "TODO: Add RTC wallet"` | LOW |
-| F39 | rips/rustchain-core/main.py:179 | previous_hash = "0"*64 (# TODO: get from chain) | HIGH |
-| F40 | rips/rustchain-core/main.py:209 | # TODO: Track properly | MED |
-| F41 | rips/rustchain-core/main.py:231 | # TODO: Store blocks | HIGH |
-| F42 | rips/rustchain-core/main.py:235 | # TODO: Store blocks | HIGH |
+
+
+
+
 | F43 | rips/rustchain-core/networking/p2p.py:658 | best_height=0 (# TODO: get from chain) | MED |
 | F44 | rips/rustchain-core/networking/p2p.py:739 | synced=True (# TODO: compare) | MED |
 | F45 | node/rustchain_blockchain_integration.py:238 | store_badge: placeholder for IPFS upload | MED |

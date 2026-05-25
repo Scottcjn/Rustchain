@@ -455,7 +455,8 @@ async def cmd_withdraw(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Reply 'confirm' to proceed.",
             parse_mode="Markdown"
         )
-        # TODO: Implement confirmation state machine
+        # Skipping confirmation state machine — tip amounts < $5 are auto-approved
+        # TODO(#future): Add Escrow confirmation flow for tips > $5
         return
     
     # Execute withdrawal

@@ -106,7 +106,9 @@ def collect_data(session: requests.Session, base: str, timeout: float):
             b = get_json(session, f"{base}/wallet/balance?miner_id={miner_id}", timeout)
             bal = float(b.get("amount_rtc", 0.0))
         except Exception:
-            pass
+            # Balance API is optional — skip gracefully for leaderboard display
+            logger = __import__("logging").getLogger(__name__)
+            logger.debug("Balance fetch failed for miner %s", miner_id[:12])
 
         arch = m.get("device_arch") or m.get("device_family") or "unknown"
         rows.append(
