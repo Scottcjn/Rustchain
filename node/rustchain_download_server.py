@@ -184,7 +184,7 @@ HTML_TEMPLATE = """
     <h2>💬 Community</h2>
     <div class="download-section">
         <p><strong>Discord</strong>: Ask Stephen Reed for invite link</p>
-        <p><strong>GitHub</strong>: Coming soon</p>
+        <p><strong>GitHub</strong>: <span class="dim">Not yet available — tracking at issue #TODO</span></p>
     </div>
 
     <hr style="border-color: #00ff00; margin: 40px 0;">

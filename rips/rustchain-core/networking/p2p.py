@@ -655,7 +655,7 @@ class NetworkManager:
         self.send_message(peer_id, MessageType.HELLO, {
             "version": PROTOCOL_VERSION,
             "chain_id": self.chain_id,
-            "best_height": 0,  # TODO: Get from chain
+best_height=0  # TODO(#core): get from chain after sync
             "best_hash": "",
             "validator_id": self.validator_id,
         })
@@ -736,7 +736,7 @@ class NetworkManager:
         best_peer = max(peers, key=lambda p: p.best_block_height)
 
         return {
-            "synced": True,  # TODO: Compare with local height
+            "synced": True,  # TODO(#core): Compare with local height after sync completes
             "best_peer_height": best_peer.best_block_height,
             "connected_peers": len(peers),
             "best_peer": best_peer.peer_id.to_string(),

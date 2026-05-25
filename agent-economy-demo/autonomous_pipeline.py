@@ -200,8 +200,8 @@ class Agent:
             )
             if r.ok:
                 return r.json().get("job")
-        except Exception:
-            pass
+        except Exception as ex:
+            logging.getLogger(__name__).debug("fetch_job_status failed for %s: %s", job_id, ex)
         return None
 
 
@@ -215,8 +215,8 @@ def get_marketplace_stats() -> dict:
         r = requests.get(f"{NODE_URL}/agent/stats", verify=VERIFY_SSL, timeout=TIMEOUT)
         if r.ok:
             return r.json().get("stats", {})
-    except Exception:
-        pass
+    except Exception as ex:
+        logging.getLogger(__name__).debug("get_marketplace_stats failed: %s", ex)
     return {}
 
 

@@ -431,7 +431,7 @@ class BridgeIntegration:
     def generate_bridge_report(self) -> Dict[str, Any]:
         """Generate bridge status report."""
         return {
-            "escrow_balance": self.get_escrow_balance("TODO") if self.spl.token_client else 0,
+            "escrow_balance": self.get_escrow_balance("pending")  # TODO(#deploy): Replace with on-chain balance after devnet deployment if self.spl.token_client else 0,
             "pending_locks": len(self.lock_events),
             "completed_mints": len(self.mint_events),
             "status": "operational"

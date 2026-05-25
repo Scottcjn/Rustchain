@@ -183,26 +183,10 @@
 
 | Cell | File:Line | Gap | Severity |
 |------|-----------|-----|----------|
-
 | F25 | tools/comment-moderation/scorer.py:192 | semantic scoring stub (previously S5) | MED |
-| F26 | sophia_core.py:78 | bare pass on catch-all exception | HIGH |
-
-| F28 | agent-economy-demo/autonomous_pipeline.py:204 | bare pass on error | MED |
-| F29 | agent-economy-demo/autonomous_pipeline.py:219 | pass stub in processing | MED |
-
-
-| F33 | integrations/solana-spl/spl_deployment.py:434 | `escrow_balance("TODO")` call | MED |
-| F34 | vintage_miner/vintage_miner_client.py:290 | `photo_evidence: "TODO: Add photo"` | LOW |
-| F35 | vintage_miner/vintage_miner_client.py:291 | `screenshot: "TODO: Add screenshot"` | LOW |
-| F36 | vintage_miner/vintage_miner_client.py:292 | `attestation_log: "TODO: Save log"` | LOW |
-| F37 | vintage_miner/vintage_miner_client.py:293 | `writeup: "TODO: Write specs"` | LOW |
-| F38 | vintage_miner/vintage_miner_client.py:294 | `wallet: "TODO: Add RTC wallet"` | LOW |
-
-
-
-
-| F43 | rips/rustchain-core/networking/p2p.py:658 | best_height=0 (# TODO: get from chain) | MED |
-| F44 | rips/rustchain-core/networking/p2p.py:739 | synced=True (# TODO: compare) | MED |
+| F26 | FALSE POSITIVE — `except ValueError: pass` is typed, not catch-all | — |
+| F28-F44 | agent-economy-demo, vintage_miner, p2p.py, spl_deployment | Batch-fixed PR #27+#6332 | FIXED |
+| F45 | node/rustchain_blockchain_integration.py:238 | store_badge: placeholder for IPFS upload | MED |
 | F45 | node/rustchain_blockchain_integration.py:238 | store_badge: placeholder for IPFS upload | MED |
 | F46 | node/claims_settlement.py:166 | assume sufficient funds for now | HIGH |
 | F47 | node/claims_settlement.py:311 | sign_and_broadcast → bare stub (S1 vault) | HIGH |

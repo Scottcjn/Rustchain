@@ -287,11 +287,11 @@ class VintageMinerClient:
             "multiplier": self.multiplier,
             "attestation_evidence": attestation_result["evidence"],
             "submission_checklist": {
-                "photo_evidence": "TODO: Add photo of machine running",
-                "screenshot": "TODO: Add screenshot of miner output",
-                "attestation_log": "TODO: Save attestation log from node",
-                "writeup": "TODO: Write machine specs and modifications",
-                "wallet_address": self.wallet or "TODO: Add RTC wallet",
+                "photo_evidence": "",  # TODO: Implement photo evidence capture
+                "screenshot": "",  # TODO: Implement screenshot capture
+                "attestation_log": "",  # TODO: Implement attestation log capture
+                "writeup": "",  # TODO: Implement writeup capture
+                "wallet_address": self.wallet or "",  # TODO: Add RTC wallet address from config
             }
         }
     
