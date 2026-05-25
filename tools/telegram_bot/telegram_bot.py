@@ -348,7 +348,7 @@ async def inline_query(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 )
             )
         except Exception:
-            pass
+            logger.warning("Failed to fetch RustChain miner stats for inline query", exc_info=True)
 
     if not query or "epoch" in query:
         try:
@@ -366,7 +366,7 @@ async def inline_query(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 )
             )
         except Exception:
-            pass
+            logger.warning("Failed to fetch RustChain epoch for inline query", exc_info=True)
 
     await update.inline_query.answer(results, cache_time=30)
 
