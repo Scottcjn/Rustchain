@@ -194,7 +194,7 @@ def _json_object_body():
     return data, None
 
 
-def _clean_string_field(data, field_name, *, optional=False, lower=False):
+def _clean_string_field(data, field_name, *, optional=False, lower=False, max_length=0):
     value = data.get(field_name)
     if value is None:
         return None if optional else ""
@@ -205,6 +205,8 @@ def _clean_string_field(data, field_name, *, optional=False, lower=False):
         value = value.lower()
     if optional and not value:
         return None
+    if max_length > 0 and len(value) > max_length:
+        raise ValueError(f"{field_name} exceeds maximum length of {max_length}")
     return value
 
 
@@ -242,11 +244,11 @@ def lock_rtc():
 
     # ── Validate inputs ──
     try:
-        sender = _clean_string_field(data, "sender_wallet")
+        sender = _clean_string_field(data, "sender_wallet", max_length=128)
         target_chain = _clean_string_field(data, "target_chain", lower=True)
-        target_wallet = _clean_string_field(data, "target_wallet")
-        tx_hash = _clean_string_field(data, "tx_hash", optional=True)
-        receipt_signature = _clean_string_field(data, "receipt_signature", optional=True, lower=True)
+        target_wallet = _clean_string_field(data, "target_wallet", max_length=128)
+        tx_hash = _clean_string_field(data, "tx_hash", optional=True, max_length=128)
+        receipt_signature = _clean_string_field(data, "receipt_signature", optional=True, lower=True, max_length=256)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
@@ -394,8 +396,8 @@ def confirm_lock():
         return error_response
     try:
         lock_id = _clean_string_field(data, "lock_id")
-        proof_ref = _clean_string_field(data, "proof_ref")
-        notes = _clean_string_field(data, "notes", optional=True)
+        proof_ref = _clean_string_field(data, "proof_ref", max_length=256)
+        notes = _clean_string_field(data, "notes", optional=True, max_length=1024)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
@@ -460,8 +462,8 @@ def release_wrtc():
         return error_response
     try:
         lock_id = _clean_string_field(data, "lock_id")
-        release_tx = _clean_string_field(data, "release_tx")
-        notes = _clean_string_field(data, "notes", optional=True)
+        release_tx = _clean_string_field(data, "release_tx", max_length=128)
+        notes = _clean_string_field(data, "notes", optional=True, max_length=1024)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
