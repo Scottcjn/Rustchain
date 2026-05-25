@@ -150,10 +150,11 @@
 || F23 | tools/rent_a_relic/mcp_integration.py | `except Exception: pass` → specific types + comment | #6331 (PR #26) | ✅ FIXED |
 || F24-F44 | Multiple files | Batch-fixed bare except + TODO stubs | #6332 | ✅ FIXED |
 
-### Wave 8 — Test Coverage (T7)
+### Wave 8 — Test Coverage
 || Cell | File | Tests | PR | Status |
 ||------|------|-------|----|--------|
-|| T7 | node/bottube_embed.py | 32 unit tests (was 0%) | #6333 | ✅ MERGED |
+|| T7 | node/bottube_embed.py | 32 unit tests (was 0%) | #6333 | ✅ PR |
+|| T8 | node/bottube_feed.py | 55 unit tests (was 0%) | #6334 | ✅ PR |
 
 ### Legacy / Misc
 
@@ -169,7 +170,7 @@
 | S14 | QR placeholder in machine_passport_viewer.py:290 (low priority) |
 | S21-S30 | Carried forward to fresh grid |
 
-**121 cells vaulted. 62 PRs submitted. 19 jaxint-approved. 1 MolhamHamwi-approved.**
+**122 cells vaulted. 63 PRs submitted. 19 jaxint-approved. 1 MolhamHamwi-approved.**
 
 ---
 
@@ -240,7 +241,7 @@
 | T5 | node/beacon_keys_cli.py | — | LOW |
 | T6 | node/beacon_x402.py | — | HIGH |
 | T7 | node/bottube_embed.py | ✅ VAULTED (#6333) | MED |
-| T8 | node/bottube_feed.py | — | MED |
+| T8 | node/bottube_feed.py | ✅ VAULTED (#6334) | MED |
 | T9 | node/bottube_feed_routes.py | — | MED |
 | T10 | node/bridge_api.py | — | HIGH |
 | T11 | node/claims_eligibility.py | — | MED |
