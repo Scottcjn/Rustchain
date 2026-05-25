@@ -110,6 +110,13 @@ class TestFeedRoutes(unittest.TestCase):
         response = self.client.get("/api/feed/rss?limit=invalid")
         self.assertEqual(response.status_code, 400)
 
+    def test_feed_negative_limit_rejected(self):
+        """Test negative limits are rejected across feed variants."""
+        for path in ("/api/feed/rss", "/api/feed/atom", "/api/feed"):
+            with self.subTest(path=path):
+                response = self.client.get(f"{path}?limit=-1")
+                self.assertEqual(response.status_code, 400)
+
     def test_rss_feed_excessive_limit(self):
         """Test RSS feed caps limit to 100."""
         response = self.client.get("/api/feed/rss?limit=999")
