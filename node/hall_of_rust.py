@@ -165,6 +165,8 @@ def induct_machine():
     # SECURITY FIX: Fingerprint based on HARDWARE ONLY (not wallet ID)
     # This prevents multiple wallets on same machine from getting multiple Hall entries
     hw_serial = data.get('cpu_serial', data.get('hardware_id', 'unknown'))
+    if not isinstance(hw_serial, str) or len(hw_serial) > 256:
+        hw_serial = 'unknown'
     fp_data = f"{data.get('device_model', '')}{data.get('device_arch', '')}{hw_serial}"
     fingerprint_hash = hashlib.sha256(fp_data.encode()).hexdigest()[:32]
     
@@ -180,8 +182,15 @@ def induct_machine():
         existing = c.fetchone()
         
         now = int(time.time())
-        model = data.get('device_model', 'Unknown')
-        arch = data.get('device_arch', 'modern')
+        miner_id = (data.get('miner_id') or 'anonymous')[:128]
+        model = (data.get('device_model', 'Unknown') or 'Unknown')[:256]
+        arch = (data.get('device_arch', 'modern') or 'modern')[:32]
+        device_family = (data.get('device_family', 'Unknown') or 'Unknown')[:128]
+
+        # Use defaults after truncation if empty
+        model = model or 'Unknown'
+        arch = arch or 'modern'
+        device_family = device_family or 'Unknown'
         
         if existing:
             # Update attestation count
