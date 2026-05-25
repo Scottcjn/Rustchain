@@ -176,7 +176,7 @@ class RustChainNode:
 
     def _process_block(self):
         """Process pending proofs and create new block"""
-        previous_hash = "0" * 64  # TODO: Get from chain
+    previous_hash = "0"*64  # TODO(#core): get from chain — genesis block uses zero hash
 
         block = self.poa.produce_block(previous_hash)
         if block:
@@ -206,7 +206,7 @@ class RustChainNode:
         return self.poa.current_block_height
 
     def get_total_minted(self) -> float:
-        # TODO: Track properly
+        # TODO(#core): Track properly — implement block height tracking
         return float(PREMINE_AMOUNT)
 
     def get_mining_pool(self) -> float:
