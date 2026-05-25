@@ -155,6 +155,7 @@
 ||------|------|-------|----|--------|
 || T7 | node/bottube_embed.py | 32 unit tests (was 0%) | #6333 | ✅ PR |
 || T8 | node/bottube_feed.py | 55 unit tests (was 0%) | #6334 | ✅ PR |
+|| T9 | node/bottube_feed_routes.py | 24 unit tests + int() fix (was 0%) | #6335 | ✅ PR |
 
 ### Legacy / Misc
 
@@ -170,7 +171,7 @@
 | S14 | QR placeholder in machine_passport_viewer.py:290 (low priority) |
 | S21-S30 | Carried forward to fresh grid |
 
-**122 cells vaulted. 63 PRs submitted. 19 jaxint-approved. 1 MolhamHamwi-approved.**
+**123 cells vaulted. 64 PRs submitted. 19 jaxint-approved. 1 MolhamHamwi-approved.**
 
 ---
 
@@ -242,7 +243,7 @@
 | T6 | node/beacon_x402.py | — | HIGH |
 | T7 | node/bottube_embed.py | ✅ VAULTED (#6333) | MED |
 | T8 | node/bottube_feed.py | ✅ VAULTED (#6334) | MED |
-| T9 | node/bottube_feed_routes.py | — | MED |
+| T9 | node/bottube_feed_routes.py | ✅ VAULTED (#6335) | MED |
 | T10 | node/bridge_api.py | — | HIGH |
 | T11 | node/claims_eligibility.py | — | MED |
 | T12 | node/claims_settlement.py | ✅ VAULTED (#6327) | HIGH |
