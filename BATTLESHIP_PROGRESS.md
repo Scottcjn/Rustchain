@@ -25,6 +25,8 @@
 | A27 | explorer/app.py | miner_id (2 GET path params) | #6270 | Open |
 | A28 | node/rustchain_p2p_sync.py | peer_url (POST /p2p/announce) | #6271 | Open |
 | A29 | explorer/rustchain_dashboard.py | wallet_address (GET path param) | #6272 | Open |
+| A30 | tools/testnet_faucet.py | wallet, github_username | #6273 | Open |
+| A31 | tools/rent_a_relic/server.py | agent_id, machine_id | #6274 | Open |
 
 ## Exhausted cells (grid complete)
 | Cell | File | Vulnerability | PR |
