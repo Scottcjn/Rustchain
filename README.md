@@ -14,7 +14,7 @@
     14|[![DePIN](https://img.shields.io/badge/DePIN-Vintage%20Hardware-8B4513)](https://rustchain.org)
     15|[![Proof of Antiquity](https://img.shields.io/badge/Consensus-Proof%20of%20Antiquity-DAA520)](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf)
     16|[![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.19442753-blue)](https://doi.org/10.5281/zenodo.19442753)
-    17|[![Bug Bounty](https://img.shields.io/badge/Bug%20Bounty-114%2F400%20cells-8A2BE2)](BATTLESHIP_PROGRESS.md)
+    17|[![Bug Bounty](https://img.shields.io/badge/Bug%20Bounty-123%2F400%20cells-8A2BE2)](BATTLESHIP_PROGRESS.md)
     18|
     19|A PowerBook G4 from 2003 earns **2.5x** more than a modern Threadripper.
     20|A Power Mac G5 earns **2.0x**. A 486 with rusty serial ports earns the most respect of all.
@@ -262,12 +262,12 @@
    262|
    263|[BATTLESHIP_PROGRESS.md](BATTLESHIP_PROGRESS.md) tracks a systematic 400-cell bug hunt across the entire codebase — static analysis, dynamic races, adversarial testing, stub/form fixes, missing error handling, test coverage, and infrastructure gaps.
    264|
-   265|| Status | Cells | Theme |
-   266||--------|-------|-------|
-   267|| 🟣 Vaulted | **103/400** | Completed: A1-A14, B1-B5, C1-C16, D1, S1-S19, M1-M9 (47 PRs) |
-   268|| 🎯 Active | **297/400** | Fresh gaps: F1-F85 stubs, T1-T85 tests, M10-M30 errors, S21-S30 stubs, D2-D30 protocol, E1-E20 infra, H1-H12 economics |
+|| Status | Cells | Theme |
+|--------|-------|-------|
+| 🟣 Vaulted | **123/400** | Completed: A1-A41, B1-B5, C1-C16, D1, S1-S20, M1-M9, F1-F44, T1-T9 (64 PRs) |
+| 🎯 Active | **277/400** | Fresh gaps: T10-T85 tests, M10-M30 errors, F45-F85 stubs, S21-S30 stubs, D2-D30 protocol, E1-E20 infra, H1-H12 economics |
    269|
-   270|**6 jaxint-approved PRs** (~1,425 RTC est. for original 6) · **+3 new approvals** (M4-M6) · All PRs carry RTC wallet for auto-bounty
+   270|**19 jaxint-approved PRs** (~400-900 RTC est.) · **+1 MolhamHamwi-approved** · All PRs carry RTC wallet for auto-bounty
    271|
    272|---
    273|
