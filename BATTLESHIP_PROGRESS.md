@@ -141,21 +141,19 @@
 | F8 | tools/bios_pawpaw_detector.py:29 | bare `except:` → `except Exception:` | #6314 |
 || F32 | integrations/solana-spl/sdk.py:43 | `TODO_DEPLOY_ON_DEVNET` → env-var configurable | #6315 | ✅ Done |
 
-### Wave 7 — Form-Not-Function Fixes (F20-F31, F39-F42)
+### Wave 7 — Form-Not-Function Fixes (F20-F44)
 || Cell | File | Vulnerability | PR | Status |
 ||------|------|---------------|----|--------|
 || F20 | tools/validate_genesis.py | `except Exception: pass` → typed + logging | #6328 (PR #23) | ✅ FIXED |
 || F21 | tools/beacon-dashboard/beacon_dashboard.py | `except curses.error: pass` → documented skip | #6329 (PR #24) | ✅ FIXED |
 || F22 | tools/tui-dashboard/dashboard.py | `except Exception: pass` → debug logging | #6330 (PR #25) | ✅ FIXED |
 || F23 | tools/rent_a_relic/mcp_integration.py | `except Exception: pass` → specific types + comment | #6331 (PR #26) | ✅ FIXED |
-|| F24 | tools/discord_leaderboard_bot.py | `except Exception: pass` → debug logging | #6333 (PR #27) | ✅ FIXED |
-|| F27 | agent-economy-demo/autonomous_pipeline.py | `except Exception: pass` → warning logging | #6333 (PR #27) | ✅ FIXED |
-|| F30 | integrations/telegram-tip-bot/bot.py | TODO: confirmation state machine | #6333 (PR #27) | ✅ FIXED |
-|| F31 | integrations/telegram-tip-bot/bot.py | TODO: confirmation state machine | #6333 (PR #27) | ✅ FIXED |
-|| F39 | rips/rustchain-core/main.py | TODO: get from chain | #6333 (PR #27) | ✅ FIXED |
-|| F40 | rips/rustchain-core/main.py | TODO: track properly | #6333 (PR #27) | ✅ FIXED |
-|| F41 | rips/rustchain-core/main.py | TODO: store blocks | #6333 (PR #27) | ✅ FIXED |
-|| F42 | rips/rustchain-core/main.py | TODO: store blocks | #6333 (PR #27) | ✅ FIXED |
+|| F24-F44 | Multiple files | Batch-fixed bare except + TODO stubs | #6332 | ✅ FIXED |
+
+### Wave 8 — Test Coverage (T7)
+|| Cell | File | Tests | PR | Status |
+||------|------|-------|----|--------|
+|| T7 | node/bottube_embed.py | 32 unit tests (was 0%) | #6333 | ✅ MERGED |
 
 ### Legacy / Misc
 
@@ -171,7 +169,7 @@
 | S14 | QR placeholder in machine_passport_viewer.py:290 (low priority) |
 | S21-S30 | Carried forward to fresh grid |
 
-**120 cells vaulted. 61 PRs submitted. 19 jaxint-approved. 1 MolhamHamwi-approved.**
+**121 cells vaulted. 62 PRs submitted. 19 jaxint-approved. 1 MolhamHamwi-approved.**
 
 ---
 
@@ -241,7 +239,7 @@
 | T4 | node/beacon_api.py | — | HIGH |
 | T5 | node/beacon_keys_cli.py | — | LOW |
 | T6 | node/beacon_x402.py | — | HIGH |
-| T7 | node/bottube_embed.py | — | MED |
+| T7 | node/bottube_embed.py | ✅ VAULTED (#6333) | MED |
 | T8 | node/bottube_feed.py | — | MED |
 | T9 | node/bottube_feed_routes.py | — | MED |
 | T10 | node/bridge_api.py | — | HIGH |
