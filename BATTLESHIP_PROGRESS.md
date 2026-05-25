@@ -7,7 +7,7 @@
 | C14 | machine_passport_api.py | offset | #6256 | Open |
 | C15 | ergo_anchor.py | offset | #6257 | Open |
 
-## Unbounded TEXT / input (Row A, Col 15-23)
+## Unbounded TEXT / input (Row A, Col 15-24)
 | Cell | File | Field | PR | Status |
 |------|------|-------|----|--------|
 | A15 | bottube_feed_routes.py | Host header | #6258 | Open, fix pushed |
@@ -19,6 +19,7 @@
 | A21 | airdrop_v2.py | github_username/wallet_address/chain/tier | #6264 | Open |
 | A22 | lock_ledger.py | miner_id/release_tx_hash/reason | #6265 | Open |
 | A23 | rustchain_sync_endpoints.py | X-Peer-ID/X-Sync-Nonce/X-Sync-Signature/table | #6266 | Open |
+| A24 | bridge/bridge_api.py | sender_wallet/target_wallet/tx_hash/receipt_signature/proof_ref/notes/release_tx | #6267 | Open |
 
 ## Exhausted cells (grid complete)
 | Cell | File | Vulnerability | PR |
