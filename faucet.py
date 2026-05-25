@@ -175,10 +175,17 @@ def try_record_drip(wallet, ip_address, amount):
 
 
 def is_valid_wallet_address(wallet):
-    """Accept legacy Ethereum-style wallets and native RTC wallets."""
-    return (wallet.startswith('0x') and len(wallet) >= 10) or bool(
-        RTC_WALLET_RE.fullmatch(wallet)
-    )
+    """Accept legacy Ethereum-style wallets and native RTC wallets.
+
+    For 0x-prefixed addresses, enforces exactly 42 chars (0x + 40 hex),
+    matching standard Ethereum address format.
+    For RTC addresses, enforces RTC + exactly 40 hex chars.
+    """
+    if wallet.startswith('0x'):
+        if len(wallet) != 42:
+            return False
+        return all(c in '0123456789abcdefABCDEF' for c in wallet[2:])
+    return bool(RTC_WALLET_RE.fullmatch(wallet))
 
 
 # HTML Template
