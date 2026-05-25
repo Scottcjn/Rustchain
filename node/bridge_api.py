@@ -176,6 +176,12 @@ def validate_bridge_request(data: Optional[Dict]) -> ValidationResult:
         return ValidationResult(ok=False, error="Invalid source_address (too short)")
     if not dest_address or len(dest_address) < 10:
         return ValidationResult(ok=False, error="Invalid dest_address (too short)")
+    # Defense-in-depth: cap address length for all chains
+    MAX_ADDRESS_LENGTH = 256
+    if len(source_address) > MAX_ADDRESS_LENGTH:
+        return ValidationResult(ok=False, error=f"source_address too long (max {MAX_ADDRESS_LENGTH} chars)")
+    if len(dest_address) > MAX_ADDRESS_LENGTH:
+        return ValidationResult(ok=False, error=f"dest_address too long (max {MAX_ADDRESS_LENGTH} chars)")
     
     # Validate amount
     amount_raw = data.get("amount_rtc", 0)
@@ -232,18 +238,22 @@ def validate_chain_address_format(chain: str, address: str) -> Tuple[bool, str]:
             return False, "RustChain addresses must start with 'RTC'"
         if len(address) < 10:
             return False, "RustChain address too short"
-    
+        if len(address) > 128:
+            return False, "RustChain address too long (max 128 chars)"
+
     elif chain == "solana":
         # Solana addresses are base58, 32-44 chars
         if len(address) < 32 or len(address) > 44:
             return False, "Invalid Solana address length"
-    
+
     elif chain == "ergo":
         # Ergo addresses start with '9' or '3'
         if not address.startswith(("9", "3")):
             return False, "Invalid Ergo address format"
         if len(address) < 30:
             return False, "Ergo address too short"
+        if len(address) > 128:
+            return False, "Ergo address too long (max 128 chars)"
     
     elif chain == "base":
         # Base (Ethereum L2) addresses are 0x-prefixed
