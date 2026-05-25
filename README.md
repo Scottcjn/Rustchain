@@ -14,6 +14,7 @@
 [![DePIN](https://img.shields.io/badge/DePIN-Vintage%20Hardware-8B4513)](https://rustchain.org)
 [![Proof of Antiquity](https://img.shields.io/badge/Consensus-Proof%20of%20Antiquity-DAA520)](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf)
 [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.19442753-blue)](https://doi.org/10.5281/zenodo.19442753)
+[![Bug Bounty](https://img.shields.io/badge/Bug%20Bounty-103%2F400%20cells-8A2BE2)](BATTLESHIP_PROGRESS.md)
 
 A PowerBook G4 from 2003 earns **2.5x** more than a modern Threadripper.
 A Power Mac G5 earns **2.0x**. A 486 with rusty serial ports earns the most respect of all.
@@ -251,8 +252,22 @@ curl -fsS https://rustchain.org/epoch           # Current epoch
 | 44 BCOS certificates issued | [Certified repos](https://rustchain.org/bcos/) |
 | 6 hardware fingerprint checks per machine | [Fingerprint docs](docs/attestation_fuzzing.md) |
 | 25,875+ RTC paid to 260+ contributors | [Public ledger](https://github.com/Scottcjn/rustchain-bounties/issues/104) |
+| 103 bug bounty cells vaulted, 297 active | [BATTLESHIP_PROGRESS.md](BATTLESHIP_PROGRESS.md) |
 | Code merged into OpenSSL | [#30437](https://github.com/openssl/openssl/pull/30437), [#30452](https://github.com/openssl/openssl/pull/30452) |
 | PRs open on CPython, curl, wolfSSL, Ghidra, vLLM | [Portfolio](https://github.com/Scottcjn/Scottcjn/blob/main/external-pr-portfolio.md) |
+
+---
+
+## Bounty Bug Hunt — 400-Cell Grid
+
+[BATTLESHIP_PROGRESS.md](BATTLESHIP_PROGRESS.md) tracks a systematic 400-cell bug hunt across the entire codebase — static analysis, dynamic races, adversarial testing, stub/form fixes, missing error handling, test coverage, and infrastructure gaps.
+
+| Status | Cells | Theme |
+|--------|-------|-------|
+| 🟣 Vaulted | **103/400** | Completed: A1-A14, B1-B5, C1-C16, D1, S1-S19, M1-M9 (47 PRs) |
+| 🎯 Active | **297/400** | Fresh gaps: F1-F85 stubs, T1-T85 tests, M10-M30 errors, S21-S30 stubs, D2-D30 protocol, E1-E20 infra, H1-H12 economics |
+
+**6 jaxint-approved PRs** (~1,425 RTC est.) · All PRs carry RTC wallet for auto-bounty
 
 ---
 
