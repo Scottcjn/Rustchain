@@ -43,28 +43,12 @@ def _get_base_url() -> str:
     if forwarded_host and forwarded_host in trusted_hosts:
         return f"https://{forwarded_host}"
 
-    # Last resort: validate host header against a basic safety pattern
-    # to prevent Host header injection attacks where an attacker sets
-    # the Host header to point feeds at an attacker-controlled domain.
-    raw_host_url = request.host_url.rstrip("/")
-    import re
-    # Allow only scheme://host[:port] — no userinfo, no path, no query
-    safe_pattern = re.compile(
-        r"^https?://[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?"
-        r"(\.[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?)*"
-        r"(:\d{1,5})?$"
-    )
-    if safe_pattern.match(raw_host_url):
-        current_app.logger.warning(
-            "Feed: no BOTTUBE_PUBLIC_BASE_URL configured, using Host header as fallback. "
-            "Set BOTTUBE_PUBLIC_BASE_URL to prevent host injection."
-        )
-        return raw_host_url
-
-    # Invalid/attacker-controlled host header — fall back to safe default
-    current_app.logger.error(
-        "Feed: rejecting suspicious Host header %r. Set BOTTUBE_PUBLIC_BASE_URL.",
-        raw_host_url,
+    # No configured base URL and no trusted forward host — refuse to reflect
+    # the Host header into feed links regardless of syntactic validity.
+    # An attacker-controlled Host header must never appear in RSS/Atom URLs.
+    current_app.logger.warning(
+        "Feed: no BOTTUBE_PUBLIC_BASE_URL configured. "
+        "Set BOTTUBE_PUBLIC_BASE_URL to control feed link origin."
     )
     return "http://localhost:8088"
 
