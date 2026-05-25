@@ -69,8 +69,11 @@ except Exception as _e:
     HAVE_FLEET_IMMUNE = False
 
 # Ed25519 signature verification
-TESTNET_ALLOW_INLINE_PUBKEY = False  # PRODUCTION: Disabled
-TESTNET_ALLOW_MOCK_SIG = False  # PRODUCTION: Disabled
+# Read from environment at import time so default is secure and
+# RUSTCHAIN_ALLOW_MOCK_SIG=1 / RUSTCHAIN_ALLOW_INLINE_PUBKEY=1 can
+# enable test-mode behavior without modifying source.
+TESTNET_ALLOW_INLINE_PUBKEY = os.environ.get("RUSTCHAIN_ALLOW_INLINE_PUBKEY", "0") == "1"
+TESTNET_ALLOW_MOCK_SIG = os.environ.get("RUSTCHAIN_ALLOW_MOCK_SIG", "0") == "1"
 _MOCK_SIG_ALLOWED_ENVS = {"test", "testing", "dev", "development", "local", "testnet"}
 
 
