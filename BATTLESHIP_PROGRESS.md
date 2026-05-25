@@ -73,7 +73,7 @@
 | S3 | beacon_api.py:1058 | mock LLM response in production | MED | ✅ #6287 |
 | S4 | tools/validate_vintage_submission.py:37 | photo validation not implemented | MED |
 | S5 | tools/validate_vintage_submission.py:83 | screenshot validation not implemented | MED |
-| S6 | tools/comment-moderation-bot/scorer.py:192 | semantic scoring is a stub | MED |
+| **S6** | **tools/comment-moderation-bot/src/scorer.py:192** | **semantic scoring stub → HTTP client** | **MED** | **✅ #6289** |
 | S7 | tools/rent_a_relic/provenance.py:49 | attestation proof digest is stub | LOW |
 | S8 | tools/cli/rustchain_cli.py:175 | epoch history not implemented | LOW |
 | S9 | tools/cli/rustchain_cli.py:263 | wallet creation not implemented | LOW |
