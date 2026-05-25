@@ -846,6 +846,10 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
     # -- GET /api/coalition/list ---------------------------------------------
     @bp.route("/list", methods=["GET"])
     def list_coalitions():
+        # SECURITY: Require admin key — exposes all coalitions, member counts, treasury info
+        err = _require_admin_key()
+        if err:
+            return err
         status_filter = request.args.get("status")
         limit, error_response, status = _parse_bounded_int_arg("limit", 50, 1, 200)
         if error_response is not None:
@@ -886,6 +890,10 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
     # -- GET /api/coalition/<id> ---------------------------------------------
     @bp.route("/<int:coalition_id>", methods=["GET"])
     def get_coalition(coalition_id: int):
+        # SECURITY: Require admin key — exposes coalition details, member miner_ids, treasury
+        err = _require_admin_key()
+        if err:
+            return err
         try:
             with sqlite3.connect(db_path) as conn:
                 conn.row_factory = sqlite3.Row
@@ -919,6 +927,10 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
     # -- GET /api/coalition/<id>/proposals -----------------------------------
     @bp.route("/<int:coalition_id>/proposals", methods=["GET"])
     def get_coalition_proposals(coalition_id: int):
+        # SECURITY: Require admin key — exposes coalition proposals, voting status, member activity
+        err = _require_admin_key()
+        if err:
+            return err
         _settle_expired_proposals(db_path)
 
         if not _coalition_exists(coalition_id, db_path):
@@ -957,6 +969,10 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
     # -- GET /api/coalition/stats --------------------------------------------
     @bp.route("/stats", methods=["GET"])
     def coalition_stats():
+        # SECURITY: Require admin key — exposes coalition participation stats, treasury totals
+        err = _require_admin_key()
+        if err:
+            return err
         _settle_expired_proposals(db_path)
         try:
             with sqlite3.connect(db_path) as conn:
