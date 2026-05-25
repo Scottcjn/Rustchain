@@ -909,7 +909,7 @@ def register_bridge_routes(app):
         external_tx_hash, error = _body_string_field(data, "external_tx_hash")
         if error:
             return jsonify({"error": error}), 400
-        confirmations, error = _parse_non_negative_int_arg(data.get("confirmations"), "confirmations", 0)
+        confirmations, error = _parse_non_negative_int_arg(data.get("confirmations"), "confirmations", 0, max_value=1000)
         if error:
             return jsonify({"error": error}), 400
         required_confirmations = None
