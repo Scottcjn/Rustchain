@@ -388,6 +388,9 @@ def drip():
 
     wallet = wallet_value.strip()
     
+    if len(wallet) > 128:
+        return jsonify({'ok': False, 'error': 'Wallet address too long'}), 400
+    
     # Basic wallet validation (accept Ethereum-style and native RTC wallets)
     if not is_valid_wallet_address(wallet):
         return jsonify({'ok': False, 'error': 'Invalid wallet address'}), 400
