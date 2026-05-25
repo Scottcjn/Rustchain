@@ -33,6 +33,8 @@
 | A35 | node/beacon_x402.py | agent_id (2 path params), _json_string_field | #6278 | Open |
 | A36 | node/bottube_embed.py | video_id (2 path params), url (query param) | #6279 | Open |
 | A37 | rips/rustchain-core/api/rpc.py | address/block_hash/proposal_id (path params) | #6280 | Open |
+| A38 | contributor_registry.py | username (admin approve path param) | #6281 | Open |
+| A39 | node/hall_of_rust.py | miner_id/device_model/arch/family/hw_serial | #6282 | Open |
 
 ## Exhausted cells (grid complete)
 | Cell | File | Vulnerability | PR |
