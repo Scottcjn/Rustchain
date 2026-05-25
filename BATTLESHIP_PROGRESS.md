@@ -36,6 +36,7 @@
 | A38 | contributor_registry.py | username (admin approve path param) | #6281 | Open |
 | A39 | node/hall_of_rust.py | miner_id/device_model/arch/family/hw_serial | #6282 | Open |
 | A40 | node/machine_passport_api.py | name/owner_miner_id/architecture/photo_hash/photo_url/provenance | #6283 | Open |
+| A41 | bottube_mood_engine.py | agent_name (6 path param endpoints) | #6284 | Open |
 
 ## Exhausted cells (grid complete)
 | Cell | File | Vulnerability | PR |
