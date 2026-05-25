@@ -13,6 +13,23 @@ import sqlite3
 from datetime import datetime
 from flask import Blueprint, jsonify, request, g
 
+# ── Simple in-memory rate limiter ─────────────────────────────────
+_ratelimit_buckets: dict[tuple[str, str], list[float]] = {}
+
+
+def _check_rate_limit(endpoint: str, max_per_minute: int) -> tuple[bool, int]:
+    """Sliding-window rate limit check by (endpoint, client_ip)."""
+    key = (endpoint, request.remote_addr or "unknown")
+    now = time.time()
+    hits = [t for t in _ratelimit_buckets.get(key, [])
+            if t > now - 60]
+    if len(hits) >= max_per_minute:
+        retry = int(hits[0] + 60 - now)
+        return False, retry
+    hits.append(now)
+    _ratelimit_buckets[key] = hits
+    return True, 0
+
 try:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 except Exception:  # pragma: no cover
@@ -277,6 +294,9 @@ def _authenticate_contract_agent(db, allowed_agents, body_bytes):
 @beacon_api.route('/api/agents', methods=['GET'])
 def get_agents():
     """Get all registered agents."""
+    allowed, retry = _check_rate_limit("get_agents", 30)
+    if not allowed:
+        return jsonify({"error": "Rate limited", "retry_after_seconds": retry}), 429
     try:
         db = get_db()
         rows = db.execute(
@@ -536,7 +556,10 @@ def beacon_atlas():
 
 @beacon_api.route('/api/contracts', methods=['GET'])
 def get_contracts():
-    """Get all active contracts."""
+    """Get contracts with optional filters."""
+    allowed, retry = _check_rate_limit("get_contracts", 30)
+    if not allowed:
+        return jsonify({"error": "Rate limited", "retry_after_seconds": retry}), 429
     try:
         db = get_db()
         rows = db.execute(
@@ -565,10 +588,13 @@ def get_contracts():
 @beacon_api.route('/api/contracts', methods=['POST'])
 def create_contract():
     """Create a new contract between agents.
-    
+
     Requires Beacon Ed25519 signature headers to authenticate the contract creator.
     Validates that the from_agent exists in the relay_agents table.
     """
+    allowed, retry = _check_rate_limit("create_contract", 10)
+    if not allowed:
+        return jsonify({"error": "Rate limited", "retry_after_seconds": retry}), 429
     try:
         body_bytes = request.get_data(cache=True)
         data = request.get_json(silent=True)
@@ -638,10 +664,13 @@ def create_contract():
 @beacon_api.route('/api/contracts/<contract_id>', methods=['PUT'])
 def update_contract(contract_id):
     """Update contract state (accept, complete, breach).
-    
+
     Requires Beacon Ed25519 signature headers to verify caller is a party to the contract.
     Validates state transitions to prevent invalid jumps.
     """
+    allowed, retry = _check_rate_limit("update_contract", 10)
+    if not allowed:
+        return jsonify({"error": "Rate limited", "retry_after_seconds": retry}), 429
     try:
         body_bytes = request.get_data(cache=True)
         data = request.get_json(silent=True)
@@ -730,7 +759,10 @@ def update_contract(contract_id):
 
 @beacon_api.route('/api/bounties', methods=['GET'])
 def get_bounties():
-    """Get all active bounties (from cache or DB)."""
+    """Get all bounties with optional filters."""
+    allowed, retry = _check_rate_limit("get_bounties", 20)
+    if not allowed:
+        return jsonify({"error": "Rate limited", "retry_after_seconds": retry}), 429
     try:
         db = get_db()
         rows = db.execute(
@@ -761,7 +793,10 @@ def get_bounties():
 
 @beacon_api.route('/api/bounties/sync', methods=['POST'])
 def sync_bounties():
-    """Sync bounties from GitHub API."""
+    """Sync bounties from GitHub issues."""
+    allowed, retry = _check_rate_limit("sync_bounties", 10)
+    if not allowed:
+        return jsonify({"error": "Rate limited", "retry_after_seconds": retry}), 429
     try:
         import hmac
         import urllib.request
@@ -887,6 +922,9 @@ def sync_bounties():
 @beacon_api.route('/api/bounties/<bounty_id>/claim', methods=['POST'])
 def claim_bounty(bounty_id):
     """Claim a bounty for an agent (admin-only)."""
+    allowed, retry = _check_rate_limit("claim_bounty", 5)
+    if not allowed:
+        return jsonify({"error": "Rate limited", "retry_after_seconds": retry}), 429
     try:
         import os, hmac
         admin_key = os.environ.get("RC_ADMIN_KEY", "")
@@ -922,6 +960,9 @@ def claim_bounty(bounty_id):
 @beacon_api.route('/api/bounties/<bounty_id>/complete', methods=['POST'])
 def complete_bounty(bounty_id):
     """Mark bounty as completed by an agent (admin-only)."""
+    allowed, retry = _check_rate_limit("complete_bounty", 5)
+    if not allowed:
+        return jsonify({"error": "Rate limited", "retry_after_seconds": retry}), 429
     try:
         import os, hmac
         admin_key = os.environ.get("RC_ADMIN_KEY", "")

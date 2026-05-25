@@ -73,19 +73,19 @@
 | S3 | beacon_api.py:1058 | mock LLM response in production | MED | ✅ #6287 |
 | S4 | tools/validate_vintage_submission.py:37 | photo validation not implemented | MED |
 | S5 | tools/validate_vintage_submission.py:83 | screenshot validation not implemented | MED |
-| S6 | tools/comment-moderation-bot/scorer.py:192 | semantic scoring is a stub | MED |
-| S7 | tools/rent_a_relic/provenance.py:49 | attestation proof digest is stub | LOW |
+| **S6** | **tools/comment-moderation-bot/src/scorer.py:192** | **semantic scoring stub → HTTP client** | **MED** | **✅ #6289** |
+| S7 | tools/rent_a_relic/provenance.py:49 | attestation proof digest (real SHA-256, Ed25519-signed, functional) | LOW | ✅ verified |
 | S8 | tools/cli/rustchain_cli.py:175 | epoch history not implemented | LOW |
 | S9 | tools/cli/rustchain_cli.py:263 | wallet creation not implemented | LOW |
 | S10 | tools/cli/rustchain_cli.py:409 | agent registration not implemented | LOW |
 | S11 | tools/cli/rustchain_cli.py:514 | bounty claim not implemented | LOW |
 | S12 | tools/cli/rustchain_cli.py:567 | x402 payment not implemented | LOW |
-| S13 | payout_worker.py:22 | MOCK_MODE for production withdrawals | HIGH |
+| S13 | payout_worker.py:22 | MOCK_MODE default → safe mock (False→True) | HIGH | ✅ #6290 |
 | S14 | machine_passport_viewer.py:290 | QR code is placeholder div — no real QR gen | LOW |
 | S15 | bottube_embed.py:708 | _get_mock_video() fallback — no real DB query | MED |
 | S16 | bottube_feed_routes.py:80 | pagination cursor not implemented in mock | MED |
-| S17 | ed25519_config.py:27 | TESTNET_ALLOW_MOCK_SIG config still exists | HIGH |
-| S18 | bridge_api.py | no rate limiting on any endpoint | MED |
+| S17 | ed25519_config.py:27 | TESTNET_ALLOW_MOCK_SIG → env-var-driven, prevents monkey-patching | HIGH | ✅ #6291 |
+| S18 | bridge_api.py | no rate limiting on any endpoint → per-IP sliding window | MED | ✅ #6292 |
 | S19 | beacon_api.py | no rate limiting on any endpoint | MED |
 | S20 | airdrop_v2.py | no rate limiting on airdrop endpoints | MED |
 | S21 | governance.py | mock erc20/ed25519 config reference | MED |
@@ -183,6 +183,6 @@
 - **Row H** — Economic — expandable
 - **Row I** — Cross-repo — expandable
 
-**56 cells vaulted. ~360 fresh gaps to hunt.**
+**59 cells vaulted. ~357 fresh gaps to hunt.**
 
 Pick lowest undone coordinate by row priority: S → M → D → E → T
