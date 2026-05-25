@@ -35,6 +35,18 @@
 **PoC:** `node/test_utxo_mempool_garbage_injection_poc.py`
 **Fix:** Whitelist allowed fields before json.dumps(). Add MAX_TX_JSON_BYTES cap.
 
+## A5: mempool_get_block_candidates() fetchall() loads all tx_data_json in memory ✅ DONE
+**File:** `node/utxo_db.py:1055` → `fetchall()` in `mempool_get_block_candidates()`
+**Severity:** MEDIUM (DoS — memory exhaustion via garbage-padded mempool entries)
+**Evidence:**
+  - `mempool_add()` stores `json.dumps(tx)` at line 1001 with NO size cap
+  - `mempool_get_block_candidates()` uses `.fetchall()` at line 1055 — loads ALL rows into Python memory
+  - Same A3 garbage injection vector inflates each tx_data_json to 100KB+
+  - MAX_POOL_SIZE=10000 × 100KB = ~977MB loaded by fetchall()
+  - Processing loop iterates ALL rows before reaching max_count (line 1091)
+**PoC:** `node/test_utxo_mempool_fetchall_oom_poc.py`
+**Fix:** Add MAX_TX_DATA_JSON_BYTES cap in mempool_add(). Use server-side cursor / LIMIT+OFFSET in mempool_get_block_candidates(). Strip non-essential fields before json.dumps().
+
 ## A4: TOCTOU — mempool_add + apply_transaction both claim same box ✅ DONE
 **File:** `node/utxo_db.py:842` (`mempool_add()`) vs `node/utxo_db.py:485` (`apply_transaction()`)
 **Severity:** LOW (sequential gap; SQLite IMMEDIATE lock mostly mitigates concurrent race)
