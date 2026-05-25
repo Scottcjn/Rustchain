@@ -50,7 +50,10 @@ def _parse_feed_limit(default: int = 20, maximum: int = 100) -> int:
     raw_limit = request.args.get("limit")
     if raw_limit in (None, ""):
         return default
-    return max(1, min(int(raw_limit), maximum))
+    try:
+        return max(1, min(int(raw_limit), maximum))
+    except (ValueError, TypeError):
+        return default
 
 
 def _get_db_connection():
