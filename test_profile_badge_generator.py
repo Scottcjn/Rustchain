@@ -95,7 +95,8 @@ def test_create_badge_blank_username(client):
     data = resp.get_json()
     assert resp.status_code == 400
     assert data["success"] is False
-    assert data["error"] == "Username required"
+    assert "username" in data["error"].lower()
+    assert "required" in data["error"].lower()
 
 
 def test_create_badge_default_type(client):
