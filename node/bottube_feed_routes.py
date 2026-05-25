@@ -33,7 +33,7 @@ feed_bp = Blueprint("bottube_feed", __name__, url_prefix="/api/feed")
 
 
 def _get_base_url() -> str:
-    """Return the public base URL without trusting arbitrary forwarded hosts."""
+    """Return the public base URL. NEVER reflects untrusted Host headers."""
     configured_base_url = current_app.config.get("BOTTUBE_PUBLIC_BASE_URL")
     if configured_base_url:
         return str(configured_base_url).rstrip("/")
