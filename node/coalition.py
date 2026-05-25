@@ -685,12 +685,15 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
 
         try:
             with sqlite3.connect(db_path) as conn:
+                conn.execute("BEGIN IMMEDIATE")
+
                 proposal = conn.execute(
                     "SELECT id, status, expires_at, coalition_id FROM coalition_proposals WHERE id = ?",
                     (proposal_id,)
                 ).fetchone()
 
                 if not proposal:
+                    conn.execute("ROLLBACK")
                     return jsonify({"error": "proposal not found"}), 404
                 if proposal[1] != PROPOSAL_STATUS_ACTIVE:
                     return jsonify({"error": f"proposal is {proposal[1]}, not active"}), 409
