@@ -132,6 +132,7 @@
 | T3 | node/tests/test_beacon_anchor.py | 53 unit tests for Beacon v2 envelope system (was 0% coverage) | #6320 |
 | T4 | node/tests/test_beacon_api.py | 62 unit tests for Beacon Atlas Flask API (was 0% coverage) | #6324 |
 | T6 | node/tests/test_beacon_x402.py | 47 unit tests for x402 payment integration (was 0% coverage) | #6325 |
+| T10 | node/tests/test_bridge_api.py | 67 unit tests for Bridge API (was 0% coverage) | #6326 |
 | F1 | integrations/mcp-server/mcp_mock.py | Server.run() pass stub → JSON-RPC stdio transport | #6312 |
 | F2 | integrations/mcp-server/mcp_mock.py | stdio_server.__aexit__ pass → proper False return | #6312 |
 | F6 | tools/telegram_bot/telegram_bot.py:351 | bare `except Exception: pass` → logger.warning | #6313 |
@@ -153,7 +154,7 @@
 | S14 | QR placeholder in machine_passport_viewer.py:290 (low priority) |
 | S21-S30 | Carried forward to fresh grid |
 
-**112 cells vaulted. 54 PRs submitted. 6 jaxint-approved. 1 MolhamHamwi-approved.**
+**113 cells vaulted. 55 PRs submitted. 19 jaxint-approved. 1 MolhamHamwi-approved.**
 
 ---
 
@@ -440,8 +441,8 @@
 
 ---
 
-## ⚜️ VAULTED (complete): 112 cells
-## 🎯 ACTIVE (to hunt): 274 cells
+## ⚜️ VAULTED (complete): 113 cells
+## 🎯 ACTIVE (to hunt): 273 cells
 ## 📏 TOTAL TARGET: 400 cells
 
 ### Legend
@@ -458,4 +459,4 @@
 | **E** | Infrastructure/DevOps | E1-E20 | 🟢 6th |
 | **H** | Economic/gaps | H1-H12 | 🟢 7th |
 
-**Next row priority: T (test coverage) — HIGH impact. T1-T4, T6 vaulted. Skip T5 (beacon_keys_cli, LOW). Next: T7 node/bottube_embed.py (MED) or T10 node/bridge_api.py (HIGH).**
+**Next row priority: T (test coverage) — HIGH impact. T1-T4, T6, T10 vaulted. T5 (LOW), T7 (MED), T8 (MED), T9 (MED) remain. T12 node/claims_settlement.py — HIGH criticality. 19 jaxint-approved PRs.**
