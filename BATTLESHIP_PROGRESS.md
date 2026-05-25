@@ -129,32 +129,32 @@
 |------|------|-----|----|
 | F1 | integrations/mcp-server/mcp_mock.py | Server.run() pass stub → JSON-RPC stdio transport | #6312 |
 | F2 | integrations/mcp-server/mcp_mock.py | stdio_server.__aexit__ pass → proper False return | #6312 |
+| F6 | tools/telegram_bot/telegram_bot.py:351 | bare `except Exception: pass` → logger.warning | #6313 |
+| F7 | tools/telegram_bot/telegram_bot.py:369 | bare `except Exception: pass` → logger.warning | #6313 |
 
 ### Legacy / Misc
 
 | Item | Status |
 |------|--------|
 | C5-C6 | ✅ FALSE POSITIVES (identified, no PR needed) |
+| F3 | FALSE POSITIVE — `except ValueError: pass` in explorer-api search is intentional skip for non-matching query types |
+| F4 | FALSE POSITIVE — same pattern as F3 |
+| F5 | FALSE POSITIVE — `class WalletCheckError(Exception): pass` is standard Python exception class pattern |
 | S14 | QR placeholder in machine_passport_viewer.py:290 (low priority) |
 | S21-S30 | Carried forward to fresh grid |
 
-**105 cells vaulted. 48 PRs submitted. 6 jaxint-approved. 1 MolhamHamwi-approved.**
+**107 cells vaulted. 49 PRs submitted. 6 jaxint-approved. 1 MolhamHamwi-approved.**
 
 ---
 
-## 🎯 FRESH GRID — 295 Gaps to Hunt
+## 🎯 FRESH GRID — 290 Gaps to Hunt
 
-### Row F — Form-Not-Function Gaps (F3-F85)
+### Row F — Form-Not-Function Gaps (F8-F85)
 
 *Stub bodies, pass-only handlers, placeholder returns, mocks in production, TODO strings, bare except: blocks, hardcoded localhost URLs, "for now" workarounds*
 
 | Cell | File:Line | Gap | Severity |
 |------|-----------|-----|----------|
-| F3 | tools/explorer-api/api.py:353 | `search` route handler is pass | HIGH |
-| F4 | tools/explorer-api/api.py:376 | `health` route handler is pass | HIGH |
-| F5 | tools/bounty_verifier/verifier.py:29 | WalletCheckError bare pass | MED |
-| F6 | tools/telegram_bot/telegram_bot.py:351 | bare pass on exception | MED |
-| F7 | tools/telegram_bot/telegram_bot.py:369 | bare pass on exception | MED |
 | F8 | tools/bios_pawpaw_detector.py:30 | `detect()` is pass stub | LOW |
 | F9 | tools/os_detector.py:55 | `detect()` is pass stub | LOW |
 | F10 | tools/discord-bot/bot.py:33 | `on_ready` is pass stub | LOW |
@@ -432,8 +432,8 @@
 
 ---
 
-## ⚜️ VAULTED (complete): 105 cells
-## 🎯 ACTIVE (to hunt): 295 cells
+## ⚜️ VAULTED (complete): 107 cells
+## 🎯 ACTIVE (to hunt): 290 cells
 ## 📏 TOTAL TARGET: 400 cells
 
 ### Legend
@@ -441,7 +441,7 @@
 | Row | Theme | Cells | Status |
 |-----|-------|-------|--------|
 | **A** | Input validation (open PRs A15-A41) | 27 pending | 🟡 PRs submitted |
-| **F** | Form-not-function stubs/placeholders | F3-F85 | 🔴 NEXT |
+| **F** | Form-not-function stubs/placeholders | F8-F85 | 🔴 NEXT |
 | **T** | Test coverage gaps | T1-T85 | 🔴 2nd |
 | **M** | Missing error handling | M10-M30 | 🟡 3rd |
 | **S** | Open stubs remaining | S21-S30 | 🟡 4th |
@@ -450,4 +450,4 @@
 | **H** | Economic/gaps | H1-H12 | 🟢 7th |
 
 **Pick lowest undone coordinate by row priority: F → T → M → S → D → E → H**
-**F3 is next: explorer-api/api.py `search` route handler is pass stub**
+**F8 is next: bios_pawpaw_detector.py `detect()` is pass stub**
