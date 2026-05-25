@@ -87,6 +87,7 @@ GENESIS_TIMESTAMP = 1764706927          # Production chain launch (Dec 2, 2025)
 MAX_PROPOSALS_PER_MINER = 10            # Anti-spam: max active proposals
 MAX_TITLE_LEN = 200
 MAX_DESCRIPTION_LEN = 10000
+PROPOSAL_FEE_RTC = 10  # Anti-spam: fee charged to propose a governance change
 
 PROPOSAL_TYPES = ("parameter_change", "feature_activation", "emergency")
 VOTE_CHOICES = ("for", "against", "abstain")
@@ -368,6 +369,25 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
 
         try:
             with sqlite3.connect(db_path) as conn:
+                # Fee check: ensure miner has sufficient balance
+                table_check = conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='balances'"
+                ).fetchone()
+                if table_check:
+                    bal_row = conn.execute(
+                        "SELECT balance_rtc FROM balances WHERE miner_pk = ?",
+                        (miner_id,)
+                    ).fetchone()
+                    if not bal_row or float(bal_row[0]) < PROPOSAL_FEE_RTC:
+                        return jsonify({
+                            "error": f"Insufficient balance: proposal fee is {PROPOSAL_FEE_RTC} RTC"
+                        }), 402
+                    # Deduct fee
+                    conn.execute(
+                        "UPDATE balances SET balance_rtc = balance_rtc - ? WHERE miner_pk = ?",
+                        (PROPOSAL_FEE_RTC, miner_id)
+                    )
+                
                 # Anti-spam: max active proposals per miner
                 active_count = conn.execute(
                     "SELECT COUNT(*) FROM governance_proposals WHERE proposed_by = ? AND status = ?",
