@@ -604,15 +604,36 @@ def create_contract():
         amount, amount_error, amount_status = _positive_float_field(data, 'amount')
         if amount_error:
             return amount_error, amount_status
-
+        
+        # Validate string fields
+        to_agent = str(data.get('to', '')).strip()
+        if not to_agent:
+            return jsonify({'error': 'to: must be a non-empty string'}), 400
+        
+        contract_type_val = str(data.get('type', '')).strip()
+        if not contract_type_val:
+            return jsonify({'error': 'type: must be a non-empty string'}), 400
+        
+        term_text = str(data.get('term', '')).strip()
+        if not term_text:
+            return jsonify({'error': 'term: must be a non-empty string'}), 400
+        
+        # Validate currency if provided
+        currency_val = str(data.get('currency', 'RTC')).strip().upper()
+        ALLOWED_CURRENCIES = {'RTC', 'ERC', 'ERG', 'USD'}
+        if currency_val not in ALLOWED_CURRENCIES:
+            return jsonify({
+                'error': f'currency: must be one of: {", ".join(sorted(ALLOWED_CURRENCIES))}'
+            }), 400
+        
         contract = {
             'id': contract_id,
             'from': data['from'],
-            'to': data['to'],
-            'type': data['type'],
+            'to': to_agent,
+            'type': contract_type_val,
             'amount': amount,
-            'currency': data.get('currency', 'RTC'),
-            'term': data['term'],
+            'currency': currency_val,
+            'term': term_text,
             'state': 'offered',  # Initial state
             'created_at': int(time.time()),
         }
