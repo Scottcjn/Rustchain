@@ -67,11 +67,10 @@
 
 ### Row S — Production Stubs / "Not Implemented" (S1-S30)
 
-| Cell | File | Gap | Priority |
-|------|------|-----|----------|
+| Cell | File | Gap | Priority | |
+|------|------|-----|----------|---|
 | S1 | claims_settlement.py:311 | sign_and_broadcast_transaction() is a hard stub | HIGH | ✅ #6286 |
-| S2 | claims_submission.py:727 | mock Ed25519 sig in production code | HIGH |
-| S3 | beacon_api.py:1058 | mock LLM response in production | MED |
+| S3 | beacon_api.py:1058 | mock LLM response in production | MED | ✅ #6287 |
 | S4 | tools/validate_vintage_submission.py:37 | photo validation not implemented | MED |
 | S5 | tools/validate_vintage_submission.py:83 | screenshot validation not implemented | MED |
 | S6 | tools/comment-moderation-bot/scorer.py:192 | semantic scoring is a stub | MED |
