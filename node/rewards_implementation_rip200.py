@@ -310,6 +310,13 @@ def register_rewards_rip200(app, DB_PATH):
 
     @app.route('/wallet/balance', methods=['GET'])
     def get_balance():
+        # SECURITY: Require admin key — exposes miner balance data without auth
+        admin_key = request.headers.get("X-Admin-Key", "")
+        expected_key = os.environ.get("RC_ADMIN_KEY", "")
+        if not expected_key:
+            return jsonify({"error": "RC_ADMIN_KEY not configured — endpoint disabled"}), 503
+        if not hmac.compare_digest(admin_key, expected_key):
+            return jsonify({"error": "Unauthorized — admin key required"}), 401
         miner_id = request.args.get('miner_id')
         if not miner_id:
             return jsonify({"error": "miner_id required"}), 400
@@ -336,6 +343,13 @@ def register_rewards_rip200(app, DB_PATH):
 
     @app.route('/wallet/balances/all', methods=['GET'])
     def get_all_balances():
+        # SECURITY: Require admin key — exposes ALL miner balances and total supply without auth
+        admin_key = request.headers.get("X-Admin-Key", "")
+        expected_key = os.environ.get("RC_ADMIN_KEY", "")
+        if not expected_key:
+            return jsonify({"error": "RC_ADMIN_KEY not configured — endpoint disabled"}), 503
+        if not hmac.compare_digest(admin_key, expected_key):
+            return jsonify({"error": "Unauthorized — admin key required"}), 401
         with sqlite3.connect(DB_PATH) as db:
             rows = db.execute(
                 "SELECT miner_id, amount_i64 FROM balances WHERE amount_i64 > 0 ORDER BY amount_i64 DESC"
@@ -361,6 +375,13 @@ def register_rewards_rip200(app, DB_PATH):
     @app.route('/lottery/eligibility', methods=['GET'])
     def check_eligibility():
         """RIP-200: Round-robin eligibility check"""
+        # SECURITY: Require admin key — exposes miner eligibility and epoch consensus info
+        admin_key = request.headers.get("X-Admin-Key", "")
+        expected_key = os.environ.get("RC_ADMIN_KEY", "")
+        if not expected_key:
+            return jsonify({"error": "RC_ADMIN_KEY not configured — endpoint disabled"}), 503
+        if not hmac.compare_digest(admin_key, expected_key):
+            return jsonify({"error": "Unauthorized — admin key required"}), 401
         miner_id = request.args.get('miner_id')
         if not miner_id:
             return jsonify({"error": "miner_id required"}), 400
@@ -374,6 +395,13 @@ def register_rewards_rip200(app, DB_PATH):
     @app.route('/consensus/round_robin_status', methods=['GET'])
     def round_robin_status():
         """Get current round-robin rotation status"""
+        # SECURITY: Require admin key — exposes all attested miners and consensus rotation
+        admin_key = request.headers.get("X-Admin-Key", "")
+        expected_key = os.environ.get("RC_ADMIN_KEY", "")
+        if not expected_key:
+            return jsonify({"error": "RC_ADMIN_KEY not configured — endpoint disabled"}), 503
+        if not hmac.compare_digest(admin_key, expected_key):
+            return jsonify({"error": "Unauthorized — admin key required"}), 401
         current = current_slot()
         current_ts = int(time.time())
 
