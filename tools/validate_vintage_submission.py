@@ -18,8 +18,15 @@ import argparse
 import json
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timezone as _tz
 from typing import Dict, Any, Optional
+import hashlib
+
+try:
+    from PIL import Image
+    PILLOW_AVAILABLE = True
+except ImportError:
+    PILLOW_AVAILABLE = False
 
 
 class SubmissionValidator:
@@ -31,81 +38,200 @@ class SubmissionValidator:
         self.warnings: list = []
     
     def validate_photo(self, photo_path: str) -> Dict[str, Any]:
-        """Validate photo evidence"""
+        """Validate photo evidence with real image content verification (fixes #6288)"""
         result = {
-            "status": "SKIP",
-            "message": "Photo validation requires image processing (not implemented)",
+            "status": "FAIL",
+            "message": "",
             "checks": {}
         }
-        
+
         if not os.path.exists(photo_path):
             result["status"] = "FAIL"
             result["message"] = f"Photo file not found: {photo_path}"
             return result
-        
+
         warning_messages = []
+        result["checks"]["file_exists"] = True
 
         # Check file size (should be reasonable)
         file_size = os.path.getsize(photo_path)
+        result["checks"]["file_size_bytes"] = file_size
         if file_size < 10000:  # Less than 10KB
             warning_messages.append(f"Photo file seems too small: {file_size} bytes")
             self.warnings.append("Photo file is unusually small")
-        
+
         # Check file extension
         ext = os.path.splitext(photo_path)[1].lower()
-        if ext not in ['.jpg', '.jpeg', '.png', '.gif', '.bmp']:
+        result["checks"]["extension"] = ext
+        if ext not in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']:
             warning_messages.append(f"Unusual photo format: {ext}")
             self.warnings.append(f"Unusual photo format: {ext}")
-        
-        # In production, would check:
-        # - EXIF timestamp
-        # - Image content (machine + monitor)
-        # - Metadata consistency
-        
+
+        # --- Real image content validation (fixes #6288) ---
+        # Verify the file is actually an image using Pillow
+        if PILLOW_AVAILABLE:
+            try:
+                with Image.open(photo_path) as img:
+                    img.verify()  # Verify image integrity (detects truncated/corrupt)
+                # Re-open after verify (verify leaves file in unusable state)
+                with Image.open(photo_path) as img:
+                    width, height = img.size
+                    result["checks"]["width"] = width
+                    result["checks"]["height"] = height
+                    result["checks"]["format"] = img.format
+                    result["checks"]["mode"] = img.mode
+                    result["checks"]["is_real_image"] = True
+
+                    # Minimum resolution check
+                    if width < 640 or height < 480:
+                        warning_messages.append(
+                            f"Photo resolution too low: {width}x{height} (min 640x480)"
+                        )
+                        self.warnings.append("Photo resolution below minimum threshold")
+
+                    # EXIF timestamp validation
+                    exif_data = img._getexif() if hasattr(img, '_getexif') else None
+                    if exif_data:
+                        date_str = exif_data.get(36867)  # DateTimeOriginal
+                        if date_str:
+                            result["checks"]["exif_timestamp"] = date_str
+                            try:
+                                exif_dt = datetime.strptime(
+                                    date_str, "%Y:%m:%d %H:%M:%S"
+                                ).replace(tzinfo=_tz.utc)
+                                age_days = (datetime.now(_tz.utc) - exif_dt).days
+                                result["checks"]["exif_age_days"] = age_days
+                                if age_days > 365:
+                                    warning_messages.append(
+                                        f"Photo EXIF is {age_days} days old"
+                                    )
+                            except (ValueError, TypeError):
+                                warning_messages.append("Could not parse EXIF timestamp")
+                        else:
+                            warning_messages.append("No EXIF DateTimeOriginal found")
+                    else:
+                        warning_messages.append("No EXIF data in photo")
+
+                    # Content hash for attestation log cross-validation
+                    with open(photo_path, "rb") as f:
+                        file_hash = hashlib.sha256(f.read()).hexdigest()
+                    result["checks"]["sha256"] = file_hash
+
+            except Exception as e:
+                result["status"] = "FAIL"
+                result["message"] = f"Image validation failed: {e}"
+                result["checks"]["is_real_image"] = False
+                return result
+        else:
+            # Fallback: check file magic bytes for common image formats
+            with open(photo_path, "rb") as f:
+                header = f.read(16)
+            is_image = (
+                header[:3] == b'\xff\xd8\xff'
+                or header[:8] == b'\x89PNG\r\n\x1a\n'
+                or header[:6] in (b'GIF87a', b'GIF89a')
+                or header[:4] == b'RIFF' and header[8:12] == b'WEBP'
+                or header[:2] == b'BM'
+            )
+            result["checks"]["is_real_image"] = is_image
+            if not is_image:
+                result["status"] = "FAIL"
+                result["message"] = f"File is not a recognized image format"
+                return result
+            warning_messages.append(
+                "Pillow not installed; skipping dimension/EXIF validation"
+            )
+            self.warnings.append("Pillow not available for full image validation")
+
         if warning_messages:
             result["status"] = "WARN"
             result["message"] = "; ".join(warning_messages)
         else:
             result["status"] = "PASS"
-            result["message"] = "Photo file exists and appears valid"
-        result["checks"] = {
-            "file_exists": True,
-            "file_size_bytes": file_size,
-            "format": ext
-        }
-        
+            result["message"] = "Photo file is a valid image with verified content"
+
         return result
-    
+
     def validate_screenshot(self, screenshot_path: str) -> Dict[str, Any]:
-        """Validate miner output screenshot"""
+        """Validate miner output screenshot with real image content verification (fixes #6288)"""
         result = {
-            "status": "SKIP",
-            "message": "Screenshot validation requires image processing (not implemented)",
+            "status": "FAIL",
+            "message": "",
             "checks": {}
         }
-        
+
         if not os.path.exists(screenshot_path):
             result["status"] = "FAIL"
             result["message"] = f"Screenshot file not found: {screenshot_path}"
             return result
-        
+
+        result["checks"]["file_exists"] = True
+
         # Check file size
         file_size = os.path.getsize(screenshot_path)
+        result["checks"]["file_size_bytes"] = file_size
         if file_size < 1000:  # Less than 1KB
+            self.warnings.append("Screenshot file is unusually small")
+
+        # --- Real image content validation (fixes #6288) ---
+        if PILLOW_AVAILABLE:
+            try:
+                with Image.open(screenshot_path) as img:
+                    img.verify()
+                with Image.open(screenshot_path) as img:
+                    width, height = img.size
+                    result["checks"]["width"] = width
+                    result["checks"]["height"] = height
+                    result["checks"]["format"] = img.format
+                    result["checks"]["mode"] = img.mode
+                    result["checks"]["is_real_image"] = True
+
+                    # Screenshots should be at least 320x240
+                    if width < 320 or height < 240:
+                        result["status"] = "FAIL"
+                        result["message"] = (
+                            f"Screenshot resolution too low: {width}x{height} "
+                            f"(minimum 320x240)"
+                        )
+                        return result
+
+                    # Content hash for attestation cross-validation
+                    with open(screenshot_path, "rb") as f:
+                        file_hash = hashlib.sha256(f.read()).hexdigest()
+                    result["checks"]["sha256"] = file_hash
+
+            except Exception as e:
+                result["status"] = "FAIL"
+                result["message"] = f"Image validation failed: {e}"
+                result["checks"]["is_real_image"] = False
+                return result
+        else:
+            # Fallback: check file magic bytes
+            with open(screenshot_path, "rb") as f:
+                header = f.read(16)
+            is_image = (
+                header[:3] == b'\xff\xd8\xff'
+                or header[:8] == b'\x89PNG\r\n\x1a\n'
+                or header[:6] in (b'GIF87a', b'GIF89a')
+                or header[:4] == b'RIFF' and header[8:12] == b'WEBP'
+            )
+            result["checks"]["is_real_image"] = is_image
+            if not is_image:
+                result["status"] = "FAIL"
+                result["message"] = "File is not a recognized image format"
+                return result
+            self.warnings.append("Pillow not available for full screenshot validation")
+
+        # If we reached here, image is valid
+        if file_size < 1000:
             result["status"] = "WARN"
             result["message"] = f"Screenshot file seems too small: {file_size} bytes"
-            self.warnings.append("Screenshot file is unusually small")
         else:
             result["status"] = "PASS"
-            result["message"] = "Screenshot file exists"
-        
-        result["checks"] = {
-            "file_exists": True,
-            "file_size_bytes": file_size
-        }
-        
+            result["message"] = "Screenshot is a valid image"
+
         return result
-    
+
     def validate_attestation_log(self, log_path: str) -> Dict[str, Any]:
         """Validate server-side attestation log"""
         result = {
