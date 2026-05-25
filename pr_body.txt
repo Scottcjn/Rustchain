@@ -1,0 +1,23 @@
+""## Security Audit: UTXO Mempool & Transaction Layer
+
+**Auditor:** @waefrebeorn
+**Date:** 2026-05-24
+**Wallet:** `15wLLZxFzNesJKEXo6E9NMVhpZWEUcAC4R` (BTC)
+**Requested Payout:** 90-150 RTC
+
+### Findings (Batch 1)
+
+| ID | Severity | Description | PoC |
+|----|----------|-------------|-----|
+| A1 | MEDIUM | `mempool_add()` missing `MAX_INPUTS` — DoS via unbounded SELECTs in write lock | `node/test_utxo_no_max_inputs_poc.py` |
+| A2 | MEDIUM | `apply_transaction()` missing `MAX_INPUTS` — block production delay | `node/test_utxo_no_max_inputs_apply_poc.py` |
+| A3 | LOW-MED | `tx_data_json` stores full dict w/ no field/size validation — 20KB+ garbage survives round-trip | `node/test_utxo_mempool_garbage_injection_poc.py` |
+| A4 | LOW | TOCTOU: `mempool_add` + `apply_transaction` both claim same box sequentially | `node/test_utxo_mempool_apply_toctou_poc.py` |
+| A5 | MEDIUM | `mempool_get_block_candidates()` fetchall() loads ALL tx_data_json into memory — OOM via garbage-padded mempool entries (977MB at max pool) | `node/test_utxo_mempool_fetchall_oom_poc.py` |
+
+Full report: `node/bounty_submission_2026-05-24.md`
+
+### Verification
+- All 5 PoCs reproduce the bugs (assertions confirm the vulnerabilities)
+- 99/102 tests pass (3 intentional A1 proof-of-bug failures)
+- Zero regressions against existing test suite""
