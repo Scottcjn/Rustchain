@@ -746,6 +746,8 @@ def api_stats():
 @app.route('/api/wallet/<wallet_address>')
 def api_wallet_lookup(wallet_address):
     """Look up wallet balance and info"""
+    if len(wallet_address) > 128:
+        return jsonify({"error": "Invalid wallet address", "balance": 0}), 400
     try:
         with sqlite3.connect(DB_PATH) as conn:
             # Get balance

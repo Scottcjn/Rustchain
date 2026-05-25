@@ -446,6 +446,9 @@ def add_p2p_endpoints(app, peer_manager, block_sync, tx_gossip):
 
         peer_url = peer_url.strip()
 
+        if len(peer_url) > 1024:
+            return jsonify({"ok": False, "error": "peer_url too long"}), 400
+
         if peer_url:
             success = peer_manager.add_peer(peer_url)
             return jsonify({"ok": success, "peers": len(peer_manager.get_active_peers())})
