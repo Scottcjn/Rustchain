@@ -946,6 +946,12 @@ def _mood_service_unavailable(operation: str):
     return jsonify({"error": "Mood service unavailable"}), 500
 
 
+def _require_valid_agent_name(agent_name: str) -> Optional[tuple]:
+    if len(agent_name) > 128:
+        return jsonify({"error": "agent_name too long"}), 400
+    return None
+
+
 @mood_bp.route("/<agent_name>/mood", methods=["GET"])
 def get_agent_mood_endpoint(agent_name: str):
     """
@@ -956,6 +962,9 @@ def get_agent_mood_endpoint(agent_name: str):
     Query Parameters:
         include_stats - Include mood statistics (default: false)
     """
+    err = _require_valid_agent_name(agent_name)
+    if err:
+        return err
     try:
         engine = get_mood_engine()
         include_stats = request.args.get("include_stats", "false").lower() == "true"
@@ -984,6 +993,9 @@ def record_mood_signal(agent_name: str):
         value - Signal value data
         weight - Optional signal weight (default: 1.0)
     """
+    err = _require_valid_agent_name(agent_name)
+    if err:
+        return err
     try:
         engine = get_mood_engine()
         data, error = _get_json_object()
@@ -1014,6 +1026,9 @@ def generate_mood_title(agent_name: str):
     Request Body:
         topic - Video topic/theme
     """
+    err = _require_valid_agent_name(agent_name)
+    if err:
+        return err
     try:
         engine = get_mood_engine()
         data, error = _get_json_object()
@@ -1044,6 +1059,9 @@ def generate_mood_comment(agent_name: str):
     Request Body:
         base_comment - Optional base comment to modify
     """
+    err = _require_valid_agent_name(agent_name)
+    if err:
+        return err
     try:
         engine = get_mood_engine()
         data, error = _get_json_object(allow_empty=True)
@@ -1070,6 +1088,9 @@ def get_post_probability(agent_name: str):
     
     Get probability of agent posting based on current mood.
     """
+    err = _require_valid_agent_name(agent_name)
+    if err:
+        return err
     try:
         engine = get_mood_engine()
         probability = engine.get_post_probability(agent_name)
@@ -1093,6 +1114,9 @@ def get_mood_statistics_endpoint(agent_name: str):
     
     Get mood statistics for an agent.
     """
+    err = _require_valid_agent_name(agent_name)
+    if err:
+        return err
     try:
         engine = get_mood_engine()
         stats = engine.get_mood_statistics(agent_name)
