@@ -29,6 +29,13 @@ from utxo_db import UtxoDB, UNIT
 
 
 class TestMempoolNoMaxInputsBoundary(unittest.TestCase):
+    """
+    🔴 2 tests intentionally fail — they prove the bug exists.
+    test_EXPECTED_FAILURE_mempool_accepts_unbounded_inputs — 200-input tx ACCEPTED (should reject)
+    test_EXPECTED_FAILURE_mempool_dos_magnitude — 500-input tx ACCEPTED (should reject)
+    These fail with: AssertionError: True is not false
+    To run: pytest -k 'not EXPECTED_FAILURE' to skip them.
+    """
     """mempool_add() accepts transactions with unlimited inputs → DoS vector."""
 
     def setUp(self):
@@ -59,12 +66,11 @@ class TestMempoolNoMaxInputsBoundary(unittest.TestCase):
             box_ids.append(boxes[0]['box_id'])
         return box_ids
 
-    def test_mempool_accepts_unbounded_inputs(self):
+    def test_EXPECTED_FAILURE_mempool_accepts_unbounded_inputs(self):
         """
-        EXPLOIT: Submit a tx with 200 inputs — no MAX_INPUTS guard.
-        EXPECT: Should reject (exceeds any reasonable input count).
-        ACTUAL: Accepted — each input triggers a separate SELECT query
-        inside BEGIN IMMEDIATE, blocking concurrent operations.
+        🔴 INTENTIONALLY FAILS — proves the bug exists.
+        Submits 200-input tx. Should be rejected (no MAX_INPUTS guard).
+        ACTUAL: Accepted — proving the vulnerability.
         """
         box_ids = self._create_unspent_boxes(200)
         inputs = [{'box_id': bid, 'spending_proof': 'sig'} for bid in box_ids]
@@ -89,7 +95,7 @@ class TestMempoolNoMaxInputsBoundary(unittest.TestCase):
             "CRITICAL: mempool_add should reject excessive inputs "
             "(200 SELECT queries inside BEGIN IMMEDIATE = DoS vector)")
 
-    def test_mempool_dos_magnitude(self):
+    def test_EXPECTED_FAILURE_mempool_dos_magnitude(self):
         """
         Measure the cost — 500-input tx to quantify the DoS surface.
         Each input adds a SELECT query. Attacker can scale to 5000+
@@ -124,7 +130,7 @@ class TestMempoolNoMaxInputsBoundary(unittest.TestCase):
         self.db.apply_transaction({
             'tx_type': 'mining_reward',
             'inputs': [],
-            'outputs': [{'address': 'fund', 'value_nrtc': 500 * UNIT}],
+            'outputs': [{'address': 'fund', 'value_nrtc': 100 * UNIT}],
             'fee_nrtc': 0,
             'timestamp': int(time.time()),
             '_allow_minting': True,
