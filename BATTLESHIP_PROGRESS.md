@@ -22,6 +22,9 @@
 | A24 | bridge/bridge_api.py | sender_wallet/target_wallet/tx_hash/receipt_signature/proof_ref/notes/release_tx | #6267 | Open |
 | A25 | faucet.py | wallet | #6268 | Open |
 | A26 | sophia_api.py | miner_id (POST + 2 GET path params) | #6269 | Open |
+| A27 | explorer/app.py | miner_id (2 GET path params) | #6270 | Open |
+| A28 | node/rustchain_p2p_sync.py | peer_url (POST /p2p/announce) | #6271 | Open |
+| A29 | explorer/rustchain_dashboard.py | wallet_address (GET path param) | #6272 | Open |
 
 ## Exhausted cells (grid complete)
 | Cell | File | Vulnerability | PR |
