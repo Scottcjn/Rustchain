@@ -16,6 +16,7 @@ This should use INSERT OR IGNORE (or catch IntegrityError for logging).
 import sys
 import os
 import sqlite3
+import pytest
 
 sys.path.insert(0, os.path.dirname(__file__))
 from utxo_db import UtxoDB, UNIT
@@ -56,8 +57,7 @@ def test_add_box_duplicate_own_conn_raises():
     # Second insert with same box_id — should raise IntegrityError
     try:
         db.add_box(box)
-        print("[BUG] Duplicate add_box ACCEPTED — should have raised IntegrityError")
-        return False
+        pytest.fail("Duplicate add_box ACCEPTED — should have raised IntegrityError")
     except sqlite3.IntegrityError:
         print("[OK] Duplicate add_box raised IntegrityError as expected")
     except Exception as e:
@@ -69,8 +69,6 @@ def test_add_box_duplicate_own_conn_raises():
     conn.close()
     assert count == 1, "Expected 1 box, got %d" % count
     print("[OK] Exactly 1 box in DB (count=%d)" % count)
-
-    return True
 
 
 def test_add_box_batch_crash():
@@ -97,7 +95,7 @@ def test_add_box_batch_crash():
             ), conn=conn)
             print("[BUG] Duplicate in batch ACCEPTED — data integrity lost")
             conn.rollback()
-            return False
+            pytest.fail("Duplicate in batch ACCEPTED — data integrity lost")
         except sqlite3.IntegrityError:
             print("[OK] Duplicate in batch raised IntegrityError")
             # The batch transaction is now doomed — any further ops in this
@@ -108,8 +106,6 @@ def test_add_box_batch_crash():
         print("[OK] Batch rolled back cleanly")
     finally:
         conn.close()
-
-    return True
 
 
 def test_add_box_duplicate_cleanup_no_connection_leak():
@@ -143,10 +139,7 @@ def test_add_box_duplicate_cleanup_no_connection_leak():
         db.add_box(box2)
         print("[OK] Second add_box succeeded — no connection leak")
     except Exception as e:
-        print("[BUG] Connection leak: %s: %s" % (type(e).__name__, e))
-        return False
-
-    return True
+        pytest.fail("Connection leak: %s: %s" % (type(e).__name__, e))
 
 
 if __name__ == "__main__":
@@ -157,8 +150,8 @@ if __name__ == "__main__":
         ("test_add_box_duplicate_cleanup_no_connection_leak", test_add_box_duplicate_cleanup_no_connection_leak),
     ]:
         try:
-            ok = fn()
-            results.append((name, "PASS" if ok else "FAIL"))
+            fn()
+            results.append((name, "PASS"))
         except Exception as e:
             results.append((name, "EXCEPTION: %s" % e))
 

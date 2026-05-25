@@ -11,6 +11,7 @@ A11: _normalize_outputs has no MAX_OUTPUTS_BYTES check on tx_data_json serializa
 import sys
 import os
 import json
+import pytest
 
 sys.path.insert(0, os.path.dirname(__file__))
 from utxo_db import address_to_proposition, proposition_to_address, UtxoDB, P2PK_PREFIX
@@ -24,7 +25,6 @@ def test_a9_empty_address():
     prefix_hex = P2PK_PREFIX.hex()
     assert result.startswith(prefix_hex), "Should at least have prefix"
     print("[A9] Empty address → %s... (len=%d)" % (result[:20], len(result)))
-    return True
 
 
 def test_a9_10k_address():
@@ -32,14 +32,12 @@ def test_a9_10k_address():
     huge = "A" * 10000
     result = address_to_proposition(huge)
     print("[A9] 10KB address accepted → len=%d bytes" % len(result))
-    return True
 
 
 def test_a9_null_bytes():
     """Null bytes in address accepted"""
     result = address_to_proposition("valid\x00address")
     print("[A9] Address with null byte accepted: %s..." % result[:30])
-    return True
 
 
 # --- A10: proposition_to_address no hex decode error handling ---
@@ -48,22 +46,18 @@ def test_a10_odd_length():
     """Odd-length hex raises ValueError — no graceful handling"""
     try:
         result = proposition_to_address("aabbc")  # 5 chars, odd
-        print("[A10] Odd-length hex accepted: %s (BUG: should fail)" % result)
-        return False
+        pytest.fail("Odd-length hex accepted: %s (BUG: should fail)" % result)
     except ValueError as e:
         print("[A10] Odd-length hex raises ValueError: %s (graceful? NO — unhandled)" % e)
-        return True
 
 
 def test_a10_invalid_hex():
     """Invalid hex chars raise ValueError — caller must catch"""
     try:
         result = proposition_to_address("zzzzz")
-        print("[A10] Invalid hex accepted: %s (BUG)" % result)
-        return False
+        pytest.fail("Invalid hex accepted: %s (BUG)" % result)
     except ValueError as e:
         print("[A10] Invalid hex raises ValueError: %s" % e)
-        return True
 
 
 # --- A11: _normalize_outputs no MAX_OUTPUTS_BYTES check ---
@@ -78,7 +72,6 @@ def test_a11_unbounded_output_size():
     db = UtxoDB(db_path)
     db.init_tables()
 
-    # Create setup boxes
     from utxo_db import UNIT
     db.add_box(dict(
         box_id="big_output_source", value_nrtc=100 * UNIT,
@@ -110,7 +103,6 @@ def test_a11_unbounded_output_size():
         print("[A11] Exception: %s: %s" % (type(e).__name__, e))
 
     os.remove(db_path)
-    return True
 
 
 def test_a11_oversized_register():
@@ -145,7 +137,6 @@ def test_a11_oversized_register():
         print("[A11] Exception: %s: %s" % (type(e).__name__, e))
 
     os.remove(db_path)
-    return True
 
 
 if __name__ == "__main__":
@@ -161,8 +152,8 @@ if __name__ == "__main__":
     results = []
     for name, fn in tests:
         try:
-            ok = fn()
-            results.append((name, "PASS" if ok else "FAIL"))
+            fn()
+            results.append((name, "PASS"))
         except Exception as e:
             results.append((name, "EXCEPTION: %s" % e))
 
