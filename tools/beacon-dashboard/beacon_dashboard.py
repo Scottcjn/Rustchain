@@ -204,6 +204,8 @@ def draw_status_bar(stdscr, width, message, db_path):
     try:
         stdscr.addnstr(row, 0, status.ljust(width)[:width], width)
     except curses.error:
+        # Terminal resized or too narrow - gracefully skip status bar draw
+        # rather than crashing the TUI on SIGWINCH
         pass
     stdscr.attroff(curses.color_pair(C_STATUS))
 
