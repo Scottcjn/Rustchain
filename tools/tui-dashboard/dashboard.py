@@ -125,8 +125,9 @@ class RustChainData:
                     "volume_24h": float(pair.get("volume", {}).get("h24", 0)),
                     "liquidity": float(pair.get("liquidity", {}).get("usd", 0)),
                 }
-        except Exception:
-            pass
+        except Exception as ex:
+            logger = __import__("logging").getLogger(__name__)
+            logger.debug("DexScreener price fetch failed: %s", ex)
         return {}
 
 # ---------------------------------------------------------------------------
