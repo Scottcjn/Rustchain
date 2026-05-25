@@ -141,11 +141,12 @@
 | F8 | tools/bios_pawpaw_detector.py:29 | bare `except:` → `except Exception:` | #6314 |
 || F32 | integrations/solana-spl/sdk.py:43 | `TODO_DEPLOY_ON_DEVNET` → env-var configurable | #6315 | ✅ Done |
 
-### Wave 7 — Form-Not-Function Fixes (F20-F21)
+### Wave 7 — Form-Not-Function Fixes (F20-F22)
 || Cell | File | Vulnerability | PR | Status |
 ||------|------|---------------|----|--------|
 || F20 | tools/validate_genesis.py | `except Exception: pass` → typed + logging | #6328 (PR #23) | ✅ FIXED |
 || F21 | tools/beacon-dashboard/beacon_dashboard.py | `except curses.error: pass` → documented skip | #6329 (PR #24) | ✅ FIXED |
+|| F22 | tools/tui-dashboard/dashboard.py | `except Exception: pass` → debug logging | #6330 (PR #25) | ✅ FIXED |
 
 ### Legacy / Misc
 
@@ -161,7 +162,7 @@
 | S14 | QR placeholder in machine_passport_viewer.py:290 (low priority) |
 | S21-S30 | Carried forward to fresh grid |
 
-**116 cells vaulted. 58 PRs submitted. 19 jaxint-approved. 1 MolhamHamwi-approved.**
+**117 cells vaulted. 59 PRs submitted. 19 jaxint-approved. 1 MolhamHamwi-approved.**
 
 ---
 
@@ -173,7 +174,6 @@
 
 | Cell | File:Line | Gap | Severity |
 |------|-----------|-----|----------|
-| F22 | tools/tui-dashboard/dashboard.py:129 | bare pass on render failure | LOW |
 | F23 | tools/rent_a_relic/mcp_integration.py:216 | bare pass on command failure | MED |
 | F24 | tools/discord_leaderboard_bot.py:109 | bare pass on API error | LOW |
 | F25 | tools/comment-moderation/scorer.py:192 | semantic scoring stub (previously S5) | MED |
