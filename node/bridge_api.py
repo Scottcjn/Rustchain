@@ -21,6 +21,7 @@ import hashlib
 import logging
 import os
 import math
+import re
 from typing import Optional, Tuple, Dict, Any
 from decimal import Decimal
 from dataclasses import dataclass
@@ -228,15 +229,15 @@ def validate_chain_address_format(chain: str, address: str) -> Tuple[bool, str]:
         return False, "Address is required"
     
     if chain == "rustchain":
-        if not address.startswith("RTC"):
-            return False, "RustChain addresses must start with 'RTC'"
-        if len(address) < 10:
-            return False, "RustChain address too short"
+        if not re.match(r"^RTC[0-9a-fA-F]{40}$", address):
+            return False, "RustChain address must be RTC + 40 hex characters"
     
     elif chain == "solana":
         # Solana addresses are base58, 32-44 chars
         if len(address) < 32 or len(address) > 44:
             return False, "Invalid Solana address length"
+        if not all(c in "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz" for c in address):
+            return False, "Invalid Solana address: contains non-base58 characters"
     
     elif chain == "ergo":
         # Ergo addresses start with '9' or '3'
