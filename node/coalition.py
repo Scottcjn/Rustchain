@@ -948,6 +948,21 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
                         (coalition_id, limit, offset)
                     ).fetchall()
                 proposals = [dict(r) for r in rows]
+                
+                # Enrich active proposals with quorum info
+                for p in proposals:
+                    if p.get("status") == PROPOSAL_STATUS_ACTIVE:
+                        member_count = _count_active_members(p["coalition_id"], db_path)
+                        voter_count = conn.execute(
+                            "SELECT COUNT(DISTINCT miner_id) FROM coalition_votes WHERE proposal_id = ?",
+                            (p["id"],)
+                        ).fetchone()[0]
+                        quorum_required = member_count * QUORUM_THRESHOLD
+                        p["member_count"] = member_count
+                        p["voter_count"] = voter_count
+                        p["quorum_required"] = quorum_required
+                        p["quorum_met"] = voter_count >= quorum_required if member_count > 0 else False
+                        p["total_votes"] = float(p.get("votes_for", 0)) + float(p.get("votes_against", 0))
         except Exception as e:
             log.error("List proposals error: %s", e)
             return jsonify({"error": "internal error"}), 500
