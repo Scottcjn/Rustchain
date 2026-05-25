@@ -19,6 +19,7 @@ Usage:
 """
 
 import json
+import os
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass
 from pathlib import Path
@@ -40,7 +41,10 @@ except ImportError:
 # ============================================================================
 
 WRTC_MINT_MAINNET = "12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X"
-WRTC_MINT_DEVNET = "TODO_DEPLOY_ON_DEVNET"
+WRTC_MINT_DEVNET = os.environ.get(
+    "WRTC_MINT_DEVNET",
+    "TODO_DEPLOY_ON_DEVNET"  # Set WRTC_MINT_DEVNET env var before using devnet
+)
 
 RPC_ENDPOINTS = {
     "mainnet": "https://api.mainnet-beta.solana.com",
