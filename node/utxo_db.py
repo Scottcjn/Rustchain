@@ -47,6 +47,7 @@ MAX_UTXO_ADDRESS_BYTES = 256
 MAX_UTXO_METADATA_BYTES = 8_192
 MAX_MEMPOOL_TX_ID_BYTES = 128
 MAX_TX_AGE_SECONDS = 3_600  # 1 hour mempool expiry
+MAX_SPENDING_PROOF_BYTES = 8_192  # 8KB max per-input spending proof
 MAX_SQLITE_INT64 = 2**63 - 1
 P2PK_PREFIX = b'\x00\x08'   # Pay-to-Public-Key proposition prefix
 SUPPORTED_TX_TYPES = {'transfer', 'mining_reward'}
@@ -882,6 +883,12 @@ class UtxoDB:
                 return False
 
             inputs = tx.get('inputs', [])
+            for inp in inputs:
+                sp = inp.get('spending_proof', '')
+                if isinstance(sp, str) and len(sp) > MAX_SPENDING_PROOF_BYTES:
+                    if manage_tx:
+                        conn.execute("ROLLBACK")
+                    return False
             tx_type = self._normalize_tx_type(tx)
             if tx_type is None:
                 if manage_tx:
