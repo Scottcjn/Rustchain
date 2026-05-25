@@ -1025,9 +1025,16 @@ class UtxoDB:
             conn.close()
 
     def mempool_remove(self, tx_id: str):
-        """Remove a transaction from the mempool."""
+        """Remove a transaction from the mempool.
+
+        Uses BEGIN IMMEDIATE to ensure atomicity of the two DELETE
+        operations. Without it, a crash between deletes can leave
+        orphan utxo_mempool_inputs rows, causing a persistent UTXO
+        lock / mempool DoS (BUG-1).
+        """
         conn = self._conn()
         try:
+            conn.execute("BEGIN IMMEDIATE")
             conn.execute(
                 "DELETE FROM utxo_mempool_inputs WHERE tx_id = ?", (tx_id,)
             )
@@ -1035,6 +1042,54 @@ class UtxoDB:
                 "DELETE FROM utxo_mempool WHERE tx_id = ?", (tx_id,)
             )
             conn.commit()
+        except Exception:
+            try:
+                conn.execute("ROLLBACK")
+            except Exception:
+                pass
+            raise
+        finally:
+            conn.close()
+
+    def _evict_stale_data_input_txs(self, spent_box_ids: List[str]) -> int:
+        """Remove mempool txs whose data_inputs include any of spent_box_ids.
+
+        BUG-4 fix: apply_transaction() now proactively evicts mempool
+        transactions that became invalid because a data_input they
+        depended on was just spent. Without this, stale txs hold their
+        normal inputs reserved in utxo_mempool_inputs until candidate
+        selection catches them — an availability gap.
+        """
+        if not spent_box_ids:
+            return 0
+        conn = self._conn()
+        try:
+            placeholders = ",".join("?" for _ in spent_box_ids)
+            stale_ids = conn.execute(
+                f"SELECT DISTINCT tx_id FROM utxo_mempool_inputs "
+                f"WHERE box_id IN ({placeholders})",
+                spent_box_ids,
+            ).fetchall()
+            if not stale_ids:
+                return 0
+            stale_tx_ids = [row["tx_id"] for row in stale_ids]
+            tx_placeholders = ",".join("?" for _ in stale_tx_ids)
+            conn.execute(
+                f"DELETE FROM utxo_mempool_inputs WHERE tx_id IN ({tx_placeholders})",
+                stale_tx_ids,
+            )
+            conn.execute(
+                f"DELETE FROM utxo_mempool WHERE tx_id IN ({tx_placeholders})",
+                stale_tx_ids,
+            )
+            conn.commit()
+            return len(stale_tx_ids)
+        except Exception:
+            try:
+                conn.execute("ROLLBACK")
+            except Exception:
+                pass
+            return 0
         finally:
             conn.close()
 
