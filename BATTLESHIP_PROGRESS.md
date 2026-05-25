@@ -171,7 +171,7 @@
 | S14 | QR placeholder in machine_passport_viewer.py:290 (low priority) |
 | S21-S30 | Carried forward to fresh grid |
 
-**123 cells vaulted. 64 PRs submitted. 19 jaxint-approved. 1 MolhamHamwi-approved.**
+**124 cells vaulted. 65 PRs submitted. 19 jaxint-approved. 1 MolhamHamwi-approved.**
 
 ---
 
@@ -245,7 +245,7 @@
 | T8 | node/bottube_feed.py | ✅ VAULTED (#6334) | MED |
 | T9 | node/bottube_feed_routes.py | ✅ VAULTED (#6335) | MED |
 | T10 | node/bridge_api.py | — | HIGH |
-| T11 | node/claims_eligibility.py | — | MED |
+|| T11 | node/claims_eligibility.py | 53 unit tests (was 0%) | #6336 | ✅ PR |
 | T12 | node/claims_settlement.py | ✅ VAULTED (#6327) | HIGH |
 | T13 | node/claims_submission.py | — | MED |
 | T14 | node/consensus_probe.py | — | MED |
