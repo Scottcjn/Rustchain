@@ -1063,38 +1063,69 @@ class UtxoDB:
             conn.close()
 
     def _evict_stale_data_input_txs(self, spent_box_ids: List[str]) -> int:
-        """Remove mempool txs whose data_inputs include any of spent_box_ids.
+        """Remove mempool txs whose inputs or data_inputs include any of spent_box_ids.
 
         BUG-4 fix: apply_transaction() now proactively evicts mempool
-        transactions that became invalid because a data_input they
-        depended on was just spent. Without this, stale txs hold their
-        normal inputs reserved in utxo_mempool_inputs until candidate
-        selection catches them — an availability gap.
+        transactions that became invalid because a box they depend on
+        (as a regular input or data_input) was just spent. Without this,
+        stale txs hold their normal inputs reserved in utxo_mempool_inputs
+        until candidate selection catches them — an availability gap.
+
+        Search strategy:
+        1. Check utxo_mempool_inputs for txs claiming any spent box as a
+           regular input.
+        2. Scan utxo_mempool.tx_data_json for txs whose data_inputs
+           reference any spent box (since data_inputs are not recorded
+           in utxo_mempool_inputs — they are read-only references).
         """
         if not spent_box_ids:
             return 0
         conn = self._conn()
         try:
+            spent_set = set(spent_box_ids)
+            stale_tx_ids = set()
+
+            # 1. Txs claiming spent boxes as regular inputs
             placeholders = ",".join("?" for _ in spent_box_ids)
-            stale_ids = conn.execute(
+            rows = conn.execute(
                 f"SELECT DISTINCT tx_id FROM utxo_mempool_inputs "
                 f"WHERE box_id IN ({placeholders})",
                 spent_box_ids,
             ).fetchall()
-            if not stale_ids:
+            for row in rows:
+                stale_tx_ids.add(row["tx_id"])
+
+            # 2. Txs referencing spent boxes as data_inputs
+            #    (not stored in utxo_mempool_inputs, so parse tx_data_json)
+            all_mempool = conn.execute(
+                "SELECT tx_id, tx_data_json FROM utxo_mempool"
+            ).fetchall()
+            for mp_row in all_mempool:
+                if mp_row["tx_id"] in stale_tx_ids:
+                    continue  # already flagged
+                try:
+                    tx_data = json.loads(mp_row["tx_data_json"])
+                    di = tx_data.get("data_inputs", [])
+                    if di and spent_set & set(di):
+                        stale_tx_ids.add(mp_row["tx_id"])
+                except (json.JSONDecodeError, TypeError):
+                    continue
+
+            if not stale_tx_ids:
                 return 0
-            stale_tx_ids = [row["tx_id"] for row in stale_ids]
-            tx_placeholders = ",".join("?" for _ in stale_tx_ids)
+
+            tx_ids = list(stale_tx_ids)
+            tx_placeholders = ",".join("?" for _ in tx_ids)
             conn.execute(
                 f"DELETE FROM utxo_mempool_inputs WHERE tx_id IN ({tx_placeholders})",
-                stale_tx_ids,
+                tx_ids,
             )
             conn.execute(
                 f"DELETE FROM utxo_mempool WHERE tx_id IN ({tx_placeholders})",
-                stale_tx_ids,
+                tx_ids,
             )
             conn.commit()
-            return len(stale_tx_ids)
+            return len(tx_ids)
         except Exception:
             try:
                 conn.execute("ROLLBACK")

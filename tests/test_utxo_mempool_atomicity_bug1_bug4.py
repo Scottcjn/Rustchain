@@ -94,6 +94,49 @@ class TestStaleDataInputEvictionBug4:
     def test_evict_empty_list(self, db):
         assert db._evict_stale_data_input_txs([]) == 0
 
+    def test_evict_finds_tx_via_data_input_in_tx_data_json(self, db):
+        """Unit test: _evict_stale_data_input_txs should find mempool txs
+        that reference a spent box only through data_inputs (not recorded
+        in utxo_mempool_inputs). This is the tx_data_json scanning path."""
+        _add_box(db, 'box_data', 10000)
+        _add_box(db, 'box_regular', 10000, 'addr2')
+
+        # Add a mempool tx via mempool_add with a data_input
+        ok = db.mempool_add({
+            'tx_id': 'tx_di_test',
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': 'box_regular', 'spending_proof': 'p'}],
+            'data_inputs': ['box_data'],
+            'outputs': [{'address': 'addr3', 'value_nrtc': 9900}],
+            'fee_nrtc': 100,
+        })
+        assert ok, 'mempool_add with data_input should work'
+
+        # box_data is NOT in utxo_mempool_inputs (only regular inputs are)
+        conn = db._conn()
+        try:
+            row = conn.execute(
+                'SELECT tx_id FROM utxo_mempool_inputs WHERE box_id=?',
+                ('box_data',),
+            ).fetchone()
+        finally:
+            conn.close()
+        assert row is None, 'data_input should not be in utxo_mempool_inputs'
+
+        # But _evict_stale_data_input_txs should still find and evict the tx
+        evicted = db._evict_stale_data_input_txs(['box_data'])
+        assert evicted == 1, 'should evict tx referencing spent data_input'
+
+        conn = db._conn()
+        try:
+            mp = conn.execute(
+                'SELECT tx_id FROM utxo_mempool WHERE tx_id=?',
+                ('tx_di_test',),
+            ).fetchone()
+        finally:
+            conn.close()
+        assert mp is None, 'tx should be removed from mempool'
+
     def test_apply_transaction_evicts_stale_mempool_tx_via_input(self, db):
         """Regression test: apply_transaction() should evict mempool txs
         whose claimed inputs reference a box that was just spent.
@@ -217,3 +260,88 @@ class TestStaleDataInputEvictionBug4:
             conn.close()
 
         assert m2 is not None, "tx_m2 should remain (its input box_b was not spent)"
+    def test_apply_transaction_evicts_mempool_tx_with_data_input(self, db):
+        """Regression test: apply_transaction() should evict mempool txs
+        whose data_inputs reference a box that was just spent.
+        Uses real mempool_add() + apply_transaction() flow.
+        This addresses the reviewer concern that data_inputs are not
+        recorded in utxo_mempool_inputs and thus need tx_data_json scanning."""
+        # Create two boxes via minting
+        db.apply_transaction({
+            'tx_type': 'mining_reward',
+            'inputs': [],
+            'outputs': [{'address': 'addr_spend', 'value_nrtc': 10000}],
+            'fee_nrtc': 0,
+            'data_inputs': [],
+            '_allow_minting': True,
+        }, block_height=1)
+        db.apply_transaction({
+            'tx_type': 'mining_reward',
+            'inputs': [],
+            'outputs': [{'address': 'addr_input', 'value_nrtc': 10000}],
+            'fee_nrtc': 0,
+            'data_inputs': [],
+            '_allow_minting': True,
+        }, block_height=1)
+
+        # Find actual box_ids
+        conn = db._conn()
+        try:
+            box_spend = conn.execute(
+                'SELECT box_id FROM utxo_boxes WHERE owner_address=? AND spent_at IS NULL ORDER BY box_id ASC LIMIT 1',
+                ('addr_spend',),
+            ).fetchone()['box_id']
+            box_input = conn.execute(
+                'SELECT box_id FROM utxo_boxes WHERE owner_address=? AND spent_at IS NULL ORDER BY box_id ASC LIMIT 1',
+                ('addr_input',),
+            ).fetchone()['box_id']
+        finally:
+            conn.close()
+
+        # Add mempool tx that uses box_spend as a DATA input (read-only)
+        # and box_input as a regular input
+        ok = db.mempool_add({
+            'tx_id': 'tx_data_dep',
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': box_input, 'spending_proof': 'p_input'}],
+            'data_inputs': [box_spend],
+            'outputs': [{'address': 'addr_out', 'value_nrtc': 9900}],
+            'fee_nrtc': 100,
+        })
+        assert ok, 'mempool_add with data_input should succeed'
+
+        # Verify tx_data_dep is in the mempool
+        conn = db._conn()
+        try:
+            mp = conn.execute(
+                'SELECT tx_id FROM utxo_mempool WHERE tx_id=?', ('tx_data_dep',)
+            ).fetchone()
+        finally:
+            conn.close()
+        assert mp is not None, 'tx_data_dep should be in mempool'
+
+        # Spend box_spend via apply_transaction
+        # This makes box_spend unavailable, which should invalidate tx_data_dep
+        # (since tx_data_dep depends on box_spend as a data_input)
+        result = db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': box_spend, 'spending_proof': 'p_spend'}],
+            'outputs': [{'address': 'addr_spent_to', 'value_nrtc': 9900}],
+            'fee_nrtc': 100,
+            'data_inputs': [],
+        }, block_height=2)
+        assert result, 'apply_transaction spending box_spend should succeed'
+
+        # BUG-4 regression: tx_data_dep should be evicted
+        conn = db._conn()
+        try:
+            mp = conn.execute(
+                'SELECT tx_id FROM utxo_mempool WHERE tx_id=?', ('tx_data_dep',)
+            ).fetchone()
+            inp = conn.execute(
+                'SELECT tx_id FROM utxo_mempool_inputs WHERE tx_id=?', ('tx_data_dep',)
+            ).fetchone()
+        finally:
+            conn.close()
+        assert mp is None, 'BUG-4: stale mempool tx with spent data_input should be evicted'
+        assert inp is None, 'BUG-4: input claims for evicted tx should be cleaned up'
