@@ -5471,6 +5471,10 @@ def api_fee_pool():
 @app.route('/withdraw/status/<withdrawal_id>', methods=['GET'])
 def withdrawal_status(withdrawal_id):
     """Get withdrawal status"""
+    # SECURITY: Require admin key — exposes miner_pk, amount, destination, tx_hash without auth
+    admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
+    if not admin_key or not hmac.compare_digest(admin_key, ADMIN_KEY or ""):
+        return jsonify({"error": "Unauthorized - admin key required"}), 401
     with sqlite3.connect(DB_PATH) as c:
         row = c.execute("""
             SELECT miner_pk, amount, fee, destination, status,
