@@ -27,6 +27,8 @@
 | A29 | explorer/rustchain_dashboard.py | wallet_address (GET path param) | #6272 | Open |
 | A30 | tools/testnet_faucet.py | wallet, github_username | #6273 | Open |
 | A31 | tools/rent_a_relic/server.py | agent_id, machine_id | #6274 | Open |
+| A32 | tools/explorer-api/api.py | addr (GET path param) | #6275 | Open |
+| A33 | tools/explorer-api/api.py | q (GET /api/search query param) | #6276 | Open |
 
 ## Exhausted cells (grid complete)
 | Cell | File | Vulnerability | PR |
