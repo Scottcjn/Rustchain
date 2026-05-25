@@ -23,6 +23,14 @@ beacon_api = Blueprint('beacon_api', __name__)
 DB_PATH = 'rustchain_v2.db'
 BEACON_AUTH_WINDOW_SECONDS = 300
 
+# Maximum field lengths to prevent SQLite/DOS via unbounded TEXT fields
+MAX_AGENT_ID_LENGTH = 128       # agent identifier
+MAX_PUBKEY_HEX_LENGTH = 128     # Ed25519 pubkey (~44 bytes in base64, 64 in hex)
+MAX_AGENT_NAME_LENGTH = 256     # human-readable name
+MAX_CURRENCY_LENGTH = 16        # currency code (e.g. 'RTC', 'USDC')
+MAX_CONTRACT_TYPE_LENGTH = 64   # contract type identifier
+MAX_CONTRACT_TERM_LENGTH = 1024 # contract term/description
+
 # In-memory cache for bounties (synced from GitHub)
 bounty_cache = {
     'data': [],
@@ -392,6 +400,26 @@ def beacon_join():
             return jsonify({'error': 'Invalid name: must be a string'}), 400
         if coinbase_address is not None and not isinstance(coinbase_address, str):
             return jsonify({'error': 'Invalid coinbase_address: must be a string'}), 400
+
+        # Validate field lengths to prevent unbounded TEXT storage
+        if len(agent_id) > MAX_AGENT_ID_LENGTH:
+            return jsonify({
+                'error': 'agent_id too long',
+                'max_length': MAX_AGENT_ID_LENGTH,
+                'actual_length': len(agent_id),
+            }), 400
+        if len(pubkey_hex) > MAX_PUBKEY_HEX_LENGTH:
+            return jsonify({
+                'error': 'pubkey_hex too long',
+                'max_length': MAX_PUBKEY_HEX_LENGTH,
+                'actual_length': len(pubkey_hex),
+            }), 400
+        if name and len(name) > MAX_AGENT_NAME_LENGTH:
+            return jsonify({
+                'error': 'name too long',
+                'max_length': MAX_AGENT_NAME_LENGTH,
+                'actual_length': len(name),
+            }), 400
         
         # Validate coinbase_address if provided (should be 0x-prefixed, 40 hex chars)
         if coinbase_address:
@@ -605,14 +633,37 @@ def create_contract():
         if amount_error:
             return amount_error, amount_status
 
+        # Validate field lengths to prevent unbounded TEXT storage
+        contract_type = data['type']
+        contract_term = data['term']
+        contract_currency = data.get('currency', 'RTC')
+        if len(contract_type) > MAX_CONTRACT_TYPE_LENGTH:
+            return jsonify({
+                'error': 'type too long',
+                'max_length': MAX_CONTRACT_TYPE_LENGTH,
+                'actual_length': len(contract_type),
+            }), 400
+        if len(contract_term) > MAX_CONTRACT_TERM_LENGTH:
+            return jsonify({
+                'error': 'term too long',
+                'max_length': MAX_CONTRACT_TERM_LENGTH,
+                'actual_length': len(contract_term),
+            }), 400
+        if len(contract_currency) > MAX_CURRENCY_LENGTH:
+            return jsonify({
+                'error': 'currency too long',
+                'max_length': MAX_CURRENCY_LENGTH,
+                'actual_length': len(contract_currency),
+            }), 400
+
         contract = {
             'id': contract_id,
             'from': data['from'],
             'to': data['to'],
-            'type': data['type'],
+            'type': contract_type,
             'amount': amount,
-            'currency': data.get('currency', 'RTC'),
-            'term': data['term'],
+            'currency': contract_currency,
+            'term': contract_term,
             'state': 'offered',  # Initial state
             'created_at': int(time.time()),
         }
