@@ -84,7 +84,7 @@
 | S14 | machine_passport_viewer.py:290 | QR code is placeholder div — no real QR gen | LOW |
 | S15 | bottube_embed.py:708 | _get_mock_video() fallback — no real DB query | MED |
 | S16 | bottube_feed_routes.py:80 | pagination cursor not implemented in mock | MED |
-| S17 | ed25519_config.py:27 | TESTNET_ALLOW_MOCK_SIG config still exists | HIGH |
+| S17 | ed25519_config.py:27 | TESTNET_ALLOW_MOCK_SIG → env-var-driven, prevents monkey-patching | HIGH | ✅ #6291 |
 | S18 | bridge_api.py | no rate limiting on any endpoint | MED |
 | S19 | beacon_api.py | no rate limiting on any endpoint | MED |
 | S20 | airdrop_v2.py | no rate limiting on airdrop endpoints | MED |
@@ -183,6 +183,6 @@
 - **Row H** — Economic — expandable
 - **Row I** — Cross-repo — expandable
 
-**57 cells vaulted. ~359 fresh gaps to hunt.**
+**59 cells vaulted. ~357 fresh gaps to hunt.**
 
 Pick lowest undone coordinate by row priority: S → M → D → E → T
