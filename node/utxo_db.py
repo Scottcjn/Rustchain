@@ -714,18 +714,31 @@ class UtxoDB:
                 ),
             )
 
-            if manage_tx:
-                conn.execute("COMMIT")
-            # -- BUG-4: evict stale mempool txs referencing spent inputs ----
-            # Runs after COMMIT so the spend is durable. Opens its own
-            # connection. A failure here does not affect the committed
-            # transaction, but we swallow exceptions for safety.
+        # -- BUG-4: evict stale mempool txs referencing spent inputs ----
+        # Must run BEFORE COMMIT when the caller holds an external
+        # connection (manage_tx=False), because SQLite only allows
+        # one writer at a time. When we own the transaction
+        # (manage_tx=True), we commit first, then evict on a fresh
+        # connection so a failure cannot roll back the durable spend.
             _spent_ids = list(set(input_box_ids + list(data_inputs)))
             if _spent_ids:
-                try:
-                    self._evict_stale_data_input_txs(_spent_ids)
-                except Exception:
-                    pass  # best-effort; already committed
+                if not manage_tx:
+                    # External-connection path: evict inside the caller's
+                    # transaction so the DELETEs share the same write lock.
+                    try:
+                        self._evict_stale_data_input_txs(_spent_ids, conn=conn)
+                    except Exception:
+                        pass  # best-effort; outer caller will commit the spend
+            if manage_tx:
+                conn.execute("COMMIT")
+                # Own-transaction path: spend is committed. Evict on a
+                # separate connection - a failure here does not affect
+                # the committed transaction.
+                if _spent_ids:
+                    try:
+                        self._evict_stale_data_input_txs(_spent_ids)
+                    except Exception:
+                        pass  # best-effort; already committed
             return True
 
         except Exception:
@@ -1062,7 +1075,8 @@ class UtxoDB:
         finally:
             conn.close()
 
-    def _evict_stale_data_input_txs(self, spent_box_ids: List[str]) -> int:
+    def _evict_stale_data_input_txs(self, spent_box_ids: List[str],
+                              conn: Optional[sqlite3.Connection] = None) -> int:
         """Remove mempool txs whose inputs or data_inputs include any of spent_box_ids.
 
         BUG-4 fix: apply_transaction() now proactively evicts mempool
@@ -1080,7 +1094,9 @@ class UtxoDB:
         """
         if not spent_box_ids:
             return 0
-        conn = self._conn()
+        own_conn = conn is None
+        if own_conn:
+            conn = self._conn()
         try:
             spent_set = set(spent_box_ids)
             stale_tx_ids = set()
@@ -1124,16 +1140,19 @@ class UtxoDB:
                 f"DELETE FROM utxo_mempool WHERE tx_id IN ({tx_placeholders})",
                 tx_ids,
             )
-            conn.commit()
+            if own_conn:
+                conn.commit()
             return len(tx_ids)
         except Exception:
-            try:
-                conn.execute("ROLLBACK")
-            except Exception:
-                pass
+            if own_conn:
+                try:
+                    conn.execute("ROLLBACK")
+                except Exception:
+                    pass
             return 0
         finally:
-            conn.close()
+            if own_conn:
+                conn.close()
 
     def mempool_get_block_candidates(self, max_count: int = 100) -> List[dict]:
         """Get highest-fee transactions from mempool for block inclusion."""
