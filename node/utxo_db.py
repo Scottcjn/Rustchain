@@ -716,6 +716,16 @@ class UtxoDB:
 
             if manage_tx:
                 conn.execute("COMMIT")
+            # -- BUG-4: evict stale mempool txs referencing spent inputs ----
+            # Runs after COMMIT so the spend is durable. Opens its own
+            # connection. A failure here does not affect the committed
+            # transaction, but we swallow exceptions for safety.
+            _spent_ids = list(set(input_box_ids + list(data_inputs)))
+            if _spent_ids:
+                try:
+                    self._evict_stale_data_input_txs(_spent_ids)
+                except Exception:
+                    pass  # best-effort; already committed
             return True
 
         except Exception:
@@ -728,6 +738,7 @@ class UtxoDB:
         finally:
             if own:
                 conn.close()
+
 
     # -- state root ----------------------------------------------------------
 
