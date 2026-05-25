@@ -21,6 +21,7 @@
 | A23 | rustchain_sync_endpoints.py | X-Peer-ID/X-Sync-Nonce/X-Sync-Signature/table | #6266 | Open |
 | A24 | bridge/bridge_api.py | sender_wallet/target_wallet/tx_hash/receipt_signature/proof_ref/notes/release_tx | #6267 | Open |
 | A25 | faucet.py | wallet | #6268 | Open |
+| A26 | sophia_api.py | miner_id (POST + 2 GET path params) | #6269 | Open |
 
 ## Exhausted cells (grid complete)
 | Cell | File | Vulnerability | PR |
