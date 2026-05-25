@@ -29,6 +29,10 @@
 | A31 | tools/rent_a_relic/server.py | agent_id, machine_id | #6274 | Open |
 | A32 | tools/explorer-api/api.py | addr (GET path param) | #6275 | Open |
 | A33 | tools/explorer-api/api.py | q (GET /api/search query param) | #6276 | Open |
+| A34 | health-dashboard/server.py | node_id (GET path param) | #6277 | Open |
+| A35 | node/beacon_x402.py | agent_id (2 path params), _json_string_field | #6278 | Open |
+| A36 | node/bottube_embed.py | video_id (2 path params), url (query param) | #6279 | Open |
+| A37 | rips/rustchain-core/api/rpc.py | address/block_hash/proposal_id (path params) | #6280 | Open |
 
 ## Exhausted cells (grid complete)
 | Cell | File | Vulnerability | PR |
