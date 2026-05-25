@@ -75,11 +75,11 @@
 | S5 | tools/validate_vintage_submission.py:83 | screenshot validation → real PIL analysis | MED | ✅ #3 |
 | S6 | tools/comment-moderation-bot/scorer.py:192 | semantic scoring stub → HTTP client | MED | ✅ #6289 |
 | S7 | tools/rent_a_relic/provenance.py:49 | attestation proof digest (real SHA-256, Ed25519-signed, functional) | LOW | ✅ verified |
-| S8 | tools/cli/rustchain_cli.py:175 | epoch history not implemented | LOW |
-| S9 | tools/cli/rustchain_cli.py:263 | wallet creation not implemented | LOW |
-| S10 | tools/cli/rustchain_cli.py:409 | agent registration not implemented | LOW |
-| S11 | tools/cli/rustchain_cli.py:514 | bounty claim not implemented | LOW |
-| S12 | tools/cli/rustchain_cli.py:567 | x402 payment not implemented | LOW |
+| S8 | tools/cli/rustchain_cli.py:175 | epoch history not implemented | LOW | ✅ #6 |
+| S9 | tools/cli/rustchain_cli.py:263 | wallet creation not implemented | LOW | ✅ #7 |
+| S10 | tools/cli/rustchain_cli.py:409 | agent registration not implemented | LOW | ✅ #8 |
+| S11 | tools/cli/rustchain_cli.py:514 | bounty claim not implemented | LOW | ✅ #9 |
+| S12 | tools/cli/rustchain_cli.py:567 | x402 payment not implemented | LOW | ✅ #9 |
 | S13 | payout_worker.py:22 | MOCK_MODE default → safe mock (False→True) | HIGH | ✅ #6290 |
 | S14 | machine_passport_viewer.py:290 | QR code is placeholder div — no real QR gen | LOW |
 | S15 | bottube_embed.py:708 | _get_mock_video() fallback — no real DB query | MED |
