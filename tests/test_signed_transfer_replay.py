@@ -140,7 +140,22 @@ def test_signed_transfer_rejects_malformed_public_key_before_address_decode():
         response = client.post("/wallet/transfer/signed", json=payload)
 
     assert response.status_code == 400
-    assert response.get_json() == {"error": "invalid_public_key"}
+    assert response.get_json() == {"ok": False, "error": "invalid_public_key"}
+
+
+def test_signed_transfer_rejects_empty_public_key_as_missing_required_field():
+    integrated_node.app.config["TESTING"] = True
+    payload = _payload()
+    payload["public_key"] = ""
+
+    with integrated_node.app.test_client() as client:
+        response = client.post("/wallet/transfer/signed", json=payload)
+
+    assert response.status_code == 400
+    assert response.get_json() == {
+        "error": "missing_required_fields",
+        "details": {"missing": ["public_key"]},
+    }
 
 
 def test_signed_transfer_rejects_duplicate_nonce(signed_transfer_client):

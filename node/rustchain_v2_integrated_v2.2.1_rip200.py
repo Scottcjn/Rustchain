@@ -8639,7 +8639,7 @@ def wallet_transfer_signed():
     signature = str(data.get("signature", "")).strip()
     raw_public_key = data.get("public_key", "")
     if raw_public_key is not None and not isinstance(raw_public_key, str):
-        return jsonify({"error": "invalid_public_key"}), 400
+        return jsonify({"ok": False, "error": "invalid_public_key"}), 400
     public_key = (raw_public_key or "").strip()
     memo = str(data.get("memo", ""))
     amount_rtc = pre.details["amount_rtc"]
@@ -8673,8 +8673,8 @@ def wallet_transfer_signed():
     else:
         try:
             expected_address = address_from_pubkey(public_key)
-        except ValueError:
-            return jsonify({"error": "invalid_public_key"}), 400
+        except (ValueError, TypeError):
+            return jsonify({"ok": False, "error": "invalid_public_key"}), 400
         if from_address != expected_address:
             return jsonify({
                 "error": "Public key does not match from_address",
