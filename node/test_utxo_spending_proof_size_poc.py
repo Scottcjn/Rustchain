@@ -17,7 +17,7 @@ import os
 import time
 import json
 
-from utxo_db import UtxoDB, UNIT
+from utxo_db import UtxoDB, UNIT, MAX_SPENDING_PROOF_BYTES
 
 
 class TestSpendingProofSize(unittest.TestCase):
@@ -77,6 +77,70 @@ class TestSpendingProofSize(unittest.TestCase):
         })
         self.assertFalse(ok, "10KB spending_proof should be rejected")
         print("  10KB proof: rejected ✓")
+
+
+    def test_non_string_list_proof_rejected(self):
+        """List-based spending_proof (non-string) — bypasses isinstance check."""
+        self.db.apply_transaction({
+            'tx_type': 'mining_reward',
+            'inputs': [],
+            'outputs': [{'address': 'alice', 'value_nrtc': 50 * UNIT}],
+            'fee_nrtc': 0,
+            'timestamp': int(time.time()),
+            '_allow_minting': True,
+        }, block_height=3)
+        boxes = self.db.get_unspent_for_address('alice')
+        bid = boxes[-1]['box_id']
+
+        # List proof with 8193 elements — serializes to ~40KB JSON
+        proof_list = ['Y'] * (MAX_SPENDING_PROOF_BYTES + 1)
+        serialized = json.dumps(proof_list, separators=(',', ':'))
+        print(f"  non-string list: {len(serialized)}B serialized")
+
+        ok = self.db.mempool_add({
+            'tx_id': 'cc' * 32,
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': bid, 'spending_proof': proof_list}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 40 * UNIT}],
+            'fee_nrtc': 10 * UNIT,
+            'timestamp': int(time.time()),
+        })
+        self.assertFalse(ok, "Non-string list proof should be rejected")
+        print("  non-string list proof: rejected ✓")
+
+    def test_dict_proof_rejected(self):
+        """Dict-based spending_proof — another non-string bypass."""
+        self.db.apply_transaction({
+            'tx_type': 'mining_reward',
+            'inputs': [],
+            'outputs': [{'address': 'alice', 'value_nrtc': 50 * UNIT}],
+            'fee_nrtc': 0,
+            'timestamp': int(time.time()),
+            '_allow_minting': True,
+        }, block_height=4)
+        boxes = self.db.get_unspent_for_address('alice')
+        bid = boxes[-1]['box_id']
+
+        # Dict with enough keys to exceed limit
+        proof_dict = {str(i): 'x' for i in range(200)}
+        serialized = json.dumps(proof_dict, separators=(',', ':'))
+        print(f"  dict proof: {len(serialized)}B serialized")
+
+        ok = self.db.mempool_add({
+            'tx_id': 'dd' * 32,
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': bid, 'spending_proof': proof_dict}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 40 * UNIT}],
+            'fee_nrtc': 10 * UNIT,
+            'timestamp': int(time.time()),
+        })
+
+        if len(serialized) > 8192:
+            self.assertFalse(ok, "Oversized dict proof should be rejected")
+            print("  dict proof: rejected ✓")
+        else:
+            self.assertTrue(ok, "Small dict proof should be accepted")
+            print("  dict proof: accepted (within limit) ✓")
 
 
 if __name__ == '__main__':

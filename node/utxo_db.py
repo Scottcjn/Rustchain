@@ -885,7 +885,9 @@ class UtxoDB:
             inputs = tx.get('inputs', [])
             for inp in inputs:
                 sp = inp.get('spending_proof', '')
-                if isinstance(sp, str) and len(sp) > MAX_SPENDING_PROOF_BYTES:
+                # Serialize non-string proofs (list, dict, etc.) to catch oversized JSON
+                proof_str = sp if isinstance(sp, str) else json.dumps(sp, separators=(',', ':'))
+                if len(proof_str) > MAX_SPENDING_PROOF_BYTES:
                     if manage_tx:
                         conn.execute("ROLLBACK")
                     return False
