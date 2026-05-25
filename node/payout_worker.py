@@ -381,7 +381,7 @@ class PayoutWorker:
                 time.sleep(POLL_INTERVAL * 2)  # Back off on error
 
     def cleanup_old_withdrawals(self):
-        """Archive old completed withdrawals"""
+        """Archive old completed withdrawals to cold storage."""
         cutoff = int(time.time()) - (7 * 24 * 3600)  # 7 days ago
 
         with sqlite3.connect(self.db_path) as conn:
@@ -394,30 +394,47 @@ class PayoutWorker:
             if count > 0:
                 # Archive to file (in production, send to cold storage)
                 rows = conn.execute("""
-                    SELECT * FROM withdrawals
+                    SELECT withdrawal_id, miner_pk, amount, destination, tx_hash, processed_at
+                    FROM withdrawals
                     WHERE status = 'completed' AND processed_at < ?
                 """, (cutoff,)).fetchall()
 
-                archive_file = f"withdrawal_archive_{datetime.now().strftime('%Y%m%d')}.json"
-                with open(archive_file, 'a') as f:
-                    for row in rows:
-                        json.dump({
-                            'withdrawal_id': row[0],
-                            'miner_pk': row[1],
-                            'amount': row[2],
-                            'destination': row[4],
-                            'tx_hash': row[8],
-                            'processed_at': row[7]
-                        }, f)
-                        f.write('\n')
+                archive_dir = os.path.join(os.path.dirname(self.db_path), "archives")
+                os.makedirs(archive_dir, exist_ok=True)
+                archive_file = os.path.join(
+                    archive_dir,
+                    f"withdrawal_archive_{datetime.now().strftime('%Y%m%d')}.jsonl"
+                )
 
-                # Delete from database
-                conn.execute("""
-                    DELETE FROM withdrawals
-                    WHERE status = 'completed' AND processed_at < ?
-                """, (cutoff,))
+                try:
+                    with open(archive_file, 'a') as f:
+                        for row in rows:
+                            json.dump({
+                                'withdrawal_id': row[0],
+                                'miner_pk': row[1],
+                                'amount': row[2],
+                                'destination': row[3],
+                                'tx_hash': row[4],
+                                'processed_at': row[5]
+                            }, f)
+                            f.write('\n')
+                            f.flush()
+                except OSError as e:
+                    logger.error(f"Failed to write archive {archive_file}: {e}")
+                    return
 
-                logger.info(f"Archived {count} old withdrawals to {archive_file}")
+                # Delete from database (only after successful archive)
+                try:
+                    conn.execute("""
+                        DELETE FROM withdrawals
+                        WHERE status = 'completed' AND processed_at < ?
+                    """, (cutoff,))
+                    logger.info(f"Archived and pruned {count} old withdrawals to {archive_file}")
+                except Exception as e:
+                    logger.error(
+                        f"Archive written to {archive_file} but DB prune failed: {e}. "
+                        "Manual cleanup may be needed."
+                    )
 
     def get_stats(self) -> Dict:
         """Get worker statistics"""
