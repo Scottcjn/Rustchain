@@ -131,6 +131,7 @@
 | F2 | integrations/mcp-server/mcp_mock.py | stdio_server.__aexit__ pass → proper False return | #6312 |
 | F6 | tools/telegram_bot/telegram_bot.py:351 | bare `except Exception: pass` → logger.warning | #6313 |
 | F7 | tools/telegram_bot/telegram_bot.py:369 | bare `except Exception: pass` → logger.warning | #6313 |
+| F8 | tools/bios_pawpaw_detector.py:29 | bare `except:` → `except Exception:` | #6314 |
 
 ### Legacy / Misc
 
@@ -143,19 +144,18 @@
 | S14 | QR placeholder in machine_passport_viewer.py:290 (low priority) |
 | S21-S30 | Carried forward to fresh grid |
 
-**107 cells vaulted. 49 PRs submitted. 6 jaxint-approved. 1 MolhamHamwi-approved.**
+**108 cells vaulted. 50 PRs submitted. 6 jaxint-approved. 1 MolhamHamwi-approved.**
 
 ---
 
-## 🎯 FRESH GRID — 290 Gaps to Hunt
+## 🎯 FRESH GRID — 289 Gaps to Hunt
 
-### Row F — Form-Not-Function Gaps (F8-F85)
+### Row F — Form-Not-Function Gaps (F9-F85)
 
 *Stub bodies, pass-only handlers, placeholder returns, mocks in production, TODO strings, bare except: blocks, hardcoded localhost URLs, "for now" workarounds*
 
 | Cell | File:Line | Gap | Severity |
 |------|-----------|-----|----------|
-| F8 | tools/bios_pawpaw_detector.py:30 | `detect()` is pass stub | LOW |
 | F9 | tools/os_detector.py:55 | `detect()` is pass stub | LOW |
 | F10 | tools/discord-bot/bot.py:33 | `on_ready` is pass stub | LOW |
 | F11 | tools/epoch_determinism/replay.py:423 | bare pass on processing error | MED |
@@ -432,8 +432,8 @@
 
 ---
 
-## ⚜️ VAULTED (complete): 107 cells
-## 🎯 ACTIVE (to hunt): 290 cells
+## ⚜️ VAULTED (complete): 108 cells
+## 🎯 ACTIVE (to hunt): 289 cells
 ## 📏 TOTAL TARGET: 400 cells
 
 ### Legend
@@ -441,7 +441,7 @@
 | Row | Theme | Cells | Status |
 |-----|-------|-------|--------|
 | **A** | Input validation (open PRs A15-A41) | 27 pending | 🟡 PRs submitted |
-| **F** | Form-not-function stubs/placeholders | F8-F85 | 🔴 NEXT |
+| **F** | Form-not-function stubs/placeholders | F9-F85 | 🔴 NEXT |
 | **T** | Test coverage gaps | T1-T85 | 🔴 2nd |
 | **M** | Missing error handling | M10-M30 | 🟡 3rd |
 | **S** | Open stubs remaining | S21-S30 | 🟡 4th |
@@ -450,4 +450,4 @@
 | **H** | Economic/gaps | H1-H12 | 🟢 7th |
 
 **Pick lowest undone coordinate by row priority: F → T → M → S → D → E → H**
-**F8 is next: bios_pawpaw_detector.py `detect()` is pass stub**
+**F9 is next: os_detector.py `detect()` is pass stub**
