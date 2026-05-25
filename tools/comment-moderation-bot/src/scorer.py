@@ -7,8 +7,15 @@ to produce a risk score for each comment.
 
 from dataclasses import dataclass
 from typing import Any, Optional
+import json
+import logging
+import urllib.request
+import urllib.error
 
 from .feature_extractor import CommentFeatures
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -189,12 +196,44 @@ class HybridScorer:
         """
         Get semantic classification score from external service.
 
-        This is a stub implementation. In production, this would
-        call an ML service for semantic spam classification.
+        Posts the comment body to the configured semantic endpoint
+        and returns a score in [0.0, 1.0]. Returns 0.0 on any error
+        (timeout, connection failure, bad response).
         """
-        # Stub: Return 0 (no semantic scoring)
-        # In production, implement HTTP call to semantic_endpoint
-        return 0.0
+        if not self.semantic_endpoint:
+            return 0.0
+
+        payload = json.dumps({"text": body}).encode("utf-8")
+        req = urllib.request.Request(
+            self.semantic_endpoint,
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=3.0) as resp:
+                if resp.status != 200:
+                    logger.warning(
+                        "semantic endpoint %s returned %d",
+                        self.semantic_endpoint, resp.status,
+                    )
+                    return 0.0
+                data = json.loads(resp.read().decode("utf-8"))
+        except (urllib.error.URLError, urllib.error.HTTPError) as e:
+            logger.warning("semantic endpoint error: %s", e)
+            return 0.0
+        except (json.JSONDecodeError, ValueError, OSError) as e:
+            logger.warning("semantic response parse error: %s", e)
+            return 0.0
+
+        # Expect response with a "score" key in [0.0, 1.0]
+        score = data.get("score")
+        if not isinstance(score, (int, float)):
+            logger.warning(
+                "semantic endpoint returned non-numeric score: %s", score
+            )
+            return 0.0
+        return max(0.0, min(1.0, float(score)))
 
     def _calculate_weighted_score(self, breakdown: ScoreBreakdown) -> float:
         """Calculate weighted final score."""
