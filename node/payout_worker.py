@@ -19,7 +19,12 @@ DB_PATH = "./rustchain_v2.db"
 BATCH_SIZE = 10
 POLL_INTERVAL = 30  # seconds
 MAX_RETRIES = 3
-MOCK_MODE = os.environ.get("RUSTCHAIN_MOCK_MODE", "0") == "1"  # Default: production (False)
+MOCK_MODE = os.environ.get("RUSTCHAIN_MOCK_MODE", "1") == "1"  # Default: mock (safe) for dev/test
+if not MOCK_MODE:
+    logger.warning(
+        "PRODUCTION MODE ENABLED — payout_worker will attempt to broadcast "
+        "real on-chain transactions. Ensure blockchain node is configured."
+    )
 
 
 class ProductionWithdrawalNotConfigured(RuntimeError):
@@ -34,6 +39,10 @@ class PayoutWorker:
             'failed': 0,
             'total_rtc': 0.0
         }
+        if MOCK_MODE:
+            logger.info("PayoutWorker initialized in MOCK MODE — withdrawals use fake tx hashes")
+        else:
+            logger.info("PayoutWorker initialized in PRODUCTION MODE")
 
     def get_pending_withdrawals(self, limit: int = BATCH_SIZE) -> List[Dict]:
         """Fetch pending withdrawals from database"""
