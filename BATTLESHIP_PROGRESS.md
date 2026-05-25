@@ -128,6 +128,7 @@
 | Cell | File | Fix | PR |
 |------|------|-----|----|
 | T1 | node/tests/test_auto_epoch_settler.py | 18 unit tests for epoch settlement daemon (was 0% coverage) | #6316 |
+| T2 | node/tests/test_bcos_pdf.py | 37 unit tests for PDF certificate generator (was 0% coverage) | #6317 |
 | F1 | integrations/mcp-server/mcp_mock.py | Server.run() pass stub → JSON-RPC stdio transport | #6312 |
 | F2 | integrations/mcp-server/mcp_mock.py | stdio_server.__aexit__ pass → proper False return | #6312 |
 | F6 | tools/telegram_bot/telegram_bot.py:351 | bare `except Exception: pass` → logger.warning | #6313 |
@@ -149,7 +150,7 @@
 | S14 | QR placeholder in machine_passport_viewer.py:290 (low priority) |
 | S21-S30 | Carried forward to fresh grid |
 
-**108 cells vaulted. 50 PRs submitted. 6 jaxint-approved. 1 MolhamHamwi-approved.**
+**109 cells vaulted. 51 PRs submitted. 6 jaxint-approved. 1 MolhamHamwi-approved.**
 
 ---
 
@@ -436,8 +437,8 @@
 
 ---
 
-## ⚜️ VAULTED (complete): 108 cells
-## 🎯 ACTIVE (to hunt): 278 cells
+## ⚜️ VAULTED (complete): 109 cells
+## 🎯 ACTIVE (to hunt): 277 cells
 ## 📏 TOTAL TARGET: 400 cells
 
 ### Legend
@@ -454,4 +455,4 @@
 | **E** | Infrastructure/DevOps | E1-E20 | 🟢 6th |
 | **H** | Economic/gaps | H1-H12 | 🟢 7th |
 
-**Next row priority: T (test coverage) — HIGH impact. T1: node/auto_epoch_settler.py — ZERO test coverage**
+**Next row priority: T (test coverage) — HIGH impact. T1: node/auto_epoch_settler.py — ZERO test coverage (VAULTED). T2: node/bcos_pdf.py — ZERO test coverage (VAULTED). Next: T3 node/beacon_anchor.py — HIGH criticality.**
