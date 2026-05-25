@@ -1373,6 +1373,10 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
     @app.route("/api/airdrop/claim/<claim_id>", methods=["GET"])
     def get_airdrop_claim(claim_id: str):
         """Get claim status."""
+        # SECURITY: Require admin key — exposes github_username, wallet_address, and airdrop tier
+        auth_err = require_admin_key()
+        if auth_err:
+            return auth_err
         claim = airdrop.get_claim(claim_id)
         if claim:
             return jsonify({"ok": True, "claim": claim.to_dict()})
