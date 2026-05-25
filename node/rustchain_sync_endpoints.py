@@ -9,6 +9,12 @@ import time
 from flask import request, jsonify
 from node.rustchain_sync import RustChainSyncManager
 
+# Max field lengths to prevent unbounded header/param DOS
+MAX_PEER_ID_LENGTH = 128
+MAX_NONCE_LENGTH = 256
+MAX_SIGNATURE_LENGTH = 1024
+MAX_TABLE_NAME_LENGTH = 64
+
 
 def register_sync_endpoints(app, db_path, admin_key):
     """Registers sync-related endpoints to the Flask app."""
@@ -59,6 +65,12 @@ def register_sync_endpoints(app, db_path, admin_key):
 
         if not ts_raw or not nonce or not signature:
             return False, "Missing sync signature headers"
+
+        # Validate field lengths to prevent header-based DOS
+        if len(nonce) > MAX_NONCE_LENGTH:
+            return False, f"nonce too long (max {MAX_NONCE_LENGTH})"
+        if len(signature) > MAX_SIGNATURE_LENGTH:
+            return False, f"signature too long (max {MAX_SIGNATURE_LENGTH})"
 
         try:
             ts_int = int(ts_raw)
@@ -131,6 +143,8 @@ def register_sync_endpoints(app, db_path, admin_key):
         - offset: row offset (default 0)
         """
         table = request.args.get("table", "").strip()
+        if len(table) > MAX_TABLE_NAME_LENGTH:
+            return jsonify({"error": f"table name too long (max {MAX_TABLE_NAME_LENGTH})"}), 400
         limit, error = _parse_sync_int_arg("limit", 200, 1, 1000)
         if error:
             return jsonify({"error": error}), 400
@@ -162,6 +176,8 @@ def register_sync_endpoints(app, db_path, admin_key):
     def sync_push():
         """Receives data from a peer and applies it locally."""
         peer_id = request.headers.get("X-Peer-ID", "unknown")
+        if len(peer_id) > MAX_PEER_ID_LENGTH:
+            return jsonify({"error": f"X-Peer-ID too long (max {MAX_PEER_ID_LENGTH})"}), 400
 
         now = time.time()
         _cleanup_peer_history(now)
