@@ -402,12 +402,16 @@ class UtxoDB:
     def _normalize_tx_type(self, tx: dict) -> Optional[str]:
         """Return a supported transaction type, defaulting only when absent."""
         if 'tx_type' not in tx:
-            return 'transfer'
+            return 'transfer'          # missing key → default
         tx_type = tx.get('tx_type')
+        if tx_type is None:
+            return None                # explicit None → reject
         if not isinstance(tx_type, str):
-            return None
-        if not tx_type or tx_type not in SUPPORTED_TX_TYPES:
-            return None
+            return None                # non-string → reject
+        if not tx_type:
+            return 'transfer'          # empty string → treat as absent → default
+        if tx_type not in SUPPORTED_TX_TYPES:
+            return None                # unsupported → reject
         return tx_type
 
     def _normalize_outputs(self, outputs: Any) -> Optional[List[dict]]:
