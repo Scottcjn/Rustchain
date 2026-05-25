@@ -42,6 +42,21 @@ import time
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from enum import Enum
+
+# ── In-memory rate limiter ────────────────────────────────────────
+_RATE_BUCKETS: dict[tuple[str, str], list[float]] = {}
+
+def _rl(endpoint: str, limit: int):
+    """Sliding-window rate check, returns (ok, retry_after)."""
+    key = (endpoint, getattr(__import__('flask').request, 'remote_addr', None) or 'unknown')
+    now = time.time()
+    hits = [t for t in _RATE_BUCKETS.get(key, []) if t > now - 60]
+    if len(hits) >= limit:
+        return False, int(hits[0] + 60 - now)
+    hits.append(now)
+    _RATE_BUCKETS[key] = hits
+    return True, 0
+
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -1293,6 +1308,9 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
     @app.route("/api/airdrop/eligibility", methods=["POST"])
     def check_airdrop_eligibility():
         """Check airdrop eligibility."""
+        ok, retry = _rl("airdrop_eligibility", 10)
+        if not ok:
+            return jsonify({"ok": False, "error": "Rate limited", "retry_after_seconds": retry}), 429
         data, error = parse_json_object_body()
         if error:
             return error
@@ -1328,7 +1346,10 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
 
     @app.route("/api/airdrop/claim", methods=["POST"])
     def claim_airdrop():
-        """Submit airdrop claim."""
+        """Claim airdrop tokens."""
+        ok, retry = _rl("airdrop_claim", 5)
+        if not ok:
+            return jsonify({"ok": False, "error": "Rate limited", "retry_after_seconds": retry}), 429
         data, error = parse_json_object_body()
         if error:
             return error
@@ -1384,8 +1405,11 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
         return jsonify({"ok": True, "stats": airdrop.get_stats()})
 
     @app.route("/api/bridge/lock", methods=["POST"])
-    def create_bridge_lock():
-        """Create bridge lock."""
+    def bridge_lock():
+        """Bridge lock."""
+        ok, retry = _rl("bridge_lock", 10)
+        if not ok:
+            return jsonify({"ok": False, "error": "Rate limited", "retry_after_seconds": retry}), 429
         data, error = parse_json_object_body()
         if error:
             return error
@@ -1432,6 +1456,9 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
     @app.route("/api/bridge/lock/<lock_id>/confirm", methods=["POST"])
     def confirm_lock(lock_id: str):
         """Confirm bridge lock with source tx."""
+        ok, retry = _rl("bridge_lock_confirm", 10)
+        if not ok:
+            return jsonify({"ok": False, "error": "Rate limited", "retry_after_seconds": retry}), 429
         auth_error = require_admin_key()
         if auth_error:
             return auth_error
@@ -1454,8 +1481,11 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
             return jsonify({"ok": False, "error": message}), 400
 
     @app.route("/api/bridge/lock/<lock_id>/release", methods=["POST"])
-    def release_lock(lock_id: str):
-        """Release bridge lock with dest tx."""
+    def bridge_lock_release(lock_id):
+        """Release bridge lock."""
+        ok, retry = _rl("bridge_lock_release", 5)
+        if not ok:
+            return jsonify({"ok": False, "error": "Rate limited", "retry_after_seconds": retry}), 429
         auth_error = require_admin_key()
         if auth_error:
             return auth_error
