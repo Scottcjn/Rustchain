@@ -431,18 +431,35 @@ class GPURenderProtocol:
                                 "RTC/1k_chars" if jt == "tts" else "RTC/1k_tokens",
                     }
 
-                    # Record to pricing history
-                    conn.execute(
-                        """INSERT INTO pricing_history
-                           (job_type, device_arch, avg_price, min_price,
-                            max_price, sample_count, recorded_at)
-                           VALUES (?,?,?,?,?,?,?)""",
-                        (jt, "all", rates[jt]["avg"], rates[jt]["min"],
-                         rates[jt]["max"], len(prices), int(time.time())),
-                    )
-
-            conn.commit()
+            # Pricing history recording removed from read path (issue #6200):
+            # GET /render/pricing should not cause persistent SQLite writes.
+            # Use record_pricing_sample() for intentional writes.
             return {"rates": rates, "timestamp": int(time.time())}
+        finally:
+            conn.close()
+
+    def record_pricing_sample(self, job_type: str, rates: dict) -> dict:
+        """Explicitly record a pricing sample to history.
+
+        This should only be called from write paths (e.g., after a job is
+        created or a node attests), not from read-only pricing queries.
+        Moved from get_fair_market_rates per issue #6200.
+        """
+        if job_type not in rates:
+            return {"error": f"No rate data for {job_type}"}
+        conn = self._get_conn()
+        try:
+            r = rates[job_type]
+            conn.execute(
+                """INSERT INTO pricing_history
+                (job_type, device_arch, avg_price, min_price,
+                max_price, sample_count, recorded_at)
+                VALUES (?,?,?,?,?,?,?)""",
+                (job_type, "all", r["avg"], r["min"],
+                r["max"], r["providers"], int(time.time())),
+            )
+            conn.commit()
+            return {"ok": True, "job_type": job_type}
         finally:
             conn.close()
 
