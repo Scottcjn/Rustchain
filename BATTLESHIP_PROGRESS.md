@@ -93,7 +93,7 @@
 | S23 | bridge_api.py:225 | chain address validation is format-only, no checksum | MED |
 | S24 | beacon_x402.py | x402 payment flow not fully wired | MED |
 | S25 | utxo_endpoints.py:493 | new-client fee signed but drift/expiry not checked | LOW |
-| S26 | rustchain_p2p_gossip.py:93 | insecure placeholder p2p secret config | HIGH |
+| S26 | rustchain_p2p_gossip.py:93 | insecure placeholder p2p secret config | HIGH | ✅ #10 |
 | S27 | hardware_fingerprint_replay.py | fingerprint replay DB has no cleanup cron | LOW |
 | S28 | anti_double_mining.py | anti-double-mining table no index on miner+block | LOW |
 | S29 | machine_passport_api.py | photo_hash not verified client-side | MED |
