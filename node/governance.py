@@ -521,8 +521,10 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
                     conn.execute("ROLLBACK")
                     return jsonify({"error": "proposal not found"}), 404
                 if proposal[1] != STATUS_ACTIVE:
+                    conn.execute("ROLLBACK")
                     return jsonify({"error": f"proposal is {proposal[1]}, not active"}), 409
                 if proposal[2] < now:
+                    conn.execute("ROLLBACK")
                     return jsonify({"error": "voting window has closed"}), 409
 
                 # Upsert vote
@@ -543,6 +545,7 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
                         # as SQL column name — prevents SQL injection if stored
                         # vote value was ever tampered with.
                         if old_vote[0] not in VOTE_CHOICES:
+                            conn.execute("ROLLBACK")
                             return jsonify({"error": "corrupted vote record"}), 500
                         old_col = f"votes_{old_vote[0]}"
                         conn.execute(
