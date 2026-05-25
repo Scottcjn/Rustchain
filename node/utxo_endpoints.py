@@ -451,7 +451,10 @@ def utxo_transfer():
         }), 400
 
     # Verify pubkey → address
-    expected_addr = _addr_from_pk_fn(public_key)
+    try:
+        expected_addr = _addr_from_pk_fn(public_key)
+    except ValueError:
+        return jsonify({'error': 'Invalid public_key'}), 400
     if from_address != expected_addr:
         return jsonify({
             'error': 'Public key does not match from_address',

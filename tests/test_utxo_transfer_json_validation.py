@@ -58,6 +58,22 @@ def test_utxo_transfer_rejects_structured_string_fields(client, field, value):
     assert response.get_json() == {"error": f"{field} must be a string"}
 
 
+def test_utxo_transfer_rejects_malformed_public_key_material(client, monkeypatch):
+    monkeypatch.setattr(
+        utxo_endpoints,
+        "_addr_from_pk_fn",
+        lambda public_key: (_ for _ in ()).throw(ValueError("bad hex")),
+    )
+
+    response = client.post(
+        "/utxo/transfer",
+        json=_transfer_payload(public_key="not-hex"),
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "Invalid public_key"}
+
+
 def test_utxo_transfer_still_reports_missing_trimmed_string_fields(client):
     response = client.post(
         "/utxo/transfer",
