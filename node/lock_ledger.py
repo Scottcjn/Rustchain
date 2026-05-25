@@ -140,6 +140,14 @@ def create_lock(
             "valid_types": list(valid_types)
         }
     
+    # Validate miner_id length
+    MAX_MINER_ID_LENGTH = 128
+    if len(miner_id) > MAX_MINER_ID_LENGTH:
+        return False, {
+            "error": f"miner_id too long (max {MAX_MINER_ID_LENGTH} chars)",
+            "actual_length": len(miner_id)
+        }
+    
     # Validate amount
     if amount_i64 <= 0:
         return False, {"error": "amount_i64 must be positive"}
@@ -673,7 +681,7 @@ def register_lock_ledger_routes(app):
             return None, (jsonify({"error": "lock_id must be positive"}), 400)
         return raw, None
 
-    def parse_optional_string(data, name: str, default: Optional[str] = None):
+    def parse_optional_string(data, name: str, default: Optional[str] = None, max_length: Optional[int] = None):
         raw = data.get(name, default)
         if raw is None:
             return default, None
@@ -682,11 +690,15 @@ def register_lock_ledger_routes(app):
         value = raw.strip()
         if value == "":
             return default, None
+        if max_length is not None and len(value) > max_length:
+            return None, (jsonify({"error": f"{name} too long (max {max_length} chars)", "actual_length": len(value)}), 400)
         return value, None
     
     @app.route('/api/lock/miner/<miner_id>', methods=['GET'])
     def get_miner_locks(miner_id: str):
         """Get locks for a specific miner."""
+        if len(miner_id) > 128:
+            return jsonify({"error": "miner_id too long (max 128 chars)", "actual_length": len(miner_id)}), 400
         status = request.args.get("status")
         limit, error_response = parse_bounded_int_arg("limit", 100, 1, 500)
         if error_response is not None:
@@ -798,7 +810,7 @@ def register_lock_ledger_routes(app):
         lock_id, error_response = parse_lock_id(data)
         if error_response is not None:
             return error_response
-        release_tx_hash, error_response = parse_optional_string(data, "release_tx_hash")
+        release_tx_hash, error_response = parse_optional_string(data, "release_tx_hash", max_length=256)
         if error_response is not None:
             return error_response
         
@@ -835,7 +847,7 @@ def register_lock_ledger_routes(app):
         lock_id, error_response = parse_lock_id(data)
         if error_response is not None:
             return error_response
-        reason, error_response = parse_optional_string(data, "reason", "admin_forfeit")
+        reason, error_response = parse_optional_string(data, "reason", "admin_forfeit", max_length=256)
         if error_response is not None:
             return error_response
         
