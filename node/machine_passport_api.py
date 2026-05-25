@@ -284,6 +284,14 @@ def create_passport():
                 'message': "Field 'machine_id' is required or provide 'hardware_fingerprint'",
             }), 400
     
+    # Cap string fields to prevent DB abuse
+    name = (data.get('name') or '')[:256]
+    owner_miner_id = (data.get('owner_miner_id') or '')[:128]
+    architecture = (data.get('architecture') or '')[:64] if data.get('architecture') else None
+    photo_hash = (data.get('photo_hash') or '')[:128] if data.get('photo_hash') else None
+    photo_url = (data.get('photo_url') or '')[:2048] if data.get('photo_url') else None
+    provenance = (data.get('provenance') or '')[:1024] if data.get('provenance') else None
+    
     ledger = get_ledger()
     
     # Check if passport already exists
@@ -297,13 +305,13 @@ def create_passport():
     
     passport = MachinePassport(
         machine_id=machine_id,
-        name=data['name'],
-        owner_miner_id=data['owner_miner_id'],
+        name=name,
+        owner_miner_id=owner_miner_id,
         manufacture_year=data.get('manufacture_year'),
-        architecture=data.get('architecture'),
-        photo_hash=data.get('photo_hash'),
-        photo_url=data.get('photo_url'),
-        provenance=data.get('provenance'),
+        architecture=architecture,
+        photo_hash=photo_hash,
+        photo_url=photo_url,
+        provenance=provenance,
     )
     
     success, msg = ledger.create_passport(passport)
@@ -349,6 +357,13 @@ def update_passport(machine_id: str):
             'error': 'invalid_request',
             'message': 'JSON body required',
         }), 400
+    
+    # Cap string fields to prevent DB abuse
+    for field in ('name', 'owner_miner_id', 'architecture', 'photo_hash', 'photo_url', 'provenance', 'machine_id'):
+        if field in data and isinstance(data[field], str):
+            max_len = {'machine_id': 128, 'name': 256, 'owner_miner_id': 128, 'architecture': 64,
+                       'photo_hash': 128, 'photo_url': 2048, 'provenance': 1024}.get(field, 256)
+            data[field] = data[field][:max_len]
     
     success, msg = ledger.update_passport(machine_id, data)
     
