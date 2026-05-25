@@ -50,7 +50,10 @@ def _parse_feed_limit(default: int = 20, maximum: int = 100) -> int:
     raw_limit = request.args.get("limit")
     if raw_limit in (None, ""):
         return default
-    return max(1, min(int(raw_limit), maximum))
+    try:
+        return max(1, min(int(raw_limit), maximum))
+    except (ValueError, TypeError):
+        return default
 
 
 def _get_db_connection():
@@ -58,6 +61,9 @@ def _get_db_connection():
     db_path = current_app.config.get("DB_PATH")
     
     if not db_path:
+        current_app.logger.warning(
+            "BOTTUBE_PUBLIC_BASE_URL or DB_PATH not configured — falling back to mock data"
+        )
         return None
     
     import sqlite3
@@ -357,8 +363,12 @@ def feed_index():
     cursor = request.args.get("cursor")
     
     # Fetch videos
-    videos, next_cursor = _fetch_videos(limit=limit, agent=agent, cursor=cursor)
-    
+    try:
+        videos, next_cursor = _fetch_videos(limit=limit, agent=agent, cursor=cursor)
+    except Exception as e:
+        current_app.logger.error(f"Feed fetch error: {e}")
+        return jsonify({"error": "Internal server error"}), 500
+
     # Get base URL
     base_url = _get_base_url()
     
