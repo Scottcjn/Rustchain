@@ -69,7 +69,7 @@
 
 | Cell | File | Gap | Priority |
 |------|------|-----|----------|
-| S1 | claims_settlement.py:311 | sign_and_broadcast_transaction() is a hard stub | HIGH |
+| S1 | claims_settlement.py:311 | sign_and_broadcast_transaction() is a hard stub | HIGH | ✅ #6286 |
 | S2 | claims_submission.py:727 | mock Ed25519 sig in production code | HIGH |
 | S3 | beacon_api.py:1058 | mock LLM response in production | MED |
 | S4 | tools/validate_vintage_submission.py:37 | photo validation not implemented | MED |
