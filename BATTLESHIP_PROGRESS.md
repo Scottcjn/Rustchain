@@ -86,7 +86,7 @@
 | S16 | bottube_feed_routes.py:80 | pagination cursor not implemented in mock | MED |
 | S17 | ed25519_config.py:27 | TESTNET_ALLOW_MOCK_SIG → env-var-driven, prevents monkey-patching | HIGH | ✅ #6291 |
 | S18 | bridge_api.py | no rate limiting on any endpoint | MED |
-| S19 | beacon_api.py | no rate limiting on any endpoint | MED |
+| S19 | beacon_api.py | no rate limiting on any endpoint → per-IP sliding window on 8 endpoints | MED | ✅ #6293 |
 | S20 | airdrop_v2.py | no rate limiting on airdrop endpoints | MED |
 | S21 | governance.py | mock erc20/ed25519 config reference | MED |
 | S22 | bottube_feed_routes.py | feed routes have no auth — anyone can spam | MED |
