@@ -1283,12 +1283,18 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
         if isinstance(value, bool):
             return None, (jsonify({"ok": False, "error": f"{name} must be a finite number"}), 400)
         try:
-            parsed = float(value)
+            v = float(value)
         except (TypeError, ValueError):
             return None, (jsonify({"ok": False, "error": f"{name} must be a finite number"}), 400)
-        if not math.isfinite(parsed):
+        if not math.isfinite(v):
             return None, (jsonify({"ok": False, "error": f"{name} must be a finite number"}), 400)
-        return parsed, None
+        return v, None
+
+    # Max field lengths to prevent unbounded TEXT storage
+    MAX_GITHUB_USERNAME_LENGTH = 128
+    MAX_WALLET_ADDRESS_LENGTH = 256
+    MAX_CHAIN_LENGTH = 32
+    MAX_TIER_LENGTH = 16
 
     @app.route("/api/airdrop/eligibility", methods=["POST"])
     def check_airdrop_eligibility():
@@ -1319,6 +1325,14 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
             return jsonify({"ok": False, "error": "missing_wallet_address"}), 400
         if not chain:
             return jsonify({"ok": False, "error": "missing_chain"}), 400
+
+        # Validate field lengths to prevent unbounded TEXT storage
+        if len(github_username) > MAX_GITHUB_USERNAME_LENGTH:
+            return jsonify({"ok": False, "error": "github_username too long", "max_length": MAX_GITHUB_USERNAME_LENGTH, "actual_length": len(github_username)}), 400
+        if len(wallet_address) > MAX_WALLET_ADDRESS_LENGTH:
+            return jsonify({"ok": False, "error": "wallet_address too long", "max_length": MAX_WALLET_ADDRESS_LENGTH, "actual_length": len(wallet_address)}), 400
+        if len(chain) > MAX_CHAIN_LENGTH:
+            return jsonify({"ok": False, "error": "chain too long", "max_length": MAX_CHAIN_LENGTH, "actual_length": len(chain)}), 400
 
         result = airdrop.check_eligibility(
             github_username, wallet_address, chain, github_token, skip_antisybil=False
@@ -1360,6 +1374,16 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
                 ),
                 400,
             )
+
+        # Validate field lengths to prevent unbounded TEXT storage
+        if len(github_username) > MAX_GITHUB_USERNAME_LENGTH:
+            return jsonify({"ok": False, "error": "github_username too long", "max_length": MAX_GITHUB_USERNAME_LENGTH, "actual_length": len(github_username)}), 400
+        if len(wallet_address) > MAX_WALLET_ADDRESS_LENGTH:
+            return jsonify({"ok": False, "error": "wallet_address too long", "max_length": MAX_WALLET_ADDRESS_LENGTH, "actual_length": len(wallet_address)}), 400
+        if len(chain) > MAX_CHAIN_LENGTH:
+            return jsonify({"ok": False, "error": "chain too long", "max_length": MAX_CHAIN_LENGTH, "actual_length": len(chain)}), 400
+        if len(tier) > MAX_TIER_LENGTH:
+            return jsonify({"ok": False, "error": "tier too long", "max_length": MAX_TIER_LENGTH, "actual_length": len(tier)}), 400
 
         success, message, claim = airdrop.claim_airdrop(
             github_username, wallet_address, chain, tier, github_token
