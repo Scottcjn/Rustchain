@@ -19,6 +19,7 @@ Query Parameters:
 import time
 from typing import Dict, Any, List, Optional, Tuple
 from flask import Blueprint, request, Response, jsonify, current_app, abort
+from werkzeug.exceptions import HTTPException
 
 from bottube_feed import (
     RSSFeedBuilder,
@@ -273,6 +274,8 @@ def rss_feed():
 
     except ValueError as e:
         return jsonify({"error": "Invalid parameter", "message": str(e)}), 400
+    except HTTPException:
+        raise
     except Exception as e:
         current_app.logger.error(f"RSS feed error: {e}")
         return jsonify({"error": "Internal server error"}), 500
@@ -329,6 +332,8 @@ def atom_feed():
 
     except ValueError as e:
         return jsonify({"error": "Invalid parameter", "message": str(e)}), 400
+    except HTTPException:
+        raise
     except Exception as e:
         current_app.logger.error(f"Atom feed error: {e}")
         return jsonify({"error": "Internal server error"}), 500
