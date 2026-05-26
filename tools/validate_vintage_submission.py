@@ -17,6 +17,7 @@ Usage:
 import argparse
 import json
 import os
+import struct
 import sys
 from datetime import datetime
 from typing import Dict, Any, Optional
@@ -29,6 +30,84 @@ class SubmissionValidator:
         self.checks: Dict[str, Dict[str, Any]] = {}
         self.errors: list = []
         self.warnings: list = []
+
+    def _read_image_metadata(self, image_path: str) -> Dict[str, Any]:
+        """Read basic image type and dimensions without optional dependencies."""
+        with open(image_path, "rb") as f:
+            header = f.read(32)
+
+            if header.startswith(b"\x89PNG\r\n\x1a\n") and header[12:16] == b"IHDR":
+                width, height = struct.unpack(">II", header[16:24])
+                return {"image_type": "png", "width": width, "height": height}
+
+            if header[:6] in (b"GIF87a", b"GIF89a"):
+                width, height = struct.unpack("<HH", header[6:10])
+                return {"image_type": "gif", "width": width, "height": height}
+
+            if header.startswith(b"\xff\xd8"):
+                f.seek(2)
+                while True:
+                    marker_prefix = f.read(1)
+                    if not marker_prefix:
+                        break
+                    if marker_prefix != b"\xff":
+                        continue
+
+                    marker = f.read(1)
+                    while marker == b"\xff":
+                        marker = f.read(1)
+                    if not marker:
+                        break
+
+                    if marker in b"\xd8\xd9":
+                        continue
+
+                    length_bytes = f.read(2)
+                    if len(length_bytes) != 2:
+                        break
+                    segment_length = struct.unpack(">H", length_bytes)[0]
+                    if segment_length < 2:
+                        break
+
+                    if marker in b"\xc0\xc1\xc2\xc3\xc5\xc6\xc7\xc9\xca\xcb\xcd\xce\xcf":
+                        segment = f.read(5)
+                        if len(segment) != 5:
+                            break
+                        height, width = struct.unpack(">HH", segment[1:5])
+                        return {"image_type": "jpeg", "width": width, "height": height}
+
+                    f.seek(segment_length - 2, os.SEEK_CUR)
+
+        raise ValueError("not a valid image")
+
+    def _validate_image_file(self, image_path: str, label: str) -> Dict[str, Any]:
+        file_size = os.path.getsize(image_path)
+        ext = os.path.splitext(image_path)[1].lower()
+        checks = {
+            "file_exists": True,
+            "file_size_bytes": file_size,
+            "format": ext,
+        }
+
+        try:
+            metadata = self._read_image_metadata(image_path)
+        except Exception as exc:
+            return {
+                "status": "FAIL",
+                "message": f"{label} is not a valid image: {exc}",
+                "checks": checks,
+            }
+
+        checks.update(metadata)
+        warnings = []
+        if metadata["width"] < 640 or metadata["height"] < 480:
+            warnings.append(f"{label} resolution is too small: {metadata['width']}x{metadata['height']}")
+
+        return {
+            "status": "WARN" if warnings else "PASS",
+            "message": "; ".join(warnings) if warnings else f"{label} is a valid image",
+            "checks": checks,
+        }
     
     def validate_photo(self, photo_path: str) -> Dict[str, Any]:
         """Validate photo evidence"""
@@ -43,37 +122,20 @@ class SubmissionValidator:
             result["message"] = f"Photo file not found: {photo_path}"
             return result
         
-        warning_messages = []
-
-        # Check file size (should be reasonable)
-        file_size = os.path.getsize(photo_path)
-        if file_size < 10000:  # Less than 10KB
-            warning_messages.append(f"Photo file seems too small: {file_size} bytes")
-            self.warnings.append("Photo file is unusually small")
-        
         # Check file extension
         ext = os.path.splitext(photo_path)[1].lower()
         if ext not in ['.jpg', '.jpeg', '.png', '.gif', '.bmp']:
-            warning_messages.append(f"Unusual photo format: {ext}")
             self.warnings.append(f"Unusual photo format: {ext}")
-        
+
         # In production, would check:
         # - EXIF timestamp
         # - Image content (machine + monitor)
         # - Metadata consistency
-        
-        if warning_messages:
+
+        result = self._validate_image_file(photo_path, "Photo file")
+        if ext not in ['.jpg', '.jpeg', '.png', '.gif', '.bmp'] and result["status"] == "PASS":
             result["status"] = "WARN"
-            result["message"] = "; ".join(warning_messages)
-        else:
-            result["status"] = "PASS"
-            result["message"] = "Photo file exists and appears valid"
-        result["checks"] = {
-            "file_exists": True,
-            "file_size_bytes": file_size,
-            "format": ext
-        }
-        
+            result["message"] = f"Unusual photo format: {ext}"
         return result
     
     def validate_screenshot(self, screenshot_path: str) -> Dict[str, Any]:
@@ -89,22 +151,7 @@ class SubmissionValidator:
             result["message"] = f"Screenshot file not found: {screenshot_path}"
             return result
         
-        # Check file size
-        file_size = os.path.getsize(screenshot_path)
-        if file_size < 1000:  # Less than 1KB
-            result["status"] = "WARN"
-            result["message"] = f"Screenshot file seems too small: {file_size} bytes"
-            self.warnings.append("Screenshot file is unusually small")
-        else:
-            result["status"] = "PASS"
-            result["message"] = "Screenshot file exists"
-        
-        result["checks"] = {
-            "file_exists": True,
-            "file_size_bytes": file_size
-        }
-        
-        return result
+        return self._validate_image_file(screenshot_path, "Screenshot file")
     
     def validate_attestation_log(self, log_path: str) -> Dict[str, Any]:
         """Validate server-side attestation log"""

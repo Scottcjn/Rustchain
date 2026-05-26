@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: MIT
 import importlib.util
+import struct
+import zlib
 from pathlib import Path
 
 
@@ -9,6 +11,24 @@ validate_vintage_submission = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(validate_vintage_submission)
 
 SubmissionValidator = validate_vintage_submission.SubmissionValidator
+
+
+def write_png(path: Path, width: int = 640, height: int = 480) -> None:
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return (
+            struct.pack(">I", len(data))
+            + kind
+            + data
+            + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+        )
+
+    raw_rows = b"".join(b"\x00" + (b"\xff\xff\xff" * width) for _ in range(height))
+    path.write_bytes(
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(raw_rows))
+        + chunk(b"IEND", b"")
+    )
 
 
 def test_wallet_validation_accepts_rtc1_alphanumeric_range():
@@ -49,32 +69,42 @@ def test_attestation_log_json_requires_core_fields(tmp_path):
     assert result["checks"]["json_valid"] is True
 
 
-def test_photo_validation_preserves_size_and_format_warnings(tmp_path):
+def test_photo_validation_rejects_non_image_content(tmp_path):
     validator = SubmissionValidator()
-    photo_path = tmp_path / "photo.txt"
-    photo_path.write_bytes(b"tiny")
+    photo_path = tmp_path / "photo.jpg"
+    photo_path.write_bytes(b"not an image" * 1000)
 
     result = validator.validate_photo(str(photo_path))
 
-    assert result["status"] == "WARN"
-    assert "too small" in result["message"]
-    assert "Unusual photo format" in result["message"]
-    assert result["checks"]["file_size_bytes"] == 4
-    assert result["checks"]["format"] == ".txt"
-    assert "Photo file is unusually small" in validator.warnings
+    assert result["status"] == "FAIL"
+    assert "not a valid image" in result["message"]
+    assert result["checks"]["file_size_bytes"] == 12000
+    assert result["checks"]["format"] == ".jpg"
 
 
-def test_screenshot_validation_preserves_small_file_warning(tmp_path):
+def test_photo_validation_accepts_real_png_with_dimensions(tmp_path):
+    validator = SubmissionValidator()
+    photo_path = tmp_path / "photo.png"
+    write_png(photo_path)
+
+    result = validator.validate_photo(str(photo_path))
+
+    assert result["status"] == "PASS"
+    assert result["checks"]["image_type"] == "png"
+    assert result["checks"]["width"] == 640
+    assert result["checks"]["height"] == 480
+
+
+def test_screenshot_validation_rejects_non_image_content(tmp_path):
     validator = SubmissionValidator()
     screenshot_path = tmp_path / "screenshot.png"
-    screenshot_path.write_bytes(b"tiny")
+    screenshot_path.write_bytes(b"not an image" * 1000)
 
     result = validator.validate_screenshot(str(screenshot_path))
 
-    assert result["status"] == "WARN"
-    assert "too small" in result["message"]
-    assert result["checks"]["file_size_bytes"] == 4
-    assert "Screenshot file is unusually small" in validator.warnings
+    assert result["status"] == "FAIL"
+    assert "not a valid image" in result["message"]
+    assert result["checks"]["file_size_bytes"] == 12000
 
 
 def test_validate_submission_extracts_arch_and_bounty_from_valid_log(tmp_path):
