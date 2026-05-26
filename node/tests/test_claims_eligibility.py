@@ -79,15 +79,15 @@ def create_test_db():
         );
     """)
 
-        # Use FIXED reference epoch 1000 — deterministic regardless of wall clock
-    GENESIS_EPOCH_TS = 1745100000
-    BLOCK_TIME = 60
+        # Use FIXED reference epoch — deterministic regardless of wall clock
+    # Derive from MODULE's genesis timestamp and block time (not hardcoded)
+    # so fixture timestamps match check_epoch_participation() epoch windows.
     SLOTS_PER_EPOCH = 144
     FIXED_EPOCH = 1000
     FIXED_SLOT = FIXED_EPOCH * SLOTS_PER_EPOCH
-    FIXED_NOW = GENESIS_EPOCH_TS + FIXED_SLOT * BLOCK_TIME + 60
+    FIXED_NOW = GENESIS_TIMESTAMP + FIXED_SLOT * BLOCK_TIME + BLOCK_TIME
     now = FIXED_NOW
-    current_slot = (now - GENESIS_EPOCH_TS) // BLOCK_TIME
+    current_slot = (now - GENESIS_TIMESTAMP) // BLOCK_TIME
     current_epoch = current_slot // SLOTS_PER_EPOCH
 
     # Insert test miner attestation
