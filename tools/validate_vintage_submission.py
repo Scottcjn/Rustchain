@@ -108,6 +108,7 @@ class SubmissionValidator:
         warnings = []
         if metadata["width"] < 640 or metadata["height"] < 480:
             warnings.append(f"{label} resolution is too small: {metadata['width']}x{metadata['height']}")
+        self.warnings.extend(warnings)
 
         return {
             "status": "WARN" if warnings else "PASS",

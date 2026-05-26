@@ -120,6 +120,18 @@ def test_photo_validation_accepts_real_bmp_with_dimensions(tmp_path):
     assert result["checks"]["height"] == 480
 
 
+def test_low_resolution_image_warning_is_in_summary(tmp_path):
+    validator = SubmissionValidator()
+    photo_path = tmp_path / "photo.png"
+    write_png(photo_path, width=320, height=240)
+
+    result = validator.validate_photo(str(photo_path))
+
+    assert result["status"] == "WARN"
+    assert "resolution is too small" in result["message"]
+    assert validator.warnings == [result["message"]]
+
+
 def test_screenshot_validation_rejects_non_image_content(tmp_path):
     validator = SubmissionValidator()
     screenshot_path = tmp_path / "screenshot.png"
