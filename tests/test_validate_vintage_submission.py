@@ -31,6 +31,18 @@ def write_png(path: Path, width: int = 640, height: int = 480) -> None:
     )
 
 
+def write_bmp(path: Path, width: int = 640, height: int = 480) -> None:
+    row_stride = ((width * 3 + 3) // 4) * 4
+    pixel_data_size = row_stride * height
+    file_size = 14 + 40 + pixel_data_size
+    path.write_bytes(
+        b"BM"
+        + struct.pack("<IHHI", file_size, 0, 0, 54)
+        + struct.pack("<IiiHHIIiiII", 40, width, height, 1, 24, 0, pixel_data_size, 0, 0, 0, 0)
+        + (b"\xff\xff\xff" * width + b"\x00" * (row_stride - width * 3)) * height
+    )
+
+
 def test_wallet_validation_accepts_rtc1_alphanumeric_range():
     validator = SubmissionValidator()
 
@@ -91,6 +103,19 @@ def test_photo_validation_accepts_real_png_with_dimensions(tmp_path):
 
     assert result["status"] == "PASS"
     assert result["checks"]["image_type"] == "png"
+    assert result["checks"]["width"] == 640
+    assert result["checks"]["height"] == 480
+
+
+def test_photo_validation_accepts_real_bmp_with_dimensions(tmp_path):
+    validator = SubmissionValidator()
+    photo_path = tmp_path / "photo.bmp"
+    write_bmp(photo_path)
+
+    result = validator.validate_photo(str(photo_path))
+
+    assert result["status"] == "PASS"
+    assert result["checks"]["image_type"] == "bmp"
     assert result["checks"]["width"] == 640
     assert result["checks"]["height"] == 480
 

@@ -44,6 +44,12 @@ class SubmissionValidator:
                 width, height = struct.unpack("<HH", header[6:10])
                 return {"image_type": "gif", "width": width, "height": height}
 
+            if header.startswith(b"BM") and len(header) >= 26:
+                dib_size = struct.unpack("<I", header[14:18])[0]
+                if dib_size >= 40:
+                    width, height = struct.unpack("<ii", header[18:26])
+                    return {"image_type": "bmp", "width": abs(width), "height": abs(height)}
+
             if header.startswith(b"\xff\xd8"):
                 f.seek(2)
                 while True:
