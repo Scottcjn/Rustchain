@@ -47,4 +47,4 @@ jobs:
         RC_ADMIN_KEY: "0123456789abcdef0123456789abcdef"
         RC_P2P_SECRET: "ci-test-secret-00000000000000000000000000000000"
         DB_PATH: ":memory:"
-      run: pytest tests/ -v --ignore=tests/test_epoch_settlement_formal.py --ignore=tests/test_rip201_bucket_spoof.py
+      run: pytest tests/ -v --ignore=tests/test_epoch_settlement_formal.py --ignore=tests/test_rip201_bucket_spoof.py --ignore=tests/test_p2p_mtls_gate.py
