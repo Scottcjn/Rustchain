@@ -20,6 +20,7 @@ import os
 import sys
 from datetime import datetime
 from typing import Dict, Any, Optional
+from PIL import Image
 
 
 class SubmissionValidator:
@@ -30,81 +31,87 @@ class SubmissionValidator:
         self.errors: list = []
         self.warnings: list = []
     
-    def validate_photo(self, photo_path: str) -> Dict[str, Any]:
-        """Validate photo evidence"""
-        result = {
-            "status": "SKIP",
-            "message": "Photo validation requires image processing (not implemented)",
-            "checks": {}
-        }
-        
-        if not os.path.exists(photo_path):
-            result["status"] = "FAIL"
-            result["message"] = f"Photo file not found: {photo_path}"
-            return result
-        
-        warning_messages = []
+    def _validate_image_core(self, file_path: str, label: str,
+                             min_size: int = 10000,
+                             min_resolution: tuple = (640, 480)) -> Dict[str, Any]:
+        """Real image content validation using Pillow.
 
-        # Check file size (should be reasonable)
-        file_size = os.path.getsize(photo_path)
-        if file_size < 10000:  # Less than 10KB
-            warning_messages.append(f"Photo file seems too small: {file_size} bytes")
-            self.warnings.append("Photo file is unusually small")
-        
-        # Check file extension
-        ext = os.path.splitext(photo_path)[1].lower()
-        if ext not in ['.jpg', '.jpeg', '.png', '.gif', '.bmp']:
-            warning_messages.append(f"Unusual photo format: {ext}")
-            self.warnings.append(f"Unusual photo format: {ext}")
-        
-        # In production, would check:
-        # - EXIF timestamp
-        # - Image content (machine + monitor)
-        # - Metadata consistency
-        
-        if warning_messages:
-            result["status"] = "WARN"
-            result["message"] = "; ".join(warning_messages)
-        else:
-            result["status"] = "PASS"
-            result["message"] = "Photo file exists and appears valid"
-        result["checks"] = {
-            "file_exists": True,
-            "file_size_bytes": file_size,
-            "format": ext
-        }
-        
-        return result
-    
-    def validate_screenshot(self, screenshot_path: str) -> Dict[str, Any]:
-        """Validate miner output screenshot"""
-        result = {
-            "status": "SKIP",
-            "message": "Screenshot validation requires image processing (not implemented)",
-            "checks": {}
-        }
-        
-        if not os.path.exists(screenshot_path):
-            result["status"] = "FAIL"
-            result["message"] = f"Screenshot file not found: {screenshot_path}"
+        Args:
+            file_path: Path to the image file.
+            label: 'Photo' or 'Screenshot' for error messages.
+            min_size: Minimum file size in bytes.
+            min_resolution: Minimum (width, height) in pixels.
+
+        Returns:
+            Dict with status (PASS/FAIL/WARN), message, and checks dict.
+        """
+        result = {"status": "FAIL", "message": "", "checks": {}}
+
+        if not os.path.exists(file_path):
+            result["message"] = f"{label} file not found: {file_path}"
             return result
-        
-        # Check file size
-        file_size = os.path.getsize(screenshot_path)
-        if file_size < 1000:  # Less than 1KB
+
+        file_size = os.path.getsize(file_path)
+        result["checks"]["file_exists"] = True
+        result["checks"]["file_size_bytes"] = file_size
+
+        if file_size < min_size:
             result["status"] = "WARN"
-            result["message"] = f"Screenshot file seems too small: {file_size} bytes"
-            self.warnings.append("Screenshot file is unusually small")
-        else:
-            result["status"] = "PASS"
-            result["message"] = "Screenshot file exists"
-        
-        result["checks"] = {
-            "file_exists": True,
-            "file_size_bytes": file_size
-        }
-        
+            result["message"] = f"{label} file seems too small: {file_size} bytes"
+            self.warnings.append(f"{label} file is unusually small")
+            # Still try to validate — let Pillow judge content
+
+        # Verify with Pillow that it's a real image
+        try:
+            img = Image.open(file_path)
+            img.verify()  # Checks image header integrity (fast, no pixel decode)
+            # Re-open to get dimensions (verify() invalidates the file handle)
+            img = Image.open(file_path)
+            width, height = img.size
+            result["checks"]["width"] = width
+            result["checks"]["height"] = height
+            result["checks"]["format"] = img.format
+
+            # Check resolution
+            if width < min_resolution[0] or height < min_resolution[1]:
+                result["status"] = "WARN"
+                msg = f"{label} resolution {width}x{height} is below {min_resolution[0]}x{min_resolution[1]}"
+                result["message"] = (result["message"] + "; " + msg) if result["message"] else msg
+                self.warnings.append(f"{label} resolution too low")
+
+            # Check extension matches format
+            ext = os.path.splitext(file_path)[1].lower().lstrip(".")
+            if img.format and ext and ext not in img.format.lower() and ext not in ("jpg", "jpeg"):
+                # jpg/jpeg are interchangeable
+                if not (ext in ("jpg", "jpeg") and img.format.lower() in ("jpeg", "jpg")):
+                    result["status"] = "WARN"
+                    msg = f"{label} extension .{ext} doesn't match format {img.format}"
+                    result["message"] = (result["message"] + "; " + msg) if result["message"] else msg
+                    self.warnings.append(f"{label} extension/format mismatch")
+
+            # If we got here with no warnings, PASS
+            if result["status"] != "WARN":
+                result["status"] = "PASS"
+                result["message"] = f"{label} validated as real image ({width}x{height}, {img.format})"
+
+        except Exception as e:
+            result["status"] = "FAIL"
+            result["message"] = f"{label} is not a valid image: {e}"
+            result["checks"]["validation_error"] = str(e)
+
         return result
+
+    def validate_photo(self, photo_path: str) -> Dict[str, Any]:
+        """Validate photo evidence with real image content check"""
+        return self._validate_image_core(photo_path, "Photo",
+                                         min_size=10000,
+                                         min_resolution=(640, 480))
+
+    def validate_screenshot(self, screenshot_path: str) -> Dict[str, Any]:
+        """Validate screenshot with real image content check"""
+        return self._validate_image_core(screenshot_path, "Screenshot",
+                                         min_size=1000,
+                                         min_resolution=(320, 240))
     
     def validate_attestation_log(self, log_path: str) -> Dict[str, Any]:
         """Validate server-side attestation log"""
