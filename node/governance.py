@@ -382,6 +382,11 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
                         return jsonify({
                             "error": f"Insufficient balance: proposal fee is {PROPOSAL_FEE_RTC} RTC"
                         }), 402
+                    # Deduct fee (inside table-check guard — balances table confirmed)
+                    conn.execute(
+                        "UPDATE balances SET balance_rtc = balance_rtc - ? WHERE miner_pk = ?",
+                        (PROPOSAL_FEE_RTC, miner_id)
+                    )
 
                 # Anti-spam: max active proposals per miner
                 active_count = conn.execute(
@@ -391,12 +396,7 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
                 if active_count >= MAX_PROPOSALS_PER_MINER:
                     return jsonify({"error": f"Max {MAX_PROPOSALS_PER_MINER} active proposals per miner"}), 429
 
-                # Deduct fee (after all rejection checks passed)
-                conn.execute(
-                    "UPDATE balances SET balance_rtc = balance_rtc - ? WHERE miner_pk = ?",
-                    (PROPOSAL_FEE_RTC, miner_id)
-                )
-
+                # Build proposal data for Sophia evaluation
                 proposal_data = {
                     "title": title,
                     "description": description,
