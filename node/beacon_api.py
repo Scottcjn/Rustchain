@@ -609,18 +609,21 @@ def create_contract():
         if amount_error:
             return amount_error, amount_status
 
-        # Validate string fields
-        to_agent = str(data.get('to', '')).strip()
-        if not to_agent:
-            return jsonify({'error': 'to: must be a non-empty string'}), 400
+        # Validate string fields — reject non-string JSON types (lists, dicts)
+        to_val = data.get("to")
+        if not isinstance(to_val, str) or not to_val.strip():
+            return jsonify({"error": "to: must be a non-empty string"}), 400
+        to_agent = to_val.strip()
 
-        contract_type_val = str(data.get('type', '')).strip()
-        if not contract_type_val:
-            return jsonify({'error': 'type: must be a non-empty string'}), 400
+        type_val = data.get("type")
+        if not isinstance(type_val, str) or not type_val.strip():
+            return jsonify({"error": "type: must be a non-empty string"}), 400
+        contract_type_val = type_val.strip()
 
-        term_text = str(data.get('term', '')).strip()
-        if not term_text:
-            return jsonify({'error': 'term: must be a non-empty string'}), 400
+        term_val = data.get("term")
+        if not isinstance(term_val, str) or not term_val.strip():
+            return jsonify({"error": "term: must be a non-empty string"}), 400
+        term_text = term_val.strip()
 
         # Validate currency if provided
         currency_val = str(data.get('currency', 'RTC')).strip().upper()
