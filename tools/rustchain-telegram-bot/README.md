@@ -33,7 +33,7 @@ python3 tools/rustchain-telegram-bot/bot.py
 worker: python3 tools/rustchain-telegram-bot/bot.py
 ```
 
-Set `TELEGRAM_BOT_TOKEN` enviroment variable in the dashboard.
+Set `TELEGRAM_BOT_TOKEN` environment variable in the dashboard.
 
 **systemd (self-hosted):**
 
