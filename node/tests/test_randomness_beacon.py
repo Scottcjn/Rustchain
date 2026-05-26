@@ -175,6 +175,72 @@ def test_randomness_routes_return_verified_latest_and_height(tmp_path):
     assert latest_body["proof"]["prev_randomness"] == height_body["randomness"]
 
 
+def test_randomness_routes_migrate_existing_blocks_table_before_lookup(tmp_path):
+    db_path = tmp_path / "rustchain.db"
+    producer = BlockProducer(str(db_path), EmptyPool())
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE blocks (
+                height INTEGER PRIMARY KEY,
+                block_hash TEXT UNIQUE NOT NULL,
+                prev_hash TEXT NOT NULL,
+                timestamp INTEGER NOT NULL,
+                merkle_root TEXT NOT NULL,
+                state_root TEXT NOT NULL,
+                attestations_hash TEXT NOT NULL,
+                producer TEXT NOT NULL,
+                producer_sig TEXT NOT NULL,
+                tx_count INTEGER NOT NULL,
+                attestation_count INTEGER NOT NULL,
+                body_json TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO blocks (
+                height, block_hash, prev_hash, timestamp, merkle_root, state_root,
+                attestations_hash, producer, producer_sig, tx_count,
+                attestation_count, body_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                0,
+                "1" * 64,
+                "0" * 64,
+                123456789,
+                "a" * 64,
+                "c" * 64,
+                "b" * 64,
+                "RTC-test-producer",
+                "d" * 128,
+                0,
+                0,
+                "{}",
+                123456789,
+            ),
+        )
+
+    app = Flask(__name__)
+    create_block_api_routes(app, producer, BlockValidator(str(db_path)))
+    client = app.test_client()
+
+    latest = client.get("/api/randomness/latest")
+    by_height = client.get("/api/randomness/0")
+
+    assert latest.status_code == 404
+    assert latest.get_json() == {"ok": False, "error": "No blocks found"}
+    assert by_height.status_code == 404
+    assert by_height.get_json() == {"ok": False, "error": "Block not found"}
+
+    with sqlite3.connect(db_path) as conn:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(blocks)")}
+    assert {"randomness_beacon", "randomness_proof_json"}.issubset(columns)
+
+
 def test_randomness_route_handles_corrupt_stored_proof(tmp_path):
     db_path = tmp_path / "rustchain.db"
     producer = BlockProducer(str(db_path), EmptyPool())

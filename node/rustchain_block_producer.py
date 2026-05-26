@@ -801,6 +801,7 @@ def create_block_api_routes(app, producer: BlockProducer, validator: BlockValida
         with sqlite3.connect(producer.db_path) as conn:
             conn.row_factory = sqlite3.Row
             try:
+                _ensure_block_randomness_columns(conn)
                 row = conn.execute(
                     "SELECT height, block_hash, randomness_beacon, randomness_proof_json "
                     "FROM blocks WHERE randomness_beacon IS NOT NULL "
@@ -822,6 +823,7 @@ def create_block_api_routes(app, producer: BlockProducer, validator: BlockValida
         with sqlite3.connect(producer.db_path) as conn:
             conn.row_factory = sqlite3.Row
             try:
+                _ensure_block_randomness_columns(conn)
                 row = conn.execute(
                     "SELECT height, block_hash, randomness_beacon, randomness_proof_json "
                     "FROM blocks WHERE height = ? AND randomness_beacon IS NOT NULL",
