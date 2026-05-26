@@ -5,6 +5,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 from nacl.signing import SigningKey
@@ -51,7 +52,7 @@ class AuditEventLogTests(unittest.TestCase):
     def test_append_audit_event_creates_hash_chained_events(self):
         db_path = _make_temp_db()
         try:
-            with sqlite3.connect(db_path) as conn:
+            with closing(sqlite3.connect(db_path)) as conn:
                 first = audit_event_log.append_audit_event(
                     conn,
                     event_type="miner_attestation_recorded",
@@ -72,10 +73,11 @@ class AuditEventLogTests(unittest.TestCase):
                     ts=101,
                     payload={"weight_units": 1000},
                 )
+                conn.commit()
 
             self.assertIsNone(first["previous_event_hash"])
             self.assertEqual(second["previous_event_hash"], first["event_hash"])
-            with sqlite3.connect(db_path) as conn:
+            with closing(sqlite3.connect(db_path)) as conn:
                 rows = conn.execute(
                     "SELECT event_type, subject_id, payload_json FROM audit_events ORDER BY id"
                 ).fetchall()
@@ -97,7 +99,7 @@ class AuditEventLogTests(unittest.TestCase):
             result = beacon_anchor.store_envelope(envelope, db_path)
 
             self.assertTrue(result["ok"])
-            with sqlite3.connect(db_path) as conn:
+            with closing(sqlite3.connect(db_path)) as conn:
                 row = conn.execute(
                     "SELECT event_type, subject_type, subject_id, payload_json "
                     "FROM audit_events"
