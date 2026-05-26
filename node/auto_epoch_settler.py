@@ -18,8 +18,10 @@ logger = logging.getLogger("rustchain.epoch_settler")
 # Configuration — environment variables with defaults
 NODE_URL = os.environ.get("RUSTCHAIN_NODE_URL", "http://localhost:8088")
 DB_PATH = os.environ.get("RUSTCHAIN_DB_PATH", "/root/rustchain/rustchain_v2.db")
-CHECK_INTERVAL = int(os.environ.get("RUSTCHAIN_SETTLE_INTERVAL", "300"))
-SLOTS_PER_EPOCH = int(os.environ.get("RUSTCHAIN_SLOTS_PER_EPOCH", "144"))
+# Module-level env config — wrap integer casts so bad env values
+# (empty string, non-numeric text) don't crash the daemon at import.
+CHECK_INTERVAL = int(os.environ.get("RUSTCHAIN_SETTLE_INTERVAL", "300") or 300)
+SLOTS_PER_EPOCH = int(os.environ.get("RUSTCHAIN_SLOTS_PER_EPOCH", "144") or 144)
 
 
 def get_current_slot():
