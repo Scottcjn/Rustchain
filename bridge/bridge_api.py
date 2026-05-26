@@ -65,7 +65,7 @@ _db_lock = threading.Lock()
 
 
 def get_db():
-    conn = sqlite3.connect(BRIDGE_DB_PATH)
+    conn = sqlite3.connect(BRIDGE_DB_PATH, timeout=5.0)
     conn.row_factory = sqlite3.Row
     return conn
 

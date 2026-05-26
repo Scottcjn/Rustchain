@@ -57,6 +57,7 @@ BRIDGE_DEFAULT_CONFIRMATIONS = int(os.environ.get("RC_BRIDGE_DEFAULT_CONFIRMATIO
 BRIDGE_LOCK_EXPIRY_SECONDS = int(os.environ.get("RC_BRIDGE_LOCK_EXPIRY_SECONDS", "604800"))  # 7 days
 BRIDGE_MIN_AMOUNT_RTC = float(os.environ.get("RC_BRIDGE_MIN_AMOUNT_RTC", "1.0"))
 BRIDGE_UNIT = 1000000  # Micro-units per RTC
+DB_TIMEOUT = 5.0  # seconds: timeout for SQLite connection locks
 logger = logging.getLogger(__name__)
 
 
@@ -791,7 +792,7 @@ def register_bridge_routes(app):
             bridge_type=details["bridge_type"]
         )
         
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=5.0)
         try:
             success, result = create_bridge_transfer(conn, req, admin_initiated)
             if success:
@@ -811,7 +812,7 @@ def register_bridge_routes(app):
         if not tx_hash:
             return jsonify({"error": "tx_hash or id parameter required"}), 400
         
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=5.0)
         try:
             transfer = get_bridge_transfer_by_hash(conn, tx_hash)
             if not transfer:
@@ -835,7 +836,7 @@ def register_bridge_routes(app):
         if error:
             return jsonify({"error": error}), 400
         
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=5.0)
         try:
             transfers = list_bridge_transfers(
                 conn,
@@ -879,7 +880,7 @@ def register_bridge_routes(app):
         if not tx_hash:
             return jsonify({"error": "tx_hash required"}), 400
         
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=5.0)
         try:
             success, result = void_bridge_transfer(conn, tx_hash, reason, voided_by)
             if success:
@@ -925,7 +926,7 @@ def register_bridge_routes(app):
         if not tx_hash or not external_tx_hash:
             return jsonify({"error": "tx_hash and external_tx_hash required"}), 400
 
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=5.0)
         try:
             success, result = update_external_confirmation(
                 conn, tx_hash, external_tx_hash, confirmations, required_confirmations
