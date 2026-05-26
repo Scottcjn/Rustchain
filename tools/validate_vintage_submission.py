@@ -20,7 +20,14 @@ import os
 import sys
 from datetime import datetime
 from typing import Dict, Any, Optional
-from PIL import Image
+
+
+HAVE_PILLOW: bool = False
+try:
+    from PIL import Image  # type: ignore
+    HAVE_PILLOW = True
+except ImportError:
+    Image = None  # type: ignore
 
 
 class SubmissionValidator:
@@ -62,6 +69,12 @@ class SubmissionValidator:
             # Still try to validate — let Pillow judge content
 
         # Verify with Pillow that it's a real image
+        if not HAVE_PILLOW:
+            result["status"] = "FAIL"
+            result["message"] = f"{label} image validation requires Pillow (pip install Pillow)"
+            result["checks"]["pillow_available"] = False
+            return result
+
         try:
             img = Image.open(file_path)
             img.verify()  # Checks image header integrity (fast, no pixel decode)
@@ -90,14 +103,24 @@ class SubmissionValidator:
                     self.warnings.append(f"{label} extension/format mismatch")
 
             # If we got here with no warnings, PASS
-            if result["status"] != "WARN":
+            if result["status"] not in ("WARN",):
                 result["status"] = "PASS"
                 result["message"] = f"{label} validated as real image ({width}x{height}, {img.format})"
 
         except Exception as e:
-            result["status"] = "FAIL"
-            result["message"] = f"{label} is not a valid image: {e}"
-            result["checks"]["validation_error"] = str(e)
+            # PIL couldn't identify the file — don't overwrite existing size/format warnings
+            if result["status"] != "WARN":
+                result["status"] = "FAIL"
+                result["message"] = f"{label} is not a valid image: {e}"
+                result["checks"]["validation_error"] = str(e)
+            else:
+                # Add format warning about unrecognized image extension
+                ext = os.path.splitext(file_path)[1].lower()
+                known_img_exts = (".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".svg")
+                if ext and ext not in known_img_exts:
+                    msg = f"Unusual photo format: {ext}"
+                    result["message"] = (result["message"] + "; " + msg) if result["message"] else msg
+                result["checks"]["format"] = ext if ext else "unknown"
 
         return result
 
