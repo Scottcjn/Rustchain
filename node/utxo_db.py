@@ -274,11 +274,14 @@ class UtxoDB:
     def spend_box(self, box_id: str, spent_by_tx: str,
                   conn: Optional[sqlite3.Connection] = None) -> Optional[dict]:
         """
-        Mark a box as spent.  Returns the box dict or None if not found.
+        Mark a box as spent. Returns the box dict or None if not found.
         Raises ValueError on double-spend attempt.
 
-        When called without an external ``conn``, acquires BEGIN IMMEDIATE
-        to prevent TOCTOU races between the SELECT and UPDATE.
+        Uses a single atomic UPDATE with ``WHERE spent_at IS NULL`` to
+        eliminate the TOCTOU window that existed when a redundant SELECT
+        preceded the UPDATE (see issue #6345). The old SELECT-check
+        pattern allowed two concurrent transactions to both observe
+        ``spent_at IS NULL`` before either reached the UPDATE.
         """
         own = conn is None
         if own:
@@ -287,20 +290,7 @@ class UtxoDB:
             if own:
                 conn.execute("BEGIN IMMEDIATE")
 
-            row = conn.execute(
-                "SELECT * FROM utxo_boxes WHERE box_id = ?", (box_id,)
-            ).fetchone()
-            if not row:
-                if own:
-                    conn.execute("ROLLBACK")
-                return None
-            if row['spent_at'] is not None:
-                if own:
-                    conn.execute("ROLLBACK")
-                raise ValueError(
-                    f"Double-spend attempt: box {box_id[:16]} already spent "
-                    f"by tx {row['spent_by_tx'][:16]}"
-                )
+            # Atomic UPDATE — no prior SELECT, so no TOCTOU gap.
             updated = conn.execute(
                 """UPDATE utxo_boxes
                    SET spent_at = ?, spent_by_tx = ?
@@ -308,17 +298,28 @@ class UtxoDB:
                 (int(time.time()), spent_by_tx, box_id),
             ).rowcount
             if updated != 1:
-                # Another connection spent this box between our SELECT
-                # and UPDATE — treat as double-spend.
+                # Box not found OR already spent (double-spend / race).
                 if own:
                     conn.execute("ROLLBACK")
-                raise ValueError(
-                    f"Double-spend race: box {box_id[:16]} was spent "
-                    f"concurrently"
-                )
+                # Distinguish "not found" from "already spent" for
+                # better error messages.
+                check = conn.execute(
+                    "SELECT spent_at, spent_by_tx FROM utxo_boxes WHERE box_id = ?",
+                    (box_id,),
+                ).fetchone() if not own else None
+                if check is not None:
+                    raise ValueError(
+                        f"Double-spend attempt: box {box_id[:16]} already spent "
+                        f"by tx {check['spent_by_tx'][:16]}"
+                    )
+                return None
+            # Fetch the row *after* the UPDATE so we can return it.
+            row = conn.execute(
+                "SELECT * FROM utxo_boxes WHERE box_id = ?", (box_id,)
+            ).fetchone()
             if own:
                 conn.commit()
-            return dict(row)
+            return dict(row) if row else None
         except ValueError:
             raise
         except Exception:
@@ -331,6 +332,7 @@ class UtxoDB:
         finally:
             if own:
                 conn.close()
+
 
 
     def get_box(self, box_id: str) -> Optional[dict]:
