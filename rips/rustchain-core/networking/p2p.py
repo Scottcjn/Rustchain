@@ -655,7 +655,7 @@ class NetworkManager:
         self.send_message(peer_id, MessageType.HELLO, {
             "version": PROTOCOL_VERSION,
             "chain_id": self.chain_id,
-best_height=0  # TODO(#core): get from chain after sync
+best_height: 0,  # TODO(#core): get from chain after sync
             "best_hash": "",
             "validator_id": self.validator_id,
         })
