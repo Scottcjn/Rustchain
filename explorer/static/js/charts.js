@@ -66,16 +66,43 @@ class ChartRenderer {
         observer.observe(this.container);
     }
 
+    asArray(data) {
+        return Array.isArray(data) ? data : [];
+    }
+
+    numericValue(value, fallback = 0) {
+        const number = Number(value);
+        return Number.isFinite(number) ? number : fallback;
+    }
+
+    getNumericData() {
+        return this.asArray(this.data).map(value => this.numericValue(value));
+    }
+
+    isSliceObject(item) {
+        return item && typeof item === 'object' && !Array.isArray(item);
+    }
+
+    getSliceValue(item) {
+        if (!this.isSliceObject(item)) return 0;
+        return Math.max(0, this.numericValue(item.value));
+    }
+
+    getSliceLabel(item) {
+        if (!this.isSliceObject(item) || item.label == null) return '';
+        return String(item.label);
+    }
+
     /**
      * Update chart data
      */
     update(newData) {
-        this.targetData = newData;
+        this.targetData = this.asArray(newData);
         
         if (this.options.animation) {
             this.animate();
         } else {
-            this.data = newData;
+            this.data = this.targetData;
             this.render();
         }
     }
@@ -90,7 +117,7 @@ class ChartRenderer {
 
         const duration = 300;
         const startTime = performance.now();
-        const startData = this.data.length > 0 ? this.data : this.targetData;
+        const startData = this.asArray(this.data).length > 0 ? this.asArray(this.data) : this.targetData;
 
         const animateFrame = (currentTime) => {
             const elapsed = currentTime - startTime;
@@ -196,9 +223,10 @@ class ChartRenderer {
 
         // Vertical grid lines
         const gridWidth = width - padding.left - padding.right;
-        if (this.data.length > 1) {
-            for (let i = 0; i < this.data.length; i++) {
-                const x = padding.left + (gridWidth / (this.data.length - 1)) * i;
+        const dataLength = this.asArray(this.data).length;
+        if (dataLength > 1) {
+            for (let i = 0; i < dataLength; i++) {
+                const x = padding.left + (gridWidth / (dataLength - 1)) * i;
                 this.ctx.beginPath();
                 this.ctx.moveTo(x, padding.top);
                 this.ctx.lineTo(x, height - padding.bottom);
@@ -222,10 +250,11 @@ class ChartRenderer {
         const chartWidth = width - padding.left - padding.right;
         const chartHeight = height - padding.top - padding.bottom;
 
-        if (this.data.length < 2) return;
+        const data = this.getNumericData();
+        if (data.length < 2) return;
 
-        const maxValue = Math.max(...this.data.map(d => typeof d === 'number' ? d : 0));
-        const minValue = Math.min(...this.data.map(d => typeof d === 'number' ? d : 0));
+        const maxValue = Math.max(...data);
+        const minValue = Math.min(...data);
         const range = maxValue - minValue || 1;
 
         // Draw line
@@ -234,8 +263,8 @@ class ChartRenderer {
         this.ctx.lineWidth = 2;
         this.ctx.lineJoin = 'round';
 
-        this.data.forEach((value, index) => {
-            const x = padding.left + (chartWidth / (this.data.length - 1)) * index;
+        data.forEach((value, index) => {
+            const x = padding.left + (chartWidth / (data.length - 1)) * index;
             const y = padding.top + chartHeight - ((value - minValue) / range) * chartHeight;
             
             if (index === 0) {
@@ -248,8 +277,8 @@ class ChartRenderer {
         this.ctx.stroke();
 
         // Draw points
-        this.data.forEach((value, index) => {
-            const x = padding.left + (chartWidth / (this.data.length - 1)) * index;
+        data.forEach((value, index) => {
+            const x = padding.left + (chartWidth / (data.length - 1)) * index;
             const y = padding.top + chartHeight - ((value - minValue) / range) * chartHeight;
             
             this.ctx.beginPath();
@@ -272,10 +301,11 @@ class ChartRenderer {
         const chartWidth = width - padding.left - padding.right;
         const chartHeight = height - padding.top - padding.bottom;
 
-        if (this.data.length < 2) return;
+        const data = this.getNumericData();
+        if (data.length < 2) return;
 
-        const maxValue = Math.max(...this.data.map(d => typeof d === 'number' ? d : 0));
-        const minValue = Math.min(...this.data.map(d => typeof d === 'number' ? d : 0));
+        const maxValue = Math.max(...data);
+        const minValue = Math.min(...data);
         const range = maxValue - minValue || 1;
 
         // Draw filled area
@@ -284,8 +314,8 @@ class ChartRenderer {
         gradient.addColorStop(0, colors[0] + '60');
         gradient.addColorStop(1, colors[0] + '10');
 
-        this.data.forEach((value, index) => {
-            const x = padding.left + (chartWidth / (this.data.length - 1)) * index;
+        data.forEach((value, index) => {
+            const x = padding.left + (chartWidth / (data.length - 1)) * index;
             const y = padding.top + chartHeight - ((value - minValue) / range) * chartHeight;
             
             if (index === 0) {
@@ -314,14 +344,15 @@ class ChartRenderer {
         const chartWidth = width - padding.left - padding.right;
         const chartHeight = height - padding.top - padding.bottom;
 
-        if (this.data.length === 0) return;
+        const data = this.getNumericData();
+        if (data.length === 0) return;
 
-        const maxValue = Math.max(...this.data.map(d => typeof d === 'number' ? d : 0));
-        const barWidth = (chartWidth / this.data.length) * 0.8;
-        const barGap = (chartWidth / this.data.length) * 0.2;
+        const maxValue = Math.max(...data);
+        const barWidth = (chartWidth / data.length) * 0.8;
+        const barGap = (chartWidth / data.length) * 0.2;
 
-        this.data.forEach((value, index) => {
-            const x = padding.left + (chartWidth / this.data.length) * index + barGap / 2;
+        data.forEach((value, index) => {
+            const x = padding.left + (chartWidth / data.length) * index + barGap / 2;
             const barHeight = maxValue > 0 ? (value / maxValue) * chartHeight : 0;
             const y = padding.top + chartHeight - barHeight;
 
@@ -347,13 +378,15 @@ class ChartRenderer {
         const centerY = height / 2;
         const radius = Math.min(width, height) / 2 - 40;
 
-        if (this.data.length === 0) return;
+        const slices = this.asArray(this.data);
+        if (slices.length === 0) return;
 
-        const total = this.data.reduce((sum, item) => sum + (item.value || 0), 0);
+        const total = slices.reduce((sum, item) => sum + this.getSliceValue(item), 0);
+        if (total <= 0) return;
         let startAngle = -Math.PI / 2;
 
-        this.data.forEach((item, index) => {
-            const value = item.value || 0;
+        slices.forEach((item, index) => {
+            const value = this.getSliceValue(item);
             const sliceAngle = (value / total) * Math.PI * 2;
 
             this.ctx.beginPath();
@@ -372,7 +405,7 @@ class ChartRenderer {
             this.ctx.font = '12px sans-serif';
             this.ctx.textAlign = 'center';
             this.ctx.textBaseline = 'middle';
-            this.ctx.fillText(item.label || '', labelX, labelY);
+            this.ctx.fillText(this.getSliceLabel(item), labelX, labelY);
 
             startAngle += sliceAngle;
         });
@@ -385,13 +418,15 @@ class ChartRenderer {
         const outerRadius = Math.min(width, height) / 2 - 20;
         const innerRadius = outerRadius * 0.6;
 
-        if (this.data.length === 0) return;
+        const slices = this.asArray(this.data);
+        if (slices.length === 0) return;
 
-        const total = this.data.reduce((sum, item) => sum + (item.value || 0), 0);
+        const total = slices.reduce((sum, item) => sum + this.getSliceValue(item), 0);
+        if (total <= 0) return;
         let startAngle = -Math.PI / 2;
 
-        this.data.forEach((item, index) => {
-            const value = item.value || 0;
+        slices.forEach((item, index) => {
+            const value = this.getSliceValue(item);
             const sliceAngle = (value / total) * Math.PI * 2;
 
             // Draw doughnut slice
@@ -421,23 +456,30 @@ class ChartRenderer {
         const itemHeight = 20;
         const itemWidth = 100;
 
-        if (!this.data.length || !this.data[0].label) return;
+        const items = this.asArray(this.data);
+        const legendItems = items
+            .map((item, index) => ({
+                label: this.getSliceLabel(item),
+                colorIndex: index
+            }))
+            .filter(item => item.label);
+        if (legendItems.length === 0) return;
 
         this.ctx.font = '12px sans-serif';
         
-        this.data.forEach((item, index) => {
+        legendItems.forEach((item, index) => {
             const x = padding;
             const y = padding + index * (itemHeight + 5);
             
             // Draw color box
-            this.ctx.fillStyle = colors[index % colors.length];
+            this.ctx.fillStyle = colors[item.colorIndex % colors.length];
             this.ctx.fillRect(x, y, 12, 12);
             
             // Draw label
             this.ctx.fillStyle = '#e8eaed';
             this.ctx.textAlign = 'left';
             this.ctx.textBaseline = 'middle';
-            this.ctx.fillText(item.label || '', x + 18, y + 6);
+            this.ctx.fillText(item.label, x + 18, y + 6);
         });
     }
 
