@@ -97,7 +97,15 @@ class AsyncRustChainClient:
                 json=json_payload,
                 headers=headers,
                 timeout=aiohttp.ClientTimeout(total=self.timeout),
+                allow_redirects=False,
             ) as response:
+                if 300 <= response.status < 400:
+                    location = response.headers.get("Location", "")
+                    raise APIError(
+                        f"API redirected: HTTP {response.status} to {location}",
+                        status_code=response.status,
+                    )
+
                 # Check for HTTP errors
                 if response.status >= 400:
                     raise APIError(

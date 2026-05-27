@@ -137,7 +137,13 @@ class RustChainClient:
         """
         try:
             client = await self._get_client()
-            response = await client.get(path, params=params)
+            response = await client.get(path, params=params, follow_redirects=False)
+            if 300 <= response.status_code < 400:
+                location = response.headers.get("location", "")
+                raise APIError(
+                    f"API redirected: HTTP {response.status_code} to {location}",
+                    status_code=response.status_code,
+                )
             response.raise_for_status()
             return response.json()
         except httpx.ConnectError as e:
