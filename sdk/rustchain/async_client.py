@@ -66,7 +66,7 @@ class AsyncRustChainClient:
         params: Dict = None,
         data: Dict = None,
         json_payload: Dict = None,
-    ) -> Dict:
+    ) -> Any:
         """
         Make async HTTP request to RustChain node.
 
@@ -119,6 +119,25 @@ class AsyncRustChainClient:
         except aiohttp.ClientError as e:
             raise ConnectionError(f"Request failed: {e}") from e
 
+    async def _request_object(
+        self,
+        method: str,
+        endpoint: str,
+        params: Dict = None,
+        data: Dict = None,
+        json_payload: Dict = None,
+    ) -> Dict[str, Any]:
+        result = await self._request(
+            method,
+            endpoint,
+            params=params,
+            data=data,
+            json_payload=json_payload,
+        )
+        if not isinstance(result, dict):
+            raise APIError("Expected JSON object response")
+        return result
+
     async def health(self) -> Dict[str, Any]:
         """
         Get node health status.
@@ -130,7 +149,7 @@ class AsyncRustChainClient:
                 - version (str): Node version
                 - db_rw (bool): Database read/write status
         """
-        return await self._request("GET", "/health")
+        return await self._request_object("GET", "/health")
 
     async def epoch(self) -> Dict[str, Any]:
         """
@@ -144,7 +163,7 @@ class AsyncRustChainClient:
                 - enrolled_miners (int): Number of enrolled miners
                 - epoch_pot (float): Current epoch PoT
         """
-        return await self._request("GET", "/epoch")
+        return await self._request_object("GET", "/epoch")
 
     async def miners(self) -> List[Dict[str, Any]]:
         """
@@ -188,7 +207,7 @@ class AsyncRustChainClient:
         if not miner_id or not isinstance(miner_id, str):
             raise ValidationError("miner_id must be a non-empty string")
 
-        return await self._request("GET", "/wallet/balance", params={"miner_id": miner_id})
+        return await self._request_object("GET", "/wallet/balance", params={"miner_id": miner_id})
 
     async def transfer(
         self,
@@ -238,7 +257,11 @@ class AsyncRustChainClient:
             payload["signature"] = signature
 
         try:
-            result = await self._request("POST", "/wallet/transfer/signed", json_payload=payload)
+            result = await self._request_object(
+                "POST",
+                "/wallet/transfer/signed",
+                json_payload=payload,
+            )
 
             if not result.get("success", False):
                 error_msg = result.get("error", "Transfer failed")
@@ -308,7 +331,7 @@ class AsyncRustChainClient:
                 raise ValidationError(f"Missing required field: {field}")
 
         try:
-            result = await self._request("POST", "/attest/submit", json_payload=payload)
+            result = await self._request_object("POST", "/attest/submit", json_payload=payload)
 
             if not result.get("success", False):
                 error_msg = result.get("error", "Attestation failed")
@@ -336,7 +359,11 @@ class AsyncRustChainClient:
             raise ValidationError("miner_id must be a non-empty string")
 
         try:
-            result = await self._request("POST", "/enroll", json_payload={"miner_id": miner_id})
+            result = await self._request_object(
+                "POST",
+                "/enroll",
+                json_payload={"miner_id": miner_id},
+            )
             return result
 
         except APIError as e:
