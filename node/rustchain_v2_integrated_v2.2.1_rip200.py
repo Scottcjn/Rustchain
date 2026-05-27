@@ -6217,6 +6217,9 @@ def get_balance(miner_pk):
         "balance_rtc": balance_i64 / ACCOUNT_UNIT,
         "amount_i64": balance_i64,
     })
+
+
+@app.route('/api/stats', methods=['GET'])
 def get_stats():
     """Get system statistics"""
     epoch = slot_to_epoch(current_slot())
