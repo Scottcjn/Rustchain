@@ -263,6 +263,16 @@ class PollingClient {
         };
     }
 
+    normalizeMinersResponse(response) {
+        if (Array.isArray(response)) {
+            return response;
+        }
+        if (Array.isArray(response?.miners)) {
+            return response.miners;
+        }
+        return [];
+    }
+
     /**
      * Start polling
      */
@@ -309,12 +319,13 @@ class PollingClient {
         this.state.lastPoll = Date.now();
 
         try {
-            const [blocks, transactions, miners, epoch] = await Promise.all([
+            const [blocks, transactions, minersResponse, epoch] = await Promise.all([
                 this.fetchJSON('/blocks'),
                 this.fetchJSON('/api/transactions'),
                 this.fetchJSON('/api/miners'),
                 this.fetchJSON('/epoch')
             ]);
+            const miners = this.normalizeMinersResponse(minersResponse);
 
             // Detect changes and emit events
             this.detectChanges(blocks, transactions, miners, epoch);
