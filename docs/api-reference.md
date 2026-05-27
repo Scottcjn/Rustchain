@@ -449,12 +449,12 @@ Returns HTML page (not JSON).
 
 ### Settlement Data
 
-#### GET /api/settlement/{epoch}
+#### GET /rewards/epoch/{epoch}
 
 Query historical settlement data for a specific epoch.
 
 ```bash
-curl -sk https://rustchain.org/api/settlement/75
+curl -sk https://rustchain.org/rewards/epoch/75
 ```
 
 **Response**:
