@@ -64,6 +64,8 @@ def check_nodes():
         try:
             with open(DATA_FILE, 'r') as f:
                 history = json.load(f)
+            if not isinstance(history, list):
+                history = []
         except: pass
     
     history.append({"time": datetime.now().isoformat(), "nodes": results})
