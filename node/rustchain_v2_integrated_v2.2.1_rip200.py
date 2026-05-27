@@ -4120,8 +4120,25 @@ def enroll_epoch():
     # unauthorized-enrollment / miner_id-hijack vector.
     # Unsigned enrollment is rejected by default. Operators running private
     # legacy migrations can temporarily set ENROLL_ALLOW_UNSIGNED_LEGACY=1.
-    sig_hex = (data.get('signature') or '').strip().lower()
-    pubkey_hex = (data.get('public_key') or '').strip().lower()
+    # SECURITY (#6123): Validate signature/public_key types before .strip()/.lower()
+    _raw_sig = data.get('signature')
+    _raw_pubkey = data.get('public_key')
+    if _raw_sig is not None and not isinstance(_raw_sig, str):
+        return jsonify({
+            "ok": False,
+            "error": "INVALID_SIGNATURE_TYPE",
+            "message": "Field 'signature' must be a string",
+            "code": "INVALID_SIGNATURE_TYPE",
+        }), 400
+    if _raw_pubkey is not None and not isinstance(_raw_pubkey, str):
+        return jsonify({
+            "ok": False,
+            "error": "INVALID_PUBLIC_KEY_TYPE",
+            "message": "Field 'public_key' must be a string",
+            "code": "INVALID_PUBLIC_KEY_TYPE",
+        }), 400
+    sig_hex = (_raw_sig or '').strip().lower()
+    pubkey_hex = (_raw_pubkey or '').strip().lower()
     epoch = slot_to_epoch(current_slot())
 
     if sig_hex and pubkey_hex:
@@ -5920,8 +5937,23 @@ def governance_vote():
     wallet = str(data.get('wallet', '')).strip()
     vote = str(data.get('vote', '')).strip().lower()
     nonce = str(data.get('nonce', '')).strip()
-    signature = str(data.get('signature', '')).strip()
-    public_key = str(data.get('public_key', '')).strip()
+    # SECURITY (#6125): Validate signature/public_key types before str() coercion
+    _raw_sig = data.get('signature')
+    _raw_pubkey = data.get('public_key')
+    if _raw_sig is not None and not isinstance(_raw_sig, str):
+        return jsonify({
+            "ok": False,
+            "error": "INVALID_SIGNATURE_TYPE",
+            "message": "Field 'signature' must be a string",
+        }), 400
+    if _raw_pubkey is not None and not isinstance(_raw_pubkey, str):
+        return jsonify({
+            "ok": False,
+            "error": "INVALID_PUBLIC_KEY_TYPE",
+            "message": "Field 'public_key' must be a string",
+        }), 400
+    signature = str(_raw_sig or '').strip()
+    public_key = str(_raw_pubkey or '').strip()
 
     if not all([proposal_id, wallet, vote in ('yes', 'no'), nonce, signature, public_key]):
         return jsonify({
@@ -5929,7 +5961,14 @@ def governance_vote():
             "error": "proposal_id, wallet, vote(yes/no), nonce, signature, public_key are required",
         }), 400
 
-    expected_wallet = address_from_pubkey(public_key)
+    try:
+        expected_wallet = address_from_pubkey(public_key)
+    except (ValueError, TypeError):
+        return jsonify({
+            "ok": False,
+            "error": "invalid_public_key",
+            "message": "Public key is not valid hexadecimal",
+		}), 400
     if wallet != expected_wallet:
         return jsonify({
             "ok": False,
@@ -8650,8 +8689,21 @@ def wallet_transfer_signed():
     to_address = pre.details["to_address"]
     nonce_int = pre.details["nonce"]
     chain_id = pre.details.get("chain_id")
-    signature = str(data.get("signature", "")).strip()
-    public_key = str(data.get("public_key", "")).strip()
+    # SECURITY (#6127): Validate signature/public_key types before str() coercion
+    _raw_sig = data.get("signature")
+    _raw_pubkey = data.get("public_key")
+    if _raw_sig is not None and not isinstance(_raw_sig, str):
+        return jsonify({
+            "error": "INVALID_SIGNATURE_TYPE",
+            "message": "Field 'signature' must be a string",
+        }), 400
+    if _raw_pubkey is not None and not isinstance(_raw_pubkey, str):
+        return jsonify({
+            "error": "INVALID_PUBLIC_KEY_TYPE",
+            "message": "Field 'public_key' must be a string",
+        }), 400
+    signature = str(_raw_sig or "").strip()
+    public_key = str(_raw_pubkey or "").strip()
     memo = str(data.get("memo", ""))
     amount_rtc = pre.details["amount_rtc"]
     fee_rtc = pre.details["fee_rtc"]
@@ -8682,7 +8734,13 @@ def wallet_transfer_signed():
             }), 400
         public_key = atlas_pubkey  # Use Atlas pubkey for verification
     else:
-        expected_address = address_from_pubkey(public_key)
+        try:
+            expected_address = address_from_pubkey(public_key)
+        except (ValueError, TypeError):
+            return jsonify({
+                "error": "invalid_public_key",
+                "message": "Public key is not valid hexadecimal",
+            }), 400
         if from_address != expected_address:
             return jsonify({
                 "error": "Public key does not match from_address",
