@@ -35,6 +35,19 @@ from datetime import datetime
 from pathlib import Path
 import argparse
 
+# ── Ed25519 signing (GPT-5.4 audit finding #2) ──
+# Optional: if miner_crypto.py + PyNaCl are available, sign attestations
+# with Ed25519 over the canonical JSON of the full payload. Server-side
+# verification accepts both this scheme and the legacy sha512 fallback
+# (see PR #6426). Without signing, attestations are vulnerable to
+# wallet-hijack via MITM — fingerprint validation still passes but the
+# server has no crypto binding between wallet field and sender.
+try:
+    from miner_crypto import get_or_create_keypair, sign_payload  # noqa: F401
+    CRYPTO_AVAILABLE = True
+except ImportError:
+    CRYPTO_AVAILABLE = False
+
 # Configuration
 RUSTCHAIN_API = "http://50.28.86.131:8088"
 WALLET_DIR = Path.home() / ".rustchain"
@@ -118,6 +131,15 @@ class RustChainMiner:
 
         # Zephyr dual-mining state — detected once per attest() cycle
         self._pow_proof = None
+
+        # Ed25519 keypair — generated/loaded once per install. Used to sign
+        # every attestation payload below. Stored in the OS keystore via
+        # miner_crypto.get_or_create_keypair() so reinstall preserves identity.
+        self.keypair = {}
+        self.public_key = ""
+        if CRYPTO_AVAILABLE:
+            self.keypair = get_or_create_keypair()
+            self.public_key = self.keypair.get("public_key", "")
 
     # -----------------------------------------------------------------------
     # ZEPHYR DUAL-MINING METHODS
@@ -447,6 +469,27 @@ class RustChainMiner:
         # so existing attestation behaviour is fully preserved for non-Zephyr miners.
         if self._pow_proof:
             attestation["pow_proof"] = self._pow_proof
+
+        # ── Ed25519 signature (GPT-5.4 audit finding #2) ──
+        # Sign canonical JSON of the full attestation BEFORE adding the
+        # signature/public_key/signature_type fields. Server reproduces the
+        # same canonical bytes by stripping those three fields and verifying.
+        # Legacy sha512 fallback for installs without PyNaCl — server flags
+        # it but still accepts (see PR #6426 server-side handling).
+        if CRYPTO_AVAILABLE and self.keypair:
+            payload_bytes = json.dumps(
+                attestation, sort_keys=True, separators=(",", ":")
+            ).encode()
+            signature = sign_payload(payload_bytes, self.keypair["private_key"])
+            attestation["signature"] = signature
+            attestation["public_key"] = self.public_key
+            attestation["signature_type"] = "ed25519"
+        else:
+            # Legacy fallback — sha512 pseudo-signature. Server accepts but
+            # logs a warning. Real wallet-hijack protection requires PyNaCl.
+            msg = f"{nonce}:{self.miner_id}:{self.wallet_address}:{int(time.time())}"
+            attestation["signature"] = hashlib.sha512(msg.encode()).hexdigest()
+            attestation["signature_type"] = "sha512_legacy"
 
         try:
             resp = requests.post(
