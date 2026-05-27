@@ -1055,6 +1055,8 @@ class UtxoDB:
             ).fetchall()
             candidates = []
             stale_tx_ids = []
+            selected_spend_inputs = set()
+            selected_data_inputs = set()
 
             for row in rows:
                 tx_id = row['tx_id']
@@ -1086,7 +1088,17 @@ class UtxoDB:
                         stale_tx_ids.append(tx_id)
                         break
                 else:
+                    input_set = set(input_ids)
+                    data_input_set = set(data_inputs)
+                    if (
+                        input_set & selected_data_inputs
+                        or data_input_set & selected_spend_inputs
+                    ):
+                        continue
+
                     candidates.append(tx)
+                    selected_spend_inputs.update(input_set)
+                    selected_data_inputs.update(data_input_set)
                     if len(candidates) >= max_count:
                         break
 

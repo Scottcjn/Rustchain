@@ -833,6 +833,40 @@ class TestUtxoDB(unittest.TestCase):
         self.assertEqual(candidates, [])
         self.assertFalse(self.db.mempool_check_double_spend(alice_box['box_id']))
 
+    def test_mempool_block_candidates_skip_internal_data_input_conflicts(self):
+        """A candidate set must be valid when applied sequentially.
+
+        One pending transaction can spend a box that another pending
+        transaction uses as a read-only data_input. Both are individually
+        valid against the current UTXO set, but including both in one block
+        candidate batch makes the later transaction fail once the first spend
+        has been applied.
+        """
+        self._apply_coinbase('oracle', 100 * UNIT, block_height=1)
+        self._apply_coinbase('alice', 100 * UNIT, block_height=2)
+        oracle_box = self.db.get_unspent_for_address('oracle')[0]
+        alice_box = self.db.get_unspent_for_address('alice')[0]
+
+        self.assertTrue(self.db.mempool_add({
+            'tx_id': 'read_oracle' * 6,
+            'inputs': [{'box_id': alice_box['box_id']}],
+            'data_inputs': [oracle_box['box_id']],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT - 1000}],
+            'fee_nrtc': 1000,
+        }))
+        self.assertTrue(self.db.mempool_add({
+            'tx_id': 'spend_oracle' * 5,
+            'inputs': [{'box_id': oracle_box['box_id']}],
+            'outputs': [
+                {'address': 'oracle-next', 'value_nrtc': 100 * UNIT - 2000}
+            ],
+            'fee_nrtc': 2000,
+        }))
+
+        candidates = self.db.mempool_get_block_candidates(max_count=10)
+        self.assertEqual([tx['tx_id'] for tx in candidates], ['spend_oracle' * 5])
+        self.assertTrue(self.db.mempool_check_double_spend(alice_box['box_id']))
+
     def test_mempool_nonexistent_input_rejected(self):
         tx = {
             'tx_id': 'cccc' * 16,
