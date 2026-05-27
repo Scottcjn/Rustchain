@@ -34,7 +34,7 @@ feed_bp = Blueprint("bottube_feed", __name__, url_prefix="/api/feed")
 
 
 def _get_base_url() -> str:
-    """Return the public base URL without trusting arbitrary forwarded hosts."""
+    """Return the public base URL. NEVER reflects untrusted Host headers."""
     configured_base_url = current_app.config.get("BOTTUBE_PUBLIC_BASE_URL")
     if configured_base_url:
         return str(configured_base_url).rstrip("/")
@@ -44,7 +44,14 @@ def _get_base_url() -> str:
     if forwarded_host and forwarded_host in trusted_hosts:
         return f"https://{forwarded_host}"
 
-    return request.host_url.rstrip("/")
+    # No configured base URL and no trusted forward host — refuse to reflect
+    # the Host header into feed links regardless of syntactic validity.
+    # An attacker-controlled Host header must never appear in RSS/Atom URLs.
+    current_app.logger.warning(
+        "Feed: no BOTTUBE_PUBLIC_BASE_URL configured. "
+        "Set BOTTUBE_PUBLIC_BASE_URL to control feed link origin."
+    )
+    return "http://localhost:8088"
 
 
 def _parse_feed_limit(default: int = 20, maximum: int = 100) -> int:
