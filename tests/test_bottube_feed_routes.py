@@ -110,19 +110,16 @@ class TestFeedRoutes(unittest.TestCase):
         response = self.client.get("/api/feed/rss?limit=invalid")
         self.assertEqual(response.status_code, 400)
 
-    def test_feed_routes_reject_negative_limit(self):
-        """All feed entrypoints reject negative limits instead of slicing/unbounding."""
-        for path in (
-            "/api/feed/rss?limit=-1",
-            "/api/feed/atom?limit=-1",
-            "/api/feed?limit=-1",
-        ):
-            with self.subTest(path=path):
-                response = self.client.get(path)
-                self.assertEqual(response.status_code, 400)
-                data = json.loads(response.data)
-                self.assertEqual(data["error"], "Invalid parameter")
-                self.assertEqual(data["message"], "limit must be non-negative")
+    def test_feed_routes_reject_non_positive_limit(self):
+        """All feed entrypoints reject limits below 1 before fetching videos."""
+        for limit in ("-1", "0"):
+            for route in ("/api/feed/rss", "/api/feed/atom", "/api/feed"):
+                with self.subTest(route=route, limit=limit):
+                    response = self.client.get(f"{route}?limit={limit}")
+                    self.assertEqual(response.status_code, 400)
+                    data = json.loads(response.data)
+                    self.assertEqual(data["error"], "Invalid parameter")
+                    self.assertEqual(data["message"], "limit must be at least 1")
 
     def test_rss_feed_excessive_limit(self):
         """Test RSS feed caps limit to 100."""

@@ -51,8 +51,8 @@ def _parse_feed_limit(default: int = 20, maximum: int = 100) -> int:
     if raw_limit in (None, ""):
         return default
     limit = int(raw_limit)
-    if limit < 0:
-        raise ValueError("limit must be non-negative")
+    if limit < 1:
+        raise ValueError("limit must be at least 1")
     return min(limit, maximum)
 
 
