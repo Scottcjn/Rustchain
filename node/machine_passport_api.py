@@ -141,7 +141,7 @@ def list_passports():
     if error_response is not None:
         return error_response, status
 
-    offset, error_response, status = _parse_non_negative_int_arg('offset', 0)
+    offset, error_response, status = _parse_non_negative_int_arg('offset', 0, max_value=10_000)
     if error_response is not None:
         return error_response, status
     
