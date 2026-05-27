@@ -240,7 +240,7 @@ paths:
                 total_miners: 25
                 active_miners: 10
 
-  /api/hall_of_fame:
+  /api/hall_of_fame/leaderboard:
     get:
       tags:
         - Miners

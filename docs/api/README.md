@@ -43,7 +43,7 @@ open http://localhost:8080/swagger.html
 | GET | `/api/miners` | List active miners |
 | GET | `/api/nodes` | List connected nodes |
 | GET | `/api/stats` | Network statistics |
-| GET | `/api/hall_of_fame` | Hall of Fame leaderboard |
+| GET | `/api/hall_of_fame/leaderboard` | Hall of Fame leaderboard |
 | GET | `/api/fee_pool` | RIP-301 fee pool stats |
 | GET | `/rewards/epoch/{epoch}` | Historical settlement data |
 | GET | `/wallet/balance?miner_id=X` | Wallet balance |

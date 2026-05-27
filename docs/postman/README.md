@@ -84,7 +84,7 @@ RustChain API - Complete Collection
 | GET | `/epoch` | Current epoch, slot, enrolled miners |
 | GET | `/api/stats` | Network statistics |
 | GET | `/api/miners` | Active miners with attestation data |
-| GET | `/api/hall_of_fame` | Hall of Fame leaderboard |
+| GET | `/api/hall_of_fame/leaderboard` | Hall of Fame leaderboard |
 | GET | `/api/fee_pool` | RIP-301 fee pool statistics |
 | GET | `/wallet/balance?miner_id=X` | Miner balance lookup |
 | GET | `/lottery/eligibility?miner_id=X` | Epoch eligibility check |
@@ -206,7 +206,7 @@ Use this checklist to verify all endpoints:
 - [ ] GET `/epoch` - Returns current epoch info
 - [ ] GET `/api/stats` - Returns network statistics
 - [ ] GET `/api/miners` - Returns active miners list
-- [ ] GET `/api/hall_of_fame` - Returns leaderboard
+- [ ] GET `/api/hall_of_fame/leaderboard` - Returns leaderboard
 
 ### Fee Pool
 - [ ] GET `/api/fee_pool` - Returns fee pool statistics
