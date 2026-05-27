@@ -114,3 +114,14 @@ def test_validate_translation_file_reports_structure_count_and_placeholder_issue
     assert any("20" in error for error in errors)
     assert any("en_us" in warning for warning in warnings)
     assert any("bad_placeholder" in warning for warning in warnings)
+
+
+def test_validate_translation_file_rejects_non_object_json_root(tmp_path):
+    path = tmp_path / "array.json"
+    path.write_text(json.dumps([]), encoding="utf-8")
+
+    valid, errors, warnings = validator.validate_translation_file(path)
+
+    assert valid is False
+    assert errors == ["JSON 根节点必须是对象：array.json"]
+    assert warnings == []
