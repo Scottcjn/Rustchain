@@ -142,7 +142,7 @@ In a new terminal:
 tail -f ~/.rustchain/miner.log
 
 # Verify your miner is visible on the network
-curl -sk https://rustchain.org/api/miners | jq '.[] | select(.miner_id contains "YOUR_WALLET_NAME")'
+curl -sk https://rustchain.org/api/miners | jq '.miners[] | select(.miner | contains("YOUR_WALLET_NAME"))'
 
 # Check your balance (after a few minutes of mining)
 curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME" | jq .
@@ -374,10 +374,10 @@ tail -f ~/.rustchain/miner.log | grep "rewards"
 ```bash
 # Check if your miner is registered
 curl -sk https://rustchain.org/api/miners | jq \
-  '.[] | select(.miner_id == "my-vintage-miner")'
+  '.miners[] | select(.miner == "my-vintage-miner")'
 
 # View all active miners
-curl -sk https://rustchain.org/api/miners | jq 'length'
+curl -sk https://rustchain.org/api/miners | jq '.miners | length'
 
 # Check current epoch
 curl -sk https://rustchain.org/epoch | jq .
@@ -510,7 +510,7 @@ check_miner() {
     
     # Check miner visibility
     MINER=$(curl -sk "$NODE/api/miners" | jq -r \
-        ".[] | select(.miner_id == \"$WALLET\") | .miner_id")
+        ".miners[] | select(.miner == \"$WALLET\") | .miner")
     if [ -z "$MINER" ]; then
         echo "❌ Miner not visible on network"
         return 1
@@ -785,7 +785,7 @@ Pending rewards: 0.00 RTC (after hours of mining)
 **Diagnosis:**
 ```bash
 # Verify miner is visible on network
-curl -sk https://rustchain.org/api/miners | jq '.[] | select(.miner_id == "YOUR_WALLET")'
+curl -sk https://rustchain.org/api/miners | jq '.miners[] | select(.miner == "YOUR_WALLET")'
 
 # Check epoch settlement status
 curl -sk https://rustchain.org/epoch | jq .
@@ -941,7 +941,7 @@ WALLET = "my-vintage-miner"
 def get_optimal_interval():
     """Adjust mining interval based on network congestion."""
     epoch_data = requests.get(f"{NODE}/epoch", verify=False).json()
-    miners_count = len(requests.get(f"{NODE}/api/miners", verify=False).json())
+    miners_count = len(requests.get(f"{NODE}/api/miners", verify=False).json().get("miners", []))
     
     # More miners = longer intervals to reduce load
     if miners_count > 100:
