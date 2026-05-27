@@ -136,6 +136,17 @@ def _positive_int_arg(name: str, default: int, max_value: int | None = None):
     return value, None
 
 
+def _tip_slot(tip: dict | None) -> int | None:
+    """Return a validated integer tip slot from an upstream tip payload."""
+    if not tip or tip.get("slot") is None:
+        return None
+
+    try:
+        return int(tip["slot"])
+    except (TypeError, ValueError):
+        return None
+
+
 # ---------------------------------------------------------------------------
 # GET /api/blocks – paginated block list (headers)
 # ---------------------------------------------------------------------------
@@ -160,10 +171,10 @@ def list_blocks():
 
     # Fetch chain tip to know the latest slot
     tip = _get("/headers/tip")
-    if not tip or tip.get("slot") is None:
+    tip_slot = _tip_slot(tip)
+    if tip_slot is None:
         return jsonify({"ok": False, "error": "node_unavailable"}), 502
 
-    tip_slot = int(tip["slot"])
     start = max(0, tip_slot - (page * limit) + 1)
     end = tip_slot - ((page - 1) * limit)
 
@@ -200,10 +211,10 @@ def list_blocks():
 def block_detail(height: int):
     """Return details for a specific block height/slot."""
     tip = _get("/headers/tip")
-    if not tip or tip.get("slot") is None:
+    tip_slot = _tip_slot(tip)
+    if tip_slot is None:
         return jsonify({"ok": False, "error": "node_unavailable"}), 502
 
-    tip_slot = int(tip["slot"])
     if height < 0 or height > tip_slot:
         return jsonify({"ok": False, "error": "block_not_found"}), 404
 
@@ -339,7 +350,8 @@ def search():
     try:
         height = int(query)
         tip = _get("/headers/tip")
-        if tip and tip.get("slot") is not None and 0 <= height <= int(tip["slot"]):
+        tip_slot = _tip_slot(tip)
+        if tip_slot is not None and 0 <= height <= tip_slot:
             results.append({
                 "type": "block",
                 "height": height,
