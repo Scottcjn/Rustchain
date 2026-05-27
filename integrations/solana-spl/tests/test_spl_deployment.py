@@ -154,6 +154,28 @@ class TestBridgeEscrowConfig:
         
         assert config.validate() is False
 
+    def test_non_positive_total_supply_cap(self):
+        """Test validation fails with a non-positive total supply cap."""
+        config = BridgeEscrowConfig(
+            escrow_authority="BridgePDA",
+            mint_address="MintAddress",
+            total_supply_cap=0
+        )
+
+        assert config.validate() is False
+
+    def test_total_supply_cap_below_per_tx_limit(self):
+        """Test validation fails when total cap cannot cover one transaction."""
+        config = BridgeEscrowConfig(
+            escrow_authority="BridgePDA",
+            mint_address="MintAddress",
+            daily_mint_cap=10_000,
+            per_tx_limit=1_000,
+            total_supply_cap=500
+        )
+
+        assert config.validate() is False
+
 
 class TestSPLTokenDeployment:
     """Test SPLTokenDeployment class."""
