@@ -234,6 +234,9 @@ class GreenTracker:
 
     def get_leaderboard(self, limit: int = 10) -> List[Dict[str, Any]]:
         """Return top machines ranked by RTC earned."""
+        if limit < 1:
+            raise ValueError("limit must be a positive integer")
+
         with self._connect() as conn:
             rows = conn.execute(
                 """

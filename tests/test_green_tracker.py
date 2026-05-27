@@ -105,6 +105,13 @@ class TestGetLeaderboard:
         lb = populated.get_leaderboard(2)
         assert len(lb) <= 2
 
+    def test_leaderboard_rejects_non_positive_limit(self, populated):
+        with pytest.raises(ValueError, match="positive integer"):
+            populated.get_leaderboard(0)
+
+        with pytest.raises(ValueError, match="positive integer"):
+            populated.get_leaderboard(-1)
+
     def test_leaderboard_top_is_g5(self, populated):
         lb = populated.get_leaderboard(10)
         assert lb[0]["machine_id"] == "g5-001"
