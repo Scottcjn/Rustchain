@@ -106,3 +106,44 @@ def test_sign_payload_matches_hmac_sha256_and_event_serializes():
     event = module.WebhookEvent(event_type="new_block", timestamp=123.0, data={"slot": 42})
     assert event.event_type == "new_block"
     assert event.data == {"slot": 42}
+
+
+def test_poller_miners_accepts_paginated_api_envelope(monkeypatch, tmp_path):
+    module = load_module()
+    store = module.SubscriberStore(str(tmp_path / "webhooks.sqlite3"))
+    poller = module.RustChainPoller("https://node.example", store)
+    events = []
+
+    payloads = iter([
+        {
+            "miners": [
+                {"miner_id": "alice", "device_arch": "G4"},
+            ],
+            "pagination": {"total": 1, "limit": 100, "offset": 0, "count": 1},
+        },
+        {
+            "miners": [
+                {"miner_id": "alice", "device_arch": "G4"},
+                {"miner": "bob", "device_arch": "SPARC", "hardware_type": "SPARCstation"},
+            ],
+            "pagination": {"total": 2, "limit": 100, "offset": 0, "count": 2},
+        },
+    ])
+
+    monkeypatch.setattr(poller, "_get", lambda path: next(payloads))
+    monkeypatch.setattr(module, "dispatch_event", lambda event, _store: events.append(event))
+    monkeypatch.setattr(module.time, "time", lambda: 123.0)
+
+    poller._check_miners()
+    poller._check_miners()
+
+    assert poller._prev_miners == {"alice", "bob"}
+    assert len(events) == 1
+    assert events[0].event_type == "miner_joined"
+    assert events[0].timestamp == 123.0
+    assert events[0].data == {
+        "miner": "bob",
+        "hardware_type": "SPARCstation",
+        "device_family": None,
+        "device_arch": "SPARC",
+    }
