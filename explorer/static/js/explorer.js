@@ -47,7 +47,7 @@ const state = {
 
 // Utility Functions
 function escapeHtml(str) {
-    if (!str) return '';
+    if (str === null || str === undefined) return '';
     return String(str)
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
@@ -57,20 +57,24 @@ function escapeHtml(str) {
 }
 
 function shortenHash(hash, chars = 8) {
-    if (!hash) return '';
-    if (hash.length <= chars * 2) return hash;
-    return `${hash.slice(0, chars)}...${hash.slice(-chars)}`;
+    const value = String(hash ?? '');
+    if (!value) return '';
+    if (value.length <= chars * 2) return value;
+    return `${value.slice(0, chars)}...${value.slice(-chars)}`;
 }
 
 function shortenAddress(addr, chars = 6) {
-    if (!addr) return '';
-    if (addr.length <= chars * 2) return addr;
-    return `${addr.slice(0, chars)}...${addr.slice(-chars)}`;
+    const value = String(addr ?? '');
+    if (!value) return '';
+    if (value.length <= chars * 2) return value;
+    return `${value.slice(0, chars)}...${value.slice(-chars)}`;
 }
 
 function formatNumber(num, decimals = 2) {
     if (num === null || num === undefined) return '0';
-    return Number(num).toLocaleString(undefined, {
+    const value = Number(num);
+    if (!Number.isFinite(value)) return '0';
+    return value.toLocaleString(undefined, {
         minimumFractionDigits: decimals,
         maximumFractionDigits: decimals
     });
@@ -100,14 +104,15 @@ function formatRelativeTime(ts) {
 }
 
 function normalizeMinersResponse(payload) {
-    if (Array.isArray(payload)) return payload;
-    if (payload && Array.isArray(payload.miners)) return payload.miners;
-    return [];
+    const rows = Array.isArray(payload) ? payload :
+        (Array.isArray(payload?.miners) ? payload.miners :
+        (Array.isArray(payload?.data) ? payload.data : []));
+    return rows.filter(row => row && typeof row === 'object');
 }
 
 function getArchitectureTier(arch) {
     if (!arch) return 'modern';
-    const archLower = arch.toLowerCase();
+    const archLower = String(arch).toLowerCase();
     if (archLower.includes('g3') || archLower.includes('g4') || archLower.includes('g5') || 
         archLower.includes('powerpc') || archLower.includes('sparc')) return 'vintage';
     if (archLower.includes('pentium') || archLower.includes('core 2') || 
@@ -131,11 +136,6 @@ function getRustBadge(score) {
     if (score >= 50) return 'Corroded Knight';
     if (score >= 30) return 'Tarnished Squire';
     return 'Fresh Metal';
-}
-
-
-function normalizeMinersResponse(response) {
-    return Array.isArray(response) ? response : (response?.miners || []);
 }
 
 // API Fetcher with Error Handling
@@ -622,10 +622,11 @@ function renderSearchResults() {
         return;
     }
     
-    const matchingMiners = state.miners.filter(m => 
-        (m.miner_id || '').toLowerCase().includes(query) ||
-        (m.device_arch || '').toLowerCase().includes(query)
-    );
+    const matchingMiners = state.miners.filter(m => {
+        const minerId = String(m.miner_id ?? '').toLowerCase();
+        const arch = String(m.device_arch ?? '').toLowerCase();
+        return minerId.includes(query) || arch.includes(query);
+    });
     
     if (matchingMiners.length === 0) {
         container.innerHTML = `
