@@ -98,7 +98,7 @@ curl -sk https://rustchain.org/api/stats | jq
 ### Get Hall of Fame
 
 ```bash
-curl -sk https://rustchain.org/api/hall_of_fame | jq
+curl -sk https://rustchain.org/api/hall_of_fame/leaderboard | jq
 ```
 
 ### Get Fee Pool Statistics
@@ -295,7 +295,7 @@ class RustChainClient:
     
     def get_hall_of_fame(self) -> Dict[str, Any]:
         """Get Hall of Fame leaderboard."""
-        resp = self.session.get(f"{self.base_url}/api/hall_of_fame")
+        resp = self.session.get(f"{self.base_url}/api/hall_of_fame/leaderboard")
         resp.raise_for_status()
         return resp.json()
     
@@ -533,7 +533,7 @@ class RustChainClient {
   }
 
   async getHallOfFame() {
-    return this.request('/api/hall_of_fame');
+    return this.request('/api/hall_of_fame/leaderboard');
   }
 
   async getFeePool() {
@@ -1137,7 +1137,7 @@ cmd_stats() {
 
 cmd_hall_of_fame() {
     print_header "Hall of Fame"
-    $CURL "$BASE_URL/api/hall_of_fame" | jq
+    $CURL "$BASE_URL/api/hall_of_fame/leaderboard" | jq
 }
 
 cmd_fee_pool() {
