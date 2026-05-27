@@ -104,10 +104,13 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 
 def _env_float(name: str, default: float = 0.0) -> float:
-    try:
-        return float(_env_stripped(name, str(default)))
-    except (TypeError, ValueError):
+    raw_value = _env_stripped(name, "")
+    if raw_value == "":
         return default
+    try:
+        return float(raw_value)
+    except (TypeError, ValueError):
+        return math.nan
 
 
 def _is_finite_amount(value: float) -> bool:
