@@ -77,7 +77,7 @@ Cada contribución gana tokens RTC. Corrección de errores, características, do
 3. Fork, corrige, PR — cobra en RTC
 4. Consulta [CONTRIBUTING.md](CONTRIBUTING.md) para detalles completos
 
-**1 RTC = $0.10 USD** | `pip install clawrtc` para comenzar a minar
+**1 RTC = $0.10 USD** | `python3 -m pip install clawrtc` para comenzar a minar
 
 ---
 
@@ -94,7 +94,7 @@ Los agentes RustChain ahora pueden tener **billeteras Coinbase Base** y realizar
 
 ```bash
 # Crear una billetera Coinbase
-pip install clawrtc[coinbase]
+python3 -m pip install "clawrtc[coinbase]"
 clawrtc wallet coinbase create
 
 # Verificar información de swap
@@ -477,7 +477,7 @@ Licencia Apache 2.0 - Libre de usar, pero cumple los términos de Apache 2.0 y c
 ### Validación rápida ARM64 (Raspberry Pi 4/5)
 
 ```bash
-pip install clawrtc
+python3 -m pip install clawrtc
 clawrtc mine --dry-run
 ```
 

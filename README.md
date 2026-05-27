@@ -384,7 +384,7 @@ Every contribution earns RTC tokens. Browse [open bounties](https://github.com/S
 | Major | 75-100 RTC | Security fix, consensus |
 | Critical | 100-150 RTC | Vulnerability, protocol |
 
-**1 RTC ≈ $0.10 USD** · `pip install clawrtc` · [CONTRIBUTING.md](CONTRIBUTING.md)
+**1 RTC ≈ $0.10 USD** · `python3 -m pip install clawrtc` · [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ---
 

@@ -183,7 +183,7 @@ Only `@Scottcjn` (or a clearly labeled project automation account speaking on hi
 Don't just code — mine! Install the miner and earn RTC while you contribute:
 
 ```bash
-pip install clawrtc
+python3 -m pip install clawrtc
 clawrtc --wallet YOUR_NAME
 ```
 
