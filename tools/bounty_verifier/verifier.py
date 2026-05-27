@@ -48,9 +48,9 @@ class BountyVerifier:
     
     # Regex patterns for parsing claim comments
     WALLET_PATTERNS = [
-        r"(?<![A-Za-z0-9])(RTC[A-Za-z0-9]{38,40})(?![A-Za-z0-9])",  # RustChain address format
-        r"(?i)wallet[:\s]+([A-Za-z0-9]{34,44})",
-        r"(?i)address[:\s]+([A-Za-z0-9]{34,44})",
+        r"(?<![A-Za-z0-9])(RTC[0-9A-Fa-f]{40})(?![A-Za-z0-9])",  # RustChain address format
+        r"(?i)wallet[:\s]+(?:RTC)?([0-9A-Fa-f]{40})(?![A-Za-z0-9])",
+        r"(?i)address[:\s]+(?:RTC)?([0-9A-Fa-f]{40})(?![A-Za-z0-9])",
     ]
     
     URL_PATTERN = r"https?://[^\s<>\[\]\"']+"

@@ -43,6 +43,12 @@ def test_encode_coll_byte_uses_extended_length_at_128_bytes():
     assert encode_coll_byte(boundary_payload) == "0e8001" + boundary_payload
 
 
+def test_encode_coll_byte_uses_multi_byte_varint_lengths():
+    payload = "cc" * 16_384
+
+    assert encode_coll_byte(payload) == "0e808001" + payload
+
+
 def test_encode_coll_byte_rejects_odd_length_hex_strings():
     with pytest.raises(ValueError):
         encode_coll_byte("abc")

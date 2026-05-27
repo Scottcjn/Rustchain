@@ -394,13 +394,31 @@ class TestBountyVerifier:
     def test_extract_wallet_label(self):
         """Test extracting wallet with label."""
         verifier = BountyVerifier(Config())
-        
+
         text = "Wallet: 1d48d848a5aa5ecf2c5f01aa5fb64837daaf2f35"
         wallet = verifier._extract_wallet(text)
         
         assert wallet is not None
         assert "1d48d848a5aa5ecf2c5f01aa5fb64837daaf2f35" in wallet
-    
+
+    def test_extract_wallet_rejects_non_hex_labeled_value(self):
+        """Do not turn arbitrary labeled alphanumeric text into an RTC wallet."""
+        verifier = BountyVerifier(Config())
+
+        text = "Wallet: zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+        wallet = verifier._extract_wallet(text)
+
+        assert wallet is None
+
+    def test_extract_wallet_rejects_short_rtc_value(self):
+        """RTC addresses must include the full 40-character hex suffix."""
+        verifier = BountyVerifier(Config())
+
+        text = "Wallet: RTC1d48d848a5aa5ecf2c5f01aa5fb64837daaf2"
+        wallet = verifier._extract_wallet(text)
+
+        assert wallet is None
+
     def test_extract_urls(self):
         """Test extracting URLs from text."""
         verifier = BountyVerifier(Config())

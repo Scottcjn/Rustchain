@@ -39,6 +39,10 @@ Open a terminal and run:
 curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash
 ```
 
+On Windows, use the Windows miner installer instead of the Bash one-liner. See
+`miners/windows/installer/README.md` and run `miners/windows/rustchain_miner_setup.bat`
+from the Windows miner bundle.
+
 **What this does:**
 
 1. Detects your operating system and CPU architecture

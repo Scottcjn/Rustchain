@@ -34,6 +34,18 @@ from flask import Blueprint, request, jsonify
 
 log = logging.getLogger("rip0002_governance")
 
+
+def _admin_key_required():
+    """Return 401 if X-Admin-Key header is missing or wrong."""
+    import os
+    expected = os.environ.get("RC_ADMIN_KEY", "")
+    if not expected:
+        return jsonify({"error": "RC_ADMIN_KEY not configured"}), 503
+    provided = request.headers.get("X-Admin-Key", "")
+    if not hmac.compare_digest(provided, expected):
+        return jsonify({"error": "Unauthorized — admin key required"}), 401
+    return None
+
 # Signature window: reject requests with timestamps older than this
 _SIGNATURE_MAX_AGE_SECONDS = 300  # 5 minutes
 
@@ -414,6 +426,10 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
     # -- GET /api/governance/proposals ----------------------------------------
     @bp.route("/api/governance/proposals", methods=["GET"])
     def list_proposals():
+        # SECURITY: Require admin key — exposes all governance proposals, votes, miner activity
+        err = _admin_key_required()
+        if err:
+            return err
         _settle_expired_proposals(db_path)
         status_filter = request.args.get("status")
         limit, error_response = _parse_non_negative_int_arg("limit", 50, max_value=200)
@@ -448,6 +464,10 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
     # -- GET /api/governance/proposal/<n> ------------------------------------
     @bp.route("/api/governance/proposal/<int:proposal_id>", methods=["GET"])
     def get_proposal(proposal_id: int):
+        # SECURITY: Require admin key — exposes proposal details, votes, voter identities
+        err = _admin_key_required()
+        if err:
+            return err
         _settle_expired_proposals(db_path)
         try:
             with sqlite3.connect(db_path) as conn:
@@ -593,6 +613,10 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
     # -- GET /api/governance/results/<n> ------------------------------------
     @bp.route("/api/governance/results/<int:proposal_id>", methods=["GET"])
     def get_results(proposal_id: int):
+        # SECURITY: Require admin key — exposes vote tallies, quorum stats, active miner count
+        err = _admin_key_required()
+        if err:
+            return err
         _settle_expired_proposals(db_path)
         try:
             with sqlite3.connect(db_path) as conn:
@@ -676,6 +700,10 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
     # -- GET /api/governance/stats ------------------------------------------
     @bp.route("/api/governance/stats", methods=["GET"])
     def governance_stats():
+        # SECURITY: Require admin key — exposes governance participation stats, voter counts
+        err = _admin_key_required()
+        if err:
+            return err
         _settle_expired_proposals(db_path)
         try:
             with sqlite3.connect(db_path) as conn:
