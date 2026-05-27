@@ -45,7 +45,7 @@ open http://localhost:8080/swagger.html
 | GET | `/api/stats` | Network statistics |
 | GET | `/api/hall_of_fame` | Hall of Fame leaderboard |
 | GET | `/api/fee_pool` | RIP-301 fee pool stats |
-| GET | `/api/settlement/{epoch}` | Historical settlement data |
+| GET | `/rewards/epoch/{epoch}` | Historical settlement data |
 | GET | `/wallet/balance?miner_id=X` | Wallet balance |
 | GET | `/wallet/history?miner_id=X` | Transaction history |
 | GET | `/wallet/swap-info` | Swap/bridge information |

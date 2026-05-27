@@ -291,7 +291,7 @@ paths:
                 total_fees_collected_rtc: 0
                 withdrawal_fee_rtc: 0.01
 
-  /api/settlement/{epoch}:
+  /rewards/epoch/{epoch}:
     get:
       tags:
         - Epoch & Network
