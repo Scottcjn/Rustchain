@@ -184,7 +184,7 @@ Don't just code — mine! Install the miner and earn RTC while you contribute:
 
 ```bash
 pip install clawrtc
-clawrtc --wallet YOUR_NAME
+clawrtc mine --wallet YOUR_NAME
 ```
 
 Vintage hardware (PowerPC G4/G5, POWER8) earns **2-2.5x** more than modern PCs.
