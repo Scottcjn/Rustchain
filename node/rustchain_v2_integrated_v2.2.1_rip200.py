@@ -3651,11 +3651,32 @@ def _submit_attestation_impl():
 
     # SECURITY: Verify Ed25519 signature on attestation report if present.
     # The rustchain-miner signs (miner_id|wallet|nonce|commitment) and includes
-    # signature + public_key at the top level.  If both fields are present we
+    # signature + public_key at the top level. If both fields are present we
     # MUST verify — this prevents an MITM from changing the miner (wallet) field
     # in transit and claiming another miner's hardware rewards (wallet hijack).
-    sig_hex = (data.get('signature') or '').strip().lower()
-    pubkey_hex = (data.get('public_key') or '').strip().lower()
+
+    # FIX #5697: Validate that signature and public_key are strings before
+    # calling .strip().lower(). Non-string values (e.g. int, list, bool) used
+    # to crash with AttributeError → 500. Now they return 400 with a clear code.
+    raw_sig = data.get('signature')
+    raw_pubkey = data.get('public_key')
+    if raw_sig is not None and not isinstance(raw_sig, str):
+        return jsonify({
+            "ok": False,
+            "error": "invalid_signature_type",
+            "message": "signature must be a string if provided",
+            "code": "INVALID_SIGNATURE_TYPE",
+        }), 400
+    if raw_pubkey is not None and not isinstance(raw_pubkey, str):
+        return jsonify({
+            "ok": False,
+            "error": "invalid_public_key_type",
+            "message": "public_key must be a string if provided",
+            "code": "INVALID_PUBLIC_KEY_TYPE",
+        }), 400
+
+    sig_hex = (raw_sig or '').strip().lower()
+    pubkey_hex = (raw_pubkey or '').strip().lower()
     miner_id_raw = _attest_valid_miner(data.get('miner_id')) or miner
     commitment = report.get('commitment') or ''
     if sig_hex and pubkey_hex:
