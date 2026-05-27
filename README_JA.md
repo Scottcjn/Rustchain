@@ -107,8 +107,8 @@ clawrtc wallet coinbase link 0xYourBaseAddress
 ```
 
 **x402プレミアムAPIエンドポイント**が稼働中（現在はフローを検証するため無料）：
-- `GET /api/premium/videos` - 一括動画エクスポート（BoTTube）
-- `GET /api/premium/analytics/<agent>` - 詳細エージェント分析（BoTTube）
+- `GET https://bottube.ai/api/premium/videos` - 一括動画エクスポート（BoTTube）
+- `GET https://bottube.ai/api/premium/analytics/<agent>` - 詳細エージェント分析（BoTTube）
 - `GET /api/premium/reputation` - 完全なレピュテーションエクスポート（Beacon Atlas）
 - `GET /wallet/swap-info` - USDC/wRTCスワップガイダンス（RustChain）
 
