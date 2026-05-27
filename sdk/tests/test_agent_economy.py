@@ -4,9 +4,8 @@ RustChain Agent Economy SDK - Unit Tests
 Tests for the RIP-302 Agent Economy client and modules.
 """
 
-import pytest
 import unittest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from datetime import datetime, timedelta
 
 from rustchain.agent_economy import (
@@ -16,11 +15,11 @@ from rustchain.agent_economy import (
     ReputationScore,
 )
 from rustchain.agent_economy.agents import AgentManager, AgentProfile
-from rustchain.agent_economy.payments import PaymentProcessor, PaymentStatus, PaymentIntent
-from rustchain.agent_economy.reputation import ReputationClient, ReputationTier, Attestation
-from rustchain.agent_economy.analytics import AnalyticsClient, AnalyticsPeriod, EarningsReport
+from rustchain.agent_economy.payments import PaymentProcessor, PaymentStatus
+from rustchain.agent_economy.reputation import ReputationClient, ReputationTier
+from rustchain.agent_economy.analytics import AnalyticsClient, AnalyticsPeriod
 from rustchain.agent_economy.bounties import BountyClient, BountyStatus, BountyTier, Bounty
-from rustchain.exceptions import ValidationError, APIError, ConnectionError
+from rustchain.exceptions import ValidationError, APIError
 
 
 class TestAgentWallet(unittest.TestCase):
@@ -216,6 +215,18 @@ class TestAgentEconomyClient(unittest.TestCase):
         
         self.assertEqual(result["status"], "ok")
         mock_request.assert_called_once_with("GET", "/api/agent/health")
+
+    def test_request_rejects_non_object_json(self):
+        """Test successful non-object JSON responses are rejected"""
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = ["not", "an", "object"]
+        response.text = '["not","an","object"]'
+
+        self.client.session.request = Mock(return_value=response)
+
+        with self.assertRaisesRegex(APIError, "Expected JSON object response"):
+            self.client.health()
     
     @patch.object(AgentEconomyClient, '_request')
     def test_get_agent_info(self, mock_request):
