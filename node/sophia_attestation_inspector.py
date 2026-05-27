@@ -726,6 +726,9 @@ def register_sophia_endpoints(app, db_path: str = None):
 
     @app.route("/sophia/status/<miner_id>", methods=["GET"])
     def sophia_status_miner(miner_id):
+        # SECURITY: Require admin key — exposes miner verdict, device fingerprint, fingerprint score
+        if not _is_admin(request):
+            return jsonify({"error": "Unauthorized — admin key required"}), 401
         result = get_latest_verdict(miner_id, db_path=db)
         if result is None:
             return jsonify({
@@ -738,6 +741,9 @@ def register_sophia_endpoints(app, db_path: str = None):
 
     @app.route("/sophia/status", methods=["GET"])
     def sophia_status_all():
+        # SECURITY: Require admin key — exposes ALL miners' verdicts, device fingerprints, scores
+        if not _is_admin(request):
+            return jsonify({"error": "Unauthorized — admin key required"}), 401
         verdicts = get_all_latest_verdicts(db_path=db)
         summary = {}
         for v in verdicts:
