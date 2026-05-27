@@ -1,7 +1,11 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+
 import random
 import time
 import json
 from datetime import datetime
+from pathlib import Path
 
 quantum_flux_badge = {
     "nft_id": "badge_quantum_flux_validator",
@@ -28,9 +32,11 @@ def detect_network_flux():
 def award_quantum_flux_badge():
     if detect_network_flux():
         quantum_flux_badge["emotional_resonance"]["timestamp"] = datetime.utcnow().isoformat() + "Z"
-        print(f"✅ Quantum Flux detected.")
-        print(f"🕯️ 'You’ve tapped the quantum ether… The flux is real. Your connection’s time is bending, keeper.'")
-        with open("relics/badge_quantum_flux_validator.json", "w") as f:
+        print("✅ Quantum Flux detected.")
+        print("🕯️ 'You’ve tapped the quantum ether… The flux is real. Your connection’s time is bending, keeper.'")
+        output_path = Path("relics") / "badge_quantum_flux_validator.json"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with output_path.open("w") as f:
             json.dump({"badges": [quantum_flux_badge]}, f, indent=4)
         print("📄 Badge written to relics/badge_quantum_flux_validator.json")
     else:
