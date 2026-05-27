@@ -22,6 +22,16 @@ import urllib.error
 import urllib.request
 
 
+def positive_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("limit must be a positive integer") from exc
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("limit must be a positive integer")
+    return parsed
+
+
 def _req(method: str, url: str, admin_key: str, payload: dict | None = None, *, insecure: bool) -> dict:
     data = None if payload is None else json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(url, data=data, method=method.upper())
@@ -63,7 +73,7 @@ def main(argv: list[str]) -> int:
 
     sp = sub.add_parser("list", help="List pending transfers")
     sp.add_argument("--status", default="pending", choices=["pending", "confirmed", "voided", "all"])
-    sp.add_argument("--limit", type=int, default=100)
+    sp.add_argument("--limit", type=positive_int, default=100)
     sp.set_defaults(fn=cmd_list)
 
     sp = sub.add_parser("confirm", help="Confirm ready pending transfers")
