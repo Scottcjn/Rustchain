@@ -126,6 +126,10 @@ class SubmissionValidator:
             try:
                 log_data = json.loads(content)
                 result["checks"]["json_valid"] = True
+                if not isinstance(log_data, dict):
+                    result["message"] = "Attestation log JSON root must be an object"
+                    result["status"] = "FAIL"
+                    return result
                 
                 # Check required fields
                 required_fields = [
