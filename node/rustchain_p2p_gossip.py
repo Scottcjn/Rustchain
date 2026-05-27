@@ -70,6 +70,10 @@ class TTLCache:
             if len(self._cache) >= self._max_size:
                 self._cache.popitem(last=False)
             self._cache[key] = time.time()
+
+    def discard(self, key: str) -> None:
+        """Remove key if present."""
+        self._cache.pop(key, None)
     
     def _cleanup_expired(self) -> None:
         """Remove expired entries."""
@@ -867,24 +871,13 @@ class GossipLayer:
 
     def handle_message(self, msg: GossipMessage) -> Optional[Dict]:
         """Handle received gossip message"""
-        # Deduplication (Issue #2271: DB-backed persistent dedup)
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                res = conn.execute("SELECT 1 FROM p2p_seen_messages WHERE msg_id = ?", (msg.msg_id,)).fetchone()
-                if res:
-                    return {"status": "duplicate"}
-        except Exception as e:
-            logger.error(f"P2P dedup DB error: {e}")
-            # Fallback to memory if DB fails
-            if self.seen_messages.contains(msg.msg_id):
-                return {"status": "duplicate"}
-
-        # Verify signature
+        # Verify signature before persistent dedup.  Otherwise an invalid packet
+        # can reserve a msg_id and race/drop a later valid copy.
         if not self.verify_message(msg):
             logger.warning(f"Invalid signature from {msg.sender_id}")
             return {"status": "invalid_signature"}
 
-        # Record as seen (Issue #2271: Persistent storage)
+        # Deduplication (Issue #2271: DB-backed persistent dedup)
         try:
             with sqlite3.connect(self.db_path) as conn:
                 now = int(time.time())
@@ -896,7 +889,8 @@ class GossipLayer:
                 conn.execute("DELETE FROM p2p_seen_messages WHERE ts < ?", (now - 3600,))
                 conn.commit()
         except Exception as e:
-            logger.error(f"P2P save seen DB error: {e}")
+            logger.error(f"P2P dedup DB error: {e}")
+            # Fallback to memory if DB fails
             with self.lock:
                 if self.seen_messages.contains(msg.msg_id):
                     return {"status": "duplicate"}
