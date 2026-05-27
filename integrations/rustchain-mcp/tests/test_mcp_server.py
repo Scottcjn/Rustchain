@@ -139,6 +139,16 @@ class TestRustChainMCP:
         assert "error" in result
         assert "required" in result["error"]
 
+    def test_create_initialization_options_delegates_to_app(self, server):
+        """Test stdio startup can request initialization options."""
+        server.app = MagicMock()
+        server.app.create_initialization_options.return_value = {"capabilities": {}}
+
+        result = server.create_initialization_options()
+
+        assert result == {"capabilities": {}}
+        server.app.create_initialization_options.assert_called_once_with()
+
 
 class TestResourceTemplates:
     """Tests for resource template handling."""

@@ -148,6 +148,10 @@ class RustChainMCP:
             await self.client.close()
         logger.info("RustChain MCP Server stopped")
 
+    def create_initialization_options(self) -> dict[str, Any]:
+        """Return MCP initialization options from the underlying app."""
+        return self.app.create_initialization_options()
+
     def _setup_handlers(self) -> None:
         """Setup MCP request handlers."""
 
