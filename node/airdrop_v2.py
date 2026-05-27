@@ -1422,7 +1422,7 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
                 400,
             )
 
-        amount_uwrtc = int(amount_wrtc * 1_000_000)
+        amount_uwrtc = int(round(amount_wrtc * 1_000_000))
 
         success, message, lock = airdrop.create_bridge_lock(
             from_address, to_address, from_chain, to_chain, amount_uwrtc
