@@ -110,7 +110,7 @@ curl -sk https://rustchain.org/api/fee_pool | jq
 ### Get Settlement Data
 
 ```bash
-curl -sk https://rustchain.org/api/settlement/75 | jq
+curl -sk https://rustchain.org/rewards/epoch/75 | jq
 ```
 
 ### Submit Hardware Attestation
@@ -307,7 +307,7 @@ class RustChainClient:
     
     def get_settlement(self, epoch: int) -> Dict[str, Any]:
         """Get settlement data for a specific epoch."""
-        resp = self.session.get(f"{self.base_url}/api/settlement/{epoch}")
+        resp = self.session.get(f"{self.base_url}/rewards/epoch/{epoch}")
         resp.raise_for_status()
         return resp.json()
     
@@ -541,7 +541,7 @@ class RustChainClient {
   }
 
   async getSettlement(epoch) {
-    return this.request(`/api/settlement/${epoch}`);
+    return this.request(`/rewards/epoch/${epoch}`);
   }
 
   async getSwapInfo() {
@@ -1153,7 +1153,7 @@ cmd_settlement() {
         exit 1
     fi
     print_header "Settlement for Epoch: $epoch"
-    $CURL "$BASE_URL/api/settlement/$epoch" | jq
+    $CURL "$BASE_URL/rewards/epoch/$epoch" | jq
 }
 
 cmd_swap_info() {
