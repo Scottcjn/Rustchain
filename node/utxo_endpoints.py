@@ -404,6 +404,8 @@ def utxo_transfer():
     memo = data.get('memo', '')
     if not isinstance(memo, str):
         return jsonify({'error': 'memo must be a string'}), 400
+    if len(memo) > 1024:
+        return jsonify({'error': 'memo cannot exceed 1024 characters'}), 400
     # FIX(#2867 M2): exact Decimal parsing with bounds check (was float()).
     try:
         amount_rtc = _parse_rtc_amount(data.get('amount_rtc', 0))
