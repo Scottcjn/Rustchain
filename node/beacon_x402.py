@@ -23,8 +23,8 @@ try:
     sys.path.insert(0, "/root/shared")
     from x402_config import (
         BEACON_TREASURY, FACILITATOR_URL, X402_NETWORK, USDC_BASE,
-        PRICE_BEACON_CONTRACT, PRICE_RELAY_REGISTER, PRICE_REPUTATION_EXPORT,
-        is_free, has_cdp_credentials, create_agentkit_wallet, SWAP_INFO,
+        PRICE_BEACON_CONTRACT, PRICE_REPUTATION_EXPORT,
+        is_free, has_cdp_credentials, SWAP_INFO,
     )
     X402_CONFIG_OK = True
 except ImportError:
@@ -81,6 +81,10 @@ def _run_migrations(db_path):
                 pass
     conn.commit()
     conn.close()
+
+
+def _ensure_x402_tables(conn):
+    conn.executescript(X402_BEACON_SCHEMA)
 
 
 # ---------------------------------------------------------------------------
@@ -227,6 +231,7 @@ def init_app(app, get_db_func):
             return _cors_json({"error": "Invalid Base address"}, 400)
 
         db = get_db_func()
+        _ensure_x402_tables(db)
         db.execute(
             """INSERT INTO beacon_wallets (agent_id, coinbase_address, created_at)
                VALUES (?, ?, ?)
@@ -256,6 +261,7 @@ def init_app(app, get_db_func):
             return _cors_json({"error": "Unauthorized — admin key required"}), 401
 
         db = get_db_func()
+        _ensure_x402_tables(db)
 
         # Check beacon_wallets table (native agents)
         row = db.execute(
