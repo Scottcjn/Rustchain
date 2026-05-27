@@ -330,7 +330,23 @@ class TestPaymentProcessor(unittest.TestCase):
         
         with self.assertRaises(ValidationError):
             self.processor.send(to="sender-agent", amount=1.0)  # Same agent
-    
+
+    def test_request_payment_intent_expires_in_future(self):
+        """Test payment requests create a usable future expiry."""
+        self.mock_client._request.return_value = {"intent_id": "intent_test"}
+        before_request = datetime.utcnow()
+
+        intent = self.processor.request(
+            from_agent="payer-agent",
+            amount=2.5,
+            description="Premium data",
+            resource="/api/premium/data",
+        )
+
+        self.assertFalse(intent.is_expired())
+        self.assertGreaterEqual(intent.expires_at, before_request + timedelta(minutes=14))
+        self.mock_client._request.assert_called_once()
+
     def test_x402_challenge(self):
         """Test x402 challenge generation"""
         self.mock_client._request.return_value = {
