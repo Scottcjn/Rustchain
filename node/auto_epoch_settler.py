@@ -3,17 +3,26 @@
 RustChain Automatic Epoch Settlement Daemon
 Runs in background and automatically settles completed epochs
 """
-import time
+import logging
+import os
 import sqlite3
-import requests
 import sys
+import time
 from datetime import datetime
 
-# Configuration
-NODE_URL = "http://localhost:8088"
-DB_PATH = "/root/rustchain/rustchain_v2.db"
-CHECK_INTERVAL = 300  # Check every 5 minutes
-SLOTS_PER_EPOCH = 144
+import requests
+
+# Configure logging (daemon-friendly — writes to stderr + syslog in systemd)
+logger = logging.getLogger("rustchain.epoch_settler")
+
+# Configuration — environment variables with defaults
+NODE_URL = os.environ.get("RUSTCHAIN_NODE_URL", "http://localhost:8088")
+DB_PATH = os.environ.get("RUSTCHAIN_DB_PATH", "/root/rustchain/rustchain_v2.db")
+# Module-level env config — wrap integer casts so bad env values
+# (empty string, non-numeric text) don't crash the daemon at import.
+CHECK_INTERVAL = int(os.environ.get("RUSTCHAIN_SETTLE_INTERVAL", "300") or 300)
+SLOTS_PER_EPOCH = int(os.environ.get("RUSTCHAIN_SLOTS_PER_EPOCH", "144") or 144)
+
 
 def get_current_slot():
     """Get current slot from node API"""
@@ -22,11 +31,13 @@ def get_current_slot():
         if resp.status_code == 200:
             data = resp.json()
             epoch = data.get("epoch", 0)
-            # Calculate approximate current slot
             return epoch * SLOTS_PER_EPOCH
+    except requests.RequestException as e:
+        logger.warning("Error getting current slot: %s", e)
     except Exception as e:
-        print(f"Error getting current slot: {e}")
+        logger.error("Unexpected error getting current slot: %s", e)
     return None
+
 
 def get_current_epoch_from_db():
     """Get current epoch by checking max slot in headers table"""
@@ -36,43 +47,38 @@ def get_current_epoch_from_db():
             if result and result[0]:
                 max_slot = result[0]
                 return max_slot // SLOTS_PER_EPOCH
+    except sqlite3.Error as e:
+        logger.warning("Database error querying current epoch: %s", e)
     except Exception as e:
-        print(f"Error querying database: {e}")
+        logger.error("Unexpected error querying current epoch: %s", e)
     return None
+
 
 def get_unsettled_epochs():
     """Get list of epochs that should be settled but aren't"""
     try:
         with sqlite3.connect(DB_PATH) as db:
-            # Get current epoch
             current_epoch = get_current_epoch_from_db()
             if current_epoch is None:
-                # Fallback to API
                 current_slot = get_current_slot()
                 if current_slot:
                     current_epoch = current_slot // SLOTS_PER_EPOCH
                 else:
+                    logger.warning("Cannot determine current epoch — no unsettled check possible")
                     return []
 
-            # Find epochs that have headers but aren't settled
-            # An epoch should be settled once the next epoch has started
             unsettled = []
-
-            for epoch in range(max(0, current_epoch - 10), current_epoch):  # Check last 10 epochs
-                # Check if epoch has any headers
+            for epoch in range(max(0, current_epoch - 10), current_epoch):
                 headers = db.execute(
                     "SELECT COUNT(*) FROM headers WHERE slot BETWEEN ? AND ?",
                     (epoch * SLOTS_PER_EPOCH, (epoch + 1) * SLOTS_PER_EPOCH - 1)
                 ).fetchone()
-
                 has_headers = headers and headers[0] > 0
 
-                # Check if settled
                 settled = db.execute(
                     "SELECT settled FROM epoch_state WHERE epoch=?",
                     (epoch,)
                 ).fetchone()
-
                 is_settled = settled and int(settled[0]) == 1
 
                 if has_headers and not is_settled:
@@ -80,9 +86,13 @@ def get_unsettled_epochs():
 
             return unsettled
 
-    except Exception as e:
-        print(f"Error finding unsettled epochs: {e}")
+    except sqlite3.Error as e:
+        logger.error("Database error finding unsettled epochs: %s", e)
         return []
+    except Exception as e:
+        logger.error("Unexpected error finding unsettled epochs: %s", e)
+        return []
+
 
 def settle_epoch_via_api(epoch):
     """Settle an epoch using the node API"""
@@ -98,59 +108,65 @@ def settle_epoch_via_api(epoch):
             if data.get("ok"):
                 eligible = data.get("eligible", 0)
                 distributed = data.get("distributed_rtc", 0)
-                print(f"[OK] Settled epoch {epoch}: {eligible} miners, {distributed:.4f} RTC")
+                logger.info("Settled epoch %d: %d miners, %.4f RTC", epoch, eligible, distributed)
                 return True
             else:
                 error = data.get("error", "unknown")
-                print(f"✗ Failed to settle epoch {epoch}: {error}")
+                logger.warning("Failed to settle epoch %d: %s", epoch, error)
         else:
-            print(f"✗ HTTP error settling epoch {epoch}: {resp.status_code}")
+            logger.warning("HTTP error settling epoch %d: %s", epoch, resp.status_code)
 
+    except requests.RequestException as e:
+        logger.error("Network error settling epoch %d: %s", epoch, e)
     except Exception as e:
-        print(f"✗ Exception settling epoch {epoch}: {e}")
+        logger.error("Unexpected error settling epoch %d: %s", epoch, e)
 
     return False
 
+
 def auto_settle_loop():
     """Main settlement loop"""
-    print("="*70)
-    print("RustChain Automatic Epoch Settler")
-    print("="*70)
-    print(f"Node: {NODE_URL}")
-    print(f"Database: {DB_PATH}")
-    print(f"Check interval: {CHECK_INTERVAL} seconds")
-    print(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("="*70)
+    logger.info("=" * 70)
+    logger.info("RustChain Automatic Epoch Settler")
+    logger.info("=" * 70)
+    logger.info("Node: %s", NODE_URL)
+    logger.info("Database: %s", DB_PATH)
+    logger.info("Check interval: %ds", CHECK_INTERVAL)
+    logger.info("Epoch slots: %d", SLOTS_PER_EPOCH)
+    logger.info("Started: %s", datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+    logger.info("=" * 70)
 
     while True:
         try:
-            print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Checking for unsettled epochs...")
-
+            logger.info("Checking for unsettled epochs...")
             unsettled = get_unsettled_epochs()
 
             if unsettled:
-                print(f"Found {len(unsettled)} unsettled epoch(s): {unsettled}")
-
+                logger.info("Found %d unsettled epoch(s): %s", len(unsettled), unsettled)
                 for epoch in sorted(unsettled):
-                    print(f"\nSettling epoch {epoch}...")
+                    logger.info("Settling epoch %d...", epoch)
                     settle_epoch_via_api(epoch)
-                    time.sleep(2)  # Small delay between settlements
-
+                    time.sleep(2)
             else:
-                print("No unsettled epochs found.")
+                logger.debug("No unsettled epochs found.")
 
-            # Wait before next check
-            print(f"Next check in {CHECK_INTERVAL} seconds...")
+            logger.debug("Next check in %ds...", CHECK_INTERVAL)
             time.sleep(CHECK_INTERVAL)
 
         except KeyboardInterrupt:
-            print("\n\n⛔ Automatic settlement stopped")
+            logger.info("Automatic settlement stopped")
             sys.exit(0)
 
         except Exception as e:
-            print(f"Error in settlement loop: {e}")
-            print(f"Retrying in {CHECK_INTERVAL} seconds...")
+            logger.exception("Error in settlement loop")
+            logger.info("Retrying in %ds...", CHECK_INTERVAL)
             time.sleep(CHECK_INTERVAL)
 
+
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+        stream=sys.stderr,
+    )
     auto_settle_loop()
