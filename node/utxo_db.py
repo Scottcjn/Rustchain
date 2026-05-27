@@ -98,13 +98,25 @@ def compute_box_id(value_nrtc: int, proposition: str, creation_height: int,
 
 def compute_tx_id(inputs: List[dict], outputs: List[dict],
                   timestamp: int) -> str:
-    """Deterministic transaction ID. Returns hex string."""
+    """Deterministic transaction ID. Returns hex string.
+
+    Sorts inputs and outputs by box_id before hashing to ensure
+    determinism regardless of caller-provided order. Uses a delimiter
+    byte to prevent input/output boundary collisions.
+    Uses big-endian for cross-platform consistency.
+
+    NOTE: This function is not used by the production code path
+    (which computes tx_id inline at apply_transaction with sort_keys).
+    It exists as a public API for external consumers.
+    """
     h = hashlib.sha256()
-    for inp in inputs:
+    for inp in sorted(inputs, key=lambda x: x['box_id']):
         h.update(bytes.fromhex(inp['box_id']))
-    for out in outputs:
+    h.update(b'|')  # delimiter — prevent input/output boundary collision
+    for out in sorted(outputs, key=lambda x: x['box_id']):
         h.update(bytes.fromhex(out['box_id']))
-    h.update(timestamp.to_bytes(8, 'little'))
+    h.update(b'|')
+    h.update(timestamp.to_bytes(8, 'big'))
     return h.hexdigest()
 
 
