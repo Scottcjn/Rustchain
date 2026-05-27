@@ -97,13 +97,17 @@ class NodeHealthMonitor:
                     data = json.loads(raw)
                 except json.JSONDecodeError:
                     data = {}
+                if not isinstance(data, dict):
+                    data = {}
 
                 epoch  = data.get("epoch") or data.get("current_epoch")
                 miners = data.get("miners") or data.get("active_miners") or data.get("miner_count")
 
                 # Coerce to int if present
-                if epoch  is not None: epoch  = int(epoch)
-                if miners is not None: miners = int(miners)
+                if epoch is not None:
+                    epoch = int(epoch)
+                if miners is not None:
+                    miners = int(miners)
 
                 status = "slow" if elapsed_ms > SLOW_THRESHOLD_MS else "online"
                 return NodeStatus(
