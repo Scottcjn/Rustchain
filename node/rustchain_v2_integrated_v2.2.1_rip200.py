@@ -595,6 +595,24 @@ try:
 except Exception as e:
     print(f"[WARN] rustchain_x402 not loaded: {e}")
 
+
+def _beacon_x402_get_db():
+    conn = getattr(g, "_beacon_x402_db", None)
+    if conn is None:
+        db_path = os.environ.get("RUSTCHAIN_DB_PATH") or os.environ.get("DB_PATH") or "./rustchain_v2.db"
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        g._beacon_x402_db = conn
+    return conn
+
+
+try:
+    import beacon_x402
+    beacon_x402.init_app(app, _beacon_x402_get_db)
+    print("[x402] Beacon premium endpoints loaded")
+except Exception as e:
+    print(f"[WARN] beacon_x402 not loaded: {e}")
+
 @app.before_request
 def _start_timer():
     g._ts = time.time()
@@ -604,6 +622,14 @@ def _start_timer():
         allowed, retry_after = _check_admin_rate_limit(get_client_ip(), rate_limit_path)
         if not allowed:
             return _admin_rate_limit_response(retry_after)
+
+
+@app.teardown_appcontext
+def _close_beacon_x402_db(_exc):
+    conn = getattr(g, "_beacon_x402_db", None)
+    if conn is not None:
+        conn.close()
+        g._beacon_x402_db = None
 
 def _normalize_client_ip(raw_value) -> str:
     """Normalize a peer/header IP string down to the first address token."""
