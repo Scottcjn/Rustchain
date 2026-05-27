@@ -186,7 +186,7 @@ curl -sSL https://rustchain.org/install.sh | bash
 **Fix:**
 ```bash
 # Check your assigned multiplier:
-curl -sk "https://rustchain.org/api/miner-info?id=YOUR_WALLET" | jq .multiplier
+curl -sk https://rustchain.org/api/miners | jq '.miners[] | select(.miner == "YOUR_WALLET") | .antiquity_multiplier'
 
 # Check total network weight this epoch:
 curl -sk https://rustchain.org/epoch | jq .total_weight
