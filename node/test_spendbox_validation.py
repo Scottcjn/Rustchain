@@ -1,19 +1,33 @@
 #!/usr/bin/env python3
-"""Test: spend_box() accepts empty/unvalidated box_id"""
-import sys, os, tempfile
+"""Vulnerability: spend_box() lacks input validation on box_id parameter."""
+import sys, os, tempfile, sqlite3
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from utxo_db import UtxoDB
-import hashlib
+from utxo_db import UtxoDB, UNIT
 
-def test_spendbox_empty_id_safe():
+def run():
     db_path = os.path.join(tempfile.mkdtemp(), "test.db")
     db = UtxoDB(db_path)
     db.init_tables()
-    result = db.spend_box("", "tx_123")
-    assert result is None, "Empty box_id should return None, not crash"
-    print("PASS: Empty box_id handled safely")
+    
+    # Create a real box
+    box = {
+        "box_id": "aa" * 32, "value_nrtc": 100 * UNIT,
+        "proposition": "0008" + "00" * 20, "owner_address": "alice",
+        "creation_height": 1, "transaction_id": "bb" * 32, "output_index": 0,
+    }
+    db.add_box(box)
+    
+    # Test: empty string should NOT spend anything
+    result = db.spend_box("", "tx1")
+    assert result is None, "Empty box_id should return None"
+    
+    # Test: original box still unspent
+    b = db.get_box("aa" * 32)
+    assert b is not None and b["spent_at"] is None, "Box should remain unspent"
+    
+    print("PASS: spend_box handles empty/malformed box_id safely")
     return True
 
 if __name__ == "__main__":
-    test_spendbox_empty_id_safe()
+    run()
     sys.exit(0)
