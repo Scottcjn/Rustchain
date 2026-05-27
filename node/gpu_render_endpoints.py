@@ -55,6 +55,9 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
             return jsonify({"error": "Unauthorized - admin key required"}), 401
         return None
 
+    def _database_error_response():
+        return jsonify({"error": "Database operation failed"}), 500
+
     def _ensure_escrow_secret_column(db):
         """Best-effort migration for older DBs."""
         try:
@@ -117,7 +120,7 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
             db.commit()
             return jsonify({"ok": True, "message": "GPU attestation recorded"})
         except sqlite3.Error as e:
-            return jsonify({"error": str(e)}), 500
+            return _database_error_response()
         finally:
             db.close()
 
@@ -180,7 +183,7 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
             # escrow_secret is intentionally returned once to allow participant-auth for release/refund.
             return jsonify({"ok": True, "job_id": job_id, "status": "locked", "escrow_secret": escrow_secret})
         except sqlite3.Error as e:
-            return jsonify({"error": str(e)}), 500
+            return _database_error_response()
         finally:
             db.close()
 
@@ -247,7 +250,7 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
         db.commit()
         return jsonify({"ok": True, "status": "released"})
         except sqlite3.Error as e:
-            return jsonify({"error": str(e)}), 500
+            return _database_error_response()
         finally:
             db.close()
 
@@ -305,7 +308,7 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
             db.commit()
             return jsonify({"ok": True, "status": "refunded"})
         except sqlite3.Error as e:
-            return jsonify({"error": str(e)}), 500
+            return _database_error_response()
         finally:
             db.close()
 

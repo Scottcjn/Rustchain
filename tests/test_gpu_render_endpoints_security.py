@@ -201,3 +201,14 @@ def test_gpu_release_rejects_structured_escrow_secret(tmp_path):
     assert response.get_json() == {"error": "escrow_secret must be a string"}
     assert _balance(db_path, "victim") == 20.0
     assert _balance(db_path, "attacker") == 0.0
+
+
+def test_gpu_attest_hides_sqlite_schema_errors(tmp_path):
+    db_path = tmp_path / "gpu.db"
+    _init_db(db_path)
+    client = _create_app(db_path).test_client()
+
+    response = client.post("/api/gpu/attest", json={"miner_id": "miner-1"})
+
+    assert response.status_code == 500
+    assert response.get_json() == {"error": "Database operation failed"}
