@@ -198,6 +198,23 @@ def test_check_helpers_shape_endpoint_responses(rustchain_health_module, monkeyp
     ]
 
 
+def test_check_miners_accepts_items_envelope(rustchain_health_module, monkeypatch):
+    miner_rows = [{"miner_id": "alice"}, {"miner_id": "bob"}]
+
+    monkeypatch.setattr(
+        rustchain_health_module,
+        "fetch",
+        lambda _url, _timeout: (True, {"items": miner_rows}, 7.0),
+    )
+
+    result = rustchain_health_module.check_miners("https://node.example", 5)
+
+    assert result["reachable"] is True
+    assert result["latency_ms"] == 7.0
+    assert result["miner_count"] == 2
+    assert result["miners"] == miner_rows
+
+
 def test_check_helpers_handle_raw_dict_and_error_edges(
     rustchain_health_module,
     monkeypatch,
