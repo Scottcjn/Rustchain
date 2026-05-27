@@ -212,7 +212,8 @@ class BeaconReservationHandler:
             body = {}
             try:
                 body = _response_json_object(exc.response)
-            except Exception:
+            except (json.JSONDecodeError, AttributeError, TypeError):
+                # Response body isn't valid JSON — fall back to generic error string
                 pass
             return self._error_response(beacon_id, body.get("error", str(exc)))
 
