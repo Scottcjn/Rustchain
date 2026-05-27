@@ -135,7 +135,7 @@ def _amount_to_base(amount_float: float) -> int:
 
 def _amount_from_base(amount_int: int) -> float:
     """Convert base units to human-readable RTC."""
-    return amount_int / (10 ** RTC_DECIMALS)
+    return round(amount_int / (10 ** RTC_DECIMALS), RTC_DECIMALS)
 
 
 def _is_base_wallet_address(value: str) -> bool:
@@ -417,7 +417,7 @@ def confirm_lock():
                 return jsonify({"error": "lock already confirmed"}), 409
             if row["state"] != STATE_REQUESTED:
                 return jsonify({"error": f"cannot confirm lock in state '{row['state']}'"}), 409
-            if row["expires_at"] < now:
+            if row["expires_at"] <= now:
                 return jsonify({"error": "lock has expired"}), 410
 
             conn.execute(
@@ -483,7 +483,7 @@ def release_wrtc():
                 return jsonify({
                     "error": f"cannot release lock in state '{row['state']}'"
                 }), 409
-            if row["expires_at"] < now:
+            if row["expires_at"] <= now:
                 return jsonify({"error": "lock has expired"}), 410
 
             conn.execute(
@@ -503,6 +503,72 @@ def release_wrtc():
         "message": "wRTC successfully minted on target chain",
     })
 
+
+
+
+@bridge_bp.route("/refund", methods=["POST"])
+@_require_admin
+def refund_lock():
+    """
+    Admin: refund an expired confirmed lock.
+
+    Transitions a confirmed/releasing lock that has expired to STATE_REFUNDED.
+    This provides a recovery path for locks stuck in confirmed state after expiry.
+
+    Body (JSON):
+     lock_id : str - Lock to refund
+     notes   : str - (optional) admin notes
+
+    Returns success/error.
+    """
+    data, error_response = _json_object_body()
+    if error_response:
+        return error_response
+    try:
+        lock_id = _clean_string_field(data, "lock_id")
+        notes = _clean_string_field(data, "notes", optional=True)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    if not lock_id:
+        return jsonify({"error": "lock_id is required"}), 400
+
+    now = int(time.time())
+    with _db_lock:
+        with get_db() as conn:
+            row = conn.execute(
+                "SELECT * FROM bridge_locks WHERE lock_id = ?", (lock_id,)
+            ).fetchone()
+
+            if not row:
+                return jsonify({"error": "lock not found"}), 404
+            if row["state"] not in (STATE_CONFIRMED, STATE_RELEASING):
+                return jsonify({
+                    "error": f"cannot refund lock in state '{row['state']}', must be confirmed or releasing"
+                }), 409
+            if row["expires_at"] > now:
+                return jsonify({
+                    "error": "lock has not expired yet, cannot refund",
+                    "expires_at": row["expires_at"],
+                    "now": now
+                }), 400
+
+            conn.execute(
+                "UPDATE bridge_locks SET state=?, updated_at=?, notes=? WHERE lock_id=?",
+                (STATE_REFUNDED, now, notes, lock_id)
+            )
+            log_event(conn, lock_id, "refunded", actor="admin", details={
+                "reason": "lock expired before release",
+                "notes": notes,
+            })
+            conn.commit()
+
+            return jsonify({
+                "lock_id": lock_id,
+                "state": STATE_REFUNDED,
+                "amount_rtc": _amount_from_base(row["amount_rtc"]),
+                "message": "Lock refunded successfully. RTC should be returned to sender.",
+            })
 
 @bridge_bp.route("/ledger", methods=["GET"])
 def get_ledger():
