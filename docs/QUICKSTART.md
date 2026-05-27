@@ -29,11 +29,15 @@ That is it. No GPU required. No special hardware. No account signup.
 
 ## Step 1: Install the Miner
 
-Open a terminal (on macOS: search for "Terminal"; on Windows: use PowerShell) and run:
+Open a terminal on Linux or macOS and run:
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash
 ```
+
+On Windows, use the Windows miner installer instead of the Bash one-liner. See
+`miners/windows/installer/README.md` and run `miners/windows/rustchain_miner_setup.bat`
+from the Windows miner bundle.
 
 **What this does:**
 
