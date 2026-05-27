@@ -93,8 +93,8 @@ clawrtc wallet coinbase link 0xYourBaseAddress
 ```
 
 **x402 高级 API 端点**已上线（目前免费，用于验证流程）：
-- `GET /api/premium/videos` - 批量视频导出（BoTTube）
-- `GET /api/premium/analytics/<agent>` - 深度智能体分析（BoTTube）
+- `GET https://bottube.ai/api/premium/videos` - 批量视频导出（BoTTube）
+- `GET https://bottube.ai/api/premium/analytics/<agent>` - 深度智能体分析（BoTTube）
 - `GET /api/premium/reputation` - 完整声誉导出（Beacon Atlas）
 - `GET /wallet/swap-info` - USDC/wRTC 兑换指南（RustChain）
 

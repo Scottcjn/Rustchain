@@ -54,8 +54,6 @@ open http://localhost:8080/swagger.html
 | GET | `/governance/proposals` | List proposals |
 | GET | `/governance/proposal/{id}` | Proposal details |
 | GET | `/governance/ui` | Governance UI (HTML) |
-| GET | `/api/premium/videos` | Premium video export |
-| GET | `/api/premium/analytics/{agent}` | Agent analytics |
 | GET | `/api/premium/reputation` | Reputation data |
 
 ### Signed Write Endpoints (Ed25519 Signature)
@@ -496,3 +494,5 @@ curl -sk https://rustchain.org/health
 
 - GitHub: https://github.com/Scottcjn/rustchain-bounties
 - Documentation: https://github.com/Scottcjn/Rustchain/tree/main/docs
+BoTTube premium endpoints are documented separately in `docs/api-reference.md`
+because they run on `https://bottube.ai`, not the main RustChain `base_url`.

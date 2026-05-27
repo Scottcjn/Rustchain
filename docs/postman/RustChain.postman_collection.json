@@ -119,20 +119,6 @@
       "name": "Premium (x402)",
       "item": [
         {
-          "name": "Premium Videos",
-          "request": {
-            "method": "GET",
-            "url": "{{base_url}}/api/premium/videos"
-          }
-        },
-        {
-          "name": "Premium Analytics",
-          "request": {
-            "method": "GET",
-            "url": "{{base_url}}/api/premium/analytics/{{agent}}"
-          }
-        },
-        {
           "name": "Premium Reputation",
           "request": {
             "method": "GET",
