@@ -456,7 +456,7 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
         limit, error_response = _parse_non_negative_int_arg("limit", 50, max_value=200)
         if error_response:
             return error_response
-        offset, error_response = _parse_non_negative_int_arg("offset", 0)
+        offset, error_response = _parse_non_negative_int_arg("offset", 0, max_value=10_000)
         if error_response:
             return error_response
 

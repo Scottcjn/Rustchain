@@ -919,6 +919,7 @@ def register_bridge_routes(app):
                 data.get("required_confirmations"),
                 "required_confirmations",
                 0,
+                max_value=1000,
             )
             if error:
                 return jsonify({"error": error}), 400
