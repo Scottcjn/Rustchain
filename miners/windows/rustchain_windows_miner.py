@@ -526,6 +526,19 @@ class RustChainMiner:
 
     def enroll(self):
         """Enroll the miner into the current epoch after attesting."""
+        # Fetch current epoch from server to construct signed enrollment.
+        # The server computes epoch from its own slot clock; we re-query to
+        # match. There's a small race if epoch rolls between our query and
+        # POST — server returns invalid_enrollment_signature in that case and
+        # the miner retries on next cycle (fine, enrollment runs ~per epoch).
+        current_epoch = None
+        try:
+            ep_resp = requests.get(f"{self.node_url}/epoch", timeout=10)
+            if ep_resp.ok:
+                current_epoch = ep_resp.json().get("epoch")
+        except Exception:
+            pass
+
         payload = {
             "miner_pubkey": self.wallet_address,
             "miner_id":     self.miner_id,
@@ -534,6 +547,20 @@ class RustChainMiner:
                 "arch":   self.hw_info["arch"]
             }
         }
+
+        # Sign (miner_pubkey|miner_id|epoch) — server expects this exact
+        # 3-field MAC format at line 4155 of rustchain_v2_integrated_v2.2.1.
+        # Uses the SAME Ed25519 key stored during attestation, so server
+        # cross-checks the pubkey matches its miner_attest_recent record.
+        if CRYPTO_AVAILABLE and self.keypair and current_epoch is not None:
+            enroll_message = f"{self.wallet_address}|{self.miner_id}|{current_epoch}"
+            try:
+                payload["signature"] = sign_payload(
+                    enroll_message.encode(), self.keypair["private_key"]
+                )
+                payload["public_key"] = self.public_key
+            except Exception:
+                pass  # Best-effort; server still accepts unsigned with warning
 
         try:
             resp = requests.post(
