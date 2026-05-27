@@ -568,6 +568,19 @@ class UtxoDB:
                     conn.execute("ROLLBACK")
                 return False
 
+            # -- prevent multiple mining_reward per block ------------------------
+            # Without this, a buggy internal caller could create multiple coinbase
+            # outputs at the same height, inflating supply beyond the intended
+            # block reward (MAX_COINBASE_OUTPUT_NRTC is per-output, not per-block).
+            if tx_type in MINTING_TX_TYPES:
+                row = conn.execute(
+                    """SELECT COUNT(*) AS n FROM utxo_transactions
+                       WHERE tx_type = 'mining_reward' AND block_height = ?""",
+                    (block_height,),
+                ).fetchone()
+                if row['n'] > 0:
+                    return abort()
+
             # -- reject duplicate input box_ids --------------------------------
             # Keyed on box_id alone (the PK of the UTXO being consumed).
             # Different spending_proof values for the same box_id are still

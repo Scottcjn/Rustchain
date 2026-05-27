@@ -574,8 +574,8 @@ class TestUtxoDB(unittest.TestCase):
     # -- integrity -----------------------------------------------------------
 
     def test_integrity_ok(self):
-        self._apply_coinbase('alice', 100 * UNIT)
-        self._apply_coinbase('bob', 50 * UNIT)
+        self._apply_coinbase('alice', 100 * UNIT, block_height=1)
+        self._apply_coinbase('bob', 50 * UNIT, block_height=2)
         result = self.db.integrity_check(expected_total=150 * UNIT)
         self.assertTrue(result['ok'])
         self.assertTrue(result['models_agree'])
