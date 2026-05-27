@@ -14,8 +14,8 @@
 # Pillow>=9.0.0     # Thumbnail generation
 
 # Development
-# pytest>=7.0.0
-# pytest-cov>=4.0.0
+# pytest>=9.0.3
+# pytest-cov>=7.1.0
 
 # Note: This pipeline uses Python standard library modules:
 # - urllib.request for HTTP requests
