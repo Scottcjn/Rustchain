@@ -35,6 +35,19 @@ Open a terminal on Linux or macOS and run:
 curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash
 ```
 
+### macOS Homebrew prerequisite
+
+The installer uses the system `python3`. On a fresh macOS install, install Python with
+Homebrew first:
+
+```bash
+brew update
+brew install python3
+python3 --version
+```
+
+Then run the RustChain installer command above.
+
 On Windows, use the Windows miner installer instead of the Bash one-liner. See
 `miners/windows/installer/README.md` and run `miners/windows/rustchain_miner_setup.bat`
 from the Windows miner bundle.
