@@ -16,6 +16,16 @@ def test_validate_metadata_file_reports_missing_file(capsys) -> None:
     assert "Error: File not found" in capsys.readouterr().out
 
 
+def test_validate_metadata_file_reports_invalid_json(tmp_path, capsys) -> None:
+    metadata_file = tmp_path / "metadata.json"
+    metadata_file.write_text("{not valid json", encoding="utf-8")
+
+    result = example.validate_metadata_file(str(metadata_file))
+
+    assert result == 1
+    assert "Error: Invalid JSON" in capsys.readouterr().out
+
+
 def test_validate_metadata_file_accepts_valid_upload_metadata(tmp_path, capsys) -> None:
     metadata_file = tmp_path / "metadata.json"
     metadata_file.write_text(
