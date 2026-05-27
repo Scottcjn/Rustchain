@@ -118,6 +118,23 @@ def test_print_miners_renders_lists_unexpected_and_errors(capsys):
     assert "Failed to fetch miners: down" in output
 
 
+def test_print_miners_renders_paginated_api_envelope(capsys):
+    module = load_module()
+
+    module.print_miners({
+        "miners": [
+            {"miner": "carol", "hardware_type": "ARM", "antiquity_multiplier": 1.25, "last_attest": 0},
+        ],
+        "pagination": {"page": 1, "total": 1},
+    })
+
+    output = capsys.readouterr().out
+    assert "Active miners: 1" in output
+    assert "carol" in output
+    assert "HW: ARM" in output
+    assert "Unexpected response" not in output
+
+
 def test_print_epoch_renders_success_and_error(capsys):
     module = load_module()
 
