@@ -195,6 +195,44 @@ def test_invalid_state_file_starts_empty(tmp_path):
     assert tracker.bounties == {}
 
 
+def test_malformed_state_shape_starts_empty(tmp_path):
+    state_file = tmp_path / "bad_state_shape.json"
+    state_file.write_text(json.dumps(["not", "an", "object"]))
+
+    module = load_bounty_tracker_module()
+    tracker = module.BountyTracker(
+        github_token="token",
+        repo="owner/repo",
+        state_file=str(state_file),
+    )
+
+    assert tracker.bounties == {}
+
+
+def test_malformed_state_entries_are_skipped(tmp_path):
+    state_file = tmp_path / "mixed_state.json"
+    state_file.write_text(
+        json.dumps(
+            {
+                "bounties": [
+                    "bad-row",
+                    {"issue_number": 11, "title": "Valid", "description": "", "reward_rtc": 2.0},
+                ]
+            }
+        )
+    )
+
+    module = load_bounty_tracker_module()
+    tracker = module.BountyTracker(
+        github_token="token",
+        repo="owner/repo",
+        state_file=str(state_file),
+    )
+
+    assert list(tracker.bounties) == [11]
+    assert tracker.bounties[11].title == "Valid"
+
+
 def test_saved_state_contains_serialized_bounties(tmp_path):
     module, tracker = make_tracker(tmp_path)
     tracker.bounties[9] = module.Bounty(9, "Serialize me", "body", 3.0)
