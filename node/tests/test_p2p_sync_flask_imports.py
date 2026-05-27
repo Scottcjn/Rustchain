@@ -52,6 +52,51 @@ def test_p2p_sync_flask_routes_use_flask_request_and_jsonify(tmp_path):
     ]
 
 
+
+def test_p2p_blocks_exports_canonical_node_schema(tmp_path):
+    db_path = tmp_path / "rustchain.db"
+    peer_manager = rustchain_p2p_sync.PeerManager(str(db_path), "127.0.0.1")
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE blocks (
+                height INTEGER,
+                block_hash TEXT,
+                prev_hash TEXT,
+                timestamp REAL,
+                merkle_root TEXT,
+                state_root TEXT,
+                attestations_hash TEXT,
+                producer TEXT,
+                producer_sig TEXT,
+                tx_count INTEGER,
+                attestation_count INTEGER,
+                body_json TEXT,
+                created_at REAL
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO blocks (height, block_hash, body_json)
+            VALUES (?, ?, ?)
+            """,
+            (1, "canonical-hash", '{"canonical": true}'),
+        )
+        conn.commit()
+
+    app = Flask(__name__)
+    rustchain_p2p_sync.add_p2p_endpoints(app, peer_manager, None, None)
+    client = app.test_client()
+
+    response = client.get("/api/blocks?start=1&limit=1")
+
+    assert response.status_code == 200
+    assert response.get_json()["blocks"] == [
+        {"height": 1, "hash": "canonical-hash", "data": {"canonical": True}}
+    ]
+
 @pytest.mark.parametrize(
     ("query", "message"),
     [

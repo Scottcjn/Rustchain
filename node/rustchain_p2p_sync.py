@@ -469,8 +469,16 @@ def add_p2p_endpoints(app, peer_manager, block_sync, tx_gossip):
 
         # Fetch blocks from database
         with sqlite3.connect(peer_manager.db_path) as conn:
-            rows = conn.execute("""
-                SELECT height, hash, data FROM blocks
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(blocks)")}
+            if {"hash", "data"}.issubset(columns):
+                hash_column = "hash"
+                data_column = "data"
+            else:
+                hash_column = "block_hash"
+                data_column = "body_json"
+
+            rows = conn.execute(f"""
+                SELECT height, {hash_column}, {data_column} FROM blocks
                 WHERE height >= ?
                 ORDER BY height ASC
                 LIMIT ?
