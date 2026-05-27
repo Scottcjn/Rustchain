@@ -9,7 +9,7 @@ This repository is certified under the **Beacon Certified Open Source (BCOS)** p
 Verify this repository's certification at: **[rustchain.org/bcos/](https://rustchain.org/bcos/)**
 
 ```bash
-pip install clawrtc
+python3 -m pip install clawrtc
 clawrtc bcos scan .
 clawrtc bcos verify BCOS-xxxxxxxx
 ```
@@ -37,4 +37,3 @@ The trust score (0-100) uses a transparent, documented formula. Full details: [B
 - **Chain**: [RustChain](https://rustchain.org) (Proof of Antiquity)
 - **Engine**: BCOS v2 — Free & Open Source (MIT)
 - **On-Chain Proof**: BLAKE2b-256 commitment anchored to RustChain ledger
-

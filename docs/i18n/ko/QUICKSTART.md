@@ -3,7 +3,7 @@
 ## 1. 설치
 
 ```bash
-pip install clawrtc
+python3 -m pip install clawrtc
 ```
 
 ## 2. 지갑 생성

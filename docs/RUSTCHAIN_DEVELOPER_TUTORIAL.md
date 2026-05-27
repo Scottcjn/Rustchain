@@ -455,7 +455,7 @@ RustChain provides `clawrtc` for command-line operations:
 
 ```bash
 # Install
-pip install clawrtc
+python3 -m pip install clawrtc
 
 # Check balance
 clawrtc balance my-vintage-miner

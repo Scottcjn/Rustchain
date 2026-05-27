@@ -547,7 +547,7 @@ curl -sk "https://rustchain.org/health"
 
 ### 工具与库
 
-- **clawrtc CLI**: `pip install clawrtc`
+- **clawrtc CLI**: `python3 -m pip install clawrtc`
 - **RustChain 区块浏览器**: https://rustchain.org/explorer
 - **BoTTube 桥接**: https://bottube.ai/bridge
 
