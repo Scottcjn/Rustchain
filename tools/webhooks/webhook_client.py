@@ -20,6 +20,8 @@ Usage:
   # 3. Watch events stream in
 """
 
+from __future__ import annotations
+
 import argparse
 import hashlib
 import hmac
@@ -73,8 +75,12 @@ def format_event(event_type: str, data: dict, ts: float) -> str:
         lines.append(f"  Miner:     {data.get('miner', '?')}")
 
     elif event_type == "large_tx":
+        try:
+            delta = f"{float(data.get('delta', 0)):+.6f}"
+        except (TypeError, ValueError):
+            delta = "?"
         lines.append(f"  Miner:     {data.get('miner', '?')}")
-        lines.append(f"  Delta:     {data.get('delta', 0):+.6f} RTC ({data.get('direction', '?')})")
+        lines.append(f"  Delta:     {delta} RTC ({data.get('direction', '?')})")
         lines.append(f"  Balance:   {data.get('previous_balance', '?')} -> {data.get('new_balance', '?')} RTC")
 
     else:
