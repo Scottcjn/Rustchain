@@ -51,6 +51,17 @@ def fetch_api(path):
     return None
 
 
+def normalize_miners_data(miners_data):
+    if isinstance(miners_data, list):
+        return miners_data, len(miners_data)
+    if isinstance(miners_data, dict):
+        miners = miners_data.get("miners", [])
+        if isinstance(miners, list):
+            return miners, len(miners)
+        return [], miners_data.get("count", 0)
+    return [], 0
+
+
 def poll_and_broadcast():
     """Poll RustChain API and broadcast changes via WebSocket."""
     while True:
@@ -79,13 +90,12 @@ def poll_and_broadcast():
                     }
 
             if miners_data:
-                miners = miners_data.get("miners", [])
-                miner_count = len(miners) if isinstance(miners, list) else miners_data.get("count", 0)
+                miners, miner_count = normalize_miners_data(miners_data)
                 if miner_count != state["last_miner_count"]:
                     state["last_miner_count"] = miner_count
                     updates["miners"] = {
                         "count": miner_count,
-                        "miners": miners[:20] if isinstance(miners, list) else [],
+                        "miners": miners[:20],
                     }
 
                 # Attestation feed — send latest attestations
