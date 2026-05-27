@@ -1625,7 +1625,14 @@ HARDWARE_WEIGHTS = {
         "retro": 1.4, "core2": 1.3, "core2duo": 1.3, "nehalem": 1.2,
         "sandy_bridge": 1.1, "sandybridge": 1.1, "ivy_bridge": 1.1, "ivybridge": 1.1,
         "haswell": 1.05, "broadwell": 1.05,
-        "pentium": 1.5, "pentium4": 1.5, "486": 2.0, "386": 2.5,
+        # Pentium M family (mirrors ANTIQUITY_MULTIPLIERS — see rip_200_round_robin_1cpu1vote.py).
+        # `derive_verified_device` resolves Pentium M brand strings to these arch keys;
+        # without them here, enroll_epoch's HARDWARE_WEIGHTS.get(family, {}).get(arch_for_weight)
+        # falls back to 'default' (1.0) and the Banias tier never reaches the miner's weight.
+        "pentium_m": 1.9, "pentium_m_banias": 1.9, "pentium_m_dothan": 1.8, "pentium_m_yonah": 1.6,
+        # Earlier Pentium tiers also covered by `_detect_x86_vintage`.
+        "pentium_iii": 2.0, "pentium_ii": 2.2, "pentium_pro": 2.3, "pentium_mmx": 2.4,
+        "pentium": 1.5, "pentium4": 1.5, "pentium_d": 1.5, "486": 2.0, "386": 2.5,
         "modern": 0.8, "default": 1.0,
     },
     "x86_64": {"modern": 0.8, "default": 0.8},
