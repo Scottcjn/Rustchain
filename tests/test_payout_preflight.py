@@ -293,8 +293,20 @@ class TestValidateWalletTransferSigned:
                 assert result.ok is False
                 assert result.error == "invalid_from_address_format"
 
+      def test_invalid_from_address_characters(self):
+                payload = self._valid_payload(from_address="RTC" + "g" * 40)
+                result = validate_wallet_transfer_signed(payload)
+                assert result.ok is False
+                assert result.error == "invalid_from_address_format"
+
+      def test_invalid_to_address_characters(self):
+                payload = self._valid_payload(to_address="RTC" + "z" * 40)
+                result = validate_wallet_transfer_signed(payload)
+                assert result.ok is False
+                assert result.error == "invalid_to_address_format"
+
       def test_self_transfer_rejected(self):
-                addr = self._make_address("x")
+                addr = self._make_address("c")
                 payload = self._valid_payload(from_address=addr, to_address=addr)
                 result = validate_wallet_transfer_signed(payload)
                 assert result.ok is False
