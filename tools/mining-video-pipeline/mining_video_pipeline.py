@@ -35,7 +35,6 @@ import json
 import os
 import random
 import subprocess
-import sys
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -147,7 +146,14 @@ def fetch_miners() -> list[MinerData]:
     """Fetch active miners from RustChain API."""
     resp = requests.get(f"{RUSTCHAIN_API}/api/miners", verify=False, timeout=30)
     resp.raise_for_status()
-    return [MinerData.from_api(m) for m in resp.json()]
+    payload = resp.json()
+    if isinstance(payload, dict):
+        rows = payload.get("miners", [])
+    else:
+        rows = payload
+    if not isinstance(rows, list):
+        return []
+    return [MinerData.from_api(m) for m in rows if isinstance(m, dict)]
 
 
 def fetch_epoch() -> dict:
@@ -271,7 +277,7 @@ def generate_video(miner: MinerData, epoch: dict, output_path: str, duration: fl
         # === Top: RustChain branding ===
         draw.rectangle([0, 0, WIDTH, 60], fill=(0, 0, 0))
         draw_glow(draw, 20, 12, "RUSTCHAIN", title_font, (232, 83, 30))
-        draw.text((WIDTH - 250, 22), f"Proof of Antiquity", fill=(120, 120, 140), font=small_font)
+        draw.text((WIDTH - 250, 22), "Proof of Antiquity", fill=(120, 120, 140), font=small_font)
         # Separator line
         draw.rectangle([0, 58, WIDTH, 60], fill=style["accent"])
 
@@ -288,7 +294,6 @@ def generate_video(miner: MinerData, epoch: dict, output_path: str, duration: fl
 
         # Fade in stats
         if progress > 0.1:
-            alpha = min(1.0, (progress - 0.1) * 3)
             draw.text((stats_x, stats_y), f"MINER: {miner.display_name}", fill=style["primary"], font=mono_lg)
             draw.text((stats_x, stats_y + 30), f"ARCH:  {miner.device_arch[:40]}", fill=(180, 180, 190), font=mono)
             draw.text((stats_x, stats_y + 55), f"TYPE:  {miner.hardware_type}", fill=(180, 180, 190), font=mono)
