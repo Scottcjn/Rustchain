@@ -410,6 +410,26 @@ class TestTipState:
         s = TipState(path)
         assert s.tip_log == []
 
+    def test_non_object_state_file_resets(self, tmp_path):
+        path = str(tmp_path / "bad_shape.json")
+        with open(path, "w") as f:
+            json.dump([], f)
+
+        s = TipState(path)
+
+        assert s.tip_log == []
+        assert s.is_processed("org/repo/111") is False
+
+    def test_invalid_state_collections_reset(self, tmp_path):
+        path = str(tmp_path / "bad_collections.json")
+        with open(path, "w") as f:
+            json.dump({"version": 1, "processed_comment_ids": {}, "tip_log": None}, f)
+
+        s = TipState(path)
+
+        assert s.tip_log == []
+        assert s.get_pending_payouts() == []
+
 
 # ---------------------------------------------------------------------------
 # End-to-end process_event tests (GitHub API mocked)
