@@ -48,8 +48,11 @@ def collect_snapshot(node_url: str, timeout_s: int = 8, fetcher: Fetcher = _defa
         epoch = _fetch_json(node_url, "/epoch", timeout_s, fetcher)
         stats = _fetch_json(node_url, "/api/stats", timeout_s, fetcher)
         miners = _fetch_json(node_url, "/api/miners", timeout_s, fetcher)
-
-        miners_count = len(miners) if isinstance(miners, list) else 0
+        if isinstance(miners, dict):
+            miners_list = miners.get("miners", [])
+            miners_count = len(miners_list) if isinstance(miners_list, list) else 0
+        else:
+            miners_count = len(miners) if isinstance(miners, list) else 0
 
         return NodeSnapshot(
             node=node_url,
