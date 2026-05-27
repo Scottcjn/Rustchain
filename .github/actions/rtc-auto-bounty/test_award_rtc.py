@@ -398,6 +398,46 @@ class TestTransferRtc(unittest.TestCase):
         self.assertEqual(payload["from_miner"], "founder_community")
         self.assertEqual(payload["to_miner"], "alice")
 
+    def test_success_response_rejects_invalid_json(self):
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = b"not json"
+
+        with patch("award_rtc.urlopen", return_value=mock_resp):
+            ok, result = transfer_rtc(
+                "https://rustchain.org/wallet/transfer",
+                "test-admin-key",
+                "founder_community",
+                "alice",
+                5.0,
+                "PR #4559 auto-bounty",
+            )
+
+        self.assertFalse(ok)
+        self.assertEqual(
+            result["error"],
+            "Invalid JSON response from transfer endpoint",
+        )
+
+    def test_success_response_rejects_non_object_json(self):
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = b'["ok", true]'
+
+        with patch("award_rtc.urlopen", return_value=mock_resp):
+            ok, result = transfer_rtc(
+                "https://rustchain.org/wallet/transfer",
+                "test-admin-key",
+                "founder_community",
+                "alice",
+                5.0,
+                "PR #4559 auto-bounty",
+            )
+
+        self.assertFalse(ok)
+        self.assertEqual(
+            result["error"],
+            "Transfer endpoint response must be a JSON object",
+        )
+
 
 # ---------------------------------------------------------------------------
 # Integration-style main() tests
