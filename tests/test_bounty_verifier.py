@@ -293,6 +293,33 @@ class TestGitHubClient:
         mock_urlopen.assert_not_called()
 
     @patch('tools.bounty_verifier.github_client.urlopen')
+    def test_check_following_treats_204_as_following(self, mock_urlopen):
+        """GitHub returns 204 No Content when a user follows the target."""
+
+        class FakeResponse:
+            def __init__(self, status, payload=b"{}"):
+                self.status = status
+                self.headers = {}
+                self._payload = payload
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return self._payload
+
+        client = GitHubClient(token="test_token")
+        mock_urlopen.side_effect = [
+            FakeResponse(200, b'{"login":"user"}'),
+            FakeResponse(204, b""),
+        ]
+
+        assert client.check_following("user") is True
+
+    @patch('tools.bounty_verifier.github_client.urlopen')
     def test_get_starred_repos_count_cached(self, mock_urlopen):
         """Test star count uses cache."""
         import time
