@@ -563,6 +563,24 @@ class TestFlaskIntegration(unittest.TestCase):
                 self.assertFalse(data['success'])
                 self.assertEqual(data['error'], 'Trust score must be a number')
 
+    def test_generate_badge_rejects_non_boolean_include_qr(self):
+        """include_qr should not treat truthy strings as enabling QR output."""
+        for include_qr in ['false', 'true', 1, None]:
+            with self.subTest(include_qr=include_qr):
+                response = self.post_generate_badge(
+                    {
+                        'repo_name': 'test/repo',
+                        'tier': 'L1',
+                        'trust_score': 75,
+                        'include_qr': include_qr,
+                    }
+                )
+
+                self.assertEqual(response.status_code, 200)
+                data = json.loads(response.data)
+                self.assertFalse(data['success'])
+                self.assertEqual(data['error'], 'include_qr must be a boolean')
+
     def test_generate_badge_rejects_attribute_breaking_cert_id(self):
         """User-supplied cert IDs must not break generated embed attributes."""
         payload = {
