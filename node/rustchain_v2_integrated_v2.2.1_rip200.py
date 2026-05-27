@@ -3672,10 +3672,14 @@ def _submit_attestation_impl():
             # Scheme 1: v3 canonical-JSON full-payload signature.
             # Try when signature_type is 'ed25519' or unspecified (the v3 miner
             # always sets signature_type='ed25519'; older callers may omit it).
+            # IMPORTANT: the miner adds 'signature', 'public_key', AND
+            # 'signature_type' to the dict AFTER signing (see miner lines
+            # 515-517). All three must be stripped to reproduce the canonical
+            # bytes the miner actually signed.
             if sig_type in ('ed25519', '', 'canonical_json'):
                 payload_for_sig = {
                     k: v for k, v in data.items()
-                    if k not in ('signature', 'signature_type')
+                    if k not in ('signature', 'signature_type', 'public_key')
                 }
                 canonical_msg = json.dumps(
                     payload_for_sig, sort_keys=True, separators=(',', ':')
