@@ -32,9 +32,7 @@ from flask import Flask, jsonify, request, abort
 from tools.rent_a_relic.models import (
     MACHINE_REGISTRY,
     VALID_DURATIONS_HOURS,
-    EscrowStatus,
     EscrowTransaction,
-    Machine,
     Reservation,
     ReservationStatus,
 )
@@ -68,6 +66,16 @@ def _optional_string_value(data: dict, key: str) -> str | None:
     value = value.strip()
     if value == "":
         return None
+    return value
+
+
+def _required_string_value(data: dict, key: str) -> str:
+    value = data.get(key)
+    if not isinstance(value, str):
+        abort(400, description=f"{key} must be a string")
+    value = value.strip()
+    if not value:
+        abort(400, description=f"{key} is required")
     return value
 
 
@@ -272,15 +280,11 @@ def post_reserve():
     """Reserve a machine and lock RTC in escrow."""
     data = _get_json_object_or_empty()
 
-    agent_id       = _optional_string_value(data, "agent_id")
-    machine_id     = _optional_string_value(data, "machine_id")
+    agent_id       = _required_string_value(data, "agent_id")
+    machine_id     = _required_string_value(data, "machine_id")
     duration_hours = data.get("duration_hours")
     rtc_amount     = data.get("rtc_amount")
 
-    if not agent_id:
-        abort(400, description="agent_id is required")
-    if not machine_id:
-        abort(400, description="machine_id is required")
     if isinstance(duration_hours, bool):
         abort(400, description="duration_hours must be one of [1, 4, 24]")
     if duration_hours not in VALID_DURATIONS_HOURS:
