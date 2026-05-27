@@ -114,3 +114,20 @@ def test_preflight_calls_health_endpoint_with_timeout_and_context():
     assert args == ("https://rustchain.org/health",)
     assert kwargs["timeout"] == 5
     assert kwargs["context"] is not None
+
+
+def test_preflight_does_not_swallow_process_exit():
+    module = load_module()
+
+    with (
+        patch.object(module.shutil, "which", return_value="/usr/local/bin/clawrtc"),
+        patch.object(module.os.path, "exists", return_value=True),
+        patch.object(module.shutil, "disk_usage", return_value=SimpleNamespace(free=2_000_000_000)),
+        patch.object(module.urllib.request, "urlopen", side_effect=SystemExit("stop")),
+    ):
+        try:
+            module.preflight()
+        except SystemExit as exc:
+            assert str(exc) == "stop"
+        else:
+            raise AssertionError("SystemExit was swallowed by preflight")
