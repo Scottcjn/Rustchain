@@ -174,7 +174,13 @@ def settle_epoch_rip200(db_path, epoch: int, enable_anti_double_mining: bool = T
                 return result
             except Exception as e:
                 print(f"[WARN] Anti-double-mining failed, falling back to standard: {e}")
-                # Fall through to standard rewards
+                # Rollback partial ADM writes before falling through to standard rewards.
+                # Without this, ADM may have already written rewards on the shared `db`
+                # connection. The standard path then adds MORE rewards on top, resulting
+                # in double-credited miners on the single commit below.
+                db.rollback()
+                # Re-acquire the write lock after rollback (rollback releases it).
+                db.execute("BEGIN IMMEDIATE")
 
         # Standard RIP-200 rewards (no anti-double-mining)
         rewards = calculate_epoch_rewards_time_aged(
