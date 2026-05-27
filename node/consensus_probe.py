@@ -49,7 +49,7 @@ def collect_snapshot(node_url: str, timeout_s: int = 8, fetcher: Fetcher = _defa
         stats = _fetch_json(node_url, "/api/stats", timeout_s, fetcher)
         miners = _fetch_json(node_url, "/api/miners", timeout_s, fetcher)
 
-        miners_count = len(miners) if isinstance(miners, list) else 0
+        miners_count = len(miners.get("miners", [])) if isinstance(miners, dict) else (len(miners) if isinstance(miners, list) else 0)
 
         return NodeSnapshot(
             node=node_url,
