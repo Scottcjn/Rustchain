@@ -1199,10 +1199,9 @@ class UtxoDB:
 
             # 2. Txs referencing spent boxes as data_inputs
             #    (not stored in utxo_mempool_inputs, so parse tx_data_json)
-            all_mempool = conn.execute(
+            for mp_row in conn.execute(
                 "SELECT tx_id, tx_data_json FROM utxo_mempool"
-            ).fetchall()
-            for mp_row in all_mempool:
+            ):
                 if mp_row["tx_id"] in stale_tx_ids:
                     continue  # already flagged
                 try:
