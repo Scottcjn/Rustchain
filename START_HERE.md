@@ -25,7 +25,7 @@ Check balances and learn the current transfer flow.
 YOUR_WALLET=retro-g5-miner
 ```
 
-Current `clawrtc` releases do **not** ship `wallet new`, `wallet show`, or `wallet pay` subcommands. `clawrtc` is the miner installer/service wrapper. For wallet basics, keep one consistent RustChain wallet ID (`miner_id`) and use the balance + signed transfer docs below.
+Current miner releases do **not** ship `wallet new`, `wallet show`, or `wallet pay` subcommands. For wallet basics, keep one consistent RustChain wallet ID (`miner_id`) and use the balance + signed transfer docs below.
 
 ### Check Balance
 
@@ -56,18 +56,14 @@ Earn RTC by contributing compute resources.
 
 ### Start Mining
 
-**Recommended: current `clawrtc` installer**
+**Recommended: installer script**
 
 ```bash
-# Install the miner wrapper and write config for your wallet ID
-npm install -g clawrtc
-clawrtc install --wallet YOUR_WALLET
-
-# Start the miner
-clawrtc start --service
+# Run the installer with your wallet ID
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --wallet YOUR_WALLET
 ```
 
-`clawrtc status` and `clawrtc logs` are the supported management commands in current releases.
+The installer will auto-detect your platform, configure an isolated environment, and set up auto-start.
 
 **Alternative: manual Python miner**
 
@@ -83,16 +79,28 @@ python3 rustchain_miner.py --wallet YOUR_WALLET
 
 ### Manage Miner
 
-```bash
-# Cross-platform wrapper
-clawrtc status
-clawrtc logs
-clawrtc stop
-clawrtc start --service
+Depending on your platform, manage the background service or run manually:
 
-# Linux/macOS service manager fallback
+**Linux (systemd):**
+```bash
 systemctl --user status rustchain-miner
 journalctl --user -u rustchain-miner -f
+systemctl --user stop rustchain-miner
+systemctl --user start rustchain-miner
+```
+
+**macOS (launchd):**
+```bash
+launchctl list | grep rustchain
+tail -f ~/.rustchain/miner.log
+launchctl stop com.rustchain.miner
+launchctl start com.rustchain.miner
+```
+
+**Manual / start.sh:**
+```bash
+# Run manually using the generated start script
+~/.rustchain/start.sh
 ```
 
 ### Check Rewards
