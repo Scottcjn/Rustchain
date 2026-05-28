@@ -57,7 +57,7 @@ def _get_json_object_or_empty() -> dict:
     return data
 
 
-def _optional_string_value(data: dict, key: str) -> str | None:
+def _optional_string_value(data: dict, key: str, max_length: int = 0) -> str | None:
     value = data.get(key)
     if value is None:
         return None
@@ -66,16 +66,20 @@ def _optional_string_value(data: dict, key: str) -> str | None:
     value = value.strip()
     if value == "":
         return None
+    if max_length > 0 and len(value) > max_length:
+        abort(400, description=f"{key} exceeds maximum length of {max_length}")
     return value
 
 
-def _required_string_value(data: dict, key: str) -> str:
+def _required_string_value(data: dict, key: str, max_length: int = 0) -> str:
     value = data.get(key)
     if not isinstance(value, str):
         abort(400, description=f"{key} must be a string")
     value = value.strip()
     if not value:
         abort(400, description=f"{key} is required")
+    if max_length > 0 and len(value) > max_length:
+        abort(400, description=f"{key} exceeds maximum length of {max_length}")
     return value
 
 
@@ -280,8 +284,8 @@ def post_reserve():
     """Reserve a machine and lock RTC in escrow."""
     data = _get_json_object_or_empty()
 
-    agent_id       = _required_string_value(data, "agent_id")
-    machine_id     = _required_string_value(data, "machine_id")
+    agent_id       = _required_string_value(data, "agent_id", max_length=128)
+    machine_id     = _required_string_value(data, "machine_id", max_length=128)
     duration_hours = data.get("duration_hours")
     rtc_amount     = data.get("rtc_amount")
 
