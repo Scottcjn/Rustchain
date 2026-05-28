@@ -308,7 +308,18 @@ class SecureFounderWallet:
                 else:
                     resp = requests.post(url, json=data, verify=VERIFY_SSL, timeout=timeout, allow_redirects=False)
                 
-                if resp.is_redirect:
+                is_redirect = False
+                if hasattr(resp, "is_redirect"):
+                    val = resp.is_redirect
+                    if isinstance(val, bool):
+                        is_redirect = val
+                    elif hasattr(resp, "status_code"):
+                        try:
+                            is_redirect = int(resp.status_code) in (301, 302, 303, 307, 308)
+                        except (ValueError, TypeError):
+                            pass
+
+                if is_redirect:
                     location = resp.headers.get("Location", "unknown")
                     return None, f"API redirected: HTTP {resp.status_code} to {location}"
 

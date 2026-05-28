@@ -18,6 +18,11 @@ from pathlib import Path
 wallet_dir = Path(__file__).parent.parent / "wallet"
 sys.path.insert(0, str(wallet_dir))
 
+from unittest.mock import MagicMock
+sys.modules['tkinter'] = MagicMock()
+sys.modules['tkinter.messagebox'] = MagicMock()
+sys.modules['tkinter.ttk'] = MagicMock()
+
 from rustchain_wallet_secure import SecureFounderWallet
 
 
