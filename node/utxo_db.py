@@ -624,6 +624,14 @@ class UtxoDB:
             input_box_ids = [i['box_id'] for i in inputs]
             if len(input_box_ids) != len(set(input_box_ids)):
                 return abort()
+            claimed_by_tx_id = tx.get('tx_id') if isinstance(tx.get('tx_id'), str) else None
+            for box_id in input_box_ids:
+                claim = conn.execute(
+                    "SELECT tx_id FROM utxo_mempool_inputs WHERE box_id = ?",
+                    (box_id,),
+                ).fetchone()
+                if claim and claim['tx_id'] != claimed_by_tx_id:
+                    return abort()
             data_inputs = self._normalize_data_inputs(data_inputs)
             if data_inputs is None:
                 return abort()
