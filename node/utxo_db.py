@@ -857,8 +857,13 @@ class UtxoDB:
             if not rows:
                 return hashlib.sha256(b"empty").hexdigest()
 
-            # Mix element count into leaf hashes to bind tree to cardinality
-            count_bytes = len(rows).to_bytes(8, 'little')
+            # Mix element count into leaf hashes to bind tree to cardinality.
+            # FIX(Ivan-LB): use 'big'-endian to match all other int encodings
+            # in this module (compute_box_id, compute_tx_id, schema). Using
+            # 'little' here diverges from the stated "big-endian (network byte
+            # order)" invariant and produces a different root than any reference
+            # implementation, breaking cross-node consensus when fixed.
+            count_bytes = len(rows).to_bytes(8, 'big')
             hashes = []
             for row in rows:
                 leaf = {
