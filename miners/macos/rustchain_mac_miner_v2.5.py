@@ -16,6 +16,8 @@ import os
 import sys
 import json
 import time
+import base64
+import glob
 import hashlib
 import platform
 import subprocess
@@ -40,6 +42,13 @@ except ImportError:
     print("  Or: python3 -m pip install requests --user")
     sys.exit(1)
 
+try:
+    from nacl.signing import SigningKey
+    SIGNING_AVAILABLE = True
+except Exception:
+    SigningKey = None
+    SIGNING_AVAILABLE = False
+
 # Import fingerprint checks
 try:
     from fingerprint_checks import validate_all_checks
@@ -62,6 +71,86 @@ BLOCK_TIME = 600  # 10 minutes
 LOTTERY_CHECK_INTERVAL = 10
 
 ATTESTATION_TTL = 580  # Re-attest 20s before expiry
+
+
+def _rtc_address_from_public_key(public_key_hex):
+    return "RTC" + hashlib.sha256(bytes.fromhex(public_key_hex)).hexdigest()[:40]
+
+
+def _extract_pkcs8_ed25519_seed(der):
+    """Extract the 32-byte Ed25519 seed from a simple PKCS#8 DER blob."""
+    marker = b"\x04\x20"
+    idx = der.rfind(marker)
+    if idx != -1 and idx + 34 <= len(der):
+        return der[idx + 2:idx + 34]
+    if len(der) == 32:
+        return der
+    raise ValueError("unsupported Ed25519 private key format")
+
+
+def _wallet_private_seed(wallet_data):
+    raw_hex = wallet_data.get("private_key_hex")
+    if isinstance(raw_hex, str) and len(raw_hex.strip()) == 64:
+        return bytes.fromhex(raw_hex.strip())
+
+    der_b64 = wallet_data.get("private_key_pkcs8_der_b64")
+    if isinstance(der_b64, str) and der_b64.strip():
+        return _extract_pkcs8_ed25519_seed(base64.b64decode(der_b64))
+
+    pem = wallet_data.get("private_key_pkcs8_pem")
+    if isinstance(pem, str) and pem.strip():
+        body = "".join(line.strip() for line in pem.splitlines() if not line.startswith("-----"))
+        return _extract_pkcs8_ed25519_seed(base64.b64decode(body))
+
+    raise ValueError("wallet file does not contain a supported private key")
+
+
+def _find_wallet_file(wallet, explicit_path=None):
+    if explicit_path:
+        path = os.path.expanduser(explicit_path)
+        with open(path) as f:
+            return path, json.load(f)
+
+    env_path = os.environ.get("RUSTCHAIN_WALLET_FILE")
+    if env_path:
+        path = os.path.expanduser(env_path)
+        with open(path) as f:
+            return path, json.load(f)
+
+    seen = set()
+    for path in glob.glob(os.path.expanduser("~/.rustchain/wallets/*.json")):
+        if path in seen:
+            continue
+        seen.add(path)
+        try:
+            with open(path) as f:
+                data = json.load(f)
+        except Exception:
+            continue
+        if data.get("address") == wallet:
+            return path, data
+    return None, None
+
+
+def _load_wallet_signing_key(wallet, wallet_file=None):
+    if not SIGNING_AVAILABLE:
+        return None, None, None
+
+    path, data = _find_wallet_file(wallet, wallet_file)
+    if not data:
+        return None, None, None
+
+    seed = _wallet_private_seed(data)
+    signing_key = SigningKey(seed)
+    public_key_hex = signing_key.verify_key.encode().hex()
+    expected_pub = data.get("public_key_hex")
+    if expected_pub and expected_pub.lower() != public_key_hex:
+        raise ValueError("wallet public key does not match private key")
+    if data.get("address") and data.get("address") != _rtc_address_from_public_key(public_key_hex):
+        raise ValueError("wallet address does not match public key")
+    if wallet and wallet != _rtc_address_from_public_key(public_key_hex):
+        raise ValueError("configured wallet address does not match wallet file")
+    return signing_key, public_key_hex, path
 
 
 # ── Transport Layer (HTTPS direct or HTTP proxy) ────────────────────
@@ -368,7 +457,7 @@ def add_binding_entropy_aliases(fingerprint_data):
 # ── Miner Class ─────────────────────────────────────────────────────
 
 class MacMiner:
-    def __init__(self, miner_id=None, wallet=None, node_url=None, proxy_url=None):
+    def __init__(self, miner_id=None, wallet=None, wallet_file=None, node_url=None, proxy_url=None):
         self.hw_info = detect_hardware()
         self.fingerprint_data = {}
         self.fingerprint_passed = False
@@ -396,6 +485,17 @@ class MacMiner:
             family = self.hw_info['family'].lower().replace(' ', '_')
             self.wallet = "{}_{}RTC".format(family, wallet_hash)
 
+        self.signing_key = None
+        self.signing_pubkey_hex = None
+        self.wallet_file = None
+        try:
+            self.signing_key, self.signing_pubkey_hex, self.wallet_file = _load_wallet_signing_key(
+                self.wallet,
+                wallet_file=wallet_file,
+            )
+        except Exception as e:
+            print(warning("[SIGNING] Wallet signing key unavailable: {}".format(e)))
+
         # Set up transport (HTTPS direct or HTTP proxy)
         self.transport = NodeTransport(
             node_url or NODE_URL,
@@ -410,6 +510,10 @@ class MacMiner:
         self._last_system_time = time.monotonic()
 
         self._print_banner()
+        if self.signing_key:
+            print(success("[SIGNING] Ed25519 wallet key loaded for header signing"))
+        elif self.wallet.startswith("RTC"):
+            print(warning("[SIGNING] No Ed25519 wallet key loaded; header submissions may be rejected"))
 
         # Run initial fingerprint check
         if FINGERPRINT_AVAILABLE:
@@ -500,6 +604,11 @@ class MacMiner:
             return True
         return False
 
+    def _attestation_miner_id(self):
+        if self.signing_key and self.wallet.startswith("RTC"):
+            return self.wallet
+        return self.miner_id
+
     def attest(self):
         """Complete hardware attestation with fingerprint."""
         ts = datetime.now().strftime('%H:%M:%S')
@@ -531,10 +640,12 @@ class MacMiner:
         commitment = hashlib.sha256(
             (nonce + self.wallet + json.dumps(entropy, sort_keys=True)).encode()
         ).hexdigest()
+        attest_miner_id = self._attestation_miner_id()
 
         attestation = {
             "miner": self.wallet,
-            "miner_id": self.miner_id,
+            "miner_id": attest_miner_id,
+            "client_miner_id": self.miner_id,
             "nonce": nonce,
             "report": {
                 "nonce": nonce,
@@ -558,6 +669,16 @@ class MacMiner:
             "fingerprint": self.fingerprint_data,
             "miner_version": MINER_VERSION,
         }
+
+        if self.signing_key:
+            sign_message = "{}|{}|{}|{}".format(
+                attest_miner_id,
+                self.wallet,
+                nonce,
+                commitment,
+            )
+            attestation["public_key"] = self.signing_pubkey_hex
+            attestation["signature"] = self.signing_key.sign(sign_message.encode()).signature.hex()
 
         try:
             resp = self.transport.post("/attest/submit", json=attestation, timeout=30)
@@ -603,9 +724,14 @@ class MacMiner:
             chain_miner_id = self.wallet
             message = "slot:{}:miner:{}:ts:{}".format(slot, chain_miner_id, int(time.time()))
             message_hex = message.encode().hex()
-            sig_data = hashlib.sha512(
-                "{}{}".format(message, self.wallet).encode()
-            ).hexdigest()
+            if self.signing_key:
+                sig_data = self.signing_key.sign(message.encode()).signature.hex()
+                pubkey = self.signing_pubkey_hex
+            else:
+                sig_data = hashlib.sha512(
+                    "{}{}".format(message, self.wallet).encode()
+                ).hexdigest()
+                pubkey = self.wallet
 
             header_payload = {
                 "miner_id": chain_miner_id,
@@ -616,7 +742,7 @@ class MacMiner:
                 },
                 "message": message_hex,
                 "signature": sig_data,
-                "pubkey": self.wallet
+                "pubkey": pubkey
             }
 
             resp = self.transport.post(
@@ -719,6 +845,7 @@ if __name__ == "__main__":
                         version="rustchain-mac-miner {}".format(MINER_VERSION))
     parser.add_argument("--miner-id", "-m", help="Custom miner ID")
     parser.add_argument("--wallet", "-w", help="Custom wallet address")
+    parser.add_argument("--wallet-file", help="Wallet JSON containing the Ed25519 signing key")
     parser.add_argument("--node", "-n", default=NODE_URL, help="Node URL (default: {})".format(NODE_URL))
     parser.add_argument("--proxy", "-p", default=PROXY_URL,
                         help="HTTP proxy URL for legacy Macs (default: {})".format(PROXY_URL))
@@ -732,6 +859,7 @@ if __name__ == "__main__":
     miner = MacMiner(
         miner_id=args.miner_id,
         wallet=args.wallet,
+        wallet_file=args.wallet_file,
         node_url=node,
         proxy_url=proxy,
     )
