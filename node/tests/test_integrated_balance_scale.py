@@ -1,8 +1,11 @@
 import importlib.util
+from contextlib import closing
+import gc
 import os
 import sqlite3
 import sys
 import tempfile
+import types
 import unittest
 
 
@@ -31,6 +34,11 @@ class _NoopMetric:
 
 
 class TestIntegratedBalanceScale(unittest.TestCase):
+    @staticmethod
+    def _cleanup_tempdir(tmpdir):
+        gc.collect()
+        tmpdir.cleanup()
+
     @classmethod
     def setUpClass(cls):
         cls._import_tmp = tempfile.TemporaryDirectory()
@@ -42,16 +50,15 @@ class TestIntegratedBalanceScale(unittest.TestCase):
         if NODE_DIR not in sys.path:
             sys.path.insert(0, NODE_DIR)
 
-        import prometheus_client
+        prev_prometheus = sys.modules.get("prometheus_client")
+        fake_prometheus = types.ModuleType("prometheus_client")
+        fake_prometheus.Counter = _NoopMetric
+        fake_prometheus.Gauge = _NoopMetric
+        fake_prometheus.Histogram = _NoopMetric
+        fake_prometheus.generate_latest = lambda *args, **kwargs: b""
+        fake_prometheus.CONTENT_TYPE_LATEST = "text/plain"
+        sys.modules["prometheus_client"] = fake_prometheus
 
-        prev_metrics = (
-            prometheus_client.Counter,
-            prometheus_client.Gauge,
-            prometheus_client.Histogram,
-        )
-        prometheus_client.Counter = _NoopMetric
-        prometheus_client.Gauge = _NoopMetric
-        prometheus_client.Histogram = _NoopMetric
         spec = importlib.util.spec_from_file_location(
             "rustchain_integrated_balance_scale_test",
             MODULE_PATH,
@@ -60,11 +67,10 @@ class TestIntegratedBalanceScale(unittest.TestCase):
         try:
             spec.loader.exec_module(cls.mod)
         finally:
-            (
-                prometheus_client.Counter,
-                prometheus_client.Gauge,
-                prometheus_client.Histogram,
-            ) = prev_metrics
+            if prev_prometheus is None:
+                sys.modules.pop("prometheus_client", None)
+            else:
+                sys.modules["prometheus_client"] = prev_prometheus
 
     @classmethod
     def tearDownClass(cls):
@@ -76,7 +82,9 @@ class TestIntegratedBalanceScale(unittest.TestCase):
             os.environ.pop("RC_ADMIN_KEY", None)
         else:
             os.environ["RC_ADMIN_KEY"] = cls._prev_admin_key
-        cls._import_tmp.cleanup()
+        sys.modules.pop("rustchain_integrated_balance_scale_test", None)
+        cls.mod = None
+        cls._cleanup_tempdir(cls._import_tmp)
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -92,10 +100,10 @@ class TestIntegratedBalanceScale(unittest.TestCase):
         self.mod.DB_PATH = self._prev_module_db
         self.mod.UTXO_DUAL_WRITE = self._prev_utxo_dual_write
         self.mod.UtxoDB = self._prev_utxo_db
-        self._tmp.cleanup()
+        self._cleanup_tempdir(self._tmp)
 
     def _init_db(self):
-        with sqlite3.connect(self.db_path) as db:
+        with closing(sqlite3.connect(self.db_path)) as db:
             db.executescript(
                 """
                 CREATE TABLE epoch_state (
@@ -136,16 +144,17 @@ class TestIntegratedBalanceScale(unittest.TestCase):
                 "INSERT INTO balances (miner_id, amount_i64, balance_rtc) VALUES (?, 0, 0)",
                 ("miner-scale",),
             )
+            db.commit()
 
     def _stored_balance(self):
-        with sqlite3.connect(self.db_path) as db:
+        with closing(sqlite3.connect(self.db_path)) as db:
             return db.execute(
                 "SELECT amount_i64, balance_rtc FROM balances WHERE miner_id = ?",
                 ("miner-scale",),
             ).fetchone()
 
     def _add_epoch_miner(self, miner_id, weight):
-        with sqlite3.connect(self.db_path) as db:
+        with closing(sqlite3.connect(self.db_path)) as db:
             db.execute(
                 "INSERT INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)",
                 (7, miner_id, weight),
@@ -158,6 +167,7 @@ class TestIntegratedBalanceScale(unittest.TestCase):
                 "INSERT INTO balances (miner_id, amount_i64, balance_rtc) VALUES (?, 0, 0)",
                 (miner_id,),
             )
+            db.commit()
 
     def test_finalize_epoch_writes_account_rewards_in_micro_rtc(self):
         self.mod.finalize_epoch(7, 0.01, b"")
