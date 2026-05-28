@@ -258,6 +258,13 @@ def init_app(app, get_db_func):
         """Get a beacon agent's Coinbase wallet info."""
         if request.method == "OPTIONS":
             return _cors_json({"ok": True})
+        # SECURITY: Require admin key — exposes coinbase_address for any beacon agent
+        admin_key = os.environ.get("RC_ADMIN_KEY", "")
+        if not admin_key:
+            return _cors_json({"error": "RC_ADMIN_KEY not configured"}), 503
+        provided = request.headers.get("X-Admin-Key", "")
+        if not hmac.compare_digest(provided, admin_key):
+            return _cors_json({"error": "Unauthorized — admin key required"}), 401
 
         if len(agent_id) > 128:
             return _cors_json({"error": "agent_id too long"}, 400)
