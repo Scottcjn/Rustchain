@@ -1265,13 +1265,16 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
             return None, (jsonify({"ok": False, "error": "invalid_json"}), 400)
         return data, None
 
-    def string_field(data: Dict[str, Any], name: str, default: str = ""):
+    def string_field(data: Dict[str, Any], name: str, default: str = "", max_length: int = 0):
         value = data.get(name, default)
         if value is None:
             return default, None
         if not isinstance(value, str):
             return None, (jsonify({"ok": False, "error": f"{name} must be a string"}), 400)
-        return value.strip(), None
+        value = value.strip()
+        if max_length > 0 and len(value) > max_length:
+            return None, (jsonify({"ok": False, "error": f"{name}_too_long"}), 400)
+        return value, None
 
     def optional_string_field(data: Dict[str, Any], name: str):
         if name not in data or data.get(name) is None:
@@ -1333,16 +1336,16 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
         if error:
             return error
 
-        github_username, error = string_field(data, "github_username")
+        github_username, error = string_field(data, "github_username", max_length=128)
         if error:
             return error
-        wallet_address, error = string_field(data, "wallet_address")
+        wallet_address, error = string_field(data, "wallet_address", max_length=128)
         if error:
             return error
-        chain, error = string_field(data, "chain")
+        chain, error = string_field(data, "chain", max_length=32)
         if error:
             return error
-        tier, error = string_field(data, "tier")
+        tier, error = string_field(data, "tier", max_length=32)
         if error:
             return error
         github_token, error = optional_string_field(data, "github_token")
