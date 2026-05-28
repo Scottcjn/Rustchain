@@ -56,20 +56,9 @@ Earn RTC by contributing compute resources.
 
 ### Start Mining
 
-**Recommended: current `clawrtc` installer**
+**Recommended: manual Python miner**
 
-```bash
-# Install the miner wrapper and write config for your wallet ID
-npm install -g clawrtc
-clawrtc install --wallet YOUR_WALLET
-
-# Start the miner
-clawrtc start --service
-```
-
-`clawrtc status` and `clawrtc logs` are the supported management commands in current releases.
-
-**Alternative: manual Python miner**
+The published `clawrtc` npm package currently does not expose a command-line binary, so `npm install -g clawrtc` does not make a `clawrtc` command available. Until a wrapper package with a `bin` entry is published, use the supported Python miner flow directly:
 
 ```bash
 # Download miner scripts
@@ -84,13 +73,10 @@ python3 rustchain_miner.py --wallet YOUR_WALLET
 ### Manage Miner
 
 ```bash
-# Cross-platform wrapper
-clawrtc status
-clawrtc logs
-clawrtc stop
-clawrtc start --service
+# Stop the foreground miner with Ctrl+C, or run it under your preferred
+# process supervisor if you want it to keep running in the background.
 
-# Linux/macOS service manager fallback
+# Linux/macOS service manager fallback, when you have installed a service unit
 systemctl --user status rustchain-miner
 journalctl --user -u rustchain-miner -f
 ```
