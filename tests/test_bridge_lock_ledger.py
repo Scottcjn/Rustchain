@@ -1058,6 +1058,76 @@ class TestIntegration:
         
         conn.close()
 
+    def test_external_confirmation_rejects_lowered_required_threshold(self, setup_test_db, funded_miner):
+        """Bridge callbacks must not lower the stored confirmation threshold."""
+        bridge_api = setup_test_db["bridge_api"]
+        lock_ledger = setup_test_db["lock_ledger"]
+        conn = sqlite3.connect(setup_test_db["db_path"])
+
+        req = bridge_api.BridgeTransferRequest(
+            direction="deposit",
+            source_chain="rustchain",
+            dest_chain="solana",
+            source_address=funded_miner,
+            dest_address="4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXq",
+            amount_rtc=10.0
+        )
+        success, result = bridge_api.create_bridge_transfer(conn, req)
+        assert success is True
+        tx_hash = result["tx_hash"]
+
+        success, result = bridge_api.update_external_confirmation(
+            conn,
+            tx_hash,
+            external_tx_hash="ext_tx_threshold",
+            confirmations=1,
+            required_confirmations=1,
+        )
+
+        assert success is False
+        assert result["error"] == "required_confirmations cannot be lowered"
+        locks = lock_ledger.get_locks_by_miner(conn, funded_miner)
+        assert locks[0].status == "locked"
+        transfer = bridge_api.get_bridge_transfer_by_hash(conn, tx_hash)
+        assert transfer["status"] == "pending"
+        assert transfer["required_confirmations"] == bridge_api.BRIDGE_DEFAULT_CONFIRMATIONS
+        conn.close()
+
+    def test_external_confirmation_helper_rejects_unbounded_counts(self, setup_test_db, funded_miner):
+        """Core helper enforces bounds even when bypassing the HTTP parser."""
+        bridge_api = setup_test_db["bridge_api"]
+        lock_ledger = setup_test_db["lock_ledger"]
+        conn = sqlite3.connect(setup_test_db["db_path"])
+
+        req = bridge_api.BridgeTransferRequest(
+            direction="deposit",
+            source_chain="rustchain",
+            dest_chain="solana",
+            source_address=funded_miner,
+            dest_address="4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXq",
+            amount_rtc=10.0
+        )
+        success, result = bridge_api.create_bridge_transfer(conn, req)
+        assert success is True
+        tx_hash = result["tx_hash"]
+
+        success, result = bridge_api.update_external_confirmation(
+            conn,
+            tx_hash,
+            external_tx_hash="ext_tx_unbounded",
+            confirmations=bridge_api.BRIDGE_MAX_CONFIRMATIONS + 1,
+        )
+
+        assert success is False
+        assert result["error"] == (
+            f"confirmations must be between 0 and {bridge_api.BRIDGE_MAX_CONFIRMATIONS}"
+        )
+        locks = lock_ledger.get_locks_by_miner(conn, funded_miner)
+        assert locks[0].status == "locked"
+        transfer = bridge_api.get_bridge_transfer_by_hash(conn, tx_hash)
+        assert transfer["status"] == "pending"
+        conn.close()
+
     def test_void_releases_lock(self, setup_test_db, funded_miner):
         """Test that voiding a transfer releases the lock."""
         bridge_api = setup_test_db["bridge_api"]
