@@ -670,7 +670,8 @@ def register_routes(app: Flask, config: Dict, logger: logging.Logger,
             return jsonify({'ok': False, 'error': 'Wallet address required'}), 400
 
         wallet = wallet_value.strip()
-        ip = get_client_ip(request)
+        trust_proxy_headers = config.get('security', {}).get('trust_proxy_headers', False)
+        ip = get_client_ip(request, trust_proxy_headers=trust_proxy_headers)
         
         logger.info(f"Drip request: wallet={wallet}, ip={ip}")
         
@@ -848,11 +849,11 @@ faucet_up 1
             return metrics_text, 200, {'Content-Type': 'text/plain'}
 
 
-def get_client_ip(request) -> str:
-    """Get client IP address from request, handling proxies."""
-    if request.headers.get('X-Forwarded-For'):
+def get_client_ip(request, trust_proxy_headers: bool = False) -> str:
+    """Get client IP address, trusting proxy headers only when configured."""
+    if trust_proxy_headers and request.headers.get('X-Forwarded-For'):
         return request.headers.get('X-Forwarded-For').split(',')[0].strip()
-    if request.headers.get('X-Real-IP'):
+    if trust_proxy_headers and request.headers.get('X-Real-IP'):
         return request.headers.get('X-Real-IP')
     return request.remote_addr or '127.0.0.1'
 
