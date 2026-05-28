@@ -647,29 +647,47 @@ class TestSophiaAPI(unittest.TestCase):
             "miner_id": "hist_m",
             "fingerprint": _good_fingerprint(),
         })
-        resp = self.client.get("/sophia/history?page=1&per_page=10")
+        with patch.dict(os.environ, {"SOPHIA_ADMIN_KEY": self.admin_key}, clear=False):
+            resp = self.client.get(
+                "/sophia/history?page=1&per_page=10",
+                headers={"X-Admin-Key": self.admin_key},
+            )
         self.assertEqual(resp.status_code, 200)
         data = resp.get_json()
         self.assertIn("inspections", data)
         self.assertIn("total", data)
 
     def test_history_rejects_invalid_pagination(self):
-        resp = self.client.get("/sophia/history?page=abc")
-        self.assertEqual(resp.status_code, 400)
-        self.assertEqual(resp.get_json()["error"], "page must be an integer")
+        with patch.dict(os.environ, {"SOPHIA_ADMIN_KEY": self.admin_key}, clear=False):
+            resp = self.client.get(
+                "/sophia/history?page=abc",
+                headers={"X-Admin-Key": self.admin_key},
+            )
+            self.assertEqual(resp.status_code, 400)
+            self.assertEqual(resp.get_json()["error"], "page must be an integer")
 
-        resp = self.client.get("/sophia/history?per_page=abc")
-        self.assertEqual(resp.status_code, 400)
-        self.assertEqual(resp.get_json()["error"], "per_page must be an integer")
+            resp = self.client.get(
+                "/sophia/history?per_page=abc",
+                headers={"X-Admin-Key": self.admin_key},
+            )
+            self.assertEqual(resp.status_code, 400)
+            self.assertEqual(resp.get_json()["error"], "per_page must be an integer")
 
     def test_history_rejects_non_positive_pagination(self):
-        resp = self.client.get("/sophia/history?page=0")
-        self.assertEqual(resp.status_code, 400)
-        self.assertEqual(resp.get_json()["error"], "page must be positive")
+        with patch.dict(os.environ, {"SOPHIA_ADMIN_KEY": self.admin_key}, clear=False):
+            resp = self.client.get(
+                "/sophia/history?page=0",
+                headers={"X-Admin-Key": self.admin_key},
+            )
+            self.assertEqual(resp.status_code, 400)
+            self.assertEqual(resp.get_json()["error"], "page must be positive")
 
-        resp = self.client.get("/sophia/history?per_page=0")
-        self.assertEqual(resp.status_code, 400)
-        self.assertEqual(resp.get_json()["error"], "per_page must be positive")
+            resp = self.client.get(
+                "/sophia/history?per_page=0",
+                headers={"X-Admin-Key": self.admin_key},
+            )
+            self.assertEqual(resp.status_code, 400)
+            self.assertEqual(resp.get_json()["error"], "per_page must be positive")
 
     def test_history_caps_per_page(self):
         for idx in range(3):
@@ -678,11 +696,45 @@ class TestSophiaAPI(unittest.TestCase):
                 "fingerprint": _good_fingerprint(),
             })
 
-        resp = self.client.get("/sophia/history?page=1&per_page=500")
+        with patch.dict(os.environ, {"SOPHIA_ADMIN_KEY": self.admin_key}, clear=False):
+            resp = self.client.get(
+                "/sophia/history?page=1&per_page=500",
+                headers={"X-Admin-Key": self.admin_key},
+            )
         self.assertEqual(resp.status_code, 200)
         data = resp.get_json()
         self.assertEqual(data["page"], 1)
         self.assertEqual(data["per_page"], 100)
+
+    def test_history_requires_valid_admin_key(self):
+        self._post_inspection({
+            "miner_id": "hist_auth_m",
+            "fingerprint": _good_fingerprint(),
+        })
+
+        with patch.dict(os.environ, {"SOPHIA_ADMIN_KEY": self.admin_key}, clear=False):
+            missing = self.client.get("/sophia/history")
+            wrong = self.client.get(
+                "/sophia/history",
+                headers={"X-Admin-Key": "wrong-secret"},
+            )
+
+        self.assertEqual(missing.status_code, 401)
+        self.assertEqual(wrong.status_code, 401)
+        self.assertEqual(missing.get_json()["error"], "Unauthorized")
+        self.assertEqual(wrong.get_json()["error"], "Unauthorized")
+
+    def test_history_fails_closed_when_admin_key_unconfigured(self):
+        self._post_inspection({
+            "miner_id": "hist_unconfigured_m",
+            "fingerprint": _good_fingerprint(),
+        })
+
+        with patch.dict(os.environ, {}, clear=True):
+            resp = self.client.get("/sophia/history")
+
+        self.assertEqual(resp.status_code, 503)
+        self.assertEqual(resp.get_json()["error"], "SOPHIA_ADMIN_KEY not configured")
 
     def test_dashboard_endpoint(self):
         self._post_inspection({

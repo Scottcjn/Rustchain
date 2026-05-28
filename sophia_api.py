@@ -124,6 +124,10 @@ def miner_status(miner_id):
 @app.route("/sophia/history", methods=["GET"])
 def inspection_history():
     """Get paginated inspection history."""
+    auth_error = require_sophia_admin()
+    if auth_error:
+        return auth_error
+
     page, error = positive_int_query_arg("page", 1)
     if error:
         return jsonify({"error": error}), 400
