@@ -353,32 +353,37 @@ VMs are detected and receive **1 billionth** of normal rewards. Real hardware on
 
 ## Tokenomics
 
-**Total supply: 2²³ = 8,388,608 RTC.** That's it. Fixed forever.
+**Total supply: 8,192,000 RTC.** Fixed forever. Consensus-enforced cap.
 
-Compare to Bitcoin's 21,000,000 (≈2.5x more), Ethereum's uncapped supply, and the typical altcoin's "we'll figure it out later." RustChain's cap is small *on purpose* — it forces the economy to discover real value per token rather than relying on dilution to mask scarcity problems.
+Compare to Bitcoin's 21M (≈2.6x more), Ethereum's uncapped supply, and the typical altcoin's "we'll figure it out later." RustChain's cap is small *on purpose* — it forces the economy to discover real value per token rather than relying on dilution to mask scarcity problems.
 
-### Why 8,388,608?
+### Supply distribution
 
-| Reason | Effect |
-|--------|--------|
-| **Power-of-2 cap** | Clean, auditable, no fractional "founder reserves" math nightmare |
-| **Smaller than Bitcoin** | One RTC will eventually represent meaningful USD-equivalent value |
-| **Inflation-immune** | Cannot be "voted" higher by governance — the supply cap is consensus-enforced |
-| **DePIN-appropriate** | Real-world hardware has finite lifespan; a finite token cap mirrors that |
+| Zone | Allocation | RTC | Purpose |
+|------|-----------|-----|---------|
+| **Block Mining** | 94% | 7,700,480 | PoA validator rewards (paid to real vintage hardware) |
+| **Community Vault** | 3% | 245,760 | Airdrops, bounty program, grants |
+| **Dev Wallet** | 2.5% | 204,800 | Development funding |
+| **Foundation** | 0.5% | 40,960 | Governance & operations |
 
-### Where the supply goes
+Total premine: **6%** (491,520 RTC). Premine wallets have a 1-year on-chain unlock delay. No VC pre-sale. No private allocation. The early miners were `pawnshop_g4_115` and `dual-g4-125`.
 
-Three buckets, all on-chain and visible:
+### Emission schedule (halving)
 
-1. **Mining rewards** (~70% target) — paid to miners attesting from real vintage hardware, weighted by antiquity multiplier
-2. **Bounty program** (~20% target) — paid to contributors (PR merges, code reviews, bug reports, comparisons, tutorials, translations)
-3. **Founder reserves** (~10%) — Community Fund, Development Fund, Team & Bounties, Founders Pool (see `RustChain Wallet Security System` in `CLAUDE.md`)
+| Period | Block reward (per epoch) |
+|--------|--------------------------|
+| Genesis – Year 2 | 1.5 RTC |
+| Year 2 – Year 4 | 0.75 RTC |
+| Year 4 – Year 6 | 0.375 RTC |
+| Continues until minimum dust threshold | — |
 
-No VC pre-mine. No private sale. The early miners were `pawnshop_g4_115` and `dual-g4-125`.
+Block time: 600s (10 min). Epoch duration: 144 blocks (~24 hours).
+
+Halving fires every 2 years OR on an **Epoch Relic Event** milestone — whichever comes first. This keeps emissions tied to either time or community-meaningful milestones, not just arbitrary block counts.
 
 ### Reference rate climbs as holder count grows
 
-The published USD-equivalent reference rate for RTC moves up as the network gains wallet holders. **This means per-bounty RTC awards must scale DOWN inversely, to keep the *USD value paid per finding* stable** as the token appreciates.
+The published USD-equivalent reference rate for RTC moves up as the network gains wallet holders. **Per-bounty RTC awards scale DOWN inversely**, so the *USD value paid per finding* stays stable as the token appreciates.
 
 | Holder count | Reference rate | Bounty rate scale |
 |--------------|----------------|-------------------|
@@ -393,13 +398,23 @@ The published USD-equivalent reference rate for RTC moves up as the network gain
 - Medium: 25 → 17 RTC
 - Generic merged PR: 5 → 3 RTC
 
-**Fairness rules** (codified in [`feedback_rtc_rate_reduction_schedule.md`](https://github.com/Scottcjn/rustchain-bounties/issues/12458)):
+**Fairness rules** (codified at [rustchain-bounties#12458](https://github.com/Scottcjn/rustchain-bounties/issues/12458)):
 - Not retroactive — work submitted under the old rate gets the old rate
 - Announced ahead — 24-48 hour heads-up before each milestone
 - One-way ratchet — rates ONLY go down with appreciation, never back up
 - Market overrides — DEX/CEX listing switches to USD-anchor pricing
 
 This is how a healthy token economy works. Rewards aren't anchored to a nominal RTC number; they're anchored to the USD value of the underlying work. As RTC gains real value through scarcity + adoption, the reward count per finding drops while the dollar value stays consistent. **The math protects both the contributor and the program.**
+
+### Fees
+
+| Operation | Fee |
+|-----------|-----|
+| Attestation | Free |
+| Transfer | 0.0001 RTC |
+| Withdrawal to Ergo | 0.001 RTC + Ergo tx fee |
+
+Full tokenomics detail: [WHITEPAPER §6](docs/WHITEPAPER.md).
 
 ## Security
 
