@@ -34,7 +34,7 @@ BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 RATE_LIMIT_SECONDS = 5       # 1 request per N seconds per user
 
 if not BOT_TOKEN:
-    print("Error: TELEGRAM_BOT_TOKEN enviroment variable is required.")
+    print("Error: TELEGRAM_BOT_TOKEN environment variable is required.")
     sys.exit(1)
 
 # Simple in-memory rate limiter (per-user last-request timestamp)
@@ -226,7 +226,7 @@ async def cmd_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 # ---------------------------------------------------------------------------
 
 def main():
-    """Start the bot.  Requires TELEGRAM_BOT_TOKEN enviroment variable."""
+    """Start the bot.  Requires TELEGRAM_BOT_TOKEN environment variable."""
     app = Application.builder().token(BOT_TOKEN).build()
 
     # Register command handlers
