@@ -351,6 +351,56 @@ VMs are detected and receive **1 billionth** of normal rewards. Real hardware on
 
 ---
 
+## Tokenomics
+
+**Total supply: 2²³ = 8,388,608 RTC.** That's it. Fixed forever.
+
+Compare to Bitcoin's 21,000,000 (≈2.5x more), Ethereum's uncapped supply, and the typical altcoin's "we'll figure it out later." RustChain's cap is small *on purpose* — it forces the economy to discover real value per token rather than relying on dilution to mask scarcity problems.
+
+### Why 8,388,608?
+
+| Reason | Effect |
+|--------|--------|
+| **Power-of-2 cap** | Clean, auditable, no fractional "founder reserves" math nightmare |
+| **Smaller than Bitcoin** | One RTC will eventually represent meaningful USD-equivalent value |
+| **Inflation-immune** | Cannot be "voted" higher by governance — the supply cap is consensus-enforced |
+| **DePIN-appropriate** | Real-world hardware has finite lifespan; a finite token cap mirrors that |
+
+### Where the supply goes
+
+Three buckets, all on-chain and visible:
+
+1. **Mining rewards** (~70% target) — paid to miners attesting from real vintage hardware, weighted by antiquity multiplier
+2. **Bounty program** (~20% target) — paid to contributors (PR merges, code reviews, bug reports, comparisons, tutorials, translations)
+3. **Founder reserves** (~10%) — Community Fund, Development Fund, Team & Bounties, Founders Pool (see `RustChain Wallet Security System` in `CLAUDE.md`)
+
+No VC pre-mine. No private sale. The early miners were `pawnshop_g4_115` and `dual-g4-125`.
+
+### Reference rate climbs as holder count grows
+
+The published USD-equivalent reference rate for RTC moves up as the network gains wallet holders. **This means per-bounty RTC awards must scale DOWN inversely, to keep the *USD value paid per finding* stable** as the token appreciates.
+
+| Holder count | Reference rate | Bounty rate scale |
+|--------------|----------------|-------------------|
+| Today (~761 holders) | $0.10 | Current |
+| 1,000 holders | $0.15 | ~67% of current |
+| 2,000 holders | $0.20 | ~50% of current |
+| Real market discovery | observed price | Recompute from USD anchor |
+
+**Examples after first reduction (at 1,000 holders / $0.15 ref)**:
+- Critical bug bounty: 100 → 65 RTC
+- High bug bounty: 50 → 33 RTC
+- Medium: 25 → 17 RTC
+- Generic merged PR: 5 → 3 RTC
+
+**Fairness rules** (codified in [`feedback_rtc_rate_reduction_schedule.md`](https://github.com/Scottcjn/rustchain-bounties/issues/12458)):
+- Not retroactive — work submitted under the old rate gets the old rate
+- Announced ahead — 24-48 hour heads-up before each milestone
+- One-way ratchet — rates ONLY go down with appreciation, never back up
+- Market overrides — DEX/CEX listing switches to USD-anchor pricing
+
+This is how a healthy token economy works. Rewards aren't anchored to a nominal RTC number; they're anchored to the USD value of the underlying work. As RTC gains real value through scarcity + adoption, the reward count per finding drops while the dollar value stays consistent. **The math protects both the contributor and the program.**
+
 ## Security
 
 - **Hardware binding**: Each fingerprint bound to one wallet
