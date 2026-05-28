@@ -739,6 +739,22 @@ class TestUtxoDB(unittest.TestCase):
         self.assertFalse(self.db.mempool_check_double_spend(box['box_id']))
         self.assertEqual(self.db.mempool_get_block_candidates(), [])
 
+    def test_apply_allows_matching_mempool_candidate_with_defaults(self):
+        """Equivalent defaulted mempool fields should still match apply."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        box = self.db.get_unspent_for_address('alice')[0]
+        tx = {
+            'tx_id': 'candidate-defaults',
+            'inputs': [{'box_id': box['box_id']}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+        }
+
+        self.assertTrue(self.db.mempool_add(tx))
+        self.assertTrue(self.db.apply_transaction(tx, block_height=10))
+        self.assertEqual(self.db.get_balance('bob'), 100 * UNIT)
+        self.assertFalse(self.db.mempool_check_double_spend(box['box_id']))
+        self.assertEqual(self.db.mempool_get_block_candidates(), [])
+
     def test_apply_rejects_spoofed_matching_mempool_tx_id(self):
         """A caller must not bypass a mempool claim by reusing its tx_id."""
         self._apply_coinbase('alice', 100 * UNIT)

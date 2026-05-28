@@ -531,7 +531,8 @@ class UtxoDB:
                                   outputs: List[dict],
                                   data_inputs: List[str],
                                   fee: int,
-                                  timestamp: int) -> bool:
+                                  timestamp: int,
+                                  timestamp_explicit: bool) -> bool:
         """Return True only when a mempool claim is for this exact tx body."""
         row = conn.execute(
             "SELECT tx_data_json FROM utxo_mempool WHERE tx_id = ?",
@@ -553,6 +554,11 @@ class UtxoDB:
         )
         mempool_fee = mempool_tx.get("fee_nrtc", 0)
         mempool_timestamp = mempool_tx.get("timestamp")
+
+        if "timestamp" not in mempool_tx:
+            if timestamp_explicit:
+                return False
+            mempool_timestamp = timestamp
 
         if (
             mempool_tx_type is None
@@ -708,7 +714,7 @@ class UtxoDB:
                 if claim_tx_id not in verified_claim_ids:
                     if not self._mempool_claim_matches_tx(
                         conn, claim_tx_id, tx_type, inputs, outputs,
-                        data_inputs, fee, ts
+                        data_inputs, fee, ts, "timestamp" in tx
                     ):
                         return abort()
                     verified_claim_ids.add(claim_tx_id)
