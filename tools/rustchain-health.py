@@ -109,7 +109,7 @@ def check_health(base: str, timeout: int) -> Dict[str, Any]:
         result["error"] = str(data)
     return result
 
-def check_epoch(base: str, timeout: int) -> Dict[str, Any]:
+def check_epoch(base: str, timeout: int) -> Dict[str, Any]:-> Dict[str, Any]:
     ok, data, ms = fetch(f"{base}/epoch", timeout)
     result: Dict[str, Any] = {"reachable": ok, "latency_ms": round(ms, 1)}
     if ok and isinstance(data, dict):
