@@ -144,6 +144,21 @@ class TestIntegratedBalanceScale(unittest.TestCase):
                 ("miner-scale",),
             ).fetchone()
 
+    def _add_epoch_miner(self, miner_id, weight):
+        with sqlite3.connect(self.db_path) as db:
+            db.execute(
+                "INSERT INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)",
+                (7, miner_id, weight),
+            )
+            db.execute(
+                "INSERT INTO miner_attest_recent (miner, fingerprint_checks_json) VALUES (?, ?)",
+                (miner_id, "{}"),
+            )
+            db.execute(
+                "INSERT INTO balances (miner_id, amount_i64, balance_rtc) VALUES (?, 0, 0)",
+                (miner_id,),
+            )
+
     def test_finalize_epoch_writes_account_rewards_in_micro_rtc(self):
         self.mod.finalize_epoch(7, 0.01, b"")
 
@@ -175,6 +190,60 @@ class TestIntegratedBalanceScale(unittest.TestCase):
         self.assertEqual(calls[0][1]["outputs"][0]["value_nrtc"], 144_000_000)
         self.assertEqual(calls[0][1]["outputs"][0]["value_nrtc"], int(1.44 * self.mod.UTXO_UNIT))
         self.assertTrue(calls[0][3])
+
+    def test_finalize_epoch_passes_row_connection_to_utxo_db(self):
+        calls = []
+
+        class RowCheckingUtxoDB:
+            def __init__(self, db_path):
+                self.db_path = db_path
+
+            def apply_transaction(self, tx, height, conn=None):
+                calls.append(conn.row_factory if conn is not None else None)
+                return conn is not None and conn.row_factory is sqlite3.Row
+
+        self.mod.UTXO_DUAL_WRITE = True
+        self.mod.UtxoDB = RowCheckingUtxoDB
+
+        self.mod.finalize_epoch(7, 0.01, b"")
+
+        self.assertEqual(calls, [sqlite3.Row])
+
+    def test_finalize_epoch_batches_multi_miner_utxo_rewards(self):
+        self._add_epoch_miner("miner-scale-2", 1.0)
+        calls = []
+        seen_heights = set()
+
+        class HeightCheckingUtxoDB:
+            def __init__(self, db_path):
+                self.db_path = db_path
+
+            def apply_transaction(self, tx, height, conn=None):
+                if height in seen_heights:
+                    return False
+                seen_heights.add(height)
+                calls.append((tx, height, conn is not None))
+                return True
+
+        self.mod.UTXO_DUAL_WRITE = True
+        self.mod.UtxoDB = HeightCheckingUtxoDB
+
+        self.mod.finalize_epoch(7, 0.01, b"")
+
+        self.assertEqual(len(calls), 1)
+        tx, height, had_conn = calls[0]
+        self.assertTrue(had_conn)
+        self.assertEqual(height, 7 * self.mod.EPOCH_SLOTS)
+        self.assertEqual(tx["tx_type"], "mining_reward")
+        self.assertEqual(tx["inputs"], [])
+        self.assertEqual(
+            sorted(out["address"] for out in tx["outputs"]),
+            ["miner-scale", "miner-scale-2"],
+        )
+        self.assertEqual(
+            sorted(out["value_nrtc"] for out in tx["outputs"]),
+            [72_000_000, 72_000_000],
+        )
 
 
 if __name__ == "__main__":

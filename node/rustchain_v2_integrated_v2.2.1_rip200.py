@@ -44,9 +44,10 @@ except Exception as e:
 # UTXO Layer (Phase 1 — dual-write alongside account model)
 UTXO_DUAL_WRITE = os.environ.get("UTXO_DUAL_WRITE", "0") == "1"
 try:
-    from utxo_db import UtxoDB
+    from utxo_db import UtxoDB, MAX_OUTPUTS as UTXO_MAX_OUTPUTS
     HAVE_UTXO = True
 except ImportError:
+    UTXO_MAX_OUTPUTS = 100
     HAVE_UTXO = False
     if UTXO_DUAL_WRITE:
         print("[WARN] utxo_db.py not found but UTXO_DUAL_WRITE=1 — disabling")
@@ -3481,6 +3482,7 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
     from decimal import Decimal, ROUND_DOWN
 
     with closing(sqlite3.connect(DB_PATH)) as conn:
+        conn.row_factory = sqlite3.Row
         c = conn.cursor()
 
         # REPLAY PROTECTION: Check if epoch already settled
@@ -3579,6 +3581,7 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
         # ATOMIC TRANSACTION: Wrap all updates in explicit transaction
         try:
             c.execute("BEGIN TRANSACTION")
+            utxo_reward_outputs = []
 
             # Distribute rewards with precision
             for pk, weight in miners:
@@ -3596,26 +3599,43 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
                     (amount_i64, amount_i64, pk)
                 )
 
-                # Sync to UTXO layer only when the dual-write feature is enabled.
-                # A rejected UTXO write must abort the surrounding account-model
-                # settlement or the two ledgers diverge while the epoch is marked
-                # settled.
                 if UTXO_DUAL_WRITE:
+                    utxo_reward_outputs.append({
+                        "address": pk,
+                        "value_nrtc": amount_nrtc,
+                    })
+                # Update metrics with decimal value for accuracy
+                balance_gauge.labels(miner_pk=pk).set(float(amount_decimal))
+
+            # Sync to UTXO layer only when the dual-write feature is enabled.
+            # The UTXO layer permits one mining_reward transaction per block
+            # height, so epoch rewards must be batched instead of written as one
+            # mint transaction per miner at the same height.
+            if UTXO_DUAL_WRITE and utxo_reward_outputs:
+                max_outputs = max(1, int(UTXO_MAX_OUTPUTS))
+                reward_batches = [
+                    utxo_reward_outputs[i:i + max_outputs]
+                    for i in range(0, len(utxo_reward_outputs), max_outputs)
+                ]
+                if len(reward_batches) > EPOCH_SLOTS:
+                    raise RuntimeError(
+                        "UTXO reward settlement exceeds epoch mint capacity"
+                    )
+                for batch_index, outputs in enumerate(reward_batches):
                     utxo_tx = {
                         "tx_type": "mining_reward",
                         "inputs": [],
-                        "outputs": [{"address": pk, "value_nrtc": amount_nrtc}],
+                        "outputs": outputs,
                         "_allow_minting": True
                     }
                     utxo_ok = UtxoDB(DB_PATH).apply_transaction(
-                        utxo_tx, epoch * 144, conn=conn
+                        utxo_tx, epoch * EPOCH_SLOTS + batch_index, conn=conn
                     )
                     if not utxo_ok:
                         raise RuntimeError(
-                            f"UTXO reward settlement failed for {pk[:20]}..."
+                            "UTXO reward settlement failed for "
+                            f"batch {batch_index + 1}/{len(reward_batches)}"
                         )
-                # Update metrics with decimal value for accuracy
-                balance_gauge.labels(miner_pk=pk).set(float(amount_decimal))
 
             # Mark epoch as settled - use UPDATE with WHERE settled=0 to prevent race
             result = c.execute(
