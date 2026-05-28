@@ -105,3 +105,8 @@ def test_bloom_filter_matches_watched_items_and_round_trips():
 
     restored = BloomFilter.from_hex(bloom.to_hex(), size_bits=256, hash_count=5)
     assert "RTC-wallet-address" in restored
+
+
+def test_bloom_filter_rejects_oversized_serialized_bits():
+    with pytest.raises(ValueError, match="exceeds configured size"):
+        BloomFilter.from_hex("ffff", size_bits=8, hash_count=1)
