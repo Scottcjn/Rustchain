@@ -972,13 +972,18 @@ def register_sophia_governor_endpoints(app, db_path: str | None = None) -> None:
     @app.route("/sophia/governor/recent", methods=["GET"])
     def sophia_governor_recent():
         try:
-            limit = _parse_recent_limit(request.args.get("limit"))
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
-        return jsonify({
-            "ok": True,
-            "events": get_recent_governor_events(db_path=db, limit=limit),
-        })
+            if not _is_admin(request):
+                return jsonify({"error": "Unauthorized -- admin key required"}), 401
+            try:
+                limit = _parse_recent_limit(request.args.get("limit"))
+            except ValueError as exc:
+                return jsonify({"error": str(exc)}), 400
+            return jsonify({
+                "ok": True,
+                "events": get_recent_governor_events(db_path=db, limit=limit),
+            })
+        except Exception as e:
+            return jsonify({"error": f"Internal error: {str(e)}"}), 500
 
     @app.route("/sophia/governor/review", methods=["POST"])
     def sophia_governor_review():
