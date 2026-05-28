@@ -1986,10 +1986,32 @@ def _has_powerpc_simd_evidence(fingerprint: dict) -> bool:
 
 
 def _has_powerpc_cache_profile(fingerprint: dict) -> bool:
+    """Verify cache fingerprint is consistent with a PowerPC machine.
+
+    Looks for an explicit PowerPC arch tag in EITHER `cache_timing.data.arch`
+    (legacy fingerprint format) OR `simd_identity.data.arch` (v3 format —
+    POWER8 reports `arch="ppc64le"` there, not in cache_timing). Falls back
+    to a ratio-based heuristic for fingerprints that don't expose arch at all.
+
+    POWER8 specifically reports very flat L1/L2/L3 timings (~445ns each — huge
+    unified caches + PSE prefetch dominate latency) so the ratio thresholds
+    designed for x86/ARM hierarchies reject genuine POWER8 silicon. The arch
+    tag is a stronger signal than ratio in this case; if a miner claims and
+    proves PowerPC (PowerPC SIMD evidence already passed upstream — see
+    `_has_powerpc_simd_evidence`), trust the explicit arch label.
+    """
     cache_data = _fingerprint_check_data(fingerprint, "cache_timing")
     arch_hint = str(cache_data.get("arch") or cache_data.get("architecture") or "").lower()
     if "powerpc" in arch_hint or "ppc" in arch_hint:
         return True
+
+    # v3 fingerprint_checks.py places the arch label in simd_identity, not
+    # cache_timing. Accept either source.
+    simd_data = _fingerprint_check_data(fingerprint, "simd_identity")
+    simd_arch = str(simd_data.get("arch") or simd_data.get("architecture") or "").lower()
+    if "powerpc" in simd_arch or "ppc" in simd_arch:
+        return True
+
     l2_l1_ratio = float(cache_data.get("l2_l1_ratio", 0.0) or 0.0)
     l3_l2_ratio = float(cache_data.get("l3_l2_ratio", 0.0) or 0.0)
     hierarchy_ratio = float(cache_data.get("hierarchy_ratio", 0.0) or 0.0)
