@@ -6488,10 +6488,19 @@ def api_miners():
                 "antiquity_multiplier": mult
             })
     
+    epoch = current_slot() // 144
+    try:
+        c = sqlite3.connect(DB_PATH)
+        enrolled = c.execute("SELECT COUNT(*) FROM epoch_enroll WHERE epoch = ?", (epoch,)).fetchone()[0]
+        c.close()
+    except Exception:
+        enrolled = 0
+
     response = jsonify({
         "miners": miners,
         "pagination": {
             "total": total_count,
+            "total_enrolled": enrolled,
             "limit": limit,
             "offset": offset,
             "count": len(miners)
