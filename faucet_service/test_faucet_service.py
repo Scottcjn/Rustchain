@@ -600,27 +600,84 @@ class TestFlaskApp(unittest.TestCase):
         self.assertIn('faucet_amount_total 0.5', metrics)
         self.assertIn('faucet_up 1', metrics)
     
-    def test_client_ip_detection(self):
-        """Test client IP detection with headers."""
-        from flask import Flask
-        
+    def test_client_ip_detection_ignores_forwarded_headers_by_default(self):
+        """Untrusted clients cannot spoof rate-limit identity with proxy headers."""
+        with self.app.test_request_context(
+            '/',
+            headers={'X-Forwarded-For': '1.2.3.4, 5.6.7.8', 'X-Real-IP': '9.10.11.12'},
+            environ_base={'REMOTE_ADDR': '127.0.0.1'},
+        ):
+            from flask import request
+            ip = get_client_ip(request)
+            self.assertEqual(ip, '127.0.0.1')
+
+    def test_client_ip_detection_can_trust_proxy_headers_when_configured(self):
+        """Proxy deployments can explicitly opt in to forwarded client IPs."""
         # Test X-Forwarded-For
         with self.app.test_request_context('/', headers={'X-Forwarded-For': '1.2.3.4, 5.6.7.8'}):
             from flask import request
-            ip = get_client_ip(request)
+            ip = get_client_ip(request, trust_proxy_headers=True)
             self.assertEqual(ip, '1.2.3.4')
-        
+
         # Test X-Real-IP
         with self.app.test_request_context('/', headers={'X-Real-IP': '9.10.11.12'}):
             from flask import request
-            ip = get_client_ip(request)
+            ip = get_client_ip(request, trust_proxy_headers=True)
             self.assertEqual(ip, '9.10.11.12')
-        
+
         # Test remote_addr fallback
         with self.app.test_request_context('/', environ_base={'REMOTE_ADDR': '127.0.0.1'}):
             from flask import request
             ip = get_client_ip(request)
             self.assertEqual(ip, '127.0.0.1')
+
+    def test_drip_rate_limit_ignores_spoofed_forwarded_for_by_default(self):
+        """Changing X-Forwarded-For should not bypass the default IP+wallet bucket."""
+        wallet = '0x9683744B6b94F2b0966aBDb8C6BdD9805d207c6E'
+
+        first = self.client.post(
+            '/faucet/drip',
+            json={'wallet': wallet},
+            headers={'X-Forwarded-For': '1.2.3.4'},
+            content_type='application/json',
+            environ_base={'REMOTE_ADDR': '203.0.113.9'},
+        )
+        second = self.client.post(
+            '/faucet/drip',
+            json={'wallet': wallet},
+            headers={'X-Forwarded-For': '5.6.7.8'},
+            content_type='application/json',
+            environ_base={'REMOTE_ADDR': '203.0.113.9'},
+        )
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 429)
+
+    def test_drip_can_trust_forwarded_for_when_configured(self):
+        """Configured proxy deployments can keep existing forwarded-IP behavior."""
+        self.config['security']['trust_proxy_headers'] = True
+        app = create_app(self.config)
+        client = app.test_client()
+        wallet_one = '0x9683744B6b94F2b0966aBDb8C6BdD9805d207c6E'
+        wallet_two = '0x1234567890abcdef1234567890abcdef12345678'
+
+        first = client.post(
+            '/faucet/drip',
+            json={'wallet': wallet_one},
+            headers={'X-Forwarded-For': '1.2.3.4'},
+            content_type='application/json',
+            environ_base={'REMOTE_ADDR': '203.0.113.9'},
+        )
+        second = client.post(
+            '/faucet/drip',
+            json={'wallet': wallet_two},
+            headers={'X-Forwarded-For': '5.6.7.8'},
+            content_type='application/json',
+            environ_base={'REMOTE_ADDR': '203.0.113.9'},
+        )
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
 
 
 class TestIntegration(unittest.TestCase):
