@@ -144,6 +144,10 @@ def inspection_history():
 @app.route("/sophia/dashboard", methods=["GET"])
 def dashboard():
     """Admin dashboard: aggregate stats + spot-check queue (CAUTIOUS/SUSPICIOUS)."""
+    auth_error = require_sophia_admin()
+    if auth_error:
+        return auth_error
+
     conn = get_connection()
     try:
         stats = get_dashboard_stats(conn)
