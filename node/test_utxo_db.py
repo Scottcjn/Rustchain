@@ -695,6 +695,50 @@ class TestUtxoDB(unittest.TestCase):
             self.db.mempool_check_double_spend(boxes[0]['box_id'])
         )
 
+    def test_apply_rejects_input_claimed_by_other_mempool_tx(self):
+        """Direct/block spends must not override another pending mempool claim."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        box = self.db.get_unspent_for_address('alice')[0]
+
+        mempool_tx = {
+            'tx_id': 'pending-claim',
+            'inputs': [{'box_id': box['box_id']}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+        }
+        self.assertTrue(self.db.mempool_add(mempool_tx))
+
+        competing_tx = {
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': box['box_id']}],
+            'outputs': [{'address': 'carol', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+            'timestamp': int(time.time()),
+        }
+
+        self.assertFalse(self.db.apply_transaction(competing_tx, block_height=10))
+        self.assertEqual(self.db.get_balance('carol'), 0)
+        self.assertTrue(self.db.mempool_check_double_spend(box['box_id']))
+
+    def test_apply_allows_matching_mempool_candidate(self):
+        """Mining the same mempool tx_id should still spend and evict it."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        box = self.db.get_unspent_for_address('alice')[0]
+        tx = {
+            'tx_id': 'candidate-claim',
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': box['box_id']}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+            'timestamp': int(time.time()),
+        }
+
+        self.assertTrue(self.db.mempool_add(tx))
+        self.assertTrue(self.db.apply_transaction(tx, block_height=10))
+        self.assertEqual(self.db.get_balance('bob'), 100 * UNIT)
+        self.assertFalse(self.db.mempool_check_double_spend(box['box_id']))
+        self.assertEqual(self.db.mempool_get_block_candidates(), [])
+
     def test_mempool_rejects_malformed_inputs_without_locking(self):
         self._apply_coinbase('alice', 100 * UNIT)
 
@@ -872,9 +916,9 @@ class TestUtxoDB(unittest.TestCase):
     def test_mempool_block_candidates_drop_spent_inputs(self):
         """Block candidates must not include txs whose inputs were confirmed.
 
-        A mempool transaction can be invalidated by a direct UTXO transfer path
-        that confirms the same input first. The stale mempool entry must not keep
-        returning to block producers until expiry.
+        Stale mempool entries can exist after a restart, prior bug, or
+        manual state repair. They must not keep returning to block producers
+        until expiry.
         """
         self._apply_coinbase('alice', 100 * UNIT, block_height=1)
         box = self.db.get_unspent_for_address('alice')[0]
@@ -887,13 +931,15 @@ class TestUtxoDB(unittest.TestCase):
             'fee_nrtc': 1000,
         }))
 
-        ok = self.db.apply_transaction({
-            'tx_type': 'transfer',
-            'inputs': [{'box_id': box['box_id'], 'spending_proof': 'sig'}],
-            'outputs': [{'address': 'carol', 'value_nrtc': 100 * UNIT}],
-            'fee_nrtc': 0,
-        }, block_height=2)
-        self.assertTrue(ok)
+        conn = self.db._conn()
+        try:
+            conn.execute(
+                "UPDATE utxo_boxes SET spent_at = ?, spent_by_tx = ? WHERE box_id = ?",
+                (int(time.time()), "external-confirmed", box['box_id']),
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
         candidates = self.db.mempool_get_block_candidates()
         self.assertEqual(candidates, [])
