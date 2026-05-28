@@ -13,14 +13,13 @@ Admin-controlled Phase 1 (upgrade to trustless lock in Phase 2)
 
 import os
 import json
-import math
 import sqlite3
 import hashlib
 import hmac
-import math
 import time
 import threading
 import uuid
+from decimal import Decimal, InvalidOperation
 from functools import wraps
 from flask import Flask, Blueprint, request, jsonify
 
@@ -128,9 +127,24 @@ def log_event(conn, lock_id: str, event_type: str, actor: str = None, details: d
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
-def _amount_to_base(amount_float: float) -> int:
+def _amount_to_base(amount) -> int:
     """Convert human-readable RTC to base units (6 decimal places)."""
-    return int(round(amount_float * (10 ** RTC_DECIMALS)))
+    return int(Decimal(str(amount)) * (10 ** RTC_DECIMALS))
+
+
+def _parse_amount_base(raw_amount) -> int:
+    """Parse a bridge amount exactly into RTC base units."""
+    if isinstance(raw_amount, bool):
+        raise ValueError("invalid amount")
+    try:
+        amount = Decimal(str(raw_amount))
+    except (InvalidOperation, ValueError):
+        raise ValueError("invalid amount")
+    if not amount.is_finite():
+        raise ValueError("invalid amount")
+    if amount.as_tuple().exponent < -RTC_DECIMALS:
+        raise ValueError(f"amount supports at most {RTC_DECIMALS} decimal places")
+    return int(amount * (10 ** RTC_DECIMALS))
 
 
 def _amount_from_base(amount_int: int) -> float:
@@ -250,15 +264,10 @@ def lock_rtc():
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
-    raw_amount = data.get("amount", 0)
-    if isinstance(raw_amount, bool):
-        return jsonify({"error": "invalid amount"}), 400
     try:
-        amount_float = float(raw_amount)
-    except (TypeError, ValueError):
-        return jsonify({"error": "invalid amount"}), 400
-    if not math.isfinite(amount_float):
-        return jsonify({"error": "invalid amount"}), 400
+        amount_base = _parse_amount_base(data.get("amount", 0))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
     if not sender:
         return jsonify({"error": "sender_wallet is required"}), 400
@@ -268,9 +277,9 @@ def lock_rtc():
         return jsonify({"error": "target_wallet is required"}), 400
     if not tx_hash:
         return jsonify({"error": "tx_hash is required for bridge lock requests"}), 400
-    if amount_float < MIN_LOCK_AMOUNT:
+    if amount_base < _amount_to_base(MIN_LOCK_AMOUNT):
         return jsonify({"error": f"minimum lock amount is {MIN_LOCK_AMOUNT} RTC"}), 400
-    if amount_float > MAX_LOCK_AMOUNT:
+    if amount_base > _amount_to_base(MAX_LOCK_AMOUNT):
         return jsonify({"error": f"maximum lock amount is {MAX_LOCK_AMOUNT} RTC"}), 400
 
     # Validate target wallet format
@@ -279,7 +288,7 @@ def lock_rtc():
     if target_chain == CHAIN_SOLANA and len(target_wallet) < 32:
         return jsonify({"error": "Solana wallet must be a valid base58 address"}), 400
 
-    amount_base = _amount_to_base(amount_float)
+    amount_rtc = _amount_from_base(amount_base)
     now = int(time.time())
     expires_at = now + LOCK_EXPIRY_SECONDS
     lock_id = _generate_lock_id(sender, amount_base, target_chain, now)
@@ -352,7 +361,7 @@ def lock_rtc():
                 return jsonify({"error": "tx_hash already used for another bridge lock"}), 409
 
             log_event(conn, lock_id, "lock_created", actor=sender, details={
-                "amount": amount_float,
+                "amount": amount_rtc,
                 "target_chain": target_chain,
                 "target_wallet": target_wallet,
                 "tx_hash": tx_hash,
@@ -370,7 +379,7 @@ def lock_rtc():
         "lock_id": lock_id,
         "state": state,
         "sender_wallet": sender,
-        "amount_rtc": amount_float,
+        "amount_rtc": amount_rtc,
         "target_chain": target_chain,
         "target_wallet": target_wallet,
         "tx_hash": tx_hash,
@@ -379,7 +388,7 @@ def lock_rtc():
         "expires_at": expires_at,
         "message": (
             f"Lock {'confirmed' if state == STATE_CONFIRMED else 'requested'}. "
-            f"Admin will only mint {amount_float} wRTC on {target_chain} "
+            f"Admin will only mint {amount_rtc} wRTC on {target_chain} "
             f"to {target_wallet[:12]}... after proof confirmation."
         )
     }), 201
