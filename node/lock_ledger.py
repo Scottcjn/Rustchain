@@ -31,8 +31,8 @@ from enum import Enum
 # Import from main node module
 try:
     from rustchain_v2_integrated_v2_2_1_rip200 import (
-        DB_PATH, 
-        current_slot, 
+        DB_PATH,
+        current_slot,
         slot_to_epoch,
         UNIT
     )
@@ -85,15 +85,15 @@ class LockEntry:
     created_at: int
     released_by: Optional[str]
     release_tx_hash: Optional[str]
-    
+
     @property
     def amount_rtc(self) -> float:
         return self.amount_i64 / LOCK_UNIT
-    
+
     @property
     def is_unlocked(self) -> bool:
         return self.unlocked_at is not None
-    
+
     @property
     def time_until_unlock(self) -> int:
         if self.is_unlocked:
@@ -116,7 +116,7 @@ def create_lock(
 ) -> Tuple[bool, Dict[str, Any]]:
     """
     Create a new lock entry.
-    
+
     Args:
         db_conn: Database connection
         miner_id: Miner ID who owns the locked assets
@@ -125,13 +125,13 @@ def create_lock(
         unlock_at: Unix timestamp when lock can be released
         bridge_transfer_id: Optional reference to bridge_transfers.id
         created_at: Optional creation timestamp (defaults to now)
-    
+
     Returns:
         (success, result_dict)
     """
     cursor = db_conn.cursor()
     now = created_at or int(time.time())
-    
+
     # Validate lock type
     valid_types = {lt.value for lt in LockType}
     if lock_type not in valid_types:
@@ -139,15 +139,15 @@ def create_lock(
             "error": f"Invalid lock_type: {lock_type}",
             "valid_types": list(valid_types)
         }
-    
+
     # Validate amount
     if amount_i64 <= 0:
         return False, {"error": "amount_i64 must be positive"}
-    
+
     # Validate unlock time
     if unlock_at <= now:
         return False, {"error": "unlock_at must be in the future"}
-    
+
     try:
         # Deduct locked amount from miner's balance atomically.
         # This ensures locked funds are unavailable for withdrawal/transfer.
@@ -196,10 +196,10 @@ def create_lock(
             unlock_at,
             now
         ))
-        
+
         lock_id = cursor.lastrowid
         db_conn.commit()
-        
+
         return True, {
             "ok": True,
             "lock_id": lock_id,
@@ -210,7 +210,7 @@ def create_lock(
             "unlock_at": unlock_at,
             "status": "locked"
         }
-        
+
     except sqlite3.Error:
         db_conn.rollback()
         logger.exception("Failed to create lock")
@@ -227,37 +227,37 @@ def release_lock(
 ) -> Tuple[bool, Dict[str, Any]]:
     """
     Release a lock, crediting assets back to owner.
-    
+
     Args:
         db_conn: Database connection
         lock_id: Lock ledger entry ID
         released_by: Entity releasing the lock (admin/system)
         release_tx_hash: Optional transaction hash for the release
-    
+
     Returns:
         (success, result_dict)
     """
     cursor = db_conn.cursor()
     now = int(time.time())
-    
+
     # Find the lock
     row = cursor.execute("""
         SELECT id, miner_id, amount_i64, lock_type, status, unlock_at
         FROM lock_ledger
         WHERE id = ?
     """, (lock_id,)).fetchone()
-    
+
     if not row:
         return False, {"error": "Lock not found"}
-    
+
     lid, miner_id, amount_i64, lock_type, status, unlock_at = row
-    
+
     if status != "locked":
         return False, {
             "error": f"Lock already {status}",
             "hint": "Only locked entries can be released"
         }
-    
+
     # Check if unlock time has passed (unless admin override)
     if now < unlock_at and released_by != "admin":
         return False, {
@@ -265,27 +265,55 @@ def release_lock(
             "unlock_at": unlock_at,
             "seconds_remaining": unlock_at - now
         }
-    
-    try:
-        # Credit the locked amount back to the miner's available balance.
-        # This is the core fix: without this, locked funds are permanently lost.
-        cursor.execute(
-            "UPDATE balances SET amount_i64 = amount_i64 + ? WHERE miner_id = ?",
-            (amount_i64, miner_id)
-        )
 
-        # Update lock status
+    try:
+        # ── Atomic status check + credit + update ────────────────────
+        # UPDATE lock_ledger with status='locked' guard so concurrent
+        # release_lock() calls cannot both pass a stale `status !=
+        # "locked"` check and double-credit the miner.  When rowcount
+        # is 0 the lock was already released by another caller.
         cursor.execute("""
             UPDATE lock_ledger
             SET status = 'released',
                 unlocked_at = ?,
                 released_by = ?,
                 release_tx_hash = ?
-            WHERE id = ?
+            WHERE id = ? AND status = 'locked'
         """, (now, released_by, release_tx_hash, lock_id))
-        
+
+        if cursor.rowcount == 0:
+            # Lock was already released or forfeited by a concurrent call
+            db_conn.rollback()
+            return False, {
+                "error": "Lock already released or forfeited",
+                "lock_id": lock_id,
+                "hint": "Only locked entries can be released"
+            }
+
+        # Credit the locked amount back to the miner's available balance.
+        # The miner_id was validated by the SELECT above; if the credit
+        # affects zero rows the miner has no balance row (INSERT OR IGNORE
+        # was skipped earlier), so fail closed rather than silently losing
+        # funds.
+        cursor.execute(
+            "INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)",
+            (miner_id,)
+        )
+        cursor.execute(
+            "UPDATE balances SET amount_i64 = amount_i64 + ? WHERE miner_id = ?",
+            (amount_i64, miner_id)
+        )
+        if cursor.rowcount == 0:
+            db_conn.rollback()
+            return False, {
+                "error": "Failed to credit released balance",
+                "lock_id": lock_id,
+                "miner_id": miner_id,
+                "hint": "Balance row could not be created or updated"
+            }
+
         db_conn.commit()
-        
+
         return True, {
             "ok": True,
             "lock_id": lock_id,
@@ -295,7 +323,7 @@ def release_lock(
             "release_tx_hash": release_tx_hash,
             "released_at": now
         }
-        
+
     except sqlite3.Error:
         db_conn.rollback()
         logger.exception("Failed to release lock")
@@ -313,52 +341,62 @@ def forfeit_lock(
     """
     Forfeit a lock (penalty/slashing).
     Assets are not returned to owner.
-    
+
     Args:
         db_conn: Database connection
         lock_id: Lock ledger entry ID
         reason: Reason for forfeiture
         forfeited_by: Entity forfeiting the lock
-    
+
     Returns:
         (success, result_dict)
     """
     cursor = db_conn.cursor()
     now = int(time.time())
-    
+
     # Find the lock
     row = cursor.execute("""
         SELECT id, miner_id, amount_i64, status
         FROM lock_ledger
         WHERE id = ?
     """, (lock_id,)).fetchone()
-    
+
     if not row:
         return False, {"error": "Lock not found"}
-    
+
     lid, miner_id, amount_i64, status = row
-    
+
     if status != "locked":
         return False, {
             "error": f"Lock already {status}",
             "hint": "Only locked entries can be forfeited"
         }
-    
+
     try:
-        # Update lock status
+        # ── Atomic status guard ────────────────────────────────────
+        # Same pattern as release_lock: UPDATE with WHERE status='locked'
+        # prevents concurrent double-forfeit.
         cursor.execute("""
             UPDATE lock_ledger
             SET status = 'forfeited',
                 unlocked_at = ?,
                 released_by = ?
-            WHERE id = ?
+            WHERE id = ? AND status = 'locked'
         """, (now, forfeited_by, lock_id))
-        
+
+        if cursor.rowcount == 0:
+            db_conn.rollback()
+            return False, {
+                "error": "Lock already released or forfeited",
+                "lock_id": lock_id,
+                "hint": "Only locked entries can be forfeited"
+            }
+
         # Note: Forfeited assets remain in the protocol treasury
         # They are not credited back to the miner
-        
+
         db_conn.commit()
-        
+
         return True, {
             "ok": True,
             "lock_id": lock_id,
@@ -369,7 +407,7 @@ def forfeit_lock(
             "forfeited_at": now,
             "note": "Forfeited assets are retained by protocol"
         }
-        
+
     except sqlite3.Error:
         db_conn.rollback()
         logger.exception("Failed to forfeit lock")
@@ -384,19 +422,19 @@ def get_lock_by_id(
 ) -> Optional[LockEntry]:
     """Get a single lock entry by ID."""
     cursor = db_conn.cursor()
-    
+
     row = cursor.execute("""
-        SELECT 
+        SELECT
             id, bridge_transfer_id, miner_id, amount_i64, lock_type,
             locked_at, unlock_at, unlocked_at, status, created_at,
             released_by, release_tx_hash
         FROM lock_ledger
         WHERE id = ?
     """, (lock_id,)).fetchone()
-    
+
     if not row:
         return None
-    
+
     return LockEntry(
         id=row[0],
         bridge_transfer_id=row[1],
@@ -421,9 +459,9 @@ def get_locks_by_miner(
 ) -> List[LockEntry]:
     """Get all locks for a miner."""
     cursor = db_conn.cursor()
-    
+
     query = """
-        SELECT 
+        SELECT
             id, bridge_transfer_id, miner_id, amount_i64, lock_type,
             locked_at, unlock_at, unlocked_at, status, created_at,
             released_by, release_tx_hash
@@ -431,16 +469,16 @@ def get_locks_by_miner(
         WHERE miner_id = ?
     """
     params = [miner_id]
-    
+
     if status_filter:
         query += " AND status = ?"
         params.append(status_filter)
-    
+
     query += " ORDER BY id DESC LIMIT ?"
     params.append(min(limit, 500))
-    
+
     rows = cursor.execute(query, params).fetchall()
-    
+
     return [
         LockEntry(
             id=r[0],
@@ -467,20 +505,20 @@ def get_pending_unlocks(
 ) -> List[LockEntry]:
     """
     Get locks that are ready to be unlocked.
-    
+
     Args:
         db_conn: Database connection
         before_timestamp: Only return locks unlocking before this time
         limit: Maximum number of entries to return
-    
+
     Returns:
         List of LockEntry objects
     """
     cursor = db_conn.cursor()
     now = int(time.time())
-    
+
     query = """
-        SELECT 
+        SELECT
             id, bridge_transfer_id, miner_id, amount_i64, lock_type,
             locked_at, unlock_at, unlocked_at, status, created_at,
             released_by, release_tx_hash
@@ -489,16 +527,16 @@ def get_pending_unlocks(
           AND unlock_at <= ?
     """
     params = [now]
-    
+
     if before_timestamp is not None:
         query += " AND unlock_at <= ?"
         params.append(before_timestamp)
-    
+
     query += " ORDER BY unlock_at ASC LIMIT ?"
     params.append(min(limit, 500))
-    
+
     rows = cursor.execute(query, params).fetchall()
-    
+
     return [
         LockEntry(
             id=r[0],
@@ -524,22 +562,22 @@ def get_miner_locked_balance(
 ) -> Dict[str, Any]:
     """
     Get total locked balance for a miner.
-    
+
     Returns:
         Dict with total_locked_rtc, breakdown by lock_type, etc.
     """
     cursor = db_conn.cursor()
-    
+
     # Total locked
     total_row = cursor.execute("""
         SELECT COALESCE(SUM(amount_i64), 0), COUNT(*)
         FROM lock_ledger
         WHERE miner_id = ? AND status = 'locked'
     """, (miner_id,)).fetchone()
-    
+
     total_locked = total_row[0] if total_row else 0
     total_count = total_row[1] if total_row else 0
-    
+
     # Breakdown by type
     breakdown_rows = cursor.execute("""
         SELECT lock_type, SUM(amount_i64), COUNT(*)
@@ -547,12 +585,12 @@ def get_miner_locked_balance(
         WHERE miner_id = ? AND status = 'locked'
         GROUP BY lock_type
     """, (miner_id,)).fetchall()
-    
+
     breakdown = {
         r[0]: {"amount_rtc": r[1] / LOCK_UNIT, "count": r[2]}
         for r in breakdown_rows
     }
-    
+
     # Next unlock
     next_row = cursor.execute("""
         SELECT unlock_at, amount_i64
@@ -561,7 +599,7 @@ def get_miner_locked_balance(
         ORDER BY unlock_at ASC
         LIMIT 1
     """, (miner_id,)).fetchone()
-    
+
     next_unlock = None
     if next_row:
         next_unlock = {
@@ -569,7 +607,7 @@ def get_miner_locked_balance(
             "amount_rtc": next_row[1] / LOCK_UNIT,
             "seconds_until": max(0, next_row[0] - int(time.time()))
         }
-    
+
     return {
         "miner_id": miner_id,
         "total_locked_rtc": total_locked / LOCK_UNIT,
@@ -585,26 +623,26 @@ def auto_release_expired_locks(
 ) -> Dict[str, Any]:
     """
     Automatically release locks that have passed their unlock time.
-    
+
     This should be called periodically by a background worker.
-    
+
     Args:
         db_conn: Database connection
         batch_size: Maximum number of locks to release per call
-    
+
     Returns:
         Dict with released_count, total_amount_rtc, errors
     """
     cursor = db_conn.cursor()
     now = int(time.time())
-    
+
     # Get expired locks
     expired = get_pending_unlocks(db_conn, limit=batch_size)
-    
+
     released_count = 0
     total_amount = 0
     errors = []
-    
+
     for lock in expired:
         success, result = release_lock(
             db_conn,
@@ -612,7 +650,7 @@ def auto_release_expired_locks(
             released_by="auto_worker",
             release_tx_hash=None
         )
-        
+
         if success:
             released_count += 1
             total_amount += lock.amount_i64
@@ -621,7 +659,7 @@ def auto_release_expired_locks(
                 "lock_id": lock.id,
                 "error": result.get("error", "Unknown error")
             })
-    
+
     return {
         "released_count": released_count,
         "total_amount_rtc": total_amount / LOCK_UNIT,
@@ -683,7 +721,7 @@ def register_lock_ledger_routes(app):
         if value == "":
             return default, None
         return value, None
-    
+
     @app.route('/api/lock/miner/<miner_id>', methods=['GET'])
     def get_miner_locks(miner_id: str):
         """Get locks for a specific miner."""
@@ -691,15 +729,15 @@ def register_lock_ledger_routes(app):
         limit, error_response = parse_bounded_int_arg("limit", 100, 1, 500)
         if error_response is not None:
             return error_response
-        
+
         conn = sqlite3.connect(DB_PATH)
         try:
             if status == "summary":
                 result = get_miner_locked_balance(conn, miner_id)
                 return jsonify(result), 200
-            
+
             locks = get_locks_by_miner(conn, miner_id, status_filter=status, limit=limit)
-            
+
             return jsonify({
                 "ok": True,
                 "miner_id": miner_id,
@@ -719,7 +757,7 @@ def register_lock_ledger_routes(app):
             }), 200
         finally:
             conn.close()
-    
+
     @app.route('/api/lock/<int:lock_id>', methods=['GET'])
     def get_lock(lock_id: int):
         """Get a specific lock by ID."""
@@ -728,7 +766,7 @@ def register_lock_ledger_routes(app):
             lock = get_lock_by_id(conn, lock_id)
             if not lock:
                 return jsonify({"error": "Lock not found"}), 404
-            
+
             return jsonify({
                 "ok": True,
                 "lock": {
@@ -746,7 +784,7 @@ def register_lock_ledger_routes(app):
             }), 200
         finally:
             conn.close()
-    
+
     @app.route('/api/lock/pending-unlock', methods=['GET'])
     def get_pending_unlocks_endpoint():
         """Get locks ready to be released."""
@@ -756,11 +794,11 @@ def register_lock_ledger_routes(app):
         before_ts, error_response = parse_bounded_int_arg("before", None, 0, 4_102_444_800)
         if error_response is not None:
             return error_response
-        
+
         conn = sqlite3.connect(DB_PATH)
         try:
             locks = get_pending_unlocks(conn, before_timestamp=before_ts, limit=limit)
-            
+
             return jsonify({
                 "ok": True,
                 "count": len(locks),
@@ -778,7 +816,7 @@ def register_lock_ledger_routes(app):
             }), 200
         finally:
             conn.close()
-    
+
     @app.route('/api/lock/release', methods=['POST'])
     def release_lock_endpoint():
         """Admin: Release a lock."""
@@ -788,24 +826,24 @@ def register_lock_ledger_routes(app):
             return jsonify({"error": "RC_ADMIN_KEY not configured — admin endpoints disabled"}), 503
         if not hmac.compare_digest(admin_key, expected_key):
             return jsonify({"error": "Unauthorized - admin key required"}), 401
-        
+
         data, error_response = parse_json_object_body()
         if error_response is not None:
             return error_response
         if not data:
             return jsonify({"error": "Request body required"}), 400
-        
+
         lock_id, error_response = parse_lock_id(data)
         if error_response is not None:
             return error_response
         release_tx_hash, error_response = parse_optional_string(data, "release_tx_hash")
         if error_response is not None:
             return error_response
-        
+
         conn = sqlite3.connect(DB_PATH)
         try:
             success, result = release_lock(
-                conn, lock_id, 
+                conn, lock_id,
                 released_by="admin",
                 release_tx_hash=release_tx_hash
             )
@@ -815,7 +853,7 @@ def register_lock_ledger_routes(app):
                 return jsonify(result), 400
         finally:
             conn.close()
-    
+
     @app.route('/api/lock/forfeit', methods=['POST'])
     def forfeit_lock_endpoint():
         """Admin: Forfeit a lock (penalty)."""
@@ -825,20 +863,20 @@ def register_lock_ledger_routes(app):
             return jsonify({"error": "RC_ADMIN_KEY not configured — admin endpoints disabled"}), 503
         if not hmac.compare_digest(admin_key, expected_key):
             return jsonify({"error": "Unauthorized - admin key required"}), 401
-        
+
         data, error_response = parse_json_object_body()
         if error_response is not None:
             return error_response
         if not data:
             return jsonify({"error": "Request body required"}), 400
-        
+
         lock_id, error_response = parse_lock_id(data)
         if error_response is not None:
             return error_response
         reason, error_response = parse_optional_string(data, "reason", "admin_forfeit")
         if error_response is not None:
             return error_response
-        
+
         conn = sqlite3.connect(DB_PATH)
         try:
             success, result = forfeit_lock(
@@ -852,7 +890,7 @@ def register_lock_ledger_routes(app):
                 return jsonify(result), 400
         finally:
             conn.close()
-    
+
     @app.route('/api/lock/auto-release', methods=['POST'])
     def auto_release_endpoint():
         """Worker: Auto-release expired locks."""
@@ -866,7 +904,7 @@ def register_lock_ledger_routes(app):
         batch_size, error_response = parse_bounded_int_arg("batch_size", 100, 1, 500)
         if error_response is not None:
             return error_response
-        
+
         conn = sqlite3.connect(DB_PATH)
         try:
             result = auto_release_expired_locks(conn, batch_size=batch_size)
@@ -881,7 +919,7 @@ def register_lock_ledger_routes(app):
 
 def init_lock_ledger_schema(cursor_or_db_path=None):
     """Initialize lock_ledger table schema.
-    
+
     Args:
         cursor_or_db_path: Either a SQLite cursor object (for integration with main node)
                           or a database path string (for standalone usage)
