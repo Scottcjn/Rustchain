@@ -20,6 +20,7 @@ You need two things:
 
 - **A computer** -- literally any computer. Linux, macOS, Windows, Raspberry Pi, PowerPC
   Mac, even a SPARC workstation. If it runs Python, it can mine.
+- **macOS only:** Python 3 via Homebrew -- run `brew install python3` before the installer.
 - **An internet connection** -- your miner talks to the RustChain network to prove your
   hardware is real.
 
@@ -55,7 +56,7 @@ from the Windows miner bundle.
 **What this does:**
 
 1. Detects your operating system and CPU architecture
-2. Installs Python 3 if you do not have it (Linux only -- macOS/Windows users need Python
+2. Installs Python 3 if you do not have it (Linux only -- macOS users should run `brew install python3` first; Windows
    pre-installed)
 3. Downloads the miner script to `~/.rustchain/`
 4. Creates a Python virtual environment with dependencies
