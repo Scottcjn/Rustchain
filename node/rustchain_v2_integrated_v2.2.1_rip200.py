@@ -6581,7 +6581,10 @@ def api_nodes():
     try:
         with sqlite3.connect(DB_PATH) as conn:
             c = conn.cursor()
-            c.execute("SELECT node_id, wallet_address, url, name, registered_at, is_active FROM node_registry")
+            c.execute(
+                "SELECT node_id, wallet_address, url, name, registered_at, is_active"
+                " FROM node_registry LIMIT 200"
+            )
             for row in c.fetchall():
                 nodes.append({
                     "node_id": row[0],
