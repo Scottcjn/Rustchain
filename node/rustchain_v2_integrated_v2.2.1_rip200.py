@@ -6184,12 +6184,14 @@ def governance_vote():
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         _ensure_governance_tables(c)
+        conn.execute("BEGIN IMMEDIATE")
 
         proposal = c.execute(
             "SELECT * FROM governance_proposals WHERE id = ?",
             (proposal_id,),
         ).fetchone()
         if not proposal:
+            conn.rollback()
             return jsonify({"ok": False, "error": "proposal_not_found"}), 404
 
         status = _refresh_proposal_status(c, proposal)
@@ -6202,26 +6204,33 @@ def governance_vote():
             (proposal_id, wallet),
         ).fetchone()
         if already:
+            conn.rollback()
             return jsonify({"ok": False, "error": "already_voted"}), 409
 
         miner_active, multiplier, miner_reason = _get_active_miner_antiquity_multiplier(c, wallet)
         if not miner_active:
+            conn.rollback()
             return jsonify({"ok": False, "error": "inactive_miner", "reason": miner_reason}), 403
 
         base_balance_i64 = _balance_i64_for_wallet(c, wallet)
         base_balance_rtc = base_balance_i64 / 1_000_000.0
         if base_balance_rtc <= 0:
+            conn.rollback()
             return jsonify({"ok": False, "error": "no_balance"}), 403
 
         weight = base_balance_rtc * multiplier
-        c.execute(
-            """
-            INSERT INTO governance_votes
-            (proposal_id, voter_wallet, vote, weight, multiplier, base_balance_rtc, signature, public_key, nonce, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (proposal_id, wallet, vote, weight, multiplier, base_balance_rtc, signature, public_key, nonce, int(time.time())),
-        )
+        try:
+            c.execute(
+                """
+                INSERT INTO governance_votes
+                (proposal_id, voter_wallet, vote, weight, multiplier, base_balance_rtc, signature, public_key, nonce, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (proposal_id, wallet, vote, weight, multiplier, base_balance_rtc, signature, public_key, nonce, int(time.time())),
+            )
+        except sqlite3.IntegrityError:
+            conn.rollback()
+            return jsonify({"ok": False, "error": "already_voted"}), 409
 
         if vote == 'yes':
             c.execute("UPDATE governance_proposals SET yes_weight = yes_weight + ? WHERE id = ?", (weight, proposal_id))
