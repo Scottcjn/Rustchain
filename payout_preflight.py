@@ -26,6 +26,10 @@ def _is_rtc_address(value: str) -> bool:
     return bool(_RTC_ADDRESS_RE.fullmatch(value))
 
 
+def _is_bcn_address(value: str) -> bool:
+    return value.startswith("bcn_") and len(value) >= 8
+
+
 def _as_dict(payload: Any) -> Tuple[Optional[Dict[str, Any]], str]:
     if not isinstance(payload, dict):
         return None, "invalid_json_body"
@@ -110,7 +114,7 @@ def validate_wallet_transfer_signed(payload: Any) -> PreflightResult:
     if err:
         return PreflightResult(ok=False, error=err, details={})
 
-    required = ["from_address", "to_address", "amount_rtc", "nonce", "signature", "public_key"]
+    required = ["from_address", "to_address", "amount_rtc", "nonce", "signature"]
     missing = [k for k in required if k not in data or data.get(k) in (None, "")]
     if missing:
         return PreflightResult(ok=False, error="missing_required_fields", details={"missing": missing})
@@ -131,13 +135,20 @@ def validate_wallet_transfer_signed(payload: Any) -> PreflightResult:
         )
     if ierr:
         return PreflightResult(ok=False, error=ierr, details={})
+    fee_rtc, ferr = _safe_decimal(data.get("fee_rtc", 0))
+    if ferr:
+        return PreflightResult(ok=False, error=ferr, details={"field": "fee_rtc"})
+    if fee_rtc is None or fee_rtc < 0:
+        return PreflightResult(ok=False, error="fee_must_be_non_negative", details={})
 
-    if not _is_rtc_address(from_address):
+    if not (_is_rtc_address(from_address) or _is_bcn_address(from_address)):
         return PreflightResult(ok=False, error="invalid_from_address_format", details={})
-    if not _is_rtc_address(to_address):
+    if not (_is_rtc_address(to_address) or _is_bcn_address(to_address)):
         return PreflightResult(ok=False, error="invalid_to_address_format", details={})
     if from_address == to_address:
         return PreflightResult(ok=False, error="from_to_must_differ", details={})
+    if _is_rtc_address(from_address) and not data.get("public_key"):
+        return PreflightResult(ok=False, error="missing_required_fields", details={"missing": ["public_key"]})
 
     try:
         nonce_int = int(str(data.get("nonce")))
@@ -158,6 +169,7 @@ def validate_wallet_transfer_signed(payload: Any) -> PreflightResult:
             "to_address": to_address,
             "amount_rtc": float(amount_rtc),
             "amount_i64": amount_i64,
+            "fee_rtc": float(fee_rtc),
             "nonce": nonce_int,
             "chain_id": chain_id or None,
         },
