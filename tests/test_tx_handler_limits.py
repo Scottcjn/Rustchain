@@ -15,30 +15,51 @@ import pytest
 from flask import Flask
 from node.rustchain_tx_handler import TransactionPool, create_tx_api_routes
 
+_TEST_ADMIN_KEY = "test-admin-key-limits"
+
+
+class _AuthClient:
+    """Wraps Flask test client, auto-injecting the X-Admin-Key header."""
+    def __init__(self, client, key):
+        self._client = client
+        self._key = key
+
+    def get(self, *args, **kwargs):
+        headers = kwargs.pop("headers", {})
+        headers.setdefault("X-Admin-Key", self._key)
+        return self._client.get(*args, headers=headers, **kwargs)
+
+    def post(self, *args, **kwargs):
+        headers = kwargs.pop("headers", {})
+        headers.setdefault("X-Admin-Key", self._key)
+        return self._client.post(*args, headers=headers, **kwargs)
+
+
 @pytest.fixture
-def app_context():
+def app_context(monkeypatch):
     """Set up a test Flask app with an isolated TransactionPool database."""
+    monkeypatch.setenv("RC_ADMIN_KEY", _TEST_ADMIN_KEY)
     db_fd, db_path = tempfile.mkstemp()
     app = Flask(__name__)
     app.config['TESTING'] = True
-    
+
     pool = TransactionPool(db_path)
     create_tx_api_routes(app, pool)
-    
+
     # Seed some data for history tests
     with sqlite3.connect(db_path) as conn:
         conn.execute("INSERT INTO balances (wallet, balance_urtc) VALUES (?, ?)", ("test_addr", 1000000))
         for i in range(10):
             conn.execute(
-                """INSERT INTO transaction_history 
+                """INSERT INTO transaction_history
                    (tx_hash, from_addr, to_addr, amount_urtc, nonce, timestamp, signature, public_key, confirmed_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (f"hash_{i}", "test_addr", "recv_addr", 100, i, 1000, "sig", "pub", 2000 + i)
             )
-    
+
     client = app.test_client()
-    yield client
-    
+    yield _AuthClient(client, _TEST_ADMIN_KEY)
+
     os.close(db_fd)
     os.unlink(db_path)
 
