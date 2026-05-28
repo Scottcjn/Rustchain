@@ -4725,7 +4725,14 @@ def ingest_signed_header():
         return jsonify({"ok":False,"error":"invalid_json_body"}), 400
 
     miner_id = str(body.get("miner_id") or "").strip()
-    header   = body.get("header") or {}
+    header   = body.get("header")
+    if header is None:
+        header = {}
+    if not isinstance(header, dict):
+        return jsonify({"ok":False,"error":"invalid_header"}), 400
+    header_miner = str(header.get("miner") or header.get("miner_id") or "").strip()
+    if header_miner and header_miner != miner_id:
+        return jsonify({"ok":False,"error":"miner_header_mismatch"}), 400
     msg_hex  = str(body.get("message") or "").strip().lower()
     sig_hex  = str(body.get("signature") or "").strip().lower()
     inline_pk= str(body.get("pubkey") or "").strip().lower()
@@ -4800,6 +4807,17 @@ def ingest_signed_header():
             "submitted_slot": slot,
             "current_slot": expected_slot,
         }), 400
+
+    from rip_200_round_robin_1cpu1vote import check_eligibility_round_robin
+    eligibility = check_eligibility_round_robin(DB_PATH, miner_id, slot, int(time.time()))
+    if not eligibility.get("eligible"):
+        return jsonify({
+            "ok": False,
+            "error": "not_slot_producer",
+            "reason": eligibility.get("reason"),
+            "slot_producer": eligibility.get("slot_producer"),
+            "rotation_size": eligibility.get("rotation_size"),
+        }), 403
 
     # Update tip + metrics
     with sqlite3.connect(DB_PATH) as db:
