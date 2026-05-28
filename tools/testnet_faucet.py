@@ -114,6 +114,15 @@ def _strip_string_field(data: dict[str, Any], name: str, max_length: int = 0) ->
     return value or None, None
 
 
+def _client_ip(trust_proxy: bool = False) -> str:
+    if trust_proxy:
+        forwarded_for = request.headers.get("X-Forwarded-For", "")
+        first_forwarded = forwarded_for.split(",")[0].strip()
+        if first_forwarded:
+            return first_forwarded
+    return request.remote_addr or "unknown"
+
+
 def _sum_last_24h(conn: sqlite3.Connection, github_username: str | None, ip: str) -> float:
     since = (_utcnow() - timedelta(hours=24)).isoformat()
     if github_username:
@@ -179,6 +188,7 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
         "FAUCET_POOL_WALLET": os.getenv("FAUCET_POOL_WALLET", "faucet_pool"),
         "GITHUB_TOKEN": os.getenv("GITHUB_TOKEN", ""),
         "DRY_RUN": os.getenv("FAUCET_DRY_RUN", "1") == "1",
+        "TRUST_PROXY": os.getenv("FAUCET_TRUST_PROXY", "0") == "1",
     }
     if config:
         cfg.update(config)
@@ -200,7 +210,7 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
         github_username, error = _strip_string_field(data, "github_username", max_length=128)
         if error:
             return error
-        ip = request.headers.get("X-Forwarded-For", request.remote_addr or "unknown").split(",")[0].strip()
+        ip = _client_ip(bool(cfg.get("TRUST_PROXY")))
 
         if not wallet:
             return jsonify({"ok": False, "error": "wallet_required"}), 400
