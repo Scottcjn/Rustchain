@@ -739,6 +739,36 @@ class TestUtxoDB(unittest.TestCase):
         self.assertFalse(self.db.mempool_check_double_spend(box['box_id']))
         self.assertEqual(self.db.mempool_get_block_candidates(), [])
 
+    def test_apply_rejects_spoofed_matching_mempool_tx_id(self):
+        """A caller must not bypass a mempool claim by reusing its tx_id."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        box = self.db.get_unspent_for_address('alice')[0]
+
+        mempool_tx = {
+            'tx_id': 'victim_tx',
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': box['box_id']}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+            'timestamp': int(time.time()),
+        }
+        self.assertTrue(self.db.mempool_add(mempool_tx))
+
+        competing_tx = {
+            'tx_id': 'victim_tx',
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': box['box_id']}],
+            'outputs': [{'address': 'mallory', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+            'timestamp': mempool_tx['timestamp'],
+        }
+
+        self.assertFalse(self.db.apply_transaction(competing_tx, block_height=10))
+        self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
+        self.assertEqual(self.db.get_balance('bob'), 0)
+        self.assertEqual(self.db.get_balance('mallory'), 0)
+        self.assertTrue(self.db.mempool_check_double_spend(box['box_id']))
+
     def test_mempool_rejects_malformed_inputs_without_locking(self):
         self._apply_coinbase('alice', 100 * UNIT)
 
