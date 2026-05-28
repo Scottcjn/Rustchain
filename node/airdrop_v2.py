@@ -66,6 +66,8 @@ MIN_ETH_BALANCE_WEI = int(0.01 * 1e18)  # 0.01 ETH
 MIN_WALLET_AGE_DAYS = 7
 MIN_GITHUB_AGE_DAYS = 30
 GITHUB_USERNAME_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?$")
+MAX_BRIDGE_ADDRESS_LENGTH = 128
+MAX_BRIDGE_TX_LENGTH = 256
 
 # Airdrop allocation
 TOTAL_SOLANA_ALLOCATION = 30_000 * 1_000_000  # 30k wRTC (6 decimals)
@@ -950,6 +952,11 @@ class AirdropV2:
         Returns:
             (success, message, lock_record)
         """
+        if len(from_address) > MAX_BRIDGE_ADDRESS_LENGTH:
+            return False, "Source address too long", None
+        if len(to_address) > MAX_BRIDGE_ADDRESS_LENGTH:
+            return False, "Destination address too long", None
+
         # Validate chains
         if from_chain not in ["solana", "base", "rustchain"]:
             return False, f"Invalid source chain: {from_chain}", None
@@ -1032,6 +1039,9 @@ class AirdropV2:
         Returns:
             (success, message)
         """
+        if len(source_tx) > MAX_BRIDGE_TX_LENGTH:
+            return False, "Source transaction too long"
+
         conn = self._get_conn()
         cursor = conn.cursor()
 
@@ -1065,6 +1075,9 @@ class AirdropV2:
         Returns:
             (success, message)
         """
+        if len(dest_tx) > MAX_BRIDGE_TX_LENGTH:
+            return False, "Destination transaction too long"
+
         conn = self._get_conn()
         cursor = conn.cursor()
 
@@ -1433,10 +1446,10 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
         if error:
             return error
 
-        from_address, error = string_field(data, "from_address")
+        from_address, error = string_field(data, "from_address", max_length=MAX_BRIDGE_ADDRESS_LENGTH)
         if error:
             return error
-        to_address, error = string_field(data, "to_address")
+        to_address, error = string_field(data, "to_address", max_length=MAX_BRIDGE_ADDRESS_LENGTH)
         if error:
             return error
         from_chain, error = string_field(data, "from_chain")
@@ -1482,7 +1495,7 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
         data, error = parse_json_object_body(require_body=False)
         if error:
             return error
-        source_tx, error = string_field(data, "source_tx")
+        source_tx, error = string_field(data, "source_tx", max_length=MAX_BRIDGE_TX_LENGTH)
         if error:
             return error
 
@@ -1506,7 +1519,7 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
         data, error = parse_json_object_body(require_body=False)
         if error:
             return error
-        dest_tx, error = string_field(data, "dest_tx")
+        dest_tx, error = string_field(data, "dest_tx", max_length=MAX_BRIDGE_TX_LENGTH)
         if error:
             return error
 
