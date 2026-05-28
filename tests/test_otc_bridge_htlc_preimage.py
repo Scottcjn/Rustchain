@@ -182,7 +182,9 @@ def test_buy_order_defers_htlc_secret_to_matching_seller(tmp_path):
         assert "htlc_secret" not in public_order
 
         with patch.object(module.requests, "post") as mock_post:
-            mock_post.return_value = MagicMock(ok=True, text='{"ok": true}')
+            m_resp = MagicMock(ok=True, text='{"ok": true}')
+            m_resp.json.return_value = {"ok": True, "phase": "pending", "tx_hash": "mock_tx"}
+            mock_post.return_value = m_resp
             confirm_response = client.post(
                 f"/api/orders/{order['order_id']}/confirm",
                 json={

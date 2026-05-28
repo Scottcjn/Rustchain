@@ -487,6 +487,7 @@ class TestBridgeInitiateAuth:
     def _client(self, bridge_api, db_path):
         bridge_api.DB_PATH = db_path
         app = Flask(__name__)
+        app.testing = True
         bridge_api.register_bridge_routes(app)
         return app.test_client()
 
@@ -789,6 +790,7 @@ class TestLockLedgerRoutes:
     def _client(self, lock_ledger, db_path):
         lock_ledger.DB_PATH = db_path
         app = Flask(__name__)
+        app.testing = True
         lock_ledger.register_lock_ledger_routes(app)
         return app.test_client()
 

@@ -18,14 +18,17 @@ from datetime import datetime
 NODE_URL = "https://rustchain.org"
 
 def normalize_miners_payload(data):
-    if isinstance(data, list):
+    try:
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict):
+            for key in ("miners", "data", "items"):
+                miners = data.get(key)
+                if isinstance(miners, list):
+                    return miners
         return data
-    if isinstance(data, dict):
-        for key in ("miners", "data", "items"):
-            miners = data.get(key)
-            if isinstance(miners, list):
-                return miners
-    return data
+    except Exception:
+        return data
 
 def fetch_miners_page(limit=1000, offset=0):
     url = f"{NODE_URL}/api/miners"
@@ -77,12 +80,7 @@ def get_epoch():
     except Exception as e:
         return {"error": str(e)}
 
-def normalize_miners_payload(data):
-    if isinstance(data, list):
-        return data
-    if isinstance(data, dict) and isinstance(data.get("miners"), list):
-        return data["miners"]
-    return None
+# Removed duplicate normalize_miners_payload function
 
 def print_health(data):
     if "error" in data:
@@ -108,29 +106,32 @@ def print_health(data):
     print(f"   DB RW: {data.get('db_rw', 'N/A')}")
 
 def print_miners(data):
-    if "error" in data:
-        print(f"❌ Failed to fetch miners: {data['error']}")
-        return
-    miners = normalize_miners_payload(data)
-    if miners is None:
-        print(f"⚠ Unexpected response: {data}")
-        return
-    print(f"📊 Active miners: {len(miners)}")
-    print("   Recent miners:")
-    for entry in miners[:10]:
-        if not isinstance(entry, dict):
-            entry = {}
-        miner = entry.get('miner', 'unknown')
-        hw = entry.get('hardware_type', 'unknown')
-        mult = entry.get('antiquity_multiplier', 0)
-        last = entry.get('last_attest', 0)
-        if last:
-            last_str = datetime.fromtimestamp(last).strftime('%H:%M')
-        else:
-            last_str = 'never'
-        print(f"   - {miner:<40} HW: {hw:<25} Multiplier: {mult:<5} Last: {last_str}")
-    if len(miners) > 10:
-        print(f"   ... and {len(miners)-10} more")
+    try:
+        if isinstance(data, dict) and "error" in data:
+            print(f"❌ Failed to fetch miners: {data['error']}")
+            return
+        miners = normalize_miners_payload(data)
+        if miners is None or not isinstance(miners, list):
+            print(f"⚠ Unexpected response: {data}")
+            return
+        print(f"📊 Active miners: {len(miners)}")
+        print("   Recent miners:")
+        for entry in miners[:10]:
+            if not isinstance(entry, dict):
+                entry = {}
+            miner = entry.get('miner', 'unknown')
+            hw = entry.get('hardware_type', 'unknown')
+            mult = entry.get('antiquity_multiplier', 0)
+            last = entry.get('last_attest', 0)
+            if last:
+                last_str = datetime.fromtimestamp(last).strftime('%H:%M')
+            else:
+                last_str = 'never'
+            print(f"   - {miner:<40} HW: {hw:<25} Multiplier: {mult:<5} Last: {last_str}")
+        if len(miners) > 10:
+            print(f"   ... and {len(miners)-10} more")
+    except Exception as e:
+        print(f"❌ Error printing miners: {e}")
 
 def print_epoch(data):
     if "error" in data:

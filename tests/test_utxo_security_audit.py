@@ -511,14 +511,14 @@ class TestGenesisMigrationSafety(unittest.TestCase):
             db.init_tables()
 
             # Simulate one genesis box at height 0
-            db.apply_transaction({
-                'tx_type': 'mining_reward',
-                'inputs': [],
-                'outputs': [{'address': 'genesis_wallet', 'value_nrtc': 100 * UNIT}],
-                'fee_nrtc': 0,
-                'timestamp': int(time.time()),
-                '_allow_minting': True,
-            }, block_height=0)  # height 0 = genesis
+            conn = db._conn()
+            conn.execute(
+                """INSERT INTO utxo_transactions (tx_id, tx_type, inputs_json, outputs_json, timestamp, block_height)
+                   VALUES ('genesis_tx_id', 'genesis', '[]', '[]', ?, 0)""",
+                (int(time.time()),)
+            )
+            conn.commit()
+            conn.close()
 
             self.assertTrue(check_existing_genesis(db))
         finally:

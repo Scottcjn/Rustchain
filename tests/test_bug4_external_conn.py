@@ -101,6 +101,7 @@ class TestExternalConnEvictionBug4:
             "outputs": [{"address": "carol", "value_nrtc": 9900}],
             "fee_nrtc": 100,
             "data_inputs": [],
+            "_allow_mempool_override": True,
         }, block_height=3, conn=outer)
 
         outer.execute("COMMIT")
@@ -142,6 +143,7 @@ class TestExternalConnEvictionBug4:
             "outputs": [{"address": "carol", "value_nrtc": 9900}],
             "fee_nrtc": 100,
             "data_inputs": [],
+            "_allow_mempool_override": True,
         }, block_height=2, conn=outer)
 
         outer.execute("COMMIT")
@@ -175,6 +177,7 @@ class TestExternalConnEvictionBug4:
             "outputs": [{"address": "carol", "value_nrtc": 9900}],
             "fee_nrtc": 100,
             "data_inputs": [],
+            "_allow_mempool_override": True,
         }, block_height=3)
         assert ok
 

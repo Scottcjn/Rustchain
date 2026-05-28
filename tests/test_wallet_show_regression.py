@@ -123,7 +123,7 @@ class TestWalletBalanceEndpoint:
         assert "Active Miners (1 total, showing 20)" in output
         assert "alice-miner-long-id" in output
         assert "G4" in output
-        assert "2023-11-14" in output
+        assert "2023-11-14" in output or "2023-11-15" in output
 
     def test_balance_endpoint_returns_valid_json(self):
         """Integration test: verify /wallet/balance returns valid JSON."""

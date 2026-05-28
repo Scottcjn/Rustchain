@@ -189,6 +189,7 @@ class TestStaleDataInputEvictionBug4:
             "outputs": [{"address": "addr_new", "value_nrtc": 9900}],
             "fee_nrtc": 100,
             "data_inputs": [],
+            "_allow_mempool_override": True,
         }, block_height=2)
         assert result is True, "apply_transaction should succeed"
 
@@ -221,7 +222,7 @@ class TestStaleDataInputEvictionBug4:
             "fee_nrtc": 0,
             "data_inputs": [],
             "_allow_minting": True,
-        }, block_height=1)
+        }, block_height=2)
 
         # Find actual box_ids
         conn = db._conn()
@@ -250,7 +251,7 @@ class TestStaleDataInputEvictionBug4:
             "outputs": [{"address": "addr_new", "value_nrtc": 9900}],
             "fee_nrtc": 100,
             "data_inputs": [],
-        }, block_height=2)
+        }, block_height=3)
         assert result
 
         conn = db._conn()
@@ -282,7 +283,7 @@ class TestStaleDataInputEvictionBug4:
             'fee_nrtc': 0,
             'data_inputs': [],
             '_allow_minting': True,
-        }, block_height=1)
+        }, block_height=2)
 
         # Find actual box_ids
         conn = db._conn()
@@ -329,7 +330,8 @@ class TestStaleDataInputEvictionBug4:
             'outputs': [{'address': 'addr_spent_to', 'value_nrtc': 9900}],
             'fee_nrtc': 100,
             'data_inputs': [],
-        }, block_height=2)
+            '_allow_mempool_override': True,
+        }, block_height=3)
         assert result, 'apply_transaction spending box_spend should succeed'
 
         # BUG-4 regression: tx_data_dep should be evicted

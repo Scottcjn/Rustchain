@@ -82,6 +82,7 @@ def test_api_miners_requires_auth(client):
         rows_result = MagicMock()
         rows_result.fetchall.return_value = []
         mock_cursor.execute.side_effect = [count_result, rows_result]
+        mock_connect.return_value.execute.return_value.fetchone.return_value = [0]
 
         response = client.get('/api/miners')
         assert response.status_code == 200

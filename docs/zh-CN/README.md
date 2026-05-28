@@ -316,6 +316,13 @@ RustChain欢迎所有形式的贡献：
 
 ---
 
+## 🔗 高级 API 端点
+
+- 视频列表: https://bottube.ai/api/premium/videos
+- 代理分析: https://bottube.ai/api/premium/analytics/<agent>
+
+---
+
 ## 📜 许可证
 
 Apache 2.0 — 见 [LICENSE](../../LICENSE)
