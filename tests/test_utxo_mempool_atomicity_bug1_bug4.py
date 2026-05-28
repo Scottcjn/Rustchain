@@ -221,7 +221,7 @@ class TestStaleDataInputEvictionBug4:
             "fee_nrtc": 0,
             "data_inputs": [],
             "_allow_minting": True,
-        }, block_height=1)
+        }, block_height=2)
 
         # Find actual box_ids
         conn = db._conn()
@@ -282,7 +282,7 @@ class TestStaleDataInputEvictionBug4:
             'fee_nrtc': 0,
             'data_inputs': [],
             '_allow_minting': True,
-        }, block_height=1)
+        }, block_height=2)
 
         # Find actual box_ids
         conn = db._conn()
