@@ -109,6 +109,17 @@ def test_print_health_formats_success_and_error(rustchain_monitor_module, capsys
     assert "Health check failed: offline" in output
 
 
+def test_print_health_handles_partial_payload(rustchain_monitor_module, capsys):
+    rustchain_monitor_module.print_health({"ok": True})
+
+    output = capsys.readouterr().out
+    assert "Node is healthy" in output
+    assert "Version: N/A" in output
+    assert "Uptime: N/A" in output
+    assert "Backup age: N/A" in output
+    assert "DB RW: N/A" in output
+
+
 def test_print_miners_limits_rows_and_formats_last_attest(
     rustchain_monitor_module, monkeypatch, capsys
 ):

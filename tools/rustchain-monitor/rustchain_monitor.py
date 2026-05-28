@@ -88,11 +88,24 @@ def print_health(data):
     if "error" in data:
         print(f"❌ Health check failed: {data['error']}")
         return
+    uptime_s = data.get("uptime_s")
+    try:
+        uptime_hours = f"{float(uptime_s) / 3600:.1f} hours"
+        uptime_text = f"{uptime_s}s ({uptime_hours})"
+    except (TypeError, ValueError):
+        uptime_text = "N/A"
+
+    backup_age = data.get("backup_age_hours")
+    try:
+        backup_text = f"{float(backup_age):.2f} hours"
+    except (TypeError, ValueError):
+        backup_text = "N/A"
+
     print("✅ Node is healthy")
-    print(f"   Version: {data.get('version')}")
-    print(f"   Uptime: {data.get('uptime_s')}s ({data.get('uptime_s')/3600:.1f} hours)")
-    print(f"   Backup age: {data.get('backup_age_hours'):.2f} hours")
-    print(f"   DB RW: {data.get('db_rw')}")
+    print(f"   Version: {data.get('version', 'N/A')}")
+    print(f"   Uptime: {uptime_text}")
+    print(f"   Backup age: {backup_text}")
+    print(f"   DB RW: {data.get('db_rw', 'N/A')}")
 
 def print_miners(data):
     if "error" in data:

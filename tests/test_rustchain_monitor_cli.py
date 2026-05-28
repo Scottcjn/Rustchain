@@ -100,6 +100,19 @@ def test_print_health_renders_success_and_error(capsys):
     assert "Health check failed: offline" in output
 
 
+def test_print_health_handles_partial_payload(capsys):
+    module = load_module()
+
+    module.print_health({"ok": True})
+
+    output = capsys.readouterr().out
+    assert "Node is healthy" in output
+    assert "Version: N/A" in output
+    assert "Uptime: N/A" in output
+    assert "Backup age: N/A" in output
+    assert "DB RW: N/A" in output
+
+
 def test_print_miners_renders_lists_unexpected_and_errors(capsys):
     module = load_module()
 
