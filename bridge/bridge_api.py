@@ -208,7 +208,7 @@ def _json_object_body():
     return data, None
 
 
-def _clean_string_field(data, field_name, *, optional=False, lower=False):
+def _clean_string_field(data, field_name, *, optional=False, lower=False, max_length=0):
     value = data.get(field_name)
     if value is None:
         return None if optional else ""
@@ -217,6 +217,8 @@ def _clean_string_field(data, field_name, *, optional=False, lower=False):
     value = value.strip()
     if lower:
         value = value.lower()
+    if max_length > 0 and len(value) > max_length:
+        raise ValueError(f"{field_name} too long (max {max_length})")
     if optional and not value:
         return None
     return value
@@ -256,11 +258,11 @@ def lock_rtc():
 
     # ── Validate inputs ──
     try:
-        sender = _clean_string_field(data, "sender_wallet")
-        target_chain = _clean_string_field(data, "target_chain", lower=True)
-        target_wallet = _clean_string_field(data, "target_wallet")
-        tx_hash = _clean_string_field(data, "tx_hash", optional=True)
-        receipt_signature = _clean_string_field(data, "receipt_signature", optional=True, lower=True)
+        sender = _clean_string_field(data, "sender_wallet", max_length=128)
+        target_chain = _clean_string_field(data, "target_chain", lower=True, max_length=32)
+        target_wallet = _clean_string_field(data, "target_wallet", max_length=128)
+        tx_hash = _clean_string_field(data, "tx_hash", optional=True, max_length=256)
+        receipt_signature = _clean_string_field(data, "receipt_signature", optional=True, lower=True, max_length=256)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
