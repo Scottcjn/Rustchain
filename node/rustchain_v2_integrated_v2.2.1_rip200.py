@@ -6259,6 +6259,7 @@ def governance_proposals():
                    status, yes_weight, no_weight
             FROM governance_proposals
             ORDER BY id DESC
+            LIMIT 200
             """
         ).fetchall()
 
