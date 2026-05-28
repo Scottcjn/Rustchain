@@ -149,7 +149,17 @@ def _check_x402_payment(price_str, action_name):
     Check for x402 payment. Returns (passed, response_or_none).
     When price is "0", always passes.
     """
-    if not X402_CONFIG_OK or is_free(price_str):
+    if not X402_CONFIG_OK:
+        log.warning(
+            "Rejected premium Beacon x402 action=%s because payment config is unavailable",
+            action_name,
+        )
+        return False, _cors_json({
+            "error": "Payment verification unavailable",
+            "message": "Beacon x402 premium exports are disabled until payment configuration is available.",
+        }, 503)
+
+    if is_free(price_str):
         return True, None
 
     payment_header = request.headers.get("X-PAYMENT", "")
@@ -258,24 +268,13 @@ def init_app(app, get_db_func):
         """Get a beacon agent's Coinbase wallet info."""
         if request.method == "OPTIONS":
             return _cors_json({"ok": True})
-        # SECURITY: Require admin key — exposes coinbase_address for any beacon agent
-        admin_key = os.environ.get("RC_ADMIN_KEY", "")
-        if not admin_key:
-            return _cors_json({"error": "RC_ADMIN_KEY not configured"}), 503
-        provided = request.headers.get("X-Admin-Key", "")
-        if not hmac.compare_digest(provided, admin_key):
-            return _cors_json({"error": "Unauthorized — admin key required"}), 401
-
         if len(agent_id) > 128:
             return _cors_json({"error": "agent_id too long"}, 400)
 
         # SECURITY: Require admin key — exposes coinbase_address for any beacon agent
-        admin_key = os.environ.get("RC_ADMIN_KEY", "")
-        if not admin_key:
-            return _cors_json({"error": "RC_ADMIN_KEY not configured"}), 503
-        provided = request.headers.get("X-Admin-Key", "")
-        if not hmac.compare_digest(provided, admin_key):
-            return _cors_json({"error": "Unauthorized — admin key required"}), 401
+        admin_error = _require_beacon_admin()
+        if admin_error:
+            return admin_error
 
         db = get_db_func()
         _ensure_x402_tables(db)
