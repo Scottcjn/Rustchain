@@ -46,7 +46,7 @@ Check the balance of your default wallet, or specify a custom wallet file:
 ### Send RTC Tokens
 
 ```bash
-./rustchain-wallet send --to RTC1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa --amount 100
+./rustchain-wallet send --to RTC89abcdef0123456789abcdef0123456789abcdef --amount 100
 ```
 
 Send 100 RTC tokens to the specified address.
@@ -62,7 +62,7 @@ Displays your wallet address for receiving RTC tokens.
 ### Validate an Address
 
 ```bash
-./rustchain-wallet validate RTC1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa
+./rustchain-wallet validate RTC89abcdef0123456789abcdef0123456789abcdef
 ```
 
 Checks if the given address is a valid RustChain address.
@@ -92,11 +92,14 @@ The wallet is stored as a JSON file:
 
 ```json
 {
-  "address": "RTC1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+  "address": "RTC0123456789abcdef0123456789abcdef01234567",
   "private_key": "a1b2c3d4e5f6...",
   "public_key": "04a1b2c3d4e5f6..."
 }
 ```
+
+RustChain addresses use the canonical 43-character format: `RTC` followed by
+40 hexadecimal characters.
 
 ## Security Best Practices
 
@@ -127,7 +130,7 @@ The wallet expects the following RustChain node API endpoints:
 Common errors and solutions:
 
 - **"Wallet file not found"**: Generate a new wallet with `generate` command
-- **"Invalid address"**: Check that the address starts with "RTC" and is properly formatted
+- **"Invalid address"**: Check that the address is `RTC` followed by 40 hexadecimal characters
 - **"Insufficient balance"**: Check your balance before sending
 - **"Connection refused"**: Verify the RustChain node is running and accessible
 
