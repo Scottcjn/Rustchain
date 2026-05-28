@@ -511,6 +511,19 @@ def rtc_cancel_escrow(job_id, poster_wallet):
         return False
 
 
+def parse_order_ttl(value):
+    if value is None:
+        return ORDER_TTL_DEFAULT
+    if isinstance(value, bool):
+        raise ValueError("ttl_seconds must be an integer")
+    if isinstance(value, float) and not value.is_integer():
+        raise ValueError("ttl_seconds must be an integer")
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("ttl_seconds must be an integer") from exc
+
+
 # ---------------------------------------------------------------------------
 # API Routes
 # ---------------------------------------------------------------------------
@@ -520,7 +533,11 @@ def rtc_cancel_escrow(job_id, poster_wallet):
 def create_order():
     """Create a new buy or sell order."""
     data = request.get_json(silent=True)
+    if data is None:
+        return jsonify({"error": "JSON body required"}), 400
     if not isinstance(data, dict):
+        return jsonify({"error": "JSON object required"}), 400
+    if not data:
         return jsonify({"error": "JSON body required"}), 400
 
     side = str(data.get("side", "")).strip().lower()
@@ -530,9 +547,9 @@ def create_order():
     price_per_rtc = data.get("price_per_rtc", 0)
     maker_eth_address = str(data.get("eth_address", "")).strip()
     try:
-        ttl = int(data.get("ttl_seconds", ORDER_TTL_DEFAULT))
-    except (ValueError, TypeError):
-        return jsonify({"error": "ttl_seconds must be an integer"}), 400
+        ttl = parse_order_ttl(data.get("ttl_seconds"))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
     # Validation
     if side not in ("buy", "sell"):
