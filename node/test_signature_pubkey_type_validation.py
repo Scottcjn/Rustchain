@@ -15,18 +15,38 @@ address_from_pubkey() in try/except to catch malformed hex.
 """
 
 import unittest
+import importlib.util
 import sys
 import os
 
-sys.path.insert(0, os.path.dirname(__file__))
+NODE_DIR = os.path.dirname(__file__)
+sys.path.insert(0, NODE_DIR)
+
+MODULE_PATH = os.path.join(
+    NODE_DIR,
+    "rustchain_v2_integrated_v2.2.1_rip200.py",
+)
+
+
+def load_app_module():
+    os.environ.setdefault("RC_ADMIN_KEY", "test-admin-key-" + "0" * 32)
+    os.environ.setdefault("RUSTCHAIN_DB_PATH", "/tmp/test_signature_validation.db")
+    sys.path.insert(0, NODE_DIR)
+    sys.modules.pop("payout_preflight", None)
+    spec = importlib.util.spec_from_file_location(
+        "rustchain_v2_integrated_signature_validation_test",
+        MODULE_PATH,
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 class TestEpochEnrollSignatureValidation(unittest.TestCase):
     """#6123: /epoch/enroll crashes on non-string signature/public_key fields."""
 
     def setUp(self):
-        os.environ.setdefault("RUSTCHAIN_DB", "/tmp/test_6123_regression.db")
-        import rustchain_v2_integrated_v2.2.1_rip200 as app_module
+        app_module = load_app_module()
         self.app = app_module.app
         self.app.config["TESTING"] = True
         self.client = self.app.test_client()
@@ -69,7 +89,7 @@ class TestGovernanceVoteSignatureValidation(unittest.TestCase):
     """#6125: /governance/vote crashes on non-string public_key."""
 
     def setUp(self):
-        import rustchain_v2_integrated_v2.2.1_rip200 as app_module
+        app_module = load_app_module()
         self.app = app_module.app
         self.app.config["TESTING"] = True
         self.client = self.app.test_client()
@@ -118,7 +138,7 @@ class TestWalletTransferSignedValidation(unittest.TestCase):
     """#6127: /wallet/transfer/signed crashes on non-string public_key."""
 
     def setUp(self):
-        import rustchain_v2_integrated_v2.2.1_rip200 as app_module
+        app_module = load_app_module()
         self.app = app_module.app
         self.app.config["TESTING"] = True
         self.client = self.app.test_client()
