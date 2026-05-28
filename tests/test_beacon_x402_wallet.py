@@ -102,9 +102,19 @@ def test_set_agent_wallet_preserves_valid_address(client):
     assert response.get_json()["coinbase_address"] == "0x1234567890123456789012345678901234567890"
 
 def test_get_agent_wallet_returns_relay_wallet(client):
-    response = client.get("/api/agents/relay-1/wallet")
+    response = client.get(
+        "/api/agents/relay-1/wallet",
+        headers={"X-Admin-Key": "test-admin-key"},
+    )
 
     assert response.status_code == 200
     body = response.get_json()
     assert body["source"] == "relay"
     assert body["coinbase_address"] == "0x1234567890123456789012345678901234567890"
+
+
+def test_get_agent_wallet_requires_admin_key(client):
+    response = client.get("/api/agents/relay-1/wallet")
+
+    assert response.status_code == 401
+    assert response.get_json()["error"] == "Unauthorized - admin key required"
