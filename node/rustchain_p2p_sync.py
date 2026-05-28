@@ -9,7 +9,9 @@ import sqlite3
 import time
 import json
 import threading
+import ipaddress
 from typing import List, Dict
+from urllib.parse import urlparse
 
 from flask import jsonify, request
 
@@ -34,6 +36,42 @@ def _parse_int_query_arg(
     if maximum is not None and value > maximum:
         return maximum
     return value
+
+
+def _validate_public_peer_url(peer_url: str) -> str | None:
+    """Return an error message when peer_url is not safe to contact."""
+    try:
+        parsed = urlparse(peer_url)
+    except Exception:
+        return "invalid peer_url format"
+
+    if parsed.scheme not in ("http", "https"):
+        return "peer_url must start with http:// or https://"
+
+    hostname = parsed.hostname
+    if not hostname:
+        return "invalid peer_url format"
+
+    normalized_host = hostname.rstrip(".").lower()
+    if normalized_host == "localhost" or normalized_host.endswith(".localhost"):
+        return "peer_url must be a public address"
+
+    try:
+        address = ipaddress.ip_address(normalized_host)
+    except ValueError:
+        return None
+
+    if (
+        address.is_private
+        or address.is_loopback
+        or address.is_link_local
+        or address.is_multicast
+        or address.is_reserved
+        or address.is_unspecified
+    ):
+        return "peer_url must be a public address"
+
+    return None
 
 
 # ============================================================================
@@ -451,18 +489,9 @@ def add_p2p_endpoints(app, peer_manager, block_sync, tx_gossip):
         # SECURITY: Validate URL scheme and reject private/internal addresses
         if not peer_url:
             return jsonify({"ok": False, "error": "peer_url required"}), 400
-        if not peer_url.startswith(("http://", "https://")):
-            return jsonify({"ok": False, "error": "peer_url must start with http:// or https://"}), 400
-        try:
-            from urllib.parse import urlparse
-            parsed = urlparse(peer_url)
-            hostname = parsed.hostname or ""
-            if hostname in ("localhost", "127.0.0.1", "0.0.0.0", "::1"):
-                return jsonify({"ok": False, "error": "peer_url must be a public address"}), 400
-            if hostname.startswith(("10.", "192.168.", "172.16.")):
-                return jsonify({"ok": False, "error": "peer_url must not be a private address"}), 400
-        except Exception:
-            return jsonify({"ok": False, "error": "invalid peer_url format"}), 400
+        peer_url_error = _validate_public_peer_url(peer_url)
+        if peer_url_error:
+            return jsonify({"ok": False, "error": peer_url_error}), 400
 
         if peer_url:
             success = peer_manager.add_peer(peer_url)
