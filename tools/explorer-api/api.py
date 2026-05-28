@@ -295,6 +295,8 @@ def address_info(addr: str):
     addr = addr.strip()
     if not addr:
         return jsonify({"ok": False, "error": "address_required"}), 400
+    if len(addr) > 128:
+        return jsonify({"ok": False, "error": "address too long"}), 400
 
     # Fetch balance
     balance_data = _get(f"/balance/{addr}")
@@ -343,6 +345,8 @@ def search():
     query = request.args.get("q", "").strip()
     if not query:
         return jsonify({"ok": False, "error": "query_required"}), 400
+    if len(query) > 256:
+        return jsonify({"ok": False, "error": "query_too_long"}), 400
 
     results = []
 
