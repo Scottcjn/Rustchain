@@ -724,7 +724,15 @@ def register_lock_ledger_routes(app):
 
     @app.route('/api/lock/miner/<miner_id>', methods=['GET'])
     def get_miner_locks(miner_id: str):
-        """Get locks for a specific miner."""
+        """Get locks for a specific miner. Requires admin key."""
+        # SECURITY: Exposes miner lock balances — admin key required
+        admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
+        expected_key = os.environ.get("RC_ADMIN_KEY", "")
+        if not expected_key:
+            return jsonify({"error": "RC_ADMIN_KEY not configured — endpoint disabled"}), 503
+        if not hmac.compare_digest(admin_key, expected_key):
+            return jsonify({"error": "Unauthorized — admin key required"}), 401
+
         status = request.args.get("status")
         limit, error_response = parse_bounded_int_arg("limit", 100, 1, 500)
         if error_response is not None:
@@ -760,7 +768,15 @@ def register_lock_ledger_routes(app):
 
     @app.route('/api/lock/<int:lock_id>', methods=['GET'])
     def get_lock(lock_id: int):
-        """Get a specific lock by ID."""
+        """Get a specific lock by ID. Requires admin key."""
+        # SECURITY: Exposes detailed lock info including miner_id and amounts — admin key required
+        admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
+        expected_key = os.environ.get("RC_ADMIN_KEY", "")
+        if not expected_key:
+            return jsonify({"error": "RC_ADMIN_KEY not configured — endpoint disabled"}), 503
+        if not hmac.compare_digest(admin_key, expected_key):
+            return jsonify({"error": "Unauthorized — admin key required"}), 401
+
         conn = sqlite3.connect(DB_PATH)
         try:
             lock = get_lock_by_id(conn, lock_id)
@@ -787,7 +803,15 @@ def register_lock_ledger_routes(app):
 
     @app.route('/api/lock/pending-unlock', methods=['GET'])
     def get_pending_unlocks_endpoint():
-        """Get locks ready to be released."""
+        """Get locks ready to be released. Requires admin key."""
+        # SECURITY: Exposes pending unlocks with miner IDs and amounts — admin key required
+        admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
+        expected_key = os.environ.get("RC_ADMIN_KEY", "")
+        if not expected_key:
+            return jsonify({"error": "RC_ADMIN_KEY not configured — endpoint disabled"}), 503
+        if not hmac.compare_digest(admin_key, expected_key):
+            return jsonify({"error": "Unauthorized — admin key required"}), 401
+
         limit, error_response = parse_bounded_int_arg("limit", 100, 1, 500)
         if error_response is not None:
             return error_response
