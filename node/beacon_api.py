@@ -1105,7 +1105,7 @@ def get_agent_reputation(agent_id):
 
 @beacon_api.route('/api/chat', methods=['POST'])
 def chat():
-    """Send message to an agent (mock response for demo)."""
+    """Send message to an agent (LLM-backed with canned fallback)."""
     try:
         data, body_error, status = _json_object_body()
         if body_error:
@@ -1129,16 +1129,56 @@ def chat():
             (agent_id, 'user', safe_message, int(time.time()))
         )
 
-        # Generate mock response (in production, call LLM)
-        responses = [
-            f"Acknowledged. I am {safe_agent_id}. How can I assist?",
-            "Transmission received. Processing request...",
-            "Beacon signal strong. Standing by for instructions.",
-            "Contract terms acceptable. Ready to proceed.",
-            "Reputation check complete. Trust level adequate.",
-        ]
-        import random
-        response = random.choice(responses)
+        # Generate response — LLM when configured, canned fallback
+        llm_url = os.environ.get("BEACON_LLM_API_URL", "").rstrip("/")
+        llm_key = os.environ.get("BEACON_LLM_API_KEY", "")
+        llm_model = os.environ.get("BEACON_LLM_MODEL", "gpt-4o-mini")
+        response = None
+
+        if llm_url:
+            try:
+                import requests as _req
+                headers = {"Content-Type": "application/json"}
+                if llm_key:
+                    headers["Authorization"] = f"Bearer {llm_key}"
+                llm_payload = {
+                    "model": llm_model,
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": f"You are agent {safe_agent_id} on the RustChain beacon network. "
+                                       "Keep responses brief (<200 chars)."
+                        },
+                        {"role": "user", "content": safe_message},
+                    ],
+                    "max_tokens": 150,
+                }
+                llm_resp = _req.post(
+                    f"{llm_url}/v1/chat/completions",
+                    json=llm_payload,
+                    headers=headers,
+                    timeout=15,
+                )
+                if llm_resp.status_code == 200:
+                    choices = llm_resp.json().get("choices", [])
+                    if choices:
+                        content = choices[0].get("message", {}).get("content", "")
+                        if content:
+                            response = content.strip()
+            except Exception:
+                pass  # fall through to canned
+
+        if response is None:
+            # ── Fallback: canned random responses ──────────────────
+            responses = [
+                f"Acknowledged. I am {safe_agent_id}. How can I assist?",
+                "Transmission received. Processing request...",
+                "Beacon signal strong. Standing by for instructions.",
+                "Contract terms acceptable. Ready to proceed.",
+                "Reputation check complete. Trust level adequate.",
+            ]
+            import random
+            response = random.choice(responses)
 
         # Store agent response
         db.execute(
