@@ -74,13 +74,23 @@ def get_last_drip_time(identifier, is_wallet=False):
     result = c.fetchone()
     conn.close()
     return result[0] if result else None
+
+
+def parse_drip_timestamp(timestamp):
+    """Parse a stored drip timestamp as UTC when SQLite returns it without tzinfo."""
+    drip_time = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+    if drip_time.tzinfo is None:
+        return drip_time.replace(tzinfo=timezone.utc)
+    return drip_time
+
+
 def can_drip(identifier, is_wallet=False):
     """Check if the IP or Wallet can request a drip (rate limiting)."""
     last_time = get_last_drip_time(identifier, is_wallet)
     if not last_time:
         return True
     
-    last_drip = datetime.fromisoformat(last_time.replace('Z', '+00:00'))
+    last_drip = parse_drip_timestamp(last_time)
     now = datetime.now(timezone.utc)
     hours_since = (now - last_drip).total_seconds() / 3600
 
@@ -93,7 +103,7 @@ def get_next_available(identifier, is_wallet=False):
     if not last_time:
         return None
     
-    last_drip = datetime.fromisoformat(last_time.replace('Z', '+00:00'))
+    last_drip = parse_drip_timestamp(last_time)
     next_available = last_drip + timedelta(hours=RATE_LIMIT_HOURS)
     now = datetime.now(timezone.utc)
     
@@ -134,7 +144,7 @@ def try_record_drip(wallet, ip_address, amount):
         ''', (ip_address,))
         row = c.fetchone()
         if row:
-            last_drip = datetime.fromisoformat(row[0].replace('Z', '+00:00'))
+            last_drip = parse_drip_timestamp(row[0])
             now = datetime.now(timezone.utc)
             hours_since = (now - last_drip).total_seconds() / 3600
             if hours_since < RATE_LIMIT_HOURS:
@@ -151,7 +161,7 @@ def try_record_drip(wallet, ip_address, amount):
         ''', (wallet,))
         row = c.fetchone()
         if row:
-            last_drip = datetime.fromisoformat(row[0].replace('Z', '+00:00'))
+            last_drip = parse_drip_timestamp(row[0])
             now = datetime.now(timezone.utc)
             hours_since = (now - last_drip).total_seconds() / 3600
             if hours_since < RATE_LIMIT_HOURS:
