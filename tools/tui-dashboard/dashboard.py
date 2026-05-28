@@ -81,6 +81,7 @@ class RustChainData:
         self.miner_total: int = 0
         self.tip: Dict[str, Any] = {}
         self.price: Dict[str, Any] = {}
+        self.proposer_calendar: Dict[str, Any] = {}
         self.last_refresh: Optional[datetime] = None
         self.latency_ms: float = 0.0
         self.block_history: List[Dict[str, Any]] = []
@@ -119,6 +120,7 @@ class RustChainData:
             self.block_history = self.block_history[:20]
         self.tip = tip
 
+        self.proposer_calendar = fetch_json(f"{self.base}/epoch/proposer-duty-calendar?lookahead=8&history_limit=6") or {}
         self.price = self._fetch_price()
         self.latency_ms = (time.time() - t0) * 1000
         self.last_refresh = datetime.now(timezone.utc)
@@ -299,6 +301,31 @@ def build_blocks_panel(data: RustChainData) -> Panel:
     return Panel(table, title="[bold]Recent Blocks[/bold]", border_style="blue")
 
 
+def build_proposer_calendar_panel(data: RustChainData) -> Panel:
+    """Upcoming round-robin proposer duties."""
+    table = Table(expand=True, show_lines=False, pad_edge=False)
+    table.add_column("Epoch", style="bold white", justify="right", max_width=8)
+    table.add_column("Proposer", style="cyan", max_width=24)
+    table.add_column("Duty", style="yellow", max_width=10)
+
+    calendar = data.proposer_calendar or {}
+    schedule = calendar.get("schedule") or []
+    if not schedule:
+        table.add_row("—", "calendar unavailable", "")
+    else:
+        current_node = calendar.get("node_id")
+        for row in schedule[:8]:
+            proposer = str(row.get("proposer", "?"))
+            duty = "now" if row.get("is_current") else f"+{row.get('offset', '?')}"
+            if proposer == current_node:
+                duty = f"{duty} local"
+            table.add_row(str(row.get("epoch", "?")), proposer, duty)
+
+    current = calendar.get("current_proposer", "?")
+    title = f"[bold]Proposer Duties[/bold] [dim](current: {current})[/dim]"
+    return Panel(table, title=title, border_style="cyan")
+
+
 def build_price_panel(data: RustChainData) -> Panel:
     """wRTC price ticker panel."""
     p = data.price
@@ -376,6 +403,7 @@ def build_layout(data: RustChainData, interval: int) -> Layout:
 
     layout["bottom"].split_row(
         Layout(name="miners", ratio=3),
+        Layout(name="duties", ratio=2),
         Layout(name="blocks", ratio=2),
     )
 
@@ -384,6 +412,7 @@ def build_layout(data: RustChainData, interval: int) -> Layout:
     layout["epoch"].update(build_epoch_panel(data))
     layout["price"].update(build_price_panel(data))
     layout["miners"].update(build_miners_panel(data))
+    layout["duties"].update(build_proposer_calendar_panel(data))
     layout["blocks"].update(build_blocks_panel(data))
 
     return layout
