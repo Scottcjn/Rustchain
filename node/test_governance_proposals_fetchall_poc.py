@@ -82,6 +82,9 @@ def _load_node_module(db_path: str):
     """
     os.environ.setdefault("RC_ADMIN_KEY", "a" * 64)
     os.environ["RUSTCHAIN_DB_PATH"] = db_path
+    node_dir = os.path.dirname(os.path.abspath(_NODE_PY))
+    if node_dir not in sys.path:
+        sys.path.insert(0, node_dir)
     spec = importlib.util.spec_from_file_location("rustchain_node", _NODE_PY)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
