@@ -25,18 +25,14 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from utxo_db import UtxoDB, UNIT
+from utxo_db import MAX_INPUTS, UtxoDB, UNIT
 
 
 class TestMempoolNoMaxInputsBoundary(unittest.TestCase):
     """
-    🔴 2 tests intentionally fail — they prove the bug exists.
-    test_EXPECTED_FAILURE_mempool_accepts_unbounded_inputs — 200-input tx ACCEPTED (should reject)
-    test_EXPECTED_FAILURE_mempool_dos_magnitude — 500-input tx ACCEPTED (should reject)
-    These fail with: AssertionError: True is not false
-    To run: pytest -k 'not EXPECTED_FAILURE' to skip them.
+    Regression tests for the input-count DoS boundary.
     """
-    """mempool_add() accepts transactions with unlimited inputs → DoS vector."""
+    """mempool_add() rejects transactions over the input-count boundary."""
 
     def setUp(self):
         self.tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
@@ -66,11 +62,10 @@ class TestMempoolNoMaxInputsBoundary(unittest.TestCase):
             box_ids.append(boxes[0]['box_id'])
         return box_ids
 
-    def test_EXPECTED_FAILURE_mempool_accepts_unbounded_inputs(self):
+    def test_mempool_rejects_inputs_over_limit(self):
         """
-        🔴 INTENTIONALLY FAILS — proves the bug exists.
-        Submits 200-input tx. Should be rejected (no MAX_INPUTS guard).
-        ACTUAL: Accepted — proving the vulnerability.
+        Submits a tx over MAX_INPUTS. It must be rejected before per-input
+        mempool checks run under the write lock.
         """
         box_ids = self._create_unspent_boxes(200)
         inputs = [{'box_id': bid, 'spending_proof': 'sig'} for bid in box_ids]
@@ -88,14 +83,12 @@ class TestMempoolNoMaxInputsBoundary(unittest.TestCase):
         })
         elapsed = time.time() - start
 
-        # BUG: This should be False — mempool_add has no MAX_INPUTS check
-        # The 200 SELECT queries ran inside a write lock
         print(f"[A1] 200-input tx accepted: {ok} ({elapsed:.3f}s, {200/elapsed:.0f} queries/sec)")
         self.assertFalse(ok,
             "CRITICAL: mempool_add should reject excessive inputs "
             "(200 SELECT queries inside BEGIN IMMEDIATE = DoS vector)")
 
-    def test_EXPECTED_FAILURE_mempool_dos_magnitude(self):
+    def test_mempool_rejects_large_input_dos_vector(self):
         """
         Measure the cost — 500-input tx to quantify the DoS surface.
         Each input adds a SELECT query. Attacker can scale to 5000+
@@ -122,37 +115,23 @@ class TestMempoolNoMaxInputsBoundary(unittest.TestCase):
             "CRITICAL: 500 inputs should be rejected "
             f"({elapsed:.3f}s of locked DB time is unbounded DoS)")
 
-    def test_apply_transaction_also_no_bound(self):
+    def test_apply_transaction_rejects_inputs_over_limit(self):
         """
-        Same bug in apply_transaction() — also no MAX_INPUTS guard.
-        Block application would lock during production.
+        Same input cap is enforced during block application.
         """
-        self.db.apply_transaction({
-            'tx_type': 'mining_reward',
-            'inputs': [],
-            'outputs': [{'address': 'fund', 'value_nrtc': 100 * UNIT}],
-            'fee_nrtc': 0,
-            'timestamp': int(time.time()),
-            '_allow_minting': True,
-        }, block_height=1)
-        boxes = self.db.get_unspent_for_address('fund')
-        bid = boxes[0]['box_id']
-
-        # 3000 identical inputs — duplicate check at line 560-562 rejects dupes
-        # So we skip that and just verify apply_transaction also has no guard
-        # (mempool_add is the primary attack surface since it's user-facing)
-        # This test documents the gap in apply_transaction
-        inputs_payload = [{'box_id': bid, 'spending_proof': 'sig'}]
+        box_ids = self._create_unspent_boxes(MAX_INPUTS + 1)
+        inputs_payload = [{'box_id': bid, 'spending_proof': 'sig'} for bid in box_ids]
         start = time.time()
         ok = self.db.apply_transaction({
             'tx_type': 'transfer',
             'inputs': inputs_payload,
-            'outputs': [{'address': 'bob', 'value_nrtc': 1 * UNIT}],
+            'outputs': [{'address': 'bob', 'value_nrtc': (MAX_INPUTS + 1) * UNIT}],
             'fee_nrtc': 0,
             'timestamp': int(time.time()),
-        }, block_height=2)
+        }, block_height=MAX_INPUTS + 10)
         elapsed = time.time() - start
-        print(f"[A1 apply_tx] 1-input tx: {ok} ({elapsed:.3f}s) — baseline (no MAX_INPUTS guard either)")
+        print(f"[A1 apply_tx] {MAX_INPUTS + 1}-input tx accepted: {ok} ({elapsed:.3f}s)")
+        self.assertFalse(ok)
 
 
 class TestDualInputCheckMissing(unittest.TestCase):
@@ -160,10 +139,8 @@ class TestDualInputCheckMissing(unittest.TestCase):
     Cross-reference: utxo_endpoints.py may also lack input count checks.
     """
 
-    def test_max_inputs_constant_missing(self):
-        """
-        Verify MAX_INPUTS constant is absent from utxo_db.py.
-        """
+    def test_max_inputs_constant_exists(self):
+        """Verify the DB layer has a MAX_INPUTS cap matching MAX_OUTPUTS."""
         with open(__file__.replace('test_utxo_no_max_inputs_poc.py',
                                    'utxo_db.py'), 'r') as f:
             src = f.read()
@@ -172,8 +149,9 @@ class TestDualInputCheckMissing(unittest.TestCase):
         print(f"[A1 constants] MAX_OUTPUTS={has_max_outputs}, MAX_INPUTS={has_max_inputs}")
         self.assertTrue(has_max_outputs,
             "MAX_OUTPUTS should exist (checking project baseline)")
-        self.assertFalse(has_max_inputs,
-            "BUG CONFIRMED: No MAX_INPUTS constant exists in utxo_db.py")
+        self.assertTrue(has_max_inputs,
+            "MAX_INPUTS should exist as the input-side DoS guard")
+        self.assertEqual(MAX_INPUTS, 100)
 
 
 if __name__ == '__main__':

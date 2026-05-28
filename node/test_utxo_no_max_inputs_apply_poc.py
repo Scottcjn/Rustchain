@@ -28,12 +28,12 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from utxo_db import UtxoDB, UNIT, MAX_OUTPUTS, coin_select
+from utxo_db import MAX_INPUTS, MAX_OUTPUTS, UtxoDB, UNIT, coin_select
 
 
 class TestApplyTransactionNoMaxInputs(unittest.TestCase):
     """
-    apply_transaction() accepts unlimited inputs — block production DoS.
+    apply_transaction() rejects transactions over the input-count boundary.
     """
 
     def setUp(self):
@@ -60,38 +60,35 @@ class TestApplyTransactionNoMaxInputs(unittest.TestCase):
             ids.append(self.db.get_unspent_for_address(f'a{i}')[0]['box_id'])
         return ids
 
-    def test_apply_tx_accepts_unbounded_inputs(self):
+    def test_apply_tx_accepts_inputs_at_limit(self):
         """
-        apply_transaction with 100 inputs — no MAX_INPUTS guard.
-        EXPECT: Should reject > MAX_OUTPUTS (100). 
-        ACTUAL: Accepted. 100 UPDATE queries inside write lock.
+        apply_transaction with exactly MAX_INPUTS remains valid.
         """
-        box_ids = self._create_boxes(100)
+        box_ids = self._create_boxes(MAX_INPUTS)
         inputs = [{'box_id': bid, 'spending_proof': 'sig'} for bid in box_ids]
 
         start = time.time()
         ok = self.db.apply_transaction({
             'tx_type': 'transfer',
             'inputs': inputs,
-            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+            'outputs': [{'address': 'bob', 'value_nrtc': MAX_INPUTS * UNIT}],
             'fee_nrtc': 0,
             'timestamp': int(time.time()),
         }, block_height=200)
         elapsed = time.time() - start
 
-        print(f"[A2] apply_tx 100 inputs: {ok} ({elapsed:.4f}s)")
+        print(f"[A2] apply_tx {MAX_INPUTS} inputs: {ok} ({elapsed:.4f}s)")
         self.assertTrue(ok,
-            "apply_transaction accepted 100 inputs — no MAX_INPUTS guard exists")
+            "apply_transaction should accept transactions at MAX_INPUTS")
 
         # Verify it actually processed
         bob_bal = self.db.get_balance('bob')
-        self.assertEqual(bob_bal, 100 * UNIT,
+        self.assertEqual(bob_bal, MAX_INPUTS * UNIT,
             "apply_transaction correctly processed all 100 inputs")
 
-    def test_apply_tx_perf_baseline(self):
+    def test_apply_tx_rejects_inputs_over_limit(self):
         """
-        Performance baseline: 500 inputs → measure block production impact.
-        A mempooll tx with 500+ inputs consumed by a miner delays block production.
+        500 inputs should be rejected before per-input block application work.
         """
         box_ids = self._create_boxes(500)
         inputs = [{'box_id': bid, 'spending_proof': 'sig'} for bid in box_ids]
@@ -107,37 +104,31 @@ class TestApplyTransactionNoMaxInputs(unittest.TestCase):
         elapsed = time.time() - start
 
         qps = 500 / elapsed
-        print(f"[A2 perf] 500 inputs: {ok} ({elapsed:.4f}s, {qps:.0f} updates/sec)")
-        self.assertTrue(ok)
-        # At 100K+ updates/sec, a 10K-input tx takes ~100ms of locked time
-        # In production with HDD or remote DB, this is worse
-        print(f"  → DoS surface: 10K inputs ~ {10_000/qps:.2f}s under write lock")
+        print(f"[A2 perf] 500 inputs: accepted={ok} ({elapsed:.4f}s, rate={qps:.0f}/sec)")
+        self.assertFalse(ok)
 
-    def test_no_max_inputs_constant(self):
-        """Verify no MAX_INPUTS constant exists in utxo_db.py."""
+    def test_max_inputs_constant_exists(self):
+        """Verify MAX_INPUTS exists in utxo_db.py."""
         with open(__file__.replace('test_utxo_no_max_inputs_apply_poc.py',
                                    'utxo_db.py'), 'r') as f:
             src = f.read()
         has = 'MAX_INPUTS' in src and 'MAX_INPUT' in src
         print(f"[A2] MAX_INPUTS constant exists: {has}")
-        # Since A1 proved this false, this is documentation
-        self.assertFalse('MAX_INPUTS' in src,
-            "A2: No MAX_INPUTS constant — same root cause as A1")
+        self.assertTrue('MAX_INPUTS' in src)
 
     def test_max_outputs_exists_inputs_doesnt(self):
         """
-        Confirm asymmetry: MAX_OUTPUTS=100 exists but no MAX_INPUTS.
-        The codebase protects against output bloat but not input bloat.
+        Confirm input and output sides use the same anti-bloat bound.
         """
         self.assertEqual(MAX_OUTPUTS, 100,
             "MAX_OUTPUTS = 100 exists as anti-bloat guard")
-        # No analogous MAX_INPUTS — this asymmetry IS the vulnerability
+        self.assertEqual(MAX_INPUTS, MAX_OUTPUTS)
 
 
 class TestCoinSelectEnforces20ButDbLayerDoesnt(unittest.TestCase):
     """
-    coin_select() caps at 20 inputs via heuristic but apply_transaction
-    has no hard limit. The networking/rpc layer is the only defense.
+    coin_select() caps at 20 inputs via heuristic and the DB layer now has
+    a hard consensus-boundary limit as defense in depth.
     """
 
     def setUp(self):

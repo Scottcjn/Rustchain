@@ -42,6 +42,7 @@ MAX_POOL_SIZE = 10_000
 
 # Anti-UTXO-bloat: maximum outputs per transaction
 # Without this, a single tx creates unlimited outputs, bloating the UTXO set.
+MAX_INPUTS = 100
 MAX_OUTPUTS = 100
 MAX_UTXO_ADDRESS_BYTES = 256
 MAX_UTXO_METADATA_BYTES = 8_192
@@ -557,6 +558,10 @@ class UtxoDB:
         # Require _allow_minting=True (internal flag) to permit mining_reward.
         if tx_type in MINTING_TX_TYPES and not tx.get('_allow_minting'):
             return False
+        if not isinstance(inputs, list):
+            return False
+        if len(inputs) > MAX_INPUTS:
+            return False
         outputs = self._normalize_outputs(outputs)
         if outputs is None:
             return False
@@ -964,6 +969,14 @@ class UtxoDB:
                     conn.execute("ROLLBACK")
                 return False
 
+            if not isinstance(inputs, list):
+                if manage_tx:
+                    conn.execute("ROLLBACK")
+                return False
+            if len(inputs) > MAX_INPUTS:
+                if manage_tx:
+                    conn.execute("ROLLBACK")
+                return False
             if not inputs:
                 if manage_tx:
                     conn.execute("ROLLBACK")
