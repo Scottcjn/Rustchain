@@ -236,19 +236,19 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
                 db.rollback()
                 return jsonify({"error": "Job was already processed"}), 409
 
-        # Transfer to provider — verify the provider has a balances row
-        credited = db.execute(
-            "UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk = ?",
-            (job["amount_rtc"], job["to_wallet"]),
-        )
-        if credited.rowcount != 1:
-            # Provider has no balances row — create one before crediting
-            db.execute(
-                "INSERT INTO balances (miner_pk, balance_rtc) VALUES (?, ?)",
-                (job["to_wallet"], job["amount_rtc"]),
+            # Transfer to provider — verify the provider has a balances row
+            credited = db.execute(
+                "UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk = ?",
+                (job["amount_rtc"], job["to_wallet"]),
             )
-        db.commit()
-        return jsonify({"ok": True, "status": "released"})
+            if credited.rowcount != 1:
+                # Provider has no balances row — create one before crediting
+                db.execute(
+                    "INSERT INTO balances (miner_pk, balance_rtc) VALUES (?, ?)",
+                    (job["to_wallet"], job["amount_rtc"]),
+                )
+            db.commit()
+            return jsonify({"ok": True, "status": "released"})
         except sqlite3.Error as e:
             return _database_error_response()
         finally:
