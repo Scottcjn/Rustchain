@@ -12,28 +12,33 @@ Phase 1 & 2 Implementation:
 Implements secure block production for Proof of Antiquity consensus.
 """
 
-import sqlite3
-import time
-import threading
-import logging
 import json
+import logging
 import os
+import sqlite3
+import threading
+import time
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
-from dataclasses import dataclass, field
 
 try:
     import redis
 except ImportError:  # pragma: no cover - Redis is optional for local nodes/tests.
     redis = None
 
+from randomness_beacon import (
+    GENESIS_RANDOMNESS,
+    build_randomness_record,
+    verify_randomness_record,
+)
 from rustchain_crypto import (
     CanonicalBlockHeader,
+    Ed25519Signer,
     MerkleTree,
     SignedTransaction,
-    Ed25519Signer,
     blake2b256_hex,
-    canonical_json
+    canonical_json,
 )
 from rustchain_tx_handler import TransactionPool
 
@@ -440,9 +445,29 @@ class BlockProducer:
                         tx_count INTEGER NOT NULL,
                         attestation_count INTEGER NOT NULL,
                         body_json TEXT NOT NULL,
+                        randomness_beacon TEXT,
+                        randomness_proof_json TEXT,
                         created_at INTEGER NOT NULL
                     )
                 """)
+                _ensure_block_randomness_columns(conn)
+
+                prev_randomness = _latest_randomness(conn)
+                randomness_record = build_randomness_record(
+                    height=block.height,
+                    block_hash=block.hash,
+                    prev_hash=block.header.prev_hash,
+                    prev_randomness=prev_randomness,
+                    merkle_root=block.header.merkle_root,
+                    attestations_hash=block.header.attestations_hash,
+                    producer=block.header.producer,
+                    timestamp=block.header.timestamp,
+                )
+                randomness_proof_json = json.dumps(
+                    randomness_record["proof"],
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
 
                 # Insert block
                 cursor.execute("""
@@ -450,8 +475,8 @@ class BlockProducer:
                         height, block_hash, prev_hash, timestamp,
                         merkle_root, state_root, attestations_hash,
                         producer, producer_sig, tx_count, attestation_count,
-                        body_json, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        body_json, randomness_beacon, randomness_proof_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     block.height,
                     block.hash,
@@ -465,6 +490,8 @@ class BlockProducer:
                     len(block.body.transactions),
                     len(block.body.attestations),
                     json.dumps(block.body.to_dict()),
+                    randomness_record["randomness"],
+                    randomness_proof_json,
                     int(time.time())
                 ))
 
@@ -562,7 +589,7 @@ class BlockValidator:
                 )
                 result = cursor.fetchone()
                 if result and result[0] != block.header.prev_hash:
-                    return False, f"Invalid prev_hash"
+                    return False, "Invalid prev_hash"
 
         # 5. Validate producer signature (if we have pubkey)
         if producer_pubkey:
@@ -649,6 +676,11 @@ def _row_to_block(row: sqlite3.Row) -> Dict:
             block["body"] = json.loads(block["body_json"])
         except (TypeError, ValueError):
             pass
+    if block.get("randomness_proof_json"):
+        try:
+            block["randomness_proof"] = json.loads(block["randomness_proof_json"])
+        except (TypeError, ValueError):
+            pass
     return block
 
 
@@ -671,9 +703,33 @@ def _blocks_table_missing(exc: sqlite3.Error) -> bool:
     )
 
 
+def _sqlite_table_columns(conn: sqlite3.Connection, table: str) -> set:
+    return {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+
+
+def _ensure_block_randomness_columns(conn: sqlite3.Connection):
+    columns = _sqlite_table_columns(conn, "blocks")
+    if "randomness_beacon" not in columns:
+        conn.execute("ALTER TABLE blocks ADD COLUMN randomness_beacon TEXT")
+    if "randomness_proof_json" not in columns:
+        conn.execute("ALTER TABLE blocks ADD COLUMN randomness_proof_json TEXT")
+
+
+def _latest_randomness(conn: sqlite3.Connection) -> str:
+    try:
+        row = conn.execute(
+            "SELECT randomness_beacon FROM blocks "
+            "WHERE randomness_beacon IS NOT NULL "
+            "ORDER BY height DESC LIMIT 1"
+        ).fetchone()
+    except sqlite3.Error:
+        return GENESIS_RANDOMNESS
+    return row[0] if row and row[0] else GENESIS_RANDOMNESS
+
+
 def create_block_api_routes(app, producer: BlockProducer, validator: BlockValidator):
     """Create Flask routes for block API"""
-    from flask import request, jsonify
+    from flask import jsonify, request
 
     @app.route('/block/latest', methods=['GET'])
     def get_latest_block():
@@ -708,6 +764,79 @@ def create_block_api_routes(app, producer: BlockProducer, validator: BlockValida
             if row:
                 return jsonify(dict(row))
             return jsonify({"error": "Block not found"}), 404
+
+    def _randomness_response(row):
+        try:
+            proof = json.loads(row["randomness_proof_json"])
+        except (TypeError, ValueError, json.JSONDecodeError):
+            logger.exception(
+                "Stored randomness proof is invalid for block height %s",
+                row["height"],
+            )
+            return {
+                "ok": False,
+                "error": "Stored randomness proof is invalid",
+            }, 500
+        randomness = row["randomness_beacon"]
+        return {
+            "ok": True,
+            "height": row["height"],
+            "block_hash": row["block_hash"],
+            "randomness": randomness,
+            "proof": proof,
+            "verified": verify_randomness_record(randomness, proof),
+        }
+
+    def _jsonify_randomness_response(row):
+        response = _randomness_response(row)
+        if isinstance(response, tuple):
+            body, status_code = response
+            return jsonify(body), status_code
+        return jsonify(response)
+
+    @app.route('/block/randomness/latest', methods=['GET'])
+    @app.route('/api/randomness/latest', methods=['GET'])
+    def get_latest_randomness():
+        """Return the latest stored on-chain randomness beacon."""
+        with sqlite3.connect(producer.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            try:
+                _ensure_block_randomness_columns(conn)
+                row = conn.execute(
+                    "SELECT height, block_hash, randomness_beacon, randomness_proof_json "
+                    "FROM blocks WHERE randomness_beacon IS NOT NULL "
+                    "ORDER BY height DESC LIMIT 1"
+                ).fetchone()
+            except sqlite3.Error as exc:
+                if _blocks_table_missing(exc):
+                    return jsonify({"ok": False, "error": "No blocks found"}), 404
+                logger.exception("Randomness lookup failed")
+                return jsonify({"ok": False, "error": "Block database unavailable"}), 500
+        if not row:
+            return jsonify({"ok": False, "error": "No blocks found"}), 404
+        return _jsonify_randomness_response(row)
+
+    @app.route('/block/randomness/<int:height>', methods=['GET'])
+    @app.route('/api/randomness/<int:height>', methods=['GET'])
+    def get_randomness_by_height(height: int):
+        """Return the stored on-chain randomness beacon for a block height."""
+        with sqlite3.connect(producer.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            try:
+                _ensure_block_randomness_columns(conn)
+                row = conn.execute(
+                    "SELECT height, block_hash, randomness_beacon, randomness_proof_json "
+                    "FROM blocks WHERE height = ? AND randomness_beacon IS NOT NULL",
+                    (height,),
+                ).fetchone()
+            except sqlite3.Error as exc:
+                if _blocks_table_missing(exc):
+                    return jsonify({"ok": False, "error": "Block not found"}), 404
+                logger.exception("Randomness lookup failed")
+                return jsonify({"ok": False, "error": "Block database unavailable"}), 500
+        if not row:
+            return jsonify({"ok": False, "error": "Block not found"}), 404
+        return _jsonify_randomness_response(row)
 
     @app.route('/v1/blocks/batch', methods=['POST'])
     @app.route('/api/blocks/batch', methods=['POST'])
@@ -851,8 +980,8 @@ def create_block_api_routes(app, producer: BlockProducer, validator: BlockValida
 # =============================================================================
 
 if __name__ == "__main__":
-    import tempfile
     import os
+    import tempfile
 
     print("=" * 70)
     print("RustChain Block Producer - Test Suite")
@@ -872,7 +1001,7 @@ if __name__ == "__main__":
         addr, pub, priv = generate_wallet_keypair()
         signer = Ed25519Signer(bytes.fromhex(priv))
 
-        print(f"\n=== Test Wallet ===")
+        print("\n=== Test Wallet ===")
         print(f"Address: {addr}")
 
         # Seed balance
@@ -904,14 +1033,14 @@ if __name__ == "__main__":
             wallet_address=addr
         )
 
-        print(f"\n=== Slot Info ===")
+        print("\n=== Slot Info ===")
         slot = producer.get_current_slot()
         print(f"Current slot: {slot}")
         print(f"Expected producer: {producer.get_round_robin_producer(slot)}")
         print(f"Is my turn: {producer.is_my_turn()}")
 
         # Create a test transaction
-        print(f"\n=== Creating Test Transaction ===")
+        print("\n=== Creating Test Transaction ===")
         addr2, _, _ = generate_wallet_keypair()
 
         tx = SignedTransaction(
@@ -928,7 +1057,7 @@ if __name__ == "__main__":
         print(f"TX submitted: {success}, {result}")
 
         # Produce block
-        print(f"\n=== Producing Block ===")
+        print("\n=== Producing Block ===")
         block = producer.produce_block()
 
         if block:
@@ -940,12 +1069,12 @@ if __name__ == "__main__":
             print(f"Attestation count: {len(block.body.attestations)}")
 
             # Save block
-            print(f"\n=== Saving Block ===")
+            print("\n=== Saving Block ===")
             saved = producer.save_block(block)
             print(f"Saved: {saved}")
 
             # Validate
-            print(f"\n=== Validating Block ===")
+            print("\n=== Validating Block ===")
             validator = BlockValidator(db_path)
             # Need to fake the expected producer since we only have one attester
             is_valid, error = block.validate_structure()
@@ -953,7 +1082,7 @@ if __name__ == "__main__":
 
             # Check block in DB
             latest = producer.get_latest_block()
-            print(f"\n=== Latest Block in DB ===")
+            print("\n=== Latest Block in DB ===")
             print(f"Height: {latest['height']}")
             print(f"Hash: {latest['block_hash'][:32]}...")
 
