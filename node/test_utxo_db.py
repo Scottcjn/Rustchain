@@ -110,6 +110,30 @@ class TestUtxoDB(unittest.TestCase):
         # Balance unchanged
         self.assertEqual(self.db.get_balance('alice'), 50 * UNIT)
 
+    def test_apply_transaction_rejects_malformed_inputs(self):
+        self._apply_coinbase('alice', 50 * UNIT)
+
+        malformed_inputs = [
+            [{}],
+            ['not-a-dict'],
+            {'box_id': 'not-a-list'},
+            [{'box_id': ''}],
+            [{'box_id': '   '}],
+        ]
+
+        for inputs in malformed_inputs:
+            with self.subTest(inputs=inputs):
+                ok = self.db.apply_transaction({
+                    'tx_type': 'transfer',
+                    'inputs': inputs,
+                    'outputs': [{'address': 'bob', 'value_nrtc': 50 * UNIT}],
+                    'fee_nrtc': 0,
+                }, block_height=10)
+
+                self.assertFalse(ok)
+                self.assertEqual(self.db.get_balance('alice'), 50 * UNIT)
+                self.assertEqual(self.db.get_balance('bob'), 0)
+
     def test_transfer_with_fee(self):
         self._apply_coinbase('alice', 100 * UNIT)
         alice_boxes = self.db.get_unspent_for_address('alice')
@@ -623,6 +647,29 @@ class TestUtxoDB(unittest.TestCase):
         self.assertFalse(
             self.db.mempool_check_double_spend(boxes[0]['box_id'])
         )
+
+    def test_mempool_rejects_malformed_inputs_without_locking(self):
+        self._apply_coinbase('alice', 100 * UNIT)
+
+        malformed_inputs = [
+            [{}],
+            ['not-a-dict'],
+            {'box_id': 'not-a-list'},
+            [{'box_id': ''}],
+            [{'box_id': '   '}],
+        ]
+
+        for idx, inputs in enumerate(malformed_inputs):
+            with self.subTest(inputs=inputs):
+                ok = self.db.mempool_add({
+                    'tx_id': f'malformed-{idx}',
+                    'inputs': inputs,
+                    'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+                    'fee_nrtc': 0,
+                })
+
+                self.assertFalse(ok)
+                self.assertEqual(self.db.mempool_get_block_candidates(), [])
 
     def test_mempool_size_limit_checked_inside_write_transaction(self):
         """Concurrent admissions must not bypass MAX_POOL_SIZE."""

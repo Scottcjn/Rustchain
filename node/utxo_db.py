@@ -325,7 +325,7 @@ class UtxoDB:
                 check = conn.execute(
                     "SELECT spent_at, spent_by_tx FROM utxo_boxes WHERE box_id = ?",
                     (box_id,),
-                ).fetchone() if not own else None
+                ).fetchone()
                 if check is not None:
                     raise ValueError(
                         f"Double-spend attempt: box {box_id[:16]} already spent "
@@ -417,6 +417,22 @@ class UtxoDB:
 
         if len(normalized) != len(set(normalized)):
             return None
+
+        return normalized
+
+    def _normalize_inputs(self, inputs: Any) -> Optional[List[dict]]:
+        """Return validated spending inputs, or None on invalid shape."""
+        if not isinstance(inputs, list):
+            return None
+
+        normalized = []
+        for inp in inputs:
+            if not isinstance(inp, dict):
+                return None
+            box_id = inp.get('box_id')
+            if not isinstance(box_id, str) or not box_id.strip():
+                return None
+            normalized.append(dict(inp))
 
         return normalized
 
@@ -558,7 +574,8 @@ class UtxoDB:
         # Require _allow_minting=True (internal flag) to permit mining_reward.
         if tx_type in MINTING_TX_TYPES and not tx.get('_allow_minting'):
             return False
-        if not isinstance(inputs, list):
+        inputs = self._normalize_inputs(inputs)
+        if inputs is None:
             return False
         if len(inputs) > MAX_INPUTS:
             return False
@@ -953,6 +970,11 @@ class UtxoDB:
                 if manage_tx:
                     conn.execute("ROLLBACK")
                 return False
+            inputs = self._normalize_inputs(inputs)
+            if inputs is None:
+                if manage_tx:
+                    conn.execute("ROLLBACK")
+                return False
             data_inputs = tx.get('data_inputs', [])
             now = int(time.time())
             timestamp = tx.get('timestamp', now)
@@ -969,10 +991,6 @@ class UtxoDB:
                     conn.execute("ROLLBACK")
                 return False
 
-            if not isinstance(inputs, list):
-                if manage_tx:
-                    conn.execute("ROLLBACK")
-                return False
             if len(inputs) > MAX_INPUTS:
                 if manage_tx:
                     conn.execute("ROLLBACK")
