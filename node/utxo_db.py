@@ -545,6 +545,8 @@ class UtxoDB:
 
         Returns True on success, False on validation failure.
         """
+        if not isinstance(tx, dict):
+            return False
         own = conn is None
 
         ts = tx.get('timestamp', int(time.time()))

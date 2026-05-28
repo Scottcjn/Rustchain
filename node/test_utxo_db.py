@@ -134,6 +134,11 @@ class TestUtxoDB(unittest.TestCase):
                 self.assertEqual(self.db.get_balance('alice'), 50 * UNIT)
                 self.assertEqual(self.db.get_balance('bob'), 0)
 
+    def test_apply_transaction_rejects_non_object_transactions(self):
+        for tx in (None, [], 'not-a-dict', 123):
+            with self.subTest(tx=tx):
+                self.assertFalse(self.db.apply_transaction(tx, block_height=10))
+
     def test_transfer_with_fee(self):
         self._apply_coinbase('alice', 100 * UNIT)
         alice_boxes = self.db.get_unspent_for_address('alice')
