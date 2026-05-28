@@ -689,11 +689,45 @@ class TestSophiaAPI(unittest.TestCase):
             "miner_id": "dash_m",
             "fingerprint": _suspicious_fingerprint(),
         })
-        resp = self.client.get("/sophia/dashboard")
+        with patch.dict(os.environ, {"SOPHIA_ADMIN_KEY": self.admin_key}, clear=False):
+            resp = self.client.get(
+                "/sophia/dashboard",
+                headers={"X-Admin-Key": self.admin_key},
+            )
         self.assertEqual(resp.status_code, 200)
         data = resp.get_json()
         self.assertIn("total_inspections", data)
         self.assertIn("spot_check_queue", data)
+
+    def test_dashboard_requires_valid_admin_key(self):
+        self._post_inspection({
+            "miner_id": "dash_auth_m",
+            "fingerprint": _suspicious_fingerprint(),
+        })
+
+        with patch.dict(os.environ, {"SOPHIA_ADMIN_KEY": self.admin_key}, clear=False):
+            missing = self.client.get("/sophia/dashboard")
+            wrong = self.client.get(
+                "/sophia/dashboard",
+                headers={"X-Admin-Key": "wrong-secret"},
+            )
+
+        self.assertEqual(missing.status_code, 401)
+        self.assertEqual(wrong.status_code, 401)
+        self.assertEqual(missing.get_json()["error"], "Unauthorized")
+        self.assertEqual(wrong.get_json()["error"], "Unauthorized")
+
+    def test_dashboard_fails_closed_when_admin_key_unconfigured(self):
+        self._post_inspection({
+            "miner_id": "dash_unconfigured_m",
+            "fingerprint": _suspicious_fingerprint(),
+        })
+
+        with patch.dict(os.environ, {}, clear=True):
+            resp = self.client.get("/sophia/dashboard")
+
+        self.assertEqual(resp.status_code, 503)
+        self.assertEqual(resp.get_json()["error"], "SOPHIA_ADMIN_KEY not configured")
 
     def test_explorer_endpoint_with_record(self):
         self._post_inspection({
