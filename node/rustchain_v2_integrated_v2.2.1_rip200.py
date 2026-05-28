@@ -1713,7 +1713,14 @@ HARDWARE_WEIGHTS = {
         "retro": 1.4, "core2": 1.3, "core2duo": 1.3, "nehalem": 1.2,
         "sandy_bridge": 1.1, "sandybridge": 1.1, "ivy_bridge": 1.1, "ivybridge": 1.1,
         "haswell": 1.05, "broadwell": 1.05,
-        "pentium": 1.5, "pentium4": 1.5, "486": 2.0, "386": 2.5,
+        # Pentium M family (mirrors ANTIQUITY_MULTIPLIERS — see rip_200_round_robin_1cpu1vote.py).
+        # `derive_verified_device` resolves Pentium M brand strings to these arch keys;
+        # without them here, enroll_epoch's HARDWARE_WEIGHTS.get(family, {}).get(arch_for_weight)
+        # falls back to 'default' (1.0) and the Banias tier never reaches the miner's weight.
+        "pentium_m": 1.9, "pentium_m_banias": 1.9, "pentium_m_dothan": 1.8, "pentium_m_yonah": 1.6,
+        # Earlier Pentium tiers also covered by `_detect_x86_vintage`.
+        "pentium_iii": 2.0, "pentium_ii": 2.2, "pentium_pro": 2.3, "pentium_mmx": 2.4,
+        "pentium": 1.5, "pentium4": 1.5, "pentium_d": 1.5, "486": 2.0, "386": 2.5,
         "modern": 0.8, "default": 1.0,
     },
     "x86_64": {"modern": 0.8, "default": 0.8},
@@ -2155,6 +2162,72 @@ def _detect_exotic_arch(device: dict) -> Optional[dict]:
     return None
 
 
+def _detect_x86_vintage(cpu_brand: str, machine: str, simd_data: dict):
+    """Identify vintage x86 (Pentium M and earlier) from CPU brand string.
+
+    The Linux/Windows miner sets device['arch']='modern' as a hardcoded x86
+    default (see miners/linux/rustchain_linux_miner.py:_get_hw_info), so without
+    this lookup vintage Pentium M (2003) lands in the 'modern' bucket (0.8x)
+    instead of its proper antiquity tier. The CPU brand string in the device
+    payload is also load-bearing for hardware-id binding, so a spoofer can't
+    lie about it without burning their other identity claims.
+
+    Pentium M is split by clock speed: Banias (130nm, max 1.7GHz, 1MB L2)
+    vs Dothan (90nm, up to 2.26GHz, 2MB L2). Yonah (2006, first dual-core
+    Core Duo) reports as 64-bit-capable.
+
+    Verified against IBM ThinkPad T40 (2373-7CU) Pentium M Banias 1.5GHz
+    on 2026-05-27: all 7 hardware fingerprint checks PASS, anti-emulation
+    0 indicators, SSE+SSE2 only (no SSE3), i686.
+
+    Returns dict with device_family/device_arch on match, else None.
+    """
+    if not cpu_brand:
+        return None
+
+    cpu_lower = cpu_brand.lower()
+    machine_lower = (machine or "").lower()
+
+    # Pentium M family — \b boundary + (?!\d) avoids false-matching "Pentium M4".
+    if re.search(r"\bpentium(?:\(r\))?\s+m\b(?!\d)", cpu_lower):
+        # Parse clock speed from brand string ("1500MHz" or "1.5GHz" form).
+        speed_mhz = None
+        mhz = re.search(r"(\d+)\s*mhz", cpu_lower)
+        if mhz:
+            speed_mhz = int(mhz.group(1))
+        else:
+            ghz = re.search(r"(\d+(?:\.\d+)?)\s*ghz", cpu_lower)
+            if ghz:
+                speed_mhz = int(float(ghz.group(1)) * 1000)
+
+        if machine_lower in ("i686", "i386", "x86", ""):
+            # 32-bit-only Pentium M = Banias or Dothan. Banias max clock was 1.7GHz.
+            pm_arch = "pentium_m_banias" if (speed_mhz and speed_mhz <= 1700) else "pentium_m_dothan"
+        else:
+            # 64-bit-capable Pentium M brand = Yonah (first Core/Core Duo).
+            pm_arch = "pentium_m_yonah"
+
+        print(f"[X86_VINTAGE] Pentium M: brand={cpu_brand[:50]!r} "
+              f"machine={machine_lower} speed={speed_mhz}MHz -> x86/{pm_arch}")
+        return {"device_family": "x86", "device_arch": pm_arch}
+
+    # Pentium III — \biii\b guards against matching "Pentium II" prefix.
+    if re.search(r"\bpentium(?:\(r\))?\s+iii\b", cpu_lower):
+        return {"device_family": "x86", "device_arch": "pentium_iii"}
+
+    # Pentium II — \bii\b with negative lookahead for "iii".
+    if re.search(r"\bpentium(?:\(r\))?\s+ii\b(?!i)", cpu_lower):
+        return {"device_family": "x86", "device_arch": "pentium_ii"}
+
+    if re.search(r"\bpentium(?:\(r\))?\s+pro\b", cpu_lower):
+        return {"device_family": "x86", "device_arch": "pentium_pro"}
+
+    if re.search(r"\bpentium(?:\(r\))?\s+mmx\b", cpu_lower):
+        return {"device_family": "x86", "device_arch": "pentium_mmx"}
+
+    return None
+
+
 def derive_verified_device(device: dict, fingerprint: dict, fingerprint_passed: bool) -> dict:
     family, arch = _claimed_family_and_arch(device)
     cpu_brand = _cpu_brand_string(device)
@@ -2275,6 +2348,14 @@ def derive_verified_device(device: dict, fingerprint: dict, fingerprint_passed: 
         if _has_any_token(cpu_brand, X86_CPU_BRANDS) or bool(simd_data.get("has_sse")) or bool(simd_data.get("has_avx")):
             return {"device_family": "x86_64", "device_arch": "default"}
         return {"device_family": "x86", "device_arch": "default"}
+
+    # x86 vintage detection — Pentium M, PIII, etc. fall through here because
+    # the miner sets arch='modern' as a default for all x86. Re-derive from the
+    # CPU brand string so genuine vintage silicon gets its proper multiplier.
+    if family.lower() in ("x86", "x86_64") or arch.lower() in ("modern", "default", "unknown", ""):
+        x86_vintage = _detect_x86_vintage(cpu_brand, machine, simd_data)
+        if x86_vintage:
+            return x86_vintage
 
     # Non-PowerPC, non-ARM, non-exotic — return claimed values
     return {"device_family": family, "device_arch": arch}

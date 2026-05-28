@@ -285,7 +285,17 @@ ANTIQUITY_MULTIPLIERS = {
     "pentium_pro": 2.3,
     "pentium_ii": 2.2,
     "pentium_iii": 2.0,
-    
+
+    # Intel Pentium M (2003-2006) — mobile P6 lineage, NOT NetBurst.
+    # Architecturally descended from Pentium III; predates Core 2 by 3 years.
+    # Verified against IBM ThinkPad T40 (2373-7CU) Banias 1.5GHz, 2003 silicon:
+    # all 7 hardware fingerprint checks pass, anti-emulation 0 indicators,
+    # SSE+SSE2 only (no SSE3), no LM (i686-only), 1MB L2 cache.
+    "pentium_m": 1.9,             # Generic Pentium M
+    "pentium_m_banias": 1.9,      # 2003, 130nm, 1MB L2, max 1.7GHz (T40 class)
+    "pentium_m_dothan": 1.8,      # 2004, 90nm, 2MB L2, up to 2.26GHz
+    "pentium_m_yonah": 1.6,       # 2006, dual-core, first Core/Core Duo
+
     # Intel Pentium 4 (2000-2006)
     "pentium4": 1.5,
     "pentium_d": 1.5,
