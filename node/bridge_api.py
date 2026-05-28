@@ -54,6 +54,7 @@ except ImportError:
 # =============================================================================
 
 BRIDGE_DEFAULT_CONFIRMATIONS = int(os.environ.get("RC_BRIDGE_DEFAULT_CONFIRMATIONS", "12"))
+BRIDGE_MAX_CONFIRMATIONS = int(os.environ.get("RC_BRIDGE_MAX_CONFIRMATIONS", "1000"))
 BRIDGE_LOCK_EXPIRY_SECONDS = int(os.environ.get("RC_BRIDGE_LOCK_EXPIRY_SECONDS", "604800"))  # 7 days
 BRIDGE_MIN_AMOUNT_RTC = float(os.environ.get("RC_BRIDGE_MIN_AMOUNT_RTC", "1.0"))
 BRIDGE_UNIT = 1000000  # Micro-units per RTC
@@ -665,9 +666,38 @@ def update_external_confirmation(
             "error": "Cannot update completed/failed/voided transfer",
             "current_status": transfer["status"]
         }
+
+    try:
+        confirmations = int(confirmations)
+    except (TypeError, ValueError):
+        return False, {"error": "confirmations must be an integer"}
+    if confirmations < 0 or confirmations > BRIDGE_MAX_CONFIRMATIONS:
+        return False, {
+            "error": f"confirmations must be between 0 and {BRIDGE_MAX_CONFIRMATIONS}"
+        }
     
     now = int(time.time())
-    req_conf = required_confirmations or transfer["required_confirmations"] or BRIDGE_DEFAULT_CONFIRMATIONS
+    existing_req_conf = transfer["required_confirmations"] or BRIDGE_DEFAULT_CONFIRMATIONS
+    if required_confirmations is None:
+        req_conf = existing_req_conf
+    else:
+        try:
+            req_conf = int(required_confirmations)
+        except (TypeError, ValueError):
+            return False, {"error": "required_confirmations must be an integer"}
+        if req_conf < existing_req_conf:
+            return False, {
+                "error": "required_confirmations cannot be lowered",
+                "required_confirmations": existing_req_conf,
+            }
+        if req_conf > BRIDGE_MAX_CONFIRMATIONS:
+            return False, {
+                "error": (
+                    f"required_confirmations must be between "
+                    f"{existing_req_conf} and {BRIDGE_MAX_CONFIRMATIONS}"
+                ),
+                "required_confirmations": existing_req_conf,
+            }
     
     # Determine new status
     if confirmations >= req_conf:
