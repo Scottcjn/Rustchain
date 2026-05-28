@@ -65,6 +65,7 @@ MIN_SOL_BALANCE_LAMPORTS = int(0.1 * 1e9)  # 0.1 SOL
 MIN_ETH_BALANCE_WEI = int(0.01 * 1e18)  # 0.01 ETH
 MIN_WALLET_AGE_DAYS = 7
 MIN_GITHUB_AGE_DAYS = 30
+GITHUB_USERNAME_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?$")
 
 # Airdrop allocation
 TOTAL_SOLANA_ALLOCATION = 30_000 * 1_000_000  # 30k wRTC (6 decimals)
@@ -300,6 +301,10 @@ class AirdropV2:
     def _normalize_github_username(github_username: str) -> str:
         return (github_username or "").strip().casefold()
 
+    @staticmethod
+    def _is_valid_github_username(github_username: str) -> bool:
+        return bool(GITHUB_USERNAME_RE.fullmatch(github_username))
+
     def check_eligibility(
         self,
         github_username: str,
@@ -322,6 +327,11 @@ class AirdropV2:
             EligibilityResult with tier and reward info
         """
         github_username = self._normalize_github_username(github_username)
+        if not self._is_valid_github_username(github_username):
+            return EligibilityResult(
+                eligible=False,
+                reason="Invalid GitHub username",
+            )
         chain_lower = chain.lower()
         if chain_lower not in ["solana", "base"]:
             return EligibilityResult(
@@ -764,6 +774,8 @@ class AirdropV2:
             (success, message, claim_record)
         """
         github_username = self._normalize_github_username(github_username)
+        if not self._is_valid_github_username(github_username):
+            return False, "Invalid GitHub username", None
         chain_lower = chain.lower()
 
         if self._has_claimed(github_username, wallet_address, chain_lower):
@@ -1276,6 +1288,16 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
             return None, (jsonify({"ok": False, "error": f"{name}_too_long"}), 400)
         return value, None
 
+    def github_username_field(data: Dict[str, Any], name: str):
+        value, error = string_field(data, name, max_length=39)
+        if error:
+            return value, error
+        if value and not AirdropV2._is_valid_github_username(
+            AirdropV2._normalize_github_username(value)
+        ):
+            return None, (jsonify({"ok": False, "error": f"{name} must be a valid GitHub username"}), 400)
+        return value, None
+
     def optional_string_field(data: Dict[str, Any], name: str):
         if name not in data or data.get(name) is None:
             return None, None
@@ -1300,7 +1322,7 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
         if error:
             return error
 
-        github_username, error = string_field(data, "github_username")
+        github_username, error = github_username_field(data, "github_username")
         if error:
             return error
         wallet_address, error = string_field(data, "wallet_address")
@@ -1336,7 +1358,7 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
         if error:
             return error
 
-        github_username, error = string_field(data, "github_username", max_length=128)
+        github_username, error = github_username_field(data, "github_username")
         if error:
             return error
         wallet_address, error = string_field(data, "wallet_address", max_length=128)
