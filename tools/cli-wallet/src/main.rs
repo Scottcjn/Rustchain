@@ -102,11 +102,12 @@ impl Wallet {
         let public_key_bytes = public_key.serialize();
         let public_key_hex = hex::encode(public_key_bytes);
         
-        // Generate address from public key hash
+        // Keep this legacy CLI aligned with the canonical RustChain address format:
+        // RTC + the first 40 hex characters of SHA-256(public key bytes).
         let mut hasher = Sha256::new();
         hasher.update(&public_key_bytes);
         let hash = hasher.finalize();
-        let address = format!("RTC{}", base58::encode(&hash[0..20]));
+        let address = format!("RTC{}", &hex::encode(hash)[..40]);
         
         Ok(Wallet {
             address,
@@ -146,13 +147,12 @@ impl Wallet {
 }
 
 fn validate_address(address: &str) -> bool {
-    // Basic validation: should start with "RTC" and be base58 encoded
     if !address.starts_with("RTC") {
         return false;
     }
-    
+
     let addr_part = &address[3..];
-    base58::decode(addr_part).is_ok() && addr_part.len() >= 25
+    addr_part.len() == 40 && addr_part.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 async fn get_balance(node_url: &str, address: &str) -> Result<u64> {
@@ -301,15 +301,20 @@ mod tests {
     
     #[test]
     fn test_address_validation() {
-        assert!(validate_address("RTC1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"));
+        assert!(validate_address("RTC0123456789abcdef0123456789abcdef01234567"));
         assert!(!validate_address("invalid_address"));
-        assert!(!validate_address("BTC1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"));
+        assert!(!validate_address("BTC0123456789abcdef0123456789abcdef01234567"));
+        assert!(!validate_address("RTC1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"));
+        assert!(!validate_address("RTC0123456789abcdef0123456789abcdef0123456"));
+        assert!(!validate_address("RTC0123456789abcdef0123456789abcdef012345678"));
+        assert!(!validate_address("RTC0123456789abcdef0123456789abcdef0123456z"));
     }
     
     #[test]
     fn test_wallet_generation() {
         let wallet = Wallet::new().unwrap();
         assert!(wallet.address.starts_with("RTC"));
+        assert!(validate_address(&wallet.address));
         assert!(!wallet.private_key.is_empty());
         assert!(!wallet.public_key.is_empty());
     }
@@ -319,7 +324,7 @@ mod tests {
         let wallet = Wallet::new().unwrap();
         let transaction = Transaction {
             from: wallet.address.clone(),
-            to: "RTC1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".to_string(),
+            to: "RTC89abcdef0123456789abcdef0123456789abcdef".to_string(),
             amount: 100,
             timestamp: 1234567890,
             signature: String::new(),
