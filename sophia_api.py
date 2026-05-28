@@ -93,6 +93,8 @@ def inspect_fingerprint():
 
     if not miner_id:
         return jsonify({"error": "miner_id is required"}), 400
+    if not isinstance(miner_id, str) or len(miner_id) > 128:
+        return jsonify({"error": "miner_id too long"}), 400
     if not fingerprint or not isinstance(fingerprint, dict):
         return jsonify({"error": "fingerprint bundle (dict) is required"}), 400
 
@@ -103,6 +105,8 @@ def inspect_fingerprint():
 @app.route("/sophia/status/<miner_id>", methods=["GET"])
 def miner_status(miner_id):
     """Get the latest inspection result + history for a miner."""
+    if len(miner_id) > 128:
+        return jsonify({"error": "miner_id too long"}), 400
     conn = get_connection()
     try:
         latest = get_latest_inspection(conn, miner_id)
@@ -154,6 +158,8 @@ def dashboard():
 @app.route("/sophia/explorer/<miner_id>", methods=["GET"])
 def explorer_verdict(miner_id):
     """Emoji verdict for block explorer integration."""
+    if len(miner_id) > 128:
+        return jsonify({"error": "miner_id too long"}), 400
     conn = get_connection()
     try:
         row = get_latest_inspection(conn, miner_id)
