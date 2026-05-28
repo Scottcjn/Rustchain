@@ -156,6 +156,49 @@ def test_bridge_lock_rejects_structured_amount(tmp_path):
     assert response.get_json() == {"ok": False, "error": "amount_wrtc must be a finite number"}
 
 
+@pytest.mark.parametrize(
+    ("amount_wrtc", "message"),
+    [
+        (0, "amount_wrtc must be positive"),
+        (-1, "amount_wrtc must be positive"),
+        (1e100, "amount_wrtc exceeds maximum bridge lock"),
+        (30000.000001, "amount_wrtc exceeds maximum bridge lock"),
+    ],
+)
+def test_bridge_lock_rejects_out_of_range_amounts(tmp_path, amount_wrtc, message):
+    client, _db_path = _make_client(tmp_path)
+
+    response = client.post(
+        "/api/bridge/lock",
+        json={
+            "from_address": "solana-source",
+            "to_address": "base-destination",
+            "from_chain": "solana",
+            "to_chain": "base",
+            "amount_wrtc": amount_wrtc,
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"ok": False, "error": message}
+
+
+def test_airdrop_service_rejects_oversized_bridge_lock(tmp_path):
+    airdrop = AirdropV2(str(tmp_path / "airdrop.db"))
+
+    success, message, lock = airdrop.create_bridge_lock(
+        "solana-source",
+        "base-destination",
+        "solana",
+        "base",
+        30_000 * 1_000_000 + 1,
+    )
+
+    assert success is False
+    assert message == "Amount exceeds maximum bridge lock"
+    assert lock is None
+
+
 def test_bridge_confirm_rejects_structured_source_tx(tmp_path, monkeypatch):
     client, _db_path = _make_client(tmp_path)
     monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")

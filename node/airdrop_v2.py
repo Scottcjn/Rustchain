@@ -69,6 +69,7 @@ MIN_GITHUB_AGE_DAYS = 30
 # Airdrop allocation
 TOTAL_SOLANA_ALLOCATION = 30_000 * 1_000_000  # 30k wRTC (6 decimals)
 TOTAL_BASE_ALLOCATION = 20_000 * 1_000_000  # 20k wRTC (6 decimals)
+MAX_BRIDGE_LOCK_UWRTC = max(TOTAL_SOLANA_ALLOCATION, TOTAL_BASE_ALLOCATION)
 
 # Rate limiting
 CLAIM_COOLDOWN_SECONDS = 86400 * 30  # 30 days between claims
@@ -948,6 +949,8 @@ class AirdropV2:
         # Validate amount
         if amount_uwrtc <= 0:
             return False, "Amount must be positive", None
+        if amount_uwrtc > MAX_BRIDGE_LOCK_UWRTC:
+            return False, "Amount exceeds maximum bridge lock", None
 
         # Generate lock ID
         lock_id = self._generate_id(
@@ -1293,6 +1296,17 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
             return None, (jsonify({"ok": False, "error": f"{name} must be a finite number"}), 400)
         return parsed, None
 
+    def bridge_amount_field(data: Dict[str, Any], name: str):
+        value, error = finite_amount_field(data, name)
+        if error:
+            return value, error
+        if value <= 0:
+            return None, (jsonify({"ok": False, "error": f"{name} must be positive"}), 400)
+        max_wrtc = MAX_BRIDGE_LOCK_UWRTC / 1_000_000
+        if value > max_wrtc:
+            return None, (jsonify({"ok": False, "error": f"{name} exceeds maximum bridge lock"}), 400)
+        return value, None
+
     @app.route("/api/airdrop/eligibility", methods=["POST"])
     def check_airdrop_eligibility():
         """Check airdrop eligibility."""
@@ -1409,7 +1423,7 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
         to_chain, error = string_field(data, "to_chain")
         if error:
             return error
-        amount_wrtc, error = finite_amount_field(data, "amount_wrtc")
+        amount_wrtc, error = bridge_amount_field(data, "amount_wrtc")
         if error:
             return error
 
