@@ -86,6 +86,51 @@ def _attest_is_valid_positive_int(value: Any, max_value: int = 4096) -> bool:
     return 1 <= coerced <= max_value
 
 
+def _attest_metric_is_valid(value: Any) -> bool:
+    """Return whether an optional attestation metric can be safely parsed."""
+    if value is None or value == "":
+        return True
+    if isinstance(value, bool):
+        return False
+    try:
+        coerced = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return False
+    return math.isfinite(coerced)
+
+
+FINGERPRINT_METRIC_PATHS = (
+    ("clock_drift", "cv"),
+    ("clock_drift", "samples"),
+    ("thermal_entropy", "variance"),
+    ("thermal_drift", "variance"),
+    ("instruction_jitter", "cv"),
+    ("instruction_jitter", "stddev_ns"),
+    ("cache_timing", "hierarchy_ratio"),
+)
+
+
+def _validate_fingerprint_metric_shapes(fingerprint: Any):
+    checks = fingerprint.get("checks") if isinstance(fingerprint, dict) else None
+    if not isinstance(checks, dict):
+        return None
+
+    for check_name, metric_name in FINGERPRINT_METRIC_PATHS:
+        check = checks.get(check_name)
+        if not isinstance(check, dict):
+            continue
+        data = check.get("data", {})
+        if not isinstance(data, dict) or metric_name not in data:
+            continue
+        if not _attest_metric_is_valid(data.get(metric_name)):
+            return _attest_field_error(
+                "INVALID_FINGERPRINT_METRIC",
+                f"Field 'fingerprint.checks.{check_name}.data.{metric_name}' must be a finite number",
+                status=422,
+            )
+    return None
+
+
 def _attest_positive_int(value: Any, default: int = 1) -> int:
     """Coerce untrusted integer-like values to a safe positive integer."""
     try:
@@ -238,5 +283,8 @@ def _validate_attestation_payload_shape(data: Any):
             "INVALID_FINGERPRINT_CHECKS",
             "Field 'fingerprint.checks' must be a JSON object",
         )
+    fingerprint_metric_error = _validate_fingerprint_metric_shapes(fingerprint)
+    if fingerprint_metric_error:
+        return fingerprint_metric_error
 
     return None

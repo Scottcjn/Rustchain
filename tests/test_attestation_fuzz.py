@@ -412,6 +412,56 @@ def test_attest_submit_no_500_on_malformed_fingerprint(client):
     assert "ok" in data or "error" in data
 
 
+def test_attest_submit_rejects_malformed_clock_drift_metric(client):
+    payload = _attach_live_challenge(client, _base_payload())
+    payload["fingerprint"]["checks"]["clock_drift"]["data"] = {
+        "cv": ["not", "numeric"],
+        "samples": 25,
+    }
+
+    response = client.post("/attest/submit", json=payload)
+
+    assert response.status_code in (400, 422)
+    body = response.get_json()
+    assert body["ok"] is False
+    assert body["code"] == "INVALID_FINGERPRINT_METRIC"
+
+
+@pytest.mark.parametrize("check_name,metric_name", integrated_node.FINGERPRINT_METRIC_PATHS)
+def test_attest_submit_rejects_malformed_metric_paths(client, check_name, metric_name):
+    payload = _attach_live_challenge(client, _base_payload())
+    checks = payload["fingerprint"]["checks"]
+    check = checks.setdefault(check_name, {"passed": True, "data": {}})
+    data = check.setdefault("data", {})
+    data[metric_name] = {"not": "numeric"}
+
+    response = client.post("/attest/submit", json=payload)
+
+    assert response.status_code == 422
+    body = response.get_json()
+    assert body["ok"] is False
+    assert body["code"] == "INVALID_FINGERPRINT_METRIC"
+    assert f"fingerprint.checks.{check_name}.data.{metric_name}" in body["message"]
+
+
+def test_extract_temporal_profile_defaults_malformed_optional_metrics():
+    profile = integrated_node.extract_temporal_profile({
+        "checks": {
+            "clock_drift": {"data": {"cv": "0.125"}},
+            "thermal_entropy": {"data": {"variance": {"bad": "shape"}}},
+            "instruction_jitter": {"data": {"cv": ["bad"], "stddev_ns": "nan"}},
+            "cache_timing": {"data": {"hierarchy_ratio": True}},
+        }
+    })
+
+    assert profile == {
+        "clock_drift_cv": 0.125,
+        "thermal_variance": 0.0,
+        "jitter_cv": 0.0,
+        "cache_hierarchy_ratio": 0.0,
+    }
+
+
 def test_attest_submit_no_500_on_edge_case_architectures(client):
     """
     FIX #1147: Edge case device architectures should not cause crashes.
