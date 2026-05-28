@@ -82,6 +82,7 @@ class TestApiNodesRealRoute(unittest.TestCase):
         sys.modules.pop(_MODULE_NAME, None)
         cls.flask_app = None
         gc.collect()
+        gc.collect()  # second pass: __del__ of one object may enqueue others
         try:
             os.unlink(cls._tmp.name)
         except OSError:
