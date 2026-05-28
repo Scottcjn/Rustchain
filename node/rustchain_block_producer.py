@@ -252,7 +252,7 @@ class BlockProducer:
 
     def get_round_robin_producer(self, slot: int) -> Optional[str]:
         """
-        Deterministic round-robin block producer selection.
+        Deterministic weighted-fair block producer selection.
 
         Returns wallet address of the selected producer for this slot.
         """
@@ -262,8 +262,92 @@ class BlockProducer:
         if not attested_miners:
             return None
 
-        producer_index = slot % len(attested_miners)
-        return attested_miners[producer_index][0]
+        rotation = self._build_balanced_producer_rotation(attested_miners)
+        producer_index = slot % len(rotation)
+        return rotation[producer_index]
+
+    @staticmethod
+    def _miner_selection_weight(attested_miner) -> float:
+        """Return a bounded producer-selection weight for an attested miner."""
+        device_info = attested_miner[2] if len(attested_miner) > 2 and attested_miner[2] else {}
+
+        explicit_weight = device_info.get("weight")
+        if explicit_weight is not None:
+            try:
+                return min(max(float(explicit_weight), 1.0), 10.0)
+            except (TypeError, ValueError):
+                pass
+
+        family = str(device_info.get("family") or "").lower()
+        arch = str(attested_miner[1] or device_info.get("arch") or "").lower()
+        combined = f"{family} {arch}"
+
+        if "g5" in combined:
+            return 2.0
+        if "g4" in combined or "powerpc" in combined or "ppc" in combined:
+            return 2.5
+        if "power8" in combined or "power9" in combined:
+            return 1.5
+
+        return 1.0
+
+    @classmethod
+    def _build_balanced_producer_rotation(cls, attested_miners) -> List[str]:
+        """
+        Build a deterministic weighted-fair rotation for the active miners.
+
+        Equal weights preserve the previous alphabetical round-robin order. When
+        miners carry explicit or device-derived weights, the cycle repeats each
+        miner proportional to its bounded weight while spreading duties across
+        the cycle instead of clustering them.
+        """
+        weighted_miners = [
+            (miner[0], cls._miner_selection_weight(miner))
+            for miner in attested_miners
+        ]
+        if not weighted_miners:
+            return []
+
+        cycle_len = sum(max(1, int(round(weight))) for _, weight in weighted_miners)
+        assigned = {miner_id: 0 for miner_id, _ in weighted_miners}
+        rotation = []
+
+        for _ in range(cycle_len):
+            miner_id, _ = min(
+                weighted_miners,
+                key=lambda item: (
+                    assigned[item[0]] / item[1],
+                    item[0],
+                ),
+            )
+            assigned[miner_id] += 1
+            rotation.append(miner_id)
+
+        return rotation
+
+    def get_producer_balance_summary(self, start_slot: int, slots: int = 32) -> Dict:
+        """Return scheduled producer duties over a bounded future slot window."""
+        slots = max(1, min(int(slots), 256))
+        current_ts = self.get_slot_start_time(start_slot)
+        attested_miners = self.get_attested_miners(current_ts)
+        rotation = self._build_balanced_producer_rotation(attested_miners)
+
+        duty_counts = {miner[0]: 0 for miner in attested_miners}
+        schedule = []
+        if rotation:
+            for offset in range(slots):
+                slot = start_slot + offset
+                producer = rotation[slot % len(rotation)]
+                duty_counts[producer] += 1
+                schedule.append({"slot": slot, "producer": producer})
+
+        return {
+            "start_slot": start_slot,
+            "slots": slots,
+            "rotation_size": len(rotation),
+            "duty_counts": duty_counts,
+            "schedule": schedule,
+        }
 
     def is_my_turn(self, slot: int = None) -> bool:
         """Check if it's this node's turn to produce a block"""
@@ -950,6 +1034,7 @@ def create_block_api_routes(app, producer: BlockProducer, validator: BlockValida
         return jsonify({
             "slot": slot,
             "expected_producer": expected_producer,
+            "balance": producer.get_producer_balance_summary(slot, slots=16),
             "slot_start": slot_start,
             "slot_end": slot_end,
             "time_remaining": max(0, slot_end - int(time.time())),
@@ -964,10 +1049,15 @@ def create_block_api_routes(app, producer: BlockProducer, validator: BlockValida
 
         return jsonify({
             "count": len(miners),
+            "balance": producer.get_producer_balance_summary(
+                producer.get_current_slot(),
+                slots=max(len(miners), 1)
+            ),
             "producers": [
                 {
                     "wallet": m[0],
                     "arch": m[1],
+                    "selection_weight": producer._miner_selection_weight(m),
                     "device_info": m[2]
                 }
                 for m in miners
