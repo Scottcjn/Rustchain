@@ -8,6 +8,7 @@ test client, and asserts both the returned node count and the number of
 health-check attempts are at most 200.
 """
 
+import gc
 import importlib
 import os
 import sqlite3
@@ -76,8 +77,15 @@ class TestApiNodesRealRoute(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        os.unlink(cls._tmp.name)
+        # Release module and app references first so Windows releases the SQLite
+        # file handle before we attempt to unlink.
         sys.modules.pop(_MODULE_NAME, None)
+        cls.flask_app = None
+        gc.collect()
+        try:
+            os.unlink(cls._tmp.name)
+        except OSError:
+            pass
 
     def _fake_get(self, url, **kwargs):
         resp = MagicMock()
