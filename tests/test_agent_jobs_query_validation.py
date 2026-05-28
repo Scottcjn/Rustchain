@@ -153,6 +153,78 @@ def test_claimed_expired_job_is_refunded_and_removed_from_claimed_listing(tmp_pa
     assert balances["poster-1"] == 2_000_000
 
 
+def test_claimed_expired_job_detail_refunds_and_returns_expired(tmp_path):
+    client, db_path = make_funded_client(tmp_path)
+
+    post = client.post("/agent/jobs", json=_valid_job_payload(ttl_seconds=3600))
+    assert post.status_code == 201
+    job_id = post.get_json()["job_id"]
+    assert client.post(
+        f"/agent/jobs/{job_id}/claim", json={"worker_wallet": "worker-1"}
+    ).status_code == 200
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "UPDATE agent_jobs SET expires_at = ? WHERE job_id = ?",
+            (int(time.time()) - 1, job_id),
+        )
+
+    response = client.get(f"/agent/jobs/{job_id}")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["ok"] is True
+    assert payload["job"]["status"] == "expired"
+    with sqlite3.connect(db_path) as conn:
+        balances = dict(conn.execute(
+            "SELECT miner_id, amount_i64 FROM balances"
+        ).fetchall())
+        status = conn.execute(
+            "SELECT status FROM agent_jobs WHERE job_id = ?", (job_id,)
+        ).fetchone()[0]
+    assert status == "expired"
+    assert balances["agent_escrow"] == 0
+    assert balances["poster-1"] == 2_000_000
+
+
+def test_cancel_on_expired_claimed_job_refunds_instead_of_locking(tmp_path):
+    client, db_path = make_funded_client(tmp_path)
+
+    post = client.post("/agent/jobs", json=_valid_job_payload(ttl_seconds=3600))
+    assert post.status_code == 201
+    job_id = post.get_json()["job_id"]
+    assert client.post(
+        f"/agent/jobs/{job_id}/claim", json={"worker_wallet": "worker-1"}
+    ).status_code == 200
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "UPDATE agent_jobs SET expires_at = ? WHERE job_id = ?",
+            (int(time.time()) - 1, job_id),
+        )
+
+    response = client.post(
+        f"/agent/jobs/{job_id}/cancel", json={"poster_wallet": "poster-1"}
+    )
+
+    assert response.status_code == 410
+    assert response.get_json() == {
+        "error": "Job has expired",
+        "status": "expired",
+        "refunded_rtc": 1.05,
+    }
+    with sqlite3.connect(db_path) as conn:
+        balances = dict(conn.execute(
+            "SELECT miner_id, amount_i64 FROM balances"
+        ).fetchall())
+        status = conn.execute(
+            "SELECT status FROM agent_jobs WHERE job_id = ?", (job_id,)
+        ).fetchone()[0]
+    assert status == "expired"
+    assert balances["agent_escrow"] == 0
+    assert balances["poster-1"] == 2_000_000
+
+
 def test_worker_cannot_deliver_after_claimed_job_expires(tmp_path):
     client, db_path = make_funded_client(tmp_path)
 
