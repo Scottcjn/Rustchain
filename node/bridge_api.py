@@ -20,10 +20,9 @@ import hmac
 import hashlib
 import logging
 import os
-import math
 import re
 from typing import Optional, Tuple, Dict, Any
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from dataclasses import dataclass
 from enum import Enum
 
@@ -181,18 +180,14 @@ def validate_bridge_request(data: Optional[Dict]) -> ValidationResult:
     
     # Validate amount
     amount_raw = data.get("amount_rtc", 0)
-    if isinstance(amount_raw, bool):
-        return ValidationResult(ok=False, error="amount_rtc must be a number")
     try:
-        amount_rtc = float(amount_raw)
-    except (TypeError, ValueError):
-        return ValidationResult(ok=False, error="amount_rtc must be a number")
+        amount_i64 = parse_bridge_amount_i64(amount_raw)
+    except ValueError as exc:
+        return ValidationResult(ok=False, error=str(exc))
     
-    if not math.isfinite(amount_rtc):
-        return ValidationResult(ok=False, error="amount_rtc must be finite")
-    if amount_rtc <= 0:
+    if amount_i64 <= 0:
         return ValidationResult(ok=False, error="amount_rtc must be positive")
-    if amount_rtc < BRIDGE_MIN_AMOUNT_RTC:
+    if amount_i64 < int(Decimal(str(BRIDGE_MIN_AMOUNT_RTC)) * BRIDGE_UNIT):
         return ValidationResult(ok=False, error=f"amount_rtc must be >= {BRIDGE_MIN_AMOUNT_RTC} RTC")
     
     # Validate bridge type (optional)
@@ -217,11 +212,28 @@ def validate_bridge_request(data: Optional[Dict]) -> ValidationResult:
             "dest_chain": dest_chain,
             "source_address": source_address,
             "dest_address": dest_address,
-            "amount_rtc": amount_rtc,
+            "amount_rtc": amount_i64 / BRIDGE_UNIT,
             "memo": memo,
             "bridge_type": bridge_type
         }
     )
+
+
+def parse_bridge_amount_i64(raw_amount) -> int:
+    """Parse RTC bridge amount exactly into bridge micro-units."""
+    if isinstance(raw_amount, bool):
+        raise ValueError("amount_rtc must be a number")
+    try:
+        amount = Decimal(str(raw_amount))
+    except (InvalidOperation, ValueError):
+        raise ValueError("amount_rtc must be a number")
+    if not amount.is_finite():
+        raise ValueError("amount_rtc must be finite")
+
+    scaled = amount * BRIDGE_UNIT
+    if scaled != scaled.to_integral_value():
+        raise ValueError("amount_rtc supports at most 6 decimal places")
+    return int(scaled)
 
 
 def validate_chain_address_format(chain: str, address: str) -> Tuple[bool, str]:
@@ -319,7 +331,7 @@ def create_bridge_transfer(
     now = int(time.time())
     current_epoch = slot_to_epoch(current_slot())
     
-    amount_i64 = int(Decimal(str(request.amount_rtc)) * BRIDGE_UNIT)
+    amount_i64 = parse_bridge_amount_i64(request.amount_rtc)
     tx_hash = generate_bridge_tx_hash(
         request.direction,
         request.source_chain,
