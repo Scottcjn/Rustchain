@@ -72,6 +72,8 @@ class PeerManager:
 
     def add_peer(self, peer_url: str) -> bool:
         """Add a new peer to the network"""
+        if len(peer_url) > 2048:
+            return False  # URL too long
         if peer_url == self.local_url:
             return False  # Don't add self
 
