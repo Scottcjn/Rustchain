@@ -1,3 +1,5 @@
+import sqlite3
+import time
 from pathlib import Path
 
 import pytest
@@ -10,6 +12,21 @@ def make_client(tmp_path: Path):
     app = Flask(__name__)
     register_agent_economy(app, str(tmp_path / "agent_jobs.db"))
     return app.test_client()
+
+
+def make_funded_client(tmp_path: Path):
+    db_path = tmp_path / "agent_jobs.db"
+    app = Flask(__name__)
+    register_agent_economy(app, str(db_path))
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "CREATE TABLE balances (miner_id TEXT PRIMARY KEY, amount_i64 INTEGER NOT NULL)"
+        )
+        conn.execute(
+            "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?)",
+            ("poster-1", 2_000_000),
+        )
+    return app.test_client(), db_path
 
 
 def test_agent_jobs_rejects_malformed_query_numbers(tmp_path):
@@ -102,3 +119,70 @@ def test_agent_job_post_rejects_invalid_ttl_values(tmp_path, ttl):
 
     assert response.status_code == 400
     assert response.get_json() == {"error": "ttl_seconds must be an integer"}
+
+
+def test_claimed_expired_job_is_refunded_and_removed_from_claimed_listing(tmp_path):
+    client, db_path = make_funded_client(tmp_path)
+
+    post = client.post("/agent/jobs", json=_valid_job_payload(ttl_seconds=3600))
+    assert post.status_code == 201
+    job_id = post.get_json()["job_id"]
+    assert client.post(
+        f"/agent/jobs/{job_id}/claim", json={"worker_wallet": "worker-1"}
+    ).status_code == 200
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "UPDATE agent_jobs SET expires_at = ? WHERE job_id = ?",
+            (int(time.time()) - 1, job_id),
+        )
+
+    response = client.get("/agent/jobs?status=claimed")
+
+    assert response.status_code == 200
+    assert response.get_json()["jobs"] == []
+    with sqlite3.connect(db_path) as conn:
+        balances = dict(conn.execute(
+            "SELECT miner_id, amount_i64 FROM balances"
+        ).fetchall())
+        status = conn.execute(
+            "SELECT status FROM agent_jobs WHERE job_id = ?", (job_id,)
+        ).fetchone()[0]
+    assert status == "expired"
+    assert balances["agent_escrow"] == 0
+    assert balances["poster-1"] == 2_000_000
+
+
+def test_worker_cannot_deliver_after_claimed_job_expires(tmp_path):
+    client, db_path = make_funded_client(tmp_path)
+
+    post = client.post("/agent/jobs", json=_valid_job_payload(ttl_seconds=3600))
+    assert post.status_code == 201
+    job_id = post.get_json()["job_id"]
+    assert client.post(
+        f"/agent/jobs/{job_id}/claim", json={"worker_wallet": "worker-1"}
+    ).status_code == 200
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "UPDATE agent_jobs SET expires_at = ? WHERE job_id = ?",
+            (int(time.time()) - 1, job_id),
+        )
+
+    response = client.post(
+        f"/agent/jobs/{job_id}/deliver",
+        json={"worker_wallet": "worker-1", "result_summary": "late delivery"},
+    )
+
+    assert response.status_code == 410
+    assert response.get_json() == {"error": "Job has expired"}
+    with sqlite3.connect(db_path) as conn:
+        balances = dict(conn.execute(
+            "SELECT miner_id, amount_i64 FROM balances"
+        ).fetchall())
+        status = conn.execute(
+            "SELECT status FROM agent_jobs WHERE job_id = ?", (job_id,)
+        ).fetchone()[0]
+    assert status == "expired"
+    assert balances["agent_escrow"] == 0
+    assert balances["poster-1"] == 2_000_000
