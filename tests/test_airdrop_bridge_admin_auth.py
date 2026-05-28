@@ -290,3 +290,101 @@ def test_bridge_confirm_rejects_structured_source_tx(tmp_path, monkeypatch):
 
     assert response.status_code == 400
     assert response.get_json() == {"ok": False, "error": "source_tx must be a string"}
+
+
+@pytest.mark.parametrize(
+    ("field", "error"),
+    [
+        ("from_address", "from_address_too_long"),
+        ("to_address", "to_address_too_long"),
+    ],
+)
+def test_bridge_lock_rejects_overlong_addresses(tmp_path, field, error):
+    client, _db_path = _make_client(tmp_path)
+    payload = {
+        "from_address": "solana-source",
+        "to_address": "base-destination",
+        "from_chain": "solana",
+        "to_chain": "base",
+        "amount_wrtc": 1,
+    }
+    payload[field] = "x" * 129
+
+    response = client.post("/api/bridge/lock", json=payload)
+
+    assert response.status_code == 400
+    assert response.get_json() == {"ok": False, "error": error}
+
+
+@pytest.mark.parametrize(
+    ("path", "payload", "error"),
+    [
+        (
+            "/api/bridge/lock/test-lock/confirm",
+            {"source_tx": "x" * 257},
+            "source_tx_too_long",
+        ),
+        (
+            "/api/bridge/lock/test-lock/release",
+            {"dest_tx": "x" * 257},
+            "dest_tx_too_long",
+        ),
+    ],
+)
+def test_bridge_admin_routes_reject_overlong_tx_ids(
+    tmp_path, monkeypatch, path, payload, error
+):
+    client, _db_path = _make_client(tmp_path)
+    monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
+
+    response = client.post(
+        path,
+        headers={"X-Admin-Key": "expected-admin"},
+        json=payload,
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"ok": False, "error": error}
+
+
+@pytest.mark.parametrize(
+    ("from_address", "to_address", "message"),
+    [
+        ("x" * 129, "base-destination", "Source address too long"),
+        ("solana-source", "x" * 129, "Destination address too long"),
+    ],
+)
+def test_airdrop_service_rejects_overlong_bridge_addresses(
+    tmp_path, from_address, to_address, message
+):
+    _client, db_path = _make_client(tmp_path)
+    airdrop = AirdropV2(str(db_path))
+
+    success, actual_message, lock = airdrop.create_bridge_lock(
+        from_address,
+        to_address,
+        "solana",
+        "base",
+        1_000_000,
+    )
+
+    assert success is False
+    assert actual_message == message
+    assert lock is None
+
+
+@pytest.mark.parametrize(
+    ("method", "message"),
+    [
+        ("confirm_bridge_lock", "Source transaction too long"),
+        ("release_bridge_lock", "Destination transaction too long"),
+    ],
+)
+def test_airdrop_service_rejects_overlong_bridge_tx_ids(tmp_path, method, message):
+    _client, db_path = _make_client(tmp_path)
+    airdrop = AirdropV2(str(db_path))
+
+    success, actual_message = getattr(airdrop, method)("lock-id", "x" * 257)
+
+    assert success is False
+    assert actual_message == message
