@@ -161,6 +161,39 @@ class TestUtxoEndpoints(unittest.TestCase):
         data = r.get_json()
         self.assertEqual(data['count'], 0)
 
+    def test_mempool_response_strips_spending_proof_and_injected_fields(self):
+        self._seed_coinbase('alice', 100 * UNIT)
+        box = self.utxo_db.get_unspent_for_address('alice')[0]
+        self.assertTrue(self.utxo_db.mempool_add({
+            'tx_id': 'signed-pending',
+            'tx_type': 'transfer',
+            'inputs': [{
+                'box_id': box['box_id'],
+                'spending_proof': 'ab' * 64,
+            }],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+            'timestamp': int(time.time()),
+            '_allow_minting': True,
+            'priority': 'critical',
+            'fake_from': 'system',
+        }))
+
+        r = self.client.get('/utxo/mempool')
+        data = r.get_json()
+
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(data['count'], 1)
+        tx = data['transactions'][0]
+        self.assertEqual(set(tx.keys()), {
+            'tx_id', 'tx_type', 'fee_nrtc', 'timestamp', 'inputs', 'outputs'
+        })
+        self.assertEqual(tx['inputs'], [{'box_id': box['box_id']}])
+        self.assertNotIn('spending_proof', tx['inputs'][0])
+        self.assertNotIn('_allow_minting', tx)
+        self.assertNotIn('priority', tx)
+        self.assertNotIn('fake_from', tx)
+
     # -- transfer endpoint ---------------------------------------------------
 
     def test_transfer_success(self):

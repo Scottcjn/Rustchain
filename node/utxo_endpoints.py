@@ -90,6 +90,40 @@ def _nrtc_to_rtc_float(amount_nrtc: int) -> float:
     return float(Decimal(amount_nrtc) / Decimal(UNIT))
 
 
+def _public_mempool_transaction(tx: dict) -> dict:
+    """Return a public-safe view of a pending UTXO transaction."""
+    public_tx = {
+        'tx_id': tx.get('tx_id'),
+        'tx_type': tx.get('tx_type'),
+        'fee_nrtc': tx.get('fee_nrtc', 0),
+    }
+    if 'timestamp' in tx:
+        public_tx['timestamp'] = tx.get('timestamp')
+    if 'data_inputs' in tx:
+        data_inputs = tx.get('data_inputs')
+        public_tx['data_inputs'] = data_inputs if isinstance(data_inputs, list) else []
+
+    inputs = []
+    for inp in tx.get('inputs', []):
+        if isinstance(inp, dict) and isinstance(inp.get('box_id'), str):
+            inputs.append({'box_id': inp['box_id']})
+    public_tx['inputs'] = inputs
+
+    outputs = []
+    for out in tx.get('outputs', []):
+        if not isinstance(out, dict):
+            continue
+        clean = {}
+        if isinstance(out.get('address'), str):
+            clean['address'] = out['address']
+        if isinstance(out.get('value_nrtc'), int):
+            clean['value_nrtc'] = out['value_nrtc']
+        if clean:
+            outputs.append(clean)
+    public_tx['outputs'] = outputs
+    return public_tx
+
+
 def _ensure_signed_float_preserves_nrtc(amount: Decimal, nrtc: int,
                                         field_name: str) -> None:
     """
@@ -314,9 +348,10 @@ def utxo_integrity():
 def utxo_mempool():
     """View current UTXO mempool pending transactions (limit 50)."""
     candidates = _utxo_db.mempool_get_block_candidates(max_count=50)
+    public_candidates = [_public_mempool_transaction(tx) for tx in candidates]
     return jsonify({
-        'count': len(candidates),
-        'transactions': candidates,
+        'count': len(public_candidates),
+        'transactions': public_candidates,
     })
 
 
