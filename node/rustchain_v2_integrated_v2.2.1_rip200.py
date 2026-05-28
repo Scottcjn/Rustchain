@@ -8925,6 +8925,21 @@ def wallet_transfer_signed():
                 "code": "REPLAY_DETECTED",
                 "nonce": nonce,
             }), 400
+        previous_nonce = c.execute(
+            """
+            SELECT MAX(CAST(nonce AS INTEGER)) FROM transfer_nonces
+            WHERE from_address = ? AND nonce != ?
+            """,
+            (from_address, nonce),
+        ).fetchone()[0]
+        if previous_nonce is not None and int(previous_nonce) >= nonce_int:
+            conn.rollback()
+            return jsonify({
+                "error": "Signed transfer nonce must increase for this wallet",
+                "code": "OUT_OF_ORDER_NONCE",
+                "nonce": nonce,
+                "latest_nonce": int(previous_nonce),
+            }), 400
 
         # Check sender balance (using from_address as wallet ID)
         sender_balance = _balance_i64_for_wallet(c, from_address)
