@@ -880,6 +880,68 @@ class TestUtxoDB(unittest.TestCase):
         # Highest fee first
         self.assertEqual(candidates[0]['tx_id'], 'high' * 16)
 
+    def test_mempool_block_candidates_limits_sql_scan(self):
+        """Candidate selection must not materialize the whole mempool."""
+        self._apply_coinbase('alice', 100 * UNIT, block_height=1)
+        self._apply_coinbase('carol', 120 * UNIT, block_height=2)
+        boxes = self.db.get_unspent_for_address('alice')
+        boxes += self.db.get_unspent_for_address('carol')
+
+        self.assertTrue(self.db.mempool_add({
+            'tx_id': 'low_' * 16,
+            'inputs': [{'box_id': boxes[0]['box_id']}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT - 1000}],
+            'fee_nrtc': 1000,
+        }))
+        self.assertTrue(self.db.mempool_add({
+            'tx_id': 'high' * 16,
+            'inputs': [{'box_id': boxes[1]['box_id']}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 120 * UNIT - 5000}],
+            'fee_nrtc': 5000,
+        }))
+
+        original_conn = self.db._conn
+        candidate_queries = []
+
+        class RecordingConnection(utxo_db_module.sqlite3.Connection):
+            def execute(self, sql, parameters=()):
+                if (
+                    "FROM utxo_mempool" in sql
+                    and "ORDER BY fee_nrtc DESC" in sql
+                ):
+                    candidate_queries.append((sql, tuple(parameters)))
+                return super().execute(sql, parameters)
+
+        def recording_conn():
+            c = utxo_db_module.sqlite3.connect(
+                self.tmp.name,
+                timeout=30,
+                factory=RecordingConnection,
+            )
+            try:
+                c.row_factory = utxo_db_module.sqlite3.Row
+                c.execute("PRAGMA journal_mode=WAL")
+                c.execute("PRAGMA foreign_keys=ON")
+                return c
+            except Exception:
+                c.close()
+                raise
+
+        self.db._conn = recording_conn
+        try:
+            candidates = self.db.mempool_get_block_candidates(max_count=1)
+        finally:
+            self.db._conn = original_conn
+
+        self.assertEqual(len(candidates), 1)
+        self.assertTrue(candidate_queries)
+        sql, params = candidate_queries[-1]
+        self.assertIn("LIMIT ?", sql)
+        self.assertEqual(
+            params[-1],
+            utxo_db_module.MAX_MEMPOOL_CANDIDATE_SCAN_FACTOR,
+        )
+
     def test_mempool_block_candidates_ignore_expired_transactions(self):
         self._apply_coinbase('alice', 100 * UNIT, block_height=1)
         box = self.db.get_unspent_for_address('alice')[0]
