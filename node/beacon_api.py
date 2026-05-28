@@ -655,7 +655,10 @@ def create_contract():
         term_text = term_val.strip()
 
         # Validate currency if provided
-        currency_val = str(data.get('currency', 'RTC')).strip().upper()
+        currency_raw = data.get('currency', 'RTC')
+        if not isinstance(currency_raw, str):
+            return jsonify({'error': 'currency: must be a string'}), 400
+        currency_val = currency_raw.strip().upper()
         ALLOWED_CURRENCIES = {'RTC', 'ERC', 'ERG', 'USD'}
         if currency_val not in ALLOWED_CURRENCIES:
             return jsonify({
@@ -708,6 +711,8 @@ def update_contract(contract_id):
 
         if not new_state:
             return jsonify({'error': 'Missing state field'}), 400
+        if not isinstance(new_state, str):
+            return jsonify({'error': 'state: must be a string'}), 400
 
         valid_states = {'offered', 'active', 'renewed', 'completed', 'breached', 'expired', 'rejected'}
         if new_state not in valid_states:

@@ -334,6 +334,36 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('Missing message', response.get_data(as_text=True))
 
+    def test_contract_creation_rejects_non_string_fields(self):
+        """Contract creation rejects non-string fields like currency."""
+        contract_data = {
+            'from': 'bcn_alice_test',
+            'to': 'bcn_bob_test',
+            'type': 'rent',
+            'amount': 100.0,
+            'term': '30d',
+            'currency': ['RTC']
+        }
+        create_body = json.dumps(contract_data)
+        response = self.client.post(
+            '/api/contracts',
+            data=create_body,
+            content_type='application/json',
+            headers=self._signed_headers('bcn_alice_test', 'POST', '/api/contracts', create_body),
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('currency: must be a string', response.get_data(as_text=True))
+
+    def test_contract_update_rejects_non_string_state(self):
+        """Contract update rejects non-string state fields."""
+        response = self.client.put(
+            '/api/contracts/ctr_test_id',
+            data=json.dumps({'state': ['active']}),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('state: must be a string', response.get_data(as_text=True))
+
     def test_reputation_tracking_workflow(self):
         """Reputation is tracked and updated correctly."""
         # Insert test reputation
