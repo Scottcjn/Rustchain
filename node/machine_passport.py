@@ -42,6 +42,14 @@ except ImportError:
     print("[WARN] reportlab library not available - PDF generation disabled")
 
 
+def _format_repair_date(repair_date: Any) -> str:
+    """Format a repair timestamp for PDF output without crashing on bad data."""
+    try:
+        return datetime.fromtimestamp(float(repair_date)).strftime('%Y-%m-%d')
+    except (TypeError, ValueError, OSError, OverflowError):
+        return 'Unknown'
+
+
 @dataclass
 class MachinePassport:
     """Data structure for a machine passport."""
@@ -732,11 +740,10 @@ def generate_passport_pdf(passport_data: Dict, output_path: str) -> Tuple[bool, 
         if repair_log:
             repair_data = [['Date', 'Type', 'Description', 'Parts']]
             for entry in repair_log[:10]:  # Limit to 10 entries
-                repair_date = datetime.fromtimestamp(entry['repair_date']).strftime('%Y-%m-%d')
                 repair_data.append([
-                    repair_date,
-                    entry['repair_type'],
-                    entry['description'][:40] + '...' if len(entry['description']) > 40 else entry['description'],
+                    _format_repair_date(entry.get('repair_date')),
+                    entry.get('repair_type', 'N/A'),
+                    str(entry.get('description', ''))[:40],
                     entry.get('parts_replaced', 'N/A') or 'N/A',
                 ])
             
