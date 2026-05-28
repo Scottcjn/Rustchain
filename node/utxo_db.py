@@ -44,6 +44,7 @@ MAX_POOL_SIZE = 10_000
 # Without this, a single tx creates unlimited outputs, bloating the UTXO set.
 MAX_INPUTS = 100
 MAX_OUTPUTS = 100
+MAX_DATA_INPUTS = 100
 MAX_UTXO_ADDRESS_BYTES = 256
 MAX_UTXO_METADATA_BYTES = 8_192
 MAX_MEMPOOL_TX_ID_BYTES = 128
@@ -407,6 +408,8 @@ class UtxoDB:
     def _normalize_data_inputs(self, data_inputs: list) -> Optional[List[str]]:
         """Return validated read-only UTXO box IDs, or None on invalid input."""
         if not isinstance(data_inputs, list):
+            return None
+        if len(data_inputs) > MAX_DATA_INPUTS:
             return None
 
         normalized = []
