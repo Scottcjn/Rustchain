@@ -56,11 +56,11 @@ Earn RTC by contributing compute resources.
 
 ### Start Mining
 
-**Recommended: current `clawrtc` installer**
+**Recommended: PyPI `clawrtc` installer**
 
 ```bash
 # Install the miner wrapper and write config for your wallet ID
-npm install -g clawrtc
+python3 -m pip install --user clawrtc
 clawrtc install --wallet YOUR_WALLET
 
 # Start the miner
@@ -68,6 +68,8 @@ clawrtc start --service
 ```
 
 `clawrtc status` and `clawrtc logs` are the supported management commands in current releases.
+
+Note: the npm package currently does not publish a `bin` entry, so `npm install -g clawrtc` does not create a `clawrtc` command. Use the PyPI installer above until npm CLI packaging is restored.
 
 **Alternative: manual Python miner**
 
@@ -84,7 +86,7 @@ python3 rustchain_miner.py --wallet YOUR_WALLET
 ### Manage Miner
 
 ```bash
-# Cross-platform wrapper
+# PyPI wrapper
 clawrtc status
 clawrtc logs
 clawrtc stop
