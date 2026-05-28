@@ -624,6 +624,15 @@ class UtxoDB:
             input_box_ids = [i['box_id'] for i in inputs]
             if len(input_box_ids) != len(set(input_box_ids)):
                 return abort()
+            # BUG-4: evict stale mempool txs that claim these inputs BEFORE
+            # the double-spend check below. A confirmed transaction always
+            # beats a pending mempool tx — without this the claim check fires
+            # and aborts the spend even though the conflicting tx is stale.
+            if input_box_ids:
+                try:
+                    self._evict_stale_data_input_txs(input_box_ids, conn=conn)
+                except Exception:
+                    pass  # best-effort; double-spend check still guards below
             claimed_by_tx_id = tx.get('tx_id') if isinstance(tx.get('tx_id'), str) else None
             for box_id in input_box_ids:
                 claim = conn.execute(
