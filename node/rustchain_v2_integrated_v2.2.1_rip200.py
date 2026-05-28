@@ -6545,6 +6545,201 @@ def _explorer_amount_rtc(amount_i64):
 
 
 EXPLORER_TRANSACTIONS_MAX_OFFSET = 10_000
+STATE_DIFF_MAX_BLOCK_RANGE = 1_000
+
+
+def _state_diff_height_arg(name):
+    raw = request.args.get(name)
+    if raw is None:
+        return None, jsonify({"ok": False, "error": f"{name} is required"}), 400
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None, jsonify({"ok": False, "error": f"{name} must be an integer"}), 400
+    if value < 0:
+        return None, jsonify({"ok": False, "error": f"{name} must be non-negative"}), 400
+    return value, None, None
+
+
+def _state_diff_amount_i64(tx):
+    for key in ("amount_i64", "amount_urtc", "value_i64", "value_urtc"):
+        if key in tx and tx[key] is not None:
+            try:
+                return int(tx[key])
+            except (TypeError, ValueError):
+                return None
+    for key in ("amount_rtc", "amount"):
+        if key in tx and tx[key] is not None:
+            try:
+                return int(round(float(tx[key]) * int(globals().get("UNIT", 1_000_000))))
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
+def _state_diff_tx_parties(tx):
+    from_addr = (
+        tx.get("from_addr")
+        or tx.get("from_address")
+        or tx.get("from")
+        or tx.get("sender")
+        or tx.get("miner_id")
+    )
+    to_addr = (
+        tx.get("to_addr")
+        or tx.get("to_address")
+        or tx.get("to")
+        or tx.get("recipient")
+    )
+    return from_addr, to_addr
+
+
+def _state_diff_body(row):
+    for column in ("body_json", "data"):
+        if column in row.keys():
+            body = _json_object_or_none(row[column])
+            if body is not None:
+                return body
+    return {}
+
+
+def _state_diff_block_changes(row):
+    body = _state_diff_body(row)
+    transactions = body.get("transactions", [])
+    if not isinstance(transactions, list):
+        transactions = []
+
+    changes = []
+    storage_diffs = []
+    balance_deltas = {}
+    for index, tx in enumerate(transactions):
+        if not isinstance(tx, dict):
+            continue
+        tx_hash = tx.get("tx_hash") or tx.get("hash") or tx.get("id")
+        from_addr, to_addr = _state_diff_tx_parties(tx)
+        amount_i64 = _state_diff_amount_i64(tx)
+
+        if amount_i64 is not None and from_addr:
+            balance_deltas[from_addr] = balance_deltas.get(from_addr, 0) - amount_i64
+            changes.append({
+                "block_height": int(row["height"]),
+                "tx_index": index,
+                "tx_hash": tx_hash,
+                "wallet": from_addr,
+                "delta_i64": -amount_i64,
+                "direction": "debit",
+            })
+        if amount_i64 is not None and to_addr:
+            balance_deltas[to_addr] = balance_deltas.get(to_addr, 0) + amount_i64
+            changes.append({
+                "block_height": int(row["height"]),
+                "tx_index": index,
+                "tx_hash": tx_hash,
+                "wallet": to_addr,
+                "delta_i64": amount_i64,
+                "direction": "credit",
+            })
+
+        tx_storage_diff = tx.get("storage_diff") or tx.get("storage_diffs")
+        if isinstance(tx_storage_diff, list):
+            storage_diffs.extend(tx_storage_diff)
+        elif isinstance(tx_storage_diff, dict):
+            storage_diffs.append(tx_storage_diff)
+
+    return changes, balance_deltas, storage_diffs
+
+
+@app.route("/api/state/diff", methods=["GET"])
+def api_state_diff():
+    """Return block-backed state changes for a bounded height range."""
+    start_height, error_response, status = _state_diff_height_arg("start")
+    if error_response is not None:
+        return error_response, status
+    end_height, error_response, status = _state_diff_height_arg("end")
+    if error_response is not None:
+        return error_response, status
+    if end_height < start_height:
+        return jsonify({"ok": False, "error": "end must be greater than or equal to start"}), 400
+    if end_height - start_height > STATE_DIFF_MAX_BLOCK_RANGE:
+        return jsonify({
+            "ok": False,
+            "error": f"range cannot exceed {STATE_DIFF_MAX_BLOCK_RANGE} blocks",
+        }), 400
+
+    with sqlite3.connect(DB_PATH) as db:
+        db.row_factory = sqlite3.Row
+        columns = _sqlite_table_columns(db, "blocks")
+        if not columns:
+            return jsonify({"ok": False, "error": "block_history_unavailable"}), 404
+        hash_col = "block_hash" if "block_hash" in columns else "hash" if "hash" in columns else None
+        if "height" not in columns or not hash_col:
+            return jsonify({"ok": False, "error": "block_history_unavailable"}), 404
+
+        select_columns = ["height", f"{hash_col} AS block_hash"]
+        for optional in ("state_root", "body_json", "data"):
+            if optional in columns:
+                select_columns.append(optional)
+        rows = db.execute(
+            f"""
+            SELECT {", ".join(select_columns)}
+            FROM blocks
+            WHERE height BETWEEN ? AND ?
+            ORDER BY height ASC
+            """,
+            (start_height, end_height),
+        ).fetchall()
+
+    found_heights = {int(row["height"]) for row in rows}
+    missing_blocks = [
+        height for height in range(start_height, end_height + 1)
+        if height not in found_heights
+    ]
+    if missing_blocks and (start_height in missing_blocks or end_height in missing_blocks):
+        return jsonify({
+            "ok": False,
+            "error": "block_range_boundary_missing",
+            "missing_blocks": missing_blocks,
+        }), 404
+
+    balance_deltas = {}
+    state_changes = []
+    storage_diffs = []
+    state_roots = []
+    for row in rows:
+        if "state_root" in row.keys():
+            state_roots.append({
+                "height": int(row["height"]),
+                "block_hash": row["block_hash"],
+                "state_root": row["state_root"],
+            })
+        changes, block_balance_deltas, block_storage_diffs = _state_diff_block_changes(row)
+        state_changes.extend(changes)
+        storage_diffs.extend(block_storage_diffs)
+        for wallet, delta_i64 in block_balance_deltas.items():
+            balance_deltas[wallet] = balance_deltas.get(wallet, 0) + delta_i64
+
+    balances = [
+        {
+            "wallet": wallet,
+            "delta_i64": delta_i64,
+            "delta_rtc": _explorer_amount_rtc(delta_i64),
+        }
+        for wallet, delta_i64 in sorted(balance_deltas.items())
+        if delta_i64 != 0
+    ]
+
+    return jsonify({
+        "ok": True,
+        "start_height": start_height,
+        "end_height": end_height,
+        "block_count": len(rows),
+        "missing_blocks": missing_blocks,
+        "state_roots": state_roots,
+        "state_changes": state_changes,
+        "balance_diffs": balances,
+        "storage_diffs": storage_diffs,
+        "storage_diff_status": "tracked" if storage_diffs else "not_tracked_in_block_body",
+    })
 
 
 @app.route("/api/blocks", methods=["GET"])
