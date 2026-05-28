@@ -87,6 +87,29 @@ def format_table(headers, rows):
     
     return "\n".join(lines)
 
+def _as_float(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+def _format_uptime(value):
+    seconds = _as_float(value)
+    if seconds is None:
+        return "N/A"
+    return f"{seconds:.0f} seconds ({seconds/3600:.1f} hours)"
+
+def _format_hours(value):
+    hours = _as_float(value)
+    if hours is None:
+        return "N/A"
+    return f"{hours:.1f} hours"
+
+def _format_slots(value):
+    if value is None:
+        return "N/A"
+    return value
+
 def cmd_status(args):
     """Show node health and status."""
     data = fetch_api("/health")
@@ -98,10 +121,10 @@ def cmd_status(args):
     print("=== RustChain Node Status ===")
     print(f"Status:      {'✅ Online' if data.get('ok') else '❌ Offline'}")
     print(f"Version:     {data.get('version', 'N/A')}")
-    print(f"Uptime:      {data.get('uptime_s', 0):.0f} seconds ({data.get('uptime_s', 0)/3600:.1f} hours)")
+    print(f"Uptime:      {_format_uptime(data.get('uptime_s'))}")
     print(f"DB Read/Write: {'✅ Yes' if data.get('db_rw') else '❌ No'}")
-    print(f"Tip Age:     {data.get('tip_age_slots', 0)} slots")
-    print(f"Backup Age:  {data.get('backup_age_hours', 0):.1f} hours")
+    print(f"Tip Age:     {_format_slots(data.get('tip_age_slots'))} slots")
+    print(f"Backup Age:  {_format_hours(data.get('backup_age_hours'))}")
 
 def normalize_miners_response(data):
     """Return miner rows from legacy arrays or current paginated envelopes."""
