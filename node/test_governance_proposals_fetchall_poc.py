@@ -13,6 +13,7 @@ Section B (Flask integration) is the regression gate:
   - this test FAILS if LIMIT 200 is removed from the handler
 """
 
+import gc
 import importlib.util
 import os
 import sqlite3
@@ -152,7 +153,16 @@ class TestGovernanceProposalsRouteLimit(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        os.unlink(cls._db_tmp.name)
+        # sqlite3.connect used as a context manager commits/rolls back but does
+        # NOT call conn.close().  On Windows the OS file handle is not released
+        # until the connection object is finalized.  gc.collect() breaks
+        # reference cycles and finalizes any lingering connection objects so
+        # the unlink below does not race against the GC.
+        gc.collect()
+        try:
+            os.unlink(cls._db_tmp.name)
+        except PermissionError:
+            pass
 
     def test_route_caps_response_at_200_proposals(self):
         """
