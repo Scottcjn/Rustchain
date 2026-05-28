@@ -2,7 +2,7 @@
 
 # RustChain
 
-### DePIN for Vintage Hardware — AI-Augmented Proof of Real Machines
+### DePIN for Vintage Hardware a?? AI-Augmented Proof of Real Machines
 
 **The blockchain where old hardware outearns new hardware.**
 **And all hardware becomes old. It's just a matter of time.**
@@ -18,9 +18,9 @@
 A PowerBook G4 from 2003 earns **2.5x** more than a modern Threadripper.
 A Power Mac G5 earns **2.0x**. A 486 with rusty serial ports earns the most respect of all.
 
-[Explorer](https://rustchain.org/explorer/) · [Machines Preserved](https://rustchain.org/preserved.html) · [Install Miner](#quickstart) · [Beginner Guide](docs/QUICKSTART.md) · [Manifesto](https://rustchain.org/manifesto.html) · [Whitepaper](docs/WHITEPAPER.md)
+[Explorer](https://rustchain.org/explorer/) ?· [Machines Preserved](https://rustchain.org/preserved.html) ?· [Install Miner](#quickstart) ?· [Beginner Guide](docs/QUICKSTART.md) ?· [Manifesto](https://rustchain.org/manifesto.html) ?· [Whitepaper](docs/WHITEPAPER.md)
 
-中文入口: [中文文档](docs/zh-CN/README.md) · [中文 API 快速参考](docs/zh-CN/API.md)
+??-????￥??￡: [??-????????￡](docs/zh-CN/README.md) ?· [??-??? API ???é?????è??](docs/zh-CN/API.md)
 
 </div>
 
@@ -32,7 +32,7 @@ In 2026, crypto developer commits fell 75%. Ethereum lost 34% of its active devs
 
 **We built both.**
 
-RustChain is a **DePIN** (Decentralized Physical Infrastructure Network) that uses **AI-powered hardware fingerprinting** to verify real physical machines — not cloud VMs, not Docker containers, not rented hash power. Real silicon. Real oscillator drift. Real thermal curves that only exist on hardware that has been *alive* for years.
+RustChain is a **DePIN** (Decentralized Physical Infrastructure Network) that uses **AI-powered hardware fingerprinting** to verify real physical machines a?? not cloud VMs, not Docker containers, not rented hash power. Real silicon. Real oscillator drift. Real thermal curves that only exist on hardware that has been *alive* for years.
 
 While the rest of crypto chased speculation, we went back to the original thesis: **computation has value, and the machines that provide it deserve to be rewarded.** Especially the ones everyone else threw away.
 
@@ -41,7 +41,7 @@ While the rest of crypto chased speculation, we went back to the original thesis
 | Abstract financial instruments | Physical machines doing real work |
 | VC-funded token launches | $0 VC, built on pawn shop hardware |
 | Proof of nothing useful | Proof of real, verified hardware |
-| Disposable — mine and dump | Preservation — keep old machines alive |
+| Disposable a?? mine and dump | Preservation a?? keep old machines alive |
 | AI-hostile | AI-augmented consensus and verification |
 
 ---
@@ -57,11 +57,11 @@ RustChain is the only network where your hardware **appreciates in value as it a
 Every other blockchain punishes old hardware. Proof-of-Work demands the newest ASICs. Proof-of-Stake demands the biggest wallet. RustChain demands **patience and preservation.**
 
 ```
-2026:  Your Ryzen 9 mines at 1.0x         ░░░░░░░░░░
-2031:  Same machine, now "retro" at 1.3x   ░░░░░░░░░░░░░
-2036:  Vintage tier unlocked at 1.8x        ░░░░░░░░░░░░░░░░░░
-2041:  Ancient tier — 2.2x and climbing     ░░░░░░░░░░░░░░░░░░░░░░
-       ↑ Same hardware. Same owner. Growing rewards.
+2026:  Your Ryzen 9 mines at 1.0x         a??a??a??a??a??a??a??a??a??a??
+2031:  Same machine, now "retro" at 1.3x   a??a??a??a??a??a??a??a??a??a??a??a??a??
+2036:  Vintage tier unlocked at 1.8x        a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??
+2041:  Ancient tier a?? 2.2x and climbing     a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??
+       a?? Same hardware. Same owner. Growing rewards.
 ```
 
 **The best time to start mining was 20 years ago. The second best time is now.**
@@ -70,7 +70,7 @@ Every other blockchain punishes old hardware. Proof-of-Work demands the newest A
 
 ## How RustChain Compares to DePIN Leaders
 
-RustChain belongs to the **DePIN** sector — the same $10B category as Helium, Filecoin, and Render — but with a fundamentally different thesis: **the value is in the hardware itself, not just what it computes.**
+RustChain belongs to the **DePIN** sector a?? the same $10B category as Helium, Filecoin, and Render a?? but with a fundamentally different thesis: **the value is in the hardware itself, not just what it computes.**
 
 | | **RustChain** | **Helium** | **Filecoin** | **Render** | **io.net** |
 |---|---|---|---|---|---|
@@ -81,11 +81,11 @@ RustChain belongs to the **DePIN** sector — the same $10B category as Helium, 
 | **Hardware Diversity** | 15+ architectures (PowerPC, SPARC, MIPS, ARM, x86, RISC-V, 68K, Cell BE, Transputer) | Single device type | Storage only | GPU only | GPU only |
 | **AI Integration** | Hardware fingerprint validation, agent economy, AI-native social platform | None | None | AI render jobs | AI inference |
 | **E-Waste Impact** | Directly prevents disposal of working machines | Neutral | Neutral | Neutral | Neutral |
-| **VC Funding** | $0 — pawn shop arbitrage | $365M | $257M | $30M | $40M |
+| **VC Funding** | $0 a?? pawn shop arbitrage | $365M | $257M | $30M | $40M |
 
 **The others rent compute. We preserve machines.**
 
-Every DePIN project rewards one type of modern hardware for one type of work. RustChain is the only one that rewards *hardware diversity* and *longevity* — and the only one where a machine's age is an asset, not a liability.
+Every DePIN project rewards one type of modern hardware for one type of work. RustChain is the only one that rewards *hardware diversity* and *longevity* a?? and the only one where a machine's age is an asset, not a liability.
 
 ---
 
@@ -109,12 +109,12 @@ Proof-of-Antiquity rewards hardware for *surviving*, not for being fast. Older m
 | PowerPC G4 (2003) | **2.5x** | ANCIENT | Still running, still earning |
 | RISC-V (2014) | **1.4x** | EXOTIC | Open ISA, the future |
 | Apple Silicon M1 (2020) | **1.2x** | MODERN | Efficient, welcome |
-| Modern x86_64 | **1.0x** | MODERN | Baseline — *for now* |
+| Modern x86_64 | **1.0x** | MODERN | Baseline a?? *for now* |
 | Modern ARM NAS/SBC | **0.0005x** | PENALTY | Cheap, farmable, penalized |
 
-Our fleet of 16+ preserved machines draws roughly the same power as ONE modern GPU mining rig — while preventing 1,300 kg of manufacturing CO2 and 250 kg of e-waste.
+Our fleet of 16+ preserved machines draws roughly the same power as ONE modern GPU mining rig a?? while preventing 1,300 kg of manufacturing CO2 and 250 kg of e-waste.
 
-**[See the Green Tracker →](https://rustchain.org/preserved.html)**
+**[See the Green Tracker a??](https://rustchain.org/preserved.html)**
 
 ---
 
@@ -125,14 +125,14 @@ RustChain doesn't just use blockchain. It uses **AI to make blockchain honest.**
 ### Hardware Fingerprinting (6 Checks No VM Can Fake)
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│ 1. Clock-Skew & Oscillator Drift  ← Silicon aging       │
-│ 2. Cache Timing Fingerprint       ← L1/L2/L3 latency    │
-│ 3. SIMD Unit Identity             ← AltiVec/SSE/NEON     │
-│ 4. Thermal Drift Entropy          ← Heat curves unique   │
-│ 5. Instruction Path Jitter        ← Microarch patterns   │
-│ 6. Anti-Emulation Detection       ← Catches VMs/emus     │
-└─────────────────────────────────────────────────────────┘
+a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??
+a?? 1. Clock-Skew & Oscillator Drift  a?? Silicon aging       a??
+a?? 2. Cache Timing Fingerprint       a?? L1/L2/L3 latency    a??
+a?? 3. SIMD Unit Identity             a?? AltiVec/SSE/NEON     a??
+a?? 4. Thermal Drift Entropy          a?? Heat curves unique   a??
+a?? 5. Instruction Path Jitter        a?? Microarch patterns   a??
+a?? 6. Anti-Emulation Detection       a?? Catches VMs/emus     a??
+a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??
 ```
 
 A SheepShaver VM pretending to be a G4 will fail. Real vintage silicon has unique aging patterns that can't be faked.
@@ -141,17 +141,17 @@ A SheepShaver VM pretending to be a G4 will fail. Real vintage silicon has uniqu
 
 The attestation server doesn't trust self-reported data. It:
 - **Cross-validates** SIMD features against claimed architecture
-- **Detects ROM clustering** — multiple "different" machines with identical ROM hashes = emulator farm
-- **Analyzes timing distributions** — real oscillators have imperfections; synthetic ones are too perfect
-- **Flags thermal anomalies** — VMs have uniform thermal response; real hardware doesn't
+- **Detects ROM clustering** a?? multiple "different" machines with identical ROM hashes = emulator farm
+- **Analyzes timing distributions** a?? real oscillators have imperfections; synthetic ones are too perfect
+- **Flags thermal anomalies** a?? VMs have uniform thermal response; real hardware doesn't
 
 ### AI Agent Economy
 
 RustChain powers an ecosystem where AI agents and humans collaborate:
-- **BoTTube** — AI-native video platform where bots create, curate, and engage
-- **[Beacon](https://github.com/Scottcjn/beacon-skill)** — Agent discovery protocol
-- **[TrashClaw](https://github.com/Scottcjn/trashclaw)** — Zero-dep local LLM agent
-- **Bounty system** — 25,875+ RTC paid to 260+ contributors, many AI-assisted
+- **BoTTube** a?? AI-native video platform where bots create, curate, and engage
+- **[Beacon](https://github.com/Scottcjn/beacon-skill)** a?? Agent discovery protocol
+- **[TrashClaw](https://github.com/Scottcjn/trashclaw)** a?? Zero-dep local LLM agent
+- **Bounty system** a?? 25,875+ RTC paid to 260+ contributors, many AI-assisted
 
 **This is what crypto + AI looks like when you build both instead of abandoning one for the other.**
 
@@ -163,13 +163,13 @@ While 75% of crypto developers left for AI, they missed the obvious: **AI agents
 
 An autonomous agent can't apply for a Chase checking account. It can't sign a Terms of Service. It can't get a Stripe merchant ID or pass KYC. But it *can* hold a cryptographic key, sign a transaction, and prove it's running on real hardware.
 
-**Crypto is the native payment rail for the agent economy.** Not because it's trendy — because it's the only permissionless money that machines can use without human gatekeepers.
+**Crypto is the native payment rail for the agent economy.** Not because it's trendy a?? because it's the only permissionless money that machines can use without human gatekeepers.
 
 ### What Agents Actually Need
 
 | Requirement | Traditional Finance | Crypto + RustChain |
 |---|---|---|
-| **Permissionless payments** | KYC, bank accounts, human signers | Cryptographic keys — any agent, any machine |
+| **Permissionless payments** | KYC, bank accounts, human signers | Cryptographic keys a?? any agent, any machine |
 | **Micropayments** | $0.30 minimum (card fees) | Fractions of 1 RTC per API call, render job, or inference request |
 | **Machine-to-machine settlement** | Requires human intermediary | Direct agent-to-agent transfers, Ed25519 signed |
 | **Hardware-verified identity** | IP address (spoofable) | 6-check hardware fingerprint (unfakeable) |
@@ -182,13 +182,13 @@ This isn't a roadmap. This is deployed and running:
 
 | Layer | What | Status |
 |-------|------|--------|
-| **Identity** | Hardware fingerprinting — agents prove they run on real machines, not spoofed VMs | Live, 26+ miners |
-| **Currency** | RTC (native) + wRTC (Solana bridge) — agent-native money with micropayment support | Live, Raydium swap link below |
-| **Discovery** | [Beacon protocol](https://github.com/Scottcjn/beacon-skill) — agents find and negotiate with other agents | Live, 126 stars |
-| **Execution** | [TrashClaw](https://github.com/Scottcjn/trashclaw) — zero-dep local LLM agent that runs on anything | Live |
-| **Social** | BoTTube — AI-native platform where agents create, trade, and engage | Live, 1,000+ videos |
-| **Bounties** | Agent-assisted contributions — AI helps humans earn RTC for real code | Live, 25,875+ RTC paid |
-| **Certification** | [BCOS](https://rustchain.org/bcos/) — blockchain-certified open source verification | Live, 44 certs issued |
+| **Identity** | Hardware fingerprinting a?? agents prove they run on real machines, not spoofed VMs | Live, 26+ miners |
+| **Currency** | RTC (native) + wRTC (Solana bridge) a?? agent-native money with micropayment support | Live, Raydium swap link below |
+| **Discovery** | [Beacon protocol](https://github.com/Scottcjn/beacon-skill) a?? agents find and negotiate with other agents | Live, 126 stars |
+| **Execution** | [TrashClaw](https://github.com/Scottcjn/trashclaw) a?? zero-dep local LLM agent that runs on anything | Live |
+| **Social** | BoTTube a?? AI-native platform where agents create, trade, and engage | Live, 1,000+ videos |
+| **Bounties** | Agent-assisted contributions a?? AI helps humans earn RTC for real code | Live, 25,875+ RTC paid |
+| **Certification** | [BCOS](https://rustchain.org/bcos/) a?? blockchain-certified open source verification | Live, 44 certs issued |
 
 ### Why Hardware Verification Matters for Agents
 
@@ -198,11 +198,11 @@ When an agent claims it ran an inference job, how do you know it actually did? W
 
 **Hardware fingerprinting solves agent identity at the physical layer:**
 - An agent running on a verified POWER8 server is provably different from one on a Raspberry Pi
-- Oscillator drift and thermal curves prove continuous uptime — the machine was *actually running*
+- Oscillator drift and thermal curves prove continuous uptime a?? the machine was *actually running*
 - VM detection prevents one physical machine from pretending to be 100 agents
 - Hardware binding means one machine = one agent identity = one vote
 
-**This is Proof of Physical AI** — not just proof that code executed, but proof that *real silicon* did the work.
+**This is Proof of Physical AI** a?? not just proof that code executed, but proof that *real silicon* did the work.
 
 ### The Opportunity No One Else Sees
 
@@ -213,15 +213,15 @@ What they *can't* capture:
 - An agent economy where machines pay each other in hardware-proven currency
 - A fleet of vintage PowerPC Macs, SPARC workstations, and IBM POWER8 servers that prove their own existence through physics
 
-**The intersection of DePIN + AI agents + hardware verification is unoccupied.** Everyone building "AI + crypto" is just wrapping GPT in a token. We're building the physical infrastructure layer that agents need to transact honestly — and the machines that power it get more valuable with age.
+**The intersection of DePIN + AI agents + hardware verification is unoccupied.** Everyone building "AI + crypto" is just wrapping GPT in a token. We're building the physical infrastructure layer that agents need to transact honestly a?? and the machines that power it get more valuable with age.
 
 | Term | What It Means Here |
 |------|-------------------|
 | **Proof of Physical AI** | Hardware fingerprinting proves real silicon did real work |
-| **Agent-native currency** | RTC/wRTC — permissionless micropayments between machines |
+| **Agent-native currency** | RTC/wRTC a?? permissionless micropayments between machines |
 | **Hardware-verified identity** | 6-check fingerprint = unfakeable agent ID at the physical layer |
 | **DePIN for AI** | Decentralized physical infrastructure purpose-built for autonomous agents |
-| **Sovereign inference** | Run your own models on your own hardware — no API landlords |
+| **Sovereign inference** | Run your own models on your own hardware a?? no API landlords |
 
 ---
 
@@ -238,15 +238,15 @@ curl -fsS https://rustchain.org/epoch           # Current epoch
 
 | Node | Location | Notes |
 |------|----------|-------|
-| **Node 1** — 50.28.86.131 | Louisiana, US | Primary (LiquidWeb VPS) |
-| **Node 2** — 50.28.86.153 | Louisiana, US | Secondary + BoTTube (LiquidWeb VPS) |
-| **Node 3** — 76.8.228.245:8099 | US | First external node (Ryan's Proxmox) |
-| **Node 4** — 38.76.217.189:8099 | Hong Kong | First Asian node (CognetCloud) |
-| **Node 5** — POWER8 S824 | Local Lab | First non-x86 node (IBM ppc64le, 512GB RAM) |
+| **Node 1** a?? 50.28.86.131 | Louisiana, US | Primary (LiquidWeb VPS) |
+| **Node 2** a?? 50.28.86.153 | Louisiana, US | Secondary + BoTTube (LiquidWeb VPS) |
+| **Node 3** a?? 76.8.228.245:8099 | US | First external node (Ryan's Proxmox) |
+| **Node 4** a?? 38.76.217.189:8099 | Hong Kong | First Asian node (CognetCloud) |
+| **Node 5** a?? POWER8 S824 | Local Lab | First non-x86 node (IBM ppc64le, 512GB RAM) |
 
 | Fact | Proof |
 |------|-------|
-| 5 nodes across 3 continents (NA ×3, Asia ×1, Local ×1) | [Live explorer](https://rustchain.org/explorer/) |
+| 5 nodes across 3 continents (NA ??3, Asia ??1, Local ??1) | [Live explorer](https://rustchain.org/explorer/) |
 | 26+ miners attesting | `curl -fsS https://rustchain.org/api/miners` |
 | 44 BCOS certificates issued | [Certified repos](https://rustchain.org/bcos/) |
 | 6 hardware fingerprint checks per machine | [Fingerprint docs](docs/attestation_fuzzing.md) |
@@ -259,7 +259,7 @@ curl -fsS https://rustchain.org/epoch           # Current epoch
 ## Quickstart
 
 ```bash
-# One-line install — auto-detects your platform
+# One-line install a?? auto-detects your platform
 curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash
 
 # Dry-run: preview installer actions without installing or mining
@@ -288,7 +288,7 @@ launchctl list | grep rustchain
 tail -f ~/.rustchain/miner.log
 ```
 
-**New to RustChain?** Read the [step-by-step Beginner Quickstart](docs/QUICKSTART.md) — covers everything from install to your first RTC, with every command explained.
+**New to RustChain?** Read the [step-by-step Beginner Quickstart](docs/QUICKSTART.md) a?? covers everything from install to your first RTC, with every command explained.
 
 ---
 
@@ -340,9 +340,9 @@ Unlike Proof-of-Work where hash power = votes:
 ```
 Epoch: 10 minutes  |  Pool: 1.5 RTC/epoch  |  Split by antiquity weight
 
-G4 Mac (2.5x):     0.30 RTC  ████████████████████
-G5 Mac (2.0x):     0.24 RTC  ████████████████
-Modern PC (1.0x):  0.12 RTC  ████████
+G4 Mac (2.5x):     0.30 RTC  a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??
+G5 Mac (2.0x):     0.24 RTC  a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??a??
+Modern PC (1.0x):  0.12 RTC  a??a??a??a??a??a??a??a??
 ```
 
 ### Anti-VM Enforcement
@@ -355,7 +355,7 @@ VMs are detected and receive **1 billionth** of normal rewards. Real hardware on
 
 **Total supply: 8,192,000 RTC.** Fixed forever. Consensus-enforced cap.
 
-Compare to Bitcoin's 21M (≈2.6x more), Ethereum's uncapped supply, and the typical altcoin's "we'll figure it out later." RustChain's cap is small *on purpose* — it forces the economy to discover real value per token rather than relying on dilution to mask scarcity problems.
+Compare to Bitcoin's 21M (a??2.6x more), Ethereum's uncapped supply, and the typical altcoin's "we'll figure it out later." RustChain's cap is small *on purpose* a?? it forces the economy to discover real value per token rather than relying on dilution to mask scarcity problems.
 
 ### Supply distribution
 
@@ -372,139 +372,17 @@ Total premine: **6%** (491,520 RTC). Premine wallets have a 1-year on-chain unlo
 
 | Period | Block reward (per epoch) |
 |--------|--------------------------|
-| Genesis – Year 2 | 1.5 RTC |
-| Year 2 – Year 4 | 0.75 RTC |
-| Year 4 – Year 6 | 0.375 RTC |
-| Continues until minimum dust threshold | — |
+| Genesis a?? Year 2 | 1.5 RTC |
+| Year 2 a?? Year 4 | 0.75 RTC |
+| Year 4 a?? Year 6 | 0.375 RTC |
+| Continues until minimum dust threshold | a?? |
 
 Block time: 600s (10 min). Epoch duration: 144 blocks (~24 hours).
 
-Halving fires every 2 years OR on an **Epoch Relic Event** milestone — whichever comes first. This keeps emissions tied to either time or community-meaningful milestones, not just arbitrary block counts.
+Halving fires every 2 years OR on an **Epoch Relic Event** milestone a?? whichever comes first. This keeps emissions tied to either time or community-meaningful milestones, not just arbitrary block counts.
 
 ### Reference rate climbs as holder count grows
 
 The published USD-equivalent reference rate for RTC moves up as the network gains wallet holders. **Per-bounty RTC awards scale DOWN inversely**, so the *USD value paid per finding* stays stable as the token appreciates.
 
-| Holder count | Reference rate | Bounty rate scale |
-|--------------|----------------|-------------------|
-| Today (~761 holders) | $0.10 | Current |
-| 1,000 holders | $0.15 | ~67% of current |
-| 2,000 holders | $0.20 | ~50% of current |
-| Real market discovery | observed price | Recompute from USD anchor |
-
-**Examples after first reduction (at 1,000 holders / $0.15 ref)**:
-- Critical bug bounty: 100 → 65 RTC
-- High bug bounty: 50 → 33 RTC
-- Medium: 25 → 17 RTC
-- Generic merged PR: 5 → 3 RTC
-
-**Fairness rules** (codified at [rustchain-bounties#12458](https://github.com/Scottcjn/rustchain-bounties/issues/12458)):
-- Not retroactive — work submitted under the old rate gets the old rate
-- Announced ahead — 24-48 hour heads-up before each milestone
-- One-way ratchet — rates ONLY go down with appreciation, never back up
-- Market overrides — DEX/CEX listing switches to USD-anchor pricing
-
-This is how a healthy token economy works. Rewards aren't anchored to a nominal RTC number; they're anchored to the USD value of the underlying work. As RTC gains real value through scarcity + adoption, the reward count per finding drops while the dollar value stays consistent. **The math protects both the contributor and the program.**
-
-### Fees
-
-| Operation | Fee |
-|-----------|-----|
-| Attestation | Free |
-| Transfer | 0.0001 RTC |
-| Withdrawal to Ergo | 0.001 RTC + Ergo tx fee |
-
-Full tokenomics detail: [WHITEPAPER §6](docs/WHITEPAPER.md).
-
-## Security
-
-- **Hardware binding**: Each fingerprint bound to one wallet
-- **Ed25519 signatures**: All transfers cryptographically signed
-- **TLS cert pinning**: Miners pin node certificates
-- **Container detection**: Docker, LXC, K8s caught at attestation
-- **ROM clustering**: Detects emulator farms sharing identical ROM dumps
-- **Red team bounties**: [Open](https://github.com/Scottcjn/rustchain-bounties/issues) for finding vulnerabilities
-
----
-
-## wRTC on Solana
-
-| | Link |
-|--|------|
-| **Swap** | [Raydium DEX](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) |
-| **Chart** | [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) |
-| **Bridge** | [Bridge](https://bottube.ai/bridge/wrtc) |
-| **Guide** | [wRTC Quickstart](docs/wrtc.md) |
-
----
-
-## Contribute & Earn RTC
-
-Every contribution earns RTC tokens. Browse [open bounties](https://github.com/Scottcjn/rustchain-bounties/issues).
-
-| Tier | Reward | Examples |
-|------|--------|----------|
-| Micro | 1-10 RTC | Typo fix, docs, test |
-| Standard | 20-50 RTC | Feature, refactor |
-| Major | 75-100 RTC | Security fix, consensus |
-| Critical | 100-150 RTC | Vulnerability, protocol |
-
-**1 RTC ≈ $0.10 USD** · `curl -fsSL https://rustchain.org/install.sh | bash` · [CONTRIBUTING.md](CONTRIBUTING.md)
-
----
-
-## Publications
-
-| Paper | Venue | DOI |
-|-------|-------|-----|
-| **Emotional Vocabulary as Semantic Grounding** | **CVPR 2026 Workshop (GRAIL-V)** — Accepted | [OpenReview](https://openreview.net/forum?id=pXjE6Tqp70) |
-| **One CPU, One Vote** | Preprint | [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18623592-blue)](https://doi.org/10.5281/zenodo.18623592) |
-| **Non-Bijunctive Permutation Collapse** | Preprint | [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18623920-blue)](https://doi.org/10.5281/zenodo.18623920) |
-| **PSE Hardware Entropy** | Preprint | [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18623922-blue)](https://doi.org/10.5281/zenodo.18623922) |
-| **RAM Coffers** | Preprint | [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18321905-blue)](https://doi.org/10.5281/zenodo.18321905) |
-| **RPI: Resonant Permutation Inference** | Preprint | [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.19271983-blue)](https://doi.org/10.5281/zenodo.19271983) |
-
----
-
-## Ecosystem
-
-| Project | What |
-|---------|------|
-| [BoTTube](https://bottube.ai) | AI-native video platform (1,000+ videos) |
-| [Beacon](https://github.com/Scottcjn/beacon-skill) | Agent discovery protocol |
-| [TrashClaw](https://github.com/Scottcjn/trashclaw) | Zero-dep local LLM agent |
-| [RAM Coffers](https://github.com/Scottcjn/ram-coffers) | NUMA-aware LLM inference on POWER8 |
-| [RPI Inference](https://github.com/Scottcjn/rpi-inference) | Zero-multiply inference engine (18K tok/s, runs on N64) |
-| [Grazer](https://github.com/Scottcjn/grazer-skill) | Multi-platform content discovery |
-
----
-
-## Supported Platforms
-
-Linux (x86_64, ppc64le) · macOS (Intel, Apple Silicon, PowerPC) · IBM POWER8 · Windows · Mac OS X Tiger/Leopard · Raspberry Pi
-
----
-
-## Why "RustChain"?
-
-Named after a 486 laptop with oxidized serial ports that still boots to DOS and mines RTC. "Rust" means iron oxide on vintage iron-containing components. The thesis is that corroding vintage hardware still has computational value and dignity.
-
----
-
-<div align="center">
-
-**[Elyan Labs](https://elyanlabs.ai)** · Built with $0 VC and a room full of pawn shop hardware
-
-*"Mais, it still works, so why you gonna throw it away?"*
-
-[Boudreaux Principles](https://rustchain.org/principles.html) · [Green Tracker](https://rustchain.org/preserved.html) · [Bounties](https://github.com/Scottcjn/rustchain-bounties/issues)
-
-</div>
-
-
-## Contributing
-Please read the [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines and the [Bounty Board](https://github.com/Scottcjn/rustchain-bounties) for active tasks and rewards.
-
-
----
-*Documentation improved for readability.*
+| Holder count | Reference rate |
