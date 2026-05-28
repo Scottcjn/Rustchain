@@ -1477,6 +1477,13 @@ def init_db():
             )
         """)
 
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS miner_header_keys (
+                miner_id TEXT PRIMARY KEY,
+                pubkey_hex TEXT NOT NULL
+            )
+        """)
+
         # Withdrawal nonce tracking (replay protection)
         c.execute("""
             CREATE TABLE IF NOT EXISTS withdrawal_nonces (
