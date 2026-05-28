@@ -102,10 +102,14 @@ def get_network_stats():
 
 @app.route('/miner/<miner_id>')
 def miner_detail(miner_id):
+    if len(miner_id) > 128:
+        return "Miner ID too long", 400
     return render_template('miner_detail.html', miner_id=miner_id)
 
 @app.route('/api/miner/<miner_id>')
 def get_miner_detail(miner_id):
+    if len(miner_id) > 128:
+        return jsonify({"error": "Miner ID too long"}), 400
     try:
         response = requests.get(MINERS_ENDPOINT, timeout=5)
         if response.status_code == 200:
