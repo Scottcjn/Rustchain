@@ -633,6 +633,16 @@ class GossipLayer:
         # Load initial state from DB
         self._load_state_from_db()
 
+    @staticmethod
+    def _valid_peer_url(peer_url: Any) -> Optional[str]:
+        if not isinstance(peer_url, str):
+            return None
+        peer_url = peer_url.strip().rstrip("/")
+        parsed = urlparse(peer_url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            return None
+        return peer_url
+
     def _load_state_from_db(self):
         """Load existing state into CRDTs and initialize P2P tables"""
         try:
@@ -903,6 +913,8 @@ class GossipLayer:
 
         if msg_type == MessageType.PING:
             return self._handle_ping(msg)
+        elif msg_type == MessageType.PEER_ANNOUNCE:
+            return self._handle_peer_announce(msg)
         elif msg_type == MessageType.INV_ATTESTATION:
             return self._handle_inv_attestation(msg)
         elif msg_type == MessageType.INV_EPOCH:
@@ -926,6 +938,28 @@ class GossipLayer:
             self.broadcast(msg, exclude_peer=msg.sender_id)
 
         return {"status": "ok"}
+
+    def _handle_peer_announce(self, msg: GossipMessage) -> Dict:
+        """Accept a signed peer announcement for NAT-discovered public URLs."""
+        payload = msg.payload if isinstance(msg.payload, dict) else {}
+        peer_id = payload.get("node_id") or msg.sender_id
+        peer_url = self._valid_peer_url(payload.get("url"))
+
+        if not isinstance(peer_id, str) or not peer_id.strip():
+            return {"status": "invalid_peer_announce", "reason": "node_id required"}
+        if peer_id == self.node_id:
+            return {"status": "ignored_self_announce"}
+        if peer_url is None:
+            return {"status": "invalid_peer_announce", "reason": "valid peer url required"}
+
+        with self.lock:
+            self.peers[peer_id.strip()] = peer_url
+
+        if msg.ttl > 0:
+            msg.ttl -= 1
+            self.broadcast(msg, exclude_peer=msg.sender_id)
+
+        return {"status": "peer_added", "node_id": peer_id.strip(), "url": peer_url}
 
     def _handle_ping(self, msg: GossipMessage) -> Dict:
         """Respond to ping with pong"""
@@ -1590,10 +1624,17 @@ class RustChainP2PNode:
     Manages gossip, CRDT state, and epoch consensus.
     """
 
-    def __init__(self, node_id: str, db_path: str, peers: Dict[str, str]):
+    def __init__(
+        self,
+        node_id: str,
+        db_path: str,
+        peers: Dict[str, str],
+        advertised_url: Optional[str] = None,
+    ):
         self.node_id = node_id
         self.db_path = db_path
         self.peers = peers
+        self.advertised_url = advertised_url
 
         # Initialize components
         self.gossip = GossipLayer(node_id, peers, db_path)
@@ -1611,6 +1652,7 @@ class RustChainP2PNode:
         self.running = True
         self.sync_thread = threading.Thread(target=self._sync_loop, daemon=True)
         self.sync_thread.start()
+        self.announce_peer()
         logger.info(f"P2P Node {self.node_id} started with {len(self.peers)} peers")
 
     def stop(self):
@@ -1667,6 +1709,17 @@ class RustChainP2PNode:
             ts_ok,
             attestation.get("device_arch", "unknown")
         )
+
+    def announce_peer(self):
+        """Broadcast this node's reachable URL when NAT traversal found one."""
+        if not self.advertised_url:
+            return
+
+        msg = self.gossip.create_message(MessageType.PEER_ANNOUNCE, {
+            "node_id": self.node_id,
+            "url": self.advertised_url,
+        })
+        self.gossip.broadcast(msg)
 
 
 # =============================================================================
@@ -1782,6 +1835,7 @@ def register_p2p_endpoints(app, p2p_node: RustChainP2PNode):
             "node_id": p2p_node.node_id,
             "running": p2p_node.running,
             "peer_count": len(p2p_node.peers),
+            "advertised_url": getattr(p2p_node, "advertised_url", None),
             "attestation_count": len(p2p_node.gossip.attestation_crdt.data),
             "settled_epochs": len(p2p_node.gossip.epoch_crdt.items)
         })
