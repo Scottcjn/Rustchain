@@ -138,6 +138,85 @@ def test_airdrop_eligibility_rejects_structured_text_field(tmp_path):
     assert response.get_json() == {"ok": False, "error": "github_username must be a string"}
 
 
+@pytest.mark.parametrize(
+    "github_username",
+    [
+        "../octocat",
+        "alice/bob",
+        "alice?tab=repositories",
+        "-alice",
+        "alice-",
+    ],
+)
+def test_airdrop_eligibility_rejects_invalid_github_username(tmp_path, github_username):
+    client, _db_path = _make_client(tmp_path)
+
+    response = client.post(
+        "/api/airdrop/eligibility",
+        json={
+            "github_username": github_username,
+            "wallet_address": "wallet-1",
+            "chain": "base",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {
+        "ok": False,
+        "error": "github_username must be a valid GitHub username",
+    }
+
+
+def test_airdrop_eligibility_rejects_overlong_github_username(tmp_path):
+    client, _db_path = _make_client(tmp_path)
+
+    response = client.post(
+        "/api/airdrop/eligibility",
+        json={
+            "github_username": "a" * 40,
+            "wallet_address": "wallet-1",
+            "chain": "base",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"ok": False, "error": "github_username_too_long"}
+
+
+def test_airdrop_claim_rejects_invalid_github_username_before_network(tmp_path):
+    client, _db_path = _make_client(tmp_path)
+
+    response = client.post(
+        "/api/airdrop/claim",
+        json={
+            "github_username": "alice/bob",
+            "wallet_address": "wallet-1",
+            "chain": "base",
+            "tier": "contributor",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {
+        "ok": False,
+        "error": "github_username must be a valid GitHub username",
+    }
+
+
+def test_airdrop_service_rejects_invalid_github_username_without_api_calls(tmp_path, monkeypatch):
+    airdrop = AirdropV2(str(tmp_path / "airdrop.db"))
+
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("GitHub API should not be called for malformed usernames")
+
+    monkeypatch.setattr(airdrop, "_check_github_account", fail_if_called)
+
+    result = airdrop.check_eligibility("../octocat", "wallet-1", "base")
+
+    assert result.eligible is False
+    assert result.reason == "Invalid GitHub username"
+
+
 def test_bridge_lock_rejects_structured_amount(tmp_path):
     client, _db_path = _make_client(tmp_path)
 
