@@ -158,6 +158,33 @@ def _error_text(data: dict[str, Any]) -> str:
     return ""
 
 
+def _normalize_miners_payload(data: dict[str, Any] | list[Any]) -> tuple[list[dict[str, Any]], int] | None:
+    """Accept legacy miner arrays and current paginated /api/miners envelopes."""
+    if isinstance(data, list):
+        miners = data
+        total = len(data)
+    elif isinstance(data, dict):
+        miners = data.get("miners") or data.get("data") or []
+        pagination = data.get("pagination") if isinstance(data.get("pagination"), dict) else {}
+        total = pagination.get("total", data.get("total", len(miners) if isinstance(miners, list) else 0))
+    else:
+        return None
+
+    if not isinstance(miners, list):
+        return None
+
+    try:
+        total = int(total)
+    except (TypeError, ValueError):
+        total = len(miners)
+
+    return miners, max(total, len(miners))
+
+
+def _miner_name(row: dict[str, Any]) -> str:
+    return str(row.get("miner") or row.get("miner_id") or "?")
+
+
 # ---------------------------------------------------------------------------
 # Command: /start
 # ---------------------------------------------------------------------------
@@ -262,18 +289,19 @@ async def cmd_miners(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(f"❌ Error: {err}")
         return
 
-    miners = data.get("miners", [])
-    if not isinstance(miners, list):
+    normalized = _normalize_miners_payload(data)
+    if normalized is None:
         await update.message.reply_text("Unexpected response from /api/miners.")
         return
+    miners, total = normalized
 
     if not miners:
         await update.message.reply_text("No active miners found on the network.")
         return
 
-    lines = [f"⛏️ *Active Miners: {len(miners)}*\n"]
+    lines = [f"⛏️ *Active Miners: {total}*\n"]
     for m in miners[:15]:
-        name = m.get("miner", "?")
+        name = _miner_name(m)
         hw = m.get("hardware_type", m.get("device_arch", ""))
         mult = m.get("antiquity_multiplier", "")
         # Escape underscores and special chars for MarkdownV2
@@ -281,8 +309,9 @@ async def cmd_miners(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         safe_hw = _md_escape(str(hw))
         lines.append(f"  `{safe_name}` — {safe_hw} \\(x{mult}\\)")
 
-    if len(miners) > 15:
-        lines.append(f"\n_\\.\\.\\.and {len(miners) - 15} more_")
+    displayed = min(len(miners), 15)
+    if total > displayed:
+        lines.append(f"\n_\\.\\.\\.and {total - displayed} more_")
 
     await update.message.reply_text("\n".join(lines), parse_mode="MarkdownV2")
 

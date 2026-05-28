@@ -60,3 +60,21 @@ def test_format_unknown_event_pretty_prints_json_payload():
     assert "Event:     custom_event" in text
     assert '"nested"' in text
     assert '"ok": true' in text
+
+
+def test_format_large_tx_tolerates_non_numeric_delta():
+    text = webhook_client.format_event(
+        "large_tx",
+        {
+            "miner": "miner-a",
+            "delta": "not-a-number",
+            "direction": "out",
+            "previous_balance": 10,
+            "new_balance": 8,
+        },
+        0,
+    )
+
+    assert "Miner:     miner-a" in text
+    assert "Delta:     ? RTC (out)" in text
+    assert "Balance:   10 -> 8 RTC" in text

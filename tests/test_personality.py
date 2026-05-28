@@ -102,6 +102,11 @@ class TestStyleText:
         # Should be truncated to first sentence
         assert len(result) < len(long)
 
+    def test_low_verbosity_uses_earliest_sentence_end(self):
+        eng = make_engine(verbosity=0.1)
+        result = eng.style_text("Question first? Then an excited part! Finally a period.")
+        assert result == "Question first?"
+
     def test_low_formality_lowercases(self):
         eng = make_engine(formality=0.1)
         result = eng.style_text("Hello World")

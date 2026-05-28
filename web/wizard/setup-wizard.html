@@ -111,7 +111,16 @@ function importWallet(){var v=document.getElementById("importWalletInput").value
 function renderDownload(el){var walletArg=S.walletName?" --wallet "+S.walletName:"";var cmd="curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s --"+walletArg;var minerDl=S.platform==="macos"?"curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/macos/rustchain_mac_miner_v2.4.py -o rustchain_miner.py":"curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/linux/rustchain_linux_miner.py -o rustchain_miner.py";var runCmd="~/.rustchain/venv/bin/python rustchain_miner.py --wallet "+(S.walletName||"YOUR_WALLET_NAME");var checkCmd="curl -sk https://rustchain.org/health";var balanceCmd="curl -sk \"https://rustchain.org/wallet/balance?miner_id="+(S.walletName||"YOUR_WALLET_NAME")+"\"";el.innerHTML='<div class="card"><h2>&#128229; Step 4 \u2014 Download &amp; Install</h2><p>Run the one-line installer. It auto-detects your platform, sets up a Python venv, and registers the miner as a system service.</p></div><div class="card"><h3>&#129514; One-Line Installer</h3><div class="cl">Run in terminal (includes your wallet name from Step 3)</div><div class="cb">'+esc(cmd)+'<span class="cpy" onclick="copyCode(this)">Copy</span></div><div class="ib">Add <code>--dry-run</code> to preview without making changes. Add <code>--skip-checksum</code> to skip checksum verification (not recommended).</div></div><div class="card"><h3>&#128736; Manual install (alternative)</h3><div class="cl">1. Create directory</div><div class="cb">mkdir -p ~/.rustchain && cd ~/.rustchain<span class="cpy" onclick="copyCode(this)">Copy</span></div><div class="cl" style="margin-top:8px">2. Download miner</div><div class="cb">'+esc(minerDl)+'<span class="cpy" onclick="copyCode(this)">Copy</span></div><div class="cl" style="margin-top:8px">3. Set up Python venv</div><div class="cb">python3 -m venv ~/.rustchain/venv && ~/.rustchain/venv/bin/pip install requests -q<span class="cpy" onclick="copyCode(this)">Copy</span></div><div class="cl" style="margin-top:8px">4. Start miner</div><div class="cb">'+esc(runCmd)+'<span class="cpy" onclick="copyCode(this)">Copy</span></div></div><div class="card"><h3>After installation</h3><div class="cl">Check node health</div><div class="cb">'+esc(checkCmd)+'<span class="cpy" onclick="copyCode(this)">Copy</span></div><div class="cl" style="margin-top:8px">Check wallet balance</div><div class="cb">'+esc(balanceCmd)+'<span class="cpy" onclick="copyCode(this)">Copy</span></div></div><div class="br"><button class="bs" onclick="go(2)">\u2190 Back</button><button class="bp" onclick="go(4)">Next: Configure \u2192</button></div>'}
 function renderConfigure(el){var wName=S.walletName||"YOUR_WALLET_NAME";var nodeVal=S.walletName?"https://rustchain.org":"https://rustchain.org";el.innerHTML='<div class="card"><h2>&#9881; Step 5 \u2014 Configure</h2><p>Set your wallet name and the RustChain node URL. These are written to your miner config.</p></div><div class="card"><div class="cl">Wallet Name</div><div class="cb">'+esc(wName)+'<span class="cpy" onclick="copyCode(this)">Copy</span></div><p class="cn">Use this name when starting the miner: <code>--wallet '+esc(wName)+'</code></p><div class="ir" style="margin-top:12px"><input type="text" id="nodeInput" value="https://rustchain.org" placeholder="Node URL" /><button class="bp" onclick="saveNode()">Save Node</button></div><div id="nodeResult" style="margin-top:8px"></div></div><div class="card"><h3>Quick config summary</h3><div class="sm"><div class="rw"><span class="lb">Wallet</span><span class="vl">'+esc(wName)+'</span></div><div class="rw"><span class="lb">Node</span><span class="vl">https://rustchain.org</span></div><div class="rw"><span class="lb">Platform</span><span class="vl">'+pName(S.platform)+'</span></div><div class="rw"><span class="lb">Python</span><span class="vl">'+(S.pythonVersion||"Not verified yet")+'</span></div></div></div><div class="br"><button class="bs" onclick="go(3)">\u2190 Back</button><button class="bp" onclick="go(5)">Next: Test Connection \u2192</button></div>'}
 function saveNode(){var v=document.getElementById("nodeInput").value.trim();var result=document.getElementById("nodeResult");if(!v||!v.startsWith("http")){result.innerHTML='<span class="bg bg-err">&#10007; Enter a valid URL starting with http</span>';return}result.innerHTML='<span class="bg bg-ok">&#10003; Node URL saved: '+esc(v)+'</span>'}
-function renderTest(el){el.innerHTML='<div class="card"><h2>&#127763; Step 6 \u2014 Test Connection</h2><p>Verify that your machine can reach the RustChain network node.</p></div><div class="card"><h3>Node Health Check</h3><div class="cl">Run in terminal
+function renderTest(el){
+  el.innerHTML=
+    '<div class="card"><h2>&#127763; Step 6 \u2014 Test Connection</h2><p>Verify that your machine can reach the RustChain network node.</p></div>'+
+    '<div class="card"><h3>Node Health Check</h3><div class="cl">Run in terminal</div>'+
+    '<div class="cb">curl -sk https://rustchain.org/health<span class="cpy" onclick="copyCode(this)">Copy</span></div>'+
+    '<div class="br"><button class="bp" onclick="testConnection()">Test Connection</button></div>'+
+    '<div id="netResult" style="margin-top:10px"></div></div>'+
+    '<div class="card"><h3>Attestation Check</h3><p>After the node responds, the wizard checks whether the attestation challenge endpoint is ready.</p><div id="attResult" style="margin-top:10px"></div></div>'+
+    '<div class="br"><button class="bs" onclick="go(4)">\u2190 Back</button><button class="bp" onclick="go(6)">Next: First Attestation \u2192</button></div>';
+}
 function testConnection(){
   var el=document.getElementById("netResult");
   el.innerHTML='<div class="nr"><div class="spn"></div>Testing node connectivity...</div>';
@@ -168,7 +177,7 @@ function renderAttest(el){
     '<div class="card"><h3>&#128640; Congratulations!</h3><div class="hero"><div class="ic">&#127881;</div><h2>You are now a RustChain Miner!</h2><p>Your hardware is contributing to the Proof-of-Antiquity network.<br/>Earn RTC tokens as your vintage hardware proves its age and authenticity.<br/><br/>Keep your miner running to accumulate attestations and rewards.</p></div>'+
     '<div class="sm"><div class="rw"><span class="lb">Wallet</span><span class="vl">'+esc(wName)+'</span></div><div class="rw"><span class="lb">Network</span><span class="vl">RustChain (https://rustchain.org)</span></div><div class="rw"><span class="lb">Bounty</span><span class="vl">50 RTC</span></div></div>'+
     '<div class="ib"><strong>Next steps:</strong> Bookmark this wizard, monitor your balance with <code>curl -sk https://rustchain.org/wallet/balance?miner_id='+wName+'</code>, and join the Discord for help.</div></div>'+
-    '<div class="br"><button class="bs" onclick="go(5)">&larr; Back</button><button class="bp" onclick="go(6)">I'm Mining! &#10003;</button></div>';
+    '<div class="br"><button class="bs" onclick="go(5)">&larr; Back</button><button class="bp" onclick="go(6)">I\'m Mining! &#10003;</button></div>';
 }
 function checkMiner(){
   var result=document.getElementById("minerResult");
@@ -180,11 +189,12 @@ function checkMiner(){
     if(xhr.status===200){
       try{
         var data=JSON.parse(xhr.responseText);
+        var miners=Array.isArray(data)?data:(data&&Array.isArray(data.miners)?data.miners:[]);
         var wName=S.walletName.toLowerCase();
         var match=null;
-        for(var i=0;i<data.length;i++){
-          if(String(data[i].miner_id||data[i].name||data[i].wallet||'').toLowerCase().indexOf(wName.substring(0,8))!==-1){
-            match=data[i];break;
+        for(var i=0;i<miners.length;i++){
+          if(String(miners[i].miner_id||miners[i].name||miners[i].wallet||'').toLowerCase().indexOf(wName.substring(0,8))!==-1){
+            match=miners[i];break;
           }
         }
         if(match){

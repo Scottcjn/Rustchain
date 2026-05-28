@@ -34,7 +34,7 @@ BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 RATE_LIMIT_SECONDS = 5       # 1 request per N seconds per user
 
 if not BOT_TOKEN:
-    print("Error: TELEGRAM_BOT_TOKEN enviroment variable is required.")
+    print("Error: TELEGRAM_BOT_TOKEN environment variable is required.")
     sys.exit(1)
 
 # Simple in-memory rate limiter (per-user last-request timestamp)
@@ -69,6 +69,33 @@ def check_rate(user_id: int) -> bool:
         return False
     _last_request[user_id] = now
     return True
+
+
+def normalize_miners_payload(data):
+    """Accept legacy miner arrays and current paginated /api/miners envelopes."""
+    if isinstance(data, list):
+        miners = data
+        total = len(data)
+    elif isinstance(data, dict):
+        miners = data.get("miners") or data.get("data") or []
+        pagination = data.get("pagination") if isinstance(data.get("pagination"), dict) else {}
+        total = pagination.get("total", data.get("total", len(miners) if isinstance(miners, list) else 0))
+    else:
+        return None
+
+    if not isinstance(miners, list):
+        return None
+
+    try:
+        total = int(total)
+    except (TypeError, ValueError):
+        total = len(miners)
+
+    return miners, max(total, len(miners))
+
+
+def miner_name(row: dict) -> str:
+    return str(row.get("miner_id") or row.get("miner") or "?")
 
 # ---------------------------------------------------------------------------
 # Command handlers
@@ -135,22 +162,27 @@ async def cmd_miners(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         await update.message.reply_text("❌ Could not reach RustChain node.")
         return
 
-    # The API may return a list directly or a dict with a miners key
-    miners = data if isinstance(data, list) else data.get("miners", [])
+    normalized = normalize_miners_payload(data)
+    if normalized is None:
+        await update.message.reply_text("Unexpected response from /api/miners.")
+        return
+    miners, total = normalized
+
     if not miners:
         await update.message.reply_text("No active miners found.")
         return
 
-    lines = [f"⛏️ *Active Miners: {len(miners)}*", ""]
+    lines = [f"⛏️ *Active Miners: {total}*", ""]
     for m in miners[:20]:
-        mid = m.get("miner_id", "?")[:16]
+        mid = miner_name(m)[:16]
         arch = m.get("device_arch", "?")
         mult = m.get("multiplier", 1)
         score = m.get("score", 0)
         lines.append(f"`{mid}`  {arch}  {mult}x  score:{score}")
 
-    if len(miners) > 20:
-        lines.append(f"... and {len(miners) - 20} more")
+    displayed = min(len(miners), 20)
+    if total > displayed:
+        lines.append(f"... and {total - displayed} more")
 
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
@@ -194,7 +226,7 @@ async def cmd_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 # ---------------------------------------------------------------------------
 
 def main():
-    """Start the bot.  Requires TELEGRAM_BOT_TOKEN enviroment variable."""
+    """Start the bot.  Requires TELEGRAM_BOT_TOKEN environment variable."""
     app = Application.builder().token(BOT_TOKEN).build()
 
     # Register command handlers

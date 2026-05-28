@@ -9,7 +9,7 @@ import sqlite3
 import random
 import time
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional, Dict, List
 from datetime import datetime
 
@@ -208,11 +208,9 @@ class PersonalityEngine:
             result = random.choice(fillers) + result
         elif self.traits.verbosity < 0.2:
             # Keep only the first sentence
-            for sep in (".", "!", "?"):
-                idx = result.find(sep)
-                if idx != -1:
-                    result = result[: idx + 1]
-                    break
+            sentence_ends = [idx for sep in (".", "!", "?") if (idx := result.find(sep)) != -1]
+            if sentence_ends:
+                result = result[: min(sentence_ends) + 1]
 
         # Sarcasm: add a sarcastic suffix
         if self.traits.sarcasm > 0.7 and random.random() < 0.5:

@@ -284,8 +284,16 @@ class TestConfig(unittest.TestCase):
         cfg = self._cfg(INPUT_RTC_AMOUNT="inf")
         self.assertEqual(cfg.validate(), "rtc-amount must be finite, got inf")
 
+    def test_validate_rejects_malformed_amount(self):
+        cfg = self._cfg(INPUT_RTC_AMOUNT="not-a-number")
+        self.assertEqual(cfg.validate(), "rtc-amount must be finite, got nan")
+
     def test_validate_rejects_nan_max_amount(self):
         cfg = self._cfg(INPUT_MAX_AMOUNT="nan")
+        self.assertEqual(cfg.validate(), "max-amount must be finite, got nan")
+
+    def test_validate_rejects_malformed_max_amount(self):
+        cfg = self._cfg(INPUT_MAX_AMOUNT="not-a-number")
         self.assertEqual(cfg.validate(), "max-amount must be finite, got nan")
 
 
@@ -398,6 +406,46 @@ class TestTransferRtc(unittest.TestCase):
         self.assertEqual(payload["from_miner"], "founder_community")
         self.assertEqual(payload["to_miner"], "alice")
 
+    def test_success_response_rejects_invalid_json(self):
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = b"not json"
+
+        with patch("award_rtc.urlopen", return_value=mock_resp):
+            ok, result = transfer_rtc(
+                "https://rustchain.org/wallet/transfer",
+                "test-admin-key",
+                "founder_community",
+                "alice",
+                5.0,
+                "PR #4559 auto-bounty",
+            )
+
+        self.assertFalse(ok)
+        self.assertEqual(
+            result["error"],
+            "Invalid JSON response from transfer endpoint",
+        )
+
+    def test_success_response_rejects_non_object_json(self):
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = b'["ok", true]'
+
+        with patch("award_rtc.urlopen", return_value=mock_resp):
+            ok, result = transfer_rtc(
+                "https://rustchain.org/wallet/transfer",
+                "test-admin-key",
+                "founder_community",
+                "alice",
+                5.0,
+                "PR #4559 auto-bounty",
+            )
+
+        self.assertFalse(ok)
+        self.assertEqual(
+            result["error"],
+            "Transfer endpoint response must be a JSON object",
+        )
+
 
 # ---------------------------------------------------------------------------
 # Integration-style main() tests
@@ -507,6 +555,16 @@ class TestMainFlow(unittest.TestCase):
         mock_fetch.assert_not_called()
         mock_post.assert_not_called()
 
+    def test_dry_run_rejects_malformed_amount(self):
+        from award_rtc import main
+        with self._env(INPUT_DRY_RUN="true", INPUT_RTC_AMOUNT="not-a-number"):
+            with patch("award_rtc.fetch_pr_comments") as mock_fetch:
+                with patch("award_rtc.post_pr_comment") as mock_post:
+                    rc = main()
+        self.assertEqual(rc, 1)
+        mock_fetch.assert_not_called()
+        mock_post.assert_not_called()
+
     def test_successful_transfer(self):
         from award_rtc import main
         transfer_result = {
@@ -588,7 +646,7 @@ class TestMainFlow(unittest.TestCase):
         call_args = mock_tx.call_args
         self.assertEqual(call_args[0][4], 200.0)  # amount parameter
 
-    def test_fallback_to_pr_author_when_no_wallet(self):
+    def test_missing_wallet_fails_without_transfer(self):
         from award_rtc import main
         transfer_result = {
             "ok": True,
@@ -600,12 +658,15 @@ class TestMainFlow(unittest.TestCase):
         with self._env(PR_BODY="Just a regular PR\n", PR_AUTHOR="bob"):
             with patch("award_rtc.fetch_pr_comments", return_value=[]):
                 with patch("award_rtc.transfer_rtc", return_value=(True, transfer_result)) as mock_tx:
-                    with patch("award_rtc.post_pr_comment", return_value=True):
+                    with patch("award_rtc.post_pr_comment", return_value=True) as mock_post:
                         rc = main()
-        self.assertEqual(rc, 0)
-        # Should use PR author as wallet
-        call_args = mock_tx.call_args
-        self.assertEqual(call_args[0][3], "bob")  # to_wallet parameter
+        self.assertEqual(rc, 1)
+        mock_tx.assert_not_called()
+        mock_post.assert_called_once()
+        comment_body = mock_post.call_args[0][2]
+        self.assertIn("RTC Auto-Bounty Skipped", comment_body)
+        self.assertIn("wallet: RTC...", comment_body)
+        self.assertIn("recipient_wallet_missing", comment_body)
 
 
 if __name__ == "__main__":

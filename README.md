@@ -12,13 +12,13 @@
 [![Stars](https://img.shields.io/github/stars/Scottcjn/Rustchain?style=flat&color=gold)](https://github.com/Scottcjn/Rustchain/stargazers)
 [![Nodes](https://img.shields.io/badge/Nodes-5%20Active-brightgreen)](https://rustchain.org/explorer/)
 [![DePIN](https://img.shields.io/badge/DePIN-Vintage%20Hardware-8B4513)](https://rustchain.org)
-[![Proof of Antiquity](https://img.shields.io/badge/Consensus-Proof%20of%20Antiquity-DAA520)](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf)
+[![Proof of Antiquity](https://img.shields.io/badge/Consensus-Proof%20of%20Antiquity-DAA520)](docs/WHITEPAPER.md)
 [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.19442753-blue)](https://doi.org/10.5281/zenodo.19442753)
 
 A PowerBook G4 from 2003 earns **2.5x** more than a modern Threadripper.
 A Power Mac G5 earns **2.0x**. A 486 with rusty serial ports earns the most respect of all.
 
-[Explorer](https://rustchain.org/explorer/) · [Machines Preserved](https://rustchain.org/preserved.html) · [Install Miner](#quickstart) · [Beginner Guide](docs/QUICKSTART.md) · [Manifesto](https://rustchain.org/manifesto.html) · [Whitepaper](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf)
+[Explorer](https://rustchain.org/explorer/) · [Machines Preserved](https://rustchain.org/preserved.html) · [Install Miner](#quickstart) · [Beginner Guide](docs/QUICKSTART.md) · [Manifesto](https://rustchain.org/manifesto.html) · [Whitepaper](docs/WHITEPAPER.md)
 
 中文入口: [中文文档](docs/zh-CN/README.md) · [中文 API 快速参考](docs/zh-CN/API.md)
 
@@ -384,7 +384,7 @@ Every contribution earns RTC tokens. Browse [open bounties](https://github.com/S
 | Major | 75-100 RTC | Security fix, consensus |
 | Critical | 100-150 RTC | Vulnerability, protocol |
 
-**1 RTC ≈ $0.10 USD** · `pip install clawrtc` · [CONTRIBUTING.md](CONTRIBUTING.md)
+**1 RTC ≈ $0.10 USD** · `curl -fsSL https://rustchain.org/install.sh | bash` · [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ---
 

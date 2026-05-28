@@ -93,6 +93,18 @@ def _parse_bounded_int_arg(name: str, default: int, maximum: int):
     return min(value, maximum), None, None
 
 
+# ── BCOS Attestation Length Limits ─────────────────────────────────
+
+# Maximum field lengths to prevent SQLite/DOS via unbounded TEXT fields
+MAX_CERT_ID_LENGTH = 128       # cert_id (UUID-like)
+MAX_REPO_LENGTH = 256          # org/repo name
+MAX_COMMIT_SHA_LENGTH = 64     # SHA-256 hex (40) → 64 is generous
+MAX_REVIEWER_LENGTH = 128      # reviewer username/identifier
+MAX_COMMITMENT_LENGTH = 256    # BLAKE2b hex commitment
+MAX_SIGNATURE_LENGTH = 1024    # Ed25519 sig (~128 bytes base64)
+MAX_PUBKEY_LENGTH = 256        # Ed25519 pubkey (~44 bytes base64)
+
+
 def _string_report_field(report: dict, name: str, default: str = "", *, required: bool = False):
     raw = report.get(name, default)
     if raw is None:
@@ -267,6 +279,25 @@ def bcos_attest():
     except ValueError as e:
         return jsonify({"error": "invalid_report_field", "message": str(e)}), 400
     raw_trust_score = report.get("trust_score", 0)
+
+    # Validate field lengths to prevent unbounded TEXT storage
+    field_limits = {
+        "cert_id": (cert_id, MAX_CERT_ID_LENGTH),
+        "repo": (repo, MAX_REPO_LENGTH),
+        "commit_sha": (commit_sha, MAX_COMMIT_SHA_LENGTH),
+        "reviewer": (reviewer, MAX_REVIEWER_LENGTH),
+        "commitment": (commitment, MAX_COMMITMENT_LENGTH),
+        "signature": (signature, MAX_SIGNATURE_LENGTH),
+        "signer_pubkey": (signer_pubkey, MAX_PUBKEY_LENGTH),
+    }
+    for fname, (fval, flimit) in field_limits.items():
+        if fval and len(fval) > flimit:
+            return jsonify({
+                "error": "field_too_long",
+                "field": fname,
+                "max_length": flimit,
+                "actual_length": len(fval),
+            }), 400
 
     # Validation
     if not cert_id or not commitment:

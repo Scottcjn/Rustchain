@@ -1152,6 +1152,8 @@ def generate_badge():
     raw_trust_score = data.get('trust_score', 75)
     cert_id = data.get('cert_id', '')
     include_qr = data.get('include_qr', False)
+    if not isinstance(include_qr, bool):
+        return jsonify({'success': False, 'error': 'include_qr must be a boolean'})
 
     # Validation
     if not repo_name:

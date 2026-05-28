@@ -53,7 +53,23 @@ def calculate_shannon_entropy(data: bytes) -> float:
 
 def analyze_cpu_timing(signals: Dict) -> Dict:
     """Analyze CPU timing characteristics from attestation signals"""
+    if not isinstance(signals, dict):
+        return {
+            "valid": False,
+            "reason": "invalid_signals",
+            "tier": "modern",
+            "confidence": 0.0
+        }
+
     timing = signals.get("cpu_timing", {})
+    if not isinstance(timing, dict):
+        return {
+            "valid": False,
+            "reason": "invalid_cpu_timing",
+            "tier": "modern",
+            "confidence": 0.0
+        }
+
     samples = timing.get("samples", [])
 
     if not samples or len(samples) < 10:
@@ -117,7 +133,12 @@ def analyze_cpu_timing(signals: Dict) -> Dict:
 
 def analyze_ram_patterns(signals: Dict) -> Dict:
     """Analyze RAM access patterns"""
+    if not isinstance(signals, dict):
+        return {"valid": False, "reason": "invalid_signals"}
+
     ram = signals.get("ram_timing", {})
+    if not isinstance(ram, dict):
+        return {"valid": False, "reason": "invalid_ram_timing"}
 
     if not ram:
         return {"valid": False, "reason": "no_ram_data"}
@@ -148,6 +169,9 @@ def analyze_ram_patterns(signals: Dict) -> Dict:
 
 def calculate_entropy_score(signals: Dict) -> float:
     """Calculate hardware entropy score from attestation signals (0.0 to 1.0)"""
+    if not isinstance(signals, dict):
+        return 0.0
+
     score = 0.0
 
     # 1. Shannon entropy of provided samples (40%)
@@ -181,6 +205,11 @@ def calculate_entropy_score(signals: Dict) -> float:
 
 def validate_hardware_proof(signals: Dict, claimed_arch: str) -> Tuple[bool, Dict]:
     """Comprehensive hardware proof validation"""
+    if not isinstance(signals, dict):
+        signals = {}
+    if not isinstance(claimed_arch, str):
+        claimed_arch = "unknown"
+
     analysis = {
         "entropy_score": 0.0,
         "cpu_timing": {},
@@ -240,8 +269,24 @@ def get_antiquity_multiplier(tier: str) -> float:
 
 def server_side_validation(data: Dict) -> Tuple[bool, Dict]:
     """Server-side validation for /attest/submit endpoint"""
+    if not isinstance(data, dict):
+        return False, {
+            "accepted": False,
+            "entropy_score": 0.0,
+            "antiquity_tier": "modern",
+            "reward_multiplier": get_antiquity_multiplier("modern"),
+            "confidence": 0.0,
+            "warnings": ["invalid_payload"],
+            "reason": "invalid_payload",
+        }
+
     device = data.get("device", {})
+    if not isinstance(device, dict):
+        device = {}
+
     signals = data.get("signals", {})
+    if not isinstance(signals, dict):
+        signals = {}
 
     claimed_arch = device.get("arch", "unknown")
     claimed_family = device.get("family", "unknown")

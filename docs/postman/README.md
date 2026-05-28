@@ -84,9 +84,9 @@ RustChain API - Complete Collection
 | GET | `/epoch` | Current epoch, slot, enrolled miners |
 | GET | `/api/stats` | Network statistics |
 | GET | `/api/miners` | Active miners with attestation data |
-| GET | `/api/hall_of_fame` | Hall of Fame leaderboard |
+| GET | `/api/hall_of_fame/leaderboard` | Hall of Fame leaderboard |
 | GET | `/api/fee_pool` | RIP-301 fee pool statistics |
-| GET | `/balance?miner_id=X` | Miner balance lookup |
+| GET | `/wallet/balance?miner_id=X` | Miner balance lookup |
 | GET | `/lottery/eligibility?miner_id=X` | Epoch eligibility check |
 | GET | `/explorer` | Block explorer HTML page |
 
@@ -146,7 +146,8 @@ curl -sk "https://rustchain.org/wallet/balance?miner_id=eafc6f14eab6d5c5362fe651
 Expected response:
 ```json
 {
-  "balance": 150.5,
+  "amount_i64": 150500000,
+  "amount_rtc": 150.5,
   "miner_id": "eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC"
 }
 ```
@@ -205,13 +206,13 @@ Use this checklist to verify all endpoints:
 - [ ] GET `/epoch` - Returns current epoch info
 - [ ] GET `/api/stats` - Returns network statistics
 - [ ] GET `/api/miners` - Returns active miners list
-- [ ] GET `/api/hall_of_fame` - Returns leaderboard
+- [ ] GET `/api/hall_of_fame/leaderboard` - Returns leaderboard
 
 ### Fee Pool
 - [ ] GET `/api/fee_pool` - Returns fee pool statistics
 
 ### Wallet
-- [ ] GET `/balance?miner_id=X` - Returns miner balance
+- [ ] GET `/wallet/balance?miner_id=X` - Returns miner balance
 - [ ] GET `/lottery/eligibility?miner_id=X` - Returns eligibility status
 
 ### Explorer

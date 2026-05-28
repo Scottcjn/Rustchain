@@ -77,9 +77,18 @@ def github_account_age_days(username: str, token: str | None = None) -> int | No
 
 
 def _limit_for_identity(github_username: str | None, account_age_days: int | None) -> float:
+    """Return daily drip limit based on verified identity.
+
+    Only grants GitHub-tier limits when account_age_days is confirmed
+    (i.e., GitHub API returned a valid account). Unverified usernames
+    (account_age_days is None) fall back to anonymous IP-limited tier.
+    """
     if not github_username:
         return 0.5
-    if account_age_days is not None and account_age_days >= 365:
+    if account_age_days is None:
+        # GitHub lookup failed or username doesn't exist — treat as anonymous
+        return 0.5
+    if account_age_days >= 365:
         return 2.0
     return 1.0
 
@@ -93,14 +102,25 @@ def _request_data() -> tuple[dict[str, Any] | None, tuple[Any, int] | None]:
     return data, None
 
 
-def _strip_string_field(data: dict[str, Any], name: str) -> tuple[str | None, tuple[Any, int] | None]:
+def _strip_string_field(data: dict[str, Any], name: str, max_length: int = 0) -> tuple[str | None, tuple[Any, int] | None]:
     value = data.get(name)
     if value is None:
         return None, None
     if not isinstance(value, str):
         return None, (jsonify({"ok": False, "error": f"{name}_must_be_string"}), 400)
     value = value.strip()
+    if max_length > 0 and len(value) > max_length:
+        return None, (jsonify({"ok": False, "error": f"{name}_too_long"}), 400)
     return value or None, None
+
+
+def _client_ip(trust_proxy: bool = False) -> str:
+    if trust_proxy:
+        forwarded_for = request.headers.get("X-Forwarded-For", "")
+        first_forwarded = forwarded_for.split(",")[0].strip()
+        if first_forwarded:
+            return first_forwarded
+    return request.remote_addr or "unknown"
 
 
 def _sum_last_24h(conn: sqlite3.Connection, github_username: str | None, ip: str) -> float:
@@ -168,6 +188,7 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
         "FAUCET_POOL_WALLET": os.getenv("FAUCET_POOL_WALLET", "faucet_pool"),
         "GITHUB_TOKEN": os.getenv("GITHUB_TOKEN", ""),
         "DRY_RUN": os.getenv("FAUCET_DRY_RUN", "1") == "1",
+        "TRUST_PROXY": os.getenv("FAUCET_TRUST_PROXY", "0") == "1",
     }
     if config:
         cfg.update(config)
@@ -183,24 +204,30 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
         data, error = _request_data()
         if error:
             return error
-        wallet, error = _strip_string_field(data, "wallet")
+        wallet, error = _strip_string_field(data, "wallet", max_length=128)
         if error:
             return error
-        github_username, error = _strip_string_field(data, "github_username")
+        github_username, error = _strip_string_field(data, "github_username", max_length=128)
         if error:
             return error
-        ip = request.headers.get("X-Forwarded-For", request.remote_addr or "unknown").split(",")[0].strip()
+        ip = _client_ip(bool(cfg.get("TRUST_PROXY")))
 
         if not wallet:
             return jsonify({"ok": False, "error": "wallet_required"}), 400
 
         age_days = github_account_age_days(github_username or "", cfg.get("GITHUB_TOKEN")) if github_username else None
         daily_limit = _limit_for_identity(github_username, age_days)
-        drip_amount = 1.0 if github_username else 0.5
+        # Only grant GitHub-tier drip amount when account is verified
+        # Unverified usernames get the anonymous 0.5 RTC amount
+        drip_amount = 1.0 if github_username and age_days is not None else 0.5
+
+        # Use IP-based rate limiting when GitHub identity is unverified
+        # to prevent bypass via rotating fake usernames
+        rate_limit_identity = github_username if (github_username and age_days is not None) else None
 
         conn = sqlite3.connect(cfg["DB_PATH"])
         try:
-            used = _sum_last_24h(conn, github_username, ip)
+            used = _sum_last_24h(conn, rate_limit_identity, ip)
             if used + drip_amount > daily_limit:
                 return jsonify(
                     {
@@ -219,7 +246,7 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
             now = _utcnow().isoformat()
             cur = conn.execute(
                 "INSERT INTO faucet_claims(wallet, github_username, ip, amount, created_at) VALUES(?,?,?,?,?)",
-                (wallet, github_username, ip, drip_amount, now),
+                (wallet, rate_limit_identity, ip, drip_amount, now),
             )
             conn.commit()
 

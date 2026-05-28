@@ -128,8 +128,12 @@ def validate_metadata_file(filepath: str) -> int:
         print(f"Error: File not found: {filepath}")
         return 1
     
-    with open(path, 'r') as f:
-        metadata = json.load(f)
+    try:
+        with open(path, 'r') as f:
+            metadata = json.load(f)
+    except json.JSONDecodeError as exc:
+        print(f"Error: Invalid JSON in {filepath}: {exc.msg}")
+        return 1
     
     checklist = FirstUploadChecklist()
     result = checklist.validate_upload(metadata)

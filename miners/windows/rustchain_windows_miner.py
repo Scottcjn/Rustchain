@@ -35,6 +35,19 @@ from datetime import datetime
 from pathlib import Path
 import argparse
 
+# ── Ed25519 signing (GPT-5.4 audit finding #2) ──
+# Optional: if miner_crypto.py + PyNaCl are available, sign attestations
+# with Ed25519 over the canonical JSON of the full payload. Server-side
+# verification accepts both this scheme and the legacy sha512 fallback
+# (see PR #6426). Without signing, attestations are vulnerable to
+# wallet-hijack via MITM — fingerprint validation still passes but the
+# server has no crypto binding between wallet field and sender.
+try:
+    from miner_crypto import get_or_create_keypair, sign_payload  # noqa: F401
+    CRYPTO_AVAILABLE = True
+except ImportError:
+    CRYPTO_AVAILABLE = False
+
 # Configuration
 RUSTCHAIN_API = "http://50.28.86.131:8088"
 WALLET_DIR = Path.home() / ".rustchain"
@@ -118,6 +131,15 @@ class RustChainMiner:
 
         # Zephyr dual-mining state — detected once per attest() cycle
         self._pow_proof = None
+
+        # Ed25519 keypair — generated/loaded once per install. Used to sign
+        # every attestation payload below. Stored in the OS keystore via
+        # miner_crypto.get_or_create_keypair() so reinstall preserves identity.
+        self.keypair = {}
+        self.public_key = ""
+        if CRYPTO_AVAILABLE:
+            self.keypair = get_or_create_keypair()
+            self.public_key = self.keypair.get("public_key", "")
 
     # -----------------------------------------------------------------------
     # ZEPHYR DUAL-MINING METHODS
@@ -448,6 +470,27 @@ class RustChainMiner:
         if self._pow_proof:
             attestation["pow_proof"] = self._pow_proof
 
+        # ── Ed25519 signature (GPT-5.4 audit finding #2) ──
+        # Sign canonical JSON of the full attestation BEFORE adding the
+        # signature/public_key/signature_type fields. Server reproduces the
+        # same canonical bytes by stripping those three fields and verifying.
+        # Legacy sha512 fallback for installs without PyNaCl — server flags
+        # it but still accepts (see PR #6426 server-side handling).
+        if CRYPTO_AVAILABLE and self.keypair:
+            payload_bytes = json.dumps(
+                attestation, sort_keys=True, separators=(",", ":")
+            ).encode()
+            signature = sign_payload(payload_bytes, self.keypair["private_key"])
+            attestation["signature"] = signature
+            attestation["public_key"] = self.public_key
+            attestation["signature_type"] = "ed25519"
+        else:
+            # Legacy fallback — sha512 pseudo-signature. Server accepts but
+            # logs a warning. Real wallet-hijack protection requires PyNaCl.
+            msg = f"{nonce}:{self.miner_id}:{self.wallet_address}:{int(time.time())}"
+            attestation["signature"] = hashlib.sha512(msg.encode()).hexdigest()
+            attestation["signature_type"] = "sha512_legacy"
+
         try:
             resp = requests.post(
                 f"{self.node_url}/attest/submit", json=attestation, timeout=30
@@ -483,6 +526,19 @@ class RustChainMiner:
 
     def enroll(self):
         """Enroll the miner into the current epoch after attesting."""
+        # Fetch current epoch from server to construct signed enrollment.
+        # The server computes epoch from its own slot clock; we re-query to
+        # match. There's a small race if epoch rolls between our query and
+        # POST — server returns invalid_enrollment_signature in that case and
+        # the miner retries on next cycle (fine, enrollment runs ~per epoch).
+        current_epoch = None
+        try:
+            ep_resp = requests.get(f"{self.node_url}/epoch", timeout=10)
+            if ep_resp.ok:
+                current_epoch = ep_resp.json().get("epoch")
+        except Exception:
+            pass
+
         payload = {
             "miner_pubkey": self.wallet_address,
             "miner_id":     self.miner_id,
@@ -491,6 +547,20 @@ class RustChainMiner:
                 "arch":   self.hw_info["arch"]
             }
         }
+
+        # Sign (miner_pubkey|miner_id|epoch) — server expects this exact
+        # 3-field MAC format at line 4155 of rustchain_v2_integrated_v2.2.1.
+        # Uses the SAME Ed25519 key stored during attestation, so server
+        # cross-checks the pubkey matches its miner_attest_recent record.
+        if CRYPTO_AVAILABLE and self.keypair and current_epoch is not None:
+            enroll_message = f"{self.wallet_address}|{self.miner_id}|{current_epoch}"
+            try:
+                payload["signature"] = sign_payload(
+                    enroll_message.encode(), self.keypair["private_key"]
+                )
+                payload["public_key"] = self.public_key
+            except Exception:
+                pass  # Best-effort; server still accepts unsigned with warning
 
         try:
             resp = requests.post(

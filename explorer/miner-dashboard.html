@@ -308,6 +308,11 @@
         return escapeHtml(String(value ?? fallback));
     }
 
+    function normalizeWithdrawals(payload) {
+        const rows = Array.isArray(payload) ? payload : (Array.isArray(payload?.withdrawals) ? payload.withdrawals : []);
+        return rows.filter(w => w && typeof w === 'object');
+    }
+
     async function loadMiner() {
         const input = document.getElementById('miner-id');
         const minerId = input.value.trim();
@@ -411,17 +416,9 @@
 
         // Withdrawal history
         const wBody = document.getElementById('withdrawals-body');
-        if (historyData && Array.isArray(historyData) && historyData.length > 0) {
-            wBody.innerHTML = historyData.slice(0, 10).map(w => `
-                <tr>
-                    <td style="font-size:0.75rem;">${safeText(String(w.withdrawal_id || w.id || '--').substring(0, 12))}...</td>
-                    <td>${safeText(w.amount, '?')} RTC</td>
-                    <td><span class="badge ${w.status === 'completed' ? 'badge-green' : w.status === 'pending' ? 'badge-yellow' : 'badge-red'}">${escapeHtml(w.status || 'unknown')}</span></td>
-                    <td>${safeText(timeAgo(w.requested_at || w.created_at || w.timestamp))}</td>
-                </tr>
-            `).join('');
-        } else if (historyData?.withdrawals && historyData.withdrawals.length > 0) {
-            wBody.innerHTML = historyData.withdrawals.slice(0, 10).map(w => `
+        const withdrawals = normalizeWithdrawals(historyData);
+        if (withdrawals.length > 0) {
+            wBody.innerHTML = withdrawals.slice(0, 10).map(w => `
                 <tr>
                     <td style="font-size:0.75rem;">${safeText(String(w.withdrawal_id || w.id || '--').substring(0, 12))}...</td>
                     <td>${safeText(w.amount, '?')} RTC</td>

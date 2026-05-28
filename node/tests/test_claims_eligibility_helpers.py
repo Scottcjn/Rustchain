@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: MIT
 
+import builtins
 import sqlite3
 import sys
+import types
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -150,3 +152,24 @@ def test_check_claim_eligibility_reports_rtc_with_urtc_unit(monkeypatch):
     assert result["eligible"] is True
     assert result["reward_urtc"] == 1_500_000
     assert result["reward_rtc"] == 1.5
+
+
+def test_fallback_epoch_reward_uses_urtc_unit(tmp_path):
+    source = Path(claims_eligibility.__file__).read_text()
+    fallback_module = types.ModuleType("claims_eligibility_fallback_probe")
+
+    real_import = __import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "rewards_implementation_rip200":
+            raise ImportError("simulate standalone fallback")
+        return real_import(name, *args, **kwargs)
+
+    fallback_builtins = vars(builtins).copy()
+    fallback_builtins["__import__"] = fake_import
+    fallback_module.__dict__["__builtins__"] = fallback_builtins
+
+    exec(compile(source, str(tmp_path / "claims_eligibility.py"), "exec"), fallback_module.__dict__)
+
+    assert fallback_module.PER_EPOCH_URTC == 1_500_000
+    assert fallback_module.PER_EPOCH_URTC / fallback_module.URTC_PER_RTC == 1.5

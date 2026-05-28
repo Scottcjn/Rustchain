@@ -9,6 +9,7 @@ from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import io
 import json
+import hmac
 import math
 import os
 import time
@@ -77,6 +78,39 @@ def get_json_object() -> Dict[str, Any]:
     if not isinstance(data, dict):
         raise JsonBodyError("JSON object required")
     return data
+
+
+def _configured_admin_key() -> str:
+    return (
+        os.getenv('BOOT_CHIME_ADMIN_KEY', '').strip()
+        or os.getenv('RC_ADMIN_KEY', '').strip()
+    )
+
+
+def _provided_admin_key() -> str:
+    header_key = (request.headers.get('X-Admin-Key') or request.headers.get('X-API-Key') or '').strip()
+    if header_key:
+        return header_key
+
+    auth_header = (request.headers.get('Authorization') or '').strip()
+    if auth_header.lower().startswith('bearer '):
+        return auth_header.split(' ', 1)[1].strip()
+    return ''
+
+
+def require_admin_auth():
+    """Fail closed unless a configured admin key matches the request."""
+    expected = _configured_admin_key()
+    if not expected:
+        return jsonify({'error': 'Admin key not configured'}), 503
+
+    provided = _provided_admin_key()
+    if not provided or not hmac.compare_digest(
+        provided.encode('utf-8'),
+        expected.encode('utf-8'),
+    ):
+        return jsonify({'error': 'Unauthorized - admin key required'}), 401
+    return None
 
 
 def validate_audio_upload(audio_file, *, required: bool = True):
@@ -181,6 +215,10 @@ def issue_challenge():
         }
     """
     try:
+        auth_error = require_admin_auth()
+        if auth_error:
+            return auth_error
+
         data = get_json_object()
         miner_id = data.get('miner_id')
         
@@ -226,6 +264,10 @@ def submit_proof():
         }
     """
     try:
+        auth_error = require_admin_auth()
+        if auth_error:
+            return auth_error
+
         miner_id = request.form.get('miner_id')
         challenge_id = request.form.get('challenge_id')
         timestamp = request.form.get('timestamp', type=int)
@@ -312,6 +354,10 @@ def enroll_miner():
         }
     """
     try:
+        auth_error = require_admin_auth()
+        if auth_error:
+            return auth_error
+
         miner_id = request.form.get('miner_id')
         
         if not miner_id:
@@ -349,6 +395,10 @@ def capture_audio():
     Response: WAV file
     """
     try:
+        auth_error = require_admin_auth()
+        if auth_error:
+            return auth_error
+
         duration = get_capture_duration()
         trigger = request.args.get('trigger', default='false').lower() == 'true'
         
@@ -395,6 +445,10 @@ def revoke_attestation():
         { "success": true, "message": "..." }
     """
     try:
+        auth_error = require_admin_auth()
+        if auth_error:
+            return auth_error
+
         data = get_json_object()
         miner_id = data.get('miner_id')
         reason = data.get('reason', '')

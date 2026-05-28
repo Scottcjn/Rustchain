@@ -626,7 +626,7 @@
                 <div class="logo-icon">wR</div>
                 <div class="logo-text">
                     <h1>wRTC Bridge Dashboard</h1>
-                    <span>Solana 鈫?RustChain Cross-Chain Bridge</span>
+                    <span>Solana -> RustChain Cross-Chain Bridge</span>
                 </div>
             </div>
             <div class="header-status">
@@ -634,7 +634,7 @@
                     <span class="live-dot"></span>
                     <span id="lastUpdate">Connecting...</span>
                 </div>
-                <button class="refresh-btn" onclick="refreshAll()">鈫?Refresh</button>
+                <button class="refresh-btn" onclick="refreshAll()">Refresh</button>
             </div>
         </div>
 
@@ -643,7 +643,7 @@
             <div class="stat-card">
                 <div class="stat-header">
                     <span class="stat-label">Total RTC Locked</span>
-                    <div class="stat-icon gold">馃敀</div>
+                    <div class="stat-icon gold">LOCK</div>
                 </div>
                 <div class="stat-value" id="lockedRtc">0.00</div>
                 <div class="stat-sub">RustChain Side</div>
@@ -651,7 +651,7 @@
             <div class="stat-card">
                 <div class="stat-header">
                     <span class="stat-label">wRTC Circulating</span>
-                    <div class="stat-icon green">馃拵</div>
+                    <div class="stat-icon green">RTC</div>
                 </div>
                 <div class="stat-value" id="circulatingWrtc">0.00</div>
                 <div class="stat-sub">Solana Side</div>
@@ -659,18 +659,18 @@
             <div class="stat-card">
                 <div class="stat-header">
                     <span class="stat-label">Total Wrap Volume</span>
-                    <div class="stat-icon purple">鈫?/div>
+                    <div class="stat-icon purple">WRAP</div>
                 </div>
                 <div class="stat-value" id="wrapVolume">0.00</div>
-                <div class="stat-sub">RTC 鈫?wRTC</div>
+                <div class="stat-sub">RTC -> wRTC</div>
             </div>
             <div class="stat-card">
                 <div class="stat-header">
                     <span class="stat-label">Total Unwrap Volume</span>
-                    <div class="stat-icon blue">鈫?/div>
+                    <div class="stat-icon blue">UNWRAP</div>
                 </div>
                 <div class="stat-value" id="unwrapVolume">0.00</div>
-                <div class="stat-sub">wRTC 鈫?RTC</div>
+                <div class="stat-sub">wRTC -> RTC</div>
             </div>
         </div>
 
@@ -694,7 +694,7 @@
                 <div class="price-main">
                     <div class="price-value" id="currentPrice">$0.0000</div>
                     <div class="price-change-large" id="priceChangeLarge">
-                        <span class="stat-change positive">鈫?0.00%</span>
+                        <span class="stat-change positive">+ 0.00%</span>
                     </div>
                 </div>
                 <div class="price-details">
@@ -724,25 +724,25 @@
 
         <!-- Bridge Health -->
         <div class="health-section">
-            <h2 class="section-title">馃彞 Bridge Health Status</h2>
+            <h2 class="section-title">Bridge Health Status</h2>
             <div class="health-grid">
                 <div class="health-card">
-                    <div class="health-status online" id="rustchainStatus">鉁?/div>
+                    <div class="health-status online" id="rustchainStatus">OK</div>
                     <div class="health-name">RustChain Node</div>
                     <div class="health-detail" id="rustchainDetail">Operational</div>
                 </div>
                 <div class="health-card">
-                    <div class="health-status online" id="solanaStatus">鉁?/div>
+                    <div class="health-status online" id="solanaStatus">OK</div>
                     <div class="health-name">Solana RPC</div>
                     <div class="health-detail" id="solanaDetail">Connected</div>
                 </div>
                 <div class="health-card">
-                    <div class="health-status online" id="bridgeStatus">鉁?/div>
+                    <div class="health-status online" id="bridgeStatus">OK</div>
                     <div class="health-name">Bridge API</div>
                     <div class="health-detail" id="bridgeDetail">Active</div>
                 </div>
                 <div class="health-card">
-                    <div class="health-status online" id="raydiumStatus">鉁?/div>
+                    <div class="health-status online" id="raydiumStatus">OK</div>
                     <div class="health-name">Raydium DEX</div>
                     <div class="health-detail" id="raydiumDetail">Trading Active</div>
                 </div>
@@ -751,7 +751,7 @@
 
         <!-- Fee Revenue -->
         <div class="fee-section">
-            <h2 class="section-title">馃挵 Bridge Fee Revenue</h2>
+            <h2 class="section-title">Bridge Fee Revenue</h2>
             <div class="fee-card">
                 <div class="fee-grid">
                     <div class="fee-item">
@@ -776,11 +776,11 @@
 
         <!-- Transactions -->
         <div class="tx-section">
-            <h2 class="section-title">馃搵 Recent Transactions</h2>
+            <h2 class="section-title">Recent Transactions</h2>
             <div class="tx-tabs">
                 <button class="tx-tab active" onclick="showTab('all')">All</button>
-                <button class="tx-tab" onclick="showTab('wrap')">Wrap (RTC鈫抴RTC)</button>
-                <button class="tx-tab" onclick="showTab('unwrap')">Unwrap (wRTC鈫扲TC)</button>
+                <button class="tx-tab" onclick="showTab('wrap')">Wrap (RTC -> wRTC)</button>
+                <button class="tx-tab" onclick="showTab('unwrap')">Unwrap (wRTC -> RTC)</button>
             </div>
             <div class="tx-table-container">
                 <table class="tx-table">
@@ -941,7 +941,7 @@
 
             // Update price change display
             const changeEl = document.getElementById('priceChangeLarge');
-            changeEl.innerHTML = `<span class="stat-change ${change >= 0 ? 'positive' : 'negative'}">${change >= 0 ? '鈫? : '鈫?} ${Math.abs(change).toFixed(2)}%</span>`;
+            changeEl.innerHTML = `<span class="stat-change ${change >= 0 ? 'positive' : 'negative'}">${change >= 0 ? '+' : '-'} ${Math.abs(change).toFixed(2)}%</span>`;
 
             // Add to price history for chart
             priceHistory.push({
@@ -1039,7 +1039,7 @@
             const detailEl = document.getElementById(detailId);
 
             statusEl.className = 'health-status ' + data.status;
-            statusEl.textContent = data.status === 'online' ? '鉁? : data.status === 'warning' ? '!' : '鉁?;
+            statusEl.textContent = data.status === 'online' ? 'OK' : data.status === 'warning' ? '!' : 'DOWN';
             detailEl.textContent = data.detail;
         }
 
@@ -1061,7 +1061,7 @@
             }
 
             if (filtered.length === 0) {
-                body.innerHTML = `<tr><td colspan="7" class="empty-state"><div class="empty-icon">馃摥</div>No transactions found</td></tr>`;
+                body.innerHTML = `<tr><td colspan="7" class="empty-state"><div class="empty-icon">--</div>No transactions found</td></tr>`;
                 return;
             }
 
@@ -1114,8 +1114,8 @@
 
         function formatChange(change) {
             const cls = change >= 0 ? 'positive' : 'negative';
-            const arrow = change >= 0 ? '鈫? : '鈫?;
-            return `<span class="stat-change ${cls}">${arrow} ${Math.abs(change).toFixed(2)}%</span>`;
+            const sign = change >= 0 ? '+' : '-';
+            return `<span class="stat-change ${cls}">${sign} ${Math.abs(change).toFixed(2)}%</span>`;
         }
 
         function formatTime(timestamp) {

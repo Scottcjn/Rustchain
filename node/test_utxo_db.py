@@ -17,7 +17,7 @@ import utxo_db as utxo_db_module
 from utxo_db import (
     UtxoDB, coin_select, compute_box_id, address_to_proposition,
     proposition_to_address, UNIT, DUST_THRESHOLD, MAX_COINBASE_OUTPUT_NRTC,
-    MAX_OUTPUTS, MAX_SQLITE_INT64, MAX_UTXO_ADDRESS_BYTES,
+    MAX_OUTPUTS, MAX_DATA_INPUTS, MAX_SQLITE_INT64, MAX_UTXO_ADDRESS_BYTES,
     MAX_UTXO_METADATA_BYTES, MAX_MEMPOOL_TX_ID_BYTES,
 )
 
@@ -45,6 +45,21 @@ class TestUtxoDB(unittest.TestCase):
             'timestamp': int(time.time()),
             '_allow_minting': True,
         }, block_height=block_height)
+
+    def _create_data_input_refs(self, count: int, start_height: int = 2) -> list:
+        refs = []
+        for idx in range(count):
+            address = f'data_ref_{idx}'
+            self.assertTrue(self.db.apply_transaction({
+                'tx_type': 'mining_reward',
+                'inputs': [],
+                'outputs': [{'address': address, 'value_nrtc': UNIT}],
+                'fee_nrtc': 0,
+                'timestamp': int(time.time()) + idx,
+                '_allow_minting': True,
+            }, block_height=start_height + idx))
+            refs.append(self.db.get_unspent_for_address(address)[0]['box_id'])
+        return refs
 
     # -- box operations ------------------------------------------------------
 
@@ -109,6 +124,35 @@ class TestUtxoDB(unittest.TestCase):
         self.assertFalse(ok)
         # Balance unchanged
         self.assertEqual(self.db.get_balance('alice'), 50 * UNIT)
+
+    def test_apply_transaction_rejects_malformed_inputs(self):
+        self._apply_coinbase('alice', 50 * UNIT)
+
+        malformed_inputs = [
+            [{}],
+            ['not-a-dict'],
+            {'box_id': 'not-a-list'},
+            [{'box_id': ''}],
+            [{'box_id': '   '}],
+        ]
+
+        for inputs in malformed_inputs:
+            with self.subTest(inputs=inputs):
+                ok = self.db.apply_transaction({
+                    'tx_type': 'transfer',
+                    'inputs': inputs,
+                    'outputs': [{'address': 'bob', 'value_nrtc': 50 * UNIT}],
+                    'fee_nrtc': 0,
+                }, block_height=10)
+
+                self.assertFalse(ok)
+                self.assertEqual(self.db.get_balance('alice'), 50 * UNIT)
+                self.assertEqual(self.db.get_balance('bob'), 0)
+
+    def test_apply_transaction_rejects_non_object_transactions(self):
+        for tx in (None, [], 'not-a-dict', 123):
+            with self.subTest(tx=tx):
+                self.assertFalse(self.db.apply_transaction(tx, block_height=10))
 
     def test_transfer_with_fee(self):
         self._apply_coinbase('alice', 100 * UNIT)
@@ -480,6 +524,33 @@ class TestUtxoDB(unittest.TestCase):
         self.assertEqual(self.db.get_balance('bob'), 0)
         self.assertIsNone(self.db.get_box(alice_box['box_id'])['spent_at'])
 
+    def test_too_many_data_inputs_rejected_before_history_write(self):
+        """Bound read-only data-input fan-out before persisting tx history."""
+        self._apply_coinbase('alice', 100 * UNIT, block_height=1)
+        alice_box = self.db.get_unspent_for_address('alice')[0]
+        data_inputs = self._create_data_input_refs(MAX_DATA_INPUTS + 1)
+
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': alice_box['box_id'], 'spending_proof': 'sig'}],
+            'data_inputs': data_inputs,
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+        }, block_height=MAX_DATA_INPUTS + 10)
+
+        self.assertFalse(ok)
+        self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
+        self.assertEqual(self.db.get_balance('bob'), 0)
+        conn = self.db._conn()
+        try:
+            row = conn.execute(
+                """SELECT COUNT(*) AS n FROM utxo_transactions
+                   WHERE tx_type = 'transfer'"""
+            ).fetchone()
+            self.assertEqual(row['n'], 0)
+        finally:
+            conn.close()
+
     # -- state root ----------------------------------------------------------
 
     def test_empty_state_root(self):
@@ -574,8 +645,8 @@ class TestUtxoDB(unittest.TestCase):
     # -- integrity -----------------------------------------------------------
 
     def test_integrity_ok(self):
-        self._apply_coinbase('alice', 100 * UNIT)
-        self._apply_coinbase('bob', 50 * UNIT)
+        self._apply_coinbase('alice', 100 * UNIT, block_height=1)
+        self._apply_coinbase('bob', 50 * UNIT, block_height=2)
         result = self.db.integrity_check(expected_total=150 * UNIT)
         self.assertTrue(result['ok'])
         self.assertTrue(result['models_agree'])
@@ -623,6 +694,73 @@ class TestUtxoDB(unittest.TestCase):
         self.assertFalse(
             self.db.mempool_check_double_spend(boxes[0]['box_id'])
         )
+
+    def test_apply_rejects_input_claimed_by_other_mempool_tx(self):
+        """Direct/block spends must not override another pending mempool claim."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        box = self.db.get_unspent_for_address('alice')[0]
+
+        mempool_tx = {
+            'tx_id': 'pending-claim',
+            'inputs': [{'box_id': box['box_id']}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+        }
+        self.assertTrue(self.db.mempool_add(mempool_tx))
+
+        competing_tx = {
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': box['box_id']}],
+            'outputs': [{'address': 'carol', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+            'timestamp': int(time.time()),
+        }
+
+        self.assertFalse(self.db.apply_transaction(competing_tx, block_height=10))
+        self.assertEqual(self.db.get_balance('carol'), 0)
+        self.assertTrue(self.db.mempool_check_double_spend(box['box_id']))
+
+    def test_apply_allows_matching_mempool_candidate(self):
+        """Mining the same mempool tx_id should still spend and evict it."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        box = self.db.get_unspent_for_address('alice')[0]
+        tx = {
+            'tx_id': 'candidate-claim',
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': box['box_id']}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+            'timestamp': int(time.time()),
+        }
+
+        self.assertTrue(self.db.mempool_add(tx))
+        self.assertTrue(self.db.apply_transaction(tx, block_height=10))
+        self.assertEqual(self.db.get_balance('bob'), 100 * UNIT)
+        self.assertFalse(self.db.mempool_check_double_spend(box['box_id']))
+        self.assertEqual(self.db.mempool_get_block_candidates(), [])
+
+    def test_mempool_rejects_malformed_inputs_without_locking(self):
+        self._apply_coinbase('alice', 100 * UNIT)
+
+        malformed_inputs = [
+            [{}],
+            ['not-a-dict'],
+            {'box_id': 'not-a-list'},
+            [{'box_id': ''}],
+            [{'box_id': '   '}],
+        ]
+
+        for idx, inputs in enumerate(malformed_inputs):
+            with self.subTest(inputs=inputs):
+                ok = self.db.mempool_add({
+                    'tx_id': f'malformed-{idx}',
+                    'inputs': inputs,
+                    'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+                    'fee_nrtc': 0,
+                })
+
+                self.assertFalse(ok)
+                self.assertEqual(self.db.mempool_get_block_candidates(), [])
 
     def test_mempool_size_limit_checked_inside_write_transaction(self):
         """Concurrent admissions must not bypass MAX_POOL_SIZE."""
@@ -778,9 +916,9 @@ class TestUtxoDB(unittest.TestCase):
     def test_mempool_block_candidates_drop_spent_inputs(self):
         """Block candidates must not include txs whose inputs were confirmed.
 
-        A mempool transaction can be invalidated by a direct UTXO transfer path
-        that confirms the same input first. The stale mempool entry must not keep
-        returning to block producers until expiry.
+        Stale mempool entries can exist after a restart, prior bug, or
+        manual state repair. They must not keep returning to block producers
+        until expiry.
         """
         self._apply_coinbase('alice', 100 * UNIT, block_height=1)
         box = self.db.get_unspent_for_address('alice')[0]
@@ -793,13 +931,15 @@ class TestUtxoDB(unittest.TestCase):
             'fee_nrtc': 1000,
         }))
 
-        ok = self.db.apply_transaction({
-            'tx_type': 'transfer',
-            'inputs': [{'box_id': box['box_id'], 'spending_proof': 'sig'}],
-            'outputs': [{'address': 'carol', 'value_nrtc': 100 * UNIT}],
-            'fee_nrtc': 0,
-        }, block_height=2)
-        self.assertTrue(ok)
+        conn = self.db._conn()
+        try:
+            conn.execute(
+                "UPDATE utxo_boxes SET spent_at = ?, spent_by_tx = ? WHERE box_id = ?",
+                (int(time.time()), "external-confirmed", box['box_id']),
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
         candidates = self.db.mempool_get_block_candidates()
         self.assertEqual(candidates, [])
@@ -858,6 +998,33 @@ class TestUtxoDB(unittest.TestCase):
         ok = self.db.mempool_add(tx)
         self.assertFalse(ok)
         self.assertFalse(self.db.mempool_check_double_spend(box['box_id']))
+
+    def test_mempool_rejects_too_many_data_inputs_without_locking_input(self):
+        """Bound data-input fan-out before storing mempool payloads."""
+        self._apply_coinbase('alice', 100 * UNIT, block_height=1)
+        box = self.db.get_unspent_for_address('alice')[0]
+        data_inputs = self._create_data_input_refs(MAX_DATA_INPUTS + 1)
+
+        tx = {
+            'tx_id': 'datacap' * 8,
+            'inputs': [{'box_id': box['box_id']}],
+            'data_inputs': data_inputs,
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+        }
+        ok = self.db.mempool_add(tx)
+
+        self.assertFalse(ok)
+        self.assertFalse(self.db.mempool_check_double_spend(box['box_id']))
+        self.assertEqual(self.db.mempool_get_block_candidates(), [])
+        conn = self.db._conn()
+        try:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM utxo_mempool"
+            ).fetchone()
+            self.assertEqual(row['n'], 0)
+        finally:
+            conn.close()
 
     def test_mempool_rejects_data_input_overlap_without_locking_input(self):
         """Mempool rejects txs that consume their read-only context."""

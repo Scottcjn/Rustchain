@@ -200,6 +200,16 @@ class TestExplorerApiRoutes(unittest.TestCase):
         self.assertEqual(tx_resp.status_code, 200)
         self.assertEqual(tx_resp.get_json(), {"ok": True, "transactions": [], "count": 0, "total": 0})
 
+    def test_explorer_endpoints_default_empty_pagination_values(self):
+        blocks_resp = self.client.get("/api/blocks?limit=&offset=")
+        tx_resp = self.client.get("/api/transactions?limit=&offset=")
+
+        self.assertEqual(blocks_resp.status_code, 200)
+        self.assertEqual(blocks_resp.get_json(), {"ok": True, "blocks": [], "count": 0, "total": 0})
+
+        self.assertEqual(tx_resp.status_code, 200)
+        self.assertEqual(tx_resp.get_json(), {"ok": True, "transactions": [], "count": 0, "total": 0})
+
     def test_explorer_endpoints_reject_invalid_pagination(self):
         blocks_resp = self.client.get("/api/blocks?limit=bad")
         tx_resp = self.client.get("/api/transactions?offset=bad")

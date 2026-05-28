@@ -99,8 +99,7 @@ def check_existing_genesis(utxo_db: UtxoDB, conn=None) -> bool:
         row = conn.execute(
             """SELECT COUNT(*) AS n
                FROM utxo_transactions
-               WHERE tx_type = 'genesis' OR block_height = ?""",
-            (GENESIS_HEIGHT,),
+               WHERE tx_type = 'genesis'""",
         ).fetchone()
         return row['n'] > 0
     finally:

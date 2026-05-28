@@ -57,6 +57,60 @@ def _make_paid_beacon_client(tmp_path, monkeypatch):
     return app.test_client(), db_path
 
 
+def _make_beacon_wallet_client_without_x402_schema(tmp_path, monkeypatch):
+    db_path = tmp_path / "beacon.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("CREATE TABLE relay_agents (agent_id TEXT PRIMARY KEY, coinbase_address TEXT)")
+
+    monkeypatch.setenv("BEACON_ADMIN_KEY", "test-admin-key")
+    monkeypatch.setattr(beacon_x402, "X402_CONFIG_OK", False)
+    monkeypatch.setattr(beacon_x402, "_run_migrations", lambda _db_path: None)
+
+    def get_db():
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    app = Flask(__name__)
+    app.config["TESTING"] = True
+    beacon_x402.init_app(app, get_db)
+    return app.test_client(), db_path
+
+
+def test_beacon_wallet_post_creates_x402_tables_on_route_db(tmp_path, monkeypatch):
+    client, db_path = _make_beacon_wallet_client_without_x402_schema(tmp_path, monkeypatch)
+    address = "0x1234567890123456789012345678901234567890"
+
+    response = client.post(
+        "/api/agents/agent-1/wallet",
+        headers={"X-Admin-Key": "test-admin-key"},
+        json={"coinbase_address": address},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["coinbase_address"] == address
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT coinbase_address FROM beacon_wallets WHERE agent_id = ?",
+            ("agent-1",),
+        ).fetchone()
+    assert row == (address,)
+
+
+def test_beacon_wallet_get_creates_x402_tables_on_route_db(tmp_path, monkeypatch):
+    client, db_path = _make_beacon_wallet_client_without_x402_schema(tmp_path, monkeypatch)
+
+    response = client.get("/api/agents/agent-1/wallet")
+
+    assert response.status_code == 200
+    assert response.get_json()["coinbase_address"] is None
+    with sqlite3.connect(db_path) as conn:
+        count = conn.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'beacon_wallets'"
+        ).fetchone()[0]
+    assert count == 1
+
+
 def test_paid_beacon_reputation_without_payment_returns_x402_challenge(tmp_path, monkeypatch):
     client, _db_path = _make_paid_beacon_client(tmp_path, monkeypatch)
 

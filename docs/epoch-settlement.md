@@ -384,13 +384,13 @@ curl -sk "https://rustchain.org/wallet/balance?miner_id=scott"
 }
 ```
 
-### GET /api/settlement/{epoch}
+### GET /rewards/epoch/{epoch}
 
 Query historical settlement data.
 
 **Request**:
 ```bash
-curl -sk https://rustchain.org/api/settlement/75
+curl -sk https://rustchain.org/rewards/epoch/75
 ```
 
 **Response**:
@@ -450,7 +450,7 @@ tail -f /var/log/rustchain/node.log | grep SETTLEMENT
 
 ```bash
 # Check if settlement completed
-curl -sk https://rustchain.org/api/settlement/75 | jq '.ergo_tx_id'
+curl -sk https://rustchain.org/rewards/epoch/75 | jq '.ergo_tx_id'
 
 # Verify on Ergo explorer
 curl "https://api.ergoplatform.com/api/v1/transactions/abc123..."
@@ -470,7 +470,7 @@ If settlement takes >10 minutes:
 If your reward seems wrong:
 - Verify you were active at epoch end (check `last_attest`)
 - Calculate expected share: `1.5 × (your_multiplier / total_weight)`
-- Query settlement data: `/api/settlement/{epoch}`
+- Query settlement data: `/rewards/epoch/{epoch}`
 
 ### Missing Reward
 

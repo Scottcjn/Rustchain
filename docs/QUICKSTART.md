@@ -20,6 +20,7 @@ You need two things:
 
 - **A computer** -- literally any computer. Linux, macOS, Windows, Raspberry Pi, PowerPC
   Mac, even a SPARC workstation. If it runs Python, it can mine.
+- **macOS only:** Python 3 via Homebrew -- run `brew install python3` before the installer.
 - **An internet connection** -- your miner talks to the RustChain network to prove your
   hardware is real.
 
@@ -29,16 +30,33 @@ That is it. No GPU required. No special hardware. No account signup.
 
 ## Step 1: Install the Miner
 
-Open a terminal (on macOS: search for "Terminal"; on Windows: use PowerShell) and run:
+Open a terminal on Linux or macOS and run:
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash
 ```
 
+### macOS Homebrew prerequisite
+
+The installer uses the system `python3`. On a fresh macOS install, install Python with
+Homebrew first:
+
+```bash
+brew update
+brew install python3
+python3 --version
+```
+
+Then run the RustChain installer command above.
+
+On Windows, use the Windows miner installer instead of the Bash one-liner. See
+`miners/windows/installer/README.md` and run `miners/windows/rustchain_miner_setup.bat`
+from the Windows miner bundle.
+
 **What this does:**
 
 1. Detects your operating system and CPU architecture
-2. Installs Python 3 if you do not have it (Linux only -- macOS/Windows users need Python
+2. Installs Python 3 if you do not have it (Linux only -- macOS users should run `brew install python3` first; Windows
    pre-installed)
 3. Downloads the miner script to `~/.rustchain/`
 4. Creates a Python virtual environment with dependencies
@@ -415,7 +433,7 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 - **GitHub Issues:** https://github.com/Scottcjn/Rustchain/issues
 - **Discord:** https://discord.gg/VqVVS2CW9Q
 - **Moltbook:** https://www.moltbook.com/m/rustchain
-- **FAQ:** [FAQ_TROUBLESHOOTING.md](FAQ_TROUBLESHOOTING.md)
+- **FAQ:** [FAQ_TROUBLESHOOTING.md](./FAQ_TROUBLESHOOTING.md)
 
 ---
 

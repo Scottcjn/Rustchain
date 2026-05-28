@@ -6,7 +6,7 @@ With RIP-PoA Hardware Fingerprint Attestation + Serial Binding v2.0
 import warnings
 # warnings.filterwarnings('ignore', message='Unverified HTTPS request')  # No longer needed — TLS verification enabled
 
-import os, sys, json, time, hashlib, uuid, requests, socket, subprocess, platform, statistics, re
+import os, sys, json, time, hashlib, uuid, math, requests, socket, subprocess, platform, statistics, re
 from datetime import datetime
 
 # Import fingerprint checks
@@ -28,6 +28,7 @@ NODE_URL = "https://rustchain.org"  # Use HTTPS via nginx
 BLOCK_TIME = 600  # 10 minutes
 NETWORK_RETRY_ATTEMPTS = 3
 NETWORK_RETRY_BASE_DELAY = 2
+MICRO_UNITS_PER_RTC = 1_000_000
 
 # TLS verification: use pinned cert if available, else system CA bundle
 _CERT_PATH = os.path.expanduser("~/.rustchain/node_cert.pem")
@@ -96,6 +97,41 @@ def _miner_id_from_hw(hw_info):
     arch = _safe_id_part(hw_info.get("arch") or hw_info.get("machine") or "linux")
     hostname = _safe_id_part(hw_info.get("hostname") or socket.gethostname())
     return f"{arch}-{hostname}"
+
+
+def _finite_float(value):
+    if isinstance(value, bool):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) else None
+
+
+def _wallet_balance_rtc(data):
+    if not isinstance(data, dict):
+        return None
+
+    value = _finite_float(data.get("amount_rtc"))
+    if value is not None:
+        return value
+
+    value = _finite_float(data.get("amount_i64"))
+    if value is not None:
+        return value / MICRO_UNITS_PER_RTC
+
+    for key in ("balance_rtc", "rtc_balance", "balance", "amount"):
+        value = _finite_float(data.get(key))
+        if value is not None:
+            return value
+
+    for key in ("balance_i64", "balance_urtc"):
+        value = _finite_float(data.get(key))
+        if value is not None:
+            return value / MICRO_UNITS_PER_RTC
+
+    return None
 
 
 def _request_with_network_retry(method, url, action, retries=NETWORK_RETRY_ATTEMPTS,
@@ -612,12 +648,21 @@ class LocalMiner:
     def check_balance(self):
         """Check balance"""
         try:
-            resp = self._get(f"/balance/{self.wallet}", "checking wallet balance", timeout=10, verify=TLS_VERIFY)
+            resp = self._get(
+                "/wallet/balance",
+                "checking wallet balance",
+                params={"miner_id": self._miner_id()},
+                timeout=10,
+                verify=TLS_VERIFY,
+            )
             if resp is None:
                 return 0
             if resp.status_code == 200:
                 result = resp.json()
-                balance = result.get('balance_rtc', 0)
+                balance = _wallet_balance_rtc(result)
+                if balance is None:
+                    print("[WARN] Invalid wallet balance response")
+                    return 0
                 print(f"\n💰 Balance: {balance} RTC")
                 return balance
         except Exception as e:

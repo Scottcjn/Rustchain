@@ -37,6 +37,15 @@ def test_verify_signature_rejects_missing_or_wrong_signature():
     assert module.verify_signature(payload, "deadbeef", "secret") is False
 
 
+def test_parse_content_length_rejects_malformed_or_non_positive_values():
+    module = load_module()
+
+    assert module.parse_content_length("42") == 42
+    assert module.parse_content_length(None) == 0
+    assert module.parse_content_length("not-a-number") == 0
+    assert module.parse_content_length("-12") == 0
+
+
 def test_format_event_renders_new_block_fields():
     module = load_module()
 

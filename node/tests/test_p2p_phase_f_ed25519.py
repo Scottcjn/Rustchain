@@ -194,6 +194,62 @@ def test_dual_mode_ed25519_verifies_against_registered_peer():
     assert receiver.verify_message(msg) is True
 
 
+def test_epoch_vote_quorum_accepts_registered_ed25519_votes():
+    """Consensus votes from registered Ed25519 peers still reach quorum."""
+    tmpdir = tempfile.mkdtemp()
+    reg_path = tmpdir + "/reg.json"
+    ident, gossip = _reload_modules("dual", tmpdir + "/bootstrap.pem", reg_path)
+
+    peer_key_paths = {
+        "peer1": tmpdir + "/peer1.pem",
+        "peer2": tmpdir + "/peer2.pem",
+        "peer3": tmpdir + "/peer3.pem",
+    }
+    registry = {"version": 1, "peers": []}
+    for peer_id, key_path in peer_key_paths.items():
+        registry["peers"].append({
+            "node_id": peer_id,
+            "pubkey_hex": ident.LocalKeypair(key_path).pubkey_hex,
+        })
+    with open(reg_path, "w") as f:
+        json.dump(registry, f)
+
+    os.environ["RC_P2P_PRIVKEY_PATH"] = tmpdir + "/victim.pem"
+    victim = _make_layer(
+        ident,
+        gossip,
+        "victim",
+        {
+            "peer1": "https://peer1.example",
+            "peer2": "https://peer2.example",
+            "peer3": "https://peer3.example",
+        },
+    )
+
+    results = []
+    for peer_id, key_path in peer_key_paths.items():
+        os.environ["RC_P2P_PRIVKEY_PATH"] = key_path
+        sender = _make_layer(
+            ident,
+            gossip,
+            peer_id,
+            {"victim": "https://victim.example"},
+        )
+        msg = sender.create_message(gossip.MessageType.EPOCH_VOTE, {
+            "epoch": 11,
+            "proposal_hash": "proposal-ed25519-quorum",
+            "vote": "accept",
+            "voter": peer_id,
+        })
+        _hmac_sig, ed25519_sig, _key_version = ident.unpack_signature(msg.signature)
+        assert ed25519_sig is not None
+        results.append(victim.handle_message(msg))
+
+    assert results[-1]["status"] == "committed"
+    assert victim.epoch_crdt.contains(11)
+    assert victim.epoch_crdt.metadata[11]["proposal_hash"] == "proposal-ed25519-quorum"
+
+
 def test_strict_mode_rejects_hmac_only():
     """Strict mode: an HMAC-only message is rejected even if HMAC is valid."""
     tmpdir = tempfile.mkdtemp()

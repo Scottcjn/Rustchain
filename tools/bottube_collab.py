@@ -10,8 +10,6 @@ Wrap with Flask or FastAPI to expose as an HTTP API.
 import sqlite3
 import time
 import uuid
-import json
-import hashlib
 import threading
 from typing import Optional
 
@@ -238,6 +236,11 @@ class CollabSession:
         if not prop:
             return {"error": "proposal_not_found", "proposal_id": proposal_id}
 
+        # Enforce the same distinct-agent cap for voters as proposals/fragments.
+        agents = self._distinct_agents(session_id)
+        if agent_id not in agents and len(agents) >= sess["max_agents"]:
+            return {"error": "max_agents_reached", "max_agents": sess["max_agents"]}
+
         # Prevent duplicate votes
         existing = self._conn.execute(
             "SELECT vote_id FROM votes WHERE proposal_id=? AND agent_id=?",
@@ -408,7 +411,8 @@ class CollabSession:
     def _distinct_agents(self, session_id: str) -> set:
         rows = self._conn.execute(
             "SELECT DISTINCT agent_id FROM proposals WHERE session_id=? "
-            "UNION SELECT DISTINCT agent_id FROM collaborations WHERE session_id=?",
-            (session_id, session_id),
+            "UNION SELECT DISTINCT agent_id FROM collaborations WHERE session_id=? "
+            "UNION SELECT DISTINCT agent_id FROM votes WHERE session_id=?",
+            (session_id, session_id, session_id),
         ).fetchall()
         return {r["agent_id"] for r in rows}

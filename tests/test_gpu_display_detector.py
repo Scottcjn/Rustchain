@@ -85,6 +85,21 @@ def test_detect_gpu_and_display_does_not_write_when_no_badges(tmp_path, monkeypa
     assert "No relic badges detected." in capsys.readouterr().out
 
 
+def test_detect_gpu_and_display_removes_stale_badges_when_no_matches(
+    tmp_path, monkeypatch, capsys
+):
+    module = load_module()
+    monkeypatch.chdir(tmp_path)
+    stale_badges = tmp_path / "unlocked_badges.json"
+    stale_badges.write_text('{"badges": [{"badge_id": "badge_voodoo_fx_g"}]}', encoding="utf-8")
+
+    with patch.object(module.subprocess, "check_output", return_value=b"ethernet controller\n"):
+        module.detect_gpu_and_display()
+
+    assert not stale_badges.exists()
+    assert "No relic badges detected." in capsys.readouterr().out
+
+
 def test_detect_gpu_and_display_handles_missing_lspci(tmp_path, monkeypatch, capsys):
     module = load_module()
     monkeypatch.chdir(tmp_path)

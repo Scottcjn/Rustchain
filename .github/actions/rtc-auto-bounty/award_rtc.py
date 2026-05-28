@@ -104,10 +104,13 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 
 def _env_float(name: str, default: float = 0.0) -> float:
-    try:
-        return float(_env_stripped(name, str(default)))
-    except (TypeError, ValueError):
+    raw_value = _env_stripped(name, "")
+    if raw_value == "":
         return default
+    try:
+        return float(raw_value)
+    except (TypeError, ValueError):
+        return math.nan
 
 
 def _is_finite_amount(value: float) -> bool:
@@ -190,12 +193,11 @@ def resolve_wallet_from_file(repo_path: str) -> Optional[str]:
 
 def resolve_wallet(pr_body: str, repo_path: str) -> Optional[str]:
     """
-    Resolve the recipient wallet.
+    Resolve the explicitly declared recipient wallet.
 
     Priority:
       1. ``wallet:`` directive in the PR body
       2. ``.rtc-wallet`` file at the repository root
-      3. Fallback to the PR author's GitHub username
     """
     wallet = resolve_wallet_from_pr_body(pr_body)
     if wallet:
@@ -335,7 +337,13 @@ def transfer_rtc(
     )
     try:
         resp = urlopen(req, timeout=30)
-        result = json.loads(resp.read().decode())
+        body = resp.read().decode(errors="replace")
+        try:
+            result = json.loads(body)
+        except (json.JSONDecodeError, ValueError):
+            return False, {"error": "Invalid JSON response from transfer endpoint"}
+        if not isinstance(result, dict):
+            return False, {"error": "Transfer endpoint response must be a JSON object"}
         return result.get("ok", False), result
     except HTTPError as e:
         body = e.read().decode(errors="replace")
@@ -429,10 +437,22 @@ def main() -> int:
     # --- Resolve recipient wallet ------------------------------------------
     wallet = resolve_wallet(cfg.pr_body, cfg.repo_path)
     if not wallet:
-        # Fallback: use PR author's GitHub username as the wallet identifier
-        wallet = cfg.pr_author
-        log_info(f"No wallet found in PR body or .rtc-wallet file; "
-                 f"falling back to PR author: {wallet}")
+        skip_reason = "recipient_wallet_missing"
+        log_error("No recipient wallet found in PR body or .rtc-wallet file; "
+                  "skipping automatic RTC transfer.")
+        if cfg.post_comment:
+            missing_wallet_body = (
+                f"**RTC Auto-Bounty Skipped**\n\n"
+                f"No recipient wallet was found, so no RTC transfer was attempted.\n\n"
+                f"To receive this award, add a line such as "
+                f"`wallet: RTC...` to the PR body or add a `.rtc-wallet` file "
+                f"at the repository root, then rerun the award workflow.\n\n"
+                f"<!-- {_AWARD_MARKER}:FAILED recipient_wallet_missing -->"
+            )
+            post_pr_comment(repo, pr_number, missing_wallet_body, cfg.github_token)
+        set_output("awarded", "false")
+        set_output("skip_reason", skip_reason)
+        return 1
 
     print(f"Recipient wallet: {wallet}")
 
@@ -481,7 +501,7 @@ def main() -> int:
                 f"| From | `{cfg.from_wallet}` |\n"
                 f"| Memo | {memo} |\n\n"
                 f"This is a **dry-run** — no actual transfer was made.\n\n"
-                f"<!-- { _AWARD_MARKER } (dry-run) -->"
+                f"<!-- {_AWARD_MARKER} (dry-run) -->"
             )
             post_pr_comment(repo, pr_number, dry_body, cfg.github_token)
         return 0
@@ -523,7 +543,7 @@ def main() -> int:
                     f"this transfer manually. This marker intentionally blocks automatic "
                     f"retries to avoid duplicate payouts; remove it only if no manual "
                     f"transfer was completed.\n\n"
-                    f"<!-- { _AWARD_MARKER }:MANUAL-REQUIRED -->"
+                    f"<!-- {_AWARD_MARKER}:MANUAL-REQUIRED -->"
                 )
                 if not post_pr_comment(repo, pr_number, manual_body, cfg.github_token):
                     log_error("Manual transfer notice could not be posted.")
@@ -538,7 +558,7 @@ def main() -> int:
                 f"but the transfer was rejected:\n\n"
                 f"```\n{error_msg}\n```\n\n"
                 f"Please process this award manually.\n\n"
-                f"<!-- { _AWARD_MARKER }:FAILED -->"
+                f"<!-- {_AWARD_MARKER}:FAILED -->"
             )
             post_pr_comment(repo, pr_number, fail_body, cfg.github_token)
         return 1
@@ -574,7 +594,7 @@ def main() -> int:
             {confirms_info}
             Transfer recorded on RustChain.
 
-            <!-- { _AWARD_MARKER } tx_hash={tx_hash} pending_id={pending_id} -->
+            <!-- {_AWARD_MARKER} tx_hash={tx_hash} pending_id={pending_id} -->
         """)
         posted = post_pr_comment(repo, pr_number, confirm_body, cfg.github_token)
         if not posted:

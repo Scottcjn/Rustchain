@@ -13,13 +13,14 @@ import urllib.request
 import urllib.error
 import hashlib
 import time
+import argparse
 from urllib.parse import urlparse
 from pathlib import Path
 
 MINER_ARTIFACTS = {
     "Linux": {
         "url": "https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/linux/rustchain_linux_miner.py",
-        "sha256": "3253afafbe67ed527a5f474bc26d0f3ce6974ded3c3e172925efc97452a71146",
+        "sha256": "4afd5aea552cc5b68364b39fa37cdc93d1d406ec295670969e1a9c4164babb15",
     },
     "Darwin": {
         "url": "https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/macos/rustchain_mac_miner_v2.5.py",
@@ -405,6 +406,19 @@ WantedBy=multi-user.target
             self.log(f"Setup failed: {e}")
             sys.exit(1)
 
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        description="Install and configure a RustChain Universal Miner."
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version="RustChain miner setup 1.0.0",
+    )
+    return parser.parse_args(argv)
+
+
 if __name__ == "__main__":
+    parse_args()
     setup = MinerSetup()
     setup.run_setup()

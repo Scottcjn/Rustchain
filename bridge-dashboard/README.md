@@ -154,6 +154,7 @@ docker run -p 8080:80 rustchain-bridge-dashboard
 | `/bridge/dashboard/metrics` | GET | Aggregated metrics for dashboard |
 | `/bridge/dashboard/health` | GET | Comprehensive health status |
 | `/bridge/dashboard/transactions` | GET | Recent transactions with filtering |
+| `/bridge/dashboard/history` | GET | Bucketed completed bridge volume and wrap/unwrap counts |
 | `/bridge/dashboard/price` | GET | wRTC price from Raydium/DexScreener |
 | `/bridge/dashboard/chart` | GET | Historical price chart data |
 
@@ -193,6 +194,28 @@ docker run -p 8080:80 rustchain-bridge-dashboard
   "circulating_change_24h": 12.5,
   "total_transactions": 42,
   "last_updated": 1742851200
+}
+```
+
+### GET /bridge/dashboard/history
+
+```json
+{
+  "period": "24h",
+  "bucket": "1h",
+  "start_time": 1742764800,
+  "end_time": 1742851200,
+  "points": [
+    {
+      "timestamp": 1742847600,
+      "completed_count": 2,
+      "total_volume_rtc": 125.75,
+      "wrap_volume_rtc": 100.5,
+      "unwrap_volume_rtc": 25.25,
+      "wrap_count": 1,
+      "unwrap_count": 1
+    }
+  ]
 }
 ```
 

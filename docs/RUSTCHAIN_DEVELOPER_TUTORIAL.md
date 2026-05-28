@@ -142,7 +142,7 @@ In a new terminal:
 tail -f ~/.rustchain/miner.log
 
 # Verify your miner is visible on the network
-curl -sk https://rustchain.org/api/miners | jq '.[] | select(.miner_id contains "YOUR_WALLET_NAME")'
+curl -sk https://rustchain.org/api/miners | jq '.miners[] | select(.miner | contains("YOUR_WALLET_NAME"))'
 
 # Check your balance (after a few minutes of mining)
 curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME" | jq .
@@ -374,10 +374,10 @@ tail -f ~/.rustchain/miner.log | grep "rewards"
 ```bash
 # Check if your miner is registered
 curl -sk https://rustchain.org/api/miners | jq \
-  '.[] | select(.miner_id == "my-vintage-miner")'
+  '.miners[] | select(.miner == "my-vintage-miner")'
 
 # View all active miners
-curl -sk https://rustchain.org/api/miners | jq 'length'
+curl -sk https://rustchain.org/api/miners | jq '.miners | length'
 
 # Check current epoch
 curl -sk https://rustchain.org/epoch | jq .
@@ -418,35 +418,36 @@ RustChain transactions are simple value transfers between wallets:
 
 ```json
 {
-  "from": "sender-wallet",
-  "to": "recipient-wallet",
-  "amount": 10.0,
-  "timestamp": "2026-03-13T10:30:00Z",
-  "signature": "base64-encoded-signature"
+  "from_address": "RTC...",
+  "to_address": "RTC...",
+  "amount_rtc": 10.0,
+  "nonce": 1771187406,
+  "public_key": "hex-encoded-public-key",
+  "signature": "hex-encoded-signature"
 }
 ```
 
 ### Sending RTC via API
 
 ```bash
-# Send 5 RTC to another wallet
-curl -sk -X POST https://rustchain.org/api/transaction \
+# Send 5 RTC to another wallet with a signed payload
+curl -sk -X POST https://rustchain.org/wallet/transfer/signed \
   -H "Content-Type: application/json" \
   -d '{
-    "from": "my-vintage-miner",
-    "to": "recipient-wallet",
-    "amount": 5.0
+    "from_address": "RTC_SENDER_ADDRESS",
+    "to_address": "RTC_RECIPIENT_ADDRESS",
+    "amount_rtc": 5.0,
+    "nonce": 1771187406,
+    "public_key": "hex-encoded-public-key",
+    "signature": "hex-encoded-signature"
   }' | jq .
 ```
 
 ### Transaction Status
 
 ```bash
-# Check transaction by ID
-curl -sk "https://rustchain.org/api/transaction/TX_ID" | jq .
-
 # List transactions for a wallet
-curl -sk "https://rustchain.org/api/wallet/my-vintage-miner/transactions" | jq .
+curl -sk "https://rustchain.org/wallet/history?miner_id=RTC_WALLET_ADDRESS&limit=10" | jq .
 ```
 
 ### Using the CLI Helper
@@ -509,17 +510,16 @@ check_miner() {
     
     # Check miner visibility
     MINER=$(curl -sk "$NODE/api/miners" | jq -r \
-        ".[] | select(.miner_id == \"$WALLET\") | .miner_id")
+        ".miners[] | select(.miner == \"$WALLET\") | .miner")
     if [ -z "$MINER" ]; then
         echo "❌ Miner not visible on network"
         return 1
     fi
     
     # Check balance
-    BALANCE=$(curl -sk "$NODE/wallet/balance?miner_id=$WALLET" | jq -r '.balance')
-    PENDING=$(curl -sk "$NODE/wallet/balance?miner_id=$WALLET" | jq -r '.pending_rewards')
+    BALANCE=$(curl -sk "$NODE/wallet/balance?miner_id=$WALLET" | jq -r '.amount_rtc')
     
-    echo "✅ Miner online | Balance: $BALANCE RTC | Pending: $PENDING RTC"
+    echo "✅ Miner online | Balance: $BALANCE RTC"
     return 0
 }
 
@@ -603,7 +603,7 @@ def get_miner_data():
         
         return {
             'balance': balance_resp.json(),
-            'total_miners': len(miners_resp.json()),
+            'total_miners': len(miners_resp.json().get('miners', [])),
             'epoch': epoch_resp.json()
         }
     except Exception as e:
@@ -622,9 +622,7 @@ def render_dashboard(data):
         return
     
     balance = data['balance']
-    print(f"\n💰 Balance: {balance.get('balance', 'N/A')} RTC")
-    print(f"⏳ Pending: {balance.get('pending_rewards', 'N/A')} RTC")
-    print(f"📊 Multiplier: ×{balance.get('cpu_multiplier', 'N/A')}")
+    print(f"\n💰 Balance: {balance.get('amount_rtc', 'N/A')} RTC")
     
     print(f"\n🌐 Network:")
     print(f"   Active Miners: {data['total_miners']}")
@@ -787,7 +785,7 @@ Pending rewards: 0.00 RTC (after hours of mining)
 **Diagnosis:**
 ```bash
 # Verify miner is visible on network
-curl -sk https://rustchain.org/api/miners | jq '.[] | select(.miner_id == "YOUR_WALLET")'
+curl -sk https://rustchain.org/api/miners | jq '.miners[] | select(.miner == "YOUR_WALLET")'
 
 # Check epoch settlement status
 curl -sk https://rustchain.org/epoch | jq .
@@ -943,7 +941,7 @@ WALLET = "my-vintage-miner"
 def get_optimal_interval():
     """Adjust mining interval based on network congestion."""
     epoch_data = requests.get(f"{NODE}/epoch", verify=False).json()
-    miners_count = len(requests.get(f"{NODE}/api/miners", verify=False).json())
+    miners_count = len(requests.get(f"{NODE}/api/miners", verify=False).json().get("miners", []))
     
     # More miners = longer intervals to reduce load
     if miners_count > 100:
@@ -987,10 +985,18 @@ def pay():
     if balance < amount:
         return jsonify({'error': 'Insufficient balance'}), 400
     
-    # Process transaction
+    # Submit a signed transfer. The caller must provide a payload signed by
+    # their wallet; this service should not handle private keys.
     tx_resp = requests.post(
-        f"{NODE}/api/transaction",
-        json={'from': from_wallet, 'to': to_wallet, 'amount': amount},
+        f"{NODE}/wallet/transfer/signed",
+        json={
+            'from_address': from_wallet,
+            'to_address': to_wallet,
+            'amount_rtc': amount,
+            'nonce': data['nonce'],
+            'public_key': data['public_key'],
+            'signature': data['signature'],
+        },
         verify=False
     )
     
@@ -1012,7 +1018,7 @@ if __name__ == '__main__':
    ```bash
    # Alert on large balance changes
    curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET" | \
-     jq 'if .balance < 10 then "⚠️ Low balance alert" else "OK" end'
+     jq 'if .amount_rtc < 10 then "⚠️ Low balance alert" else "OK" end'
    ```
 
 ---
@@ -1057,10 +1063,10 @@ curl -sk "https://rustchain.org/wallet/balance?miner_id=WALLET_NAME" | jq .
 # Current epoch
 curl -sk https://rustchain.org/epoch | jq .
 
-# Send transaction
-curl -sk -X POST https://rustchain.org/api/transaction \
+# Send signed transaction
+curl -sk -X POST https://rustchain.org/wallet/transfer/signed \
   -H "Content-Type: application/json" \
-  -d '{"from":"SENDER","to":"RECIPIENT","amount":10}' | jq .
+  -d '{"from_address":"RTC_SENDER","to_address":"RTC_RECIPIENT","amount_rtc":10,"nonce":1771187406,"public_key":"HEX_PUBLIC_KEY","signature":"HEX_SIGNATURE"}' | jq .
 ```
 
 ### Related Documentation
@@ -1117,9 +1123,8 @@ curl -sk -X POST https://rustchain.org/api/transaction \
 | GET | `/epoch` | Current epoch info |
 | GET | `/api/miners` | List active miners |
 | GET | `/wallet/balance?miner_id=X` | Get wallet balance |
-| POST | `/api/transaction` | Send RTC |
-| GET | `/api/transaction/ID` | Get transaction details |
-| GET | `/api/wallet/ID/transactions` | Wallet transaction history |
+| POST | `/wallet/transfer/signed` | Send RTC with an Ed25519-signed payload |
+| GET | `/wallet/history?miner_id=X` | Wallet transaction history |
 
 ### Example Responses
 
@@ -1143,10 +1148,8 @@ curl -sk -X POST https://rustchain.org/api/transaction \
 // GET /wallet/balance?miner_id=my-wallet
 {
   "miner_id": "my-wallet",
-  "balance": 125.75,
-  "pending_rewards": 2.5,
-  "last_heartbeat": "2026-03-13T10:30:00Z",
-  "cpu_multiplier": 3.5
+  "amount_i64": 125750000,
+  "amount_rtc": 125.75
 }
 ```
 

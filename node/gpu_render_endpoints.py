@@ -55,6 +55,9 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
             return jsonify({"error": "Unauthorized - admin key required"}), 401
         return None
 
+    def _database_error_response():
+        return jsonify({"error": "Database operation failed"}), 500
+
     def _ensure_escrow_secret_column(db):
         """Best-effort migration for older DBs."""
         try:
@@ -81,6 +84,14 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
         # For the bounty, we implement the protocol storage and API.
         db = get_db()
         try:
+            # Validate pricing fields using existing _parse_positive_amount
+            price_render = _parse_positive_amount(data.get("price_render_minute", 0.1))
+            price_tts = _parse_positive_amount(data.get("price_tts_1k_chars", 0.05))
+            price_stt = _parse_positive_amount(data.get("price_stt_minute", 0.1))
+            price_llm = _parse_positive_amount(data.get("price_llm_1k_tokens", 0.02))
+            if None in (price_render, price_tts, price_stt, price_llm):
+                return jsonify({"error": "GPU pricing fields must be finite positive numbers"}), 400
+
             db.execute(
                 """
                 INSERT OR REPLACE INTO gpu_attestations (
@@ -95,10 +106,10 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
                     data.get("vram_gb"),
                     data.get("cuda_version"),
                     data.get("benchmark_score", 0),
-                    data.get("price_render_minute", 0.1),
-                    data.get("price_tts_1k_chars", 0.05),
-                    data.get("price_stt_minute", 0.1),
-                    data.get("price_llm_1k_tokens", 0.02),
+                    price_render,
+                    price_tts,
+                    price_stt,
+                    price_llm,
                     1 if data.get("supports_render") else 0,
                     1 if data.get("supports_tts") else 0,
                     1 if data.get("supports_stt") else 0,
@@ -109,7 +120,7 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
             db.commit()
             return jsonify({"ok": True, "message": "GPU attestation recorded"})
         except sqlite3.Error as e:
-            return jsonify({"error": str(e)}), 500
+            return _database_error_response()
         finally:
             db.close()
 
@@ -172,7 +183,7 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
             # escrow_secret is intentionally returned once to allow participant-auth for release/refund.
             return jsonify({"ok": True, "job_id": job_id, "status": "locked", "escrow_secret": escrow_secret})
         except sqlite3.Error as e:
-            return jsonify({"error": str(e)}), 500
+            return _database_error_response()
         finally:
             db.close()
 
@@ -225,12 +236,21 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
                 db.rollback()
                 return jsonify({"error": "Job was already processed"}), 409
 
-            # Transfer to provider
-            db.execute("UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk = ?", (job["amount_rtc"], job["to_wallet"]))
-            db.commit()
-            return jsonify({"ok": True, "status": "released"})
+        # Transfer to provider — verify the provider has a balances row
+        credited = db.execute(
+            "UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk = ?",
+            (job["amount_rtc"], job["to_wallet"]),
+        )
+        if credited.rowcount != 1:
+            # Provider has no balances row — create one before crediting
+            db.execute(
+                "INSERT INTO balances (miner_pk, balance_rtc) VALUES (?, ?)",
+                (job["to_wallet"], job["amount_rtc"]),
+            )
+        db.commit()
+        return jsonify({"ok": True, "status": "released"})
         except sqlite3.Error as e:
-            return jsonify({"error": str(e)}), 500
+            return _database_error_response()
         finally:
             db.close()
 
@@ -288,7 +308,7 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
             db.commit()
             return jsonify({"ok": True, "status": "refunded"})
         except sqlite3.Error as e:
-            return jsonify({"error": str(e)}), 500
+            return _database_error_response()
         finally:
             db.close()
 

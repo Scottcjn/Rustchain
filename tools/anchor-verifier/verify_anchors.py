@@ -164,11 +164,21 @@ def read_anchors(db_path: str, limit: Optional[int] = None) -> List[AnchorRecord
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     query = "SELECT * FROM ergo_anchors ORDER BY rustchain_height DESC"
-    if limit:
-        query += f" LIMIT {int(limit)}"
+    params = ()
+    if limit is not None:
+        try:
+            parsed_limit = int(limit)
+        except (TypeError, ValueError):
+            conn.close()
+            return []
+        if parsed_limit <= 0:
+            conn.close()
+            return []
+        query += " LIMIT ?"
+        params = (parsed_limit,)
 
     try:
-        rows = conn.execute(query).fetchall()
+        rows = conn.execute(query, params).fetchall()
     except sqlite3.OperationalError:
         conn.close()
         return []

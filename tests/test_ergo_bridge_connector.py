@@ -39,21 +39,21 @@ def connector():
 def test_get_merkle_root_returns_node_payload(monkeypatch, connector):
     calls = []
 
-    def fake_get(url):
-        calls.append(url)
+    def fake_get(url, timeout):
+        calls.append((url, timeout))
         return FakeResponse(200, {"merkle_root": "abc123"})
 
     monkeypatch.setattr("ergo_connector.requests.get", fake_get)
 
     assert connector.get_merkle_root() == "abc123"
-    assert calls == ["https://rustchain.example/get_merkle_root"]
+    assert calls == [("https://rustchain.example/get_merkle_root", 10)]
 
 
 def test_submit_merkle_root_posts_contract_payload(monkeypatch, connector):
     posts = []
 
-    def fake_post(url, json):
-        posts.append((url, json))
+    def fake_post(url, json, timeout):
+        posts.append((url, json, timeout))
         return FakeResponse(200, {"tx_id": "tx-1"})
 
     monkeypatch.setattr("ergo_connector.requests.post", fake_post)
@@ -63,6 +63,7 @@ def test_submit_merkle_root_posts_contract_payload(monkeypatch, connector):
         (
             "https://ergo.example/submit_merkle_root",
             {"contract_address": "contract-123", "merkle_root": "root-456"},
+            10,
         )
     ]
 
@@ -75,10 +76,44 @@ def test_verify_contract_distinguishes_existing_contract(monkeypatch, connector)
         ]
     )
 
-    monkeypatch.setattr("ergo_connector.requests.get", lambda url: next(responses))
+    monkeypatch.setattr("ergo_connector.requests.get", lambda url, timeout: next(responses))
 
     assert connector.verify_contract() is True
     assert connector.verify_contract() is False
+
+
+def test_verify_contract_url_encodes_contract_path(monkeypatch):
+    connector = ErgoBridgeConnector(
+        ergo_rpc_url="https://ergo.example",
+        rustchain_node_url="https://rustchain.example",
+        contract_address="../admin?debug=true",
+    )
+    calls = []
+
+    def fake_get(url, timeout):
+        calls.append((url, timeout))
+        return FakeResponse(200, {"status": "exists"})
+
+    monkeypatch.setattr("ergo_connector.requests.get", fake_get)
+
+    assert connector.verify_contract() is True
+    assert calls == [
+        (
+            "https://ergo.example/verify_contract/..%2Fadmin%3Fdebug%3Dtrue",
+            10,
+        )
+    ]
+
+
+@pytest.mark.parametrize("timeout", [0, -1, False, "10"])
+def test_connector_rejects_non_positive_request_timeout(timeout):
+    with pytest.raises(ValueError, match="request_timeout must be a positive number"):
+        ErgoBridgeConnector(
+            ergo_rpc_url="https://ergo.example",
+            rustchain_node_url="https://rustchain.example",
+            contract_address="contract-123",
+            request_timeout=timeout,
+        )
 
 
 @pytest.mark.parametrize(

@@ -9,9 +9,11 @@ from flask import Blueprint, jsonify, request
 import sqlite3
 import hashlib
 import time
-import json
+import logging
+import random
 
 hall_bp = Blueprint('hall_of_rust', __name__)
+logger = logging.getLogger(__name__)
 
 
 def _json_object_required():
@@ -158,9 +160,11 @@ def estimate_manufacture_year(model, arch):
 @hall_bp.route('/hall/induct', methods=['POST'])
 def induct_machine():
     """Automatically induct a machine into the Hall of Rust on first attestation."""
-    data, error = _json_object_required()
-    if error:
-        return error
+    data = request.get_json(silent=True)
+    if data is None:
+        data = {}
+    if not isinstance(data, dict):
+        return jsonify({"error": "JSON object required"}), 400
     
     # Generate fingerprint hash from hardware identifiers
     # SECURITY FIX: Fingerprint based on HARDWARE ONLY (not wallet ID)
@@ -247,8 +251,8 @@ def induct_machine():
             'capacitor_plague': is_plague
         })
         
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        return _internal_error_response("induct_machine")
 
 @hall_bp.route('/hall/machine/<fingerprint>', methods=['GET'])
 def get_machine(fingerprint):
@@ -268,8 +272,8 @@ def get_machine(fingerprint):
             return jsonify({'error': 'Machine not found in Hall of Rust'}), 404
         
         return jsonify(dict(row))
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        return _internal_error_response("get_machine")
 
 @hall_bp.route('/hall/leaderboard', methods=['GET'])
 def rust_leaderboard():
@@ -307,15 +311,17 @@ def rust_leaderboard():
             'total_machines': len(leaderboard),
             'generated_at': int(time.time())
         })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        return _internal_error_response("rust_leaderboard")
 
 @hall_bp.route('/hall/eulogy/<fingerprint>', methods=['POST'])
 def set_eulogy(fingerprint):
     """Set a eulogy/nickname for a machine. For when it finally dies."""
-    data, error = _json_object_required()
-    if error:
-        return error
+    data = request.get_json(silent=True)
+    if data is None:
+        data = {}
+    if not isinstance(data, dict):
+        return jsonify({"error": "JSON object required"}), 400
     
     try:
         from flask import current_app
@@ -346,8 +352,8 @@ def set_eulogy(fingerprint):
         
         conn.close()
         return jsonify({'ok': True, 'message': 'Memorial updated'})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        return _internal_error_response("set_eulogy")
 
 @hall_bp.route('/hall/stats', methods=['GET'])
 def hall_stats():
@@ -386,8 +392,8 @@ def hall_stats():
         
         conn.close()
         return jsonify(stats)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        return _internal_error_response("hall_stats")
 
 def get_rust_badge(score):
     """Get a badge based on Rust Score."""
@@ -451,6 +457,11 @@ def _table_exists(cursor, table_name):
         (table_name,),
     ).fetchone()
     return row is not None
+
+
+def _internal_error_response(context):
+    logger.exception("Explorer Hall of Rust endpoint failed: %s", context)
+    return jsonify({'error': 'internal_error'}), 500
 
 @hall_bp.route('/api/hall_of_fame/machine', methods=['GET'])
 def api_hall_of_fame_machine():
@@ -572,8 +583,8 @@ def api_hall_of_fame_machine():
             'reward_participation': reward_participation,
             'generated_at': now,
         })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        return _internal_error_response("api_hall_of_fame_machine")
 
 def register_hall_endpoints(app, db_path):
     """Register Hall of Rust endpoints with Flask app."""
@@ -583,8 +594,6 @@ def register_hall_endpoints(app, db_path):
     print("[HALL OF RUST] Endpoints registered - The machines will be remembered!")
 
 # ============== ENHANCED STATS ==============
-
-import random
 
 # Fun facts about vintage hardware
 VINTAGE_FACTS = [
@@ -642,8 +651,8 @@ def machine_of_the_day():
         machine['age_years'] = max(0, current_utc_year() - int(mfg)) if mfg else None
         
         return jsonify(machine)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        return _internal_error_response("machine_of_the_day")
 
 @hall_bp.route('/hall/fleet_breakdown', methods=['GET'])
 def fleet_breakdown():
@@ -682,8 +691,8 @@ def fleet_breakdown():
             'total_architectures': len(breakdown),
             'generated_at': int(time.time())
         })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        return _internal_error_response("fleet_breakdown")
 
 @hall_bp.route('/hall/timeline', methods=['GET'])
 def hall_timeline():
@@ -718,5 +727,5 @@ def hall_timeline():
             'timeline': timeline,
             'generated_at': int(time.time())
         })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        return _internal_error_response("hall_timeline")

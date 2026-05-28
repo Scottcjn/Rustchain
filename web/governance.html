@@ -20,20 +20,30 @@
 
   <div class="card">
     <h2>Create Proposal</h2>
-    <input id="p_wallet" placeholder="Proposer wallet (RTC...)" />
+    <input id="p_miner" placeholder="Miner public key hex" />
     <input id="p_title" placeholder="Title" />
+    <select id="p_type">
+      <option value="feature_activation">feature_activation</option>
+      <option value="parameter_change">parameter_change</option>
+      <option value="emergency">emergency</option>
+    </select>
+    <input id="p_param_key" placeholder="Parameter key (required for parameter_change)" />
+    <input id="p_param_value" placeholder="Parameter value (optional)" />
     <textarea id="p_desc" rows="4" placeholder="Description"></textarea>
+    <input id="p_signature" placeholder="Signature hex for propose:<miner_id>:<timestamp>" />
     <button onclick="createProposal()">Submit Proposal</button>
   </div>
 
   <div class="card">
     <h2>Vote</h2>
     <input id="v_proposal" placeholder="Proposal ID" />
-    <input id="v_wallet" placeholder="Wallet (RTC...)" />
-    <select id="v_vote"><option value="yes">yes</option><option value="no">no</option></select>
-    <input id="v_nonce" placeholder="Nonce (any unique string)" />
-    <input id="v_pub" placeholder="Public key hex" />
-    <textarea id="v_sig" rows="3" placeholder="Signature hex"></textarea>
+    <input id="v_miner" placeholder="Miner public key hex" />
+    <select id="v_vote">
+      <option value="for">for</option>
+      <option value="against">against</option>
+      <option value="abstain">abstain</option>
+    </select>
+    <textarea id="v_sig" rows="3" placeholder="Signature hex for vote:<miner_id>:<timestamp>"></textarea>
     <button onclick="submitVote()">Submit Vote</button>
   </div>
 
@@ -71,37 +81,49 @@ async function api(path, method='GET', body=null){
 }
 
 async function createProposal(){
-  await api('/governance/propose', 'POST', {
-    wallet: document.getElementById('p_wallet').value.trim(),
+  const timestamp = Math.floor(Date.now() / 1000);
+  await api('/api/governance/propose', 'POST', {
+    miner_id: document.getElementById('p_miner').value.trim(),
     title: document.getElementById('p_title').value.trim(),
-    description: document.getElementById('p_desc').value.trim()
+    description: document.getElementById('p_desc').value.trim(),
+    proposal_type: document.getElementById('p_type').value,
+    parameter_key: document.getElementById('p_param_key').value.trim(),
+    parameter_value: document.getElementById('p_param_value').value.trim(),
+    timestamp,
+    signature: document.getElementById('p_signature').value.trim()
   });
   await loadProposals();
 }
 
 async function submitVote(){
-  await api('/governance/vote', 'POST', {
+  const timestamp = Math.floor(Date.now() / 1000);
+  await api('/api/governance/vote', 'POST', {
     proposal_id: Number(document.getElementById('v_proposal').value.trim()),
-    wallet: document.getElementById('v_wallet').value.trim(),
+    miner_id: document.getElementById('v_miner').value.trim(),
     vote: document.getElementById('v_vote').value,
-    nonce: document.getElementById('v_nonce').value.trim(),
-    public_key: document.getElementById('v_pub').value.trim(),
+    timestamp,
     signature: document.getElementById('v_sig').value.trim()
   });
   await loadProposals();
 }
 
 async function loadProposals(){
-  const data = await api('/governance/proposals');
+  const data = await api('/api/governance/proposals');
   const list = document.getElementById('list');
   list.innerHTML = '';
   for (const p of (data.proposals || [])) {
+    p.proposer_wallet = p.proposed_by ?? p.proposer_wallet;
+    p.yes_weight = p.votes_for ?? p.yes_weight;
+    p.no_weight = p.votes_against ?? p.no_weight;
+    p.abstain_weight = p.votes_abstain ?? p.abstain_weight;
     const div = document.createElement('div');
     div.className = 'card';
     div.innerHTML = `<b>#${safeNumber(p.id)} ${escapeHtml(p.title)}</b><br>
       <span class="muted">${escapeHtml(p.proposer_wallet)} • ${escapeHtml(p.status)}</span><br>
       ${escapeHtml(p.description)}<br>
-      yes=${safeNumber(p.yes_weight).toFixed(4)} no=${safeNumber(p.no_weight).toFixed(4)}`;
+      yes=${safeNumber(p.yes_weight).toFixed(4)}
+      no=${safeNumber(p.no_weight).toFixed(4)}
+      abstain=${safeNumber(p.abstain_weight).toFixed(4)}`;
     list.appendChild(div);
   }
 }

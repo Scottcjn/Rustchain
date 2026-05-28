@@ -64,6 +64,44 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# ─── Early Dry Run Check ─────────────────────────────────────────────
+
+if [ "$DRY_RUN" -eq 1 ]; then
+    OS=$(uname -s)
+    ARCH=$(uname -m)
+
+    case "$OS" in
+        Linux)
+            MINER_PATH="linux/rustchain_linux_miner.py"
+            FINGERPRINT_PATH="linux/fingerprint_checks.py"
+            ;;
+        Darwin)
+            MINER_PATH="macos/rustchain_mac_miner_v2.4.py"
+            FINGERPRINT_PATH="macos/fingerprint_checks.py"
+            ;;
+        *)      echo -e "${RED}Unsupported OS: $OS${NC}"; exit 1 ;;
+    esac
+
+    if [ -z "$WALLET" ]; then
+        HOSTNAME=$(hostname 2>/dev/null | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-' | head -c 20)
+        WALLET="${HOSTNAME:-miner}-$(echo "$ARCH" | tr '[:upper:]' '[:lower:]')"
+    fi
+
+    MINER_URL="${BASE_URL}/miners/${MINER_PATH}"
+    FINGERPRINT_URL="${BASE_URL}/miners/${FINGERPRINT_PATH}"
+
+    echo -e "${YELLOW}[DRY RUN] Would install to: $INSTALL_DIR${NC}"
+    echo "  OS: $OS"
+    echo "  Architecture: $ARCH"
+    echo "  Miner: $MINER_URL"
+    echo "  Fingerprint: $FINGERPRINT_URL"
+    echo "  Checksums: $CHECKSUM_URL"
+    echo "  Wallet: $WALLET"
+    echo "  Node: $NODE_URL"
+    echo "  Silent: $SILENT"
+    exit 0
+fi
+
 # ─── Banner ──────────────────────────────────────────────────────────
 
 echo -e "${CYAN}"
@@ -222,20 +260,6 @@ if [ -z "$WALLET" ]; then
 fi
 
 echo -e "  Wallet: ${CYAN}$WALLET${NC}"
-
-# ─── Dry Run Check ───────────────────────────────────────────────────
-
-if [ "$DRY_RUN" -eq 1 ]; then
-    echo ""
-    echo -e "${YELLOW}[DRY RUN] Would install to: $INSTALL_DIR${NC}"
-    echo "  Miner: $MINER_URL"
-    echo "  Fingerprint: $FINGERPRINT_URL"
-    echo "  Checksums: $CHECKSUM_URL"
-    echo "  Wallet: $WALLET"
-    echo "  Node: $NODE_URL"
-    echo "  Silent: $SILENT"
-    exit 0
-fi
 
 # ─── Download Miner ──────────────────────────────────────────────────
 

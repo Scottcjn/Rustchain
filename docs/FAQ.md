@@ -68,7 +68,7 @@ bash install-miner.sh --dry-run --wallet YOUR_WALLET_NAME
 
 ```powershell
 # 使用 Python 安装
-pip install clawrtc
+curl -fsSL https://rustchain.org/install.sh | bash
 # Windows note: current clawrtc releases do not support `mine --dry-run`.
 # Use the installer preview path on Linux/macOS/WSL when you need a dry-run.
 bash install-miner.sh --dry-run --wallet YOUR_WALLET_NAME
@@ -379,29 +379,33 @@ RustChain 使用链上治理系统：
 
 ```bash
 # 创建提案
-curl -sk -X POST https://rustchain.org/governance/propose \
+curl -sk -X POST https://rustchain.org/api/governance/propose \
  -H 'Content-Type: application/json' \
  -d '{
- "wallet":"RTC...",
+ "miner_id":"<ed25519_pubkey_hex>",
  "title":"启用参数 X",
- "description":"理由和实现细节"
+ "description":"理由和实现细节",
+ "proposal_type":"feature_activation",
+ "parameter_key":"",
+ "parameter_value":"",
+ "timestamp":1700000000,
+ "signature":"<ed25519_signature_hex>"
  }'
 
 # 列出提案
-curl -sk https://rustchain.org/governance/proposals
+curl -sk https://rustchain.org/api/governance/proposals
 
 # 提案详情
-curl -sk https://rustchain.org/governance/proposal/1
+curl -sk https://rustchain.org/api/governance/proposal/1
 
 # 提交签名投票
-curl -sk -X POST https://rustchain.org/governance/vote \
+curl -sk -X POST https://rustchain.org/api/governance/vote \
  -H 'Content-Type: application/json' \
  -d '{
  "proposal_id":1,
- "wallet":"RTC...",
- "vote":"yes",
- "nonce":"1700000000",
- "public_key":"<ed25519_pubkey_hex>",
+ "miner_id":"<ed25519_pubkey_hex>",
+ "vote":"for",
+ "timestamp":1700000000,
  "signature":"<ed25519_signature_hex>"
  }'
 ```

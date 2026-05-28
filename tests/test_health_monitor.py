@@ -9,17 +9,15 @@ import sys
 import time
 import unittest
 import urllib.error
-from io import BytesIO
 from unittest.mock import MagicMock, patch
 
 # Make sure the tools directory is importable
-import importlib, os
+import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools"))
 
 from node_health_monitor import (
     NodeHealthMonitor,
     NodeStatus,
-    NetworkHealth,
     DEFAULT_NODES,
     DIM,
     GREEN,
@@ -40,6 +38,16 @@ def _make_response(data: dict, status: int = 200) -> MagicMock:
     mock_r.__exit__  = MagicMock(return_value=False)
     mock_r.read      = MagicMock(return_value=body)
     mock_r.status    = status
+    return mock_r
+
+
+def _make_raw_response(raw: str, status: int = 200) -> MagicMock:
+    """Build a mock urllib response that returns raw response text."""
+    mock_r = MagicMock()
+    mock_r.__enter__ = lambda s: s
+    mock_r.__exit__ = MagicMock(return_value=False)
+    mock_r.read = MagicMock(return_value=raw.encode())
+    mock_r.status = status
     return mock_r
 
 
@@ -132,6 +140,16 @@ class TestCheckNode(unittest.TestCase):
         self.assertIsNone(result.epoch)
         self.assertIsNone(result.miners)
         self.assertEqual(result.status, "online")
+
+    @patch("urllib.request.urlopen")
+    def test_non_object_json_is_reachable_with_missing_fields(self, mock_open):
+        """A node returning JSON with the wrong shape is reachable, not offline."""
+        mock_open.return_value = _make_raw_response("[]")
+        result = self.monitor.check_node(self.url)
+        self.assertEqual(result.status, "online")
+        self.assertIsNone(result.epoch)
+        self.assertIsNone(result.miners)
+        self.assertIsNone(result.error)
 
 
 class TestCheckAll(unittest.TestCase):

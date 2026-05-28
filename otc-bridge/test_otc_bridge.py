@@ -10,6 +10,9 @@ import time
 import unittest
 from unittest.mock import patch, MagicMock
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
 # Set an initial test DB before importing, then replace it per test.
 _fd, TEST_DB = tempfile.mkstemp(suffix=".db")
 os.close(_fd)
@@ -36,6 +39,45 @@ class OTCBridgeTestCase(unittest.TestCase):
                 os.remove(TEST_DB)
             except PermissionError:
                 pass
+
+    def signed_create_order_payload(self, payload):
+        private_key = Ed25519PrivateKey.generate()
+        public_key_hex = private_key.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw,
+        ).hex()
+        wallet = otc_bridge.rtc_address_from_public_key(public_key_hex)
+        payload = dict(payload, wallet=wallet)
+        _, amount_micro_rtc = otc_bridge.decimal_units(
+            payload["amount_rtc"], otc_bridge.RTC_UNIT, "amount_rtc"
+        )
+        _, price_per_rtc_nano_quote = otc_bridge.decimal_units(
+            payload["price_per_rtc"], otc_bridge.QUOTE_PRICE_SCALE, "price_per_rtc"
+        )
+        ttl = otc_bridge.parse_order_ttl(payload.get("ttl_seconds"))
+        ttl = min(max(ttl, 3600), otc_bridge.ORDER_TTL_MAX)
+        timestamp = int(time.time())
+        auth_fields = otc_bridge.create_order_auth_fields(
+            payload["side"],
+            payload["pair"],
+            amount_micro_rtc,
+            price_per_rtc_nano_quote,
+            ttl,
+            payload.get("eth_address", ""),
+        )
+        message = otc_bridge.wallet_auth_message(
+            "create_order",
+            otc_bridge.CREATE_ORDER_AUTH_ID,
+            wallet,
+            timestamp,
+            auth_fields,
+        )
+        payload["wallet_auth"] = {
+            "public_key": public_key_hex,
+            "signature": private_key.sign(message).hex(),
+            "timestamp": timestamp,
+        }
+        return payload
 
     def create_legacy_money_schema(self):
         """Create the pre-migration schema with REAL NOT NULL money columns."""
@@ -92,13 +134,12 @@ class OTCBridgeTestCase(unittest.TestCase):
 
     def test_create_buy_order(self):
         """Buy orders don't need escrow -- just post to order book."""
-        r = self.app.post("/api/orders", json={
+        r = self.app.post("/api/orders", json=self.signed_create_order_payload({
             "side": "buy",
             "pair": "RTC/USDC",
-            "wallet": "test-buyer",
             "amount_rtc": 100,
             "price_per_rtc": 0.10,
-        })
+        }))
         data = r.get_json()
         self.assertTrue(data["ok"])
         self.assertEqual(data["side"], "buy")
@@ -222,6 +263,41 @@ class OTCBridgeTestCase(unittest.TestCase):
         self.assertEqual(data["escrow_job_id"], "job_test123")
         self.assertEqual(data["escrow_status"], "locked")
         mock_escrow.assert_called_once()
+
+    def test_create_order_rejects_non_object_json(self):
+        r = self.app.post("/api/orders", json=["not-an-object"])
+        data = r.get_json()
+
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(data["error"], "JSON object required")
+
+    def test_create_order_rejects_invalid_ttl_seconds(self):
+        r = self.app.post("/api/orders", json={
+            "side": "buy",
+            "pair": "RTC/USDC",
+            "wallet": "test-buyer",
+            "amount_rtc": 100,
+            "price_per_rtc": 0.10,
+            "ttl_seconds": "abc",
+        })
+        data = r.get_json()
+
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(data["error"], "ttl_seconds must be an integer")
+
+    def test_create_order_rejects_fractional_ttl_seconds(self):
+        r = self.app.post("/api/orders", json={
+            "side": "buy",
+            "pair": "RTC/USDC",
+            "wallet": "test-buyer",
+            "amount_rtc": 100,
+            "price_per_rtc": 0.10,
+            "ttl_seconds": 3600.5,
+        })
+        data = r.get_json()
+
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(data["error"], "ttl_seconds must be an integer")
 
     @patch("otc_bridge.rtc_get_balance", return_value=10.0)
     def test_sell_order_insufficient_balance(self, mock_balance):
@@ -494,6 +570,40 @@ class OTCBridgeTestCase(unittest.TestCase):
             "quote_tx": "0x123",
         })
         self.assertEqual(r2.status_code, 409)
+
+    def test_confirm_rejects_non_object_json(self):
+        r = self.app.post("/api/orders/otc_fake123/confirm", json=[
+            "seller1",
+            "0xabc123",
+            "secret",
+        ])
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.get_json(), {"error": "JSON object required"})
+
+        r = self.app.post("/api/orders/otc_fake123/confirm", json="seller1")
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.get_json(), {"error": "JSON object required"})
+
+    def test_confirm_rejects_falsey_non_object_json(self):
+        payloads = [
+            [],
+            False,
+            0,
+            "",
+        ]
+        for payload in payloads:
+            with self.subTest(payload=payload):
+                r = self.app.post("/api/orders/otc_fake123/confirm", json=payload)
+                self.assertEqual(r.status_code, 400)
+                self.assertEqual(r.get_json(), {"error": "JSON object required"})
+
+        r = self.app.post(
+            "/api/orders/otc_fake123/confirm",
+            data="null",
+            content_type="application/json",
+        )
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.get_json(), {"error": "JSON object required"})
 
     # ---------------------------------------------------------------
     # Stats & Trades

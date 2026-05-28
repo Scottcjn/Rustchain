@@ -43,6 +43,24 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN", "")
 API_TIMEOUT = float(os.getenv("API_TIMEOUT", "10"))
 
 
+def _format_uptime(value) -> str:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return "N/A"
+    return f"{value:,}s (~{value // 3600}h)"
+
+
+def _format_count(value) -> str:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return "N/A"
+    return f"{value:,}"
+
+
+def _format_rtc(value) -> str:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return "N/A"
+    return f"{value:.6f} RTC"
+
+
 # ---------------------------------------------------------------------------
 # API client
 # ---------------------------------------------------------------------------
@@ -126,6 +144,25 @@ class RustChainBot(commands.Bot):
 bot = RustChainBot()
 
 
+def normalize_miners_payload(data: dict | list) -> tuple[list, int]:
+    if isinstance(data, list):
+        return data, len(data)
+    if not isinstance(data, dict):
+        return [], 0
+
+    miners = data.get("miners") or data.get("data") or []
+    if not isinstance(miners, list):
+        miners = []
+
+    pagination = data.get("pagination") if isinstance(data.get("pagination"), dict) else {}
+    total = pagination.get("total", data.get("total", len(miners)))
+    try:
+        total = int(total)
+    except (TypeError, ValueError):
+        total = len(miners)
+    return miners, max(total, len(miners))
+
+
 # ---------------------------------------------------------------------------
 # /health
 # ---------------------------------------------------------------------------
@@ -148,7 +185,7 @@ async def cmd_health(interaction: discord.Interaction):
     )
     embed.add_field(name="Status", value="Online" if ok else "Offline", inline=True)
     embed.add_field(name="Version", value=version, inline=True)
-    embed.add_field(name="Uptime", value=f"{uptime:,}s (~{uptime // 3600}h)", inline=True)
+    embed.add_field(name="Uptime", value=_format_uptime(uptime), inline=True)
     embed.timestamp = datetime.now(timezone.utc)
     embed.set_footer(text=RUSTCHAIN_URL)
     await interaction.followup.send(embed=embed)
@@ -168,15 +205,15 @@ async def cmd_epoch(interaction: discord.Interaction):
 
     embed = discord.Embed(title="RustChain Epoch", color=discord.Color.blue())
     embed.add_field(name="Epoch", value=str(data.get("epoch", "?")), inline=True)
-    embed.add_field(name="Slot", value=f"{data.get('slot', 0):,}", inline=True)
-    embed.add_field(name="Height", value=f"{data.get('height', 0):,}", inline=True)
+    embed.add_field(name="Slot", value=_format_count(data.get("slot")), inline=True)
+    embed.add_field(name="Height", value=_format_count(data.get("height")), inline=True)
 
     if "blocks_per_epoch" in data:
         embed.add_field(name="Blocks/Epoch", value=str(data["blocks_per_epoch"]), inline=True)
     if "enrolled_miners" in data:
         embed.add_field(name="Enrolled Miners", value=str(data["enrolled_miners"]), inline=True)
     if "epoch_pot" in data:
-        embed.add_field(name="Epoch Pot", value=f"{data['epoch_pot']:.6f} RTC", inline=True)
+        embed.add_field(name="Epoch Pot", value=_format_rtc(data["epoch_pot"]), inline=True)
 
     embed.timestamp = datetime.now(timezone.utc)
     embed.set_footer(text=RUSTCHAIN_URL)
@@ -206,7 +243,7 @@ async def cmd_balance(interaction: discord.Interaction, miner_id: str):
 
     embed = discord.Embed(title="Wallet Balance", color=discord.Color.gold())
     embed.add_field(name="Miner", value=mid, inline=True)
-    embed.add_field(name="Balance", value=f"{amount:.6f} RTC", inline=True)
+    embed.add_field(name="Balance", value=_format_rtc(amount), inline=True)
     embed.timestamp = datetime.now(timezone.utc)
     embed.set_footer(text=RUSTCHAIN_URL)
     await interaction.followup.send(embed=embed)
@@ -224,8 +261,7 @@ async def cmd_miners(interaction: discord.Interaction):
         await interaction.followup.send("Could not fetch miner list.", ephemeral=True)
         return
 
-    miners = data if isinstance(data, list) else data.get("miners", [])
-    total = len(miners)
+    miners, total = normalize_miners_payload(data)
 
     # Show up to 20 miners in embed fields
     display = miners[:20]
@@ -236,7 +272,7 @@ async def cmd_miners(interaction: discord.Interaction):
     )
 
     for m in display:
-        name = m.get("miner", "unknown")
+        name = m.get("miner") or m.get("miner_id") or "unknown"
         arch = m.get("device_arch", "?")
         family = m.get("device_family", "?")
         multiplier = m.get("antiquity_multiplier", 1.0)
@@ -246,8 +282,8 @@ async def cmd_miners(interaction: discord.Interaction):
             inline=False,
         )
 
-    if total > 20:
-        embed.set_footer(text=f"Showing 20 of {total} miners | {RUSTCHAIN_URL}")
+    if total > len(display):
+        embed.set_footer(text=f"Showing {len(display)} of {total} miners | {RUSTCHAIN_URL}")
     else:
         embed.set_footer(text=RUSTCHAIN_URL)
 

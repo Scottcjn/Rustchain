@@ -12,6 +12,11 @@ app = Flask(__name__)
 
 # Local server on same machine
 LOCAL_SERVER = "http://localhost:8088"
+ALLOWED_API_METHODS = {
+    "register": {"POST"},
+    "mine": {"POST"},
+    "stats": {"GET"},
+}
 
 
 def _generic_upstream_error(response, reason):
@@ -34,20 +39,31 @@ def _build_local_api_url(path):
     safe_path = "/".join(quote(part, safe="") for part in parts)
     return f"{LOCAL_SERVER}/api/{safe_path}"
 
+
+def _is_allowed_api_request(path, method):
+    """Return whether the public proxy should forward this API request."""
+    allowed_methods = ALLOWED_API_METHODS.get(path)
+    return bool(allowed_methods and method in allowed_methods)
+
 @app.route('/api/<path:path>', methods=['GET', 'POST'])
 def proxy(path):
-    """Forward all API requests to local server"""
+    """Forward only the public G4/miner API routes to the local server."""
     url = _build_local_api_url(path)
     if not url:
         return jsonify({'error': 'Invalid API path'}), 400
+    if not _is_allowed_api_request(path, request.method):
+        return jsonify({'error': 'API path not allowed'}), 403
 
     try:
         if request.method == 'POST':
+            payload = request.get_json(silent=True)
+            if not isinstance(payload, dict):
+                return jsonify({'error': 'JSON object required'}), 400
             # Forward POST requests with JSON data
             headers = {'Content-Type': 'application/json'}
             response = requests.post(
                 url,
-                json=request.json,
+                json=payload,
                 headers=headers,
                 timeout=10
             )

@@ -78,8 +78,10 @@ class RustChainData:
         self.health: Dict[str, Any] = {}
         self.epoch: Dict[str, Any] = {}
         self.miners: List[Dict[str, Any]] = []
+        self.miner_total: int = 0
         self.tip: Dict[str, Any] = {}
         self.price: Dict[str, Any] = {}
+        self.proposer_calendar: Dict[str, Any] = {}
         self.last_refresh: Optional[datetime] = None
         self.latency_ms: float = 0.0
         self.block_history: List[Dict[str, Any]] = []
@@ -93,10 +95,19 @@ class RustChainData:
         miners_raw = fetch_json(f"{self.base}/api/miners")
         if isinstance(miners_raw, list):
             self.miners = miners_raw
+            self.miner_total = len(miners_raw)
         elif isinstance(miners_raw, dict):
-            self.miners = miners_raw.get("miners", miners_raw.get("data", []))
+            miners = miners_raw.get("miners", miners_raw.get("data", []))
+            self.miners = miners if isinstance(miners, list) else []
+            pagination = miners_raw.get("pagination") if isinstance(miners_raw.get("pagination"), dict) else {}
+            total = pagination.get("total", miners_raw.get("total", len(self.miners)))
+            try:
+                self.miner_total = max(int(total), len(self.miners))
+            except (TypeError, ValueError):
+                self.miner_total = len(self.miners)
         else:
             self.miners = []
+            self.miner_total = 0
 
         tip = fetch_json(f"{self.base}/headers/tip") or {}
         if tip and tip != self.tip:
@@ -109,6 +120,7 @@ class RustChainData:
             self.block_history = self.block_history[:20]
         self.tip = tip
 
+        self.proposer_calendar = fetch_json(f"{self.base}/epoch/proposer-duty-calendar?lookahead=8&history_limit=6") or {}
         self.price = self._fetch_price()
         self.latency_ms = (time.time() - t0) * 1000
         self.last_refresh = datetime.now(timezone.utc)
@@ -125,8 +137,9 @@ class RustChainData:
                     "volume_24h": float(pair.get("volume", {}).get("h24", 0)),
                     "liquidity": float(pair.get("liquidity", {}).get("usd", 0)),
                 }
-        except Exception:
-            pass
+        except Exception as ex:
+            logger = __import__("logging").getLogger(__name__)
+            logger.debug("DexScreener price fetch failed: %s", ex)
         return {}
 
 # ---------------------------------------------------------------------------
@@ -241,7 +254,7 @@ def build_miners_panel(data: RustChainData) -> Panel:
         table.add_row("No miners available", "", "", "")
     else:
         for m in miners:
-            miner_id = str(m.get("miner_id", m.get("id", "?")))
+            miner_id = str(m.get("miner_id") or m.get("miner") or m.get("id", "?"))
             if len(miner_id) > 24:
                 miner_id = miner_id[:21] + "..."
             hw = str(m.get("hardware_type", m.get("hardware", "?")))
@@ -253,7 +266,7 @@ def build_miners_panel(data: RustChainData) -> Panel:
                 mult_str = str(mult)
             table.add_row(miner_id, hw, arch, mult_str)
 
-    count = len(data.miners)
+    count = data.miner_total
     title = f"[bold]Active Miners[/bold] [dim]({count} total)[/dim]"
     return Panel(table, title=title, border_style="magenta")
 
@@ -286,6 +299,31 @@ def build_blocks_panel(data: RustChainData) -> Panel:
             table.add_row(height, bhash, seen)
 
     return Panel(table, title="[bold]Recent Blocks[/bold]", border_style="blue")
+
+
+def build_proposer_calendar_panel(data: RustChainData) -> Panel:
+    """Upcoming round-robin proposer duties."""
+    table = Table(expand=True, show_lines=False, pad_edge=False)
+    table.add_column("Epoch", style="bold white", justify="right", max_width=8)
+    table.add_column("Proposer", style="cyan", max_width=24)
+    table.add_column("Duty", style="yellow", max_width=10)
+
+    calendar = data.proposer_calendar or {}
+    schedule = calendar.get("schedule") or []
+    if not schedule:
+        table.add_row("—", "calendar unavailable", "")
+    else:
+        current_node = calendar.get("node_id")
+        for row in schedule[:8]:
+            proposer = str(row.get("proposer", "?"))
+            duty = "now" if row.get("is_current") else f"+{row.get('offset', '?')}"
+            if proposer == current_node:
+                duty = f"{duty} local"
+            table.add_row(str(row.get("epoch", "?")), proposer, duty)
+
+    current = calendar.get("current_proposer", "?")
+    title = f"[bold]Proposer Duties[/bold] [dim](current: {current})[/dim]"
+    return Panel(table, title=title, border_style="cyan")
 
 
 def build_price_panel(data: RustChainData) -> Panel:
@@ -365,6 +403,7 @@ def build_layout(data: RustChainData, interval: int) -> Layout:
 
     layout["bottom"].split_row(
         Layout(name="miners", ratio=3),
+        Layout(name="duties", ratio=2),
         Layout(name="blocks", ratio=2),
     )
 
@@ -373,6 +412,7 @@ def build_layout(data: RustChainData, interval: int) -> Layout:
     layout["epoch"].update(build_epoch_panel(data))
     layout["price"].update(build_price_panel(data))
     layout["miners"].update(build_miners_panel(data))
+    layout["duties"].update(build_proposer_calendar_panel(data))
     layout["blocks"].update(build_blocks_panel(data))
 
     return layout

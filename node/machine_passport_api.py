@@ -96,10 +96,23 @@ def _parse_non_negative_int_arg(name: str, default: int, max_value: Optional[int
     return value, None, None
 
 
+def _require_valid_machine_id(machine_id: str, max_len: int = 128):
+    """Reject overlong machine_id path parameters before DB work."""
+    if len(machine_id) > max_len:
+        return jsonify({
+            'ok': False, 'error': 'invalid_machine_id',
+            'message': f'machine_id exceeds {max_len} characters',
+        }), 400
+    return None
+
+
 # === Public Read Endpoints ===
 
 @machine_passport_bp.route('/<machine_id>', methods=['GET'])
 def get_passport(machine_id: str):
+    err = _require_valid_machine_id(machine_id)
+    if err:
+        return err
     """
     Get a machine passport by ID.
     
@@ -141,7 +154,7 @@ def list_passports():
     if error_response is not None:
         return error_response, status
 
-    offset, error_response, status = _parse_non_negative_int_arg('offset', 0)
+    offset, error_response, status = _parse_non_negative_int_arg('offset', 0, max_value=10_000)
     if error_response is not None:
         return error_response, status
     
@@ -163,6 +176,9 @@ def list_passports():
 
 @machine_passport_bp.route('/<machine_id>/repair-log', methods=['GET'])
 def get_repair_log(machine_id: str):
+    err = _require_valid_machine_id(machine_id)
+    if err:
+        return err
     """Get repair log for a machine."""
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
@@ -179,6 +195,9 @@ def get_repair_log(machine_id: str):
 
 @machine_passport_bp.route('/<machine_id>/attestations', methods=['GET'])
 def get_attestations(machine_id: str):
+    err = _require_valid_machine_id(machine_id)
+    if err:
+        return err
     """Get attestation history for a machine."""
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
@@ -195,6 +214,9 @@ def get_attestations(machine_id: str):
 
 @machine_passport_bp.route('/<machine_id>/benchmarks', methods=['GET'])
 def get_benchmarks(machine_id: str):
+    err = _require_valid_machine_id(machine_id)
+    if err:
+        return err
     """Get benchmark signatures for a machine."""
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
@@ -211,6 +233,9 @@ def get_benchmarks(machine_id: str):
 
 @machine_passport_bp.route('/<machine_id>/lineage', methods=['GET'])
 def get_lineage(machine_id: str):
+    err = _require_valid_machine_id(machine_id)
+    if err:
+        return err
     """Get lineage notes for a machine."""
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
@@ -325,6 +350,9 @@ def create_passport():
 
 @machine_passport_bp.route('/<machine_id>', methods=['PUT'])
 def update_passport(machine_id: str):
+    err = _require_valid_machine_id(machine_id)
+    if err:
+        return err
     """
     Update a machine passport.
 
@@ -364,6 +392,9 @@ def update_passport(machine_id: str):
 
 @machine_passport_bp.route('/<machine_id>/repair-log', methods=['POST'])
 def add_repair_entry(machine_id: str):
+    err = _require_valid_machine_id(machine_id)
+    if err:
+        return err
     """
     Add a repair log entry.
     
@@ -422,6 +453,9 @@ def add_repair_entry(machine_id: str):
 
 @machine_passport_bp.route('/<machine_id>/attestations', methods=['POST'])
 def add_attestation(machine_id: str):
+    err = _require_valid_machine_id(machine_id)
+    if err:
+        return err
     """
     Record an attestation event.
     
@@ -464,6 +498,9 @@ def add_attestation(machine_id: str):
 
 @machine_passport_bp.route('/<machine_id>/benchmarks', methods=['POST'])
 def add_benchmark(machine_id: str):
+    err = _require_valid_machine_id(machine_id)
+    if err:
+        return err
     """
     Record a benchmark signature.
     
@@ -514,6 +551,9 @@ def add_benchmark(machine_id: str):
 
 @machine_passport_bp.route('/<machine_id>/lineage', methods=['POST'])
 def add_lineage_note(machine_id: str):
+    err = _require_valid_machine_id(machine_id)
+    if err:
+        return err
     """
     Add a lineage note (ownership transfer, acquisition, etc.).
     
@@ -575,6 +615,9 @@ def add_lineage_note(machine_id: str):
 
 @machine_passport_bp.route('/<machine_id>/qr', methods=['GET'])
 def generate_qr(machine_id: str):
+    err = _require_valid_machine_id(machine_id)
+    if err:
+        return err
     """
     Generate a QR code for the machine passport.
     
@@ -623,6 +666,9 @@ def generate_qr(machine_id: str):
 
 @machine_passport_bp.route('/<machine_id>/pdf', methods=['GET'])
 def generate_pdf(machine_id: str):
+    err = _require_valid_machine_id(machine_id)
+    if err:
+        return err
     """
     Generate a printable PDF passport.
     

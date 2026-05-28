@@ -11,7 +11,6 @@ import hmac
 import logging
 import os
 import sqlite3
-import time
 
 from flask import jsonify, request
 
@@ -21,7 +20,7 @@ log = logging.getLogger("rustchain.x402")
 try:
     import sys
     sys.path.insert(0, "/root/shared")
-    from x402_config import SWAP_INFO, WRTC_BASE, USDC_BASE, AERODROME_POOL
+    from x402_config import SWAP_INFO
     X402_CONFIG_OK = True
 except ImportError:
     log.warning("x402_config not found — using inline swap info")
@@ -78,6 +77,26 @@ def _is_base_address(value: str) -> bool:
     )
 
 
+def _find_balance_row(conn, miner_id):
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(balances)").fetchall()}
+
+    if "miner_id" in columns:
+        row = conn.execute(
+            "SELECT miner_id FROM balances WHERE miner_id = ?", (miner_id,)
+        ).fetchone()
+        if row:
+            return row[0], "miner_id"
+
+    if "miner_pk" in columns:
+        row = conn.execute(
+            "SELECT miner_pk FROM balances WHERE miner_pk = ?", (miner_id,)
+        ).fetchone()
+        if row:
+            return row[0], "miner_pk"
+
+    return None, None
+
+
 def init_app(app, db_path):
     """Register x402 routes on the RustChain Flask app."""
 
@@ -116,25 +135,24 @@ def init_app(app, db_path):
             return jsonify({"error": "Invalid Base address (must be 0x + 40 hex chars)"}), 400
 
         conn = sqlite3.connect(db_path)
-        row = conn.execute(
-            "SELECT miner_id FROM balances WHERE miner_id = ?", (miner_id,)
-        ).fetchone()
-        if not row:
-            # Try miner_pk
-            row = conn.execute(
-                "SELECT miner_id FROM balances WHERE miner_pk = ?", (miner_id,)
-            ).fetchone()
-        if not row:
-            conn.close()
-            return jsonify({"error": f"Miner '{miner_id}' not found in balances"}), 404
+        try:
+            actual_id, id_column = _find_balance_row(conn, miner_id)
+            if not actual_id:
+                return jsonify({"error": f"Miner '{miner_id}' not found in balances"}), 404
 
-        actual_id = row[0]
-        conn.execute(
-            "UPDATE balances SET coinbase_address = ? WHERE miner_id = ?",
-            (coinbase_address, actual_id),
-        )
-        conn.commit()
-        conn.close()
+            if id_column == "miner_id":
+                conn.execute(
+                    "UPDATE balances SET coinbase_address = ? WHERE miner_id = ?",
+                    (coinbase_address, actual_id),
+                )
+            else:
+                conn.execute(
+                    "UPDATE balances SET coinbase_address = ? WHERE miner_pk = ?",
+                    (coinbase_address, actual_id),
+                )
+            conn.commit()
+        finally:
+            conn.close()
 
         return jsonify({
             "ok": True,

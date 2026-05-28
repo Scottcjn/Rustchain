@@ -85,6 +85,46 @@ class TestWalletBalanceEndpoint:
         assert exc_info.value.code == 1
         assert "Error: sentinel-main-error" in capsys.readouterr().err
 
+    def test_miners_count_uses_paginated_response_rows(self, capsys):
+        """Test miners --count counts rows inside current API envelopes."""
+        args = type("Args", (), {"count": True, "json": False})()
+        with patch.object(
+            rustchain_cli,
+            "fetch_api",
+            return_value={
+                "miners": [{"miner": "alice"}, {"miner": "bob"}],
+                "pagination": {"total": 2, "limit": 100, "offset": 0, "count": 2},
+            },
+        ):
+            rustchain_cli.cmd_miners(args)
+
+        assert "Active miners: 2" in capsys.readouterr().out
+
+    def test_miners_table_renders_paginated_response_fields(self, capsys):
+        """Test miners table renders current API envelope and row field names."""
+        args = type("Args", (), {"count": False, "json": False})()
+        with patch.object(
+            rustchain_cli,
+            "fetch_api",
+            return_value={
+                "miners": [
+                    {
+                        "miner": "alice-miner-long-identifier",
+                        "device_arch": "G4",
+                        "ts_ok": 1_700_000_000,
+                    }
+                ],
+                "pagination": {"total": 1, "limit": 100, "offset": 0, "count": 1},
+            },
+        ):
+            rustchain_cli.cmd_miners(args)
+
+        output = capsys.readouterr().out
+        assert "Active Miners (1 total, showing 20)" in output
+        assert "alice-miner-long-id" in output
+        assert "G4" in output
+        assert "2023-11-14" in output
+
     def test_balance_endpoint_returns_valid_json(self):
         """Integration test: verify /wallet/balance returns valid JSON."""
         node_url = get_node_url()

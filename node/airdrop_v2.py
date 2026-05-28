@@ -65,10 +65,12 @@ MIN_SOL_BALANCE_LAMPORTS = int(0.1 * 1e9)  # 0.1 SOL
 MIN_ETH_BALANCE_WEI = int(0.01 * 1e18)  # 0.01 ETH
 MIN_WALLET_AGE_DAYS = 7
 MIN_GITHUB_AGE_DAYS = 30
+GITHUB_USERNAME_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?$")
 
 # Airdrop allocation
 TOTAL_SOLANA_ALLOCATION = 30_000 * 1_000_000  # 30k wRTC (6 decimals)
 TOTAL_BASE_ALLOCATION = 20_000 * 1_000_000  # 20k wRTC (6 decimals)
+MAX_BRIDGE_LOCK_UWRTC = max(TOTAL_SOLANA_ALLOCATION, TOTAL_BASE_ALLOCATION)
 
 # Rate limiting
 CLAIM_COOLDOWN_SECONDS = 86400 * 30  # 30 days between claims
@@ -300,6 +302,10 @@ class AirdropV2:
     def _normalize_github_username(github_username: str) -> str:
         return (github_username or "").strip().casefold()
 
+    @staticmethod
+    def _is_valid_github_username(github_username: str) -> bool:
+        return bool(GITHUB_USERNAME_RE.fullmatch(github_username))
+
     def check_eligibility(
         self,
         github_username: str,
@@ -322,6 +328,11 @@ class AirdropV2:
             EligibilityResult with tier and reward info
         """
         github_username = self._normalize_github_username(github_username)
+        if not self._is_valid_github_username(github_username):
+            return EligibilityResult(
+                eligible=False,
+                reason="Invalid GitHub username",
+            )
         chain_lower = chain.lower()
         if chain_lower not in ["solana", "base"]:
             return EligibilityResult(
@@ -764,6 +775,8 @@ class AirdropV2:
             (success, message, claim_record)
         """
         github_username = self._normalize_github_username(github_username)
+        if not self._is_valid_github_username(github_username):
+            return False, "Invalid GitHub username", None
         chain_lower = chain.lower()
 
         if self._has_claimed(github_username, wallet_address, chain_lower):
@@ -948,6 +961,8 @@ class AirdropV2:
         # Validate amount
         if amount_uwrtc <= 0:
             return False, "Amount must be positive", None
+        if amount_uwrtc > MAX_BRIDGE_LOCK_UWRTC:
+            return False, "Amount exceeds maximum bridge lock", None
 
         # Generate lock ID
         lock_id = self._generate_id(
@@ -1265,13 +1280,26 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
             return None, (jsonify({"ok": False, "error": "invalid_json"}), 400)
         return data, None
 
-    def string_field(data: Dict[str, Any], name: str, default: str = ""):
+    def string_field(data: Dict[str, Any], name: str, default: str = "", max_length: int = 0):
         value = data.get(name, default)
         if value is None:
             return default, None
         if not isinstance(value, str):
             return None, (jsonify({"ok": False, "error": f"{name} must be a string"}), 400)
-        return value.strip(), None
+        value = value.strip()
+        if max_length > 0 and len(value) > max_length:
+            return None, (jsonify({"ok": False, "error": f"{name}_too_long"}), 400)
+        return value, None
+
+    def github_username_field(data: Dict[str, Any], name: str):
+        value, error = string_field(data, name, max_length=39)
+        if error:
+            return value, error
+        if value and not AirdropV2._is_valid_github_username(
+            AirdropV2._normalize_github_username(value)
+        ):
+            return None, (jsonify({"ok": False, "error": f"{name} must be a valid GitHub username"}), 400)
+        return value, None
 
     def optional_string_field(data: Dict[str, Any], name: str):
         if name not in data or data.get(name) is None:
@@ -1290,6 +1318,17 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
             return None, (jsonify({"ok": False, "error": f"{name} must be a finite number"}), 400)
         return parsed, None
 
+    def bridge_amount_field(data: Dict[str, Any], name: str):
+        value, error = finite_amount_field(data, name)
+        if error:
+            return value, error
+        if value <= 0:
+            return None, (jsonify({"ok": False, "error": f"{name} must be positive"}), 400)
+        max_wrtc = MAX_BRIDGE_LOCK_UWRTC / 1_000_000
+        if value > max_wrtc:
+            return None, (jsonify({"ok": False, "error": f"{name} exceeds maximum bridge lock"}), 400)
+        return value, None
+
     @app.route("/api/airdrop/eligibility", methods=["POST"])
     def check_airdrop_eligibility():
         """Check airdrop eligibility."""
@@ -1297,7 +1336,7 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
         if error:
             return error
 
-        github_username, error = string_field(data, "github_username")
+        github_username, error = github_username_field(data, "github_username")
         if error:
             return error
         wallet_address, error = string_field(data, "wallet_address")
@@ -1333,16 +1372,16 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
         if error:
             return error
 
-        github_username, error = string_field(data, "github_username")
+        github_username, error = github_username_field(data, "github_username")
         if error:
             return error
-        wallet_address, error = string_field(data, "wallet_address")
+        wallet_address, error = string_field(data, "wallet_address", max_length=128)
         if error:
             return error
-        chain, error = string_field(data, "chain")
+        chain, error = string_field(data, "chain", max_length=32)
         if error:
             return error
-        tier, error = string_field(data, "tier")
+        tier, error = string_field(data, "tier", max_length=32)
         if error:
             return error
         github_token, error = optional_string_field(data, "github_token")
@@ -1373,6 +1412,10 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
     @app.route("/api/airdrop/claim/<claim_id>", methods=["GET"])
     def get_airdrop_claim(claim_id: str):
         """Get claim status."""
+        # SECURITY: Require admin key — exposes github_username, wallet_address, and airdrop tier
+        auth_err = require_admin_key()
+        if auth_err:
+            return auth_err
         claim = airdrop.get_claim(claim_id)
         if claim:
             return jsonify({"ok": True, "claim": claim.to_dict()})
@@ -1402,7 +1445,7 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
         to_chain, error = string_field(data, "to_chain")
         if error:
             return error
-        amount_wrtc, error = finite_amount_field(data, "amount_wrtc")
+        amount_wrtc, error = bridge_amount_field(data, "amount_wrtc")
         if error:
             return error
 
@@ -1418,7 +1461,7 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
                 400,
             )
 
-        amount_uwrtc = int(amount_wrtc * 1_000_000)
+        amount_uwrtc = int(round(amount_wrtc * 1_000_000))
 
         success, message, lock = airdrop.create_bridge_lock(
             from_address, to_address, from_chain, to_chain, amount_uwrtc

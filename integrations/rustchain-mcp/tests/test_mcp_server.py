@@ -139,6 +139,16 @@ class TestRustChainMCP:
         assert "error" in result
         assert "required" in result["error"]
 
+    def test_create_initialization_options_delegates_to_app(self, server):
+        """Test stdio startup can request initialization options."""
+        server.app = MagicMock()
+        server.app.create_initialization_options.return_value = {"capabilities": {}}
+
+        result = server.create_initialization_options()
+
+        assert result == {"capabilities": {}}
+        server.app.create_initialization_options.assert_called_once_with()
+
 
 class TestResourceTemplates:
     """Tests for resource template handling."""
@@ -192,6 +202,14 @@ class TestResourceTemplates:
         data = json.loads(content)
         assert mime_type == "application/json"
         assert "balance_rtc" in data
+
+    @pytest.mark.asyncio
+    async def test_read_resource_wallet_requires_id(self, server):
+        """Test wallet resource rejects a missing miner id."""
+        with pytest.raises(ValueError) as exc_info:
+            await server._read_resource_impl("rustchain://wallet/")
+
+        assert "miner_id is required" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_read_resource_docs(self, server):

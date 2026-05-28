@@ -8,16 +8,28 @@ import json
 import hashlib
 import time
 import requests
+from numbers import Real
 from typing import Dict, List, Optional, Tuple
 from db.rustchain_database_schema import RustChainDatabase
 from rustchain_nft_badges import NFTBadgeGenerator
+
+DEFAULT_REQUEST_TIMEOUT = 10
+
 
 class BlockchainIntegration:
     """Integrates RustChain database with blockchain verification"""
     
     def __init__(self, node_url: str = "https://rustchain.org:8085", 
-                 db_path: str = "db/rustchain_miners.db"):
+                 db_path: str = "db/rustchain_miners.db",
+                 request_timeout: int | float = DEFAULT_REQUEST_TIMEOUT):
+        if (
+            isinstance(request_timeout, bool)
+            or not isinstance(request_timeout, Real)
+            or request_timeout <= 0
+        ):
+            raise ValueError("request_timeout must be a positive number")
         self.node_url = node_url
+        self.request_timeout = request_timeout
         self.db = RustChainDatabase(db_path)
         self.badge_generator = NFTBadgeGenerator()
         
@@ -252,7 +264,15 @@ class BlockchainIntegration:
         
         try:
             # Get current blockchain state
-            response = requests.get(f"{self.node_url}/api/blocks")
+            response = requests.get(
+                f"{self.node_url}/api/blocks",
+                timeout=self.request_timeout,
+            )
+            if response.status_code >= 400:
+                results['errors'].append(
+                    f"Sync error: node returned HTTP {response.status_code}"
+                )
+                return results
             data = response.json()
             blocks = data.get('blocks', [])
             

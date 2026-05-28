@@ -282,6 +282,38 @@ class TestActiveMiners:
         assert result["count"] == 1
         assert result["miners"][0]["miner"] == "m1"
 
+    @pytest.mark.asyncio
+    async def test_get_active_miners_coerces_string_limit(self, mcp_server):
+        """Test active miner listing accepts numeric string limits from MCP clients."""
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(
+            return_value={
+                "miners": [
+                    {"miner_id": "m1", "score": 300},
+                    {"miner_id": "m2", "score": 200},
+                    {"miner_id": "m3", "score": 100},
+                ]
+            }
+        )
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=AsyncContextManagerMock(mock_response))
+        mcp_server.session = mock_session
+
+        result = await mcp_server._tool_get_active_miners({"limit": "2"})
+
+        assert result["count"] == 3
+        assert result["limit"] == 2
+        assert [miner["miner_id"] for miner in result["miners"]] == ["m1", "m2"]
+
+    @pytest.mark.asyncio
+    async def test_get_active_miners_rejects_invalid_limit(self, mcp_server):
+        """Test active miner listing rejects limits that cannot slice safely."""
+        result = await mcp_server._tool_get_active_miners({"limit": -1})
+
+        assert result == {"error": "limit must be a positive integer"}
+
 
 class TestWalletBalance:
     """Tests for wallet balance tools."""

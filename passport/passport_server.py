@@ -7,12 +7,11 @@ Web interface for viewing and managing Machine Passports.
 Deployable at rustchain.org/passport/<machine_id>
 """
 
-import json
 import os
 from datetime import datetime
 from typing import Any, Dict
 
-from flask import Flask, render_template, jsonify, request, Response
+from flask import Flask, render_template, jsonify, request
 from passport_ledger import MachinePassport, PassportLedger, RepairEntry, BenchmarkSignature
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
@@ -25,6 +24,19 @@ def get_json_object() -> Dict[str, Any]:
     if not isinstance(data, dict):
         raise ValueError("JSON object required")
     return data
+
+
+def get_machine_id(data: Dict[str, Any]) -> str:
+    """Return a safe machine_id from a JSON payload."""
+    if "machine_id" not in data:
+        raise ValueError("machine_id required")
+
+    machine_id = data["machine_id"]
+    if not isinstance(machine_id, str) or not machine_id:
+        raise ValueError("machine_id must be a non-empty string")
+    if "/" in machine_id or "\\" in machine_id:
+        raise ValueError("machine_id cannot contain path separators")
+    return machine_id
 
 
 # ── Web Routes ────────────────────────────────────────────────────
@@ -80,14 +92,12 @@ def api_create():
     """Create or update a machine passport."""
     try:
         data = get_json_object()
+        machine_id = get_machine_id(data)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
-    if "machine_id" not in data:
-        return jsonify({"error": "machine_id required"}), 400
-
     # Check if exists (update) or new (create)
-    existing = ledger.get(data["machine_id"])
+    existing = ledger.get(machine_id)
     if existing:
         # Update fields
         for field in ["name", "photo_hash", "provenance", "notes", "owner_address"]:
@@ -103,7 +113,7 @@ def api_create():
         })
         passport_hash = ledger.save(passport)
 
-    return jsonify({"passport_hash": passport_hash, "machine_id": data["machine_id"]}), 201
+    return jsonify({"passport_hash": passport_hash, "machine_id": machine_id}), 201
 
 
 @app.route("/api/passport/<machine_id>/repair", methods=["POST"])

@@ -42,11 +42,14 @@ class TipState:
             try:
                 with open(self.state_file) as f:
                     data = json.load(f)
+                if not isinstance(data, dict):
+                    raise ValueError("state root must be an object")
                 # Migrate if needed
                 if data.get("version") != self.VERSION:
                     data = self._migrate(data)
+                self._validate(data)
                 return data
-            except (json.JSONDecodeError, KeyError):
+            except (json.JSONDecodeError, KeyError, ValueError):
                 pass
         return {"processed_comment_ids": [], "tip_log": [], "version": self.VERSION}
 
@@ -55,7 +58,15 @@ class TipState:
         data.setdefault("processed_comment_ids", [])
         data.setdefault("tip_log", [])
         data["version"] = self.VERSION
+        self._validate(data)
         return data
+
+    def _validate(self, data: dict[str, Any]) -> None:
+        """Reject corrupt state shapes that would break idempotency checks."""
+        if not isinstance(data.get("processed_comment_ids"), list):
+            raise ValueError("processed_comment_ids must be a list")
+        if not isinstance(data.get("tip_log"), list):
+            raise ValueError("tip_log must be a list")
 
     def save(self) -> None:
         with open(self.state_file, "w") as f:

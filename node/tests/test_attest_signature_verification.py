@@ -119,7 +119,13 @@ class TestAttestSignatureVerification(unittest.TestCase):
             "report": {"nonce": nonce, "commitment": commitment},
             "device": {"family": "x86_64", "arch": "default", "model": "test-box", "cores": 4},
             "signals": {"hostname": "test-host", "macs": []},
-            "fingerprint": {},
+            "fingerprint": {
+                "checks": {
+                    "anti_emulation": {"passed": True, "data": {"vm_indicators": []}},
+                    "clock_drift": {"passed": True, "data": {"cv": 0.05, "samples": 64}},
+                },
+                "all_passed": True,
+            },
         }
         if sig_hex is not None:
             payload["signature"] = sig_hex
@@ -239,7 +245,13 @@ class TestAttestSignatureVerification(unittest.TestCase):
             "report": {"nonce": nonce, "commitment": "deadbeef"},
             "device": {"family": "x86_64", "arch": "default", "model": "test-box", "cores": 4},
             "signals": {"hostname": "test-host", "macs": []},
-            "fingerprint": {},
+            "fingerprint": {
+                "checks": {
+                    "anti_emulation": {"passed": True, "data": {"vm_indicators": []}},
+                    "clock_drift": {"passed": True, "data": {"cv": 0.05, "samples": 64}},
+                },
+                "all_passed": True,
+            },
         }
         status, body = self._submit(mod, payload)
 

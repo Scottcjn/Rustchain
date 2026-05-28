@@ -1,6 +1,4 @@
 # SPDX-License-Identifier: MIT
-import pytest
-
 from node.consensus_probe import (
     NodeSnapshot,
     collect_snapshot,
@@ -53,6 +51,41 @@ def test_collect_snapshot_reads_expected_endpoints():
         ("https://node.example/api/stats", 4),
         ("https://node.example/api/miners", 4),
     ]
+
+
+def test_collect_snapshot_counts_enveloped_miner_total():
+    payloads = {
+        "https://node.example/health": {"ok": True, "version": "2.1.0"},
+        "https://node.example/epoch": {"enrolled_miners": 5},
+        "https://node.example/api/stats": {"total_balance": 12.5},
+        "https://node.example/api/miners": {
+            "miners": [{"id": "a"}, {"id": "b"}],
+            "pagination": {"total": 5, "limit": 2, "offset": 0, "count": 2},
+        },
+    }
+
+    def fetcher(url, timeout):
+        return payloads[url]
+
+    result = collect_snapshot("https://node.example", timeout_s=4, fetcher=fetcher)
+
+    assert result.miners_count == 5
+
+
+def test_collect_snapshot_counts_enveloped_miner_rows_without_total():
+    payloads = {
+        "https://node.example/health": {"ok": True, "version": "2.1.0"},
+        "https://node.example/epoch": {"enrolled_miners": 2},
+        "https://node.example/api/stats": {"total_balance": 12.5},
+        "https://node.example/api/miners": {"data": [{"id": "a"}, {"id": "b"}]},
+    }
+
+    def fetcher(url, timeout):
+        return payloads[url]
+
+    result = collect_snapshot("https://node.example", timeout_s=4, fetcher=fetcher)
+
+    assert result.miners_count == 2
 
 
 def test_collect_snapshot_reports_fetch_errors():
