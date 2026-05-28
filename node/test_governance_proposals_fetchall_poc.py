@@ -1,22 +1,27 @@
 # SPDX-License-Identifier: MIT
 """
-PoC: GET /governance/proposals fetches every row from governance_proposals
-with no LIMIT, including the full description column.
+PoC + regression: GET /governance/proposals must return at most 200 proposals.
 
-Each description can hold up to several kilobytes of text. With 250 active
-proposals at 10 KB each, a single unauthenticated request forces the node
-to deserialise and serialise ~2.5 MB of JSON per call. A sustained flood
-of such requests exhausts Flask worker memory and causes OOM.
+Section A (standalone SQL) documents the vulnerability in isolation:
+  - unbounded fetchall() loads all rows when no LIMIT is present
+  - LIMIT 200 caps the result set
 
-Fix: add LIMIT 200 to the SELECT so the response size is bounded
-regardless of how many proposals exist.
+Section B (Flask integration) is the regression gate:
+  - seeds 250 rows in the real app DB
+  - calls GET /governance/proposals through app.test_client()
+  - asserts the actual handler returns at most 200 proposals
+  - this test FAILS if LIMIT 200 is removed from the handler
 """
 
-import sqlite3
-import tempfile
+import importlib.util
 import os
+import sqlite3
+import sys
+import tempfile
 import unittest
 
+
+_NODE_PY = os.path.join(os.path.dirname(__file__), "rustchain_v2_integrated_v2.2.1_rip200.py")
 
 _SELECT_UNBOUNDED = """
     SELECT id, proposer_wallet, title, description, created_at, activated_at,
@@ -36,6 +41,10 @@ _SELECT_BOUNDED = """
 _PROPOSAL_COUNT = 250
 _DESCRIPTION_BYTES = 10_000   # 10 KB per proposal
 
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 def _make_db(path: str, n: int) -> None:
     conn = sqlite3.connect(path)
@@ -58,7 +67,7 @@ def _make_db(path: str, n: int) -> None:
         " (proposer_wallet, title, description, created_at, status)"
         " VALUES (?,?,?,?,?)",
         [
-            (f"RTC{'a'*40}", f"Proposal {i}", "x" * _DESCRIPTION_BYTES, 0, "active")
+            (f"RTC{'a' * 40}", f"Proposal {i}", "x" * _DESCRIPTION_BYTES, 0, "active")
             for i in range(n)
         ],
     )
@@ -66,7 +75,24 @@ def _make_db(path: str, n: int) -> None:
     conn.close()
 
 
-class TestGovernanceProposalsLimit(unittest.TestCase):
+def _load_node_module(db_path: str):
+    """
+    Import the node module with RUSTCHAIN_DB_PATH and RC_ADMIN_KEY pointing at
+    test fixtures so the import succeeds without a real node environment.
+    """
+    os.environ.setdefault("RC_ADMIN_KEY", "a" * 64)
+    os.environ["RUSTCHAIN_DB_PATH"] = db_path
+    spec = importlib.util.spec_from_file_location("rustchain_node", _NODE_PY)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+# ---------------------------------------------------------------------------
+# Section A: standalone SQL tests (vulnerability documentation)
+# ---------------------------------------------------------------------------
+
+class TestGovernanceProposalsSQLBound(unittest.TestCase):
 
     def setUp(self):
         self._tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
@@ -96,6 +122,64 @@ class TestGovernanceProposalsLimit(unittest.TestCase):
                              "Bounded query must return at most 200 proposals")
         self.assertEqual(len(rows), 200,
                          "With 250 proposals the cap should be exactly 200")
+
+
+# ---------------------------------------------------------------------------
+# Section B: Flask route integration (regression gate)
+# ---------------------------------------------------------------------------
+
+class TestGovernanceProposalsRouteLimit(unittest.TestCase):
+    """
+    Calls GET /governance/proposals through the real Flask app.test_client().
+
+    This test will fail if LIMIT 200 is removed from the governance_proposals()
+    handler in rustchain_v2_integrated_v2.2.1_rip200.py, which the standalone
+    SQL tests in Section A would not catch.
+    """
+
+    _module = None  # loaded once per process to avoid double-import
+
+    @classmethod
+    def setUpClass(cls):
+        cls._db_tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        cls._db_tmp.close()
+        _make_db(cls._db_tmp.name, _PROPOSAL_COUNT)
+        if cls._module is None:
+            TestGovernanceProposalsRouteLimit._module = _load_node_module(cls._db_tmp.name)
+
+    @classmethod
+    def tearDownClass(cls):
+        os.unlink(cls._db_tmp.name)
+
+    def test_route_caps_response_at_200_proposals(self):
+        """
+        GET /governance/proposals must return at most 200 items even when the
+        database contains more. Verifies the real handler applies LIMIT 200.
+        """
+        client = self._module.app.test_client()
+        response = client.get("/governance/proposals")
+
+        self.assertEqual(response.status_code, 200,
+                         "Route should return HTTP 200")
+        data = response.get_json()
+        self.assertTrue(data.get("ok"), "Response envelope should have ok=True")
+
+        proposals = data.get("proposals", [])
+        self.assertLessEqual(
+            len(proposals),
+            200,
+            f"Handler returned {len(proposals)} proposals; LIMIT 200 must be enforced",
+        )
+        self.assertEqual(
+            len(proposals),
+            200,
+            f"With {_PROPOSAL_COUNT} rows in DB the response should be exactly 200",
+        )
+        self.assertEqual(
+            data.get("count"),
+            len(proposals),
+            "count field in the envelope must match the actual proposals list length",
+        )
 
 
 if __name__ == "__main__":
