@@ -858,7 +858,7 @@ class UtxoDB:
                 return hashlib.sha256(b"empty").hexdigest()
 
             # Mix element count into leaf hashes to bind tree to cardinality
-            count_bytes = len(rows).to_bytes(8, 'little')
+            count_bytes = len(rows).to_bytes(8, 'big')
             hashes = []
             for row in rows:
                 leaf = {
