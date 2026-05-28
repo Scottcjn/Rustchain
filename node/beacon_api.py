@@ -45,11 +45,14 @@ def _json_object_body():
     return data, None, None
 
 
-def _required_text_field(data, field_name):
+def _required_text_field(data, field_name, max_length=0):
     value = data.get(field_name)
-    if not isinstance(value, str) or not value.strip():
+    if not value or not isinstance(value, str):
         return None, jsonify({'error': f'Missing {field_name}'}), 400
-    return value.strip(), None, None
+    value = value.strip()
+    if max_length > 0 and len(value) > max_length:
+        return None, jsonify({'error': f'{field_name} too long (max {max_length})'}), 400
+    return value, None, None
 
 
 def _positive_float_field(data, field_name):
@@ -956,7 +959,7 @@ def claim_bounty(bounty_id):
         data, body_error, status = _json_object_body()
         if body_error:
             return body_error, status
-        agent_id, field_error, status = _required_text_field(data, 'agent_id')
+        agent_id, field_error, status = _required_text_field(data, 'agent_id', max_length=128)
         if field_error:
             return field_error, status
 
@@ -965,8 +968,8 @@ def claim_bounty(bounty_id):
             "UPDATE beacon_bounties SET state = 'claimed', claimant_agent = ?, updated_at = ? WHERE id = ?",
             (agent_id, int(time.time()), bounty_id)
         )
-        db.commit()
 
+        db = get_db()
         if db.total_changes == 0:
             return jsonify({'error': 'Bounty not found'}), 404
 
@@ -991,7 +994,7 @@ def complete_bounty(bounty_id):
         data, body_error, status = _json_object_body()
         if body_error:
             return body_error, status
-        agent_id, field_error, status = _required_text_field(data, 'agent_id')
+        agent_id, field_error, status = _required_text_field(data, 'agent_id', max_length=128)
         if field_error:
             return field_error, status
 
@@ -1107,10 +1110,10 @@ def chat():
         data, body_error, status = _json_object_body()
         if body_error:
             return body_error, status
-        agent_id, field_error, status = _required_text_field(data, 'agent_id')
+        agent_id, field_error, status = _required_text_field(data, 'agent_id', max_length=128)
         if field_error:
             return field_error, status
-        message, field_error, status = _required_text_field(data, 'message')
+        message, field_error, status = _required_text_field(data, 'message', max_length=4096)
         if field_error:
             return field_error, status
 
