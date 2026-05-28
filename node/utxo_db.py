@@ -1199,10 +1199,16 @@ class UtxoDB:
 
             # 2. Txs referencing spent boxes as data_inputs
             #    (not stored in utxo_mempool_inputs, so parse tx_data_json)
-            all_mempool = conn.execute(
+            #
+            # FIX(Ivan-LB): use cursor iteration instead of fetchall().
+            # .fetchall() loads all tx_data_json into memory at once.
+            # With MAX_POOL_SIZE=10_000 and MAX_TX_DATA_JSON_BYTES=262_144,
+            # a full mempool could spike up to 2.56 GB — an OOM DoS vector
+            # that fires on EVERY apply_transaction() commit. Streaming rows
+            # one at a time keeps memory proportional to one row, not the pool.
+            for mp_row in conn.execute(
                 "SELECT tx_id, tx_data_json FROM utxo_mempool"
-            ).fetchall()
-            for mp_row in all_mempool:
+            ):
                 if mp_row["tx_id"] in stale_tx_ids:
                     continue  # already flagged
                 try:
