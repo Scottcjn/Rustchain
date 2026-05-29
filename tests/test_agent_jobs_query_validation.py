@@ -130,6 +130,14 @@ def _balance(db_path: Path, wallet: str) -> int:
     return row[0] if row else 0
 
 
+def _balance_with_connect(connect, db_path: Path, wallet: str) -> int:
+    with connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT amount_i64 FROM balances WHERE miner_id = ?", (wallet,)
+        ).fetchone()
+    return row[0] if row else 0
+
+
 def _create_claimed_job(client):
     post = client.post(
         "/agent/jobs",
@@ -146,6 +154,19 @@ def _create_claimed_job(client):
     )
     assert claim.status_code == 200
     return job_id
+
+
+def _create_open_job(client):
+    post = client.post(
+        "/agent/jobs",
+        json=_valid_job_payload(
+            title="Build open expiry refund",
+            description="Build a complete open expiry refund regression test.",
+            ttl_seconds=3600,
+        ),
+    )
+    assert post.status_code == 201
+    return post.get_json()["job_id"]
 
 
 def _expire_job(db_path: Path, job_id: str):
@@ -215,6 +236,113 @@ def test_worker_cannot_deliver_after_claimed_job_expires(tmp_path):
     assert _balance(db_path, "worker-1") == 0
     assert _balance(db_path, "founder_community") == 0
     assert _balance(db_path, "agent_escrow") == 0
+
+
+def test_claim_returns_state_race_if_expiry_refund_loses_status_race(
+    tmp_path, monkeypatch
+):
+    app, db_path = _make_funded_client(tmp_path)
+    client = app.test_client()
+    job_id = _create_open_job(client)
+    _expire_job(db_path, job_id)
+
+    real_connect = sqlite3.connect
+
+    class RacingCursor:
+        def __init__(self, cursor):
+            self._cursor = cursor
+
+        def execute(self, sql, params=()):
+            normalized = " ".join(sql.split())
+            if normalized.startswith("UPDATE agent_jobs SET status = ?"):
+                with real_connect(db_path) as conn:
+                    conn.execute(
+                        "UPDATE agent_jobs SET status = ? WHERE job_id = ?",
+                        ("cancelled", job_id),
+                    )
+            return self._cursor.execute(sql, params)
+
+        def __getattr__(self, name):
+            return getattr(self._cursor, name)
+
+    class RacingConnection:
+        def __init__(self, conn):
+            self._conn = conn
+
+        def cursor(self, *args, **kwargs):
+            return RacingCursor(self._conn.cursor(*args, **kwargs))
+
+        def __getattr__(self, name):
+            return getattr(self._conn, name)
+
+    def racing_connect(*args, **kwargs):
+        return RacingConnection(real_connect(*args, **kwargs))
+
+    monkeypatch.setattr(rip302_agent_economy.sqlite3, "connect", racing_connect)
+
+    response = client.post(
+        f"/agent/jobs/{job_id}/claim", json={"worker_wallet": "worker-1"}
+    )
+
+    assert response.status_code == 409
+    assert response.get_json()["code"] == "STATE_RACE"
+    assert _balance_with_connect(real_connect, db_path, "poster-1") == 950_000
+    assert _balance_with_connect(real_connect, db_path, "agent_escrow") == 1_050_000
+
+
+def test_deliver_returns_state_race_if_expiry_refund_loses_status_race(
+    tmp_path, monkeypatch
+):
+    app, db_path = _make_funded_client(tmp_path)
+    client = app.test_client()
+    job_id = _create_claimed_job(client)
+    _expire_job(db_path, job_id)
+
+    real_connect = sqlite3.connect
+
+    class RacingCursor:
+        def __init__(self, cursor):
+            self._cursor = cursor
+
+        def execute(self, sql, params=()):
+            normalized = " ".join(sql.split())
+            if normalized.startswith("UPDATE agent_jobs SET status = ?"):
+                with real_connect(db_path) as conn:
+                    conn.execute(
+                        "UPDATE agent_jobs SET status = ? WHERE job_id = ?",
+                        ("delivered", job_id),
+                    )
+            return self._cursor.execute(sql, params)
+
+        def __getattr__(self, name):
+            return getattr(self._cursor, name)
+
+    class RacingConnection:
+        def __init__(self, conn):
+            self._conn = conn
+
+        def cursor(self, *args, **kwargs):
+            return RacingCursor(self._conn.cursor(*args, **kwargs))
+
+        def __getattr__(self, name):
+            return getattr(self._conn, name)
+
+    def racing_connect(*args, **kwargs):
+        return RacingConnection(real_connect(*args, **kwargs))
+
+    monkeypatch.setattr(rip302_agent_economy.sqlite3, "connect", racing_connect)
+
+    response = client.post(
+        f"/agent/jobs/{job_id}/deliver",
+        json={"worker_wallet": "worker-1", "result_summary": "late work"},
+    )
+
+    assert response.status_code == 409
+    assert response.get_json()["code"] == "STATE_RACE"
+    assert _balance_with_connect(real_connect, db_path, "poster-1") == 950_000
+    assert _balance_with_connect(real_connect, db_path, "worker-1") == 0
+    assert _balance_with_connect(real_connect, db_path, "founder_community") == 0
+    assert _balance_with_connect(real_connect, db_path, "agent_escrow") == 1_050_000
 
 
 def test_stale_deliver_cannot_resurrect_refunded_expired_job(

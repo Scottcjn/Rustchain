@@ -467,9 +467,14 @@ def register_agent_economy(app: Flask, db_path: str):
 
             now = int(time.time())
             if now > j["expires_at"]:
-                _expire_refundable_job(c, j, now)
-                conn.commit()
-                return jsonify({"error": "Job has expired"}), 410
+                if _expire_refundable_job(c, j, now):
+                    conn.commit()
+                    return jsonify({"error": "Job has expired"}), 410
+                conn.rollback()
+                return jsonify({
+                    "error": "Job state changed under concurrent request — please retry",
+                    "code": "STATE_RACE",
+                }), 409
 
             # Claim it
             c.execute("""
@@ -536,9 +541,14 @@ def register_agent_economy(app: Flask, db_path: str):
 
             now = int(time.time())
             if now > j["expires_at"]:
-                _expire_refundable_job(c, j, now)
-                conn.commit()
-                return jsonify({"error": "Job has expired"}), 410
+                if _expire_refundable_job(c, j, now):
+                    conn.commit()
+                    return jsonify({"error": "Job has expired"}), 410
+                conn.rollback()
+                return jsonify({
+                    "error": "Job state changed under concurrent request — please retry",
+                    "code": "STATE_RACE",
+                }), 409
 
             c.execute("""
                 UPDATE agent_jobs
