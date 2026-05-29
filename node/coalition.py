@@ -39,6 +39,7 @@ log = logging.getLogger("rip0278_coalition")
 
 # Signature window: reject requests with timestamps older than this
 _SIGNATURE_MAX_AGE_SECONDS = 300  # 5 minutes
+_TEST_UNSIGNED_MINER_ENV = "RUSTCHAIN_TEST_ALLOW_UNSIGNED_COALITION_MINERS"
 
 
 def _parse_bounded_int_arg(name: str, default: int, minimum: int, maximum: int):
@@ -64,17 +65,14 @@ def _verify_miner_signature(miner_id: str, action: str, data: dict) -> bool:
 
     The signed payload is: f"{action}:{miner_id}:{timestamp}"
 
-    For test convenience, if *miner_id* is not a valid hex-encoded public key
-    (e.g. plain names like ``"alice"``), cryptographic verification is skipped
-    and the request is accepted.  Production miner IDs are always 64-char hex
-    strings (32-byte ed25519 verify keys) so this fallback only affects tests.
+    Tests may opt into readable fake miner names by setting
+    RUSTCHAIN_TEST_ALLOW_UNSIGNED_COALITION_MINERS=1. Production defaults to
+    fail-closed so arbitrary non-hex miner IDs cannot bypass signature auth.
     """
-    # If miner_id is not a valid hex string (e.g. test miner like "alice"),
-    # skip cryptographic verification entirely.
     try:
         bytes.fromhex(miner_id)
     except ValueError:
-        return True
+        return os.environ.get(_TEST_UNSIGNED_MINER_ENV, "").strip().lower() in {"1", "true", "yes"}
 
     signature_value = data.get("signature", "")
     if not isinstance(signature_value, str):

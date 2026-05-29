@@ -77,6 +77,7 @@ def tmp_db():
 @pytest.fixture
 def app(tmp_db, monkeypatch):
     monkeypatch.setenv("RC_ADMIN_KEY", ADMIN_KEY)
+    monkeypatch.setenv("RUSTCHAIN_TEST_ALLOW_UNSIGNED_COALITION_MINERS", "1")
     app = Flask(__name__)
     bp = create_coalition_blueprint(tmp_db)
     app.register_blueprint(bp)
@@ -270,6 +271,25 @@ def test_hex_miner_signature_field_type_returns_unauthorized(client):
     assert "invalid or missing signature" in res.get_json()["error"]
 
 
+def test_non_hex_miner_ids_require_signature_unless_test_bypass_enabled(tmp_db, monkeypatch):
+    """Production config must not accept arbitrary unsigned named miner IDs."""
+    monkeypatch.setenv("RC_ADMIN_KEY", ADMIN_KEY)
+    monkeypatch.delenv("RUSTCHAIN_TEST_ALLOW_UNSIGNED_COALITION_MINERS", raising=False)
+    app = Flask(__name__)
+    app.register_blueprint(create_coalition_blueprint(tmp_db))
+    app.config["TESTING"] = True
+    client = app.test_client()
+
+    res = client.post("/api/coalition/create", json={
+        "miner_id": "alice",
+        "name": "Unsigned Coalition",
+        "description": "Should require miner identity proof.",
+    })
+
+    assert res.status_code == 401
+    assert "invalid or missing signature" in res.get_json()["error"]
+
+
 def test_create_coalition_creator_is_auto_member(client, rich_miner):
     """Creator should automatically be a member."""
     res = client.post("/api/coalition/create", json={
@@ -280,7 +300,7 @@ def test_create_coalition_creator_is_auto_member(client, rich_miner):
     assert res.status_code == 201
     cid = res.get_json()["coalition_id"]
 
-    res = client.get(f"/api/coalition/{cid}")
+    res = client.get(f"/api/coalition/{cid}", headers=ADMIN_HEADERS)
     data = res.get_json()
     members = data["members"]
     assert len(members) == 1
@@ -527,7 +547,7 @@ def test_change_vote(client, test_coalition, tmp_db, rich_miner, poor_miner, med
     assert res.status_code == 200
 
     # Check proposal tally
-    res = client.get(f"/api/coalition/{test_coalition}/proposals")
+    res = client.get(f"/api/coalition/{test_coalition}/proposals", headers=ADMIN_HEADERS)
     data = res.get_json()
     prop = data["proposals"][0]
     assert prop["votes_for"] == 0.0
@@ -759,7 +779,7 @@ def test_flamebound_review_fails_closed_without_admin_key(client, monkeypatch, t
 
 def test_list_coalitions_includes_flamebound(client):
     """List endpoint returns coalitions including Flamebound."""
-    res = client.get("/api/coalition/list")
+    res = client.get("/api/coalition/list", headers=ADMIN_HEADERS)
     assert res.status_code == 200
     data = res.get_json()
     assert data["count"] >= 1
@@ -776,7 +796,7 @@ def test_list_coalitions_with_status_filter(client, rich_miner):
         "description": "For filtering test.",
     })
 
-    res = client.get("/api/coalition/list?status=active")
+    res = client.get("/api/coalition/list?status=active", headers=ADMIN_HEADERS)
     assert res.status_code == 200
     data = res.get_json()
     for c in data["coalitions"]:
@@ -785,22 +805,22 @@ def test_list_coalitions_with_status_filter(client, rich_miner):
 
 def test_list_coalitions_rejects_non_integer_pagination(client):
     """Malformed pagination returns 400 instead of an internal error."""
-    res = client.get("/api/coalition/list?limit=not-an-int")
+    res = client.get("/api/coalition/list?limit=not-an-int", headers=ADMIN_HEADERS)
     assert res.status_code == 400
     assert res.get_json() == {"error": "limit must be an integer"}
 
-    res = client.get("/api/coalition/list?offset=not-an-int")
+    res = client.get("/api/coalition/list?offset=not-an-int", headers=ADMIN_HEADERS)
     assert res.status_code == 400
     assert res.get_json() == {"error": "offset must be an integer"}
 
 
 def test_list_coalitions_rejects_negative_pagination(client):
     """Negative pagination values are invalid."""
-    res = client.get("/api/coalition/list?limit=-5")
+    res = client.get("/api/coalition/list?limit=-5", headers=ADMIN_HEADERS)
     assert res.status_code == 400
     assert res.get_json() == {"error": "limit must be at least 1"}
 
-    res = client.get("/api/coalition/list?offset=-10")
+    res = client.get("/api/coalition/list?offset=-10", headers=ADMIN_HEADERS)
     assert res.status_code == 400
     assert res.get_json() == {"error": "offset must be at least 0"}
 
@@ -813,7 +833,7 @@ def test_get_coalition_details(client, test_coalition, rich_miner, poor_miner):
         "coalition_id": test_coalition,
     })
 
-    res = client.get(f"/api/coalition/{test_coalition}")
+    res = client.get(f"/api/coalition/{test_coalition}", headers=ADMIN_HEADERS)
     assert res.status_code == 200
     data = res.get_json()
     assert data["name"] == "Test Coalition"
@@ -823,7 +843,7 @@ def test_get_coalition_details(client, test_coalition, rich_miner, poor_miner):
 
 def test_get_nonexistent_coalition(client):
     """Get non-existent coalition returns 404."""
-    res = client.get("/api/coalition/99999")
+    res = client.get("/api/coalition/99999", headers=ADMIN_HEADERS)
     assert res.status_code == 404
 
 
@@ -841,7 +861,7 @@ def test_list_coalition_proposals(client, test_coalition, rich_miner, poor_miner
         "description": "Testing.",
     })
 
-    res = client.get(f"/api/coalition/{test_coalition}/proposals")
+    res = client.get(f"/api/coalition/{test_coalition}/proposals", headers=ADMIN_HEADERS)
     assert res.status_code == 200
     data = res.get_json()
     assert data["coalition_id"] == test_coalition
@@ -858,7 +878,7 @@ def test_list_proposals_status_filter(client, test_coalition, rich_miner):
         "description": "Testing.",
     })
 
-    res = client.get(f"/api/coalition/{test_coalition}/proposals?status=active")
+    res = client.get(f"/api/coalition/{test_coalition}/proposals?status=active", headers=ADMIN_HEADERS)
     assert res.status_code == 200
     data = res.get_json()
     assert data["count"] == 1
@@ -866,29 +886,29 @@ def test_list_proposals_status_filter(client, test_coalition, rich_miner):
 
 def test_list_proposals_rejects_non_integer_pagination(client, test_coalition):
     """Proposal listing validates pagination before querying SQLite."""
-    res = client.get(f"/api/coalition/{test_coalition}/proposals?limit=NaN")
+    res = client.get(f"/api/coalition/{test_coalition}/proposals?limit=NaN", headers=ADMIN_HEADERS)
     assert res.status_code == 400
     assert res.get_json() == {"error": "limit must be an integer"}
 
-    res = client.get(f"/api/coalition/{test_coalition}/proposals?offset=NaN")
+    res = client.get(f"/api/coalition/{test_coalition}/proposals?offset=NaN", headers=ADMIN_HEADERS)
     assert res.status_code == 400
     assert res.get_json() == {"error": "offset must be an integer"}
 
 
 def test_list_proposals_rejects_negative_pagination(client, test_coalition):
     """Proposal listing rejects negative pagination before querying SQLite."""
-    res = client.get(f"/api/coalition/{test_coalition}/proposals?limit=-1")
+    res = client.get(f"/api/coalition/{test_coalition}/proposals?limit=-1", headers=ADMIN_HEADERS)
     assert res.status_code == 400
     assert res.get_json() == {"error": "limit must be at least 1"}
 
-    res = client.get(f"/api/coalition/{test_coalition}/proposals?offset=-1")
+    res = client.get(f"/api/coalition/{test_coalition}/proposals?offset=-1", headers=ADMIN_HEADERS)
     assert res.status_code == 400
     assert res.get_json() == {"error": "offset must be at least 0"}
 
 
 def test_list_proposals_nonexistent_coalition(client, rich_miner):
     """List proposals for non-existent coalition returns 404."""
-    res = client.get("/api/coalition/99999/proposals")
+    res = client.get("/api/coalition/99999/proposals", headers=ADMIN_HEADERS)
     assert res.status_code == 404
 
 
@@ -898,7 +918,7 @@ def test_list_proposals_nonexistent_coalition(client, rich_miner):
 
 def test_coalition_stats(client):
     """Stats endpoint returns aggregated data."""
-    res = client.get("/api/coalition/stats")
+    res = client.get("/api/coalition/stats", headers=ADMIN_HEADERS)
     assert res.status_code == 200
     data = res.get_json()
     assert "coalition_counts" in data
@@ -913,7 +933,7 @@ def test_coalition_stats(client):
 def test_stats_reflect_created_coalition(client, rich_miner):
     """Stats reflect newly created coalitions."""
     # Initial stats
-    res1 = client.get("/api/coalition/stats")
+    res1 = client.get("/api/coalition/stats", headers=ADMIN_HEADERS)
     initial = res1.get_json()["coalition_counts"]["coalitions_active"]
 
     client.post("/api/coalition/create", json={
@@ -922,7 +942,7 @@ def test_stats_reflect_created_coalition(client, rich_miner):
         "description": "For stats verification.",
     })
 
-    res2 = client.get("/api/coalition/stats")
+    res2 = client.get("/api/coalition/stats", headers=ADMIN_HEADERS)
     final = res2.get_json()["coalition_counts"]["coalitions_active"]
     assert final == initial + 1
 
@@ -961,7 +981,7 @@ def test_proposal_tally_accuracy(client, test_coalition, tmp_db, rich_miner, poo
     })
 
     # Check proposal
-    res = client.get(f"/api/coalition/{test_coalition}/proposals")
+    res = client.get(f"/api/coalition/{test_coalition}/proposals", headers=ADMIN_HEADERS)
     data = res.get_json()
     prop = data["proposals"][0]
     # 200 + 1 + 75 = 276
