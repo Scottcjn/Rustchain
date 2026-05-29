@@ -150,6 +150,12 @@ class TestDuplicateDetection(unittest.TestCase):
                 entropy_score REAL
             )
         """)
+        self.conn.execute("""
+            CREATE TABLE epoch_enroll (
+                epoch INTEGER NOT NULL,
+                miner_pk TEXT NOT NULL
+            )
+        """)
         
         self.conn.execute("""
             CREATE TABLE miner_fingerprint_history (
@@ -157,13 +163,6 @@ class TestDuplicateDetection(unittest.TestCase):
                 miner TEXT NOT NULL,
                 ts INTEGER NOT NULL,
                 profile_json TEXT NOT NULL
-            )
-        """)
-
-        self.conn.execute("""
-            CREATE TABLE epoch_enroll (
-                epoch INTEGER NOT NULL,
-                miner_pk TEXT NOT NULL
             )
         """)
     
@@ -266,6 +265,14 @@ class TestRepresentativeSelection(unittest.TestCase):
                 entropy_score REAL
             )
         """)
+        self.conn.execute("""
+            CREATE TABLE epoch_enroll (
+                epoch INTEGER,
+                miner_pk TEXT,
+                weight REAL,
+                PRIMARY KEY (epoch, miner_pk)
+            )
+        """)
     
     def test_select_highest_entropy(self):
         """Should select miner with highest entropy score."""
@@ -319,6 +326,37 @@ class TestRepresentativeSelection(unittest.TestCase):
         
         selected = select_representative_miner(self.conn, miners)
         self.assertEqual(selected, "miner-a", "Should select alphabetically first on full tie")
+
+    def test_select_highest_enrolled_weight_before_entropy(self):
+        """Epoch weight should beat a fresher low-weight alias on the same machine."""
+        epoch = 175
+        rows = [
+            ("t40-thinkpad-banias", 1.9, 1728000000, 0.40),
+            ("alias-low", 0.000000001, 1728001000, 0.95),
+        ]
+
+        for miner_id, weight, ts_ok, entropy in rows:
+            self.conn.execute("""
+                INSERT INTO miner_attest_recent (miner, device_arch, ts_ok, entropy_score)
+                VALUES (?, ?, ?, ?)
+            """, (miner_id, "pentium_m_banias", ts_ok, entropy))
+            self.conn.execute(
+                "INSERT INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)",
+                (epoch, miner_id, weight),
+            )
+
+        self.conn.commit()
+
+        selected = select_representative_miner(
+            self.conn,
+            [row[0] for row in rows],
+            epoch=epoch,
+        )
+        self.assertEqual(
+            selected,
+            "t40-thinkpad-banias",
+            "Representative selection should preserve the highest enrolled weight for the machine",
+        )
 
 
 class TestAntiDoubleMiningRewards(unittest.TestCase):

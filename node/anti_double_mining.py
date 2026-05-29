@@ -288,15 +288,17 @@ def log_duplicate_detection(duplicates: List[MachineIdentity], epoch: int):
 
 def select_representative_miner(
     conn: sqlite3.Connection,
-    miner_ids: List[str]
+    miner_ids: List[str],
+    epoch: Optional[int] = None,
 ) -> str:
     """
     Select one representative miner ID from a group of miner IDs belonging to the same machine.
     
     Selection criteria (in order of priority):
-    1. Highest entropy score (most authentic attestation)
-    2. Most recent attestation timestamp
-    3. First miner ID alphabetically (deterministic tie-breaker)
+    1. Highest enrolled epoch weight (when epoch is provided)
+    2. Highest entropy score (most authentic attestation)
+    3. Most recent attestation timestamp
+    4. First miner ID alphabetically (deterministic tie-breaker)
     
     This ensures consistent selection across re-runs.
     """
@@ -305,7 +307,21 @@ def select_representative_miner(
     
     cursor = conn.cursor()
     
-    # Get attestation details for all miner IDs
+    # Prefer the highest enrolled weight for this epoch so a low-weight alias on
+    # the same physical machine cannot displace the canonical rewarded miner.
+    if epoch is not None:
+        epoch_weights = _get_epoch_enrolled_weights(conn, epoch)
+        if epoch_weights:
+            best_weight = max(epoch_weights.get(miner_id, 0.0) for miner_id in miner_ids)
+            weighted_ids = [
+                miner_id for miner_id in miner_ids
+                if epoch_weights.get(miner_id, 0.0) == best_weight
+            ]
+            if len(weighted_ids) == 1:
+                return weighted_ids[0]
+            miner_ids = weighted_ids
+
+    # Get attestation details for the remaining candidate miner IDs
     placeholders = ",".join("?" * len(miner_ids))
     cursor.execute(f"""
         SELECT miner, entropy_score, ts_ok
@@ -502,7 +518,7 @@ def calculate_anti_double_mining_rewards(
         for identity_hash, miner_ids in miner_groups.items():
             if len(miner_ids) > 1:
                 # Multiple miners for same machine - select one
-                rep = select_representative_miner(conn, miner_ids)
+                rep = select_representative_miner(conn, miner_ids, epoch=epoch)
                 representative_map[identity_hash] = rep
                 
                 # Track skipped miners for telemetry
@@ -794,7 +810,7 @@ def _calculate_anti_double_mining_rewards_conn(
 
     for identity_hash, miner_ids in miner_groups.items():
         if len(miner_ids) > 1:
-            rep = select_representative_miner(conn, miner_ids)
+            rep = select_representative_miner(conn, miner_ids, epoch=epoch)
             representative_map[identity_hash] = rep
             for mid in miner_ids:
                 if mid != rep:
