@@ -6732,8 +6732,12 @@ def api_miners():
     epoch = current_slot() // 144
     try:
         c = sqlite3.connect(DB_PATH)
-        enrolled = c.execute("SELECT COUNT(*) FROM epoch_enroll WHERE epoch = ?", (epoch,)).fetchone()[0]
-        c.close()
+        try:
+            cur = c.cursor()
+            row = cur.execute("SELECT COUNT(*) FROM epoch_enroll WHERE epoch = ?", (epoch,)).fetchone()
+        finally:
+            c.close()
+        enrolled = int(row[0]) if row else 0
     except Exception:
         enrolled = 0
 

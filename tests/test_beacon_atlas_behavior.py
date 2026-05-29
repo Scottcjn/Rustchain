@@ -37,6 +37,7 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         cls.app = Flask(__name__)
         cls.app.config['TESTING'] = True
         cls.app.config['DB_PATH'] = cls.test_db_path
+        os.environ['RC_ADMIN_KEY'] = 'test-admin-key'
         
         # Import blueprint routes manually to avoid teardown_appcontext issue
         from node.beacon_api import DB_PATH, init_beacon_tables
@@ -282,7 +283,7 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
             conn.commit()
         
         # Get bounties list
-        response = self.client.get('/api/bounties')
+        response = self.client.get('/api/bounties', headers={'X-Admin-Key': os.environ['RC_ADMIN_KEY']})
         self.assertEqual(response.status_code, 200)
         bounties = json.loads(response.data)
         self.assertEqual(len(bounties), 1)
@@ -298,7 +299,7 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         self.assertEqual(claim_response.status_code, 200)
         
         # Verify claimed state
-        response2 = self.client.get('/api/bounties')
+        response2 = self.client.get('/api/bounties', headers={'X-Admin-Key': os.environ['RC_ADMIN_KEY']})
         bounties2 = json.loads(response2.data)
         # Bounty should no longer appear in open list (state changed to claimed)
 
@@ -346,7 +347,7 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
             conn.commit()
         
         # Get all reputations
-        response = self.client.get('/api/reputation')
+        response = self.client.get('/api/reputation', headers={'X-Admin-Key': os.environ['RC_ADMIN_KEY']})
         self.assertEqual(response.status_code, 200)
         reps = json.loads(response.data)
         self.assertEqual(len(reps), 1)
@@ -354,13 +355,13 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         self.assertEqual(reps[0]['score'], 50)
         
         # Get single agent reputation
-        response2 = self.client.get('/api/reputation/bcn_reputation_test')
+        response2 = self.client.get('/api/reputation/bcn_reputation_test', headers={'X-Admin-Key': os.environ['RC_ADMIN_KEY']})
         self.assertEqual(response2.status_code, 200)
         rep = json.loads(response2.data)
         self.assertEqual(rep['bounties_completed'], 2)
         
         # Non-existent agent returns 404
-        response3 = self.client.get('/api/reputation/bcn_nonexistent')
+        response3 = self.client.get('/api/reputation/bcn_nonexistent', headers={'X-Admin-Key': os.environ['RC_ADMIN_KEY']})
         self.assertEqual(response3.status_code, 404)
 
     def test_chat_message_storage(self):
@@ -576,7 +577,7 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         self.assertEqual(complete_response.status_code, 200)
         
         # Verify reputation was created/updated
-        rep_response = self.client.get('/api/reputation/bcn_completer')
+        rep_response = self.client.get('/api/reputation/bcn_completer', headers={'X-Admin-Key': os.environ['RC_ADMIN_KEY']})
         self.assertEqual(rep_response.status_code, 200)
         rep = json.loads(rep_response.data)
         self.assertEqual(rep['bounties_completed'], 1)
