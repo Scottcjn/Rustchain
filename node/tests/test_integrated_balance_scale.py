@@ -1,8 +1,11 @@
 import importlib.util
+from contextlib import closing
+import gc
 import os
 import sqlite3
 import sys
 import tempfile
+import types
 import unittest
 
 
@@ -31,6 +34,11 @@ class _NoopMetric:
 
 
 class TestIntegratedBalanceScale(unittest.TestCase):
+    @staticmethod
+    def _cleanup_tempdir(tmpdir):
+        gc.collect()
+        tmpdir.cleanup()
+
     @classmethod
     def setUpClass(cls):
         cls._import_tmp = tempfile.TemporaryDirectory()
@@ -42,16 +50,15 @@ class TestIntegratedBalanceScale(unittest.TestCase):
         if NODE_DIR not in sys.path:
             sys.path.insert(0, NODE_DIR)
 
-        import prometheus_client
+        prev_prometheus = sys.modules.get("prometheus_client")
+        fake_prometheus = types.ModuleType("prometheus_client")
+        fake_prometheus.Counter = _NoopMetric
+        fake_prometheus.Gauge = _NoopMetric
+        fake_prometheus.Histogram = _NoopMetric
+        fake_prometheus.generate_latest = lambda *args, **kwargs: b""
+        fake_prometheus.CONTENT_TYPE_LATEST = "text/plain"
+        sys.modules["prometheus_client"] = fake_prometheus
 
-        prev_metrics = (
-            prometheus_client.Counter,
-            prometheus_client.Gauge,
-            prometheus_client.Histogram,
-        )
-        prometheus_client.Counter = _NoopMetric
-        prometheus_client.Gauge = _NoopMetric
-        prometheus_client.Histogram = _NoopMetric
         spec = importlib.util.spec_from_file_location(
             "rustchain_integrated_balance_scale_test",
             MODULE_PATH,
@@ -60,11 +67,10 @@ class TestIntegratedBalanceScale(unittest.TestCase):
         try:
             spec.loader.exec_module(cls.mod)
         finally:
-            (
-                prometheus_client.Counter,
-                prometheus_client.Gauge,
-                prometheus_client.Histogram,
-            ) = prev_metrics
+            if prev_prometheus is None:
+                sys.modules.pop("prometheus_client", None)
+            else:
+                sys.modules["prometheus_client"] = prev_prometheus
 
     @classmethod
     def tearDownClass(cls):
@@ -76,7 +82,9 @@ class TestIntegratedBalanceScale(unittest.TestCase):
             os.environ.pop("RC_ADMIN_KEY", None)
         else:
             os.environ["RC_ADMIN_KEY"] = cls._prev_admin_key
-        cls._import_tmp.cleanup()
+        sys.modules.pop("rustchain_integrated_balance_scale_test", None)
+        cls.mod = None
+        cls._cleanup_tempdir(cls._import_tmp)
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -92,10 +100,10 @@ class TestIntegratedBalanceScale(unittest.TestCase):
         self.mod.DB_PATH = self._prev_module_db
         self.mod.UTXO_DUAL_WRITE = self._prev_utxo_dual_write
         self.mod.UtxoDB = self._prev_utxo_db
-        self._tmp.cleanup()
+        self._cleanup_tempdir(self._tmp)
 
     def _init_db(self):
-        with sqlite3.connect(self.db_path) as db:
+        with closing(sqlite3.connect(self.db_path)) as db:
             db.executescript(
                 """
                 CREATE TABLE epoch_state (
@@ -136,13 +144,30 @@ class TestIntegratedBalanceScale(unittest.TestCase):
                 "INSERT INTO balances (miner_id, amount_i64, balance_rtc) VALUES (?, 0, 0)",
                 ("miner-scale",),
             )
+            db.commit()
 
     def _stored_balance(self):
-        with sqlite3.connect(self.db_path) as db:
+        with closing(sqlite3.connect(self.db_path)) as db:
             return db.execute(
                 "SELECT amount_i64, balance_rtc FROM balances WHERE miner_id = ?",
                 ("miner-scale",),
             ).fetchone()
+
+    def _add_epoch_miner(self, miner_id, weight):
+        with closing(sqlite3.connect(self.db_path)) as db:
+            db.execute(
+                "INSERT INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)",
+                (7, miner_id, weight),
+            )
+            db.execute(
+                "INSERT INTO miner_attest_recent (miner, fingerprint_checks_json) VALUES (?, ?)",
+                (miner_id, "{}"),
+            )
+            db.execute(
+                "INSERT INTO balances (miner_id, amount_i64, balance_rtc) VALUES (?, 0, 0)",
+                (miner_id,),
+            )
+            db.commit()
 
     def test_finalize_epoch_writes_account_rewards_in_micro_rtc(self):
         self.mod.finalize_epoch(7, 0.01, b"")
@@ -175,6 +200,60 @@ class TestIntegratedBalanceScale(unittest.TestCase):
         self.assertEqual(calls[0][1]["outputs"][0]["value_nrtc"], 144_000_000)
         self.assertEqual(calls[0][1]["outputs"][0]["value_nrtc"], int(1.44 * self.mod.UTXO_UNIT))
         self.assertTrue(calls[0][3])
+
+    def test_finalize_epoch_passes_row_connection_to_utxo_db(self):
+        calls = []
+
+        class RowCheckingUtxoDB:
+            def __init__(self, db_path):
+                self.db_path = db_path
+
+            def apply_transaction(self, tx, height, conn=None):
+                calls.append(conn.row_factory if conn is not None else None)
+                return conn is not None and conn.row_factory is sqlite3.Row
+
+        self.mod.UTXO_DUAL_WRITE = True
+        self.mod.UtxoDB = RowCheckingUtxoDB
+
+        self.mod.finalize_epoch(7, 0.01, b"")
+
+        self.assertEqual(calls, [sqlite3.Row])
+
+    def test_finalize_epoch_batches_multi_miner_utxo_rewards(self):
+        self._add_epoch_miner("miner-scale-2", 1.0)
+        calls = []
+        seen_heights = set()
+
+        class HeightCheckingUtxoDB:
+            def __init__(self, db_path):
+                self.db_path = db_path
+
+            def apply_transaction(self, tx, height, conn=None):
+                if height in seen_heights:
+                    return False
+                seen_heights.add(height)
+                calls.append((tx, height, conn is not None))
+                return True
+
+        self.mod.UTXO_DUAL_WRITE = True
+        self.mod.UtxoDB = HeightCheckingUtxoDB
+
+        self.mod.finalize_epoch(7, 0.01, b"")
+
+        self.assertEqual(len(calls), 1)
+        tx, height, had_conn = calls[0]
+        self.assertTrue(had_conn)
+        self.assertEqual(height, 7 * self.mod.EPOCH_SLOTS)
+        self.assertEqual(tx["tx_type"], "mining_reward")
+        self.assertEqual(tx["inputs"], [])
+        self.assertEqual(
+            sorted(out["address"] for out in tx["outputs"]),
+            ["miner-scale", "miner-scale-2"],
+        )
+        self.assertEqual(
+            sorted(out["value_nrtc"] for out in tx["outputs"]),
+            [72_000_000, 72_000_000],
+        )
 
 
 if __name__ == "__main__":
