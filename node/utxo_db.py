@@ -525,6 +525,75 @@ class UtxoDB:
 
         return True
 
+    def _mempool_claim_matches_tx(self, conn: sqlite3.Connection,
+                                  tx_id: str,
+                                  tx_type: str,
+                                  inputs: List[dict],
+                                  outputs: List[dict],
+                                  data_inputs: List[str],
+                                  fee: int,
+                                  timestamp: int,
+                                  timestamp_explicit: bool) -> bool:
+        """Return True only when a mempool claim is for this exact tx body."""
+        row = conn.execute(
+            "SELECT tx_data_json FROM utxo_mempool WHERE tx_id = ?",
+            (tx_id,),
+        ).fetchone()
+        if not row:
+            return False
+
+        try:
+            mempool_tx = json.loads(row["tx_data_json"])
+        except (TypeError, json.JSONDecodeError):
+            return False
+
+        mempool_tx_type = self._normalize_tx_type(mempool_tx)
+        mempool_inputs = self._normalize_inputs(mempool_tx.get("inputs", []))
+        mempool_outputs = self._normalize_outputs(mempool_tx.get("outputs", []))
+        mempool_data_inputs = self._normalize_data_inputs(
+            mempool_tx.get("data_inputs", [])
+        )
+        mempool_fee = mempool_tx.get("fee_nrtc", 0)
+        mempool_timestamp = mempool_tx.get("timestamp")
+
+        if "timestamp" not in mempool_tx:
+            if timestamp_explicit:
+                return False
+            mempool_timestamp = timestamp
+
+        if (
+            mempool_tx_type is None
+            or mempool_inputs is None
+            or mempool_outputs is None
+            or mempool_data_inputs is None
+            or not _is_nonnegative_int64(mempool_fee)
+            or not _is_nonnegative_int64(mempool_timestamp)
+        ):
+            return False
+
+        def input_ids(items: List[dict]) -> List[str]:
+            return sorted(item["box_id"] for item in items)
+
+        def output_intent(items: List[dict]) -> List[dict]:
+            return [
+                {
+                    "address": item["address"],
+                    "value_nrtc": item["value_nrtc"],
+                    "tokens_json": item.get("tokens_json", "[]"),
+                    "registers_json": item.get("registers_json", "{}"),
+                }
+                for item in items
+            ]
+
+        return (
+            mempool_tx_type == tx_type
+            and input_ids(mempool_inputs) == input_ids(inputs)
+            and sorted(mempool_data_inputs) == sorted(data_inputs)
+            and output_intent(mempool_outputs) == output_intent(outputs)
+            and mempool_fee == fee
+            and mempool_timestamp == timestamp
+        )
+
     # -- transaction application ---------------------------------------------
 
     def apply_transaction(self, tx: dict, block_height: int,
@@ -625,19 +694,31 @@ class UtxoDB:
             input_box_ids = [i['box_id'] for i in inputs]
             if len(input_box_ids) != len(set(input_box_ids)):
                 return abort()
-            claimed_by_tx_id = tx.get('tx_id') if isinstance(tx.get('tx_id'), str) else None
-            for box_id in input_box_ids:
-                claim = conn.execute(
-                    "SELECT tx_id FROM utxo_mempool_inputs WHERE box_id = ?",
-                    (box_id,),
-                ).fetchone()
-                if claim and claim['tx_id'] != claimed_by_tx_id:
-                    return abort()
             data_inputs = self._normalize_data_inputs(data_inputs)
             if data_inputs is None:
                 return abort()
             if set(input_box_ids) & set(data_inputs):
                 return abort()
+
+            claimed_by_tx_id = tx.get('tx_id') if isinstance(tx.get('tx_id'), str) else None
+            verified_claim_ids = set()
+            for box_id in input_box_ids:
+                claim = conn.execute(
+                    "SELECT tx_id FROM utxo_mempool_inputs WHERE box_id = ?",
+                    (box_id,),
+                ).fetchone()
+                if not claim:
+                    continue
+                claim_tx_id = claim['tx_id']
+                if claim_tx_id != claimed_by_tx_id:
+                    return abort()
+                if claim_tx_id not in verified_claim_ids:
+                    if not self._mempool_claim_matches_tx(
+                        conn, claim_tx_id, tx_type, inputs, outputs,
+                        data_inputs, fee, ts, "timestamp" in tx
+                    ):
+                        return abort()
+                    verified_claim_ids.add(claim_tx_id)
 
             # -- validate inputs exist and are unspent -----------------------
             input_total = 0
