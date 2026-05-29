@@ -177,7 +177,30 @@ except ImportError as _e:
     HAVE_REPLAY_DEFENSE = False
     print(f"[ISSUE #2276] Replay defense module not available: {_e}")
 
+from werkzeug.exceptions import RequestEntityTooLarge
+
 app = Flask(__name__)
+app.config['MAX_CONTENT_LENGTH'] = 1 * 1024 * 1024  # 1 MB — reject oversized request bodies before they reach route handlers
+
+
+@app.before_request
+def _enforce_content_length():
+    """Raise 413 before any route handler runs, so broad except-Exception wrappers cannot swallow it."""
+    max_len = app.config.get('MAX_CONTENT_LENGTH')
+    if max_len and request.content_length and request.content_length > max_len:
+        raise RequestEntityTooLarge()
+
+
+@app.errorhandler(413)
+@app.errorhandler(RequestEntityTooLarge)
+def _handle_request_too_large(_e):
+    return jsonify({
+        "ok": False,
+        "code": "REQUEST_TOO_LARGE",
+        "error": "request body exceeds the 1 MB limit",
+    }), 413
+
+
 # Supports running from repo `node/` dir or a flat deployment directory (e.g. /root/rustchain).
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(_BASE_DIR, "..")) if os.path.basename(_BASE_DIR) == "node" else _BASE_DIR
