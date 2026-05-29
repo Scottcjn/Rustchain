@@ -399,7 +399,7 @@ def beacon_join():
 
         try:
             # Validate it's proper hex
-            bytes.fromhex(pubkey_clean)
+            pubkey_bytes = bytes.fromhex(pubkey_clean)
         except ValueError:
             return jsonify({'error': 'Invalid pubkey_hex: must be valid hexadecimal string'}), 400
 
@@ -410,6 +410,8 @@ def beacon_join():
             return jsonify({'error': 'Invalid name: must be a string'}), 400
         if coinbase_address is not None and not isinstance(coinbase_address, str):
             return jsonify({'error': 'Invalid coinbase_address: must be a string'}), 400
+        if len(pubkey_bytes) != 32:
+            return jsonify({'error': 'Invalid pubkey_hex: must be 32 bytes'}), 400
 
         # Validate coinbase_address if provided (should be 0x-prefixed, 40 hex chars)
         if coinbase_address:
