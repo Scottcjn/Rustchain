@@ -6294,6 +6294,16 @@ def governance_proposals():
 
 @app.route('/governance/proposal/<int:proposal_id>', methods=['GET'])
 def governance_proposal_detail(proposal_id: int):
+    _VOTES_MAX_LIMIT = 500
+    try:
+        votes_limit = max(1, min(int(request.args.get("votes_limit", 200)), _VOTES_MAX_LIMIT))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "votes_limit must be an integer"}), 400
+    try:
+        votes_offset = max(0, int(request.args.get("votes_offset", 0)))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "votes_offset must be an integer"}), 400
+
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
@@ -6313,14 +6323,20 @@ def governance_proposal_detail(proposal_id: int):
 
         status = _refresh_proposal_status(c, row)
 
+        total_votes = c.execute(
+            "SELECT COUNT(*) FROM governance_votes WHERE proposal_id = ?",
+            (proposal_id,),
+        ).fetchone()[0]
+
         votes = c.execute(
             """
             SELECT voter_wallet, vote, weight, multiplier, base_balance_rtc, created_at
             FROM governance_votes
             WHERE proposal_id = ?
             ORDER BY created_at DESC
+            LIMIT ? OFFSET ?
             """,
-            (proposal_id,),
+            (proposal_id, votes_limit, votes_offset),
         ).fetchall()
         conn.commit()
 
@@ -6345,6 +6361,9 @@ def governance_proposal_detail(proposal_id: int):
             "result": "passed" if status == "passed" else ("failed" if status == "failed" else "pending"),
         },
         "votes": [dict(v) for v in votes],
+        "votes_total": total_votes,
+        "votes_limit": votes_limit,
+        "votes_offset": votes_offset,
     })
 
 
