@@ -6153,10 +6153,12 @@ def governance_propose():
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         _ensure_governance_tables(c)
+        conn.execute("BEGIN IMMEDIATE")
 
         balance_i64 = _balance_i64_for_wallet(c, proposer_wallet)
         balance_rtc = balance_i64 / 1_000_000.0
         if balance_rtc <= GOVERNANCE_MIN_PROPOSER_BALANCE_RTC:
+            conn.rollback()
             return jsonify({
                 "ok": False,
                 "error": "insufficient_balance_to_propose",
@@ -6165,6 +6167,14 @@ def governance_propose():
             }), 403
 
         now = int(time.time())
+        if not _reserve_governance_nonce(c, proposer_wallet, nonce, now):
+            conn.rollback()
+            return jsonify({
+                "ok": False,
+                "error": "nonce_already_used",
+                "nonce": nonce,
+            }), 409
+
         ends_at = now + GOVERNANCE_ACTIVE_SECONDS
         c.execute(
             """
@@ -9156,6 +9166,25 @@ def _ensure_governance_tables(c: sqlite3.Cursor) -> None:
             FOREIGN KEY (proposal_id) REFERENCES governance_proposals(id)
         )
     """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS governance_nonces (
+            wallet TEXT NOT NULL,
+            nonce TEXT NOT NULL,
+            used_at INTEGER NOT NULL,
+            PRIMARY KEY (wallet, nonce)
+        )
+    """)
+
+
+def _reserve_governance_nonce(c: sqlite3.Cursor, wallet: str, nonce: str, used_at: int) -> bool:
+    c.execute(
+        """
+        INSERT OR IGNORE INTO governance_nonces (wallet, nonce, used_at)
+        VALUES (?, ?, ?)
+        """,
+        (wallet, nonce, used_at),
+    )
+    return c.rowcount == 1
 
 
 def _get_active_miner_antiquity_multiplier(c: sqlite3.Cursor, wallet: str):
