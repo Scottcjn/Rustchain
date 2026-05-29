@@ -103,6 +103,18 @@ def _load_node_module(db_path: str):
     return module
 
 
+_SHARED_NODE_MODULE = None
+
+
+def _get_or_load_module(db_path: str):
+    # Load once per process; re-importing registers Prometheus counters twice
+    # and raises ValueError: Duplicated timeseries in CollectorRegistry.
+    global _SHARED_NODE_MODULE
+    if _SHARED_NODE_MODULE is None:
+        _SHARED_NODE_MODULE = _load_node_module(db_path)
+    return _SHARED_NODE_MODULE
+
+
 # ---------------------------------------------------------------------------
 # Section A: standalone SQL tests (vulnerability documentation)
 # ---------------------------------------------------------------------------
@@ -165,7 +177,7 @@ class TestGovernanceProposalsRouteLimit(unittest.TestCase):
         cls._db_tmp.close()
         _make_db(cls._db_tmp.name, _PROPOSAL_COUNT)
         if cls._module is None:
-            TestGovernanceProposalsRouteLimit._module = _load_node_module(cls._db_tmp.name)
+            TestGovernanceProposalsRouteLimit._module = _get_or_load_module(cls._db_tmp.name)
 
     @classmethod
     def tearDownClass(cls):
@@ -265,7 +277,7 @@ class TestGovernanceProposeDescriptionCap(unittest.TestCase):
         cls._db_tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         cls._db_tmp.close()
         if cls._module is None:
-            TestGovernanceProposeDescriptionCap._module = _load_node_module(cls._db_tmp.name)
+            TestGovernanceProposeDescriptionCap._module = _get_or_load_module(cls._db_tmp.name)
 
     @classmethod
     def tearDownClass(cls):
