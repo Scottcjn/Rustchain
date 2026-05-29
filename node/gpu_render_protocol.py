@@ -32,6 +32,7 @@ import hmac
 import math
 import secrets
 from functools import wraps
+from flask import request
 
 logger = logging.getLogger("gpu_render_protocol")
 
@@ -44,6 +45,17 @@ def _normalize_job_type(job_type):
         return None
     normalized = job_type.strip().lower()
     return normalized if normalized in VALID_JOB_TYPES else None
+
+
+def _admin_key_required():
+    """Return (None, None) on success or (error_dict, status_code) on failure."""
+    admin_key = os.environ.get("RC_ADMIN_KEY", "")
+    if not admin_key:
+        return {'error': 'RC_ADMIN_KEY not configured — endpoint disabled'}, 503
+    provided_key = request.headers.get("X-Admin-Key", "")
+    if not hmac.compare_digest(provided_key, admin_key):
+        return {'error': 'Unauthorized — admin key required'}, 401
+    return None, None
 
 
 # ---------------------------------------------------------------------------
@@ -574,6 +586,9 @@ def register_routes(app):
 
     @app.route("/gpu/nodes", methods=["GET"])
     def gpu_nodes():
+        err, status = _admin_key_required()
+        if err is not None:
+            return jsonify(err), status
         job_type = request.args.get("job_type")
         device_arch = request.args.get("device_arch")
         nodes = protocol.list_gpu_nodes(job_type, device_arch)
@@ -667,12 +682,18 @@ def register_routes(app):
 
     @app.route("/render/escrow/<job_id>", methods=["GET"])
     def get_escrow(job_id):
+        err, status = _admin_key_required()
+        if err is not None:
+            return jsonify(err), status
         result = protocol.get_escrow(job_id)
         status_code = 200 if "error" not in result else 404
         return jsonify(result), status_code
 
     @app.route("/render/pricing", methods=["GET"])
     def get_pricing():
+        err, status = _admin_key_required()
+        if err is not None:
+            return jsonify(err), status
         job_type = request.args.get("job_type")
         result = protocol.get_fair_market_rates(job_type)
         return jsonify(result)
