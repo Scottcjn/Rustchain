@@ -17,6 +17,7 @@ Rules:
 """
 
 import argparse
+from decimal import Decimal, InvalidOperation
 import hashlib
 import json
 import sqlite3
@@ -31,6 +32,24 @@ GENESIS_TX_PREFIX = "rustchain_genesis:"
 GENESIS_HEIGHT = 0
 ACCOUNT_UNIT = 1_000_000  # Account-model amount_i64 is micro-RTC.
 ACCOUNT_TO_UTXO_SCALE = UNIT // ACCOUNT_UNIT
+
+
+def _legacy_balance_rtc_to_nrtc(value) -> int:
+    """Convert legacy balance_rtc text/REAL to exact nanoRTC units."""
+    try:
+        amount = Decimal(str(value))
+    except (InvalidOperation, ValueError) as exc:
+        raise ValueError(f"invalid legacy balance_rtc value: {value!r}") from exc
+    if not amount.is_finite() or amount <= 0:
+        raise ValueError(f"invalid legacy balance_rtc value: {value!r}")
+    nrtc = amount * UNIT
+    integral = nrtc.to_integral_value()
+    if nrtc != integral:
+        raise ValueError(
+            "legacy balance_rtc has more than 8 decimal places: "
+            f"{value!r}"
+        )
+    return int(integral)
 
 
 def _is_locked_error(exc: Exception) -> bool:
@@ -78,13 +97,15 @@ def load_account_balances(db_path: str, conn=None) -> list:
         # Try alternate column names
         rows = conn.execute(
             """SELECT miner_pk AS miner_id,
-                      CAST(balance_rtc * ? AS INTEGER) AS amount_nrtc
+                      CAST(balance_rtc AS TEXT) AS balance_rtc
                FROM balances
                WHERE balance_rtc > 0
-               ORDER BY miner_pk ASC""",
-            (UNIT,),
+               ORDER BY miner_pk ASC"""
         ).fetchall()
-        return [(r['miner_id'], int(r['amount_nrtc'])) for r in rows]
+        return [
+            (r['miner_id'], _legacy_balance_rtc_to_nrtc(r['balance_rtc']))
+            for r in rows
+        ]
     finally:
         if own:
             conn.close()
