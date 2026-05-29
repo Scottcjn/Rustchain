@@ -833,7 +833,7 @@ class TestUtxoDB(unittest.TestCase):
         self.assertEqual(candidates, [])
         self.assertFalse(self.db.mempool_check_double_spend(alice_box['box_id']))
 
-    def test_mempool_block_candidates_skip_internal_data_input_conflicts(self):
+    def test_mempool_block_candidates_skip_cross_transaction_data_input_conflicts(self):
         """A candidate set must be valid when applied sequentially.
 
         One pending transaction can spend a box that another pending
