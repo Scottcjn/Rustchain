@@ -287,9 +287,11 @@ def test_gpu_protocol_pricing_check_rejects_boolean_price(tmp_path, monkeypatch)
 
 
 def test_gpu_protocol_pricing_check_normalizes_job_type(tmp_path, monkeypatch):
+    monkeypatch.setenv("RC_ADMIN_KEY", "test-admin-key")
     client = _route_client(tmp_path, monkeypatch)
     client.post(
         "/gpu/attest",
+        headers={"X-Admin-Key": "test-admin-key"},
         json={
             "miner_id": "miner-1",
             "gpu_model": "RTX 4090",
@@ -307,6 +309,68 @@ def test_gpu_protocol_pricing_check_normalizes_job_type(tmp_path, monkeypatch):
     assert response.status_code == 200
     assert response.get_json()["manipulated"] is True
     assert response.get_json()["reason"] == "price_too_high"
+
+
+def test_gpu_protocol_attest_requires_admin_key_before_write(tmp_path, monkeypatch):
+    monkeypatch.setenv("RC_ADMIN_KEY", "test-admin-key")
+    client = _route_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/gpu/attest",
+        json={
+            "miner_id": "miner-1",
+            "gpu_model": "RTX 4090",
+            "vram_gb": 24,
+            "device_arch": "nvidia_gpu",
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.get_json() == {"error": "Unauthorized - admin key required"}
+    nodes = client.get("/gpu/nodes").get_json()
+    assert nodes["count"] == 0
+
+
+def test_gpu_protocol_attest_fails_closed_without_admin_key(tmp_path, monkeypatch):
+    monkeypatch.delenv("RC_ADMIN_KEY", raising=False)
+    client = _route_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/gpu/attest",
+        headers={"X-Admin-Key": "test-admin-key"},
+        json={
+            "miner_id": "miner-1",
+            "gpu_model": "RTX 4090",
+            "vram_gb": 24,
+            "device_arch": "nvidia_gpu",
+        },
+    )
+
+    assert response.status_code == 503
+    assert response.get_json() == {"error": "RC_ADMIN_KEY not configured"}
+    nodes = client.get("/gpu/nodes").get_json()
+    assert nodes["count"] == 0
+
+
+def test_gpu_protocol_attest_accepts_api_key_header(tmp_path, monkeypatch):
+    monkeypatch.setenv("RC_ADMIN_KEY", "test-admin-key")
+    client = _route_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/gpu/attest",
+        headers={"X-API-Key": "test-admin-key"},
+        json={
+            "miner_id": "miner-1",
+            "gpu_model": "RTX 4090",
+            "vram_gb": 24,
+            "device_arch": "nvidia_gpu",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["status"] == "attested"
+    nodes = client.get("/gpu/nodes").get_json()
+    assert nodes["count"] == 1
 
 
 if __name__ == "__main__":

@@ -542,11 +542,23 @@ def register_routes(app):
         data[name] = value
         return None
 
+    def _require_admin_key():
+        expected = os.environ.get("RC_ADMIN_KEY", "").strip()
+        if not expected:
+            return jsonify({"error": "RC_ADMIN_KEY not configured"}), 503
+        provided = (request.headers.get("X-Admin-Key") or request.headers.get("X-API-Key") or "").strip()
+        if not provided or not hmac.compare_digest(provided, expected):
+            return jsonify({"error": "Unauthorized - admin key required"}), 401
+        return None
+
     @app.route("/gpu/attest", methods=["POST"])
     def gpu_attest():
         data, error_response = _json_object_body()
         if error_response is not None:
             return error_response
+        auth_error = _require_admin_key()
+        if auth_error is not None:
+            return auth_error
         data = dict(data)
         miner_id, error_response = _string_field(data, "miner_id")
         if error_response is not None:
