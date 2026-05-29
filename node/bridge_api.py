@@ -268,7 +268,16 @@ def validate_chain_address_format(chain: str, address: str) -> Tuple[bool, str]:
             return False, "Invalid Base address length"
         if not all(char in "0123456789abcdefABCDEF" for char in address[2:]):
             return False, "Invalid Base address hex"
-    
+
+    elif chain == "ethereum":
+        # Ethereum mainnet addresses — same EIP-55 format as Base
+        if not address.startswith("0x"):
+            return False, "Ethereum addresses must start with '0x'"
+        if len(address) != 42:
+            return False, "Invalid Ethereum address length"
+        if not all(char in "0123456789abcdefABCDEF" for char in address[2:]):
+            return False, "Invalid Ethereum address hex"
+
     return True, ""
 
 
