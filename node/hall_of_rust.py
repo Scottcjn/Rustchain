@@ -170,6 +170,11 @@ def estimate_manufacture_year(model, arch):
 @hall_bp.route('/hall/induct', methods=['POST'])
 def induct_machine():
     """Automatically induct a machine into the Hall of Rust on first attestation."""
+    # SECURITY: Require admin key — without this, anyone can forge Hall of Rust entries
+    # by posting arbitrary hardware fingerprints, polluting the memorial registry.
+    err = _require_admin()
+    if err:
+        return err
     data, error_response = _json_object_or_empty()
     if error_response:
         return error_response
