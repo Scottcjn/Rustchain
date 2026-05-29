@@ -35,6 +35,20 @@ from datetime import datetime
 from pathlib import Path
 import argparse
 
+# ── RIP-PoA hardware fingerprint module ──
+# Optional import — if absent the miner still runs, but the server enrolls
+# it at VM-tier weight (1e-9) for not submitting fingerprint data. This was
+# previously dropped in a refactor and produced silent earning regressions
+# for every v3.1.0/v3.1.1-bundled install. Restored 2026-05-28 for v3.1.2.
+try:
+    from fingerprint_checks import validate_all_checks
+    FINGERPRINT_AVAILABLE = True
+    _FP_IMPORT_ERROR = ""
+except Exception as e:
+    FINGERPRINT_AVAILABLE = False
+    _FP_IMPORT_ERROR = str(e)
+    validate_all_checks = None
+
 # ── Ed25519 signing (GPT-5.4 audit finding #2) ──
 # Optional: if miner_crypto.py + PyNaCl are available, sign attestations
 # with Ed25519 over the canonical JSON of the full payload. Server-side
@@ -464,6 +478,22 @@ class RustChainMiner:
                 "hostname": self.hw_info["hostname"]
             }
         }
+
+        # ── RIP-PoA hardware fingerprint attestation ──
+        # Server gates reward weight on this block: miners that omit it are
+        # enrolled at VM-tier weight (1e-9). Real hardware passes all six
+        # checks. ROM check disabled — this is modern x86, not retro.
+        # MUST populate fingerprint BEFORE signing so the Ed25519 signature
+        # below covers the canonical JSON including this block.
+        if FINGERPRINT_AVAILABLE:
+            try:
+                fp_passed, fp_checks = validate_all_checks(include_rom_check=False)
+                attestation["fingerprint"] = {
+                    "all_passed": fp_passed,
+                    "checks":     fp_checks,
+                }
+            except Exception:
+                pass
 
         # Attach PoW proof if present — server ignores this field if absent,
         # so existing attestation behaviour is fully preserved for non-Zephyr miners.
