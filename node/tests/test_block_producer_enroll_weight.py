@@ -6,6 +6,7 @@ epoch_enroll table, not just local device heuristics.
 Regression test for https://github.com/Scottcjn/Rustchain/issues/6463
 """
 
+import contextlib
 import json
 import os
 import sqlite3
@@ -60,7 +61,7 @@ def _make_db(tmpdir, attested_miners, enroll_weights, epoch=0):
     now_ts = int(time.time())
     epoch_for_ts = (now_ts - GENESIS_TIMESTAMP) // BLOCK_TIME // 144
 
-    with sqlite3.connect(db_path) as conn:
+    with contextlib.closing(sqlite3.connect(db_path)) as conn:
         conn.execute("""
             CREATE TABLE miner_attest_recent (
                 miner TEXT PRIMARY KEY,
@@ -209,7 +210,7 @@ class TestEnrollWeightGate:
             db_path = os.path.join(tmpdir, "test.db")
             now_ts = int(time.time())
 
-            with sqlite3.connect(db_path) as conn:
+            with contextlib.closing(sqlite3.connect(db_path)) as conn:
                 conn.execute("""
                     CREATE TABLE miner_attest_recent (
                         miner TEXT PRIMARY KEY,
