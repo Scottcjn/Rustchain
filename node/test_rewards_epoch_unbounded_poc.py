@@ -20,13 +20,23 @@ Section B — verify the endpoint returns at most `limit` rows when the DB
             contains far more.
 """
 
+import gc
+import importlib
 import os
 import sqlite3
+import sys
 import tempfile
+import unittest
 
 import pytest
 
 UNIT = 1_000_000
+
+_NODE_FILE = os.path.join(
+    os.path.dirname(__file__), "rustchain_v2_integrated_v2.2.1_rip200.py"
+)
+_MODULE_NAME = "rustchain_node_rewards_epoch_test"
+_TEST_EPOCH = 7
 
 
 def _make_epoch_db(n_miners: int, epoch: int = 1) -> str:
@@ -141,3 +151,131 @@ def test_rewards_epoch_empty_epoch_ok():
         assert rows == [], f"Expected empty list, got {rows}"
     finally:
         os.unlink(db_path)
+
+
+# ===========================================================================
+# Section C: Flask integration — real route returns bounded results
+# ===========================================================================
+
+
+def _seed_epoch(db_path: str, epoch: int, n_miners: int) -> None:
+    """Seed epoch_rewards; call before or after app init (uses IF NOT EXISTS)."""
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS epoch_rewards (miner_id TEXT, epoch INTEGER, share_i64 INTEGER)"
+        )
+        for i in range(n_miners):
+            conn.execute(
+                "INSERT OR IGNORE INTO epoch_rewards (miner_id, epoch, share_i64) VALUES (?,?,?)",
+                (f"RTC{'a' * 3}{i:037d}", epoch, UNIT * (i + 1)),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _load_app(db_path: str):
+    """Import the real Flask app with RUSTCHAIN_DB_PATH pointing at db_path."""
+    node_dir = os.path.dirname(os.path.abspath(_NODE_FILE))
+    if node_dir not in sys.path:
+        sys.path.insert(0, node_dir)
+    os.environ["RUSTCHAIN_DB_PATH"] = db_path
+    os.environ.setdefault("RC_ADMIN_KEY", "test-admin-key-not-real-padded-to-32ch")
+    sys.modules.pop(_MODULE_NAME, None)
+    spec = importlib.util.spec_from_file_location(_MODULE_NAME, _NODE_FILE)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[_MODULE_NAME] = mod
+    spec.loader.exec_module(mod)
+    return mod.app, mod
+
+
+class TestRewardsEpochFlaskRoute(unittest.TestCase):
+    """
+    Calls GET /rewards/epoch/<epoch> through the real Flask app.test_client().
+    These tests fail if the LIMIT/OFFSET or the 1000-row cap are removed from
+    api_rewards_epoch() in rustchain_v2_integrated_v2.2.1_rip200.py.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls._tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        cls._tmp.close()
+        _seed_epoch(cls._tmp.name, _TEST_EPOCH, n_miners=500)
+        cls.flask_app, cls._mod = _load_app(cls._tmp.name)
+        cls.flask_app.config["TESTING"] = True
+
+    @classmethod
+    def tearDownClass(cls):
+        sys.modules.pop(_MODULE_NAME, None)
+        cls.flask_app = None
+        cls._mod = None
+        gc.collect()
+        gc.collect()
+        try:
+            os.unlink(cls._tmp.name)
+        except OSError:
+            pass
+
+    def test_response_structure(self):
+        """GET /rewards/epoch/<epoch> must return epoch, limit, offset and rewards."""
+        with self.flask_app.test_client() as c:
+            rv = c.get(f"/rewards/epoch/{_TEST_EPOCH}?limit=10")
+        self.assertEqual(rv.status_code, 200)
+        data = rv.get_json()
+        self.assertEqual(data.get("epoch"), _TEST_EPOCH)
+        self.assertIn("rewards", data)
+        self.assertIn("limit", data)
+        self.assertIn("offset", data)
+
+    def test_default_limit_bounds_response(self):
+        """Default call must return at most 200 rows even with 500 in the DB."""
+        with self.flask_app.test_client() as c:
+            rv = c.get(f"/rewards/epoch/{_TEST_EPOCH}")
+        data = rv.get_json()
+        self.assertLessEqual(
+            len(data.get("rewards", [])), 200,
+            "Default response must not exceed 200 rows regardless of DB size",
+        )
+
+    def test_explicit_limit_is_respected(self):
+        """limit=10 must return at most 10 reward entries."""
+        with self.flask_app.test_client() as c:
+            rv = c.get(f"/rewards/epoch/{_TEST_EPOCH}?limit=10")
+        data = rv.get_json()
+        self.assertLessEqual(len(data.get("rewards", [])), 10)
+
+    def test_limit_capped_at_1000(self):
+        """limit=9999 must be clamped to 1000."""
+        with self.flask_app.test_client() as c:
+            rv = c.get(f"/rewards/epoch/{_TEST_EPOCH}?limit=9999")
+        data = rv.get_json()
+        self.assertLessEqual(data.get("limit", 9999), 1000)
+        self.assertLessEqual(len(data.get("rewards", [])), 1000)
+
+    def test_offset_pages_through_results(self):
+        """offset=250 with limit=10 must return a non-overlapping page."""
+        with self.flask_app.test_client() as c:
+            rv1 = c.get(f"/rewards/epoch/{_TEST_EPOCH}?limit=10&offset=0")
+            rv2 = c.get(f"/rewards/epoch/{_TEST_EPOCH}?limit=10&offset=250")
+        ids1 = {r["miner_id"] for r in rv1.get_json().get("rewards", [])}
+        ids2 = {r["miner_id"] for r in rv2.get_json().get("rewards", [])}
+        self.assertTrue(ids1.isdisjoint(ids2), "Pages must not overlap")
+
+    def test_empty_epoch_returns_empty_list(self):
+        """An epoch with no rewards must return an empty rewards list, not an error."""
+        with self.flask_app.test_client() as c:
+            rv = c.get(f"/rewards/epoch/9999?limit=10")
+        self.assertEqual(rv.status_code, 200)
+        data = rv.get_json()
+        self.assertEqual(data.get("rewards", []), [])
+
+    def test_invalid_limit_returns_400(self):
+        """Non-integer limit must return 400."""
+        with self.flask_app.test_client() as c:
+            rv = c.get(f"/rewards/epoch/{_TEST_EPOCH}?limit=abc")
+        self.assertEqual(rv.status_code, 400)
+
+
+if __name__ == "__main__":
+    unittest.main()
