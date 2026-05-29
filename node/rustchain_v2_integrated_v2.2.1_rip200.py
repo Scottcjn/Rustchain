@@ -6106,9 +6106,48 @@ def governance_propose():
     proposer_wallet = str(data.get('wallet', '')).strip()
     title = str(data.get('title', '')).strip()
     description = str(data.get('description', '')).strip()
+    nonce = str(data.get('nonce', '')).strip()
+
+    # SECURITY: Validate signature/public_key field types before coercion
+    _raw_sig    = data.get('signature')
+    _raw_pubkey = data.get('public_key')
+    if _raw_sig is not None and not isinstance(_raw_sig, str):
+        return jsonify({"ok": False, "error": "INVALID_SIGNATURE_TYPE",
+                        "message": "Field 'signature' must be a string"}), 400
+    if _raw_pubkey is not None and not isinstance(_raw_pubkey, str):
+        return jsonify({"ok": False, "error": "INVALID_PUBLIC_KEY_TYPE",
+                        "message": "Field 'public_key' must be a string"}), 400
+    signature  = str(_raw_sig    or '').strip()
+    public_key = str(_raw_pubkey or '').strip()
 
     if not proposer_wallet or not title or not description:
         return jsonify({"ok": False, "error": "wallet, title and description are required"}), 400
+
+    if not all([nonce, signature, public_key]):
+        return jsonify({
+            "ok": False,
+            "error": "nonce, signature, public_key are required to authenticate the proposer",
+        }), 400
+
+    # Verify the proposer controls the wallet they are proposing from
+    try:
+        expected_wallet = address_from_pubkey(public_key)
+    except (ValueError, TypeError):
+        return jsonify({"ok": False, "error": "invalid_public_key",
+                        "message": "public_key is not valid hex"}), 400
+    if proposer_wallet != expected_wallet:
+        return jsonify({"ok": False, "error": "wallet_does_not_match_public_key",
+                        "expected": expected_wallet, "got": proposer_wallet}), 400
+
+    propose_message = json.dumps({
+        "description": description,
+        "nonce": nonce,
+        "title": title,
+        "wallet": proposer_wallet,
+    }, sort_keys=True, separators=(",", ":")).encode()
+
+    if not verify_rtc_signature(public_key, propose_message, signature):
+        return jsonify({"ok": False, "error": "invalid_signature"}), 401
 
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
