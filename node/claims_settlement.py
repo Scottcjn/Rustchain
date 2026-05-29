@@ -99,29 +99,34 @@ def get_pending_claims(
         return []
 
 
+_VERIFYING_CLAIMS_LIMIT = 500
+
+
 def get_verifying_claims(
     db_path: str,
     older_than_seconds: int = 300
 ) -> List[Dict[str, Any]]:
     """
     Get claims stuck in 'verifying' status for too long
-    
+
     These should be auto-approved or flagged for manual review.
+    Returns at most _VERIFYING_CLAIMS_LIMIT rows to prevent OOM on large tables.
     """
     threshold = int(time.time()) - older_than_seconds
-    
+
     try:
         with sqlite3.connect(db_path) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            
+
             cursor.execute("""
                 SELECT * FROM claims
                 WHERE status = 'verifying'
                 AND submitted_at < ?
                 ORDER BY submitted_at ASC
-            """, (threshold,))
-            
+                LIMIT ?
+            """, (threshold, _VERIFYING_CLAIMS_LIMIT))
+
             claims = []
             for row in cursor.fetchall():
                 claims.append({
@@ -132,7 +137,7 @@ def get_verifying_claims(
                     "reward_urtc": row["reward_urtc"],
                     "submitted_at": row["submitted_at"]
                 })
-            
+
             return claims
     except sqlite3.Error as e:
         print(f"[SETTLEMENT] Error getting verifying claims: {e}")
