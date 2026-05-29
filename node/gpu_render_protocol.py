@@ -488,7 +488,7 @@ class GPURenderProtocol:
 # Flask route registration (integrates with existing RustChain node)
 # ---------------------------------------------------------------------------
 
-def register_routes(app):
+def register_routes(app, admin_key: str = ""):
     """Register GPU Render Protocol routes with a Flask app."""
     from flask import jsonify, request
 
@@ -542,11 +542,22 @@ def register_routes(app):
         data[name] = value
         return None
 
+    def _require_admin_key():
+        if not admin_key:
+            return jsonify({"error": "Admin key not configured - attest endpoint disabled"}), 503
+        provided = request.headers.get("X-Admin-Key") or request.headers.get("X-API-Key") or ""
+        if not hmac.compare_digest(provided, admin_key):
+            return jsonify({"error": "Unauthorized - admin key required for GPU attestation"}), 401
+        return None
+
     @app.route("/gpu/attest", methods=["POST"])
     def gpu_attest():
         data, error_response = _json_object_body()
         if error_response is not None:
             return error_response
+        auth_error = _require_admin_key()
+        if auth_error is not None:
+            return auth_error
         data = dict(data)
         miner_id, error_response = _string_field(data, "miner_id")
         if error_response is not None:
