@@ -50,6 +50,7 @@ MAX_UTXO_METADATA_BYTES = 8_192
 MAX_MEMPOOL_TX_ID_BYTES = 128
 MAX_TX_AGE_SECONDS = 3_600  # 1 hour mempool expiry
 MAX_TX_DATA_JSON_BYTES = 262_144  # 256KB max serialized tx size
+MAX_MEMPOOL_CANDIDATE_SCAN_FACTOR = 4
 MAX_SQLITE_INT64 = 2**63 - 1
 P2PK_PREFIX = b'\x00\x08'   # Pay-to-Public-Key proposition prefix
 SUPPORTED_TX_TYPES = {'transfer', 'mining_reward'}
@@ -1247,12 +1248,17 @@ class UtxoDB:
         conn = self._conn()
         try:
             now = int(time.time())
+            scan_limit = min(
+                MAX_POOL_SIZE,
+                max_count * MAX_MEMPOOL_CANDIDATE_SCAN_FACTOR,
+            )
             rows = conn.execute(
                 """SELECT tx_id, tx_data_json FROM utxo_mempool
                    WHERE expires_at > ?
                    ORDER BY fee_nrtc DESC
+                   LIMIT ?
                 """,
-                (now,),
+                (now, scan_limit),
             ).fetchall()
             candidates = []
             stale_tx_ids = []
