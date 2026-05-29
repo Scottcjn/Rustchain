@@ -4808,7 +4808,6 @@ def ingest_signed_header():
             "current_slot": expected_slot,
         }), 400
 
-    from rip_200_round_robin_1cpu1vote import check_eligibility_round_robin
     eligibility = check_eligibility_round_robin(DB_PATH, miner_id, slot, int(time.time()))
     if not eligibility.get("eligible"):
         return jsonify({
