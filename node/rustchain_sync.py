@@ -220,7 +220,18 @@ class RustChainSyncManager:
                             (sanitized[pk],),
                         )
                         local_row = cursor.fetchone()
-                        if local_row and local_row[0] is not None:
+                        if local_row is None:
+                            # Unknown wallet — reject. Balances are authoritative
+                            # local state; a peer must not be able to create
+                            # new balance rows for wallets this node does not
+                            # track.  See issue #6617.
+                            self.logger.warning(
+                                f"Rejected sync: Unknown wallet "
+                                f"{sanitized[pk]} — refusing to insert "
+                                f"balance from peer"
+                            )
+                            continue
+                        if local_row[0] is not None:
                             remote_val = int(sanitized[candidate_balance_col])
                             local_val = int(local_row[0])
                             if remote_val != local_val:
