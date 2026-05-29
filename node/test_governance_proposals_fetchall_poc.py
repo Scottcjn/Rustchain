@@ -1,16 +1,19 @@
 # SPDX-License-Identifier: MIT
 """
-PoC + regression: GET /governance/proposals must return at most 200 proposals.
+PoC + regression: GET /governance/proposals must paginate results and return
+description summaries rather than full description text.
 
-Section A (standalone SQL) documents the vulnerability in isolation:
-  - unbounded fetchall() loads all rows when no LIMIT is present
-  - LIMIT 200 caps the result set
+Section A (standalone SQL) documents the original vulnerability:
+  - unbounded fetchall() loads all rows with no LIMIT or OFFSET
+  - LIMIT ? OFFSET ? caps each page and enables pagination
 
 Section B (Flask integration) is the regression gate:
-  - seeds 250 rows in the real app DB
+  - seeds 250 rows with large descriptions in the real app DB
   - calls GET /governance/proposals through app.test_client()
-  - asserts the actual handler returns at most 200 proposals
-  - this test FAILS if LIMIT 200 is removed from the handler
+  - asserts: default page is capped at 50 rows
+  - asserts: limit/offset params control which rows are returned
+  - asserts: description_preview is truncated to 200 chars, not the full text
+  - asserts: total count reflects the full table size
 """
 
 import gc
@@ -36,11 +39,14 @@ _SELECT_BOUNDED = """
            ends_at, status, yes_weight, no_weight
     FROM governance_proposals
     ORDER BY id DESC
-    LIMIT 200
+    LIMIT ? OFFSET ?
 """
 
 _PROPOSAL_COUNT = 250
 _DESCRIPTION_BYTES = 10_000   # 10 KB per proposal
+_DESCRIPTION_PREVIEW_LEN = 200
+_DEFAULT_LIMIT = 50
+_MAX_LIMIT = 200
 
 
 # ---------------------------------------------------------------------------
@@ -117,15 +123,21 @@ class TestGovernanceProposalsSQLBound(unittest.TestCase):
         self.assertGreater(total_bytes, _DESCRIPTION_BYTES * (_PROPOSAL_COUNT - 1),
                            "Unbounded query loads all description data into memory")
 
-    def test_bounded_query_caps_at_200(self):
-        """Fixed behaviour: LIMIT 200 prevents loading more than 200 proposals."""
+    def test_bounded_query_caps_at_limit_with_offset(self):
+        """Fixed behaviour: LIMIT/OFFSET pages through results without loading all rows."""
         conn = sqlite3.connect(self._tmp.name)
-        rows = conn.execute(_SELECT_BOUNDED).fetchall()
+        page1 = conn.execute(_SELECT_BOUNDED, (_DEFAULT_LIMIT, 0)).fetchall()
+        page2 = conn.execute(_SELECT_BOUNDED, (_DEFAULT_LIMIT, _DEFAULT_LIMIT)).fetchall()
         conn.close()
-        self.assertLessEqual(len(rows), 200,
-                             "Bounded query must return at most 200 proposals")
-        self.assertEqual(len(rows), 200,
-                         "With 250 proposals the cap should be exactly 200")
+
+        self.assertEqual(len(page1), _DEFAULT_LIMIT,
+                         "First page must return exactly the default limit")
+        self.assertEqual(len(page2), _DEFAULT_LIMIT,
+                         "Second page must return exactly the default limit")
+        ids_page1 = {r[0] for r in page1}
+        ids_page2 = {r[0] for r in page2}
+        self.assertEqual(len(ids_page1 & ids_page2), 0,
+                         "Pages must not overlap")
 
 
 # ---------------------------------------------------------------------------
@@ -136,9 +148,8 @@ class TestGovernanceProposalsRouteLimit(unittest.TestCase):
     """
     Calls GET /governance/proposals through the real Flask app.test_client().
 
-    This test will fail if LIMIT 200 is removed from the governance_proposals()
-    handler in rustchain_v2_integrated_v2.2.1_rip200.py, which the standalone
-    SQL tests in Section A would not catch.
+    These tests fail if pagination or description truncation is removed from
+    the governance_proposals() handler.
     """
 
     _module = None  # loaded once per process to avoid double-import
@@ -153,46 +164,80 @@ class TestGovernanceProposalsRouteLimit(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        # sqlite3.connect used as a context manager commits/rolls back but does
-        # NOT call conn.close().  On Windows the OS file handle is not released
-        # until the connection object is finalized.  gc.collect() breaks
-        # reference cycles and finalizes any lingering connection objects so
-        # the unlink below does not race against the GC.
+        gc.collect()
         gc.collect()
         try:
             os.unlink(cls._db_tmp.name)
         except PermissionError:
             pass
 
-    def test_route_caps_response_at_200_proposals(self):
-        """
-        GET /governance/proposals must return at most 200 items even when the
-        database contains more. Verifies the real handler applies LIMIT 200.
-        """
+    def _get(self, path):
         client = self._module.app.test_client()
-        response = client.get("/governance/proposals")
+        return client.get(path)
 
-        self.assertEqual(response.status_code, 200,
-                         "Route should return HTTP 200")
+    def test_default_page_returns_fifty_proposals(self):
+        """GET /governance/proposals with no params must return the default 50 rows."""
+        response = self._get("/governance/proposals")
+        self.assertEqual(response.status_code, 200)
         data = response.get_json()
-        self.assertTrue(data.get("ok"), "Response envelope should have ok=True")
+        self.assertTrue(data.get("ok"))
+        self.assertEqual(data.get("limit"), _DEFAULT_LIMIT)
+        self.assertEqual(data.get("offset"), 0)
+        self.assertEqual(len(data.get("proposals", [])), _DEFAULT_LIMIT)
 
-        proposals = data.get("proposals", [])
-        self.assertLessEqual(
-            len(proposals),
-            200,
-            f"Handler returned {len(proposals)} proposals; LIMIT 200 must be enforced",
-        )
-        self.assertEqual(
-            len(proposals),
-            200,
-            f"With {_PROPOSAL_COUNT} rows in DB the response should be exactly 200",
-        )
-        self.assertEqual(
-            data.get("count"),
-            len(proposals),
-            "count field in the envelope must match the actual proposals list length",
-        )
+    def test_total_reflects_full_table_size(self):
+        """Response must include total equal to the full row count."""
+        response = self._get("/governance/proposals")
+        data = response.get_json()
+        self.assertEqual(data.get("total"), _PROPOSAL_COUNT,
+                         "total must reflect the full table, not just the page")
+
+    def test_limit_param_controls_page_size(self):
+        """?limit=10 must return exactly 10 proposals."""
+        response = self._get("/governance/proposals?limit=10")
+        data = response.get_json()
+        self.assertEqual(data.get("limit"), 10)
+        self.assertEqual(len(data.get("proposals", [])), 10)
+
+    def test_limit_is_capped_at_max(self):
+        """?limit=999 must be clamped to the max of 200."""
+        response = self._get(f"/governance/proposals?limit=999")
+        data = response.get_json()
+        self.assertLessEqual(data.get("limit"), _MAX_LIMIT,
+                             "limit must be clamped to MAX_LIMIT")
+        self.assertLessEqual(len(data.get("proposals", [])), _MAX_LIMIT)
+
+    def test_offset_param_pages_to_next_page(self):
+        """?offset=50 must return a non-overlapping page."""
+        r1 = self._get(f"/governance/proposals?limit={_DEFAULT_LIMIT}&offset=0").get_json()
+        r2 = self._get(f"/governance/proposals?limit={_DEFAULT_LIMIT}&offset={_DEFAULT_LIMIT}").get_json()
+
+        ids1 = {p["id"] for p in r1["proposals"]}
+        ids2 = {p["id"] for p in r2["proposals"]}
+        self.assertEqual(len(ids1 & ids2), 0, "Pages must not overlap")
+        self.assertEqual(len(ids2), _DEFAULT_LIMIT, "Second page must have the same size")
+
+    def test_description_is_truncated_to_preview(self):
+        """List response must return description_preview capped at 200 chars, not full text."""
+        response = self._get("/governance/proposals?limit=1")
+        data = response.get_json()
+        proposal = data["proposals"][0]
+
+        self.assertNotIn("description", proposal,
+                         "Full description must not appear in list response")
+        self.assertIn("description_preview", proposal,
+                      "description_preview must be present in list response")
+        self.assertLessEqual(len(proposal["description_preview"]), _DESCRIPTION_PREVIEW_LEN,
+                             "description_preview must be at most 200 chars")
+        self.assertLess(len(proposal["description_preview"]), _DESCRIPTION_BYTES,
+                        "description_preview must be shorter than the full description")
+
+    def test_count_matches_proposals_list_length(self):
+        """count in the envelope must equal the actual proposals list length."""
+        response = self._get("/governance/proposals")
+        data = response.get_json()
+        self.assertEqual(data.get("count"), len(data.get("proposals", [])),
+                         "count field must match the actual proposals list length")
 
 
 if __name__ == "__main__":

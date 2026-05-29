@@ -6246,12 +6246,22 @@ def governance_propose():
     }), 201
 
 
+_PROPOSALS_DESCRIPTION_PREVIEW_LEN = 200
+_PROPOSALS_MAX_LIMIT = 200
+_PROPOSALS_DEFAULT_LIMIT = 50
+
+
 @app.route('/governance/proposals', methods=['GET'])
 def governance_proposals():
+    limit = min(max(request.args.get('limit', _PROPOSALS_DEFAULT_LIMIT, type=int), 1), _PROPOSALS_MAX_LIMIT)
+    offset = max(request.args.get('offset', 0, type=int), 0)
+
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         _ensure_governance_tables(c)
+
+        total = c.execute("SELECT COUNT(*) FROM governance_proposals").fetchone()[0]
 
         rows = c.execute(
             """
@@ -6259,18 +6269,20 @@ def governance_proposals():
                    status, yes_weight, no_weight
             FROM governance_proposals
             ORDER BY id DESC
-            LIMIT 200
-            """
+            LIMIT ? OFFSET ?
+            """,
+            (limit, offset),
         ).fetchall()
 
         proposals = []
         for row in rows:
             status = _refresh_proposal_status(c, row)
+            desc = row["description"] or ""
             proposals.append({
                 "id": row["id"],
                 "proposer_wallet": row["proposer_wallet"],
                 "title": row["title"],
-                "description": row["description"],
+                "description_preview": desc[:_PROPOSALS_DESCRIPTION_PREVIEW_LEN],
                 "created_at": row["created_at"],
                 "activated_at": row["activated_at"],
                 "ends_at": row["ends_at"],
@@ -6280,7 +6292,14 @@ def governance_proposals():
             })
         conn.commit()
 
-    return jsonify({"ok": True, "count": len(proposals), "proposals": proposals})
+    return jsonify({
+        "ok": True,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "count": len(proposals),
+        "proposals": proposals,
+    })
 
 
 @app.route('/governance/proposal/<int:proposal_id>', methods=['GET'])
