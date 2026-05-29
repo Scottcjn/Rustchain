@@ -1261,6 +1261,7 @@ MAX_DAILY_WITHDRAWAL = 1000.0  # RTC
 GOVERNANCE_ACTIVE_SECONDS = 7 * 24 * 60 * 60
 GOVERNANCE_MIN_PROPOSER_BALANCE_RTC = 10.0
 GOVERNANCE_ACTIVE_MINER_WINDOW_SECONDS = 3600
+GOVERNANCE_DESCRIPTION_MAX_LEN = 4_000
 
 EPOCH_WEIGHT_SCALE = 1_000_000_000
 MAX_EPOCH_WEIGHT = 10_000
@@ -6172,6 +6173,13 @@ def governance_propose():
 
     if not proposer_wallet or not title or not description:
         return jsonify({"ok": False, "error": "wallet, title and description are required"}), 400
+
+    if len(description) > GOVERNANCE_DESCRIPTION_MAX_LEN:
+        return jsonify({
+            "ok": False,
+            "error": "description_too_long",
+            "max_len": GOVERNANCE_DESCRIPTION_MAX_LEN,
+        }), 400
 
     if not all([nonce, signature, public_key]):
         return jsonify({

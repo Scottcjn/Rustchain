@@ -14,6 +14,10 @@ Section B (Flask integration) is the regression gate:
   - asserts: limit/offset params control which rows are returned
   - asserts: description_preview is truncated to 200 chars, not the full text
   - asserts: total count reflects the full table size
+
+Section C (propose contract) tests description length enforcement at creation:
+  - POST /governance/propose with description > 4000 chars must be rejected with 400
+  - POST /governance/propose with description <= 4000 chars must succeed
 """
 
 import gc
@@ -47,6 +51,7 @@ _DESCRIPTION_BYTES = 10_000   # 10 KB per proposal
 _DESCRIPTION_PREVIEW_LEN = 200
 _DEFAULT_LIMIT = 50
 _MAX_LIMIT = 200
+_DESCRIPTION_MAX_LEN = 4_000
 
 
 # ---------------------------------------------------------------------------
@@ -238,6 +243,67 @@ class TestGovernanceProposalsRouteLimit(unittest.TestCase):
         data = response.get_json()
         self.assertEqual(data.get("count"), len(data.get("proposals", [])),
                          "count field must match the actual proposals list length")
+
+
+# ---------------------------------------------------------------------------
+# Section C: description length enforcement at creation (regression gate)
+# ---------------------------------------------------------------------------
+
+class TestGovernanceProposeDescriptionCap(unittest.TestCase):
+    """
+    Verifies that POST /governance/propose rejects descriptions that exceed
+    GOVERNANCE_DESCRIPTION_MAX_LEN (4000 chars) with HTTP 400.
+
+    These tests fail if the creation-time guard is removed from
+    governance_propose().
+    """
+
+    _module = None
+
+    @classmethod
+    def setUpClass(cls):
+        cls._db_tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        cls._db_tmp.close()
+        if cls._module is None:
+            TestGovernanceProposeDescriptionCap._module = _load_node_module(cls._db_tmp.name)
+
+    @classmethod
+    def tearDownClass(cls):
+        gc.collect()
+        gc.collect()
+        try:
+            os.unlink(cls._db_tmp.name)
+        except PermissionError:
+            pass
+
+    def _post_propose(self, description: str):
+        client = self._module.app.test_client()
+        return client.post(
+            "/governance/propose",
+            json={
+                "wallet": "RTC" + "a" * 40,
+                "title": "Test proposal",
+                "description": description,
+                "signature": "00" * 64,
+            },
+            content_type="application/json",
+        )
+
+    def test_description_over_limit_is_rejected(self):
+        """POST /governance/propose with description > 4000 chars must return 400."""
+        response = self._post_propose("x" * (_DESCRIPTION_MAX_LEN + 1))
+        self.assertEqual(response.status_code, 400)
+        data = response.get_json()
+        self.assertFalse(data.get("ok"))
+        self.assertEqual(data.get("error"), "description_too_long")
+        self.assertEqual(data.get("max_len"), _DESCRIPTION_MAX_LEN)
+
+    def test_description_at_limit_is_accepted_or_blocked_by_balance(self):
+        """POST /governance/propose with description == 4000 chars must not fail on length."""
+        response = self._post_propose("x" * _DESCRIPTION_MAX_LEN)
+        data = response.get_json()
+        self.assertNotEqual(data.get("error"), "description_too_long",
+                            "Exactly-at-limit description must not be rejected for length")
 
 
 if __name__ == "__main__":
