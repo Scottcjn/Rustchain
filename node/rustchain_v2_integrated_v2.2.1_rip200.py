@@ -8207,7 +8207,7 @@ def api_wallet_history():
         return jsonify({"ok": False, "error": "limit must be an integer"}), 400
 
     try:
-        offset = max(0, int(request.args.get("offset", "0")))
+        offset = max(0, min(int(request.args.get("offset", "0")), 9_800))
     except (ValueError, TypeError):
         return jsonify({"ok": False, "error": "offset must be an integer"}), 400
 
@@ -8215,6 +8215,7 @@ def api_wallet_history():
 
     with sqlite3.connect(DB_PATH) as db:
         # --- Ledger entries (transfers) ---
+        _history_cap = offset + limit
         try:
             ledger_rows = db.execute(
                 """
@@ -8222,8 +8223,9 @@ def api_wallet_history():
                 FROM ledger
                 WHERE miner_id = ?
                 ORDER BY ts DESC
+                LIMIT ?
                 """,
-                (miner_id,),
+                (miner_id, _history_cap),
             ).fetchall()
 
             for ts, epoch, _mid, delta_i64, reason in ledger_rows:
@@ -8268,8 +8270,9 @@ def api_wallet_history():
                 LEFT JOIN epoch_state es ON er.epoch = es.epoch
                 WHERE er.miner_id = ?
                 ORDER BY er.epoch DESC
+                LIMIT ?
                 """,
-                (miner_id,),
+                (miner_id, _history_cap),
             ).fetchall()
 
             for epoch, share_i64, _blocks in reward_rows:
@@ -8292,8 +8295,9 @@ def api_wallet_history():
                 FROM pending_ledger
                 WHERE from_miner = ? OR to_miner = ?
                 ORDER BY COALESCE(created_at, ts) DESC
+                LIMIT ?
                 """,
-                (miner_id, miner_id),
+                (miner_id, miner_id, _history_cap),
             ).fetchall()
 
             for ts, from_m, to_m, amt, reason, status, tx_hash, created in pending_rows:
