@@ -1,0 +1,17 @@
+{
+  "machine_id": "hektorhq-m4-macbook-air-2024",
+  "name": "MacBook Air M4 (2024)",
+  "owner": "hektorhq",
+  "wallet": "hektorhq",
+  "architecture": "ARM64",
+  "cpu": "Apple M4 (10-core)",
+  "year_manufactured": 2024,
+  "power_draw_watts": 15,
+  "usage": "AI agent runtime, RustChain miner (v2.5.0), bounty automation",
+  "miner_id": "m4-MacBook-Ai-15fdc939",
+  "antiquity_multiplier": 1.2,
+  "would_be_ewaste": false,
+  "notes": "Daily driver repurposed as continuous RustChain mining node. Avg ~15W under miner load vs 300W+ for traditional GPU miners.",
+  "added_by": "hektorhq",
+  "added_date": "2026-05-29"
+}
