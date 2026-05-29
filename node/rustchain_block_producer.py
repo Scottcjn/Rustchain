@@ -55,6 +55,7 @@ logger = logging.getLogger(__name__)
 
 GENESIS_TIMESTAMP = 1764706927  # Production chain launch (Dec 2, 2025)
 BLOCK_TIME = 600  # 10 minutes (600 seconds)
+EPOCH_SLOTS = 144  # 24 hours at 10-min blocks
 MAX_TXS_PER_BLOCK = 1000
 ATTESTATION_TTL = 600  # 10 minutes
 MAX_BATCH_BLOCKS = 100
@@ -262,15 +263,56 @@ class BlockProducer:
         if not attested_miners:
             return None
 
-        rotation = self._build_balanced_producer_rotation(attested_miners)
+        epoch = start_slot // max(EPOCH_SLOTS, 1)
+        # #6463: exclude miners with zero epoch_enroll weight from producer duty
+        _db_path = getattr(self, 'db_path', None)
+        active_miners = [
+            m for m in attested_miners
+            if BlockProducer._miner_selection_weight(m, epoch, _db_path) > 0
+        ]
+        rotation = self._build_balanced_producer_rotation(active_miners, epoch, _db_path)
         producer_index = slot % len(rotation)
         return rotation[producer_index]
 
     @staticmethod
-    def _miner_selection_weight(attested_miner) -> float:
-        """Return a bounded producer-selection weight for an attested miner."""
+    def _miner_selection_weight(attested_miner, epoch: Optional[int] = None, db_path: Optional[str] = None) -> float:
+        """Return a bounded producer-selection weight for an attested miner.
+
+        Fix for #6463: the authoritative reward weight lives in epoch_enroll.
+        If a miner has zero enroll weight (e.g. VM/emulator fingerprint fail),
+        their producer-duty weight must also be zero to preserve the
+        single-source-of-truth invariant for hardware weighting.
+
+        Args:
+            attested_miner: (miner_id, arch, device_info) tuple
+            epoch: epoch number (if None, heuristic-only mode)
+            db_path: path to the blockchain DB (if None, heuristic-only mode)
+        """
+        miner_id = attested_miner[0]
         device_info = attested_miner[2] if len(attested_miner) > 2 and attested_miner[2] else {}
 
+        # --- Single source of truth: check epoch_enroll weight first ---
+        if epoch is not None and db_path is not None:
+            try:
+                with sqlite3.connect(db_path) as conn:
+                    row = conn.execute(
+                        "SELECT weight FROM epoch_enroll WHERE epoch = ? AND miner_pk = ?",
+                        (epoch, miner_id),
+                    ).fetchone()
+                    if row is not None:
+                        enroll_weight = row[0]
+                        # Zero enroll weight => zero duty weight (VM/emulator excluded)
+                        if enroll_weight == 0:
+                            return 0.0
+                        # Enroll weight is authoritative — use it directly (bounded)
+                        try:
+                            return min(max(float(enroll_weight), 1.0), 10.0)
+                        except (TypeError, ValueError):
+                            pass  # fall through to heuristic
+            except sqlite3.OperationalError:
+                pass  # epoch_enroll table may not exist in test — fall through
+
+        # --- Fallback: device heuristic (only when no epoch_enroll row exists) ---
         explicit_weight = device_info.get("weight")
         if explicit_weight is not None:
             try:
@@ -292,7 +334,7 @@ class BlockProducer:
         return 1.0
 
     @classmethod
-    def _build_balanced_producer_rotation(cls, attested_miners) -> List[str]:
+    def _build_balanced_producer_rotation(cls, attested_miners, epoch: Optional[int] = None, db_path: Optional[str] = None) -> List[str]:
         """
         Build a deterministic weighted-fair rotation for the active miners.
 
@@ -300,11 +342,18 @@ class BlockProducer:
         miners carry explicit or device-derived weights, the cycle repeats each
         miner proportional to its bounded weight while spreading duties across
         the cycle instead of clustering them.
+
+        Fix for #6463: miners with zero epoch_enroll weight are excluded from
+        the rotation entirely, preserving the single-source-of-truth invariant.
         """
+        # Create a temporary instance to access _miner_selection_weight (needs db_path)
+        # For backward compat with classmethod calls, weight defaults to heuristic
         weighted_miners = [
-            (miner[0], cls._miner_selection_weight(miner))
+            (miner[0], cls._miner_selection_weight(miner, epoch, db_path))
             for miner in attested_miners
         ]
+        # Exclude miners with zero duty weight (VM/emulator with zero enroll weight)
+        weighted_miners = [(mid, w) for mid, w in weighted_miners if w > 0]
         if not weighted_miners:
             return []
 
@@ -330,7 +379,14 @@ class BlockProducer:
         slots = max(1, min(int(slots), 256))
         current_ts = self.get_slot_start_time(start_slot)
         attested_miners = self.get_attested_miners(current_ts)
-        rotation = self._build_balanced_producer_rotation(attested_miners)
+        epoch = start_slot // max(EPOCH_SLOTS, 1)
+        # #6463: exclude miners with zero epoch_enroll weight from producer duty
+        _db_path = getattr(self, 'db_path', None)
+        active_miners = [
+            m for m in attested_miners
+            if BlockProducer._miner_selection_weight(m, epoch, _db_path) > 0
+        ]
+        rotation = self._build_balanced_producer_rotation(active_miners, epoch, _db_path)
 
         duty_counts = {miner[0]: 0 for miner in attested_miners}
         schedule = []
