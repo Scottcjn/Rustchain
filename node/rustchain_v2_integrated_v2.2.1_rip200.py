@@ -6842,6 +6842,7 @@ def api_miners():
             "count": len(miners)
         }
     })
+    response.headers["X-Total-Count"] = str(total_count)
     add_rate_limit_headers(response, rate_info)
     return response
 

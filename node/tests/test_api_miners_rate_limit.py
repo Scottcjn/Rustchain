@@ -111,10 +111,35 @@ class TestApiMinersRateLimit(unittest.TestCase):
         )
 
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(
-            resp.get_json()["pagination"],
-            {"total": 0, "limit": 100, "offset": 0, "count": 0},
+        pagination = resp.get_json()["pagination"]
+        self.assertEqual(pagination["total"], 0)
+        self.assertEqual(pagination["limit"], 100)
+        self.assertEqual(pagination["offset"], 0)
+        self.assertEqual(pagination["count"], 0)
+
+    def test_api_miners_exposes_total_count_header(self):
+        now = int(self.mod.time.time())
+        with sqlite3.connect(self.mod.DB_PATH) as conn:
+            conn.execute("DELETE FROM miner_attest_recent")
+            conn.executemany(
+                "INSERT INTO miner_attest_recent "
+                "(miner, ts_ok, device_family, device_arch, entropy_score) "
+                "VALUES (?, ?, ?, ?, ?)",
+                [
+                    ("miner-a", now - 10, "x86", "x86_64", 0.5),
+                    ("miner-b", now - 20, "x86", "x86_64", 0.6),
+                ],
+            )
+
+        resp = self.client.get(
+            "/api/miners?limit=1&offset=0",
+            environ_base={"REMOTE_ADDR": "203.0.113.23"},
         )
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.headers["X-Total-Count"], "2")
+        self.assertEqual(resp.get_json()["pagination"]["total"], 2)
+        self.assertEqual(len(resp.get_json()["miners"]), 1)
 
 
 if __name__ == "__main__":
