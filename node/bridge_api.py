@@ -21,7 +21,7 @@ import hashlib
 import logging
 import os
 import re
-from typing import Optional, Tuple, Dict, Any
+from typing import List, Optional, Tuple, Dict, Any
 from decimal import Decimal, InvalidOperation
 from dataclasses import dataclass
 from enum import Enum
@@ -647,6 +647,104 @@ def void_bridge_transfer(
         }
 
 
+
+def expire_confirmed_bridge_transfers(
+    db_conn: sqlite3.Connection,
+    limit: int = 100
+) -> Tuple[int, List[Dict[str, Any]]]:
+    """Transition confirmed-but-expired bridge transfers to 'failed' and refund their locks.
+
+    This recovers locks that were confirmed by the bridge operator but never
+    released (minted) before the lock expiry window elapsed.  Without this
+    path, those locks sit in STATE_CONFIRMED forever with no admin
+    recovery mechanism — a confirmed-then-expired DoS on escrow.
+
+    Returns:
+        (count_expired, list_of_expired_transfers)
+    """
+    cursor = db_conn.cursor()
+    now = int(time.time())
+    expired = []
+
+    # Find confirmed/confirming transfers whose lock has expired
+    rows = cursor.execute(
+        """
+        SELECT id, tx_hash, direction, source_address, dest_address,
+               amount_i64, amount_rtc, expires_at
+        FROM bridge_transfers
+        WHERE status IN ('confirming', 'locked')
+          AND expires_at IS NOT NULL
+          AND expires_at <= ?
+        ORDER BY expires_at ASC
+        LIMIT ?
+        """,
+        (now, limit),
+    ).fetchall()
+
+    if not rows:
+        return 0, []
+
+    try:
+        cursor.execute("BEGIN IMMEDIATE")
+        for row in rows:
+            bridge_id, tx_hash, direction, source, dest, amount_i64, amount_rtc, expires_at = row
+
+            # Transition bridge transfer to 'failed'
+            cursor.execute(
+                """
+                UPDATE bridge_transfers
+                SET status = 'failed',
+                    failure_reason = 'lock_expired_before_release',
+                    updated_at = ?
+                WHERE id = ? AND status IN ('confirming', 'locked')
+                """,
+                (now, bridge_id),
+            )
+            if cursor.rowcount != 1:
+                continue  # raced — skip
+
+            # Release the associated lock (refund)
+            cursor.execute(
+                """
+                UPDATE lock_ledger
+                SET status = 'released',
+                    unlocked_at = ?,
+                    released_by = 'expire_refund'
+                WHERE bridge_transfer_id = ?
+                  AND status = 'locked'
+                """,
+                (now, bridge_id),
+            )
+
+            # For deposit direction: credit back the source wallet
+            if direction == "deposit":
+                cursor.execute(
+                    "INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)",
+                    (source,),
+                )
+                cursor.execute(
+                    "UPDATE balances SET amount_i64 = amount_i64 + ? WHERE miner_id = ?",
+                    (amount_i64, source),
+                )
+
+            expired.append({
+                "bridge_id": bridge_id,
+                "tx_hash": tx_hash,
+                "direction": direction,
+                "source_address": source,
+                "amount_rtc": amount_rtc,
+                "expired_at": now,
+            })
+
+        db_conn.commit()
+        return len(expired), expired
+
+    except sqlite3.Error:
+        db_conn.rollback()
+        logger.exception("Failed to expire confirmed bridge transfers")
+        return 0, []
+
+
 def update_external_confirmation(
     db_conn: sqlite3.Connection,
     tx_hash: str,
@@ -995,6 +1093,40 @@ def register_bridge_routes(app):
                 return jsonify(result), 200
             else:
                 return jsonify(result), 400
+        finally:
+            conn.close()
+
+    @app.route('/api/bridge/expire-refund', methods=['POST'])
+    def expire_refund_bridge():
+        """Admin: Expire and refund confirmed/locked bridge transfers past their TTL.
+
+        This provides the recovery path for confirmed-then-expired locks described
+        in issue #6416: without it, locks that pass their expiry window while in
+        ``confirming`` or ``locked`` state are permanently stuck with no refund.
+        """
+        admin_key = request.headers.get("X-Admin-Key", "")
+        expected_key = os.environ.get("RC_ADMIN_KEY", "")
+        if not admin_key or not expected_key or not hmac.compare_digest(admin_key, expected_key):
+            return jsonify({"error": "unauthorized"}), 401
+
+        data = request.get_json(silent=True) or {}
+        limit = 100
+        if "limit" in data:
+            try:
+                limit = int(data["limit"])
+                if limit < 1 or limit > 1000:
+                    return jsonify({"error": "limit must be between 1 and 1000"}), 400
+            except (TypeError, ValueError):
+                return jsonify({"error": "limit must be an integer"}), 400
+
+        conn = sqlite3.connect(DB_PATH, timeout=5.0)
+        try:
+            count, expired = expire_confirmed_bridge_transfers(conn, limit=limit)
+            return jsonify({
+                "ok": True,
+                "expired_count": count,
+                "expired_transfers": expired,
+            }), 200
         finally:
             conn.close()
 
