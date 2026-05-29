@@ -327,12 +327,21 @@ def init_app(app, get_db_func):
         if request.method == "OPTIONS":
             return _cors_json({"ok": True})
 
-        passed, err_resp = _check_x402_payment(
-            PRICE_REPUTATION_EXPORT if X402_CONFIG_OK else "0",
-            "reputation_export",
-        )
-        if not passed:
-            return err_resp
+        # SECURITY: Block free access when x402 is misconfigured (fail-closed).
+        # Without this, anyone can read the full reputation table by triggering
+        # the X402_CONFIG_OK=False code path (price="0" bypasses payment check).
+        if X402_CONFIG_OK:
+            passed, err_resp = _check_x402_payment(
+                PRICE_REPUTATION_EXPORT,
+                "reputation_export",
+            )
+            if not passed:
+                return err_resp
+        else:
+            # x402 not configured -- fall back to admin key auth
+            admin_error = _require_beacon_admin()
+            if admin_error:
+                return admin_error
 
         db = get_db_func()
         try:
@@ -355,12 +364,19 @@ def init_app(app, get_db_func):
         if request.method == "OPTIONS":
             return _cors_json({"ok": True})
 
-        passed, err_resp = _check_x402_payment(
-            PRICE_BEACON_CONTRACT if X402_CONFIG_OK else "0",
-            "contracts_export",
-        )
-        if not passed:
-            return err_resp
+        # SECURITY: Block free access when x402 is misconfigured (fail-closed).
+        if X402_CONFIG_OK:
+            passed, err_resp = _check_x402_payment(
+                PRICE_BEACON_CONTRACT,
+                "contracts_export",
+            )
+            if not passed:
+                return err_resp
+        else:
+            # x402 not configured -- fall back to admin key auth
+            admin_error = _require_beacon_admin()
+            if admin_error:
+                return admin_error
 
         db = get_db_func()
         try:

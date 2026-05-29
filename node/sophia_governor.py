@@ -967,6 +967,10 @@ def register_sophia_governor_endpoints(app, db_path: str | None = None) -> None:
 
     @app.route("/sophia/governor/status", methods=["GET"])
     def sophia_governor_status():
+        # SECURITY: governor status exposes LLM endpoints, phone_home_targets,
+        # and other sensitive infra config -- require admin key.
+        if not _is_admin(request):
+            return jsonify({"error": "Unauthorized -- admin key required"}), 401
         return jsonify(get_governor_status(db))
 
     @app.route("/sophia/governor/recent", methods=["GET"])

@@ -1536,6 +1536,9 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
     @app.route("/api/bridge/lock/<lock_id>", methods=["GET"])
     def get_bridge_lock(lock_id: str):
         """Get bridge lock status."""
+        auth_err = require_admin_key()
+        if auth_err:
+            return auth_err
         lock = airdrop.get_lock(lock_id)
         if lock:
             return jsonify({"ok": True, "lock": lock.to_dict()})
