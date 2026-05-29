@@ -8115,14 +8115,25 @@ def api_rewards_settle():
 @app.route('/rewards/epoch/<int:epoch>', methods=['GET'])
 def api_rewards_epoch(epoch: int):
     """Get reward distribution for a specific epoch"""
+    try:
+        limit = max(1, min(int(request.args.get("limit", "200")), 1000))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "limit must be an integer"}), 400
+    try:
+        offset = max(0, int(request.args.get("offset", "0")))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "offset must be an integer"}), 400
+
     with sqlite3.connect(DB_PATH) as db:
         rows = db.execute(
-            "SELECT miner_id, share_i64 FROM epoch_rewards WHERE epoch=? ORDER BY miner_id",
-            (epoch,)
+            "SELECT miner_id, share_i64 FROM epoch_rewards WHERE epoch=? ORDER BY miner_id LIMIT ? OFFSET ?",
+            (epoch, limit, offset)
         ).fetchall()
 
     return jsonify({
         "epoch": epoch,
+        "limit": limit,
+        "offset": offset,
         "rewards": [
             {
                 "miner_id": r[0],
