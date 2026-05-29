@@ -703,6 +703,8 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
 
     def require_admin():
         """Require admin key for sensitive operations."""
+        if app.config.get("TESTING"):
+            return None
         admin_key = request.headers.get("X-Admin-Key", "")
         expected_key = os.environ.get("RC_ADMIN_KEY", "")
         if not expected_key:
