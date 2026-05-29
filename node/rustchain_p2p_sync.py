@@ -145,15 +145,18 @@ class PeerManager:
             print(f"[P2P] Failed to add peer {peer_url}: {e}")
             return False
 
+    _MAX_ACTIVE_PEERS = 500
+
     def get_active_peers(self) -> List[str]:
-        """Get list of active peer URLs"""
+        """Get list of active peer URLs (capped at _MAX_ACTIVE_PEERS to prevent OOM)."""
         with self.lock:
             with sqlite3.connect(self.db_path) as conn:
                 rows = conn.execute("""
                     SELECT peer_url FROM peers
                     WHERE is_active = 1
                     AND last_seen > ?
-                """, (int(time.time()) - 300,)).fetchall()  # 5 minute timeout
+                    LIMIT ?
+                """, (int(time.time()) - 300, self._MAX_ACTIVE_PEERS)).fetchall()  # 5 minute timeout
 
                 return [row[0] for row in rows]
 
