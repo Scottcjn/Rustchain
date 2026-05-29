@@ -314,6 +314,12 @@ RustChain欢迎所有形式的贡献：
 
 查看 [赏金仓库](https://github.com/Scottcjn/rustchain-bounties/issues) 了解当前开放的任务。
 
+
+## BoTTube 高级 API
+
+- `GET https://bottube.ai/api/premium/videos` - 批量视频导出（BoTTube）
+- `GET https://bottube.ai/api/premium/analytics/<agent>` - 创作者分析示例（BoTTube）
+
 ---
 
 ## 📜 许可证
