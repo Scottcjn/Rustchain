@@ -126,23 +126,22 @@ class TestExternalConnEvictionBug4:
         evicted via the external-connection path."""
         box_a = _mint(db, "alice", 10000)
 
-        # Add mempool tx claiming box_a
-        _add_mempool_tx_with_data_input(
-            db, "tx_stale_reg", [box_a], [], fee=50
-        )
+        tx = {
+            "tx_id": "tx_stale_reg",
+            "tx_type": "transfer",
+            "inputs": [{"box_id": box_a, "spending_proof": "p2"}],
+            "outputs": [{"address": "carol", "value_nrtc": 9900}],
+            "fee_nrtc": 100,
+            "data_inputs": [],
+        }
+        assert db.mempool_add(tx)
 
         # Spend box_a via external connection
         outer = sqlite3.connect(db.db_path)
         outer.row_factory = sqlite3.Row
         outer.execute("BEGIN IMMEDIATE")
 
-        ok = db.apply_transaction({
-            "tx_type": "transfer",
-            "inputs": [{"box_id": box_a, "spending_proof": "p2"}],
-            "outputs": [{"address": "carol", "value_nrtc": 9900}],
-            "fee_nrtc": 100,
-            "data_inputs": [],
-        }, block_height=2, conn=outer)
+        ok = db.apply_transaction(tx, block_height=2, conn=outer)
 
         outer.execute("COMMIT")
         outer.close()

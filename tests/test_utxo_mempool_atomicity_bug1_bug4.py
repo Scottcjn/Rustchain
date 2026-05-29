@@ -165,13 +165,14 @@ class TestStaleDataInputEvictionBug4:
         box_w = row["box_id"]
 
         # Add a mempool tx that claims this box as input
-        ok = db.mempool_add({
+        tx = {
             "tx_id": "tx_m",
             "tx_type": "transfer",
             "inputs": [{"box_id": box_w, "spending_proof": "proof_w"}],
             "outputs": [{"address": "addr3", "value_nrtc": 9900}],
             "fee_nrtc": 100,
-        })
+        }
+        ok = db.mempool_add(tx)
         assert ok, "mempool_add should succeed"
 
         # Verify tx_m is in the mempool
@@ -182,14 +183,9 @@ class TestStaleDataInputEvictionBug4:
             conn.close()
         assert mp_row is not None, "tx_m should be in mempool before spend"
 
-        # Spend box_w via apply_transaction
-        result = db.apply_transaction({
-            "tx_type": "transfer",
-            "inputs": [{"box_id": box_w, "spending_proof": "proof_spend"}],
-            "outputs": [{"address": "addr_new", "value_nrtc": 9900}],
-            "fee_nrtc": 100,
-            "data_inputs": [],
-        }, block_height=2)
+        # Mine the same mempool transaction. A different transaction spending
+        # box_w would correctly fail the mempool claim guard.
+        result = db.apply_transaction(tx, block_height=2)
         assert result is True, "apply_transaction should succeed"
 
         # BUG-4 regression: tx_m should have been evicted
@@ -221,7 +217,7 @@ class TestStaleDataInputEvictionBug4:
             "fee_nrtc": 0,
             "data_inputs": [],
             "_allow_minting": True,
-        }, block_height=1)
+        }, block_height=2)
 
         # Find actual box_ids
         conn = db._conn()
@@ -250,7 +246,7 @@ class TestStaleDataInputEvictionBug4:
             "outputs": [{"address": "addr_new", "value_nrtc": 9900}],
             "fee_nrtc": 100,
             "data_inputs": [],
-        }, block_height=2)
+        }, block_height=3)
         assert result
 
         conn = db._conn()
@@ -371,7 +367,7 @@ class TestStaleDataInputEvictionBug4:
             'fee_nrtc': 0,
             'data_inputs': [],
             '_allow_minting': True,
-        }, block_height=1)
+        }, block_height=2)
 
         # Find actual box_ids
         conn = db._conn()
@@ -418,7 +414,7 @@ class TestStaleDataInputEvictionBug4:
             'outputs': [{'address': 'addr_spent_to', 'value_nrtc': 9900}],
             'fee_nrtc': 100,
             'data_inputs': [],
-        }, block_height=2)
+        }, block_height=3)
         assert result, 'apply_transaction spending box_spend should succeed'
 
         # BUG-4 regression: tx_data_dep should be evicted
