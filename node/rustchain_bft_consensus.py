@@ -1091,6 +1091,14 @@ def create_bft_routes(app, bft: BFTConsensus):
     @app.route('/bft/propose', methods=['POST'])
     def bft_propose():
         """Manually trigger epoch proposal (admin)"""
+        # SECURITY: Manually triggering epoch proposals can cause double-spend / consensus
+        # disruption — require admin key to prevent unauthorized chain manipulation.
+        admin_key = request.headers.get("X-Admin-Key", "")
+        expected_admin_key = os.environ.get("RC_ADMIN_KEY", "")
+        if not expected_admin_key:
+            return jsonify({'error': 'RC_ADMIN_KEY not configured'}), 503
+        if not hmac.compare_digest(admin_key, expected_admin_key):
+            return jsonify({'error': 'Unauthorized — admin key required'}), 401
         try:
             data = request.get_json(silent=True)
             if not isinstance(data, dict):
