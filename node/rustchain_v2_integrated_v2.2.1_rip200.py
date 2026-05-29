@@ -6551,9 +6551,24 @@ def _parse_oui_enforce(value):
         return None
 
 
+# Health-status cache for /api/nodes: url -> (online: bool|None, checked_at: float)
+# Populated lazily; decouples outbound probes from the request path.
+_NODE_HEALTH_CACHE: dict = {}
+_NODE_HEALTH_CACHE_TTL = 60.0   # seconds before a cached status is considered stale
+_MAX_INLINE_PROBES = 3          # max outbound health probes issued per request
+
+
 @app.route("/api/nodes")
 def api_nodes():
-    """Return list of all registered attestation nodes"""
+    """Return paginated registered attestation nodes with cached health status.
+
+    RIP-200 Bounty #6527: Added pagination (limit, offset) and decoupled health
+    probes via a module-level TTL cache with a per-request probe cap to prevent
+    unauthenticated blocking fan-out DoS.
+    """
+    import time as _time
+    import requests as _requests
+
     def _is_admin() -> bool:
         need = os.environ.get("RC_ADMIN_KEY", "")
         got = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
@@ -6577,13 +6592,30 @@ def api_nodes():
             # Non-IP hosts (DNS names) are assumed public.
             return False
 
+    # Pagination params (mirrors /api/miners convention)
+    try:
+        raw_limit = request.args.get("limit")
+        limit = int(raw_limit) if raw_limit not in (None, "") else 20
+    except (ValueError, TypeError):
+        return jsonify({"ok": False, "error": "limit must be an integer"}), 400
+    try:
+        raw_offset = request.args.get("offset")
+        offset = int(raw_offset) if raw_offset not in (None, "") else 0
+    except (ValueError, TypeError):
+        return jsonify({"ok": False, "error": "offset must be an integer"}), 400
+    limit = min(max(limit, 1), 50)
+    offset = max(offset, 0)
+
     nodes = []
+    total = 0
     try:
         with sqlite3.connect(DB_PATH) as conn:
             c = conn.cursor()
+            total = c.execute("SELECT COUNT(*) FROM node_registry").fetchone()[0]
             c.execute(
                 "SELECT node_id, wallet_address, url, name, registered_at, is_active"
-                " FROM node_registry LIMIT 200"
+                " FROM node_registry LIMIT ? OFFSET ?",
+                (limit, offset),
             )
             for row in c.fetchall():
                 nodes.append({
@@ -6592,32 +6624,54 @@ def api_nodes():
                     "url": row[2],
                     "name": row[3],
                     "registered_at": row[4],
-                    "is_active": bool(row[5])
+                    "is_active": bool(row[5]),
                 })
     except Exception as e:
         print(f"Error fetching nodes: {e}")
-    
-    # Also add live status check
-    # SECURITY: Only probe URLs that are NOT internal/private to prevent SSRF
-    import requests
+
+    # Health status: serve from TTL cache; issue at most _MAX_INLINE_PROBES outbound
+    # requests per call so a single unauthenticated request cannot hold a worker for
+    # 200 * timeout seconds.
+    now = _time.time()
+    probes_issued = 0
+    admin = _is_admin()
+
     for node in nodes:
         raw_url = node.get("url") or ""
-        if raw_url and not _should_redact_url(raw_url):
-            try:
-                resp = requests.get(f"{raw_url}/health", timeout=3)
-                node["online"] = resp.status_code == 200
-            except Exception:
-                node["online"] = False
-        else:
-            # Skip health check for internal/private URLs (SSRF prevention)
+        private = bool(raw_url and _should_redact_url(raw_url))
+
+        if not raw_url or private:
             node["online"] = None
+        else:
+            cached = _NODE_HEALTH_CACHE.get(raw_url)
+            fresh = cached is not None and (now - cached[1]) < _NODE_HEALTH_CACHE_TTL
+            if fresh:
+                node["online"] = cached[0]
+            elif probes_issued < _MAX_INLINE_PROBES:
+                try:
+                    resp = _requests.get(f"{raw_url}/health", timeout=3)
+                    status = resp.status_code == 200
+                except Exception:
+                    status = False
+                _NODE_HEALTH_CACHE[raw_url] = (status, now)
+                node["online"] = status
+                probes_issued += 1
+            else:
+                # Probe budget exhausted; return last known status or unknown.
+                node["online"] = cached[0] if cached is not None else None
 
         # SECURITY: don't leak private/VPN URLs to unauthenticated clients.
-        if (not _is_admin()) and raw_url and _should_redact_url(raw_url):
+        if not admin and private:
             node["url"] = None
             node["url_redacted"] = True
-    
-    return jsonify({"nodes": nodes, "count": len(nodes)})
+
+    return jsonify({
+        "nodes": nodes,
+        "count": len(nodes),
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+    })
 
 
 @app.route("/api/miners", methods=["GET"])
