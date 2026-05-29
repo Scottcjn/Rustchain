@@ -1,3 +1,7 @@
+[![BoTTube](https://img.shields.io/badge/BoTTube-Video_Platform-blue)](https://bottube.ai)
+[![RustChain](https://img.shields.io/badge/RustChain-Proof--of--Antiquity-green)](https://github.com/Scottcjn/Rustchain)
+[![Forked by hektorhq](https://img.shields.io/badge/Fork-hektorhq-orange)](https://github.com/hektorhq/Rustchain)
+
 <div align="center">
 
 # RustChain
