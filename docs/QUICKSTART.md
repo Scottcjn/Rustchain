@@ -415,7 +415,7 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 - **GitHub Issues:** https://github.com/Scottcjn/Rustchain/issues
 - **Discord:** https://discord.gg/VqVVS2CW9Q
 - **Moltbook:** https://www.moltbook.com/m/rustchain
-- **FAQ:** [FAQ_TROUBLESHOOTING.md](FAQ_TROUBLESHOOTING.md)
+- **FAQ:** [FAQ_TROUBLESHOOTING.md](docs/FAQ_TROUBLESHOOTING.md)
 
 ---
 
@@ -437,11 +437,11 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 
 ## Next Steps
 
-- **Swap RTC for Solana tokens:** [wRTC Guide](wrtc.md)
-- **Run a full node:** [Protocol Docs](PROTOCOL.md)
-- **Deep dive into Proof-of-Antiquity:** [Whitepaper](WHITEPAPER.md)
-- **Contribute code:** [CONTRIBUTING.md](../CONTRIBUTING.md)
-- **API reference:** [API Walkthrough](API_WALKTHROUGH.md)
+- **Swap RTC for Solana tokens:** [wRTC Guide](docs/wrtc.md)
+- **Run a full node:** [Protocol Docs](docs/PROTOCOL.md)
+- **Deep dive into Proof-of-Antiquity:** [Whitepaper](docs/WHITEPAPER.md)
+- **Contribute code:** [CONTRIBUTING.md](CONTRIBUTING.md)
+- **API reference:** [API Walkthrough](docs/API_WALKTHROUGH.md)
 
 ---
 
