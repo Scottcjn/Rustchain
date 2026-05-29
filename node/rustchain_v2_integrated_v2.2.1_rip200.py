@@ -8197,7 +8197,7 @@ def api_wallet_history():
         return jsonify({"ok": False, "error": "limit must be an integer"}), 400
 
     try:
-        offset = max(0, int(request.args.get("offset", "0")))
+        offset = max(0, min(int(request.args.get("offset", "0")), 9_800))
     except (ValueError, TypeError):
         return jsonify({"ok": False, "error": "offset must be an integer"}), 400
 

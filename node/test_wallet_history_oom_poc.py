@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """
 PoC: /wallet/history unbounded in-memory fetchall OOM
 
@@ -82,7 +83,7 @@ def _make_db(n_ledger: int = 0, n_rewards: int = 0, n_pending: int = 0) -> str:
 
 def _extract_history_queries(source_path: str) -> str:
     """Return the source of api_wallet_history (up to 8 kb after its def)."""
-    with open(source_path) as fh:
+    with open(source_path, encoding="utf-8") as fh:
         src = fh.read()
 
     start = src.index("def api_wallet_history(")
@@ -121,6 +122,15 @@ def test_pending_ledger_query_has_limit():
     pending_snippet = body[pending_idx : pending_idx + 300]
     assert "LIMIT" in pending_snippet, (
         "pending_ledger query inside api_wallet_history is missing a SQL LIMIT — OOM risk"
+    )
+
+
+def test_offset_cap_present_in_source():
+    """api_wallet_history must cap the caller-supplied offset to bound _history_cap."""
+    main = os.path.join(os.path.dirname(__file__), "rustchain_v2_integrated_v2.2.1_rip200.py")
+    body = _extract_history_queries(main)
+    assert "min(" in body, (
+        "api_wallet_history is missing an offset cap — large offset causes high-fetch OOM"
     )
 
 
