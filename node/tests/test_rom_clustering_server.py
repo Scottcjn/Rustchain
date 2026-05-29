@@ -33,6 +33,15 @@ def test_rom_cluster_upsert_keeps_one_row_per_rom_hash(tmp_path):
     assert rows[0][1] == 3
 
 
+def test_default_threshold_flags_second_unique_miner(tmp_path):
+    db_path = str(tmp_path / "default-threshold-roms.db")
+    server = ROMClusteringServer(db_path)
+    rom_hash = "12" * 20
+
+    assert server.process_rom_report("miner-1", rom_hash)[1] == "unique_rom"
+    assert server.process_rom_report("miner-2", rom_hash)[1] == "rom_clustering"
+
+
 def test_init_rom_tables_deduplicates_legacy_cluster_rows_before_unique_index(tmp_path):
     db_path = str(tmp_path / "legacy-roms.db")
     rom_hash = "cd" * 20

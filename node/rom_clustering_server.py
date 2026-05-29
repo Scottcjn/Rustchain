@@ -165,6 +165,10 @@ class ROMClusteringServer:
         self.cluster_threshold = cluster_threshold
         init_rom_tables(db_path)
 
+    def _effective_cluster_threshold(self) -> int:
+        # Keep the first report valid; a duplicate ROM starts at two miners.
+        return max(2, int(self.cluster_threshold))
+
     def _get_conn(self):
         return sqlite3.connect(self.db_path)
 
@@ -229,11 +233,10 @@ class ROMClusteringServer:
         """, (rom_hash_lower, miner_id))
 
         other_miners = [row[0] for row in cur.fetchall()]
+        all_miners = [miner_id] + other_miners
 
-        if len(other_miners) >= self.cluster_threshold:
+        if len(all_miners) >= self._effective_cluster_threshold():
             # Clustering detected!
-            all_miners = [miner_id] + other_miners
-
             # Record the cluster
             import json
             cur.execute("""
