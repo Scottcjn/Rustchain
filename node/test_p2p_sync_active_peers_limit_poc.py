@@ -30,15 +30,20 @@ def _make_peer_db(path: str) -> None:
         conn.commit()
 
 
+_peer_counter = 0
+
+
 def _insert_peers(path: str, count: int, active: bool = True, ts_offset: int = 0):
+    global _peer_counter
     ts = int(time.time()) + ts_offset
     is_active = 1 if active else 0
     with sqlite3.connect(path) as conn:
-        for i in range(count):
+        for _ in range(count):
             conn.execute(
-                "INSERT OR IGNORE INTO peers (peer_url, is_active, last_seen) VALUES (?, ?, ?)",
-                (f"http://10.0.{i // 256}.{i % 256}:7333", is_active, ts)
+                "INSERT INTO peers (peer_url, is_active, last_seen) VALUES (?, ?, ?)",
+                (f"http://peer-{_peer_counter}.example.com:7333", is_active, ts)
             )
+            _peer_counter += 1
         conn.commit()
 
 

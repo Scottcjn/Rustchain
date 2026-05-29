@@ -155,6 +155,7 @@ class PeerManager:
                     SELECT peer_url FROM peers
                     WHERE is_active = 1
                     AND last_seen > ?
+                    ORDER BY last_seen DESC
                     LIMIT ?
                 """, (int(time.time()) - 300, self._MAX_ACTIVE_PEERS)).fetchall()  # 5 minute timeout
 
