@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """
 PoC: /rewards/epoch/<epoch> unbounded fetchall
 
@@ -52,7 +53,7 @@ def _make_epoch_db(n_miners: int, epoch: int = 1) -> str:
 
 
 def _rewards_epoch_body(source_path: str) -> str:
-    with open(source_path) as fh:
+    with open(source_path, encoding="utf-8") as fh:
         src = fh.read()
     start = src.index("def api_rewards_epoch(")
     return src[start : start + 1500]
