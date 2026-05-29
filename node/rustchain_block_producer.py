@@ -221,15 +221,40 @@ class BlockProducer:
         """Get start timestamp for a slot"""
         return GENESIS_TIMESTAMP + (slot * BLOCK_TIME)
 
+    EPOCH_SLOTS = 144  # must match rustchain_v2_integrated EPOCH_SLOTS
+
+    def _current_epoch(self, current_ts: int) -> int:
+        """Derive epoch number from a slot timestamp."""
+        slot = (current_ts - GENESIS_TIMESTAMP) // BLOCK_TIME
+        return slot // self.EPOCH_SLOTS
+
     def get_attested_miners(self, current_ts: int) -> List[Tuple[str, str, Dict]]:
         """
         Get all currently attested miners (within TTL window).
 
-        Returns: List of (miner_id, device_arch, device_info) tuples, sorted alphabetically
+        Returns: List of (miner_id, device_arch, device_info) tuples, sorted alphabetically.
+        The device_info dict includes an ``enroll_weight`` key sourced from the
+        authoritative ``epoch_enroll`` table for the current epoch.  A value of
+        0 means the miner was flagged (e.g. VM/emulator) and must not receive
+        producer duties.
         """
+        epoch = self._current_epoch(current_ts)
+
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
+
+            # Fetch authoritative enroll weights for the current epoch
+            enroll_weights: Dict[str, int] = {}
+            try:
+                for row in cursor.execute(
+                    "SELECT miner_pk, weight FROM epoch_enroll WHERE epoch = ?",
+                    (epoch,),
+                ):
+                    enroll_weights[row["miner_pk"]] = int(row["weight"])
+            except sqlite3.OperationalError:
+                # epoch_enroll table may not exist yet in test environments
+                pass
 
             cursor.execute("""
                 SELECT miner, device_arch, device_family, device_model, device_year, ts_ok
@@ -244,7 +269,8 @@ class BlockProducer:
                     "arch": row["device_arch"] or "modern_x86",
                     "family": row["device_family"] or "",
                     "model": row["device_model"] if "device_model" in row.keys() else "",
-                    "year": row["device_year"] if "device_year" in row.keys() else 2025
+                    "year": row["device_year"] if "device_year" in row.keys() else 2025,
+                    "enroll_weight": enroll_weights.get(row["miner"], None),
                 }
                 results.append((row["miner"], row["device_arch"], device_info))
 
@@ -263,13 +289,25 @@ class BlockProducer:
             return None
 
         rotation = self._build_balanced_producer_rotation(attested_miners)
+        if not rotation:
+            return None
         producer_index = slot % len(rotation)
         return rotation[producer_index]
 
     @staticmethod
     def _miner_selection_weight(attested_miner) -> float:
-        """Return a bounded producer-selection weight for an attested miner."""
+        """Return a bounded producer-selection weight for an attested miner.
+
+        If the miner's authoritative ``epoch_enroll`` weight is 0 (e.g. flagged
+        as VM/emulator), this returns 0 regardless of the local heuristic so
+        that the miner is excluded from producer duties.
+        """
         device_info = attested_miner[2] if len(attested_miner) > 2 and attested_miner[2] else {}
+
+        # Authoritative gate: zero enroll weight → zero producer weight
+        enroll_weight = device_info.get("enroll_weight")
+        if enroll_weight is not None and enroll_weight <= 0:
+            return 0.0
 
         explicit_weight = device_info.get("weight")
         if explicit_weight is not None:
@@ -305,6 +343,9 @@ class BlockProducer:
             (miner[0], cls._miner_selection_weight(miner))
             for miner in attested_miners
         ]
+        # Exclude miners with zero authoritative weight (e.g. VM/emulator
+        # flagged in epoch_enroll) from the producer rotation entirely.
+        weighted_miners = [(m, w) for m, w in weighted_miners if w > 0]
         if not weighted_miners:
             return []
 
