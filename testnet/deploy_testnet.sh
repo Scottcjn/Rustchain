@@ -166,10 +166,13 @@ rate_limit:
   max_amount: 0.5           # test-RTC per window
   max_requests: 1
 database:
-  path: "$DB_PATH"          # the testnet node DB (balances live here)
-faucet_wallet: "$FAUCET_WALLET"
-node_url: "http://127.0.0.1:$RC_PORT"
-admin_key: "$ADMIN_KEY"
+  path: "$DB_PATH"          # the testnet node DB (rate-limit tracking)
+distribution:
+  mock_mode: false          # real drips via the node's /wallet/transfer
+  node_url: "http://127.0.0.1:$RC_PORT"
+  faucet_wallet: "$FAUCET_WALLET"
+  amount: 0.5
+  admin_key: "$ADMIN_KEY"   # X-Admin-Key for /wallet/transfer (also read from RC_ADMIN_KEY env)
 validation:
   required_prefix:
     - "RTC"
