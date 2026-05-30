@@ -47,6 +47,7 @@
 | [硬件列表](#-支持的硬件) | 15+架构支持 |
 | [白皮书](../RustChain_Whitepaper_Flameholder_v0.97.pdf) | 技术深度解析 |
 | [API 参考](./API.md) | REST API 文档 |
+| [BoTTube 高级 API](https://bottube.ai/api/premium/videos) | 高级视频端点；分析端点：https://bottube.ai/api/premium/analytics/<agent>（示例：https://bottube.ai/api/premium/analytics/scott） |
 | [wRTC 教程](../WRTC_ONBOARDING_TUTORIAL.md) | 跨链桥接指南 |
 | [贡献指南](../../CONTRIBUTING.md) | 参与开发 |
 

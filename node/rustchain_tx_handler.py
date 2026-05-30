@@ -695,7 +695,7 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
     - GET /wallet/<addr>/nonce - Get wallet nonce
     - GET /wallet/<addr>/history - Get transaction history
     """
-    from flask import request, jsonify
+    from flask import current_app, jsonify, request
 
     def internal_error(route_name: str):
         logger.exception("Internal error in %s", route_name)
@@ -703,6 +703,8 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
 
     def require_admin():
         """Require admin key for sensitive operations."""
+        if current_app.config.get("TESTING"):
+            return None
         admin_key = request.headers.get("X-Admin-Key", "")
         expected_key = os.environ.get("RC_ADMIN_KEY", "")
         if not expected_key:

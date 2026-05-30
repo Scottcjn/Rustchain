@@ -261,7 +261,8 @@ def rtc_transfer_from_worker(recipient_wallet, amount_rtc, order_id):
             return {"ok": False, "error": last_error, "details": last_payload}
 
         try:
-            last_payload = transfer_r.json()
+            parsed_payload = transfer_r.json()
+            last_payload = parsed_payload if isinstance(parsed_payload, dict) else {}
         except ValueError:
             last_payload = {}
 

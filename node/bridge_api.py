@@ -243,8 +243,11 @@ def validate_chain_address_format(chain: str, address: str) -> Tuple[bool, str]:
         return False, "Address is required"
     
     if chain == "rustchain":
-        if not re.match(r"^RTC[0-9a-fA-F]{40}$", address):
-            return False, "RustChain address must be RTC + 40 hex characters"
+        if not (
+            re.match(r"^RTC[0-9a-fA-F]{40}$", address)
+            or re.match(r"^RTC_[A-Za-z0-9_]{7,}$", address)
+        ):
+            return False, "RustChain address must be RTC + 40 hex characters or RTC_ legacy miner id"
     
     elif chain == "solana":
         # Solana addresses are base58, 32-44 chars
@@ -802,15 +805,6 @@ def register_bridge_routes(app):
             return jsonify({"error": validation.error}), 400
         details = validation.details or {}
         
-        # Validate address formats
-        for chain, addr in [
-            (details["source_chain"], details["source_address"]),
-            (details["dest_chain"], details["dest_address"])
-        ]:
-            valid, msg = validate_chain_address_format(chain, addr)
-            if not valid:
-                return jsonify({"error": f"Invalid {chain} address: {msg}"}), 400
-        
         # Check admin initiation (bypasses balance check)
         admin_key = request.headers.get("X-Admin-Key", "")
         expected_admin_key = os.environ.get("RC_ADMIN_KEY", "")
@@ -822,6 +816,17 @@ def register_bridge_routes(app):
                 return jsonify({"error": "RC_ADMIN_KEY not configured"}), 503
             if not admin_initiated:
                 return jsonify({"error": "unauthorized"}), 401
+
+        # Validate address formats after the deposit authorization gate so
+        # unauthenticated lock attempts cannot use validation responses to
+        # probe RustChain miner/address existence or format details.
+        for chain, addr in [
+            (details["source_chain"], details["source_address"]),
+            (details["dest_chain"], details["dest_address"])
+        ]:
+            valid, msg = validate_chain_address_format(chain, addr)
+            if not valid:
+                return jsonify({"error": f"Invalid {chain} address: {msg}"}), 400
         
         # Create bridge transfer
         req = BridgeTransferRequest(

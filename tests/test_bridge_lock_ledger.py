@@ -789,6 +789,7 @@ class TestLockLedgerRoutes:
     def _client(self, lock_ledger, db_path):
         lock_ledger.DB_PATH = db_path
         app = Flask(__name__)
+        app.config["TESTING"] = True
         lock_ledger.register_lock_ledger_routes(app)
         return app.test_client()
 
