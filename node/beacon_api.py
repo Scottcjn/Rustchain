@@ -193,6 +193,23 @@ def _clean_pubkey_hex(pubkey_hex):
     return pubkey_clean
 
 
+def _agent_id_from_pubkey(pubkey_bytes):
+    """根据 Ed25519 公钥派生规范 Beacon agent_id。"""
+    return f"bcn_{hashlib.sha256(pubkey_bytes).hexdigest()[:12]}"
+
+
+def _is_canonical_agent_id(agent_id):
+    """识别 bcn_<12 hex> 规范 ID，兼容历史非规范测试/本地标签。"""
+    if not isinstance(agent_id, str):
+        return False
+    suffix = agent_id[4:]
+    return (
+        agent_id.startswith('bcn_')
+        and len(suffix) == 12
+        and all(ch in '0123456789abcdef' for ch in suffix)
+    )
+
+
 def _canonical_agent_request(agent_id, timestamp, nonce, body_bytes):
     body_hash = hashlib.sha256(body_bytes or b'').hexdigest()
     return '\n'.join([
@@ -412,6 +429,13 @@ def beacon_join():
             return jsonify({'error': 'Invalid coinbase_address: must be a string'}), 400
         if len(pubkey_bytes) != 32:
             return jsonify({'error': 'Invalid pubkey_hex: must be 32 bytes'}), 400
+
+        if _is_canonical_agent_id(agent_id):
+            expected_agent_id = _agent_id_from_pubkey(pubkey_bytes)
+            if agent_id != expected_agent_id:
+                return jsonify({
+                    'error': 'Invalid agent_id: canonical bcn_<hash> must match pubkey_hex'
+                }), 400
 
         # Validate coinbase_address if provided (should be 0x-prefixed, 40 hex chars)
         if coinbase_address:
