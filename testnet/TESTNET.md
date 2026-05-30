@@ -22,17 +22,17 @@ mainnet — but a mistake here costs nothing.
 
 | What | URL |
 |------|-----|
-| Node health | `https://<testnet-host>/health` |
-| Current epoch | `https://<testnet-host>/epoch` |
-| Miners | `https://<testnet-host>/api/miners` |
-| Faucet | `https://<testnet-host>/faucet` |
+| Node health | `https://sophiapower8-1.tailbac22e.ts.net/health` |
+| Current epoch | `https://sophiapower8-1.tailbac22e.ts.net/epoch` |
+| Miners | `https://sophiapower8-1.tailbac22e.ts.net/api/miners` |
+| Faucet | `https://sophiapower8-1.tailbac22e.ts.net/faucet` |
 
-(The operator will fill in `<testnet-host>` once the public proxy is live.)
+**Live now** — public via Tailscale Funnel (auto-TLS), backed by the node on POWER8.
 
 ## Get test-RTC from the faucet
 
 ```bash
-curl -X POST https://<testnet-host>/faucet \
+curl -X POST https://sophiapower8-1.tailbac22e.ts.net/faucet \
   -H "Content-Type: application/json" \
   -d '{"wallet": "RTC<your-address>"}'
 ```
@@ -46,7 +46,7 @@ to mainnet (real fingerprint checks, real Ed25519 signing):
 
 ```bash
 # Windows miner: edit RUSTCHAIN_API to the testnet host, or:
-RUSTCHAIN_API=https://<testnet-host> python rustchain_windows_miner.py
+RUSTCHAIN_API=https://sophiapower8-1.tailbac22e.ts.net python rustchain_windows_miner.py
 ```
 
 Your miner attests, enrolls, and earns **test**-RTC on the testnet chain. The
@@ -90,12 +90,13 @@ on a host with a public IP.
   generates and persists one.
 
 ### Verified status
-- ✅ **Node boots and serves on POWER8** (Python 3.10 + pysqlite3 shim),
-  `chain_id=rustchain-testnet-v2`, fresh genesis (epoch 0), `/health` + `/epoch`
-  return 200. Confirmed isolated from mainnet by distinct chain_id.
+- ✅ **Live + public** at `https://sophiapower8-1.tailbac22e.ts.net` via Tailscale
+  Funnel (auto-TLS). `chain_id=rustchain-testnet-v2`, fresh genesis, `/health` +
+  `/epoch` return 200, chain advancing. Isolated from mainnet by distinct chain_id.
+- ✅ **Persistent** — runs under systemd (`rustchain-testnet.service`,
+  enabled + auto-restart) on POWER8 (Python 3.10 + pysqlite3 shim).
 - ⚠️ **Rewards module**: a `_epoch_eligible_miners` import warning appears at
   boot (`rewards_implementation_rip200`); epoch settlement/rewards on testnet
   need a verification pass before miners can earn test-RTC.
 - ⚠️ **Faucet** payout path (`faucet_service/`) still needs a live verification
   pass against the running node before announce.
-- ⏳ Public nginx proxy + persistent systemd enable are the remaining steps.
