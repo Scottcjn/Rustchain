@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
 """Export RustChain attestation and reward data.
 
 Supports the public node API for portable snapshots and a local SQLite database
