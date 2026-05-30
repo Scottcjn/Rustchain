@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rustchain"
+version = "2.2.1"
+description = "RustChain — Proof of Antiquity blockchain with hardware fingerprinting + RTC token"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    {name = "Scott Boudreaux / Elyan Labs", email = "scottbphone12@gmail.com"},
+]
+dependencies = [
+    "flask>=2.0",
+    "requests>=2.28",
+    "cryptography>=41",
+    "pynacl>=1.5",
+    "psutil>=5.9",
+]
+
+[project.urls]
+Homepage = "https://github.com/Scottcjn/Rustchain"
+Repository = "https://github.com/Scottcjn/Rustchain"
+Issues = "https://github.com/Scottcjn/Rustchain/issues"
+
+[tool.setuptools]
+packages = ["node"]
+
+[tool.setuptools.package-data]
+"node" = ["*.sql", "*.json"]
