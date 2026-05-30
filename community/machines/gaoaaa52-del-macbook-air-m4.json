@@ -1,0 +1,21 @@
+{
+  "machine_name": "gaoaaa52-del MacBook Air M4",
+  "model": "MacBook Air (2025)",
+  "model_identifier": "Mac16,13",
+  "year_manufactured": 2025,
+  "architecture": "Apple Silicon M4 (arm64)",
+  "cpu_cores": "10 (4P + 6E)",
+  "memory_gb": 24,
+  "power_draw_watts": 12,
+  "usage": [
+    "RustChain miner dry-run testing",
+    "AI coding agent execution",
+    "GitHub bounty automation",
+    "local development"
+  ],
+  "description": "MacBook Air with Apple M4 and 24 GB unified memory used for local Codex agent work, RustChain miner dry-run validation, GitHub bounty automation, and software development. The miner dry-run completed on macOS arm64 with all six fingerprint checks passing and the RustChain node health probe returning HTTP 200.",
+  "wallet_name": "gaoaaa52-del",
+  "wallet_address": "gaoaaa52-del",
+  "contributor": "gaoaaa52-del",
+  "added_date": "2026-05-29"
+}
