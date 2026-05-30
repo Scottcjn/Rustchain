@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 pytest.importorskip("matplotlib")
+pytest.importorskip("seaborn")
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "benchmarks" / "pse" / "analyze_results.py"
 SPEC = importlib.util.spec_from_file_location("pse_analyze_results", MODULE_PATH)
