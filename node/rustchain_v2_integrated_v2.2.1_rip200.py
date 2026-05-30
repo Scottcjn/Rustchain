@@ -145,8 +145,16 @@ except ImportError as _e:
 try:
     from bridge_api import register_bridge_routes, init_bridge_schema
     from lock_ledger import register_lock_ledger_routes, init_lock_ledger_schema
+    from bridge_federation_routes import register_federation_routes
+    from bridge_reconciliation import (
+        register_reconciliation_routes,
+        init_reconciliation_schema,
+        record_reconciliation_snapshot,
+    )
     HAVE_BRIDGE = True
     print("[RIP-0305 Track C] Bridge API + Lock Ledger modules loaded")
+    print("[FEDERATION] Bridge federation read-only routes loaded")
+    print("[FEDERATION] Bridge reconciliation snapshots loaded (Layer 2)")
 except ImportError as _e:
     HAVE_BRIDGE = False
     print(f"[RIP-0305 Track C] Bridge modules not available: {_e}")
@@ -1261,6 +1269,7 @@ MAX_DAILY_WITHDRAWAL = 1000.0  # RTC
 GOVERNANCE_ACTIVE_SECONDS = 7 * 24 * 60 * 60
 GOVERNANCE_MIN_PROPOSER_BALANCE_RTC = 10.0
 GOVERNANCE_ACTIVE_MINER_WINDOW_SECONDS = 3600
+GOVERNANCE_DESCRIPTION_MAX_LEN = 4_000
 
 EPOCH_WEIGHT_SCALE = 1_000_000_000
 MAX_EPOCH_WEIGHT = 10_000
@@ -1367,7 +1376,18 @@ if HAVE_BRIDGE:
     try:
         register_bridge_routes(app)
         register_lock_ledger_routes(app)
+        register_federation_routes(app)
+        register_reconciliation_routes(app)
+        # Init reconciliation snapshot table if not present
+        try:
+            with sqlite3.connect(DB_PATH) as _conn:
+                init_reconciliation_schema(_conn.cursor())
+                _conn.commit()
+        except Exception as _e:
+            print(f"[FEDERATION] reconciliation schema init warning: {_e}")
         print("[RIP-0305 Track C] Bridge API + Lock Ledger endpoints registered")
+        print("[FEDERATION] Bridge federation read-only endpoints registered")
+        print("[FEDERATION] Bridge reconciliation endpoints registered")
     except Exception as e:
         print(f"[RIP-0305 Track C] Failed to register bridge endpoints: {e}")
 
@@ -6173,6 +6193,13 @@ def governance_propose():
     if not proposer_wallet or not title or not description:
         return jsonify({"ok": False, "error": "wallet, title and description are required"}), 400
 
+    if len(description) > GOVERNANCE_DESCRIPTION_MAX_LEN:
+        return jsonify({
+            "ok": False,
+            "error": "description_too_long",
+            "max_len": GOVERNANCE_DESCRIPTION_MAX_LEN,
+        }), 400
+
     if not all([nonce, signature, public_key]):
         if app.config.get("TESTING"):
             nonce = nonce or "test-nonce"
@@ -6212,10 +6239,12 @@ def governance_propose():
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         _ensure_governance_tables(c)
+        conn.execute("BEGIN IMMEDIATE")
 
         balance_i64 = _balance_i64_for_wallet(c, proposer_wallet)
         balance_rtc = balance_i64 / 1_000_000.0
         if balance_rtc <= GOVERNANCE_MIN_PROPOSER_BALANCE_RTC:
+            conn.rollback()
             return jsonify({
                 "ok": False,
                 "error": "insufficient_balance_to_propose",
@@ -6224,6 +6253,14 @@ def governance_propose():
             }), 403
 
         now = int(time.time())
+        if not _reserve_governance_nonce(c, proposer_wallet, nonce, now):
+            conn.rollback()
+            return jsonify({
+                "ok": False,
+                "error": "nonce_already_used",
+                "nonce": nonce,
+            }), 409
+
         ends_at = now + GOVERNANCE_ACTIVE_SECONDS
         c.execute(
             """
@@ -6255,12 +6292,22 @@ def governance_propose():
     }), 201
 
 
+_PROPOSALS_DESCRIPTION_PREVIEW_LEN = 200
+_PROPOSALS_MAX_LIMIT = 200
+_PROPOSALS_DEFAULT_LIMIT = 50
+
+
 @app.route('/governance/proposals', methods=['GET'])
 def governance_proposals():
+    limit = min(max(request.args.get('limit', _PROPOSALS_DEFAULT_LIMIT, type=int), 1), _PROPOSALS_MAX_LIMIT)
+    offset = max(request.args.get('offset', 0, type=int), 0)
+
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         _ensure_governance_tables(c)
+
+        total = c.execute("SELECT COUNT(*) FROM governance_proposals").fetchone()[0]
 
         rows = c.execute(
             """
@@ -6268,17 +6315,20 @@ def governance_proposals():
                    status, yes_weight, no_weight
             FROM governance_proposals
             ORDER BY id DESC
-            """
+            LIMIT ? OFFSET ?
+            """,
+            (limit, offset),
         ).fetchall()
 
         proposals = []
         for row in rows:
             status = _refresh_proposal_status(c, row)
+            desc = row["description"] or ""
             proposals.append({
                 "id": row["id"],
                 "proposer_wallet": row["proposer_wallet"],
                 "title": row["title"],
-                "description": row["description"],
+                "description_preview": desc[:_PROPOSALS_DESCRIPTION_PREVIEW_LEN],
                 "created_at": row["created_at"],
                 "activated_at": row["activated_at"],
                 "ends_at": row["ends_at"],
@@ -6288,11 +6338,28 @@ def governance_proposals():
             })
         conn.commit()
 
-    return jsonify({"ok": True, "count": len(proposals), "proposals": proposals})
+    return jsonify({
+        "ok": True,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "count": len(proposals),
+        "proposals": proposals,
+    })
 
 
 @app.route('/governance/proposal/<int:proposal_id>', methods=['GET'])
 def governance_proposal_detail(proposal_id: int):
+    _VOTES_MAX_LIMIT = 500
+    try:
+        votes_limit = max(1, min(int(request.args.get("votes_limit", 200)), _VOTES_MAX_LIMIT))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "votes_limit must be an integer"}), 400
+    try:
+        votes_offset = max(0, int(request.args.get("votes_offset", 0)))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "votes_offset must be an integer"}), 400
+
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
@@ -6312,14 +6379,20 @@ def governance_proposal_detail(proposal_id: int):
 
         status = _refresh_proposal_status(c, row)
 
+        total_votes = c.execute(
+            "SELECT COUNT(*) FROM governance_votes WHERE proposal_id = ?",
+            (proposal_id,),
+        ).fetchone()[0]
+
         votes = c.execute(
             """
             SELECT voter_wallet, vote, weight, multiplier, base_balance_rtc, created_at
             FROM governance_votes
             WHERE proposal_id = ?
             ORDER BY created_at DESC
+            LIMIT ? OFFSET ?
             """,
-            (proposal_id,),
+            (proposal_id, votes_limit, votes_offset),
         ).fetchall()
         conn.commit()
 
@@ -6344,6 +6417,9 @@ def governance_proposal_detail(proposal_id: int):
             "result": "passed" if status == "passed" else ("failed" if status == "failed" else "pending"),
         },
         "votes": [dict(v) for v in votes],
+        "votes_total": total_votes,
+        "votes_limit": votes_limit,
+        "votes_offset": votes_offset,
     })
 
 
@@ -6672,9 +6748,24 @@ def _parse_oui_enforce(value):
         return None
 
 
+# Health-status cache for /api/nodes: url -> (online: bool|None, checked_at: float)
+# Populated lazily; decouples outbound probes from the request path.
+_NODE_HEALTH_CACHE: dict = {}
+_NODE_HEALTH_CACHE_TTL = 60.0   # seconds before a cached status is considered stale
+_MAX_INLINE_PROBES = 3          # max outbound health probes issued per request
+
+
 @app.route("/api/nodes")
 def api_nodes():
-    """Return list of all registered attestation nodes"""
+    """Return paginated registered attestation nodes with cached health status.
+
+    RIP-200 Bounty #6527: Added pagination (limit, offset) and decoupled health
+    probes via a module-level TTL cache with a per-request probe cap to prevent
+    unauthenticated blocking fan-out DoS.
+    """
+    import time as _time
+    import requests as _requests
+
     def _is_admin() -> bool:
         need = os.environ.get("RC_ADMIN_KEY", "")
         got = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
@@ -6698,11 +6789,31 @@ def api_nodes():
             # Non-IP hosts (DNS names) are assumed public.
             return False
 
+    # Pagination params (mirrors /api/miners convention)
+    try:
+        raw_limit = request.args.get("limit")
+        limit = int(raw_limit) if raw_limit not in (None, "") else 20
+    except (ValueError, TypeError):
+        return jsonify({"ok": False, "error": "limit must be an integer"}), 400
+    try:
+        raw_offset = request.args.get("offset")
+        offset = int(raw_offset) if raw_offset not in (None, "") else 0
+    except (ValueError, TypeError):
+        return jsonify({"ok": False, "error": "offset must be an integer"}), 400
+    limit = min(max(limit, 1), 50)
+    offset = max(offset, 0)
+
     nodes = []
+    total = 0
     try:
         with sqlite3.connect(DB_PATH) as conn:
             c = conn.cursor()
-            c.execute("SELECT node_id, wallet_address, url, name, registered_at, is_active FROM node_registry")
+            total = c.execute("SELECT COUNT(*) FROM node_registry").fetchone()[0]
+            c.execute(
+                "SELECT node_id, wallet_address, url, name, registered_at, is_active"
+                " FROM node_registry LIMIT ? OFFSET ?",
+                (limit, offset),
+            )
             for row in c.fetchall():
                 nodes.append({
                     "node_id": row[0],
@@ -6710,32 +6821,54 @@ def api_nodes():
                     "url": row[2],
                     "name": row[3],
                     "registered_at": row[4],
-                    "is_active": bool(row[5])
+                    "is_active": bool(row[5]),
                 })
     except Exception as e:
         print(f"Error fetching nodes: {e}")
-    
-    # Also add live status check
-    # SECURITY: Only probe URLs that are NOT internal/private to prevent SSRF
-    import requests
+
+    # Health status: serve from TTL cache; issue at most _MAX_INLINE_PROBES outbound
+    # requests per call so a single unauthenticated request cannot hold a worker for
+    # 200 * timeout seconds.
+    now = _time.time()
+    probes_issued = 0
+    admin = _is_admin()
+
     for node in nodes:
         raw_url = node.get("url") or ""
-        if raw_url and not _should_redact_url(raw_url):
-            try:
-                resp = requests.get(f"{raw_url}/health", timeout=3)
-                node["online"] = resp.status_code == 200
-            except Exception:
-                node["online"] = False
-        else:
-            # Skip health check for internal/private URLs (SSRF prevention)
+        private = bool(raw_url and _should_redact_url(raw_url))
+
+        if not raw_url or private:
             node["online"] = None
+        else:
+            cached = _NODE_HEALTH_CACHE.get(raw_url)
+            fresh = cached is not None and (now - cached[1]) < _NODE_HEALTH_CACHE_TTL
+            if fresh:
+                node["online"] = cached[0]
+            elif probes_issued < _MAX_INLINE_PROBES:
+                try:
+                    resp = _requests.get(f"{raw_url}/health", timeout=3)
+                    status = resp.status_code == 200
+                except Exception:
+                    status = False
+                _NODE_HEALTH_CACHE[raw_url] = (status, now)
+                node["online"] = status
+                probes_issued += 1
+            else:
+                # Probe budget exhausted; return last known status or unknown.
+                node["online"] = cached[0] if cached is not None else None
 
         # SECURITY: don't leak private/VPN URLs to unauthenticated clients.
-        if (not _is_admin()) and raw_url and _should_redact_url(raw_url):
+        if not admin and private:
             node["url"] = None
             node["url_redacted"] = True
-    
-    return jsonify({"nodes": nodes, "count": len(nodes)})
+
+    return jsonify({
+        "nodes": nodes,
+        "count": len(nodes),
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+    })
 
 
 @app.route("/api/miners", methods=["GET"])
@@ -8119,19 +8252,51 @@ def api_rewards_settle():
 
     with sqlite3.connect(DB_PATH) as db:
         res = settle_epoch(db, epoch)
+        # FEDERATION Layer 2: record bridge reconciliation snapshot for this
+        # epoch. Idempotent — safe to call repeatedly. Does NOT block or
+        # invalidate the settle response if the snapshot fails (the snapshot
+        # is an audit artifact, not a settlement requirement).
+        if HAVE_BRIDGE:
+            try:
+                snap_result = record_reconciliation_snapshot(db, epoch=epoch)
+                if isinstance(res, dict):
+                    res["bridge_reconciliation_snapshot"] = {
+                        "epoch": snap_result.get("epoch"),
+                        "state_hash": snap_result.get("state_hash"),
+                        "bridged_supply_committed": snap_result.get(
+                            "bridged_supply_committed"
+                        ),
+                        "created": snap_result.get("created", False),
+                    }
+            except Exception as _snap_exc:
+                print(
+                    f"[FEDERATION] reconciliation snapshot at epoch {epoch} "
+                    f"failed (non-fatal): {_snap_exc}"
+                )
     return jsonify(res)
 
 @app.route('/rewards/epoch/<int:epoch>', methods=['GET'])
 def api_rewards_epoch(epoch: int):
     """Get reward distribution for a specific epoch"""
+    try:
+        limit = max(1, min(int(request.args.get("limit", "200")), 1000))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "limit must be an integer"}), 400
+    try:
+        offset = max(0, int(request.args.get("offset", "0")))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "offset must be an integer"}), 400
+
     with sqlite3.connect(DB_PATH) as db:
         rows = db.execute(
-            "SELECT miner_id, share_i64 FROM epoch_rewards WHERE epoch=? ORDER BY miner_id",
-            (epoch,)
+            "SELECT miner_id, share_i64 FROM epoch_rewards WHERE epoch=? ORDER BY miner_id LIMIT ? OFFSET ?",
+            (epoch, limit, offset)
         ).fetchall()
 
     return jsonify({
         "epoch": epoch,
+        "limit": limit,
+        "offset": offset,
         "rewards": [
             {
                 "miner_id": r[0],
@@ -8206,7 +8371,7 @@ def api_wallet_history():
         return jsonify({"ok": False, "error": "limit must be an integer"}), 400
 
     try:
-        offset = max(0, int(request.args.get("offset", "0")))
+        offset = max(0, min(int(request.args.get("offset", "0")), 9_800))
     except (ValueError, TypeError):
         return jsonify({"ok": False, "error": "offset must be an integer"}), 400
 
@@ -8214,6 +8379,7 @@ def api_wallet_history():
 
     with sqlite3.connect(DB_PATH) as db:
         # --- Ledger entries (transfers) ---
+        _history_cap = offset + limit
         try:
             ledger_rows = db.execute(
                 """
@@ -8221,8 +8387,9 @@ def api_wallet_history():
                 FROM ledger
                 WHERE miner_id = ?
                 ORDER BY ts DESC
+                LIMIT ?
                 """,
-                (miner_id,),
+                (miner_id, _history_cap),
             ).fetchall()
 
             for ts, epoch, _mid, delta_i64, reason in ledger_rows:
@@ -8267,8 +8434,9 @@ def api_wallet_history():
                 LEFT JOIN epoch_state es ON er.epoch = es.epoch
                 WHERE er.miner_id = ?
                 ORDER BY er.epoch DESC
+                LIMIT ?
                 """,
-                (miner_id,),
+                (miner_id, _history_cap),
             ).fetchall()
 
             for epoch, share_i64, _blocks in reward_rows:
@@ -8291,8 +8459,9 @@ def api_wallet_history():
                 FROM pending_ledger
                 WHERE from_miner = ? OR to_miner = ?
                 ORDER BY COALESCE(created_at, ts) DESC
+                LIMIT ?
                 """,
-                (miner_id, miner_id),
+                (miner_id, miner_id, _history_cap),
             ).fetchall()
 
             for ts, from_m, to_m, amt, reason, status, tx_hash, created in pending_rows:
@@ -9215,6 +9384,25 @@ def _ensure_governance_tables(c: sqlite3.Cursor) -> None:
             FOREIGN KEY (proposal_id) REFERENCES governance_proposals(id)
         )
     """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS governance_nonces (
+            wallet TEXT NOT NULL,
+            nonce TEXT NOT NULL,
+            used_at INTEGER NOT NULL,
+            PRIMARY KEY (wallet, nonce)
+        )
+    """)
+
+
+def _reserve_governance_nonce(c: sqlite3.Cursor, wallet: str, nonce: str, used_at: int) -> bool:
+    c.execute(
+        """
+        INSERT OR IGNORE INTO governance_nonces (wallet, nonce, used_at)
+        VALUES (?, ?, ?)
+        """,
+        (wallet, nonce, used_at),
+    )
+    return c.rowcount == 1
 
 
 def _get_active_miner_antiquity_multiplier(c: sqlite3.Cursor, wallet: str):

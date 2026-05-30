@@ -874,7 +874,10 @@ class UtxoDB:
         # one writer at a time. When we own the transaction
         # (manage_tx=True), we commit first, then evict on a fresh
         # connection so a failure cannot roll back the durable spend.
-            _spent_ids = list(set(input_box_ids + list(data_inputs)))
+            # Only regular inputs are spent by this transaction. Read-only
+            # data_inputs remain unspent and must not evict other mempool
+            # transactions that legitimately depend on the same reference box.
+            _spent_ids = list(set(input_box_ids))
             if _spent_ids:
                 if not manage_tx:
                     # External-connection path: evict inside the caller's
@@ -1343,6 +1346,8 @@ class UtxoDB:
             ).fetchall()
             candidates = []
             stale_tx_ids = []
+            selected_spend_inputs = set()
+            selected_data_inputs = set()
 
             for row in rows:
                 tx_id = row['tx_id']
@@ -1374,7 +1379,17 @@ class UtxoDB:
                         stale_tx_ids.append(tx_id)
                         break
                 else:
+                    input_set = set(input_ids)
+                    data_input_set = set(data_inputs)
+                    if (
+                        input_set & selected_data_inputs
+                        or data_input_set & selected_spend_inputs
+                    ):
+                        continue
+
                     candidates.append(tx)
+                    selected_spend_inputs.update(input_set)
+                    selected_data_inputs.update(data_input_set)
                     if len(candidates) >= max_count:
                         break
 

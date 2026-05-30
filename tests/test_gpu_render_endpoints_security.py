@@ -1,10 +1,12 @@
 # SPDX-License-Identifier: MIT
 
 import sqlite3
+import threading
 
 import pytest
 from flask import Flask
 
+from node import gpu_render_endpoints as gpu_module
 from node.gpu_render_endpoints import register_gpu_render_endpoints
 
 
@@ -151,6 +153,79 @@ def test_gpu_admin_can_create_and_release_escrow(tmp_path):
     assert released.get_json() == {"ok": True, "status": "released"}
     assert _balance(db_path, "victim") == 20.0
     assert _balance(db_path, "attacker") == 5.0
+
+
+def test_gpu_escrow_blocks_concurrent_overdraft(tmp_path, monkeypatch):
+    db_path = tmp_path / "gpu.db"
+    _init_db(db_path)
+    app = _create_app(db_path)
+
+    real_connect = gpu_module.sqlite3.connect
+    select_barrier = threading.Barrier(2)
+
+    class RaceCursor:
+        def __init__(self, cursor):
+            self._cursor = cursor
+
+        def fetchone(self):
+            row = self._cursor.fetchone()
+            select_barrier.wait(timeout=5)
+            return row
+
+        def __getattr__(self, name):
+            return getattr(self._cursor, name)
+
+    class RaceConnection:
+        def __init__(self, conn):
+            self._conn = conn
+
+        def execute(self, sql, params=()):
+            cursor = self._conn.execute(sql, params)
+            if sql.strip().startswith("SELECT balance_rtc FROM balances"):
+                return RaceCursor(cursor)
+            return cursor
+
+        def __getattr__(self, name):
+            return getattr(self._conn, name)
+
+        def __enter__(self):
+            self._conn.__enter__()
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return self._conn.__exit__(exc_type, exc_value, traceback)
+
+    def race_connect(*args, **kwargs):
+        return RaceConnection(real_connect(*args, **kwargs))
+
+    monkeypatch.setattr(gpu_module.sqlite3, "connect", race_connect)
+    results = []
+
+    def create_escrow(job_id):
+        payload = _escrow_payload()
+        payload["job_id"] = job_id
+        payload["amount_rtc"] = 20
+        client = app.test_client()
+        response = client.post(
+            "/api/gpu/escrow",
+            json=payload,
+            headers={"X-Admin-Key": ADMIN_KEY},
+        )
+        results.append(response.status_code)
+
+    threads = [
+        threading.Thread(target=create_escrow, args=("race-job-1",)),
+        threading.Thread(target=create_escrow, args=("race-job-2",)),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+
+    monkeypatch.undo()
+
+    assert sorted(results) == [200, 400]
+    assert _balance(db_path, "victim") == 5.0
 
 
 def test_gpu_admin_endpoints_fail_closed_without_configured_key(tmp_path):
