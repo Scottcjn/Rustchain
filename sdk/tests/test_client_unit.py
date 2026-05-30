@@ -37,6 +37,13 @@ class TestRustChainClient:
         assert client.timeout == 60
         client.close()
 
+    def test_init_with_retry_settings(self):
+        """Test client initialization with retry settings"""
+        client = RustChainClient("https://rustchain.org", retry_count=5, retry_backoff=0.25)
+        assert client.retry_count == 5
+        assert client.retry_backoff == 0.25
+        client.close()
+
     def test_init_strips_trailing_slash(self):
         """Test that trailing slash is stripped from base URL"""
         client = RustChainClient("https://rustchain.org/")
@@ -254,6 +261,88 @@ class TestBalanceEndpoint:
                 client.balance(None)
 
         assert "miner_id" in str(exc_info.value)
+
+
+class TestEligibilityEndpoint:
+    """Test /lottery/eligibility endpoint"""
+
+    @patch("requests.Session.request")
+    def test_check_eligibility_success(self, mock_request):
+        """Test successful eligibility query"""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "eligible": True,
+            "reason": "attested_and_enrolled",
+            "epoch": 91,
+            "slot": 13227,
+        }
+        mock_response.raise_for_status = Mock()
+        mock_request.return_value = mock_response
+
+        with RustChainClient("https://rustchain.org") as client:
+            result = client.check_eligibility("aliceRTC")
+
+        assert result["eligible"] is True
+        assert result["reason"] == "attested_and_enrolled"
+        assert mock_request.call_args.kwargs["url"] == "https://rustchain.org/lottery/eligibility"
+        assert mock_request.call_args.kwargs["params"] == {"miner_id": "aliceRTC"}
+        assert mock_request.call_args.kwargs["allow_redirects"] is False
+
+    def test_check_eligibility_empty_miner_id(self):
+        """Test eligibility with empty miner_id raises ValidationError"""
+        with pytest.raises(ValidationError) as exc_info:
+            with RustChainClient("https://rustchain.org") as client:
+                client.check_eligibility("")
+
+        assert "miner_id" in str(exc_info.value)
+
+
+class TestRequestRetry:
+    """Test retry behavior for transient failures"""
+
+    @patch("time.sleep")
+    @patch("requests.Session.request")
+    def test_retries_transient_connection_error(self, mock_request, mock_sleep):
+        """Retry connection errors before succeeding"""
+        import requests
+
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"ok": True}
+        mock_response.raise_for_status = Mock()
+        mock_request.side_effect = [
+            requests.exceptions.ConnectionError("temporary"),
+            mock_response,
+        ]
+
+        with RustChainClient("https://rustchain.org", retry_count=2, retry_backoff=0.01) as client:
+            result = client.health()
+
+        assert result["ok"] is True
+        assert mock_request.call_count == 2
+        mock_sleep.assert_called_once_with(0.01)
+
+    @patch("time.sleep")
+    @patch("requests.Session.request")
+    def test_retries_http_503(self, mock_request, mock_sleep):
+        """Retry transient HTTP server errors"""
+        first = Mock()
+        first.status_code = 503
+
+        second = Mock()
+        second.status_code = 200
+        second.raise_for_status = Mock()
+        second.json.return_value = {"ok": True}
+
+        mock_request.side_effect = [first, second]
+
+        with RustChainClient("https://rustchain.org", retry_count=2, retry_backoff=0.01) as client:
+            result = client.health()
+
+        assert result["ok"] is True
+        assert mock_request.call_count == 2
+        mock_sleep.assert_called_once_with(0.01)
 
 
 class TestTransferEndpoint:
