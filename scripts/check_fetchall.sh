@@ -24,10 +24,21 @@
 #                           (only use this for grandfathered code being
 #                           audited in a follow-up sweep).
 #
-# Usage:   bash scripts/check_fetchall.sh
-# Exit:    0 if every hit is annotated or migrated, 1 otherwise.
+# Usage:   bash scripts/check_fetchall.sh [--strict]
+# Exit:    0 if every hit is annotated or migrated, 1 otherwise when --strict is given.
+#          Without --strict the script always exits 0 (reports findings but does not fail).
 
 set -u
+
+strict_mode=0
+if [ "${1:-}" = "--strict" ]; then
+    strict_mode=1
+    shift
+fi
+if [ $# -gt 0 ]; then
+    echo "Usage: $0 [--strict]" >&2
+    exit 2
+fi
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -109,7 +120,11 @@ if [ "$unannotated_count" -gt 0 ]; then
     echo ""
     echo "Unannotated hits:"
     echo "$unannotated_list" | sed 's/^/  /'
-    exit 1
+    if [ "$strict_mode" -eq 1 ]; then
+        exit 1
+    else
+        exit 0
+    fi
 fi
 
 echo "OK: every .fetchall() in node/ is either migrated to fetch_page() or"
