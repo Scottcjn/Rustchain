@@ -72,6 +72,9 @@ def _validate_challenge_params(
         raise ValueError("sample_size out of range")
     if sample_size > piece_size:
         raise ValueError("sample_size cannot exceed piece_size")
+    distinct_windows = piece_size - sample_size + 1
+    if sample_count > distinct_windows:
+        raise ValueError("sample_count exceeds distinct sample windows")
 
 
 @dataclass(frozen=True)
@@ -161,12 +164,15 @@ def build_custody_challenge(
     max_offset = piece_size - sample_size
     seed_material = _derive_seed(piece_id, piece_size, epoch, validator_id, seed)
     offsets = []
+    seen_offsets = set()
     counter = 0
 
     while len(offsets) < sample_count:
         digest = hashlib.sha256(seed_material + counter.to_bytes(8, "big")).digest()
         offset = int.from_bytes(digest[:8], "big") % (max_offset + 1)
-        offsets.append(offset)
+        if offset not in seen_offsets:
+            offsets.append(offset)
+            seen_offsets.add(offset)
         counter += 1
 
     return CustodyChallenge(

@@ -124,3 +124,29 @@ def test_challenge_rejects_impossible_sample_size():
             sample_count=1,
             sample_size=32,
         )
+
+
+def test_challenge_rejects_more_samples_than_unique_windows():
+    with pytest.raises(ValueError, match="sample_count exceeds distinct sample windows"):
+        build_custody_challenge(
+            piece_id="piece-small",
+            piece_size=32,
+            epoch=1,
+            validator_id="validator-1",
+            sample_count=16,
+            sample_size=32,
+        )
+
+
+def test_challenge_offsets_are_unique():
+    challenge = build_custody_challenge(
+        piece_id="piece-a",
+        piece_size=96,
+        epoch=5,
+        validator_id="validator-1",
+        sample_count=16,
+        sample_size=32,
+    )
+
+    assert len(challenge.sample_offsets) == 16
+    assert len(set(challenge.sample_offsets)) == 16
