@@ -129,7 +129,7 @@ class TransactionPool:
 
             # Check if wallet_nonce column exists
             cursor.execute("PRAGMA table_info(balances)")
-            columns = [col[1] for col in cursor.fetchall()]
+            columns = [col[1] for col in cursor.fetchall()]  # fetchall-ok: pragma-result
 
             if "wallet_nonce" not in columns:
                 try:
@@ -182,7 +182,7 @@ class TransactionPool:
             "SELECT name FROM sqlite_master WHERE type='table' "
             "AND name IN ('balances', 'balances_old', 'balances_new')"
         )
-        tables = {row[0] for row in cursor.fetchall()}
+        tables = {row[0] for row in cursor.fetchall()}  # fetchall-ok: bounded-by-schema
 
         if "balances" in tables:
             return
@@ -340,7 +340,7 @@ class TransactionPool:
                 "SELECT nonce FROM pending_transactions WHERE from_addr = ? AND status = 'pending'",
                 (address,)
             )
-            return {row["nonce"] for row in cursor.fetchall()}
+            return {row["nonce"] for row in cursor.fetchall()}  # fetchall-ok: bounded-by-schema
 
     def _tx_exists(self, tx_hash: str) -> bool:
         """Check if transaction already exists"""
@@ -423,7 +423,7 @@ class TransactionPool:
                 "SELECT nonce FROM pending_transactions WHERE from_addr = ? AND status = 'pending'",
                 (tx.from_addr,)
             )
-            pending_nonces = {row["nonce"] for row in cursor.fetchall()}
+            pending_nonces = {row["nonce"] for row in cursor.fetchall()}  # fetchall-ok: bounded-by-schema
             while expected_nonce in pending_nonces:
                 expected_nonce += 1
 
@@ -517,7 +517,7 @@ class TransactionPool:
                     public_key=row["public_key"],
                     tx_hash=row["tx_hash"]
                 )
-                for row in cursor.fetchall()
+                for row in cursor.fetchall()  # fetchall-ok: bounded-by-schema
             ]
 
     def confirm_transaction(
@@ -882,7 +882,7 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
                     (address, address, limit, offset)
                 )
 
-                transactions = [dict(row) for row in cursor.fetchall()]
+                transactions = [dict(row) for row in cursor.fetchall()]  # fetchall-ok: bounded-by-schema
 
             return jsonify({
                 "address": address,

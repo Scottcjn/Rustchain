@@ -537,7 +537,7 @@ def _recent_reviews(limit: int = 10, db_path: str | None = None) -> list[dict[st
             LIMIT ?
             """,
             (limit,),
-        ).fetchall()
+        ).fetchall()  # fetchall-ok: bounded-by-schema
     results = []
     for row in rows:
         item = dict(row)
@@ -565,7 +565,7 @@ def _reviews_missing_text(limit: int = 25, db_path: str | None = None) -> list[d
             LIMIT ?
             """,
             (limit,),
-        ).fetchall()
+        ).fetchall()  # fetchall-ok: bounded-by-schema
     return [dict(row) for row in rows]
 
 
@@ -637,7 +637,7 @@ def _recent_review_rows(limit: int = 25, db_path: str | None = None) -> list[dic
             LIMIT ?
             """,
             (limit,),
-        ).fetchall()
+        ).fetchall()  # fetchall-ok: bounded-by-schema
     return [dict(row) for row in rows]
 
 

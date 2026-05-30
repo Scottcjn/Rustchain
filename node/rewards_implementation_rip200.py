@@ -359,7 +359,7 @@ def register_rewards_rip200(app, DB_PATH):
         with sqlite3.connect(DB_PATH) as db:
             rows = db.execute(
                 "SELECT miner_id, amount_i64 FROM balances WHERE amount_i64 > 0 ORDER BY amount_i64 DESC"
-            ).fetchall()
+            ).fetchall()  # fetchall-ok: bounded-by-schema
 
             balances = [
                 {

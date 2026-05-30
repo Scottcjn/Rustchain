@@ -57,7 +57,7 @@ def _micro_to_rtc(amount_micro):
 
 def _ensure_balance_micro_schema(conn):
     """Keep balances canonical in integer micro-RTC units."""
-    columns = conn.execute("PRAGMA table_info(balances)").fetchall()
+    columns = conn.execute("PRAGMA table_info(balances)").fetchall()  # fetchall-ok: pragma-result
     if not columns:
         conn.execute(
             "CREATE TABLE balances (miner_pk TEXT PRIMARY KEY, balance_rtc INTEGER DEFAULT 0)"

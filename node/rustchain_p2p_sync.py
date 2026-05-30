@@ -153,7 +153,7 @@ class PeerManager:
                     SELECT peer_url FROM peers
                     WHERE is_active = 1
                     AND last_seen > ?
-                """, (int(time.time()) - 300,)).fetchall()  # 5 minute timeout
+                """, (int(time.time()) - 300,)).fetchall()  # 5 minute timeout  # fetchall-ok: bounded-by-schema
 
                 return [row[0] for row in rows]
 
@@ -529,7 +529,7 @@ def add_p2p_endpoints(app, peer_manager, block_sync, tx_gossip):
                 WHERE height >= ?
                 ORDER BY height ASC
                 LIMIT ?
-            """, (start, limit)).fetchall()
+            """, (start, limit)).fetchall()  # fetchall-ok: bounded-by-schema
 
             blocks = [
                 {"height": row[0], "hash": row[1], "data": json.loads(row[2])}

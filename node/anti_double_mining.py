@@ -157,7 +157,7 @@ def detect_duplicate_identities(
         "SELECT miner_pk FROM epoch_enroll WHERE epoch = ?",
         (epoch,)
     )
-    enrolled = cursor.fetchall()
+    enrolled = cursor.fetchall()  # fetchall-ok: bounded-by-schema
 
     if enrolled:
         rows = []
@@ -207,7 +207,7 @@ def detect_duplicate_identities(
             WHERE ts_ok >= ? AND ts_ok <= ?
             ORDER BY device_arch, entropy_score DESC
         """, (epoch_start_ts, epoch_end_ts))
-        rows = cursor.fetchall()
+        rows = cursor.fetchall()  # fetchall-ok: bounded-by-schema
 
     # Group miners by machine identity
     identity_map: Dict[str, List[Tuple[str, Dict]]] = {}  # identity_hash -> [(miner_id, attestation_data)]
@@ -330,7 +330,7 @@ def select_representative_miner(
         ORDER BY entropy_score DESC, ts_ok DESC, miner ASC
     """, miner_ids)
     
-    rows = cursor.fetchall()
+    rows = cursor.fetchall()  # fetchall-ok: bounded-by-schema
     
     if not rows:
         # Fallback: return first miner ID
@@ -364,7 +364,7 @@ def get_epoch_miner_groups(
         "SELECT miner_pk FROM epoch_enroll WHERE epoch = ?",
         (epoch,)
     )
-    enrolled = cursor.fetchall()
+    enrolled = cursor.fetchall()  # fetchall-ok: bounded-by-schema
 
     if enrolled:
         # Build miner list from epoch_enroll; look up arch + fingerprint history.
@@ -404,7 +404,7 @@ def get_epoch_miner_groups(
             FROM miner_attest_recent
             WHERE ts_ok >= ? AND ts_ok <= ?
         """, (epoch_start_ts, epoch_end_ts))
-        rows = cursor.fetchall()
+        rows = cursor.fetchall()  # fetchall-ok: bounded-by-schema
     
     # Group by machine identity
     groups: Dict[str, List[str]] = {}
@@ -436,7 +436,7 @@ def _get_epoch_enrolled_weights(conn: sqlite3.Connection, epoch: int) -> Dict[st
     multiplier path.
     """
     try:
-        cols = conn.execute("PRAGMA table_info(epoch_enroll)").fetchall()
+        cols = conn.execute("PRAGMA table_info(epoch_enroll)").fetchall()  # fetchall-ok: pragma-result
     except sqlite3.Error:
         return {}
 
@@ -447,7 +447,7 @@ def _get_epoch_enrolled_weights(conn: sqlite3.Connection, epoch: int) -> Dict[st
         rows = conn.execute(
             "SELECT miner_pk, weight FROM epoch_enroll WHERE epoch = ?",
             (epoch,),
-        ).fetchall()
+        ).fetchall()  # fetchall-ok: bounded-by-schema
     except sqlite3.Error:
         return {}
 

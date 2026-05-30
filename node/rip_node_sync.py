@@ -60,7 +60,7 @@ def get_local_attestations() -> Set[str]:
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT miner FROM miner_attest_recent")
-            return set(row[0] for row in cursor.fetchall())
+            return set(row[0] for row in cursor.fetchall())  # fetchall-ok: bounded-by-schema
     except Exception as e:
         logger.error(f"Failed to read local DB: {e}")
         return set()

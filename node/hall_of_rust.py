@@ -323,7 +323,7 @@ def rust_leaderboard():
             LIMIT ?
         """, (limit,))
         
-        rows = c.fetchall()
+        rows = c.fetchall()  # fetchall-ok: bounded-by-schema
         conn.close()
         
         leaderboard = []
@@ -573,7 +573,7 @@ def api_hall_of_fame_leaderboard():
             """,
             params + [limit],
         )
-        rows = c.fetchall()
+        rows = c.fetchall()  # fetchall-ok: bounded-by-schema
         conn.close()
 
         leaderboard = []
@@ -653,7 +653,7 @@ def api_hall_of_fame_machine():
                     'rust_score': machine.get('rust_score'),
                     'samples': int(r['attestations'] or 0),
                 }
-                for r in c.fetchall()
+                for r in c.fetchall()  # fetchall-ok: bounded-by-schema
             ]
         elif _table_exists(c, 'rust_score_history'):
             c.execute(
@@ -675,7 +675,7 @@ def api_hall_of_fame_machine():
                     'samples': int(r['samples'] or 0),
                     'attestations': int(r['samples'] or 0),
                 }
-                for r in c.fetchall()
+                for r in c.fetchall()  # fetchall-ok: bounded-by-schema
             ]
 
         # Reward participation (best-effort) from enrollments + pending ledger credits.
@@ -824,7 +824,7 @@ def fleet_breakdown():
         """)
         
         breakdown = []
-        for row in c.fetchall():
+        for row in c.fetchall():  # fetchall-ok: bounded-by-schema
             breakdown.append({
                 'architecture': row[0],
                 'count': row[1],
@@ -867,7 +867,7 @@ def hall_timeline():
         """)
         
         timeline = []
-        for row in c.fetchall():
+        for row in c.fetchall():  # fetchall-ok: bounded-by-schema
             timeline.append({
                 'date': row[0],
                 'machines_joined': row[1],

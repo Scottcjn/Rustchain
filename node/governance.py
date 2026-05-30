@@ -231,7 +231,7 @@ def _settle_expired_proposals(db_path: str):
                 "SELECT id, votes_for, votes_against, votes_abstain FROM governance_proposals "
                 "WHERE status = ? AND expires_at <= ?",
                 (STATUS_ACTIVE, now)
-            ).fetchall()
+            ).fetchall()  # fetchall-ok: bounded-by-schema
 
             for (pid, v_for, v_against, v_abstain) in active:
                 total_votes = v_for + v_against + v_abstain
@@ -469,12 +469,12 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
                         "SELECT * FROM governance_proposals WHERE status = ? "
                         "ORDER BY created_at DESC LIMIT ? OFFSET ?",
                         (status_filter, limit, offset)
-                    ).fetchall()
+                    ).fetchall()  # fetchall-ok: bounded-by-schema
                 else:
                     rows = conn.execute(
                         "SELECT * FROM governance_proposals ORDER BY created_at DESC LIMIT ? OFFSET ?",
                         (limit, offset)
-                    ).fetchall()
+                    ).fetchall()  # fetchall-ok: bounded-by-schema
                 proposals = [dict(r) for r in rows]
 
         except Exception as e:
@@ -504,7 +504,7 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
                     "SELECT miner_id, vote, weight, voted_at FROM governance_votes "
                     "WHERE proposal_id = ? ORDER BY voted_at DESC",
                     (proposal_id,)
-                ).fetchall()
+                ).fetchall()  # fetchall-ok: bounded-by-schema
 
         except Exception as e:
             log.error("Get proposal error: %s", e)

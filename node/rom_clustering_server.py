@@ -82,7 +82,7 @@ def _ensure_rom_cluster_unique_index(conn: sqlite3.Connection):
         GROUP BY rom_hash, hash_type
         HAVING COUNT(*) > 1
     """)
-    duplicate_keys = [(row[0], row[1]) for row in cur.fetchall()]
+    duplicate_keys = [(row[0], row[1]) for row in cur.fetchall()]  # fetchall-ok: bounded-by-schema
 
     for rom_hash, hash_type in duplicate_keys:
         cur.execute("""
@@ -92,7 +92,7 @@ def _ensure_rom_cluster_unique_index(conn: sqlite3.Connection):
             WHERE rom_hash = ? AND hash_type = ?
             ORDER BY last_updated DESC, cluster_size DESC, cluster_id DESC
         """, (rom_hash, hash_type))
-        rows = cur.fetchall()
+        rows = cur.fetchall()  # fetchall-ok: bounded-by-schema
         keep = rows[0]
         keep_id = keep[0]
         duplicate_ids = [row[0] for row in rows if row[0] != keep_id]
@@ -232,7 +232,7 @@ class ROMClusteringServer:
             WHERE rom_hash = ? AND miner_id != ?
         """, (rom_hash_lower, miner_id))
 
-        other_miners = [row[0] for row in cur.fetchall()]
+        other_miners = [row[0] for row in cur.fetchall()]  # fetchall-ok: bounded-by-schema
         all_miners = [miner_id] + other_miners
 
         if len(all_miners) >= self._effective_cluster_threshold():
@@ -314,7 +314,7 @@ class ROMClusteringServer:
 
         import json
         clusters = []
-        for row in cur.fetchall():
+        for row in cur.fetchall():  # fetchall-ok: bounded-by-schema
             clusters.append({
                 "rom_hash": row[0],
                 "hash_type": row[1],
@@ -342,7 +342,7 @@ class ROMClusteringServer:
         """)
 
         flagged = []
-        for row in cur.fetchall():
+        for row in cur.fetchall():  # fetchall-ok: bounded-by-schema
             flagged.append({
                 "miner_id": row[0],
                 "reason": row[1],

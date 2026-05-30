@@ -83,7 +83,7 @@ def get_pending_claims(
             """, (max_claims,))
             
             claims = []
-            for row in cursor.fetchall():
+            for row in cursor.fetchall():  # fetchall-ok: bounded-by-schema
                 claims.append({
                     "claim_id": row["claim_id"],
                     "miner_id": row["miner_id"],
@@ -123,7 +123,7 @@ def get_verifying_claims(
             """, (threshold,))
             
             claims = []
-            for row in cursor.fetchall():
+            for row in cursor.fetchall():  # fetchall-ok: bounded-by-schema
                 claims.append({
                     "claim_id": row["claim_id"],
                     "miner_id": row["miner_id"],
@@ -408,7 +408,7 @@ def reserve_claims_for_settlement(
                 WHERE status = 'approved'
                 ORDER BY submitted_at ASC
                 LIMIT ?
-            """, (max_claims,)).fetchall()
+            """, (max_claims,)).fetchall()  # fetchall-ok: bounded-by-schema
 
             claim_ids = [row["claim_id"] for row in rows]
             if not claim_ids:
@@ -435,7 +435,7 @@ def reserve_claims_for_settlement(
                     AND settlement_batch = ?
                     ORDER BY submitted_at ASC
                     LIMIT ?
-                """, (batch_id, max_claims)).fetchall()
+                """, (batch_id, max_claims)).fetchall()  # fetchall-ok: bounded-by-schema
 
             conn.commit()
         except Exception:

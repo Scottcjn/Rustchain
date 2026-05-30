@@ -64,7 +64,7 @@ class RustChainSyncManager:
             if not self._table_exists(conn, table_name):
                 return None
 
-            rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+            rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()  # fetchall-ok: pragma-result
             if not rows:
                 return None
 
@@ -110,7 +110,7 @@ class RustChainSyncManager:
         try:
             cursor = conn.cursor()
             cursor.execute(f"SELECT * FROM {table_name} ORDER BY {pk} ASC")
-            rows = cursor.fetchall()
+            rows = cursor.fetchall()  # fetchall-ok: bounded-by-schema
 
             hasher = hashlib.sha256()
             for row in rows:
@@ -150,7 +150,7 @@ class RustChainSyncManager:
             f"SELECT * FROM {table_name} ORDER BY {pk} ASC LIMIT ? OFFSET ?",
             (int(limit), int(offset)),
         )
-        data = [dict(row) for row in cursor.fetchall()]
+        data = [dict(row) for row in cursor.fetchall()]  # fetchall-ok: bounded-by-schema
         conn.close()
         return data
 

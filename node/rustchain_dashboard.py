@@ -501,7 +501,7 @@ def api_stats():
                 GROUP BY e.miner_pk
                 ORDER BY e.weight DESC, b.balance_rtc DESC
                 LIMIT 50
-            """, (epoch_data['epoch'],)).fetchall()
+            """, (epoch_data['epoch'],)).fetchall()  # fetchall-ok: bounded-by-schema
 
             active_miners = []
             for miner in miners:
@@ -554,7 +554,7 @@ def api_stats():
                 GROUP BY epoch
                 ORDER BY epoch DESC
                 LIMIT 10
-            """).fetchall()
+            """).fetchall()  # fetchall-ok: bounded-by-schema
 
             recent_blocks = []
             for idx, activity in enumerate(recent_activity):

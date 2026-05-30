@@ -496,7 +496,7 @@ def get_attested_miners(db_path: str, current_ts: int) -> List[Tuple[str, str]]:
             ORDER BY miner ASC
         """, (current_ts - ATTESTATION_TTL,))
 
-        return cursor.fetchall()
+        return cursor.fetchall()  # fetchall-ok: bounded-by-schema
 
 
 def get_round_robin_producer(slot: int, attested_miners: List[Tuple[str, str]]) -> str:
@@ -633,7 +633,7 @@ def calculate_epoch_rewards_time_aged(
         cursor = conn.cursor()
 
         # Schema compatibility: detect whether fingerprint_checks_json column exists
-        cols = cursor.execute("PRAGMA table_info(miner_attest_recent)").fetchall()
+        cols = cursor.execute("PRAGMA table_info(miner_attest_recent)").fetchall()  # fetchall-ok: pragma-result
         has_checks_col = any(col[1] == 'fingerprint_checks_json' for col in cols)
         has_warthog_col = any(col[1] == 'warthog_bonus' for col in cols)
         wart_sql = ", COALESCE(warthog_bonus, 1.0) " if has_warthog_col else ", 1.0 "
@@ -644,7 +644,7 @@ def calculate_epoch_rewards_time_aged(
                 "SELECT miner_pk, weight FROM epoch_enroll WHERE epoch = ?",
                 (epoch,)
             )
-            enrolled = cursor.fetchall()
+            enrolled = cursor.fetchall()  # fetchall-ok: bounded-by-schema
         except sqlite3.Error:
             enrolled = []
 
@@ -705,7 +705,7 @@ def calculate_epoch_rewards_time_aged(
                     FROM miner_attest_recent
                     WHERE ts_ok >= ? AND ts_ok <= ?
                 """, (epoch_start_ts - ATTESTATION_TTL, epoch_end_ts))
-            epoch_miners = cursor.fetchall()
+            epoch_miners = cursor.fetchall()  # fetchall-ok: bounded-by-schema
 
     if not epoch_miners:
         return {}

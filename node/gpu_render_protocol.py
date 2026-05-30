@@ -149,7 +149,7 @@ class GPURenderProtocol:
 
     def _ensure_escrow_secret_column(self, conn):
         """Add escrow secret storage for databases created before this guard."""
-        cols = {row[1] for row in conn.execute("PRAGMA table_info(render_escrow)").fetchall()}
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(render_escrow)").fetchall()}  # fetchall-ok: pragma-result
         if "escrow_secret_hash" not in cols:
             conn.execute("ALTER TABLE render_escrow ADD COLUMN escrow_secret_hash TEXT")
 
@@ -269,7 +269,7 @@ class GPURenderProtocol:
                 query += " AND device_arch=?"
                 params.append(device_arch)
             query += " ORDER BY benchmark_score DESC"
-            rows = conn.execute(query, params).fetchall()
+            rows = conn.execute(query, params).fetchall()  # fetchall-ok: bounded-by-schema
             return [dict(r) for r in rows]
         finally:
             conn.close()
@@ -415,7 +415,7 @@ class GPURenderProtocol:
         try:
             nodes = conn.execute(
                 "SELECT * FROM gpu_attestations WHERE status='active'"
-            ).fetchall()
+            ).fetchall()  # fetchall-ok: bounded-by-schema
 
             if not nodes:
                 return {"error": "No active GPU nodes", "rates": {}}

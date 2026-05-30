@@ -263,7 +263,7 @@ def check_fingerprint_replay(
             LIMIT 10
         ''', (fingerprint_hash, window_start))
         
-        recent_submissions = c.fetchall()
+        recent_submissions = c.fetchall()  # fetchall-ok: bounded-by-schema
         
         if recent_submissions:
             for prev_wallet, prev_miner, prev_time, prev_nonce in recent_submissions:
@@ -344,7 +344,7 @@ def check_entropy_collision(
             LIMIT 5
         ''', (entropy_profile_hash, window_start, wallet_address))
         
-        collisions = c.fetchall()
+        collisions = c.fetchall()  # fetchall-ok: bounded-by-schema
         
         if collisions:
             collision_wallets = [
@@ -551,7 +551,7 @@ def detect_fingerprint_anomalies(
             LIMIT 20
         ''', (miner_id,))
         
-        history = c.fetchall()
+        history = c.fetchall()  # fetchall-ok: bounded-by-schema
         
         if len(history) < 2:
             return False, []  # Not enough history

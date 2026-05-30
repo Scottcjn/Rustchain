@@ -264,7 +264,7 @@ class BlockProducer:
             """, (current_ts - ATTESTATION_TTL,))
 
             results = []
-            for row in cursor.fetchall():
+            for row in cursor.fetchall():  # fetchall-ok: bounded-by-schema
                 device_info = {
                     "arch": row["device_arch"] or "modern_x86",
                     "family": row["device_family"] or "",
@@ -435,7 +435,7 @@ class BlockProducer:
             """)
 
             state = []
-            for row in cursor.fetchall():
+            for row in cursor.fetchall():  # fetchall-ok: bounded-by-schema
                 state.append({
                     "wallet": row["wallet"],
                     "balance": row["balance_urtc"],
@@ -466,7 +466,7 @@ class BlockProducer:
                     "family": row["device_family"],
                     "timestamp": row["ts_ok"]
                 }
-                for row in cursor.fetchall()
+                for row in cursor.fetchall()  # fetchall-ok: bounded-by-schema
             ]
 
     def produce_block(self, slot: int = None) -> Optional[Block]:
@@ -834,7 +834,7 @@ def _blocks_table_missing(exc: sqlite3.Error) -> bool:
 
 
 def _sqlite_table_columns(conn: sqlite3.Connection, table: str) -> set:
-    return {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    return {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}  # fetchall-ok: pragma-result
 
 
 def _ensure_block_randomness_columns(conn: sqlite3.Connection):
@@ -1018,7 +1018,7 @@ def create_block_api_routes(app, producer: BlockProducer, validator: BlockValida
                     rows = cursor.execute(
                         f"SELECT * FROM blocks WHERE height IN ({placeholders})",
                         height_misses,
-                    ).fetchall()
+                    ).fetchall()  # fetchall-ok: bounded-by-schema
                 except sqlite3.Error as exc:
                     if _blocks_table_missing(exc):
                         logger.debug("Block batch height lookup skipped: %s", exc)
@@ -1038,7 +1038,7 @@ def create_block_api_routes(app, producer: BlockProducer, validator: BlockValida
                     rows = cursor.execute(
                         f"SELECT * FROM blocks WHERE block_hash IN ({placeholders})",
                         hash_misses,
-                    ).fetchall()
+                    ).fetchall()  # fetchall-ok: bounded-by-schema
                 except sqlite3.Error as exc:
                     if _blocks_table_missing(exc):
                         logger.debug("Block batch hash lookup skipped: %s", exc)

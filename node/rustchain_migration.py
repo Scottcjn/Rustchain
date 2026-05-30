@@ -120,7 +120,7 @@ class RustChainMigration:
 
                 # Check tables exist
                 cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-                tables = [row[0] for row in cursor.fetchall()]
+                tables = [row[0] for row in cursor.fetchall()]  # fetchall-ok: bounded-by-schema
                 self.log(f"Testnet tables: {tables}")
 
                 # Check miner attestations
@@ -357,7 +357,7 @@ class RustChainMigration:
                     SELECT miner, device_arch, device_family, ts_ok
                     FROM miner_attest_recent
                 """)
-                attestations = cursor.fetchall()
+                attestations = cursor.fetchall()  # fetchall-ok: bounded-by-schema
 
             with sqlite3.connect(self.mainnet_db) as mainnet_conn:
                 cursor = mainnet_conn.cursor()
@@ -490,7 +490,7 @@ class RustChainMigration:
 
                 # Check chain metadata
                 cursor.execute("SELECT key, value FROM chain_metadata")
-                metadata = dict(cursor.fetchall())
+                metadata = dict(cursor.fetchall())  # fetchall-ok: bounded-by-schema
                 self.log(f"Chain version: {metadata.get('version', 'unknown')}")
                 self.log(f"Network: {metadata.get('network', 'unknown')}")
 

@@ -35,7 +35,7 @@ class ErgoMinerAnchor:
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
         cur.execute("SELECT miner, device_arch, ts_ok FROM miner_attest_recent ORDER BY ts_ok DESC LIMIT ?", (limit,))
-        miners = [dict(row) for row in cur.fetchall()]
+        miners = [dict(row) for row in cur.fetchall()]  # fetchall-ok: bounded-by-schema
         conn.close()
         return miners
     

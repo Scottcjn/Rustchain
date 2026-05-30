@@ -410,7 +410,7 @@ def _fetch_miner_data(miner_id: str, db_path: str = None) -> Tuple[dict, dict, l
                     "SELECT ts, profile_json FROM miner_fingerprint_history "
                     "WHERE miner = ? ORDER BY ts DESC LIMIT 10",
                     (miner_id,)
-                ).fetchall()
+                ).fetchall()  # fetchall-ok: bounded-by-schema
             except Exception:
                 hist_rows = []
             for hr in hist_rows:
@@ -573,7 +573,7 @@ def batch_inspect_all(db_path: str = None) -> List[Dict]:
             rows = conn.execute(
                 "SELECT miner FROM miner_attest_recent WHERE ts_ok > ? ORDER BY ts_ok DESC",
                 (cutoff,)
-            ).fetchall()
+            ).fetchall()  # fetchall-ok: bounded-by-schema
             miners = [r[0] for r in rows]
     except Exception as exc:
         log.error("Failed to query active miners: %s", exc)
@@ -676,7 +676,7 @@ def get_all_latest_verdicts(db_path: str = None) -> List[Dict]:
                 ) latest ON s.miner = latest.miner AND s.inspection_ts = latest.max_ts
                 ORDER BY s.miner
                 """
-            ).fetchall()
+            ).fetchall()  # fetchall-ok: bounded-by-schema
             return [
                 {
                     "miner": r["miner"],

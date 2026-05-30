@@ -672,7 +672,7 @@ def get_eligible_epochs(
                 limit
             ))
             
-            epochs = [row[0] for row in cursor.fetchall() if row[0] >= 0]
+            epochs = [row[0] for row in cursor.fetchall() if row[0] >= 0]  # fetchall-ok: bounded-by-schema
     except sqlite3.Error as e:
         print(f"[CLAIMS] Error getting eligible epochs: {e}")
         return {

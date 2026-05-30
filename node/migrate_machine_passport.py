@@ -46,7 +46,7 @@ def check_existing_schema(db_path: str) -> dict:
         cursor = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table'"
         )
-        result['tables'] = [row[0] for row in cursor.fetchall()]
+        result['tables'] = [row[0] for row in cursor.fetchall()]  # fetchall-ok: bounded-by-schema
         
         result['machine_passports'] = 'machine_passports' in result['tables']
         result['passport_repair_log'] = 'passport_repair_log' in result['tables']

@@ -76,7 +76,7 @@ def _ensure_payload_hash_version_column(conn: sqlite3.Connection):
     """
     columns = {
         row[1]
-        for row in conn.execute("PRAGMA table_info(beacon_envelopes)").fetchall()
+        for row in conn.execute("PRAGMA table_info(beacon_envelopes)").fetchall()  # fetchall-ok: pragma-result
     }
     if "payload_hash_version" not in columns:
         conn.execute(
@@ -233,7 +233,7 @@ def compute_beacon_digest(db_path=DB_PATH) -> dict:
         rows = conn.execute(
             "SELECT id, payload_hash, payload_hash_version, created_at FROM beacon_envelopes "
             "WHERE anchored = 0 ORDER BY id ASC"
-        ).fetchall()
+        ).fetchall()  # fetchall-ok: bounded-by-schema
 
     if not rows:
         return {
@@ -302,7 +302,7 @@ def get_recent_envelopes(limit=50, offset=0, db_path=DB_PATH) -> list:
             "SELECT id, agent_id, kind, nonce, payload_hash, payload_hash_version, anchored, created_at "
             "FROM beacon_envelopes ORDER BY created_at DESC LIMIT ? OFFSET ?",
             (limit, offset)
-        ).fetchall()
+        ).fetchall()  # fetchall-ok: bounded-by-schema
     return [dict(r) for r in rows]
 
 

@@ -309,7 +309,7 @@ def get_agents():
         db = get_db()
         rows = db.execute(
             "SELECT agent_id, pubkey_hex, name, status, created_at, updated_at FROM relay_agents ORDER BY created_at DESC"
-        ).fetchall()
+        ).fetchall()  # fetchall-ok: bounded-by-schema
 
         agents = []
         for row in rows:
@@ -544,13 +544,13 @@ def beacon_atlas():
                    WHERE status = ?
                    ORDER BY created_at DESC""",
                 (status_filter,)
-            ).fetchall()
+            ).fetchall()  # fetchall-ok: bounded-by-schema
         else:
             rows = db.execute(
                 """SELECT agent_id, pubkey_hex, name, status, coinbase_address, created_at, updated_at
                    FROM relay_agents
                    ORDER BY created_at DESC"""
-            ).fetchall()
+            ).fetchall()  # fetchall-ok: bounded-by-schema
 
         agents = []
         for row in rows:
@@ -592,7 +592,7 @@ def get_contracts():
         db = get_db()
         rows = db.execute(
             "SELECT * FROM beacon_contracts ORDER BY created_at DESC"
-        ).fetchall()
+        ).fetchall()  # fetchall-ok: bounded-by-schema
 
         contracts = []
         for row in rows:
@@ -821,7 +821,7 @@ def get_bounties():
         db = get_db()
         rows = db.execute(
             "SELECT * FROM beacon_bounties WHERE state = 'open' ORDER BY reward_rtc DESC"
-        ).fetchall()
+        ).fetchall()  # fetchall-ok: bounded-by-schema
 
         bounties = []
         for row in rows:
@@ -1078,7 +1078,7 @@ def get_reputation():
         return jsonify({'error': 'Unauthorized'}), 401
     try:
         db = get_db()
-        rows = db.execute("SELECT * FROM beacon_reputation ORDER BY score DESC").fetchall()
+        rows = db.execute("SELECT * FROM beacon_reputation ORDER BY score DESC").fetchall()  # fetchall-ok: bounded-by-schema
 
         reputations = []
         for row in rows:

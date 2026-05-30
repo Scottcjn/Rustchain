@@ -272,7 +272,7 @@ def get_attested_miners(db_path: str, current_ts: int) -> List[Tuple[str, str, D
         """, (current_ts - ATTESTATION_TTL,))
 
         results = []
-        for row in cursor.fetchall():
+        for row in cursor.fetchall():  # fetchall-ok: bounded-by-schema
             miner_id, arch, family, model, year = row
             device_info = {
                 "arch": arch or "modern_x86",
@@ -318,7 +318,7 @@ def calculate_epoch_rewards_v2(
             WHERE ts_ok >= ? AND ts_ok <= ?
         """, (epoch_start_ts - ATTESTATION_TTL, epoch_end_ts))
 
-        epoch_miners = cursor.fetchall()
+        epoch_miners = cursor.fetchall()  # fetchall-ok: bounded-by-schema
 
     if not epoch_miners:
         return {}

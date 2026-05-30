@@ -92,7 +92,7 @@ def load_vote_history(
                 ORDER BY epoch DESC, ts DESC
                 """,
                 (lower_bound, int(current_epoch)),
-            ).fetchall()
+            ).fetchall()  # fetchall-ok: bounded-by-schema
     except sqlite3.Error:
         return []
 

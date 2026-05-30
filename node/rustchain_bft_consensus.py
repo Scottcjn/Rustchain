@@ -231,7 +231,7 @@ class BFTConsensus:
             with sqlite3.connect(self.db_path) as conn:
                 rows = conn.execute(
                     "SELECT epoch, view FROM bft_committed_epochs"
-                ).fetchall()
+                ).fetchall()  # fetchall-ok: bounded-by-schema
                 for epoch, view in rows:
                     self.committed_epochs.add(epoch)
                     if view > self.current_view:

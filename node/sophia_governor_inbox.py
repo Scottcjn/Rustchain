@@ -532,7 +532,7 @@ def _get_forward_attempts(inbox_id: int, db_path: str | None = None) -> list[dic
             ORDER BY created_at DESC
             """,
             (inbox_id,),
-        ).fetchall()
+        ).fetchall()  # fetchall-ok: bounded-by-schema
     return [
         {
             "attempt_id": row["id"],
@@ -891,7 +891,7 @@ def list_governor_inbox_entries(
 
     with sqlite3.connect(db) as conn:
         conn.row_factory = sqlite3.Row
-        rows = conn.execute(query, params).fetchall()
+        rows = conn.execute(query, params).fetchall()  # fetchall-ok: bounded-by-schema
 
     return [_row_to_entry(row) for row in rows]
 
@@ -965,21 +965,21 @@ def get_governor_inbox_status(db_path: str | None = None) -> dict[str, Any]:
             FROM sophia_governor_inbox
             GROUP BY status
             """
-        ).fetchall()
+        ).fetchall()  # fetchall-ok: bounded-by-schema
         risk_rows = conn.execute(
             """
             SELECT risk_level, COUNT(*) AS count
             FROM sophia_governor_inbox
             GROUP BY risk_level
             """
-        ).fetchall()
+        ).fetchall()  # fetchall-ok: bounded-by-schema
         forward_rows = conn.execute(
             """
             SELECT status, COUNT(*) AS count
             FROM sophia_governor_inbox_forward
             GROUP BY status
             """
-        ).fetchall()
+        ).fetchall()  # fetchall-ok: bounded-by-schema
 
     return {
         "service": "sophia-governor-inbox",

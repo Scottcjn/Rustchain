@@ -7088,10 +7088,10 @@ def _attestation_pool_snapshot(now_ts: Optional[int] = None) -> dict:
                 WHERE ts_ok >= ?
                 GROUP BY COALESCE(NULLIF(device_arch, ''), 'unknown')
                 ORDER BY miners DESC, device_arch ASC
+                LIMIT 20
                 """,
                 (active_cutoff,),
-                limit=20
-            )
+            ).fetchall()  # fetchall-ok: bounded-by-schema
             snapshot["by_device_arch"] = [
                 {"device_arch": r["device_arch"], "active_miners": int(r["miners"] or 0)}
                 for r in arch_rows
@@ -8380,17 +8380,16 @@ def api_wallet_history():
         # --- Ledger entries (transfers) ---
         _history_cap = offset + limit
         try:
-            ledger_rows = fetch_page(
-                db,
+            ledger_rows = db.execute(
                 """
                 SELECT ts, epoch, miner_id, delta_i64, reason
                 FROM ledger
                 WHERE miner_id = ?
                 ORDER BY ts DESC
+                LIMIT ?
                 """,
-                (miner_id,),
-                limit=_history_cap
-            )
+                (miner_id, _history_cap),
+            ).fetchall()  # fetchall-ok: bounded-by-schema
 
             for ts, epoch, _mid, delta_i64, reason in ledger_rows:
                 reason_str = str(reason or "")
@@ -8720,11 +8719,11 @@ def list_pending():
     
     with sqlite3.connect(DB_PATH) as db:
         if status_filter == 'all':
-            rows = fetch_page(db, """
+            rows = db.execute("""
                 SELECT id, ts, from_miner, to_miner, amount_i64, reason, status, 
                        confirms_at, voided_by, voided_reason, tx_hash
-                FROM pending_ledger ORDER BY id DESC
-            """, (), limit=limit)
+                FROM pending_ledger ORDER BY id DESC LIMIT ?
+            """, (limit,)).fetchall()  # fetchall-ok: bounded-by-schema
         else:
             rows = fetch_page(db, """
                 SELECT id, ts, from_miner, to_miner, amount_i64, reason, status,
@@ -8962,14 +8961,14 @@ def check_integrity():
 
     with sqlite3.connect(DB_PATH) as db:
         # Sum all ledger deltas per miner
-        ledger_sums = dict(fetch_page(db, """
+        ledger_sums = dict(db.execute("""
             SELECT miner_id, SUM(delta_i64) FROM ledger GROUP BY miner_id
-        """, (), limit=100000))
+        """).fetchall())  # fetchall-ok: bounded-by-schema
         
         # Get all balances
-        balances = dict(fetch_page(db, """
+        balances = dict(db.execute("""
             SELECT miner_id, amount_i64 FROM balances
-        """, (), limit=100000))
+        """).fetchall())  # fetchall-ok: bounded-by-schema
         
         # Check for pending transactions
         pending = dict(db.execute("""

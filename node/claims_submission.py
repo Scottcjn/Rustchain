@@ -113,7 +113,7 @@ def get_registered_claim_public_key(db_path: str, miner_id: str) -> Optional[str
             for table, miner_column in candidate_tables:
                 try:
                     cursor.execute(f"PRAGMA table_info({table})")
-                    columns = {row[1] for row in cursor.fetchall()}
+                    columns = {row[1] for row in cursor.fetchall()}  # fetchall-ok: pragma-result
                 except sqlite3.Error:
                     continue
 
@@ -637,7 +637,7 @@ def get_claim_history(
             claims = []
             total_claimed = 0
             
-            for row in cursor.fetchall():
+            for row in cursor.fetchall():  # fetchall-ok: bounded-by-schema
                 claims.append({
                     "claim_id": row["claim_id"],
                     "epoch": row["epoch"],

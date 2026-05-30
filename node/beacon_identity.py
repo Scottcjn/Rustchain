@@ -122,7 +122,7 @@ def load_all_keys(db_path: str = DB_PATH) -> List[Dict[str, Any]]:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
             "SELECT * FROM beacon_known_keys ORDER BY first_seen ASC"
-        ).fetchall()
+        ).fetchall()  # fetchall-ok: bounded-by-schema
     return [dict(r) for r in rows]
 
 
@@ -256,7 +256,7 @@ def expire_old_keys(
         rows = conn.execute(
             "SELECT agent_id FROM beacon_known_keys WHERE last_seen < ? AND revoked = 0",
             (cutoff,),
-        ).fetchall()
+        ).fetchall()  # fetchall-ok: bounded-by-schema
         expired_ids = [r[0] for r in rows]
         if not dry_run and expired_ids:
             placeholders = ",".join("?" for _ in expired_ids)

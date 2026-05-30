@@ -411,7 +411,7 @@ class SecurePeerManager:
                 SELECT peer_url FROM peers
                 WHERE is_active = 1 AND is_banned = 0
             """)
-            return [row[0] for row in cursor.fetchall()]
+            return [row[0] for row in cursor.fetchall()]  # fetchall-ok: bounded-by-schema
 
     def get_network_stats(self):
         """Get P2P network statistics"""
@@ -540,7 +540,7 @@ class SecureBlockSync:
                 ORDER BY slot ASC
                 LIMIT ?
             """, (start_height, limit))
-            rows = cursor.fetchall()
+            rows = cursor.fetchall()  # fetchall-ok: bounded-by-schema
 
         blocks = []
         previous_hash = "0" * 64

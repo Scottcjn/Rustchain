@@ -42,7 +42,7 @@ def _run_migration(db_path):
     """Add coinbase_address column to balances if missing."""
     conn = sqlite3.connect(db_path)
     cursor = conn.execute("PRAGMA table_info(balances)")
-    existing = {row[1] for row in cursor.fetchall()}
+    existing = {row[1] for row in cursor.fetchall()}  # fetchall-ok: pragma-result
     if "coinbase_address" not in existing:
         try:
             conn.execute(COINBASE_MIGRATION)
@@ -78,7 +78,7 @@ def _is_base_address(value: str) -> bool:
 
 
 def _find_balance_row(conn, miner_id):
-    columns = {row[1] for row in conn.execute("PRAGMA table_info(balances)").fetchall()}
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(balances)").fetchall()}  # fetchall-ok: pragma-result
 
     if "miner_id" in columns:
         row = conn.execute(

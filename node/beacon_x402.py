@@ -69,7 +69,7 @@ def _run_migrations(db_path):
     # Add coinbase_address to relay_agents if missing
     cursor = conn.execute("PRAGMA table_info(relay_agents)")
     existing_cols = {row[1] if isinstance(row, tuple) else row["name"]
-                     for row in cursor.fetchall()}
+                     for row in cursor.fetchall()}  # fetchall-ok: pragma-result
 
     for sql in RELAY_MIGRATION_SQL:
         col_name = sql.split("ADD COLUMN ")[1].split()[0]
@@ -338,7 +338,7 @@ def init_app(app, get_db_func):
         try:
             rows = db.execute(
                 "SELECT * FROM reputation ORDER BY score DESC"
-            ).fetchall()
+            ).fetchall()  # fetchall-ok: bounded-by-schema
             reputation = [dict(r) for r in rows]
         except sqlite3.OperationalError:
             reputation = []
@@ -366,7 +366,7 @@ def init_app(app, get_db_func):
         try:
             rows = db.execute(
                 "SELECT * FROM contracts ORDER BY created_at DESC"
-            ).fetchall()
+            ).fetchall()  # fetchall-ok: bounded-by-schema
         except sqlite3.OperationalError:
             rows = []
 
@@ -407,7 +407,7 @@ def init_app(app, get_db_func):
         try:
             rows = db.execute(
                 "SELECT * FROM x402_beacon_payments ORDER BY created_at DESC LIMIT 50"
-            ).fetchall()
+            ).fetchall()  # fetchall-ok: bounded-by-schema
         except sqlite3.OperationalError:
             rows = []
 

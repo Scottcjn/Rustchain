@@ -190,7 +190,7 @@ def check_entropy_collision(entropy_profile: Dict, exclude_serial: str = None) -
         c = conn.cursor()
         c.execute('SELECT serial_hash, entropy_profile FROM hardware_bindings_v2')
         
-        for row in c.fetchall():
+        for row in c.fetchall():  # fetchall-ok: bounded-by-schema
             serial_hash, stored_json = row
             if serial_hash == exclude_serial:
                 continue

@@ -44,7 +44,7 @@ class PayoutWorker:
                 WHERE status = 'pending'
                 ORDER BY created_at ASC
                 LIMIT ?
-            """, (limit,)).fetchall()
+            """, (limit,)).fetchall()  # fetchall-ok: bounded-by-schema
 
             withdrawals = []
             for row in rows:
@@ -106,7 +106,7 @@ class PayoutWorker:
                     WHERE status = 'processing'
                     AND tx_hash IS NOT NULL
                     AND tx_hash != ''
-                """).fetchall()
+                """).fetchall()  # fetchall-ok: bounded-by-schema
 
             for withdrawal_id, tx_hash in rows:
                 chain_status = self.lookup_withdrawal_status(tx_hash)
@@ -299,7 +299,7 @@ class PayoutWorker:
                     FROM withdrawals
                     WHERE status = 'processing'
                     AND (tx_hash IS NULL OR tx_hash = '')
-                """).fetchall()
+                """).fetchall()  # fetchall-ok: bounded-by-schema
 
                 for (withdrawal_id,) in rows:
                     logger.warning(
@@ -397,7 +397,7 @@ class PayoutWorker:
                     SELECT withdrawal_id, miner_pk, amount, destination, tx_hash, processed_at
                     FROM withdrawals
                     WHERE status = 'completed' AND processed_at < ?
-                """, (cutoff,)).fetchall()
+                """, (cutoff,)).fetchall()  # fetchall-ok: bounded-by-schema
 
                 archive_dir = os.path.join(os.path.dirname(self.db_path), "archives")
                 os.makedirs(archive_dir, exist_ok=True)

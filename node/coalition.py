@@ -319,7 +319,7 @@ def _settle_expired_proposals(db_path: str):
                 "JOIN coalitions c ON p.coalition_id = c.id "
                 "WHERE p.status = ? AND p.expires_at <= ? AND c.status = ?",
                 (PROPOSAL_STATUS_ACTIVE, now, COALITION_STATUS_ACTIVE)
-            ).fetchall()
+            ).fetchall()  # fetchall-ok: bounded-by-schema
 
             for (pid, v_for, v_against, cid) in active:
                 total_votes = v_for + v_against
@@ -871,12 +871,12 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
                         "SELECT * FROM coalitions WHERE status = ? "
                         "ORDER BY created_at DESC LIMIT ? OFFSET ?",
                         (status_filter, limit, offset)
-                    ).fetchall()
+                    ).fetchall()  # fetchall-ok: bounded-by-schema
                 else:
                     rows = conn.execute(
                         "SELECT * FROM coalitions ORDER BY created_at DESC LIMIT ? OFFSET ?",
                         (limit, offset)
-                    ).fetchall()
+                    ).fetchall()  # fetchall-ok: bounded-by-schema
                 coalitions = [dict(r) for r in rows]
 
                 # Enrich with member count
@@ -912,7 +912,7 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
                     "SELECT miner_id, joined_at, status FROM coalition_members "
                     "WHERE coalition_id = ? ORDER BY joined_at",
                     (coalition_id,)
-                ).fetchall()
+                ).fetchall()  # fetchall-ok: bounded-by-schema
 
                 active_proposals = conn.execute(
                     "SELECT COUNT(*) FROM coalition_proposals WHERE coalition_id = ? AND status = ?",
@@ -957,13 +957,13 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
                         "SELECT * FROM coalition_proposals WHERE coalition_id = ? AND status = ? "
                         "ORDER BY created_at DESC LIMIT ? OFFSET ?",
                         (coalition_id, status_filter, limit, offset)
-                    ).fetchall()
+                    ).fetchall()  # fetchall-ok: bounded-by-schema
                 else:
                     rows = conn.execute(
                         "SELECT * FROM coalition_proposals WHERE coalition_id = ? "
                         "ORDER BY created_at DESC LIMIT ? OFFSET ?",
                         (coalition_id, limit, offset)
-                    ).fetchall()
+                    ).fetchall()  # fetchall-ok: bounded-by-schema
                 proposals = [dict(r) for r in rows]
 
                 # Enrich active proposals with quorum info

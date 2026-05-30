@@ -447,7 +447,7 @@ class MachinePassportLedger:
                 WHERE {where_clause}
                 ORDER BY created_at DESC
                 LIMIT ? OFFSET ?
-            """, params).fetchall()
+            """, params).fetchall()  # fetchall-ok: bounded-by-schema
             
             return [MachinePassport(
                 machine_id=row['machine_id'],
@@ -492,7 +492,7 @@ class MachinePassportLedger:
                 SELECT * FROM passport_repair_log 
                 WHERE machine_id = ?
                 ORDER BY repair_date DESC
-            """, (machine_id,)).fetchall()
+            """, (machine_id,)).fetchall()  # fetchall-ok: bounded-by-schema
             
             return [dict(row) for row in rows]
     
@@ -526,7 +526,7 @@ class MachinePassportLedger:
                 SELECT * FROM passport_attestation_history 
                 WHERE machine_id = ?
                 ORDER BY attestation_ts DESC
-            """, (machine_id,)).fetchall()
+            """, (machine_id,)).fetchall()  # fetchall-ok: bounded-by-schema
             
             return [dict(row) for row in rows]
     
@@ -564,7 +564,7 @@ class MachinePassportLedger:
                 SELECT * FROM passport_benchmark_signatures 
                 WHERE machine_id = ?
                 ORDER BY benchmark_ts DESC
-            """, (machine_id,)).fetchall()
+            """, (machine_id,)).fetchall()  # fetchall-ok: bounded-by-schema
             
             return [dict(row) for row in rows]
     
@@ -598,7 +598,7 @@ class MachinePassportLedger:
                 SELECT * FROM passport_lineage_notes 
                 WHERE machine_id = ?
                 ORDER BY lineage_ts DESC
-            """, (machine_id,)).fetchall()
+            """, (machine_id,)).fetchall()  # fetchall-ok: bounded-by-schema
             
             return [dict(row) for row in rows]
     

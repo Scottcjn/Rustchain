@@ -465,7 +465,7 @@ class AnchorService:
                         WHERE status IN ('pending', 'confirming')
                     """)
 
-                    for row in cursor.fetchall():
+                    for row in cursor.fetchall():  # fetchall-ok: bounded-by-schema
                         tx_id = row["ergo_tx_id"]
                         confs, status = self.update_anchor_status(tx_id)
                         logger.debug(f"Anchor {tx_id[:16]}... = {confs} confirmations ({status})")
@@ -553,7 +553,7 @@ def create_anchor_api_routes(app, anchor_service: AnchorService):
                 LIMIT ? OFFSET ?
             """, (limit, offset))
 
-            anchors = [dict(row) for row in cursor.fetchall()]
+            anchors = [dict(row) for row in cursor.fetchall()]  # fetchall-ok: bounded-by-schema
         finally:
             conn.close()
 

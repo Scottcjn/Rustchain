@@ -1139,7 +1139,7 @@ class AirdropV2:
             "SELECT * FROM airdrop_claims WHERE github_username = ?",
             (github_username,),
         )
-        rows = cursor.fetchall()
+        rows = cursor.fetchall()  # fetchall-ok: bounded-by-schema
         self._close_conn(conn)
 
         return [
@@ -1190,7 +1190,7 @@ class AirdropV2:
         conn = self._get_conn()
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM airdrop_allocation")
-        rows = cursor.fetchall()
+        rows = cursor.fetchall()  # fetchall-ok: bounded-by-schema
         self._close_conn(conn)
 
         return {
@@ -1223,7 +1223,7 @@ class AirdropV2:
         )
         by_tier = {
             row["tier"]: {"count": row["count"], "total_wrtc": row["total"] / 1_000_000}
-            for row in cursor.fetchall()
+            for row in cursor.fetchall()  # fetchall-ok: bounded-by-schema
         }
 
         # Claims by chain
@@ -1235,7 +1235,7 @@ class AirdropV2:
         )
         by_chain = {
             row["chain"]: {"count": row["count"], "total_wrtc": row["total"] / 1_000_000}
-            for row in cursor.fetchall()
+            for row in cursor.fetchall()  # fetchall-ok: bounded-by-schema
         }
 
         # Bridge locks

@@ -88,7 +88,7 @@ def load_account_balances(db_path: str, conn=None) -> list:
                FROM balances
                WHERE amount_i64 > 0
                ORDER BY miner_id ASC"""
-        ).fetchall()
+        ).fetchall()  # fetchall-ok: bounded-by-schema
         return [
             (r['miner_id'], int(r['amount_i64']) * ACCOUNT_TO_UTXO_SCALE)
             for r in rows
@@ -101,7 +101,7 @@ def load_account_balances(db_path: str, conn=None) -> list:
                FROM balances
                WHERE balance_rtc > 0
                ORDER BY miner_pk ASC"""
-        ).fetchall()
+        ).fetchall()  # fetchall-ok: bounded-by-schema
         return [
             (r['miner_id'], _legacy_balance_rtc_to_nrtc(r['balance_rtc']))
             for r in rows

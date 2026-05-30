@@ -61,7 +61,7 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
     def _ensure_escrow_secret_column(db):
         """Best-effort migration for older DBs."""
         try:
-            cols = {row[1] for row in db.execute("PRAGMA table_info(render_escrow)").fetchall()}
+            cols = {row[1] for row in db.execute("PRAGMA table_info(render_escrow)").fetchall()}  # fetchall-ok: pragma-result
             if "escrow_secret_hash" not in cols:
                 db.execute("ALTER TABLE render_escrow ADD COLUMN escrow_secret_hash TEXT")
                 db.commit()

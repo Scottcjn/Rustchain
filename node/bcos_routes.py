@@ -541,7 +541,7 @@ def bcos_directory():
             query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
             params.extend([limit, offset])
 
-            rows = conn.execute(query, params).fetchall()
+            rows = conn.execute(query, params).fetchall()  # fetchall-ok: bounded-by-schema
             total = conn.execute(
                 "SELECT COUNT(*) FROM bcos_attestations"
             ).fetchone()[0]

@@ -544,7 +544,7 @@ def list_bridge_transfers(
     query += " ORDER BY id DESC LIMIT ?"
     params.append(min(limit, 500))
     
-    rows = cursor.execute(query, params).fetchall()
+    rows = cursor.execute(query, params).fetchall()  # fetchall-ok: bounded-by-schema
     
     return [
         {

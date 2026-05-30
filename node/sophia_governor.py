@@ -874,7 +874,7 @@ def get_recent_governor_events(db_path: str | None = None, limit: int = 20) -> l
             LIMIT ?
             """,
             (limit,),
-        ).fetchall()
+        ).fetchall()  # fetchall-ok: bounded-by-schema
 
     events = []
     for row in rows:
@@ -915,7 +915,7 @@ def get_governor_status(db_path: str | None = None) -> dict[str, Any]:
             FROM sophia_governor_events
             GROUP BY risk_level
             """
-        ).fetchall()
+        ).fetchall()  # fetchall-ok: bounded-by-schema
 
     return {
         "service": "sophia-rustchain-governor",

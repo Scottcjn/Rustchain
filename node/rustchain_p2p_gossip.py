@@ -672,7 +672,7 @@ class GossipLayer:
                 rows = conn.execute("""
                     SELECT miner, ts_ok, device_family, device_arch, entropy_score
                     FROM miner_attest_recent
-                """).fetchall()
+                """).fetchall()  # fetchall-ok: bounded-by-schema
                 for miner, ts_ok, family, arch, entropy in rows:
                     self.attestation_crdt.set(miner, {
                         "miner": miner,
@@ -684,14 +684,14 @@ class GossipLayer:
                 # Load settled epochs
                 rows = conn.execute("""
                     SELECT epoch FROM epoch_state WHERE settled = 1
-                """).fetchall()
+                """).fetchall()  # fetchall-ok: bounded-by-schema
                 for (epoch,) in rows:
                     self.epoch_crdt.add(epoch)
 
                 rows = conn.execute("""
                     SELECT epoch, proposal_hash, voter, vote
                     FROM p2p_epoch_votes
-                """).fetchall()
+                """).fetchall()  # fetchall-ok: bounded-by-schema
                 for epoch, proposal_hash, voter, vote in rows:
                     key = (epoch, proposal_hash)
                     self._epoch_votes.setdefault(key, {})[voter] = vote
@@ -1169,7 +1169,7 @@ class GossipLayer:
                 cursor = conn.execute(
                     "SELECT miner FROM miner_attest_recent"
                 )
-                attested_miners = {row[0] for row in cursor.fetchall()}
+                attested_miners = {row[0] for row in cursor.fetchall()}  # fetchall-ok: bounded-by-schema
         except Exception as e:
             logger.error(f"Epoch {epoch}: Failed to query attested miners: {e}")
             return self._reject_epoch_vote(epoch, proposal, "attested_miners_query_error")

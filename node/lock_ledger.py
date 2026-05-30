@@ -477,7 +477,7 @@ def get_locks_by_miner(
     query += " ORDER BY id DESC LIMIT ?"
     params.append(min(limit, 500))
 
-    rows = cursor.execute(query, params).fetchall()
+    rows = cursor.execute(query, params).fetchall()  # fetchall-ok: bounded-by-schema
 
     return [
         LockEntry(
@@ -535,7 +535,7 @@ def get_pending_unlocks(
     query += " ORDER BY unlock_at ASC LIMIT ?"
     params.append(min(limit, 500))
 
-    rows = cursor.execute(query, params).fetchall()
+    rows = cursor.execute(query, params).fetchall()  # fetchall-ok: bounded-by-schema
 
     return [
         LockEntry(
@@ -584,7 +584,7 @@ def get_miner_locked_balance(
         FROM lock_ledger
         WHERE miner_id = ? AND status = 'locked'
         GROUP BY lock_type
-    """, (miner_id,)).fetchall()
+    """, (miner_id,)).fetchall()  # fetchall-ok: bounded-by-schema
 
     breakdown = {
         r[0]: {"amount_rtc": r[1] / LOCK_UNIT, "count": r[2]}
