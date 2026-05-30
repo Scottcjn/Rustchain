@@ -74,6 +74,9 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
         data, body_error = _json_object_body()
         if body_error:
             return body_error
+        auth_error = _require_admin_key()
+        if auth_error:
+            return auth_error
         miner_id, field_error = _string_field(data, "miner_id")
         if field_error:
             return field_error

@@ -971,6 +971,8 @@ def register_sophia_governor_endpoints(app, db_path: str | None = None) -> None:
 
     @app.route("/sophia/governor/recent", methods=["GET"])
     def sophia_governor_recent():
+        if not _is_admin(request):
+            return jsonify({"error": "Unauthorized -- admin key required"}), 401
         try:
             limit = _parse_recent_limit(request.args.get("limit"))
         except ValueError as exc:

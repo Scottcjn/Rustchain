@@ -479,9 +479,9 @@ function renderBlocksTable() {
     container.innerHTML = state.blocks.map(block => `
         <tr>
             <td><strong class="text-accent">#${formatNumber(block.height, 0)}</strong></td>
-            <td class="mono" title="${escapeHtml(block.hash)}">${shortenHash(block.hash || '0x')}</td>
+            <td class="mono" title="${escapeHtml(block.hash)}">${escapeHtml(shortenHash(block.hash || '0x'))}</td>
             <td class="mono">${formatTimestamp(block.timestamp)}</td>
-            <td><span class="badge badge-info">${block.miners_count || 0} miners</span></td>
+            <td><span class="badge badge-info">${formatNumber(block.miners_count || 0, 0)} miners</span></td>
             <td class="text-success">${formatNumber(block.reward || 0, 2)} RTC</td>
         </tr>
     `).join('');
@@ -515,10 +515,10 @@ function renderTransactionsTable() {
     
     container.innerHTML = state.transactions.map(tx => `
         <tr>
-            <td class="mono" title="${escapeHtml(tx.hash)}">${shortenHash(tx.hash || '0x', 6)}</td>
+            <td class="mono" title="${escapeHtml(tx.hash)}">${escapeHtml(shortenHash(tx.hash || '0x', 6))}</td>
             <td class="mono">${escapeHtml(tx.type || 'transfer')}</td>
-            <td class="mono" title="${escapeHtml(tx.from)}">${shortenAddress(tx.from || '0x')}</td>
-            <td class="mono" title="${escapeHtml(tx.to)}">${shortenAddress(tx.to || '0x')}</td>
+            <td class="mono" title="${escapeHtml(tx.from)}">${escapeHtml(shortenAddress(tx.from || '0x'))}</td>
+            <td class="mono" title="${escapeHtml(tx.to)}">${escapeHtml(shortenAddress(tx.to || '0x'))}</td>
             <td class="text-success">${formatNumber(tx.amount || 0, 6)} RTC</td>
             <td class="mono">${formatRelativeTime(tx.timestamp)}</td>
         </tr>

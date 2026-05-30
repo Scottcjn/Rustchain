@@ -44,9 +44,10 @@ except Exception as e:
 # UTXO Layer (Phase 1 — dual-write alongside account model)
 UTXO_DUAL_WRITE = os.environ.get("UTXO_DUAL_WRITE", "0") == "1"
 try:
-    from utxo_db import UtxoDB
+    from utxo_db import UtxoDB, MAX_OUTPUTS as UTXO_MAX_OUTPUTS
     HAVE_UTXO = True
 except ImportError:
+    UTXO_MAX_OUTPUTS = 100
     HAVE_UTXO = False
     if UTXO_DUAL_WRITE:
         print("[WARN] utxo_db.py not found but UTXO_DUAL_WRITE=1 — disabling")
@@ -177,7 +178,30 @@ except ImportError as _e:
     HAVE_REPLAY_DEFENSE = False
     print(f"[ISSUE #2276] Replay defense module not available: {_e}")
 
+from werkzeug.exceptions import RequestEntityTooLarge
+
 app = Flask(__name__)
+app.config['MAX_CONTENT_LENGTH'] = 1 * 1024 * 1024  # 1 MB — reject oversized request bodies before they reach route handlers
+
+
+@app.before_request
+def _enforce_content_length():
+    """Raise 413 before any route handler runs, so broad except-Exception wrappers cannot swallow it."""
+    max_len = app.config.get('MAX_CONTENT_LENGTH')
+    if max_len and request.content_length and request.content_length > max_len:
+        raise RequestEntityTooLarge()
+
+
+@app.errorhandler(413)
+@app.errorhandler(RequestEntityTooLarge)
+def _handle_request_too_large(_e):
+    return jsonify({
+        "ok": False,
+        "code": "REQUEST_TOO_LARGE",
+        "error": "request body exceeds the 1 MB limit",
+    }), 413
+
+
 # Supports running from repo `node/` dir or a flat deployment directory (e.g. /root/rustchain).
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(_BASE_DIR, "..")) if os.path.basename(_BASE_DIR) == "node" else _BASE_DIR
@@ -3481,6 +3505,7 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
     from decimal import Decimal, ROUND_DOWN
 
     with closing(sqlite3.connect(DB_PATH)) as conn:
+        conn.row_factory = sqlite3.Row
         c = conn.cursor()
 
         # REPLAY PROTECTION: Check if epoch already settled
@@ -3579,6 +3604,7 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
         # ATOMIC TRANSACTION: Wrap all updates in explicit transaction
         try:
             c.execute("BEGIN TRANSACTION")
+            utxo_reward_outputs = []
 
             # Distribute rewards with precision
             for pk, weight in miners:
@@ -3596,26 +3622,43 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
                     (amount_i64, amount_i64, pk)
                 )
 
-                # Sync to UTXO layer only when the dual-write feature is enabled.
-                # A rejected UTXO write must abort the surrounding account-model
-                # settlement or the two ledgers diverge while the epoch is marked
-                # settled.
                 if UTXO_DUAL_WRITE:
+                    utxo_reward_outputs.append({
+                        "address": pk,
+                        "value_nrtc": amount_nrtc,
+                    })
+                # Update metrics with decimal value for accuracy
+                balance_gauge.labels(miner_pk=pk).set(float(amount_decimal))
+
+            # Sync to UTXO layer only when the dual-write feature is enabled.
+            # The UTXO layer permits one mining_reward transaction per block
+            # height, so epoch rewards must be batched instead of written as one
+            # mint transaction per miner at the same height.
+            if UTXO_DUAL_WRITE and utxo_reward_outputs:
+                max_outputs = max(1, int(UTXO_MAX_OUTPUTS))
+                reward_batches = [
+                    utxo_reward_outputs[i:i + max_outputs]
+                    for i in range(0, len(utxo_reward_outputs), max_outputs)
+                ]
+                if len(reward_batches) > EPOCH_SLOTS:
+                    raise RuntimeError(
+                        "UTXO reward settlement exceeds epoch mint capacity"
+                    )
+                for batch_index, outputs in enumerate(reward_batches):
                     utxo_tx = {
                         "tx_type": "mining_reward",
                         "inputs": [],
-                        "outputs": [{"address": pk, "value_nrtc": amount_nrtc}],
+                        "outputs": outputs,
                         "_allow_minting": True
                     }
                     utxo_ok = UtxoDB(DB_PATH).apply_transaction(
-                        utxo_tx, epoch * 144, conn=conn
+                        utxo_tx, epoch * EPOCH_SLOTS + batch_index, conn=conn
                     )
                     if not utxo_ok:
                         raise RuntimeError(
-                            f"UTXO reward settlement failed for {pk[:20]}..."
+                            "UTXO reward settlement failed for "
+                            f"batch {batch_index + 1}/{len(reward_batches)}"
                         )
-                # Update metrics with decimal value for accuracy
-                balance_gauge.labels(miner_pk=pk).set(float(amount_decimal))
 
             # Mark epoch as settled - use UPDATE with WHERE settled=0 to prevent race
             result = c.execute(
@@ -4730,8 +4773,13 @@ def ingest_signed_header():
     sig_hex  = str(body.get("signature") or "").strip().lower()
     inline_pk= str(body.get("pubkey") or "").strip().lower()
 
+    if header and not isinstance(header, dict):
+        return jsonify({"ok":False,"error":"invalid_header"}), 400
     if not miner_id or not sig_hex or (not header and not msg_hex):
         return jsonify({"ok":False,"error":"missing fields"}), 400
+    header_miner = str(header.get("miner") or "").strip() if header else ""
+    if header_miner and header_miner != miner_id:
+        return jsonify({"ok":False,"error":"miner_mismatch"}), 400
 
     # Resolve public key
     pubkey_hex = None
@@ -4800,6 +4848,31 @@ def ingest_signed_header():
             "submitted_slot": slot,
             "current_slot": expected_slot,
         }), 400
+
+    try:
+        from rip_200_round_robin_1cpu1vote import check_eligibility_round_robin
+        eligibility = check_eligibility_round_robin(
+            DB_PATH,
+            miner_id,
+            slot,
+            int(time.time()),
+        )
+    except Exception as e:
+        logging.exception("Round-robin header authorization failed: %s", e)
+        return jsonify({
+            "ok": False,
+            "error": "eligibility_check_failed",
+        }), 503
+    if not eligibility.get("eligible"):
+        return jsonify({
+            "ok": False,
+            "error": "not_slot_producer",
+            "reason": eligibility.get("reason", "unknown"),
+            "slot": slot,
+            "slot_producer": eligibility.get("slot_producer"),
+            "your_turn_at_slot": eligibility.get("your_turn_at_slot"),
+            "rotation_size": eligibility.get("rotation_size"),
+        }), 403
 
     # Update tip + metrics
     with sqlite3.connect(DB_PATH) as db:
@@ -6083,9 +6156,48 @@ def governance_propose():
     proposer_wallet = str(data.get('wallet', '')).strip()
     title = str(data.get('title', '')).strip()
     description = str(data.get('description', '')).strip()
+    nonce = str(data.get('nonce', '')).strip()
+
+    # SECURITY: Validate signature/public_key field types before coercion
+    _raw_sig    = data.get('signature')
+    _raw_pubkey = data.get('public_key')
+    if _raw_sig is not None and not isinstance(_raw_sig, str):
+        return jsonify({"ok": False, "error": "INVALID_SIGNATURE_TYPE",
+                        "message": "Field 'signature' must be a string"}), 400
+    if _raw_pubkey is not None and not isinstance(_raw_pubkey, str):
+        return jsonify({"ok": False, "error": "INVALID_PUBLIC_KEY_TYPE",
+                        "message": "Field 'public_key' must be a string"}), 400
+    signature  = str(_raw_sig    or '').strip()
+    public_key = str(_raw_pubkey or '').strip()
 
     if not proposer_wallet or not title or not description:
         return jsonify({"ok": False, "error": "wallet, title and description are required"}), 400
+
+    if not all([nonce, signature, public_key]):
+        return jsonify({
+            "ok": False,
+            "error": "nonce, signature, public_key are required to authenticate the proposer",
+        }), 400
+
+    # Verify the proposer controls the wallet they are proposing from
+    try:
+        expected_wallet = address_from_pubkey(public_key)
+    except (ValueError, TypeError):
+        return jsonify({"ok": False, "error": "invalid_public_key",
+                        "message": "public_key is not valid hex"}), 400
+    if proposer_wallet != expected_wallet:
+        return jsonify({"ok": False, "error": "wallet_does_not_match_public_key",
+                        "expected": expected_wallet, "got": proposer_wallet}), 400
+
+    propose_message = json.dumps({
+        "description": description,
+        "nonce": nonce,
+        "title": title,
+        "wallet": proposer_wallet,
+    }, sort_keys=True, separators=(",", ":")).encode()
+
+    if not verify_rtc_signature(public_key, propose_message, signature):
+        return jsonify({"ok": False, "error": "invalid_signature"}), 401
 
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
