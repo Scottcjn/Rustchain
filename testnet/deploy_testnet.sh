@@ -60,18 +60,47 @@ else
 fi
 [ -f "$REPO_DIR/$NODE_REL" ] || { echo "node entrypoint missing: $NODE_REL" >&2; exit 1; }
 
-# ── 2. venv + deps ──────────────────────────────────────────────────────────
-if [ ! -d "$VENV" ]; then say "creating venv"; python3 -m venv "$VENV"; fi
+# ── 2. Python >= 3.9 (node uses PEP585 generics + flask>=3.1) + deps ─────────
+# The node has `tuple[str, ...]` runtime annotations (PEP585) and requirements
+# pin flask>=3.1.3 — both need Python >= 3.9. Pick the newest available.
+PYBIN="${PYBIN:-}"
+if [ -z "$PYBIN" ]; then
+  for c in python3.12 python3.11 python3.10 python3.9; do command -v "$c" >/dev/null && PYBIN="$c" && break; done
+fi
+[ -z "$PYBIN" ] && PYBIN=python3
+PYVER=$("$PYBIN" -c 'import sys;print("%d.%d"%sys.version_info[:2])')
+case "$PYVER" in 3.8|3.7|3.6|2.*) echo "ERROR: need Python >= 3.9 (found $PYBIN $PYVER)." >&2; exit 1;; esac
+say "using interpreter: $PYBIN ($PYVER)"
+
+if [ ! -d "$VENV" ]; then say "creating venv with $PYBIN"; "$PYBIN" -m venv "$VENV"; fi
 # shellcheck disable=SC1091
 source "$VENV/bin/activate"
 pip install --quiet --upgrade pip
-say "installing python deps (this can take a while on ppc64le)"
-# Core runtime deps. PyNaCl needs libsodium; ppc64le builds from source if no wheel.
-pip install --quiet flask gunicorn requests pynacl pyyaml || {
-  echo "pip install failed — on Debian/Ubuntu try: sudo apt-get install -y libsodium-dev build-essential python3-dev" >&2
-  exit 1
-}
-[ -f "$REPO_DIR/requirements.txt" ] && pip install --quiet -r "$REPO_DIR/requirements.txt" || true
+say "installing python deps (pynacl/cryptography may build from source on ppc64le)"
+pip install --quiet flask gunicorn requests pynacl pyyaml flask-cors pycryptodome cryptography || {
+  echo "pip install failed — try: sudo apt-get install -y libsodium-dev libffi-dev build-essential python3-dev" >&2; exit 1; }
+[ -f "$REPO_DIR/requirements.txt" ] && pip install --quiet -r "$REPO_DIR/requirements.txt" 2>/dev/null \
+  || say "note: full requirements.txt partial/skipped (core deps above cover the node)"
+
+# Some source-built Pythons (e.g. POWER8's /usr/local/python3.10) ship WITHOUT
+# the _sqlite3 stdlib extension. The node is entirely SQLite-backed, so shim in
+# pysqlite3 (built against libsqlite3-dev) as the stdlib sqlite3 module.
+if ! python -c 'import sqlite3' 2>/dev/null; then
+  say "this Python lacks stdlib sqlite3 — installing pysqlite3 shim"
+  command -v apt-get >/dev/null && sudo apt-get install -y libsqlite3-dev >/dev/null 2>&1 || true
+  pip install --quiet pysqlite3 || { echo "ERROR: pysqlite3 build failed; install libsqlite3-dev" >&2; exit 1; }
+  SP=$(python -c 'import site;print(site.getsitepackages()[0])')
+  cat > "$SP/sitecustomize.py" <<'PY'
+# Route stdlib sqlite3 -> pysqlite3 for Pythons built without _sqlite3.
+try:
+    import sys, pysqlite3, pysqlite3.dbapi2
+    sys.modules['sqlite3'] = pysqlite3
+    sys.modules['sqlite3.dbapi2'] = pysqlite3.dbapi2
+except Exception:
+    pass
+PY
+  python -c 'import sqlite3;print("   sqlite3 via pysqlite3:", sqlite3.sqlite_version)'
+fi
 
 # ── 3. Admin key (generated once, persisted) ────────────────────────────────
 if [ ! -f "$ADMIN_KEY_FILE" ]; then
@@ -80,6 +109,15 @@ if [ ! -f "$ADMIN_KEY_FILE" ]; then
   chmod 600 "$ADMIN_KEY_FILE"
 fi
 ADMIN_KEY="$(cat "$ADMIN_KEY_FILE")"
+
+# P2P HMAC secret — the node refuses to start without RC_P2P_SECRET set.
+P2P_SECRET_FILE="$TESTNET_HOME/p2p_secret"
+if [ ! -f "$P2P_SECRET_FILE" ]; then
+  say "generating P2P secret"
+  python -c "import secrets;print(secrets.token_hex(32))" > "$P2P_SECRET_FILE"
+  chmod 600 "$P2P_SECRET_FILE"
+fi
+P2P_SECRET="$(cat "$P2P_SECRET_FILE")"
 
 # ── 4. Fresh genesis on --reset ─────────────────────────────────────────────
 if [ "$RESET" = 1 ] && [ -f "$DB_PATH" ]; then
@@ -103,6 +141,7 @@ RC_PORT=$RC_PORT
 RUSTCHAIN_DB_PATH=$DB_PATH
 DB_PATH=$DB_PATH
 RC_ADMIN_KEY=$ADMIN_KEY
+RC_P2P_SECRET=$P2P_SECRET
 RC_RUNTIME_ENV=testnet
 PYTHONUNBUFFERED=1
 # Mirror mainnet consensus: real Ed25519 sigs, real fingerprint gating.

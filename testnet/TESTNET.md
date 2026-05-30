@@ -78,6 +78,24 @@ cd ~/rustchain-testnet/Rustchain/testnet
 Then expose it publicly with [`nginx/testnet.rustchain.conf`](./nginx/testnet.rustchain.conf)
 on a host with a public IP.
 
-**Status note:** the node + chain isolation are the verified core. The faucet
-payout path (`faucet_service/`) still needs a live verification pass against the
-running testnet node before it's announced — see the operator README.
+### Host requirements (learned deploying on POWER8 S824, ppc64le)
+- **Python ≥ 3.9** — the node uses PEP585 runtime generics (`tuple[str, ...]`)
+  and `flask>=3.1`. The script auto-picks `python3.10`/`3.11`/`3.12`. POWER8's
+  default `python3` is 3.8 (too old); a source-built `python3.10` lives at
+  `/usr/local/bin/python3.10`.
+- **SQLite** — if the chosen Python was built without the `_sqlite3` extension
+  (common for source builds), the script installs `libsqlite3-dev` + `pysqlite3`
+  and shims it in as the stdlib `sqlite3` module automatically.
+- **`RC_P2P_SECRET`** — the node refuses to start without it; the script
+  generates and persists one.
+
+### Verified status
+- ✅ **Node boots and serves on POWER8** (Python 3.10 + pysqlite3 shim),
+  `chain_id=rustchain-testnet-v2`, fresh genesis (epoch 0), `/health` + `/epoch`
+  return 200. Confirmed isolated from mainnet by distinct chain_id.
+- ⚠️ **Rewards module**: a `_epoch_eligible_miners` import warning appears at
+  boot (`rewards_implementation_rip200`); epoch settlement/rewards on testnet
+  need a verification pass before miners can earn test-RTC.
+- ⚠️ **Faucet** payout path (`faucet_service/`) still needs a live verification
+  pass against the running node before announce.
+- ⏳ Public nginx proxy + persistent systemd enable are the remaining steps.
