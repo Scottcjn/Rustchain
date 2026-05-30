@@ -218,12 +218,15 @@ def db_exports(options: ExportOptions) -> dict[str, list[dict[str, Any]]]:
         raise ValueError("--db is required in db mode")
     setattr(select_time_filtered, "start_ts", options.start_ts)
     setattr(select_time_filtered, "end_ts", options.end_ts)
-    with sqlite3.connect(options.db_path) as conn:
+    conn = sqlite3.connect(options.db_path)
+    try:
         attestations = select_time_filtered(conn, "miner_attest_recent", "ts_ok", "ts_ok")
         balances = select_time_filtered(conn, "balances", None)
         epoch_state = select_time_filtered(conn, "epoch_state", "settled_ts", "epoch")
         rewards = select_time_filtered(conn, "epoch_rewards", None, "epoch")
         ledger = select_time_filtered(conn, "ledger", "ts", "ts")
+    finally:
+        conn.close()
 
     balance_rows = []
     for row in balances:
