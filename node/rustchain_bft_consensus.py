@@ -1023,6 +1023,7 @@ class BFTConsensus:
 
 def create_bft_routes(app, bft: BFTConsensus):
     """Add BFT consensus routes to Flask app"""
+    import os
     from flask import request, jsonify
 
     def _json_object():
@@ -1034,6 +1035,16 @@ def create_bft_routes(app, bft: BFTConsensus):
     def _missing_fields(data: Dict, required: Iterable[str]) -> List[str]:
         return [field for field in required if field not in data]
 
+    def _require_admin():
+        """Require RC_ADMIN_KEY for administrative BFT endpoints."""
+        admin_key = os.environ.get("RC_ADMIN_KEY", "")
+        if not admin_key:
+            return jsonify({'error': 'RC_ADMIN_KEY not configured -- BFT admin endpoints disabled'}), 503
+        provided = request.headers.get("X-Admin-Key", "")
+        if not hmac.compare_digest(provided, admin_key):
+            return jsonify({'error': 'Unauthorized -- admin key required'}), 401
+        return None
+
     def _internal_error_response(message: str, status_code: int):
         return jsonify({'error': message}), status_code
 
@@ -1044,7 +1055,11 @@ def create_bft_routes(app, bft: BFTConsensus):
 
     @app.route('/bft/message', methods=['POST'])
     def bft_receive_message():
-        """Receive consensus message from peer"""
+        """Receive consensus message from peer (internal P2P only -- public Internet)."""
+        # SECURITY: Require admin key -- prevents unauthorized BFT message injection
+        admin_err = _require_admin()
+        if admin_err:
+            return admin_err
         try:
             msg_data, error = _json_object()
             if error:
@@ -1067,7 +1082,11 @@ def create_bft_routes(app, bft: BFTConsensus):
 
     @app.route('/bft/view_change', methods=['POST'])
     def bft_view_change():
-        """Receive view change message"""
+        """Receive view change message."""
+        # SECURITY: Require admin key -- prevents unauthorized BFT view changes
+        admin_err = _require_admin()
+        if admin_err:
+            return admin_err
         try:
             msg_data, error = _json_object()
             if error:
@@ -1090,7 +1109,11 @@ def create_bft_routes(app, bft: BFTConsensus):
 
     @app.route('/bft/propose', methods=['POST'])
     def bft_propose():
-        """Manually trigger epoch proposal (admin)"""
+        """Manually trigger epoch proposal (admin only)."""
+        # SECURITY: Require admin key -- unauthorized epoch proposals can disrupt consensus
+        admin_err = _require_admin()
+        if admin_err:
+            return admin_err
         try:
             data = request.get_json(silent=True)
             if not isinstance(data, dict):
