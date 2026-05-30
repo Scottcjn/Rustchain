@@ -222,7 +222,7 @@ class RustChainWallet:
                 else:
                     resp = requests.post(url, json=data, verify=VERIFY_SSL, timeout=timeout, allow_redirects=False)
                 
-                if resp.is_redirect:
+                if resp.is_redirect is True:
                     location = resp.headers.get("Location", "unknown")
                     return None, f"API redirected: HTTP {resp.status_code} to {location}"
 
