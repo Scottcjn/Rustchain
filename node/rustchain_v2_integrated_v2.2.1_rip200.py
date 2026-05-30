@@ -6718,11 +6718,22 @@ def api_nodes():
             # Non-IP hosts (DNS names) are assumed public.
             return False
 
+    # RIP-BUG-002: Add pagination to prevent unbounded memory consumption (DoS)
+    try:
+        limit = min(max(int(request.args.get("limit", 100)), 1), 1000)
+        offset = max(int(request.args.get("offset", 0)), 0)
+    except (ValueError, TypeError):
+        limit, offset = 100, 0
+
     nodes = []
     try:
         with sqlite3.connect(DB_PATH) as conn:
             c = conn.cursor()
-            c.execute("SELECT node_id, wallet_address, url, name, registered_at, is_active FROM node_registry")
+            c.execute(
+                "SELECT node_id, wallet_address, url, name, registered_at, is_active "
+                "FROM node_registry ORDER BY registered_at DESC LIMIT ? OFFSET ?",
+                (limit, offset),
+            )
             for row in c.fetchall():
                 nodes.append({
                     "node_id": row[0],
@@ -6730,11 +6741,14 @@ def api_nodes():
                     "url": row[2],
                     "name": row[3],
                     "registered_at": row[4],
-                    "is_active": bool(row[5])
+                    "is_active": bool(row[5]),
                 })
+        # Total count for pagination metadata
+        total = conn.execute("SELECT COUNT(*) FROM node_registry").fetchone()[0]
     except Exception as e:
         print(f"Error fetching nodes: {e}")
-    
+        total = 0
+
     # Also add live status check
     # SECURITY: Only probe URLs that are NOT internal/private to prevent SSRF
     import requests
@@ -6755,7 +6769,7 @@ def api_nodes():
             node["url"] = None
             node["url_redacted"] = True
     
-    return jsonify({"nodes": nodes, "count": len(nodes)})
+    return jsonify({"nodes": nodes, "count": len(nodes), "limit": limit, "offset": offset, "total": total})
 
 
 @app.route("/api/miners", methods=["GET"])
@@ -6887,7 +6901,17 @@ def _explorer_int_arg(name, default, minimum, maximum):
     return max(minimum, min(value, maximum)), None, None
 
 
+# RIP-BUG-003: Whitelist allowed table names to prevent SQL injection via PRAGMA.
+# PRAGMA statements accept arbitrary SQL expressions, so f-string interpolation
+# is inherently dangerous. Restricting to known tables eliminates the attack surface.
+_ALLOWED_TABLE_NAMES = frozenset({"blocks", "ledger", "pending_ledger", "balances",
+                                  "epoch_enroll", "miner_attest_recent", "miner_attest_history",
+                                  "beacon_envelopes", "relay_agents", "governance_proposals",
+                                  "node_registry", "miner_reports"})
+
 def _sqlite_table_columns(conn, table_name):
+    if table_name not in _ALLOWED_TABLE_NAMES:
+        return set()
     try:
         rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
     except sqlite3.Error:
@@ -9775,6 +9799,9 @@ BEACON_RATE_LIMIT  = 60
 
 @app.route("/beacon/submit", methods=["POST"])
 def beacon_submit():
+    # SECURITY: Require admin key to prevent unauthorized envelope injection (RIP-BUG-001)
+    if not is_admin(request):
+        return jsonify({"ok": False, "error": "admin_required"}), 401
     data = request.get_json(silent=True)
     if not isinstance(data, dict) or not data:
         return jsonify({"ok": False, "error": "invalid_json"}), 400
