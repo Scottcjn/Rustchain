@@ -1160,6 +1160,66 @@ if HAVE_BOTTUBE_FEED:
     except Exception as e:
         print(f"[BoTTube Feed] Failed to register feed endpoints: {e}")
 
+
+def _ensure_state_transition_events_table(db):
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS state_transition_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts INTEGER NOT NULL,
+            event_type TEXT NOT NULL,
+            entity_type TEXT NOT NULL,
+            entity_id TEXT NOT NULL,
+            epoch INTEGER,
+            actor TEXT,
+            details_json TEXT NOT NULL DEFAULT '{}'
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_state_transition_events_entity
+        ON state_transition_events(entity_type, entity_id, ts DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_state_transition_events_epoch
+        ON state_transition_events(epoch, ts DESC)
+        """
+    )
+
+
+def record_state_transition_event(
+    db,
+    event_type: str,
+    entity_type: str,
+    entity_id: str,
+    *,
+    epoch=None,
+    actor=None,
+    details=None,
+    ts=None,
+):
+    _ensure_state_transition_events_table(db)
+    db.execute(
+        """
+        INSERT INTO state_transition_events
+            (ts, event_type, entity_type, entity_id, epoch, actor, details_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            int(ts if ts is not None else time.time()),
+            event_type,
+            entity_type,
+            str(entity_id),
+            epoch,
+            actor,
+            json.dumps(details or {}, sort_keys=True),
+        ),
+    )
+
+
 def init_db():
     """Initialize all database tables"""
     with sqlite3.connect(DB_PATH) as c:
@@ -1172,6 +1232,7 @@ def init_db():
         c.execute("CREATE TABLE IF NOT EXISTS epoch_enroll (epoch INTEGER, miner_pk TEXT, weight INTEGER, PRIMARY KEY (epoch, miner_pk))")
         ensure_epoch_enroll_integer_weights(c)
         c.execute("CREATE TABLE IF NOT EXISTS balances (miner_pk TEXT PRIMARY KEY, balance_rtc REAL DEFAULT 0)")
+        _ensure_state_transition_events_table(c)
         ensure_fingerprint_history_table(c)
         ensure_epoch_fingerprint_rotation_table(c)
 
@@ -2360,6 +2421,20 @@ def record_attestation_success(miner: str, device: dict, fingerprint_passed: boo
             INSERT INTO miner_attest_history (miner, ts_ok, device_family, device_arch, entropy_score, fingerprint_passed, fingerprint_checks_json)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (miner, now, verified_device["device_family"], verified_device["device_arch"], entropy_score, new_fp, fingerprint_checks_json))
+        record_state_transition_event(
+            conn,
+            "miner_attestation_success",
+            "miner",
+            miner,
+            actor=miner,
+            details={
+                "device_family": verified_device["device_family"],
+                "device_arch": verified_device["device_arch"],
+                "fingerprint_passed": bool(new_fp),
+                "source_ip_present": bool(source_ip),
+            },
+            ts=now,
+        )
         conn.commit()
 
         # RIP-201: Record fleet immune system signals
@@ -3217,6 +3292,21 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
                 "UPDATE epoch_state SET settled = 1, settled_ts = ? WHERE epoch = ? AND settled = 0",
                 (int(time.time()), epoch)
             )
+            record_state_transition_event(
+                c,
+                "epoch_finalized",
+                "epoch",
+                str(epoch),
+                epoch=epoch,
+                details={
+                    "miner_count": len(miners),
+                    "total_weight_units": int(total_weight),
+                    "per_block_rtc": str(per_block_rtc),
+                    "epoch_slots": EPOCH_SLOTS,
+                    "settled_rows": result.rowcount,
+                    "excluded_zero_weight_miners": len(zero_weight_miners),
+                },
+            )
 
             # Commit transaction atomically
             c.execute("COMMIT")
@@ -4070,10 +4160,27 @@ def enroll_epoch():
         # attacker could overwrite a legitimate miner's weight (e.g. 2.5) with
         # a near-zero value (1e-9) by calling this endpoint with failed-fingerprint
         # or default device data.
-        c.execute(
+        enroll_result = c.execute(
             "INSERT OR IGNORE INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)",
             (epoch, miner_pk, weight_units)
         )
+        if enroll_result.rowcount:
+            record_state_transition_event(
+                c,
+                "miner_epoch_enrolled",
+                "miner",
+                miner_pk,
+                epoch=epoch,
+                actor=miner_id,
+                details={
+                    "miner_id": miner_id,
+                    "weight_units": int(weight_units),
+                    "weight": weight,
+                    "fingerprint_failed": bool(fingerprint_failed),
+                    "active_fingerprint_pass_count": rotation_eval["active_pass_count"],
+                    "active_fingerprint_total": rotation_eval["active_total"],
+                },
+            )
 
         # Register a real Ed25519 pubkey for block-header verification when available.
         header_pubkey = _valid_ed25519_pubkey_hex(pubkey_hex) or _valid_ed25519_pubkey_hex(miner_pk)

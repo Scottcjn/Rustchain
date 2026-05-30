@@ -36,6 +36,63 @@ contract_store = []
 chat_sessions = {}
 
 
+def _ensure_state_transition_events_table(db):
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS state_transition_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts INTEGER NOT NULL,
+            event_type TEXT NOT NULL,
+            entity_type TEXT NOT NULL,
+            entity_id TEXT NOT NULL,
+            epoch INTEGER,
+            actor TEXT,
+            details_json TEXT NOT NULL DEFAULT '{}'
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_state_transition_events_entity
+        ON state_transition_events(entity_type, entity_id, ts DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_state_transition_events_epoch
+        ON state_transition_events(epoch, ts DESC)
+        """
+    )
+
+
+def _record_state_transition_event(
+    db,
+    event_type,
+    entity_type,
+    entity_id,
+    *,
+    actor=None,
+    details=None,
+    ts=None,
+):
+    _ensure_state_transition_events_table(db)
+    db.execute(
+        """
+        INSERT INTO state_transition_events
+            (ts, event_type, entity_type, entity_id, actor, details_json)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            int(ts if ts is not None else time.time()),
+            event_type,
+            entity_type,
+            str(entity_id),
+            actor,
+            json.dumps(details or {}, sort_keys=True),
+        ),
+    )
+
+
 def _coinbase_addresses_match(left, right):
     """Compare optional EVM-style payment addresses without case sensitivity."""
     return (left or '').strip().casefold() == (right or '').strip().casefold()
@@ -143,6 +200,7 @@ def init_beacon_tables(db_path=DB_PATH):
                 PRIMARY KEY (agent_id, nonce)
             )
         """)
+        _ensure_state_transition_events_table(conn)
 
         # Create indexes
         conn.execute("CREATE INDEX IF NOT EXISTS idx_contracts_from ON beacon_contracts(from_agent)")
@@ -355,7 +413,7 @@ def beacon_join():
         
         try:
             # Validate it's proper hex
-            bytes.fromhex(pubkey_clean)
+            pubkey_bytes = bytes.fromhex(pubkey_clean)
         except ValueError:
             return jsonify({'error': 'Invalid pubkey_hex: must be valid hexadecimal string'}), 400
 
@@ -416,12 +474,27 @@ def beacon_join():
                     updated_at = ?
                 WHERE agent_id = ?
             """, (name, now, agent_id))
+            event_type = "beacon_agent_updated"
         else:
             # New agent — insert with pubkey_hex
             db.execute("""
                 INSERT INTO relay_agents (agent_id, pubkey_hex, name, status, coinbase_address, created_at, updated_at)
                 VALUES (?, ?, ?, 'active', ?, ?, ?)
             """, (agent_id, pubkey_hex, name, coinbase_address, now, now))
+            event_type = "beacon_agent_registered"
+        _record_state_transition_event(
+            db,
+            event_type,
+            "beacon_agent",
+            agent_id,
+            actor=agent_id,
+            details={
+                "name": name,
+                "coinbase_address_present": bool(coinbase_address),
+                "pubkey_fingerprint": hashlib.sha256(pubkey_bytes).hexdigest()[:16],
+            },
+            ts=now,
+        )
 
         db.commit()
 

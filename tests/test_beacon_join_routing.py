@@ -73,6 +73,7 @@ class TestBeaconJoinRouting(unittest.TestCase):
         """Reset database state before each test."""
         with sqlite3.connect(self.test_db_path) as conn:
             conn.execute("DELETE FROM relay_agents")
+            conn.execute("DELETE FROM state_transition_events")
             conn.commit()
 
     # ============================================================
@@ -99,6 +100,21 @@ class TestBeaconJoinRouting(unittest.TestCase):
         self.assertEqual(data['agent_id'], 'bcn_test_agent_001')
         self.assertEqual(data['status'], 'active')
         self.assertIn('timestamp', data)
+
+        with sqlite3.connect(self.test_db_path) as conn:
+            row = conn.execute(
+                """
+                SELECT event_type, entity_type, entity_id, actor, details_json
+                FROM state_transition_events
+                """
+            ).fetchone()
+        self.assertEqual(row[0], 'beacon_agent_registered')
+        self.assertEqual(row[1], 'beacon_agent')
+        self.assertEqual(row[2], 'bcn_test_agent_001')
+        self.assertEqual(row[3], 'bcn_test_agent_001')
+        details = json.loads(row[4])
+        self.assertEqual(details['name'], 'Test Agent')
+        self.assertFalse(details['coinbase_address_present'])
 
     def test_join_upsert_duplicate_agent(self):
         """POST /beacon/join upserts mutable fields for duplicate agent_id.
