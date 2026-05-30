@@ -114,6 +114,7 @@ class TestFetchWithRetry(unittest.TestCase):
         mock_response = MagicMock()
         mock_response.json.return_value = {"balance": 100.5}
         mock_response.raise_for_status = MagicMock()
+        mock_response.is_redirect = False  # not a redirect (allow_redirects=False guard)
         mock_get.return_value = mock_response
         
         data, error = self.wallet._fetch_with_retry("https://rustchain.org/wallet/balance")
@@ -129,6 +130,7 @@ class TestFetchWithRetry(unittest.TestCase):
         mock_response = MagicMock()
         mock_response.json.return_value = [{"balance": 100.5}]
         mock_response.raise_for_status = MagicMock()
+        mock_response.is_redirect = False  # not a redirect (allow_redirects=False guard)
         mock_get.return_value = mock_response
 
         data, error = self.wallet._fetch_with_retry("https://rustchain.org/wallet/balance")
@@ -144,7 +146,8 @@ class TestFetchWithRetry(unittest.TestCase):
         mock_response = MagicMock()
         mock_response.json.return_value = {"balance": 100.5}
         mock_response.raise_for_status = MagicMock()
-        
+        mock_response.is_redirect = False  # not a redirect (allow_redirects=False guard)
+
         mock_get.side_effect = [
             ConnectionError("Connection failed"),
             mock_response
@@ -204,6 +207,7 @@ class TestFetchWithRetry(unittest.TestCase):
         mock_response = MagicMock()
         mock_response.json.return_value = {"ok": True}
         mock_response.raise_for_status = MagicMock()
+        mock_response.is_redirect = False  # not a redirect (allow_redirects=False guard)
         mock_post.return_value = mock_response
         
         post_data = {"from": "RTC123", "to": "RTC456", "amount": 10.0}

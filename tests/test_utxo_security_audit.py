@@ -502,7 +502,10 @@ class TestGenesisMigrationSafety(unittest.TestCase):
 
     def test_genesis_rerun_blocked(self):
         """check_existing_genesis must return True after first migration."""
-        from utxo_genesis_migration import check_existing_genesis
+        from utxo_genesis_migration import (
+            check_existing_genesis, compute_genesis_tx_id, GENESIS_HEIGHT,
+        )
+        import json
 
         tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
         tmp.close()
@@ -510,15 +513,39 @@ class TestGenesisMigrationSafety(unittest.TestCase):
             db = UtxoDB(tmp.name)
             db.init_tables()
 
-            # Simulate one genesis box at height 0
-            db.apply_transaction({
-                'tx_type': 'mining_reward',
-                'inputs': [],
-                'outputs': [{'address': 'genesis_wallet', 'value_nrtc': 100 * UNIT}],
-                'fee_nrtc': 0,
-                'timestamp': int(time.time()),
-                '_allow_minting': True,
-            }, block_height=0)  # height 0 = genesis
+            # Insert one real genesis transaction (tx_type='genesis'), mirroring
+            # what the genesis migration writes. check_existing_genesis keys off
+            # tx_type='genesis', NOT block height — a mining_reward tx at height
+            # 0 would not register as genesis (this is what the old test got
+            # wrong). Pattern matches test_rollback_then_remigrate_idempotent.
+            conn = db._conn()
+            now = int(time.time())
+            tx_id = compute_genesis_tx_id('genesis_wallet')
+            prop = address_to_proposition('genesis_wallet')
+            box_id = compute_box_id(100 * UNIT, prop, GENESIS_HEIGHT, tx_id, 0)
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute(
+                """INSERT INTO utxo_boxes
+                   (box_id, value_nrtc, proposition, owner_address,
+                    creation_height, transaction_id, output_index,
+                    tokens_json, registers_json, created_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                (box_id, 100 * UNIT, prop, 'genesis_wallet', GENESIS_HEIGHT,
+                 tx_id, 0, '[]', json.dumps({'R4': 'genesis'}), now),
+            )
+            conn.execute(
+                """INSERT INTO utxo_transactions
+                   (tx_id, tx_type, inputs_json, outputs_json,
+                    data_inputs_json, fee_nrtc, timestamp,
+                    block_height, status)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                (tx_id, 'genesis', '[]',
+                 json.dumps([{'box_id': box_id, 'value_nrtc': 100 * UNIT,
+                              'owner': 'genesis_wallet'}]),
+                 '[]', 0, now, GENESIS_HEIGHT, 'confirmed'),
+            )
+            conn.execute("COMMIT")
+            conn.close()
 
             self.assertTrue(check_existing_genesis(db))
         finally:
