@@ -143,6 +143,7 @@ DB_PATH=$DB_PATH
 RC_ADMIN_KEY=$ADMIN_KEY
 RC_P2P_SECRET=$P2P_SECRET
 RC_RUNTIME_ENV=testnet
+RC_CONFIRMATION_DELAY_SECONDS=0
 PYTHONUNBUFFERED=1
 # Mirror mainnet consensus: real Ed25519 sigs, real fingerprint gating.
 # (mock-sig/inline-pubkey deliberately left OFF.)

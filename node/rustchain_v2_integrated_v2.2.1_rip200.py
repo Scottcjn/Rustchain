@@ -8495,7 +8495,7 @@ def api_wallet_history():
 # =============================================================================
 
 # Configuration
-CONFIRMATION_DELAY_SECONDS = 86400  # 24 hours
+CONFIRMATION_DELAY_SECONDS = int(os.environ.get("RC_CONFIRMATION_DELAY_SECONDS", "86400"))  # mainnet 24h; testnet sets 0 for instant faucet drips
 SOPHIACHECK_WEBHOOK = None  # Set via env var RC_SOPHIACHECK_WEBHOOK
 
 # Alert thresholds
