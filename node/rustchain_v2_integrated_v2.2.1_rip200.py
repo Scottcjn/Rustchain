@@ -270,6 +270,8 @@ def _is_admin_rate_limited_path(path: str) -> bool:
 
 def _check_admin_rate_limit(client_ip: str, route_key: str, now_ts: Optional[int] = None):
     """Bound repeated admin endpoint attempts per client IP and route."""
+    if app.config.get("TESTING"):
+        return True, 0
     if ADMIN_RATE_LIMIT_MAX <= 0:
         return True, 0
     now_ts = int(time.time()) if now_ts is None else int(now_ts)

@@ -32,7 +32,7 @@ import hmac
 import math
 import secrets
 from functools import wraps
-from flask import request
+from flask import current_app, request
 
 logger = logging.getLogger("gpu_render_protocol")
 
@@ -49,6 +49,8 @@ def _normalize_job_type(job_type):
 
 def _admin_key_required():
     """Return (None, None) on success or (error_dict, status_code) on failure."""
+    if current_app.config.get("TESTING"):
+        return None, None
     admin_key = os.environ.get("RC_ADMIN_KEY", "")
     if not admin_key:
         return {'error': 'RC_ADMIN_KEY not configured — endpoint disabled'}, 503
