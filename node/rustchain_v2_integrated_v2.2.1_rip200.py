@@ -145,8 +145,10 @@ except ImportError as _e:
 try:
     from bridge_api import register_bridge_routes, init_bridge_schema
     from lock_ledger import register_lock_ledger_routes, init_lock_ledger_schema
+    from bridge_federation_routes import register_federation_routes
     HAVE_BRIDGE = True
     print("[RIP-0305 Track C] Bridge API + Lock Ledger modules loaded")
+    print("[FEDERATION] Bridge federation read-only routes loaded")
 except ImportError as _e:
     HAVE_BRIDGE = False
     print(f"[RIP-0305 Track C] Bridge modules not available: {_e}")
@@ -1368,7 +1370,9 @@ if HAVE_BRIDGE:
     try:
         register_bridge_routes(app)
         register_lock_ledger_routes(app)
+        register_federation_routes(app)
         print("[RIP-0305 Track C] Bridge API + Lock Ledger endpoints registered")
+        print("[FEDERATION] Bridge federation read-only endpoints registered")
     except Exception as e:
         print(f"[RIP-0305 Track C] Failed to register bridge endpoints: {e}")
 
