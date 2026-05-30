@@ -165,13 +165,14 @@ class TestStaleDataInputEvictionBug4:
         box_w = row["box_id"]
 
         # Add a mempool tx that claims this box as input
-        ok = db.mempool_add({
+        tx = {
             "tx_id": "tx_m",
             "tx_type": "transfer",
             "inputs": [{"box_id": box_w, "spending_proof": "proof_w"}],
             "outputs": [{"address": "addr3", "value_nrtc": 9900}],
             "fee_nrtc": 100,
-        })
+        }
+        ok = db.mempool_add(tx)
         assert ok, "mempool_add should succeed"
 
         # Verify tx_m is in the mempool
@@ -182,14 +183,9 @@ class TestStaleDataInputEvictionBug4:
             conn.close()
         assert mp_row is not None, "tx_m should be in mempool before spend"
 
-        # Spend box_w via apply_transaction
-        result = db.apply_transaction({
-            "tx_type": "transfer",
-            "inputs": [{"box_id": box_w, "spending_proof": "proof_spend"}],
-            "outputs": [{"address": "addr_new", "value_nrtc": 9900}],
-            "fee_nrtc": 100,
-            "data_inputs": [],
-        }, block_height=2)
+        # Mine the same mempool transaction. A different transaction spending
+        # box_w would correctly fail the mempool claim guard.
+        result = db.apply_transaction(tx, block_height=2)
         assert result is True, "apply_transaction should succeed"
 
         # BUG-4 regression: tx_m should have been evicted
@@ -221,7 +217,7 @@ class TestStaleDataInputEvictionBug4:
             "fee_nrtc": 0,
             "data_inputs": [],
             "_allow_minting": True,
-        }, block_height=1)
+        }, block_height=2)
 
         # Find actual box_ids
         conn = db._conn()
@@ -250,7 +246,7 @@ class TestStaleDataInputEvictionBug4:
             "outputs": [{"address": "addr_new", "value_nrtc": 9900}],
             "fee_nrtc": 100,
             "data_inputs": [],
-        }, block_height=2)
+        }, block_height=3)
         assert result
 
         conn = db._conn()
@@ -260,6 +256,95 @@ class TestStaleDataInputEvictionBug4:
             conn.close()
 
         assert m2 is not None, "tx_m2 should remain (its input box_b was not spent)"
+
+    def test_apply_transaction_preserves_mempool_tx_sharing_unspent_data_input(self, db):
+        """A read-only data_input used by the confirmed transaction is not spent.
+
+        Confirming one transaction that reads an oracle/reference box must not
+        evict another mempool transaction that reads the same still-unspent box.
+        """
+        db.apply_transaction({
+            "tx_type": "mining_reward",
+            "inputs": [],
+            "outputs": [{"address": "addr_shared_data", "value_nrtc": 10000}],
+            "fee_nrtc": 0,
+            "data_inputs": [],
+            "_allow_minting": True,
+        }, block_height=1)
+        db.apply_transaction({
+            "tx_type": "mining_reward",
+            "inputs": [],
+            "outputs": [{"address": "addr_confirmed_input", "value_nrtc": 10000}],
+            "fee_nrtc": 0,
+            "data_inputs": [],
+            "_allow_minting": True,
+        }, block_height=2)
+        db.apply_transaction({
+            "tx_type": "mining_reward",
+            "inputs": [],
+            "outputs": [{"address": "addr_mempool_input", "value_nrtc": 20000}],
+            "fee_nrtc": 0,
+            "data_inputs": [],
+            "_allow_minting": True,
+        }, block_height=3)
+
+        conn = db._conn()
+        try:
+            shared_data = conn.execute(
+                "SELECT box_id FROM utxo_boxes WHERE owner_address=? AND spent_at IS NULL",
+                ("addr_shared_data",),
+            ).fetchone()["box_id"]
+            confirmed_input = conn.execute(
+                "SELECT box_id FROM utxo_boxes WHERE owner_address=? AND spent_at IS NULL",
+                ("addr_confirmed_input",),
+            ).fetchone()["box_id"]
+            mempool_input = conn.execute(
+                "SELECT box_id FROM utxo_boxes WHERE owner_address=? AND spent_at IS NULL",
+                ("addr_mempool_input",),
+            ).fetchone()["box_id"]
+        finally:
+            conn.close()
+
+        ok = db.mempool_add({
+            "tx_id": "tx_reads_same_data_input",
+            "tx_type": "transfer",
+            "inputs": [{"box_id": mempool_input, "spending_proof": "p_mempool"}],
+            "data_inputs": [shared_data],
+            "outputs": [{"address": "addr_mempool_out", "value_nrtc": 19900}],
+            "fee_nrtc": 100,
+        })
+        assert ok, "mempool tx with shared read-only data_input should be admitted"
+
+        result = db.apply_transaction({
+            "tx_type": "transfer",
+            "inputs": [{"box_id": confirmed_input, "spending_proof": "p_confirmed"}],
+            "data_inputs": [shared_data],
+            "outputs": [{"address": "addr_confirmed_out", "value_nrtc": 9900}],
+            "fee_nrtc": 100,
+        }, block_height=4)
+        assert result, "confirmed transaction should be able to read shared_data"
+
+        conn = db._conn()
+        try:
+            mp = conn.execute(
+                "SELECT tx_id FROM utxo_mempool WHERE tx_id=?",
+                ("tx_reads_same_data_input",),
+            ).fetchone()
+            inp = conn.execute(
+                "SELECT tx_id FROM utxo_mempool_inputs WHERE tx_id=?",
+                ("tx_reads_same_data_input",),
+            ).fetchone()
+            shared_row = conn.execute(
+                "SELECT spent_at FROM utxo_boxes WHERE box_id=?",
+                (shared_data,),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        assert shared_row["spent_at"] is None, "shared data_input remains unspent"
+        assert mp is not None, "mempool tx sharing unspent data_input should remain"
+        assert inp is not None, "mempool input claim should remain for valid tx"
+
     def test_apply_transaction_evicts_mempool_tx_with_data_input(self, db):
         """Regression test: apply_transaction() should evict mempool txs
         whose data_inputs reference a box that was just spent.
@@ -282,7 +367,7 @@ class TestStaleDataInputEvictionBug4:
             'fee_nrtc': 0,
             'data_inputs': [],
             '_allow_minting': True,
-        }, block_height=1)
+        }, block_height=2)
 
         # Find actual box_ids
         conn = db._conn()
@@ -329,7 +414,7 @@ class TestStaleDataInputEvictionBug4:
             'outputs': [{'address': 'addr_spent_to', 'value_nrtc': 9900}],
             'fee_nrtc': 100,
             'data_inputs': [],
-        }, block_height=2)
+        }, block_height=3)
         assert result, 'apply_transaction spending box_spend should succeed'
 
         # BUG-4 regression: tx_data_dep should be evicted

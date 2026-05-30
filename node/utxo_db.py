@@ -874,7 +874,10 @@ class UtxoDB:
         # one writer at a time. When we own the transaction
         # (manage_tx=True), we commit first, then evict on a fresh
         # connection so a failure cannot roll back the durable spend.
-            _spent_ids = list(set(input_box_ids + list(data_inputs)))
+            # Only regular inputs are spent by this transaction. Read-only
+            # data_inputs remain unspent and must not evict other mempool
+            # transactions that legitimately depend on the same reference box.
+            _spent_ids = list(set(input_box_ids))
             if _spent_ids:
                 if not manage_tx:
                     # External-connection path: evict inside the caller's
