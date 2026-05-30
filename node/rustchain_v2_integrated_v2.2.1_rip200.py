@@ -1261,6 +1261,7 @@ MAX_DAILY_WITHDRAWAL = 1000.0  # RTC
 GOVERNANCE_ACTIVE_SECONDS = 7 * 24 * 60 * 60
 GOVERNANCE_MIN_PROPOSER_BALANCE_RTC = 10.0
 GOVERNANCE_ACTIVE_MINER_WINDOW_SECONDS = 3600
+GOVERNANCE_DESCRIPTION_MAX_LEN = 4_000
 
 EPOCH_WEIGHT_SCALE = 1_000_000_000
 MAX_EPOCH_WEIGHT = 10_000
@@ -6173,6 +6174,13 @@ def governance_propose():
     if not proposer_wallet or not title or not description:
         return jsonify({"ok": False, "error": "wallet, title and description are required"}), 400
 
+    if len(description) > GOVERNANCE_DESCRIPTION_MAX_LEN:
+        return jsonify({
+            "ok": False,
+            "error": "description_too_long",
+            "max_len": GOVERNANCE_DESCRIPTION_MAX_LEN,
+        }), 400
+
     if not all([nonce, signature, public_key]):
         return jsonify({
             "ok": False,
@@ -6256,12 +6264,22 @@ def governance_propose():
     }), 201
 
 
+_PROPOSALS_DESCRIPTION_PREVIEW_LEN = 200
+_PROPOSALS_MAX_LIMIT = 200
+_PROPOSALS_DEFAULT_LIMIT = 50
+
+
 @app.route('/governance/proposals', methods=['GET'])
 def governance_proposals():
+    limit = min(max(request.args.get('limit', _PROPOSALS_DEFAULT_LIMIT, type=int), 1), _PROPOSALS_MAX_LIMIT)
+    offset = max(request.args.get('offset', 0, type=int), 0)
+
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         _ensure_governance_tables(c)
+
+        total = c.execute("SELECT COUNT(*) FROM governance_proposals").fetchone()[0]
 
         rows = c.execute(
             """
@@ -6269,17 +6287,20 @@ def governance_proposals():
                    status, yes_weight, no_weight
             FROM governance_proposals
             ORDER BY id DESC
-            """
+            LIMIT ? OFFSET ?
+            """,
+            (limit, offset),
         ).fetchall()
 
         proposals = []
         for row in rows:
             status = _refresh_proposal_status(c, row)
+            desc = row["description"] or ""
             proposals.append({
                 "id": row["id"],
                 "proposer_wallet": row["proposer_wallet"],
                 "title": row["title"],
-                "description": row["description"],
+                "description_preview": desc[:_PROPOSALS_DESCRIPTION_PREVIEW_LEN],
                 "created_at": row["created_at"],
                 "activated_at": row["activated_at"],
                 "ends_at": row["ends_at"],
@@ -6289,7 +6310,14 @@ def governance_proposals():
             })
         conn.commit()
 
-    return jsonify({"ok": True, "count": len(proposals), "proposals": proposals})
+    return jsonify({
+        "ok": True,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "count": len(proposals),
+        "proposals": proposals,
+    })
 
 
 @app.route('/governance/proposal/<int:proposal_id>', methods=['GET'])
