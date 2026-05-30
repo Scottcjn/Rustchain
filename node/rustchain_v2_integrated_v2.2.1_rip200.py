@@ -146,9 +146,15 @@ try:
     from bridge_api import register_bridge_routes, init_bridge_schema
     from lock_ledger import register_lock_ledger_routes, init_lock_ledger_schema
     from bridge_federation_routes import register_federation_routes
+    from bridge_reconciliation import (
+        register_reconciliation_routes,
+        init_reconciliation_schema,
+        record_reconciliation_snapshot,
+    )
     HAVE_BRIDGE = True
     print("[RIP-0305 Track C] Bridge API + Lock Ledger modules loaded")
     print("[FEDERATION] Bridge federation read-only routes loaded")
+    print("[FEDERATION] Bridge reconciliation snapshots loaded (Layer 2)")
 except ImportError as _e:
     HAVE_BRIDGE = False
     print(f"[RIP-0305 Track C] Bridge modules not available: {_e}")
@@ -1371,8 +1377,17 @@ if HAVE_BRIDGE:
         register_bridge_routes(app)
         register_lock_ledger_routes(app)
         register_federation_routes(app)
+        register_reconciliation_routes(app)
+        # Init reconciliation snapshot table if not present
+        try:
+            with sqlite3.connect(DB_PATH) as _conn:
+                init_reconciliation_schema(_conn.cursor())
+                _conn.commit()
+        except Exception as _e:
+            print(f"[FEDERATION] reconciliation schema init warning: {_e}")
         print("[RIP-0305 Track C] Bridge API + Lock Ledger endpoints registered")
         print("[FEDERATION] Bridge federation read-only endpoints registered")
+        print("[FEDERATION] Bridge reconciliation endpoints registered")
     except Exception as e:
         print(f"[RIP-0305 Track C] Failed to register bridge endpoints: {e}")
 
@@ -8228,6 +8243,27 @@ def api_rewards_settle():
 
     with sqlite3.connect(DB_PATH) as db:
         res = settle_epoch(db, epoch)
+        # FEDERATION Layer 2: record bridge reconciliation snapshot for this
+        # epoch. Idempotent — safe to call repeatedly. Does NOT block or
+        # invalidate the settle response if the snapshot fails (the snapshot
+        # is an audit artifact, not a settlement requirement).
+        if HAVE_BRIDGE:
+            try:
+                snap_result = record_reconciliation_snapshot(db, epoch=epoch)
+                if isinstance(res, dict):
+                    res["bridge_reconciliation_snapshot"] = {
+                        "epoch": snap_result.get("epoch"),
+                        "state_hash": snap_result.get("state_hash"),
+                        "bridged_supply_committed": snap_result.get(
+                            "bridged_supply_committed"
+                        ),
+                        "created": snap_result.get("created", False),
+                    }
+            except Exception as _snap_exc:
+                print(
+                    f"[FEDERATION] reconciliation snapshot at epoch {epoch} "
+                    f"failed (non-fatal): {_snap_exc}"
+                )
     return jsonify(res)
 
 @app.route('/rewards/epoch/<int:epoch>', methods=['GET'])
