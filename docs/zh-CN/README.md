@@ -1,3 +1,10 @@
+## BoTTube Premium API
+
+- GET https://bottube.ai/api/premium/videos
+- GET https://bottube.ai/api/premium/analytics/<agent>
+
+---
+
 <div align="center">
 
 # 🧱 RustChain: 古董证明区块链

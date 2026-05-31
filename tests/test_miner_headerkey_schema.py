@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 """Regression tests for miner header key schema initialisation."""
 
+import os
 import sys
 
 
@@ -18,7 +19,7 @@ def test_init_db_creates_miner_header_keys_table(tmp_path):
         with node.app.test_client() as client:
             response = client.post(
                 "/miner/headerkey",
-                headers={"X-API-Key": "0" * 32},
+                headers={"X-API-Key": os.environ["RC_ADMIN_KEY"]},
                 json={"miner_id": "miner-one", "pubkey_hex": "a" * 64},
             )
 
