@@ -261,4 +261,4 @@ wRTC 也可在 Base L2 上使用：
 
 ---
 
-**下一步**: 查看 [api-reference.md](./api-reference.md) 了解所有公共端点。
+**下一步**: 查看 [API_REFERENCE.md](./API_REFERENCE.md) 了解所有公共端点。
