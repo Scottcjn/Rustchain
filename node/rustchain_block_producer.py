@@ -18,7 +18,6 @@ import os
 import sqlite3
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
@@ -43,6 +42,7 @@ logging.basicConfig(
     format='%(asctime)s [BLOCK] %(levelname)s: %(message)s'
 )
 logger = logging.getLogger(__name__)
+ThreadPoolExecutor = None
 
 
 # =============================================================================
@@ -212,6 +212,12 @@ class Block:
                 if not tx.verify():
                     return False, tx.tx_hash
             return True, ""
+
+        global ThreadPoolExecutor
+        if ThreadPoolExecutor is None:
+            from concurrent.futures import ThreadPoolExecutor as _ThreadPoolExecutor
+
+            ThreadPoolExecutor = _ThreadPoolExecutor
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             results = executor.map(self._verify_transaction_signature, transactions)
