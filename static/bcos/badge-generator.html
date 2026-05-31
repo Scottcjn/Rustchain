@@ -867,14 +867,17 @@ function renderDirectory() {
     count.textContent = `${directory.length} certified repos`;
 
     grid.innerHTML = directory.map((c, i) => `
-        <div class="dir-card" onclick="selectFromDirectory('${c.cert_id}')" title="${c.cert_id}">
+        <div class="dir-card" data-cert-id="${escAttr(c.cert_id)}" title="${escAttr(c.cert_id)}">
             <div class="dir-card-repo">${escHtml(c.repo)}</div>
             <div class="dir-card-meta">
-                <span class="tier-badge tier-${c.tier}">${c.tier}</span>
-                <span>${c.trust_score}/100</span>
+                <span class="tier-badge ${tierClass(c.tier)}">${escHtml(normalizeTier(c.tier))}</span>
+                <span>${escHtml(formatTrustScore(c.trust_score))}/100</span>
             </div>
         </div>
     `).join('');
+    grid.querySelectorAll('.dir-card').forEach(card => {
+        card.addEventListener('click', () => selectFromDirectory(card.dataset.certId));
+    });
 }
 
 function selectFromDirectory(certId) {
@@ -896,7 +899,7 @@ function onCertIdInput(val) {
 
     renderAC('certIdList', matches, c => `
         <span>${escHtml(c.cert_id)} — ${escHtml(c.repo)}</span>
-        <span class="ac-tier tier-badge tier-${c.tier}">${c.tier} ${c.trust_score}/100</span>
+        <span class="ac-tier tier-badge ${tierClass(c.tier)}">${escHtml(normalizeTier(c.tier))} ${escHtml(formatTrustScore(c.trust_score))}/100</span>
     `, c => {
         document.getElementById('certIdInput').value = c.cert_id;
         closeAC('certIdList');
@@ -922,7 +925,7 @@ function onRepoInput(val) {
 
     renderAC('repoList', matches, c => `
         <span>${escHtml(c.repo)}</span>
-        <span class="ac-tier tier-badge tier-${c.tier}">${c.tier}</span>
+        <span class="ac-tier tier-badge ${tierClass(c.tier)}">${escHtml(normalizeTier(c.tier))}</span>
     `, c => {
         document.getElementById('repoInput').value = c.repo;
         closeAC('repoList');
@@ -946,6 +949,31 @@ function renderAC(listId, items, renderFn, onSelect) {
     });
     list.classList.add('open');
     acIndex = -1;
+}
+
+function escAttr(s) {
+    return escHtml(String(s ?? '')).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function normalizeTier(tier) {
+    const normalized = String(tier ?? '').trim().toUpperCase();
+    return /^L[0-9]$/.test(normalized) ? normalized : 'UNKNOWN';
+}
+
+function tierClass(tier) {
+    const normalized = normalizeTier(tier);
+    return normalized === 'UNKNOWN' ? '' : `tier-${normalized}`;
+}
+
+function normalizeTrustScore(score) {
+    const n = Number(score);
+    if (!Number.isFinite(n)) return null;
+    return Math.max(0, Math.min(100, Math.round(n)));
+}
+
+function formatTrustScore(score) {
+    const normalized = normalizeTrustScore(score);
+    return normalized === null ? '?' : String(normalized);
 }
 
 function closeAC(listId) {
@@ -1017,20 +1045,15 @@ async function generate() {
     btn.textContent = 'RESOLVING CERTIFICATE…';
 
     try {
-        // Try to get cert details from directory (fast path)
-        let cert = directory.find(c => c.cert_id === certId || c.cert_id.toLowerCase() === certId.toLowerCase());
-
-        if (!cert) {
-            // Fetch from API (verifies and returns full data)
-            const r = await fetch(`${NODE}/bcos/verify/${certId}`, {
-                signal: AbortSignal.timeout(8000)
-            });
-            if (r.status === 404) throw new Error(`Certificate "${certId}" not found in the BCOS registry.`);
-            if (!r.ok) throw new Error(`API error: ${r.status}`);
-            const data = await r.json();
-            if (!data.ok) throw new Error(data.error || 'Certificate not found.');
-            cert = data;
-        }
+        const r = await fetch(`${NODE}/bcos/verify/${encodeURIComponent(certId)}`, {
+            signal: AbortSignal.timeout(8000)
+        });
+        if (r.status === 404) throw new Error(`Certificate "${certId}" not found in the BCOS registry.`);
+        if (!r.ok) throw new Error(`API error: ${r.status}`);
+        const data = await r.json();
+        if (!data.ok) throw new Error(data.error || 'Certificate not found.');
+        const directoryMatch = directory.find(c => c.cert_id === certId || c.cert_id.toLowerCase() === certId.toLowerCase()) || {};
+        const cert = { ...directoryMatch, ...data };
 
         currentCert = cert;
         renderOutput(cert, certId);
@@ -1057,24 +1080,25 @@ function renderOutput(cert, certId) {
     document.getElementById('outputTitle').textContent = `${certId} — stdout`;
 
     // Cert info fields
-    const tier = cert.tier || '?';
-    const score = cert.trust_score ?? cert.score ?? '?';
+    const tier = normalizeTier(cert.tier);
+    const score = normalizeTrustScore(cert.trust_score ?? cert.score);
+    const scoreLabel = score === null ? '?' : String(score);
     const repo = cert.repo || cert.repo_name || '?';
-    const rev = cert.reviewer || 'Scott Boudreaux';
+    const rev = cert.reviewer || 'unknown';
     const ts = cert.created_at ? new Date(cert.created_at * 1000).toISOString().slice(0,10) : '?';
 
     document.getElementById('certInfo').innerHTML = `
         <div class="cert-field"><span class="cert-key">cert_id</span><span class="cert-val">${escHtml(certId)}</span></div>
         <div class="cert-field"><span class="cert-key">repo</span><span class="cert-val">${escHtml(repo)}</span></div>
-        <div class="cert-field"><span class="cert-key">tier</span><span class="cert-val amber">${tier}</span></div>
-        <div class="cert-field"><span class="cert-key">trust_score</span><span class="cert-val">${score}/100</span></div>
+        <div class="cert-field"><span class="cert-key">tier</span><span class="cert-val amber">${escHtml(tier)}</span></div>
+        <div class="cert-field"><span class="cert-key">trust_score</span><span class="cert-val">${escHtml(scoreLabel)}/100</span></div>
         <div class="cert-field"><span class="cert-key">reviewer</span><span class="cert-val">${escHtml(rev)}</span></div>
         <div class="cert-field"><span class="cert-key">anchored</span><span class="cert-val">${ts}</span></div>
-        <div class="cert-field"><span class="cert-key">verify_url</span><span class="cert-val"><a href="${verifyUrl}" target="_blank" style="color:var(--green);text-decoration:none;">${verifyUrl}</a></span></div>
+        <div class="cert-field"><span class="cert-key">verify_url</span><span class="cert-val"><a href="${escAttr(verifyUrl)}" target="_blank" style="color:var(--green);text-decoration:none;">${escHtml(verifyUrl)}</a></span></div>
     `;
 
     // Score bar
-    if (typeof score === 'number') {
+    if (score !== null) {
         const bar = document.getElementById('scoreFill');
         bar.className = 'score-fill' + (score >= 80 ? '' : score >= 60 ? '' : score >= 40 ? ' amber-fill' : ' red-fill');
         document.getElementById('scoreLabel').textContent = `${score}/100`;
