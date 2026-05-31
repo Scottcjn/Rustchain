@@ -114,6 +114,34 @@ def test_tampered_sample_hash_is_slashable_custody_failure():
     assert tampered_offset in result.failed_offsets
 
 
+def test_tampered_piece_hash_is_slashable_custody_failure():
+    data = b"availability-piece" * 64
+    challenge = build_custody_challenge(
+        piece_id="piece-a",
+        piece_size=len(data),
+        epoch=13,
+        validator_id="validator-1",
+        sample_count=6,
+        sample_size=32,
+    )
+    proof = create_custody_proof(data, challenge)
+    tampered_proof = type(proof)(
+        challenge_hash=proof.challenge_hash,
+        piece_id=proof.piece_id,
+        validator_id=proof.validator_id,
+        sample_hashes=proof.sample_hashes,
+        piece_hash="00" * 32,
+    )
+
+    result = verify_custody_proof(data, challenge, tampered_proof)
+
+    assert result.valid is False
+    assert result.slashable is True
+    assert result.reason == "piece_hash_mismatch"
+    assert result.checked_samples == 0
+    assert result.failed_offsets == []
+
+
 def test_challenge_rejects_impossible_sample_size():
     with pytest.raises(ValueError, match="sample_size cannot exceed piece_size"):
         build_custody_challenge(

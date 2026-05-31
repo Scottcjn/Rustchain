@@ -7,7 +7,6 @@ import json
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
-
 DEFAULT_SAMPLE_COUNT = 16
 DEFAULT_SAMPLE_SIZE = 32
 MAX_SAMPLE_COUNT = 256
@@ -163,7 +162,7 @@ def build_custody_challenge(
 
     max_offset = piece_size - sample_size
     seed_material = _derive_seed(piece_id, piece_size, epoch, validator_id, seed)
-    offsets = []
+    offsets: List[int] = []
     seen_offsets = set()
     counter = 0
 
@@ -240,6 +239,16 @@ def verify_custody_proof(
             checked_samples=0,
             failed_offsets=[],
         )
+    if proof.piece_hash is not None:
+        expected_piece_hash = _sha256_hex(data)
+        if not hmac.compare_digest(proof.piece_hash, expected_piece_hash):
+            return CustodyVerificationResult(
+                valid=False,
+                slashable=True,
+                reason="piece_hash_mismatch",
+                checked_samples=0,
+                failed_offsets=[],
+            )
 
     failed_offsets = []
     for offset in challenge.sample_offsets:
