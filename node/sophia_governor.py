@@ -409,6 +409,15 @@ def _query_local_llm(event_type: str, payload: dict[str, Any], heuristic: dict[s
         except Exception as exc:
             log.warning("Local governor LLM failed via %s: %s", endpoint, exc)
     return None
+def _parse_transfer_amount(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        if isinstance(value, (int, float, str)):
+            return float(value)
+    except (ValueError, TypeError):
+        pass
+    return None
 
 
 def _heuristic_review(event_type: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -469,9 +478,25 @@ def _heuristic_review(event_type: str, payload: dict[str, Any]) -> dict[str, Any
             recommended_actions.append("keep proposal on local watchlist")
 
     elif event_type == "pending_transfer":
-        amount_rtc = float(payload.get("amount_rtc") or 0.0)
+        amount_rtc = None
+        raw_rtc = payload.get("amount_rtc")
+        if raw_rtc is not None:
+            amount_rtc = _parse_transfer_amount(raw_rtc)
+            
         if not amount_rtc and payload.get("amount_i64") is not None:
-            amount_rtc = float(payload["amount_i64"]) / 1_000_000.0
+            i64_val = _parse_transfer_amount(payload["amount_i64"])
+            if i64_val is not None:
+                amount_rtc = i64_val / 1_000_000.0
+
+        if amount_rtc is None:
+            # Mark as malformed
+            amount_rtc = 0.0
+            risk_level = "high"
+            route = ROUTE_LOCAL_THEN_PHONE_HOME
+            stance = "watch"
+            signals.append("malformed_amount")
+            recommended_actions.append("review malformed transfer amount")
+
         reason_text = str(payload.get("reason", "")).lower()
         if amount_rtc >= _transfer_critical_rtc():
             risk_level = "critical"
