@@ -6,10 +6,13 @@ from slasher import (
     DOUBLE_PROPOSAL,
     DOUBLE_VOTE,
     SURROUND_VOTE,
+    ProposalRecord,
+    VoteRecord,
     build_slashing_report,
     detect_double_proposals,
     detect_double_votes,
     detect_surround_votes,
+    normalize_proposal,
     normalize_vote,
 )
 
@@ -167,4 +170,42 @@ def test_invalid_vote_epoch_order_is_rejected():
                 "target_epoch": 5,
                 "root": "root-a",
             }
+        )
+
+
+def test_invalid_dataclass_vote_fields_are_rejected():
+    for record, message in (
+        (VoteRecord("", 1, 2, "root-a"), "validator_id"),
+        (VoteRecord("validator-a", 1, 2, ""), "root"),
+        (VoteRecord("validator-a", False, 2, "root-a"), "source_epoch"),
+        (VoteRecord("validator-a", 1, True, "root-a"), "target_epoch"),
+    ):
+        with pytest.raises(ValueError, match=message):
+            normalize_vote(record)
+
+
+def test_invalid_dataclass_proposal_fields_are_rejected():
+    for record, message in (
+        (ProposalRecord("", 7, "root-a"), "validator_id"),
+        (ProposalRecord("validator-a", 7, ""), "block_root"),
+        (ProposalRecord("validator-a", True, "root-a"), "slot"),
+    ):
+        with pytest.raises(ValueError, match=message):
+            normalize_proposal(record)
+
+
+def test_malformed_records_raise_value_error():
+    with pytest.raises(ValueError, match="vote record"):
+        normalize_vote(["not", "a", "mapping"])  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="proposal record"):
+        normalize_proposal(["not", "a", "mapping"])  # type: ignore[arg-type]
+
+
+def test_invalid_dataclass_proposals_do_not_emit_empty_validator_evidence():
+    with pytest.raises(ValueError, match="validator_id"):
+        detect_double_proposals(
+            [
+                ProposalRecord("", 7, "root-a"),
+                ProposalRecord("", 7, "root-b"),
+            ]
         )

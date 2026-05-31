@@ -8,6 +8,7 @@ votes and proposals, then decide how to persist or submit the generated report.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from typing import Dict, Iterable, List, Sequence, Tuple, Union
 
@@ -57,6 +58,8 @@ ProposalInput = Union[ProposalRecord, Dict[str, object]]
 
 
 def _as_int(value: object, field_name: str) -> int:
+    if isinstance(value, bool):
+        raise ValueError(f"{field_name} must be an integer")
     try:
         return int(value)
     except (TypeError, ValueError) as exc:
@@ -73,15 +76,18 @@ def _as_non_empty_str(value: object, field_name: str) -> str:
 def normalize_vote(record: VoteInput) -> VoteRecord:
     """Normalize mapping/dataclass vote input and validate epoch ordering."""
     if isinstance(record, VoteRecord):
-        vote = record
+        data: Mapping[str, object] = asdict(record)
     else:
-        vote = VoteRecord(
-            validator_id=_as_non_empty_str(record.get("validator_id"), "validator_id"),
-            source_epoch=_as_int(record.get("source_epoch"), "source_epoch"),
-            target_epoch=_as_int(record.get("target_epoch"), "target_epoch"),
-            root=_as_non_empty_str(record.get("root"), "root"),
-            signature=str(record.get("signature") or ""),
-        )
+        if not isinstance(record, Mapping):
+            raise ValueError("vote record must be a mapping or VoteRecord")
+        data = record
+    vote = VoteRecord(
+        validator_id=_as_non_empty_str(data.get("validator_id"), "validator_id"),
+        source_epoch=_as_int(data.get("source_epoch"), "source_epoch"),
+        target_epoch=_as_int(data.get("target_epoch"), "target_epoch"),
+        root=_as_non_empty_str(data.get("root"), "root"),
+        signature=str(data.get("signature") or ""),
+    )
 
     if vote.target_epoch <= vote.source_epoch:
         raise ValueError("target_epoch must be greater than source_epoch")
@@ -91,14 +97,17 @@ def normalize_vote(record: VoteInput) -> VoteRecord:
 def normalize_proposal(record: ProposalInput) -> ProposalRecord:
     """Normalize mapping/dataclass proposal input."""
     if isinstance(record, ProposalRecord):
-        proposal = record
+        data: Mapping[str, object] = asdict(record)
     else:
-        proposal = ProposalRecord(
-            validator_id=_as_non_empty_str(record.get("validator_id"), "validator_id"),
-            slot=_as_int(record.get("slot"), "slot"),
-            block_root=_as_non_empty_str(record.get("block_root"), "block_root"),
-            signature=str(record.get("signature") or ""),
-        )
+        if not isinstance(record, Mapping):
+            raise ValueError("proposal record must be a mapping or ProposalRecord")
+        data = record
+    proposal = ProposalRecord(
+        validator_id=_as_non_empty_str(data.get("validator_id"), "validator_id"),
+        slot=_as_int(data.get("slot"), "slot"),
+        block_root=_as_non_empty_str(data.get("block_root"), "block_root"),
+        signature=str(data.get("signature") or ""),
+    )
 
     if proposal.slot < 0:
         raise ValueError("slot must be non-negative")
