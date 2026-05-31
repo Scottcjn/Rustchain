@@ -56,6 +56,12 @@ from datetime import datetime
 from typing import Dict, Optional, Tuple
 from hashlib import blake2b
 
+# Bounded-query helper (OOM protection for .fetchall() — Issue #6627)
+try:
+    from db_helpers import fetch_page, fetch_one_or_none
+except ImportError:
+    from node.db_helpers import fetch_page, fetch_one_or_none
+
 # RIP-201: Fleet Detection Immune System
 try:
     from fleet_immune_system import (
