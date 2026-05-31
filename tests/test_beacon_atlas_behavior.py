@@ -176,7 +176,7 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         contract_id = created['id']
         
         # Verify contract appears in list
-        list_response = self.client.get('/api/contracts')
+        list_response = self.client.get('/api/contracts', headers={'X-Admin-Key': os.environ.get('RC_ADMIN_KEY', '0'*32)})
         self.assertEqual(list_response.status_code, 200)
         contracts = json.loads(list_response.data)
         self.assertEqual(len(contracts), 1)
@@ -198,7 +198,7 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         self.assertEqual(update_response.status_code, 200)
         
         # Verify state changed
-        list_response2 = self.client.get('/api/contracts')
+        list_response2 = self.client.get('/api/contracts', headers={'X-Admin-Key': os.environ.get('RC_ADMIN_KEY', '0'*32)})
         contracts2 = json.loads(list_response2.data)
         self.assertEqual(contracts2[0]['state'], 'active')
 
@@ -282,7 +282,7 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
             conn.commit()
         
         # Get bounties list
-        response = self.client.get('/api/bounties')
+        response = self.client.get('/api/bounties', headers={'X-Admin-Key': os.environ.get('RC_ADMIN_KEY', '0'*32)})
         self.assertEqual(response.status_code, 200)
         bounties = json.loads(response.data)
         self.assertEqual(len(bounties), 1)
@@ -298,7 +298,7 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         self.assertEqual(claim_response.status_code, 200)
         
         # Verify claimed state
-        response2 = self.client.get('/api/bounties')
+        response2 = self.client.get('/api/bounties', headers={'X-Admin-Key': os.environ.get('RC_ADMIN_KEY', '0'*32)})
         bounties2 = json.loads(response2.data)
         # Bounty should no longer appear in open list (state changed to claimed)
 
@@ -346,7 +346,7 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
             conn.commit()
         
         # Get all reputations
-        response = self.client.get('/api/reputation')
+        response = self.client.get('/api/reputation', headers={'X-Admin-Key': os.environ.get('RC_ADMIN_KEY', '0'*32)})
         self.assertEqual(response.status_code, 200)
         reps = json.loads(response.data)
         self.assertEqual(len(reps), 1)
@@ -354,13 +354,13 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         self.assertEqual(reps[0]['score'], 50)
         
         # Get single agent reputation
-        response2 = self.client.get('/api/reputation/bcn_reputation_test')
+        response2 = self.client.get('/api/reputation/bcn_reputation_test', headers={'X-Admin-Key': os.environ.get('RC_ADMIN_KEY', '0'*32)})
         self.assertEqual(response2.status_code, 200)
         rep = json.loads(response2.data)
         self.assertEqual(rep['bounties_completed'], 2)
         
         # Non-existent agent returns 404
-        response3 = self.client.get('/api/reputation/bcn_nonexistent')
+        response3 = self.client.get('/api/reputation/bcn_nonexistent', headers={'X-Admin-Key': os.environ.get('RC_ADMIN_KEY', '0'*32)})
         self.assertEqual(response3.status_code, 404)
 
     def test_chat_message_storage(self):
@@ -461,7 +461,7 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         self.assertEqual(reject_response.status_code, 200)
         self.assertEqual(json.loads(reject_response.data)['state'], 'rejected')
 
-        list_response = self.client.get('/api/contracts')
+        list_response = self.client.get('/api/contracts', headers={'X-Admin-Key': os.environ.get('RC_ADMIN_KEY', '0'*32)})
         contracts = json.loads(list_response.data)
         self.assertEqual(contracts[0]['state'], 'rejected')
 
@@ -514,7 +514,7 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         )
         self.assertEqual(reject_response.status_code, 403)
 
-        list_response = self.client.get('/api/contracts')
+        list_response = self.client.get('/api/contracts', headers={'X-Admin-Key': os.environ.get('RC_ADMIN_KEY', '0'*32)})
         contracts = json.loads(list_response.data)
         self.assertEqual(contracts[0]['state'], 'offered')
 
@@ -576,7 +576,7 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         self.assertEqual(complete_response.status_code, 200)
         
         # Verify reputation was created/updated
-        rep_response = self.client.get('/api/reputation/bcn_completer')
+        rep_response = self.client.get('/api/reputation/bcn_completer', headers={'X-Admin-Key': os.environ.get('RC_ADMIN_KEY', '0'*32)})
         self.assertEqual(rep_response.status_code, 200)
         rep = json.loads(rep_response.data)
         self.assertEqual(rep['bounties_completed'], 1)

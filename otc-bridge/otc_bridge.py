@@ -262,7 +262,9 @@ def rtc_transfer_from_worker(recipient_wallet, amount_rtc, order_id):
 
         try:
             last_payload = transfer_r.json()
-        except ValueError:
+            if not isinstance(last_payload, dict):
+                last_payload = {}
+        except Exception:
             last_payload = {}
 
         if transfer_r.ok:

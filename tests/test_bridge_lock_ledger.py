@@ -166,11 +166,11 @@ def funded_miner(setup_test_db):
     conn = sqlite3.connect(setup_test_db['db_path'])
     conn.execute(
         "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?)",
-        ("RTC_test_miner", 100 * 1000000)  # 100 RTC
+        ("RTC0000000000000000000000000000000000000000", 100 * 1000000)  # 100 RTC
     )
     conn.commit()
     conn.close()
-    return "RTC_test_miner"
+    return "RTC0000000000000000000000000000000000000000"
 
 
 def assert_generic_database_error(result):
@@ -193,7 +193,7 @@ class TestBridgeValidation:
             "direction": "deposit",
             "source_chain": "rustchain",
             "dest_chain": "solana",
-            "source_address": "RTC_test123",
+            "source_address": "RTC0000000000000000000000000000000000000000",
             "dest_address": "4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXqXq",
             "amount_rtc": 10.0
         }
@@ -209,7 +209,7 @@ class TestBridgeValidation:
             "source_chain": "solana",
             "dest_chain": "rustchain",
             "source_address": "4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXqXq",
-            "dest_address": "RTC_test123",
+            "dest_address": "RTC0000000000000000000000000000000000000000",
             "amount_rtc": 5.0
         }
         result = bridge_api.validate_bridge_request(data)
@@ -221,7 +221,7 @@ class TestBridgeValidation:
         data = {
             "direction": "deposit",
             "dest_chain": "solana",
-            "source_address": "RTC_test123",
+            "source_address": "RTC0000000000000000000000000000000000000000",
             "dest_address": "4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXqXq",
             "amount_rtc": 10.0
         }
@@ -236,7 +236,7 @@ class TestBridgeValidation:
             "direction": "invalid",
             "source_chain": "rustchain",
             "dest_chain": "solana",
-            "source_address": "RTC_test123",
+            "source_address": "RTC0000000000000000000000000000000000000000",
             "dest_address": "4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXqXq",
             "amount_rtc": 10.0
         }
@@ -251,8 +251,8 @@ class TestBridgeValidation:
             "direction": "deposit",
             "source_chain": "rustchain",
             "dest_chain": "rustchain",
-            "source_address": "RTC_test123",
-            "dest_address": "RTC_other123",
+            "source_address": "RTC0000000000000000000000000000000000000000",
+            "dest_address": "RTC11111111111111111111111111111111111111111",
             "amount_rtc": 10.0
         }
         result = bridge_api.validate_bridge_request(data)
@@ -267,7 +267,7 @@ class TestBridgeValidation:
             "source_chain": "solana",
             "dest_chain": "rustchain",
             "source_address": "4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXqXq",
-            "dest_address": "RTC_test123",
+            "dest_address": "RTC0000000000000000000000000000000000000000",
             "amount_rtc": 10.0
         }
         result = bridge_api.validate_bridge_request(data)
@@ -281,7 +281,7 @@ class TestBridgeValidation:
             "direction": "withdraw",
             "source_chain": "rustchain",
             "dest_chain": "solana",
-            "source_address": "RTC_test123",
+            "source_address": "RTC0000000000000000000000000000000000000000",
             "dest_address": "4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXqXq",
             "amount_rtc": 10.0
         }
@@ -296,7 +296,7 @@ class TestBridgeValidation:
             "direction": "deposit",
             "source_chain": "rustchain",
             "dest_chain": "solana",
-            "source_address": "RTC_test123",
+            "source_address": "RTC0000000000000000000000000000000000000000",
             "dest_address": "4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXqXq",
             "amount_rtc": 0.5
         }
@@ -315,7 +315,7 @@ class TestAddressValidation:
     def test_valid_rustchain_address(self, setup_test_db):
         """Test valid RustChain address."""
         bridge_api = setup_test_db["bridge_api"]
-        valid, msg = bridge_api.validate_chain_address_format("rustchain", "RTC_test123abc")
+        valid, msg = bridge_api.validate_chain_address_format("rustchain", "RTC0000000000000000000000000000000000000000")
         assert valid is True
     
     def test_invalid_rustchain_address_prefix(self, setup_test_db):
@@ -405,7 +405,7 @@ class TestBridgeTransferCreation:
             source_chain="solana",
             dest_chain="rustchain",
             source_address="4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXqXq",
-            dest_address="RTC_dest123",
+            dest_address="RTC33333333333333333333333333333333333333333",
             amount_rtc=5.0
         )
         
@@ -447,7 +447,7 @@ class TestBridgeTransferCreation:
             direction="deposit",
             source_chain="rustchain",
             dest_chain="solana",
-            source_address="RTC_unfunded_miner",
+            source_address="RTC22222222222222222222222222222222222222222",
             dest_address="4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXqXq",
             amount_rtc=1000.0
         )
@@ -469,7 +469,7 @@ class TestBridgeTransferCreation:
             source_chain="solana",
             dest_chain="rustchain",
             source_address="4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXqXq",
-            dest_address="RTC_dest123",
+            dest_address="RTC33333333333333333333333333333333333333333",
             amount_rtc=5.0
         )
 
@@ -648,7 +648,7 @@ class TestLockLedger:
 
         success, result = lock_ledger.create_lock(
             conn,
-            miner_id="RTC_test_miner",
+            miner_id="RTC0000000000000000000000000000000000000000",
             amount_i64=10 * 1000000,
             lock_type="bridge_deposit",
             unlock_at=int(time.time()) + 3600
@@ -787,6 +787,7 @@ class TestLockLedgerRoutes:
     """Test lock ledger route-level validation and helper dispatch."""
 
     def _client(self, lock_ledger, db_path):
+        os.environ["RC_ADMIN_KEY"] = "expected-admin"
         lock_ledger.DB_PATH = db_path
         app = Flask(__name__)
         lock_ledger.register_lock_ledger_routes(app)
@@ -806,7 +807,7 @@ class TestLockLedgerRoutes:
         lock_ledger = setup_test_db["lock_ledger"]
         client = self._client(lock_ledger, setup_test_db["db_path"])
 
-        response = client.get(f"/api/lock/miner/{funded_miner}?limit=abc")
+        response = client.get(f"/api/lock/miner/{funded_miner}?limit=abc", headers={"X-Admin-Key": "expected-admin"})
 
         assert response.status_code == 400
         assert response.get_json() == {"error": "limit must be an integer"}
@@ -815,7 +816,7 @@ class TestLockLedgerRoutes:
         lock_ledger = setup_test_db["lock_ledger"]
         client = self._client(lock_ledger, setup_test_db["db_path"])
 
-        response = client.get("/api/lock/pending-unlock?before=not-a-timestamp")
+        response = client.get("/api/lock/pending-unlock?before=not-a-timestamp", headers={"X-Admin-Key": "expected-admin"})
 
         assert response.status_code == 400
         assert response.get_json() == {"error": "before must be an integer"}
@@ -842,7 +843,7 @@ class TestLockLedgerRoutes:
 
         client = self._client(lock_ledger, db_path)
 
-        response = client.get("/api/lock/pending-unlock?limit=10")
+        response = client.get("/api/lock/pending-unlock?limit=10", headers={"X-Admin-Key": "expected-admin"})
 
         assert response.status_code == 200
         body = response.get_json()
@@ -872,7 +873,7 @@ class TestLockLedgerRoutes:
 
         client = self._client(lock_ledger, db_path)
 
-        response = client.get("/api/lock/pending-unlock?before=0&limit=10")
+        response = client.get("/api/lock/pending-unlock?before=0&limit=10", headers={"X-Admin-Key": "expected-admin"})
 
         assert response.status_code == 200
         body = response.get_json()
