@@ -35,6 +35,20 @@ from datetime import datetime
 from pathlib import Path
 import argparse
 
+# ── RIP-PoA hardware fingerprint module ──
+# Optional import — if absent the miner still runs, but the server enrolls
+# it at VM-tier weight (1e-9) for not submitting fingerprint data. This was
+# previously dropped in a refactor and produced silent earning regressions
+# for every v3.1.0/v3.1.1-bundled install. Restored 2026-05-28 for v3.1.2.
+try:
+    from fingerprint_checks import validate_all_checks
+    FINGERPRINT_AVAILABLE = True
+    _FP_IMPORT_ERROR = ""
+except Exception as e:
+    FINGERPRINT_AVAILABLE = False
+    _FP_IMPORT_ERROR = str(e)
+    validate_all_checks = None
+
 # ── Ed25519 signing (GPT-5.4 audit finding #2) ──
 # Optional: if miner_crypto.py + PyNaCl are available, sign attestations
 # with Ed25519 over the canonical JSON of the full payload. Server-side
@@ -128,6 +142,10 @@ class RustChainMiner:
         self.hw_info = self._get_hw_info()
         self.last_entropy = {}
         self.last_attestation_error = ""
+        # Surfaced fingerprint status — non-empty string means the miner is
+        # submitting NO fingerprint and will be enrolled at VM-tier weight
+        # (1e-9), i.e. earning ~zero. Shown loudly every attest cycle.
+        self.last_fingerprint_warning = ""
 
         # Zephyr dual-mining state — detected once per attest() cycle
         self._pow_proof = None
@@ -404,6 +422,21 @@ class RustChainMiner:
             "samples_preview": samples[:12],
         }
 
+    def _warn_fingerprint(self, message: str):
+        """Surface a fingerprint-degradation warning loudly.
+
+        Stores it for the GUI and prints it to stderr every attest cycle.
+        A miner submitting no fingerprint earns ~zero (server weight 1e-9),
+        so this fault is repeated each cycle on purpose rather than logged
+        once and forgotten — silent degradation is what cost miners days of
+        rewards under the v3.1.x regression.
+        """
+        self.last_fingerprint_warning = message
+        try:
+            print(f"[FINGERPRINT][WARN] {message}", file=sys.stderr, flush=True)
+        except Exception:
+            pass
+
     def attest(self):
         """
         Perform hardware attestation for PoA.
@@ -464,6 +497,39 @@ class RustChainMiner:
                 "hostname": self.hw_info["hostname"]
             }
         }
+
+        # ── RIP-PoA hardware fingerprint attestation ──
+        # Server gates reward weight on this block: miners that omit it are
+        # enrolled at VM-tier weight (1e-9). Real hardware passes all six
+        # checks. ROM check disabled — this is modern x86, not retro.
+        # MUST populate fingerprint BEFORE signing so the Ed25519 signature
+        # below covers the canonical JSON including this block.
+        if FINGERPRINT_AVAILABLE:
+            try:
+                fp_passed, fp_checks = validate_all_checks(include_rom_check=False)
+                attestation["fingerprint"] = {
+                    "all_passed": fp_passed,
+                    "checks":     fp_checks,
+                }
+                self.last_fingerprint_warning = ""
+            except Exception as e:
+                # Do NOT swallow: a runtime failure here means the miner
+                # submits no fingerprint and the server enrolls it at VM-tier
+                # weight (1e-9). Surface it instead of mining at ~zero blindly.
+                self._warn_fingerprint(
+                    f"fingerprint checks raised at runtime ({e}); submitting "
+                    f"NO fingerprint -> server weight 1e-9 (earning ~zero)"
+                )
+        else:
+            # No fingerprint module at all. This is the #1 silent earning
+            # regression: the miner runs, attests, and enrolls fine, but at
+            # VM-tier weight. Make it impossible to miss.
+            self._warn_fingerprint(
+                "fingerprint_checks NOT available -> submitting NO fingerprint "
+                "-> server weight 1e-9 (earning ~zero). Put fingerprint_checks.py "
+                "in the SAME folder as this miner. Import error: "
+                + (_FP_IMPORT_ERROR or "unknown")
+            )
 
         # Attach PoW proof if present — server ignores this field if absent,
         # so existing attestation behaviour is fully preserved for non-Zephyr miners.

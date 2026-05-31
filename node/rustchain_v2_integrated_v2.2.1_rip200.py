@@ -1254,7 +1254,7 @@ OPENAPI = {
 
 # Configuration
 BLOCK_TIME = 600  # 10 minutes
-GENESIS_TIMESTAMP = 1764706927  # First actual block (Dec 2, 2025)
+GENESIS_TIMESTAMP = int(os.environ.get("RC_GENESIS_TIMESTAMP", "1764706927"))  # mainnet: first block (Dec 2, 2025); testnet overrides via env
 EPOCH_SLOTS = 144  # 24 hours at 10-min blocks
 PER_EPOCH_RTC = 1.5  # Total RTC distributed per epoch across all miners
 PER_BLOCK_RTC = PER_EPOCH_RTC / EPOCH_SLOTS  # ~0.0104 RTC per block
@@ -1263,7 +1263,7 @@ TOTAL_SUPPLY_URTC = int(TOTAL_SUPPLY_RTC * 1_000_000)  # 8,388,608,000,000 uRTC
 ACCOUNT_UNIT = 1_000_000  # balances.amount_i64 uses micro-RTC.
 UTXO_UNIT = 100_000_000   # UTXO values use nano-RTC.
 ENFORCE = False  # Start with enforcement off
-CHAIN_ID = "rustchain-mainnet-v2"
+CHAIN_ID = os.environ.get("RC_CHAIN_ID", "rustchain-mainnet-v2")  # testnet overrides via env (e.g. rustchain-testnet-v2)
 MIN_WITHDRAWAL = 0.1  # RTC
 WITHDRAWAL_FEE = 0.01  # RTC
 MAX_DAILY_WITHDRAWAL = 1000.0  # RTC
@@ -8511,7 +8511,7 @@ def api_wallet_history():
 # =============================================================================
 
 # Configuration
-CONFIRMATION_DELAY_SECONDS = 86400  # 24 hours
+CONFIRMATION_DELAY_SECONDS = int(os.environ.get("RC_CONFIRMATION_DELAY_SECONDS", "86400"))  # mainnet 24h; testnet sets 0 for instant faucet drips
 SOPHIACHECK_WEBHOOK = None  # Set via env var RC_SOPHIACHECK_WEBHOOK
 
 # Alert thresholds
@@ -10050,7 +10050,7 @@ if __name__ == "__main__":
     print("")
     print("=" * 70)
     print()
-    app.run(host='0.0.0.0', port=8099, debug=False)
+    app.run(host='0.0.0.0', port=int(os.environ.get("RC_PORT", "8099")), debug=False)
 
 @app.route("/download/test")
 def download_test():
