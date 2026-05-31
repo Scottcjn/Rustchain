@@ -138,33 +138,15 @@ def _positive_int_arg(name: str, default: int, max_value: int | None = None):
     return value, None
 
 
-def _as_int(value, default: int = 0) -> int:
+def _tip_slot(tip: dict | None) -> int | None:
+    """Return a validated integer tip slot from an upstream tip payload."""
+    if not tip or tip.get("slot") is None:
+        return None
+
     try:
-        return int(value)
+        return int(tip["slot"])
     except (TypeError, ValueError):
-        return default
-
-
-def _normalize_mempool_tx(tx: dict, now_ts: int) -> dict:
-    """Return dashboard-friendly mempool transaction fields."""
-    inputs = tx.get("inputs") if isinstance(tx.get("inputs"), list) else []
-    outputs = tx.get("outputs") if isinstance(tx.get("outputs"), list) else []
-    fee_nrtc = _as_int(tx.get("fee_nrtc"))
-    timestamp = _as_int(tx.get("timestamp"))
-    expires_at = _as_int(tx.get("expires_at"))
-
-    return {
-        "tx_id": tx.get("tx_id") or tx.get("id") or "",
-        "tx_type": tx.get("tx_type") or tx.get("type") or "unknown",
-        "fee_nrtc": fee_nrtc,
-        "fee_rtc": fee_nrtc / 1000000,
-        "input_count": len(inputs),
-        "output_count": len(outputs),
-        "timestamp": timestamp or None,
-        "age_seconds": max(0, now_ts - timestamp) if timestamp else None,
-        "expires_at": expires_at or None,
-        "expires_in_seconds": max(0, expires_at - now_ts) if expires_at else None,
-    }
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -191,10 +173,10 @@ def list_blocks():
 
     # Fetch chain tip to know the latest slot
     tip = _get("/headers/tip")
-    if not tip or tip.get("slot") is None:
+    tip_slot = _tip_slot(tip)
+    if tip_slot is None:
         return jsonify({"ok": False, "error": "node_unavailable"}), 502
 
-    tip_slot = int(tip["slot"])
     start = max(0, tip_slot - (page * limit) + 1)
     end = tip_slot - ((page - 1) * limit)
 
@@ -231,10 +213,10 @@ def list_blocks():
 def block_detail(height: int):
     """Return details for a specific block height/slot."""
     tip = _get("/headers/tip")
-    if not tip or tip.get("slot") is None:
+    tip_slot = _tip_slot(tip)
+    if tip_slot is None:
         return jsonify({"ok": False, "error": "node_unavailable"}), 502
 
-    tip_slot = int(tip["slot"])
     if height < 0 or height > tip_slot:
         return jsonify({"ok": False, "error": "block_not_found"}), 404
 
@@ -306,6 +288,35 @@ def list_transactions():
 # ---------------------------------------------------------------------------
 # GET /api/mempool – pending UTXO transactions and metrics
 # ---------------------------------------------------------------------------
+
+
+def _as_int(value, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _normalize_mempool_tx(tx: dict, now_ts: int) -> dict:
+    """Return dashboard-friendly mempool transaction fields."""
+    inputs = tx.get("inputs") if isinstance(tx.get("inputs"), list) else []
+    outputs = tx.get("outputs") if isinstance(tx.get("outputs"), list) else []
+    fee_nrtc = _as_int(tx.get("fee_nrtc"))
+    timestamp = _as_int(tx.get("timestamp"))
+    expires_at = _as_int(tx.get("expires_at"))
+
+    return {
+        "tx_id": tx.get("tx_id") or tx.get("id") or "",
+        "tx_type": tx.get("tx_type") or tx.get("type") or "unknown",
+        "fee_nrtc": fee_nrtc,
+        "fee_rtc": fee_nrtc / 1000000,
+        "input_count": len(inputs),
+        "output_count": len(outputs),
+        "timestamp": timestamp or None,
+        "age_seconds": max(0, now_ts - timestamp) if timestamp else None,
+        "expires_at": expires_at or None,
+        "expires_in_seconds": max(0, expires_at - now_ts) if expires_at else None,
+    }
 
 
 @app.route("/api/mempool", methods=["GET"])
@@ -421,7 +432,8 @@ def search():
     try:
         height = int(query)
         tip = _get("/headers/tip")
-        if tip and tip.get("slot") is not None and 0 <= height <= int(tip["slot"]):
+        tip_slot = _tip_slot(tip)
+        if tip_slot is not None and 0 <= height <= tip_slot:
             results.append({
                 "type": "block",
                 "height": height,
