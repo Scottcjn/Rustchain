@@ -84,6 +84,7 @@ CREATE TABLE IF NOT EXISTS wallet_pubkeys (
 -- Index for faster queries
 CREATE INDEX IF NOT EXISTS idx_pending_from ON pending_transactions(from_addr);
 CREATE INDEX IF NOT EXISTS idx_pending_nonce ON pending_transactions(from_addr, nonce);
+CREATE INDEX IF NOT EXISTS idx_pending_admission ON pending_transactions(created_at, tx_hash);
 CREATE INDEX IF NOT EXISTS idx_history_from ON transaction_history(from_addr);
 CREATE INDEX IF NOT EXISTS idx_history_to ON transaction_history(to_addr);
 CREATE INDEX IF NOT EXISTS idx_history_block ON transaction_history(block_height);
@@ -170,6 +171,7 @@ class TransactionPool:
                         if "already exists" not in str(e):
                             logger.warning(f"Schema statement failed: {e}")
 
+            self._ensure_pending_created_at(cursor)
             conn.commit()
 
     def _recover_interrupted_balances_migration(self, cursor) -> None:
@@ -192,6 +194,29 @@ class TransactionPool:
         if "balances_old" in tables:
             cursor.execute("ALTER TABLE balances_old RENAME TO balances")
             logger.warning("Recovered interrupted balances migration from balances_old")
+
+    def _ensure_pending_created_at(self, cursor) -> None:
+        """Backfill admission-time ordering support for older pending tables."""
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='pending_transactions'"
+        )
+        if not cursor.fetchone():
+            return
+        cursor.execute("PRAGMA table_info(pending_transactions)")
+        columns = [col[1] for col in cursor.fetchall()]
+        if "created_at" not in columns:
+            cursor.execute(
+                "ALTER TABLE pending_transactions ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0"
+            )
+            if "timestamp" in columns:
+                cursor.execute(
+                    "UPDATE pending_transactions SET created_at = timestamp WHERE created_at = 0"
+                )
+            logger.info("Added created_at column to pending_transactions table")
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_pending_admission "
+            "ON pending_transactions(created_at, tx_hash)"
+        )
 
     @contextmanager
     def _get_connection(self):

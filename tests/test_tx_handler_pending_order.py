@@ -97,3 +97,53 @@ def test_pending_transactions_use_hash_tiebreaker_for_same_admission_time(tmp_pa
     pending = pool.get_pending_transactions()
 
     assert [tx.tx_hash for tx in pending] == ["c" * 64, "d" * 64]
+
+
+def test_legacy_pending_table_gets_created_at_migration(tmp_path):
+    db_path = tmp_path / "legacy.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """CREATE TABLE balances (
+               wallet TEXT PRIMARY KEY,
+               balance_urtc INTEGER NOT NULL DEFAULT 0,
+               wallet_nonce INTEGER DEFAULT 0
+            )"""
+        )
+        conn.execute(
+            """CREATE TABLE pending_transactions (
+               tx_hash TEXT PRIMARY KEY,
+               from_addr TEXT NOT NULL,
+               to_addr TEXT NOT NULL,
+               amount_urtc INTEGER NOT NULL,
+               nonce INTEGER NOT NULL,
+               timestamp INTEGER NOT NULL,
+               memo TEXT DEFAULT '',
+               signature TEXT NOT NULL,
+               public_key TEXT NOT NULL,
+               status TEXT DEFAULT 'pending'
+            )"""
+        )
+        conn.execute(
+            """INSERT INTO pending_transactions
+               (tx_hash, from_addr, to_addr, amount_urtc, nonce, timestamp,
+                memo, signature, public_key, status)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')""",
+            ("b" * 64, "wallet-a", "receiver", 1, 9, 100, "", "sig", "00"),
+        )
+        conn.execute(
+            """INSERT INTO pending_transactions
+               (tx_hash, from_addr, to_addr, amount_urtc, nonce, timestamp,
+                memo, signature, public_key, status)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')""",
+            ("a" * 64, "wallet-b", "receiver", 1, 1, 200, "", "sig", "00"),
+        )
+
+    pool = TransactionPool(str(db_path))
+
+    with sqlite3.connect(db_path) as conn:
+        columns = [row[1] for row in conn.execute("PRAGMA table_info(pending_transactions)")]
+        assert "created_at" in columns
+
+    pending = pool.get_pending_transactions()
+
+    assert [tx.tx_hash for tx in pending] == ["b" * 64, "a" * 64]
