@@ -39,13 +39,17 @@ from typing import Optional
 try:
     import torch
     import torch.cuda
+    HAS_TORCH = True
 except ImportError:
-    print("ERROR: PyTorch with CUDA support required. Install: pip install torch")
-    sys.exit(1)
+    HAS_TORCH = False
 
-if not torch.cuda.is_available():
-    print("ERROR: No CUDA-capable GPU detected.")
-    sys.exit(1)
+def check_requirements():
+    if not HAS_TORCH:
+        print("ERROR: PyTorch with CUDA support required. Install: pip install torch")
+        sys.exit(1)
+    if not torch.cuda.is_available():
+        print("ERROR: No CUDA-capable GPU detected.")
+        sys.exit(1)
 
 
 # ---------------------------------------------------------------------------
@@ -789,6 +793,7 @@ def cross_validate_gpu(device: torch.device) -> ChannelResult:
 
 def run_gpu_fingerprint(device_index: int = 0, samples: int = 200, epoch_salt: str = "") -> GPUFingerprint:
     """Run all GPU fingerprint channels and return results."""
+    check_requirements()
     device = torch.device(f"cuda:{device_index}")
 
     # GPU info

@@ -27,6 +27,7 @@ def app_context(monkeypatch):
     monkeypatch.setenv("RC_ADMIN_KEY", admin_key)
 
     db_fd, db_path = tempfile.mkstemp()
+    os.close(db_fd)
     app = Flask(__name__)
     app.config['TESTING'] = True
 
@@ -50,8 +51,10 @@ def app_context(monkeypatch):
     client.environ_base['HTTP_X_ADMIN_KEY'] = admin_key
     yield client
 
-    os.close(db_fd)
-    os.unlink(db_path)
+    try:
+        os.unlink(db_path)
+    except PermissionError:
+        pass
 
 def test_pending_default_limit(app_context):
     """Scenario: Default parameters (no query string) - Expect 100 (from logic)"""
