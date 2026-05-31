@@ -4,12 +4,16 @@
 Regression tests for transaction API internal error redaction.
 """
 
+import os
+
 from flask import Flask
 
 from node.rustchain_tx_handler import create_tx_api_routes
 
 
 LEAKY_ERROR = "no such table: pending_transactions at /srv/rustchain/prod.db"
+ADMIN_KEY = "test-admin-key-0123456789abcdef"
+ADMIN_HEADERS = {"X-Admin-Key": ADMIN_KEY}
 
 
 class ExplodingPool:
@@ -41,15 +45,12 @@ class ExplodingPool:
 
 
 def _client_for_exploding_pool():
+    os.environ["RC_ADMIN_KEY"] = ADMIN_KEY
     app = Flask(__name__)
     app.config["TESTING"] = True
     create_tx_api_routes(app, ExplodingPool())
     return app.test_client()
 
-
-import os
-os.environ["RC_ADMIN_KEY"] = "test_admin_key_for_tests"
-ADMIN_HEADERS = {"X-Admin-Key": "test_admin_key_for_tests"}
 
 def _assert_redacted(response):
     assert response.status_code == 500
