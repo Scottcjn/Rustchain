@@ -490,13 +490,13 @@ class TransactionPool:
                 return False, f"Transaction already exists: {e}"
 
     def get_pending_transactions(self, limit: int = 100) -> List[SignedTransaction]:
-        """Get pending transactions ordered by nonce"""
+        """Get pending transactions in deterministic admission order."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """SELECT * FROM pending_transactions
                    WHERE status = 'pending'
-                   ORDER BY nonce ASC
+                   ORDER BY created_at ASC, tx_hash ASC
                    LIMIT ?""",
                 (limit,)
             )
