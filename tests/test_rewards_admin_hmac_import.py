@@ -1,12 +1,16 @@
 # SPDX-License-Identifier: MIT
 
+import os
 import sqlite3
 import sys
 
 from flask import Flask
 
 
-rewards = sys.modules["rewards_mod"]
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "node"))
+
+import rewards_implementation_rip200 as rewards
+
 ADMIN_KEY = "abcdefghijklmnopqrstuvwxyz123456"
 
 
