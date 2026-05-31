@@ -377,6 +377,16 @@ class FallbackStateProvider:
                 continue
         return None
 
+    def _table_providers(self, table_name: str) -> List[StateProvider]:
+        providers: List[StateProvider] = []
+        for provider in self.providers:
+            try:
+                if table_name in provider.get_available_sync_tables():
+                    providers.append(provider)
+            except Exception:
+                continue
+        return providers
+
     def get_available_sync_tables(self) -> List[str]:
         tables: List[str] = []
         for provider in self.providers:
@@ -389,8 +399,12 @@ class FallbackStateProvider:
         return tables
 
     def calculate_table_hash(self, table_name: str) -> str:
-        provider = self._first_table_provider(table_name)
-        return provider.calculate_table_hash(table_name) if provider else ""
+        for provider in self._table_providers(table_name):
+            try:
+                return provider.calculate_table_hash(table_name)
+            except Exception:
+                continue
+        return ""
 
     def get_merkle_root(self) -> str:
         combined = "".join(
@@ -400,22 +414,41 @@ class FallbackStateProvider:
         return hashlib.sha256(combined.encode()).hexdigest()
 
     def get_primary_key(self, table_name: str) -> Optional[str]:
-        provider = self._first_table_provider(table_name)
-        return provider.get_primary_key(table_name) if provider else None
+        for provider in self._table_providers(table_name):
+            try:
+                primary_key = provider.get_primary_key(table_name)
+            except Exception:
+                continue
+            if primary_key:
+                return primary_key
+        return None
 
     def get_table_data(
         self, table_name: str, limit: int = 200, offset: int = 0
     ) -> List[Dict[str, Any]]:
-        provider = self._first_table_provider(table_name)
-        return provider.get_table_data(table_name, limit, offset) if provider else []
+        for provider in self._table_providers(table_name):
+            try:
+                return provider.get_table_data(table_name, limit, offset)
+            except Exception:
+                continue
+        return []
 
     def apply_sync_payload(self, table_name: str, remote_data: List[Dict[str, Any]]):
-        provider = self._first_table_provider(table_name)
-        return provider.apply_sync_payload(table_name, remote_data) if provider else False
+        for provider in self._table_providers(table_name):
+            try:
+                if provider.apply_sync_payload(table_name, remote_data):
+                    return True
+            except Exception:
+                continue
+        return False
 
     def get_count(self, table_name: str) -> int:
-        provider = self._first_table_provider(table_name)
-        return provider.get_count(table_name) if provider else 0
+        for provider in self._table_providers(table_name):
+            try:
+                return provider.get_count(table_name)
+            except Exception:
+                continue
+        return 0
 
 
 class RustChainSyncManager:

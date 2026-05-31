@@ -69,6 +69,53 @@ def test_fallback_state_provider_uses_secondary_when_primary_fails():
     assert provider.get_count("epoch_rewards") == 1
 
 
+def test_fallback_state_provider_tries_secondary_when_advertised_table_operation_fails():
+    class AdvertisesButFails:
+        def get_available_sync_tables(self):
+            return ["epoch_rewards"]
+
+        def calculate_table_hash(self, table_name):
+            raise RuntimeError("hash failed")
+
+        def get_merkle_root(self):
+            raise RuntimeError("root failed")
+
+        def get_primary_key(self, table_name):
+            raise RuntimeError("pk failed")
+
+        def get_table_data(self, table_name, limit=200, offset=0):
+            raise RuntimeError("data failed")
+
+        def apply_sync_payload(self, table_name, remote_data):
+            raise RuntimeError("apply failed")
+
+        def get_count(self, table_name):
+            raise RuntimeError("count failed")
+
+    secondary = InMemoryStateProvider(
+        tables={"epoch_rewards": [{"epoch": 7, "reward": 100}]},
+        primary_keys={"epoch_rewards": "epoch"},
+    )
+    provider = FallbackStateProvider([AdvertisesButFails(), secondary])
+
+    assert provider.get_primary_key("epoch_rewards") == "epoch"
+    assert provider.get_table_data("epoch_rewards") == [
+        {"epoch": 7, "reward": 100},
+    ]
+    assert provider.get_count("epoch_rewards") == 1
+    assert provider.calculate_table_hash("epoch_rewards") == secondary.calculate_table_hash(
+        "epoch_rewards"
+    )
+
+    assert provider.apply_sync_payload(
+        "epoch_rewards",
+        [{"epoch": 7, "reward": 120}],
+    )
+    assert provider.get_table_data("epoch_rewards") == [
+        {"epoch": 7, "reward": 120},
+    ]
+
+
 def test_default_sqlite_provider_preserves_existing_sync_behavior(tmp_path):
     db_path = tmp_path / "rustchain.db"
     with sqlite3.connect(db_path) as conn:
