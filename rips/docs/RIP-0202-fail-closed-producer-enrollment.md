@@ -140,3 +140,39 @@ Both decisions require consensus infrastructure that **does not exist yet**. RIP
 ## Implementation status
 
 The producer-side change (`node/rustchain_block_producer.py`) is drafted and tri-brain-reviewed to a **minimal deterministic core**, shipping **dormant** (`RIP0202_ACTIVATION_EPOCH = None`, byte-identical behavior). It is intentionally **NOT** merged or activated: activation is unsafe until INV-1..3 are implemented in settlement and Decisions 1–2 are made. Tests for the gate paths are pending the activation-mechanism decision (the test fixtures depend on it).
+
+---
+
+## Implementation Roadmap & Grounding Findings (2026-05-31)
+
+Codebase grounding (tri-brain + 2 Explore traces) established that this is a **multi-RIP consensus project**, sequenced bottom-up. Verified facts and the dependency stack:
+
+### Verified architecture
+- **`miner_attest_recent` / `epoch_enroll` are NODE-LOCAL.** Attestations are committed into blocks (`attestations_hash`), but block apply (`rustchain_p2p_sync._apply_blocks`) never replays them back into the table; it's written only by the local `/attest/submit` + an eventual gossip protocol. Enrollment is NOT chain-replicated state today.
+- **Producer selection is ADVISORY, not enforced.** `_apply_blocks` does not call `validate_block` with `expected_producer`; peer blocks are accepted on structure/height/prev_hash alone. *This is why the fail-open hasn't forked the chain — and why the gate is currently inert as a control.*
+- **`derive_verified_device(device, fingerprint, fingerprint_passed)` is a pure deterministic function** of its inputs (no local-hardware reads) → trustless re-derivation across the PowerPC/x86/POWER8 fleet is viable.
+- **The committed block attestation is `{miner, arch, family, timestamp}` only** — insufficient to re-derive the anti-VM weight (needs `device` + `fingerprint` + `fingerprint_passed`).
+- **The live weight is deeper than HARDWARE_WEIGHTS:** `hw_weight × rotation_eval["active_ratio"]` (RIP-309 fingerprint-rotation *temporal* history, node-local) in fixed-point units, with failed fingerprint → `FAILED_FINGERPRINT_WEIGHT_UNITS` (~1e-9, **not** hard 0). So a VM is *near-zero-weighted*, not hard-excluded, and RIP-309 active checks can flip eligibility.
+
+### Decisions made (operator)
+- Activation = **on-chain governance height** (atomic; requires PREREQ-A governance-param substrate).
+- Rely on **INV-1 always-present** (no node-local read-fault fallback).
+- B0 block format = **commit full raw `device` + `fingerprint` + `fingerprint_passed`** per attestation (fully trustless re-derivation).
+
+### Dependency stack (build order)
+1. **B0 — block-format hard fork**: extend `get_attestations_for_block` + the block attestation record to commit `device` + `fingerprint` + `fingerprint_passed`; `attestations_hash` then covers them.
+2. **B1 — deterministic enrollment derivation** (pure, reuses `derive_verified_device` + `HARDWARE_WEIGHTS`).
+3. **B2 — materialize on block apply** (both `produce_block` and `_apply_blocks`) so every node converges.
+4. **B3 — seal `epoch_enroll_state`** at the epoch boundary (INV-2 never seal empty; INV-3 seal before use).
+5. **NEW — producer-eligibility validation rule**: `_apply_blocks` must reject blocks from ineligible producers (the rule that makes the gate *bite*; hard fork).
+6. **A — on-chain governance activation** (PREREQ-A) so 1–5 turn on atomically.
+
+### OPEN scope decision (gates B1)
+**Eligibility definition for the chain-derived gate:**
+- (a) **Attestation-level only** — eligible iff `derive_verified_device → HARDWARE_WEIGHTS` weight clears a threshold (and `fingerprint_passed`); treat the ~1e-9 failed-fingerprint value as excluded. RIP-309 *temporal* rotation checks deferred to a later RIP. **Simplest; buildable now.**
+- (b) **Full parity** — chain-derived eligibility also incorporates RIP-309 `active_ratio`, which requires the per-miner fingerprint-rotation *history* to also be chain-replicated (much larger).
+
+Recommendation: **(a)** for RIP-0202 (eligibility = attestation-level anti-VM), with RIP-309 temporal integration as a follow-up RIP.
+
+### Status
+Producer-side gate drafted dormant + tri-brain-converged (`/home/scott/rip0202-draft/`). No production code merged. Next concrete build (after the eligibility-definition decision): B1 as a pure, unit-tested module.
