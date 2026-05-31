@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-from __future__ import annotations
-
 """
 RustChain Block Explorer REST API
 
@@ -15,10 +13,12 @@ EXPLORER_PORT       – port to bind (default: 6100)
 CACHE_TTL           – response cache lifetime in seconds (default: 15)
 """
 
-import os
-import time
+from __future__ import annotations
+
 import hashlib
+import os
 import threading
+import time
 from functools import wraps
 
 import requests
@@ -299,8 +299,10 @@ def _as_int(value, default: int = 0) -> int:
 
 def _normalize_mempool_tx(tx: dict, now_ts: int) -> dict:
     """Return dashboard-friendly mempool transaction fields."""
-    inputs = tx.get("inputs") if isinstance(tx.get("inputs"), list) else []
-    outputs = tx.get("outputs") if isinstance(tx.get("outputs"), list) else []
+    raw_inputs = tx.get("inputs")
+    raw_outputs = tx.get("outputs")
+    inputs: list = raw_inputs if isinstance(raw_inputs, list) else []
+    outputs: list = raw_outputs if isinstance(raw_outputs, list) else []
     fee_nrtc = _as_int(tx.get("fee_nrtc"))
     timestamp = _as_int(tx.get("timestamp"))
     expires_at = _as_int(tx.get("expires_at"))
