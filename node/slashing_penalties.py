@@ -26,6 +26,20 @@ SLASHABLE_OFFENSES = frozenset(
         "surround_vote",
     }
 )
+KNOWN_SCHEMA_TABLES = frozenset(
+    {
+        "balances",
+        "epoch_enroll",
+        "validator_slashes",
+        "slashed_validators",
+    }
+)
+OFFENSE_DETAIL_KEY_PAIRS = {
+    "double_vote": (("vote_a", "vote_b"), ("first", "second")),
+    "double_proposal": (("proposal_a", "proposal_b"), ("first", "second")),
+    "equivocation": (("evidence_a", "evidence_b"), ("vote_a", "vote_b"), ("first", "second")),
+    "surround_vote": (("surrounding_vote", "surrounded_vote"), ("vote_a", "vote_b"), ("first", "second")),
+}
 
 
 class SlashingError(ValueError):
@@ -84,11 +98,15 @@ def normalize_slashing_evidence(
     if not isinstance(details, Mapping):
         raise SlashingError("details_must_be_mapping")
     details = dict(details)
+    _validate_evidence_details(offense_type, details)
 
+    derived_hash = _derive_evidence_hash(validator_id, offense_type, epoch, details)
     evidence_hash = payload.get("evidence_hash")
     if evidence_hash is None:
-        evidence_hash = _derive_evidence_hash(validator_id, offense_type, epoch, details)
+        evidence_hash = derived_hash
     evidence_hash = _required_text(evidence_hash, "evidence_hash")
+    if evidence_hash != derived_hash:
+        raise SlashingError("evidence_hash_mismatch")
 
     return SlashingEvidence(
         validator_id=validator_id,
@@ -155,66 +173,67 @@ def apply_slashing_evidence(
     if exclusion_epochs < 1:
         raise SlashingError("exclusion_epochs_must_be_positive")
 
-    ensure_slashing_tables(conn)
-    existing = conn.execute(
-        "SELECT penalty_urtc, slashed_until_epoch FROM validator_slashes WHERE evidence_hash = ?",
-        (normalized.evidence_hash,),
-    ).fetchone()
-    if existing:
-        return {
-            "applied": False,
-            "duplicate": True,
-            "validator_id": normalized.validator_id,
-            "offense_type": normalized.offense_type,
-            "penalty_urtc": int(existing[0]),
-            "slashed_until_epoch": int(existing[1]),
-            "evidence_hash": normalized.evidence_hash,
-        }
+    with conn:
+        ensure_slashing_tables(conn)
+        existing = conn.execute(
+            "SELECT penalty_urtc, slashed_until_epoch FROM validator_slashes WHERE evidence_hash = ?",
+            (normalized.evidence_hash,),
+        ).fetchone()
+        if existing:
+            return {
+                "applied": False,
+                "duplicate": True,
+                "validator_id": normalized.validator_id,
+                "offense_type": normalized.offense_type,
+                "penalty_urtc": int(existing[0]),
+                "slashed_until_epoch": int(existing[1]),
+                "evidence_hash": normalized.evidence_hash,
+            }
 
-    balance = _get_balance_urtc(conn, normalized.validator_id)
-    penalty = _calculate_penalty_urtc(balance, slash_fraction, min_penalty_urtc)
-    if penalty:
-        _debit_balance(conn, normalized.validator_id, penalty)
+        balance = _get_balance_urtc(conn, normalized.validator_id)
+        penalty = _calculate_penalty_urtc(balance, slash_fraction, min_penalty_urtc)
+        if penalty:
+            _debit_balance(conn, normalized.validator_id, penalty)
 
-    slashed_until = current_epoch + exclusion_epochs
-    now_ts = int(time.time()) if now_ts is None else _required_int(now_ts, "now_ts")
-    conn.execute(
-        """
-        INSERT INTO validator_slashes (
-            evidence_hash, validator_id, offense_type, epoch, penalty_urtc,
-            slashed_until_epoch, evidence_json, created_at
+        slashed_until = current_epoch + exclusion_epochs
+        now_ts = int(time.time()) if now_ts is None else _required_int(now_ts, "now_ts")
+        conn.execute(
+            """
+            INSERT INTO validator_slashes (
+                evidence_hash, validator_id, offense_type, epoch, penalty_urtc,
+                slashed_until_epoch, evidence_json, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                normalized.evidence_hash,
+                normalized.validator_id,
+                normalized.offense_type,
+                normalized.epoch,
+                penalty,
+                slashed_until,
+                normalized.to_json(),
+                now_ts,
+            ),
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            normalized.evidence_hash,
-            normalized.validator_id,
-            normalized.offense_type,
-            normalized.epoch,
-            penalty,
-            slashed_until,
-            normalized.to_json(),
-            now_ts,
-        ),
-    )
-    conn.execute(
-        """
-        INSERT INTO slashed_validators (
-            validator_id, slashed_until_epoch, total_penalty_urtc,
-            last_offense_type, last_slashed_at
+        conn.execute(
+            """
+            INSERT INTO slashed_validators (
+                validator_id, slashed_until_epoch, total_penalty_urtc,
+                last_offense_type, last_slashed_at
+            )
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(validator_id) DO UPDATE SET
+                slashed_until_epoch = MAX(slashed_until_epoch, excluded.slashed_until_epoch),
+                total_penalty_urtc = total_penalty_urtc + excluded.total_penalty_urtc,
+                last_offense_type = excluded.last_offense_type,
+                last_slashed_at = excluded.last_slashed_at
+            """,
+            (normalized.validator_id, slashed_until, penalty, normalized.offense_type, now_ts),
         )
-        VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(validator_id) DO UPDATE SET
-            slashed_until_epoch = MAX(slashed_until_epoch, excluded.slashed_until_epoch),
-            total_penalty_urtc = total_penalty_urtc + excluded.total_penalty_urtc,
-            last_offense_type = excluded.last_offense_type,
-            last_slashed_at = excluded.last_slashed_at
-        """,
-        (normalized.validator_id, slashed_until, penalty, normalized.offense_type, now_ts),
-    )
-    removed_enrollments = _remove_future_enrollments(
-        conn, normalized.validator_id, current_epoch, slashed_until
-    )
+        removed_enrollments = _remove_future_enrollments(
+            conn, normalized.validator_id, current_epoch, slashed_until
+        )
 
     return {
         "applied": True,
@@ -290,6 +309,34 @@ def _derive_evidence_hash(
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def _validate_evidence_details(offense_type: str, details: Mapping[str, Any]) -> None:
+    for left_key, right_key in OFFENSE_DETAIL_KEY_PAIRS[offense_type]:
+        if left_key in details or right_key in details:
+            left = _required_detail_value(details.get(left_key), left_key)
+            right = _required_detail_value(details.get(right_key), right_key)
+            if _canonical_detail_value(left) == _canonical_detail_value(right):
+                raise SlashingError("details_must_describe_conflicting_evidence")
+            return
+    expected = " or ".join(
+        f"{left_key}/{right_key}" for left_key, right_key in OFFENSE_DETAIL_KEY_PAIRS[offense_type]
+    )
+    raise SlashingError(f"details_missing_required_pair:{expected}")
+
+
+def _required_detail_value(value: Any, field: str) -> Any:
+    if value is None:
+        raise SlashingError(f"{field}_is_required")
+    if isinstance(value, str) and not value.strip():
+        raise SlashingError(f"{field}_is_required")
+    if isinstance(value, (Mapping, Sequence)) and not isinstance(value, (str, bytes, bytearray)) and not value:
+        raise SlashingError(f"{field}_is_required")
+    return value
+
+
+def _canonical_detail_value(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+
+
 def _calculate_penalty_urtc(balance_urtc: int, slash_fraction: float, min_penalty_urtc: int) -> int:
     if balance_urtc <= 0:
         return 0
@@ -341,13 +388,10 @@ def _debit_balance(conn: sqlite3.Connection, validator_id: str, penalty_urtc: in
         conn.execute(
             f"""
             UPDATE balances
-            SET balance_rtc = CASE
-                WHEN balance_rtc >= ? THEN balance_rtc - ?
-                ELSE 0
-            END
+            SET balance_rtc = MAX(0.0, balance_rtc - ?)
             WHERE {key_column} = ?
             """,
-            (penalty_rtc, penalty_rtc, validator_id),
+            (penalty_rtc, validator_id),
         )
 
 
@@ -384,7 +428,9 @@ def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
 
 
 def _table_columns(conn: sqlite3.Connection, table_name: str) -> Sequence[str]:
-    return tuple(row[1] for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall())
+    if table_name not in KNOWN_SCHEMA_TABLES:
+        raise SlashingError("unknown_table")
+    return tuple(row[1] for row in conn.execute(f'PRAGMA table_info("{table_name}")').fetchall())
 
 
 def _first_present(columns: Sequence[str], candidates: Tuple[str, ...]) -> Optional[str]:
