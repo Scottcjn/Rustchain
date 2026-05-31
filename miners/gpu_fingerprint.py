@@ -24,6 +24,8 @@ Usage:
 Author: Elyan Labs (RIP-0308: Proof of Physical AI)
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import hashlib
