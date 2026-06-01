@@ -116,3 +116,38 @@ def test_block_epoch_fails_closed_without_slot():
 
 def test_block_version_constant():
     assert b0.B0_BLOCK_VERSION == 2
+
+
+# ---- tri-brain fixes: JSON-safety, hash validation, blocks_per_epoch guard ----
+def test_build_rejects_non_string_mapping_key():
+    with pytest.raises(b0.B0FormatError):
+        b0.build_b0_attestation("m", {1: "x"}, FP, True, 1)        # non-str key in device
+    with pytest.raises(b0.B0FormatError):
+        b0.build_b0_attestation("m", DEV, {"a": {2: "y"}}, True, 1)  # nested non-str key
+
+
+@pytest.mark.parametrize("bad", [("t",), {1, 2}, b"bytes"])
+def test_build_rejects_non_json_safe_types(bad):
+    with pytest.raises(b0.B0FormatError):
+        b0.build_b0_attestation("m", {"k": bad}, FP, True, 1)
+
+
+def test_hash_rejects_malformed_record():
+    good = _att("m", 1)
+    for bad in ({"miner": "m"},                       # missing device/fingerprint/...
+                {"miner": "", "device": {}, "fingerprint": {}, "fingerprint_passed": True, "timestamp": 1},
+                {"miner": "m", "device": "x", "fingerprint": {}, "fingerprint_passed": True, "timestamp": 1}):
+        with pytest.raises(b0.B0FormatError):
+            b0.canonical_b0_attestations_hash([good, bad])
+
+
+def test_assert_blocks_per_epoch():
+    b0.assert_blocks_per_epoch(b0.BLOCKS_PER_EPOCH)   # match -> no raise
+    with pytest.raises(b0.B0FormatError):
+        b0.assert_blocks_per_epoch(b0.BLOCKS_PER_EPOCH + 1)
+
+
+@pytest.mark.parametrize("bad", [True, 1.0, 0, -5])
+def test_slot_to_epoch_rejects_bad_blocks_per_epoch(bad):
+    with pytest.raises(b0.B0FormatError):
+        b0.slot_to_epoch(144, blocks_per_epoch=bad)
