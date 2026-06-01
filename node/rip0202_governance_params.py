@@ -43,9 +43,10 @@ CREATE TABLE IF NOT EXISTS governance_params (
 _PARAM_SPEC: Dict[str, Dict[str, Any]] = {
     # RIP-202 step A: activation epoch for the fail-closed producer gate.
     # None => not activated (pre-activation behaviour, byte-identical to today).
-    "rip0202_activation_epoch": {"type": int, "default": None},
-    # RIP-202 B1/D5: eligibility threshold in B1 weight units (>=1).
-    "rip0202_eligibility_threshold_units": {"type": int, "default": 1},
+    "rip0202_activation_epoch": {"type": int, "default": None, "min": 0},
+    # RIP-202 B1/D5: eligibility threshold in B1 weight units (>=1). A stored
+    # value < 1 would defeat INV-2 (admit 0-weight VMs) — enforced on set AND read.
+    "rip0202_eligibility_threshold_units": {"type": int, "default": 1, "min": 1},
 }
 
 
@@ -69,12 +70,27 @@ def _coerce(name: str, raw: str) -> Any:
     typ = _spec(name)["type"]
     try:
         if typ is int:
-            return int(raw)
-        if typ is str:
-            return str(raw)
+            value = int(raw)
+        elif typ is str:
+            value = str(raw)
+        else:
+            raise GovernanceParamError(f"param {name!r} has unsupported type {typ!r}")
     except (TypeError, ValueError):
         raise GovernanceParamError(f"param {name!r} value {raw!r} is not a valid {typ.__name__}")
-    raise GovernanceParamError(f"param {name!r} has unsupported type {typ!r}")
+    return _enforce_bounds(name, value)
+
+
+def _enforce_bounds(name: str, value: Any) -> Any:
+    """Fail closed on a registered value that violates its declared `min`.
+
+    Applied on BOTH set and read: a corrupt/out-of-bounds stored value raises
+    (loud) rather than silently admitting e.g. a 0 eligibility threshold.
+    """
+    spec = _spec(name)
+    lo = spec.get("min")
+    if lo is not None and isinstance(value, int) and value < lo:
+        raise GovernanceParamError(f"param {name!r} value {value} < min {lo}")
+    return value
 
 
 def get_param(conn: sqlite3.Connection, name: str) -> Any:
@@ -89,8 +105,13 @@ def get_param(conn: sqlite3.Connection, name: str) -> Any:
         row = conn.execute(
             "SELECT value FROM governance_params WHERE name = ?", (name,)
         ).fetchone()
-    except sqlite3.OperationalError:
-        return spec["default"]  # table not created yet -> default
+    except sqlite3.OperationalError as e:
+        # ONLY tolerate a genuinely-absent table (bootstrap). A lock, disk
+        # failure, or schema corruption must NOT silently return the default —
+        # that could disable activation on one node and fork consensus. Re-raise.
+        if "no such table" in str(e).lower():
+            return spec["default"]
+        raise
     if row is None:
         return spec["default"]
     return _coerce(name, row[0])
@@ -116,6 +137,7 @@ def set_param(
         raise GovernanceParamError(f"param {name!r} requires int, got {type(value).__name__}")
     if typ is str and not isinstance(value, str):
         raise GovernanceParamError(f"param {name!r} requires str, got {type(value).__name__}")
+    _enforce_bounds(name, value)  # reject e.g. threshold 0/negative, activation epoch < 0
     if isinstance(set_at_epoch, bool) or not isinstance(set_at_epoch, int) or set_at_epoch < 0:
         raise GovernanceParamError("set_at_epoch must be a non-negative int")
     conn.execute(
