@@ -255,6 +255,51 @@ class TestIntegratedBalanceScale(unittest.TestCase):
             [72_000_000, 72_000_000],
         )
 
+    def test_finalize_epoch_does_not_abort_on_sub_dust_utxo_reward(self):
+        """A tiny miner share must not roll back the whole epoch settlement.
+
+        UTXO boxes reject outputs below DUST_THRESHOLD, but finalize_epoch()
+        currently forwards every positive reward share directly into the
+        mining_reward outputs batch. A miner with a very small fixed-point
+        weight can therefore make UTXO dual-write fail and abort settlement for
+        the whole epoch.
+        """
+        self._add_epoch_miner("miner-dust", 0.000005)
+        calls = []
+
+        from utxo_db import DUST_THRESHOLD
+
+        class DustRejectingUtxoDB:
+            def __init__(self, db_path):
+                self.db_path = db_path
+
+            def apply_transaction(self, tx, height, conn=None):
+                calls.append((tx, height, conn is not None))
+                return all(
+                    out["value_nrtc"] >= DUST_THRESHOLD
+                    for out in tx["outputs"]
+                )
+
+        self.mod.UTXO_DUAL_WRITE = True
+        self.mod.UtxoDB = DustRejectingUtxoDB
+
+        try:
+            self.mod.finalize_epoch(7, 0.01, b"")
+        except RuntimeError as exc:
+            emitted_values = [
+                out["value_nrtc"]
+                for tx, _, _ in calls
+                for out in tx["outputs"]
+            ]
+            self.fail(
+                "finalize_epoch should skip, aggregate, or account-only handle "
+                f"sub-dust UTXO rewards instead of aborting settlement; "
+                f"emitted reward outputs={emitted_values}, "
+                f"dust_threshold={DUST_THRESHOLD}: {exc}"
+            )
+
+        self.assertEqual(len(calls), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
