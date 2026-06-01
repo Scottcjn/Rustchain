@@ -20,7 +20,8 @@ A Power Mac G5 earns **2.0x**. A 486 with rusty serial ports earns the most resp
 
 [Explorer](https://rustchain.org/explorer/) · [Machines Preserved](https://rustchain.org/preserved.html) · [Install Miner](#quickstart) · [Beginner Guide](docs/QUICKSTART.md) · [Manifesto](https://rustchain.org/manifesto.html) · [Whitepaper](docs/WHITEPAPER.md)
 
-中文入口: [中文文档](docs/zh-CN/README.md) · [中文 API 快速参考](docs/zh-CN/API.md)
+#### 🌍 Translations
+[English](README.md) · [Português](README.pt-BR.md) · [中文](README.zh.md) · [繁體中文](README_ZH-TW.md) · [Tiếng Việt](README.vi.md) · [Deutsch](docs/de-DE/README.md) · [Español](README_ES.md) · [हिन्दी](README_HI.md) · [日本語](README_JA.md) · [Русский](README_RU.md) · [Italiano](docs/it-IT/README.md) · [Français](docs/fr-FR/README.md) · [한국어](docs/ko-KR/README.md) · [العربية](docs/ar-SA/README.md)
 
 </div>
 
