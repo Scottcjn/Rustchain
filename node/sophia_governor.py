@@ -19,7 +19,6 @@ from __future__ import annotations
 import hmac
 import json
 import logging
-import math
 import os
 import re
 import sqlite3
@@ -211,34 +210,6 @@ def _risk_rank(value: str) -> int:
 
 def _strongest_risk(left: str, right: str) -> str:
     return left if _risk_rank(left) >= _risk_rank(right) else right
-
-
-def _safe_nonnegative_float(value: Any) -> tuple[float | None, bool]:
-    """Parse JSON scalar numeric fields without accepting booleans/containers."""
-    if value is None or value == "":
-        return None, False
-    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
-        return None, True
-    try:
-        parsed = float(value)
-    except (TypeError, ValueError):
-        return None, True
-    if not math.isfinite(parsed) or parsed < 0:
-        return None, True
-    return parsed, False
-
-
-def _pending_transfer_amount_rtc(payload: dict[str, Any]) -> tuple[float, bool]:
-    """Return best-effort pending transfer RTC amount and whether it was malformed."""
-    amount_rtc, invalid = _safe_nonnegative_float(payload.get("amount_rtc"))
-    if amount_rtc:
-        return amount_rtc, invalid
-
-    amount_i64, i64_invalid = _safe_nonnegative_float(payload.get("amount_i64"))
-    if amount_i64 is not None:
-        return amount_i64 / 1_000_000.0, invalid or i64_invalid
-
-    return 0.0, invalid or i64_invalid
 
 
 def _load_continuity_packet() -> dict[str, Any]:
@@ -498,15 +469,36 @@ def _heuristic_review(event_type: str, payload: dict[str, Any]) -> dict[str, Any
             recommended_actions.append("keep proposal on local watchlist")
 
     elif event_type == "pending_transfer":
-        amount_rtc, amount_invalid = _pending_transfer_amount_rtc(payload)
+        amount_rtc = 0.0
+        malformed_amount = False
+        try:
+            val = payload.get("amount_rtc")
+            if val is not None:
+                if isinstance(val, bool):
+                    malformed_amount = True
+                else:
+                    amount_rtc = float(val)
+            elif payload.get("amount_i64") is not None:
+                val = payload.get("amount_i64")
+                if isinstance(val, bool):
+                    malformed_amount = True
+                else:
+                    amount_rtc = float(val) / 1_000_000.0
+        except (TypeError, ValueError):
+            malformed_amount = True
+
         reason_text = str(payload.get("reason", "")).lower()
-        if amount_invalid:
-            risk_level = "medium"
-            route = ROUTE_LOCAL_THEN_PHONE_HOME
-            stance = "watch"
-            signals.append("invalid_transfer_amount")
-            recommended_actions.append("review malformed transfer amount")
-        if amount_rtc >= _transfer_critical_rtc():
+
+        if malformed_amount:
+            risk_level = "critical"
+            route = ROUTE_IMMEDIATE_PHONE_HOME
+            stance = "hold"
+            signals.append("malformed_amount")
+            recommended_actions.extend([
+                "retain transfer in pending state",
+                "page bigger Sophia agents immediately due to malformed payload",
+            ])
+        elif amount_rtc >= _transfer_critical_rtc():
             risk_level = "critical"
             route = ROUTE_IMMEDIATE_PHONE_HOME
             stance = "hold"
