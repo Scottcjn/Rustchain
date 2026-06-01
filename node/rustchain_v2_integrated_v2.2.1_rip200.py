@@ -8333,6 +8333,52 @@ def api_wallet_balance():
     })
 
 
+# Conservative identifier grammar for /api/wallet/<id>: RTC address, wallet
+# name, or namespaced miner id (e.g. "github:user"). Bounds length so a
+# direct caller cannot use oversized ids for request/DB/response amplification.
+_API_WALLET_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,80}$")
+
+
+# NOTE: any future *static* route under /api/wallet/ (e.g. /api/wallet/list)
+# must be declared BEFORE this variable rule or Werkzeug will capture it here.
+@app.route('/api/wallet/<miner_id>', methods=['GET'])
+def api_wallet_lookup(miner_id):
+    """Canonical read-only balance lookup by miner_id / RTC address.
+
+    Alias of /wallet/balance so /api/wallet/<id> — the path used by the block
+    explorer, dashboard, and external tooling — resolves on the node origin
+    instead of returning 404 (the route previously lived only in the separate
+    rustchain_dashboard.py app, which is not the process nginx proxies to).
+    Read-only; mirrors existing public /wallet/balance behaviour, so it
+    exposes no data that was not already reachable. Malformed ids return 400
+    (not a zero balance) so the prefix still distinguishes bad input.
+    """
+    miner_id = (miner_id or "").strip()
+    if not _API_WALLET_ID_RE.match(miner_id):
+        return jsonify({"ok": False, "error": "invalid miner_id"}), 400
+    try:
+        with sqlite3.connect(DB_PATH) as db:
+            try:
+                # Newer schema: balances(miner_id, amount_i64)
+                row = db.execute("SELECT amount_i64 FROM balances WHERE miner_id=?", (miner_id,)).fetchone()
+                amt = int(row[0]) if row else 0
+            except sqlite3.OperationalError as schema_err:
+                # Only fall back for the expected missing-column case; re-raise
+                # genuine operational failures instead of masking them.
+                if "no such column" not in str(schema_err).lower():
+                    raise
+                # Legacy schema: balances(miner_pk, balance_rtc)
+                row = db.execute("SELECT balance_rtc FROM balances WHERE miner_pk=?", (miner_id,)).fetchone()
+                amt = int(round(float(row[0]) * UNIT)) if row else 0
+    except sqlite3.OperationalError:
+        return jsonify({"ok": False, "error": "balance lookup unavailable"}), 503
+    return jsonify({
+        "miner_id": miner_id,
+        "amount_i64": amt,
+        "amount_rtc": amt / UNIT
+    })
+
+
 @app.route('/wallet/history', methods=['GET'])
 def api_wallet_history():
     """Get unified transaction history for a wallet (fixes #775, #886).
