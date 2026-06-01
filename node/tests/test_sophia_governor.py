@@ -399,3 +399,92 @@ def test_governor_review_rejects_malformed_amount_rtc_without_crashing(tmp_db):
     assert result['stance'] == 'hold'
     assert result['risk_level'] == 'critical'
     assert 'malformed_amount' in result['signals']
+
+
+def test_governor_review_rejects_negative_amount_rtc(tmp_db):
+    result = review_rustchain_event(
+        event_type="pending_transfer",
+        source="pytest",
+        payload={"amount_rtc": -5},
+        db_path=tmp_db,
+    )
+    assert result["stance"] == "hold"
+    assert result["risk_level"] == "critical"
+    assert "malformed_amount" in result["signals"]
+
+
+def test_governor_review_rejects_infinite_amount_rtc(tmp_db):
+    result = review_rustchain_event(
+        event_type="pending_transfer",
+        source="pytest",
+        payload={"amount_rtc": "inf"},
+        db_path=tmp_db,
+    )
+    assert result["stance"] == "hold"
+    assert result["risk_level"] == "critical"
+    assert "malformed_amount" in result["signals"]
+
+
+def test_governor_review_rejects_nan_amount_rtc(tmp_db):
+    result = review_rustchain_event(
+        event_type="pending_transfer",
+        source="pytest",
+        payload={"amount_rtc": "nan"},
+        db_path=tmp_db,
+    )
+    assert result["stance"] == "hold"
+    assert result["risk_level"] == "critical"
+    assert "malformed_amount" in result["signals"]
+
+
+def test_governor_review_rejects_malformed_amount_i64(tmp_db):
+    # Test list in amount_i64
+    result1 = review_rustchain_event(
+        event_type="pending_transfer",
+        source="pytest",
+        payload={"amount_i64": ["bad"]},
+        db_path=tmp_db,
+    )
+    assert result1["stance"] == "hold"
+    assert "malformed_amount" in result1["signals"]
+
+    # Test dict in amount_i64
+    result2 = review_rustchain_event(
+        event_type="pending_transfer",
+        source="pytest",
+        payload={"amount_i64": {"bad": 1}},
+        db_path=tmp_db,
+    )
+    assert result2["stance"] == "hold"
+    assert "malformed_amount" in result2["signals"]
+
+    # Test bool in amount_i64
+    result3 = review_rustchain_event(
+        event_type="pending_transfer",
+        source="pytest",
+        payload={"amount_i64": True},
+        db_path=tmp_db,
+    )
+    assert result3["stance"] == "hold"
+    assert "malformed_amount" in result3["signals"]
+
+    # Test negative in amount_i64
+    result4 = review_rustchain_event(
+        event_type="pending_transfer",
+        source="pytest",
+        payload={"amount_i64": -5000000},
+        db_path=tmp_db,
+    )
+    assert result4["stance"] == "hold"
+    assert "malformed_amount" in result4["signals"]
+
+    # Test non-finite in amount_i64
+    result5 = review_rustchain_event(
+        event_type="pending_transfer",
+        source="pytest",
+        payload={"amount_i64": "inf"},
+        db_path=tmp_db,
+    )
+    assert result5["stance"] == "hold"
+    assert "malformed_amount" in result5["signals"]
+

@@ -19,10 +19,12 @@ from __future__ import annotations
 import hmac
 import json
 import logging
+import math
 import os
 import re
 import sqlite3
 import time
+
 from pathlib import Path
 from typing import Any
 
@@ -478,14 +480,19 @@ def _heuristic_review(event_type: str, payload: dict[str, Any]) -> dict[str, Any
                     malformed_amount = True
                 else:
                     amount_rtc = float(val)
+                    if amount_rtc < 0 or not math.isfinite(amount_rtc):
+                        malformed_amount = True
             elif payload.get("amount_i64") is not None:
                 val = payload.get("amount_i64")
                 if isinstance(val, bool):
                     malformed_amount = True
                 else:
                     amount_rtc = float(val) / 1_000_000.0
+                    if amount_rtc < 0 or not math.isfinite(amount_rtc):
+                        malformed_amount = True
         except (TypeError, ValueError):
             malformed_amount = True
+
 
         reason_text = str(payload.get("reason", "")).lower()
 
