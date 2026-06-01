@@ -812,7 +812,9 @@
 
 <script>
 /* ─── State ────────────────────────────────────────────────────── */
-const NODE = 'https://50.28.86.131';
+const NODE = window.location.origin && (window.location.origin.includes('127.0.0.1') || window.location.origin.includes('localhost'))
+    ? window.location.origin
+    : 'https://rustchain.org';
 const VERIFY_BASE = 'https://rustchain.org/bcos/verify';
 
 let mode = 'certid';           // 'certid' | 'repo'
@@ -1023,7 +1025,7 @@ async function generate() {
         if (!certId) { showError('Please enter a certificate ID, e.g. BCOS-e9aae86d'); return; }
         // Normalize: handle pasted URLs like rustchain.org/bcos/verify/BCOS-xxx
         const m = certId.match(/BCOS-[a-f0-9]+/i);
-        if (m) certId = m[0].toUpperCase().replace(/^BCOS-/,'BCOS-') ;
+        if (m) certId = 'BCOS-' + m[0].replace(/^BCOS-/i, '').toLowerCase();
     } else {
         let repo = document.getElementById('repoInput').value.trim()
             .replace(/^https?:\/\/github\.com\//,'')
@@ -1055,7 +1057,7 @@ async function generate() {
         const directoryMatch = directory.find(c => c.cert_id === certId || c.cert_id.toLowerCase() === certId.toLowerCase()) || {};
         const cert = { ...directoryMatch, ...data };
 
-        currentCert = cert;
+        currentCert = { ...cert, cert_id: certId };
         renderOutput(cert, certId);
     } catch (err) {
         showError(err.message || 'Could not reach the RustChain node. Try again shortly.');
