@@ -280,23 +280,29 @@ class TestIntegratedBalanceScale(unittest.TestCase):
                     for out in tx["outputs"]
                 )
 
+        original_utxo_dual_write = self.mod.UTXO_DUAL_WRITE
+        original_utxo_db = self.mod.UtxoDB
         self.mod.UTXO_DUAL_WRITE = True
         self.mod.UtxoDB = DustRejectingUtxoDB
 
         try:
-            self.mod.finalize_epoch(7, 0.01, b"")
-        except RuntimeError as exc:
-            emitted_values = [
-                out["value_nrtc"]
-                for tx, _, _ in calls
-                for out in tx["outputs"]
-            ]
-            self.fail(
-                "finalize_epoch should skip, aggregate, or account-only handle "
-                f"sub-dust UTXO rewards instead of aborting settlement; "
-                f"emitted reward outputs={emitted_values}, "
-                f"dust_threshold={DUST_THRESHOLD}: {exc}"
-            )
+            try:
+                self.mod.finalize_epoch(7, 0.01, b"")
+            except RuntimeError as exc:
+                emitted_values = [
+                    out["value_nrtc"]
+                    for tx, _, _ in calls
+                    for out in tx["outputs"]
+                ]
+                self.fail(
+                    "finalize_epoch should skip, aggregate, or account-only handle "
+                    f"sub-dust UTXO rewards instead of aborting settlement; "
+                    f"emitted reward outputs={emitted_values}, "
+                    f"dust_threshold={DUST_THRESHOLD}: {exc}"
+                )
+        finally:
+            self.mod.UTXO_DUAL_WRITE = original_utxo_dual_write
+            self.mod.UtxoDB = original_utxo_db
 
         self.assertEqual(len(calls), 1)
         emitted_values = [
