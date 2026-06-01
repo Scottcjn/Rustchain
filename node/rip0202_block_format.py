@@ -155,13 +155,14 @@ def canonical_b0_attestations_hash(attestations: List[Mapping]) -> str:
     # incomplete record can never enter the consensus hash as null-filled, and
     # a malformed one can never crash serialisation mid-block. The result is
     # exactly the pinned fields, so incidental extra keys can't perturb the hash.
-    validated = [
-        build_b0_attestation(
+    validated = []
+    for a in attestations:
+        if not isinstance(a, Mapping):
+            raise B0FormatError(f"attestation must be a mapping, got {type(a).__name__}")
+        validated.append(build_b0_attestation(
             a.get("miner"), a.get("device"), a.get("fingerprint"),
             a.get("fingerprint_passed"), a.get("timestamp"),
-        )
-        for a in attestations
-    ]
+        ))
     ordered = sorted(
         validated,
         key=lambda a: (a["miner"], a["timestamp"], _attestation_digest(a)),
