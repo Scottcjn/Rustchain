@@ -915,7 +915,7 @@ def get_settlement_stats(
         print(f"[SETTLEMENT] Error getting stats: {e}")
         return {
             "period_days": days,
-            "error": str(e)
+            "error": "internal_error"
         }
 
 
