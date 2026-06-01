@@ -3,7 +3,7 @@ RustChain Telegram Community Bot
 Bounty #249 — 50 RTC + Bonuses
 
 Core commands:
-  /price   — wRTC price from Raydium (DexScreener)
+  /price   — wRTC price from Raydium
   /miners  — Active miner list & count
   /epoch   — Current epoch info
   /balance — Check RTC balance
@@ -15,7 +15,7 @@ Bonus features:
   - Inline queries  (type @bot price/miners/epoch)
 
 Improvements over prior version:
-  - Async HTTP (aiohttp) instead of blocking requests in async handlers
+  - HTTP calls run off the event loop with asyncio.to_thread
   - Correct API field names per REFERENCE.md (amount_rtc, ok, slot, etc.)
   - All three bonus features implemented
 """
@@ -23,8 +23,9 @@ Improvements over prior version:
 import os
 import asyncio
 import logging
+from typing import Any
 
-import aiohttp
+import requests
 from dotenv import load_dotenv
 from telegram import Update, InlineQueryResultArticle, InputTextMessageContent
 from telegram.ext import (
@@ -46,48 +47,144 @@ logger = logging.getLogger("rustchain_bot")
 # ---------------------------------------------------------------------------
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 RUSTCHAIN_API = os.getenv("RUSTCHAIN_API", "https://rustchain.org")
+RUSTCHAIN_VERIFY_SSL = os.getenv("RUSTCHAIN_VERIFY_SSL", "true").lower() not in {
+    "0",
+    "false",
+    "no",
+}
 WRTC_MINT = "12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X"
-DEXSCREENER_URL = f"https://api.dexscreener.com/latest/dex/tokens/{WRTC_MINT}"
+WSOL_MINT = "So11111111111111111111111111111111111111112"
+RAYDIUM_MINT_PRICE_URL = os.getenv(
+    "RAYDIUM_MINT_PRICE_URL", "https://api-v3.raydium.io/mint/price"
+)
+RAYDIUM_POOL_INFO_URL = os.getenv(
+    "RAYDIUM_POOL_INFO_URL", "https://api-v3.raydium.io/pools/info/mint"
+)
+RAYDIUM_SWAP_URL = (
+    "https://raydium.io/swap/?inputMint=sol&outputMint="
+    f"{WRTC_MINT}"
+)
 
 # Alert config
 PRICE_ALERT_INTERVAL = int(os.getenv("PRICE_ALERT_INTERVAL", "120"))   # seconds
 MINER_ALERT_INTERVAL = int(os.getenv("MINER_ALERT_INTERVAL", "60"))    # seconds
 PRICE_CHANGE_THRESHOLD = float(os.getenv("PRICE_CHANGE_THRESHOLD", "5.0"))  # percent
+HTTP_HEADERS = {
+    "Accept": "application/json",
+    "User-Agent": "RustChain-Telegram-Bot/1.0 (+https://github.com/Scottcjn/Rustchain)",
+}
 
 
 # ---------------------------------------------------------------------------
 # Async HTTP helpers (non-blocking, self-signed cert safe)
 # ---------------------------------------------------------------------------
 async def _get_json(url: str, params: dict | None = None, *, verify_ssl: bool = True):
-    connector = aiohttp.TCPConnector(ssl=verify_ssl)
-    async with aiohttp.ClientSession(connector=connector) as session:
-        async with session.get(
-            url, params=params, timeout=aiohttp.ClientTimeout(total=10)
-        ) as resp:
-            resp.raise_for_status()
-            return await resp.json()
+    def fetch():
+        resp = requests.get(
+            url,
+            params=params,
+            headers=HTTP_HEADERS,
+            timeout=10,
+            verify=verify_ssl,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    return await asyncio.to_thread(fetch)
 
 
 async def fetch_rustchain(path: str, params: dict | None = None):
-    """Fetch from RustChain node (self-signed cert → ssl=False)."""
-    return await _get_json(f"{RUSTCHAIN_API}{path}", params, verify_ssl=False)
+    """Fetch from RustChain node; set RUSTCHAIN_VERIFY_SSL=false for self-signed nodes."""
+    return await _get_json(f"{RUSTCHAIN_API}{path}", params, verify_ssl=RUSTCHAIN_VERIFY_SSL)
+
+
+def _to_float(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_raydium_mint_price(payload: dict, mint: str = WRTC_MINT) -> float | None:
+    """Return Raydium's USD price for the requested mint."""
+    if not isinstance(payload, dict) or payload.get("success") is False:
+        return None
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        return None
+    return _to_float(data.get(mint))
+
+
+def parse_raydium_pool_info(payload: dict, mint: str = WRTC_MINT) -> dict:
+    """Extract the most liquid Raydium pool details for display."""
+    empty = {
+        "price_sol": None,
+        "liquidity": 0.0,
+        "volume_24h": 0.0,
+        "pool_id": "",
+        "url": RAYDIUM_SWAP_URL,
+    }
+    if not isinstance(payload, dict) or payload.get("success") is False:
+        return empty
+
+    data = payload.get("data")
+    rows = data.get("data") if isinstance(data, dict) else None
+    if not isinstance(rows, list) or not rows:
+        return empty
+
+    pool = rows[0]
+    if not isinstance(pool, dict):
+        return empty
+
+    mint_a = (pool.get("mintA") or {}).get("address")
+    mint_b = (pool.get("mintB") or {}).get("address")
+    raw_price = _to_float(pool.get("price"))
+    price_sol = None
+    if raw_price and raw_price > 0:
+        if mint_a == mint:
+            price_sol = raw_price
+        elif mint_b == mint:
+            price_sol = 1 / raw_price
+
+    day = pool.get("day") if isinstance(pool.get("day"), dict) else {}
+    return {
+        "price_sol": price_sol,
+        "liquidity": _to_float(pool.get("tvl")) or 0.0,
+        "volume_24h": _to_float(day.get("volume")) or 0.0,
+        "pool_id": str(pool.get("id") or ""),
+        "url": RAYDIUM_SWAP_URL,
+    }
 
 
 async def fetch_price_data() -> dict | None:
-    """Fetch wRTC price from DexScreener, preferring the Raydium pair."""
+    """Fetch wRTC price from Raydium price and pool APIs."""
     try:
-        data = await _get_json(DEXSCREENER_URL)
-        pairs = data.get("pairs", [])
-        if not pairs:
+        price_payload = await _get_json(
+            RAYDIUM_MINT_PRICE_URL, {"mints": WRTC_MINT}
+        )
+        pool_payload = await _get_json(
+            RAYDIUM_POOL_INFO_URL,
+            {
+                "mint1": WRTC_MINT,
+                "mint2": WSOL_MINT,
+                "poolType": "all",
+                "poolSortField": "liquidity",
+                "sortType": "desc",
+                "pageSize": "1",
+                "page": "1",
+            },
+        )
+        price_usd = parse_raydium_mint_price(price_payload)
+        pool = parse_raydium_pool_info(pool_payload)
+        if price_usd is None:
             return None
-        pair = next((p for p in pairs if p.get("dexId") == "raydium"), pairs[0])
         return {
-            "price_usd": float(pair.get("priceUsd", 0)),
-            "price_sol": pair.get("priceNative", "N/A"),
-            "h24_change": pair.get("priceChange", {}).get("h24", 0),
-            "liquidity": pair.get("liquidity", {}).get("usd", 0),
-            "volume_24h": pair.get("volume", {}).get("h24", 0),
-            "url": pair.get("url", "https://dexscreener.com"),
+            "price_usd": price_usd,
+            "price_sol": pool["price_sol"],
+            "liquidity": pool["liquidity"],
+            "volume_24h": pool["volume_24h"],
+            "pool_id": pool["pool_id"],
+            "url": pool["url"],
         }
     except Exception as e:
         logger.error("fetch_price_data: %s", e)
@@ -143,11 +240,11 @@ async def cmd_price(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     text = (
         f"*wRTC Price*\n\n"
         f"USD: `${data['price_usd']:.6f}`\n"
-        f"SOL: `{data['price_sol']}`\n"
-        f"24h: `{data['h24_change']}%`\n"
-        f"Liquidity: `${data['liquidity']:,.0f}`\n"
-        f"Volume 24h: `${data['volume_24h']:,.0f}`\n\n"
-        f"[DexScreener]({data['url']})"
+        f"SOL: `{data['price_sol'] or 'N/A'}`\n"
+        f"Raydium TVL: `${data['liquidity']:,.0f}`\n"
+        f"Raydium 24h Volume: `{data['volume_24h']:,.4f}`\n"
+        f"Pool: `{data['pool_id'] or 'N/A'}`\n\n"
+        f"[Raydium]({data['url']})"
     )
     await update.message.reply_text(
         text, parse_mode="Markdown", disable_web_page_preview=True
@@ -354,9 +451,9 @@ async def inline_query(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 InlineQueryResultArticle(
                     id="price",
                     title=f"wRTC ${data['price_usd']:.6f}",
-                    description=f"24h change: {data['h24_change']}%",
+                    description=f"Raydium TVL: ${data['liquidity']:,.0f}",
                     input_message_content=InputTextMessageContent(
-                        f"wRTC: ${data['price_usd']:.6f} | 24h: {data['h24_change']}%"
+                        f"wRTC: ${data['price_usd']:.6f} | Raydium TVL: ${data['liquidity']:,.0f}"
                     ),
                 )
             )
