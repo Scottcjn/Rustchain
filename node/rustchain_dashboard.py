@@ -9,9 +9,27 @@ import json
 import time
 import psutil
 import os
+import hmac
 from datetime import datetime, timedelta
 from flask import Flask, send_from_directory, render_template_string, jsonify, request
 import requests
+
+
+def _get_admin_key():
+    return os.environ.get("RC_ADMIN_KEY", "")
+
+
+def _require_admin():
+    """Return error response if not admin, else None."""
+    admin_key = request.headers.get("X-Admin-Key", "")
+    if not admin_key:
+        return jsonify({"error": "X-Admin-Key header required"}), 401
+    expected = _get_admin_key()
+    if not expected:
+        return jsonify({"error": "Admin authentication not configured"}), 503
+    if not hmac.compare_digest(admin_key, expected):
+        return jsonify({"error": "Invalid admin key"}), 403
+    return None
 
 app = Flask(__name__)
 
@@ -604,7 +622,10 @@ def api_stats():
 
 @app.route('/api/wallet/<wallet_address>')
 def api_wallet_lookup(wallet_address):
-    """Look up wallet balance and info"""
+    """Look up wallet balance and info (admin only)."""
+    err = _require_admin()
+    if err:
+        return err
     try:
         with sqlite3.connect(DB_PATH) as conn:
             # Get balance

@@ -12,6 +12,8 @@ Phase 1 & 2 Implementation:
 Implements secure block production for Proof of Antiquity consensus.
 """
 
+import hashlib
+import hmac
 import json
 import logging
 import os
@@ -860,6 +862,23 @@ def _latest_randomness(conn: sqlite3.Connection) -> str:
 def create_block_api_routes(app, producer: BlockProducer, validator: BlockValidator):
     """Create Flask routes for block API"""
     from flask import jsonify, request
+    import os as _os
+
+    def _get_admin_key() -> str:
+        return _os.environ.get("RC_ADMIN_KEY", "")
+
+    def _require_admin():
+        """Return error response if not admin, else None."""
+        admin_key = request.headers.get("X-Admin-Key", "")
+        if not admin_key:
+            return jsonify({"error": "X-Admin-Key header required"}), 401
+        expected = _get_admin_key()
+        if not expected:
+            # If RC_ADMIN_KEY is not set, reject all requests.
+            return jsonify({"error": "Admin authentication not configured"}), 503
+        if not hmac.compare_digest(admin_key, expected):
+            return jsonify({"error": "Invalid admin key"}), 403
+        return None
 
     @app.route('/block/latest', methods=['GET'])
     def get_latest_block():
@@ -1072,6 +1091,9 @@ def create_block_api_routes(app, producer: BlockProducer, validator: BlockValida
     @app.route('/block/slot', methods=['GET'])
     def get_current_slot():
         """Get current slot info"""
+        err = _require_admin()
+        if err:
+            return err
         slot = producer.get_current_slot()
         expected_producer = producer.get_round_robin_producer(slot)
         slot_start = producer.get_slot_start_time(slot)
@@ -1090,6 +1112,9 @@ def create_block_api_routes(app, producer: BlockProducer, validator: BlockValida
     @app.route('/block/producers', methods=['GET'])
     def list_producers():
         """List current block producers"""
+        err = _require_admin()
+        if err:
+            return err
         current_ts = int(time.time())
         miners = producer.get_attested_miners(current_ts)
 
