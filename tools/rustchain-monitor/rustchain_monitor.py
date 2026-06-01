@@ -77,13 +77,6 @@ def get_epoch():
     except Exception as e:
         return {"error": str(e)}
 
-def normalize_miners_payload(data):
-    if isinstance(data, list):
-        return data
-    if isinstance(data, dict) and isinstance(data.get("miners"), list):
-        return data["miners"]
-    return None
-
 def print_health(data):
     if "error" in data:
         print(f"❌ Health check failed: {data['error']}")
@@ -112,7 +105,7 @@ def print_miners(data):
         print(f"❌ Failed to fetch miners: {data['error']}")
         return
     miners = normalize_miners_payload(data)
-    if miners is None:
+    if not isinstance(miners, list):
         print(f"⚠ Unexpected response: {data}")
         return
     print(f"📊 Active miners: {len(miners)}")

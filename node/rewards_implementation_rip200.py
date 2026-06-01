@@ -12,6 +12,7 @@ Issue #1449: Anti-Double-Mining Enforcement
 import sqlite3
 import time
 import os
+import hmac
 try:
     from flask import request, jsonify
 except ImportError:
@@ -286,7 +287,6 @@ def register_rewards_rip200(app, DB_PATH):
     @app.route('/rewards/settle', methods=['POST'])
     def settle_rewards():
         # ── Authentication: settlement is a privileged operation ──────
-        import hmac
         settle_key = os.environ.get("RC_SETTLE_KEY", "")
         if not settle_key:
             return jsonify({"error": "RC_SETTLE_KEY not configured — settle endpoint disabled"}), 503
