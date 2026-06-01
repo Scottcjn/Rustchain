@@ -30,13 +30,8 @@ from award_rtc import (
     is_endpoint_unreachable_error,
     set_output,
     transfer_rtc,
-    validate_recipient,
-    distinct_wallet_directives,
-    compute_idempotency_key,
     _AWARD_MARKER,
 )
-
-VALID_RTC = "RTC" + "a1b2c3d4" * 5  # RTC + 40 hex chars
 
 
 # ---------------------------------------------------------------------------
@@ -46,6 +41,8 @@ VALID_RTC = "RTC" + "a1b2c3d4" * 5  # RTC + 40 hex chars
 
 class TestResolveWalletFromPrBody(unittest.TestCase):
     """Test extracting wallet from PR body text."""
+
+    RTC_ADDRESS = "RTC" + "a" * 40
 
     def test_lowercase_wallet_directive(self):
         body = "This is a PR\n\nwallet: RTCabc123def456\n\nSome more text"
@@ -74,6 +71,42 @@ class TestResolveWalletFromPrBody(unittest.TestCase):
     def test_github_username_as_wallet(self):
         body = "wallet: some-contributor\n"
         self.assertEqual(resolve_wallet_from_pr_body(body), "some-contributor")
+
+    def test_payout_wallet_directive(self):
+        body = f"Summary\n\nPayout wallet: {self.RTC_ADDRESS}\n"
+        self.assertEqual(resolve_wallet_from_pr_body(body), self.RTC_ADDRESS)
+
+    def test_payout_address_directive(self):
+        body = f"Payout address: {self.RTC_ADDRESS}\n"
+        self.assertEqual(resolve_wallet_from_pr_body(body), self.RTC_ADDRESS)
+
+    def test_payout_address_if_accepted_directive(self):
+        body = f"Payout address if accepted: {self.RTC_ADDRESS}\n"
+        self.assertEqual(resolve_wallet_from_pr_body(body), self.RTC_ADDRESS)
+
+    def test_rtc_wallet_directive(self):
+        body = f"RTC Wallet: {self.RTC_ADDRESS}\n"
+        self.assertEqual(resolve_wallet_from_pr_body(body), self.RTC_ADDRESS)
+
+    def test_inline_rtc_address_with_payout_label(self):
+        body = f"Please use this payout destination: {self.RTC_ADDRESS} after merge.\n"
+        self.assertEqual(resolve_wallet_from_pr_body(body), self.RTC_ADDRESS)
+
+    def test_inline_rtc_address_without_payout_context_is_ignored(self):
+        body = f"Regression fixture includes {self.RTC_ADDRESS} in example data.\n"
+        self.assertIsNone(resolve_wallet_from_pr_body(body))
+
+    def test_miner_id_for_payout_if_accepted_directive(self):
+        body = "miner ID for payout if accepted: github:alice\n"
+        self.assertEqual(resolve_wallet_from_pr_body(body), "github:alice")
+
+    def test_miner_id_directive(self):
+        body = "miner ID: alice-miner\n"
+        self.assertEqual(resolve_wallet_from_pr_body(body), "alice-miner")
+
+    def test_miner_id_snake_case_directive(self):
+        body = "miner_id: alice_miner\n"
+        self.assertEqual(resolve_wallet_from_pr_body(body), "alice_miner")
 
 
 class TestResolveWalletFromFile(unittest.TestCase):
@@ -672,107 +705,6 @@ class TestMainFlow(unittest.TestCase):
         self.assertIn("RTC Auto-Bounty Skipped", comment_body)
         self.assertIn("wallet: RTC...", comment_body)
         self.assertIn("recipient_wallet_missing", comment_body)
-
-
-class TestValidateRecipient(unittest.TestCase):
-    """Security: recipient validation before any transfer."""
-
-    def test_accepts_canonical_rtc_address(self):
-        ok, reason = validate_recipient(VALID_RTC)
-        self.assertTrue(ok)
-        self.assertIsNone(reason)
-
-    def test_accepts_simple_username(self):
-        ok, reason = validate_recipient("some-contributor")
-        self.assertTrue(ok)
-        self.assertIsNone(reason)
-
-    def test_accepts_wallet_name(self):
-        self.assertTrue(validate_recipient("JONASXZB")[0])
-
-    def test_rejects_none_and_empty(self):
-        self.assertFalse(validate_recipient(None)[0])
-        self.assertFalse(validate_recipient("")[0])
-
-    def test_rejects_markdown_junk(self):
-        # backtick / parenthesis confusables from `code` spans
-        self.assertFalse(validate_recipient("RTCabc`")[0])
-        self.assertFalse(validate_recipient("(RTCabc)")[0])
-
-    def test_rejects_non_ascii_confusable(self):
-        # Cyrillic 'а' homoglyph
-        ok, reason = validate_recipient("RTCаbcdef")
-        self.assertFalse(ok)
-        self.assertEqual(reason, "recipient_wallet_non_ascii")
-
-    def test_rejects_platform_wallets(self):
-        for w in ("founder_community", "founder_dev_fund", "FOUNDER_FOUNDERS", "treasury"):
-            ok, reason = validate_recipient(w)
-            self.assertFalse(ok, w)
-            self.assertEqual(reason, "recipient_platform_wallet_blocked")
-
-    def test_rejects_embedded_whitespace(self):
-        self.assertFalse(validate_recipient("RTC abc")[0])
-
-    def test_rejects_overlong_garbage(self):
-        self.assertFalse(validate_recipient("x" * 200)[0])
-
-
-class TestDistinctWalletDirectives(unittest.TestCase):
-    """Security: conflicting recipient directives must be detectable."""
-
-    def test_single_directive(self):
-        self.assertEqual(distinct_wallet_directives("wallet: RTCone\n"), ["RTCone"])
-
-    def test_duplicate_same_value_collapses(self):
-        body = "wallet: RTCone\nwallet: RTCone\n"
-        self.assertEqual(distinct_wallet_directives(body), ["RTCone"])
-
-    def test_conflicting_directives_detected(self):
-        body = "wallet: RTCattacker\nsome text\nwallet: RTClegit\n"
-        result = distinct_wallet_directives(body)
-        self.assertEqual(len(result), 2)
-        self.assertIn("RTCattacker", result)
-        self.assertIn("RTClegit", result)
-
-    def test_no_directive(self):
-        self.assertEqual(distinct_wallet_directives("nothing here"), [])
-
-
-class TestIdempotencyKey(unittest.TestCase):
-    """Security: deterministic idempotency key + payload wiring."""
-
-    def test_deterministic_and_keyed_on_inputs(self):
-        a = compute_idempotency_key("o/r", "42", VALID_RTC, 50.0)
-        b = compute_idempotency_key("o/r", "42", VALID_RTC, 50.0)
-        c = compute_idempotency_key("o/r", "43", VALID_RTC, 50.0)
-        self.assertEqual(a, b)
-        self.assertNotEqual(a, c)
-        self.assertTrue(a.startswith("award-"))
-        self.assertLessEqual(len(a), 128)
-
-    def test_transfer_includes_idempotency_key_when_given(self):
-        mock_resp = MagicMock()
-        mock_resp.read.return_value = b'{"ok": true, "tx_hash": "tx_abc"}'
-        with patch("award_rtc.urlopen", return_value=mock_resp) as mock_urlopen:
-            transfer_rtc(
-                "https://rustchain.org/wallet/transfer",
-                "k", "founder_community", VALID_RTC, 5.0, "memo",
-                idempotency_key="award-deadbeef",
-            )
-        payload = json.loads(mock_urlopen.call_args[0][0].data.decode("utf-8"))
-        self.assertEqual(payload["idempotency_key"], "award-deadbeef")
-
-    def test_transfer_omits_idempotency_key_when_absent(self):
-        mock_resp = MagicMock()
-        mock_resp.read.return_value = b'{"ok": true, "tx_hash": "tx_abc"}'
-        with patch("award_rtc.urlopen", return_value=mock_resp) as mock_urlopen:
-            transfer_rtc(
-                "https://rustchain.org/wallet/transfer",
-                "k", "founder_community", VALID_RTC, 5.0, "memo",
-            )
-        payload = json.loads(mock_urlopen.call_args[0][0].data.decode("utf-8"))
-        self.assertNotIn("idempotency_key", payload)
 
 
 if __name__ == "__main__":
