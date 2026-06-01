@@ -82,11 +82,11 @@ class TestResolveWalletFromPrBody(unittest.TestCase):
         body = "miner ID for payout if accepted: my-miner-id\n"
         self.assertEqual(resolve_wallet_from_pr_body(body), "my-miner-id")
 
-    def test_miner_id_directive_keeps_annotated_value(self):
+    def test_miner_id_directive_returns_token_without_annotation(self):
         body = "miner ID for payout if accepted: my-miner-id (fallback worker)\n"
         self.assertEqual(
             resolve_wallet_from_pr_body(body),
-            "my-miner-id (fallback worker)",
+            "my-miner-id",
         )
 
     def test_miner_id_underscore_directive(self):

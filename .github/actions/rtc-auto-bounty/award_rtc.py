@@ -77,6 +77,7 @@ _DIRECTIVE_RE = re.compile(
     re.IGNORECASE,
 )
 _RTC_ADDRESS_RE = re.compile(r"RTC[0-9a-f]{40}", re.IGNORECASE)
+_MINER_ID_RE = re.compile(r"[A-Za-z0-9._:-]+")
 
 # Payment-amount override in the PR body (owner can specify a custom amount).
 #   bounty: 100 RTC
@@ -201,6 +202,10 @@ def resolve_wallet_from_pr_body(pr_body: str) -> Optional[str]:
                 address_match = _RTC_ADDRESS_RE.search(value)
                 if address_match:
                     return address_match.group(0)
+                return value
+            miner_match = _MINER_ID_RE.search(value)
+            if miner_match:
+                return miner_match.group(0)
             return value
         if re.search(r"(payout|wallet|address)", line, re.IGNORECASE):
             address_match = _RTC_ADDRESS_RE.search(line)
