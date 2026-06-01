@@ -17,6 +17,11 @@ try:
     from payout_preflight import validate_wallet_transfer_admin, validate_wallet_transfer_signed
 except ImportError:
     from node.payout_preflight import validate_wallet_transfer_admin, validate_wallet_transfer_signed
+try:
+    # Deployment compatibility: production may run this file as a single script.
+    from db_helpers import fetch_page
+except ImportError:
+    from node.db_helpers import fetch_page
 
 # Hardware Binding v2.0 - Anti-Spoof with Entropy Validation
 try:
@@ -5188,8 +5193,8 @@ def admin_wallet_review_holds():
         if status:
             sql += " WHERE status = ?"
             params.append(status)
-        sql += " ORDER BY created_at DESC LIMIT 200"
-        rows = conn.execute(sql, params).fetchall()
+        sql += " ORDER BY created_at DESC"
+        rows = fetch_page(conn, sql, params, limit=200, max_limit=200)
     return jsonify({
         "ok": True,
         "count": len(rows),
@@ -5438,8 +5443,8 @@ def admin_wallet_review_holds_ui():
         if active_status:
             sql += " WHERE status = ?"
             params.append(active_status)
-        sql += " ORDER BY created_at DESC LIMIT 200"
-        rows = conn.execute(sql, params).fetchall()
+        sql += " ORDER BY created_at DESC"
+        rows = fetch_page(conn, sql, params, limit=200, max_limit=200)
 
     entries = [
         {
@@ -5927,14 +5932,13 @@ def withdrawal_history(miner_pk):
     limit = request.args.get('limit', 50, type=int)
 
     with sqlite3.connect(DB_PATH) as c:
-        rows = c.execute("""
+        rows = fetch_page(c, """
             SELECT withdrawal_id, amount, fee, destination, status,
                    created_at, processed_at, tx_hash
             FROM withdrawals
             WHERE miner_pk = ?
             ORDER BY created_at DESC
-            LIMIT ?
-        """, (miner_pk, limit)).fetchall()
+        """, (miner_pk,), limit=max(1, min(limit, 500)), max_limit=500)
 
         withdrawals = []
         for row in rows:
@@ -6300,16 +6304,18 @@ def governance_proposals():
 
         total = c.execute("SELECT COUNT(*) FROM governance_proposals").fetchone()[0]
 
-        rows = c.execute(
+        rows = fetch_page(
+            c,
             """
             SELECT id, proposer_wallet, title, description, created_at, activated_at, ends_at,
                    status, yes_weight, no_weight
             FROM governance_proposals
             ORDER BY id DESC
-            LIMIT ? OFFSET ?
             """,
-            (limit, offset),
-        ).fetchall()
+            limit=limit,
+            offset=offset,
+            max_limit=_PROPOSALS_MAX_LIMIT,
+        )
 
         proposals = []
         for row in rows:
@@ -6375,16 +6381,19 @@ def governance_proposal_detail(proposal_id: int):
             (proposal_id,),
         ).fetchone()[0]
 
-        votes = c.execute(
+        votes = fetch_page(
+            c,
             """
             SELECT voter_wallet, vote, weight, multiplier, base_balance_rtc, created_at
             FROM governance_votes
             WHERE proposal_id = ?
             ORDER BY created_at DESC
-            LIMIT ? OFFSET ?
             """,
-            (proposal_id, votes_limit, votes_offset),
-        ).fetchall()
+            (proposal_id,),
+            limit=votes_limit,
+            offset=votes_offset,
+            max_limit=_VOTES_MAX_LIMIT,
+        )
         conn.commit()
 
     yes_weight = float(row["yes_weight"] or 0.0)
@@ -6903,15 +6912,14 @@ def api_miners():
         total_count = c.execute("SELECT COUNT(*) FROM miner_attest_recent WHERE ts_ok > ?", (now - 3600,)).fetchone()[0]
         
         # Get paginated miners with their first attestation time (optimized subquery)
-        rows = c.execute("""
+        rows = fetch_page(c, """
             SELECT 
                 r.miner, r.ts_ok, r.device_family, r.device_arch, r.entropy_score,
                 (SELECT MIN(h.ts_ok) FROM miner_attest_history h WHERE h.miner = r.miner) as first_ts
             FROM miner_attest_recent r
             WHERE r.ts_ok > ?
             ORDER BY r.ts_ok DESC
-            LIMIT ? OFFSET ?
-        """, (now - 3600, limit, offset)).fetchall()
+        """, (now - 3600,), limit=limit, offset=offset, max_limit=1000)
         
         miners = []
         for r in rows:
@@ -7321,7 +7329,8 @@ def api_state_diff():
         for optional in ("state_root", "body_json", "data"):
             if optional in columns:
                 select_columns.append(optional)
-        rows = db.execute(
+        rows = fetch_page(
+            db,
             f"""
             SELECT {", ".join(select_columns)}
             FROM blocks
@@ -7329,7 +7338,9 @@ def api_state_diff():
             ORDER BY height ASC
             """,
             (start_height, end_height),
-        ).fetchall()
+            limit=(end_height - start_height + 1),
+            max_limit=STATE_DIFF_MAX_BLOCK_RANGE + 1,
+        )
 
     found_heights = {int(row["height"]) for row in rows}
     missing_blocks = [
@@ -7422,15 +7433,17 @@ def api_explorer_blocks():
                 select_columns.append(optional)
 
         total = db.execute("SELECT COUNT(*) FROM blocks").fetchone()[0]
-        rows = db.execute(
+        rows = fetch_page(
+            db,
             f"""
             SELECT {", ".join(select_columns)}
             FROM blocks
             ORDER BY height DESC
-            LIMIT ? OFFSET ?
             """,
-            (limit, offset),
-        ).fetchall()
+            limit=limit,
+            offset=offset,
+            max_limit=200,
+        )
 
     blocks = []
     for row in rows:
@@ -7725,13 +7738,12 @@ def api_miner_dashboard(miner_id):
             total_earned = (total_row['s'] or 0) / 1_000_000.0
             reward_events = int(total_row['cnt'] or 0)
 
-            hist = c.execute("""
+            hist = fetch_page(c, """
                 SELECT epoch, amount_i64, tx_hash, confirmed_at
                 FROM pending_ledger
                 WHERE to_miner = ? AND status = 'confirmed'
                 ORDER BY epoch DESC, confirmed_at DESC
-                LIMIT 20
-            """, (miner_id,)).fetchall()
+            """, (miner_id,), limit=20, max_limit=20)
             reward_history = [{
                 'epoch': int(r['epoch'] or 0),
                 'amount_rtc': round((r['amount_i64'] or 0)/1_000_000.0, 6),
@@ -7749,13 +7761,13 @@ def api_miner_dashboard(miner_id):
             if has_hist:
                 now_ts = int(time.time())
                 start = now_ts - 86400
-                rows = c.execute("""
+                rows = fetch_page(c, """
                     SELECT CAST((ts_ok/3600) AS INTEGER) AS bucket, COUNT(*) AS n
                     FROM miner_attest_history
                     WHERE miner = ? AND ts_ok >= ?
                     GROUP BY bucket
                     ORDER BY bucket ASC
-                """, (miner_id, start)).fetchall()
+                """, (miner_id, start), limit=24, max_limit=24)
                 timeline = [{'hour_bucket': int(r['bucket']), 'count': int(r['n'])} for r in rows]
 
             return jsonify({
@@ -7797,16 +7809,18 @@ def api_miner_attestations(miner_id: str):
         if not ok:
             return jsonify({"ok": False, "error": "miner_attest_history_missing"}), 404
 
-        rows = c.execute(
+        rows = fetch_page(
+            c,
             """
             SELECT ts_ok, device_family, device_arch
             FROM miner_attest_history
             WHERE miner = ?
             ORDER BY ts_ok DESC
-            LIMIT ?
             """,
-            (miner_id, limit),
-        ).fetchall()
+            (miner_id,),
+            limit=limit,
+            max_limit=500,
+        )
 
     items = [
         {
@@ -7845,10 +7859,12 @@ def api_balances():
 
         # Current schema: balances(miner_id, amount_i64, ...)
         if "miner_id" in cols and "amount_i64" in cols:
-            rows = c.execute(
-                "SELECT miner_id, amount_i64 FROM balances ORDER BY amount_i64 DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
+            rows = fetch_page(
+                c,
+                "SELECT miner_id, amount_i64 FROM balances ORDER BY amount_i64 DESC",
+                limit=limit,
+                max_limit=5000,
+            )
             out = [
                 {
                     "miner_id": r["miner_id"],
@@ -7861,10 +7877,12 @@ def api_balances():
 
         # Legacy schema: balances(miner_pk, balance_rtc)
         if "miner_pk" in cols and "balance_rtc" in cols:
-            rows = c.execute(
-                "SELECT miner_pk, balance_rtc FROM balances ORDER BY balance_rtc DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
+            rows = fetch_page(
+                c,
+                "SELECT miner_pk, balance_rtc FROM balances ORDER BY balance_rtc DESC",
+                limit=limit,
+                max_limit=5000,
+            )
             out = [
                 {
                     "miner_id": r["miner_pk"],
@@ -7883,7 +7901,12 @@ def list_oui_deny():
     if not is_admin(request):
         return jsonify({"ok": False, "error": "forbidden"}), 403
     with sqlite3.connect(DB_PATH) as conn:
-        rows = conn.execute("SELECT oui, vendor, added_ts, enforce FROM oui_deny ORDER BY vendor").fetchall()
+        rows = fetch_page(
+            conn,
+            "SELECT oui, vendor, added_ts, enforce FROM oui_deny ORDER BY vendor",
+            limit=1000,
+            max_limit=1000,
+        )
     return jsonify({
         "ok": True,
         "count": len(rows),
@@ -8045,10 +8068,13 @@ def attest_debug():
 
         # Check MACs
         day_ago = now - 86400
-        mac_rows = conn.execute(
+        mac_rows = fetch_page(
+            conn,
             "SELECT mac_hash, first_ts, last_ts, count FROM miner_macs WHERE miner = ? AND last_ts >= ?",
-            (miner, day_ago)
-        ).fetchall()
+            (miner, day_ago),
+            limit=256,
+            max_limit=256,
+        )
 
         result["macs"] = {
             "unique_24h": len(mac_rows),
@@ -8757,17 +8783,17 @@ def list_pending():
     
     with sqlite3.connect(DB_PATH) as db:
         if status_filter == 'all':
-            rows = db.execute("""
+            rows = fetch_page(db, """
                 SELECT id, ts, from_miner, to_miner, amount_i64, reason, status, 
                        confirms_at, voided_by, voided_reason, tx_hash
-                FROM pending_ledger ORDER BY id DESC LIMIT ?
-            """, (limit,)).fetchall()
+                FROM pending_ledger ORDER BY id DESC
+            """, limit=limit, max_limit=500)
         else:
-            rows = db.execute("""
+            rows = fetch_page(db, """
                 SELECT id, ts, from_miner, to_miner, amount_i64, reason, status,
                        confirms_at, voided_by, voided_reason, tx_hash
-                FROM pending_ledger WHERE status = ? ORDER BY id DESC LIMIT ?
-            """, (status_filter, limit)).fetchall()
+                FROM pending_ledger WHERE status = ? ORDER BY id DESC
+            """, (status_filter,), limit=limit, max_limit=500)
     
     items = []
     for r in rows:
@@ -9120,14 +9146,20 @@ def api_wallet_ledger():
 
     with sqlite3.connect(DB_PATH) as db:
         if miner_id:
-            rows = db.execute(
-                "SELECT ts, epoch, delta_i64, reason FROM ledger WHERE miner_id=? ORDER BY id DESC LIMIT 200",
-                (miner_id,)
-            ).fetchall()
+            rows = fetch_page(
+                db,
+                "SELECT ts, epoch, delta_i64, reason FROM ledger WHERE miner_id=? ORDER BY id DESC",
+                (miner_id,),
+                limit=200,
+                max_limit=200,
+            )
         else:
-            rows = db.execute(
-                "SELECT ts, epoch, miner_id, delta_i64, reason FROM ledger ORDER BY id DESC LIMIT 200"
-            ).fetchall()
+            rows = fetch_page(
+                db,
+                "SELECT ts, epoch, miner_id, delta_i64, reason FROM ledger ORDER BY id DESC",
+                limit=200,
+                max_limit=200,
+            )
 
     items = []
     for r in rows:
