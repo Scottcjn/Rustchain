@@ -6,7 +6,7 @@ A reusable GitHub Action that automatically awards RustChain (RTC) to contributo
 
 - **Automatic RTC awards** on PR merge — no manual intervention needed
 - **Configurable amount** per merge, with per-PR override via `bounty:` directive in the PR body
-- **Flexible wallet resolution** — reads from `wallet:` directive in PR body, `.rtc-wallet` file, or falls back to PR author username
+- **Flexible wallet resolution** — reads payout wallet/address aliases from the PR body or `.rtc-wallet`
 - **Dry-run mode** — test the action safely without making real transfers
 - **Duplicate prevention** — detects already-awarded PRs via comment markers
 - **PR comment confirmation** — posts a formatted table with transfer details
@@ -90,9 +90,8 @@ If this action lives in a separate repository (e.g., `Scottcjn/RustChain`), othe
 1. **Merge guard** — Only runs when `github.event.pull_request.merged == true`
 2. **Duplicate check** — Fetches existing PR comments and looks for `RTC-AutoBounty-Awarded` marker
 3. **Wallet resolution** (in priority order):
-   - `wallet: <address>` or `.rtc-wallet: <address>` directive in the PR body
+   - `wallet: <address>`, `.rtc-wallet: <address>`, payout wallet/address aliases, or miner ID directives in the PR body
    - `.rtc-wallet` file at the repository root
-   - Falls back to the PR author's GitHub username
 4. **Amount determination**:
    - Uses `rtc-amount` input as the default
    - Checks for `bounty: <amount> RTC` directive in the PR body to override
@@ -139,11 +138,21 @@ Add a line anywhere in the PR body:
 wallet: RTCxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
-Or using the `.rtc-wallet` alias:
+Or using one of the supported aliases:
 
 ```
 .rtc-wallet: my-github-username
+Payout wallet: RTCxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+Payout address: RTCxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+Payout address if accepted: RTCxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+RTC Wallet: RTCxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+miner ID for payout if accepted: github:my-github-username
+miner ID: my-miner-id
+miner_id: my-miner-id
 ```
+
+The parser also accepts a same-line `RTC[0-9a-f]{40}` address when the line
+contains payout context such as `payout`, `wallet`, or `address`.
 
 ### 2. `.rtc-wallet` file
 
