@@ -206,6 +206,26 @@ def _missing_transfer_nonce(nonce) -> bool:
     )
 
 
+def _parse_transfer_nonce(nonce_raw):
+    if _missing_transfer_nonce(nonce_raw):
+        raise ValueError('nonce is required')
+
+    if isinstance(nonce_raw, int):
+        nonce_int = nonce_raw
+    elif isinstance(nonce_raw, str):
+        nonce_text = nonce_raw.strip()
+        if not nonce_text.isdigit():
+            raise ValueError('nonce must be an integer greater than or equal to 0')
+        nonce_int = int(nonce_text)
+    else:
+        raise ValueError('nonce must be an integer greater than or equal to 0')
+
+    if nonce_int < 0:
+        raise ValueError('nonce must be an integer greater than or equal to 0')
+
+    return str(nonce_int), nonce_int
+
+
 def _transfer_string_field(data: dict, field: str):
     value = data.get(field)
     if value is None:
@@ -507,6 +527,14 @@ def utxo_transfer():
             'got': from_address,
         }), 400
 
+    try:
+        nonce, nonce_int = _parse_transfer_nonce(nonce)
+    except ValueError as e:
+        return jsonify({
+            'error': str(e),
+            'code': 'INVALID_NONCE',
+        }), 400
+
     # Reconstruct signed message.
     # FIX(#2202): Include fee in signed data to prevent MITM fee manipulation.
     # Backward-compatible: try new format (with fee) first, fall back to legacy
@@ -524,7 +552,7 @@ def utxo_transfer():
         'amount': amount_for_sig,
         'fee': fee_for_sig,
         'memo': memo,
-        'nonce': nonce,
+        'nonce': nonce_int,
     }
     message_v2 = json.dumps(tx_data_v2, sort_keys=True, separators=(',', ':')).encode()
 
@@ -533,7 +561,7 @@ def utxo_transfer():
         'to': to_address,
         'amount': amount_for_sig,
         'memo': memo,
-        'nonce': nonce,
+        'nonce': nonce_int,
     }
     message_legacy = json.dumps(tx_data_legacy, sort_keys=True, separators=(',', ':')).encode()
 
@@ -611,6 +639,21 @@ def utxo_transfer():
                 'error': 'Nonce already used (replay attack detected)',
                 'code': 'REPLAY_DETECTED',
                 'nonce': str(nonce),
+            }), 400
+        previous_nonce = conn.execute(
+            """
+            SELECT MAX(CAST(nonce AS INTEGER)) FROM transfer_nonces
+            WHERE from_address = ? AND nonce != ?
+            """,
+            (from_address, nonce),
+        ).fetchone()[0]
+        if previous_nonce is not None and int(previous_nonce) >= nonce_int:
+            conn.rollback()
+            return jsonify({
+                'error': 'Signed transfer nonce must increase for this wallet',
+                'code': 'OUT_OF_ORDER_NONCE',
+                'nonce': nonce,
+                'latest_nonce': int(previous_nonce),
             }), 400
 
         ok = _utxo_db.apply_transaction(tx, block_height, conn=conn)
