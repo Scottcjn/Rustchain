@@ -182,19 +182,56 @@ def _ensure_transfer_nonce_table(conn: sqlite3.Connection) -> None:
 
 
 
-def _reserve_transfer_nonce(conn: sqlite3.Connection, from_address: str, nonce) -> bool:
+def _reserve_transfer_nonce(conn: sqlite3.Connection, from_address: str, nonce) -> dict:
     """Atomically reserve a signed-transfer nonce for replay protection.
 
-    Returns True if the nonce was newly reserved, False if it was already used.
+    Returns {'ok': True} if the nonce was newly reserved and valid.
+    Returns {'ok': False, 'error': ..., 'code': ...} otherwise.
     The caller is responsible for committing or rolling back the surrounding
     transaction so failed transfers do not burn the nonce.
     """
     _ensure_transfer_nonce_table(conn)
+    
+    try:
+        nonce_int = int(nonce)
+    except (ValueError, TypeError):
+        return {
+            'ok': False,
+            'error': 'Nonce must be an integer',
+            'code': 'INVALID_NONCE_FORMAT',
+            'nonce': str(nonce)
+        }
+
     conn.execute(
         "INSERT OR IGNORE INTO transfer_nonces (from_address, nonce, used_at) VALUES (?, ?, ?)",
         (from_address, str(nonce), int(time.time())),
     )
-    return conn.execute("SELECT changes()").fetchone()[0] == 1
+    if conn.execute("SELECT changes()").fetchone()[0] == 0:
+        return {
+            'ok': False,
+            'error': 'Nonce already used (replay attack detected)',
+            'code': 'REPLAY_DETECTED',
+            'nonce': str(nonce)
+        }
+
+    previous_nonce = conn.execute(
+        """
+        SELECT MAX(CAST(nonce AS INTEGER)) FROM transfer_nonces
+        WHERE from_address = ? AND nonce != ?
+        """,
+        (from_address, str(nonce)),
+    ).fetchone()[0]
+    
+    if previous_nonce is not None and int(previous_nonce) >= nonce_int:
+        return {
+            'ok': False,
+            'error': 'Signed transfer nonce must increase for this wallet',
+            'code': 'OUT_OF_ORDER_NONCE',
+            'nonce': str(nonce),
+            'latest_nonce': int(previous_nonce),
+        }
+        
+    return {'ok': True}
 
 
 def _missing_transfer_nonce(nonce) -> bool:
@@ -605,13 +642,12 @@ def utxo_transfer():
     try:
         conn.execute("BEGIN IMMEDIATE")
 
-        if not _reserve_transfer_nonce(conn, from_address, nonce):
+        nonce_res = _reserve_transfer_nonce(conn, from_address, nonce)
+        if not nonce_res.get('ok'):
             conn.rollback()
-            return jsonify({
-                'error': 'Nonce already used (replay attack detected)',
-                'code': 'REPLAY_DETECTED',
-                'nonce': str(nonce),
-            }), 400
+            res_data = nonce_res.copy()
+            res_data.pop('ok', None)
+            return jsonify(res_data), 400
 
         ok = _utxo_db.apply_transaction(tx, block_height, conn=conn)
         if not ok:

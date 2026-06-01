@@ -220,6 +220,72 @@ class TestUtxoEndpoints(unittest.TestCase):
         sender_bal = self.utxo_db.get_balance('RTC_test_aabbccdd')
         self.assertEqual(sender_bal, 40 * UNIT)
 
+    def test_transfer_nonce_must_increase(self):
+        self._seed_coinbase('RTC_test_aabbccdd', 100 * UNIT)
+
+        # First transfer with nonce 1000
+        r1 = self.client.post('/utxo/transfer', json={
+            'from_address': 'RTC_test_aabbccdd',
+            'to_address': 'bob',
+            'amount_rtc': 10.0,
+            'public_key': 'aabbccdd' * 8,
+            'signature': 'sig' * 22,
+            'nonce': 1000,
+        })
+        self.assertEqual(r1.status_code, 200)
+
+        # Second transfer with same nonce
+        r2 = self.client.post('/utxo/transfer', json={
+            'from_address': 'RTC_test_aabbccdd',
+            'to_address': 'bob',
+            'amount_rtc': 10.0,
+            'public_key': 'aabbccdd' * 8,
+            'signature': 'sig' * 22,
+            'nonce': 1000,
+        })
+        self.assertEqual(r2.status_code, 400)
+        self.assertEqual(r2.get_json()['code'], 'REPLAY_DETECTED')
+
+        # Third transfer with lower nonce
+        r3 = self.client.post('/utxo/transfer', json={
+            'from_address': 'RTC_test_aabbccdd',
+            'to_address': 'bob',
+            'amount_rtc': 10.0,
+            'public_key': 'aabbccdd' * 8,
+            'signature': 'sig' * 22,
+            'nonce': 999,
+        })
+        self.assertEqual(r3.status_code, 400)
+        self.assertEqual(r3.get_json()['code'], 'OUT_OF_ORDER_NONCE')
+
+        # Fourth transfer with valid higher nonce
+        r4 = self.client.post('/utxo/transfer', json={
+            'from_address': 'RTC_test_aabbccdd',
+            'to_address': 'bob',
+            'amount_rtc': 10.0,
+            'public_key': 'aabbccdd' * 8,
+            'signature': 'sig' * 22,
+            'nonce': 1001,
+        })
+        self.assertEqual(r4.status_code, 200)
+
+    def test_transfer_invalid_nonce_formats(self):
+        self._seed_coinbase('RTC_test_aabbccdd', 100 * UNIT)
+
+        for bad_nonce in ['abc', '10.5', 'nonce123']:
+            with self.subTest(nonce=bad_nonce):
+                r = self.client.post('/utxo/transfer', json={
+                    'from_address': 'RTC_test_aabbccdd',
+                    'to_address': 'bob',
+                    'amount_rtc': 10.0,
+                    'public_key': 'aabbccdd' * 8,
+                    'signature': 'sig' * 22,
+                    'nonce': bad_nonce,
+                })
+                self.assertEqual(r.status_code, 400)
+                data = r.get_json()
+                self.assertEqual(data.get('code'), 'INVALID_NONCE_FORMAT')
+
     def test_transfer_insufficient(self):
         self._seed_coinbase('RTC_test_aabbccdd', 50 * UNIT)
 
