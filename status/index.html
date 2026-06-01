@@ -219,6 +219,11 @@
       color: var(--red);
     }
 
+    .badge.blocked {
+      background: rgba(156, 175, 197, 0.16);
+      color: var(--muted);
+    }
+
     .kv {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -382,7 +387,7 @@
     </section>
 
     <footer>
-      Static GitHub Pages compatible status page. If a browser blocks node requests because of CORS or self-signed TLS, host this page from the same origin as a RustChain node or add CORS headers to the node API.
+      Static GitHub Pages compatible status page. HTTPS pages only poll HTTPS node origins; expose HTTP-only nodes through an HTTPS proxy with CORS headers before enabling browser polling for them.
     </footer>
   </main>
 
@@ -467,10 +472,16 @@
     }
 
     function getOnlineStatus(result) {
+      if (result.skipped) return "blocked";
       if (!result.ok) return "offline";
       const status = String(result.health.status || result.health.state || "ok").toLowerCase();
       if (status.includes("error") || status.includes("down") || status.includes("fail")) return "degraded";
       return "online";
+    }
+
+    function canFetchNode(node) {
+      const nodeProtocol = new URL(node.origin).protocol;
+      return window.location.protocol !== "https:" || nodeProtocol === "https:";
     }
 
     async function fetchJson(url, timeoutMs = 9000) {
@@ -493,6 +504,19 @@
     }
 
     async function checkNode(node) {
+      if (!canFetchNode(node)) {
+        return {
+          node,
+          ok: false,
+          skipped: true,
+          responseMs: null,
+          health: {},
+          epoch: null,
+          miners: null,
+          error: "Skipped: HTTP node would be blocked from an HTTPS page. Use an HTTPS proxy with CORS to poll it."
+        };
+      }
+
       try {
         const health = await fetchJson(`${node.origin}/health`);
         let epoch = null;
@@ -549,7 +573,7 @@
                 <div class="node-title">${result.node.name}</div>
                 <div class="node-sub">${result.node.location}<br>${result.node.origin}</div>
               </div>
-              <span class="badge ${status === "online" ? "ok" : status === "offline" ? "bad" : ""}">${status}</span>
+              <span class="badge ${status === "online" ? "ok" : status === "offline" ? "bad" : status === "blocked" ? "blocked" : ""}">${status}</span>
             </div>
             <div class="kv">
               <div><span>Response</span><strong>${result.responseMs ? `${result.responseMs} ms` : "--"}</strong></div>
@@ -628,7 +652,7 @@
     function renderLog(results) {
       $("fetch-log").innerHTML = results.map((result) => {
         const status = getOnlineStatus(result);
-        const cls = status === "online" ? "green" : status === "offline" ? "red" : "amber";
+        const cls = status === "online" ? "green" : status === "offline" ? "red" : status === "blocked" ? "" : "amber";
         const msg = result.error || `health ok in ${result.responseMs} ms`;
         return `<div class="log-item"><strong class="${cls}">${result.node.name}</strong>: ${escapeHtml(msg)}</div>`;
       }).join("");

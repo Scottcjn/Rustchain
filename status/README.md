@@ -14,7 +14,7 @@ Real-time status pages monitoring RustChain attestation nodes.
 
 Open it directly in a browser or host the `status/` directory with GitHub Pages or any static web server.
 
-If a browser blocks requests because of CORS or self-signed TLS, host the page from the same origin as a RustChain node or add CORS headers to the node API.
+When hosted over HTTPS, the static page only polls HTTPS node origins. HTTP-only nodes remain visible in the dashboard but are skipped in browser polling to avoid mixed-content requests. To monitor those nodes from GitHub Pages or another HTTPS host, expose them through an HTTPS reverse proxy with CORS headers.
 
 ## Flask Dashboard
 
