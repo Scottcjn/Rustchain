@@ -61,11 +61,13 @@ def test_hash_deterministic_and_order_independent():
     assert h1 == h2 == h3 and len(h1) == 64
 
 
-def test_same_miner_same_ts_tiebreak_is_total_order():
-    """Two records, same miner+ts, different content -> deterministic order."""
+def test_hash_rejects_duplicate_miner():
+    """One miner, one record per block (loop-3): a dup miner is rejected, not
+    silently resolved — cross-block dups are B2's job (max src_height)."""
     x = b0.build_b0_attestation("dup", DEV, {"k": 1}, True, 5)
     y = b0.build_b0_attestation("dup", DEV, {"k": 2}, True, 5)
-    assert b0.canonical_b0_attestations_hash([x, y]) == b0.canonical_b0_attestations_hash([y, x])
+    with pytest.raises(b0.B0FormatError):
+        b0.canonical_b0_attestations_hash([x, y])
 
 
 def test_hash_ignores_incidental_extra_keys():
@@ -160,3 +162,26 @@ def test_hash_rejects_non_mapping_items():
     for bad in (None, "str", 5, ["x"]):
         with pytest.raises(b0.B0FormatError):
             b0.canonical_b0_attestations_hash([good, bad])
+
+
+# ---- tri-brain loop-3 fixes: size/depth caps, concrete-dict, dup-miner ----
+def test_build_rejects_oversized_evidence():
+    big = {"blob": "x" * (b0.MAX_EVIDENCE_FIELD_BYTES + 10)}
+    with pytest.raises(b0.B0FormatError):
+        b0.build_b0_attestation("m", big, FP, True, 1)
+
+
+def test_build_rejects_excessive_nesting_depth():
+    d = cur = {}
+    for _ in range(b0.MAX_EVIDENCE_DEPTH + 5):
+        cur["n"] = {}
+        cur = cur["n"]
+    with pytest.raises(b0.B0FormatError):
+        b0.build_b0_attestation("m", {"deep": d}, FP, True, 1)
+
+
+def test_build_rejects_non_dict_mapping():
+    import types
+    proxy = types.MappingProxyType({"k": 1})  # a Mapping, NOT a dict
+    with pytest.raises(b0.B0FormatError):
+        b0.build_b0_attestation("m", {"nested": proxy}, FP, True, 1)
