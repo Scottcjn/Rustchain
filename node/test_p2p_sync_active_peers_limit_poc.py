@@ -1,103 +1,120 @@
 """
-PoC: PeerManager.get_active_peers() had no LIMIT on the SQL query.
-fetchall() returned every active peer row in the 'peers' table.
-This method is called on every sync cycle (every 30 s) and every
-health-check loop (every 60 s). An attacker can flood /p2p/announce
-with distinct valid public IPs to grow the peers table and cause OOM.
-
-Before fix: SELECT peer_url FROM peers WHERE is_active=1 AND last_seen > ?
-After fix:  ... LIMIT 500
+PoC tests for PeerManager eclipse-resistant peer selection and per-source
+admission cap. get_active_peers() now uses a two-bucket strategy (75% freshest,
+25% oldest-trusted) and add_peer() enforces _MAX_PEERS_PER_HOST per host.
 """
 import sqlite3
 import time
 import unittest
 import tempfile
 import os
+import gc
 
 from rustchain_p2p_sync import PeerManager
-
-
-def _make_peer_db(path: str) -> None:
-    with sqlite3.connect(path) as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS peers (
-                peer_url TEXT PRIMARY KEY,
-                is_active INTEGER DEFAULT 1,
-                last_seen INTEGER,
-                last_block_height INTEGER DEFAULT 0
-            )
-        """)
-        conn.commit()
-
 
 _peer_counter = 0
 
 
-def _insert_peers(path: str, count: int, active: bool = True, ts_offset: int = 0):
+def _insert_peers(path, count, host_prefix="peer", active=True,
+                  ts_offset=0, added_offset=0):
     global _peer_counter
     ts = int(time.time()) + ts_offset
+    added = int(time.time()) + added_offset
     is_active = 1 if active else 0
     with sqlite3.connect(path) as conn:
         for _ in range(count):
+            host = f"{host_prefix}-{_peer_counter}.example.com"
             conn.execute(
-                "INSERT INTO peers (peer_url, is_active, last_seen) VALUES (?, ?, ?)",
-                (f"http://peer-{_peer_counter}.example.com:7333", is_active, ts)
+                "INSERT OR IGNORE INTO peers "
+                "(peer_url, peer_host, peer_port, last_seen, is_active, added_at) "
+                "VALUES (?, ?, 7333, ?, ?, ?)",
+                (f"http://{host}:7333", host, ts, is_active, added)
             )
             _peer_counter += 1
         conn.commit()
 
 
-class TestGetActivePeersLimit(unittest.TestCase):
+class TestGetActivePeersEclipseResistant(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         self.db_path = self.tmp.name
         self.tmp.close()
-        _make_peer_db(self.db_path)
         self.mgr = PeerManager(self.db_path, local_host="127.0.0.1", local_port=7333)
 
     def tearDown(self):
-        os.unlink(self.db_path)
+        self.mgr = None
+        gc.collect()
+        try:
+            os.unlink(self.db_path)
+        except OSError:
+            pass
 
     def test_caps_at_max_active_peers(self):
-        """With more peers than the cap, only _MAX_ACTIVE_PEERS are returned."""
-        over_limit = PeerManager._MAX_ACTIVE_PEERS + 50
-        _insert_peers(self.db_path, over_limit)
-        result = self.mgr.get_active_peers()
-        self.assertLessEqual(len(result), PeerManager._MAX_ACTIVE_PEERS,
-                             f"Expected at most {PeerManager._MAX_ACTIVE_PEERS}, got {len(result)}")
+        _insert_peers(self.db_path, PeerManager._MAX_ACTIVE_PEERS + 50)
+        self.assertLessEqual(len(self.mgr.get_active_peers()), PeerManager._MAX_ACTIVE_PEERS)
 
     def test_returns_all_when_under_limit(self):
-        """Fewer peers than the cap — all are returned."""
-        count = 10
-        _insert_peers(self.db_path, count)
-        result = self.mgr.get_active_peers()
-        self.assertEqual(len(result), count)
+        _insert_peers(self.db_path, 10)
+        self.assertEqual(len(self.mgr.get_active_peers()), 10)
 
     def test_excludes_inactive_peers(self):
-        """Inactive peers are not included."""
         _insert_peers(self.db_path, 5, active=True)
         _insert_peers(self.db_path, 3, active=False)
-        result = self.mgr.get_active_peers()
-        self.assertEqual(len(result), 5)
+        self.assertEqual(len(self.mgr.get_active_peers()), 5)
 
     def test_excludes_stale_peers(self):
-        """Peers last seen more than 5 minutes ago are excluded."""
-        _insert_peers(self.db_path, 5, ts_offset=0)       # fresh
-        _insert_peers(self.db_path, 3, ts_offset=-400)    # stale (>300 s old)
-        result = self.mgr.get_active_peers()
-        self.assertEqual(len(result), 5)
+        _insert_peers(self.db_path, 4, ts_offset=0)
+        _insert_peers(self.db_path, 3, ts_offset=-400)
+        self.assertEqual(len(self.mgr.get_active_peers()), 4)
 
     def test_empty_table(self):
-        result = self.mgr.get_active_peers()
-        self.assertEqual(result, [])
+        self.assertEqual(self.mgr.get_active_peers(), [])
 
     def test_returns_list_of_strings(self):
-        _insert_peers(self.db_path, 2)
+        _insert_peers(self.db_path, 3)
+        self.assertTrue(all(isinstance(u, str) for u in self.mgr.get_active_peers()))
+
+    def test_trust_tier_survives_flood(self):
+        """Oldest-trusted peers appear in results even when flooded with fresh ones."""
+        _insert_peers(self.db_path, 5, host_prefix="honest", added_offset=-10000)
+        _insert_peers(self.db_path, PeerManager._MAX_ACTIVE_PEERS,
+                      host_prefix="flood", ts_offset=10)
         result = self.mgr.get_active_peers()
-        self.assertEqual(len(result), 2)
-        for url in result:
-            self.assertIsInstance(url, str)
+        trust_cap = PeerManager._MAX_ACTIVE_PEERS - int(
+            PeerManager._MAX_ACTIVE_PEERS * PeerManager._FRESH_FRACTION
+        )
+        honest = [u for u in result if "honest" in u]
+        self.assertGreaterEqual(len(honest), min(5, trust_cap))
+
+    def test_per_host_admission_cap(self):
+        """A single host cannot exceed _MAX_PEERS_PER_HOST entries."""
+        cap = PeerManager._MAX_PEERS_PER_HOST
+        for i in range(cap + 3):
+            self.mgr.add_peer(f"http://attacker.evil.com:{9000 + i}")
+        with sqlite3.connect(self.db_path) as conn:
+            count = conn.execute(
+                "SELECT COUNT(*) FROM peers WHERE peer_host=?",
+                ("attacker.evil.com",)
+            ).fetchone()[0]
+        self.assertLessEqual(count, cap)
+
+    def test_re_announce_preserves_added_at(self):
+        """Re-announcing an existing peer must not reset its added_at."""
+        self.mgr.add_peer("http://stable.node.net:8088")
+        with sqlite3.connect(self.db_path) as conn:
+            orig = conn.execute(
+                "SELECT added_at FROM peers WHERE peer_url=?",
+                ("http://stable.node.net:8088",)
+            ).fetchone()[0]
+        time.sleep(0.05)
+        self.mgr.add_peer("http://stable.node.net:8088")
+        with sqlite3.connect(self.db_path) as conn:
+            new = conn.execute(
+                "SELECT added_at FROM peers WHERE peer_url=?",
+                ("http://stable.node.net:8088",)
+            ).fetchone()[0]
+        self.assertEqual(orig, new)
 
 
 if __name__ == "__main__":
