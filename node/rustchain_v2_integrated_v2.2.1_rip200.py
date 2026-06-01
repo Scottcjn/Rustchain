@@ -1396,6 +1396,92 @@ if HAVE_BRIDGE:
     except Exception as e:
         print(f"[RIP-0305 Track C] Failed to register bridge endpoints: {e}")
 
+# RIP-302 Agent Economy endpoints used by the explorer dashboard
+try:
+    if REPO_ROOT not in sys.path:
+        sys.path.insert(0, REPO_ROOT)
+    from rip302_agent_economy import register_agent_economy
+
+    register_agent_economy(app, DB_PATH)
+    print("[RIP-302] Agent Economy endpoints registered")
+except ImportError as e:
+    print(f"[RIP-302] Agent Economy module not available: {e}")
+except Exception as e:
+    print(f"[RIP-302] Failed to register Agent Economy endpoints: {e}")
+
+# Ergo anchor transparency endpoints used by explorer/navigation links.
+_ANCHOR_ROUTES_REGISTERED = False
+try:
+    from rustchain_ergo_anchor import AnchorService, create_anchor_api_routes
+
+    create_anchor_api_routes(app, AnchorService(DB_PATH))
+    _ANCHOR_ROUTES_REGISTERED = True
+    print("[ANCHOR] Ergo anchor read-only endpoints registered")
+except ImportError as e:
+    print(f"[ANCHOR] Ergo anchor module not available: {e}")
+except Exception as e:
+    print(f"[ANCHOR] Failed to register Ergo anchor endpoints: {e}")
+
+
+if not _ANCHOR_ROUTES_REGISTERED:
+    def _fallback_anchor_int_arg(name, default, minimum, maximum=None):
+        raw_value = request.args.get(name)
+        if raw_value is None or raw_value == "":
+            return default, None
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError):
+            return None, f"{name}_must_be_integer"
+        if value < minimum:
+            return None, f"{name}_must_be_at_least_{minimum}"
+        if maximum is not None:
+            value = min(value, maximum)
+        return value, None
+
+    def _ensure_fallback_anchor_table(cursor):
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS ergo_anchors (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                rustchain_height INTEGER NOT NULL,
+                rustchain_hash TEXT NOT NULL,
+                commitment_hash TEXT NOT NULL,
+                ergo_tx_id TEXT NOT NULL,
+                ergo_height INTEGER,
+                confirmations INTEGER DEFAULT 0,
+                status TEXT DEFAULT 'pending',
+                created_at INTEGER NOT NULL
+            )
+        """)
+
+    @app.route("/anchor/list", methods=["GET"])
+    def fallback_anchor_list():
+        limit, error = _fallback_anchor_int_arg("limit", 50, 1, 100)
+        if error:
+            return jsonify({"error": error}), 400
+        offset, error = _fallback_anchor_int_arg("offset", 0, 0, 10_000)
+        if error:
+            return jsonify({"error": error}), 400
+
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            _ensure_fallback_anchor_table(cursor)
+            rows = cursor.execute("""
+                SELECT * FROM ergo_anchors
+                ORDER BY rustchain_height DESC
+                LIMIT ? OFFSET ?
+            """, (limit, offset)).fetchall()
+
+        return jsonify({
+            "count": len(rows),
+            "anchors": [dict(row) for row in rows],
+        })
+
+
+@app.route("/anchors", methods=["GET"])
+def anchors_alias():
+    return redirect("/anchor/list", code=302)
+
 # BoTTube RSS/Atom Feed endpoints (Issue #759)
 if HAVE_BOTTUBE_FEED:
     try:

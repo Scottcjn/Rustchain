@@ -46,6 +46,22 @@ ANCHOR_CONFIRMATION_DEPTH = 6  # Wait for 6 Ergo confirmations
 ANCHOR_WALLET_ADDRESS = os.environ.get("ANCHOR_WALLET", "")
 
 
+def _ensure_anchor_table(cursor) -> None:
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS ergo_anchors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            rustchain_height INTEGER NOT NULL,
+            rustchain_hash TEXT NOT NULL,
+            commitment_hash TEXT NOT NULL,
+            ergo_tx_id TEXT NOT NULL,
+            ergo_height INTEGER,
+            confirmations INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'pending',
+            created_at INTEGER NOT NULL
+        )
+    """)
+
+
 # =============================================================================
 # ANCHOR COMMITMENT
 # =============================================================================
@@ -292,19 +308,7 @@ class AnchorService:
             cursor = conn.cursor()
 
             # Ensure table exists
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS ergo_anchors (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    rustchain_height INTEGER NOT NULL,
-                    rustchain_hash TEXT NOT NULL,
-                    commitment_hash TEXT NOT NULL,
-                    ergo_tx_id TEXT NOT NULL,
-                    ergo_height INTEGER,
-                    confirmations INTEGER DEFAULT 0,
-                    status TEXT DEFAULT 'pending',
-                    created_at INTEGER NOT NULL
-                )
-            """)
+            _ensure_anchor_table(cursor)
 
             cursor.execute("""
                 SELECT * FROM ergo_anchors
@@ -546,6 +550,7 @@ def create_anchor_api_routes(app, anchor_service: AnchorService):
         try:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
+            _ensure_anchor_table(cursor)
 
             cursor.execute("""
                 SELECT * FROM ergo_anchors
