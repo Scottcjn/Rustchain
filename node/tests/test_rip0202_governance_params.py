@@ -118,3 +118,15 @@ def test_get_param_reraises_non_missing_table_error():
             raise sqlite3.OperationalError("database is locked")
     with pytest.raises(sqlite3.OperationalError):
         gp.get_param(_LockedConn(), "rip0202_activation_epoch")
+
+
+def test_ensure_schema_rejects_in_transaction():
+    c = sqlite3.connect(":memory:")
+    try:
+        c.execute("CREATE TABLE t(x)")
+        c.execute("INSERT INTO t VALUES (1)")  # opens a transaction
+        assert c.in_transaction
+        with pytest.raises(RuntimeError):
+            gp.ensure_governance_params_schema(c)
+    finally:
+        c.close()
