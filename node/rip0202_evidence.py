@@ -45,6 +45,11 @@ CREATE TABLE IF NOT EXISTS attestation_evidence (
 def ensure_attestation_evidence_schema(conn: sqlite3.Connection) -> None:
     """Create the evidence table if absent. Call once at DB init (DDL implicit-
     commits — do NOT call inside a consensus transaction)."""
+    if conn.in_transaction:
+        raise RuntimeError(
+            "ensure_attestation_evidence_schema must not run inside a transaction "
+            "(DDL implicit-commits and would break the caller's tx atomicity)"
+        )
     conn.execute(ATTESTATION_EVIDENCE_SCHEMA)
 
 
@@ -105,8 +110,16 @@ def load_committed_attestations(
         sql += " WHERE ts >= ?"
         params = (min_ts,)
     sql += " ORDER BY miner"
+    # Bootstrap-safe: a missing table (init not yet run) must NOT crash the
+    # producer — return empty, mirroring get_param's missing-table tolerance.
+    try:
+        rows = conn.execute(sql, params).fetchall()
+    except sqlite3.OperationalError as e:
+        if "no such table" in str(e).lower():
+            return []
+        raise
     out: List[Dict[str, Any]] = []
-    for miner, dev_j, fp_j, passed, ts in conn.execute(sql, params).fetchall():
+    for miner, dev_j, fp_j, passed, ts in rows:
         try:
             # Strict stored-type validation (fail closed): a corrupt row with
             # passed=2 or ts=1.9 must be skipped, NOT loosely coerced via
