@@ -54,6 +54,35 @@ class TestResolveWalletFromPrBody(unittest.TestCase):
         body = ".rtc-wallet: RTCdotfile123\n"
         self.assertEqual(resolve_wallet_from_pr_body(body), "RTCdotfile123")
 
+    def test_payout_address_if_accepted_directive(self):
+        body = "Payout address if accepted: RTC4730a64f821a590972e8b37781fae5d568b5865c\n"
+        self.assertEqual(
+            resolve_wallet_from_pr_body(body),
+            "RTC4730a64f821a590972e8b37781fae5d568b5865c",
+        )
+
+    def test_rtc_wallet_directive(self):
+        body = "RTC Wallet: RTCaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+        self.assertEqual(
+            resolve_wallet_from_pr_body(body),
+            "RTCaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        )
+
+    def test_miner_id_for_payout_directive(self):
+        body = "miner ID for payout if accepted: my-miner-id\n"
+        self.assertEqual(resolve_wallet_from_pr_body(body), "my-miner-id")
+
+    def test_miner_id_underscore_directive(self):
+        body = "miner_id: fallback-miner\n"
+        self.assertEqual(resolve_wallet_from_pr_body(body), "fallback-miner")
+
+    def test_rtc_address_with_contextual_label(self):
+        body = "Please use this payout address RTCbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb for settlement.\n"
+        self.assertEqual(
+            resolve_wallet_from_pr_body(body),
+            "RTCbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        )
+
     def test_wallet_with_trailingling_comma(self):
         body = "wallet: RTCwithcomma,\n"
         self.assertEqual(resolve_wallet_from_pr_body(body), "RTCwithcomma")

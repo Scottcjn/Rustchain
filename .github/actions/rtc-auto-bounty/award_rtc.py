@@ -56,10 +56,27 @@ VPS_PORT = 8099
 #   Wallet: RTCxxxx...
 #   wallet: my-github-username
 #   .rtc-wallet: RTCxxxx...
-_WALLET_RE = re.compile(
-    r"(?:^|\n)\s*(?:wallet|\.rtc-wallet)\s*:\s*(\S+)\s*(?:\n|$)",
+#   Payout wallet: RTCxxxx...
+#   Payout address: RTCxxxx...
+#   Payout address if accepted: RTCxxxx...
+#   RTC wallet: RTCxxxx...
+#   miner ID for payout if accepted: some-miner-id
+#   miner ID: some-miner-id
+#   miner_id: some-miner-id
+_DIRECTIVE_RE = re.compile(
+    r"^\s*(?:"
+    r"wallet|"
+    r"\.rtc-wallet|"
+    r"payout wallet|"
+    r"payout address(?: if accepted)?|"
+    r"rtc wallet|"
+    r"miner id for payout if accepted|"
+    r"miner id|"
+    r"miner_id"
+    r")\s*:\s*(\S.*?)\s*$",
     re.IGNORECASE,
 )
+_RTC_ADDRESS_RE = re.compile(r"RTC[0-9a-f]{40}", re.IGNORECASE)
 
 # Payment-amount override in the PR body (owner can specify a custom amount).
 #   bounty: 100 RTC
@@ -171,10 +188,18 @@ class Config:
 
 
 def resolve_wallet_from_pr_body(pr_body: str) -> Optional[str]:
-    """Extract wallet address from a ``wallet: <addr>`` directive in the PR body."""
-    match = _WALLET_RE.search(pr_body)
-    if match:
-        return match.group(1).strip().rstrip(",")
+    """Extract wallet or lazy-pay recipient hints from the PR body."""
+    for raw_line in pr_body.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        match = _DIRECTIVE_RE.match(line)
+        if match:
+            return match.group(1).strip().rstrip(",")
+        if re.search(r"(payout|wallet|address)", line, re.IGNORECASE):
+            address_match = _RTC_ADDRESS_RE.search(line)
+            if address_match:
+                return address_match.group(0)
     return None
 
 
