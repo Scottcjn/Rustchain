@@ -176,6 +176,17 @@ def test_print_miners_accepts_paginated_envelope(rustchain_monitor_module, capsy
     assert "Unexpected response" not in output
 
 
+def test_print_miners_accepts_list_and_miners_envelope(rustchain_monitor_module, capsys):
+    rustchain_monitor_module.print_miners([{"miner": "list-miner"}])
+    rustchain_monitor_module.print_miners({"miners": [{"miner": "envelope-miner"}]})
+
+    output = capsys.readouterr().out
+    assert "Active miners: 1" in output
+    assert "list-miner" in output
+    assert "envelope-miner" in output
+    assert "Unexpected response" not in output
+
+
 def test_print_epoch_formats_success_and_error(rustchain_monitor_module, capsys):
     rustchain_monitor_module.print_epoch(
         {

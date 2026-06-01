@@ -77,8 +77,6 @@ def get_epoch():
     except Exception as e:
         return {"error": str(e)}
 
-
-
 def print_health(data):
     if "error" in data:
         print(f"❌ Health check failed: {data['error']}")
