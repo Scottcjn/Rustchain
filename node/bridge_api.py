@@ -22,6 +22,7 @@ import logging
 import os
 import re
 from typing import Optional, Tuple, Dict, Any
+from Crypto.Hash import keccak as _keccak
 from decimal import Decimal, InvalidOperation
 from dataclasses import dataclass
 from enum import Enum
@@ -117,6 +118,14 @@ class ValidationResult:
 
 VALID_CHAINS = {"rustchain", "solana", "ergo", "base", "ethereum"}
 VALID_BRIDGE_TYPES = {"bottube", "internal", "custom"}
+
+
+def _eip55_checksum(address_hex: str) -> str:
+    """Return the EIP-55 checksummed form of a lowercase 40-char hex address."""
+    k = _keccak.new(digest_bits=256)
+    k.update(address_hex.encode("ascii"))
+    h = k.hexdigest()
+    return "".join(c.upper() if int(h[i], 16) >= 8 else c for i, c in enumerate(address_hex))
 
 
 def validate_bridge_request(data: Optional[Dict]) -> ValidationResult:
@@ -270,13 +279,19 @@ def validate_chain_address_format(chain: str, address: str) -> Tuple[bool, str]:
             return False, "Invalid Base address hex"
 
     elif chain == "ethereum":
-        # Ethereum mainnet addresses — same EIP-55 format as Base
+        # Ethereum addresses: 0x + 40 hex chars.
+        # All-lowercase and all-uppercase are accepted without checksum.
+        # Mixed-case must satisfy EIP-55 checksum to catch typos in payout addresses.
         if not address.startswith("0x"):
             return False, "Ethereum addresses must start with '0x'"
         if len(address) != 42:
             return False, "Invalid Ethereum address length"
-        if not all(char in "0123456789abcdefABCDEF" for char in address[2:]):
+        hex_part = address[2:]
+        if not all(char in "0123456789abcdefABCDEF" for char in hex_part):
             return False, "Invalid Ethereum address hex"
+        is_mixed = any(c.islower() for c in hex_part) and any(c.isupper() for c in hex_part)
+        if is_mixed and address[2:] != _eip55_checksum(hex_part.lower()):
+            return False, "Mixed-case Ethereum address fails EIP-55 checksum — use all-lowercase or a valid checksummed address"
 
     return True, ""
 

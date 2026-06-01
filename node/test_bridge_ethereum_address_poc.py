@@ -47,9 +47,16 @@ class TestBridgeEthereumAddressValidation(unittest.TestCase):
         ok, _ = validate_chain_address_format("ethereum", "0x" + "a" * 40)
         self.assertTrue(ok)
 
-    def test_accepts_valid_mixed_case(self):
-        ok, _ = validate_chain_address_format("ethereum", "0xAbCdEf1234567890AbCdEf1234567890AbCdEf12")
+    def test_accepts_valid_eip55_checksum(self):
+        # EIP-55 checksummed address — mixed-case must match keccak-derived checksum
+        ok, _ = validate_chain_address_format("ethereum", "0xabCDEF1234567890ABcDEF1234567890aBCDeF12")
         self.assertTrue(ok)
+
+    def test_rejects_invalid_mixed_case(self):
+        # Typo'd mixed-case that does not satisfy EIP-55 checksum
+        ok, msg = validate_chain_address_format("ethereum", "0xAbCdEf1234567890AbCdEf1234567890AbCdEf12")
+        self.assertFalse(ok)
+        self.assertIn("EIP-55", msg)
 
     def test_accepts_zero_address(self):
         ok, _ = validate_chain_address_format("ethereum", "0x" + "0" * 40)
