@@ -63,7 +63,7 @@ class TestHealthEndpoint:
     @patch("requests.Session.request")
     def test_health_success(self, mock_request):
         """Test successful health check"""
-        mock_response = Mock()
+        mock_response = Mock(status_code=200)
         mock_response.status_code = 200
         mock_response.json.return_value = {
             "ok": True,
@@ -99,7 +99,7 @@ class TestHealthEndpoint:
     @patch("requests.Session.request")
     def test_health_rejects_non_object_json(self, mock_request):
         """Object-returning endpoints reject array/scalar JSON payloads."""
-        mock_response = Mock()
+        mock_response = Mock(status_code=200)
         mock_response.json.return_value = ["not", "an", "object"]
         mock_response.raise_for_status = Mock()
         mock_request.return_value = mock_response
@@ -115,7 +115,7 @@ class TestEpochEndpoint:
     @patch("requests.Session.request")
     def test_epoch_success(self, mock_request):
         """Test successful epoch query"""
-        mock_response = Mock()
+        mock_response = Mock(status_code=200)
         mock_response.json.return_value = {
             "epoch": 74,
             "slot": 10745,
@@ -142,7 +142,7 @@ class TestMinersEndpoint:
     @patch("requests.Session.request")
     def test_miners_success(self, mock_request):
         """Test successful miners query"""
-        mock_response = Mock()
+        mock_response = Mock(status_code=200)
         mock_response.json.return_value = [
             {
                 "miner": "eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC",
@@ -172,7 +172,7 @@ class TestMinersEndpoint:
     @patch("requests.Session.request")
     def test_miners_empty_list(self, mock_request):
         """Test miners endpoint returning empty list"""
-        mock_response = Mock()
+        mock_response = Mock(status_code=200)
         mock_response.json.return_value = []
         mock_response.raise_for_status = Mock()
         mock_request.return_value = mock_response
@@ -185,7 +185,7 @@ class TestMinersEndpoint:
     @patch("requests.Session.request")
     def test_miners_envelope_response(self, mock_request):
         """Test miners endpoint returning an envelope."""
-        mock_response = Mock()
+        mock_response = Mock(status_code=200)
         mock_response.json.return_value = {
             "data": [
                 {
@@ -210,7 +210,7 @@ class TestBalanceEndpoint:
     @patch("requests.Session.request")
     def test_balance_success(self, mock_request):
         """Test successful balance query"""
-        mock_response = Mock()
+        mock_response = Mock(status_code=200)
         mock_response.status_code = 200
         mock_response.json.return_value = {
             "miner_pk": "test_wallet_address",
@@ -234,7 +234,7 @@ class TestBalanceEndpoint:
 
     @patch("requests.Session.request")
     def test_balance_redirect_reports_location(self, mock_request):
-        mock_response = Mock()
+        mock_response = Mock(status_code=200)
         mock_response.status_code = 307
         mock_response.headers = {"Location": "http://redirect.netprotect.mk/passthrough"}
         mock_request.return_value = mock_response
@@ -269,7 +269,7 @@ class TestEligibilityEndpoint:
     @patch("requests.Session.request")
     def test_check_eligibility_success(self, mock_request):
         """Test successful eligibility query"""
-        mock_response = Mock()
+        mock_response = Mock(status_code=200)
         mock_response.status_code = 200
         mock_response.json.return_value = {
             "eligible": True,
@@ -307,7 +307,7 @@ class TestRequestRetry:
         """Retry connection errors before succeeding"""
         import requests
 
-        mock_response = Mock()
+        mock_response = Mock(status_code=200)
         mock_response.status_code = 200
         mock_response.json.return_value = {"ok": True}
         mock_response.raise_for_status = Mock()
@@ -330,7 +330,7 @@ class TestRequestRetry:
         first = Mock()
         first.status_code = 503
 
-        second = Mock()
+        second = Mock(status_code=200)
         second.status_code = 200
         second.raise_for_status = Mock()
         second.json.return_value = {"ok": True}
@@ -351,7 +351,7 @@ class TestTransferEndpoint:
     @patch("requests.Session.request")
     def test_transfer_success(self, mock_request):
         """Test successful transfer"""
-        mock_response = Mock()
+        mock_response = Mock(status_code=200)
         mock_response.json.return_value = {
             "success": True,
             "tx_id": "tx_abc123",
@@ -375,7 +375,7 @@ class TestTransferEndpoint:
     @patch("requests.Session.request")
     def test_transfer_with_signature(self, mock_request):
         """Test transfer with signature"""
-        mock_response = Mock()
+        mock_response = Mock(status_code=200)
         mock_response.json.return_value = {
             "success": True,
             "tx_id": "tx_def456",
@@ -434,7 +434,7 @@ class TestAttestationEndpoint:
     @patch("requests.Session.request")
     def test_submit_attestation_success(self, mock_request):
         """Test successful attestation submission"""
-        mock_response = Mock()
+        mock_response = Mock(status_code=200)
         mock_response.json.return_value = {
             "success": True,
             "epoch": 74,
@@ -499,7 +499,7 @@ class TestTransferHistory:
     @patch("requests.Session.request")
     def test_transfer_history_success(self, mock_request):
         """Test successful transfer history query"""
-        mock_response = Mock()
+        mock_response = Mock(status_code=200)
         mock_response.json.return_value = [
             {
                 "tx_id": "tx_abc123",
