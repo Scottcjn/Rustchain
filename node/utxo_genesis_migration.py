@@ -322,6 +322,16 @@ def rollback_genesis(db_path: str) -> int:
     try:
         conn.execute("BEGIN IMMEDIATE")
 
+        has_genesis = check_existing_genesis(utxo_db, conn=conn)
+        if has_genesis and check_existing_non_genesis_utxo_state(
+            utxo_db,
+            conn=conn,
+        ):
+            conn.execute("ROLLBACK")
+            raise RuntimeError(
+                "refusing to rollback genesis while non-genesis UTXO state exists"
+            )
+
         # Delete only boxes produced by genesis transactions. A non-genesis
         # box can legitimately have creation_height=0.
         deleted = conn.execute(
