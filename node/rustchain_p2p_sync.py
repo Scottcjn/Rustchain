@@ -123,10 +123,22 @@ class PeerManager:
 
             with self.lock:
                 with sqlite3.connect(self.db_path) as conn:
+                    existing = conn.execute(
+                        "SELECT 1 FROM peers WHERE peer_url = ?", (peer_url,)
+                    ).fetchone()
+                    if not existing:
+                        host_count = conn.execute(
+                            "SELECT COUNT(*) FROM peers WHERE peer_host = ?", (peer_host,)
+                        ).fetchone()[0]
+                        if host_count >= self._MAX_PEERS_PER_HOST:
+                            return False
                     conn.execute("""
-                        INSERT OR REPLACE INTO peers
+                        INSERT INTO peers
                         (peer_url, peer_host, peer_port, last_seen, is_active, added_at)
                         VALUES (?, ?, ?, ?, 1, ?)
+                        ON CONFLICT(peer_url) DO UPDATE SET
+                            last_seen = excluded.last_seen,
+                            is_active = 1
                     """, (peer_url, peer_host, peer_port, int(time.time()), int(time.time())))
                     conn.commit()
 
@@ -146,20 +158,48 @@ class PeerManager:
             return False
 
     _MAX_ACTIVE_PEERS = 500
+    _FRESH_FRACTION = 0.75   # fraction of cap from most-recently-seen peers
+    _MAX_PEERS_PER_HOST = 3  # per-source admission cap
 
     def get_active_peers(self) -> List[str]:
-        """Get list of active peer URLs (capped at _MAX_ACTIVE_PEERS to prevent OOM)."""
+        """Return active peer URLs using flood-resistant two-bucket selection.
+
+        75 % of the cap comes from the freshest peers (last_seen DESC).
+        The remaining 25 % comes from the oldest-admitted peers (added_at ASC)
+        that were not already included in the fresh bucket.  This prevents an
+        attacker who floods /p2p/announce from fully eclipsing long-standing
+        honest peers by keeping their entries perpetually 'freshest'.
+        """
+        cap = self._MAX_ACTIVE_PEERS
+        fresh_n = int(cap * self._FRESH_FRACTION)
+        trust_n = cap - fresh_n
+        cutoff = int(time.time()) - 300
+
         with self.lock:
             with sqlite3.connect(self.db_path) as conn:
-                rows = conn.execute("""
-                    SELECT peer_url FROM peers
-                    WHERE is_active = 1
-                    AND last_seen > ?
-                    ORDER BY last_seen DESC
-                    LIMIT ?
-                """, (int(time.time()) - 300, self._MAX_ACTIVE_PEERS)).fetchall()  # 5 minute timeout
+                fresh = [
+                    row[0] for row in conn.execute("""
+                        SELECT peer_url FROM peers
+                        WHERE is_active = 1 AND last_seen > ?
+                        ORDER BY last_seen DESC
+                        LIMIT ?
+                    """, (cutoff, fresh_n)).fetchall()
+                ]
 
-                return [row[0] for row in rows]
+                fresh_set = set(fresh)
+
+                trust = [
+                    row[0]
+                    for row in conn.execute("""
+                        SELECT peer_url FROM peers
+                        WHERE is_active = 1 AND last_seen > ?
+                        ORDER BY added_at ASC
+                        LIMIT ?
+                    """, (cutoff, cap)).fetchall()
+                    if row[0] not in fresh_set
+                ][:trust_n]
+
+                return fresh + trust
 
     def update_peer_status(self, peer_url: str, block_height: int = None):
         """Update peer last seen timestamp"""
