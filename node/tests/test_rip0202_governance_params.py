@@ -93,3 +93,28 @@ def test_registered_params_introspection():
     reg["rip0202_activation_epoch"]["default"] = "mutated"  # copy, not the live spec
     assert gp.get_param.__module__  # sanity
     assert gp.registered_params()["rip0202_activation_epoch"]["default"] is None
+
+
+# ---- tri-brain fixes: value bounds + narrowed OperationalError ----
+def test_set_param_enforces_min(conn):
+    with pytest.raises(gp.GovernanceParamError):
+        gp.set_param(conn, "rip0202_eligibility_threshold_units", 0, set_at_epoch=1)   # < min 1
+    with pytest.raises(gp.GovernanceParamError):
+        gp.set_param(conn, "rip0202_eligibility_threshold_units", -3, set_at_epoch=1)
+    with pytest.raises(gp.GovernanceParamError):
+        gp.set_param(conn, "rip0202_activation_epoch", -1, set_at_epoch=1)             # < min 0
+
+
+def test_get_param_rejects_out_of_bounds_stored_value(conn):
+    conn.execute("INSERT OR REPLACE INTO governance_params VALUES (?,?,?,?)",
+                 ("rip0202_eligibility_threshold_units", "0", 1, None))   # corrupt: below min
+    with pytest.raises(gp.GovernanceParamError):
+        gp.get_param(conn, "rip0202_eligibility_threshold_units")
+
+
+def test_get_param_reraises_non_missing_table_error():
+    class _LockedConn:
+        def execute(self, *a, **k):
+            raise sqlite3.OperationalError("database is locked")
+    with pytest.raises(sqlite3.OperationalError):
+        gp.get_param(_LockedConn(), "rip0202_activation_epoch")
