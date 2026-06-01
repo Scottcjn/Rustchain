@@ -35,6 +35,7 @@ The Linux miner auto-detects your hardware via `platform.machine()` and reports 
 ## Quick Start
 ```bash
 # Linux
+python3 -m pip install -r linux/requirements-miner.txt
 python3 rustchain_linux_miner.py
 
 # Linux dry run: print hardware fingerprint/preflight details without mining
