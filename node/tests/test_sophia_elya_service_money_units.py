@@ -15,7 +15,7 @@ def load_service(tmp_path):
 
 
 def test_balances_schema_uses_integer_micro_rtc():
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         service = load_service(Path(tmp))
 
         service.init_db()
@@ -30,7 +30,7 @@ def test_balances_schema_uses_integer_micro_rtc():
 
 
 def test_finalize_epoch_stores_integer_micro_rtc_and_returns_public_rtc():
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         service = load_service(Path(tmp))
         service.init_db()
 
@@ -61,7 +61,7 @@ def test_finalize_epoch_stores_integer_micro_rtc_and_returns_public_rtc():
 
 
 def test_epoch_state_schema_adds_settlement_columns_to_legacy_table():
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         service = load_service(Path(tmp))
 
         with sqlite3.connect(service.DB_PATH) as conn:
@@ -90,7 +90,7 @@ def test_epoch_state_schema_adds_settlement_columns_to_legacy_table():
 
 
 def test_finalize_epoch_marks_settled_and_blocks_second_credit():
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         service = load_service(Path(tmp))
         service.init_db()
 
@@ -123,7 +123,7 @@ def test_finalize_epoch_marks_settled_and_blocks_second_credit():
 
 
 def test_finalize_epoch_respects_existing_settled_marker_without_crediting():
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         service = load_service(Path(tmp))
         service.init_db()
 
@@ -144,7 +144,7 @@ def test_finalize_epoch_respects_existing_settled_marker_without_crediting():
 
 
 def test_legacy_real_balances_are_migrated_to_micro_rtc():
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         service = load_service(Path(tmp))
 
         with sqlite3.connect(service.DB_PATH) as conn:
@@ -169,3 +169,50 @@ def test_legacy_real_balances_are_migrated_to_micro_rtc():
         assert stored_type == "integer"
         assert stored_value == 1_234_567
         assert service.get_balance("RTC_legacy") == 1.234567
+
+
+def test_finalize_epoch_idempotent_pays_once():
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        service = load_service(Path(tmp))
+        service.init_db()
+        for _ in range(2):
+            service.inc_epoch_block(5)
+        service.enroll_epoch(5, "m1", 1.0)
+        r1 = service.finalize_epoch(5, 1.5)
+        bal1 = service.get_balance("m1")
+        r2 = service.finalize_epoch(5, 1.5)
+        bal2 = service.get_balance("m1")
+        assert r1["ok"] is True
+        assert r2["ok"] is False and r2["reason"] == "already_settled"
+        assert bal1 == bal2  # double-settlement guard: paid exactly once
+
+
+def test_inc_epoch_block_does_not_inflate_count_after_finalize():
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        service = load_service(Path(tmp))
+        service.init_db()
+        for _ in range(3):
+            service.inc_epoch_block(7)
+        service.enroll_epoch(7, "m1", 1.0)
+        assert service.finalize_epoch(7, 1.5)["blocks"] == 3
+        service.inc_epoch_block(7)  # late block after settlement
+        with sqlite3.connect(service.DB_PATH) as conn:
+            blocks = conn.execute(
+                "SELECT accepted_blocks FROM epoch_state WHERE epoch=7"
+            ).fetchone()[0]
+        assert blocks == 3  # count the reward was computed against is frozen
+
+
+def test_null_settled_row_is_still_payable():
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        service = load_service(Path(tmp))
+        service.init_db()
+        service.enroll_epoch(9, "m1", 1.0)
+        with sqlite3.connect(service.DB_PATH) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO epoch_state(epoch, accepted_blocks, finalized, settled) "
+                "VALUES (9, 2, 0, NULL)"
+            )
+        res = service.finalize_epoch(9, 1.5)
+        assert res["ok"] is True  # NULL settled must not make the epoch unpayable
+        assert service.get_balance("m1") > 0

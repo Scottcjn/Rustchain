@@ -95,11 +95,25 @@ def _ensure_epoch_state_settlement_schema(conn):
         "settled_ts INTEGER)"
     )
     columns = {row[1] for row in conn.execute("PRAGMA table_info(epoch_state)").fetchall()}
+    newly_added_settled = False
     if "settled" not in columns:
-        conn.execute("ALTER TABLE epoch_state ADD COLUMN settled INTEGER DEFAULT 0")
+        try:
+            conn.execute("ALTER TABLE epoch_state ADD COLUMN settled INTEGER DEFAULT 0")
+            newly_added_settled = True
+        except sqlite3.OperationalError:
+            pass  # a concurrent migrator won the ADD COLUMN race; column now exists
     if "settled_ts" not in columns:
-        conn.execute("ALTER TABLE epoch_state ADD COLUMN settled_ts INTEGER")
-    conn.execute("UPDATE epoch_state SET settled = 1 WHERE finalized = 1 AND settled = 0")
+        try:
+            conn.execute("ALTER TABLE epoch_state ADD COLUMN settled_ts INTEGER")
+        except sqlite3.OperationalError:
+            pass
+    conn.execute("UPDATE epoch_state SET settled = 0 WHERE settled IS NULL")
+    # ONE-TIME backfill, only when we just added the column: rows finalized by the
+    # pre-settlement code path were already paid, so mark them settled exactly
+    # once during migration. Never re-run on later startups — that could suppress
+    # a legitimate finalized-but-not-yet-settled row in a two-phase/shared flow.
+    if newly_added_settled:
+        conn.execute("UPDATE epoch_state SET settled = 1 WHERE finalized = 1 AND COALESCE(settled, 0) = 0")
 
 def init_db():
     """Initialize database with epoch tables"""
@@ -163,8 +177,11 @@ def _finite_float(value, default=1.0):
 def inc_epoch_block(epoch):
     """Increment accepted blocks for epoch"""
     with sqlite3.connect(DB_PATH) as c:
+        c.execute("PRAGMA busy_timeout=5000")
         c.execute("INSERT OR IGNORE INTO epoch_state(epoch, accepted_blocks, finalized, settled) VALUES (?,0,0,0)", (epoch,))
-        c.execute("UPDATE epoch_state SET accepted_blocks = accepted_blocks + 1 WHERE epoch=?", (epoch,))
+        # Do not inflate the block count once the epoch is finalized/settled —
+        # a late block must not change the count the reward was computed against.
+        c.execute("UPDATE epoch_state SET accepted_blocks = accepted_blocks + 1 WHERE epoch=? AND COALESCE(finalized,0)=0 AND COALESCE(settled,0)=0", (epoch,))
 
 def enroll_epoch(epoch, miner_pk, weight):
     """Enroll miner in epoch with weight.
@@ -181,9 +198,13 @@ def enroll_epoch(epoch, miner_pk, weight):
 def finalize_epoch(epoch, per_block_rtc):
     """Finalize epoch and distribute rewards"""
     with sqlite3.connect(DB_PATH) as c:
+        c.execute("PRAGMA busy_timeout=5000")
         c.execute("BEGIN IMMEDIATE")
+        # COALESCE settled so a legacy/shared row whose column was added without
+        # a value cannot crash int() here.
         row = c.execute(
-            "SELECT finalized, accepted_blocks, settled FROM epoch_state WHERE epoch=?",
+            "SELECT COALESCE(finalized, 0), COALESCE(accepted_blocks, 0), COALESCE(settled, 0) "
+            "FROM epoch_state WHERE epoch=?",
             (epoch,),
         ).fetchone()
         if not row:
@@ -195,35 +216,40 @@ def finalize_epoch(epoch, per_block_rtc):
             c.rollback()
             return {"ok": False, "reason": "already_settled"}
         if finalized:
-            c.execute(
-                "UPDATE epoch_state SET settled=1, settled_ts=? WHERE epoch=? AND settled=0",
-                (int(time.time()), epoch),
-            )
-            c.commit()
+            # Status probe only — do NOT mutate on this read path. Legacy
+            # finalized-but-unsettled rows are reconciled by the init-time
+            # backfill in _ensure_epoch_state_settlement_schema().
+            c.rollback()
             return {"ok": False, "reason": "already_finalized"}
 
         claim = c.execute(
-            "UPDATE epoch_state SET settled=1, settled_ts=?, finalized=1 WHERE epoch=? AND settled=0",
+            "UPDATE epoch_state SET settled=1, settled_ts=?, finalized=1 WHERE epoch=? AND COALESCE(settled,0)=0",
             (int(time.time()), epoch),
         )
         if claim.rowcount != 1:
             c.rollback()
             return {"ok": False, "reason": "already_settled"}
 
-        total_reward = per_block_rtc * blocks
-        miners = list(c.execute("SELECT miner_pk, weight FROM epoch_enroll WHERE epoch=?", (epoch,)))
-        sum_w = sum(w for _, w in miners) or 0.0
-        payouts = []
+        try:
+            total_reward = per_block_rtc * blocks
+            miners = list(c.execute("SELECT miner_pk, weight FROM epoch_enroll WHERE epoch=?", (epoch,)))
+            sum_w = sum(w for _, w in miners) or 0.0
+            payouts = []
 
-        if sum_w > 0 and total_reward > 0:
-            for pk, w in miners:
-                amt = total_reward * (w / sum_w)
-                c.execute("INSERT OR IGNORE INTO balances(miner_pk, balance_rtc) VALUES (?,0)", (pk,))
-                amount_micro = _rtc_to_micro(amt)
-                c.execute("UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk=?", (amount_micro, pk))
-                payouts.append((pk, _micro_to_rtc(amount_micro)))
+            if sum_w > 0 and total_reward > 0:
+                for pk, w in miners:
+                    amt = total_reward * (w / sum_w)
+                    c.execute("INSERT OR IGNORE INTO balances(miner_pk, balance_rtc) VALUES (?,0)", (pk,))
+                    amount_micro = _rtc_to_micro(amt)
+                    c.execute("UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk=?", (amount_micro, pk))
+                    payouts.append((pk, _micro_to_rtc(amount_micro)))
 
-        c.commit()
+            c.commit()
+        except Exception:
+            # Roll back the settlement claim + any partial credits together so the
+            # epoch stays unsettled and can be retried (no half-paid epoch).
+            c.rollback()
+            raise
         return {"ok": True, "blocks": blocks, "total_reward": total_reward, "sum_w": sum_w, "payouts": payouts}
 
 def get_balance(miner_pk):
@@ -282,9 +308,11 @@ def get_epoch():
 
     # Get epoch state
     with sqlite3.connect(DB_PATH) as c:
-        row = c.execute("SELECT accepted_blocks, finalized FROM epoch_state WHERE epoch=?", (epoch,)).fetchone()
+        row = c.execute("SELECT accepted_blocks, finalized, COALESCE(settled,0), settled_ts FROM epoch_state WHERE epoch=?", (epoch,)).fetchone()
         blocks = int(row[0]) if row else 0
         finalized = bool(row[1]) if row else False
+        settled = bool(row[2]) if row else False
+        settled_ts = (row[3] if row else None)
 
         # Count enrolled miners
         miners = c.execute("SELECT COUNT(*), SUM(weight) FROM epoch_enroll WHERE epoch=?", (epoch,)).fetchone()
@@ -301,6 +329,8 @@ def get_epoch():
         "enrolled_miners": miner_count,
         "total_weight": total_weight,
         "finalized": finalized,
+        "settled": settled,
+        "settled_ts": settled_ts,
         "epoch_pot": PER_BLOCK_RTC * blocks
     })
 
