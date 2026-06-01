@@ -20,9 +20,7 @@ Design principle: "Trust infrastructure that distrusts itself on a schedule."
 import hashlib
 import logging
 import random
-import sqlite3
-import time
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +36,13 @@ ALL_FP_CHECKS = [
 
 # How many checks are active per epoch
 ACTIVE_FP_COUNT = 4
+
+# RIP-309 issue text used ``simd_bias`` while the emitted fingerprint payloads
+# use ``simd_identity``. Treat both names as aliases at evaluation boundaries.
+FP_CHECK_ALIASES = {
+    "simd_bias": ("simd_bias", "simd_identity"),
+    "simd_identity": ("simd_identity", "simd_bias"),
+}
 
 # Weighted decay factor for EMA (exponential moving average)
 # 0.95 means each epoch is worth 95% of the previous one
@@ -58,6 +63,13 @@ WINDOW_SLOW_RANGE = (72, 168)  # hours
 WINDOW_FAST_PROBABILITY = 0.6  # 60% chance of fast window
 
 
+def _prev_hash_hex_to_bytes(prev_block_hash: str) -> bytes:
+    """Decode a previous block hash hex string for reward-path helpers."""
+    if not prev_block_hash:
+        return b""
+    return bytes.fromhex(prev_block_hash.strip())
+
+
 def derive_epoch_nonce(prev_block_hash: str) -> bytes:
     """
     Derive a measurement nonce for this epoch from the previous block hash.
@@ -71,15 +83,14 @@ def derive_epoch_nonce(prev_block_hash: str) -> bytes:
     Returns:
         32-byte nonce
     """
-    if not prev_block_hash:
+    prev_hash_bytes = _prev_hash_hex_to_bytes(prev_block_hash)
+    reward_nonce = derive_reward_measurement_nonce(prev_hash_bytes)
+    if reward_nonce is None:
         # Genesis epoch or missing hash — use fixed seed
         # This is acceptable ONLY for epoch 0
         logger.warning("RIP-309: No prev_block_hash, using genesis fallback nonce")
         return hashlib.sha256(b"rip309_genesis_fallback").digest()
-
-    return hashlib.sha256(
-        bytes.fromhex(prev_block_hash) + b"rip309_measurement_nonce"
-    ).digest()
+    return reward_nonce
 
 
 def get_active_fp_checks(nonce: bytes) -> List[str]:
@@ -98,6 +109,28 @@ def get_active_fp_checks(nonce: bytes) -> List[str]:
     seed = int.from_bytes(nonce[:4], "big")
     active = random.Random(seed).sample(ALL_FP_CHECKS, ACTIVE_FP_COUNT)
     return sorted(active)
+
+
+def derive_reward_measurement_nonce(prev_block_hash: bytes) -> Optional[bytes]:
+    """Derive the reward-path nonce without changing legacy consensus behavior."""
+    if not prev_block_hash:
+        return None
+    return hashlib.sha256(prev_block_hash + b"measurement_nonce").digest()
+
+
+def get_reward_active_fingerprint_checks(prev_block_hash: bytes) -> List[str]:
+    """Return the active reward checks used by the current RIP-200 path.
+
+    This helper intentionally preserves the existing inline algorithm in
+    ``calculate_epoch_rewards_time_aged()``:
+    ``sha256(prev_block_hash + b"measurement_nonce")`` seeded into
+    ``random.Random(...).sample(..., 4)``.  The empty-hash fallback remains
+    all checks active for backward compatibility.
+    """
+    nonce = derive_reward_measurement_nonce(prev_block_hash)
+    if nonce is None:
+        return list(ALL_FP_CHECKS)
+    return get_active_fp_checks(nonce)
 
 
 def get_observation_window_hours(nonce: bytes) -> int:
@@ -147,8 +180,18 @@ def evaluate_fingerprint_rotation(
     active_total = len(active_checks)
 
     for check_name in active_checks:
-        check_result = checks.get(check_name, {})
-        if check_result.get("passed", False):
+        check_result = None
+        for alias in FP_CHECK_ALIASES.get(check_name, (check_name,)):
+            if alias in checks:
+                check_result = checks[alias]
+                break
+        if isinstance(check_result, bool):
+            passed_check = check_result
+        elif isinstance(check_result, dict):
+            passed_check = check_result.get("passed", False)
+        else:
+            passed_check = False
+        if passed_check:
             active_passed += 1
 
     # All active checks must pass for the miner to earn full weight
@@ -266,8 +309,9 @@ def get_epoch_measurement_config(
     Returns:
         Dict with active_fingerprints, observation_window_hours, nonce
     """
+    prev_hash_bytes = _prev_hash_hex_to_bytes(prev_block_hash)
     nonce = derive_epoch_nonce(prev_block_hash)
-    active_fp = get_active_fp_checks(nonce)
+    active_fp = get_reward_active_fingerprint_checks(prev_hash_bytes)
     window_hours = get_observation_window_hours(nonce)
 
     config = {
@@ -313,7 +357,7 @@ if __name__ == "__main__":
         print(f"  Epoch {i:2d}: {config['active_fingerprints']}  "
               f"window={window}h ({mode})")
 
-    print(f"\nCheck activation counts over 20 epochs:")
+    print("\nCheck activation counts over 20 epochs:")
     for check, count in sorted(check_counts.items()):
         bar = "#" * count
         print(f"  {check:20s}: {count:2d}/20 ({count/20*100:.0f}%) {bar}")
@@ -349,4 +393,4 @@ if __name__ == "__main__":
             slow += 1
     print(f"  Fast (6-24h):   {fast}%")
     print(f"  Slow (72-168h): {slow}%")
-    print(f"  (Expected: ~60/40)")
+    print("  (Expected: ~60/40)")
