@@ -812,10 +812,13 @@
 
 <script>
 /* ─── State ────────────────────────────────────────────────────── */
-const NODE = window.location.origin && (window.location.origin.includes('127.0.0.1') || window.location.origin.includes('localhost'))
-    ? window.location.origin
-    : 'https://rustchain.org';
-const VERIFY_BASE = 'https://rustchain.org/bcos/verify';
+const PUBLIC_BASE = 'https://rustchain.org';
+const NODE = window.location.origin && (
+    window.location.origin.includes('127.0.0.1') ||
+    window.location.origin.includes('localhost')
+) ? window.location.origin : PUBLIC_BASE;
+const VERIFY_BASE = `${PUBLIC_BASE}/bcos/verify`;
+const BADGE_BASE = `${PUBLIC_BASE}/bcos/badge`;
 
 let mode = 'certid';           // 'certid' | 'repo'
 let directory = [];            // [{cert_id, repo, tier, trust_score, ...}]
@@ -854,12 +857,13 @@ async function loadDirectory() {
         const r = await fetch(`${NODE}/bcos/directory?limit=200`, {
             signal: AbortSignal.timeout(8000)
         });
-        if (!r.ok) throw new Error(r.status);
+        if (!r.ok) throw new Error(`directory status ${r.status}`);
         const data = await r.json();
         directory = (data.certificates || []);
         renderDirectory();
     } catch (e) {
-        document.getElementById('dirCount').textContent = 'directory unavailable';
+        directory = [];
+        document.getElementById('dirCount').textContent = 'static mode';
     }
 }
 
@@ -1047,13 +1051,7 @@ async function generate() {
     btn.textContent = 'RESOLVING CERTIFICATE…';
 
     try {
-        const r = await fetch(`${NODE}/bcos/verify/${encodeURIComponent(certId)}`, {
-            signal: AbortSignal.timeout(8000)
-        });
-        if (r.status === 404) throw new Error(`Certificate "${certId}" not found in the BCOS registry.`);
-        if (!r.ok) throw new Error(`API error: ${r.status}`);
-        const data = await r.json();
-        if (!data.ok) throw new Error(data.error || 'Certificate not found.');
+        const data = await verifyCert(certId);
         const directoryMatch = directory.find(c => c.cert_id === certId || c.cert_id.toLowerCase() === certId.toLowerCase()) || {};
         const cert = { ...directoryMatch, ...data };
 
@@ -1067,6 +1065,38 @@ async function generate() {
     }
 }
 
+async function verifyCert(certId) {
+    const url = `${NODE}/bcos/verify/${encodeURIComponent(certId)}`;
+    try {
+        const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
+        const contentType = r.headers.get('content-type') || '';
+        if (r.ok && contentType.includes('application/json')) {
+            const data = await r.json();
+            if (!data.ok) throw new Error(data.error || 'Certificate not found.');
+            return data;
+        }
+        if (r.status === 404 || r.status === 501) {
+            return {
+                ok: true,
+                cert_id: certId,
+                verification_status: 'not_checked',
+                note: 'BCOS live verification endpoint is not available on this host yet.'
+            };
+        }
+        throw new Error(`API error: ${r.status}`);
+    } catch (err) {
+        if (err.name === 'TimeoutError' || err instanceof TypeError) {
+            return {
+                ok: true,
+                cert_id: certId,
+                verification_status: 'not_checked',
+                note: 'BCOS live verification endpoint could not be reached.'
+            };
+        }
+        throw err;
+    }
+}
+
 function onStyleChange() {
     if (currentCert) renderOutput(currentCert, currentCert.cert_id);
 }
@@ -1074,7 +1104,7 @@ function onStyleChange() {
 /* ─── Render output ────────────────────────────────────────────── */
 function renderOutput(cert, certId) {
     const style = document.getElementById('styleSelect').value;
-    const badgeUrl = `${NODE}/bcos/badge/${certId}.svg?style=${style}`;
+    const badgeUrl = `${BADGE_BASE}/${certId}.svg?style=${style}`;
     const verifyUrl = `${VERIFY_BASE}/${certId}`;
 
     // Update badge image
@@ -1088,9 +1118,11 @@ function renderOutput(cert, certId) {
     const repo = cert.repo || cert.repo_name || '?';
     const rev = cert.reviewer || 'unknown';
     const ts = cert.created_at ? new Date(cert.created_at * 1000).toISOString().slice(0,10) : '?';
+    const status = cert.verification_status === 'not_checked' ? 'not checked' : 'verified';
 
     document.getElementById('certInfo').innerHTML = `
         <div class="cert-field"><span class="cert-key">cert_id</span><span class="cert-val">${escHtml(certId)}</span></div>
+        <div class="cert-field"><span class="cert-key">status</span><span class="cert-val amber">${escHtml(status)}</span></div>
         <div class="cert-field"><span class="cert-key">repo</span><span class="cert-val">${escHtml(repo)}</span></div>
         <div class="cert-field"><span class="cert-key">tier</span><span class="cert-val amber">${escHtml(tier)}</span></div>
         <div class="cert-field"><span class="cert-key">trust_score</span><span class="cert-val">${escHtml(scoreLabel)}/100</span></div>
@@ -1106,6 +1138,10 @@ function renderOutput(cert, certId) {
         document.getElementById('scoreLabel').textContent = `${score}/100`;
         setTimeout(() => { bar.style.width = score + '%'; }, 50);
         document.getElementById('scoreBarWrap').style.display = '';
+    } else {
+        document.getElementById('scoreFill').style.width = '0%';
+        document.getElementById('scoreLabel').textContent = '?/100';
+        document.getElementById('scoreBarWrap').style.display = 'none';
     }
 
     // Code snippets
