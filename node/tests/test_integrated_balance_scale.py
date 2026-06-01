@@ -299,6 +299,13 @@ class TestIntegratedBalanceScale(unittest.TestCase):
             )
 
         self.assertEqual(len(calls), 1)
+        emitted_values = [
+            out["value_nrtc"]
+            for tx, _, _ in calls
+            for out in tx["outputs"]
+        ]
+        self.assertEqual(emitted_values, [143999280])
+        self.assertTrue(all(value >= DUST_THRESHOLD for value in emitted_values))
 
 
 if __name__ == "__main__":

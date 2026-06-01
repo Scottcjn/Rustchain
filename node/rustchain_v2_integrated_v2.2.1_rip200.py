@@ -44,9 +44,14 @@ except Exception as e:
 # UTXO Layer (Phase 1 — dual-write alongside account model)
 UTXO_DUAL_WRITE = os.environ.get("UTXO_DUAL_WRITE", "0") == "1"
 try:
-    from utxo_db import UtxoDB, MAX_OUTPUTS as UTXO_MAX_OUTPUTS
+    from utxo_db import (
+        DUST_THRESHOLD as UTXO_DUST_THRESHOLD,
+        MAX_OUTPUTS as UTXO_MAX_OUTPUTS,
+        UtxoDB,
+    )
     HAVE_UTXO = True
 except ImportError:
+    UTXO_DUST_THRESHOLD = 1_000
     UTXO_MAX_OUTPUTS = 100
     HAVE_UTXO = False
     if UTXO_DUAL_WRITE:
@@ -3625,6 +3630,7 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
         try:
             c.execute("BEGIN TRANSACTION")
             utxo_reward_outputs = []
+            skipped_utxo_dust_nrtc = 0
 
             # Distribute rewards with precision
             for pk, weight in miners:
@@ -3643,10 +3649,17 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
                 )
 
                 if UTXO_DUAL_WRITE:
-                    utxo_reward_outputs.append({
-                        "address": pk,
-                        "value_nrtc": amount_nrtc,
-                    })
+                    if amount_nrtc >= UTXO_DUST_THRESHOLD:
+                        utxo_reward_outputs.append({
+                            "address": pk,
+                            "value_nrtc": amount_nrtc,
+                        })
+                    else:
+                        # The UTXO layer intentionally rejects sub-dust boxes.
+                        # Keep the account-model reward settlement alive and
+                        # skip the unspendable UTXO output until a carry-forward
+                        # accumulator exists for tiny shares.
+                        skipped_utxo_dust_nrtc += max(0, amount_nrtc)
                 # Update metrics with decimal value for accuracy
                 balance_gauge.labels(miner_pk=pk).set(float(amount_decimal))
 
@@ -3679,6 +3692,11 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
                             "UTXO reward settlement failed for "
                             f"batch {batch_index + 1}/{len(reward_batches)}"
                         )
+                if skipped_utxo_dust_nrtc:
+                    print(
+                        "[UTXO] Skipped sub-dust epoch reward outputs totaling "
+                        f"{skipped_utxo_dust_nrtc} nRTC"
+                    )
 
             # Mark epoch as settled - use UPDATE with WHERE settled=0 to prevent race
             result = c.execute(
