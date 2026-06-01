@@ -185,3 +185,22 @@ def test_build_rejects_non_dict_mapping():
     proxy = types.MappingProxyType({"k": 1})  # a Mapping, NOT a dict
     with pytest.raises(b0.B0FormatError):
         b0.build_b0_attestation("m", {"nested": proxy}, FP, True, 1)
+
+
+# ---- tri-brain loop-4 fixes: deep-copy (TOCTOU) + miner-id length ----
+def test_build_deepcopies_evidence_no_aliasing():
+    """Loop-4: mutating the caller's nested evidence after build must NOT change
+    the built record (no shallow-copy aliasing / validate->hash TOCTOU)."""
+    dev = {"nested": {"k": "orig"}, "arr": [1, 2]}
+    rec = b0.build_b0_attestation("m", dev, FP, True, 1)
+    dev["nested"]["k"] = "mutated"
+    dev["arr"].append(999)
+    assert rec["device"]["nested"]["k"] == "orig"
+    assert rec["device"]["arr"] == [1, 2]
+
+
+def test_build_rejects_overlong_miner_id():
+    with pytest.raises(b0.B0FormatError):
+        b0.build_b0_attestation("x" * (b0.MAX_MINER_ID_LEN + 1), DEV, FP, True, 1)
+    # at-limit is accepted
+    assert b0.build_b0_attestation("x" * b0.MAX_MINER_ID_LEN, DEV, FP, True, 1)["miner"]
