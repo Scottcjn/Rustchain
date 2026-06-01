@@ -1,18 +1,36 @@
-# RustChain Multi-Node Health Dashboard
+# RustChain Network Status Pages
 
-Real-time status page monitoring all 4 RustChain attestation nodes.
+Real-time status pages monitoring RustChain attestation nodes.
 
-## Features
+## Static Page
 
-- **Real-time monitoring** — polls all 4 nodes every 60 seconds
-- **Status display** — up/down, response time, version, uptime, active miners, epoch
-- **24-hour uptime history** — visual timeline per node
-- **Incident log** — automatic detection of outages and recoveries
-- **Mobile-friendly** — responsive dark-mode UI
-- **RSS feed** — `/feed.xml` for incident notifications
-- **API endpoints** — JSON API for integration
+`index.html` is a single-file, GitHub Pages-compatible status page for bounty #38. It:
 
-## Quickstart
+- polls public node `/health`, `/api/miners`, and `/epoch` endpoints every 60 seconds
+- shows node status, response time, version, uptime, miner count, and epoch data
+- summarizes active miners by architecture
+- estimates time until next settlement from the current epoch slot
+- works on mobile without a backend
+
+Open it directly in a browser or host the `status/` directory with GitHub Pages or any static web server.
+
+If a browser blocks requests because of CORS or self-signed TLS, host the page from the same origin as a RustChain node or add CORS headers to the node API.
+
+## Flask Dashboard
+
+The optional Flask dashboard keeps 24-hour history and incident data.
+
+### Features
+
+- **Real-time monitoring** - polls all 4 nodes every 60 seconds
+- **Status display** - up/down, response time, version, uptime, active miners, epoch
+- **24-hour uptime history** - visual timeline per node
+- **Incident log** - automatic detection of outages and recoveries
+- **Mobile-friendly** - responsive dark-mode UI
+- **RSS feed** - `/feed.xml` for incident notifications
+- **API endpoints** - JSON API for integration
+
+### Quickstart
 
 ```bash
 cd status/
@@ -21,7 +39,7 @@ python status_server.py
 # Open http://localhost:8050
 ```
 
-## Deployment
+### Deployment
 
 Deploy at `rustchain.org/status` with nginx:
 
@@ -32,7 +50,7 @@ location /status {
 }
 ```
 
-## API
+### API
 
 | Endpoint | Description |
 |---|---|
