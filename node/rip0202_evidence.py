@@ -72,10 +72,13 @@ def record_attestation_evidence(
     input so the caller can reject the attestation rather than store junk.
     """
     rec = build_b0_attestation(miner, device, fingerprint, fingerprint_passed, ts)
-    # TS-MONOTONIC upsert: only overwrite when the incoming attestation is at
-    # least as new as the stored one. A delayed/replayed OLDER attestation must
-    # not clobber newer evidence (which would silently drop a miner from the
-    # producer's TTL-filtered view). Deterministic + order-independent.
+    # TS-MONOTONIC upsert: a delayed/replayed OLDER attestation must not clobber
+    # newer evidence (older ts < stored -> no-op). Equal-ts is last-arrival-wins
+    # and NOT content-deterministic — acceptable because this table is NODE-LOCAL
+    # pre-commit producer state: only the slot producer commits a block, after
+    # which every node hashes/re-derives its committed bytes identically (B0/B1),
+    # so local equal-ts variance cannot fork consensus. The committed block, not
+    # this pool, is the consensus artifact.
     conn.execute(
         "INSERT INTO attestation_evidence "
         "(miner, device_json, fingerprint_json, fingerprint_passed, ts) VALUES (?,?,?,?,?) "
