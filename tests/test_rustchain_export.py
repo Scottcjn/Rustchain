@@ -58,6 +58,8 @@ def make_db(path: Path) -> None:
         ("oldRTC", "x86", "x86_64", "PC", 1600000000, 0.1, 1.0),
     )
     conn.execute("INSERT INTO balances VALUES (?, ?)", ("aliceRTC", 1250000))
+    conn.execute("INSERT INTO balances VALUES (?, ?)", ("bobRTC", 500000))
+    conn.execute("INSERT INTO balances VALUES (?, ?)", ("carolRTC", 999999))
     conn.execute("INSERT INTO epoch_state VALUES (?, ?, ?)", (62, 1, 1770113000))
     conn.execute("INSERT INTO epoch_rewards VALUES (?, ?, ?)", (62, "aliceRTC", 1250000))
     conn.execute("INSERT INTO ledger VALUES (?, ?, ?, ?, ?)", (1770113000, 62, "aliceRTC", 1250000, "reward"))
@@ -95,7 +97,14 @@ class RustChainExportTests(unittest.TestCase):
 
             with (out_dir / "balances.csv").open(newline="", encoding="utf-8") as handle:
                 balances = list(csv.DictReader(handle))
-            self.assertEqual(balances[0]["amount_rtc"], "1.25")
+            self.assertEqual(
+                {row["miner_id"]: row["amount_rtc"] for row in balances},
+                {
+                    "aliceRTC": "1.25",
+                    "bobRTC": "0.5",
+                    "carolRTC": "0.999999",
+                },
+            )
 
             manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))[0]
             self.assertEqual(manifest["tables"]["miners"], 1)
@@ -140,6 +149,12 @@ class RustChainExportTests(unittest.TestCase):
             path = Path(tmp) / "empty.csv"
             exporter.write_csv(path, [])
             self.assertEqual(path.read_text(encoding="utf-8").strip(), "")
+
+    def test_balance_amount_normalizes_micro_columns_by_source(self):
+        self.assertEqual(exporter.balance_amount_rtc({"amount_i64": 1}), 0.000001)
+        self.assertEqual(exporter.balance_amount_rtc({"amount_i64": 500_000}), 0.5)
+        self.assertEqual(exporter.balance_amount_rtc({"balance_urtc": 999_999}), 0.999999)
+        self.assertEqual(exporter.balance_amount_rtc({"balance_rtc": 0.5}), 0.5)
 
 
 if __name__ == "__main__":

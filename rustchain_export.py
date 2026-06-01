@@ -67,6 +67,22 @@ def normalize_rtc(value: Any) -> float:
     return amount
 
 
+def normalize_micro_rtc(value: Any) -> float:
+    if value is None:
+        return 0.0
+    try:
+        return float(value) / MICRO_RTC
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def balance_amount_rtc(row: dict[str, Any]) -> float:
+    for column in ("amount_i64", "balance_urtc"):
+        if column in row and row[column] is not None:
+            return normalize_micro_rtc(row[column])
+    return normalize_rtc(row.get("balance_rtc", row.get("amount")))
+
+
 def in_range(timestamp: Any, start_ts: int | None, end_ts: int | None) -> bool:
     if timestamp in (None, ""):
         return True
@@ -231,8 +247,7 @@ def db_exports(options: ExportOptions) -> dict[str, list[dict[str, Any]]]:
     balance_rows = []
     for row in balances:
         miner_id = row.get("miner_id") or row.get("miner_pk") or row.get("wallet") or row.get("address")
-        amount = row.get("amount_i64", row.get("balance_urtc", row.get("balance_rtc", row.get("amount"))))
-        balance_rows.append({"miner_id": miner_id, "amount_rtc": normalize_rtc(amount)})
+        balance_rows.append({"miner_id": miner_id, "amount_rtc": balance_amount_rtc(row)})
 
     return {
         "miners": [
