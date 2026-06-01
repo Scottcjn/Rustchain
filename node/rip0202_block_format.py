@@ -34,6 +34,7 @@ Consensus-determinism guarantees (the reasons this is its own pinned module):
 """
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import math
@@ -59,6 +60,7 @@ B0_ATTESTATION_FIELDS = ("miner", "device", "fingerprint", "fingerprint_passed",
 # blocks. Generous enough for real fingerprint timing data, tight enough to cap abuse.
 MAX_EVIDENCE_FIELD_BYTES = 65_536   # 64 KB canonical JSON, per device and per fingerprint
 MAX_EVIDENCE_DEPTH = 32             # max nesting depth in device/fingerprint
+MAX_MINER_ID_LEN = 256              # reject absurd miner identifiers (defense-in-depth)
 
 
 class B0FormatError(ValueError):
@@ -118,6 +120,8 @@ def build_b0_attestation(
     """
     if not isinstance(miner, str) or not miner:
         raise B0FormatError("miner must be a non-empty str")
+    if len(miner) > MAX_MINER_ID_LEN:
+        raise B0FormatError(f"miner id exceeds {MAX_MINER_ID_LEN} chars")
     if not isinstance(device, Mapping):
         raise B0FormatError("device must be a dict")
     if not isinstance(fingerprint, Mapping):
@@ -133,6 +137,12 @@ def build_b0_attestation(
     for name, val in (("device", device), ("fingerprint", fingerprint)):
         if len(_canonical_bytes(val)) > MAX_EVIDENCE_FIELD_BYTES:
             raise B0FormatError(f"{name} exceeds {MAX_EVIDENCE_FIELD_BYTES}-byte canonical limit")
+    # Deep copy AFTER validation (structure is now guaranteed JSON-safe, hence
+    # deepcopyable): the returned record shares NO nested mutable state with the
+    # caller, preventing a validate -> hash -> serialize TOCTOU where the caller
+    # mutates aliased nested evidence between validation and the consensus hash.
+    device = copy.deepcopy(device)
+    fingerprint = copy.deepcopy(fingerprint)
     return {
         "miner": miner,
         "device": device,
