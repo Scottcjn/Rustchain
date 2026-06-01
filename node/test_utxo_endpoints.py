@@ -272,6 +272,85 @@ class TestUtxoEndpoints(unittest.TestCase):
         data = r.get_json()
         self.assertIn('does not match', data['error'])
 
+    def test_transfer_rejects_invalid_nonce_values(self):
+        sender = 'RTC_test_aabbccdd'
+        self._seed_coinbase(sender, 100 * UNIT)
+
+        for bad_nonce in (-1, 'abc', '12.5'):
+            with self.subTest(nonce=bad_nonce):
+                r = self.client.post('/utxo/transfer', json={
+                    'from_address': sender,
+                    'to_address': 'bob',
+                    'amount_rtc': 10.0,
+                    'public_key': 'aabbccdd' * 8,
+                    'signature': 'sig' * 22,
+                    'nonce': bad_nonce,
+                })
+                self.assertEqual(r.status_code, 400)
+                data = r.get_json()
+                self.assertEqual(data['code'], 'INVALID_NONCE')
+                self.assertIn('greater than or equal to 0', data['error'])
+
+    def test_transfer_rejects_stale_nonce_after_newer_nonce(self):
+        sender = 'RTC_test_aabbccdd'
+        recipient = 'bob'
+        self._seed_coinbase(sender, 100 * UNIT)
+
+        first = self.client.post('/utxo/transfer', json={
+            'from_address': sender,
+            'to_address': recipient,
+            'amount_rtc': 10.0,
+            'public_key': 'aabbccdd' * 8,
+            'signature': 'sig' * 22,
+            'nonce': 200,
+        })
+        self.assertEqual(first.status_code, 200, first.get_json())
+
+        stale = self.client.post('/utxo/transfer', json={
+            'from_address': sender,
+            'to_address': recipient,
+            'amount_rtc': 5.0,
+            'public_key': 'aabbccdd' * 8,
+            'signature': 'sig' * 22,
+            'nonce': 100,
+        })
+        self.assertEqual(stale.status_code, 400)
+        data = stale.get_json()
+        self.assertEqual(data['code'], 'OUT_OF_ORDER_NONCE')
+        self.assertEqual(data['nonce'], '100')
+        self.assertEqual(data['latest_nonce'], 200)
+        self.assertEqual(self.utxo_db.get_balance(sender), 90 * UNIT)
+        self.assertEqual(self.utxo_db.get_balance(recipient), 10 * UNIT)
+
+    def test_transfer_accepts_legacy_string_nonce_signature_form(self):
+        sender = 'RTC_test_aabbccdd'
+        self._seed_coinbase(sender, 100 * UNIT)
+
+        def verify_only_string_nonce(pubkey_hex, message, sig_hex):
+            payload = json.loads(message.decode())
+            return payload.get('nonce') == '123'
+
+        app = Flask(__name__)
+        app.config['TESTING'] = True
+        register_utxo_blueprint(
+            app, self.utxo_db, self.db_path,
+            verify_sig_fn=verify_only_string_nonce,
+            addr_from_pk_fn=mock_addr_from_pk,
+            current_slot_fn=mock_current_slot,
+            dual_write=False,
+        )
+        client = app.test_client()
+
+        r = client.post('/utxo/transfer', json={
+            'from_address': sender,
+            'to_address': 'bob',
+            'amount_rtc': 10.0,
+            'public_key': 'aabbccdd' * 8,
+            'signature': 'sig' * 22,
+            'nonce': '123',
+        })
+        self.assertEqual(r.status_code, 200, r.get_json())
+
     def test_transfer_with_fee(self):
         self._seed_coinbase('RTC_test_aabbccdd', 100 * UNIT)
 
