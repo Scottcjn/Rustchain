@@ -84,6 +84,23 @@ def _ensure_balance_micro_schema(conn):
         )
     conn.execute("DROP TABLE balances_legacy_real")
 
+def _ensure_epoch_state_settlement_schema(conn):
+    """Keep Sophia's epoch_state compatible with shared settlement guards."""
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS epoch_state ("
+        "epoch INTEGER PRIMARY KEY, "
+        "accepted_blocks INTEGER DEFAULT 0, "
+        "finalized INTEGER DEFAULT 0, "
+        "settled INTEGER DEFAULT 0, "
+        "settled_ts INTEGER)"
+    )
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(epoch_state)").fetchall()}
+    if "settled" not in columns:
+        conn.execute("ALTER TABLE epoch_state ADD COLUMN settled INTEGER DEFAULT 0")
+    if "settled_ts" not in columns:
+        conn.execute("ALTER TABLE epoch_state ADD COLUMN settled_ts INTEGER")
+    conn.execute("UPDATE epoch_state SET settled = 1 WHERE finalized = 1 AND settled = 0")
+
 def init_db():
     """Initialize database with epoch tables"""
     with sqlite3.connect(DB_PATH) as c:
@@ -92,7 +109,7 @@ def init_db():
         c.execute("CREATE TABLE IF NOT EXISTS tickets (ticket_id TEXT PRIMARY KEY, expires_at INTEGER, commitment TEXT)")
 
         # New epoch tables
-        c.execute("CREATE TABLE IF NOT EXISTS epoch_state (epoch INTEGER PRIMARY KEY, accepted_blocks INTEGER DEFAULT 0, finalized INTEGER DEFAULT 0)")
+        _ensure_epoch_state_settlement_schema(c)
         # `weight` is a non-financial pro-rata multiplier; balances are financial
         # and stay in integer micro-RTC units.
         c.execute("CREATE TABLE IF NOT EXISTS epoch_enroll (epoch INTEGER, miner_pk TEXT, weight REAL, PRIMARY KEY (epoch, miner_pk))")
@@ -146,7 +163,7 @@ def _finite_float(value, default=1.0):
 def inc_epoch_block(epoch):
     """Increment accepted blocks for epoch"""
     with sqlite3.connect(DB_PATH) as c:
-        c.execute("INSERT OR IGNORE INTO epoch_state(epoch, accepted_blocks, finalized) VALUES (?,0,0)", (epoch,))
+        c.execute("INSERT OR IGNORE INTO epoch_state(epoch, accepted_blocks, finalized, settled) VALUES (?,0,0,0)", (epoch,))
         c.execute("UPDATE epoch_state SET accepted_blocks = accepted_blocks + 1 WHERE epoch=?", (epoch,))
 
 def enroll_epoch(epoch, miner_pk, weight):
@@ -164,13 +181,34 @@ def enroll_epoch(epoch, miner_pk, weight):
 def finalize_epoch(epoch, per_block_rtc):
     """Finalize epoch and distribute rewards"""
     with sqlite3.connect(DB_PATH) as c:
-        row = c.execute("SELECT finalized, accepted_blocks FROM epoch_state WHERE epoch=?", (epoch,)).fetchone()
+        c.execute("BEGIN IMMEDIATE")
+        row = c.execute(
+            "SELECT finalized, accepted_blocks, settled FROM epoch_state WHERE epoch=?",
+            (epoch,),
+        ).fetchone()
         if not row:
+            c.rollback()
             return {"ok": False, "reason": "no_state"}
 
-        finalized, blocks = int(row[0]), int(row[1])
+        finalized, blocks, settled = int(row[0]), int(row[1]), int(row[2])
+        if settled:
+            c.rollback()
+            return {"ok": False, "reason": "already_settled"}
         if finalized:
+            c.execute(
+                "UPDATE epoch_state SET settled=1, settled_ts=? WHERE epoch=? AND settled=0",
+                (int(time.time()), epoch),
+            )
+            c.commit()
             return {"ok": False, "reason": "already_finalized"}
+
+        claim = c.execute(
+            "UPDATE epoch_state SET settled=1, settled_ts=?, finalized=1 WHERE epoch=? AND settled=0",
+            (int(time.time()), epoch),
+        )
+        if claim.rowcount != 1:
+            c.rollback()
+            return {"ok": False, "reason": "already_settled"}
 
         total_reward = per_block_rtc * blocks
         miners = list(c.execute("SELECT miner_pk, weight FROM epoch_enroll WHERE epoch=?", (epoch,)))
@@ -185,7 +223,7 @@ def finalize_epoch(epoch, per_block_rtc):
                 c.execute("UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk=?", (amount_micro, pk))
                 payouts.append((pk, _micro_to_rtc(amount_micro)))
 
-        c.execute("UPDATE epoch_state SET finalized=1 WHERE epoch=?", (epoch,))
+        c.commit()
         return {"ok": True, "blocks": blocks, "total_reward": total_reward, "sum_w": sum_w, "payouts": payouts}
 
 def get_balance(miner_pk):

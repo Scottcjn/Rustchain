@@ -15,7 +15,7 @@ def load_service(tmp_path):
 
 
 def test_balances_schema_uses_integer_micro_rtc():
-    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+    with tempfile.TemporaryDirectory() as tmp:
         service = load_service(Path(tmp))
 
         service.init_db()
@@ -30,7 +30,7 @@ def test_balances_schema_uses_integer_micro_rtc():
 
 
 def test_finalize_epoch_stores_integer_micro_rtc_and_returns_public_rtc():
-    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+    with tempfile.TemporaryDirectory() as tmp:
         service = load_service(Path(tmp))
         service.init_db()
 
@@ -60,8 +60,91 @@ def test_finalize_epoch_stores_integer_micro_rtc_and_returns_public_rtc():
         assert stored_value == 100_000
 
 
+def test_epoch_state_schema_adds_settlement_columns_to_legacy_table():
+    with tempfile.TemporaryDirectory() as tmp:
+        service = load_service(Path(tmp))
+
+        with sqlite3.connect(service.DB_PATH) as conn:
+            conn.execute(
+                "CREATE TABLE epoch_state ("
+                "epoch INTEGER PRIMARY KEY, "
+                "accepted_blocks INTEGER DEFAULT 0, "
+                "finalized INTEGER DEFAULT 0)"
+            )
+            conn.execute(
+                "INSERT INTO epoch_state(epoch, accepted_blocks, finalized) VALUES (?,?,?)",
+                (7, 1, 1),
+            )
+
+        service.init_db()
+
+        with sqlite3.connect(service.DB_PATH) as conn:
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(epoch_state)")}
+            row = conn.execute(
+                "SELECT finalized, settled FROM epoch_state WHERE epoch=?",
+                (7,),
+            ).fetchone()
+
+        assert {"settled", "settled_ts"} <= columns
+        assert row == (1, 1)
+
+
+def test_finalize_epoch_marks_settled_and_blocks_second_credit():
+    with tempfile.TemporaryDirectory() as tmp:
+        service = load_service(Path(tmp))
+        service.init_db()
+
+        with sqlite3.connect(service.DB_PATH) as conn:
+            conn.execute(
+                "INSERT INTO epoch_state(epoch, accepted_blocks, finalized, settled) VALUES (?,?,?,?)",
+                (7, 1, 0, 0),
+            )
+            conn.execute(
+                "INSERT INTO epoch_enroll(epoch, miner_pk, weight) VALUES (?,?,?)",
+                (7, "RTC_miner", 1.0),
+            )
+
+        first = service.finalize_epoch(7, 0.1)
+        second = service.finalize_epoch(7, 0.1)
+
+        assert first["ok"] is True
+        assert second == {"ok": False, "reason": "already_settled"}
+        assert service.get_balance("RTC_miner") == 0.1
+
+        with sqlite3.connect(service.DB_PATH) as conn:
+            row = conn.execute(
+                "SELECT finalized, settled, settled_ts FROM epoch_state WHERE epoch=?",
+                (7,),
+            ).fetchone()
+
+        assert row[0] == 1
+        assert row[1] == 1
+        assert isinstance(row[2], int)
+
+
+def test_finalize_epoch_respects_existing_settled_marker_without_crediting():
+    with tempfile.TemporaryDirectory() as tmp:
+        service = load_service(Path(tmp))
+        service.init_db()
+
+        with sqlite3.connect(service.DB_PATH) as conn:
+            conn.execute(
+                "INSERT INTO epoch_state(epoch, accepted_blocks, finalized, settled) VALUES (?,?,?,?)",
+                (7, 1, 0, 1),
+            )
+            conn.execute(
+                "INSERT INTO epoch_enroll(epoch, miner_pk, weight) VALUES (?,?,?)",
+                (7, "RTC_miner", 1.0),
+            )
+
+        result = service.finalize_epoch(7, 0.1)
+
+        assert result == {"ok": False, "reason": "already_settled"}
+        assert service.get_balance("RTC_miner") == 0.0
+
+
 def test_legacy_real_balances_are_migrated_to_micro_rtc():
-    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+    with tempfile.TemporaryDirectory() as tmp:
         service = load_service(Path(tmp))
 
         with sqlite3.connect(service.DB_PATH) as conn:
