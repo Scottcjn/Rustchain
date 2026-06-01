@@ -151,3 +151,12 @@ def test_assert_blocks_per_epoch():
 def test_slot_to_epoch_rejects_bad_blocks_per_epoch(bad):
     with pytest.raises(b0.B0FormatError):
         b0.slot_to_epoch(144, blocks_per_epoch=bad)
+
+
+def test_hash_rejects_non_mapping_items():
+    """Loop-2: a non-dict in the list raises B0FormatError (documented contract),
+    not a raw AttributeError/TypeError."""
+    good = _att("m", 1)
+    for bad in (None, "str", 5, ["x"]):
+        with pytest.raises(b0.B0FormatError):
+            b0.canonical_b0_attestations_hash([good, bad])
