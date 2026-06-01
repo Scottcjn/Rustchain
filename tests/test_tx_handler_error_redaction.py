@@ -4,6 +4,8 @@
 Regression tests for transaction API internal error redaction.
 """
 
+import os
+
 from flask import Flask
 
 from node.rustchain_tx_handler import create_tx_api_routes
@@ -47,6 +49,10 @@ def _client_for_exploding_pool():
     return app.test_client()
 
 
+def _admin_headers():
+    return {"X-Admin-Key": os.environ["RC_ADMIN_KEY"]}
+
+
 def _assert_redacted(response):
     assert response.status_code == 500
     assert response.get_json() == {"error": "internal_error"}
@@ -56,22 +62,22 @@ def _assert_redacted(response):
 
 def test_tx_status_redacts_internal_exception_details():
     with _client_for_exploding_pool() as client:
-        _assert_redacted(client.get("/tx/status/hash_1"))
+        _assert_redacted(client.get("/tx/status/hash_1", headers=_admin_headers()))
 
 
 def test_tx_pending_redacts_internal_exception_details():
     with _client_for_exploding_pool() as client:
-        _assert_redacted(client.get("/tx/pending"))
+        _assert_redacted(client.get("/tx/pending", headers=_admin_headers()))
 
 
 def test_wallet_balance_redacts_internal_exception_details():
     with _client_for_exploding_pool() as client:
-        _assert_redacted(client.get("/wallet/alice/balance"))
+        _assert_redacted(client.get("/wallet/alice/balance", headers=_admin_headers()))
 
 
 def test_wallet_nonce_redacts_internal_exception_details():
     with _client_for_exploding_pool() as client:
-        _assert_redacted(client.get("/wallet/alice/nonce"))
+        _assert_redacted(client.get("/wallet/alice/nonce", headers=_admin_headers()))
 
 
 def test_wallet_history_redacts_internal_exception_details(monkeypatch):
@@ -83,4 +89,4 @@ def test_wallet_history_redacts_internal_exception_details(monkeypatch):
     monkeypatch.setattr(tx_handler.sqlite3, "connect", raise_connect_error)
 
     with _client_for_exploding_pool() as client:
-        _assert_redacted(client.get("/wallet/alice/history"))
+        _assert_redacted(client.get("/wallet/alice/history", headers=_admin_headers()))

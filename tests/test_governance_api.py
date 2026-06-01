@@ -37,6 +37,17 @@ def _vote_payload(proposal_id: int, wallet: str, vote: str, nonce: str):
     return payload
 
 
+def _proposal_payload(pub_hex: str, title: str, description: str, nonce: str):
+    return {
+        "wallet": integrated_node.address_from_pubkey(pub_hex),
+        "title": title,
+        "description": description,
+        "nonce": nonce,
+        "signature": "ab" * 64,
+        "public_key": pub_hex,
+    }
+
+
 def test_governance_propose_requires_gt_10_rtc_balance():
     with _temporary_directory() as td:
         db_path = str(Path(td) / "gov.db")
@@ -44,16 +55,17 @@ def test_governance_propose_requires_gt_10_rtc_balance():
         integrated_node.app.config["DB_PATH"] = db_path
         integrated_node.init_db()
 
+        pub_hex = "22" * 32
+        payload = _proposal_payload(pub_hex, "No", "insufficient", "proposal-low-1")
+
         with sqlite3.connect(db_path) as c:
-            c.execute("INSERT INTO balances(miner_pk, balance_rtc) VALUES(?, ?)", ("RTC-low", 10.0))
+            c.execute("INSERT INTO balances(miner_pk, balance_rtc) VALUES(?, ?)", (payload["wallet"], 10.0))
             c.commit()
 
         integrated_node.app.config["TESTING"] = True
         with integrated_node.app.test_client() as client:
-            resp = client.post(
-                "/governance/propose",
-                json={"wallet": "RTC-low", "title": "No", "description": "insufficient"},
-            )
+            with patch("integrated_node.verify_rtc_signature", return_value=True):
+                resp = client.post("/governance/propose", json=payload)
             assert resp.status_code == 403
             assert resp.get_json()["error"] == "insufficient_balance_to_propose"
 
@@ -136,10 +148,14 @@ def test_governance_vote_flow_and_lifecycle_finalization():
         integrated_node.app.config["TESTING"] = True
         with integrated_node.app.test_client() as client:
             # Create proposal
-            r1 = client.post(
-                "/governance/propose",
-                json={"wallet": wallet, "title": "Raise testnet fee", "description": "for anti-spam"},
+            proposal_payload = _proposal_payload(
+                pub_hex,
+                "Raise testnet fee",
+                "for anti-spam",
+                "proposal-flow-1",
             )
+            with patch("integrated_node.verify_rtc_signature", return_value=True):
+                r1 = client.post("/governance/propose", json=proposal_payload)
             assert r1.status_code == 201
             proposal_id = r1.get_json()["proposal"]["id"]
 
