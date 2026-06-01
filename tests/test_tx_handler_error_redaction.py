@@ -40,11 +40,17 @@ class ExplodingPool:
         self._boom()
 
 
+import os
+
 def _client_for_exploding_pool():
+    if "RC_ADMIN_KEY" not in os.environ:
+        os.environ["RC_ADMIN_KEY"] = "test-admin-key-0123456789abcdef"
     app = Flask(__name__)
     app.config["TESTING"] = True
     create_tx_api_routes(app, ExplodingPool())
-    return app.test_client()
+    client = app.test_client()
+    client.environ_base['HTTP_X_ADMIN_KEY'] = os.environ["RC_ADMIN_KEY"]
+    return client
 
 
 def _assert_redacted(response):
