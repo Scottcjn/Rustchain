@@ -163,14 +163,15 @@ def setup_test_db(tmp_path):
 @pytest.fixture
 def funded_miner(setup_test_db):
     """Create a miner with balance in the test database."""
+    miner_id = "RTC" + "1" * 40
     conn = sqlite3.connect(setup_test_db['db_path'])
     conn.execute(
         "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?)",
-        ("RTC_test_miner", 100 * 1000000)  # 100 RTC
+        (miner_id, 100 * 1000000)  # 100 RTC
     )
     conn.commit()
     conn.close()
-    return "RTC_test_miner"
+    return miner_id
 
 
 def assert_generic_database_error(result):
@@ -315,7 +316,7 @@ class TestAddressValidation:
     def test_valid_rustchain_address(self, setup_test_db):
         """Test valid RustChain address."""
         bridge_api = setup_test_db["bridge_api"]
-        valid, msg = bridge_api.validate_chain_address_format("rustchain", "RTC_test123abc")
+        valid, msg = bridge_api.validate_chain_address_format("rustchain", "RTC" + "a" * 40)
         assert valid is True
     
     def test_invalid_rustchain_address_prefix(self, setup_test_db):
@@ -802,27 +803,36 @@ class TestLockLedgerRoutes:
                 (lock_id, miner_id, 5 * 1000000, "bridge_deposit", now - 3600, now + 3600, "locked", now - 3600),
             )
 
-    def test_miner_locks_rejects_malformed_limit(self, setup_test_db, funded_miner):
+    def test_miner_locks_rejects_malformed_limit(self, setup_test_db, funded_miner, monkeypatch):
         lock_ledger = setup_test_db["lock_ledger"]
         client = self._client(lock_ledger, setup_test_db["db_path"])
+        monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
 
-        response = client.get(f"/api/lock/miner/{funded_miner}?limit=abc")
+        response = client.get(
+            f"/api/lock/miner/{funded_miner}?limit=abc",
+            headers={"X-Admin-Key": "expected-admin"},
+        )
 
         assert response.status_code == 400
         assert response.get_json() == {"error": "limit must be an integer"}
 
-    def test_pending_unlock_rejects_malformed_before(self, setup_test_db):
+    def test_pending_unlock_rejects_malformed_before(self, setup_test_db, monkeypatch):
         lock_ledger = setup_test_db["lock_ledger"]
         client = self._client(lock_ledger, setup_test_db["db_path"])
+        monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
 
-        response = client.get("/api/lock/pending-unlock?before=not-a-timestamp")
+        response = client.get(
+            "/api/lock/pending-unlock?before=not-a-timestamp",
+            headers={"X-Admin-Key": "expected-admin"},
+        )
 
         assert response.status_code == 400
         assert response.get_json() == {"error": "before must be an integer"}
 
-    def test_pending_unlock_route_calls_database_helper(self, setup_test_db, funded_miner):
+    def test_pending_unlock_route_calls_database_helper(self, setup_test_db, funded_miner, monkeypatch):
         lock_ledger = setup_test_db["lock_ledger"]
         db_path = setup_test_db["db_path"]
+        monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
         now = int(time.time())
         with sqlite3.connect(db_path) as conn:
             conn.execute(
@@ -842,7 +852,10 @@ class TestLockLedgerRoutes:
 
         client = self._client(lock_ledger, db_path)
 
-        response = client.get("/api/lock/pending-unlock?limit=10")
+        response = client.get(
+            "/api/lock/pending-unlock?limit=10",
+            headers={"X-Admin-Key": "expected-admin"},
+        )
 
         assert response.status_code == 200
         body = response.get_json()
@@ -850,9 +863,10 @@ class TestLockLedgerRoutes:
         assert body["count"] == 1
         assert body["locks"][0]["miner_id"] == funded_miner
 
-    def test_pending_unlock_before_zero_applies_cutoff(self, setup_test_db, funded_miner):
+    def test_pending_unlock_before_zero_applies_cutoff(self, setup_test_db, funded_miner, monkeypatch):
         lock_ledger = setup_test_db["lock_ledger"]
         db_path = setup_test_db["db_path"]
+        monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
         now = int(time.time())
         with sqlite3.connect(db_path) as conn:
             conn.execute(
@@ -872,7 +886,10 @@ class TestLockLedgerRoutes:
 
         client = self._client(lock_ledger, db_path)
 
-        response = client.get("/api/lock/pending-unlock?before=0&limit=10")
+        response = client.get(
+            "/api/lock/pending-unlock?before=0&limit=10",
+            headers={"X-Admin-Key": "expected-admin"},
+        )
 
         assert response.status_code == 200
         body = response.get_json()

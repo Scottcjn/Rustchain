@@ -50,6 +50,8 @@
 | [wRTC 教程](../WRTC_ONBOARDING_TUTORIAL.md) | 跨链桥接指南 |
 | [贡献指南](../../CONTRIBUTING.md) | 参与开发 |
 
+BoTTube 高级接口运行在 BoTTube 域名上：`https://bottube.ai/api/premium/videos` 和 `https://bottube.ai/api/premium/analytics/<agent>`。
+
 ---
 
 ## 🔥 Crypto 迷失了方向。我们回到原点。
