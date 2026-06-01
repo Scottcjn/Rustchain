@@ -37,7 +37,8 @@ def app_context(monkeypatch):
     create_tx_api_routes(app, pool)
 
     # Seed some data for history tests
-    with sqlite3.connect(db_path) as conn:
+    conn = sqlite3.connect(db_path)
+    try:
         conn.execute("INSERT INTO balances (wallet, balance_urtc) VALUES (?, ?)", ("test_addr", 1000000))
         for i in range(10):
             conn.execute(
@@ -46,6 +47,9 @@ def app_context(monkeypatch):
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (f"hash_{i}", "test_addr", "recv_addr", 100, i, 1000, "sig", "pub", 2000 + i)
             )
+        conn.commit()
+    finally:
+        conn.close()
 
     client = app.test_client()
     # Werkzeug maps the WSGI env var HTTP_X_ADMIN_KEY back to the

@@ -81,7 +81,11 @@ def test_governance_propose_rejects_non_object_json():
 def test_governance_vote_rejects_non_object_json():
     integrated_node.app.config["TESTING"] = True
     with integrated_node.app.test_client() as client:
-        resp = client.post("/governance/vote", json=["not", "an", "object"])
+        resp = client.post(
+            "/governance/vote",
+            headers={"X-Admin-Key": "0" * 32},
+            json=["not", "an", "object"]
+        )
 
     assert resp.status_code == 400
     assert resp.get_json()["error"] == "JSON object required"
@@ -92,6 +96,7 @@ def test_governance_vote_rejects_invalid_proposal_id():
     with integrated_node.app.test_client() as client:
         resp = client.post(
             "/governance/vote",
+            headers={"X-Admin-Key": "0" * 32},
             json={
                 "proposal_id": "not-an-int",
                 "wallet": "RTC-test",
@@ -167,6 +172,7 @@ def test_governance_vote_flow_and_lifecycle_finalization():
             with patch("integrated_node.verify_rtc_signature", return_value=True):
                 r2 = client.post(
                     "/governance/vote",
+                    headers={"X-Admin-Key": "0" * 32},
                     json={
                         **payload,
                         "public_key": pub_hex,
