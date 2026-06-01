@@ -57,6 +57,11 @@ class GovernanceParamError(ValueError):
 def ensure_governance_params_schema(conn: sqlite3.Connection) -> None:
     """Create the governance_params table if absent. Call once at DB init (DDL
     implicit-commits — not inside a consensus transaction)."""
+    if conn.in_transaction:
+        raise RuntimeError(
+            "ensure_governance_params_schema must not run inside a transaction "
+            "(DDL implicit-commits and would break the caller's tx atomicity)"
+        )
     conn.execute(GOVERNANCE_PARAMS_SCHEMA)
 
 
