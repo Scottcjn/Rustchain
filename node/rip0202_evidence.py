@@ -67,9 +67,17 @@ def record_attestation_evidence(
     input so the caller can reject the attestation rather than store junk.
     """
     rec = build_b0_attestation(miner, device, fingerprint, fingerprint_passed, ts)
+    # TS-MONOTONIC upsert: only overwrite when the incoming attestation is at
+    # least as new as the stored one. A delayed/replayed OLDER attestation must
+    # not clobber newer evidence (which would silently drop a miner from the
+    # producer's TTL-filtered view). Deterministic + order-independent.
     conn.execute(
-        "INSERT OR REPLACE INTO attestation_evidence "
-        "(miner, device_json, fingerprint_json, fingerprint_passed, ts) VALUES (?,?,?,?,?)",
+        "INSERT INTO attestation_evidence "
+        "(miner, device_json, fingerprint_json, fingerprint_passed, ts) VALUES (?,?,?,?,?) "
+        "ON CONFLICT(miner) DO UPDATE SET "
+        "device_json=excluded.device_json, fingerprint_json=excluded.fingerprint_json, "
+        "fingerprint_passed=excluded.fingerprint_passed, ts=excluded.ts "
+        "WHERE excluded.ts >= attestation_evidence.ts",
         (
             rec["miner"],
             _canonical(rec["device"]),
@@ -100,10 +108,17 @@ def load_committed_attestations(
     out: List[Dict[str, Any]] = []
     for miner, dev_j, fp_j, passed, ts in conn.execute(sql, params).fetchall():
         try:
+            # Strict stored-type validation (fail closed): a corrupt row with
+            # passed=2 or ts=1.9 must be skipped, NOT loosely coerced via
+            # bool()/int() (which would admit garbage into the committed set).
+            if passed not in (0, 1):
+                continue
+            if isinstance(ts, bool) or not isinstance(ts, int):
+                continue
             device = json.loads(dev_j)
             fingerprint = json.loads(fp_j)
             out.append(
-                build_b0_attestation(miner, device, fingerprint, bool(passed), int(ts))
+                build_b0_attestation(miner, device, fingerprint, passed == 1, ts)
             )
         except (json.JSONDecodeError, B0FormatError, TypeError, ValueError):
             continue  # fail closed: skip a corrupt/invalid row
