@@ -157,6 +157,52 @@ def init_governance_tables(db_path: str):
 # Helper functions
 # ---------------------------------------------------------------------------
 
+def _balance_rtc_for_miner(conn: sqlite3.Connection, miner_id: str) -> float:
+    """Return miner balance in RTC, tolerant to both known balances schemas.
+
+    Schema A (legacy):  balances(miner_pk TEXT PRIMARY KEY, balance_rtc REAL)
+    Schema B (current): balances(miner_id TEXT PRIMARY KEY, amount_i64 INTEGER)
+    """
+    try:
+        row = conn.execute(
+            "SELECT amount_i64 FROM balances WHERE miner_id = ?", (miner_id,)
+        ).fetchone()
+        if row is not None:
+            return int(row[0] or 0) / 1_000_000.0
+    except Exception:
+        pass
+    try:
+        row = conn.execute(
+            "SELECT balance_rtc FROM balances WHERE miner_pk = ?", (miner_id,)
+        ).fetchone()
+        if row is not None:
+            return float(row[0] or 0)
+    except Exception:
+        pass
+    return 0.0
+
+
+def _deduct_proposal_fee(conn: sqlite3.Connection, miner_id: str, fee_rtc: float) -> None:
+    """Deduct proposal fee from miner balance, tolerant to both schemas."""
+    fee_i64 = int(fee_rtc * 1_000_000)
+    try:
+        updated = conn.execute(
+            "UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ?",
+            (fee_i64, miner_id),
+        ).rowcount
+        if updated > 0:
+            return
+    except Exception:
+        pass
+    try:
+        conn.execute(
+            "UPDATE balances SET balance_rtc = balance_rtc - ? WHERE miner_pk = ?",
+            (fee_rtc, miner_id),
+        )
+    except Exception:
+        pass
+
+
 def _get_miner_antiquity_weight(miner_id: str, db_path: str) -> float:
     """Return the antiquity multiplier for a miner (default 1.0 if not found)."""
     try:
@@ -387,19 +433,12 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
                     "SELECT name FROM sqlite_master WHERE type='table' AND name='balances'"
                 ).fetchone()
                 if table_check:
-                    bal_row = conn.execute(
-                        "SELECT balance_rtc FROM balances WHERE miner_pk = ?",
-                        (miner_id,)
-                    ).fetchone()
-                    if not bal_row or float(bal_row[0]) < PROPOSAL_FEE_RTC:
+                    balance = _balance_rtc_for_miner(conn, miner_id)
+                    if balance < PROPOSAL_FEE_RTC:
                         return jsonify({
                             "error": f"Insufficient balance: proposal fee is {PROPOSAL_FEE_RTC} RTC"
                         }), 402
-                    # Deduct fee (inside table-check guard — balances table confirmed)
-                    conn.execute(
-                        "UPDATE balances SET balance_rtc = balance_rtc - ? WHERE miner_pk = ?",
-                        (PROPOSAL_FEE_RTC, miner_id)
-                    )
+                    _deduct_proposal_fee(conn, miner_id, PROPOSAL_FEE_RTC)
 
                 # Anti-spam: max active proposals per miner
                 active_count = conn.execute(

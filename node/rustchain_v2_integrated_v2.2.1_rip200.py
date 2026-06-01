@@ -44,9 +44,14 @@ except Exception as e:
 # UTXO Layer (Phase 1 — dual-write alongside account model)
 UTXO_DUAL_WRITE = os.environ.get("UTXO_DUAL_WRITE", "0") == "1"
 try:
-    from utxo_db import UtxoDB, MAX_OUTPUTS as UTXO_MAX_OUTPUTS
+    from utxo_db import (
+        DUST_THRESHOLD as UTXO_DUST_THRESHOLD,
+        MAX_OUTPUTS as UTXO_MAX_OUTPUTS,
+        UtxoDB,
+    )
     HAVE_UTXO = True
 except ImportError:
+    UTXO_DUST_THRESHOLD = 1_000
     UTXO_MAX_OUTPUTS = 100
     HAVE_UTXO = False
     if UTXO_DUAL_WRITE:
@@ -1422,7 +1427,38 @@ def init_db():
         c.execute("CREATE TABLE IF NOT EXISTS tickets (ticket_id TEXT PRIMARY KEY, expires_at INTEGER, commitment TEXT)")
 
         # Epoch tables
-        c.execute("CREATE TABLE IF NOT EXISTS epoch_state (epoch INTEGER PRIMARY KEY, accepted_blocks INTEGER DEFAULT 0, finalized INTEGER DEFAULT 0)")
+        c.execute("CREATE TABLE IF NOT EXISTS epoch_state (epoch INTEGER PRIMARY KEY, accepted_blocks INTEGER DEFAULT 0, finalized INTEGER DEFAULT 0, settled INTEGER DEFAULT 0, settled_ts INTEGER)")
+        # Idempotent migration: settlement paths require settled/settled_ts; add
+        # them on pre-existing epoch_state tables so the replay guard cannot be
+        # silently disabled by a missing column.
+        _epoch_state_cols = {row[1] for row in c.execute("PRAGMA table_info(epoch_state)").fetchall()}
+        if "settled" not in _epoch_state_cols:
+            c.execute("ALTER TABLE epoch_state ADD COLUMN settled INTEGER DEFAULT 0")
+        if "settled_ts" not in _epoch_state_cols:
+            c.execute("ALTER TABLE epoch_state ADD COLUMN settled_ts INTEGER")
+        # Upgrade-safety backfill: any epoch already rewarded via the
+        # epoch_rewards settlement path must be marked settled so the atomic
+        # finalize_epoch guard cannot re-claim and re-credit it after upgrade.
+        try:
+            # (1) Insert a settled row for any rewarded epoch that has NO
+            # epoch_state row at all — otherwise finalize_epoch would INSERT it
+            # with settled=0 and credit the epoch a second time.
+            c.execute(
+                "INSERT OR IGNORE INTO epoch_state (epoch, settled, settled_ts) "
+                "SELECT DISTINCT epoch, 1, ? FROM epoch_rewards",
+                (int(time.time()),)
+            )
+            # (2) Mark any existing-but-unsettled rewarded epoch as settled.
+            c.execute(
+                "UPDATE epoch_state SET settled = 1 "
+                "WHERE settled = 0 AND epoch IN (SELECT DISTINCT epoch FROM epoch_rewards)"
+            )
+        except sqlite3.OperationalError as _bf_err:
+            # Only tolerate the expected absent optional epoch_rewards table;
+            # never silently skip the monetary backfill for any other error.
+            _bf_msg = str(_bf_err).lower()
+            if not ("no such table" in _bf_msg and "epoch_rewards" in _bf_msg):
+                raise
         c.execute("CREATE TABLE IF NOT EXISTS epoch_enroll (epoch INTEGER, miner_pk TEXT, weight INTEGER, PRIMARY KEY (epoch, miner_pk))")
         ensure_epoch_enroll_integer_weights(c)
         c.execute("CREATE TABLE IF NOT EXISTS balances (miner_pk TEXT PRIMARY KEY, balance_rtc REAL DEFAULT 0)")
@@ -3621,10 +3657,32 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
             print(f"[SECURITY] No valid miners for epoch {epoch} after RIP-309 filtering")
             return
 
-        # ATOMIC TRANSACTION: Wrap all updates in explicit transaction
+        # ATOMIC TRANSACTION: claim the epoch first, then credit — all under an
+        # IMMEDIATE write lock so two concurrent finalize_epoch calls cannot both
+        # credit balances (double-settlement / reward inflation past the cap).
         try:
-            c.execute("BEGIN TRANSACTION")
+            c.execute("BEGIN IMMEDIATE")
+
+            # Ensure the row exists, then atomically CLAIM settlement. If the
+            # claim affects 0 rows another settlement already won this epoch, so
+            # abort WITHOUT crediting. This (not the autocommit pre-check above)
+            # is the authoritative replay guard.
+            c.execute(
+                "INSERT INTO epoch_state (epoch, settled) VALUES (?, 0) "
+                "ON CONFLICT(epoch) DO NOTHING",
+                (epoch,)
+            )
+            claim = c.execute(
+                "UPDATE epoch_state SET settled = 1, settled_ts = ? WHERE epoch = ? AND settled = 0",
+                (int(time.time()), epoch)
+            )
+            if claim.rowcount != 1:
+                c.execute("ROLLBACK")
+                print(f"[SECURITY] Epoch {epoch} already settled (claim lost) — skipping to prevent double-reward")
+                return
+
             utxo_reward_outputs = []
+            skipped_utxo_dust_nrtc = 0
 
             # Distribute rewards with precision
             for pk, weight in miners:
@@ -3643,10 +3701,17 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
                 )
 
                 if UTXO_DUAL_WRITE:
-                    utxo_reward_outputs.append({
-                        "address": pk,
-                        "value_nrtc": amount_nrtc,
-                    })
+                    if amount_nrtc >= UTXO_DUST_THRESHOLD:
+                        utxo_reward_outputs.append({
+                            "address": pk,
+                            "value_nrtc": amount_nrtc,
+                        })
+                    else:
+                        # The UTXO layer intentionally rejects sub-dust boxes.
+                        # Keep the account-model reward settlement alive and
+                        # skip the unspendable UTXO output until a carry-forward
+                        # accumulator exists for tiny shares.
+                        skipped_utxo_dust_nrtc += max(0, amount_nrtc)
                 # Update metrics with decimal value for accuracy
                 balance_gauge.labels(miner_pk=pk).set(float(amount_decimal))
 
@@ -3679,14 +3744,14 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
                             "UTXO reward settlement failed for "
                             f"batch {batch_index + 1}/{len(reward_batches)}"
                         )
+                if skipped_utxo_dust_nrtc:
+                    print(
+                        "[UTXO] Skipped sub-dust epoch reward outputs totaling "
+                        f"{skipped_utxo_dust_nrtc} nRTC"
+                    )
 
-            # Mark epoch as settled - use UPDATE with WHERE settled=0 to prevent race
-            result = c.execute(
-                "UPDATE epoch_state SET settled = 1, settled_ts = ? WHERE epoch = ? AND settled = 0",
-                (int(time.time()), epoch)
-            )
-
-            # Commit transaction atomically
+            # Settlement was already CLAIMED atomically at the top of this
+            # transaction (settled=1). Commit the credits together with it.
             c.execute("COMMIT")
             print(f"[EPOCH] Finalized epoch {epoch} with {len(miners)} miners, total_weight={total_weight}")
 
@@ -4913,7 +4978,10 @@ def ingest_signed_header():
         
         if blocks_in_epoch >= EPOCH_SLOTS:
             # Check if already settled
-            settled_row = db.execute("SELECT 1 FROM epoch_rewards WHERE epoch=?", (current_epoch,)).fetchone()
+            # finalize_epoch records settlement in epoch_state.settled (it never
+            # writes epoch_rewards), so the guard must consult that flag — else
+            # it re-invokes finalize_epoch on every subsequent block in the epoch.
+            settled_row = db.execute("SELECT 1 FROM epoch_state WHERE epoch=? AND settled=1", (current_epoch,)).fetchone()
             if not settled_row:
                 # Call finalize_epoch to distribute rewards
                 try:
@@ -6415,6 +6483,7 @@ def governance_proposal_detail(proposal_id: int):
 
 
 @app.route('/governance/vote', methods=['POST'])
+@admin_required
 def governance_vote():
     data = request.get_json(silent=True)
     if data is None:
@@ -8326,6 +8395,52 @@ def api_wallet_balance():
             bal_rtc = float(row[0]) if row else 0.0
             amt = int(round(bal_rtc * UNIT))
 
+    return jsonify({
+        "miner_id": miner_id,
+        "amount_i64": amt,
+        "amount_rtc": amt / UNIT
+    })
+
+
+# Conservative identifier grammar for /api/wallet/<id>: RTC address, wallet
+# name, or namespaced miner id (e.g. "github:user"). Bounds length so a
+# direct caller cannot use oversized ids for request/DB/response amplification.
+_API_WALLET_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,80}$")
+
+
+# NOTE: any future *static* route under /api/wallet/ (e.g. /api/wallet/list)
+# must be declared BEFORE this variable rule or Werkzeug will capture it here.
+@app.route('/api/wallet/<miner_id>', methods=['GET'])
+def api_wallet_lookup(miner_id):
+    """Canonical read-only balance lookup by miner_id / RTC address.
+
+    Alias of /wallet/balance so /api/wallet/<id> — the path used by the block
+    explorer, dashboard, and external tooling — resolves on the node origin
+    instead of returning 404 (the route previously lived only in the separate
+    rustchain_dashboard.py app, which is not the process nginx proxies to).
+    Read-only; mirrors existing public /wallet/balance behaviour, so it
+    exposes no data that was not already reachable. Malformed ids return 400
+    (not a zero balance) so the prefix still distinguishes bad input.
+    """
+    miner_id = (miner_id or "").strip()
+    if not _API_WALLET_ID_RE.match(miner_id):
+        return jsonify({"ok": False, "error": "invalid miner_id"}), 400
+    try:
+        with sqlite3.connect(DB_PATH) as db:
+            try:
+                # Newer schema: balances(miner_id, amount_i64)
+                row = db.execute("SELECT amount_i64 FROM balances WHERE miner_id=?", (miner_id,)).fetchone()
+                amt = int(row[0]) if row else 0
+            except sqlite3.OperationalError as schema_err:
+                # Only fall back for the expected missing-column case; re-raise
+                # genuine operational failures instead of masking them.
+                if "no such column" not in str(schema_err).lower():
+                    raise
+                # Legacy schema: balances(miner_pk, balance_rtc)
+                row = db.execute("SELECT balance_rtc FROM balances WHERE miner_pk=?", (miner_id,)).fetchone()
+                amt = int(round(float(row[0]) * UNIT)) if row else 0
+    except sqlite3.OperationalError:
+        return jsonify({"ok": False, "error": "balance lookup unavailable"}), 503
     return jsonify({
         "miner_id": miner_id,
         "amount_i64": amt,

@@ -55,6 +55,10 @@ logger = logging.getLogger(__name__)
 
 GENESIS_TIMESTAMP = 1764706927  # Production chain launch (Dec 2, 2025)
 BLOCK_TIME = 600  # 10 minutes (600 seconds)
+
+# Public allowlist for /block/producers device_info (prevents future
+# fields leaking through this unauthenticated endpoint).
+_DEVICE_PUBLIC_FIELDS = ("arch", "family", "model", "year", "enroll_weight")
 MAX_TXS_PER_BLOCK = 1000
 ATTESTATION_TTL = 600  # 10 minutes
 MAX_BATCH_BLOCKS = 100
@@ -1093,6 +1097,11 @@ def create_block_api_routes(app, producer: BlockProducer, validator: BlockValida
         current_ts = int(time.time())
         miners = producer.get_attested_miners(current_ts)
 
+        # Intentionally PUBLIC consensus transparency. device_info is exposed via
+        # an explicit field allowlist so a future column added to it (e.g. an
+        # IP/hostname) can never leak through this unauthenticated endpoint.
+        # Behaviour for current data is unchanged (these are the only fields
+        # device_info carries); a non-dict/None row degrades to {} instead of 500.
         return jsonify({
             "count": len(miners),
             "balance": producer.get_producer_balance_summary(
@@ -1104,7 +1113,9 @@ def create_block_api_routes(app, producer: BlockProducer, validator: BlockValida
                     "wallet": m[0],
                     "arch": m[1],
                     "selection_weight": producer._miner_selection_weight(m),
-                    "device_info": m[2]
+                    "device_info": {
+                        k: m[2].get(k) for k in _DEVICE_PUBLIC_FIELDS
+                    } if isinstance(m[2], dict) else {},
                 }
                 for m in miners
             ]

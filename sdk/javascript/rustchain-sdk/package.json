@@ -1,0 +1,32 @@
+{
+  "name": "rustchain-sdk",
+  "version": "0.1.0",
+  "description": "Lightweight JavaScript SDK for the RustChain node API",
+  "type": "module",
+  "main": "src/index.js",
+  "files": [
+    "src",
+    "examples",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test"
+  },
+  "keywords": [
+    "rustchain",
+    "rtc",
+    "blockchain",
+    "sdk",
+    "proof-of-antiquity"
+  ],
+  "author": "RustChain Contributors",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Scottcjn/Rustchain.git",
+    "directory": "sdk/javascript/rustchain-sdk"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
