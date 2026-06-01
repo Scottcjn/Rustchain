@@ -226,6 +226,23 @@ def _parse_transfer_nonce(nonce_raw):
     return str(nonce_int), nonce_int
 
 
+def _nonce_signature_forms(nonce_raw, nonce_int):
+    """
+    Return candidate nonce representations for signature verification.
+
+    Older clients could sign the raw string form that the endpoint previously
+    accepted, while newer clients may already sign the normalized integer.
+    """
+    forms = [nonce_int]
+    if isinstance(nonce_raw, str):
+        nonce_text = nonce_raw.strip()
+        if nonce_text and nonce_text != str(nonce_int):
+            forms.append(nonce_text)
+        elif nonce_text == str(nonce_int):
+            forms.append(nonce_text)
+    return forms
+
+
 def _transfer_string_field(data: dict, field: str):
     value = data.get(field)
     if value is None:
@@ -546,28 +563,38 @@ def utxo_transfer():
     # keep the signed-payload bytes byte-identical to what the wallet computed.
     amount_for_sig = float(amount_rtc)
     fee_for_sig = float(fee_rtc)
-    tx_data_v2 = {
-        'from': from_address,
-        'to': to_address,
-        'amount': amount_for_sig,
-        'fee': fee_for_sig,
-        'memo': memo,
-        'nonce': nonce_int,
-    }
-    message_v2 = json.dumps(tx_data_v2, sort_keys=True, separators=(',', ':')).encode()
+    signature_verified = False
+    used_legacy_signature = False
+    for nonce_for_sig in _nonce_signature_forms(data.get('nonce'), nonce_int):
+        tx_data_v2 = {
+            'from': from_address,
+            'to': to_address,
+            'amount': amount_for_sig,
+            'fee': fee_for_sig,
+            'memo': memo,
+            'nonce': nonce_for_sig,
+        }
+        message_v2 = json.dumps(tx_data_v2, sort_keys=True, separators=(',', ':')).encode()
+        if _verify_sig_fn(public_key, message_v2, signature):
+            signature_verified = True
+            break
 
-    tx_data_legacy = {
-        'from': from_address,
-        'to': to_address,
-        'amount': amount_for_sig,
-        'memo': memo,
-        'nonce': nonce_int,
-    }
-    message_legacy = json.dumps(tx_data_legacy, sort_keys=True, separators=(',', ':')).encode()
+        tx_data_legacy = {
+            'from': from_address,
+            'to': to_address,
+            'amount': amount_for_sig,
+            'memo': memo,
+            'nonce': nonce_for_sig,
+        }
+        message_legacy = json.dumps(tx_data_legacy, sort_keys=True, separators=(',', ':')).encode()
+        if _verify_sig_fn(public_key, message_legacy, signature):
+            signature_verified = True
+            used_legacy_signature = True
+            break
 
-    if _verify_sig_fn(public_key, message_v2, signature):
-        pass  # New client — fee is signed, MITM-resistant
-    elif _verify_sig_fn(public_key, message_legacy, signature):
+    if not signature_verified:
+        return jsonify({'error': 'Invalid Ed25519 signature'}), 401
+    if used_legacy_signature:
         if fee_nrtc != 0:
             return jsonify({
                 'error': 'Legacy signature format cannot authorize nonzero fee',
@@ -583,8 +610,6 @@ def utxo_transfer():
             "Upgrade client to include fee in signed message.",
             from_address[:20],
         )
-    else:
-        return jsonify({'error': 'Invalid Ed25519 signature'}), 401
 
     # --- UTXO transaction ---------------------------------------------------
 
