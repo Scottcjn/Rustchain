@@ -64,7 +64,7 @@ VPS_PORT = 8099
 #   miner ID: some-miner-id
 #   miner_id: some-miner-id
 _DIRECTIVE_RE = re.compile(
-    r"^\s*(?:"
+    r"^\s*(?P<label>"
     r"wallet|"
     r"\.rtc-wallet|"
     r"payout wallet|"
@@ -73,7 +73,7 @@ _DIRECTIVE_RE = re.compile(
     r"miner id for payout if accepted|"
     r"miner id|"
     r"miner_id"
-    r")\s*:\s*(\S.*?)\s*$",
+    r")\s*:\s*(?P<value>\S.*?)\s*$",
     re.IGNORECASE,
 )
 _RTC_ADDRESS_RE = re.compile(r"RTC[0-9a-f]{40}", re.IGNORECASE)
@@ -195,7 +195,13 @@ def resolve_wallet_from_pr_body(pr_body: str) -> Optional[str]:
             continue
         match = _DIRECTIVE_RE.match(line)
         if match:
-            return match.group(1).strip().rstrip(",")
+            label = match.group("label").strip().lower()
+            value = match.group("value").strip().rstrip(",")
+            if "miner" not in label:
+                address_match = _RTC_ADDRESS_RE.search(value)
+                if address_match:
+                    return address_match.group(0)
+            return value
         if re.search(r"(payout|wallet|address)", line, re.IGNORECASE):
             address_match = _RTC_ADDRESS_RE.search(line)
             if address_match:

@@ -61,6 +61,16 @@ class TestResolveWalletFromPrBody(unittest.TestCase):
             "RTC4730a64f821a590972e8b37781fae5d568b5865c",
         )
 
+    def test_annotated_payout_address_directive_returns_rtc_token_only(self):
+        body = (
+            "Payout address if accepted: "
+            "RTC4730a64f821a590972e8b37781fae5d568b5865c (preferred wallet)\n"
+        )
+        self.assertEqual(
+            resolve_wallet_from_pr_body(body),
+            "RTC4730a64f821a590972e8b37781fae5d568b5865c",
+        )
+
     def test_rtc_wallet_directive(self):
         body = "RTC Wallet: RTCaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
         self.assertEqual(
@@ -71,6 +81,13 @@ class TestResolveWalletFromPrBody(unittest.TestCase):
     def test_miner_id_for_payout_directive(self):
         body = "miner ID for payout if accepted: my-miner-id\n"
         self.assertEqual(resolve_wallet_from_pr_body(body), "my-miner-id")
+
+    def test_miner_id_directive_keeps_annotated_value(self):
+        body = "miner ID for payout if accepted: my-miner-id (fallback worker)\n"
+        self.assertEqual(
+            resolve_wallet_from_pr_body(body),
+            "my-miner-id (fallback worker)",
+        )
 
     def test_miner_id_underscore_directive(self):
         body = "miner_id: fallback-miner\n"
