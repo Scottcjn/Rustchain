@@ -151,6 +151,14 @@ def test_parse_raydium_pool_info_for_wrapped_rtc_pair(monkeypatch):
             "data": {
                 "data": [
                     {
+                        "id": "unrelated-pool",
+                        "mintA": {"address": module.WSOL_MINT},
+                        "mintB": {"address": "other-token"},
+                        "price": 99,
+                        "tvl": 999999,
+                        "day": {"volume": 999999},
+                    },
+                    {
                         "id": "8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb",
                         "mintA": {"address": module.WRTC_MINT},
                         "mintB": {"address": module.WSOL_MINT},
@@ -168,6 +176,36 @@ def test_parse_raydium_pool_info_for_wrapped_rtc_pair(monkeypatch):
     assert pool["liquidity"] == 778.37
     assert pool["volume_24h"] == 12.5
     assert pool["url"].startswith("https://raydium.io/swap/")
+
+
+def test_parse_raydium_pool_info_ignores_unmatched_pool_rows(monkeypatch):
+    module = load_bot_module(monkeypatch)
+
+    pool = module.parse_raydium_pool_info(
+        {
+            "success": True,
+            "data": {
+                "data": [
+                    {
+                        "id": "unrelated-pool",
+                        "mintA": {"address": module.WSOL_MINT},
+                        "mintB": {"address": "other-token"},
+                        "price": 99,
+                        "tvl": 999999,
+                        "day": {"volume": 999999},
+                    }
+                ],
+            },
+        }
+    )
+
+    assert pool == {
+        "price_sol": None,
+        "liquidity": 0.0,
+        "volume_24h": 0.0,
+        "pool_id": "",
+        "url": module.RAYDIUM_SWAP_URL,
+    }
 
 
 def test_parse_raydium_pool_info_inverts_when_wrtc_is_quote_mint(monkeypatch):

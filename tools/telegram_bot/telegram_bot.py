@@ -26,6 +26,7 @@ import logging
 from typing import Any
 
 import requests
+import urllib3
 from dotenv import load_dotenv
 from telegram import Update, InlineQueryResultArticle, InputTextMessageContent
 from telegram.ext import (
@@ -52,6 +53,9 @@ RUSTCHAIN_VERIFY_SSL = os.getenv("RUSTCHAIN_VERIFY_SSL", "true").lower() not in 
     "false",
     "no",
 }
+if not RUSTCHAIN_VERIFY_SSL:
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 WRTC_MINT = "12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X"
 WSOL_MINT = "So11111111111111111111111111111111111111112"
 RAYDIUM_MINT_PRICE_URL = os.getenv(
@@ -132,7 +136,20 @@ def parse_raydium_pool_info(payload: dict, mint: str = WRTC_MINT) -> dict:
     if not isinstance(rows, list) or not rows:
         return empty
 
-    pool = rows[0]
+    expected_mints = {mint, WSOL_MINT}
+    pool = next(
+        (
+            row
+            for row in rows
+            if isinstance(row, dict)
+            and {
+                (row.get("mintA") or {}).get("address"),
+                (row.get("mintB") or {}).get("address"),
+            }
+            == expected_mints
+        ),
+        None,
+    )
     if not isinstance(pool, dict):
         return empty
 
@@ -159,10 +176,8 @@ def parse_raydium_pool_info(payload: dict, mint: str = WRTC_MINT) -> dict:
 async def fetch_price_data() -> dict | None:
     """Fetch wRTC price from Raydium price and pool APIs."""
     try:
-        price_payload = await _get_json(
-            RAYDIUM_MINT_PRICE_URL, {"mints": WRTC_MINT}
-        )
-        pool_payload = await _get_json(
+        price_request = _get_json(RAYDIUM_MINT_PRICE_URL, {"mints": WRTC_MINT})
+        pool_request = _get_json(
             RAYDIUM_POOL_INFO_URL,
             {
                 "mint1": WRTC_MINT,
@@ -174,6 +189,7 @@ async def fetch_price_data() -> dict | None:
                 "page": "1",
             },
         )
+        price_payload, pool_payload = await asyncio.gather(price_request, pool_request)
         price_usd = parse_raydium_mint_price(price_payload)
         pool = parse_raydium_pool_info(pool_payload)
         if price_usd is None:
