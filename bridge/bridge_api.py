@@ -13,14 +13,13 @@ Admin-controlled Phase 1 (upgrade to trustless lock in Phase 2)
 
 import os
 import json
-import math
 import sqlite3
 import hashlib
 import hmac
-import math
 import time
 import threading
 import uuid
+from decimal import Decimal, InvalidOperation
 from functools import wraps
 from flask import Flask, Blueprint, request, jsonify
 
@@ -65,7 +64,7 @@ _db_lock = threading.Lock()
 
 
 def get_db():
-    conn = sqlite3.connect(BRIDGE_DB_PATH)
+    conn = sqlite3.connect(BRIDGE_DB_PATH, timeout=5.0)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -128,14 +127,29 @@ def log_event(conn, lock_id: str, event_type: str, actor: str = None, details: d
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
-def _amount_to_base(amount_float: float) -> int:
+def _amount_to_base(amount) -> int:
     """Convert human-readable RTC to base units (6 decimal places)."""
-    return int(round(amount_float * (10 ** RTC_DECIMALS)))
+    return int(Decimal(str(amount)) * (10 ** RTC_DECIMALS))
+
+
+def _parse_amount_base(raw_amount) -> int:
+    """Parse a bridge amount exactly into RTC base units."""
+    if isinstance(raw_amount, bool):
+        raise ValueError("invalid amount")
+    try:
+        amount = Decimal(str(raw_amount))
+    except (InvalidOperation, ValueError):
+        raise ValueError("invalid amount")
+    if not amount.is_finite():
+        raise ValueError("invalid amount")
+    if amount.as_tuple().exponent < -RTC_DECIMALS:
+        raise ValueError(f"amount supports at most {RTC_DECIMALS} decimal places")
+    return int(amount * (10 ** RTC_DECIMALS))
 
 
 def _amount_from_base(amount_int: int) -> float:
     """Convert base units to human-readable RTC."""
-    return amount_int / (10 ** RTC_DECIMALS)
+    return round(amount_int / (10 ** RTC_DECIMALS), RTC_DECIMALS)
 
 
 def _is_base_wallet_address(value: str) -> bool:
@@ -194,7 +208,7 @@ def _json_object_body():
     return data, None
 
 
-def _clean_string_field(data, field_name, *, optional=False, lower=False):
+def _clean_string_field(data, field_name, *, optional=False, lower=False, max_length=0):
     value = data.get(field_name)
     if value is None:
         return None if optional else ""
@@ -203,6 +217,8 @@ def _clean_string_field(data, field_name, *, optional=False, lower=False):
     value = value.strip()
     if lower:
         value = value.lower()
+    if max_length > 0 and len(value) > max_length:
+        raise ValueError(f"{field_name} too long (max {max_length})")
     if optional and not value:
         return None
     return value
@@ -242,23 +258,18 @@ def lock_rtc():
 
     # ── Validate inputs ──
     try:
-        sender = _clean_string_field(data, "sender_wallet")
-        target_chain = _clean_string_field(data, "target_chain", lower=True)
-        target_wallet = _clean_string_field(data, "target_wallet")
-        tx_hash = _clean_string_field(data, "tx_hash", optional=True)
-        receipt_signature = _clean_string_field(data, "receipt_signature", optional=True, lower=True)
+        sender = _clean_string_field(data, "sender_wallet", max_length=128)
+        target_chain = _clean_string_field(data, "target_chain", lower=True, max_length=32)
+        target_wallet = _clean_string_field(data, "target_wallet", max_length=128)
+        tx_hash = _clean_string_field(data, "tx_hash", optional=True, max_length=256)
+        receipt_signature = _clean_string_field(data, "receipt_signature", optional=True, lower=True, max_length=256)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
-    raw_amount = data.get("amount", 0)
-    if isinstance(raw_amount, bool):
-        return jsonify({"error": "invalid amount"}), 400
     try:
-        amount_float = float(raw_amount)
-    except (TypeError, ValueError):
-        return jsonify({"error": "invalid amount"}), 400
-    if not math.isfinite(amount_float):
-        return jsonify({"error": "invalid amount"}), 400
+        amount_base = _parse_amount_base(data.get("amount", 0))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
     if not sender:
         return jsonify({"error": "sender_wallet is required"}), 400
@@ -268,9 +279,9 @@ def lock_rtc():
         return jsonify({"error": "target_wallet is required"}), 400
     if not tx_hash:
         return jsonify({"error": "tx_hash is required for bridge lock requests"}), 400
-    if amount_float < MIN_LOCK_AMOUNT:
+    if amount_base < _amount_to_base(MIN_LOCK_AMOUNT):
         return jsonify({"error": f"minimum lock amount is {MIN_LOCK_AMOUNT} RTC"}), 400
-    if amount_float > MAX_LOCK_AMOUNT:
+    if amount_base > _amount_to_base(MAX_LOCK_AMOUNT):
         return jsonify({"error": f"maximum lock amount is {MAX_LOCK_AMOUNT} RTC"}), 400
 
     # Validate target wallet format
@@ -279,7 +290,7 @@ def lock_rtc():
     if target_chain == CHAIN_SOLANA and len(target_wallet) < 32:
         return jsonify({"error": "Solana wallet must be a valid base58 address"}), 400
 
-    amount_base = _amount_to_base(amount_float)
+    amount_rtc = _amount_from_base(amount_base)
     now = int(time.time())
     expires_at = now + LOCK_EXPIRY_SECONDS
     lock_id = _generate_lock_id(sender, amount_base, target_chain, now)
@@ -352,7 +363,7 @@ def lock_rtc():
                 return jsonify({"error": "tx_hash already used for another bridge lock"}), 409
 
             log_event(conn, lock_id, "lock_created", actor=sender, details={
-                "amount": amount_float,
+                "amount": amount_rtc,
                 "target_chain": target_chain,
                 "target_wallet": target_wallet,
                 "tx_hash": tx_hash,
@@ -370,7 +381,7 @@ def lock_rtc():
         "lock_id": lock_id,
         "state": state,
         "sender_wallet": sender,
-        "amount_rtc": amount_float,
+        "amount_rtc": amount_rtc,
         "target_chain": target_chain,
         "target_wallet": target_wallet,
         "tx_hash": tx_hash,
@@ -379,7 +390,7 @@ def lock_rtc():
         "expires_at": expires_at,
         "message": (
             f"Lock {'confirmed' if state == STATE_CONFIRMED else 'requested'}. "
-            f"Admin will only mint {amount_float} wRTC on {target_chain} "
+            f"Admin will only mint {amount_rtc} wRTC on {target_chain} "
             f"to {target_wallet[:12]}... after proof confirmation."
         )
     }), 201
@@ -417,7 +428,7 @@ def confirm_lock():
                 return jsonify({"error": "lock already confirmed"}), 409
             if row["state"] != STATE_REQUESTED:
                 return jsonify({"error": f"cannot confirm lock in state '{row['state']}'"}), 409
-            if row["expires_at"] < now:
+            if row["expires_at"] <= now:
                 return jsonify({"error": "lock has expired"}), 410
 
             conn.execute(
@@ -483,7 +494,7 @@ def release_wrtc():
                 return jsonify({
                     "error": f"cannot release lock in state '{row['state']}'"
                 }), 409
-            if row["expires_at"] < now:
+            if row["expires_at"] <= now:
                 return jsonify({"error": "lock has expired"}), 410
 
             conn.execute(
@@ -503,6 +514,72 @@ def release_wrtc():
         "message": "wRTC successfully minted on target chain",
     })
 
+
+
+
+@bridge_bp.route("/refund", methods=["POST"])
+@_require_admin
+def refund_lock():
+    """
+    Admin: refund an expired confirmed lock.
+
+    Transitions a confirmed/releasing lock that has expired to STATE_REFUNDED.
+    This provides a recovery path for locks stuck in confirmed state after expiry.
+
+    Body (JSON):
+     lock_id : str - Lock to refund
+     notes   : str - (optional) admin notes
+
+    Returns success/error.
+    """
+    data, error_response = _json_object_body()
+    if error_response:
+        return error_response
+    try:
+        lock_id = _clean_string_field(data, "lock_id")
+        notes = _clean_string_field(data, "notes", optional=True)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    if not lock_id:
+        return jsonify({"error": "lock_id is required"}), 400
+
+    now = int(time.time())
+    with _db_lock:
+        with get_db() as conn:
+            row = conn.execute(
+                "SELECT * FROM bridge_locks WHERE lock_id = ?", (lock_id,)
+            ).fetchone()
+
+            if not row:
+                return jsonify({"error": "lock not found"}), 404
+            if row["state"] not in (STATE_CONFIRMED, STATE_RELEASING):
+                return jsonify({
+                    "error": f"cannot refund lock in state '{row['state']}', must be confirmed or releasing"
+                }), 409
+            if row["expires_at"] > now:
+                return jsonify({
+                    "error": "lock has not expired yet, cannot refund",
+                    "expires_at": row["expires_at"],
+                    "now": now
+                }), 400
+
+            conn.execute(
+                "UPDATE bridge_locks SET state=?, updated_at=?, notes=? WHERE lock_id=?",
+                (STATE_REFUNDED, now, notes, lock_id)
+            )
+            log_event(conn, lock_id, "refunded", actor="admin", details={
+                "reason": "lock expired before release",
+                "notes": notes,
+            })
+            conn.commit()
+
+            return jsonify({
+                "lock_id": lock_id,
+                "state": STATE_REFUNDED,
+                "amount_rtc": _amount_from_base(row["amount_rtc"]),
+                "message": "Lock refunded successfully. RTC should be returned to sender.",
+            })
 
 @bridge_bp.route("/ledger", methods=["GET"])
 def get_ledger():

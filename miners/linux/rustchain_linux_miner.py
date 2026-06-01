@@ -6,8 +6,21 @@ With RIP-PoA Hardware Fingerprint Attestation + Serial Binding v2.0
 import warnings
 # warnings.filterwarnings('ignore', message='Unverified HTTPS request')  # No longer needed — TLS verification enabled
 
-import os, sys, json, time, hashlib, uuid, requests, socket, subprocess, platform, statistics, re
+import os, sys, json, time, hashlib, uuid, math, requests, socket, subprocess, platform, statistics, re
 from datetime import datetime
+
+# ── Ed25519 signing (GPT-5.4 audit finding #2) ──
+# If miner_crypto.py + PyNaCl are available, sign every attestation with
+# Ed25519 over the canonical JSON of the full payload, and sign every
+# enrollment with the 3-field MAC server expects. Server-side acceptance:
+# PR #6426 (canonical-JSON) + the existing 3-field MAC path for enrollment.
+# Without signing, miner falls back to legacy sha512 / unsigned — server
+# accepts with WARNING but offers no wallet-hijack protection.
+try:
+    from miner_crypto import get_or_create_keypair, sign_payload  # noqa: F401
+    CRYPTO_AVAILABLE = True
+except ImportError:
+    CRYPTO_AVAILABLE = False
 
 # Import fingerprint checks
 try:
@@ -28,6 +41,7 @@ NODE_URL = "https://rustchain.org"  # Use HTTPS via nginx
 BLOCK_TIME = 600  # 10 minutes
 NETWORK_RETRY_ATTEMPTS = 3
 NETWORK_RETRY_BASE_DELAY = 2
+MICRO_UNITS_PER_RTC = 1_000_000
 
 # TLS verification: use pinned cert if available, else system CA bundle
 _CERT_PATH = os.path.expanduser("~/.rustchain/node_cert.pem")
@@ -98,6 +112,41 @@ def _miner_id_from_hw(hw_info):
     return f"{arch}-{hostname}"
 
 
+def _finite_float(value):
+    if isinstance(value, bool):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) else None
+
+
+def _wallet_balance_rtc(data):
+    if not isinstance(data, dict):
+        return None
+
+    value = _finite_float(data.get("amount_rtc"))
+    if value is not None:
+        return value
+
+    value = _finite_float(data.get("amount_i64"))
+    if value is not None:
+        return value / MICRO_UNITS_PER_RTC
+
+    for key in ("balance_rtc", "rtc_balance", "balance", "amount"):
+        value = _finite_float(data.get(key))
+        if value is not None:
+            return value
+
+    for key in ("balance_i64", "balance_urtc"):
+        value = _finite_float(data.get(key))
+        if value is not None:
+            return value / MICRO_UNITS_PER_RTC
+
+    return None
+
+
 def _request_with_network_retry(method, url, action, retries=NETWORK_RETRY_ATTEMPTS,
                                 base_delay=NETWORK_RETRY_BASE_DELAY, sleep_func=None,
                                 **kwargs):
@@ -162,6 +211,16 @@ class LocalMiner:
         self.attestation_valid_until = 0
         self.last_entropy = {}
         self.fingerprint_data = {}
+
+        # Ed25519 keypair — generated/loaded once per install. Used to sign
+        # /attest/submit (canonical JSON) and /epoch/enroll (3-field MAC).
+        # Persisted via miner_crypto.get_or_create_keypair so reinstall
+        # preserves identity.
+        self.keypair = {}
+        self.public_key = ""
+        if CRYPTO_AVAILABLE:
+            self.keypair = get_or_create_keypair()
+            self.public_key = self.keypair.get("public_key", "")
         self.fingerprint_passed = False
         self.verbose = verbose
         self.show_payload = show_payload
@@ -487,6 +546,23 @@ class LocalMiner:
             "warthog": self.warthog.collect_proof() if self.warthog else None
         }
 
+        # ── Ed25519 signature (GPT-5.4 audit finding #2) ──
+        # Sign canonical JSON of the full attestation BEFORE adding signature
+        # fields. Server (PR #6426) strips signature/public_key/signature_type
+        # before re-canonicalizing for verification.
+        if CRYPTO_AVAILABLE and self.keypair:
+            try:
+                payload_bytes = json.dumps(
+                    attestation, sort_keys=True, separators=(",", ":")
+                ).encode()
+                attestation["signature"] = sign_payload(
+                    payload_bytes, self.keypair["private_key"]
+                )
+                attestation["public_key"] = self.public_key
+                attestation["signature_type"] = "ed25519"
+            except Exception:
+                pass  # Fall through unsigned; server accepts with warning
+
         try:
             resp = self._post(
                 "/attest/submit",
@@ -547,14 +623,42 @@ class LocalMiner:
 
         print(f"\n📝 [{datetime.now().strftime('%H:%M:%S')}] Enrolling...")
 
+        # Fetch current epoch so we can sign the enrollment. Server expects
+        # 3-field MAC (miner_pubkey|miner_id|epoch) verified against the
+        # SAME Ed25519 key used during attestation (cross-checked via
+        # signing_pubkey column in miner_attest_recent). Race with epoch
+        # rollover is mild — server returns invalid_enrollment_signature on
+        # mismatch and the miner retries on next cycle.
+        current_epoch = None
+        try:
+            ep_resp = requests.get(
+                f"{self.node_url}/epoch", timeout=10, verify=TLS_VERIFY
+            )
+            if ep_resp.ok:
+                current_epoch = ep_resp.json().get("epoch")
+        except Exception:
+            pass
+
+        miner_id = self._miner_id()
         payload = {
             "miner_pubkey": self.wallet,
-            "miner_id": self._miner_id(),
+            "miner_id": miner_id,
             "device": {
                 "family": self.hw_info["family"],
                 "arch": self.hw_info["arch"]
             }
         }
+
+        # Ed25519-sign the enrollment if we have a keypair AND a fresh epoch.
+        if CRYPTO_AVAILABLE and self.keypair and current_epoch is not None:
+            enroll_message = f"{self.wallet}|{miner_id}|{current_epoch}"
+            try:
+                payload["signature"] = sign_payload(
+                    enroll_message.encode(), self.keypair["private_key"]
+                )
+                payload["public_key"] = self.public_key
+            except Exception:
+                pass  # Best-effort; server still accepts unsigned with warning
 
         try:
             resp = self._post(
@@ -612,12 +716,21 @@ class LocalMiner:
     def check_balance(self):
         """Check balance"""
         try:
-            resp = self._get(f"/balance/{self.wallet}", "checking wallet balance", timeout=10, verify=TLS_VERIFY)
+            resp = self._get(
+                "/wallet/balance",
+                "checking wallet balance",
+                params={"miner_id": self._miner_id()},
+                timeout=10,
+                verify=TLS_VERIFY,
+            )
             if resp is None:
                 return 0
             if resp.status_code == 200:
                 result = resp.json()
-                balance = result.get('balance_rtc', 0)
+                balance = _wallet_balance_rtc(result)
+                if balance is None:
+                    print("[WARN] Invalid wallet balance response")
+                    return 0
                 print(f"\n💰 Balance: {balance} RTC")
                 return balance
         except Exception as e:

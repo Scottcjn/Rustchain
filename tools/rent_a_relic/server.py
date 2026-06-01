@@ -32,9 +32,7 @@ from flask import Flask, jsonify, request, abort
 from tools.rent_a_relic.models import (
     MACHINE_REGISTRY,
     VALID_DURATIONS_HOURS,
-    EscrowStatus,
     EscrowTransaction,
-    Machine,
     Reservation,
     ReservationStatus,
 )
@@ -59,7 +57,7 @@ def _get_json_object_or_empty() -> dict:
     return data
 
 
-def _optional_string_value(data: dict, key: str) -> str | None:
+def _optional_string_value(data: dict, key: str, max_length: int = 0) -> str | None:
     value = data.get(key)
     if value is None:
         return None
@@ -68,6 +66,20 @@ def _optional_string_value(data: dict, key: str) -> str | None:
     value = value.strip()
     if value == "":
         return None
+    if max_length > 0 and len(value) > max_length:
+        abort(400, description=f"{key} exceeds maximum length of {max_length}")
+    return value
+
+
+def _required_string_value(data: dict, key: str, max_length: int = 0) -> str:
+    value = data.get(key)
+    if not isinstance(value, str):
+        abort(400, description=f"{key} must be a string")
+    value = value.strip()
+    if not value:
+        abort(400, description=f"{key} is required")
+    if max_length > 0 and len(value) > max_length:
+        abort(400, description=f"{key} exceeds maximum length of {max_length}")
     return value
 
 
@@ -272,15 +284,11 @@ def post_reserve():
     """Reserve a machine and lock RTC in escrow."""
     data = _get_json_object_or_empty()
 
-    agent_id       = _optional_string_value(data, "agent_id")
-    machine_id     = _optional_string_value(data, "machine_id")
+    agent_id       = _required_string_value(data, "agent_id", max_length=128)
+    machine_id     = _required_string_value(data, "machine_id", max_length=128)
     duration_hours = data.get("duration_hours")
     rtc_amount     = data.get("rtc_amount")
 
-    if not agent_id:
-        abort(400, description="agent_id is required")
-    if not machine_id:
-        abort(400, description="machine_id is required")
     if isinstance(duration_hours, bool):
         abort(400, description="duration_hours must be one of [1, 4, 24]")
     if duration_hours not in VALID_DURATIONS_HOURS:

@@ -13,11 +13,14 @@ import sqlite3
 import sys
 import tempfile
 import time
+from unittest import mock
 from pathlib import Path
 
 os.environ.setdefault("RC_P2P_SECRET", "unit-test-secret-0123456789abcdef")
 
-MODULE_PATH = Path(__file__).resolve().parents[1] / "rustchain_p2p_gossip.py"
+NODE_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(NODE_DIR))
+MODULE_PATH = NODE_DIR / "rustchain_p2p_gossip.py"
 spec = importlib.util.spec_from_file_location("rustchain_p2p_gossip", MODULE_PATH)
 mod = importlib.util.module_from_spec(spec)
 sys.modules["rustchain_p2p_gossip"] = mod
@@ -81,30 +84,60 @@ def test_phase_a_old_payload_voter_spoof_still_blocked():
     assert result.get("reason") == "voter_identity_mismatch"
 
 
-def test_p2p_dedup_insert_race_returns_duplicate():
-    """A concurrent handler winning the insert after precheck must stop processing."""
+def test_p2p_dedup_duplicate_does_not_process_message():
+    """Duplicate messages must not be processed after passing verification."""
     target = _mk_layer("node1", {"node2": "http://n2"})
     sender = _mk_layer("node2", db_path=target.db_path)
     sender.broadcast = lambda *args, **kwargs: None
 
-    msg = sender.create_message(mod.MessageType.PING, {"ping": 1})
-    original_verify = target.verify_message
+    first = sender.create_message(mod.MessageType.PING, {"ping": 1})
+    duplicate = mod.GossipMessage.from_dict(first.to_dict())
 
-    def racing_verify(message):
-        verified = original_verify(message)
-        with sqlite3.connect(target.db_path) as conn:
-            conn.execute(
-                "INSERT OR IGNORE INTO p2p_seen_messages (msg_id, ts) VALUES (?, ?)",
-                (message.msg_id, int(time.time())),
-            )
-        return verified
+    assert target.handle_message(first)["status"] == "ok"
 
-    target.verify_message = racing_verify
+    with mock.patch.object(target, "_handle_ping", side_effect=AssertionError("duplicate processed")):
+        result = target.handle_message(duplicate)
 
-    result = target.handle_message(msg)
     assert result["status"] == "duplicate"
     assert "pong" not in result
 
+
+
+def test_p2p_invalid_signature_does_not_poison_dedup():
+    """Invalid packets must not mark a msg_id as seen before a valid copy arrives."""
+    target = _mk_layer("node1", {"node2": "http://n2"})
+    sender = _mk_layer("node2", db_path=target.db_path)
+    sender.broadcast = lambda *args, **kwargs: None
+
+    valid = sender.create_message(mod.MessageType.PING, {"ping": 1})
+    spoof = mod.GossipMessage.from_dict(valid.to_dict())
+    spoof.signature = "bad-signature"
+
+    assert target.handle_message(spoof)["status"] == "invalid_signature"
+    result = target.handle_message(valid)
+    assert result["status"] == "ok"
+    assert "pong" in result
+
+
+def test_p2p_invalid_signature_does_not_poison_memory_fallback_dedup(monkeypatch):
+    """DB outages must not let invalid packets poison the memory fallback cache."""
+    target = _mk_layer("node1", {"node2": "http://n2"})
+    sender = _mk_layer("node2", db_path=target.db_path)
+    sender.broadcast = lambda *args, **kwargs: None
+
+    valid = sender.create_message(mod.MessageType.PING, {"ping": 1})
+    spoof = mod.GossipMessage.from_dict(valid.to_dict())
+    spoof.signature = "bad-signature"
+
+    def db_down(*args, **kwargs):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(mod.sqlite3, "connect", db_down)
+
+    assert target.handle_message(spoof)["status"] == "invalid_signature"
+    result = target.handle_message(valid)
+    assert result["status"] == "ok"
+    assert "pong" in result
 
 # Phase B regression
 def test_phase_b_rr_delegate_gate_rejects_non_leader():

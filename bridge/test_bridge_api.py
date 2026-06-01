@@ -13,6 +13,7 @@ import time
 import hmac
 import hashlib
 import tempfile
+from decimal import Decimal
 import pytest
 from pathlib import Path
 
@@ -52,7 +53,7 @@ def _receipt_signature(sender_wallet, amount, target_chain, target_wallet, tx_ha
     """Generate valid HMAC-SHA256 receipt signature for testing."""
     payload = {
         "sender_wallet": sender_wallet,
-        "amount_base": int(round(amount * 1_000_000)),
+        "amount_base": int(Decimal(str(amount)) * 1_000_000),
         "target_chain": target_chain,
         "target_wallet": target_wallet,
         "tx_hash": tx_hash,
@@ -69,7 +70,7 @@ def _receipt_signature_with_secret(sender_wallet, amount, target_chain, target_w
     """Generate receipt signature with custom secret (for testing invalid signatures)."""
     payload = {
         "sender_wallet": sender_wallet,
-        "amount_base": int(round(amount * 1_000_000)),
+        "amount_base": int(Decimal(str(amount)) * 1_000_000),
         "target_chain": target_chain,
         "target_wallet": target_wallet,
         "tx_hash": tx_hash,
@@ -702,6 +703,46 @@ class TestBridgeRequestValidation:
 
         assert resp.status_code == 400
         assert resp.get_json()["error"] == "invalid amount"
+
+    @pytest.mark.parametrize("amount", ["1.0000004", 1.0000004])
+    def test_lock_rejects_overprecision_amount(self, client, amount):
+        resp = client.post("/bridge/lock", json={
+            "sender_wallet": "test-miner",
+            "amount": amount,
+            "target_chain": "solana",
+            "target_wallet": "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+            "tx_hash": f"rtc-lock-overprecision-{str(amount).replace('.', '-')}",
+            "receipt_signature": _receipt_signature(
+                "test-miner",
+                "1.000000",
+                "solana",
+                "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+                f"rtc-lock-overprecision-{str(amount).replace('.', '-')}",
+            ),
+        })
+
+        assert resp.status_code == 400
+        assert "at most 6 decimal places" in resp.get_json()["error"]
+
+    def test_lock_accepts_six_decimal_amount_exactly(self, client):
+        tx_hash = "rtc-lock-six-decimal-amount"
+        resp = client.post("/bridge/lock", json={
+            "sender_wallet": "test-miner",
+            "amount": "1.000001",
+            "target_chain": "solana",
+            "target_wallet": "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+            "tx_hash": tx_hash,
+            "receipt_signature": _receipt_signature(
+                "test-miner",
+                "1.000001",
+                "solana",
+                "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+                tx_hash,
+            ),
+        })
+
+        assert resp.status_code == 201
+        assert resp.get_json()["amount_rtc"] == 1.000001
 
     def test_confirm_rejects_non_object_json(self, client):
         resp = client.post(

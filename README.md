@@ -12,13 +12,13 @@
 [![Stars](https://img.shields.io/github/stars/Scottcjn/Rustchain?style=flat&color=gold)](https://github.com/Scottcjn/Rustchain/stargazers)
 [![Nodes](https://img.shields.io/badge/Nodes-5%20Active-brightgreen)](https://rustchain.org/explorer/)
 [![DePIN](https://img.shields.io/badge/DePIN-Vintage%20Hardware-8B4513)](https://rustchain.org)
-[![Proof of Antiquity](https://img.shields.io/badge/Consensus-Proof%20of%20Antiquity-DAA520)](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf)
+[![Proof of Antiquity](https://img.shields.io/badge/Consensus-Proof%20of%20Antiquity-DAA520)](docs/WHITEPAPER.md)
 [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.19442753-blue)](https://doi.org/10.5281/zenodo.19442753)
 
 A PowerBook G4 from 2003 earns **2.5x** more than a modern Threadripper.
 A Power Mac G5 earns **2.0x**. A 486 with rusty serial ports earns the most respect of all.
 
-[Explorer](https://rustchain.org/explorer/) · [Machines Preserved](https://rustchain.org/preserved.html) · [Install Miner](#quickstart) · [Beginner Guide](docs/QUICKSTART.md) · [Manifesto](https://rustchain.org/manifesto.html) · [Whitepaper](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf)
+[Explorer](https://rustchain.org/explorer/) · [Machines Preserved](https://rustchain.org/preserved.html) · [Install Miner](#quickstart) · [Beginner Guide](docs/QUICKSTART.md) · [Manifesto](https://rustchain.org/manifesto.html) · [Whitepaper](docs/WHITEPAPER.md)
 
 中文入口: [中文文档](docs/zh-CN/README.md) · [中文 API 快速参考](docs/zh-CN/API.md)
 
@@ -351,6 +351,71 @@ VMs are detected and receive **1 billionth** of normal rewards. Real hardware on
 
 ---
 
+## Tokenomics
+
+**Total supply: 8,192,000 RTC.** Fixed forever. Consensus-enforced cap.
+
+Compare to Bitcoin's 21M (≈2.6x more), Ethereum's uncapped supply, and the typical altcoin's "we'll figure it out later." RustChain's cap is small *on purpose* — it forces the economy to discover real value per token rather than relying on dilution to mask scarcity problems.
+
+### Supply distribution
+
+| Zone | Allocation | RTC | Purpose |
+|------|-----------|-----|---------|
+| **Block Mining** | 94% | 7,700,480 | PoA validator rewards (paid to real vintage hardware) |
+| **Community Vault** | 3% | 245,760 | Airdrops, bounty program, grants |
+| **Dev Wallet** | 2.5% | 204,800 | Development funding |
+| **Foundation** | 0.5% | 40,960 | Governance & operations |
+
+Total premine: **6%** (491,520 RTC). Premine wallets have a 1-year on-chain unlock delay. No VC pre-sale. No private allocation. The early miners were `pawnshop_g4_115` and `dual-g4-125`.
+
+### Emission schedule (halving)
+
+| Period | Block reward (per epoch) |
+|--------|--------------------------|
+| Genesis – Year 2 | 1.5 RTC |
+| Year 2 – Year 4 | 0.75 RTC |
+| Year 4 – Year 6 | 0.375 RTC |
+| Continues until minimum dust threshold | — |
+
+Block time: 600s (10 min). Epoch duration: 144 blocks (~24 hours).
+
+Halving fires every 2 years OR on an **Epoch Relic Event** milestone — whichever comes first. This keeps emissions tied to either time or community-meaningful milestones, not just arbitrary block counts.
+
+### Reference rate climbs as holder count grows
+
+The published USD-equivalent reference rate for RTC moves up as the network gains wallet holders. **Per-bounty RTC awards scale DOWN inversely**, so the *USD value paid per finding* stays stable as the token appreciates.
+
+| Holder count | Reference rate | Bounty rate scale |
+|--------------|----------------|-------------------|
+| Today (~761 holders) | $0.10 | Current |
+| 1,000 holders | $0.15 | ~67% of current |
+| 2,000 holders | $0.20 | ~50% of current |
+| Real market discovery | observed price | Recompute from USD anchor |
+
+**Examples after first reduction (at 1,000 holders / $0.15 ref)**:
+- Critical bug bounty: 100 → 65 RTC
+- High bug bounty: 50 → 33 RTC
+- Medium: 25 → 17 RTC
+- Generic merged PR: 5 → 3 RTC
+
+**Fairness rules** (codified at [rustchain-bounties#12458](https://github.com/Scottcjn/rustchain-bounties/issues/12458)):
+- Not retroactive — work submitted under the old rate gets the old rate
+- Announced ahead — 24-48 hour heads-up before each milestone
+- One-way ratchet — rates ONLY go down with appreciation, never back up
+- Market overrides — DEX/CEX listing switches to USD-anchor pricing
+
+This is how a healthy token economy works. Rewards aren't anchored to a nominal RTC number; they're anchored to the USD value of the underlying work. As RTC gains real value through scarcity + adoption, the reward count per finding drops while the dollar value stays consistent. **The math protects both the contributor and the program.**
+
+### Fees
+
+| Operation | Fee |
+|-----------|-----|
+| Attestation | Free |
+| Transfer | 0.0001 RTC |
+| Withdrawal to Ergo | 0.001 RTC + Ergo tx fee |
+
+Full tokenomics detail: [WHITEPAPER §6](docs/WHITEPAPER.md).
+
 ## Security
 
 - **Hardware binding**: Each fingerprint bound to one wallet
@@ -384,7 +449,7 @@ Every contribution earns RTC tokens. Browse [open bounties](https://github.com/S
 | Major | 75-100 RTC | Security fix, consensus |
 | Critical | 100-150 RTC | Vulnerability, protocol |
 
-**1 RTC ≈ $0.10 USD** · `pip install clawrtc` · [CONTRIBUTING.md](CONTRIBUTING.md)
+**1 RTC ≈ $0.10 USD** · `curl -fsSL https://rustchain.org/install.sh | bash` · [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ---
 

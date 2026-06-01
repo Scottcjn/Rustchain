@@ -23,9 +23,7 @@ Author: NOX Ventures (noxxxxybot-sketch)
 Date: 2026-03-07
 """
 
-import hashlib
 import hmac
-import json
 import logging
 import sqlite3
 import time
@@ -33,6 +31,18 @@ from typing import Any, Optional
 from flask import Blueprint, request, jsonify
 
 log = logging.getLogger("rip0002_governance")
+
+
+def _admin_key_required():
+    """Return 401 if X-Admin-Key header is missing or wrong."""
+    import os
+    expected = os.environ.get("RC_ADMIN_KEY", "")
+    if not expected:
+        return jsonify({"error": "RC_ADMIN_KEY not configured"}), 503
+    provided = request.headers.get("X-Admin-Key", "")
+    if not hmac.compare_digest(provided, expected):
+        return jsonify({"error": "Unauthorized — admin key required"}), 401
+    return None
 
 # Signature window: reject requests with timestamps older than this
 _SIGNATURE_MAX_AGE_SECONDS = 300  # 5 minutes
@@ -87,6 +97,7 @@ GENESIS_TIMESTAMP = 1764706927          # Production chain launch (Dec 2, 2025)
 MAX_PROPOSALS_PER_MINER = 10            # Anti-spam: max active proposals
 MAX_TITLE_LEN = 200
 MAX_DESCRIPTION_LEN = 10000
+PROPOSAL_FEE_RTC = 10  # Anti-spam: fee charged to propose a governance change
 
 PROPOSAL_TYPES = ("parameter_change", "feature_activation", "emergency")
 VOTE_CHOICES = ("for", "against", "abstain")
@@ -145,6 +156,52 @@ def init_governance_tables(db_path: str):
 # ---------------------------------------------------------------------------
 # Helper functions
 # ---------------------------------------------------------------------------
+
+def _balance_rtc_for_miner(conn: sqlite3.Connection, miner_id: str) -> float:
+    """Return miner balance in RTC, tolerant to both known balances schemas.
+
+    Schema A (legacy):  balances(miner_pk TEXT PRIMARY KEY, balance_rtc REAL)
+    Schema B (current): balances(miner_id TEXT PRIMARY KEY, amount_i64 INTEGER)
+    """
+    try:
+        row = conn.execute(
+            "SELECT amount_i64 FROM balances WHERE miner_id = ?", (miner_id,)
+        ).fetchone()
+        if row is not None:
+            return int(row[0] or 0) / 1_000_000.0
+    except Exception:
+        pass
+    try:
+        row = conn.execute(
+            "SELECT balance_rtc FROM balances WHERE miner_pk = ?", (miner_id,)
+        ).fetchone()
+        if row is not None:
+            return float(row[0] or 0)
+    except Exception:
+        pass
+    return 0.0
+
+
+def _deduct_proposal_fee(conn: sqlite3.Connection, miner_id: str, fee_rtc: float) -> None:
+    """Deduct proposal fee from miner balance, tolerant to both schemas."""
+    fee_i64 = int(fee_rtc * 1_000_000)
+    try:
+        updated = conn.execute(
+            "UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ?",
+            (fee_i64, miner_id),
+        ).rowcount
+        if updated > 0:
+            return
+    except Exception:
+        pass
+    try:
+        conn.execute(
+            "UPDATE balances SET balance_rtc = balance_rtc - ? WHERE miner_pk = ?",
+            (fee_rtc, miner_id),
+        )
+    except Exception:
+        pass
+
 
 def _get_miner_antiquity_weight(miner_id: str, db_path: str) -> float:
     """Return the antiquity multiplier for a miner (default 1.0 if not found)."""
@@ -254,7 +311,7 @@ def _sophia_evaluate(proposal: dict) -> str:
 
     param_key = proposal.get("parameter_key") or ""
     analysis_lines = [
-        f"**Sophia AI Evaluation** (auto-generated, non-binding)",
+        "**Sophia AI Evaluation** (auto-generated, non-binding)",
         f"- Proposal type: `{ptype}`",
         f"- Risk level: **{risk_level}**",
     ]
@@ -344,7 +401,10 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
         if error_response:
             return error_response
         parameter_key = parameter_key or None
-        parameter_value = str(data.get("parameter_value", "")).strip() or None
+        parameter_value, error_response = _string_field(data, "parameter_value")
+        if error_response:
+            return error_response
+        parameter_value = parameter_value or None
 
         # Validation
         if not miner_id:
@@ -368,6 +428,18 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
 
         try:
             with sqlite3.connect(db_path) as conn:
+                # Fee check: ensure miner has sufficient balance
+                table_check = conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='balances'"
+                ).fetchone()
+                if table_check:
+                    balance = _balance_rtc_for_miner(conn, miner_id)
+                    if balance < PROPOSAL_FEE_RTC:
+                        return jsonify({
+                            "error": f"Insufficient balance: proposal fee is {PROPOSAL_FEE_RTC} RTC"
+                        }), 402
+                    _deduct_proposal_fee(conn, miner_id, PROPOSAL_FEE_RTC)
+
                 # Anti-spam: max active proposals per miner
                 active_count = conn.execute(
                     "SELECT COUNT(*) FROM governance_proposals WHERE proposed_by = ? AND status = ?",
@@ -376,6 +448,7 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
                 if active_count >= MAX_PROPOSALS_PER_MINER:
                     return jsonify({"error": f"Max {MAX_PROPOSALS_PER_MINER} active proposals per miner"}), 429
 
+                # Build proposal data for Sophia evaluation
                 proposal_data = {
                     "title": title,
                     "description": description,
@@ -414,12 +487,16 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
     # -- GET /api/governance/proposals ----------------------------------------
     @bp.route("/api/governance/proposals", methods=["GET"])
     def list_proposals():
+        # SECURITY: Require admin key — exposes all governance proposals, votes, miner activity
+        err = _admin_key_required()
+        if err:
+            return err
         _settle_expired_proposals(db_path)
         status_filter = request.args.get("status")
         limit, error_response = _parse_non_negative_int_arg("limit", 50, max_value=200)
         if error_response:
             return error_response
-        offset, error_response = _parse_non_negative_int_arg("offset", 0)
+        offset, error_response = _parse_non_negative_int_arg("offset", 0, max_value=10_000)
         if error_response:
             return error_response
 
@@ -448,6 +525,10 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
     # -- GET /api/governance/proposal/<n> ------------------------------------
     @bp.route("/api/governance/proposal/<int:proposal_id>", methods=["GET"])
     def get_proposal(proposal_id: int):
+        # SECURITY: Require admin key — exposes proposal details, votes, voter identities
+        err = _admin_key_required()
+        if err:
+            return err
         _settle_expired_proposals(db_path)
         try:
             with sqlite3.connect(db_path) as conn:
@@ -510,16 +591,21 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
 
         try:
             with sqlite3.connect(db_path) as conn:
+                conn.execute("BEGIN IMMEDIATE")
+
                 proposal = conn.execute(
                     "SELECT id, status, expires_at FROM governance_proposals WHERE id = ?",
                     (proposal_id,)
                 ).fetchone()
 
                 if not proposal:
+                    conn.execute("ROLLBACK")
                     return jsonify({"error": "proposal not found"}), 404
                 if proposal[1] != STATUS_ACTIVE:
+                    conn.execute("ROLLBACK")
                     return jsonify({"error": f"proposal is {proposal[1]}, not active"}), 409
                 if proposal[2] < now:
+                    conn.execute("ROLLBACK")
                     return jsonify({"error": "voting window has closed"}), 409
 
                 # Upsert vote
@@ -540,6 +626,7 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
                         # as SQL column name — prevents SQL injection if stored
                         # vote value was ever tampered with.
                         if old_vote[0] not in VOTE_CHOICES:
+                            conn.execute("ROLLBACK")
                             return jsonify({"error": "corrupted vote record"}), 500
                         old_col = f"votes_{old_vote[0]}"
                         conn.execute(
@@ -593,6 +680,10 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
     # -- GET /api/governance/results/<n> ------------------------------------
     @bp.route("/api/governance/results/<int:proposal_id>", methods=["GET"])
     def get_results(proposal_id: int):
+        # SECURITY: Require admin key — exposes vote tallies, quorum stats, active miner count
+        err = _admin_key_required()
+        if err:
+            return err
         _settle_expired_proposals(db_path)
         try:
             with sqlite3.connect(db_path) as conn:
@@ -676,6 +767,10 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
     # -- GET /api/governance/stats ------------------------------------------
     @bp.route("/api/governance/stats", methods=["GET"])
     def governance_stats():
+        # SECURITY: Require admin key — exposes governance participation stats, voter counts
+        err = _admin_key_required()
+        if err:
+            return err
         _settle_expired_proposals(db_path)
         try:
             with sqlite3.connect(db_path) as conn:

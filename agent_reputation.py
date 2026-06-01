@@ -88,7 +88,10 @@ class ReputationEngine:
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "rustchain-reputation/1.0"})
             with urllib.request.urlopen(req, timeout=8, context=CTX) as r:
-                return json.loads(r.read().decode())
+                data = json.loads(r.read().decode())
+                if isinstance(data, (dict, list)):
+                    return data
+                return None
         except Exception:
             return None
 
@@ -173,14 +176,18 @@ class ReputationEngine:
             # Try via API /api/miners
             miners_data = self._fetch("/api/miners")
             if miners_data:
-                miners = miners_data if isinstance(miners_data, list) else []
-                if isinstance(miners_data, dict):
+                miners = []
+                if isinstance(miners_data, list):
+                    miners = miners_data
+                elif isinstance(miners_data, dict):
                     for key in ("miners", "data", "items"):
-                        rows = miners_data.get(key)
-                        if isinstance(rows, list):
-                            miners = rows
+                        raw_miners = miners_data.get(key)
+                        if isinstance(raw_miners, list):
+                            miners = raw_miners
                             break
                 for m in miners:
+                    if not isinstance(m, dict):
+                        continue
                     miner_id = (
                         m.get("wallet_name")
                         or m.get("wallet")

@@ -314,6 +314,8 @@ def api_contributors():
 def approve_contributor(username):
     if not _contributor_admin_authorized():
         abort(401)
+    if len(username) > 128:
+        abort(400, description="Username too long")
 
     with db_connection() as conn:
         conn.execute(

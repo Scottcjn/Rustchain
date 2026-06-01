@@ -538,7 +538,7 @@ def create_anchor_api_routes(app, anchor_service: AnchorService):
         if error:
             return jsonify({"error": error}), 400
 
-        offset, error = parse_int_query_arg('offset', 0, 0)
+        offset, error = parse_int_query_arg('offset', 0, 0, max_value=10_000)
         if error:
             return jsonify({"error": error}), 400
 

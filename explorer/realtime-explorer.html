@@ -1160,6 +1160,13 @@
         }
 
         function esc(s) { const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
+        function safeNumber(value, fallback = 0) {
+            const number = Number(value);
+            return Number.isFinite(number) ? number : fallback;
+        }
+        function formatNumber(value, decimals) {
+            return safeNumber(value).toFixed(decimals);
+        }
 
         async function loadHealth() {
             const health = await fetchAPI('/health');
@@ -1187,7 +1194,7 @@
                         <td><span class="multiplier">x${esc(miner.multiplier || miner.antiquity_multiplier || '1.0')}</span></td>
                         <td><span class="badge badge-success">Online</span></td>
                         <td>${esc(formatTime(miner.last_attestation || miner.last_seen))}</td>
-                        <td>${esc((miner.earnings || miner.total_earned || 0).toFixed(2))} RTC</td>
+                        <td>${esc(formatNumber(miner.earnings || miner.total_earned, 2))} RTC</td>
                     </tr>
                 `).join('');
 
@@ -1200,7 +1207,7 @@
                         <td><span class="badge badge-success">Online</span></td>
                         <td>${esc(formatTime(miner.last_attestation || miner.last_seen))}</td>
                         <td><code>${esc(miner.wallet || miner.wallet_address || 'N/A')}</code></td>
-                        <td>${esc((miner.earnings || miner.total_earned || 0).toFixed(2))} RTC</td>
+                        <td>${esc(formatNumber(miner.earnings || miner.total_earned, 2))} RTC</td>
                     </tr>
                 `).join('');
             }
@@ -1216,7 +1223,7 @@
                 document.getElementById('epoch-slot-num').textContent = epoch.slot || 'N/A';
                 document.getElementById('epoch-height').textContent = epoch.height || 'N/A';
                 document.getElementById('epoch-timestamp').textContent = epoch.timestamp ? new Date(epoch.timestamp).toLocaleString() : 'N/A';
-                document.getElementById('epoch-pot').textContent = (epoch.pot || epoch.pot_rtc || 0).toFixed(2);
+                document.getElementById('epoch-pot').textContent = formatNumber(epoch.pot || epoch.pot_rtc, 2);
             }
         }
 
@@ -1236,7 +1243,7 @@
                         <td><code>${esc((block.hash || '').substring(0, 16))}...</code></td>
                         <td>${esc(formatTime(block.timestamp))}</td>
                         <td>${esc(block.miners_count || 0)}</td>
-                        <td>${esc((block.reward || 0).toFixed(4))} RTC</td>
+                        <td>${esc(formatNumber(block.reward, 4))} RTC</td>
                     </tr>
                 `).join('');
             }

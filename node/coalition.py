@@ -39,6 +39,7 @@ log = logging.getLogger("rip0278_coalition")
 
 # Signature window: reject requests with timestamps older than this
 _SIGNATURE_MAX_AGE_SECONDS = 300  # 5 minutes
+_TEST_UNSIGNED_MINER_ENV = "RUSTCHAIN_TEST_ALLOW_UNSIGNED_COALITION_MINERS"
 
 
 def _parse_bounded_int_arg(name: str, default: int, minimum: int, maximum: int):
@@ -64,17 +65,14 @@ def _verify_miner_signature(miner_id: str, action: str, data: dict) -> bool:
 
     The signed payload is: f"{action}:{miner_id}:{timestamp}"
 
-    For test convenience, if *miner_id* is not a valid hex-encoded public key
-    (e.g. plain names like ``"alice"``), cryptographic verification is skipped
-    and the request is accepted.  Production miner IDs are always 64-char hex
-    strings (32-byte ed25519 verify keys) so this fallback only affects tests.
+    Tests may opt into readable fake miner names by setting
+    RUSTCHAIN_TEST_ALLOW_UNSIGNED_COALITION_MINERS=1. Production defaults to
+    fail-closed so arbitrary non-hex miner IDs cannot bypass signature auth.
     """
-    # If miner_id is not a valid hex string (e.g. test miner like "alice"),
-    # skip cryptographic verification entirely.
     try:
         bytes.fromhex(miner_id)
     except ValueError:
-        return True
+        return os.environ.get(_TEST_UNSIGNED_MINER_ENV, "").strip().lower() in {"1", "true", "yes"}
 
     signature_value = data.get("signature", "")
     if not isinstance(signature_value, str):
@@ -685,20 +683,26 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
 
         try:
             with sqlite3.connect(db_path) as conn:
+                conn.execute("BEGIN IMMEDIATE")
+
                 proposal = conn.execute(
                     "SELECT id, status, expires_at, coalition_id FROM coalition_proposals WHERE id = ?",
                     (proposal_id,)
                 ).fetchone()
 
                 if not proposal:
+                    conn.execute("ROLLBACK")
                     return jsonify({"error": "proposal not found"}), 404
                 if proposal[1] != PROPOSAL_STATUS_ACTIVE:
+                    conn.execute("ROLLBACK")
                     return jsonify({"error": f"proposal is {proposal[1]}, not active"}), 409
                 if proposal[2] < now:
+                    conn.execute("ROLLBACK")
                     return jsonify({"error": "voting window has closed"}), 409
 
                 cid = proposal[3]
                 if not _is_coalition_member(cid, miner_id, db_path):
+                    conn.execute("ROLLBACK")
                     return jsonify({"error": "only coalition members can vote"}), 403
 
                 # Upsert vote
@@ -716,6 +720,7 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
                     ).fetchone()
                     if old_vote:
                         if old_vote[0] not in VOTE_CHOICES:
+                            conn.execute("ROLLBACK")
                             return jsonify({"error": "corrupted vote record"}), 500
                         old_col = f"votes_{old_vote[0]}"
                         conn.execute(
@@ -846,6 +851,10 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
     # -- GET /api/coalition/list ---------------------------------------------
     @bp.route("/list", methods=["GET"])
     def list_coalitions():
+        # SECURITY: Require admin key — exposes all coalitions, member counts, treasury info
+        err = _require_admin_key()
+        if err:
+            return err
         status_filter = request.args.get("status")
         limit, error_response, status = _parse_bounded_int_arg("limit", 50, 1, 200)
         if error_response is not None:
@@ -886,6 +895,10 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
     # -- GET /api/coalition/<id> ---------------------------------------------
     @bp.route("/<int:coalition_id>", methods=["GET"])
     def get_coalition(coalition_id: int):
+        # SECURITY: Require admin key — exposes coalition details, member miner_ids, treasury
+        err = _require_admin_key()
+        if err:
+            return err
         try:
             with sqlite3.connect(db_path) as conn:
                 conn.row_factory = sqlite3.Row
@@ -919,6 +932,10 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
     # -- GET /api/coalition/<id>/proposals -----------------------------------
     @bp.route("/<int:coalition_id>/proposals", methods=["GET"])
     def get_coalition_proposals(coalition_id: int):
+        # SECURITY: Require admin key — exposes coalition proposals, voting status, member activity
+        err = _require_admin_key()
+        if err:
+            return err
         _settle_expired_proposals(db_path)
 
         if not _coalition_exists(coalition_id, db_path):
@@ -948,6 +965,21 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
                         (coalition_id, limit, offset)
                     ).fetchall()
                 proposals = [dict(r) for r in rows]
+
+                # Enrich active proposals with quorum info
+                for p in proposals:
+                    if p.get("status") == PROPOSAL_STATUS_ACTIVE:
+                        member_count = _count_active_members(p["coalition_id"], db_path)
+                        voter_count = conn.execute(
+                            "SELECT COUNT(DISTINCT miner_id) FROM coalition_votes WHERE proposal_id = ?",
+                            (p["id"],)
+                        ).fetchone()[0]
+                        quorum_required = member_count * QUORUM_THRESHOLD
+                        p["member_count"] = member_count
+                        p["voter_count"] = voter_count
+                        p["quorum_required"] = quorum_required
+                        p["quorum_met"] = voter_count >= quorum_required if member_count > 0 else False
+                        p["total_votes"] = float(p.get("votes_for", 0)) + float(p.get("votes_against", 0))
         except Exception as e:
             log.error("List proposals error: %s", e)
             return jsonify({"error": "internal error"}), 500
@@ -957,6 +989,10 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
     # -- GET /api/coalition/stats --------------------------------------------
     @bp.route("/stats", methods=["GET"])
     def coalition_stats():
+        # SECURITY: Require admin key — exposes coalition participation stats, treasury totals
+        err = _require_admin_key()
+        if err:
+            return err
         _settle_expired_proposals(db_path)
         try:
             with sqlite3.connect(db_path) as conn:

@@ -2,10 +2,13 @@
 """Unit tests for the RustChain webhook dispatcher helpers."""
 
 import importlib.util
+import io
 import json
 import sys
 from pathlib import Path
 from unittest.mock import patch
+
+import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -23,6 +26,16 @@ def load_module():
 
 def fake_addrinfo(ip):
     return [(None, None, None, None, (ip, 443))]
+
+
+def make_admin_handler(module, payload):
+    body = json.dumps(payload).encode()
+    handler = object.__new__(module.WebhookAdminHandler)
+    handler.headers = {"Content-Length": str(len(body))}
+    handler.rfile = io.BytesIO(body)
+    handler.responses = []
+    handler._send_json = lambda status, response: handler.responses.append((status, response))
+    return handler
 
 
 def test_validate_webhook_url_rejects_bad_scheme_and_missing_host():
@@ -106,3 +119,84 @@ def test_sign_payload_matches_hmac_sha256_and_event_serializes():
     event = module.WebhookEvent(event_type="new_block", timestamp=123.0, data={"slot": 42})
     assert event.event_type == "new_block"
     assert event.data == {"slot": 42}
+
+
+def test_poller_miners_accepts_paginated_api_envelope(monkeypatch, tmp_path):
+    module = load_module()
+    store = module.SubscriberStore(str(tmp_path / "webhooks.sqlite3"))
+    poller = module.RustChainPoller("https://node.example", store)
+    events = []
+
+    payloads = iter([
+        {
+            "miners": [
+                {"miner_id": "alice", "device_arch": "G4"},
+            ],
+            "pagination": {"total": 1, "limit": 100, "offset": 0, "count": 1},
+        },
+        {
+            "miners": [
+                {"miner_id": "alice", "device_arch": "G4"},
+                {"miner": "bob", "device_arch": "SPARC", "hardware_type": "SPARCstation"},
+            ],
+            "pagination": {"total": 2, "limit": 100, "offset": 0, "count": 2},
+        },
+    ])
+
+    monkeypatch.setattr(poller, "_get", lambda path: next(payloads))
+    monkeypatch.setattr(module, "dispatch_event", lambda event, _store: events.append(event))
+    monkeypatch.setattr(module.time, "time", lambda: 123.0)
+
+    poller._check_miners()
+    poller._check_miners()
+
+    assert poller._prev_miners == {"alice", "bob"}
+    assert len(events) == 1
+    assert events[0].event_type == "miner_joined"
+    assert events[0].timestamp == 123.0
+    assert events[0].data == {
+        "miner": "bob",
+        "hardware_type": "SPARCstation",
+        "device_family": None,
+        "device_arch": "SPARC",
+    }
+
+
+@pytest.mark.parametrize("payload", [["not", "object"], "string", 1])
+def test_webhook_admin_read_body_rejects_non_object_json(payload):
+    module = load_module()
+    handler = make_admin_handler(module, payload)
+
+    with pytest.raises(ValueError, match="JSON object body required"):
+        handler._read_body()
+
+
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        ({"url": ["https://example.com/hook"]}, "url must be a string"),
+        ({"url": "https://example.com/hook", "events": "new_block"}, "events must be a list of strings"),
+        ({"url": "https://example.com/hook", "events": [1]}, "events must be a list of strings"),
+        ({"url": "https://example.com/hook", "id": {"bad": "id"}}, "id must be a string"),
+        ({"url": "https://example.com/hook", "secret": {"bad": "secret"}}, "secret must be a string"),
+    ],
+)
+def test_webhook_admin_subscribe_rejects_malformed_fields(monkeypatch, payload, message):
+    module = load_module()
+    handler = make_admin_handler(module, payload)
+    handler.store = module.SubscriberStore(":memory:")
+    monkeypatch.setattr(module, "validate_webhook_url", lambda url: None)
+
+    handler._handle_subscribe()
+
+    assert handler.responses == [(400, {"error": message})]
+
+
+def test_webhook_admin_unsubscribe_rejects_non_string_id():
+    module = load_module()
+    handler = make_admin_handler(module, {"id": {"bad": "id"}})
+    handler.store = module.SubscriberStore(":memory:")
+
+    handler._handle_unsubscribe()
+
+    assert handler.responses == [(400, {"error": "id must be a string"})]

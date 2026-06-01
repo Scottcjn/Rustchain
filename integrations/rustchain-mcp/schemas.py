@@ -183,8 +183,10 @@ class APIError(Exception):
     details: Optional[dict[str, Any]] = None
 
     @classmethod
-    def from_response(cls, status: int, body: dict[str, Any]) -> "APIError":
+    def from_response(cls, status: int, body: Any) -> "APIError":
         """Create from API error response."""
+        if not isinstance(body, dict):
+            body = {"message": str(body)}
         return cls(
             code=body.get("error", body.get("code", "UNKNOWN_ERROR")),
             message=body.get("message", body.get("error_description", "Unknown error")),

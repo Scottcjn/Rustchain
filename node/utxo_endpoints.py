@@ -90,6 +90,40 @@ def _nrtc_to_rtc_float(amount_nrtc: int) -> float:
     return float(Decimal(amount_nrtc) / Decimal(UNIT))
 
 
+def _public_mempool_transaction(tx: dict) -> dict:
+    """Return a public-safe view of a pending UTXO transaction."""
+    public_tx = {
+        'tx_id': tx.get('tx_id'),
+        'tx_type': tx.get('tx_type'),
+        'fee_nrtc': tx.get('fee_nrtc', 0),
+    }
+    if 'timestamp' in tx:
+        public_tx['timestamp'] = tx.get('timestamp')
+    if 'data_inputs' in tx:
+        data_inputs = tx.get('data_inputs')
+        public_tx['data_inputs'] = data_inputs if isinstance(data_inputs, list) else []
+
+    inputs = []
+    for inp in tx.get('inputs', []):
+        if isinstance(inp, dict) and isinstance(inp.get('box_id'), str):
+            inputs.append({'box_id': inp['box_id']})
+    public_tx['inputs'] = inputs
+
+    outputs = []
+    for out in tx.get('outputs', []):
+        if not isinstance(out, dict):
+            continue
+        clean = {}
+        if isinstance(out.get('address'), str):
+            clean['address'] = out['address']
+        if isinstance(out.get('value_nrtc'), int):
+            clean['value_nrtc'] = out['value_nrtc']
+        if clean:
+            outputs.append(clean)
+    public_tx['outputs'] = outputs
+    return public_tx
+
+
 def _ensure_signed_float_preserves_nrtc(amount: Decimal, nrtc: int,
                                         field_name: str) -> None:
     """
@@ -170,6 +204,43 @@ def _missing_transfer_nonce(nonce) -> bool:
         or not isinstance(nonce, (int, str))
         or (isinstance(nonce, str) and nonce.strip() == '')
     )
+
+
+def _parse_transfer_nonce(nonce_raw):
+    if _missing_transfer_nonce(nonce_raw):
+        raise ValueError('nonce is required')
+
+    if isinstance(nonce_raw, int):
+        nonce_int = nonce_raw
+    elif isinstance(nonce_raw, str):
+        nonce_text = nonce_raw.strip()
+        if not nonce_text.isdigit():
+            raise ValueError('nonce must be an integer greater than or equal to 0')
+        nonce_int = int(nonce_text)
+    else:
+        raise ValueError('nonce must be an integer greater than or equal to 0')
+
+    if nonce_int < 0:
+        raise ValueError('nonce must be an integer greater than or equal to 0')
+
+    return str(nonce_int), nonce_int
+
+
+def _nonce_signature_forms(nonce_raw, nonce_int):
+    """
+    Return candidate nonce representations for signature verification.
+
+    Older clients could sign the raw string form that the endpoint previously
+    accepted, while newer clients may already sign the normalized integer.
+    """
+    forms = [nonce_int]
+    if isinstance(nonce_raw, str):
+        nonce_text = nonce_raw.strip()
+        if nonce_text and nonce_text != str(nonce_int):
+            forms.append(nonce_text)
+        elif nonce_text == str(nonce_int):
+            forms.append(nonce_text)
+    return forms
 
 
 def _transfer_string_field(data: dict, field: str):
@@ -314,9 +385,10 @@ def utxo_integrity():
 def utxo_mempool():
     """View current UTXO mempool pending transactions (limit 50)."""
     candidates = _utxo_db.mempool_get_block_candidates(max_count=50)
+    public_candidates = [_public_mempool_transaction(tx) for tx in candidates]
     return jsonify({
-        'count': len(candidates),
-        'transactions': candidates,
+        'count': len(public_candidates),
+        'transactions': public_candidates,
     })
 
 
@@ -404,6 +476,8 @@ def utxo_transfer():
     memo = data.get('memo', '')
     if not isinstance(memo, str):
         return jsonify({'error': 'memo must be a string'}), 400
+    if len(memo) > 1024:
+        return jsonify({'error': 'memo cannot exceed 1024 characters'}), 400
     # FIX(#2867 M2): exact Decimal parsing with bounds check (was float()).
     try:
         amount_rtc = _parse_rtc_amount(data.get('amount_rtc', 0))
@@ -451,12 +525,31 @@ def utxo_transfer():
         }), 400
 
     # Verify pubkey → address
-    expected_addr = _addr_from_pk_fn(public_key)
+    # FIX(#6114): catch malformed hex in public_key before converter blows up
+    try:
+        if len(public_key) != 64 or not all(c in "0123456789abcdefABCDEF" for c in public_key):
+            return jsonify({
+                "error": "public_key must be 64 hex characters (32-byte Ed25519 key)",
+                "got": public_key[:20] + ("..." if len(public_key) > 20 else ""),
+            }), 400
+        expected_addr = _addr_from_pk_fn(public_key)
+    except (ValueError, Exception) as e:
+        return jsonify({
+            "error": f"Invalid public_key: {e}",
+        }), 400
     if from_address != expected_addr:
         return jsonify({
             'error': 'Public key does not match from_address',
             'expected': expected_addr,
             'got': from_address,
+        }), 400
+
+    try:
+        nonce, nonce_int = _parse_transfer_nonce(nonce)
+    except ValueError as e:
+        return jsonify({
+            'error': str(e),
+            'code': 'INVALID_NONCE',
         }), 400
 
     # Reconstruct signed message.
@@ -470,28 +563,38 @@ def utxo_transfer():
     # keep the signed-payload bytes byte-identical to what the wallet computed.
     amount_for_sig = float(amount_rtc)
     fee_for_sig = float(fee_rtc)
-    tx_data_v2 = {
-        'from': from_address,
-        'to': to_address,
-        'amount': amount_for_sig,
-        'fee': fee_for_sig,
-        'memo': memo,
-        'nonce': nonce,
-    }
-    message_v2 = json.dumps(tx_data_v2, sort_keys=True, separators=(',', ':')).encode()
+    signature_verified = False
+    used_legacy_signature = False
+    for nonce_for_sig in _nonce_signature_forms(data.get('nonce'), nonce_int):
+        tx_data_v2 = {
+            'from': from_address,
+            'to': to_address,
+            'amount': amount_for_sig,
+            'fee': fee_for_sig,
+            'memo': memo,
+            'nonce': nonce_for_sig,
+        }
+        message_v2 = json.dumps(tx_data_v2, sort_keys=True, separators=(',', ':')).encode()
+        if _verify_sig_fn(public_key, message_v2, signature):
+            signature_verified = True
+            break
 
-    tx_data_legacy = {
-        'from': from_address,
-        'to': to_address,
-        'amount': amount_for_sig,
-        'memo': memo,
-        'nonce': nonce,
-    }
-    message_legacy = json.dumps(tx_data_legacy, sort_keys=True, separators=(',', ':')).encode()
+        tx_data_legacy = {
+            'from': from_address,
+            'to': to_address,
+            'amount': amount_for_sig,
+            'memo': memo,
+            'nonce': nonce_for_sig,
+        }
+        message_legacy = json.dumps(tx_data_legacy, sort_keys=True, separators=(',', ':')).encode()
+        if _verify_sig_fn(public_key, message_legacy, signature):
+            signature_verified = True
+            used_legacy_signature = True
+            break
 
-    if _verify_sig_fn(public_key, message_v2, signature):
-        pass  # New client — fee is signed, MITM-resistant
-    elif _verify_sig_fn(public_key, message_legacy, signature):
+    if not signature_verified:
+        return jsonify({'error': 'Invalid Ed25519 signature'}), 401
+    if used_legacy_signature:
         if fee_nrtc != 0:
             return jsonify({
                 'error': 'Legacy signature format cannot authorize nonzero fee',
@@ -507,8 +610,6 @@ def utxo_transfer():
             "Upgrade client to include fee in signed message.",
             from_address[:20],
         )
-    else:
-        return jsonify({'error': 'Invalid Ed25519 signature'}), 401
 
     # --- UTXO transaction ---------------------------------------------------
 
@@ -563,6 +664,21 @@ def utxo_transfer():
                 'error': 'Nonce already used (replay attack detected)',
                 'code': 'REPLAY_DETECTED',
                 'nonce': str(nonce),
+            }), 400
+        previous_nonce = conn.execute(
+            """
+            SELECT MAX(CAST(nonce AS INTEGER)) FROM transfer_nonces
+            WHERE from_address = ? AND nonce != ?
+            """,
+            (from_address, nonce),
+        ).fetchone()[0]
+        if previous_nonce is not None and int(previous_nonce) >= nonce_int:
+            conn.rollback()
+            return jsonify({
+                'error': 'Signed transfer nonce must increase for this wallet',
+                'code': 'OUT_OF_ORDER_NONCE',
+                'nonce': nonce,
+                'latest_nonce': int(previous_nonce),
             }), 400
 
         ok = _utxo_db.apply_transaction(tx, block_height, conn=conn)

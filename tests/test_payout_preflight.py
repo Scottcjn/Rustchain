@@ -273,6 +273,41 @@ class TestValidateWalletTransferSigned:
                 assert result.ok is True
                 assert result.error == ""
                 assert result.details["nonce"] == 1
+                assert result.details["fee_rtc"] == 0.0
+
+      def test_signed_transfer_accepts_fee_rtc(self):
+                result = validate_wallet_transfer_signed(self._valid_payload(fee_rtc="0.25"))
+                assert result.ok is True
+                assert result.details["fee_rtc"] == 0.25
+
+      def test_signed_transfer_rejects_negative_fee_rtc(self):
+                result = validate_wallet_transfer_signed(self._valid_payload(fee_rtc="-0.01"))
+                assert result.ok is False
+                assert result.error == "fee_must_be_non_negative"
+
+      def test_signed_transfer_accepts_bcn_sender_without_public_key(self):
+                result = validate_wallet_transfer_signed({
+                              "from_address": "bcn_sender001",
+                              "to_address": self._make_address("b"),
+                              "amount_rtc": 10.0,
+                              "nonce": 1,
+                              "signature": "sig_abc123",
+                })
+                assert result.ok is True
+
+      def test_signed_transfer_accepts_bcn_recipient(self):
+                result = validate_wallet_transfer_signed(self._valid_payload(
+                              to_address="bcn_receiver001",
+                ))
+                assert result.ok is True
+
+      def test_rtc_sender_still_requires_public_key(self):
+                payload = self._valid_payload()
+                payload.pop("public_key")
+                result = validate_wallet_transfer_signed(payload)
+                assert result.ok is False
+                assert result.error == "missing_required_fields"
+                assert result.details["missing"] == ["public_key"]
 
       def test_missing_required_fields(self):
                 result = validate_wallet_transfer_signed({
@@ -293,8 +328,20 @@ class TestValidateWalletTransferSigned:
                 assert result.ok is False
                 assert result.error == "invalid_from_address_format"
 
+      def test_invalid_from_address_characters(self):
+                payload = self._valid_payload(from_address="RTC" + "g" * 40)
+                result = validate_wallet_transfer_signed(payload)
+                assert result.ok is False
+                assert result.error == "invalid_from_address_format"
+
+      def test_invalid_to_address_characters(self):
+                payload = self._valid_payload(to_address="RTC" + "z" * 40)
+                result = validate_wallet_transfer_signed(payload)
+                assert result.ok is False
+                assert result.error == "invalid_to_address_format"
+
       def test_self_transfer_rejected(self):
-                addr = self._make_address("x")
+                addr = self._make_address("c")
                 payload = self._valid_payload(from_address=addr, to_address=addr)
                 result = validate_wallet_transfer_signed(payload)
                 assert result.ok is False

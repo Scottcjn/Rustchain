@@ -32,6 +32,7 @@ import hmac
 import math
 import secrets
 from functools import wraps
+from flask import request
 
 logger = logging.getLogger("gpu_render_protocol")
 
@@ -44,6 +45,17 @@ def _normalize_job_type(job_type):
         return None
     normalized = job_type.strip().lower()
     return normalized if normalized in VALID_JOB_TYPES else None
+
+
+def _admin_key_required():
+    """Return (None, None) on success or (error_dict, status_code) on failure."""
+    admin_key = os.environ.get("RC_ADMIN_KEY", "")
+    if not admin_key:
+        return {'error': 'RC_ADMIN_KEY not configured — endpoint disabled'}, 503
+    provided_key = request.headers.get("X-Admin-Key", "")
+    if not hmac.compare_digest(provided_key, admin_key):
+        return {'error': 'Unauthorized — admin key required'}, 401
+    return None, None
 
 
 # ---------------------------------------------------------------------------
@@ -431,18 +443,35 @@ class GPURenderProtocol:
                                 "RTC/1k_chars" if jt == "tts" else "RTC/1k_tokens",
                     }
 
-                    # Record to pricing history
-                    conn.execute(
-                        """INSERT INTO pricing_history
-                           (job_type, device_arch, avg_price, min_price,
-                            max_price, sample_count, recorded_at)
-                           VALUES (?,?,?,?,?,?,?)""",
-                        (jt, "all", rates[jt]["avg"], rates[jt]["min"],
-                         rates[jt]["max"], len(prices), int(time.time())),
-                    )
-
-            conn.commit()
+            # Pricing history recording removed from read path (issue #6200):
+            # GET /render/pricing should not cause persistent SQLite writes.
+            # Use record_pricing_sample() for intentional writes.
             return {"rates": rates, "timestamp": int(time.time())}
+        finally:
+            conn.close()
+
+    def record_pricing_sample(self, job_type: str, rates: dict) -> dict:
+        """Explicitly record a pricing sample to history.
+
+        This should only be called from write paths (e.g., after a job is
+        created or a node attests), not from read-only pricing queries.
+        Moved from get_fair_market_rates per issue #6200.
+        """
+        if job_type not in rates:
+            return {"error": f"No rate data for {job_type}"}
+        conn = self._get_conn()
+        try:
+            r = rates[job_type]
+            conn.execute(
+                """INSERT INTO pricing_history
+                (job_type, device_arch, avg_price, min_price,
+                max_price, sample_count, recorded_at)
+                VALUES (?,?,?,?,?,?,?)""",
+                (job_type, "all", r["avg"], r["min"],
+                r["max"], r["providers"], int(time.time())),
+            )
+            conn.commit()
+            return {"ok": True, "job_type": job_type}
         finally:
             conn.close()
 
@@ -525,11 +554,23 @@ def register_routes(app):
         data[name] = value
         return None
 
+    def _require_admin_key():
+        expected = os.environ.get("RC_ADMIN_KEY", "").strip()
+        if not expected:
+            return jsonify({"error": "RC_ADMIN_KEY not configured"}), 503
+        provided = (request.headers.get("X-Admin-Key") or request.headers.get("X-API-Key") or "").strip()
+        if not provided or not hmac.compare_digest(provided, expected):
+            return jsonify({"error": "Unauthorized - admin key required"}), 401
+        return None
+
     @app.route("/gpu/attest", methods=["POST"])
     def gpu_attest():
         data, error_response = _json_object_body()
         if error_response is not None:
             return error_response
+        auth_error = _require_admin_key()
+        if auth_error is not None:
+            return auth_error
         data = dict(data)
         miner_id, error_response = _string_field(data, "miner_id")
         if error_response is not None:
@@ -557,6 +598,9 @@ def register_routes(app):
 
     @app.route("/gpu/nodes", methods=["GET"])
     def gpu_nodes():
+        err, status = _admin_key_required()
+        if err is not None:
+            return jsonify(err), status
         job_type = request.args.get("job_type")
         device_arch = request.args.get("device_arch")
         nodes = protocol.list_gpu_nodes(job_type, device_arch)
@@ -650,12 +694,18 @@ def register_routes(app):
 
     @app.route("/render/escrow/<job_id>", methods=["GET"])
     def get_escrow(job_id):
+        err, status = _admin_key_required()
+        if err is not None:
+            return jsonify(err), status
         result = protocol.get_escrow(job_id)
         status_code = 200 if "error" not in result else 404
         return jsonify(result), status_code
 
     @app.route("/render/pricing", methods=["GET"])
     def get_pricing():
+        err, status = _admin_key_required()
+        if err is not None:
+            return jsonify(err), status
         job_type = request.args.get("job_type")
         result = protocol.get_fair_market_rates(job_type)
         return jsonify(result)

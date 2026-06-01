@@ -374,10 +374,14 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
         # Dynamic routes
         if path.startswith("/api/wallet/"):
             address = path.split("/")[-1]
+            if len(address) > 128:
+                return ApiResponse(success=False, error="address too long")
             return self.api.rpc.call("getWallet", {"address": address})
 
         if path.startswith("/api/block/"):
             height = path.split("/")[-1]
+            if len(height) > 128:
+                return ApiResponse(success=False, error="block hash too long")
             try:
                 return self.api.rpc.call("getBlock", {"height": int(height)})
             except ValueError:
@@ -385,6 +389,8 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
 
         if path.startswith("/api/proposal/"):
             proposal_id = path.split("/")[-1]
+            if len(proposal_id) > 128:
+                return ApiResponse(success=False, error="proposal_id too long")
             return self.api.rpc.call("getProposal", {"proposal_id": proposal_id})
 
         # POST endpoints

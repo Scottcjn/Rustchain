@@ -31,6 +31,7 @@ Environment variables (set by the action):
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -72,6 +73,27 @@ _BOUNTY_RE = re.compile(
 # Marker to prevent duplicate awards.
 _AWARD_MARKER = "RTC-AutoBounty-Awarded"
 
+# --- Recipient validation (security) ---------------------------------------
+# A resolved recipient must be EITHER a canonical RTC address (RTC + 40 hex)
+# OR a conservative wallet-name / GitHub-username grammar. Anything else
+# (markdown junk, zero-width / non-ASCII confusables, multi-token garbage)
+# is rejected so a malformed or spoofed directive cannot misroute funds.
+_RTC_ADDRESS_RE = re.compile(r"^RTC[0-9A-Fa-f]{40}$")
+_WALLET_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$")
+
+# Platform / treasury wallets must never be auto-selected as a *recipient*
+# from PR-controlled text (prevents misrouting and self-dealing loops).
+_BLOCKED_RECIPIENTS = frozenset({
+    "founder_community",
+    "founder_dev_fund",
+    "founder_team_bounty",
+    "founder_founders",
+    "community",
+    "dev_wallet",
+    "foundation",
+    "treasury",
+})
+
 _ENDPOINT_UNREACHABLE_PATTERNS = (
     "connection failed:",
     "connection refused",
@@ -104,10 +126,13 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 
 def _env_float(name: str, default: float = 0.0) -> float:
-    try:
-        return float(_env_stripped(name, str(default)))
-    except (TypeError, ValueError):
+    raw_value = _env_stripped(name, "")
+    if raw_value == "":
         return default
+    try:
+        return float(raw_value)
+    except (TypeError, ValueError):
+        return math.nan
 
 
 def _is_finite_amount(value: float) -> bool:
@@ -190,12 +215,11 @@ def resolve_wallet_from_file(repo_path: str) -> Optional[str]:
 
 def resolve_wallet(pr_body: str, repo_path: str) -> Optional[str]:
     """
-    Resolve the recipient wallet.
+    Resolve the explicitly declared recipient wallet.
 
     Priority:
       1. ``wallet:`` directive in the PR body
       2. ``.rtc-wallet`` file at the repository root
-      3. Fallback to the PR author's GitHub username
     """
     wallet = resolve_wallet_from_pr_body(pr_body)
     if wallet:
@@ -204,6 +228,59 @@ def resolve_wallet(pr_body: str, repo_path: str) -> Optional[str]:
     if wallet:
         return wallet
     return None
+
+
+def distinct_wallet_directives(pr_body: str) -> list:
+    """Return the distinct ``wallet:`` directive values found in the PR body.
+
+    Used to fail closed when a body contains multiple *conflicting* recipient
+    directives (an attacker appending a second directive should not silently
+    win or lose — it requires manual review).
+    """
+    seen = []
+    for raw in _WALLET_RE.findall(pr_body or ""):
+        value = raw.strip().rstrip(",")
+        if value and value not in seen:
+            seen.append(value)
+    return seen
+
+
+def validate_recipient(wallet: Optional[str]) -> Tuple[bool, Optional[str]]:
+    """Validate a resolved recipient before it is used in a transfer.
+
+    Returns ``(ok, reason)``. ``reason`` is a short machine-readable skip code
+    when ``ok`` is False. A recipient is accepted only when it is a canonical
+    RTC address or a conservative wallet-name/username, and is not a
+    platform/treasury wallet.
+    """
+    if not wallet:
+        return False, "recipient_wallet_missing"
+    candidate = wallet.strip()
+    if candidate != wallet:
+        # Trailing/leading whitespace already stripped by the parser; a
+        # mismatch here means embedded control/space chars — reject.
+        return False, "recipient_wallet_whitespace"
+    try:
+        candidate.encode("ascii")
+    except UnicodeEncodeError:
+        return False, "recipient_wallet_non_ascii"
+    if _RTC_ADDRESS_RE.match(candidate):
+        return True, None
+    if _WALLET_NAME_RE.match(candidate):
+        if candidate.lower() in _BLOCKED_RECIPIENTS or candidate.lower().startswith("founder_"):
+            return False, "recipient_platform_wallet_blocked"
+        return True, None
+    return False, "recipient_wallet_invalid_format"
+
+
+def compute_idempotency_key(repo: str, pr_number: str, wallet: str, amount: float) -> str:
+    """Deterministic idempotency key so workflow re-runs collapse to one payout.
+
+    The node's /wallet/transfer endpoint returns the existing pending row for a
+    repeated key instead of inserting a new one, making retries safe.
+    """
+    basis = f"{repo}:{pr_number}:{wallet}:{amount}"
+    return "award-" + hashlib.sha256(basis.encode("utf-8")).hexdigest()
 
 
 # ---------------------------------------------------------------------------
@@ -307,6 +384,7 @@ def transfer_rtc(
     to_wallet: str,
     amount: float,
     memo: str,
+    idempotency_key: Optional[str] = None,
 ) -> Tuple[bool, Dict[str, Any]]:
     """
     Call the RustChain ``POST /wallet/transfer`` admin endpoint.
@@ -324,6 +402,8 @@ def transfer_rtc(
         "amount_rtc": amount,
         "memo": memo,
     }
+    if idempotency_key:
+        payload["idempotency_key"] = idempotency_key
     req = Request(
         transfer_url,
         data=json.dumps(payload).encode("utf-8"),
@@ -335,7 +415,13 @@ def transfer_rtc(
     )
     try:
         resp = urlopen(req, timeout=30)
-        result = json.loads(resp.read().decode())
+        body = resp.read().decode(errors="replace")
+        try:
+            result = json.loads(body)
+        except (json.JSONDecodeError, ValueError):
+            return False, {"error": "Invalid JSON response from transfer endpoint"}
+        if not isinstance(result, dict):
+            return False, {"error": "Transfer endpoint response must be a JSON object"}
         return result.get("ok", False), result
     except HTTPError as e:
         body = e.read().decode(errors="replace")
@@ -429,10 +515,66 @@ def main() -> int:
     # --- Resolve recipient wallet ------------------------------------------
     wallet = resolve_wallet(cfg.pr_body, cfg.repo_path)
     if not wallet:
-        # Fallback: use PR author's GitHub username as the wallet identifier
-        wallet = cfg.pr_author
-        log_info(f"No wallet found in PR body or .rtc-wallet file; "
-                 f"falling back to PR author: {wallet}")
+        skip_reason = "recipient_wallet_missing"
+        log_error("No recipient wallet found in PR body or .rtc-wallet file; "
+                  "skipping automatic RTC transfer.")
+        if cfg.post_comment:
+            missing_wallet_body = (
+                f"**RTC Auto-Bounty Skipped**\n\n"
+                f"No recipient wallet was found, so no RTC transfer was attempted.\n\n"
+                f"To receive this award, add a line such as "
+                f"`wallet: RTC...` to the PR body or add a `.rtc-wallet` file "
+                f"at the repository root, then rerun the award workflow.\n\n"
+                f"<!-- {_AWARD_MARKER}:FAILED recipient_wallet_missing -->"
+            )
+            post_pr_comment(repo, pr_number, missing_wallet_body, cfg.github_token)
+        set_output("awarded", "false")
+        set_output("skip_reason", skip_reason)
+        return 1
+
+    # --- Fail closed on conflicting recipient directives -------------------
+    directives = distinct_wallet_directives(cfg.pr_body)
+    if len(directives) > 1:
+        skip_reason = "recipient_wallet_conflict"
+        log_error(
+            "Multiple conflicting `wallet:` directives in PR body "
+            f"({directives}); refusing to auto-select a recipient."
+        )
+        if cfg.post_comment:
+            conflict_body = (
+                f"**RTC Auto-Bounty Skipped — manual review required**\n\n"
+                f"This PR body declares more than one recipient wallet "
+                f"({', '.join(f'`{d}`' for d in directives)}). To avoid "
+                f"misrouting funds, no automatic transfer was made. A "
+                f"maintainer must confirm the correct recipient.\n\n"
+                f"<!-- {_AWARD_MARKER}:FAILED recipient_wallet_conflict -->"
+            )
+            post_pr_comment(repo, pr_number, conflict_body, cfg.github_token)
+        set_output("awarded", "false")
+        set_output("skip_reason", skip_reason)
+        return 1
+
+    # --- Validate recipient format / blocklist ----------------------------
+    recipient_ok, recipient_err = validate_recipient(wallet)
+    if not recipient_ok:
+        log_error(
+            f"Resolved recipient `{wallet}` failed validation "
+            f"({recipient_err}); refusing automatic RTC transfer."
+        )
+        if cfg.post_comment:
+            invalid_body = (
+                f"**RTC Auto-Bounty Skipped — invalid recipient**\n\n"
+                f"The resolved recipient `{wallet}` did not pass safety "
+                f"validation (`{recipient_err}`). A recipient must be a "
+                f"canonical `RTC...` address or a simple wallet name, and "
+                f"may not be a platform/treasury wallet. No transfer was "
+                f"made; a maintainer can process this manually.\n\n"
+                f"<!-- {_AWARD_MARKER}:FAILED {recipient_err} -->"
+            )
+            post_pr_comment(repo, pr_number, invalid_body, cfg.github_token)
+        set_output("awarded", "false")
+        set_output("skip_reason", recipient_err)
+        return 1
 
     print(f"Recipient wallet: {wallet}")
 
@@ -481,13 +623,14 @@ def main() -> int:
                 f"| From | `{cfg.from_wallet}` |\n"
                 f"| Memo | {memo} |\n\n"
                 f"This is a **dry-run** — no actual transfer was made.\n\n"
-                f"<!-- { _AWARD_MARKER } (dry-run) -->"
+                f"<!-- {_AWARD_MARKER} (dry-run) -->"
             )
             post_pr_comment(repo, pr_number, dry_body, cfg.github_token)
         return 0
 
     # --- Execute transfer --------------------------------------------------
     print(f"Initiating transfer: {amount} RTC from {cfg.from_wallet} to {wallet}")
+    idempotency_key = compute_idempotency_key(repo, pr_number, wallet, amount)
     ok, result = transfer_rtc(
         cfg.rtc_api_url or cfg.vps_host,
         cfg.admin_key,
@@ -495,6 +638,7 @@ def main() -> int:
         wallet,
         amount,
         memo,
+        idempotency_key=idempotency_key,
     )
 
     tx_hash = result.get("tx_hash", "")
@@ -523,7 +667,7 @@ def main() -> int:
                     f"this transfer manually. This marker intentionally blocks automatic "
                     f"retries to avoid duplicate payouts; remove it only if no manual "
                     f"transfer was completed.\n\n"
-                    f"<!-- { _AWARD_MARKER }:MANUAL-REQUIRED -->"
+                    f"<!-- {_AWARD_MARKER}:MANUAL-REQUIRED -->"
                 )
                 if not post_pr_comment(repo, pr_number, manual_body, cfg.github_token):
                     log_error("Manual transfer notice could not be posted.")
@@ -538,7 +682,7 @@ def main() -> int:
                 f"but the transfer was rejected:\n\n"
                 f"```\n{error_msg}\n```\n\n"
                 f"Please process this award manually.\n\n"
-                f"<!-- { _AWARD_MARKER }:FAILED -->"
+                f"<!-- {_AWARD_MARKER}:FAILED -->"
             )
             post_pr_comment(repo, pr_number, fail_body, cfg.github_token)
         return 1
@@ -574,7 +718,7 @@ def main() -> int:
             {confirms_info}
             Transfer recorded on RustChain.
 
-            <!-- { _AWARD_MARKER } tx_hash={tx_hash} pending_id={pending_id} -->
+            <!-- {_AWARD_MARKER} tx_hash={tx_hash} pending_id={pending_id} -->
         """)
         posted = post_pr_comment(repo, pr_number, confirm_body, cfg.github_token)
         if not posted:

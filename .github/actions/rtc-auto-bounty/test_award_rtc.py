@@ -30,8 +30,13 @@ from award_rtc import (
     is_endpoint_unreachable_error,
     set_output,
     transfer_rtc,
+    validate_recipient,
+    distinct_wallet_directives,
+    compute_idempotency_key,
     _AWARD_MARKER,
 )
+
+VALID_RTC = "RTC" + "a1b2c3d4" * 5  # RTC + 40 hex chars
 
 
 # ---------------------------------------------------------------------------
@@ -284,8 +289,16 @@ class TestConfig(unittest.TestCase):
         cfg = self._cfg(INPUT_RTC_AMOUNT="inf")
         self.assertEqual(cfg.validate(), "rtc-amount must be finite, got inf")
 
+    def test_validate_rejects_malformed_amount(self):
+        cfg = self._cfg(INPUT_RTC_AMOUNT="not-a-number")
+        self.assertEqual(cfg.validate(), "rtc-amount must be finite, got nan")
+
     def test_validate_rejects_nan_max_amount(self):
         cfg = self._cfg(INPUT_MAX_AMOUNT="nan")
+        self.assertEqual(cfg.validate(), "max-amount must be finite, got nan")
+
+    def test_validate_rejects_malformed_max_amount(self):
+        cfg = self._cfg(INPUT_MAX_AMOUNT="not-a-number")
         self.assertEqual(cfg.validate(), "max-amount must be finite, got nan")
 
 
@@ -398,6 +411,46 @@ class TestTransferRtc(unittest.TestCase):
         self.assertEqual(payload["from_miner"], "founder_community")
         self.assertEqual(payload["to_miner"], "alice")
 
+    def test_success_response_rejects_invalid_json(self):
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = b"not json"
+
+        with patch("award_rtc.urlopen", return_value=mock_resp):
+            ok, result = transfer_rtc(
+                "https://rustchain.org/wallet/transfer",
+                "test-admin-key",
+                "founder_community",
+                "alice",
+                5.0,
+                "PR #4559 auto-bounty",
+            )
+
+        self.assertFalse(ok)
+        self.assertEqual(
+            result["error"],
+            "Invalid JSON response from transfer endpoint",
+        )
+
+    def test_success_response_rejects_non_object_json(self):
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = b'["ok", true]'
+
+        with patch("award_rtc.urlopen", return_value=mock_resp):
+            ok, result = transfer_rtc(
+                "https://rustchain.org/wallet/transfer",
+                "test-admin-key",
+                "founder_community",
+                "alice",
+                5.0,
+                "PR #4559 auto-bounty",
+            )
+
+        self.assertFalse(ok)
+        self.assertEqual(
+            result["error"],
+            "Transfer endpoint response must be a JSON object",
+        )
+
 
 # ---------------------------------------------------------------------------
 # Integration-style main() tests
@@ -507,6 +560,16 @@ class TestMainFlow(unittest.TestCase):
         mock_fetch.assert_not_called()
         mock_post.assert_not_called()
 
+    def test_dry_run_rejects_malformed_amount(self):
+        from award_rtc import main
+        with self._env(INPUT_DRY_RUN="true", INPUT_RTC_AMOUNT="not-a-number"):
+            with patch("award_rtc.fetch_pr_comments") as mock_fetch:
+                with patch("award_rtc.post_pr_comment") as mock_post:
+                    rc = main()
+        self.assertEqual(rc, 1)
+        mock_fetch.assert_not_called()
+        mock_post.assert_not_called()
+
     def test_successful_transfer(self):
         from award_rtc import main
         transfer_result = {
@@ -588,7 +651,7 @@ class TestMainFlow(unittest.TestCase):
         call_args = mock_tx.call_args
         self.assertEqual(call_args[0][4], 200.0)  # amount parameter
 
-    def test_fallback_to_pr_author_when_no_wallet(self):
+    def test_missing_wallet_fails_without_transfer(self):
         from award_rtc import main
         transfer_result = {
             "ok": True,
@@ -600,12 +663,116 @@ class TestMainFlow(unittest.TestCase):
         with self._env(PR_BODY="Just a regular PR\n", PR_AUTHOR="bob"):
             with patch("award_rtc.fetch_pr_comments", return_value=[]):
                 with patch("award_rtc.transfer_rtc", return_value=(True, transfer_result)) as mock_tx:
-                    with patch("award_rtc.post_pr_comment", return_value=True):
+                    with patch("award_rtc.post_pr_comment", return_value=True) as mock_post:
                         rc = main()
-        self.assertEqual(rc, 0)
-        # Should use PR author as wallet
-        call_args = mock_tx.call_args
-        self.assertEqual(call_args[0][3], "bob")  # to_wallet parameter
+        self.assertEqual(rc, 1)
+        mock_tx.assert_not_called()
+        mock_post.assert_called_once()
+        comment_body = mock_post.call_args[0][2]
+        self.assertIn("RTC Auto-Bounty Skipped", comment_body)
+        self.assertIn("wallet: RTC...", comment_body)
+        self.assertIn("recipient_wallet_missing", comment_body)
+
+
+class TestValidateRecipient(unittest.TestCase):
+    """Security: recipient validation before any transfer."""
+
+    def test_accepts_canonical_rtc_address(self):
+        ok, reason = validate_recipient(VALID_RTC)
+        self.assertTrue(ok)
+        self.assertIsNone(reason)
+
+    def test_accepts_simple_username(self):
+        ok, reason = validate_recipient("some-contributor")
+        self.assertTrue(ok)
+        self.assertIsNone(reason)
+
+    def test_accepts_wallet_name(self):
+        self.assertTrue(validate_recipient("JONASXZB")[0])
+
+    def test_rejects_none_and_empty(self):
+        self.assertFalse(validate_recipient(None)[0])
+        self.assertFalse(validate_recipient("")[0])
+
+    def test_rejects_markdown_junk(self):
+        # backtick / parenthesis confusables from `code` spans
+        self.assertFalse(validate_recipient("RTCabc`")[0])
+        self.assertFalse(validate_recipient("(RTCabc)")[0])
+
+    def test_rejects_non_ascii_confusable(self):
+        # Cyrillic 'а' homoglyph
+        ok, reason = validate_recipient("RTCаbcdef")
+        self.assertFalse(ok)
+        self.assertEqual(reason, "recipient_wallet_non_ascii")
+
+    def test_rejects_platform_wallets(self):
+        for w in ("founder_community", "founder_dev_fund", "FOUNDER_FOUNDERS", "treasury"):
+            ok, reason = validate_recipient(w)
+            self.assertFalse(ok, w)
+            self.assertEqual(reason, "recipient_platform_wallet_blocked")
+
+    def test_rejects_embedded_whitespace(self):
+        self.assertFalse(validate_recipient("RTC abc")[0])
+
+    def test_rejects_overlong_garbage(self):
+        self.assertFalse(validate_recipient("x" * 200)[0])
+
+
+class TestDistinctWalletDirectives(unittest.TestCase):
+    """Security: conflicting recipient directives must be detectable."""
+
+    def test_single_directive(self):
+        self.assertEqual(distinct_wallet_directives("wallet: RTCone\n"), ["RTCone"])
+
+    def test_duplicate_same_value_collapses(self):
+        body = "wallet: RTCone\nwallet: RTCone\n"
+        self.assertEqual(distinct_wallet_directives(body), ["RTCone"])
+
+    def test_conflicting_directives_detected(self):
+        body = "wallet: RTCattacker\nsome text\nwallet: RTClegit\n"
+        result = distinct_wallet_directives(body)
+        self.assertEqual(len(result), 2)
+        self.assertIn("RTCattacker", result)
+        self.assertIn("RTClegit", result)
+
+    def test_no_directive(self):
+        self.assertEqual(distinct_wallet_directives("nothing here"), [])
+
+
+class TestIdempotencyKey(unittest.TestCase):
+    """Security: deterministic idempotency key + payload wiring."""
+
+    def test_deterministic_and_keyed_on_inputs(self):
+        a = compute_idempotency_key("o/r", "42", VALID_RTC, 50.0)
+        b = compute_idempotency_key("o/r", "42", VALID_RTC, 50.0)
+        c = compute_idempotency_key("o/r", "43", VALID_RTC, 50.0)
+        self.assertEqual(a, b)
+        self.assertNotEqual(a, c)
+        self.assertTrue(a.startswith("award-"))
+        self.assertLessEqual(len(a), 128)
+
+    def test_transfer_includes_idempotency_key_when_given(self):
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = b'{"ok": true, "tx_hash": "tx_abc"}'
+        with patch("award_rtc.urlopen", return_value=mock_resp) as mock_urlopen:
+            transfer_rtc(
+                "https://rustchain.org/wallet/transfer",
+                "k", "founder_community", VALID_RTC, 5.0, "memo",
+                idempotency_key="award-deadbeef",
+            )
+        payload = json.loads(mock_urlopen.call_args[0][0].data.decode("utf-8"))
+        self.assertEqual(payload["idempotency_key"], "award-deadbeef")
+
+    def test_transfer_omits_idempotency_key_when_absent(self):
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = b'{"ok": true, "tx_hash": "tx_abc"}'
+        with patch("award_rtc.urlopen", return_value=mock_resp) as mock_urlopen:
+            transfer_rtc(
+                "https://rustchain.org/wallet/transfer",
+                "k", "founder_community", VALID_RTC, 5.0, "memo",
+            )
+        payload = json.loads(mock_urlopen.call_args[0][0].data.decode("utf-8"))
+        self.assertNotIn("idempotency_key", payload)
 
 
 if __name__ == "__main__":

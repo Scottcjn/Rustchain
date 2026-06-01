@@ -55,7 +55,7 @@ class TestBridgeInitiateTypeValidation(unittest.TestCase):
             "source_chain": "solana",
             "dest_chain": "rustchain",
             "source_address": "S" * 32,
-            "dest_address": "RTCdestination12345",
+            "dest_address": "RTC" + "a" * 40,
             "amount_rtc": 1.0,
         }
 
@@ -82,6 +82,32 @@ class TestBridgeInitiateTypeValidation(unittest.TestCase):
                 payload = {**self.valid_payload(), "amount_rtc": amount_rtc}
                 response = self.client.post("/api/bridge/initiate", json=payload)
                 self.assertEqual(response.status_code, 400)
+
+    def test_overprecision_amount_returns_400(self):
+        payload = {**self.valid_payload(), "amount_rtc": "1.0000004"}
+
+        response = self.client.post("/api/bridge/initiate", json=payload)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("at most 6 decimal places", response.get_json()["error"])
+
+    def test_six_decimal_amount_is_stored_exactly(self):
+        payload = {**self.valid_payload(), "amount_rtc": "1.000001"}
+
+        response = self.client.post("/api/bridge/initiate", json=payload)
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        self.assertEqual(body["amount_rtc"], 1.000001)
+        conn = sqlite3.connect(self.db_path)
+        try:
+            row = conn.execute(
+                "SELECT amount_i64 FROM bridge_transfers WHERE tx_hash = ?",
+                (body["tx_hash"],),
+            ).fetchone()
+        finally:
+            conn.close()
+        self.assertEqual(row[0], 1_000_001)
 
     def test_mixed_case_chain_uses_normalized_value_for_address_validation(self):
         payload = {

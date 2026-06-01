@@ -52,6 +52,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from collections import deque
 
+from flask import Blueprint, jsonify, request
+
 logger = logging.getLogger(__name__)
 
 
@@ -393,7 +395,7 @@ class MoodEngine:
 
             conn.commit()
             conn.close()
-        except Exception as e:
+        except Exception:
             # Database errors are non-fatal - mood system works in memory-only mode
             pass
 
@@ -725,7 +727,6 @@ class MoodEngine:
         
         # Check if mood changed
         if new_mood != history.current_mood:
-            old_mood = history.current_mood
             history.current_mood = new_mood
             history.mood_started_at = time.time()
             history.history.insert(0, {
@@ -914,9 +915,6 @@ class MoodEngine:
         }
 
 
-# ─── Flask Blueprint ─────────────────────────────────────────────────────────── #
-from flask import Blueprint, jsonify, request
-
 mood_bp = Blueprint("bottube_mood", __name__, url_prefix="/api/v1/agents")
 
 
@@ -939,6 +937,18 @@ def _get_json_object(allow_empty: bool = False):
     if not isinstance(data, dict):
         return None, (jsonify({"error": "JSON object required"}), 400)
     return data, None
+
+
+def _get_signal_weight(data: Dict[str, Any]):
+    raw_weight = data.get("weight", 1.0)
+    if isinstance(raw_weight, bool) or not isinstance(raw_weight, (int, float)):
+        return None, (jsonify({"error": "weight must be a number"}), 400)
+
+    weight = float(raw_weight)
+    if not math.isfinite(weight):
+        return None, (jsonify({"error": "weight must be finite"}), 400)
+
+    return weight, None
 
 
 def _mood_service_unavailable(operation: str):
@@ -992,7 +1002,9 @@ def record_mood_signal(agent_name: str):
 
         signal_type = data.get("signal_type")
         value = data.get("value", {})
-        weight = data.get("weight", 1.0)
+        weight, weight_error = _get_signal_weight(data)
+        if weight_error:
+            return weight_error
 
         if not signal_type:
             return jsonify({"error": "signal_type required"}), 400
@@ -1177,7 +1189,7 @@ if __name__ == "__main__":
         print(f"  Signals:       {result['recent_signals_count']}")
         
         if result['history']:
-            print(f"\n  Recent History:")
+            print("\n  Recent History:")
             for entry in result['history'][:5]:
                 print(f"    - {entry['mood']} ({entry['triggered_by']}) @ {entry['created_at_iso']}")
         

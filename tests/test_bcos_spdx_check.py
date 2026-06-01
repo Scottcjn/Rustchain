@@ -45,3 +45,52 @@ def test_git_diff_name_status_parses_valid_rows(monkeypatch):
         ("M", "tools/old.py"),
         ("R100", "old.py\tnew.py"),
     ]
+
+
+def test_ensure_base_ref_returns_existing_ref(monkeypatch):
+    calls = []
+
+    def fake_run(cmd):
+        calls.append(cmd)
+        return ""
+
+    monkeypatch.setattr(bcos_spdx_check, "_run", fake_run)
+
+    assert bcos_spdx_check._ensure_base_ref("origin/main") == "origin/main"
+    assert calls == [["git", "rev-parse", "--verify", "origin/main"]]
+
+
+def test_ensure_base_ref_fetches_remote_branch_when_missing(monkeypatch):
+    calls = []
+
+    def fake_run(cmd):
+        calls.append(cmd)
+        if cmd == ["git", "rev-parse", "--verify", "upstream/main"]:
+            raise RuntimeError("missing")
+        return ""
+
+    monkeypatch.setattr(bcos_spdx_check, "_run", fake_run)
+
+    assert bcos_spdx_check._ensure_base_ref("upstream/main") == "upstream/main"
+    assert calls == [
+        ["git", "rev-parse", "--verify", "upstream/main"],
+        ["git", "fetch", "upstream", "main", "--depth=1"],
+    ]
+
+
+def test_ensure_base_ref_normalizes_missing_bare_branch(monkeypatch):
+    calls = []
+
+    def fake_run(cmd):
+        calls.append(cmd)
+        if cmd == ["git", "rev-parse", "--verify", "main"]:
+            raise RuntimeError("missing")
+        return ""
+
+    monkeypatch.setattr(bcos_spdx_check, "_run", fake_run)
+
+    assert bcos_spdx_check._ensure_base_ref("main") == "origin/main"
+    assert calls == [
+        ["git", "rev-parse", "--verify", "main"],
+        ["git", "fetch", "origin", "main", "--depth=1"],
+    ]

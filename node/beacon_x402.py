@@ -23,8 +23,8 @@ try:
     sys.path.insert(0, "/root/shared")
     from x402_config import (
         BEACON_TREASURY, FACILITATOR_URL, X402_NETWORK, USDC_BASE,
-        PRICE_BEACON_CONTRACT, PRICE_RELAY_REGISTER, PRICE_REPUTATION_EXPORT,
-        is_free, has_cdp_credentials, create_agentkit_wallet, SWAP_INFO,
+        PRICE_BEACON_CONTRACT, PRICE_REPUTATION_EXPORT,
+        is_free, has_cdp_credentials, SWAP_INFO,
     )
     X402_CONFIG_OK = True
 except ImportError:
@@ -83,6 +83,10 @@ def _run_migrations(db_path):
     conn.close()
 
 
+def _ensure_x402_tables(conn):
+    conn.executescript(X402_BEACON_SCHEMA)
+
+
 # ---------------------------------------------------------------------------
 # CORS helper (match beacon_chat.py pattern)
 # ---------------------------------------------------------------------------
@@ -104,13 +108,16 @@ def _json_object_body():
     return data, None
 
 
-def _json_string_field(data, field_name, default=""):
+def _json_string_field(data, field_name, default="", max_length=0):
     value = data.get(field_name, default)
     if value is None:
         return ""
     if not isinstance(value, str):
         raise ValueError(f"{field_name} must be a string")
-    return value.strip()
+    value = value.strip()
+    if max_length > 0 and len(value) > max_length:
+        raise ValueError(f"{field_name} exceeds maximum length of {max_length}")
+    return value
 
 
 def _is_base_address(value: str) -> bool:
@@ -142,7 +149,17 @@ def _check_x402_payment(price_str, action_name):
     Check for x402 payment. Returns (passed, response_or_none).
     When price is "0", always passes.
     """
-    if not X402_CONFIG_OK or is_free(price_str):
+    if not X402_CONFIG_OK:
+        log.warning(
+            "Rejected premium Beacon x402 action=%s because payment config is unavailable",
+            action_name,
+        )
+        return False, _cors_json({
+            "error": "Payment verification unavailable",
+            "message": "Beacon x402 premium exports are disabled until payment configuration is available.",
+        }, 503)
+
+    if is_free(price_str):
         return True, None
 
     payment_header = request.headers.get("X-PAYMENT", "")
@@ -211,6 +228,9 @@ def init_app(app, get_db_func):
         if request.method == "OPTIONS":
             return _cors_json({"ok": True})
 
+        if len(agent_id) > 128:
+            return _cors_json({"error": "agent_id too long"}, 400)
+
         # Simple admin check ? require admin key in header
         admin_error = _require_beacon_admin()
         if admin_error:
@@ -227,6 +247,7 @@ def init_app(app, get_db_func):
             return _cors_json({"error": "Invalid Base address"}, 400)
 
         db = get_db_func()
+        _ensure_x402_tables(db)
         db.execute(
             """INSERT INTO beacon_wallets (agent_id, coinbase_address, created_at)
                VALUES (?, ?, ?)
@@ -247,8 +268,16 @@ def init_app(app, get_db_func):
         """Get a beacon agent's Coinbase wallet info."""
         if request.method == "OPTIONS":
             return _cors_json({"ok": True})
+        if len(agent_id) > 128:
+            return _cors_json({"error": "agent_id too long"}, 400)
+
+        # SECURITY: Require admin key — exposes coinbase_address for any beacon agent
+        admin_error = _require_beacon_admin()
+        if admin_error:
+            return admin_error
 
         db = get_db_func()
+        _ensure_x402_tables(db)
 
         # Check beacon_wallets table (native agents)
         row = db.execute(

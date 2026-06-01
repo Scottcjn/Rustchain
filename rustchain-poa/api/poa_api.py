@@ -40,9 +40,6 @@ def validate():
     if file.filename == '':
         return jsonify({"error": "No selected file"}), 400
 
-    if request.content_length and request.content_length > MAX_UPLOAD_BYTES:
-        return jsonify({"error": f"File too large (max {MAX_UPLOAD_BYTES} bytes)"}), 413
-
     if not _is_json_upload(file):
         return jsonify({"error": "Only JSON files accepted"}), 400
 

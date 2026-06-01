@@ -252,6 +252,14 @@ class TestDatabaseReader(unittest.TestCase):
         anchors = read_anchors(self.db_path, limit=2)
         self.assertEqual(len(anchors), 2)
 
+    def test_read_zero_limit_returns_no_anchors(self):
+        anchors = read_anchors(self.db_path, limit=0)
+        self.assertEqual(anchors, [])
+
+    def test_read_negative_limit_returns_no_anchors(self):
+        anchors = read_anchors(self.db_path, limit=-1)
+        self.assertEqual(anchors, [])
+
     def test_read_ordered_desc(self):
         anchors = read_anchors(self.db_path)
         heights = [a.rustchain_height for a in anchors]

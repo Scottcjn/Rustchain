@@ -61,6 +61,8 @@ detect_platform() {
         Darwin)
             [ "$arch" != "x86_64" ] && [ "$arch" != "arm64" ] && { echo -e "${RED}[!] Unsupported macOS architecture: $arch (Supported: x86_64, arm64)${NC}"; exit 1; }
             echo "macos" ;;
+        MINGW*|MSYS*|CYGWIN*)
+            echo "windows" ;;
         *) echo "unknown"; exit 1 ;;
     esac
 }
@@ -72,13 +74,16 @@ echo -e "${GREEN}[+] Platform: $PLATFORM ($(uname -m))${NC}"
 setup_python() {
     if ! command -v python3 &>/dev/null; then
         echo -e "${YELLOW}[*] Python 3 not found. Attempting install...${NC}"
-        if [ "$PLATFORM" != "macos" ] && command -v apt-get &>/dev/null; then
+        if [ "$PLATFORM" = "windows" ]; then
+            echo -e "${RED}[!] Python 3.8+ required. Install Python for Windows and re-run from Git Bash/MSYS.${NC}"; exit 1
+        elif [ "$PLATFORM" != "macos" ] && command -v apt-get &>/dev/null; then
             run_cmd sudo apt-get update && run_cmd sudo apt-get install -y python3 python3-venv python3-pip
         else
             echo -e "${RED}[!] Python 3.8+ required. Please install manually.${NC}"; exit 1
         fi
     fi
-    V=$(python3 -c "import sys; print(sys.version_info.minor)")
+    PYTHON_BIN=$(command -v python3 || command -v python)
+    V=$($PYTHON_BIN -c "import sys; print(sys.version_info.minor)")
     if [ "$V" -lt 8 ]; then
         echo -e "${RED}[!] Python 3.8+ required (Found 3.$V)${NC}"
         exit 1
@@ -137,7 +142,7 @@ download_miner
 
 # Dependencies
 echo -e "${YELLOW}[*] Setting up virtual environment...${NC}"
-run_cmd python3 -m venv "$VENV_DIR"
+run_cmd "$PYTHON_BIN" -m venv "$VENV_DIR"
 run_cmd "$VENV_DIR/bin/pip" install requests -q
 
 # Wallet
@@ -151,7 +156,9 @@ echo -e "${GREEN}[+] Wallet: $WALLET${NC}"
 
 # Auto-start Persistence
 [ "$SKIP_SERVICE" = false ] && {
-    if [ "$PLATFORM" = "macos" ]; then
+    if [ "$PLATFORM" = "windows" ]; then
+        echo -e "${YELLOW}[*] Windows detected; skipping systemd/launchd service setup. Use $INSTALL_DIR/start.sh to start the miner.${NC}"
+    elif [ "$PLATFORM" = "macos" ]; then
         FILE="$HOME/Library/LaunchAgents/com.rustchain.miner.plist"
         PLIST="<?xml version=\"1.0\" encoding=\"UTF-8\"?><!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\"><plist version=\"1.0\"><dict><key>Label</key><string>com.rustchain.miner</string><key>ProgramArguments</key><array><string>$VENV_DIR/bin/python</string><string>-u</string><string>$INSTALL_DIR/rustchain_miner.py</string><string>--wallet</string><string>$WALLET</string></array><key>WorkingDirectory</key><string>$INSTALL_DIR</string><key>RunAtLoad</key><true/><key>KeepAlive</key><true/></dict></plist>"
         if [ "$DRY_RUN" = true ]; then echo "[DRY-RUN] Create launchd plist"; else echo "$PLIST" > "$FILE"; launchctl load "$FILE" 2>/dev/null || true; fi

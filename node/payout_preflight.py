@@ -8,10 +8,11 @@ from typing import Any, Dict, Optional, Tuple
 
 MICRO_RTC = Decimal("1000000")
 MAX_I64 = 2**63 - 1
+_RTC_ADDRESS_RE = re.compile(r"RTC[0-9A-Fa-f]{40}")
 
 
 def _is_rtc_address(value: str) -> bool:
-    return value.startswith("RTC") and len(value) == 43
+    return bool(_RTC_ADDRESS_RE.fullmatch(value))
 
 
 def _is_bcn_address(value: str) -> bool:

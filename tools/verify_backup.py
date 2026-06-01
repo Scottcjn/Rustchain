@@ -80,6 +80,8 @@ def verify(live_db: str, backup_file: str) -> CheckResult:
 
     if not os.path.exists(live_db):
         return CheckResult(False, lines + [log(f"RESULT: FAIL (live db missing: {live_db})")])
+    if not os.path.exists(backup_file):
+        return CheckResult(False, lines + [log(f"RESULT: FAIL (backup file missing: {backup_file})")])
 
     with tempfile.TemporaryDirectory(prefix="backup-verify-") as td:
         copied = os.path.join(td, Path(backup_file).name)

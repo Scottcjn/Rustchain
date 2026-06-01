@@ -35,6 +35,33 @@ from datetime import datetime
 from pathlib import Path
 import argparse
 
+# ── RIP-PoA hardware fingerprint module ──
+# Optional import — if absent the miner still runs, but the server enrolls
+# it at VM-tier weight (1e-9) for not submitting fingerprint data. This was
+# previously dropped in a refactor and produced silent earning regressions
+# for every v3.1.0/v3.1.1-bundled install. Restored 2026-05-28 for v3.1.2.
+try:
+    from fingerprint_checks import validate_all_checks
+    FINGERPRINT_AVAILABLE = True
+    _FP_IMPORT_ERROR = ""
+except Exception as e:
+    FINGERPRINT_AVAILABLE = False
+    _FP_IMPORT_ERROR = str(e)
+    validate_all_checks = None
+
+# ── Ed25519 signing (GPT-5.4 audit finding #2) ──
+# Optional: if miner_crypto.py + PyNaCl are available, sign attestations
+# with Ed25519 over the canonical JSON of the full payload. Server-side
+# verification accepts both this scheme and the legacy sha512 fallback
+# (see PR #6426). Without signing, attestations are vulnerable to
+# wallet-hijack via MITM — fingerprint validation still passes but the
+# server has no crypto binding between wallet field and sender.
+try:
+    from miner_crypto import get_or_create_keypair, sign_payload  # noqa: F401
+    CRYPTO_AVAILABLE = True
+except ImportError:
+    CRYPTO_AVAILABLE = False
+
 # Configuration
 RUSTCHAIN_API = "http://50.28.86.131:8088"
 WALLET_DIR = Path.home() / ".rustchain"
@@ -115,9 +142,22 @@ class RustChainMiner:
         self.hw_info = self._get_hw_info()
         self.last_entropy = {}
         self.last_attestation_error = ""
+        # Surfaced fingerprint status — non-empty string means the miner is
+        # submitting NO fingerprint and will be enrolled at VM-tier weight
+        # (1e-9), i.e. earning ~zero. Shown loudly every attest cycle.
+        self.last_fingerprint_warning = ""
 
         # Zephyr dual-mining state — detected once per attest() cycle
         self._pow_proof = None
+
+        # Ed25519 keypair — generated/loaded once per install. Used to sign
+        # every attestation payload below. Stored in the OS keystore via
+        # miner_crypto.get_or_create_keypair() so reinstall preserves identity.
+        self.keypair = {}
+        self.public_key = ""
+        if CRYPTO_AVAILABLE:
+            self.keypair = get_or_create_keypair()
+            self.public_key = self.keypair.get("public_key", "")
 
     # -----------------------------------------------------------------------
     # ZEPHYR DUAL-MINING METHODS
@@ -382,6 +422,21 @@ class RustChainMiner:
             "samples_preview": samples[:12],
         }
 
+    def _warn_fingerprint(self, message: str):
+        """Surface a fingerprint-degradation warning loudly.
+
+        Stores it for the GUI and prints it to stderr every attest cycle.
+        A miner submitting no fingerprint earns ~zero (server weight 1e-9),
+        so this fault is repeated each cycle on purpose rather than logged
+        once and forgotten — silent degradation is what cost miners days of
+        rewards under the v3.1.x regression.
+        """
+        self.last_fingerprint_warning = message
+        try:
+            print(f"[FINGERPRINT][WARN] {message}", file=sys.stderr, flush=True)
+        except Exception:
+            pass
+
     def attest(self):
         """
         Perform hardware attestation for PoA.
@@ -443,10 +498,64 @@ class RustChainMiner:
             }
         }
 
+        # ── RIP-PoA hardware fingerprint attestation ──
+        # Server gates reward weight on this block: miners that omit it are
+        # enrolled at VM-tier weight (1e-9). Real hardware passes all six
+        # checks. ROM check disabled — this is modern x86, not retro.
+        # MUST populate fingerprint BEFORE signing so the Ed25519 signature
+        # below covers the canonical JSON including this block.
+        if FINGERPRINT_AVAILABLE:
+            try:
+                fp_passed, fp_checks = validate_all_checks(include_rom_check=False)
+                attestation["fingerprint"] = {
+                    "all_passed": fp_passed,
+                    "checks":     fp_checks,
+                }
+                self.last_fingerprint_warning = ""
+            except Exception as e:
+                # Do NOT swallow: a runtime failure here means the miner
+                # submits no fingerprint and the server enrolls it at VM-tier
+                # weight (1e-9). Surface it instead of mining at ~zero blindly.
+                self._warn_fingerprint(
+                    f"fingerprint checks raised at runtime ({e}); submitting "
+                    f"NO fingerprint -> server weight 1e-9 (earning ~zero)"
+                )
+        else:
+            # No fingerprint module at all. This is the #1 silent earning
+            # regression: the miner runs, attests, and enrolls fine, but at
+            # VM-tier weight. Make it impossible to miss.
+            self._warn_fingerprint(
+                "fingerprint_checks NOT available -> submitting NO fingerprint "
+                "-> server weight 1e-9 (earning ~zero). Put fingerprint_checks.py "
+                "in the SAME folder as this miner. Import error: "
+                + (_FP_IMPORT_ERROR or "unknown")
+            )
+
         # Attach PoW proof if present — server ignores this field if absent,
         # so existing attestation behaviour is fully preserved for non-Zephyr miners.
         if self._pow_proof:
             attestation["pow_proof"] = self._pow_proof
+
+        # ── Ed25519 signature (GPT-5.4 audit finding #2) ──
+        # Sign canonical JSON of the full attestation BEFORE adding the
+        # signature/public_key/signature_type fields. Server reproduces the
+        # same canonical bytes by stripping those three fields and verifying.
+        # Legacy sha512 fallback for installs without PyNaCl — server flags
+        # it but still accepts (see PR #6426 server-side handling).
+        if CRYPTO_AVAILABLE and self.keypair:
+            payload_bytes = json.dumps(
+                attestation, sort_keys=True, separators=(",", ":")
+            ).encode()
+            signature = sign_payload(payload_bytes, self.keypair["private_key"])
+            attestation["signature"] = signature
+            attestation["public_key"] = self.public_key
+            attestation["signature_type"] = "ed25519"
+        else:
+            # Legacy fallback — sha512 pseudo-signature. Server accepts but
+            # logs a warning. Real wallet-hijack protection requires PyNaCl.
+            msg = f"{nonce}:{self.miner_id}:{self.wallet_address}:{int(time.time())}"
+            attestation["signature"] = hashlib.sha512(msg.encode()).hexdigest()
+            attestation["signature_type"] = "sha512_legacy"
 
         try:
             resp = requests.post(
@@ -483,6 +592,19 @@ class RustChainMiner:
 
     def enroll(self):
         """Enroll the miner into the current epoch after attesting."""
+        # Fetch current epoch from server to construct signed enrollment.
+        # The server computes epoch from its own slot clock; we re-query to
+        # match. There's a small race if epoch rolls between our query and
+        # POST — server returns invalid_enrollment_signature in that case and
+        # the miner retries on next cycle (fine, enrollment runs ~per epoch).
+        current_epoch = None
+        try:
+            ep_resp = requests.get(f"{self.node_url}/epoch", timeout=10)
+            if ep_resp.ok:
+                current_epoch = ep_resp.json().get("epoch")
+        except Exception:
+            pass
+
         payload = {
             "miner_pubkey": self.wallet_address,
             "miner_id":     self.miner_id,
@@ -491,6 +613,20 @@ class RustChainMiner:
                 "arch":   self.hw_info["arch"]
             }
         }
+
+        # Sign (miner_pubkey|miner_id|epoch) — server expects this exact
+        # 3-field MAC format at line 4155 of rustchain_v2_integrated_v2.2.1.
+        # Uses the SAME Ed25519 key stored during attestation, so server
+        # cross-checks the pubkey matches its miner_attest_recent record.
+        if CRYPTO_AVAILABLE and self.keypair and current_epoch is not None:
+            enroll_message = f"{self.wallet_address}|{self.miner_id}|{current_epoch}"
+            try:
+                payload["signature"] = sign_payload(
+                    enroll_message.encode(), self.keypair["private_key"]
+                )
+                payload["public_key"] = self.public_key
+            except Exception:
+                pass  # Best-effort; server still accepts unsigned with warning
 
         try:
             resp = requests.post(

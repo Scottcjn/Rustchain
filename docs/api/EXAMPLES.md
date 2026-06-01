@@ -98,7 +98,7 @@ curl -sk https://rustchain.org/api/stats | jq
 ### Get Hall of Fame
 
 ```bash
-curl -sk https://rustchain.org/api/hall_of_fame | jq
+curl -sk https://rustchain.org/api/hall_of_fame/leaderboard | jq
 ```
 
 ### Get Fee Pool Statistics
@@ -110,7 +110,7 @@ curl -sk https://rustchain.org/api/fee_pool | jq
 ### Get Settlement Data
 
 ```bash
-curl -sk https://rustchain.org/api/settlement/75 | jq
+curl -sk https://rustchain.org/rewards/epoch/75 | jq
 ```
 
 ### Submit Hardware Attestation
@@ -295,7 +295,7 @@ class RustChainClient:
     
     def get_hall_of_fame(self) -> Dict[str, Any]:
         """Get Hall of Fame leaderboard."""
-        resp = self.session.get(f"{self.base_url}/api/hall_of_fame")
+        resp = self.session.get(f"{self.base_url}/api/hall_of_fame/leaderboard")
         resp.raise_for_status()
         return resp.json()
     
@@ -307,7 +307,7 @@ class RustChainClient:
     
     def get_settlement(self, epoch: int) -> Dict[str, Any]:
         """Get settlement data for a specific epoch."""
-        resp = self.session.get(f"{self.base_url}/api/settlement/{epoch}")
+        resp = self.session.get(f"{self.base_url}/rewards/epoch/{epoch}")
         resp.raise_for_status()
         return resp.json()
     
@@ -533,7 +533,7 @@ class RustChainClient {
   }
 
   async getHallOfFame() {
-    return this.request('/api/hall_of_fame');
+    return this.request('/api/hall_of_fame/leaderboard');
   }
 
   async getFeePool() {
@@ -541,7 +541,7 @@ class RustChainClient {
   }
 
   async getSettlement(epoch) {
-    return this.request(`/api/settlement/${epoch}`);
+    return this.request(`/rewards/epoch/${epoch}`);
   }
 
   async getSwapInfo() {
@@ -1137,7 +1137,7 @@ cmd_stats() {
 
 cmd_hall_of_fame() {
     print_header "Hall of Fame"
-    $CURL "$BASE_URL/api/hall_of_fame" | jq
+    $CURL "$BASE_URL/api/hall_of_fame/leaderboard" | jq
 }
 
 cmd_fee_pool() {
@@ -1153,7 +1153,7 @@ cmd_settlement() {
         exit 1
     fi
     print_header "Settlement for Epoch: $epoch"
-    $CURL "$BASE_URL/api/settlement/$epoch" | jq
+    $CURL "$BASE_URL/rewards/epoch/$epoch" | jq
 }
 
 cmd_swap_info() {

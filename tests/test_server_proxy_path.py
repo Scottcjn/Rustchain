@@ -47,6 +47,42 @@ def test_proxy_rejects_encoded_parent_segment(monkeypatch):
     assert called is False
 
 
+def test_proxy_rejects_unlisted_api_path_before_upstream(monkeypatch):
+    proxy = load_server_proxy()
+    called = False
+
+    def fake_get(*args, **kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("requests.get should not be called")
+
+    monkeypatch.setattr(proxy.requests, "get", fake_get)
+
+    response = proxy.app.test_client().get("/api/admin/wallet-transfer")
+
+    assert response.status_code == 403
+    assert response.get_json()["error"] == "API path not allowed"
+    assert called is False
+
+
+def test_proxy_rejects_wrong_method_before_upstream(monkeypatch):
+    proxy = load_server_proxy()
+    called = False
+
+    def fake_get(*args, **kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("requests.get should not be called")
+
+    monkeypatch.setattr(proxy.requests, "get", fake_get)
+
+    response = proxy.app.test_client().get("/api/register")
+
+    assert response.status_code == 403
+    assert response.get_json()["error"] == "API path not allowed"
+    assert called is False
+
+
 def test_proxy_keeps_safe_requests_under_api(monkeypatch):
     proxy = load_server_proxy()
     captured = {}
@@ -70,6 +106,61 @@ def test_proxy_keeps_safe_requests_under_api(monkeypatch):
     assert captured == {"url": "http://localhost:8088/api/stats", "timeout": 10}
 
 
+def test_proxy_forwards_allowed_post_json(monkeypatch):
+    proxy = load_server_proxy()
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+        text = ""
+        headers = {"Content-Type": "application/json"}
+
+        def json(self):
+            return {"ok": True}
+
+    def fake_post(url, json, headers, timeout):
+        captured["url"] = url
+        captured["json"] = json
+        captured["headers"] = headers
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr(proxy.requests, "post", fake_post)
+
+    response = proxy.app.test_client().post("/api/register", json={"miner": "g4"})
+
+    assert response.status_code == 200
+    assert response.get_json() == {"ok": True}
+    assert captured == {
+        "url": "http://localhost:8088/api/register",
+        "json": {"miner": "g4"},
+        "headers": {"Content-Type": "application/json"},
+        "timeout": 10,
+    }
+
+
+def test_proxy_rejects_post_without_json_object_before_upstream(monkeypatch):
+    proxy = load_server_proxy()
+    called = False
+
+    def fake_post(*args, **kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("requests.post should not be called")
+
+    monkeypatch.setattr(proxy.requests, "post", fake_post)
+
+    response = proxy.app.test_client().post(
+        "/api/register",
+        data='["not", "an", "object"]',
+        content_type="application/json",
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "JSON object required"
+    assert called is False
+
+
 def test_proxy_hides_upstream_exception_details(monkeypatch):
     proxy = load_server_proxy()
 
@@ -81,7 +172,7 @@ def test_proxy_hides_upstream_exception_details(monkeypatch):
 
     monkeypatch.setattr(proxy.requests, "get", fake_get)
 
-    response = proxy.app.test_client().get("/api/miners")
+    response = proxy.app.test_client().get("/api/stats")
     body = response.get_json()
 
     assert response.status_code == 502
@@ -104,7 +195,7 @@ def test_proxy_hides_upstream_error_response_details(monkeypatch):
 
     monkeypatch.setattr(proxy.requests, "get", fake_get)
 
-    response = proxy.app.test_client().get("/api/miners")
+    response = proxy.app.test_client().get("/api/stats")
 
     assert response.status_code == 502
     assert response.get_json() == {"error": "Local server unavailable"}
@@ -129,7 +220,7 @@ def test_proxy_hides_invalid_json_response_details(monkeypatch):
 
     monkeypatch.setattr(proxy.requests, "get", fake_get)
 
-    response = proxy.app.test_client().get("/api/miners")
+    response = proxy.app.test_client().get("/api/stats")
 
     assert response.status_code == 502
     assert response.get_json() == {"error": "Local server unavailable"}
@@ -150,7 +241,7 @@ def test_proxy_hides_non_json_client_error_details(monkeypatch):
 
     monkeypatch.setattr(proxy.requests, "get", fake_get)
 
-    response = proxy.app.test_client().get("/api/missing")
+    response = proxy.app.test_client().get("/api/stats")
 
     assert response.status_code == 502
     assert response.get_json() == {"error": "Local server unavailable"}

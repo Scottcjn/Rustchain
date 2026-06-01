@@ -1,8 +1,11 @@
 # SPDX-License-Identifier: MIT
 import json
-import platform
 import subprocess
 from datetime import datetime
+from pathlib import Path
+
+
+BADGE_OUTPUT = Path("unlocked_badges.json")
 
 
 def _read_lspci_output():
@@ -51,11 +54,13 @@ def detect_gpu_and_display():
 
     if badges:
         badge_entries = [{"badge_id": b, "awarded_at": now} for b in badges]
-        with open("unlocked_badges.json", "w") as f:
+        with BADGE_OUTPUT.open("w") as f:
             json.dump({"badges": badge_entries}, f, indent=4)
         print(f"Unlocked {len(badges)} badge(s):", [b for b in badges])
     else:
+        BADGE_OUTPUT.unlink(missing_ok=True)
         print("No relic badges detected.")
+
 
 if __name__ == "__main__":
     detect_gpu_and_display()

@@ -1061,7 +1061,7 @@ def register_fleet_endpoints(app, DB_PATH):
         with sqlite3.connect(DB_PATH) as db:
             if miner:
                 rows = db.execute("""
-                    SELECT epoch, fleet_score, ip_signal, timing_signal,
+                    SELECT miner, epoch, fleet_score, ip_signal, timing_signal,
                            fingerprint_signal, effective_multiplier
                     FROM fleet_scores WHERE miner = ?
                     ORDER BY epoch DESC LIMIT ?

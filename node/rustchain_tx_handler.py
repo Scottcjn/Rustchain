@@ -12,10 +12,12 @@ Phase 1 Implementation:
 All transactions MUST be signed with Ed25519.
 """
 
+import os
 import sqlite3
 import time
 import threading
 import logging
+import hmac
 from typing import Dict, Optional, Tuple, List
 from dataclasses import dataclass
 from contextlib import contextmanager
@@ -699,6 +701,16 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
         logger.exception("Internal error in %s", route_name)
         return jsonify({"error": "internal_error"}), 500
 
+    def require_admin():
+        """Require admin key for sensitive operations."""
+        admin_key = request.headers.get("X-Admin-Key", "")
+        expected_key = os.environ.get("RC_ADMIN_KEY", "")
+        if not expected_key:
+            return jsonify({"error": "RC_ADMIN_KEY not configured — endpoint disabled"}), 503
+        if not hmac.compare_digest(admin_key, expected_key):
+            return jsonify({"error": "Unauthorized — admin key required"}), 401
+        return None
+
     @app.route('/tx/submit', methods=['POST'])
     def submit_transaction():
         """Submit a signed transaction"""
@@ -742,6 +754,10 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
     @app.route('/tx/status/<tx_hash>', methods=['GET'])
     def get_tx_status(tx_hash: str):
         """Get transaction status"""
+        # SECURITY: Require admin key — prevents unauthorized transaction surveillance
+        auth_err = require_admin()
+        if auth_err:
+            return auth_err
         try:
             status = tx_pool.get_transaction_status(tx_hash)
             return jsonify(status)
@@ -751,6 +767,10 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
     @app.route('/tx/pending', methods=['GET'])
     def list_pending():
         """List pending transactions"""
+        # SECURITY: Require admin key — pending tx pool is internal state
+        auth_err = require_admin()
+        if auth_err:
+            return auth_err
         try:
             limit_raw = request.args.get('limit')
             if limit_raw is None:
@@ -777,6 +797,10 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
     @app.route('/wallet/<address>/balance', methods=['GET'])
     def get_wallet_balance(address: str):
         """Get wallet balance"""
+        # SECURITY: Require admin key — exposes wallet balances without auth
+        auth_err = require_admin()
+        if auth_err:
+            return auth_err
         try:
             balance = tx_pool.get_balance(address)
             available = tx_pool.get_available_balance(address)
@@ -796,6 +820,10 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
     @app.route('/wallet/<address>/nonce', methods=['GET'])
     def get_wallet_nonce(address: str):
         """Get wallet nonce (for transaction construction)"""
+        # SECURITY: Require admin key — exposes wallet nonces enabling nonce exhaustion attacks
+        auth_err = require_admin()
+        if auth_err:
+            return auth_err
         try:
             nonce = tx_pool.get_wallet_nonce(address)
             pending_nonces = tx_pool._get_pending_nonces(address)
@@ -817,6 +845,10 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
     @app.route('/wallet/<address>/history', methods=['GET'])
     def get_wallet_history(address: str):
         """Get transaction history for wallet"""
+        # SECURITY: Require admin key — exposes complete transaction history without auth
+        auth_err = require_admin()
+        if auth_err:
+            return auth_err
         try:
             limit_raw = request.args.get('limit')
             offset_raw = request.args.get('offset')

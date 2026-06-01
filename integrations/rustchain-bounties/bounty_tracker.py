@@ -96,10 +96,17 @@ class BountyTracker:
         if path.exists():
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
-                for b_data in data.get("bounties", []):
+                if not isinstance(data, dict):
+                    return
+                bounties = data.get("bounties", [])
+                if not isinstance(bounties, list):
+                    return
+                for b_data in bounties:
+                    if not isinstance(b_data, dict):
+                        continue
                     bounty = Bounty.from_dict(b_data)
                     self.bounties[bounty.issue_number] = bounty
-            except (json.JSONDecodeError, KeyError):
+            except (json.JSONDecodeError, KeyError, TypeError, ValueError):
                 pass
     
     def _save_state(self):

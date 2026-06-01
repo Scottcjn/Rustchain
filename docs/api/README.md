@@ -43,9 +43,9 @@ open http://localhost:8080/swagger.html
 | GET | `/api/miners` | List active miners |
 | GET | `/api/nodes` | List connected nodes |
 | GET | `/api/stats` | Network statistics |
-| GET | `/api/hall_of_fame` | Hall of Fame leaderboard |
+| GET | `/api/hall_of_fame/leaderboard` | Hall of Fame leaderboard |
 | GET | `/api/fee_pool` | RIP-301 fee pool stats |
-| GET | `/api/settlement/{epoch}` | Historical settlement data |
+| GET | `/rewards/epoch/{epoch}` | Historical settlement data |
 | GET | `/wallet/balance?miner_id=X` | Wallet balance |
 | GET | `/wallet/history?miner_id=X` | Transaction history |
 | GET | `/wallet/swap-info` | Swap/bridge information |
@@ -54,8 +54,6 @@ open http://localhost:8080/swagger.html
 | GET | `/governance/proposals` | List proposals |
 | GET | `/governance/proposal/{id}` | Proposal details |
 | GET | `/governance/ui` | Governance UI (HTML) |
-| GET | `/api/premium/videos` | Premium video export |
-| GET | `/api/premium/analytics/{agent}` | Agent analytics |
 | GET | `/api/premium/reputation` | Reputation data |
 
 ### Signed Write Endpoints (Ed25519 Signature)
@@ -496,3 +494,5 @@ curl -sk https://rustchain.org/health
 
 - GitHub: https://github.com/Scottcjn/rustchain-bounties
 - Documentation: https://github.com/Scottcjn/Rustchain/tree/main/docs
+BoTTube premium endpoints are documented separately in `docs/api-reference.md`
+because they run on `https://bottube.ai`, not the main RustChain `base_url`.

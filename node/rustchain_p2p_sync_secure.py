@@ -215,6 +215,9 @@ class BlockValidator:
         Returns: (is_valid, error_message)
         """
         try:
+            if not isinstance(block_data, dict):
+                return False, "Block must be a JSON object"
+
             # 1. Check required fields
             required_fields = ['block_index', 'hash', 'previous_hash', 'timestamp', 'miner', 'transactions']
             for field in required_fields:
@@ -232,9 +235,13 @@ class BlockValidator:
                 return False, "Block timestamp in future"
 
             # 4. Validate transactions
-            for tx in block_data.get('transactions', []):
+            transactions = block_data.get('transactions', [])
+            if not isinstance(transactions, list):
+                return False, "Block transactions must be a list"
+            for tx in transactions:
                 if not self._validate_transaction(tx):
-                    return False, f"Invalid transaction: {tx.get('tx_hash', 'unknown')}"
+                    tx_hash = tx.get('tx_hash', 'unknown') if isinstance(tx, dict) else 'unknown'
+                    return False, f"Invalid transaction: {tx_hash}"
 
             # NEW: Verify producer signature
             if not self._verify_block_signature(block_data):
@@ -265,6 +272,8 @@ class BlockValidator:
 
     def _validate_transaction(self, tx: Dict) -> bool:
         """Validate transaction structure"""
+        if not isinstance(tx, dict):
+            return False
         required_tx_fields = ['tx_hash', 'sender', 'recipient', 'amount_nano']
         return all(field in tx for field in required_tx_fields)
 

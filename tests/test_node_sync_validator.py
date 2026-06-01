@@ -114,6 +114,43 @@ def test_snapshot_node_fetches_all_miner_pages_before_hashing(monkeypatch):
     ]
 
 
+def test_snapshot_node_marks_repeated_miner_page_offset_incomplete(monkeypatch):
+    module = load_module()
+    calls = []
+
+    responses = {
+        "/health": {"tip_age_slots": 0},
+        "/epoch": {"epoch": 7, "slot": 99, "enrolled_miners": 4},
+        "/api/stats": {"epoch": 7, "total_miners": 4, "total_balance": 19.5},
+        "/api/miners": {
+            "miners": [{"miner": "alice"}, {"miner": "bob"}],
+            "pagination": {"total": 4, "limit": 2, "offset": 0, "count": 2},
+        },
+        "/api/miners?limit=2&offset=2": {
+            "miners": [{"miner": "alice"}, {"miner": "bob"}],
+            "pagination": {"total": 4, "limit": 2, "offset": 0, "count": 2},
+        },
+    }
+
+    def fake_get_json(node, endpoint, timeout, verify_ssl):
+        assert node == "https://node-a"
+        calls.append(endpoint)
+        return responses[endpoint]
+
+    monkeypatch.setattr(module, "get_json", fake_get_json)
+
+    snap = module.snapshot_node("https://node-a", timeout=1.5, verify_ssl=False, sample_balances=0)
+
+    assert calls.count("/api/miners?limit=2&offset=2") == 1
+    assert snap.miners == ["alice", "bob", "alice", "bob"]
+    assert snap.miner_total == 4
+    assert snap.miner_set_complete is False
+    assert snap.miner_pages == [
+        {"total": 4, "limit": 2, "offset": 0, "count": 2, "row_count": 2},
+        {"total": 4, "limit": 2, "offset": 0, "count": 2, "row_count": 2},
+    ]
+
+
 def test_paged_miner_hash_detects_divergent_second_page(monkeypatch):
     module = load_module()
 

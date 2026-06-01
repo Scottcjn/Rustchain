@@ -554,6 +554,12 @@
         return Number.isFinite(number) ? number : fallback;
     }
 
+    function safeOptionalNumber(value) {
+        if (value === null || value === undefined) return null;
+        const number = Number(value);
+        return Number.isFinite(number) ? number : null;
+    }
+
     function formatNumber(value, decimals) {
         return safeNumber(value).toFixed(decimals);
     }
@@ -672,12 +678,14 @@
             const asksEl = document.getElementById('orderbook-asks');
             const bidsEl = document.getElementById('orderbook-bids');
             const emptyEl = document.getElementById('orderbook-empty');
+            const asks = Array.isArray(data.asks) ? data.asks : [];
+            const bids = Array.isArray(data.bids) ? data.bids : [];
 
             // Find max total for depth bars
-            const allTotals = [...data.asks, ...data.bids].map(o => o.total_rtc);
+            const allTotals = [...asks, ...bids].map(o => safeNumber(o?.total_rtc));
             const maxTotal = Math.max(...allTotals, 1);
 
-            if (data.asks.length === 0 && data.bids.length === 0) {
+            if (asks.length === 0 && bids.length === 0) {
                 asksEl.innerHTML = '';
                 bidsEl.innerHTML = '';
                 emptyEl.style.display = 'block';
@@ -689,10 +697,10 @@
             const decimals = quote === 'ETH' ? 6 : 4;
 
             // Asks (reversed so lowest is at bottom, near spread)
-            asksEl.innerHTML = [...data.asks].reverse().map(a => {
-                const price = safeNumber(a.price);
-                const totalRtc = safeNumber(a.total_rtc);
-                const orderCount = safeNumber(a.order_count);
+            asksEl.innerHTML = [...asks].reverse().map(a => {
+                const price = safeNumber(a?.price);
+                const totalRtc = safeNumber(a?.total_rtc);
+                const orderCount = safeNumber(a?.order_count);
                 const pct = (totalRtc / maxTotal * 100).toFixed(0);
                 return `<tr class="ask-row">
                     <td>${formatNumber(price, decimals)}</td>
@@ -704,10 +712,10 @@
             }).join('');
 
             // Bids
-            bidsEl.innerHTML = data.bids.map(b => {
-                const price = safeNumber(b.price);
-                const totalRtc = safeNumber(b.total_rtc);
-                const orderCount = safeNumber(b.order_count);
+            bidsEl.innerHTML = bids.map(b => {
+                const price = safeNumber(b?.price);
+                const totalRtc = safeNumber(b?.total_rtc);
+                const orderCount = safeNumber(b?.order_count);
                 const pct = (totalRtc / maxTotal * 100).toFixed(0);
                 return `<tr class="bid-row">
                     <td>${formatNumber(price, decimals)}</td>
@@ -720,20 +728,22 @@
 
             // Spread
             const spreadEl = document.getElementById('spread-display');
-            if (data.spread !== null) {
-                spreadEl.textContent = `Spread: ${data.spread.toFixed(decimals)} ${quote}`;
+            const spread = safeOptionalNumber(data.spread);
+            if (spread !== null) {
+                spreadEl.textContent = `Spread: ${formatNumber(spread, decimals)} ${quote}`;
             } else {
                 spreadEl.textContent = 'Spread: --';
             }
 
             // Update ticker
-            if (data.last_price) {
+            const lastPrice = safeOptionalNumber(data.last_price);
+            if (lastPrice !== null) {
                 const tickId = quote === 'USDC' ? 'tick-usdc' : quote === 'ETH' ? 'tick-eth' : null;
-                if (tickId) document.getElementById(tickId).textContent = data.last_price.toFixed(decimals);
-                document.getElementById('nav-last-price').textContent = `$${data.last_price.toFixed(4)}`;
+                if (tickId) document.getElementById(tickId).textContent = formatNumber(lastPrice, decimals);
+                document.getElementById('nav-last-price').textContent = `$${formatNumber(lastPrice, 4)}`;
             }
-            document.getElementById('tick-trades').textContent = data.trades_24h;
-            document.getElementById('nav-volume').textContent = `${data.volume_24h_rtc.toFixed(0)} RTC`;
+            document.getElementById('tick-trades').textContent = safeNumber(data.trades_24h, 0);
+            document.getElementById('nav-volume').textContent = `${formatNumber(data.volume_24h_rtc, 0)} RTC`;
         } catch (e) {
             console.error('Orderbook load failed:', e);
         }
@@ -748,31 +758,35 @@
             if (!data.ok) return;
 
             const el = document.getElementById('orders-list');
-            document.getElementById('order-count').textContent = `${data.total} orders`;
-            document.getElementById('nav-orders').textContent = data.total;
+            const rawOrders = Array.isArray(data.orders) ? data.orders : [];
+            const orders = rawOrders.filter(o => o && typeof o === 'object' && String(o.order_id ?? '').trim() !== '');
+            const total = safeNumber(data.total, orders.length);
+            document.getElementById('order-count').textContent = `${total} orders`;
+            document.getElementById('nav-orders').textContent = total;
 
-            if (data.orders.length === 0) {
+            if (orders.length === 0) {
                 el.innerHTML = '<div class="empty">No open orders. Create the first one!</div>';
                 return;
             }
 
             const quote = pair.split('/')[1];
             openOrdersById = new Map();
-            el.innerHTML = data.orders.map(o => {
-                const orderId = String(o.order_id ?? '');
-                openOrdersById.set(orderId, o);
-                const age = timeSince(o.created_at);
-                const escrowed = o.escrow_job_id ? '<span class="escrow-badge">Escrowed</span>' : '';
-                const side = safeSide(o.side);
-                const amount = safeNumber(o.amount_rtc);
-                const price = safeNumber(o.price_per_rtc);
-                const total = safeNumber(o.total_quote);
+            el.innerHTML = orders.map(o => {
+                const order = o;
+                const orderId = String(order.order_id ?? '');
+                openOrdersById.set(orderId, order);
+                const age = timeSince(order.created_at);
+                const escrowed = order.escrow_job_id ? '<span class="escrow-badge">Escrowed</span>' : '';
+                const side = safeSide(order.side);
+                const amount = safeNumber(order.amount_rtc);
+                const price = safeNumber(order.price_per_rtc);
+                const total = safeNumber(order.total_quote);
                 return `<div class="order-item">
                     <span class="order-side ${side}">${escapeHtml(side)}</span>
                     <div class="order-info">
                         <div class="order-amount">${formatNumber(amount, 2)} RTC @ ${formatNumber(price, 4)} ${escapeHtml(quote)}</div>
                         <div class="order-price">Total: ${formatNumber(total, 4)} ${escapeHtml(quote)} ${escrowed}</div>
-                        <div class="order-wallet">${escapeHtml(o.maker_wallet)} &bull; ${escapeHtml(age)}</div>
+                        <div class="order-wallet">${escapeHtml(order.maker_wallet)} &bull; ${escapeHtml(age)}</div>
                     </div>
                     <div class="order-actions">
                         <button class="btn-sm btn-match" data-order-id="${escapeHtml(orderId)}">Match</button>
@@ -795,22 +809,24 @@
             if (!data.ok) return;
 
             const el = document.getElementById('trades-body');
-            if (data.trades.length === 0) {
+            const trades = Array.isArray(data.trades) ? data.trades : [];
+            if (trades.length === 0) {
                 el.innerHTML = '<tr><td colspan="5" class="empty">No trades yet</td></tr>';
                 return;
             }
 
-            el.innerHTML = data.trades.map(t => {
-                const quote = String(t.pair || '').split('/')[1] || 'USDC';
-                const time = new Date(t.completed_at * 1000).toLocaleTimeString();
-                const side = safeSide(t.side);
+            el.innerHTML = trades.map(t => {
+                const trade = t && typeof t === 'object' ? t : {};
+                const quote = String(trade.pair || '').split('/')[1] || 'USDC';
+                const time = new Date(safeNumber(trade.completed_at) * 1000).toLocaleTimeString();
+                const side = safeSide(trade.side);
                 const sideColor = side === 'buy' ? 'var(--green)' : 'var(--red)';
                 return `<tr>
                     <td>${escapeHtml(time)}</td>
                     <td style="color:${sideColor}; text-transform:uppercase; font-weight:600;">${escapeHtml(side)}</td>
-                    <td>${formatNumber(t.price_per_rtc, 4)}</td>
-                    <td>${formatNumber(t.amount_rtc, 2)}</td>
-                    <td>${formatNumber(t.total_quote, 4)} ${escapeHtml(quote)}</td>
+                    <td>${formatNumber(trade.price_per_rtc, 4)}</td>
+                    <td>${formatNumber(trade.amount_rtc, 2)}</td>
+                    <td>${formatNumber(trade.total_quote, 4)} ${escapeHtml(quote)}</td>
                 </tr>`;
             }).join('');
         } catch (e) {
@@ -896,17 +912,18 @@
             const r = await fetch(`${API}/stats`);
             const data = await r.json();
             if (!data.ok) return;
-            const s = data.stats;
+            const s = data.stats && typeof data.stats === 'object' ? data.stats : {};
             // Update nav
-            if (s.last_price) {
-                document.getElementById('nav-last-price').textContent = `$${s.last_price.toFixed(4)}`;
+            const lastPrice = safeOptionalNumber(s.last_price);
+            if (lastPrice !== null) {
+                document.getElementById('nav-last-price').textContent = `$${formatNumber(lastPrice, 4)}`;
             }
         } catch (e) {}
     }
 
     // Helpers
     function timeSince(ts) {
-        const seconds = Math.floor(Date.now() / 1000 - ts);
+        const seconds = Math.floor(Date.now() / 1000 - safeNumber(ts));
         if (seconds < 60) return 'just now';
         if (seconds < 3600) return `${Math.floor(seconds/60)}m ago`;
         if (seconds < 86400) return `${Math.floor(seconds/3600)}h ago`;

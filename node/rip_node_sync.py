@@ -35,6 +35,25 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+def _normalize_peer_rows(payload, key: str) -> List[Dict]:
+    """Normalize legacy list and envelope payloads into attestation dictionaries."""
+    if isinstance(payload, list):
+        rows = payload
+    elif isinstance(payload, dict):
+        rows = payload.get(key, [])
+    else:
+        return []
+
+    normalized = []
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, dict):
+            continue
+        miner = row.get("miner") or row.get("miner_id") or row.get("id")
+        if not miner:
+            continue
+        normalized.append({**row, "miner": miner})
+    return normalized
+
 def get_local_attestations() -> Set[str]:
     """Get all miner IDs currently in local attestation pool"""
     try:
@@ -52,12 +71,12 @@ def fetch_peer_attestations(peer_url: str) -> List[Dict]:
         # Try to get attestations from peer's API
         resp = requests.get(f"{peer_url}/api/attestations", timeout=10)
         if resp.status_code == 200:
-            return resp.json().get("attestations", [])
+            return _normalize_peer_rows(resp.json(), "attestations")
         
         # Fallback: get miner list
         resp = requests.get(f"{peer_url}/api/miners", timeout=10)
         if resp.status_code == 200:
-            return resp.json().get("miners", [])
+            return _normalize_peer_rows(resp.json(), "miners")
     except Exception as e:
         logger.warning(f"Failed to fetch from {peer_url}: {e}")
     return []

@@ -82,6 +82,53 @@ def test_epoch_commit_rejects_sender_reported_quorum_without_local_votes(tmp_pat
     assert not victim.epoch_crdt.contains(7)
 
 
+def test_hmac_epoch_votes_cannot_impersonate_multiple_voters(tmp_path, monkeypatch):
+    monkeypatch.setenv("RC_P2P_SECRET", "a" * 64)
+    victim = GossipLayer(
+        node_id="victim",
+        peers={
+            "peer1": "https://peer1.example",
+            "peer2": "https://peer2.example",
+            "peer3": "https://peer3.example",
+        },
+        db_path=str(tmp_path / "victim.db"),
+    )
+    proposal_hash = "proposal-hmac-impersonation"
+
+    results = []
+    for peer_id in ("peer1", "peer2", "peer3"):
+        sender = GossipLayer(
+            node_id=peer_id,
+            peers={
+                "victim": "https://victim.example",
+                "peer1": "https://peer1.example",
+                "peer2": "https://peer2.example",
+                "peer3": "https://peer3.example",
+            },
+            db_path=str(tmp_path / f"{peer_id}.db"),
+        )
+        msg = sender.create_message(
+            MessageType.EPOCH_VOTE,
+            {
+                "epoch": 9,
+                "proposal_hash": proposal_hash,
+                "vote": "accept",
+                "voter": peer_id,
+            },
+            ttl=0,
+        )
+        assert victim.verify_message(msg)
+        results.append(victim.handle_message(msg))
+
+    assert [result["reason"] for result in results] == [
+        "epoch_vote_requires_ed25519",
+        "epoch_vote_requires_ed25519",
+        "epoch_vote_requires_ed25519",
+    ]
+    assert not victim.epoch_crdt.contains(9)
+    assert victim._epoch_votes.get((9, proposal_hash), {}) == {}
+
+
 def test_epoch_commit_accepts_quorum_backed_by_local_votes(tmp_path, monkeypatch):
     monkeypatch.setenv("RC_P2P_SECRET", "a" * 64)
     victim = GossipLayer(

@@ -96,3 +96,59 @@ def test_relationship_mutations_reject_non_object_json(monkeypatch, tmp_path):
         assert response.status_code == 400
         assert response.get_json() == {"error": "JSON object required"}
         assert engine.get_relationship("alice", "bob") is None
+
+
+def test_disagreement_rejects_non_string_topic(monkeypatch, tmp_path):
+    monkeypatch.setenv("RELATIONSHIPS_ADMIN_KEY", "relationship-admin-secret")
+    monkeypatch.delenv("RC_ADMIN_KEY", raising=False)
+    client, engine = _build_client(tmp_path)
+
+    response = client.post(
+        "/api/relationships/alice/bob/disagree",
+        json={"topic": ["model routing"]},
+        headers={"X-Admin-Key": "relationship-admin-secret"},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "topic must be a string"}
+    assert engine.get_relationship("alice", "bob") is None
+
+
+def test_relationship_mutations_reject_non_string_descriptions(monkeypatch, tmp_path):
+    monkeypatch.setenv("RELATIONSHIPS_ADMIN_KEY", "relationship-admin-secret")
+    monkeypatch.delenv("RC_ADMIN_KEY", raising=False)
+    client, engine = _build_client(tmp_path)
+
+    for path in (
+        "/api/relationships/alice/bob/disagree",
+        "/api/relationships/alice/bob/collaborate",
+        "/api/relationships/alice/bob/reconcile",
+    ):
+        response = client.post(
+            path,
+            json={"topic": "model routing", "description": ["bad"]},
+            headers={"X-Admin-Key": "relationship-admin-secret"},
+        )
+
+        assert response.status_code == 400
+        assert response.get_json() == {"error": "description must be a string"}
+        assert engine.get_relationship("alice", "bob") is None
+
+
+def test_intervention_rejects_non_string_admin_fields(monkeypatch, tmp_path):
+    monkeypatch.setenv("RELATIONSHIPS_ADMIN_KEY", "relationship-admin-secret")
+    monkeypatch.delenv("RC_ADMIN_KEY", raising=False)
+    client, engine = _build_client(tmp_path)
+
+    for field in ("admin_id", "reason", "action"):
+        payload = {"admin_id": "ops", "reason": "moderation", "action": "reset_to_neutral"}
+        payload[field] = ["bad"]
+        response = client.post(
+            "/api/relationships/alice/bob/intervene",
+            json=payload,
+            headers={"X-Admin-Key": "relationship-admin-secret"},
+        )
+
+        assert response.status_code == 400
+        assert response.get_json() == {"error": f"{field} must be a string"}
+        assert engine.get_relationship("alice", "bob") is None

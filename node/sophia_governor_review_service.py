@@ -177,6 +177,18 @@ def _normalize_maintenance_limit(data: Any, default: int = 25, maximum: int = 20
     return min(limit, maximum)
 
 
+def _json_object_body_or_empty() -> tuple[dict[str, Any], Any | None]:
+    raw_body = request.get_data(cache=True)
+    data = request.get_json(silent=True)
+    if data is None:
+        if request.is_json and raw_body.strip():
+            return {}, (jsonify({"error": "JSON object required"}), 400)
+        return {}, None
+    if not isinstance(data, dict):
+        return {}, (jsonify({"error": "JSON object required"}), 400)
+    return data, None
+
+
 def _is_authorized(req) -> bool:
     required_admin = os.getenv("RC_ADMIN_KEY", "").strip()
     if required_admin:
@@ -688,7 +700,9 @@ def recent():
 def backfill_missing():
     if not _is_authorized(request):
         return jsonify({"error": "Unauthorized -- admin key or bearer required"}), 401
-    data = request.get_json(silent=True) or {}
+    data, body_error = _json_object_body_or_empty()
+    if body_error:
+        return body_error
     try:
         limit = _normalize_maintenance_limit(data)
     except ValueError as exc:
@@ -702,7 +716,9 @@ def backfill_missing():
 def normalize_existing():
     if not _is_authorized(request):
         return jsonify({"error": "Unauthorized -- admin key or bearer required"}), 401
-    data = request.get_json(silent=True) or {}
+    data, body_error = _json_object_body_or_empty()
+    if body_error:
+        return body_error
     try:
         limit = _normalize_maintenance_limit(data)
     except ValueError as exc:
@@ -717,9 +733,9 @@ def review():
     if not _is_authorized(request):
         return jsonify({"error": "Unauthorized -- admin key or bearer required"}), 401
 
-    data = request.get_json(silent=True) or {}
-    if not isinstance(data, dict):
-        return jsonify({"error": "JSON object required"}), 400
+    data, body_error = _json_object_body_or_empty()
+    if body_error:
+        return body_error
     try:
         _validate_review_request(data)
     except ValueError as exc:
@@ -757,9 +773,9 @@ def queue_scott_notification():
     if not _is_authorized(request):
         return jsonify({"error": "Unauthorized -- admin key or bearer required"}), 401
 
-    data = request.get_json(silent=True) or {}
-    if not isinstance(data, dict):
-        return jsonify({"error": "JSON object required"}), 400
+    data, body_error = _json_object_body_or_empty()
+    if body_error:
+        return body_error
 
     status_code, body = _relay_scott_notification(data)
     return jsonify(body), status_code

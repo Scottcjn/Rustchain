@@ -131,6 +131,8 @@ def register_sync_endpoints(app, db_path, admin_key):
         - offset: row offset (default 0)
         """
         table = request.args.get("table", "").strip()
+        if len(table) > 128:
+            return jsonify({"error": "table name too long"}), 400
         limit, error = _parse_sync_int_arg("limit", 200, 1, 1000)
         if error:
             return jsonify({"error": error}), 400

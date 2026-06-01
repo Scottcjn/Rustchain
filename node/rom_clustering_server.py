@@ -165,6 +165,10 @@ class ROMClusteringServer:
         self.cluster_threshold = cluster_threshold
         init_rom_tables(db_path)
 
+    def _effective_cluster_threshold(self) -> int:
+        # Keep the first report valid; a duplicate ROM starts at two miners.
+        return max(2, int(self.cluster_threshold))
+
     def _get_conn(self):
         return sqlite3.connect(self.db_path)
 
@@ -181,8 +185,17 @@ class ROMClusteringServer:
         Returns:
             (is_valid, reason, details)
         """
+        if not isinstance(miner_id, str) or not miner_id.strip():
+            return False, "invalid_rom_report", {"field": "miner_id"}
+        if not isinstance(rom_hash, str) or not rom_hash.strip():
+            return False, "invalid_rom_report", {"field": "rom_hash"}
+        if not isinstance(hash_type, str) or not hash_type.strip():
+            return False, "invalid_rom_report", {"field": "hash_type"}
+
         now = int(time.time())
-        rom_hash_lower = rom_hash.lower()
+        miner_id = miner_id.strip()
+        rom_hash_lower = rom_hash.strip().lower()
+        hash_type = hash_type.strip().lower()
 
         conn = self._get_conn()
         cur = conn.cursor()
@@ -220,11 +233,10 @@ class ROMClusteringServer:
         """, (rom_hash_lower, miner_id))
 
         other_miners = [row[0] for row in cur.fetchall()]
+        all_miners = [miner_id] + other_miners
 
-        if len(other_miners) >= self.cluster_threshold:
+        if len(all_miners) >= self._effective_cluster_threshold():
             # Clustering detected!
-            all_miners = [miner_id] + other_miners
-
             # Record the cluster
             import json
             cur.execute("""
@@ -390,16 +402,29 @@ def integrate_with_attestation(
     """
     miner_id = attestation_data.get("miner_id") or attestation_data.get("miner")
     fingerprint = attestation_data.get("fingerprint", {})
+    if not isinstance(fingerprint, dict):
+        return False, "invalid_fingerprint"
 
     # Check if fingerprint includes ROM data
-    rom_check = fingerprint.get("checks", {}).get("rom_fingerprint", {})
+    checks = fingerprint.get("checks", {})
+    if not isinstance(checks, dict):
+        return False, "invalid_fingerprint_checks"
+
+    rom_check = checks.get("rom_fingerprint", {})
+    if "rom_fingerprint" in checks and not isinstance(rom_check, dict):
+        return False, "invalid_rom_fingerprint"
 
     if not rom_check or rom_check.get("skipped"):
         # No ROM data reported - OK for modern hardware
         return True, "no_rom_data"
 
     rom_data = rom_check.get("data", {})
+    if not isinstance(rom_data, dict):
+        return False, "invalid_rom_fingerprint_data"
+
     rom_hashes = rom_data.get("rom_hashes", {})
+    if not isinstance(rom_hashes, dict):
+        return False, "invalid_rom_hashes"
 
     # Process each reported ROM hash
     for platform, rom_hash in rom_hashes.items():

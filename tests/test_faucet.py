@@ -21,7 +21,7 @@ def app(tmp_path, monkeypatch):
     [
         (None, None, 0.5),
         ("", None, 0.5),
-        ("alice", None, 1.0),
+        ("alice", None, 0.5),
         ("alice", 364, 1.0),
         ("alice", 365, 2.0),
     ],
@@ -77,15 +77,49 @@ def test_drip_rejects_non_string_fields(app, payload, error):
     assert r.get_json() == {"ok": False, "error": error}
 
 
-def test_ip_only_limit(app):
+def test_ip_only_limit_uses_remote_addr_by_default(app):
     c = app.test_client()
-    h = {"X-Forwarded-For": "1.2.3.4"}
-    r1 = c.post("/faucet/drip", json={"wallet": "w1"}, headers=h)
+    r1 = c.post(
+        "/faucet/drip",
+        json={"wallet": "w1"},
+        headers={"X-Forwarded-For": "1.2.3.4"},
+        environ_base={"REMOTE_ADDR": "203.0.113.10"},
+    )
     assert r1.status_code == 200
 
-    r2 = c.post("/faucet/drip", json={"wallet": "w2"}, headers=h)
+    r2 = c.post(
+        "/faucet/drip",
+        json={"wallet": "w2"},
+        headers={"X-Forwarded-For": "5.6.7.8"},
+        environ_base={"REMOTE_ADDR": "203.0.113.10"},
+    )
     assert r2.status_code == 429
     assert r2.get_json()["error"] == "rate_limited"
+
+
+def test_ip_only_limit_can_trust_proxy_when_configured(tmp_path, monkeypatch):
+    db_path = tmp_path / "faucet.db"
+    monkeypatch.setattr(faucet, "github_account_age_days", lambda *_args, **_kwargs: 30)
+    app = faucet.create_app({"DB_PATH": str(db_path), "DRY_RUN": True, "TRUST_PROXY": True})
+    app.config.update(TESTING=True)
+    c = app.test_client()
+    remote = {"REMOTE_ADDR": "10.0.0.5"}
+
+    r1 = c.post(
+        "/faucet/drip",
+        json={"wallet": "w1"},
+        headers={"X-Forwarded-For": "1.2.3.4"},
+        environ_base=remote,
+    )
+    r2 = c.post(
+        "/faucet/drip",
+        json={"wallet": "w2"},
+        headers={"X-Forwarded-For": "5.6.7.8"},
+        environ_base=remote,
+    )
+
+    assert r1.status_code == 200
+    assert r2.status_code == 200
 
 
 def test_github_old_account_gets_2rtc_limit(tmp_path, monkeypatch):

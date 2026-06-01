@@ -172,6 +172,27 @@ def test_collect_miners_counts_recent_attestations_and_uses_fallback():
     assert module.rustchain_enrolled_miners_total._value.get() == 5
 
 
+def test_collect_miners_accepts_paginated_api_envelope():
+    module = load_module()
+
+    with (
+        patch.object(module, "fetch_json", return_value={
+            "miners": [
+                {"miner_id": "alice-id", "device_arch": "g4", "last_attest": 1_000},
+                {"miner": "bob", "arch": "sparc", "last_attest_timestamp": 0},
+            ],
+            "pagination": {"total": 9, "limit": 2, "offset": 0, "count": 2},
+        }),
+        patch.object(module.time, "time", return_value=2_000),
+    ):
+        module.collect_miners(fallback_enrolled=0)
+
+    assert module.rustchain_active_miners_total._value.get() == 1
+    assert module.rustchain_enrolled_miners_total._value.get() == 9
+    assert {"miner": "alice-id", "arch": "g4"} in module.rustchain_miner_last_attest_timestamp.calls
+    assert {"miner": "bob", "arch": "sparc"} in module.rustchain_miner_last_attest_timestamp.calls
+
+
 def test_collect_hall_of_fame_fee_pool_and_stats_fallbacks():
     module = load_module()
 

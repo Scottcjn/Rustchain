@@ -87,6 +87,25 @@ def test_blocks_treats_non_object_tip_response_as_unavailable(monkeypatch):
     assert response.get_json() == {"ok": False, "error": "node_unavailable"}
 
 
+def test_blocks_treats_malformed_tip_slot_as_unavailable(monkeypatch):
+    explorer_api = load_explorer_api()
+
+    def fake_get(path, params=None, timeout=None):
+        assert path == "/headers/tip"
+        return {"slot": "not-an-integer", "miner": "alice", "tip_age": 7}
+
+    monkeypatch.setattr(explorer_api, "_get", fake_get)
+
+    with explorer_api.app.test_client() as client:
+        list_response = client.get("/api/blocks")
+        detail_response = client.get("/api/blocks/1")
+
+    assert list_response.status_code == 502
+    assert list_response.get_json() == {"ok": False, "error": "node_unavailable"}
+    assert detail_response.status_code == 502
+    assert detail_response.get_json() == {"ok": False, "error": "node_unavailable"}
+
+
 def test_transactions_rejects_bad_limit_params():
     explorer_api = load_explorer_api()
 

@@ -105,8 +105,8 @@ clawrtc wallet coinbase link 0xTuDireccionBase
 ```
 
 **Endpoints premium de API x402** están activos (actualmente gratuitos mientras se demuestra el flujo):
-- `GET /api/premium/videos` - Exportación masiva de videos (BoTTube)
-- `GET /api/premium/analytics/<agent>` - Análisis profundo de agentes (BoTTube)
+- `GET https://bottube.ai/api/premium/videos` - Exportación masiva de videos (BoTTube)
+- `GET https://bottube.ai/api/premium/analytics/<agent>` - Análisis profundo de agentes (BoTTube)
 - `GET /api/premium/reputation` - Exportación completa de reputación (Beacon Atlas)
 - `GET /wallet/swap-info` - Guía de swap USDC/wRTC (RustChain)
 

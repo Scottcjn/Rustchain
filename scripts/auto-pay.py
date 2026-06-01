@@ -19,12 +19,10 @@ Environment variables (set by the GitHub Action):
     REPO_OWNER      — Repository owner username (e.g. Scottcjn)
 """
 
-import json
 import hashlib
 import os
 import re
 import sys
-import time
 
 import requests
 
@@ -49,6 +47,7 @@ PAYMENT_RE = re.compile(
 # already processed for this PR.
 ALREADY_PAID_MARKER = "RTC-AutoPay-Confirmed"
 PAYMENT_STARTED_MARKER = "RTC-AutoPay-Started"
+MANUAL_PAYMENT_MARKER = "RTC-AutoPay-Manual-Required"
 TRUSTED_BOT_LOGINS = {"github-actions[bot]"}
 
 # ---------------------------------------------------------------------------
@@ -138,10 +137,26 @@ def find_existing_payment_marker(comments: list, repo_owner: str,
         body = c.get("body") or ""
         if ALREADY_PAID_MARKER not in body:
             continue
+        if f"{ALREADY_PAID_MARKER}:MANUAL" in body:
+            continue
         if f"payment_key={payment_key}" in body:
             return ALREADY_PAID_MARKER
         if "payment_key=" not in body:
             return ALREADY_PAID_MARKER
+    return ""
+
+
+def find_existing_manual_marker(comments: list, repo_owner: str,
+                                payment_key: str) -> str:
+    """Find a trusted manual-transfer notice for this payment key."""
+    for c in comments:
+        if not trusted_marker_author(c, repo_owner):
+            continue
+        body = c.get("body") or ""
+        if MANUAL_PAYMENT_MARKER in body and f"payment_key={payment_key}" in body:
+            return MANUAL_PAYMENT_MARKER
+        if f"{ALREADY_PAID_MARKER}:MANUAL" in body and f"payment_key={payment_key}" in body:
+            return MANUAL_PAYMENT_MARKER
     return ""
 
 
@@ -214,12 +229,17 @@ def main() -> None:
 
     # --- Check if VPS secrets are configured ------------------------------
     if not vps_host or not admin_key:
+        manual_marker = find_existing_manual_marker(comments, repo_owner, payment_key)
+        if manual_marker:
+            print(f"Manual transfer notice already posted (found trusted {manual_marker}). Skipping.")
+            return
+
         print("::warning::RTC_VPS_HOST or RTC_ADMIN_KEY not configured — posting manual transfer notice.")
         manual_body = (
             f"**RTC Auto-Pay — Manual Transfer Required**\n\n"
             f"Payment directive found: **{payment_amount} RTC** for @{to_wallet}\n\n"
             f"VPS secrets not configured — please process this payment manually.\n\n"
-            f"<!-- {ALREADY_PAID_MARKER}:MANUAL payment_key={payment_key} "
+            f"<!-- {MANUAL_PAYMENT_MARKER} payment_key={payment_key} "
             f"payment_comment_id={payment_comment_id} -->"
         )
         post_comment(repo, pr_number, manual_body)
@@ -244,7 +264,7 @@ def main() -> None:
         print(f"::error::VPS returned error: {e.response.status_code} — {e.response.text}")
         sys.exit(1)
     except requests.exceptions.Timeout:
-        print(f"::error::VPS request timed out after 30s")
+        print("::error::VPS request timed out after 30s")
         sys.exit(1)
 
     ok = result.get("ok", False)

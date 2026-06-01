@@ -27,11 +27,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from tools.rent_a_relic.models import (
     MACHINE_REGISTRY,
     VALID_DURATIONS_HOURS,
-    EscrowStatus,
-    EscrowTransaction,
     Machine,
     Reservation,
-    ReservationStatus,
 )
 from tools.rent_a_relic.provenance import generate_receipt, verify_receipt
 
@@ -294,6 +291,21 @@ class TestReservationFlow:
         resp = app.post("/relic/reserve", json=["not", "object"])
         assert resp.status_code == 400
         assert resp.json["error"] == "JSON object required"
+
+    def test_reserve_rejects_non_string_identity_fields(self, app):
+        for field in ("agent_id", "machine_id"):
+            payload = {
+                "agent_id": "a",
+                "machine_id": "g3-beige",
+                "duration_hours": 1,
+                "rtc_amount": 4.0,
+            }
+            payload[field] = ["not", "a", "string"]
+
+            resp = app.post("/relic/reserve", json=payload)
+
+            assert resp.status_code == 400
+            assert resp.json["error"] == f"{field} must be a string"
 
     def test_unknown_machine_returns_404(self, app):
         resp = app.post("/relic/reserve", json={

@@ -233,7 +233,17 @@ def collect_epoch() -> dict[str, int | float]:
 
 def collect_miners(fallback_enrolled: int) -> None:
     payload = fetch_json("/api/miners")
-    if not isinstance(payload, list):
+    if isinstance(payload, list):
+        miners = payload
+        total = len(payload)
+    elif isinstance(payload, dict):
+        miners = payload.get("miners", payload.get("data", []))
+        if not isinstance(miners, list):
+            miners = []
+        pagination = payload.get("pagination") if isinstance(payload.get("pagination"), dict) else {}
+        total = _to_int(pagination.get("total", payload.get("total", len(miners))), len(miners))
+        total = max(total, len(miners))
+    else:
         rustchain_active_miners_total.set(0)
         rustchain_enrolled_miners_total.set(fallback_enrolled)
         rustchain_miner_last_attest_timestamp.clear()
@@ -243,10 +253,10 @@ def collect_miners(fallback_enrolled: int) -> None:
 
     now = time.time()
     active = 0
-    for item in payload:
+    for item in miners:
         if not isinstance(item, dict):
             continue
-        miner = str(item.get("miner", item.get("id", "unknown")))
+        miner = str(item.get("miner", item.get("miner_id", item.get("id", "unknown"))))
         arch = str(item.get("arch", item.get("device_arch", "unknown")))
         last_attest = _to_float(item.get("last_attest", item.get("last_attest_timestamp", 0)))
         rustchain_miner_last_attest_timestamp.labels(miner=miner, arch=arch).set(last_attest)
@@ -255,7 +265,7 @@ def collect_miners(fallback_enrolled: int) -> None:
 
     rustchain_active_miners_total.set(active)
     rustchain_enrolled_miners_total.set(
-        fallback_enrolled if fallback_enrolled > 0 else len(payload)
+        fallback_enrolled if fallback_enrolled > 0 else total
     )
 
 

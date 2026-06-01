@@ -40,6 +40,14 @@ def test_timestamp_validation_rejects_future_and_pre_macintosh_dates():
     assert module.is_reasonable_timestamp("Sat Jan 01 00:00:00 1983") is False
 
 
+def test_validation_helpers_reject_non_string_values_without_raising():
+    module = load_module()
+
+    assert module.is_valid_mac(None) is False
+    assert module.is_valid_cpu({"cpu": "PowerPC G4"}) is False
+    assert module.is_reasonable_timestamp(["Mon Jan 01 00:00:00 2001"]) is False
+
+
 def test_recompute_hash_is_stable_for_same_genesis_fields():
     module = load_module()
 

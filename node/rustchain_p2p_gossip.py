@@ -70,6 +70,10 @@ class TTLCache:
             if len(self._cache) >= self._max_size:
                 self._cache.popitem(last=False)
             self._cache[key] = time.time()
+
+    def discard(self, key: str) -> None:
+        """Remove key if present."""
+        self._cache.pop(key, None)
     
     def _cleanup_expired(self) -> None:
         """Remove expired entries."""
@@ -629,6 +633,16 @@ class GossipLayer:
         # Load initial state from DB
         self._load_state_from_db()
 
+    @staticmethod
+    def _valid_peer_url(peer_url: Any) -> Optional[str]:
+        if not isinstance(peer_url, str):
+            return None
+        peer_url = peer_url.strip().rstrip("/")
+        parsed = urlparse(peer_url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            return None
+        return peer_url
+
     def _load_state_from_db(self):
         """Load existing state into CRDTs and initialize P2P tables"""
         try:
@@ -841,6 +855,32 @@ class GossipLayer:
         ).hexdigest()
         return hmac.compare_digest(hmac_sig, expected)
 
+    def _has_trusted_ed25519_identity(self, msg: GossipMessage) -> bool:
+        """Return True only when msg has a valid trusted Ed25519 signature."""
+        from p2p_identity import unpack_signature, verify_ed25519
+
+        _hmac_sig, ed25519_sig, _key_version = unpack_signature(msg.signature)
+        if not ed25519_sig:
+            return False
+
+        pubkey = None
+        if self._peer_registry is not None:
+            pubkey = self._peer_registry.get_pubkey(msg.sender_id)
+        if pubkey is None and msg.sender_id == self.node_id and self._keypair is not None:
+            pubkey = self._keypair.pubkey_hex
+        if pubkey is None:
+            return False
+
+        content = self._signed_content(
+            msg.msg_type,
+            msg.sender_id,
+            msg.msg_id,
+            msg.ttl,
+            msg.payload,
+        )
+        message = f"{content}:{msg.timestamp}"
+        return verify_ed25519(pubkey, ed25519_sig, message.encode())
+
     def broadcast(self, msg: GossipMessage, exclude_peer: str = None):
         """Broadcast message to all peers"""
         for peer_id, peer_url in self.peers.items():
@@ -867,24 +907,13 @@ class GossipLayer:
 
     def handle_message(self, msg: GossipMessage) -> Optional[Dict]:
         """Handle received gossip message"""
-        # Deduplication (Issue #2271: DB-backed persistent dedup)
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                res = conn.execute("SELECT 1 FROM p2p_seen_messages WHERE msg_id = ?", (msg.msg_id,)).fetchone()
-                if res:
-                    return {"status": "duplicate"}
-        except Exception as e:
-            logger.error(f"P2P dedup DB error: {e}")
-            # Fallback to memory if DB fails
-            if self.seen_messages.contains(msg.msg_id):
-                return {"status": "duplicate"}
-
-        # Verify signature
+        # Verify signature before persistent dedup.  Otherwise an invalid packet
+        # can reserve a msg_id and race/drop a later valid copy.
         if not self.verify_message(msg):
             logger.warning(f"Invalid signature from {msg.sender_id}")
             return {"status": "invalid_signature"}
 
-        # Record as seen (Issue #2271: Persistent storage)
+        # Deduplication (Issue #2271: DB-backed persistent dedup)
         try:
             with sqlite3.connect(self.db_path) as conn:
                 now = int(time.time())
@@ -896,7 +925,8 @@ class GossipLayer:
                 conn.execute("DELETE FROM p2p_seen_messages WHERE ts < ?", (now - 3600,))
                 conn.commit()
         except Exception as e:
-            logger.error(f"P2P save seen DB error: {e}")
+            logger.error(f"P2P dedup DB error: {e}")
+            # Fallback to memory if DB fails
             with self.lock:
                 if self.seen_messages.contains(msg.msg_id):
                     return {"status": "duplicate"}
@@ -909,6 +939,8 @@ class GossipLayer:
 
         if msg_type == MessageType.PING:
             return self._handle_ping(msg)
+        elif msg_type == MessageType.PEER_ANNOUNCE:
+            return self._handle_peer_announce(msg)
         elif msg_type == MessageType.INV_ATTESTATION:
             return self._handle_inv_attestation(msg)
         elif msg_type == MessageType.INV_EPOCH:
@@ -932,6 +964,28 @@ class GossipLayer:
             self.broadcast(msg, exclude_peer=msg.sender_id)
 
         return {"status": "ok"}
+
+    def _handle_peer_announce(self, msg: GossipMessage) -> Dict:
+        """Accept a signed peer announcement for NAT-discovered public URLs."""
+        payload = msg.payload if isinstance(msg.payload, dict) else {}
+        peer_id = payload.get("node_id") or msg.sender_id
+        peer_url = self._valid_peer_url(payload.get("url"))
+
+        if not isinstance(peer_id, str) or not peer_id.strip():
+            return {"status": "invalid_peer_announce", "reason": "node_id required"}
+        if peer_id == self.node_id:
+            return {"status": "ignored_self_announce"}
+        if peer_url is None:
+            return {"status": "invalid_peer_announce", "reason": "valid peer url required"}
+
+        with self.lock:
+            self.peers[peer_id.strip()] = peer_url
+
+        if msg.ttl > 0:
+            msg.ttl -= 1
+            self.broadcast(msg, exclude_peer=msg.sender_id)
+
+        return {"status": "peer_added", "node_id": peer_id.strip(), "url": peer_url}
 
     def _handle_ping(self, msg: GossipMessage) -> Dict:
         """Respond to ping with pong"""
@@ -1158,9 +1212,11 @@ class GossipLayer:
         Requires at least 3 of 4 nodes (or majority of known nodes)
         to agree before finalizing an epoch reward distribution.
 
-        SECURITY (#2256 Phase A + C):
+        SECURITY (#2256 Phase A + C + Ed25519 binding):
         - Voter identity bound to msg.sender_id (not payload["voter"]).
-          sender_id itself is now HMAC-covered (see Phase A changes above).
+          Consensus votes require a registered Ed25519 identity because the
+          shared HMAC only proves cluster-secret possession, not which peer
+          sent the vote.
         - Votes indexed by (epoch, proposal_hash), not just epoch. Mixed
           votes for different proposals cannot aggregate into a false quorum;
           only the specific proposal_hash that reached quorum finalizes.
@@ -1187,6 +1243,17 @@ class GossipLayer:
                 f"authenticated sender {voter}; rejecting vote"
             )
             return {"status": "error", "reason": "voter_identity_mismatch"}
+
+        known_nodes = set(self.peers.keys()) | {self.node_id}
+        if voter not in known_nodes:
+            return {"status": "error", "reason": "unknown_voter"}
+
+        if not self._has_trusted_ed25519_identity(msg):
+            logger.warning(
+                f"Epoch {epoch}: rejecting vote from {voter}; "
+                "trusted Ed25519 identity required for consensus votes"
+            )
+            return {"status": "error", "reason": "epoch_vote_requires_ed25519"}
 
         # Phase C: index by (epoch, proposal_hash) — not just epoch.
         key = (epoch, proposal_hash)
@@ -1596,10 +1663,17 @@ class RustChainP2PNode:
     Manages gossip, CRDT state, and epoch consensus.
     """
 
-    def __init__(self, node_id: str, db_path: str, peers: Dict[str, str]):
+    def __init__(
+        self,
+        node_id: str,
+        db_path: str,
+        peers: Dict[str, str],
+        advertised_url: Optional[str] = None,
+    ):
         self.node_id = node_id
         self.db_path = db_path
         self.peers = peers
+        self.advertised_url = advertised_url
 
         # Initialize components
         self.gossip = GossipLayer(node_id, peers, db_path)
@@ -1617,6 +1691,7 @@ class RustChainP2PNode:
         self.running = True
         self.sync_thread = threading.Thread(target=self._sync_loop, daemon=True)
         self.sync_thread.start()
+        self.announce_peer()
         logger.info(f"P2P Node {self.node_id} started with {len(self.peers)} peers")
 
     def stop(self):
@@ -1673,6 +1748,17 @@ class RustChainP2PNode:
             ts_ok,
             attestation.get("device_arch", "unknown")
         )
+
+    def announce_peer(self):
+        """Broadcast this node's reachable URL when NAT traversal found one."""
+        if not self.advertised_url:
+            return
+
+        msg = self.gossip.create_message(MessageType.PEER_ANNOUNCE, {
+            "node_id": self.node_id,
+            "url": self.advertised_url,
+        })
+        self.gossip.broadcast(msg)
 
 
 # =============================================================================
@@ -1788,6 +1874,7 @@ def register_p2p_endpoints(app, p2p_node: RustChainP2PNode):
             "node_id": p2p_node.node_id,
             "running": p2p_node.running,
             "peer_count": len(p2p_node.peers),
+            "advertised_url": getattr(p2p_node, "advertised_url", None),
             "attestation_count": len(p2p_node.gossip.attestation_crdt.data),
             "settled_epochs": len(p2p_node.gossip.epoch_crdt.items)
         })

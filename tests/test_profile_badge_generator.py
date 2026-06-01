@@ -53,6 +53,31 @@ def test_create_badge_accepts_valid_json_object(client):
     assert _badge_count() == 1
 
 
+@pytest.mark.parametrize(
+    ("field", "value", "expected_error"),
+    [
+        ("username", ["not", "text"], "username must be a string"),
+        ("wallet", {"address": "RTCstructured"}, "wallet must be a string"),
+        ("badge_type", ["developer"], "badge_type must be a string"),
+        ("custom_message", {"label": "Bug Hunter"}, "custom_message must be a string"),
+    ],
+)
+def test_create_badge_rejects_non_string_fields(client, field, value, expected_error):
+    payload = {
+        "username": "jasperdevs",
+        "wallet": "RTCe361734a691c56c825af0faba890807c05fa35ef",
+        "badge_type": "bounty-hunter",
+        "custom_message": "Bug Hunter",
+    }
+    payload[field] = value
+
+    response = client.post("/api/badge/create", json=payload)
+
+    assert response.status_code == 400
+    assert response.get_json() == {"success": False, "error": expected_error}
+    assert _badge_count() == 0
+
+
 def test_create_badge_updates_existing_github_username(client):
     first = client.post(
         "/api/badge/create",

@@ -8,6 +8,8 @@ from rustchain.async_client import AsyncRustChainClient
 from rustchain.exceptions import (
     ConnectionError,
     ValidationError,
+    APIError,
+    TransferError,
 )
 
 
@@ -116,6 +118,30 @@ class TestAsyncHealthEndpoint:
                     await client.health()
 
             assert "Failed to connect" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_health_rejects_non_object_json(self):
+        """Test health rejects malformed non-object JSON"""
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value=["not", "an", "object"])
+        mock_response.reason = "OK"
+
+        mock_cm = AsyncContextManager(mock_response)
+
+        with patch('aiohttp.ClientSession') as mock_session_class:
+            mock_request = Mock(return_value=mock_cm)
+            mock_session = Mock()
+            mock_session.request = mock_request
+            mock_session.closed = False
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=None)
+            mock_session.close = AsyncMock()
+            mock_session_class.return_value = mock_session
+
+            async with AsyncRustChainClient("https://rustchain.org") as client:
+                with pytest.raises(APIError, match="Expected JSON object response"):
+                    await client.health()
 
 
 class TestAsyncEpochEndpoint:
@@ -391,6 +417,34 @@ class TestAsyncTransferEndpoint:
                 )
 
             assert result["success"] is True
+
+    @pytest.mark.asyncio
+    async def test_transfer_rejects_non_object_json(self):
+        """Test transfer wraps malformed non-object JSON as transfer failure"""
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value=["not", "an", "object"])
+        mock_response.reason = "OK"
+
+        mock_cm = AsyncContextManager(mock_response)
+
+        with patch('aiohttp.ClientSession') as mock_session_class:
+            mock_request = Mock(return_value=mock_cm)
+            mock_session = Mock()
+            mock_session.request = mock_request
+            mock_session.closed = False
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=None)
+            mock_session.close = AsyncMock()
+            mock_session_class.return_value = mock_session
+
+            async with AsyncRustChainClient("https://rustchain.org") as client:
+                with pytest.raises(TransferError, match="Expected JSON object response"):
+                    await client.transfer(
+                        from_addr="wallet1",
+                        to_addr="wallet2",
+                        amount=10.0,
+                    )
 
     @pytest.mark.asyncio
     async def test_transfer_negative_amount(self):

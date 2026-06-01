@@ -28,9 +28,12 @@ def response_json_list(resp):
 def encode_coll_byte(hex_str):
     data = bytes.fromhex(hex_str)
     length = len(data)
-    if length < 128:
-        return "0e" + format(length, "02x") + hex_str
-    return "0e" + format(0x80 | (length & 0x7f), "02x") + format(length >> 7, "02x") + hex_str
+    encoded_length = ""
+    while length >= 128:
+        encoded_length += format(0x80 | (length & 0x7f), "02x")
+        length >>= 7
+    encoded_length += format(length, "02x")
+    return "0e" + encoded_length + hex_str
 
 def encode_int_reg(n):
     zigzag = (n << 1) ^ (n >> 31) if n >= 0 else (((-n) << 1) - 1)

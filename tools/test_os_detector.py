@@ -1,22 +1,16 @@
 # SPDX-License-Identifier: MIT
-import importlib.util
-from pathlib import Path
 from unittest.mock import patch
 
-
-MODULE_PATH = Path(__file__).resolve().parent / "os_detector.py"
-spec = importlib.util.spec_from_file_location("os_detector", MODULE_PATH)
-os_detector = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(os_detector)
+import tools.os_detector as os_detector
 
 
 class FixedDateTime:
     @staticmethod
-    def utcnow():
+    def now(_tz):
         class FixedNow:
             @staticmethod
             def isoformat():
-                return "2026-05-11T12:00:00"
+                return "2026-05-11T12:00:00+00:00"
 
         return FixedNow()
 

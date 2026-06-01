@@ -49,6 +49,18 @@ def test_attestation_log_json_requires_core_fields(tmp_path):
     assert result["checks"]["json_valid"] is True
 
 
+def test_attestation_log_rejects_non_object_json_root(tmp_path):
+    validator = SubmissionValidator()
+    log_path = tmp_path / "attestation.json"
+    log_path.write_text('"miner_id device_arch fingerprint_hash timestamp"')
+
+    result = validator.validate_attestation_log(str(log_path))
+
+    assert result["status"] == "FAIL"
+    assert result["message"] == "Attestation log JSON root must be an object"
+    assert result["checks"]["json_valid"] is True
+
+
 def test_photo_validation_preserves_size_and_format_warnings(tmp_path):
     validator = SubmissionValidator()
     photo_path = tmp_path / "photo.txt"

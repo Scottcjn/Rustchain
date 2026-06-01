@@ -7,7 +7,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from rom_clustering_server import ROMClusteringServer, init_rom_tables
+from rom_clustering_server import (
+    ROMClusteringServer,
+    init_rom_tables,
+    integrate_with_attestation,
+)
 
 
 def test_rom_cluster_upsert_keeps_one_row_per_rom_hash(tmp_path):
@@ -27,6 +31,15 @@ def test_rom_cluster_upsert_keeps_one_row_per_rom_hash(tmp_path):
 
     assert len(rows) == 1
     assert rows[0][1] == 3
+
+
+def test_default_threshold_flags_second_unique_miner(tmp_path):
+    db_path = str(tmp_path / "default-threshold-roms.db")
+    server = ROMClusteringServer(db_path)
+    rom_hash = "12" * 20
+
+    assert server.process_rom_report("miner-1", rom_hash)[1] == "unique_rom"
+    assert server.process_rom_report("miner-2", rom_hash)[1] == "rom_clustering"
 
 
 def test_init_rom_tables_deduplicates_legacy_cluster_rows_before_unique_index(tmp_path):
@@ -158,3 +171,43 @@ def test_init_rom_tables_merges_partial_legacy_duplicate_cluster_miners(tmp_path
     assert json.loads(row[2]) == ["miner-a", "miner-b", "miner-c"]
     assert row[3:] == (10, 30)
     assert flag_cluster_id == row[0]
+
+
+def test_process_rom_report_rejects_non_string_rom_hash(tmp_path):
+    db_path = str(tmp_path / "roms.db")
+    server = ROMClusteringServer(db_path)
+
+    result = server.process_rom_report("miner-1", {"hash": "ab" * 20})
+
+    assert result == (False, "invalid_rom_report", {"field": "rom_hash"})
+
+
+def test_integrate_with_attestation_rejects_malformed_fingerprint_shapes(tmp_path):
+    db_path = str(tmp_path / "roms.db")
+    server = ROMClusteringServer(db_path)
+
+    assert integrate_with_attestation(
+        {"miner_id": "miner-1", "fingerprint": []},
+        server,
+    ) == (False, "invalid_fingerprint")
+    assert integrate_with_attestation(
+        {"miner_id": "miner-1", "fingerprint": {"checks": []}},
+        server,
+    ) == (False, "invalid_fingerprint_checks")
+    assert integrate_with_attestation(
+        {"miner_id": "miner-1", "fingerprint": {"checks": {"rom_fingerprint": []}}},
+        server,
+    ) == (False, "invalid_rom_fingerprint")
+    assert integrate_with_attestation(
+        {
+            "miner_id": "miner-1",
+            "fingerprint": {
+                "checks": {
+                    "rom_fingerprint": {
+                        "data": {"rom_hashes": []},
+                    },
+                },
+            },
+        },
+        server,
+    ) == (False, "invalid_rom_hashes")

@@ -48,20 +48,22 @@ def get_miners():
                     try:
                         timestamp = datetime.fromtimestamp(miner['last_seen'])
                         miner['last_seen_formatted'] = timestamp.strftime('%Y-%m-%d %H:%M:%S')
-                    except:
+                    except (TypeError, ValueError, OSError, OverflowError):
                         miner['last_seen_formatted'] = 'Unknown'
                 
                 # Set status based on last seen
-                if 'last_seen' in miner:
-                    time_diff = datetime.now().timestamp() - miner['last_seen']
+                try:
+                    last_seen = float(miner['last_seen'])
+                except (KeyError, TypeError, ValueError):
+                    miner['status'] = 'unknown'
+                else:
+                    time_diff = datetime.now().timestamp() - last_seen
                     if time_diff < 300:  # 5 minutes
                         miner['status'] = 'online'
                     elif time_diff < 3600:  # 1 hour
                         miner['status'] = 'idle'
                     else:
                         miner['status'] = 'offline'
-                else:
-                    miner['status'] = 'unknown'
             
             return jsonify(miners_data)
         else:
@@ -102,10 +104,14 @@ def get_network_stats():
 
 @app.route('/miner/<miner_id>')
 def miner_detail(miner_id):
+    if len(miner_id) > 128:
+        return "Miner ID too long", 400
     return render_template('miner_detail.html', miner_id=miner_id)
 
 @app.route('/api/miner/<miner_id>')
 def get_miner_detail(miner_id):
+    if len(miner_id) > 128:
+        return jsonify({"error": "Miner ID too long"}), 400
     try:
         response = requests.get(MINERS_ENDPOINT, timeout=5)
         if response.status_code == 200:
@@ -121,12 +127,16 @@ def get_miner_detail(miner_id):
                     try:
                         timestamp = datetime.fromtimestamp(miner['last_seen'])
                         miner['last_seen_formatted'] = timestamp.strftime('%Y-%m-%d %H:%M:%S')
-                    except:
+                    except (TypeError, ValueError, OSError, OverflowError):
                         miner['last_seen_formatted'] = 'Unknown'
                 
                 # Calculate status
-                if 'last_seen' in miner:
-                    time_diff = datetime.now().timestamp() - miner['last_seen']
+                try:
+                    last_seen = float(miner['last_seen'])
+                except (KeyError, TypeError, ValueError):
+                    miner['status'] = 'unknown'
+                else:
+                    time_diff = datetime.now().timestamp() - last_seen
                     if time_diff < 300:
                         miner['status'] = 'online'
                     elif time_diff < 3600:

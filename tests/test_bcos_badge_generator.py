@@ -515,6 +515,30 @@ class TestFlaskIntegration(unittest.TestCase):
         self.assertFalse(data['success'])
         self.assertIn('error', data)
 
+    def test_generate_badge_rejects_non_object_json(self):
+        """Badge generation should reject JSON arrays without raising 500."""
+        response = self.post_generate_badge(['not', 'an', 'object'])
+
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.data)
+        self.assertFalse(data['success'])
+        self.assertEqual(data['error'], 'JSON object body required')
+
+    def test_generate_badge_rejects_non_string_repo_name(self):
+        """Non-string repo names should fail validation instead of raising 500."""
+        response = self.post_generate_badge(
+            {
+                'repo_name': {'owner': 'test', 'repo': 'repo'},
+                'tier': 'L1',
+                'trust_score': 75,
+            }
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertFalse(data['success'])
+        self.assertEqual(data['error'], 'Repository name must be a string')
+
     def test_generate_badge_invalid_tier(self):
         """Test badge generation with invalid tier."""
         response = self.post_generate_badge(
@@ -528,6 +552,21 @@ class TestFlaskIntegration(unittest.TestCase):
         data = json.loads(response.data)
         self.assertFalse(data['success'])
         self.assertIn('error', data)
+
+    def test_generate_badge_rejects_non_string_tier(self):
+        """Non-string tiers should fail validation instead of raising 500."""
+        response = self.post_generate_badge(
+            {
+                'repo_name': 'test/repo',
+                'tier': ['L1'],
+                'trust_score': 75,
+            }
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertFalse(data['success'])
+        self.assertEqual(data['error'], 'Tier must be a string')
 
     def test_generate_badge_invalid_score(self):
         """Test badge generation with invalid trust score."""
@@ -562,6 +601,24 @@ class TestFlaskIntegration(unittest.TestCase):
                 data = json.loads(response.data)
                 self.assertFalse(data['success'])
                 self.assertEqual(data['error'], 'Trust score must be a number')
+
+    def test_generate_badge_rejects_non_boolean_include_qr(self):
+        """include_qr should not treat truthy strings as enabling QR output."""
+        for include_qr in ['false', 'true', 1, None]:
+            with self.subTest(include_qr=include_qr):
+                response = self.post_generate_badge(
+                    {
+                        'repo_name': 'test/repo',
+                        'tier': 'L1',
+                        'trust_score': 75,
+                        'include_qr': include_qr,
+                    }
+                )
+
+                self.assertEqual(response.status_code, 200)
+                data = json.loads(response.data)
+                self.assertFalse(data['success'])
+                self.assertEqual(data['error'], 'include_qr must be a boolean')
 
     def test_generate_badge_rejects_attribute_breaking_cert_id(self):
         """User-supplied cert IDs must not break generated embed attributes."""
