@@ -16,13 +16,16 @@ Key Changes:
 import hashlib
 import json
 import logging
-import random
 import sqlite3
-import time
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import List, Tuple, Dict
 
 logger = logging.getLogger(__name__)
+
+try:
+    from rip_309_measurement_rotation import get_reward_active_fingerprint_checks
+except ImportError:  # package-style import from repo root
+    from .rip_309_measurement_rotation import get_reward_active_fingerprint_checks
 
 ROTATING_FINGERPRINT_CHECKS = (
     "clock_drift",
@@ -610,16 +613,9 @@ def calculate_epoch_rewards_time_aged(
     Returns:
         Dict of {miner_id: reward_urtc}
     """
-    # RIP-309: Rotating fingerprint checks (4-of-6 per epoch)
-    fp_checks = ['clock_drift', 'cache_timing', 'simd_identity',
-                 'thermal_drift', 'instruction_jitter', 'anti_emulation']
-    if prev_block_hash:
-        nonce = hashlib.sha256(prev_block_hash + b"measurement_nonce").digest()
-        seed = int.from_bytes(nonce[:4], 'big')
-        active_checks = set(random.Random(seed).sample(fp_checks, 4))
-    else:
-        # Fallback when no prev_block_hash provided: all checks active (backward compat)
-        active_checks = set(fp_checks)
+    # RIP-309: Rotating fingerprint checks (4-of-6 per epoch).
+    # The helper is golden-tested against the former inline algorithm.
+    active_checks = set(get_reward_active_fingerprint_checks(prev_block_hash))
     print(f"[RIP-309] Epoch {epoch} active checks: {sorted(active_checks)} (seed derived from prev_block_hash)")
 
     chain_age_years = get_chain_age_years(current_slot)
@@ -788,7 +784,7 @@ if __name__ == "__main__":
         g5_share = 0 if total_weight == 0 else (g5_mult / total_weight) * total_reward
         modern_share = 0 if total_weight == 0 else (modern_mult / total_weight) * total_reward
 
-        print(f"\nReward distribution (1.5 RTC total):")
+        print("\nReward distribution (1.5 RTC total):")
         print(f"  G4: {g4_share / 100_000_000:.6f} RTC ({g4_share/total_reward*100:.1f}%)")
         print(f"  G5: {g5_share / 100_000_000:.6f} RTC ({g5_share/total_reward*100:.1f}%)")
         print(f"  Modern: {modern_share / 100_000_000:.6f} RTC ({modern_share/total_reward*100:.1f}%)")

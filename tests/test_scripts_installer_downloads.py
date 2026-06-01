@@ -11,6 +11,9 @@ def test_scripts_installer_uses_existing_linux_miner_paths():
 
     assert 'MINER_URL="${REPO_RAW}/miners/linux/rustchain_linux_miner.py"' in script
     assert 'FINGERPRINT_URL="${REPO_RAW}/miners/linux/fingerprint_checks.py"' in script
+    assert 'MINER_CRYPTO_URL="${REPO_RAW}/miners/linux/miner_crypto.py"' in script
+    assert "requests psutil PyNaCl" in script
+    assert "import requests, psutil, nacl" in script
 
 
 def test_scripts_installer_fails_on_http_download_errors():
@@ -19,7 +22,9 @@ def test_scripts_installer_fails_on_http_download_errors():
     assert "curl -fsSL --proto '=https' --tlsv1.2" in script
     assert 'download_file "${MINER_URL}"' in script
     assert 'download_file "${FINGERPRINT_URL}"' in script
+    assert 'download_file "${MINER_CRYPTO_URL}"' in script
     assert '[ ! -s "${INSTALL_DIR}/fingerprint_checks.py" ]' in script
+    assert '[ ! -s "${INSTALL_DIR}/miner_crypto.py" ]' in script
 
 
 def test_root_installer_defaults_to_tls_domain_node_url():

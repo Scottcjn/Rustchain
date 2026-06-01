@@ -6,7 +6,7 @@ Telegram bot for RustChain community — Bounty #249 (50 RTC + bonuses).
 
 | Command | Description |
 |---------|-------------|
-| `/price` | wRTC price from Raydium via DexScreener |
+| `/price` | wRTC price from Raydium price and pool APIs |
 | `/miners` | Active miner list and count |
 | `/epoch` | Current epoch, slot, pot, enrolled miners |
 | `/balance <wallet>` | Check RTC balance for a wallet |
@@ -47,6 +47,9 @@ python telegram_bot.py
 |----------|---------|-------------|
 | `TELEGRAM_BOT_TOKEN` | _(required)_ | Bot token from BotFather |
 | `RUSTCHAIN_API` | `https://rustchain.org` | RustChain node URL |
+| `RUSTCHAIN_VERIFY_SSL` | `true` | Set to `false` only for self-signed test nodes |
+| `RAYDIUM_MINT_PRICE_URL` | `https://api-v3.raydium.io/mint/price` | Raydium token price endpoint |
+| `RAYDIUM_POOL_INFO_URL` | `https://api-v3.raydium.io/pools/info/mint` | Raydium pool metadata endpoint |
 | `PRICE_ALERT_INTERVAL` | `120` | Seconds between price checks |
 | `MINER_ALERT_INTERVAL` | `60` | Seconds between miner checks |
 | `PRICE_CHANGE_THRESHOLD` | `5.0` | % change to trigger price alert |
@@ -60,6 +63,7 @@ docker run --env-file .env rustchain-tg-bot
 
 ## Key Improvements
 
-- **Async HTTP** — uses `aiohttp` instead of blocking `requests` in async handlers
+- **Raydium-native price** — `/price` reads Raydium v3 price and pool endpoints directly
+- **Non-blocking handlers** — uses `asyncio.to_thread` so live HTTP calls do not block Telegram polling
 - **Correct API fields** — uses `amount_rtc`, `ok`, `slot`, `enrolled_miners` per API docs
 - **All bonus features** — mining alerts, price alerts, inline queries
