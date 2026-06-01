@@ -107,3 +107,25 @@ def test_load_skips_out_of_range_passed_and_float_ts(conn):
     conn.execute("INSERT INTO attestation_evidence VALUES (?,?,?,?,?)", ("bad_passed", "{}", "{}", 2, 20))
     conn.execute("INSERT INTO attestation_evidence VALUES (?,?,?,?,?)", ("bad_ts", "{}", "{}", 1, 1.9))
     assert [r["miner"] for r in ev.load_committed_attestations(conn)] == ["good"]
+
+
+# ---- tri-brain loop-2 fixes: missing-table tolerance + DDL tx guard ----
+def test_load_tolerates_missing_table():
+    """Bootstrap-safe: load on a DB without the table returns [] (no crash)."""
+    bare = sqlite3.connect(":memory:")
+    try:
+        assert ev.load_committed_attestations(bare) == []
+    finally:
+        bare.close()
+
+
+def test_ensure_schema_rejects_in_transaction():
+    c = sqlite3.connect(":memory:")
+    try:
+        c.execute("CREATE TABLE t(x)")
+        c.execute("INSERT INTO t VALUES (1)")  # opens a transaction
+        assert c.in_transaction
+        with pytest.raises(RuntimeError):
+            ev.ensure_attestation_evidence_schema(c)
+    finally:
+        c.close()
