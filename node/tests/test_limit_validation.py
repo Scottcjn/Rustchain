@@ -79,7 +79,7 @@ class TestLimitValidation(unittest.TestCase):
 
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json(), {"ok": True, "count": 0, "pending": []})
-        self.assertEqual(mock_db.execute.call_args.args[1], ("pending", 1))
+        self.assertEqual(mock_db.execute.call_args.args[1], ("pending", 1, 0))
 
 
 if __name__ == "__main__":

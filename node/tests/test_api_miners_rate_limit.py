@@ -113,7 +113,7 @@ class TestApiMinersRateLimit(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(
             resp.get_json()["pagination"],
-            {"total": 0, "limit": 100, "offset": 0, "count": 0},
+            {"total": 0, "total_enrolled": 0, "limit": 100, "offset": 0, "count": 0},
         )
 
 
