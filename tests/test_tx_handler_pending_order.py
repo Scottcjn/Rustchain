@@ -38,15 +38,19 @@ class FakeSignedTransaction:
         self.public_key = public_key
         self.tx_hash = tx_hash
 
+    def verify(self):
+        return True
+
 
 mock.SignedTransaction = FakeSignedTransaction  # type: ignore[attr-defined]
 mock.Ed25519Signer = object  # type: ignore[attr-defined]
 mock.blake2b256_hex = lambda data: "00" * 32  # type: ignore[attr-defined]
-mock.address_from_public_key = lambda data: "addr-from-pub"  # type: ignore[attr-defined]
+mock.address_from_public_key = lambda data: data.hex()  # type: ignore[attr-defined]
 previous_crypto = sys.modules.get("rustchain_crypto")
 sys.modules["rustchain_crypto"] = mock
 
-TransactionPool = importlib.import_module("rustchain_tx_handler").TransactionPool
+rustchain_tx_handler = importlib.import_module("rustchain_tx_handler")
+TransactionPool = rustchain_tx_handler.TransactionPool
 
 if previous_crypto is None:
     sys.modules.pop("rustchain_crypto", None)
@@ -87,7 +91,7 @@ def test_pending_transactions_use_fifo_order_across_wallets(tmp_path):
     assert [tx.tx_hash for tx in pending] == ["b" * 64, "a" * 64]
 
 
-def test_pending_transactions_use_hash_tiebreaker_for_same_admission_time(tmp_path):
+def test_pending_transactions_preserve_insert_order_for_same_admission_time(tmp_path):
     pool = TransactionPool(str(tmp_path / "tx.db"))
 
     with sqlite3.connect(pool.db_path) as conn:
@@ -96,7 +100,49 @@ def test_pending_transactions_use_hash_tiebreaker_for_same_admission_time(tmp_pa
 
     pending = pool.get_pending_transactions()
 
-    assert [tx.tx_hash for tx in pending] == ["c" * 64, "d" * 64]
+    assert [tx.tx_hash for tx in pending] == ["d" * 64, "c" * 64]
+
+
+def test_submit_transaction_preserves_fifo_when_clock_collides(tmp_path, monkeypatch):
+    pool = TransactionPool(str(tmp_path / "tx.db"))
+    monkeypatch.setattr(rustchain_tx_handler, "address_from_public_key", lambda data: data.hex())
+    monkeypatch.setattr(rustchain_tx_handler.time, "time", lambda: 100)
+
+    with sqlite3.connect(pool.db_path) as conn:
+        conn.execute(
+            "INSERT INTO balances (wallet, balance_urtc, wallet_nonce) VALUES (?, ?, ?)",
+            ("aa", 10, 0),
+        )
+
+    first = FakeSignedTransaction(
+        from_addr="aa",
+        to_addr="bb",
+        amount_urtc=1,
+        nonce=1,
+        timestamp=100,
+        memo="",
+        signature="sig",
+        public_key="aa",
+        tx_hash="z" * 64,
+    )
+    second = FakeSignedTransaction(
+        from_addr="aa",
+        to_addr="cc",
+        amount_urtc=1,
+        nonce=2,
+        timestamp=101,
+        memo="",
+        signature="sig",
+        public_key="aa",
+        tx_hash="a" * 64,
+    )
+
+    assert pool.submit_transaction(first) == (True, "z" * 64)
+    assert pool.submit_transaction(second) == (True, "a" * 64)
+
+    pending = pool.get_pending_transactions()
+
+    assert [tx.tx_hash for tx in pending] == ["z" * 64, "a" * 64]
 
 
 def test_legacy_pending_table_gets_created_at_migration(tmp_path):

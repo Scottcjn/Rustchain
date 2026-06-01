@@ -521,7 +521,7 @@ class TransactionPool:
             cursor.execute(
                 """SELECT * FROM pending_transactions
                    WHERE status = 'pending'
-                   ORDER BY created_at ASC, tx_hash ASC
+                   ORDER BY created_at ASC, rowid ASC
                    LIMIT ?""",
                 (limit,)
             )
