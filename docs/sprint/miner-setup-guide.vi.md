@@ -39,7 +39,7 @@
     39|cd Rustchain/miners/linux
     40|python3 -m venv .venv
     41|source .venv/bin/activate
-    42|pip install requests
+    42|pip install requests PyNaCl
     43|python3 rustchain_linux_miner.py --dry-run --show-payload
     44|```
     45|
