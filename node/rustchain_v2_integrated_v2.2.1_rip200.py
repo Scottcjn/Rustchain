@@ -5659,6 +5659,7 @@ def register_withdrawal_key():
     })
 
 @app.route('/withdraw/request', methods=['POST'])
+@admin_required
 def request_withdrawal():
     """Request RTC withdrawal"""
     withdrawal_requests.inc()
@@ -6167,6 +6168,7 @@ def gov_rotate_commit():
         })
 
 @app.route('/governance/propose', methods=['POST'])
+@admin_required
 def governance_propose():
     data = request.get_json(silent=True)
     if data is None:
@@ -6415,6 +6417,7 @@ def governance_proposal_detail(proposal_id: int):
 
 
 @app.route('/governance/vote', methods=['POST'])
+@admin_required
 def governance_vote():
     data = request.get_json(silent=True)
     if data is None:
