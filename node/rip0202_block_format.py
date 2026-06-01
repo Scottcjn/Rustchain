@@ -54,12 +54,18 @@ BLOCKS_PER_EPOCH = 144
 # a field is a consensus change gated by activation.
 B0_ATTESTATION_FIELDS = ("miner", "device", "fingerprint", "fingerprint_passed", "timestamp")
 
+# Resource bounds (defense-in-depth atop the deployed nginx/#6529 1 MB body cap):
+# a single attestation's device/fingerprint cannot bloat storage or recurring
+# blocks. Generous enough for real fingerprint timing data, tight enough to cap abuse.
+MAX_EVIDENCE_FIELD_BYTES = 65_536   # 64 KB canonical JSON, per device and per fingerprint
+MAX_EVIDENCE_DEPTH = 32             # max nesting depth in device/fingerprint
+
 
 class B0FormatError(ValueError):
     """Raised when an attestation cannot be canonicalised into a B0 record."""
 
 
-def _assert_canonical_safe(obj: Any, path: str = "") -> None:
+def _assert_canonical_safe(obj: Any, path: str = "", depth: int = 0) -> None:
     """Recursively reject anything that is not canonical-JSON-safe + round-trip
     stable, so a record can never explode at hash/serialise time two hops away
     or mutate on a deserialise round-trip (which would diverge the consensus hash):
@@ -73,21 +79,26 @@ def _assert_canonical_safe(obj: Any, path: str = "") -> None:
     Allowed leaves: str, bool, int, finite float, None. Allowed containers:
     dict (str keys) and list.
     """
+    if depth > MAX_EVIDENCE_DEPTH:
+        raise B0FormatError(f"nesting exceeds depth {MAX_EVIDENCE_DEPTH} at {path or '<root>'}")
     if obj is None or isinstance(obj, (bool, int, str)):
         return  # bool is an int subclass; both are JSON-safe scalars
     if isinstance(obj, float):
         if not math.isfinite(obj):
             raise B0FormatError(f"non-finite float at {path or '<root>'}")
         return
-    if isinstance(obj, Mapping):
+    # Require a CONCRETE dict, not an arbitrary Mapping: json.dumps only
+    # serialises dict, so a custom Mapping subclass would pass validation here
+    # and then raise TypeError at hash/serialise time (validate-then-crash).
+    if isinstance(obj, dict):
         for k, v in obj.items():
             if not isinstance(k, str):
                 raise B0FormatError(f"non-string mapping key {k!r} at {path or '<root>'}")
-            _assert_canonical_safe(v, f"{path}.{k}")
+            _assert_canonical_safe(v, f"{path}.{k}", depth + 1)
         return
     if isinstance(obj, list):
         for i, v in enumerate(obj):
-            _assert_canonical_safe(v, f"{path}[{i}]")
+            _assert_canonical_safe(v, f"{path}[{i}]", depth + 1)
         return
     raise B0FormatError(f"non-JSON-safe {type(obj).__name__} at {path or '<root>'}")
 
@@ -119,6 +130,9 @@ def build_b0_attestation(
     fingerprint = dict(fingerprint)
     _assert_canonical_safe(device, "device")
     _assert_canonical_safe(fingerprint, "fingerprint")
+    for name, val in (("device", device), ("fingerprint", fingerprint)):
+        if len(_canonical_bytes(val)) > MAX_EVIDENCE_FIELD_BYTES:
+            raise B0FormatError(f"{name} exceeds {MAX_EVIDENCE_FIELD_BYTES}-byte canonical limit")
     return {
         "miner": miner,
         "device": device,
@@ -163,6 +177,13 @@ def canonical_b0_attestations_hash(attestations: List[Mapping]) -> str:
             a.get("miner"), a.get("device"), a.get("fingerprint"),
             a.get("fingerprint_passed"), a.get("timestamp"),
         ))
+    # Reject duplicate miners: B1 enrollment assumes one record per miner, and a
+    # crafted dup could create selection/weight ambiguity. One miner, one record.
+    seen = set()
+    for a in validated:
+        if a["miner"] in seen:
+            raise B0FormatError(f"duplicate miner in attestation set: {a['miner']}")
+        seen.add(a["miner"])
     ordered = sorted(
         validated,
         key=lambda a: (a["miner"], a["timestamp"], _attestation_digest(a)),
