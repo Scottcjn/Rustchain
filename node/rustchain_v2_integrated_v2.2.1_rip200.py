@@ -1422,7 +1422,38 @@ def init_db():
         c.execute("CREATE TABLE IF NOT EXISTS tickets (ticket_id TEXT PRIMARY KEY, expires_at INTEGER, commitment TEXT)")
 
         # Epoch tables
-        c.execute("CREATE TABLE IF NOT EXISTS epoch_state (epoch INTEGER PRIMARY KEY, accepted_blocks INTEGER DEFAULT 0, finalized INTEGER DEFAULT 0)")
+        c.execute("CREATE TABLE IF NOT EXISTS epoch_state (epoch INTEGER PRIMARY KEY, accepted_blocks INTEGER DEFAULT 0, finalized INTEGER DEFAULT 0, settled INTEGER DEFAULT 0, settled_ts INTEGER)")
+        # Idempotent migration: settlement paths require settled/settled_ts; add
+        # them on pre-existing epoch_state tables so the replay guard cannot be
+        # silently disabled by a missing column.
+        _epoch_state_cols = {row[1] for row in c.execute("PRAGMA table_info(epoch_state)").fetchall()}
+        if "settled" not in _epoch_state_cols:
+            c.execute("ALTER TABLE epoch_state ADD COLUMN settled INTEGER DEFAULT 0")
+        if "settled_ts" not in _epoch_state_cols:
+            c.execute("ALTER TABLE epoch_state ADD COLUMN settled_ts INTEGER")
+        # Upgrade-safety backfill: any epoch already rewarded via the
+        # epoch_rewards settlement path must be marked settled so the atomic
+        # finalize_epoch guard cannot re-claim and re-credit it after upgrade.
+        try:
+            # (1) Insert a settled row for any rewarded epoch that has NO
+            # epoch_state row at all — otherwise finalize_epoch would INSERT it
+            # with settled=0 and credit the epoch a second time.
+            c.execute(
+                "INSERT OR IGNORE INTO epoch_state (epoch, settled, settled_ts) "
+                "SELECT DISTINCT epoch, 1, ? FROM epoch_rewards",
+                (int(time.time()),)
+            )
+            # (2) Mark any existing-but-unsettled rewarded epoch as settled.
+            c.execute(
+                "UPDATE epoch_state SET settled = 1 "
+                "WHERE settled = 0 AND epoch IN (SELECT DISTINCT epoch FROM epoch_rewards)"
+            )
+        except sqlite3.OperationalError as _bf_err:
+            # Only tolerate the expected absent optional epoch_rewards table;
+            # never silently skip the monetary backfill for any other error.
+            _bf_msg = str(_bf_err).lower()
+            if not ("no such table" in _bf_msg and "epoch_rewards" in _bf_msg):
+                raise
         c.execute("CREATE TABLE IF NOT EXISTS epoch_enroll (epoch INTEGER, miner_pk TEXT, weight INTEGER, PRIMARY KEY (epoch, miner_pk))")
         ensure_epoch_enroll_integer_weights(c)
         c.execute("CREATE TABLE IF NOT EXISTS balances (miner_pk TEXT PRIMARY KEY, balance_rtc REAL DEFAULT 0)")
@@ -3621,9 +3652,30 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
             print(f"[SECURITY] No valid miners for epoch {epoch} after RIP-309 filtering")
             return
 
-        # ATOMIC TRANSACTION: Wrap all updates in explicit transaction
+        # ATOMIC TRANSACTION: claim the epoch first, then credit — all under an
+        # IMMEDIATE write lock so two concurrent finalize_epoch calls cannot both
+        # credit balances (double-settlement / reward inflation past the cap).
         try:
-            c.execute("BEGIN TRANSACTION")
+            c.execute("BEGIN IMMEDIATE")
+
+            # Ensure the row exists, then atomically CLAIM settlement. If the
+            # claim affects 0 rows another settlement already won this epoch, so
+            # abort WITHOUT crediting. This (not the autocommit pre-check above)
+            # is the authoritative replay guard.
+            c.execute(
+                "INSERT INTO epoch_state (epoch, settled) VALUES (?, 0) "
+                "ON CONFLICT(epoch) DO NOTHING",
+                (epoch,)
+            )
+            claim = c.execute(
+                "UPDATE epoch_state SET settled = 1, settled_ts = ? WHERE epoch = ? AND settled = 0",
+                (int(time.time()), epoch)
+            )
+            if claim.rowcount != 1:
+                c.execute("ROLLBACK")
+                print(f"[SECURITY] Epoch {epoch} already settled (claim lost) — skipping to prevent double-reward")
+                return
+
             utxo_reward_outputs = []
 
             # Distribute rewards with precision
@@ -3680,13 +3732,8 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
                             f"batch {batch_index + 1}/{len(reward_batches)}"
                         )
 
-            # Mark epoch as settled - use UPDATE with WHERE settled=0 to prevent race
-            result = c.execute(
-                "UPDATE epoch_state SET settled = 1, settled_ts = ? WHERE epoch = ? AND settled = 0",
-                (int(time.time()), epoch)
-            )
-
-            # Commit transaction atomically
+            # Settlement was already CLAIMED atomically at the top of this
+            # transaction (settled=1). Commit the credits together with it.
             c.execute("COMMIT")
             print(f"[EPOCH] Finalized epoch {epoch} with {len(miners)} miners, total_weight={total_weight}")
 
@@ -4913,7 +4960,10 @@ def ingest_signed_header():
         
         if blocks_in_epoch >= EPOCH_SLOTS:
             # Check if already settled
-            settled_row = db.execute("SELECT 1 FROM epoch_rewards WHERE epoch=?", (current_epoch,)).fetchone()
+            # finalize_epoch records settlement in epoch_state.settled (it never
+            # writes epoch_rewards), so the guard must consult that flag — else
+            # it re-invokes finalize_epoch on every subsequent block in the epoch.
+            settled_row = db.execute("SELECT 1 FROM epoch_state WHERE epoch=? AND settled=1", (current_epoch,)).fetchone()
             if not settled_row:
                 # Call finalize_epoch to distribute rewards
                 try:
