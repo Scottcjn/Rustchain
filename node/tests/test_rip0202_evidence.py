@@ -86,3 +86,24 @@ def test_loaded_records_hash_equals_original(conn):
                                        r["fingerprint_passed"], r["timestamp"])
     loaded = ev.load_committed_attestations(conn)
     assert b0.canonical_b0_attestations_hash(loaded) == b0.canonical_b0_attestations_hash(originals)
+
+
+# ---- tri-brain fixes: ts-monotonic upsert + strict load validation ----
+def test_older_attestation_does_not_clobber_newer(conn):
+    ev.record_attestation_evidence(conn, "m", DEV, {"v": "new"}, True, 200)
+    ev.record_attestation_evidence(conn, "m", DEV, {"v": "old"}, True, 100)  # older ts
+    rec = ev.load_committed_attestations(conn)[0]
+    assert rec["fingerprint"] == {"v": "new"} and rec["timestamp"] == 200
+
+
+def test_equal_ts_overwrites(conn):
+    ev.record_attestation_evidence(conn, "m", DEV, {"v": 1}, True, 100)
+    ev.record_attestation_evidence(conn, "m", DEV, {"v": 2}, True, 100)  # same ts -> replace
+    assert ev.load_committed_attestations(conn)[0]["fingerprint"] == {"v": 2}
+
+
+def test_load_skips_out_of_range_passed_and_float_ts(conn):
+    ev.record_attestation_evidence(conn, "good", DEV, FP, True, 10)
+    conn.execute("INSERT INTO attestation_evidence VALUES (?,?,?,?,?)", ("bad_passed", "{}", "{}", 2, 20))
+    conn.execute("INSERT INTO attestation_evidence VALUES (?,?,?,?,?)", ("bad_ts", "{}", "{}", 1, 1.9))
+    assert [r["miner"] for r in ev.load_committed_attestations(conn)] == ["good"]
