@@ -46,20 +46,14 @@ Der RustChain Token (RTC) ist jetzt als **wRTC** auf Solana über die BoTTube Br
 ## ⚡ Schnellstart
 
 ```bash
-# 1. Repo klonen
-git clone https://github.com/Scottcjn/Rustchain.git && cd Rustchain
+# 1. Miner mit dem aktuellen Installer einrichten
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash
 
-# 2. Python-Umgebung aufsetzen (Linux/macOS)
-python3 -m venv venv && source venv/bin/activate
+# 2. Optional zuerst einen Testlauf ausführen
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --dry-run
 
-# 3. Abhängigkeiten installieren
-pip install -r requirements.txt
-
-# 4. Wallet erstellen
-python3 -c "from rustchain.wallet import Wallet; w = Wallet.create('meine_wallet.json'); print(w.address)"
-
-# 5. Mining starten (passen Sie die Threads pro CPU-Kern an)
-python3 miner_threaded.py --threads 4 --wallet meine_wallet.json
+# 3. Mit einem eigenen Walletnamen starten
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --wallet mein-wallet
 ```
 
 **Hardware-Anforderungen:**

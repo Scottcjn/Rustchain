@@ -52,6 +52,17 @@
 
 ---
 
+## x402 高级 API
+
+以下高级 API 已部署在 BoTTube 域名上（当前免费用于验证流程）：
+
+- `GET https://bottube.ai/api/premium/videos` - 批量视频导出（BoTTube）
+- `GET https://bottube.ai/api/premium/analytics/<agent>` - 深度 Agent 分析（BoTTube）
+- `GET /api/premium/reputation` - 完整声誉导出（Beacon Atlas）
+- `GET /wallet/swap-info` - USDC/wRTC 兑换指引（RustChain）
+
+---
+
 ## 🔥 Crypto 迷失了方向。我们回到原点。
 
 2026年，加密货币开发者提交量下降75%。以太坊流失了34%的活跃开发者。Solana流失了40%。建设者们离开了，投奔AI。
@@ -213,25 +224,24 @@ RustChain支持**15+种CPU架构**——比任何其他区块链都多：
 ### 安装
 
 ```bash
-# 克隆仓库
-git clone https://github.com/Scottcjn/Rustchain.git
-cd Rustchain
+# 一键安装并启动矿工
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash
 
-# 安装依赖
-pip install -r requirements.txt
+# 或者先进行干运行测试
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --dry-run
 
-# 启动矿工
-python3 miner.py
+# 使用指定钱包名称
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --wallet 我的钱包
 ```
 
 ### 验证你的矿工
 
 ```bash
-# 检查矿工状态
-python3 miner.py --status
+# 检查用户服务状态（Linux/systemd）
+systemctl --user status rustchain-miner
 
-# 查看硬件指纹
-python3 miner.py --fingerprint
+# 查看矿工日志
+journalctl --user -u rustchain-miner -f
 ```
 
 你的矿工启动后，会自动进行6项硬件检查并注册到网络。无需额外配置。
