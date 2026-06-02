@@ -26,7 +26,7 @@ def conn():
 def test_schema_idempotent(conn):
     gp.ensure_governance_params_schema(conn)
     cols = [r[1] for r in conn.execute("PRAGMA table_info(governance_params)")]
-    assert cols == ["name", "value", "set_at_epoch", "proposal_id"]
+    assert cols == ["name", "set_at_epoch", "value", "proposal_id"]
 
 
 def test_unset_returns_builtin_default(conn):
@@ -53,8 +53,8 @@ def test_set_then_get_typed(conn):
 
 def test_stored_value_coerced_to_declared_type(conn):
     # even if a raw string slipped into storage, read coerces to int
-    conn.execute("INSERT OR REPLACE INTO governance_params VALUES (?,?,?,?)",
-                 ("rip0202_eligibility_threshold_units", "7", 10, None))
+    conn.execute("INSERT OR REPLACE INTO governance_params (name, set_at_epoch, value, proposal_id) "
+                 "VALUES (?,?,?,?)", ("rip0202_eligibility_threshold_units", 10, "7", None))
     assert gp.get_param(conn, "rip0202_eligibility_threshold_units") == 7
 
 
@@ -80,11 +80,32 @@ def test_set_param_bad_epoch(conn):
             gp.set_param(conn, "rip0202_activation_epoch", 1, set_at_epoch=bad)
 
 
-def test_overwrite_latest_wins(conn):
+def test_history_keyed_get_param_latest(conn):
+    """Distinct set_at_epoch APPENDS history; get_param returns the latest."""
     gp.set_param(conn, "rip0202_activation_epoch", 100, set_at_epoch=1)
     gp.set_param(conn, "rip0202_activation_epoch", 200, set_at_epoch=2)
     assert gp.get_param(conn, "rip0202_activation_epoch") == 200
+    assert conn.execute("SELECT COUNT(*) FROM governance_params").fetchone()[0] == 2  # history retained
+
+
+def test_same_epoch_reseed_replaces(conn):
+    gp.set_param(conn, "rip0202_activation_epoch", 100, set_at_epoch=5)
+    gp.set_param(conn, "rip0202_activation_epoch", 150, set_at_epoch=5)  # same epoch -> replace
+    assert gp.get_param(conn, "rip0202_activation_epoch") == 150
     assert conn.execute("SELECT COUNT(*) FROM governance_params").fetchone()[0] == 1
+
+
+def test_get_param_as_of_recovers_prior_epoch_value(conn):
+    """Replay/reorg-safe: value EFFECTIVE AT a prior epoch is recoverable."""
+    gp.set_param(conn, "rip0202_activation_epoch", 100, set_at_epoch=10)
+    gp.set_param(conn, "rip0202_activation_epoch", 200, set_at_epoch=20)
+    assert gp.get_param_as_of(conn, "rip0202_activation_epoch", 5) is None    # before first set -> default
+    assert gp.get_param_as_of(conn, "rip0202_activation_epoch", 10) == 100    # at first set
+    assert gp.get_param_as_of(conn, "rip0202_activation_epoch", 15) == 100    # between
+    assert gp.get_param_as_of(conn, "rip0202_activation_epoch", 25) == 200    # after second
+    for bad in (-1, True, "5", 1.0):
+        with pytest.raises(gp.GovernanceParamError):
+            gp.get_param_as_of(conn, "rip0202_activation_epoch", bad)
 
 
 def test_registered_params_introspection():
@@ -106,8 +127,8 @@ def test_set_param_enforces_min(conn):
 
 
 def test_get_param_rejects_out_of_bounds_stored_value(conn):
-    conn.execute("INSERT OR REPLACE INTO governance_params VALUES (?,?,?,?)",
-                 ("rip0202_eligibility_threshold_units", "0", 1, None))   # corrupt: below min
+    conn.execute("INSERT OR REPLACE INTO governance_params (name, set_at_epoch, value, proposal_id) "
+                 "VALUES (?,?,?,?)", ("rip0202_eligibility_threshold_units", 1, "0", None))  # corrupt: below min
     with pytest.raises(gp.GovernanceParamError):
         gp.get_param(conn, "rip0202_eligibility_threshold_units")
 
