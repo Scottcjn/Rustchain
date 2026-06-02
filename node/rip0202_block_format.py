@@ -89,16 +89,19 @@ def _assert_canonical_safe(obj: Any, path: str = "", depth: int = 0) -> None:
         if not math.isfinite(obj):
             raise B0FormatError(f"non-finite float at {path or '<root>'}")
         return
-    # Require a CONCRETE dict, not an arbitrary Mapping: json.dumps only
-    # serialises dict, so a custom Mapping subclass would pass validation here
-    # and then raise TypeError at hash/serialise time (validate-then-crash).
-    if isinstance(obj, dict):
+    # Require a CONCRETE dict/list -- EXACT type, not isinstance. json.dumps only
+    # serialises built-in dict/list canonically, and a subclass could pass an
+    # isinstance check here yet override __deepcopy__/__iter__ to yield different
+    # (unvalidated, oversized, non-canonical) data after this gate -- a
+    # validate-then-substitute bypass. Exact-type makes the check mean what its
+    # name says. Real JSON-sourced evidence is always concrete dict/list.
+    if type(obj) is dict:
         for k, v in obj.items():
             if not isinstance(k, str):
                 raise B0FormatError(f"non-string mapping key {k!r} at {path or '<root>'}")
             _assert_canonical_safe(v, f"{path}.{k}", depth + 1)
         return
-    if isinstance(obj, list):
+    if type(obj) is list:
         for i, v in enumerate(obj):
             _assert_canonical_safe(v, f"{path}[{i}]", depth + 1)
         return
@@ -132,17 +135,26 @@ def build_b0_attestation(
         raise B0FormatError("timestamp must be an int")
     device = dict(device)
     fingerprint = dict(fingerprint)
+    # First validation runs on the (top-concretised) caller data: a non-canonical
+    # type is rejected cleanly here (B0FormatError) before deepcopy -- which would
+    # otherwise raise an opaque TypeError on, e.g., a nested mappingproxy.
     _assert_canonical_safe(device, "device")
     _assert_canonical_safe(fingerprint, "fingerprint")
     for name, val in (("device", device), ("fingerprint", fingerprint)):
         if len(_canonical_bytes(val)) > MAX_EVIDENCE_FIELD_BYTES:
             raise B0FormatError(f"{name} exceeds {MAX_EVIDENCE_FIELD_BYTES}-byte canonical limit")
-    # Deep copy AFTER validation (structure is now guaranteed JSON-safe, hence
-    # deepcopyable): the returned record shares NO nested mutable state with the
-    # caller, preventing a validate -> hash -> serialize TOCTOU where the caller
-    # mutates aliased nested evidence between validation and the consensus hash.
+    # Snapshot, then RE-VALIDATE the snapshot. The returned record shares no
+    # nested state with the caller, and re-checking the copy closes the TOCTOU
+    # where a concurrent mutation (or a subclass __deepcopy__) could swap in
+    # unvalidated/oversized evidence between the first check and the consensus
+    # hash -- the bytes we hash are exactly the bytes we validated.
     device = copy.deepcopy(device)
     fingerprint = copy.deepcopy(fingerprint)
+    _assert_canonical_safe(device, "device")
+    _assert_canonical_safe(fingerprint, "fingerprint")
+    for name, val in (("device", device), ("fingerprint", fingerprint)):
+        if len(_canonical_bytes(val)) > MAX_EVIDENCE_FIELD_BYTES:
+            raise B0FormatError(f"{name} exceeds {MAX_EVIDENCE_FIELD_BYTES}-byte canonical limit")
     return {
         "miner": miner,
         "device": device,

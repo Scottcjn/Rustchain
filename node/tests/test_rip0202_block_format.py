@@ -187,6 +187,22 @@ def test_build_rejects_non_dict_mapping():
         b0.build_b0_attestation("m", {"nested": proxy}, FP, True, 1)
 
 
+def test_build_rejects_dict_and_list_subclasses():
+    """Exact-type check: a dict/list SUBCLASS (isinstance-true but not concrete)
+    is rejected, so it can't pass validation and then yield different data via an
+    overridden __deepcopy__/__iter__ (validate-then-substitute bypass)."""
+    class SneakyDict(dict):
+        pass
+
+    class SneakyList(list):
+        pass
+
+    with pytest.raises(b0.B0FormatError):
+        b0.build_b0_attestation("m", {"nested": SneakyDict({"k": 1})}, FP, True, 1)
+    with pytest.raises(b0.B0FormatError):
+        b0.build_b0_attestation("m", {"arr": SneakyList([1, 2])}, FP, True, 1)
+
+
 # ---- tri-brain loop-4 fixes: deep-copy (TOCTOU) + miner-id length ----
 def test_build_deepcopies_evidence_no_aliasing():
     """Loop-4: mutating the caller's nested evidence after build must NOT change
