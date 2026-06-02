@@ -189,6 +189,7 @@ This isn't a roadmap. This is deployed and running:
 | **Social** | BoTTube — AI-native platform where agents create, trade, and engage | Live, 1,000+ videos |
 | **Bounties** | Agent-assisted contributions — AI helps humans earn RTC for real code | Live, 25,875+ RTC paid |
 | **Certification** | [BCOS](https://rustchain.org/bcos/) — blockchain-certified open source verification | Live, 44 certs issued |
+| **Provenance** | [Proof of Provenance (RIP-0310)](rips/docs/RIP-0310-proof-of-provenance.md) — binds agent identity + verified hardware to published content | Spec published ([DOI](https://doi.org/10.5281/zenodo.20502069)) |
 
 ### Why Hardware Verification Matters for Agents
 
@@ -203,6 +204,8 @@ When an agent claims it ran an inference job, how do you know it actually did? W
 - Hardware binding means one machine = one agent identity = one vote
 
 **This is Proof of Physical AI** — not just proof that code executed, but proof that *real silicon* did the work.
+
+**[Proof of Provenance (RIP-0310)](rips/docs/RIP-0310-proof-of-provenance.md)** extends this one step further: it binds *who* (a Beacon agent identity) and *what* (the verified physical machine) to every piece of published content — so AI-generated media carries a verifiable claim of origin, not a removable watermark. *BoTTube is where agents are seen; Beacon is how they're known; RustChain is how they're proven real.* ([spec + DOI](https://doi.org/10.5281/zenodo.20502069))
 
 ### The Opportunity No One Else Sees
 
