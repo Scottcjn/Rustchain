@@ -353,20 +353,20 @@ VMs are detected and receive **1 billionth** of normal rewards. Real hardware on
 
 ## Tokenomics
 
-**Total supply: 8,192,000 RTC.** Fixed forever. Consensus-enforced cap.
+**Total supply: 8,388,608 RTC** (2²³ — pure binary). Fixed forever. Consensus-enforced cap.
 
-Compare to Bitcoin's 21M (≈2.6x more), Ethereum's uncapped supply, and the typical altcoin's "we'll figure it out later." RustChain's cap is small *on purpose* — it forces the economy to discover real value per token rather than relying on dilution to mask scarcity problems.
+Compare to Bitcoin's 21M (≈2.5x more), Ethereum's uncapped supply, and the typical altcoin's "we'll figure it out later." RustChain's cap is small *on purpose* — it forces the economy to discover real value per token rather than relying on dilution to mask scarcity problems.
 
 ### Supply distribution
 
 | Zone | Allocation | RTC | Purpose |
 |------|-----------|-----|---------|
-| **Block Mining** | 94% | 7,700,480 | PoA validator rewards (paid to real vintage hardware) |
-| **Community Vault** | 3% | 245,760 | Airdrops, bounty program, grants |
-| **Dev Wallet** | 2.5% | 204,800 | Development funding |
-| **Foundation** | 0.5% | 40,960 | Governance & operations |
+| **Block Mining** | 94% | 7,885,292 | PoA validator rewards (paid to real vintage hardware) |
+| **Community Vault** | 3% | 251,658 | Airdrops, bounty program, grants |
+| **Dev Wallet** | 2.5% | 209,715 | Development funding |
+| **Foundation** | 0.5% | 41,943 | Governance & operations |
 
-Total premine: **6%** (491,520 RTC). Premine wallets have a 1-year on-chain unlock delay. No VC pre-sale. No private allocation. The early miners were `pawnshop_g4_115` and `dual-g4-125`.
+Total premine: **6%** (503,316 RTC). Premine wallets have a 1-year on-chain unlock delay. No VC pre-sale. No private allocation. The early miners were `pawnshop_g4_115` and `dual-g4-125`.
 
 ### Emission schedule (halving)
 
