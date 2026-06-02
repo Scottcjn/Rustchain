@@ -315,7 +315,7 @@ class TestAddressValidation:
     def test_valid_rustchain_address(self, setup_test_db):
         """Test valid RustChain address."""
         bridge_api = setup_test_db["bridge_api"]
-        valid, msg = bridge_api.validate_chain_address_format("rustchain", "RTC_test123abc")
+        valid, msg = bridge_api.validate_chain_address_format("rustchain", "RTC" + "a" * 40)
         assert valid is True
     
     def test_invalid_rustchain_address_prefix(self, setup_test_db):

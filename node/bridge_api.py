@@ -272,6 +272,15 @@ def validate_chain_address_format(chain: str, address: str) -> Tuple[bool, str]:
     return True, ""
 
 
+def validate_bridge_route_address(
+    chain: str, address: str, *, rustchain_source_is_miner: bool = False
+) -> Tuple[bool, str]:
+    """Validate a bridge route address without conflating miner IDs and wallets."""
+    if chain == "rustchain" and rustchain_source_is_miner:
+        return validate_miner_id_format(address)
+    return validate_chain_address_format(chain, address)
+
+
 # =============================================================================
 # Bridge Transfer Functions
 # =============================================================================
@@ -801,27 +810,35 @@ def register_bridge_routes(app):
         if not validation.ok:
             return jsonify({"error": validation.error}), 400
         details = validation.details or {}
+
+        # Deposits lock balances keyed by RustChain miner_id. Require operator
+        # authorization before any address-format response can mask auth state
+        # or leak validation behavior for another miner's balance.
+        admin_key = request.headers.get("X-Admin-Key", "")
+        expected_admin_key = os.environ.get("RC_ADMIN_KEY", "")
+        admin_initiated = bool(expected_admin_key) and hmac.compare_digest(admin_key, expected_admin_key)
+        if details["direction"] == "deposit":
+            if not expected_admin_key:
+                return jsonify({"error": "RC_ADMIN_KEY not configured"}), 503
+            if not admin_initiated:
+                return jsonify({"error": "unauthorized"}), 401
         
         # Validate address formats
         for chain, addr in [
             (details["source_chain"], details["source_address"]),
             (details["dest_chain"], details["dest_address"])
         ]:
-            valid, msg = validate_chain_address_format(chain, addr)
+            valid, msg = validate_bridge_route_address(
+                chain,
+                addr,
+                rustchain_source_is_miner=(
+                    details["direction"] == "deposit"
+                    and chain == details["source_chain"]
+                    and chain == "rustchain"
+                ),
+            )
             if not valid:
                 return jsonify({"error": f"Invalid {chain} address: {msg}"}), 400
-        
-        # Check admin initiation (bypasses balance check)
-        admin_key = request.headers.get("X-Admin-Key", "")
-        expected_admin_key = os.environ.get("RC_ADMIN_KEY", "")
-        admin_initiated = bool(expected_admin_key) and hmac.compare_digest(admin_key, expected_admin_key)
-        if details["direction"] == "deposit":
-            # Deposits create balance locks by source_address; require operator
-            # authorization until a wallet-owner signature flow exists.
-            if not expected_admin_key:
-                return jsonify({"error": "RC_ADMIN_KEY not configured"}), 503
-            if not admin_initiated:
-                return jsonify({"error": "unauthorized"}), 401
         
         # Create bridge transfer
         req = BridgeTransferRequest(
