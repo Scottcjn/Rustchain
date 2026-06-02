@@ -30,10 +30,11 @@ from typing import Any, Dict, Optional
 
 GOVERNANCE_PARAMS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS governance_params (
-    name         TEXT PRIMARY KEY,
-    value        TEXT NOT NULL,
+    name         TEXT NOT NULL,
     set_at_epoch INTEGER NOT NULL,
-    proposal_id  INTEGER
+    value        TEXT NOT NULL,
+    proposal_id  INTEGER,
+    PRIMARY KEY (name, set_at_epoch)
 )
 """
 
@@ -98,28 +99,52 @@ def _enforce_bounds(name: str, value: Any) -> Any:
     return value
 
 
-def get_param(conn: sqlite3.Connection, name: str) -> Any:
-    """Return the typed value of a registered param, or its built-in default.
+def _read_value(conn: sqlite3.Connection, name: str, suffix: str, params: tuple) -> Any:
+    """Shared reader: latest matching row's value (coerced+bounded) or default.
 
-    Unknown name -> GovernanceParamError (fail closed). Missing table/row ->
-    the binary default (bootstrap-safe, fleet-uniform). Never raises into a
-    consensus read for a *registered* name on a missing table.
+    Unknown name -> GovernanceParamError (via _spec, fail closed). ONLY a
+    genuinely-absent table (bootstrap) returns the default; a lock / disk / schema
+    error re-raises (silently defaulting could disable activation on one node and
+    fork consensus).
     """
     spec = _spec(name)
     try:
         row = conn.execute(
-            "SELECT value FROM governance_params WHERE name = ?", (name,)
+            "SELECT value FROM governance_params WHERE name = ? " + suffix,
+            (name, *params),
         ).fetchone()
     except sqlite3.OperationalError as e:
-        # ONLY tolerate a genuinely-absent table (bootstrap). A lock, disk
-        # failure, or schema corruption must NOT silently return the default —
-        # that could disable activation on one node and fork consensus. Re-raise.
         if "no such table" in str(e).lower():
             return spec["default"]
         raise
     if row is None:
         return spec["default"]
     return _coerce(name, row[0])
+
+
+def get_param(conn: sqlite3.Connection, name: str) -> Any:
+    """Latest value of a registered param (greatest set_at_epoch), or its default.
+
+    For replay/reorg-correct reads keyed to a specific chain height, use
+    ``get_param_as_of`` — this returns the most recently set value regardless of
+    epoch (suitable for "current" reads in the dormant/admin path).
+    """
+    return _read_value(conn, name, "ORDER BY set_at_epoch DESC LIMIT 1", ())
+
+
+def get_param_as_of(conn: sqlite3.Connection, name: str, epoch: int) -> Any:
+    """Value of a registered param EFFECTIVE AT ``epoch`` — the row with the
+    greatest ``set_at_epoch <= epoch``, else the binary default.
+
+    This is the replay/reorg-safe read (tri-brain loop-4): a node validating
+    history recovers the exact value in force at a prior epoch, and a future-dated
+    change does not apply until its epoch. Deterministic function of chain height.
+    """
+    if isinstance(epoch, bool) or not isinstance(epoch, int) or epoch < 0:
+        raise GovernanceParamError("epoch must be a non-negative int")
+    return _read_value(
+        conn, name, "AND set_at_epoch <= ? ORDER BY set_at_epoch DESC LIMIT 1", (epoch,)
+    )
 
 
 def set_param(
@@ -129,11 +154,13 @@ def set_param(
     set_at_epoch: int,
     proposal_id: Optional[int] = None,
 ) -> None:
-    """Seed/update a registered param (admin migration; later: vote execution).
+    """Append a registered param value EFFECTIVE AT ``set_at_epoch`` (history-keyed).
 
-    Validates the name is registered and the value matches the declared type
+    History-keyed (PK name,set_at_epoch): a new set_at_epoch APPENDS a row (prior
+    values are retained for replay); re-setting the same (name,set_at_epoch)
+    replaces it (idempotent re-seed). Validates name + declared type + bounds
     (fail closed). ``set_at_epoch`` is the chain-derived epoch the value takes
-    effect — provenance for determinism, not wall-clock.
+    effect — provenance for determinism, never wall-clock.
     """
     typ = _spec(name)["type"]
     if value is None:
