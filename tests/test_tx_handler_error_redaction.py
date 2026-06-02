@@ -62,7 +62,7 @@ def _assert_redacted(response):
 
 def test_tx_status_redacts_internal_exception_details(monkeypatch):
     with _client_for_exploding_pool(monkeypatch) as client:
-        _assert_redacted(client.get("/tx/status/hash_1", headers=_admin_headers()))
+        _assert_redacted(client.get("/tx/status/hash_1"))
 
 
 def test_tx_pending_redacts_internal_exception_details(monkeypatch):
@@ -72,12 +72,12 @@ def test_tx_pending_redacts_internal_exception_details(monkeypatch):
 
 def test_wallet_balance_redacts_internal_exception_details(monkeypatch):
     with _client_for_exploding_pool(monkeypatch) as client:
-        _assert_redacted(client.get("/wallet/alice/balance", headers=_admin_headers()))
+        _assert_redacted(client.get("/wallet/alice/balance"))
 
 
 def test_wallet_nonce_redacts_internal_exception_details(monkeypatch):
     with _client_for_exploding_pool(monkeypatch) as client:
-        _assert_redacted(client.get("/wallet/alice/nonce", headers=_admin_headers()))
+        _assert_redacted(client.get("/wallet/alice/nonce"))
 
 
 def test_wallet_history_redacts_internal_exception_details(monkeypatch):
@@ -89,4 +89,4 @@ def test_wallet_history_redacts_internal_exception_details(monkeypatch):
     monkeypatch.setattr(tx_handler.sqlite3, "connect", raise_connect_error)
 
     with _client_for_exploding_pool(monkeypatch) as client:
-        _assert_redacted(client.get("/wallet/alice/history", headers=_admin_headers()))
+        _assert_redacted(client.get("/wallet/alice/history"))

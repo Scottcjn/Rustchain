@@ -10,7 +10,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 integrated_node = sys.modules["integrated_node"]
-ADMIN_KEY = "0123456789abcdef0123456789abcdef"
 
 
 @contextmanager
@@ -49,10 +48,6 @@ def _proposal_payload(pub_hex: str, title: str, description: str, nonce: str):
     }
 
 
-def _admin_headers():
-    return {"X-Admin-Key": ADMIN_KEY}
-
-
 def test_governance_propose_requires_gt_10_rtc_balance():
     with _temporary_directory() as td:
         db_path = str(Path(td) / "gov.db")
@@ -84,24 +79,19 @@ def test_governance_propose_rejects_non_object_json():
     assert resp.get_json()["error"] == "JSON object required"
 
 
-def test_governance_vote_rejects_non_object_json(monkeypatch):
-    monkeypatch.setenv("RC_ADMIN_KEY", ADMIN_KEY)
-    monkeypatch.setattr(integrated_node, "ADMIN_KEY", ADMIN_KEY)
+def test_governance_vote_rejects_non_object_json():
     integrated_node.app.config["TESTING"] = True
     with integrated_node.app.test_client() as client:
         resp = client.post(
             "/governance/vote",
             json=["not", "an", "object"],
-            headers=_admin_headers(),
         )
 
     assert resp.status_code == 400
     assert resp.get_json()["error"] == "JSON object required"
 
 
-def test_governance_vote_rejects_invalid_proposal_id(monkeypatch):
-    monkeypatch.setenv("RC_ADMIN_KEY", ADMIN_KEY)
-    monkeypatch.setattr(integrated_node, "ADMIN_KEY", ADMIN_KEY)
+def test_governance_vote_rejects_invalid_proposal_id():
     integrated_node.app.config["TESTING"] = True
     with integrated_node.app.test_client() as client:
         resp = client.post(
@@ -114,7 +104,6 @@ def test_governance_vote_rejects_invalid_proposal_id(monkeypatch):
                 "signature": "ab",
                 "public_key": "11" * 32,
             },
-            headers=_admin_headers(),
         )
 
     assert resp.status_code == 400
@@ -123,10 +112,8 @@ def test_governance_vote_rejects_invalid_proposal_id(monkeypatch):
     )
 
 
-def test_governance_vote_flow_and_lifecycle_finalization(monkeypatch):
+def test_governance_vote_flow_and_lifecycle_finalization():
     with _temporary_directory() as td:
-        monkeypatch.setenv("RC_ADMIN_KEY", ADMIN_KEY)
-        monkeypatch.setattr(integrated_node, "ADMIN_KEY", ADMIN_KEY)
         db_path = str(Path(td) / "gov.db")
         integrated_node.DB_PATH = db_path
         integrated_node.app.config["DB_PATH"] = db_path
@@ -185,7 +172,6 @@ def test_governance_vote_flow_and_lifecycle_finalization(monkeypatch):
                         "public_key": pub_hex,
                         "signature": "ab" * 64,
                     },
-                    headers=_admin_headers(),
                 )
             assert r2.status_code == 200
             body = r2.get_json()

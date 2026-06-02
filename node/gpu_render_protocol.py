@@ -598,9 +598,6 @@ def register_routes(app):
 
     @app.route("/gpu/nodes", methods=["GET"])
     def gpu_nodes():
-        err, status = _admin_key_required()
-        if err is not None:
-            return jsonify(err), status
         job_type = request.args.get("job_type")
         device_arch = request.args.get("device_arch")
         nodes = protocol.list_gpu_nodes(job_type, device_arch)

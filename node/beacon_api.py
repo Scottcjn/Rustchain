@@ -581,13 +581,6 @@ def beacon_atlas():
 @beacon_api.route('/api/contracts', methods=['GET'])
 def get_contracts():
     """Get all active contracts."""
-    # SECURITY: Require admin key — exposes all beacon contracts, agent IDs, contract terms
-    admin_key = os.environ.get("RC_ADMIN_KEY", "")
-    if not admin_key:
-        return jsonify({'error': 'RC_ADMIN_KEY not configured'}), 503
-    provided_key = request.headers.get("X-Admin-Key", "")
-    if not hmac.compare_digest(provided_key, admin_key):
-        return jsonify({'error': 'Unauthorized'}), 401
     try:
         db = get_db()
         rows = db.execute(
@@ -810,13 +803,6 @@ def update_contract(contract_id):
 @beacon_api.route('/api/bounties', methods=['GET'])
 def get_bounties():
     """Get all active bounties (from cache or DB)."""
-    # SECURITY: Require admin key — exposes all beacon bounties with reward amounts and agent info
-    admin_key = os.environ.get("RC_ADMIN_KEY", "")
-    if not admin_key:
-        return jsonify({'error': 'RC_ADMIN_KEY not configured'}), 503
-    provided_key = request.headers.get("X-Admin-Key", "")
-    if not hmac.compare_digest(provided_key, admin_key):
-        return jsonify({'error': 'Unauthorized'}), 401
     try:
         db = get_db()
         rows = db.execute(
@@ -1069,13 +1055,6 @@ def complete_bounty(bounty_id):
 @beacon_api.route('/api/reputation', methods=['GET'])
 def get_reputation():
     """Get all agent reputations."""
-    # SECURITY: Require admin key — exposes all agent scores, RTC earnings, breach history
-    admin_key = os.environ.get("RC_ADMIN_KEY", "")
-    if not admin_key:
-        return jsonify({'error': 'RC_ADMIN_KEY not configured'}), 503
-    provided_key = request.headers.get("X-Admin-Key", "")
-    if not hmac.compare_digest(provided_key, admin_key):
-        return jsonify({'error': 'Unauthorized'}), 401
     try:
         db = get_db()
         rows = db.execute("SELECT * FROM beacon_reputation ORDER BY score DESC").fetchall()
@@ -1099,13 +1078,6 @@ def get_reputation():
 @beacon_api.route('/api/reputation/<agent_id>', methods=['GET'])
 def get_agent_reputation(agent_id):
     """Get single agent reputation."""
-    # SECURITY: Require admin key — exposes agent score, RTC earnings, breach count
-    admin_key = os.environ.get("RC_ADMIN_KEY", "")
-    if not admin_key:
-        return jsonify({'error': 'RC_ADMIN_KEY not configured'}), 503
-    provided_key = request.headers.get("X-Admin-Key", "")
-    if not hmac.compare_digest(provided_key, admin_key):
-        return jsonify({'error': 'Unauthorized'}), 401
     try:
         db = get_db()
         row = db.execute("SELECT * FROM beacon_reputation WHERE agent_id = ?", (agent_id,)).fetchone()

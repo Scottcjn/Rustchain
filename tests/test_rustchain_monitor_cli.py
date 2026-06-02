@@ -148,6 +148,31 @@ def test_print_miners_renders_paginated_api_envelope(capsys):
     assert "Unexpected response" not in output
 
 
+def test_miners_cli_smoke_renders_paginated_api_envelope(capsys):
+    module = load_module()
+
+    with patch.object(sys, "argv", ["rustchain-monitor", "--miners"]), patch.object(
+        module,
+        "get_miners",
+        return_value={
+            "miners": [
+                {
+                    "miner": "smoke-miner",
+                    "hardware_type": "ARM",
+                    "antiquity_multiplier": 1.0,
+                    "last_attest": 0,
+                }
+            ],
+            "pagination": {"page": 1, "total": 1},
+        },
+    ):
+        module.main()
+
+    output = capsys.readouterr().out
+    assert "Active miners: 1" in output
+    assert "smoke-miner" in output
+
+
 def test_print_epoch_renders_success_and_error(capsys):
     module = load_module()
 
