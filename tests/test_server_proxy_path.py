@@ -92,8 +92,9 @@ def test_proxy_keeps_safe_requests_under_api(monkeypatch):
         text = "ok"
         headers = {"Content-Type": "text/plain"}
 
-    def fake_get(url, timeout):
+    def fake_get(url, headers, timeout):
         captured["url"] = url
+        captured["headers"] = headers
         captured["timeout"] = timeout
         return FakeResponse()
 
@@ -103,7 +104,11 @@ def test_proxy_keeps_safe_requests_under_api(monkeypatch):
 
     assert response.status_code == 200
     assert response.get_data(as_text=True) == "ok"
-    assert captured == {"url": "http://localhost:8088/api/stats", "timeout": 10}
+    assert captured == {
+        "url": "http://localhost:8088/api/stats",
+        "headers": {},
+        "timeout": 10,
+    }
 
 
 def test_proxy_forwards_allowed_post_json(monkeypatch):
@@ -164,7 +169,7 @@ def test_proxy_rejects_post_without_json_object_before_upstream(monkeypatch):
 def test_proxy_hides_upstream_exception_details(monkeypatch):
     proxy = load_server_proxy()
 
-    def fake_get(url, timeout):
+    def fake_get(url, headers, timeout):
         raise RuntimeError(
             "connect failed to http://127.0.0.1:8088/api/miners "
             "token=secret path=/srv/rustchain/private.db"
@@ -190,7 +195,7 @@ def test_proxy_hides_upstream_error_response_details(monkeypatch):
         text = "trace token=super-secret path=/srv/rustchain/private.db host=127.0.0.1"
         headers = {"Content-Type": "text/html"}
 
-    def fake_get(url, timeout):
+    def fake_get(url, headers, timeout):
         return FakeResponse()
 
     monkeypatch.setattr(proxy.requests, "get", fake_get)
@@ -215,7 +220,7 @@ def test_proxy_hides_invalid_json_response_details(monkeypatch):
         def json(self):
             raise ValueError("invalid json")
 
-    def fake_get(url, timeout):
+    def fake_get(url, headers, timeout):
         return FakeResponse()
 
     monkeypatch.setattr(proxy.requests, "get", fake_get)
@@ -236,7 +241,7 @@ def test_proxy_hides_non_json_client_error_details(monkeypatch):
         text = "not found token=super-secret path=/srv/rustchain/private.db"
         headers = {"Content-Type": "text/html"}
 
-    def fake_get(url, timeout):
+    def fake_get(url, headers, timeout):
         return FakeResponse()
 
     monkeypatch.setattr(proxy.requests, "get", fake_get)
