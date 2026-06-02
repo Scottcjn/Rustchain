@@ -132,7 +132,7 @@ def count_user_stars(
 def check_wallet_exists(wallet_address: str) -> bool:
     """Verify that a wallet address exists on the RustChain node."""
     try:
-        url = f"{RUSTCHAIN_NODE_URL}/api/balance/{wallet_address}"
+        url = f"{RUSTCHAIN_NODE_URL}/wallet/balance?miner_id={wallet_address}"
         import os
         _cert = os.path.expanduser("~/.rustchain/node_cert.pem")
         _verify = _cert if os.path.exists(_cert) else True
