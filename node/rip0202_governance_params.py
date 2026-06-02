@@ -12,7 +12,8 @@ This module is the READ-ONLY / DORMANT first slice: the table + a typed
 ``get_param`` over a built-in DEFAULT registry. It does NOT yet wire vote-driven
 execution (A1/A2) — values are only seedable via ``set_param`` (admin migration).
 That keeps it purely additive (no consensus change) while giving step A a real
-substrate to wire ``get_param("rip0202_activation_epoch")`` against.
+substrate to wire ``get_param_as_of("rip0202_activation_epoch", current_epoch)``
+against (the epoch-aware, consensus-safe reader -- never the bare ``get_param``).
 
 Determinism contract:
   * The DEFAULT registry ships in the binary -> identical on every node, so an
@@ -125,9 +126,12 @@ def _read_value(conn: sqlite3.Connection, name: str, suffix: str, params: tuple)
 def get_param(conn: sqlite3.Connection, name: str) -> Any:
     """Latest value of a registered param (greatest set_at_epoch), or its default.
 
-    For replay/reorg-correct reads keyed to a specific chain height, use
-    ``get_param_as_of`` — this returns the most recently set value regardless of
-    epoch (suitable for "current" reads in the dormant/admin path).
+    WARNING -- NOT consensus-safe. This returns the row with the greatest
+    ``set_at_epoch`` regardless of the current chain height, so a value seeded
+    with a FUTURE ``set_at_epoch`` (scheduled activation) is returned *before*
+    it takes effect. Consensus / block-replay / producer-gate reads MUST use
+    ``get_param_as_of(conn, name, current_epoch)``. Use this only for the
+    dormant/admin "current latest" path.
     """
     return _read_value(conn, name, "ORDER BY set_at_epoch DESC LIMIT 1", ())
 
@@ -157,10 +161,12 @@ def set_param(
     """Append a registered param value EFFECTIVE AT ``set_at_epoch`` (history-keyed).
 
     History-keyed (PK name,set_at_epoch): a new set_at_epoch APPENDS a row (prior
-    values are retained for replay); re-setting the same (name,set_at_epoch)
-    replaces it (idempotent re-seed). Validates name + declared type + bounds
-    (fail closed). ``set_at_epoch`` is the chain-derived epoch the value takes
-    effect — provenance for determinism, never wall-clock.
+    values are retained for replay); re-setting the same (name,set_at_epoch) with
+    an IDENTICAL value+proposal_id is an idempotent no-op, while a CONFLICTING
+    re-seed fails closed (history is append-only -- no substitution). Validates
+    name + declared type + bounds (fail closed). ``set_at_epoch`` is the
+    chain-derived epoch the value takes effect — provenance for determinism,
+    never wall-clock.
     """
     typ = _spec(name)["type"]
     if value is None:
@@ -172,8 +178,26 @@ def set_param(
     _enforce_bounds(name, value)  # reject e.g. threshold 0/negative, activation epoch < 0
     if isinstance(set_at_epoch, bool) or not isinstance(set_at_epoch, int) or set_at_epoch < 0:
         raise GovernanceParamError("set_at_epoch must be a non-negative int")
+    # History-keyed integrity: a same-(name, set_at_epoch) re-seed must be
+    # idempotent, never a substitution. Rewriting an existing historical row's
+    # value or proposal_id would let governance history be altered under
+    # replay/audit -> consensus history substitution. Accept an identical
+    # re-seed (no-op); fail closed on any conflicting overwrite.
+    existing = conn.execute(
+        "SELECT value, proposal_id FROM governance_params "
+        "WHERE name = ? AND set_at_epoch = ?",
+        (name, set_at_epoch),
+    ).fetchone()
+    if existing is not None:
+        if (existing[0], existing[1]) != (str(value), proposal_id):
+            raise GovernanceParamError(
+                f"param {name!r} at epoch {set_at_epoch} already set to a "
+                f"different value/proposal; history is append-only "
+                f"(no substitution)"
+            )
+        return  # identical re-seed -> idempotent no-op
     conn.execute(
-        "INSERT OR REPLACE INTO governance_params (name, value, set_at_epoch, proposal_id) "
+        "INSERT INTO governance_params (name, value, set_at_epoch, proposal_id) "
         "VALUES (?,?,?,?)",
         (name, str(value), set_at_epoch, proposal_id),
     )

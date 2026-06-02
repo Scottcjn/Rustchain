@@ -88,10 +88,22 @@ def test_history_keyed_get_param_latest(conn):
     assert conn.execute("SELECT COUNT(*) FROM governance_params").fetchone()[0] == 2  # history retained
 
 
-def test_same_epoch_reseed_replaces(conn):
+def test_same_epoch_reseed_is_idempotent(conn):
+    """Identical re-seed of the same (name, set_at_epoch) is a no-op (no dup row)."""
     gp.set_param(conn, "rip0202_activation_epoch", 100, set_at_epoch=5)
-    gp.set_param(conn, "rip0202_activation_epoch", 150, set_at_epoch=5)  # same epoch -> replace
-    assert gp.get_param(conn, "rip0202_activation_epoch") == 150
+    gp.set_param(conn, "rip0202_activation_epoch", 100, set_at_epoch=5)  # identical -> no-op
+    assert gp.get_param(conn, "rip0202_activation_epoch") == 100
+    assert conn.execute("SELECT COUNT(*) FROM governance_params").fetchone()[0] == 1
+
+
+def test_same_epoch_reseed_conflict_fails_closed(conn):
+    """A conflicting re-seed at the same epoch must raise -- history is
+    append-only, no substitution (consensus-history integrity)."""
+    gp.set_param(conn, "rip0202_activation_epoch", 100, set_at_epoch=5)
+    with pytest.raises(gp.GovernanceParamError):
+        gp.set_param(conn, "rip0202_activation_epoch", 150, set_at_epoch=5)
+    # original value + single row preserved
+    assert gp.get_param(conn, "rip0202_activation_epoch") == 100
     assert conn.execute("SELECT COUNT(*) FROM governance_params").fetchone()[0] == 1
 
 
