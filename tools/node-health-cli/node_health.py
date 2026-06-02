@@ -92,7 +92,10 @@ def fetch_json(url: str, timeout: int = DEFAULT_TIMEOUT) -> Dict[str, Any]:
             req = Request(url, headers={"Accept": "application/json"})
             with urlopen(req, timeout=timeout) as response:
                 payload = response.read().decode("utf-8")
-            return json.loads(payload)
+            data = json.loads(payload)
+            if not isinstance(data, dict):
+                raise ValueError("JSON response must be an object")
+            return data
         except HTTPError as e:
             last_error = f"HTTP {e.code}: {e.reason}"
             time.sleep(DEFAULT_RETRY_DELAY)
@@ -101,6 +104,9 @@ def fetch_json(url: str, timeout: int = DEFAULT_TIMEOUT) -> Dict[str, Any]:
             time.sleep(DEFAULT_RETRY_DELAY)
         except json.JSONDecodeError as e:
             last_error = f"JSON parse error: {e}"
+            break
+        except ValueError as e:
+            last_error = str(e)
             break
         except Exception as e:
             last_error = f"Unexpected error: {e}"

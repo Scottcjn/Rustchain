@@ -28,7 +28,7 @@ dependencies = [
 mcp = ["mcp>=1.0.0"]
 dev = [
     "mcp>=1.0.0",
-    "pytest>=7.0.0",
+    "pytest>=9.0.3",
     "pytest-asyncio>=0.21.0",
     "ruff>=0.1.0",
 ]

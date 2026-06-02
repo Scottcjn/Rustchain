@@ -2,7 +2,7 @@
 
 # 🧱 RustChain: Proof-of-Antiquity Blockchain
 
-[![Lizenz](https://img.shields.io/badge/Lizenz-MIT-blue.svg)](LICENSE)
+[![Lizenz](https://img.shields.io/badge/Lizenz-Apache_2.0-blue.svg)](LICENSE)
 [![PowerPC](https://img.shields.io/badge/PowerPC-G3%2FG4%2FG5-orange)](https://github.com/Scottcjn/Rustchain)
 [![Blockchain](https://img.shields.io/badge/Konsens-Proof--of--Antiquity-green)](https://github.com/Scottcjn/Rustchain)
 [![Python](https://img.shields.io/badge/Python-3.x-yellow)](https://python.org)
@@ -46,20 +46,14 @@ Der RustChain Token (RTC) ist jetzt als **wRTC** auf Solana über die BoTTube Br
 ## ⚡ Schnellstart
 
 ```bash
-# 1. Repo klonen
-git clone https://github.com/Scottcjn/Rustchain.git && cd Rustchain
+# 1. Miner mit dem aktuellen Installer einrichten
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash
 
-# 2. Python-Umgebung aufsetzen (Linux/macOS)
-python3 -m venv venv && source venv/bin/activate
+# 2. Optional zuerst einen Testlauf ausführen
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --dry-run
 
-# 3. Abhängigkeiten installieren
-pip install -r requirements.txt
-
-# 4. Wallet erstellen
-python3 -c "from rustchain.wallet import Wallet; w = Wallet.create('meine_wallet.json'); print(w.address)"
-
-# 5. Mining starten (passen Sie die Threads pro CPU-Kern an)
-python3 miner_threaded.py --threads 4 --wallet meine_wallet.json
+# 3. Mit einem eigenen Walletnamen starten
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --wallet mein-wallet
 ```
 
 **Hardware-Anforderungen:**
@@ -123,7 +117,7 @@ Belohnungsfaktor = f(Produktionsdatum, Nachweis der Nutzung)
 
 ## 📜 Lizenz
 
-MIT Lizenz – siehe [LICENSE](LICENSE)
+Apache License 2.0 – siehe [LICENSE](LICENSE)
 
 ---
 

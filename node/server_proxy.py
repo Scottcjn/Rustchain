@@ -6,13 +6,30 @@ Allows G4 to connect via different port
 
 from flask import Flask, request, jsonify
 import requests
-import json
 from urllib.parse import quote
 
 app = Flask(__name__)
 
 # Local server on same machine
 LOCAL_SERVER = "http://localhost:8088"
+ALLOWED_API_METHODS = {
+    "register": {"POST"},
+    "mine": {"POST"},
+    "stats": {"GET"},
+}
+
+
+def _generic_upstream_error(response, reason):
+    """Hide upstream failure details from public proxy clients."""
+    app.logger.warning(
+        "RustChain proxy upstream %s: status=%s content_type=%r body=%r",
+        reason,
+        getattr(response, "status_code", None),
+        getattr(response, "headers", {}).get("Content-Type", ""),
+        getattr(response, "text", "")[:1000],
+    )
+    return jsonify({'error': 'Local server unavailable'}), 502
+
 
 def _build_local_api_url(path):
     """Return a local /api URL without allowing dot-segment escapes."""
@@ -22,44 +39,73 @@ def _build_local_api_url(path):
     safe_path = "/".join(quote(part, safe="") for part in parts)
     return f"{LOCAL_SERVER}/api/{safe_path}"
 
+
+def _is_allowed_api_request(path, method):
+    """Return whether the public proxy should forward this API request."""
+    allowed_methods = ALLOWED_API_METHODS.get(path)
+    return bool(allowed_methods and method in allowed_methods)
+
 @app.route('/api/<path:path>', methods=['GET', 'POST'])
 def proxy(path):
-    """Forward all API requests to local server"""
+    """Forward only the public G4/miner API routes to the local server."""
     url = _build_local_api_url(path)
     if not url:
         return jsonify({'error': 'Invalid API path'}), 400
+    if not _is_allowed_api_request(path, request.method):
+        return jsonify({'error': 'API path not allowed'}), 403
 
     try:
+        # SECURITY: Forward auth and identity headers to preserve admin checks
+        # on the backend. Without these, requests through the proxy bypass
+        # admin authentication on all protected endpoints.
+        SAFE_HEADERS = (
+            'content-type', 'accept', 'authorization',
+            'x-admin-key', 'x-api-key', 'x-agent-id', 'x-agent-key',
+            'x-agent-signature', 'x-agent-pubkey', 'x-agent-timestamp',
+            'x-agent-nonce',
+        )
+        forward_headers = {
+            k: v for k, v in request.headers.items()
+            if k.lower() in SAFE_HEADERS
+        }
+
         if request.method == 'POST':
+            payload = request.get_json(silent=True)
+            if not isinstance(payload, dict):
+                return jsonify({'error': 'JSON object required'}), 400
             # Forward POST requests with JSON data
-            headers = {'Content-Type': 'application/json'}
             response = requests.post(
                 url,
-                json=request.json,
-                headers=headers,
+                json=payload,
+                headers=forward_headers,
                 timeout=10
             )
         else:
-            # Forward GET requests
-            response = requests.get(url, timeout=10)
+            # Forward GET requests with auth headers
+            response = requests.get(url, headers=forward_headers, timeout=10)
 
         # Return the response from local server
+        if response.status_code >= 500:
+            return _generic_upstream_error(response, "error response")
+
         # Safely handle non-JSON responses from upstream
         content_type = response.headers.get('Content-Type', '')
         if 'application/json' in content_type:
             try:
                 return response.json(), response.status_code
-            except (ValueError, Exception):
-                # JSON parse failed, fall back to text
-                return response.text, response.status_code
-        else:
-            # Non-JSON response (e.g., HTML error page), return as-is with text
-            return response.text, response.status_code
+            except ValueError:
+                return _generic_upstream_error(response, "invalid json")
+        if response.status_code >= 400:
+            return _generic_upstream_error(response, "non-json error response")
+
+        # Successful non-JSON response (for example, plain health text).
+        return response.text, response.status_code
 
     except requests.exceptions.Timeout:
         return jsonify({'error': 'Local server timeout'}), 504
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        app.logger.exception("RustChain proxy upstream request failed")
+        return jsonify({'error': 'Local server unavailable'}), 502
 
 @app.route('/status')
 def status():
@@ -78,7 +124,7 @@ def home():
     })
 
 if __name__ == '__main__':
-    print(f"Starting RustChain proxy on port 8089...")
+    print("Starting RustChain proxy on port 8089...")
     print(f"Forwarding to: {LOCAL_SERVER}")
-    print(f"G4 can connect to: https://rustchain.org:8089")
+    print("G4 can connect to: https://rustchain.org:8089")
     app.run(host='0.0.0.0', port=8089, debug=False)

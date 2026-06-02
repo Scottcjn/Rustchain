@@ -15,7 +15,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from relic_market_api import (
-    VintageMachine, Reservation, ProvenanceReceipt,
+    VintageMachine,
     MachineRegistry, EscrowManager, ReceiptSigner,
     ReservationManager, MCPIntegration, BeaconIntegration,
     AccessDuration, ReservationStatus, app
@@ -527,6 +527,48 @@ class TestAPIEndpoints(unittest.TestCase):
         )
         
         self.assertEqual(response.status_code, 400)
+
+    def test_reserve_machine_rejects_structured_identity_fields(self):
+        base_payload = {
+            "machine_id": "vm-001",
+            "agent_id": "api-agent",
+            "duration_hours": 1,
+            "payment_rtc": 50.0
+        }
+
+        for field in ("machine_id", "agent_id"):
+            with self.subTest(field=field):
+                payload = dict(base_payload)
+                payload[field] = ["not", "a", "string"]
+
+                response = self.client.post(
+                    '/relic/reserve',
+                    json=payload,
+                    content_type='application/json'
+                )
+
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(
+                    response.get_json()["error"],
+                    f"{field} must be a non-empty string",
+                )
+
+    def test_reserve_machine_rejects_invalid_payment_type(self):
+        payload = {
+            "machine_id": "vm-001",
+            "agent_id": "api-agent",
+            "duration_hours": 1,
+            "payment_rtc": "50.0"
+        }
+
+        response = self.client.post(
+            '/relic/reserve',
+            json=payload,
+            content_type='application/json'
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["error"], "payment_rtc must be a positive number")
     
     def test_get_reservation(self):
         # Create reservation first

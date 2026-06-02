@@ -7,7 +7,7 @@ from Python data structures. This module can be used standalone or
 as part of the rustchain_exporter.
 
 The Prometheus text exposition format is documented at:
-https://github.com/prometheus/docs/blob/main/content/docs/instrumenting/exposition_formats.md
+https://prometheus.io/docs/instrumenting/exposition_formats/
 """
 
 import re

@@ -6,6 +6,7 @@
 const CACHE_NAME = 'rustchain-explorer-v1';
 const API_CACHE_NAME = 'rustchain-api-v1';
 const CACHE_DURATION = 10 * 1000; // 10 seconds for API
+const CACHE_PREFIX = 'rustchain-';
 
 // Assets to cache on install
 const STATIC_ASSETS = [
@@ -15,6 +16,18 @@ const STATIC_ASSETS = [
     '/static/css/explorer.css',
     '/static/js/explorer.js'
 ];
+
+function isRustChainCache(name) {
+    return typeof name === 'string' && name.startsWith(CACHE_PREFIX);
+}
+
+function isCurrentCache(name) {
+    return name === CACHE_NAME || name === API_CACHE_NAME;
+}
+
+function isCacheableResponse(response) {
+    return response && response.ok && (response.type === 'basic' || response.type === 'cors');
+}
 
 // Install event - cache static assets
 self.addEventListener('install', (event) => {
@@ -44,7 +57,7 @@ self.addEventListener('activate', (event) => {
                 return Promise.all(
                     cacheNames
                         .filter((name) => {
-                            return name !== CACHE_NAME && name !== API_CACHE_NAME;
+                            return isRustChainCache(name) && !isCurrentCache(name);
                         })
                         .map((name) => {
                             console.log('[SW] Deleting old cache:', name);
@@ -78,6 +91,10 @@ self.addEventListener('fetch', (event) => {
         event.respondWith(
             fetch(request)
                 .then((response) => {
+                    if (!isCacheableResponse(response)) {
+                        return response;
+                    }
+
                     // Clone response for caching
                     const responseClone = response.clone();
                     caches.open(API_CACHE_NAME).then((cache) => {
@@ -137,7 +154,7 @@ self.addEventListener('fetch', (event) => {
                     })
                     .catch(() => {
                         // Offline fallback for HTML
-                        if (request.headers.get('accept').includes('text/html')) {
+                        if ((request.headers.get('accept') || '').includes('text/html')) {
                             return caches.match('/explorer/index.html');
                         }
                     });
@@ -157,7 +174,9 @@ self.addEventListener('message', (event) => {
         event.waitUntil(
             caches.keys().then((cacheNames) => {
                 return Promise.all(
-                    cacheNames.map((name) => caches.delete(name))
+                    cacheNames
+                        .filter(isRustChainCache)
+                        .map((name) => caches.delete(name))
                 );
             })
         );

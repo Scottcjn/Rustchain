@@ -16,8 +16,19 @@ import statistics
 import uuid
 import subprocess
 import re
-import tkinter as tk
-from tkinter import ttk, messagebox, scrolledtext
+import argparse
+try:
+    import tkinter as tk
+    from tkinter import ttk, messagebox, scrolledtext
+    TK_AVAILABLE = True
+    _TK_IMPORT_ERROR = ""
+except Exception as e:
+    TK_AVAILABLE = False
+    _TK_IMPORT_ERROR = str(e)
+    tk = None
+    ttk = None
+    messagebox = None
+    scrolledtext = None
 import requests
 # urllib3.disable_warnings no longer needed — TLS verification enabled
 from datetime import datetime
@@ -320,6 +331,7 @@ class RustChainMiner:
         self.enrolled = False
         self.hw_info = self._get_hw_info()
         self.last_entropy = {}
+        self.last_attestation_error = ""
         self.fingerprint_data = None
         self._run_fingerprint_checks()
 
@@ -389,7 +401,10 @@ class RustChainMiner:
         if now >= self.attestation_valid_until - 60:
             if not self.attest():
                 if callback:
-                    callback({"type": "error", "message": "Attestation failed"})
+                    message = "Attestation failed"
+                    if self.last_attestation_error:
+                        message = f"{message}: {self.last_attestation_error}"
+                    callback({"type": "error", "message": message})
                 return False
 
         if (now - self.last_enroll) > 3600 or not self.enrolled:
@@ -463,9 +478,26 @@ class RustChainMiner:
     def attest(self):
         """Perform hardware attestation for PoA."""
         try:
-            challenge = requests.post(f"{self.node_url}/attest/challenge", json={}, timeout=10, verify=TLS_VERIFY).json()
-            nonce = challenge.get("nonce")
-        except Exception:
+            challenge_resp = requests.post(
+                f"{self.node_url}/attest/challenge",
+                json={},
+                timeout=10,
+                verify=TLS_VERIFY,
+            )
+            if challenge_resp.status_code != 200:
+                self.last_attestation_error = (
+                    f"challenge rejected: {self._response_diagnostic(challenge_resp)}"
+                )
+                return False
+            challenge = challenge_resp.json()
+            nonce = challenge.get("nonce") if isinstance(challenge, dict) else None
+            if not nonce:
+                self.last_attestation_error = (
+                    f"challenge rejected: {self._response_diagnostic(challenge_resp)}"
+                )
+                return False
+        except Exception as e:
+            self.last_attestation_error = f"challenge request failed: {e}"
             return False
 
         entropy = self._collect_entropy()
@@ -503,12 +535,32 @@ class RustChainMiner:
                                  timeout=30, verify=TLS_VERIFY)
             if resp.status_code == 200 and resp.json().get("ok"):
                 self.attestation_valid_until = time.time() + 580
+                self.last_attestation_error = ""
                 return True
-            else:
-                print(f"[ATTEST] Server response: {resp.status_code} {resp.text[:200]}")
+            self.last_attestation_error = f"submit rejected: {self._response_diagnostic(resp)}"
         except Exception as e:
-            print(f"[ATTEST] Error: {e}")
+            self.last_attestation_error = f"submit request failed: {e}"
         return False
+
+    def _response_diagnostic(self, resp):
+        """Return a compact HTTP failure description for operator logs."""
+        parts = [f"HTTP {getattr(resp, 'status_code', 'unknown')}"]
+        try:
+            payload = resp.json()
+        except Exception:
+            payload = None
+
+        if isinstance(payload, dict):
+            for key in ("code", "error", "message"):
+                value = payload.get(key)
+                if value:
+                    parts.append(f"{key}={value}")
+        else:
+            text = (getattr(resp, "text", "") or "").strip()
+            if text:
+                parts.append(f"body={text[:240]}")
+
+        return " ".join(parts)
 
     def enroll(self):
         """Enroll the miner into the current epoch after attesting."""
@@ -567,6 +619,8 @@ class RustChainMiner:
 class RustChainGUI:
     """Windows GUI for RustChain"""
     def __init__(self):
+        if not TK_AVAILABLE:
+            raise RuntimeError(f"tkinter is not available: {_TK_IMPORT_ERROR}")
         self.root = tk.Tk()
         self.root.title("RustChain Wallet & Miner for Windows")
         self.root.geometry("800x600")
@@ -667,10 +721,64 @@ class RustChainGUI:
         """Run the GUI"""
         self.root.mainloop()
 
-def main():
+def run_headless(wallet_address: str, node_url: str) -> int:
+    wallet = RustChainWallet()
+    active_wallet = wallet_address or wallet.wallet_data["address"]
+    miner = RustChainMiner(active_wallet)
+    miner.node_url = node_url
+
+    def cb(evt):
+        if evt.get("type") == "share":
+            ok = "OK" if evt.get("success") else "FAIL"
+            print(
+                f"[share] submitted={evt.get('submitted')} "
+                f"accepted={evt.get('accepted')} {ok}",
+                flush=True,
+            )
+        elif evt.get("type") == "error":
+            print(f"[error] {evt.get('message')}", file=sys.stderr, flush=True)
+
+    print("RustChain Windows miner: headless mode", flush=True)
+    print(f"node={miner.node_url} miner_id={miner.miner_id}", flush=True)
+    miner.start_mining(cb)
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        miner.stop_mining()
+        print("\nStopping miner.", flush=True)
+        return 0
+
+
+def main(argv=None):
     """Main entry point"""
+    ap = argparse.ArgumentParser(
+        description="RustChain Windows wallet + miner (GUI or headless fallback)."
+    )
+    ap.add_argument(
+        "--headless",
+        action="store_true",
+        help="Run without GUI when Tcl/Tk is unavailable.",
+    )
+    ap.add_argument("--node", default=RUSTCHAIN_API, help="RustChain node base URL.")
+    ap.add_argument("--wallet", default="", help="Wallet address / miner pubkey string.")
+    args = ap.parse_args(argv)
+
+    if args.headless or not TK_AVAILABLE:
+        if not TK_AVAILABLE and not args.headless:
+            print(
+                f"tkinter unavailable ({_TK_IMPORT_ERROR}); falling back to --headless.",
+                file=sys.stderr,
+            )
+        return run_headless(args.wallet, args.node)
+
     app = RustChainGUI()
+    app.miner.node_url = args.node
+    if args.wallet:
+        app.miner.wallet_address = args.wallet
+        app.miner.miner_id = f"windows_{hashlib.md5(args.wallet.encode()).hexdigest()[:8]}"
     app.run()
+    return 0
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

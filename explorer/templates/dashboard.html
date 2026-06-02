@@ -302,9 +302,10 @@
             fetch('/api/dashboard-data')
                 .then(response => response.json())
                 .then(data => {
-                    updateNetworkStats(data.network_stats);
-                    updateRecentBlocks(data.recent_blocks);
-                    updateMiners(data.miners);
+                    const payload = asObject(data);
+                    updateNetworkStats(payload.network_stats);
+                    updateRecentBlocks(payload.recent_blocks);
+                    updateMiners(payload.miners);
                     document.getElementById('refresh-icon').classList.remove('fa-spin');
                 })
                 .catch(error => {
@@ -314,10 +315,24 @@
         }
         
         function updateNetworkStats(stats) {
-            document.getElementById('block-height').textContent = stats.block_height;
-            document.getElementById('hash-rate').textContent = stats.hash_rate;
-            document.getElementById('active-miners').textContent = stats.active_miners;
-            document.getElementById('difficulty').textContent = stats.difficulty;
+            const safeStats = asObject(stats);
+            document.getElementById('block-height').textContent = displayText(safeStats.block_height);
+            document.getElementById('hash-rate').textContent = displayText(safeStats.hash_rate);
+            document.getElementById('active-miners').textContent = displayText(safeStats.active_miners);
+            document.getElementById('difficulty').textContent = displayText(safeStats.difficulty);
+        }
+
+        function asObject(value) {
+            return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+        }
+
+        function asArray(value) {
+            return Array.isArray(value) ? value.filter(item => item && typeof item === 'object') : [];
+        }
+
+        function displayText(value, fallback = '--') {
+            if (value === undefined || value === null || value === '') return fallback;
+            return String(value);
         }
 
         function escapeHtml(value) {
@@ -335,8 +350,13 @@
         }
         
         function updateRecentBlocks(blocks) {
+            const blockList = asArray(blocks);
             const tbody = document.getElementById('recent-blocks');
-            tbody.innerHTML = blocks.map(block => `
+            if (blockList.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-muted text-center">No recent blocks</td></tr>';
+                return;
+            }
+            tbody.innerHTML = blockList.map(block => `
                 <tr>
                     <td><a href="/block/${encodeURIComponent(String(block.hash || ''))}" class="text-decoration-none">${escapeHtml(block.height)}</a></td>
                     <td><code class="text-muted">${escapeHtml(String(block.hash || '').substring(0, 16))}...</code></td>
@@ -348,8 +368,13 @@
         }
         
         function updateMiners(miners) {
+            const minerList = asArray(miners);
             const tbody = document.getElementById('miners-tbody');
-            tbody.innerHTML = miners.map(miner => {
+            if (minerList.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-muted text-center">No miners found</td></tr>';
+                return;
+            }
+            tbody.innerHTML = minerList.map(miner => {
                 const architecture = String(miner.architecture || 'unknown');
                 const architectureLower = classToken(architecture);
                 const archIcon = miner.architecture === 'x86' ? 'microchip' : 

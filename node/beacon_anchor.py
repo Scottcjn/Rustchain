@@ -10,6 +10,7 @@ import hashlib
 import json
 import sqlite3
 import time
+from contextlib import closing
 from hashlib import blake2b
 
 try:
@@ -53,6 +54,18 @@ def _canonical_signing_payload(envelope: dict) -> bytes:
     ).encode("utf-8")
 
 
+def _invalid_text_fields(envelope: dict, fields: tuple[str, ...]) -> list[str]:
+    """Return required fields whose values are present but not non-empty strings."""
+    invalid = []
+    for field in fields:
+        value = envelope.get(field)
+        if value is None or value == "":
+            continue
+        if not isinstance(value, str):
+            invalid.append(field)
+    return invalid
+
+
 def _ensure_payload_hash_version_column(conn: sqlite3.Connection):
     """
     Preserve existing hashes as legacy version 1 and mark new hashes as version 2.
@@ -90,6 +103,9 @@ def verify_envelope_signature(envelope: dict) -> tuple[bool, str]:
     pubkey_hex = envelope.get("pubkey", "")
     agent_id = envelope.get("agent_id", "")
 
+    if _invalid_text_fields(envelope, ("sig", "pubkey", "agent_id")):
+        return False, "invalid_signature_fields"
+
     if not all([sig_hex, pubkey_hex, agent_id]):
         return False, "missing_signature_fields"
 
@@ -116,7 +132,7 @@ def verify_envelope_signature(envelope: dict) -> tuple[bool, str]:
 
 def init_beacon_table(db_path=DB_PATH):
     """Create beacon_envelopes table if it doesn't exist."""
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS beacon_envelopes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -158,6 +174,10 @@ def store_envelope(envelope: dict, db_path=DB_PATH) -> dict:
     nonce = envelope.get("nonce", "")
     sig = envelope.get("sig", "")
     pubkey = envelope.get("pubkey", "")
+
+    invalid_fields = _invalid_text_fields(envelope, REQUIRED_ENVELOPE_FIELDS)
+    if invalid_fields:
+        return {"ok": False, "error": f"invalid_field:{invalid_fields[0]}"}
 
     if not all(envelope.get(field, "") for field in REQUIRED_ENVELOPE_FIELDS):
         return {"ok": False, "error": "missing_fields"}
@@ -259,8 +279,23 @@ def mark_anchored(envelope_ids: list, db_path=DB_PATH):
         conn.commit()
 
 
+def normalize_beacon_pagination(limit=50, offset=0, max_limit=50):
+    """Clamp Beacon envelope pagination before values reach SQLite."""
+    try:
+        normalized_limit = int(limit)
+    except (TypeError, ValueError):
+        normalized_limit = max_limit
+    try:
+        normalized_offset = int(offset)
+    except (TypeError, ValueError):
+        normalized_offset = 0
+
+    return max(1, min(normalized_limit, max_limit)), max(0, normalized_offset)
+
+
 def get_recent_envelopes(limit=50, offset=0, db_path=DB_PATH) -> list:
     """Return recent envelopes, newest first."""
+    limit, offset = normalize_beacon_pagination(limit, offset)
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(

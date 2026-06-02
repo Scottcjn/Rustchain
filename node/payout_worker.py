@@ -59,6 +59,82 @@ class PayoutWorker:
 
             return withdrawals
 
+    def _record_broadcast_reconciliation_needed(
+        self,
+        withdrawal_id: str,
+        tx_hash: str,
+        error: str,
+    ) -> None:
+        """Keep broadcast withdrawals out of the refund path after DB failures."""
+        message = (
+            "Broadcast returned transaction hash but completion update failed; "
+            f"manual reconciliation required: {error}"
+        )
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute("""
+                    UPDATE withdrawals
+                    SET status = 'processing',
+                        tx_hash = ?,
+                        error_msg = ?
+                    WHERE withdrawal_id = ?
+                """, (tx_hash, message, withdrawal_id))
+        except Exception as record_error:
+            logger.error(
+                "Failed to record reconciliation state for %s (%s): %s",
+                withdrawal_id,
+                tx_hash,
+                record_error,
+            )
+
+    def lookup_withdrawal_status(self, tx_hash: str) -> Optional[bool]:
+        """Return True if tx is confirmed, False if known failed, None if unknown.
+
+        Production nodes should replace this hook with their chain lookup RPC.
+        Keeping the default as None preserves manual reconciliation semantics
+        without incorrectly marking broadcast withdrawals failed.
+        """
+        return None
+
+    def reconcile_broadcast_withdrawals(self):
+        """Resolve broadcast withdrawals that are waiting on chain reconciliation."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                rows = conn.execute("""
+                    SELECT withdrawal_id, tx_hash
+                    FROM withdrawals
+                    WHERE status = 'processing'
+                    AND tx_hash IS NOT NULL
+                    AND tx_hash != ''
+                """).fetchall()
+
+            for withdrawal_id, tx_hash in rows:
+                chain_status = self.lookup_withdrawal_status(tx_hash)
+                if chain_status is None:
+                    continue
+                with sqlite3.connect(self.db_path) as conn:
+                    if chain_status:
+                        conn.execute("""
+                            UPDATE withdrawals
+                            SET status = 'completed',
+                                processed_at = ?,
+                                error_msg = NULL
+                            WHERE withdrawal_id = ?
+                            AND status = 'processing'
+                            AND tx_hash = ?
+                        """, (int(time.time()), withdrawal_id, tx_hash))
+                    else:
+                        conn.execute("""
+                            UPDATE withdrawals
+                            SET status = 'failed',
+                                error_msg = 'Broadcast transaction not found or failed; manual refund required'
+                            WHERE withdrawal_id = ?
+                            AND status = 'processing'
+                            AND tx_hash = ?
+                        """, (withdrawal_id, tx_hash))
+        except Exception as e:
+            logger.error(f"Failed to reconcile broadcast withdrawals: {e}")
+
     def execute_withdrawal(self, withdrawal: Dict) -> Optional[str]:
         """Execute withdrawal transaction"""
         if MOCK_MODE:
@@ -90,6 +166,7 @@ class PayoutWorker:
     def process_withdrawal(self, withdrawal: Dict) -> bool:
         """Process a single withdrawal with balance deduction before execution."""
         withdrawal_id = withdrawal['withdrawal_id']
+        tx_hash = None
 
         try:
             logger.info(f"Processing withdrawal {withdrawal_id}")
@@ -177,6 +254,15 @@ class PayoutWorker:
         except Exception as e:
             logger.error(f"✗ Withdrawal {withdrawal_id} failed: {e}")
 
+            if tx_hash:
+                self._record_broadcast_reconciliation_needed(
+                    withdrawal_id,
+                    tx_hash,
+                    str(e),
+                )
+                self.stats['failed'] += 1
+                return False
+
             # Refund balance on broadcast failure and mark as failed
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute("BEGIN IMMEDIATE")
@@ -195,6 +281,49 @@ class PayoutWorker:
 
             self.stats['failed'] += 1
             return False
+
+    def recover_orphans(self):
+        """Flag withdrawals stuck in processing without assuming safe refund.
+
+        A ``processing`` row with no tx_hash is ambiguous: the worker may have
+        crashed before broadcast, or it may have crashed after a successful
+        broadcast but before persisting the tx_hash. Automatically refunding
+        that state can double-pay the miner, so keep the debit in place and
+        require explicit reconciliation evidence before any refund.
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute("BEGIN IMMEDIATE")
+                rows = conn.execute("""
+                    SELECT withdrawal_id
+                    FROM withdrawals
+                    WHERE status = 'processing'
+                    AND (tx_hash IS NULL OR tx_hash = '')
+                """).fetchall()
+
+                for (withdrawal_id,) in rows:
+                    logger.warning(
+                        "Withdrawal %s is processing without tx_hash; "
+                        "leaving debit intact for manual reconciliation",
+                        withdrawal_id,
+                    )
+                    conn.execute(
+                        """
+                        UPDATE withdrawals
+                        SET error_msg = 'Processing without tx_hash; manual reconciliation required before refund'
+                        WHERE withdrawal_id = ?
+                        AND status = 'processing'
+                        AND (tx_hash IS NULL OR tx_hash = '')
+                        """,
+                        (withdrawal_id,),
+                    )
+                conn.execute("COMMIT")
+
+                if rows:
+                    logger.info(f"Flagged {len(rows)} ambiguous processing withdrawals for reconciliation.")
+
+        except Exception as e:
+            logger.error(f"Failed to recover orphans: {e}")
 
     def process_batch(self) -> int:
         """Process a batch of withdrawals"""
@@ -225,6 +354,12 @@ class PayoutWorker:
 
         while True:
             try:
+                # Recover pre-broadcast orphans before processing new batches to prevent stranded funds
+                self.recover_orphans()
+
+                # Reconcile already-broadcast withdrawals that were left in processing state
+                self.reconcile_broadcast_withdrawals()
+
                 # Process batch
                 processed = self.process_batch()
 
@@ -246,7 +381,7 @@ class PayoutWorker:
                 time.sleep(POLL_INTERVAL * 2)  # Back off on error
 
     def cleanup_old_withdrawals(self):
-        """Archive old completed withdrawals"""
+        """Archive old completed withdrawals to cold storage."""
         cutoff = int(time.time()) - (7 * 24 * 3600)  # 7 days ago
 
         with sqlite3.connect(self.db_path) as conn:
@@ -259,30 +394,47 @@ class PayoutWorker:
             if count > 0:
                 # Archive to file (in production, send to cold storage)
                 rows = conn.execute("""
-                    SELECT * FROM withdrawals
+                    SELECT withdrawal_id, miner_pk, amount, destination, tx_hash, processed_at
+                    FROM withdrawals
                     WHERE status = 'completed' AND processed_at < ?
                 """, (cutoff,)).fetchall()
 
-                archive_file = f"withdrawal_archive_{datetime.now().strftime('%Y%m%d')}.json"
-                with open(archive_file, 'a') as f:
-                    for row in rows:
-                        json.dump({
-                            'withdrawal_id': row[0],
-                            'miner_pk': row[1],
-                            'amount': row[2],
-                            'destination': row[4],
-                            'tx_hash': row[8],
-                            'processed_at': row[7]
-                        }, f)
-                        f.write('\n')
+                archive_dir = os.path.join(os.path.dirname(self.db_path), "archives")
+                os.makedirs(archive_dir, exist_ok=True)
+                archive_file = os.path.join(
+                    archive_dir,
+                    f"withdrawal_archive_{datetime.now().strftime('%Y%m%d')}.jsonl"
+                )
 
-                # Delete from database
-                conn.execute("""
-                    DELETE FROM withdrawals
-                    WHERE status = 'completed' AND processed_at < ?
-                """, (cutoff,))
+                try:
+                    with open(archive_file, 'a') as f:
+                        for row in rows:
+                            json.dump({
+                                'withdrawal_id': row[0],
+                                'miner_pk': row[1],
+                                'amount': row[2],
+                                'destination': row[3],
+                                'tx_hash': row[4],
+                                'processed_at': row[5]
+                            }, f)
+                            f.write('\n')
+                            f.flush()
+                except OSError as e:
+                    logger.error(f"Failed to write archive {archive_file}: {e}")
+                    return
 
-                logger.info(f"Archived {count} old withdrawals to {archive_file}")
+                # Delete from database (only after successful archive)
+                try:
+                    conn.execute("""
+                        DELETE FROM withdrawals
+                        WHERE status = 'completed' AND processed_at < ?
+                    """, (cutoff,))
+                    logger.info(f"Archived and pruned {count} old withdrawals to {archive_file}")
+                except Exception as e:
+                    logger.error(
+                        f"Archive written to {archive_file} but DB prune failed: {e}. "
+                        "Manual cleanup may be needed."
+                    )
 
     def get_stats(self) -> Dict:
         """Get worker statistics"""

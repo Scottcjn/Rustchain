@@ -6,7 +6,10 @@ set "PYTHON_URL=https://www.python.org/ftp/python/3.11.5/python-3.11.5-amd64.exe
 set "PYTHON_INSTALLER=%SCRIPT_DIR%python-3.11.5-amd64.exe"
 set "MINER_URL=https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/windows/rustchain_windows_miner.py"
 set "MINER_SCRIPT=%SCRIPT_DIR%rustchain_windows_miner.py"
-set "MINER_SHA256=51fe431cbee3c5b81218a738c221d45e675dafa5d67f9aff716d4ea11f304662"
+set "MINER_SHA256=7f663904031e5a4202be416682fd16ab51af2e96664d6db1567f716d8625f8e1"
+set "CRYPTO_URL=https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/windows/miner_crypto.py"
+set "CRYPTO_SCRIPT=%SCRIPT_DIR%miner_crypto.py"
+set "CRYPTO_SHA256=a987e2f0caaf75723c568de67ec848daec5e323cc5673cc17964da04eee07242"
 
 echo.
 echo === RustChain Windows Miner Bootstrap ===
@@ -43,13 +46,28 @@ echo Installing miner dependencies...
 python -m pip install -r "%REQUIREMENTS%"
 
 if exist "%MINER_SCRIPT%" (
-    echo Keeping existing miner script (%MINER_SCRIPT%).
+    echo Keeping existing miner script: "%MINER_SCRIPT%"
 ) else (
     echo Downloading the latest miner script...
     powershell -Command "Invoke-WebRequest -UseBasicParsing -Uri '%MINER_URL%' -OutFile '%MINER_SCRIPT%'"
 )
 call :verify_miner
 if errorlevel 1 exit /b 1
+
+REM Download miner_crypto.py (Ed25519 signing module — protects against
+REM wallet hijack via MITM). Server-side PR #6426 accepts the signed flow;
+REM without this file the miner falls back to legacy sha512 pseudo-sig.
+if exist "%CRYPTO_SCRIPT%" (
+    echo Keeping existing crypto module: "%CRYPTO_SCRIPT%"
+) else (
+    echo Downloading miner_crypto.py (Ed25519 signing module)...
+    powershell -Command "Invoke-WebRequest -UseBasicParsing -Uri '%CRYPTO_URL%' -OutFile '%CRYPTO_SCRIPT%'"
+)
+if not exist "%CRYPTO_SCRIPT%" (
+    echo WARNING: miner_crypto.py was not downloaded — miner will run in
+    echo          legacy unsigned mode. Re-run setup with network access
+    echo          to enable Ed25519 signing.
+)
 
 echo.
 echo Miner is ready. Run:

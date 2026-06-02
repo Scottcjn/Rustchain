@@ -18,19 +18,16 @@ Architecture:
 """
 
 import argparse
-import hashlib
-import json
 import logging
 import os
 import smtplib
 import sqlite3
-import sys
 import time
 from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional
 
 import requests
 from dotenv import load_dotenv
@@ -149,6 +146,34 @@ class AlertDB:
             defaults.update(alerts)
 
         cur = self.conn.cursor()
+        if email is None and phone is not None:
+            cur.execute(
+                """
+                SELECT id FROM subscriptions
+                WHERE miner_id = ? AND email IS NULL AND phone = ?
+                """,
+                (miner_id, phone),
+            )
+            existing = cur.fetchone()
+            if existing:
+                cur.execute("""
+                    UPDATE subscriptions SET
+                        alert_offline = ?,
+                        alert_rewards = ?,
+                        alert_large_transfer = ?,
+                        alert_attestation_fail = ?,
+                        active = 1
+                    WHERE id = ?
+                """, (
+                    defaults["alert_offline"],
+                    defaults["alert_rewards"],
+                    defaults["alert_large_transfer"],
+                    defaults["alert_attestation_fail"],
+                    existing["id"],
+                ))
+                self.conn.commit()
+                return existing["id"]
+
         cur.execute("""
             INSERT INTO subscriptions
                 (miner_id, email, phone, alert_offline, alert_rewards,
@@ -484,8 +509,11 @@ def fetch_miners() -> List[dict]:
         data = resp.json()
         if isinstance(data, list):
             return data
-        if isinstance(data, dict) and isinstance(data.get("miners"), list):
-            return data["miners"]
+        if isinstance(data, dict):
+            for key in ("miners", "data", "items"):
+                miners = data.get(key)
+                if isinstance(miners, list):
+                    return miners
         return []
     except Exception as e:
         logger.error(f"Failed to fetch miners: {e}")

@@ -16,7 +16,23 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from rip_200_round_robin_1cpu1vote import calculate_epoch_rewards_time_aged, GENESIS_TIMESTAMP, BLOCK_TIME
+from rip_200_round_robin_1cpu1vote import calculate_epoch_rewards_time_aged, GENESIS_TIMESTAMP
+from rip_309_measurement_rotation import (
+    ALL_FP_CHECKS,
+    evaluate_fingerprint_rotation,
+    get_epoch_measurement_config,
+    get_reward_active_fingerprint_checks,
+)
+
+
+def _legacy_reward_active_checks(prev_block_hash):
+    fp_checks = ['clock_drift', 'cache_timing', 'simd_identity',
+                 'thermal_drift', 'instruction_jitter', 'anti_emulation']
+    if prev_block_hash:
+        nonce = hashlib.sha256(prev_block_hash + b"measurement_nonce").digest()
+        seed = int.from_bytes(nonce[:4], 'big')
+        return set(random.Random(seed).sample(fp_checks, 4))
+    return set(fp_checks)
 
 
 def _init_db(conn):
@@ -94,6 +110,50 @@ class TestRip309Rotation(unittest.TestCase):
         # All identical
         self.assertEqual(len(set(tuple(sorted(r.items())) for r in results)), 1)
         os.unlink(db_path)
+
+    def test_helper_matches_current_inline_reward_algorithm_golden_vectors(self):
+        """Canonical helper must preserve current reward-path selection."""
+        sample_hashes = [
+            b"deadbeef" * 4,
+            hashlib.sha256(b"epoch-1").digest(),
+            hashlib.sha256(b"epoch-2").digest(),
+            hashlib.sha256(b"epoch-309").digest(),
+            bytes.fromhex("00" * 32),
+            bytes.fromhex("ff" * 32),
+        ]
+
+        for prev_hash in sample_hashes:
+            expected = _legacy_reward_active_checks(prev_hash)
+            actual = set(get_reward_active_fingerprint_checks(prev_hash))
+            self.assertEqual(actual, expected, prev_hash.hex())
+
+    def test_helper_preserves_empty_hash_all_checks_fallback(self):
+        """Empty prev_block_hash must keep all six checks active."""
+        self.assertEqual(
+            set(get_reward_active_fingerprint_checks(b"")),
+            set(ALL_FP_CHECKS),
+        )
+
+    def test_epoch_measurement_config_matches_reward_golden_vectors(self):
+        """The public config helper must not drift from reward selection."""
+        sample_hashes = [
+            hashlib.sha256(b"config-1").digest(),
+            hashlib.sha256(b"config-2").digest(),
+            bytes.fromhex("11" * 32),
+        ]
+
+        for prev_hash in sample_hashes:
+            config = get_epoch_measurement_config(prev_hash.hex(), 7)
+            self.assertEqual(
+                set(config["active_fingerprints"]),
+                _legacy_reward_active_checks(prev_hash),
+            )
+
+    def test_epoch_measurement_config_empty_hash_uses_all_checks(self):
+        """The public config helper must preserve no-prev-hash fallback too."""
+        config = get_epoch_measurement_config("", 0)
+        self.assertEqual(set(config["active_fingerprints"]), set(ALL_FP_CHECKS))
+        self.assertEqual(config["inactive_fingerprints"], [])
 
     def test_unpredictability_different_hashes(self):
         """Different block hashes should produce different active sets over many trials."""
@@ -189,6 +249,39 @@ class TestRip309Rotation(unittest.TestCase):
         rewards = calculate_epoch_rewards_time_aged(db_path, 1, 1_000_000, 200, b"")
         self.assertGreater(rewards.get("alice", 0), 0)
         os.unlink(db_path)
+
+    def test_fallback_empty_prev_hash_failed_check_zeroes_reward(self):
+        """The empty-hash fallback must evaluate every check, not a 4-of-6 subset."""
+        db_path = self._fresh_db()
+        conn = sqlite3.connect(db_path)
+        _enroll_miner(conn, 1, "alice", 100)
+        checks = {
+            "clock_drift": True, "cache_timing": True, "simd_identity": True,
+            "thermal_drift": True, "instruction_jitter": True, "anti_emulation": False,
+        }
+        _insert_miner(conn, "alice", checks=checks)
+        conn.close()
+
+        rewards = calculate_epoch_rewards_time_aged(db_path, 1, 1_000_000, 200, b"")
+        self.assertEqual(rewards.get("alice", 0), 0)
+        os.unlink(db_path)
+
+    def test_simd_bias_alias_accepts_simd_identity_payloads(self):
+        """RIP-309 helpers must bridge issue wording and emitted fingerprint keys."""
+        fingerprint = {
+            "checks": {
+                "simd_identity": {"passed": True},
+            },
+        }
+
+        passed, active_passed, active_total = evaluate_fingerprint_rotation(
+            fingerprint,
+            ["simd_bias"],
+        )
+
+        self.assertTrue(passed)
+        self.assertEqual(active_passed, 1)
+        self.assertEqual(active_total, 1)
 
 
 if __name__ == "__main__":

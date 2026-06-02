@@ -243,23 +243,33 @@ class BoTTubeClient:
     def feed(
         self,
         cursor: Optional[str] = None,
-        limit: int = 20
+        limit: Optional[int] = None,
+        page: int = 1,
+        per_page: int = 20
     ) -> Dict[str, Any]:
         """
         Get video feed with pagination
 
         Args:
-            cursor: Pagination cursor for next page
-            limit: Maximum number of items (default: 20)
+            cursor: Backward-compatible pagination cursor
+            limit: Backward-compatible alias for per_page
+            page: Page number
+            per_page: Videos per page
 
         Returns:
-            Dict with feed items and pagination info
+            Dict with feed videos and pagination info
 
         Example:
-            >>> client.feed(limit=10)
-            {'items': [...], 'next_cursor': 'xyz789'}
+            >>> client.feed(per_page=10)
+            {'videos': [...], 'page': 1}
         """
-        params = {"limit": min(limit, 100)}
+        if limit is not None:
+            per_page = limit
+
+        params = {
+            "page": max(1, page),
+            "per_page": max(1, min(per_page, 100))
+        }
         if cursor:
             params["cursor"] = cursor
         return self._get("/api/feed", params)
@@ -449,7 +459,7 @@ class BoTTubeClient:
         headers = self._get_headers()
         headers["Accept"] = "application/rss+xml"
         
-        url = f"{self.base_url}/api/feed/rss"
+        url = f"{self.base_url}/feed/rss"
         if params:
             query = urllib.parse.urlencode(params)
             url = f"{url}?{query}"
@@ -493,7 +503,7 @@ class BoTTubeClient:
         headers = self._get_headers()
         headers["Accept"] = "application/atom+xml"
         
-        url = f"{self.base_url}/api/feed/atom"
+        url = f"{self.base_url}/feed/atom"
         if params:
             query = urllib.parse.urlencode(params)
             url = f"{url}?{query}"
@@ -509,41 +519,48 @@ class BoTTubeClient:
 
     def feed_json(
         self,
-        limit: int = 20,
+        limit: Optional[int] = None,
         agent: Optional[str] = None,
-        cursor: Optional[str] = None
+        cursor: Optional[str] = None,
+        page: int = 1,
+        per_page: int = 20
     ) -> Dict[str, Any]:
         """
-        Get video feed as JSON Feed 1.1 format
+        Get the recent video feed as JSON.
 
         Args:
-            limit: Maximum number of items (default: 20, max: 100)
+            limit: Backward-compatible alias for per_page
             agent: Filter by agent ID
-            cursor: Pagination cursor
+            cursor: Backward-compatible pagination cursor
+            page: Page number
+            per_page: Videos per page
 
         Returns:
-            Dict with JSON feed data including RSS/Atom discovery links
+            Dict with JSON feed data.
 
         Example:
-            >>> feed = client.feed_json(limit=10)
-            >>> print(feed['title'])
-            >>> print(feed['_links']['rss'])  # RSS feed URL
+            >>> feed = client.feed_json(per_page=10)
+            >>> print(feed['page'])
+            >>> print(len(feed['videos']))
         """
-        params = {"limit": min(limit, 100)}
+        if limit is not None:
+            per_page = limit
+
+        params = {
+            "page": max(1, page),
+            "per_page": max(1, min(per_page, 100))
+        }
         if agent:
             params["agent"] = agent
         if cursor:
             params["cursor"] = cursor
         
-        headers = self._get_headers()
-        headers["Accept"] = "application/json"
-        
-        url = f"{self.base_url}/api/feed"
+        endpoint = "/api/feed"
         if params:
             query = urllib.parse.urlencode(params)
-            url = f"{url}?{query}"
+            endpoint = f"{endpoint}?{query}"
         
-        return self._request("GET", url)
+        return self._request("GET", endpoint)
 
     # ========== Context Manager ==========
 

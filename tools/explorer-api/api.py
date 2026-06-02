@@ -92,9 +92,12 @@ def _get(path: str, params: dict | None = None, timeout: float | None = None):
             timeout=timeout or REQUEST_TIMEOUT,
         )
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        if isinstance(data, dict):
+            return data
     except Exception:
         return None
+    return None
 
 
 def _post(path: str, json_body: dict | None = None, timeout: float | None = None):
@@ -106,9 +109,12 @@ def _post(path: str, json_body: dict | None = None, timeout: float | None = None
             timeout=timeout or REQUEST_TIMEOUT,
         )
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        if isinstance(data, dict):
+            return data
     except Exception:
         return None
+    return None
 
 
 def _positive_int_arg(name: str, default: int, max_value: int | None = None):
@@ -128,6 +134,17 @@ def _positive_int_arg(name: str, default: int, max_value: int | None = None):
         value = min(value, max_value)
 
     return value, None
+
+
+def _tip_slot(tip: dict | None) -> int | None:
+    """Return a validated integer tip slot from an upstream tip payload."""
+    if not tip or tip.get("slot") is None:
+        return None
+
+    try:
+        return int(tip["slot"])
+    except (TypeError, ValueError):
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -154,10 +171,10 @@ def list_blocks():
 
     # Fetch chain tip to know the latest slot
     tip = _get("/headers/tip")
-    if not tip or tip.get("slot") is None:
+    tip_slot = _tip_slot(tip)
+    if tip_slot is None:
         return jsonify({"ok": False, "error": "node_unavailable"}), 502
 
-    tip_slot = int(tip["slot"])
     start = max(0, tip_slot - (page * limit) + 1)
     end = tip_slot - ((page - 1) * limit)
 
@@ -194,10 +211,10 @@ def list_blocks():
 def block_detail(height: int):
     """Return details for a specific block height/slot."""
     tip = _get("/headers/tip")
-    if not tip or tip.get("slot") is None:
+    tip_slot = _tip_slot(tip)
+    if tip_slot is None:
         return jsonify({"ok": False, "error": "node_unavailable"}), 502
 
-    tip_slot = int(tip["slot"])
     if height < 0 or height > tip_slot:
         return jsonify({"ok": False, "error": "block_not_found"}), 404
 
@@ -278,6 +295,8 @@ def address_info(addr: str):
     addr = addr.strip()
     if not addr:
         return jsonify({"ok": False, "error": "address_required"}), 400
+    if len(addr) > 128:
+        return jsonify({"ok": False, "error": "address too long"}), 400
 
     # Fetch balance
     balance_data = _get(f"/balance/{addr}")
@@ -326,6 +345,8 @@ def search():
     query = request.args.get("q", "").strip()
     if not query:
         return jsonify({"ok": False, "error": "query_required"}), 400
+    if len(query) > 256:
+        return jsonify({"ok": False, "error": "query_too_long"}), 400
 
     results = []
 
@@ -333,7 +354,8 @@ def search():
     try:
         height = int(query)
         tip = _get("/headers/tip")
-        if tip and tip.get("slot") is not None and 0 <= height <= int(tip["slot"]):
+        tip_slot = _tip_slot(tip)
+        if tip_slot is not None and 0 <= height <= tip_slot:
             results.append({
                 "type": "block",
                 "height": height,

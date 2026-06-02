@@ -1,5 +1,8 @@
 # RustChain Tokenomics – Flameholder Draft v1
 
+> ⚠️ **SUPERSEDED HISTORICAL DRAFT (v1).** Token was then named "RUST" with supply 8,192,000. This does NOT reflect the production chain. Authoritative tokenomics: **8,388,608 RTC (2²³)**, 94% mining + 6% premine = 4 × 1.5% founder buckets. See [WHITEPAPER §6](WHITEPAPER.md).
+
+
 **Token Name:** RUST  
 **Ticker:** RUST  
 **Total Supply:** 8,192,000  

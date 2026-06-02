@@ -50,6 +50,7 @@ INSTALL_DIR="/opt/rustchain-miner"
 REPO_RAW="https://raw.githubusercontent.com/Scottcjn/Rustchain/main"
 MINER_URL="${REPO_RAW}/miners/linux/rustchain_linux_miner.py"
 FINGERPRINT_URL="${REPO_RAW}/miners/linux/fingerprint_checks.py"
+MINER_CRYPTO_URL="${REPO_RAW}/miners/linux/miner_crypto.py"
 NODE_URL="https://50.28.86.131"
 BOUNTY_URL="https://github.com/Scottcjn/rustchain-bounties/issues/2451"
 ARCADE_REPO="https://github.com/Scottcjn/rustchain-arcade"
@@ -319,16 +320,16 @@ ensure_python() {
 ensure_pip_deps() {
     local py="$1"
     info "Installing Python dependencies..."
-    "$py" -m pip install --quiet --break-system-packages requests psutil 2>/dev/null || \
-    "$py" -m pip install --quiet requests psutil 2>/dev/null || \
-    "$py" -m pip install --user --quiet requests psutil 2>/dev/null || \
+    "$py" -m pip install --quiet --break-system-packages requests psutil PyNaCl 2>/dev/null || \
+    "$py" -m pip install --quiet requests psutil PyNaCl 2>/dev/null || \
+    "$py" -m pip install --user --quiet requests psutil PyNaCl 2>/dev/null || \
     warn "Could not install pip packages globally. Trying venv..."
 
-    if ! "$py" -c "import requests" 2>/dev/null; then
+    if ! "$py" -c "import requests, psutil, nacl" 2>/dev/null; then
         info "Creating virtual environment..."
         "$py" -m venv "${INSTALL_DIR}/venv"
         source "${INSTALL_DIR}/venv/bin/activate"
-        pip install --quiet requests psutil
+        pip install --quiet requests psutil PyNaCl
         py="${INSTALL_DIR}/venv/bin/python3"
         ok "Virtual environment created at ${INSTALL_DIR}/venv"
     fi
@@ -353,7 +354,8 @@ Type=simple
 User=$(whoami)
 WorkingDirectory=${INSTALL_DIR}
 Environment="RUSTCHAIN_WALLET=${wallet}"
-ExecStart=${py} ${INSTALL_DIR}/rustchain_linux_miner.py
+Environment="PYTHONUNBUFFERED=1"
+ExecStart=${py} -u ${INSTALL_DIR}/rustchain_linux_miner.py --wallet ${wallet}
 Restart=always
 RestartSec=30
 StandardOutput=append:/var/log/rustchain-miner.log
@@ -389,12 +391,17 @@ create_launchd_plist() {
     <key>ProgramArguments</key>
     <array>
         <string>${py}</string>
+        <string>-u</string>
         <string>${INSTALL_DIR}/rustchain_linux_miner.py</string>
+        <string>--wallet</string>
+        <string>${wallet}</string>
     </array>
     <key>EnvironmentVariables</key>
     <dict>
         <key>RUSTCHAIN_WALLET</key>
         <string>${wallet}</string>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
     </dict>
     <key>WorkingDirectory</key>
     <string>${INSTALL_DIR}</string>
@@ -521,6 +528,7 @@ main() {
     info "Downloading miner files..."
     download_file "${MINER_URL}" "https://rustchain.org/rustchain_linux_miner.py" "${INSTALL_DIR}/rustchain_linux_miner.py" "miner"
     download_file "${FINGERPRINT_URL}" "https://rustchain.org/fingerprint_checks.py" "${INSTALL_DIR}/fingerprint_checks.py" "fingerprint helper"
+    download_file "${MINER_CRYPTO_URL}" "https://rustchain.org/miner_crypto.py" "${INSTALL_DIR}/miner_crypto.py" "miner signing helper"
 
     if [ ! -s "${INSTALL_DIR}/rustchain_linux_miner.py" ]; then
         err "Failed to download miner files. Check network connectivity."
@@ -528,6 +536,10 @@ main() {
     fi
     if [ ! -s "${INSTALL_DIR}/fingerprint_checks.py" ]; then
         err "Failed to download fingerprint helper. Check network connectivity."
+        exit 1
+    fi
+    if [ ! -s "${INSTALL_DIR}/miner_crypto.py" ]; then
+        err "Failed to download miner signing helper. Check network connectivity."
         exit 1
     fi
     ok "Miner files downloaded"
