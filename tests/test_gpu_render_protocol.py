@@ -327,7 +327,8 @@ def test_gpu_protocol_attest_requires_admin_key_before_write(tmp_path, monkeypat
 
     assert response.status_code == 401
     assert response.get_json() == {"error": "Unauthorized - admin key required"}
-    nodes = client.get("/gpu/nodes").get_json()
+    # /gpu/nodes became admin-gated in #6557; authenticate the read
+    nodes = client.get("/gpu/nodes", headers={"X-Admin-Key": "test-admin-key"}).get_json()
     assert nodes["count"] == 0
 
 
@@ -348,8 +349,8 @@ def test_gpu_protocol_attest_fails_closed_without_admin_key(tmp_path, monkeypatc
 
     assert response.status_code == 503
     assert response.get_json() == {"error": "RC_ADMIN_KEY not configured"}
-    nodes = client.get("/gpu/nodes").get_json()
-    assert nodes["count"] == 0
+    # with RC_ADMIN_KEY unset, the admin-gated /gpu/nodes also fails closed (#6557)
+    assert client.get("/gpu/nodes").status_code == 503
 
 
 def test_gpu_protocol_attest_accepts_api_key_header(tmp_path, monkeypatch):
@@ -369,7 +370,8 @@ def test_gpu_protocol_attest_accepts_api_key_header(tmp_path, monkeypatch):
 
     assert response.status_code == 200
     assert response.get_json()["status"] == "attested"
-    nodes = client.get("/gpu/nodes").get_json()
+    # /gpu/nodes' _admin_key_required (#6557) checks X-Admin-Key only (attest also takes X-API-Key)
+    nodes = client.get("/gpu/nodes", headers={"X-Admin-Key": "test-admin-key"}).get_json()
     assert nodes["count"] == 1
 
 

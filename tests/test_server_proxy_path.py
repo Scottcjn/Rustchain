@@ -92,7 +92,7 @@ def test_proxy_keeps_safe_requests_under_api(monkeypatch):
         text = "ok"
         headers = {"Content-Type": "text/plain"}
 
-    def fake_get(url, timeout):
+    def fake_get(url, timeout, headers=None):  # proxy now forwards headers= (node/server_proxy.py)
         captured["url"] = url
         captured["timeout"] = timeout
         return FakeResponse()
