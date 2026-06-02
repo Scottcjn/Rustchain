@@ -9123,7 +9123,10 @@ def confirm_pending():
                 except Exception:
                     pass
                 print(f"[ERROR] confirm_pending {pid}: {e!r}")
-                errors.append({"id": pid, "error": "internal_error"})
+                if str(e) == "unsupported balances schema for wallet transfer":
+                    errors.append({"id": pid, "error": str(e)})
+                else:
+                    errors.append({"id": pid, "error": "internal_error"})
         
         conn.commit()
         
