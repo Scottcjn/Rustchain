@@ -401,12 +401,12 @@ Halving fires every 2 years OR on an **Epoch Relic Event** milestone — whichev
 
 ### Reference rate climbs as holder count grows
 
-The published USD-equivalent reference rate for RTC moves up as the network gains wallet holders. **Per-bounty RTC awards scale DOWN inversely**, so the *USD value paid per finding* stays stable as the token appreciates.
+The published USD-equivalent reference rate for RTC moves up as the network gains wallet holders. **Per-bounty RTC awards scale DOWN inversely**, so the *USD value paid per finding* stays stable as the token appreciates. The live rate is always at [`/api/tokenomics`](https://rustchain.org/api/tokenomics).
 
 | Holder count | Reference rate | Bounty rate scale |
 |--------------|----------------|-------------------|
-| Today (~761 holders) | $0.10 | Current |
-| 1,000 holders | $0.15 | ~67% of current |
+| Genesis (~761 holders) | $0.10 | initial |
+| ~1,000+ holders (today) | $0.15 | **Current** |
 | 2,000 holders | $0.20 | ~50% of current |
 | Real market discovery | observed price | Recompute from USD anchor |
 
@@ -454,7 +454,7 @@ Full tokenomics detail: [WHITEPAPER §6](docs/WHITEPAPER.md).
 | **Bridge** | [Bridge](https://bottube.ai/bridge/wrtc) |
 | **Guide** | [wRTC Quickstart](docs/wrtc.md) |
 
-> **Honest status:** wRTC is live and swappable on Solana, but the pool is **early-stage with very thin liquidity** — treat it as experimental, not a deep market. The `$0.10` figure for RTC is an **internal reference rate** for bounty accounting, not a market price or a promise of convertibility.
+> **Honest status:** wRTC is live and swappable on Solana, but the pool is **early-stage with very thin liquidity** — treat it as experimental, not a deep market. The `$0.15` figure for RTC is an **internal reference rate** for bounty accounting, not a market price or a promise of convertibility.
 
 ---
 
@@ -469,7 +469,7 @@ Every contribution earns RTC tokens. Browse [open bounties](https://github.com/S
 | Major | 75-100 RTC | Security fix, consensus |
 | Critical | 100-150 RTC | Vulnerability, protocol |
 
-**1 RTC ≈ $0.10 USD** · `curl -fsSL https://rustchain.org/install.sh | bash` · [CONTRIBUTING.md](CONTRIBUTING.md)
+**1 RTC ≈ $0.15 USD** · `curl -fsSL https://rustchain.org/install.sh | bash` · [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ---
 
