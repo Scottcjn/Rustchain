@@ -1,10 +1,11 @@
 # RIP-0310: Proof of Provenance (PoP)
+### A framework for verifiable lineage across hardware, agents, content, knowledge & economic activity
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20502068.svg)](https://doi.org/10.5281/zenodo.20502068)
 
 ```yaml
 rip: 0310
-title: Proof of Provenance (PoP) — Identity-Bound, Hardware-Bound Provenance for AI Content
+title: Proof of Provenance (PoP) — A Verifiable-Lineage Framework (with Content-layer normative spec)
 author: Scott Boudreaux (Elyan Labs)
 status: Draft
 type: Standards Track
@@ -15,7 +16,7 @@ external: Beacon agent-identity layer (agent.json / bcn_*); Ergo register anchor
 doi: 10.5281/zenodo.20502068
 ```
 
-> **Citation:** Boudreaux, S. (2026). *RIP-0310: Proof of Provenance (PoP) — Identity-Bound, Hardware-Bound Provenance for AI Content*. Elyan Labs. https://doi.org/10.5281/zenodo.20502068
+> **Citation:** Boudreaux, S. (2026). *RIP-0310: Proof of Provenance (PoP) — A Verifiable-Lineage Framework*. Elyan Labs. https://doi.org/10.5281/zenodo.20502068
 
 > **Priority / coined-here.** The **Proof-of-Provenance binding** — a cryptographic chain
 > joining a persistent agent identity to a physically-verified machine and making that
@@ -23,6 +24,8 @@ doi: 10.5281/zenodo.20502068
 > This document constitutes the original specification and prior art as of 2026-06-01. It
 > defines the claim **format and verification semantics** for interoperability; it does
 > **not** release the production binding generator/verifier, which is retained Elyan Labs IP.
+> The **Proof-of-Provenance framework** itself — the five-layer verifiable-lineage taxonomy and
+> its VERIFY/AUDIT rigor tiers (next section) — is likewise first articulated here as of 2026-06-02.
 
 **License:** Thesis + interface spec — CC-BY 4.0 (attribution required). Reference implementation — NOT released by this document.
 
@@ -30,11 +33,61 @@ doi: 10.5281/zenodo.20502068
 
 ## Abstract
 
-Proof of Provenance (PoP) binds three otherwise-separate guarantees into one verifiable claim over a piece of AI-generated content: **who** produced it (a persistent Beacon agent identity), **what** produced it (a RustChain Proof-of-Antiquity–verified physical machine), and **when** (an immutable Ergo anchor). Where Proof of Physical AI (RIP-0308) proves that real silicon did real work, PoP attributes that work to a *named, accountable, scarce identity* and attaches it to *published media*. The novel contribution is the **binding**, not the constituent layers: agent identity, content platforms, and hardware attestation each exist independently; no prior system ties a persistent identity to physically-verified hardware and makes that pairing the trust unit for content.
+**Proof of Provenance (PoP) is a framework for verifiable lineage** across hardware, agents, content, knowledge, and economic activity. It replaces the question *"is this result correct?"* with *"can its origin be demonstrated?"* — and unifies the Elyan Labs stack (Proof of Antiquity, Proof of Physical AI, Beacon, GRAIL-V, BoTTube, RTC) into one trust architecture in which trust emerges from **demonstrable provenance rather than centralized authority**.
+
+This document defines the framework (its five layers and their two rigor tiers) and then **fully specifies its canonical normative instance — the Content Provenance layer**: a cryptographic binding that joins a persistent Beacon agent identity to a RustChain-verified physical machine and makes that binding the trust unit for published media, answering **who** produced a piece of AI content, **what** physical machine it ran on, and **when** (immutably anchored). The novel contribution is the **binding**, not the constituent layers: agent identity, content platforms, and hardware attestation each exist independently; no prior system ties a persistent identity to physically-verified hardware and makes that pairing the trust unit for content.
 
 ---
 
-## Architecture
+## The Provenance Framework
+
+PoP generalizes a single question across the entire Elyan Labs stack:
+
+> **"Can I prove where this came from?"**
+
+Most trust systems ask whether a result is *correct*. PoP asks whether its *origin can be demonstrated* — a weaker but far more verifiable property, and the one the agent web actually lacks. The framework spans five layers, each answering *"where did this originate?"* for a different kind of digital activity, and each backed by a system Elyan Labs already runs.
+
+### Two rigor tiers (load-bearing distinction)
+
+Not all provenance is equally strong, and conflating the two would weaken the strong claim. PoP separates them explicitly:
+
+- **VERIFY** — *cryptographic* provenance: a signature you check or an anchor you confirm. Binary, non-probabilistic, adversary-proof.
+- **AUDIT** — *evidentiary* provenance: grounding you can inspect and reproduce, but probabilistic — not a signature. Strong, but a different rigor class, and labeled as such on purpose.
+
+Four of the five layers are VERIFY; Knowledge provenance is AUDIT. Naming this is what keeps the framework honest — provenance you can *verify* is not the same guarantee as grounding you can *audit*.
+
+### The five layers
+
+| Layer | Question | Backing systems | Reference | Tier |
+|-------|----------|-----------------|-----------|------|
+| **Hardware** | Is this real, unique silicon? | Proof of Antiquity · Proof of Physical AI · anti-emulation | RIP-0001 / 0007 / 0308 | VERIFY |
+| **Agent** | Which persistent identity acted? | Beacon identity · signed accords · reputation | Beacon (`agent.json` / `bcn_*`) | VERIFY |
+| **Content** | Where did this media originate? | BoTTube + the PoP binding (this RIP) | **RIP-0310** | VERIFY |
+| **Knowledge** | What evidence grounded this reasoning? | GRAIL-V · evidence retrieval · citations | GRAIL-V (CVPR 2026) | AUDIT |
+| **Economic** | How did value actually flow? | RTC ledger · task history · work verification | RIP-0004 | VERIFY |
+
+```text
+Proof of Provenance — "where did this come from?"
+├── Hardware Provenance    [VERIFY]  PoA · PPA · anti-emulation
+├── Agent Provenance       [VERIFY]  Beacon identity · accords · reputation
+├── Content Provenance     [VERIFY]  BoTTube · binding (this RIP)
+├── Knowledge Provenance   [AUDIT ]  GRAIL-V · evidence · citations
+└── Economic Provenance    [VERIFY]  RTC · task history · payments
+```
+
+### Composition: the chain of custody
+
+The layers compose. A single BoTTube artifact can carry a full chain of custody — *which agent* (Agent) made it on *which verified machine* (Hardware), informed by *which evidence* (Knowledge), with *which value flow* (Economic), bound at the *content* layer and anchored in time. **That composite — not any single layer — is the demonstration that earns the framework.** The framework is the map; the chain-of-custody artifact is the territory.
+
+### PoA is evidence, not the destination
+
+Proof of Antiquity is the most *visible* piece today because it is unusual — but in the mature architecture it is not the destination. It is **one evidence source under Hardware Provenance**. The destination is the verifiable chain of origin itself.
+
+---
+
+> The remainder of this document fully specifies the **Content Provenance** layer (Parts I–III) — the canonical, normative instance of the framework above. The other four layers are realized by the existing Elyan Labs systems mapped here and inherit the same VERIFY/AUDIT discipline.
+
+## Content-Layer Architecture (the binding)
 
 ```mermaid
 flowchart TB
@@ -74,7 +127,7 @@ ASCII fallback — the trust triangle:
 
 ---
 
-## Part I — Motivation
+## Part I — Content Provenance: Motivation
 
 The agent web is about to drown in unattributable synthetic media. Current platforms can tell you a *model* produced something; none can tell you **which persistent agent** produced it, **on what hardware**, or prove the claim **wasn't spun up for free in a cloud vacuum**. Watermarking is removable; model-side signatures prove a vendor, not an actor; datacenter attestation proves a building, not a scarce accountable identity.
 
@@ -95,7 +148,7 @@ PoP proves *who / what / when*. It does **not** assert the content is true, good
 
 ---
 
-## Part II — Normative Binding Spec (interface only)
+## Part II — Content Provenance: Normative Binding Spec (interface only)
 
 Primitives are already deployed in the Elyan Labs stack: Ed25519 signatures, the RustChain `hardware_id` + 6-check fingerprint (RIP-0007 / RIP-0308), Beacon `bcn_*` identity cards, and Ergo register anchoring of Blake2b256 commitments.
 
@@ -159,7 +212,7 @@ Full pass ⇒ **"Content C was produced by agent `bcn_X`, bound to verified phys
 
 ---
 
-## Part III — Worked Example & Verification Flow
+## Part III — Content Provenance: Worked Example & Verification Flow
 
 This section illustrates one complete provenance claim with sample values.
 **All values are illustrative and truncated** — they show the *format* a verifier
