@@ -666,3 +666,28 @@ class TestIntegration:
         result = verifier.verify_claim(sample_claim_comment)
         
         assert result.overall_status == VerificationStatus.FAILED
+
+class TestWalletExistsVerification:
+    """Regression tests for the bounty verifier wallet-exists API correction (Issue #6779)."""
+
+    @patch('tools.bounty_verifier.star_checker.requests.get')
+    def test_check_wallet_exists_calls_maintained_endpoint(self, mock_get):
+        """Verify check_wallet_exists makes a GET request to the maintained /wallet/balance endpoint."""
+        from tools.bounty_verifier.star_checker import check_wallet_exists
+        
+        # Mock successful balance JSON response
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"balance": 1500}
+        mock_get.return_value = mock_response
+
+        wallet = "RTC1d48d848a5aa5ecf2c5f01aa5fb64837daaf2f35"
+        exists = check_wallet_exists(wallet)
+
+        assert exists is True
+        mock_get.assert_called_once_with(
+            "https://50.28.86.131/wallet/balance",
+            params={"miner_id": wallet},
+            verify=True,
+            timeout=10
+        )
