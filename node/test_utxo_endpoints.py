@@ -565,8 +565,14 @@ class TestUtxoEndpoints(unittest.TestCase):
         self.assertIn('signed payload', r.get_json()['error'])
         self.assertEqual(self.utxo_db.get_balance(recipient), 0)
 
-    def test_legacy_signature_rejects_nonzero_fee(self):
-        """Legacy signatures omit fee_rtc, so they cannot authorize fees."""
+    def test_legacy_account_signature_rejected_without_utxo_domain(self):
+        """A legacy account-shaped signature (no UTXO domain) cannot move UTXO funds.
+
+        UTXO transfers are now domain-separated: the signed message must carry
+        ``domain == UTXO_SIGNATURE_DOMAIN``. A legacy account-model signature
+        omits that field, so it is rejected with UTXO_SIGNATURE_DOMAIN_REQUIRED
+        before any fee handling, and balances stay untouched.
+        """
         sender = 'RTC_test_aabbccdd'
         recipient = 'bob'
         self._seed_coinbase(sender, 100 * UNIT)
@@ -601,7 +607,7 @@ class TestUtxoEndpoints(unittest.TestCase):
         self.assertEqual(r.status_code, 401)
         self.assertEqual(
             r.get_json()['code'],
-            'LEGACY_SIGNATURE_FEE_UNBOUND',
+            'UTXO_SIGNATURE_DOMAIN_REQUIRED',
         )
         self.assertEqual(self.utxo_db.get_balance(sender), 100 * UNIT)
         self.assertEqual(self.utxo_db.get_balance(recipient), 0)

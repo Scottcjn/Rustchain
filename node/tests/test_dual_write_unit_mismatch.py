@@ -307,7 +307,19 @@ class TestDualWriteUnitCorrectness(unittest.TestCase):
         self.assertNotEqual(recipient_i64, 1_000_000)
 
     def test_dual_write_large_amount_no_overflow(self):
-        """Transferring 10,000 RTC should write 10,000,000,000 uRTC."""
+        """A large transfer must write the correct large i64 to the shadow row.
+
+        Amount note / invariant: a single ``/utxo/transfer`` can be funded by at
+        most ``MAX_INPUTS`` (100) UTXOs, and coinbase outputs are capped at
+        ``MAX_COINBASE_OUTPUT_NRTC`` (150 RTC). A coinbase-only sender therefore
+        cannot move more than 100 * 150 = 15,000 RTC in one transfer, so the
+        original 1_000_000 RTC amount is structurally unreachable through this
+        endpoint path (it needs ~6,667 inputs and is rejected before settling).
+        The full 1_000_000 RTC i64-overflow magnitude is covered directly at the
+        conversion boundary by ``test_account_i64_no_overflow_at_one_million_rtc``
+        below; this case exercises a large end-to-end transfer near the feasible
+        ceiling.
+        """
         sender = 'RTC_test_aabbccdd'
         recipient = 'RTC_test_eeffgghh'
         self._seed_coinbase(sender, 20_000 * UNIT)
@@ -333,6 +345,22 @@ class TestDualWriteUnitCorrectness(unittest.TestCase):
         recipient_i64 = self._get_account_balance_i64(recipient)
         expected_i64 = int(10_000.0 * ACCOUNT_UNIT)  # 10_000_000_000
         self.assertEqual(recipient_i64, expected_i64)
+
+    def test_account_i64_no_overflow_at_one_million_rtc(self):
+        """Restore 1_000_000 RTC i64-overflow coverage at the conversion boundary.
+
+        This is the exact helper the dual-write path uses to mirror UTXO amounts
+        into the 6-decimal account shadow row. It is not bounded by MAX_INPUTS, so
+        it can assert the full 1_000_000 RTC magnitude (1_000_000_000_000 uRTC)
+        converts exactly, stays positive, and remains far below the int64 ceiling.
+        """
+        from decimal import Decimal
+        from utxo_endpoints import _decimal_to_account_i64
+
+        result = _decimal_to_account_i64(Decimal('1000000'), 'amount_rtc')
+        self.assertEqual(result, 1_000_000_000_000)
+        self.assertGreater(result, 0)
+        self.assertLess(result, 2 ** 63 - 1)
 
     # -- Integrity endpoint tests --------------------------------------------
 
