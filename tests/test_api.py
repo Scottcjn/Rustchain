@@ -73,6 +73,8 @@ def test_api_miners_requires_auth(client):
         mock_conn = mock_connect.return_value.__enter__.return_value
         mock_conn.row_factory = _sqlite3.Row
         mock_cursor = mock_conn.cursor.return_value
+        enrolled_conn = MagicMock()
+        enrolled_conn.execute.return_value.fetchone.return_value = [0]
 
         # The endpoint calls c.execute() twice:
         #   1. SELECT COUNT(*) ... -> fetchone() -> [0]
@@ -83,6 +85,7 @@ def test_api_miners_requires_auth(client):
         rows_result.fetchall.return_value = []
         mock_cursor.execute.side_effect = [count_result, rows_result]
         mock_connect.return_value.execute.return_value.fetchone.return_value = [0]
+        mock_connect.side_effect = [mock_connect.return_value, enrolled_conn]
 
         response = client.get('/api/miners')
         assert response.status_code == 200

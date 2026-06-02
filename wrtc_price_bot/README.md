@@ -69,7 +69,7 @@ python3 wrtc_price_bot.py --watch --interval 300 --threshold 10
 ## Token Details
 
 - **Mint:** `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X`
-- **Supply:** 8,300,000 wRTC
+- **Supply:** 8,388,608 wRTC
 - **Raydium Pool:** `8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb`
 
 ## Example Output

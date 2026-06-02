@@ -30,8 +30,8 @@ To prevent emulation (VMs) and spoofing, RustChain employs 6 distinct hardware c
 
 ## 4. Token Economics (RTC)
 *   **Token Symbol**: RTC
-*   **Total Supply**: 8,000,000 RTC (Capped)
-*   **Premine**: 75,000 RTC (Dev fund/Bounties)
+*   **Total Supply**: 8,388,608 RTC (Capped)
+*   **Premine**: 503,316 RTC (Dev fund/Bounties)
 *   **Epoch Pot**: 1.5 RTC distributed every ~24 hours.
 
 ### 4.1 Antiquity Multipliers

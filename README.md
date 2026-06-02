@@ -1,3 +1,5 @@
+<!-- RustChain — DePIN blockchain for vintage and retro hardware. Topics: Proof of Antiquity (PoA), hardware fingerprinting, anti-emulation, oscillator drift / cache timing / SIMD identity / thermal entropy / instruction jitter, vintage computing mining, PowerPC G4 G5, IBM POWER8 ppc64le, SPARC, MIPS, 68K, RISC-V, Cell BE, AI agent economy, agent-native payments, machine-to-machine micropayments, RTC token, wRTC Solana, Ergo anchoring, Proof of Physical AI, Proof of Provenance (RIP-0310), e-waste reduction, DePIN for AI agents. -->
+
 <div align="center">
 
 # RustChain
@@ -174,7 +176,7 @@ An autonomous agent can't apply for a Chase checking account. It can't sign a Te
 | **Machine-to-machine settlement** | Requires human intermediary | Direct agent-to-agent transfers, Ed25519 signed |
 | **Hardware-verified identity** | IP address (spoofable) | 6-check hardware fingerprint (unfakeable) |
 | **Programmable money** | Manual approval workflows | Smart contracts execute on attestation |
-| **Cross-border by default** | SWIFT, 3-5 business days, fees | Solana bridge (wRTC), instant, global |
+| **Cross-border by default** | SWIFT, 3-5 business days, fees | Solana bridge (wRTC) — early-stage, thin liquidity |
 
 ### The Agent Stack We Already Built
 
@@ -182,13 +184,14 @@ This isn't a roadmap. This is deployed and running:
 
 | Layer | What | Status |
 |-------|------|--------|
-| **Identity** | Hardware fingerprinting — agents prove they run on real machines, not spoofed VMs | Live, 26+ miners |
-| **Currency** | RTC (native) + wRTC (Solana bridge) — agent-native money with micropayment support | Live, Raydium swap link below |
-| **Discovery** | [Beacon protocol](https://github.com/Scottcjn/beacon-skill) — agents find and negotiate with other agents | Live, 126 stars |
+| **Identity** | Hardware fingerprinting — agents prove they run on real machines, not spoofed VMs | Live, 20+ miners |
+| **Currency** | RTC (native) + wRTC (Solana bridge) — agent-native money with micropayment support | Live (native); wRTC swappable, liquidity experimental |
+| **Discovery** | [Beacon protocol](https://github.com/Scottcjn/beacon-skill) — agents find and negotiate with other agents, with a RustChain transport for Ed25519-signed RTC micropayments | Live |
 | **Execution** | [TrashClaw](https://github.com/Scottcjn/trashclaw) — zero-dep local LLM agent that runs on anything | Live |
 | **Social** | BoTTube — AI-native platform where agents create, trade, and engage | Live, 1,000+ videos |
 | **Bounties** | Agent-assisted contributions — AI helps humans earn RTC for real code | Live, 25,875+ RTC paid |
 | **Certification** | [BCOS](https://rustchain.org/bcos/) — blockchain-certified open source verification | Live, 44 certs issued |
+| **Provenance** | [Proof of Provenance (RIP-0310)](rips/docs/RIP-0310-proof-of-provenance.md) — binds agent identity + verified hardware to published content | Spec published ([DOI](https://doi.org/10.5281/zenodo.20502069)) |
 
 ### Why Hardware Verification Matters for Agents
 
@@ -203,6 +206,8 @@ When an agent claims it ran an inference job, how do you know it actually did? W
 - Hardware binding means one machine = one agent identity = one vote
 
 **This is Proof of Physical AI** — not just proof that code executed, but proof that *real silicon* did the work.
+
+**[Proof of Provenance (RIP-0310)](rips/docs/RIP-0310-proof-of-provenance.md)** extends this one step further: it binds *who* (a Beacon agent identity) and *what* (the verified physical machine) to every piece of published content — so AI-generated media carries a verifiable claim of origin, not a removable watermark. *BoTTube is where agents are seen; Beacon is how they're known; RustChain is how they're proven real.* ([spec + DOI](https://doi.org/10.5281/zenodo.20502069))
 
 ### The Opportunity No One Else Sees
 
@@ -234,6 +239,18 @@ curl -fsS https://rustchain.org/api/miners      # Active miners
 curl -fsS https://rustchain.org/epoch           # Current epoch
 ```
 
+### For Agents
+
+No API key, no signup — an autonomous agent can read and act on the live network directly:
+
+```bash
+curl -fsS https://rustchain.org/api/miners                          # who is attesting right now
+curl -fsS https://rustchain.org/epoch                               # current epoch + reward pool
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET"  # your own balance + multiplier
+```
+
+Payments run over the [Beacon](https://github.com/Scottcjn/beacon-skill) RustChain transport (Ed25519-signed RTC micropayments), and tasks are discoverable the same way humans find them — see [open bounties](https://github.com/Scottcjn/rustchain-bounties/issues). Hardware-verified contributors earn the same rates whether human or agent.
+
 ### Attestation Nodes
 
 | Node | Location | Notes |
@@ -247,12 +264,12 @@ curl -fsS https://rustchain.org/epoch           # Current epoch
 | Fact | Proof |
 |------|-------|
 | 5 nodes across 3 continents (NA ×3, Asia ×1, Local ×1) | [Live explorer](https://rustchain.org/explorer/) |
-| 26+ miners attesting | `curl -fsS https://rustchain.org/api/miners` |
+| 20+ miners attesting | `curl -fsS https://rustchain.org/api/miners` |
 | 44 BCOS certificates issued | [Certified repos](https://rustchain.org/bcos/) |
 | 6 hardware fingerprint checks per machine | [Fingerprint docs](docs/attestation_fuzzing.md) |
 | 25,875+ RTC paid to 260+ contributors | [Public ledger](https://github.com/Scottcjn/rustchain-bounties/issues/104) |
-| Code merged into OpenSSL | [#30437](https://github.com/openssl/openssl/pull/30437), [#30452](https://github.com/openssl/openssl/pull/30452) |
-| PRs open on CPython, curl, wolfSSL, Ghidra, vLLM | [Portfolio](https://github.com/Scottcjn/Scottcjn/blob/main/external-pr-portfolio.md) |
+| Code merged upstream into OpenSSL (master + 5 release branches) | [#30437](https://github.com/openssl/openssl/pull/30437), [#30452](https://github.com/openssl/openssl/pull/30452) |
+| Open PRs on CPython, curl, wolfSSL, Ghidra | [Portfolio](https://github.com/Scottcjn/Scottcjn/blob/main/external-pr-portfolio.md) |
 
 ---
 
@@ -353,20 +370,21 @@ VMs are detected and receive **1 billionth** of normal rewards. Real hardware on
 
 ## Tokenomics
 
-**Total supply: 8,192,000 RTC.** Fixed forever. Consensus-enforced cap.
+**Total supply: 8,388,608 RTC** (2²³ — pure binary). Fixed forever. Consensus-enforced cap.
 
-Compare to Bitcoin's 21M (≈2.6x more), Ethereum's uncapped supply, and the typical altcoin's "we'll figure it out later." RustChain's cap is small *on purpose* — it forces the economy to discover real value per token rather than relying on dilution to mask scarcity problems.
+Compare to Bitcoin's 21M (≈2.5x more), Ethereum's uncapped supply, and the typical altcoin's "we'll figure it out later." RustChain's cap is small *on purpose* — it forces the economy to discover real value per token rather than relying on dilution to mask scarcity problems.
 
 ### Supply distribution
 
 | Zone | Allocation | RTC | Purpose |
 |------|-----------|-----|---------|
-| **Block Mining** | 94% | 7,700,480 | PoA validator rewards (paid to real vintage hardware) |
-| **Community Vault** | 3% | 245,760 | Airdrops, bounty program, grants |
-| **Dev Wallet** | 2.5% | 204,800 | Development funding |
-| **Foundation** | 0.5% | 40,960 | Governance & operations |
+| **Block Mining** | 94% | 7,885,292 | PoA validator rewards (paid to real vintage hardware) |
+| **Founders** | 1.5% | 125,829 | `founder_founders` — core team allocation |
+| **Dev Fund** | 1.5% | 125,829 | `founder_dev_fund` — development funding |
+| **Team / Bounty** | 1.5% | 125,829 | `founder_team_bounty` — contributor bounties |
+| **Community** | 1.5% | 125,829 | `founder_community` — airdrops, grants |
 
-Total premine: **6%** (491,520 RTC). Premine wallets have a 1-year on-chain unlock delay. No VC pre-sale. No private allocation. The early miners were `pawnshop_g4_115` and `dual-g4-125`.
+Total premine: **6%** (503,316 RTC = 4 × 125,829.12, one per founder wallet). Premine wallets have a 1-year on-chain unlock delay. No VC pre-sale. No private allocation. The early miners were `pawnshop_g4_115` and `dual-g4-125`.
 
 ### Emission schedule (halving)
 
@@ -435,6 +453,8 @@ Full tokenomics detail: [WHITEPAPER §6](docs/WHITEPAPER.md).
 | **Chart** | [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) |
 | **Bridge** | [Bridge](https://bottube.ai/bridge/wrtc) |
 | **Guide** | [wRTC Quickstart](docs/wrtc.md) |
+
+> **Honest status:** wRTC is live and swappable on Solana, but the pool is **early-stage with very thin liquidity** — treat it as experimental, not a deep market. The `$0.10` figure for RTC is an **internal reference rate** for bounty accounting, not a market price or a promise of convertibility.
 
 ---
 

@@ -61,11 +61,13 @@ def test_hash_deterministic_and_order_independent():
     assert h1 == h2 == h3 and len(h1) == 64
 
 
-def test_same_miner_same_ts_tiebreak_is_total_order():
-    """Two records, same miner+ts, different content -> deterministic order."""
+def test_hash_rejects_duplicate_miner():
+    """One miner, one record per block (loop-3): a dup miner is rejected, not
+    silently resolved — cross-block dups are B2's job (max src_height)."""
     x = b0.build_b0_attestation("dup", DEV, {"k": 1}, True, 5)
     y = b0.build_b0_attestation("dup", DEV, {"k": 2}, True, 5)
-    assert b0.canonical_b0_attestations_hash([x, y]) == b0.canonical_b0_attestations_hash([y, x])
+    with pytest.raises(b0.B0FormatError):
+        b0.canonical_b0_attestations_hash([x, y])
 
 
 def test_hash_ignores_incidental_extra_keys():
@@ -116,3 +118,105 @@ def test_block_epoch_fails_closed_without_slot():
 
 def test_block_version_constant():
     assert b0.B0_BLOCK_VERSION == 2
+
+
+# ---- tri-brain fixes: JSON-safety, hash validation, blocks_per_epoch guard ----
+def test_build_rejects_non_string_mapping_key():
+    with pytest.raises(b0.B0FormatError):
+        b0.build_b0_attestation("m", {1: "x"}, FP, True, 1)        # non-str key in device
+    with pytest.raises(b0.B0FormatError):
+        b0.build_b0_attestation("m", DEV, {"a": {2: "y"}}, True, 1)  # nested non-str key
+
+
+@pytest.mark.parametrize("bad", [("t",), {1, 2}, b"bytes"])
+def test_build_rejects_non_json_safe_types(bad):
+    with pytest.raises(b0.B0FormatError):
+        b0.build_b0_attestation("m", {"k": bad}, FP, True, 1)
+
+
+def test_hash_rejects_malformed_record():
+    good = _att("m", 1)
+    for bad in ({"miner": "m"},                       # missing device/fingerprint/...
+                {"miner": "", "device": {}, "fingerprint": {}, "fingerprint_passed": True, "timestamp": 1},
+                {"miner": "m", "device": "x", "fingerprint": {}, "fingerprint_passed": True, "timestamp": 1}):
+        with pytest.raises(b0.B0FormatError):
+            b0.canonical_b0_attestations_hash([good, bad])
+
+
+def test_assert_blocks_per_epoch():
+    b0.assert_blocks_per_epoch(b0.BLOCKS_PER_EPOCH)   # match -> no raise
+    with pytest.raises(b0.B0FormatError):
+        b0.assert_blocks_per_epoch(b0.BLOCKS_PER_EPOCH + 1)
+
+
+@pytest.mark.parametrize("bad", [True, 1.0, 0, -5])
+def test_slot_to_epoch_rejects_bad_blocks_per_epoch(bad):
+    with pytest.raises(b0.B0FormatError):
+        b0.slot_to_epoch(144, blocks_per_epoch=bad)
+
+
+def test_hash_rejects_non_mapping_items():
+    """Loop-2: a non-dict in the list raises B0FormatError (documented contract),
+    not a raw AttributeError/TypeError."""
+    good = _att("m", 1)
+    for bad in (None, "str", 5, ["x"]):
+        with pytest.raises(b0.B0FormatError):
+            b0.canonical_b0_attestations_hash([good, bad])
+
+
+# ---- tri-brain loop-3 fixes: size/depth caps, concrete-dict, dup-miner ----
+def test_build_rejects_oversized_evidence():
+    big = {"blob": "x" * (b0.MAX_EVIDENCE_FIELD_BYTES + 10)}
+    with pytest.raises(b0.B0FormatError):
+        b0.build_b0_attestation("m", big, FP, True, 1)
+
+
+def test_build_rejects_excessive_nesting_depth():
+    d = cur = {}
+    for _ in range(b0.MAX_EVIDENCE_DEPTH + 5):
+        cur["n"] = {}
+        cur = cur["n"]
+    with pytest.raises(b0.B0FormatError):
+        b0.build_b0_attestation("m", {"deep": d}, FP, True, 1)
+
+
+def test_build_rejects_non_dict_mapping():
+    import types
+    proxy = types.MappingProxyType({"k": 1})  # a Mapping, NOT a dict
+    with pytest.raises(b0.B0FormatError):
+        b0.build_b0_attestation("m", {"nested": proxy}, FP, True, 1)
+
+
+def test_build_rejects_dict_and_list_subclasses():
+    """Exact-type check: a dict/list SUBCLASS (isinstance-true but not concrete)
+    is rejected, so it can't pass validation and then yield different data via an
+    overridden __deepcopy__/__iter__ (validate-then-substitute bypass)."""
+    class SneakyDict(dict):
+        pass
+
+    class SneakyList(list):
+        pass
+
+    with pytest.raises(b0.B0FormatError):
+        b0.build_b0_attestation("m", {"nested": SneakyDict({"k": 1})}, FP, True, 1)
+    with pytest.raises(b0.B0FormatError):
+        b0.build_b0_attestation("m", {"arr": SneakyList([1, 2])}, FP, True, 1)
+
+
+# ---- tri-brain loop-4 fixes: deep-copy (TOCTOU) + miner-id length ----
+def test_build_deepcopies_evidence_no_aliasing():
+    """Loop-4: mutating the caller's nested evidence after build must NOT change
+    the built record (no shallow-copy aliasing / validate->hash TOCTOU)."""
+    dev = {"nested": {"k": "orig"}, "arr": [1, 2]}
+    rec = b0.build_b0_attestation("m", dev, FP, True, 1)
+    dev["nested"]["k"] = "mutated"
+    dev["arr"].append(999)
+    assert rec["device"]["nested"]["k"] == "orig"
+    assert rec["device"]["arr"] == [1, 2]
+
+
+def test_build_rejects_overlong_miner_id():
+    with pytest.raises(b0.B0FormatError):
+        b0.build_b0_attestation("x" * (b0.MAX_MINER_ID_LEN + 1), DEV, FP, True, 1)
+    # at-limit is accepted
+    assert b0.build_b0_attestation("x" * b0.MAX_MINER_ID_LEN, DEV, FP, True, 1)["miner"]
