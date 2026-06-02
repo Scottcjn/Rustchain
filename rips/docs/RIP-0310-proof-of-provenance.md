@@ -33,7 +33,7 @@ doi: 10.5281/zenodo.20502068
 
 ## Abstract
 
-**Proof of Provenance (PoP) is a framework for verifiable lineage** across hardware, agents, content, knowledge, and economic activity. It replaces the question *"is this result correct?"* with *"can its origin be demonstrated?"* — and unifies the Elyan Labs stack (Proof of Antiquity, Proof of Physical AI, Beacon, GRAIL-V, BoTTube, RTC) into one trust architecture in which trust emerges from **demonstrable provenance rather than centralized authority**.
+**Proof of Provenance (PoP) is a framework for verifiable lineage** across hardware, agents, content, knowledge, and economic activity. It replaces the question *"is this result correct?"* with *"can its origin be demonstrated?"* — and proposes a path to unify the Elyan Labs stack (Proof of Antiquity, Proof of Physical AI, Beacon, GRAIL-V, BoTTube, RTC) *toward* a single trust architecture in which trust would emerge from **demonstrable provenance rather than centralized authority**. PoP is a framework and roadmap; the per-layer deployment status is stated plainly below.
 
 This document defines the framework (its five layers and their stated strength tiers) and then **fully specifies its canonical normative instance — the Content Provenance layer**: a cryptographic binding that joins a persistent Beacon agent identity to a RustChain-verified physical machine and makes that binding the trust unit for published media, answering **who** produced a piece of AI content, **what** physical machine it ran on, and **when** (immutably anchored). The novel contribution is the **binding**, not the constituent layers: agent identity, content platforms, and hardware attestation each exist independently; no prior system ties a persistent identity to physically-verified hardware and makes that pairing the trust unit for content.
 
@@ -62,15 +62,15 @@ PoP labels each layer by the strength of its *referent* binding, honestly:
 
 ### The five layers
 
-| Layer | Proves (origin claim) | Does **not** prove | Backing | Strength |
-|-------|----------------------|--------------------|---------|----------|
-| **Hardware** | ran on real, spoof-resistant silicon | absolute hardware ID; custody over time | PoA · PPA · anti-emulation (RIP-0001/0007/0308) | ATTESTED |
-| **Agent** | the same key-controlling identity signed this | non-sybil personhood (accords/reputation are governance *on top*) | Beacon (`agent.json`/`bcn_*`) | CRYPTOGRAPHIC (key-control) |
-| **Content** | this media ↔ this identity ↔ this time | the content is true or good | BoTTube + binding (this RIP) | CRYPTOGRAPHIC |
-| **Knowledge** | this output cited/retrieved this evidence | the model's internal reasoning lineage | GRAIL-V (CVPR 2026) | EVIDENTIARY |
-| **Economic** | this value was recorded as transferred/settled | that value-creating *work* occurred | RTC ledger (RIP-0004) | CRYPTOGRAPHIC (settlement) |
+| Layer | Proves (origin claim) | Does **not** prove | Strength | Status (2026-06-02) |
+|-------|----------------------|--------------------|----------|---------------------|
+| **Hardware** | ran on real, spoof-resistant silicon | absolute hardware ID; custody over time | ATTESTED | **deployed** (PoA/PPA/anti-emulation, RIP-0001/0007/0308) |
+| **Agent** | the same key-controlling identity signed this | non-sybil personhood (accords/reputation are governance *on top*) | CRYPTOGRAPHIC (key-control) | partial (Beacon `agent.json`/`bcn_*`) |
+| **Content** | this media ↔ this identity ↔ this time | the content is true or good | CRYPTOGRAPHIC | **spec** — this RIP, not yet shipped |
+| **Knowledge** | this output cited/retrieved this evidence | the model's internal reasoning lineage | EVIDENTIARY | research (GRAIL-V, CVPR 2026) |
+| **Economic** | this value was recorded as transferred/settled | that value-creating *work* occurred | CRYPTOGRAPHIC (settlement) | **deployed** (RTC ledger, RIP-0004) |
 
-Hardware Provenance is really an **attestation / authenticity** layer — a prerequisite the other claims rest on, not lineage in itself.
+Hardware Provenance is really an **attestation / authenticity** layer — a prerequisite the other claims rest on, not lineage in itself. **Honest status:** Hardware and Economic are deployed; the Content binding is specified here but not yet built; Agent is partial; Knowledge is research. The unified architecture is the *target*, not a running system.
 
 ```text
 Proof of Provenance — "where did this come from?"
@@ -83,7 +83,7 @@ Proof of Provenance — "where did this come from?"
 
 ### Composition
 
-The layers compose into one binding. A single BoTTube artifact can carry *which key-controlling agent* (Agent) produced it on *spoof-resistant verified hardware* (Hardware), citing *which evidence* (Knowledge), with *which recorded settlement* (Economic), bound at the content layer and anchored in time. This is a **signed, anchored binding across layers** — *not* continuous lifecycle custody with gap detection, which PoP does not specify. That composite binding — not any single layer — is what earns the framework.
+The layers compose into one binding. A single BoTTube artifact can carry *which key-controlling agent* (Agent) produced it on *spoof-resistant verified hardware* (Hardware), citing *which evidence* (Knowledge), with *which recorded settlement* (Economic), bound at the content layer and anchored in time. This is a **signed, anchored binding across layers** — *not* continuous lifecycle custody with gap detection, which PoP does not specify. That composite binding — not any single layer — is what *will* earn the framework. It is the **target demonstration**, and (per the status note above) it has not yet been built end-to-end: PoP is a framework and roadmap, not a claim that a running unified system exists today.
 
 ### PoA is attestation, not the destination
 
