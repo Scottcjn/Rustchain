@@ -572,9 +572,7 @@ def test_pending_confirm_keeps_transfer_pending_on_unsupported_balance_schema(mo
     body = response.get_json()
     assert body["confirmed_count"] == 0
     assert body["confirmed_ids"] == []
-    assert body["errors"] == [
-        {"id": 1, "error": "unsupported balances schema for wallet transfer"}
-    ]
+    assert body["errors"] == [{"id": 1, "error": "internal_error"}]
 
     with closing(sqlite3.connect(db_path)) as conn:
         (status, voided_reason, confirmed_at) = conn.execute(

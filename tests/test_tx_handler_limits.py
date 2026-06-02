@@ -8,9 +8,11 @@ strictly enforce limit caps and validate input parameters.
 """
 
 import os
+import gc
 import json
 import sqlite3
 import tempfile
+import time
 import pytest
 from flask import Flask
 from node.rustchain_tx_handler import TransactionPool, create_tx_api_routes
@@ -27,6 +29,7 @@ def app_context(monkeypatch):
     monkeypatch.setenv("RC_ADMIN_KEY", admin_key)
 
     db_fd, db_path = tempfile.mkstemp()
+    os.close(db_fd)
     app = Flask(__name__)
     app.config['TESTING'] = True
 
@@ -50,8 +53,18 @@ def app_context(monkeypatch):
     client.environ_base['HTTP_X_ADMIN_KEY'] = admin_key
     yield client
 
-    os.close(db_fd)
-    os.unlink(db_path)
+    del client
+    del pool
+    gc.collect()
+
+    for attempt in range(5):
+        try:
+            os.unlink(db_path)
+            break
+        except PermissionError:
+            if attempt == 4:
+                raise
+            time.sleep(0.1)
 
 def test_pending_default_limit(app_context):
     """Scenario: Default parameters (no query string) - Expect 100 (from logic)"""

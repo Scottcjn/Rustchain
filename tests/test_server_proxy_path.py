@@ -92,8 +92,9 @@ def test_proxy_keeps_safe_requests_under_api(monkeypatch):
         text = "ok"
         headers = {"Content-Type": "text/plain"}
 
-    def fake_get(url, timeout):
+    def fake_get(url, headers, timeout):
         captured["url"] = url
+        captured["headers"] = headers
         captured["timeout"] = timeout
         return FakeResponse()
 
@@ -103,7 +104,11 @@ def test_proxy_keeps_safe_requests_under_api(monkeypatch):
 
     assert response.status_code == 200
     assert response.get_data(as_text=True) == "ok"
-    assert captured == {"url": "http://localhost:8088/api/stats", "timeout": 10}
+    assert captured == {
+        "url": "http://localhost:8088/api/stats",
+        "headers": {},
+        "timeout": 10,
+    }
 
 
 def test_proxy_forwards_allowed_post_json(monkeypatch):

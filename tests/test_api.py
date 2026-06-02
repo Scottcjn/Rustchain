@@ -2,7 +2,7 @@ import pytest
 import os
 import json
 import sqlite3
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -64,30 +64,17 @@ def test_api_epoch_admin_sees_full_payload(client):
         assert data['enrolled_miners'] == 10
 
 
-def test_api_miners_requires_auth(client):
+def test_api_miners_requires_auth(client, monkeypatch, tmp_path):
     """Unauthenticated /api/miners endpoint should still return data (no auth required)."""
+    db_path = tmp_path / "api_miners_public.db"
+    _init_api_miners_db(db_path)
+    monkeypatch.setattr(integrated_node, "DB_PATH", str(db_path))
+
     rate_info = {"limit": 100, "remaining": 99, "reset": 0, "retry_after": 0}
-    with patch('integrated_node.check_api_miners_rate_limit', return_value=(True, rate_info)), \
-         patch('sqlite3.connect') as mock_connect:
-        import sqlite3 as _sqlite3
-        mock_conn = mock_connect.return_value.__enter__.return_value
-        mock_conn.row_factory = _sqlite3.Row
-        mock_cursor = mock_conn.cursor.return_value
-        enrolled_conn = MagicMock()
-        enrolled_conn.execute.return_value.fetchone.return_value = [0]
-
-        # The endpoint calls c.execute() twice:
-        #   1. SELECT COUNT(*) ... -> fetchone() -> [0]
-        #   2. SELECT ... FROM miner_attest_recent ... -> fetchall() -> []
-        count_result = MagicMock()
-        count_result.fetchone.return_value = [0]
-        rows_result = MagicMock()
-        rows_result.fetchall.return_value = []
-        mock_cursor.execute.side_effect = [count_result, rows_result]
-        mock_connect.side_effect = [mock_connect.return_value, enrolled_conn]
-
+    with patch('integrated_node.check_api_miners_rate_limit', return_value=(True, rate_info)):
         response = client.get('/api/miners')
         assert response.status_code == 200
+        assert response.get_json()["miners"] == []
 
 
 def _init_api_miners_db(path):

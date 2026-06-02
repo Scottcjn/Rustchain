@@ -83,6 +83,7 @@ docs/media/*.mp3 -diff
 *.env text eol=lf
 *.txt text eol=lf
 *.rst text eol=lf
+*.sha256 text eol=lf
 
 # Shell scripts should always use LF
 *.sh text eol=lf
