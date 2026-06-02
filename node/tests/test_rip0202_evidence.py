@@ -96,10 +96,21 @@ def test_older_attestation_does_not_clobber_newer(conn):
     assert rec["fingerprint"] == {"v": "new"} and rec["timestamp"] == 200
 
 
-def test_equal_ts_overwrites(conn):
+def test_equal_ts_resolves_deterministically_by_content(conn):
+    """On EQUAL ts the lexicographically smaller canonical content wins, so the
+    stored evidence converges to the same bytes regardless of arrival order
+    (no equal-ts last-arrival-wins substitution surface)."""
+    # {"v":1} canonical-sorts before {"v":2}, so it must win either insertion order.
     ev.record_attestation_evidence(conn, "m", DEV, {"v": 1}, True, 100)
-    ev.record_attestation_evidence(conn, "m", DEV, {"v": 2}, True, 100)  # same ts -> replace
-    assert ev.load_committed_attestations(conn)[0]["fingerprint"] == {"v": 2}
+    ev.record_attestation_evidence(conn, "m", DEV, {"v": 2}, True, 100)  # higher content -> no clobber
+    assert ev.load_committed_attestations(conn)[0]["fingerprint"] == {"v": 1}
+
+
+def test_equal_ts_convergence_is_order_independent(conn):
+    """Reverse arrival order yields the identical stored row."""
+    ev.record_attestation_evidence(conn, "m", DEV, {"v": 2}, True, 100)
+    ev.record_attestation_evidence(conn, "m", DEV, {"v": 1}, True, 100)  # lower content -> wins
+    assert ev.load_committed_attestations(conn)[0]["fingerprint"] == {"v": 1}
 
 
 def test_load_skips_out_of_range_passed_and_float_ts(conn):

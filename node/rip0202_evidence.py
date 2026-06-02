@@ -72,20 +72,25 @@ def record_attestation_evidence(
     input so the caller can reject the attestation rather than store junk.
     """
     rec = build_b0_attestation(miner, device, fingerprint, fingerprint_passed, ts)
-    # TS-MONOTONIC upsert: a delayed/replayed OLDER attestation must not clobber
-    # newer evidence (older ts < stored -> no-op). Equal-ts is last-arrival-wins
-    # and NOT content-deterministic — acceptable because this table is NODE-LOCAL
-    # pre-commit producer state: only the slot producer commits a block, after
-    # which every node hashes/re-derives its committed bytes identically (B0/B1),
-    # so local equal-ts variance cannot fork consensus. The committed block, not
-    # this pool, is the consensus artifact.
+    # TS-MONOTONIC upsert with a DETERMINISTIC equal-ts tiebreak: a delayed/replayed
+    # OLDER attestation never clobbers newer evidence (older ts -> no-op); on an
+    # EQUAL ts, the row with the lexicographically smaller canonical content wins.
+    # The committed block (not this node-local pool) is the consensus artifact, but
+    # resolving equal-ts collisions by content rather than arrival order makes the
+    # stored evidence a pure function of the input SET -- every honest node's pool
+    # converges to identical bytes, removing any equal-ts arrival-order substitution
+    # surface before block production. char(31) (US, unit separator) is escaped out
+    # of canonical JSON, so it is an unambiguous field separator for the compare.
     conn.execute(
         "INSERT INTO attestation_evidence "
         "(miner, device_json, fingerprint_json, fingerprint_passed, ts) VALUES (?,?,?,?,?) "
         "ON CONFLICT(miner) DO UPDATE SET "
         "device_json=excluded.device_json, fingerprint_json=excluded.fingerprint_json, "
         "fingerprint_passed=excluded.fingerprint_passed, ts=excluded.ts "
-        "WHERE excluded.ts >= attestation_evidence.ts",
+        "WHERE excluded.ts > attestation_evidence.ts "
+        "OR (excluded.ts = attestation_evidence.ts AND "
+        "    excluded.device_json || char(31) || excluded.fingerprint_json || char(31) || excluded.fingerprint_passed "
+        "    < attestation_evidence.device_json || char(31) || attestation_evidence.fingerprint_json || char(31) || attestation_evidence.fingerprint_passed)",
         (
             rec["miner"],
             _canonical(rec["device"]),
