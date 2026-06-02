@@ -5,7 +5,7 @@ Settlement-atomicity tests for the OTC bridge.
 Covers the state-machine hardening:
   - confirm marks 'completed' ONLY when the payout actually succeeds;
   - a payout failure after escrow release -> 'settlement_recovery' (no trade
-    row, ok=False, HTTP 200);
+    row, ok=False, HTTP 502);
   - an escrow-release failure (funds never left escrow) -> reverts to 'matched'
     so the seller can retry;
   - a second confirm of a completed order is rejected;
@@ -113,7 +113,7 @@ def test_payout_failure_marks_settlement_recovery_not_completed(tmp_path):
             r = client.post(f"/api/orders/{order_id}/confirm",
                             json={"wallet": seller_wallet, "quote_tx": "0xabc", "secret": secret})
         body = r.get_json()
-        assert r.status_code == 200  # 200 + ok:false (body carries outcome)
+        assert r.status_code == 502  # failed settlement = upstream failure (body carries ok:false)
         assert body["ok"] is False
         assert body["status"] == "settlement_recovery"
         assert "htlc_secret" not in body  # preimage not echoed on failure
@@ -133,7 +133,7 @@ def test_escrow_release_failure_reverts_to_matched_for_retry(tmp_path):
             r = client.post(f"/api/orders/{order_id}/confirm",
                             json={"wallet": seller_wallet, "quote_tx": "0xabc", "secret": secret})
         body = r.get_json()
-        assert r.status_code == 200  # 200 + ok:false (body carries outcome)
+        assert r.status_code == 502  # failed settlement = upstream failure (body carries ok:false)
         assert body["ok"] is False
         assert body["status"] == "matched"        # funds untouched -> retryable
         mock_payout.assert_not_called()            # never paid out
@@ -189,6 +189,38 @@ def test_confirm_exception_after_release_recovers_to_settlement_recovery(tmp_pat
         status = client.get(f"/api/orders/{order_id}").get_json()["order"]["status"]
         assert status == "settlement_recovery"  # NOT wedged in 'settling'
         assert _trade_count(module) == 0
+
+
+def test_accept_read_timeout_is_ambiguous_recovery(tmp_path):
+    """A read-timeout on /accept (request sent, outcome unknown) is AMBIGUOUS —
+    escrow may have moved — so recovery must be 'settlement_recovery', not a
+    retry that could dead-end on an already-accepted job."""
+    module = load_otc_bridge(tmp_path)
+    ok = _escrow_ok_post()
+    with module.app.test_client() as client:
+        order_id, seller_wallet, secret = _matched_buy(module, client)
+        # claim ok, deliver ok, accept read-times-out.
+        with patch.object(module.requests, "post",
+                          side_effect=[ok, ok, module.requests.exceptions.ReadTimeout("slow")]):
+            r = client.post(f"/api/orders/{order_id}/confirm",
+                            json={"wallet": seller_wallet, "quote_tx": "0xabc", "secret": secret})
+        assert r.status_code == 500
+        assert client.get(f"/api/orders/{order_id}").get_json()["order"]["status"] == "settlement_recovery"
+
+
+def test_accept_connection_error_reverts_to_matched(tmp_path):
+    """A connection error on /accept (request never reached the node) means
+    escrow definitely did NOT move — revert to 'matched' (retryable)."""
+    module = load_otc_bridge(tmp_path)
+    ok = _escrow_ok_post()
+    with module.app.test_client() as client:
+        order_id, seller_wallet, secret = _matched_buy(module, client)
+        with patch.object(module.requests, "post",
+                          side_effect=[ok, ok, module.requests.exceptions.ConnectionError("refused")]):
+            r = client.post(f"/api/orders/{order_id}/confirm",
+                            json={"wallet": seller_wallet, "quote_tx": "0xabc", "secret": secret})
+        assert r.status_code == 500
+        assert client.get(f"/api/orders/{order_id}").get_json()["order"]["status"] == "matched"
 
 
 def test_cancel_of_matched_order_does_not_refund(tmp_path):

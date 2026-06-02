@@ -1107,17 +1107,17 @@ def match_order(order_id):
 
         if c.execute("SELECT changes()").fetchone()[0] == 0:
             # We lost the race. Release the escrow WE just locked, else the
-            # loser's RTC is orphaned in a job no order row references.
+            # loser's RTC is orphaned in a job no order row references. Use the
+            # raise-proof helper so a refund/alert failure can't turn this 409
+            # into a 500 (or trigger a double cleanup in the outer handler).
             conn.rollback()
             if created_escrow_job_id:
-                if not rtc_cancel_escrow(created_escrow_job_id, taker_wallet):
-                    log.error(f"Failed to refund losing-taker escrow {created_escrow_job_id} for {order_id}")
-                    send_bridge_alert(
-                        "critical",
-                        "OTC taker escrow orphaned after lost match race",
-                        {"order_id": order_id, "escrow_job_id": created_escrow_job_id,
-                         "taker_wallet": taker_wallet},
-                    )
+                safe_refund_escrow(
+                    created_escrow_job_id, taker_wallet,
+                    "OTC taker escrow orphaned after lost match race",
+                    {"order_id": order_id, "escrow_job_id": created_escrow_job_id,
+                     "taker_wallet": taker_wallet})
+                created_escrow_job_id = None  # handled; don't double-refund in except
             return jsonify({"error": "Order was matched by someone else"}), 409
 
         conn.commit()
@@ -1168,20 +1168,13 @@ def match_order(order_id):
         # Release escrow this request locked but never committed to an order,
         # so an unexpected failure can't strand the taker's RTC. (Cleared to None
         # right after a successful commit, so this only fires for uncommitted
-        # escrow.) Alert on refund failure, same as the lost-race path.
+        # escrow.) Raise-proof so it can't mask the original error.
         if created_escrow_job_id:
-            refunded = False
-            try:
-                refunded = rtc_cancel_escrow(created_escrow_job_id, taker_wallet)
-            except Exception:
-                log.error(f"Exception refunding escrow {created_escrow_job_id} after match error for {order_id}")
-            if not refunded:
-                send_bridge_alert(
-                    "critical",
-                    "OTC taker escrow orphaned after match exception",
-                    {"order_id": order_id, "escrow_job_id": created_escrow_job_id,
-                     "taker_wallet": taker_wallet},
-                )
+            safe_refund_escrow(
+                created_escrow_job_id, taker_wallet,
+                "OTC taker escrow orphaned after match exception",
+                {"order_id": order_id, "escrow_job_id": created_escrow_job_id,
+                 "taker_wallet": taker_wallet})
         return internal_error_response("Order match")
     finally:
         conn.close()
@@ -1275,10 +1268,9 @@ def confirm_order(order_id):
 
         payout_status = "not_started"
         payout_result = {}
-        # Tracks whether escrow funds have left into otc_bridge_worker. Drives
-        # recovery if we crash mid-settlement: released -> settlement_recovery,
-        # not-released -> safe to revert to 'matched' for retry.
-        escrow_released = False
+        # escrow_released (init'd before the try) tracks whether escrow funds
+        # have left into otc_bridge_worker, driving recovery: released ->
+        # settlement_recovery, not-released -> safe to revert to 'matched'.
 
         # Release RTC escrow
         if order["escrow_job_id"]:
@@ -1307,18 +1299,30 @@ def confirm_order(order_id):
                 # Accept releases funds to otc_bridge_worker. We then transfer
                 # from worker → recipient via admin /wallet/transfer.
                 if deliver_r.ok:
-                    # Mark released BEFORE the call: accept is the point of no
-                    # return. If it times out / disconnects the funds may have
-                    # moved even though we got no ok response, so any exception
-                    # from here must route recovery to 'settlement_recovery'
-                    # (ambiguous), never back to a retryable 'matched'.
-                    escrow_released = True
-                    accept_r = requests.post(
-                        f"{RUSTCHAIN_NODE}/agent/jobs/{order['escrow_job_id']}/accept",
-                        json={"poster_wallet": escrow_poster, "rating": 5},
-                        verify=TLS_VERIFY, timeout=15
-                    )
+                    # The accept call is the point of no return for escrow.
+                    # Distinguish "never reached the node" from "sent, outcome
+                    # unknown" so crash/exception recovery picks the right state:
+                    #   ConnectionError (refused / DNS / SSL / connect-timeout)
+                    #       -> request never landed, escrow NOT released, stays
+                    #          retryable ('matched');
+                    #   read-timeout / other RequestException after send
+                    #       -> funds MAY have moved, AMBIGUOUS -> mark released so
+                    #          recovery routes to 'settlement_recovery', never to
+                    #          a retry that would dead-end on an already-accepted
+                    #          job.
+                    try:
+                        accept_r = requests.post(
+                            f"{RUSTCHAIN_NODE}/agent/jobs/{order['escrow_job_id']}/accept",
+                            json={"poster_wallet": escrow_poster, "rating": 5},
+                            verify=TLS_VERIFY, timeout=15
+                        )
+                    except requests.exceptions.ConnectionError:
+                        raise  # never reached node -> escrow_released stays False
+                    except requests.exceptions.RequestException:
+                        escrow_released = True  # sent, outcome unknown -> ambiguous
+                        raise
                     if accept_r.ok:
+                        escrow_released = True
                         payout_result = rtc_transfer_from_worker(
                             rtc_recipient,
                             order["amount_rtc"],
@@ -1367,7 +1371,13 @@ def confirm_order(order_id):
 
         if payout_succeeded:
             final_status = "completed"
-        elif payout_status == "manual_recovery_required":
+        elif escrow_released:
+            # Invariant: once escrow has (or may have) left, NEVER revert to a
+            # retryable 'matched' — a retry would dead-end on an already-accepted
+            # job while funds sit in otc_bridge_worker. Always route to recovery.
+            # (Today this only fires for payout_status=='manual_recovery_required',
+            # but keying on escrow_released enforces the invariant directly rather
+            # than relying on that coincidence.)
             final_status = "settlement_recovery"
         else:
             final_status = "matched"  # escrow untouched (claim/deliver/accept failed) — retryable
@@ -1448,10 +1458,13 @@ def confirm_order(order_id):
             # Only echo the preimage + trade_id on a genuinely completed swap.
             response["trade_id"] = trade_id
             response["htlc_secret"] = secret
-        # Always HTTP 200: the request was processed and the outcome is in the
-        # body (ok + status). Clients here branch on `ok`, not the status code;
-        # a non-2xx would break the frontend's `if (data.ok)` flow.
-        return jsonify(response)
+        # 200 only on genuine completion; a failed settlement (escrow/payout
+        # failure, now in 'settlement_recovery' or reverted to 'matched') is an
+        # upstream failure -> 502, so monitoring/intermediaries don't read a
+        # failed financial operation as success. Clients still get the full body
+        # (ok + status) and can branch on `ok`; a retry is safe (matched is
+        # designed to retry, settlement_recovery 409s).
+        return jsonify(response), (200 if payout_succeeded else 502)
 
     except Exception:
         conn.rollback()
