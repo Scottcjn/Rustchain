@@ -1,73 +1,93 @@
-# Consensus Invariant Attractor
+# Consensus Invariant Attractor Harness
 
-This document defines a reusable submission format for small adversarial tests
-against RustChain consensus invariants. The goal is to make future bounty
-submissions cheap to review: one invariant, one setup, one action, one objective
-expected result.
+This document defines the reusable submission grammar and acceptance rubric for
+small adversarial tests that pin RustChain consensus invariants. The goal is to
+make future bounty submissions cheap to review: one invariant per test, one
+explicit oracle, and a deterministic fixture that runs without live network
+state.
+
+## PR Title
+
+`attractor: consensus-invariant harness`
 
 ## Submission Grammar
 
-Submit one PR titled:
+Each submitted test MUST declare exactly one invariant case with these fields:
 
-```text
-attractor: consensus-invariant harness
-```
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `invariant_id` | yes | Stable lowercase identifier, for example `consensus.reward.emission_conserved`. |
+| `statement` | yes | One-sentence invariant that must hold across all valid executions. |
+| `fixture` | yes | Minimal deterministic chain, database, or module state needed to exercise the invariant. |
+| `adversarial_move` | yes | The mutation, ordering change, replay, duplicate, delay, or alias attempt being tested. |
+| `oracle` | yes | Objective pass/fail predicate checked by the test. |
+| `determinism_controls` | yes | How time, randomness, live services, and filesystem state are bounded or mocked. |
+| `command` | yes | Exact command reviewers can run from repository root. |
+| `bcos_tier` | yes for code PRs | `BCOS-L1` for ordinary regression harnesses, `BCOS-L2` for consensus/reward/auth/crypto-sensitive behavior. |
 
-For each added test, include an `InvariantSpec` header with:
+Recommended test name:
 
-- `invariant_id`: stable short id, such as `utxo-conservation-001`
-- `claim`: the consensus claim being pinned
-- `setup`: the exact fixture state created before the action
-- `action`: the adversarial or boundary action performed
-- `expected`: the objective result that makes the invariant pass
+`test_<domain>__<invariant_id_slug>__<adversarial_move_slug>`
 
-Each test should follow this shape:
+Example:
 
-```python
-spec = InvariantSpec(
-    invariant_id="area-claim-number",
-    claim="one sentence invariant",
-    setup="minimal starting state",
-    action="single operation under test",
-    expected="objective pass/fail condition",
-)
+`test_consensus__machine_identity_stable__fingerprint_key_reorder`
 
-# Arrange
-# Act
-# Assert with assert_invariant(spec, condition, detail)
+## Reusable Template
+
+Copy this block into future attractor submissions and fill in every field:
+
+```markdown
+### Invariant Case
+
+- invariant_id:
+- statement:
+- fixture:
+- adversarial_move:
+- oracle:
+- determinism_controls:
+- command:
+- bcos_tier:
+
+### Review Notes
+
+- Expected failure if the invariant is broken:
+- Files touched:
+- Runtime bound:
 ```
 
 ## Acceptance Rubric
 
-Accept a submitted attractor test when all of these are true:
+Accept a submitted invariant test when all checks below are true:
 
-- It tests exactly one invariant.
-- It is deterministic and green on current `main`.
-- It has a minimal fixture and no live-network dependency.
-- It fails if the invariant is intentionally broken.
-- The assertion message includes enough detail to debug a failure.
-- The test belongs near the code it protects, usually under `node/`.
+| Check | Accept | Reject |
+| --- | --- | --- |
+| Single invariant | The test pins one stated invariant. | The test mixes unrelated properties or has no clear invariant. |
+| Meaningful adversary | The adversarial move could expose a consensus, reward, enrollment, settlement, identity, or idempotency regression. | The test only asserts a tautology or mirrors implementation constants without pressure. |
+| Objective oracle | Pass/fail is decided by deterministic assertions. | Reviewers must interpret logs, screenshots, timing, or subjective prose. |
+| Deterministic fixture | No live network, wall-clock dependency, random seed drift, or persistent local state is required. | The test can pass or fail depending on external services, current time, or host state. |
+| Bounded runtime | The focused command should complete in under 10 seconds on a normal development machine. | The test is a long soak, load test, or unbounded fuzz run. |
+| Reviewable scope | The fixture is small enough to understand inline or in one helper. | The submission brings a broad framework or rewrites production code only to test it. |
+| Failure signal | A plausible one-line mutation to the guarded behavior would fail the test. | The test would still pass if the invariant were broken. |
 
-Reject or request changes when any of these are true:
+## Reference Example Tests
 
-- The test is a tautology or only checks that the helper itself works.
-- The setup is broad enough that a failure is hard to attribute.
-- The test depends on wall-clock timing, live nodes, external APIs, or account
-  state outside its fixture.
-- The claim is already covered by an equivalent invariant test without adding a
-  clearer boundary or simpler reproduction.
-- The expected result is subjective or requires maintainer interpretation.
+The first three reference cases live in `tests/test_consensus_invariant_attractor.py`:
 
-## Reference Examples
+| Test | Invariant pinned |
+| --- | --- |
+| `test_consensus__machine_identity_stable__fingerprint_key_reorder` | Reordered fingerprint JSON cannot change a physical machine identity hash. |
+| `test_consensus__machine_identity_separates__architecture_alias` | The same fingerprint on a different architecture is a different machine identity. |
+| `test_consensus__representative_selection_idempotent__input_order_shuffle` | Duplicate-miner representative selection is deterministic and preserves the highest enrolled epoch weight. |
 
-`node/test_consensus_invariant_harness.py` provides three green examples:
+Run them with:
 
-1. `utxo-conservation-001`: a non-mint transfer may only reduce unspent supply
-   by its declared fee.
-2. `utxo-double-spend-001`: a spent UTXO cannot be consumed again, and the failed
-   attempt must not mutate state.
-3. `genesis-idempotency-001`: rerunning genesis migration must be refused without
-   duplicating balances.
+```bash
+python -m pytest tests/test_consensus_invariant_attractor.py -q
+```
 
-These examples are deliberately small. Future attractor submissions should add
-more cases in the same style instead of embedding long audit reports in tests.
+Fallback without pytest:
+
+```bash
+python -m unittest tests.test_consensus_invariant_attractor
+```
