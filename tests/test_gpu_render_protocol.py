@@ -86,6 +86,25 @@ class TestGPURenderProtocol(unittest.TestCase):
         refund = self.proto.refund_escrow(job_id, "wallet-b", result["escrow_secret"])
         self.assertEqual(refund["status"], "refunded")
 
+    def test_escrow_transition_is_atomic_under_race(self):
+        # A concurrent winner transitions the row between our read and write;
+        # the WHERE status='locked' guard must make the loser fail (no double-spend).
+        result = self.proto.create_escrow("render", "wallet-a", "wallet-b", 10.0)
+        job_id = result["job_id"]
+        secret = result["escrow_secret"]
+        orig_auth = self.proto._authorize_escrow_action
+
+        def racing_auth(row, **kwargs):
+            c = self.proto._get_conn()
+            c.execute("UPDATE render_escrow SET status='released' WHERE job_id=?", (job_id,))
+            c.commit()
+            c.close()
+            return orig_auth(row, **kwargs)
+
+        self.proto._authorize_escrow_action = racing_auth
+        res = self.proto.refund_escrow(job_id, "wallet-b", secret)
+        self.assertIn("no longer locked", res.get("error", ""))
+
     def test_release_requires_payer_and_secret(self):
         result = self.proto.create_escrow("render", "wallet-a", "wallet-b", 10.0)
         job_id = result["job_id"]
