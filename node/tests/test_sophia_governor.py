@@ -488,3 +488,29 @@ def test_governor_review_rejects_malformed_amount_i64(tmp_db):
     assert result5["stance"] == "hold"
     assert "malformed_amount" in result5["signals"]
 
+
+def test_governor_review_amount_precedence(tmp_db, monkeypatch):
+    monkeypatch.setenv("SOPHIA_GOVERNOR_TRANSFER_CRITICAL_RTC", "100")
+    # If amount_rtc is 0/0.0 and amount_i64 is set, it must fallback to amount_i64
+    result = review_rustchain_event(
+        event_type="pending_transfer",
+        source="pytest",
+        payload={"amount_rtc": 0, "amount_i64": 500000000},
+        db_path=tmp_db,
+    )
+    assert result["stance"] == "hold"
+    assert result["risk_level"] == "critical"
+    # Should flag critical transfer since 500.0 RTC >= 100.0 (critical threshold)
+    assert "amount>=100.00rtc" in result["signals"]
+
+    # If amount_rtc is non-zero, it takes precedence over amount_i64
+    result2 = review_rustchain_event(
+        event_type="pending_transfer",
+        source="pytest",
+        payload={"amount_rtc": 50, "amount_i64": 500000000},
+        db_path=tmp_db,
+    )
+    # Stance should be allow (or watch) rather than hold, since 50 < 100
+    assert result2["stance"] != "hold"
+
+

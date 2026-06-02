@@ -473,25 +473,44 @@ def _heuristic_review(event_type: str, payload: dict[str, Any]) -> dict[str, Any
     elif event_type == "pending_transfer":
         amount_rtc = 0.0
         malformed_amount = False
-        try:
-            val = payload.get("amount_rtc")
-            if val is not None:
-                if isinstance(val, bool):
-                    malformed_amount = True
-                else:
-                    amount_rtc = float(val)
-                    if amount_rtc < 0 or not math.isfinite(amount_rtc):
+
+        # 1. Parse amount_rtc
+        rtc_val = payload.get("amount_rtc")
+        rtc_parsed = None
+        if rtc_val is not None and rtc_val != "":
+            if isinstance(rtc_val, bool) or not isinstance(rtc_val, (int, float, str)):
+                malformed_amount = True
+            else:
+                try:
+                    rtc_parsed = float(rtc_val)
+                    if rtc_parsed < 0 or not math.isfinite(rtc_parsed):
                         malformed_amount = True
-            elif payload.get("amount_i64") is not None:
-                val = payload.get("amount_i64")
-                if isinstance(val, bool):
+                except (TypeError, ValueError):
                     malformed_amount = True
-                else:
-                    amount_rtc = float(val) / 1_000_000.0
-                    if amount_rtc < 0 or not math.isfinite(amount_rtc):
+
+        # 2. Parse amount_i64
+        i64_val = payload.get("amount_i64")
+        i64_parsed = None
+        if i64_val is not None and i64_val != "":
+            if isinstance(i64_val, bool) or not isinstance(i64_val, (int, float, str)):
+                malformed_amount = True
+            else:
+                try:
+                    i64_parsed = float(i64_val) / 1_000_000.0
+                    if i64_parsed < 0 or not math.isfinite(i64_parsed):
                         malformed_amount = True
-        except (TypeError, ValueError):
-            malformed_amount = True
+                except (TypeError, ValueError):
+                    malformed_amount = True
+
+        # 3. Apply precedence: use amount_rtc if non-zero; fallback to amount_i64
+        if rtc_parsed:
+            amount_rtc = rtc_parsed
+        elif i64_parsed is not None:
+            amount_rtc = i64_parsed
+        elif rtc_parsed is not None:
+            amount_rtc = rtc_parsed
+        else:
+            amount_rtc = 0.0
 
 
         reason_text = str(payload.get("reason", "")).lower()
