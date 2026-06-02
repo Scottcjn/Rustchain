@@ -4,8 +4,7 @@
 Regression tests for transaction API internal error redaction.
 """
 
-import os
-
+import pytest
 from flask import Flask
 
 from node.rustchain_tx_handler import create_tx_api_routes
@@ -16,6 +15,12 @@ from node.rustchain_tx_handler import create_tx_api_routes
 # authenticate to reach (and trigger) the internal-error path.
 _ADMIN_KEY = "test-admin-key"
 _ADMIN_HDR = {"X-Admin-Key": _ADMIN_KEY}
+
+
+@pytest.fixture(autouse=True)
+def _configure_admin_key(monkeypatch):
+    # SCOPED (auto-restored): never leak RC_ADMIN_KEY into later test files.
+    monkeypatch.setenv("RC_ADMIN_KEY", _ADMIN_KEY)
 
 
 LEAKY_ERROR = "no such table: pending_transactions at /srv/rustchain/prod.db"
@@ -50,7 +55,6 @@ class ExplodingPool:
 
 
 def _client_for_exploding_pool():
-    os.environ["RC_ADMIN_KEY"] = _ADMIN_KEY  # so require_admin() is configured (not 503)
     app = Flask(__name__)
     app.config["TESTING"] = True
     create_tx_api_routes(app, ExplodingPool())
