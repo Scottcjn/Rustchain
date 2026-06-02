@@ -681,6 +681,27 @@ def rtc_cancel_escrow(job_id, poster_wallet):
         return False
 
 
+def safe_refund_escrow(job_id, poster_wallet, alert_title, alert_fields):
+    """Best-effort escrow refund used AFTER a durable status commit.
+
+    NEVER raises: the order's terminal/intermediate state is already committed,
+    so the caller's API response must not turn into a 500 just because the
+    refund call (or the alert) failed. On any failure it logs + alerts and
+    returns False, so stranded escrow is always surfaced for reconciliation.
+    """
+    try:
+        if rtc_cancel_escrow(job_id, poster_wallet):
+            return True
+    except Exception:
+        log.error(f"Exception during post-commit escrow refund of job {job_id}")
+    log.error(f"Escrow refund failed for job {job_id}: {alert_title}")
+    try:
+        send_bridge_alert("critical", alert_title, alert_fields)
+    except Exception:
+        log.error("send_bridge_alert raised while reporting refund failure")
+    return False
+
+
 def parse_order_ttl(value):
     if value is None:
         return ORDER_TTL_DEFAULT
@@ -893,17 +914,33 @@ def list_orders():
         c = conn.cursor()
         now = int(time.time())
 
-        # Auto-expire old orders
+        # Auto-expire old orders in two phases so the durable 'expired'
+        # transition commits BEFORE the irreversible refund (same ordering as
+        # cancel): a commit failure must never leave a refunded order still
+        # 'open' and matchable. Each transition is guarded with AND status='open'
+        # so a stale expiry scan racing a concurrent match can't clobber/refund a
+        # just-matched order.
         expired = c.execute(
             "SELECT order_id, maker_wallet, escrow_job_id FROM orders WHERE status = 'open' AND expires_at < ?",
             (now,)
         ).fetchall()
+        to_refund = []
         for ex in expired:
-            c.execute("UPDATE orders SET status = 'expired' WHERE order_id = ?", (ex["order_id"],))
+            c.execute(
+                "UPDATE orders SET status = 'expired' WHERE order_id = ? AND status = 'open'",
+                (ex["order_id"],))
+            if c.execute("SELECT changes()").fetchone()[0] == 0:
+                continue  # already matched/cancelled concurrently — leave it alone
             if ex["escrow_job_id"]:
-                rtc_cancel_escrow(ex["escrow_job_id"], ex["maker_wallet"])
+                to_refund.append((ex["order_id"], ex["escrow_job_id"], ex["maker_wallet"]))
         if expired:
             conn.commit()
+        # Now that expiry is durable, refund escrow best-effort (raise-proof, so
+        # a refund/alert failure can't 500 this hot GET path).
+        for order_id_x, job_id, maker in to_refund:
+            safe_refund_escrow(
+                job_id, maker, "OTC escrow refund failed on order expiry",
+                {"order_id": order_id_x, "escrow_job_id": job_id, "maker_wallet": maker})
 
         # Build query
         where = ["status = 'open'"]
@@ -988,6 +1025,9 @@ def match_order(order_id):
         return jsonify({"error": auth_error}), 401
 
     conn = get_db()
+    # Escrow this request locks (buy side); released on any failure after the
+    # lock but before the match commits, so it is never orphaned.
+    created_escrow_job_id = None
     try:
         c = conn.cursor()
         row = c.execute("SELECT * FROM orders WHERE order_id = ?", (order_id,)).fetchone()
@@ -1003,13 +1043,27 @@ def match_order(order_id):
 
         now = int(time.time())
         if now > order["expires_at"]:
-            c.execute("UPDATE orders SET status = 'expired' WHERE order_id = ?", (order_id,))
-            if order["escrow_job_id"]:
-                rtc_cancel_escrow(order["escrow_job_id"], order["maker_wallet"])
-            conn.commit()
+            c.execute(
+                "UPDATE orders SET status = 'expired' WHERE order_id = ? AND status = 'open'",
+                (order_id,))
+            won_expire = c.execute("SELECT changes()").fetchone()[0] != 0
+            if won_expire:
+                conn.commit()  # commit expiry BEFORE the irreversible refund
+                # Only refund if THIS request expired the row (not a racing match).
+                if order["escrow_job_id"]:
+                    safe_refund_escrow(
+                        order["escrow_job_id"], order["maker_wallet"],
+                        "OTC escrow refund failed on order expiry",
+                        {"order_id": order_id, "escrow_job_id": order["escrow_job_id"],
+                         "maker_wallet": order["maker_wallet"]})
+            else:
+                conn.rollback()
             return jsonify({"error": "Order has expired"}), 410
 
-        # For buy orders: taker is selling RTC, needs to lock escrow
+        # For buy orders: taker is selling RTC, needs to lock escrow.
+        # created_escrow_job_id (init'd above) tracks an escrow WE create this
+        # request so we can release it if we then lose the atomic match CAS or
+        # hit an error before committing.
         escrow_job_id = order["escrow_job_id"]
         if order["side"] == "buy":
             balance = rtc_get_balance(taker_wallet)
@@ -1032,6 +1086,7 @@ def match_order(order_id):
                     "details": escrow_result.get("error")
                 }), 400
             escrow_job_id = escrow_result["job_id"]
+            created_escrow_job_id = escrow_job_id
             htlc_secret, htlc_hash = generate_htlc_secret()
         else:
             htlc_secret, htlc_hash = order["htlc_secret"], order["htlc_hash"]
@@ -1051,9 +1106,25 @@ def match_order(order_id):
               order_id))
 
         if c.execute("SELECT changes()").fetchone()[0] == 0:
+            # We lost the race. Release the escrow WE just locked, else the
+            # loser's RTC is orphaned in a job no order row references.
+            conn.rollback()
+            if created_escrow_job_id:
+                if not rtc_cancel_escrow(created_escrow_job_id, taker_wallet):
+                    log.error(f"Failed to refund losing-taker escrow {created_escrow_job_id} for {order_id}")
+                    send_bridge_alert(
+                        "critical",
+                        "OTC taker escrow orphaned after lost match race",
+                        {"order_id": order_id, "escrow_job_id": created_escrow_job_id,
+                         "taker_wallet": taker_wallet},
+                    )
             return jsonify({"error": "Order was matched by someone else"}), 409
 
         conn.commit()
+        # The escrow is now committed to a live matched order — clear the marker
+        # so the exception handler below can never refund it out from under the
+        # settlement if response building (or anything later) throws.
+        created_escrow_job_id = None
 
         response = {
             "ok": True,
@@ -1094,6 +1165,23 @@ def match_order(order_id):
 
     except Exception:
         conn.rollback()
+        # Release escrow this request locked but never committed to an order,
+        # so an unexpected failure can't strand the taker's RTC. (Cleared to None
+        # right after a successful commit, so this only fires for uncommitted
+        # escrow.) Alert on refund failure, same as the lost-race path.
+        if created_escrow_job_id:
+            refunded = False
+            try:
+                refunded = rtc_cancel_escrow(created_escrow_job_id, taker_wallet)
+            except Exception:
+                log.error(f"Exception refunding escrow {created_escrow_job_id} after match error for {order_id}")
+            if not refunded:
+                send_bridge_alert(
+                    "critical",
+                    "OTC taker escrow orphaned after match exception",
+                    {"order_id": order_id, "escrow_job_id": created_escrow_job_id,
+                     "taker_wallet": taker_wallet},
+                )
         return internal_error_response("Order match")
     finally:
         conn.close()
@@ -1121,6 +1209,9 @@ def confirm_order(order_id):
         return jsonify({"error": "quote_tx required"}), 400
 
     conn = get_db()
+    # Init before the try so the exception handler can always read it (it only
+    # becomes meaningful once escrow is released, but must be bound regardless).
+    escrow_released = False
     try:
         c = conn.cursor()
         row = c.execute("SELECT * FROM orders WHERE order_id = ?", (order_id,)).fetchone()
@@ -1169,8 +1260,25 @@ def confirm_order(order_id):
                 "error": "Bridge payout unavailable: RC_ADMIN_KEY not configured"
             }), 500
 
+        # Atomically claim this settlement BEFORE any irreversible external call.
+        # The seller holds the preimage and could submit confirm twice; without
+        # this, two concurrent confirms both pass the status=='matched' read and
+        # both release escrow. Commit the matched->settling transition so a
+        # racing confirm sees 'settling' and is rejected.
+        c.execute(
+            "UPDATE orders SET status = 'settling' WHERE order_id = ? AND status = 'matched'",
+            (order_id,))
+        if c.execute("SELECT changes()").fetchone()[0] == 0:
+            conn.rollback()
+            return jsonify({"error": "Order is no longer matched (already settling or settled)"}), 409
+        conn.commit()
+
         payout_status = "not_started"
         payout_result = {}
+        # Tracks whether escrow funds have left into otc_bridge_worker. Drives
+        # recovery if we crash mid-settlement: released -> settlement_recovery,
+        # not-released -> safe to revert to 'matched' for retry.
+        escrow_released = False
 
         # Release RTC escrow
         if order["escrow_job_id"]:
@@ -1199,6 +1307,12 @@ def confirm_order(order_id):
                 # Accept releases funds to otc_bridge_worker. We then transfer
                 # from worker → recipient via admin /wallet/transfer.
                 if deliver_r.ok:
+                    # Mark released BEFORE the call: accept is the point of no
+                    # return. If it times out / disconnects the funds may have
+                    # moved even though we got no ok response, so any exception
+                    # from here must route recovery to 'settlement_recovery'
+                    # (ambiguous), never back to a retryable 'matched'.
+                    escrow_released = True
                     accept_r = requests.post(
                         f"{RUSTCHAIN_NODE}/agent/jobs/{order['escrow_job_id']}/accept",
                         json={"poster_wallet": escrow_poster, "rating": 5},
@@ -1241,78 +1355,130 @@ def confirm_order(order_id):
         payout_details = payout_result.get("details", {}) if isinstance(payout_result, dict) else {}
         payout_tx = payout_details.get("tx_hash") if isinstance(payout_details, dict) else None
 
-        # Record trade
+        # Decide the real outcome — never mark 'completed' unless the payout to
+        # the recipient actually succeeded:
+        #   payout ok                      -> completed (+ record the trade)
+        #   escrow released, payout failed -> settlement_recovery (funds left the
+        #       escrow into otc_bridge_worker; payout is idempotent (#6799) so an
+        #       operator can re-drive it — NOT retryable as a fresh confirm)
+        #   escrow never released          -> revert to matched (safe to retry)
+        payout_succeeded = isinstance(payout_result, dict) and bool(payout_result.get("ok"))
         trade_id = generate_trade_id(order_id, order["taker_wallet"])
-        insert_columns = [
-            "trade_id", "order_id", "pair", "side", "maker_wallet", "taker_wallet",
-            "amount_micro_rtc", "price_per_rtc_nano_quote", "total_quote_nano",
-            "quote_tx", "completed_at",
-        ]
-        values = [
-            trade_id, order_id, order["pair"], order["side"],
-            order["maker_wallet"], order["taker_wallet"],
-            order["amount_micro_rtc"], order["price_per_rtc_nano_quote"],
-            order["total_quote_nano"], quote_tx, now,
-        ]
-        include_legacy_money_columns_if_present(
-            table_columns(c, "trades"),
-            insert_columns,
-            values,
-            order["amount_rtc"],
-            order["price_per_rtc"],
-            order["total_quote"],
-        )
-        placeholders = ", ".join("?" for _ in values)
-        c.execute(
-            f"INSERT INTO trades ({', '.join(insert_columns)}) VALUES ({placeholders})",
-            values,
-        )
 
-        # Update order
-        c.execute("""
-            UPDATE orders SET status = 'completed', confirmed_at = ?,
-                   settlement_tx = ?
-            WHERE order_id = ?
-        """, (now, quote_tx, order_id))
+        if payout_succeeded:
+            final_status = "completed"
+        elif payout_status == "manual_recovery_required":
+            final_status = "settlement_recovery"
+        else:
+            final_status = "matched"  # escrow untouched (claim/deliver/accept failed) — retryable
+
+        # Record the trade ONLY on a genuinely completed settlement, so trade
+        # history / volume stats never count failed or pending settlements.
+        if payout_succeeded:
+            insert_columns = [
+                "trade_id", "order_id", "pair", "side", "maker_wallet", "taker_wallet",
+                "amount_micro_rtc", "price_per_rtc_nano_quote", "total_quote_nano",
+                "quote_tx", "completed_at",
+            ]
+            values = [
+                trade_id, order_id, order["pair"], order["side"],
+                order["maker_wallet"], order["taker_wallet"],
+                order["amount_micro_rtc"], order["price_per_rtc_nano_quote"],
+                order["total_quote_nano"], quote_tx, now,
+            ]
+            include_legacy_money_columns_if_present(
+                table_columns(c, "trades"),
+                insert_columns,
+                values,
+                order["amount_rtc"],
+                order["price_per_rtc"],
+                order["total_quote"],
+            )
+            placeholders = ", ".join("?" for _ in values)
+            c.execute(
+                f"INSERT INTO trades ({', '.join(insert_columns)}) VALUES ({placeholders})",
+                values,
+            )
+            c.execute("""
+                UPDATE orders SET status = 'completed', confirmed_at = ?, settlement_tx = ?
+                WHERE order_id = ? AND status = 'settling'
+            """, (now, quote_tx, order_id))
+            if c.execute("SELECT changes()").fetchone()[0] == 0:
+                # Our 'settling' claim vanished (recovered by an error handler or
+                # an operator). Do NOT leave an orphan trade row for a
+                # non-completed order — roll back the insert with it.
+                conn.rollback()
+                return jsonify({"error": "Settlement state changed during payout; not completed"}), 409
+        else:
+            # Release our 'settling' claim to the correct recovery/retry state.
+            c.execute(
+                "UPDATE orders SET status = ? WHERE order_id = ? AND status = 'settling'",
+                (final_status, order_id))
         conn.commit()
 
-        if payout_status == "pending":
+        if final_status == "completed":
             message = (
                 f"Trade completed. {order['amount_rtc']} RTC payout to {rtc_recipient} "
-                "was queued successfully. HTLC secret verified and revealed."
+                "succeeded. HTLC secret verified and revealed."
             )
-        elif payout_status == "manual_recovery_required":
+        elif final_status == "settlement_recovery":
             message = (
-                f"Trade completed, but payout to {rtc_recipient} failed after escrow "
-                "accept. Operators were alerted for manual recovery."
+                f"Escrow released but payout to {rtc_recipient} failed. Operators were "
+                "alerted; the payout is idempotent and will be re-driven for recovery. "
+                "This order is NOT retryable as a fresh confirm."
             )
-        elif payout_status == "escrow_accept_failed":
+        else:  # reverted to matched
             message = (
-                "Trade recorded, but escrow accept failed before payout could be queued. "
-                "Manual review required."
-            )
-        else:
-            message = (
-                f"Trade completed with payout status '{payout_status}'. "
-                "HTLC secret verified and revealed."
+                f"Settlement could not be completed (escrow status '{payout_status}'); "
+                "no funds left escrow. Order returned to 'matched' — retry confirm."
             )
 
-        return jsonify({
-            "ok": True,
+        response = {
+            "ok": payout_succeeded,
             "order_id": order_id,
-            "trade_id": trade_id,
-            "status": "completed",
-            "htlc_secret": secret,
+            "status": final_status,
             "amount_rtc": order["amount_rtc"],
             "rtc_recipient": rtc_recipient,
             "rtc_transfer_status": payout_status,
             "rtc_transfer_pending_id": payout_details.get("pending_id") if isinstance(payout_details, dict) else None,
             "rtc_transfer_tx_hash": payout_tx,
             "message": message,
-        })
+        }
+        if payout_succeeded:
+            # Only echo the preimage + trade_id on a genuinely completed swap.
+            response["trade_id"] = trade_id
+            response["htlc_secret"] = secret
+        # Always HTTP 200: the request was processed and the outcome is in the
+        # body (ok + status). Clients here branch on `ok`, not the status code;
+        # a non-2xx would break the frontend's `if (data.ok)` flow.
+        return jsonify(response)
 
     except Exception:
         conn.rollback()
+        # We may hold a committed 'settling' claim (the claim is committed before
+        # the external calls). The rollback above can't undo that prior commit,
+        # so an exception here would otherwise WEDGE the order in 'settling'
+        # forever (unconfirmable, invisible to the open book). Move it to a
+        # recoverable state: 'settlement_recovery' if escrow funds may have left
+        # (operator + idempotent payout), else back to 'matched' for retry.
+        try:
+            recovery = "settlement_recovery" if escrow_released else "matched"
+            rc = conn.cursor()
+            rc.execute(
+                "UPDATE orders SET status = ? WHERE order_id = ? AND status = 'settling'",
+                (recovery, order_id))
+            if rc.execute("SELECT changes()").fetchone()[0]:
+                conn.commit()
+                send_bridge_alert(
+                    "critical",
+                    "OTC confirm errored mid-settlement",
+                    {"order_id": order_id, "recovered_to": recovery,
+                     "escrow_released": escrow_released},
+                )
+            else:
+                conn.rollback()
+        except Exception:
+            log.error(f"Failed to recover wedged 'settling' order {order_id} after confirm error")
         return internal_error_response("Order confirmation")
     finally:
         conn.close()
@@ -1348,18 +1514,40 @@ def cancel_order(order_id):
         if order["status"] not in ("open",):
             return jsonify({"error": f"Can only cancel open orders (current: {order['status']})"}), 409
 
-        # Cancel RTC escrow
-        if order["escrow_job_id"]:
-            rtc_cancel_escrow(order["escrow_job_id"], wallet)
-
-        c.execute("UPDATE orders SET status = 'cancelled' WHERE order_id = ?", (order_id,))
+        # Atomically claim the open -> cancelled transition and COMMIT it BEFORE
+        # the irreversible refund. Ordering matters two ways:
+        #  - the status guard stops a cancel racing a match from refunding a
+        #    matched order's escrow (changes()==0 -> we lost, do NOT refund);
+        #  - committing first means a later commit failure can't roll the order
+        #    back to 'open' after we've already refunded (which would let it be
+        #    re-matched with no escrow). Once cancelled is durable, the refund is
+        #    best-effort + alerted.
+        c.execute(
+            "UPDATE orders SET status = 'cancelled' WHERE order_id = ? AND status = 'open'",
+            (order_id,))
+        if c.execute("SELECT changes()").fetchone()[0] == 0:
+            conn.rollback()
+            return jsonify({"error": "Order is no longer open (matched or cancelled concurrently)"}), 409
         conn.commit()
+
+        # Order is durably cancelled; now refund escrow (raise-proof). If the
+        # refund fails the order stays cancelled (maker's intent) and we alert
+        # for manual recovery rather than silently claiming success.
+        escrow_refunded = True
+        if order["escrow_job_id"]:
+            escrow_refunded = safe_refund_escrow(
+                order["escrow_job_id"], wallet,
+                "OTC escrow refund failed after order cancel",
+                {"order_id": order_id, "escrow_job_id": order["escrow_job_id"],
+                 "maker_wallet": wallet})
 
         return jsonify({
             "ok": True,
             "order_id": order_id,
             "status": "cancelled",
-            "message": "Order cancelled. Escrow refunded."
+            "escrow_refunded": escrow_refunded,
+            "message": "Order cancelled. Escrow refunded." if escrow_refunded
+                       else "Order cancelled. Escrow refund FAILED — operators alerted for manual recovery.",
         })
     except Exception:
         conn.rollback()
