@@ -60,6 +60,8 @@ PoP labels each layer by the strength of its *referent* binding, honestly:
 - **ATTESTED** — the referent is a physical/behavioral fact inferred from measurement; **spoof-resistant, not absolute** (e.g. "real silicon, not a VM").
 - **EVIDENTIARY** — the referent is supporting evidence you can inspect and reproduce, but probabilistic and not a signature (e.g. "this output cited these sources").
 
+**Normative rule.** A verifier treats a **CRYPTOGRAPHIC** claim as *dispositive* once the check passes; an **ATTESTED** claim as *spoof-resistant evidence, never absolute proof*; an **EVIDENTIARY** claim as *auditable but non-dispositive*. Labeling a claim one tier stronger than its referent supports is precisely the overclaim PoP exists to prevent.
+
 ### The five layers
 
 | Layer | Proves (origin claim) | Does **not** prove | Strength | Status (2026-06-02) |
@@ -70,7 +72,7 @@ PoP labels each layer by the strength of its *referent* binding, honestly:
 | **Knowledge** | this output cited/retrieved this evidence | the model's internal reasoning lineage | EVIDENTIARY | research (GRAIL-V, CVPR 2026) |
 | **Economic** | this value was recorded as transferred/settled | that value-creating *work* occurred | CRYPTOGRAPHIC (settlement) | **deployed** (RTC ledger, RIP-0004) |
 
-Hardware Provenance is really an **attestation / authenticity** layer — a prerequisite the other claims rest on, not lineage in itself. **Honest status:** Hardware and Economic are deployed; the Content binding is specified here but not yet built; Agent is partial; Knowledge is research. The unified architecture is the *target*, not a running system.
+Hardware Provenance is a **precondition layer**, not a peer of the others: it is attestation/authenticity that the Agent, Content, and Economic claims *rest on*, not lineage in itself. It is listed among the five for completeness, but architecturally it *underpins* them rather than sitting beside them. **Honest status:** Hardware and Economic are deployed; the Content binding is specified here but not yet built; Agent is partial; Knowledge is research. The unified architecture is the *target*, not a running system.
 
 ```text
 Proof of Provenance — "where did this come from?"
