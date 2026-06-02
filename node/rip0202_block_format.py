@@ -34,6 +34,7 @@ Consensus-determinism guarantees (the reasons this is its own pinned module):
 """
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import math
@@ -54,27 +55,57 @@ BLOCKS_PER_EPOCH = 144
 # a field is a consensus change gated by activation.
 B0_ATTESTATION_FIELDS = ("miner", "device", "fingerprint", "fingerprint_passed", "timestamp")
 
+# Resource bounds (defense-in-depth atop the deployed nginx/#6529 1 MB body cap):
+# a single attestation's device/fingerprint cannot bloat storage or recurring
+# blocks. Generous enough for real fingerprint timing data, tight enough to cap abuse.
+MAX_EVIDENCE_FIELD_BYTES = 65_536   # 64 KB canonical JSON, per device and per fingerprint
+MAX_EVIDENCE_DEPTH = 32             # max nesting depth in device/fingerprint
+MAX_MINER_ID_LEN = 256              # reject absurd miner identifiers (defense-in-depth)
+
 
 class B0FormatError(ValueError):
     """Raised when an attestation cannot be canonicalised into a B0 record."""
 
 
-def _assert_finite(obj: Any, path: str = "") -> None:
-    """Recursively reject non-finite floats (NaN/+-Inf) anywhere in the payload.
+def _assert_canonical_safe(obj: Any, path: str = "", depth: int = 0) -> None:
+    """Recursively reject anything that is not canonical-JSON-safe + round-trip
+    stable, so a record can never explode at hash/serialise time two hops away
+    or mutate on a deserialise round-trip (which would diverge the consensus hash):
 
-    Non-finite values have no valid canonical JSON token (json emits the
-    non-standard ``NaN``/``Infinity``), would not round-trip, and are never
-    legitimate fingerprint/device data — reject at build time, fail closed.
+      * non-finite floats (NaN/+-Inf) — no valid JSON token, don't round-trip;
+      * non-string mapping keys — ``sort_keys=True`` raises on mixed-type keys,
+        and ``1`` vs ``"1"`` serialise ambiguously;
+      * tuples/sets/bytes/custom objects — a tuple becomes a list on reload, so
+        it would hash differently after a commit→deserialise round-trip.
+
+    Allowed leaves: str, bool, int, finite float, None. Allowed containers:
+    dict (str keys) and list.
     """
+    if depth > MAX_EVIDENCE_DEPTH:
+        raise B0FormatError(f"nesting exceeds depth {MAX_EVIDENCE_DEPTH} at {path or '<root>'}")
+    if obj is None or isinstance(obj, (bool, int, str)):
+        return  # bool is an int subclass; both are JSON-safe scalars
     if isinstance(obj, float):
         if not math.isfinite(obj):
             raise B0FormatError(f"non-finite float at {path or '<root>'}")
-    elif isinstance(obj, Mapping):
+        return
+    # Require a CONCRETE dict/list -- EXACT type, not isinstance. json.dumps only
+    # serialises built-in dict/list canonically, and a subclass could pass an
+    # isinstance check here yet override __deepcopy__/__iter__ to yield different
+    # (unvalidated, oversized, non-canonical) data after this gate -- a
+    # validate-then-substitute bypass. Exact-type makes the check mean what its
+    # name says. Real JSON-sourced evidence is always concrete dict/list.
+    if type(obj) is dict:
         for k, v in obj.items():
-            _assert_finite(v, f"{path}.{k}")
-    elif isinstance(obj, (list, tuple)):
+            if not isinstance(k, str):
+                raise B0FormatError(f"non-string mapping key {k!r} at {path or '<root>'}")
+            _assert_canonical_safe(v, f"{path}.{k}", depth + 1)
+        return
+    if type(obj) is list:
         for i, v in enumerate(obj):
-            _assert_finite(v, f"{path}[{i}]")
+            _assert_canonical_safe(v, f"{path}[{i}]", depth + 1)
+        return
+    raise B0FormatError(f"non-JSON-safe {type(obj).__name__} at {path or '<root>'}")
 
 
 def build_b0_attestation(
@@ -92,6 +123,8 @@ def build_b0_attestation(
     """
     if not isinstance(miner, str) or not miner:
         raise B0FormatError("miner must be a non-empty str")
+    if len(miner) > MAX_MINER_ID_LEN:
+        raise B0FormatError(f"miner id exceeds {MAX_MINER_ID_LEN} chars")
     if not isinstance(device, Mapping):
         raise B0FormatError("device must be a dict")
     if not isinstance(fingerprint, Mapping):
@@ -102,8 +135,26 @@ def build_b0_attestation(
         raise B0FormatError("timestamp must be an int")
     device = dict(device)
     fingerprint = dict(fingerprint)
-    _assert_finite(device, "device")
-    _assert_finite(fingerprint, "fingerprint")
+    # First validation runs on the (top-concretised) caller data: a non-canonical
+    # type is rejected cleanly here (B0FormatError) before deepcopy -- which would
+    # otherwise raise an opaque TypeError on, e.g., a nested mappingproxy.
+    _assert_canonical_safe(device, "device")
+    _assert_canonical_safe(fingerprint, "fingerprint")
+    for name, val in (("device", device), ("fingerprint", fingerprint)):
+        if len(_canonical_bytes(val)) > MAX_EVIDENCE_FIELD_BYTES:
+            raise B0FormatError(f"{name} exceeds {MAX_EVIDENCE_FIELD_BYTES}-byte canonical limit")
+    # Snapshot, then RE-VALIDATE the snapshot. The returned record shares no
+    # nested state with the caller, and re-checking the copy closes the TOCTOU
+    # where a concurrent mutation (or a subclass __deepcopy__) could swap in
+    # unvalidated/oversized evidence between the first check and the consensus
+    # hash -- the bytes we hash are exactly the bytes we validated.
+    device = copy.deepcopy(device)
+    fingerprint = copy.deepcopy(fingerprint)
+    _assert_canonical_safe(device, "device")
+    _assert_canonical_safe(fingerprint, "fingerprint")
+    for name, val in (("device", device), ("fingerprint", fingerprint)):
+        if len(_canonical_bytes(val)) > MAX_EVIDENCE_FIELD_BYTES:
+            raise B0FormatError(f"{name} exceeds {MAX_EVIDENCE_FIELD_BYTES}-byte canonical limit")
     return {
         "miner": miner,
         "device": device,
@@ -135,27 +186,39 @@ def canonical_b0_attestations_hash(attestations: List[Mapping]) -> str:
     """
     if not attestations:
         return "0" * 64
+    # Defense-in-depth: re-validate EVERY record through build_b0_attestation
+    # (raises B0FormatError on malformed/missing/non-JSON-safe) so an
+    # incomplete record can never enter the consensus hash as null-filled, and
+    # a malformed one can never crash serialisation mid-block. The result is
+    # exactly the pinned fields, so incidental extra keys can't perturb the hash.
+    validated = []
+    for a in attestations:
+        if not isinstance(a, Mapping):
+            raise B0FormatError(f"attestation must be a mapping, got {type(a).__name__}")
+        validated.append(build_b0_attestation(
+            a.get("miner"), a.get("device"), a.get("fingerprint"),
+            a.get("fingerprint_passed"), a.get("timestamp"),
+        ))
+    # Reject duplicate miners: B1 enrollment assumes one record per miner, and a
+    # crafted dup could create selection/weight ambiguity. One miner, one record.
+    seen = set()
+    for a in validated:
+        if a["miner"] in seen:
+            raise B0FormatError(f"duplicate miner in attestation set: {a['miner']}")
+        seen.add(a["miner"])
     ordered = sorted(
-        attestations,
-        key=lambda a: (
-            str(a.get("miner", "")),
-            a.get("timestamp", 0) if isinstance(a.get("timestamp"), int)
-            and not isinstance(a.get("timestamp"), bool) else 0,
-            _attestation_digest(a),
-        ),
+        validated,
+        key=lambda a: (a["miner"], a["timestamp"], _attestation_digest(a)),
     )
-    # Hash the canonical projection of each record (only the pinned fields), so
-    # incidental extra keys can never perturb the consensus hash.
-    projected = [{k: a.get(k) for k in B0_ATTESTATION_FIELDS} for a in ordered]
-    return hashlib.blake2b(_canonical_bytes(projected), digest_size=32).hexdigest()
+    return hashlib.blake2b(_canonical_bytes(ordered), digest_size=32).hexdigest()
 
 
 def slot_to_epoch(slot: int, blocks_per_epoch: int = BLOCKS_PER_EPOCH) -> int:
     """Deterministic epoch for a committed slot. Pure; no wall-clock."""
     if isinstance(slot, bool) or not isinstance(slot, int) or slot < 0:
         raise B0FormatError("slot must be a non-negative int")
-    if blocks_per_epoch < 1:
-        raise B0FormatError("blocks_per_epoch must be >= 1")
+    if isinstance(blocks_per_epoch, bool) or not isinstance(blocks_per_epoch, int) or blocks_per_epoch < 1:
+        raise B0FormatError("blocks_per_epoch must be a positive int")
     return slot // blocks_per_epoch
 
 
@@ -169,3 +232,19 @@ def block_epoch(header: Mapping, blocks_per_epoch: int = BLOCKS_PER_EPOCH) -> in
     if isinstance(slot, bool) or not isinstance(slot, int):
         raise B0FormatError("header missing committed integer 'slot' (B0)")
     return slot_to_epoch(slot, blocks_per_epoch)
+
+
+def assert_blocks_per_epoch(node_blocks_per_epoch: int) -> None:
+    """Fail fast if this module's pinned BLOCKS_PER_EPOCH diverges from the node's.
+
+    The wiring step (B0-wire) MUST call this once at import against the node's
+    authoritative constant. Backs the module-header contract with a real guard,
+    so the pinned 144 can never silently become a second source of truth — a
+    mismatch would diverge every epoch computation (eligibility, governance
+    activation, B1 weight) from the live chain.
+    """
+    if node_blocks_per_epoch != BLOCKS_PER_EPOCH:
+        raise B0FormatError(
+            f"BLOCKS_PER_EPOCH mismatch: module pins {BLOCKS_PER_EPOCH}, "
+            f"node uses {node_blocks_per_epoch} — wiring must reconcile before activation"
+        )
