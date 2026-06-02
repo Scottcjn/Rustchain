@@ -157,6 +157,17 @@ def _decimal_to_account_i64(amount: Decimal, field_name: str) -> int:
     return int(integral)
 
 
+def _nrtc_to_account_i64(amount_nrtc: int, field_name: str) -> int:
+    """Convert nanoRTC to legacy account units without dropping precision."""
+    scale = UNIT // ACCOUNT_UNIT
+    if amount_nrtc % scale != 0:
+        raise ValueError(
+            f"{field_name} cannot be mirrored by dual-write account model "
+            "(max 6 decimal places)"
+        )
+    return amount_nrtc // scale
+
+
 utxo_bp = Blueprint('utxo', __name__, url_prefix='/utxo')
 
 # These get set by register_utxo_blueprint() from the main server
@@ -506,13 +517,10 @@ def utxo_transfer():
         _ensure_signed_float_preserves_nrtc(amount_rtc, amount_nrtc, 'amount_rtc')
         _ensure_signed_float_preserves_nrtc(fee_rtc, fee_nrtc, 'fee_rtc')
         amount_i64_for_dual_write = None
-        fee_i64_for_dual_write = None
+        effective_fee_i64_for_dual_write = None
         if _dual_write:
             amount_i64_for_dual_write = _decimal_to_account_i64(
                 amount_rtc, 'amount_rtc'
-            )
-            fee_i64_for_dual_write = _decimal_to_account_i64(
-                fee_rtc, 'fee_rtc'
             )
     except ValueError as e:
         return jsonify({'error': f'Invalid amount: {e}'}), 400
@@ -642,6 +650,14 @@ def utxo_transfer():
         return jsonify({'error': 'UTXO coin selection underfunded transaction'}), 500
     effective_fee_nrtc = fee_nrtc + absorbed_fee_nrtc
 
+    if _dual_write:
+        try:
+            effective_fee_i64_for_dual_write = _nrtc_to_account_i64(
+                effective_fee_nrtc, 'effective_fee_nrtc'
+            )
+        except ValueError as e:
+            return jsonify({'error': f'Invalid amount: {e}'}), 400
+
     # Build and apply UTXO transaction
     block_height = _current_slot_fn()
     tx = {
@@ -703,7 +719,7 @@ def utxo_transfer():
             conn = sqlite3.connect(_db_path)
             c = conn.cursor()
             amount_i64 = amount_i64_for_dual_write
-            fee_i64 = fee_i64_for_dual_write
+            fee_i64 = effective_fee_i64_for_dual_write
             debit_i64 = amount_i64 + fee_i64
 
             # Re-check sender shadow-balance before debit (security: prevent
