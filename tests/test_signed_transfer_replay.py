@@ -573,7 +573,7 @@ def test_pending_confirm_keeps_transfer_pending_on_unsupported_balance_schema(mo
     assert body["confirmed_count"] == 0
     assert body["confirmed_ids"] == []
     assert body["errors"] == [
-        {"id": 1, "error": "unsupported balances schema for wallet transfer"}
+        {"id": 1, "error": "internal_error"}  # confirm_pending now redacts internal exceptions (#3202/#5546)
     ]
 
     with closing(sqlite3.connect(db_path)) as conn:
