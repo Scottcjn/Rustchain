@@ -887,6 +887,6 @@ GET /epoch
 
 ---
 
-*版权所有 © 2025-2026 Scott Johnson / Elyan Labs。根据 MIT 许可证发布。*
+*版权所有 © 2025-2026 Scott Johnson / Elyan Labs。根据 Apache License 2.0 许可证发布。*
 
 *RustChain — 让复古硬件再次变得有价值。*

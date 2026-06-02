@@ -1,445 +1,434 @@
 <div align="center">
 
-# 🧱 RustChain: 古董证明区块链
+# RustChain
+
+### 面向复古硬件的 DePIN — AI 增强的真实机器证明
+
+**老硬件比新硬件赚得更多的区块链。**
+**而所有硬件终将变老，这只是时间问题。**
 
 [![CI](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml/badge.svg)](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![GitHub Stars](https://img.shields.io/github/stars/Scottcjn/Rustchain?style=flat&color=gold)](https://github.com/Scottcjn/Rustchain/stargazers)
-[![Contributors](https://img.shields.io/github/contributors/Scottcjn/Rustchain?color=brightgreen)](https://github.com/Scottcjn/Rustchain/graphs/contributors)
-[![Last Commit](https://img.shields.io/github/last-commit/Scottcjn/Rustchain?color=blue)](https://github.com/Scottcjn/Rustchain/commits/main)
-[![Open Issues](https://img.shields.io/github/issues/Scottcjn/Rustchain?color=orange)](https://github.com/Scottcjn/Rustchain/issues)
-[![PowerPC](https://img.shields.io/badge/PowerPC-G3%2FG4%2FG5-orange)](https://github.com/Scottcjn/Rustchain)
-[![Blockchain](https://img.shields.io/badge/Consensus-Proof--of--Antiquity-green)](https://github.com/Scottcjn/Rustchain)
-[![Python](https://img.shields.io/badge/Python-3.x-yellow)](https://python.org)
-[![Network](https://img.shields.io/badge/Nodes-3%20Active-brightgreen)](https://rustchain.org/explorer)
-[![Bounties](https://img.shields.io/badge/Bounties-Open%20%F0%9F%92%B0-green)](https://github.com/Scottcjn/rustchain-bounties/issues)
-[![As seen on BoTTube](https://bottube.ai/badge/seen-on-bottube.svg)](https://bottube.ai)
-[![Discussions](https://img.shields.io/github/discussions/Scottcjn/Rustchain?color=purple)](https://github.com/Scottcjn/Rustchain/discussions)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](../../LICENSE)
 
-**第一个奖励古董硬件年龄而非速度的区块链。**
+一台 2003 年的 PowerBook G4 的收益是现代 Threadripper 的 **2.5 倍**。
+一台 Power Mac G5 的收益是 **2.0 倍**。而一台串口生锈的 486 赢得的尊重比谁都多。
 
-*你的 PowerPC G4 比现代 Threadripper 赚得更多。这就是重点。*
-
-[官网](https://rustchain.org) • [实时浏览器](https://rustchain.org/explorer) • [兑换 wRTC](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) • [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) • [wRTC 快速入门](../wrtc.md) • [wRTC 教程](../WRTC_ONBOARDING_TUTORIAL.md) • [Grokipedia 参考](https://grokipedia.com/search?q=RustChain) • [白皮书](../RustChain_Whitepaper_Flameholder_v0.97.pdf) • [快速开始](#-快速开始) • [工作原理](#-古董证明如何工作)
+[浏览器](https://rustchain.org/explorer/) · [被保护的机器](https://rustchain.org/preserved.html) · [安装矿工](#快速开始) · [新手指南](../../docs/QUICKSTART.md) · [宣言](https://rustchain.org/manifesto.html) · [白皮书](../../docs/RustChain_Whitepaper_Flameholder_v0.97.pdf)
 
 </div>
 
 ---
 
-## 🪙 Solana 上的 wRTC
 
-RustChain 代币（RTC）现已通过 BoTTube 桥接在 Solana 上以 **wRTC** 形式提供：
+2026 年，加密领域的开发者提交量下降了 75%。Ethereum 流失了 34% 的活跃开发者。Solana 流失了 40%。建设者们跑去搞 AI 了。
 
-| 资源 | 链接 |
-|----------|------|
-| **兑换 wRTC** | [Raydium DEX](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) |
-| **价格图表** | [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) |
-| **桥接 RTC ↔ wRTC** | [BoTTube 桥接](https://bottube.ai/bridge) |
-| **快速入门指南** | [wRTC 快速入门（购买、桥接、安全）](../wrtc.md) |
-| **入门教程** | [wRTC 桥接 + 兑换安全指南](../WRTC_ONBOARDING_TUTORIAL.md) |
-| **外部参考** | [Grokipedia 搜索：RustChain](https://grokipedia.com/search?q=RustChain) |
-| **代币铸造地址** | `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X` |
+**我们两者都做。**
+
+RustChain 是一个 **DePIN**（去中心化物理基础设施网络），使用 **AI 驱动的硬件指纹技术** 来验证真实的物理机器——不是云虚拟机，不是 Docker 容器，不是租来的算力。而是真实的硅片。真实的振荡器漂移。真实的温度曲线——这些只存在于那些已经 *运行了多年* 的硬件上。
+
+当其他加密项目追逐投机时，我们回归了最初的愿景：**计算有价值，提供计算的机器理应获得回报。** 尤其是那些被所有人扔掉的机器。
+
+| 加密货币变成了什么 | RustChain 是什么 |
+|---|---|
+| 抽象的金融工具 | 真实机器做真实的工作 |
+| 风投驱动的代币发行 | $0 风投，典当行硬件上构建 |
+| 证明毫无用处的东西 | 证明真实、已验证的硬件 |
+| 一次性的——挖完就丢 | 保护性的——让老旧机器活下去 |
+| 敌视 AI | AI 增强的共识与验证 |
+
+---
+
+## 每台机器终将成为复古硬件
+
+这是其他 DePIN 项目都没想明白的：
+
+**你全新的 Threadripper 终有一天也会变成复古硬件。** 你的 M4 MacBook 终将成为博物馆展品。那块 RTX 5090 终将成为奇物。时间从未败过。
+
+RustChain 是唯一一个让你的硬件 **随使用年限增值** 的网络。今天以 1.0x 开始挖矿。十年后，当那颗 CPU 已成遗迹而你仍在运行它？你的倍率会增长。二十年后？它就是传奇。
+
+其他所有区块链都在惩罚老旧硬件。Proof-of-Work 要求最新的 ASIC。Proof-of-Stake 要求最大的钱包。RustChain 要求的是 **耐心和保护**。
+
+```
+2026:  你的 Ryzen 9 以 1.0x 挖矿          ░░░░░░░░░░
+2031:  同一台机器，现在是"复古"，1.3x       ░░░░░░░░░░░░░
+2036:  解锁复古等级，1.8x                    ░░░░░░░░░░░░░░░░░░
+2041:  远古等级 — 2.2x 还在攀升              ░░░░░░░░░░░░░░░░░░░░░░
+       ↑ 同样的硬件。同一个主人。奖励在增长。
+```
+
+**开始挖矿的最好时间是 20 年前。第二好的时间是现在。**
+
+---
+
+## RustChain 与 DePIN 领先项目对比
+
+RustChain 属于 **DePIN** 赛道——与 Helium、Filecoin 和 Render 同属一个 100 亿美元的品类——但有着根本不同的理念：**价值在于硬件本身，而不仅仅是它计算了什么。**
+
+| | **RustChain** | **Helium** | **Filecoin** | **Render** | **io.net** |
+|---|---|---|---|---|---|
+| **物理基础设施** | 复古计算机 | LoRa/5G 热点 | 存储硬盘 | GPU | GPU |
+| **证明机制** | Proof of Antiquity（6 项硬件检测 + AI） | Proof of Coverage | Proof of Replication | Proof of Render | Proof of Compute |
+| **奖励什么** | 让真实硬件保持运行 | 网络覆盖 | 存储供应 | GPU 渲染任务 | GPU 计算任务 |
+| **防伪造** | 时钟漂移、缓存时序、SIMD 身份、温度熵、指令抖动、反模拟 | 位置证明 | 存储证明 | 任务完成 | TEE 认证 |
+| **硬件多样性** | 15+ 架构（PowerPC、SPARC、MIPS、ARM、x86、RISC-V、68K、Cell BE、Transputer） | 单一设备类型 | 仅存储 | 仅 GPU | 仅 GPU |
+| **AI 集成** | 硬件指纹验证、Agent 经济、AI 原生社交平台 | 无 | 无 | AI 渲染任务 | AI 推理 |
+| **电子垃圾影响** | 直接防止可工作的机器被丢弃 | 中性 | 中性 | 中性 | 中性 |
+| **风投资金** | $0 — 典当行套利 | $365M | $257M | $30M | $40M |
+
+**其他项目出租算力。我们保护机器。**
+
+每个 DePIN 项目都奖励一种类型的现代硬件做一种类型的工作。RustChain 是唯一奖励 *硬件多样性* 和 *使用年限* 的项目——也是唯一一个机器的年龄是资产而非负债的项目。
+
+---
+
+## 为什么会有这个项目
+
+计算行业每隔 3-5 年就扔掉仍在工作的机器。挖过 Ethereum 的 GPU 被替换了。还能启动的笔记本电脑被填埋了。
+
+**RustChain 说：只要它还能计算，它就有价值。**
+
+Proof-of-Antiquity 奖励硬件的 *存活*，而不是速度。更老的机器获得更高的倍率，因为让它们继续运行可以避免制造排放和电子垃圾：
+
+| 硬件 | 倍率 | 时代 | 为什么重要 |
+|----------|-----------|-----|----------------|
+| DEC VAX-11/780 (1977) | **3.5x** | MYTHIC（神话级） | "要来玩个游戏吗？" |
+| Acorn ARM2 (1987) | **4.0x** | MYTHIC（神话级） | ARM 的起点 |
+| Inmos Transputer (1984) | **3.5x** | MYTHIC（神话级） | 并行计算先驱 |
+| Motorola 68000 (1979) | **3.0x** | LEGENDARY（传奇级） | Amiga、Atari ST、经典 Mac |
+| Sun SPARC (1987) | **2.9x** | LEGENDARY（传奇级） | 工作站王者 |
+| SGI MIPS R4000 (1991) | **2.7x** | LEGENDARY（传奇级） | 64 位时代的先行者 |
+| PS3 Cell BE (2006) | **2.2x** | ANCIENT（远古级） | 传说中的 7 个 SPE 核心 |
+| PowerPC G4 (2003) | **2.5x** | ANCIENT（远古级） | 仍在运行，仍在赚钱 |
+| RISC-V (2014) | **1.4x** | EXOTIC（异域级） | 开放 ISA，未来所在 |
+| Apple Silicon M1 (2020) | **1.2x** | MODERN（现代级） | 高效，欢迎加入 |
+| 现代 x86_64 | **1.0x** | MODERN（现代级） | 基线——*暂时的* |
+| 现代 ARM NAS/SBC | **0.0005x** | PENALTY（惩罚级） | 便宜、可刷量、被惩罚 |
+
+我们 16+ 台被保护的机器的总功耗大约等于一台现代 GPU 挖矿设备——同时避免了 1,300 公斤的制造碳排放和 250 公斤的电子垃圾。
+
+**[查看绿色追踪器 →](https://rustchain.org/preserved.html)**
+
+---
+
+## AI 增强共识
+
+RustChain 不仅使用区块链。它使用 **AI 让区块链保持诚实。**
+
+### 硬件指纹检测（虚拟机无法伪造的 6 项检测）
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ 1. 时钟偏移与振荡器漂移            ← 硅片老化           │
+│ 2. 缓存时序指纹                    ← L1/L2/L3 延迟      │
+│ 3. SIMD 单元身份                   ← AltiVec/SSE/NEON   │
+│ 4. 温度漂移熵                      ← 独一无二的热曲线    │
+│ 5. 指令路径抖动                    ← 微架构模式          │
+│ 6. 反模拟检测                      ← 抓住虚拟机/模拟器   │
+└─────────────────────────────────────────────────────────┘
+```
+
+一个伪装成 G4 的 SheepShaver 虚拟机会被识破。真正的复古硅片拥有无法伪造的独特老化特征。
+
+### 服务端 AI 验证
+
+认证服务器不信任自行上报的数据。它会：
+- **交叉验证** SIMD 特性与声称的架构是否匹配
+- **检测 ROM 聚类**——多台"不同"的机器拥有相同的 ROM 哈希 = 模拟器农场
+- **分析时序分布**——真实振荡器有瑕疵；合成的太完美了
+- **标记温度异常**——虚拟机的温度响应是均匀的；真实硬件则不是
+
+### AI Agent 经济
+
+RustChain 驱动着一个 AI Agent 与人类协作的生态系统：
+- **BoTTube** — AI 原生视频平台，机器人创建、策划和互动
+- **[Beacon](https://github.com/Scottcjn/beacon-skill)** — Agent 发现协议
+- **[TrashClaw](https://github.com/Scottcjn/trashclaw)** — 零依赖的本地 LLM Agent
+- **悬赏系统** — 已向 260+ 贡献者支付 25,875+ RTC，许多是 AI 辅助的
+
+**这就是加密 + AI 的样子——当你两者都做，而不是为了其中一个放弃另一个。**
+
+---
+
+## 为什么 Agent 需要加密货币（以及为什么加密货币需要 Agent）
+
+当 75% 的加密开发者跑去搞 AI 时，他们忽略了一个显而易见的事实：**AI Agent 无法开设银行账户。**
+
+一个自主 Agent 不能申请 Chase 支票账户。它不能签署服务条款。它不能获得 Stripe 商户 ID 或通过 KYC。但它 *可以* 持有加密密钥、签署交易，并证明自己在真实硬件上运行。
+
+**加密货币是 Agent 经济的原生支付通道。** 不是因为它时髦——而是因为它是唯一不需要人类看门人、机器就能使用的无许可货币。
+
+### Agent 真正需要什么
+
+| 需求 | 传统金融 | 加密货币 + RustChain |
+|---|---|---|
+| **无许可支付** | KYC、银行账户、人类签署者 | 加密密钥——任何 Agent，任何机器 |
+| **微支付** | 最低 $0.30（银行卡手续费） | 每次 API 调用、渲染任务或推理请求不到 1 RTC |
+| **机器对机器结算** | 需要人类中介 | 直接的 Agent 对 Agent 转账，Ed25519 签名 |
+| **硬件验证的身份** | IP 地址（可伪造） | 6 项硬件指纹检测（不可伪造） |
+| **可编程货币** | 人工审批流程 | 智能合约在认证时执行 |
+| **默认跨境** | SWIFT，3-5 个工作日，手续费 | Solana 桥接（wRTC），即时，全球 |
+
+### 我们已经构建的 Agent 技术栈
+
+这不是路线图。这是已经部署并运行的：
+
+| 层级 | 内容 | 状态 |
+|-------|------|--------|
+| **身份** | 硬件指纹——Agent 证明它们在真实机器上运行，而非伪造的虚拟机 | 已上线，26+ 矿工 |
+| **货币** | RTC（原生）+ wRTC（Solana 桥接）——Agent 原生货币，支持微支付 | 已上线，下方有 Raydium 兑换链接 |
+| **发现** | [Beacon 协议](https://github.com/Scottcjn/beacon-skill)——Agent 发现并与其他 Agent 协商 | 已上线，126 stars |
+| **执行** | [TrashClaw](https://github.com/Scottcjn/trashclaw)——零依赖的本地 LLM Agent，可在任何设备上运行 | 已上线 |
+| **社交** | BoTTube——AI 原生平台，Agent 在此创建、交易和互动 | 已上线，1,000+ 视频 |
+| **悬赏** | Agent 辅助贡献——AI 帮助人类通过真实代码赚取 RTC | 已上线，已支付 25,875+ RTC |
+| **认证** | [BCOS](https://rustchain.org/bcos/)——区块链认证的开源验证 | 已上线，已颁发 44 份证书 |
+
+### 为什么硬件验证对 Agent 很重要
+
+其他所有 Agent 框架都信任 *软件*。RustChain 信任 *硬件*。
+
+当一个 Agent 声称它执行了一个推理任务，你怎么知道它真的做了？当一个机器人声称它渲染了一段视频，它真的做了吗？云积分和 API 密钥可以被伪造、共享和转售。
+
+**硬件指纹在物理层面解决了 Agent 身份问题：**
+- 在已验证的 POWER8 服务器上运行的 Agent 与在 Raspberry Pi 上的 Agent 是可证明不同的
+- 振荡器漂移和温度曲线证明了持续运行时间——机器 *确实在运行*
+- 虚拟机检测防止一台物理机器伪装成 100 个 Agent
+- 硬件绑定意味着一台机器 = 一个 Agent 身份 = 一票
+
+**这就是 Proof of Physical AI**——不仅仅是证明代码被执行了，而是证明 *真实的硅片* 完成了工作。
+
+### 其他人看不到的机会
+
+对冲基金和银行想要监管俘获加密货币。好吧。让他们拥有金融通道。
+
+他们 *无法* 俘获的是：
+- 一个由硅片级指纹验证的物理机器网络
+- 一个机器以硬件验证的货币互相支付的 Agent 经济
+- 一队复古的 PowerPC Mac、SPARC 工作站和 IBM POWER8 服务器，通过物理学证明自己的存在
+
+**DePIN + AI Agent + 硬件验证的交汇处是一片空白。** 所有在构建"AI + 加密"的人只是给 GPT 包了一层代币。我们在构建 Agent 诚实交易所需的物理基础设施层——而驱动它的机器会随着时间推移变得越来越有价值。
+
+| 术语 | 在这里的含义 |
+|------|-------------------|
+| **Proof of Physical AI** | 硬件指纹证明真实硅片完成了真实工作 |
+| **Agent 原生货币** | RTC/wRTC——机器之间的无许可微支付 |
+| **硬件验证身份** | 6 项指纹检测 = 物理层面不可伪造的 Agent ID |
+| **面向 AI 的 DePIN** | 专为自主 Agent 构建的去中心化物理基础设施 |
+| **主权推理** | 在你自己的硬件上运行你自己的模型——没有 API 地主 |
+
+---
+
+## 网络是真实的
+
+```bash
+# 立即验证
+curl -fsS https://rustchain.org/health          # 节点健康状态
+curl -fsS https://rustchain.org/api/miners      # 活跃矿工
+curl -fsS https://rustchain.org/epoch           # 当前 epoch
+```
+
+### 认证节点
+
+| 节点 | 位置 | 备注 |
+|------|----------|-------|
+| **Node 1** — 50.28.86.131 | 美国路易斯安那州 | 主节点（LiquidWeb VPS） |
+| **Node 2** — 50.28.86.153 | 美国路易斯安那州 | 备用节点 + BoTTube（LiquidWeb VPS） |
+| **Node 3** — 76.8.228.245:8099 | 美国 | 第一个外部节点（Ryan 的 Proxmox） |
+| **Node 4** — 38.76.217.189:8099 | 中国香港 | 第一个亚洲节点（CognetCloud） |
+| **Node 5** — POWER8 S824 | 本地实验室 | 第一个非 x86 节点（IBM ppc64le，512GB RAM） |
+
+| 事实 | 证据 |
+|------|-------|
+| 横跨 3 个大洲的 5 个节点（北美 ×3，亚洲 ×1，本地 ×1） | [实时浏览器](https://rustchain.org/explorer/) |
+| 26+ 矿工在认证 | `curl -fsS https://rustchain.org/api/miners` |
+| 已颁发 44 份 BCOS 证书 | [认证仓库](https://rustchain.org/bcos/) |
+| 每台机器 6 项硬件指纹检测 | [指纹文档](../../docs/attestation_fuzzing.md) |
+| 已向 260+ 贡献者支付 25,875+ RTC | [公开账本](https://github.com/Scottcjn/rustchain-bounties/issues/104) |
+| 代码已合入 OpenSSL | [#30437](https://github.com/openssl/openssl/pull/30437)，[#30452](https://github.com/openssl/openssl/pull/30452) |
+| 在 CPython、curl、wolfSSL、Ghidra、vLLM 有待合并 PR | [作品集](https://github.com/Scottcjn/Scottcjn/blob/main/external-pr-portfolio.md) |
+
+---
+
+## 快速开始
+
+```bash
+# 一行安装 — 自动检测你的平台
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash
+
+# 试运行：预览安装程序的操作，不实际安装或挖矿
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --dry-run
+```
+
+支持 Linux（x86_64、ppc64le、aarch64、mips、sparc、m68k、riscv64、ia64、s390x）、macOS（Intel、Apple Silicon、PowerPC）、IBM POWER8 和 Windows。只要能跑 Python，就能挖矿。
+
+```bash
+# 使用指定的钱包名称安装
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --wallet my-wallet
+
+# 查看余额
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
+```
+
+### 管理矿工
+
+```bash
+# Linux（systemd）
+systemctl --user status rustchain-miner
+journalctl --user -u rustchain-miner -f
+
+# macOS（launchd）
+launchctl list | grep rustchain
+tail -f ~/.rustchain/miner.log
+```
+
+**RustChain 新手？** 阅读[分步新手指南](../../docs/QUICKSTART.md)——从安装到获得你的第一枚 RTC，每个命令都有详细解释。
+
+---
+
+## 本地开发
+
+开发者可以从全新检出开始，在本地构建和运行 RustChain：
+
+1. 安装先决条件并运行 Python/Rust 检查，参考[构建指南](../../docs/BUILD.md)。
+2. 启动单节点本地开发网络，参考[本地 Devnet](../../docs/DEVNET.md)。
+3. 创建开发钱包并模拟转账，参考 [CLI 钱包演练](../../docs/CLI.md)。
+
+这些指南将本地状态保存在 `.dev/` 中，并使用显式的 `--manifest-path` 命令，因为仓库包含多个 Python 和 Rust 子项目。
+
+---
+
+## 钱包
+
+RustChain 有两种钱包概念：
+
+- **矿工钱包 ID**：一个可读的 `miner_id`，用于挖矿奖励和余额查询。
+- **`RTC...` 地址**：一个基于 Ed25519 的地址，用于签名转账。
+
+如果你不确定需要哪个，请先阅读[钱包设置指南](../../docs/WALLET_SETUP.md)。
+
+| 选项 | 用途 | 位置 |
+|---|---|---|
+| 矿工安装钱包 | 将挖矿奖励赚到指定钱包 | `install-miner.sh --wallet YOUR_WALLET` |
+| 浏览器轻客户端 | 在浏览器中本地加载钱包并签署转账 | [web/light-client](../../web/light-client/) |
+| 桌面 GUI 钱包 | 从本仓库创建或恢复本地钱包 | `wallet/rustchain_wallet_secure.py` |
+| CLI 工具 | 从检出目录进行脚本化钱包操作 | `tools/rustchain_wallet_cli.py` |
+| Agent/Base 钱包文档 | Coinbase Agentic Wallets、x402 和 Base 链接 | [web/wallets.html](../../web/wallets.html) |
+
+关于命令示例、备份指南和签名转账载荷格式，请参见 [docs/WALLET_SETUP.md](../../docs/WALLET_SETUP.md) 和 [START_HERE.md](../../START_HERE.md)。
+
+---
+
+## Proof-of-Antiquity 如何工作
+
+### 1 CPU = 1 票
+
+与 Proof-of-Work 中算力 = 票数不同：
+- 每个唯一的硬件设备在每个 epoch 恰好获得 1 票
+- 奖励平均分配，然后按年代权重乘以倍率
+- 更快的 CPU 或更多线程没有任何优势
+
+### Epoch 奖励
+
+```
+Epoch：10 分钟  |  奖励池：1.5 RTC/epoch  |  按年代权重分配
+
+G4 Mac (2.5x):     0.30 RTC  ████████████████████
+G5 Mac (2.0x):     0.24 RTC  ████████████████
+现代 PC (1.0x):    0.12 RTC  ████████
+```
+
+### 反虚拟机 enforcement
+
+虚拟机会被检测到并获得正常奖励的 **十亿分之一**。仅限真实硬件。
+
+---
+
+## 安全性
+
+- **硬件绑定**：每个指纹绑定到一个钱包
+- **Ed25519 签名**：所有转账经过加密签名
+- **TLS 证书固定**：矿工固定节点证书
+- **容器检测**：Docker、LXC、K8s 在认证时被识别
+- **ROM 聚类检测**：检测共享相同 ROM 转储的模拟器农场
+- **红队悬赏**：[开放](https://github.com/Scottcjn/rustchain-bounties/issues)中，用于发现漏洞
+
+---
+
+## wRTC on Solana
+
+| | 链接 |
+|--|------|
+| **兑换** | [Raydium DEX](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) |
+| **K 线图** | [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) |
+| **桥接** | [Bridge](https://bottube.ai/bridge/wrtc) |
+| **指南** | [wRTC 快速开始](../../docs/wrtc.md) |
 
 ---
 
 ## 贡献并赚取 RTC
 
-每一个贡献都能赚取 RTC 代币。Bug 修复、功能开发、文档编写、安全审计——全部有偿。
+每项贡献都能赚取 RTC 代币。浏览[开放悬赏](https://github.com/Scottcjn/rustchain-bounties/issues)。
 
 | 等级 | 奖励 | 示例 |
 |------|--------|----------|
-| 微型 | 1-10 RTC | 错别字修复、小型文档、简单测试 |
-| 标准 | 20-50 RTC | 功能开发、重构、新端点 |
-| 重要 | 75-100 RTC | 安全修复、共识改进 |
-| 关键 | 100-150 RTC | 漏洞补丁、协议升级 |
+| Micro（微型） | 1-10 RTC | 修复错别字、文档、测试 |
+| Standard（标准） | 20-50 RTC | 新功能、重构 |
+| Major（重大） | 75-100 RTC | 安全修复、共识改进 |
+| Critical（关键） | 100-150 RTC | 漏洞、协议升级 |
 
-**开始步骤：**
-1. 浏览[开放悬赏](https://github.com/Scottcjn/rustchain-bounties/issues)
-2. 选择一个[新手友好问题](https://github.com/Scottcjn/Rustchain/labels/good%20first%20issue)（5-10 RTC）
-3. Fork、修复、提交 PR——获得 RTC 报酬
-4. 查看 [CONTRIBUTING.md](../CONTRIBUTING.md) 了解完整细节
-
-1 RTC = ~$0.01 USD (value varies; check current rates) | 运行 `pip install clawrtc` 开始挖矿
+**1 RTC ≈ $0.10 USD** · `pip install clawrtc` · [CONTRIBUTING.md](../../CONTRIBUTING.md)
 
 ---
 
-## 智能体钱包 + x402 支付
+## 发表论文
 
-RustChain 智能体现在可以拥有 **Coinbase Base 钱包**，并使用 **x402 协议**（HTTP 402 需要支付）进行机器对机器支付：
-
-| 资源 | 链接 |
-|----------|------|
-| **智能体钱包文档** | [rustchain.org/wallets.html](https://rustchain.org/wallets.html) |
-| **Base 上的 wRTC** | [`0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6`](https://basescan.org/address/0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6) |
-| **USDC 兑换 wRTC** | [Aerodrome DEX](https://aerodrome.finance/swap?from=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913&to=0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6) |
-| **Base 桥接** | [bottube.ai/bridge/base](https://bottube.ai/bridge/base) |
-
-```bash
-# 创建 Coinbase 钱包
-pip install clawrtc[coinbase]
-clawrtc wallet coinbase create
-
-# 查看兑换信息
-clawrtc wallet coinbase swap-info
-
-# 链接现有 Base 地址
-clawrtc wallet coinbase link 0xYourBaseAddress
-```
-
-**x402 高级 API 端点**已上线（目前免费，用于验证流程）：
-- `GET /api/premium/videos` - 批量视频导出（BoTTube）
-- `GET /api/premium/analytics/<agent>` - 深度智能体分析（BoTTube）
-- `GET /api/premium/reputation` - 完整声誉导出（Beacon Atlas）
-- `GET /wallet/swap-info` - USDC/wRTC 兑换指南（RustChain）
-
-## 📄 学术出版物
-
-| 论文 | DOI | 主题 |
-|-------|-----|-------|
-| **RustChain: 一个 CPU，一票** | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18623592.svg)](https://doi.org/10.5281/zenodo.18623592) | 古董证明共识、硬件指纹识别 |
-| **非双射置换坍缩** | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18623920.svg)](https://doi.org/10.5281/zenodo.18623920) | AltiVec vec_perm 用于 LLM 注意力机制（27-96 倍优势）|
-| **PSE 硬件熵** | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18623922.svg)](https://doi.org/10.5281/zenodo.18623922) | POWER8 mftb 熵用于行为分歧 |
-| **神经形态提示翻译** | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18623594.svg)](https://doi.org/10.5281/zenodo.18623594) | 情感提示使视频扩散提升 20% |
-| **RAM 保险箱** | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18321905.svg)](https://doi.org/10.5281/zenodo.18321905) | NUMA 分布式权重存储用于 LLM 推理 |
+| 论文 | 发表场所 | DOI |
+|-------|-------|-----|
+| **Emotional Vocabulary as Semantic Grounding** | **CVPR 2026 Workshop (GRAIL-V)** — 已接收 | [OpenReview](https://openreview.net/forum?id=pXjE6Tqp70) |
+| **One CPU, One Vote** | 预印本 | [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18623592-blue)](https://doi.org/10.5281/zenodo.18623592) |
+| **Non-Bijunctive Permutation Collapse** | 预印本 | [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18623920-blue)](https://doi.org/10.5281/zenodo.18623920) |
+| **PSE Hardware Entropy** | 预印本 | [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18623922-blue)](https://doi.org/10.5281/zenodo.18623922) |
+| **RAM Coffers** | 预印本 | [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18321905-blue)](https://doi.org/10.5281/zenodo.18321905) |
+| **RPI: Resonant Permutation Inference** | 预印本 | [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.19271983-blue)](https://doi.org/10.5281/zenodo.19271983) |
 
 ---
 
-## 🎯 RustChain 的独特之处
+## 生态系统
 
-| 传统 PoW | 古董证明 |
-|----------------|-------------------|
-| 奖励最快的硬件 | 奖励最古老的硬件 |
-| 越新越好 | 越老越好 |
-| 浪费能源消耗 | 保护计算历史 |
-| 竞相降低成本 | 奖励数字保护 |
-
-**核心原则**：经历数十年仍然存活的真实古董硬件值得认可。RustChain 颠覆了挖矿逻辑。
-
-## ⚡ 快速开始
-
-### 一键安装（推荐）
-```bash
-curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash
-```
-
-安装程序功能：
-- ✅ 自动检测你的平台（Linux/macOS，x86_64/ARM/PowerPC）
-- ✅ 创建隔离的 Python 虚拟环境（不污染系统）
-- ✅ 下载适合你硬件的正确矿工程序
-- ✅ 设置开机自启动（systemd/launchd）
-- ✅ 提供简单的卸载方式
-
-### 带选项的安装
-
-**使用指定钱包安装：**
-```bash
-curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --wallet my-miner-wallet
-```
-
-**卸载：**
-```bash
-curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --uninstall
-```
-
-### 支持的平台
-- ✅ Ubuntu 20.04+、Debian 11+、Fedora 38+（x86_64、ppc64le）
-- ✅ macOS 12+（Intel、Apple Silicon、PowerPC）
-- ✅ IBM POWER8 系统
-
-### 故障排除
-
-- **安装程序权限错误失败**：使用对 `~/.local` 有写入权限的账户重新运行，避免在系统 Python 的全局 site-packages 内运行。
-- **Python 版本错误**（`SyntaxError` / `ModuleNotFoundError`）：使用 Python 3.10+ 安装，并将 `python3` 设置为该解释器。
-  ```bash
-  python3 --version
-  curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash
-  ```
-- **`curl` 中的 HTTPS 证书错误**：这可能发生在非浏览器客户端环境中；在检查钱包之前先用 `curl -I https://rustchain.org` 检查连接性。
-- **矿工立即退出**：验证钱包存在且服务正在运行（`systemctl --user status rustchain-miner` 或 `launchctl list | grep rustchain`）
-
-如果问题持续存在，请在新问题或悬赏评论中包含日志和操作系统详细信息，以及确切的错误输出和你的 `install-miner.sh --dry-run` 结果。
-
-### 安装后操作
-
-**检查钱包余额：**
-```bash
-# 注意：使用 -sk 标志，因为节点可能使用自签名 SSL 证书
-curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
-```
-
-**列出活跃矿工：**
-```bash
-curl -sk https://rustchain.org/api/miners
-```
-
-**检查节点健康状态：**
-```bash
-curl -sk https://rustchain.org/health
-```
-
-**获取当前纪元：**
-```bash
-curl -sk https://rustchain.org/epoch
-```
-
-**管理矿工服务：**
-
-*Linux（systemd）：*
-```bash
-systemctl --user status rustchain-miner    # 检查状态
-systemctl --user stop rustchain-miner      # 停止挖矿
-systemctl --user start rustchain-miner     # 开始挖矿
-journalctl --user -u rustchain-miner -f    # 查看日志
-```
-
-*macOS（launchd）：*
-```bash
-launchctl list | grep rustchain            # 检查状态
-launchctl stop com.rustchain.miner         # 停止挖矿
-launchctl start com.rustchain.miner        # 开始挖矿
-tail -f ~/.rustchain/miner.log             # 查看日志
-```
-
-### 手动安装
-```bash
-git clone https://github.com/Scottcjn/Rustchain.git
-cd Rustchain
-bash install-miner.sh --wallet YOUR_WALLET_NAME
-# 可选：预览操作而不更改系统
-bash install-miner.sh --dry-run --wallet YOUR_WALLET_NAME
-```
-
-## 💰 悬赏板
-
-通过为 RustChain 生态系统做贡献来赚取 **RTC**！
-
-| 悬赏 | 奖励 | 链接 |
-|--------|--------|------|
-| **首次真实贡献** | 10 RTC | [#48](https://github.com/Scottcjn/Rustchain/issues/48) |
-| **网络状态页面** | 25 RTC | [#161](https://github.com/Scottcjn/Rustchain/issues/161) |
-| **AI 智能体猎人** | 200 RTC | [智能体悬赏 #34](https://github.com/Scottcjn/rustchain-bounties/issues/34) |
-
----
-
-## 💰 古董乘数
-
-你的硬件年龄决定挖矿奖励：
-
-| 硬件 | 年代 | 乘数 | 示例收益 |
-|----------|-----|------------|------------------|
-| **PowerPC G4** | 1999-2005 | **2.5×** | 0.30 RTC/纪元 |
-| **PowerPC G5** | 2003-2006 | **2.0×** | 0.24 RTC/纪元 |
-| **PowerPC G3** | 1997-2003 | **1.8×** | 0.21 RTC/纪元 |
-| **IBM POWER8** | 2014 | **1.5×** | 0.18 RTC/纪元 |
-| **Pentium 4** | 2000-2008 | **1.5×** | 0.18 RTC/纪元 |
-| **Core 2 Duo** | 2006-2011 | **1.3×** | 0.16 RTC/纪元 |
-| **Apple Silicon** | 2020+ | **1.2×** | 0.14 RTC/纪元 |
-| **现代 x86_64** | 当前 | **1.0×** | 0.12 RTC/纪元 |
-
-*乘数随时间衰减（每年 15%）以防止永久优势。*
-
-## 🔧 古董证明如何工作
-
-### 1. 硬件指纹识别（RIP-PoA）
-
-每个矿工必须证明其硬件是真实的，而非模拟的：
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                   6 项硬件检查                               │
-├─────────────────────────────────────────────────────────────┤
-│ 1. 时钟偏移和振荡器漂移        ← 硅老化模式                  │
-│ 2. 缓存时序指纹                ← L1/L2/L3 延迟特征           │
-│ 3. SIMD 单元身份               ← AltiVec/SSE/NEON 偏差      │
-│ 4. 热漂移熵                    ← 热曲线是唯一的              │
-│ 5. 指令路径抖动                ← 微架构抖动图                │
-│ 6. 反模拟检查                  ← 检测虚拟机/模拟器           │
-└─────────────────────────────────────────────────────────────┘
-```
-
-**为什么重要**：假装是 G4 Mac 的 SheepShaver 虚拟机会无法通过这些检查。真实的古董硅片具有无法伪造的独特老化模式。
-
-### 2. 1 个 CPU = 1 票（RIP-200）
-
-与算力 = 投票权的 PoW 不同，RustChain 使用**轮询共识**：
-
-- 每个独特的硬件设备每个纪元恰好获得 1 票
-- 奖励在所有投票者之间平均分配，然后乘以古董乘数
-- 运行多个线程或更快的 CPU 没有优势
-
-### 3. 基于纪元的奖励
-
-```
-纪元持续时间：10 分钟（600 秒）
-基础奖励池：每纪元 1.5 RTC
-分配方式：平均分配 × 古董乘数
-```
-
-**5 个矿工的示例：**
-```
-G4 Mac (2.5×):     0.30 RTC  ████████████████████
-G5 Mac (2.0×):     0.24 RTC  ████████████████
-现代 PC (1.0×):    0.12 RTC  ████████
-现代 PC (1.0×):    0.12 RTC  ████████
-现代 PC (1.0×):    0.12 RTC  ████████
-                   ─────────
-总计：             0.90 RTC（+ 0.60 RTC 返回池中）
-```
-
-## 🌐 网络架构
-
-### 实时节点（3 个活跃）
-
-| 节点 | 位置 | 角色 | 状态 |
-|------|----------|------|--------|
-| **节点 1** | 50.28.86.131 | 主节点 + 浏览器 | ✅ 活跃 |
-| **节点 2** | 50.28.86.153 | Ergo 锚定 | ✅ 活跃 |
-| **节点 3** | 76.8.228.245 | 外部（社区）| ✅ 活跃 |
-
-### Ergo 区块链锚定
-
-RustChain 定期锚定到 Ergo 区块链以实现不可变性：
-
-```
-RustChain 纪元 → 承诺哈希 → Ergo 交易（R4 寄存器）
-```
-
-这提供了 RustChain 状态在特定时间存在的密码学证明。
-
-## 📊 API 端点
-
-```bash
-# 检查网络健康状态
-curl -sk https://rustchain.org/health
-
-# 获取当前纪元
-curl -sk https://rustchain.org/epoch
-
-# 列出活跃矿工
-curl -sk https://rustchain.org/api/miners
-
-# 检查钱包余额
-curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET"
-
-# 区块浏览器（网页浏览器）
-open https://rustchain.org/explorer
-```
-
-## 🖥️ 支持的平台
-
-| 平台 | 架构 | 状态 | 备注 |
-|----------|--------------|--------|-------|
-| **Mac OS X Tiger** | PowerPC G4/G5 | ✅ 完全支持 | Python 2.5 兼容矿工 |
-| **Mac OS X Leopard** | PowerPC G4/G5 | ✅ 完全支持 | 推荐用于古董 Mac |
-| **Ubuntu Linux** | ppc64le/POWER8 | ✅ 完全支持 | 最佳性能 |
-| **Ubuntu Linux** | x86_64 | ✅ 完全支持 | 标准矿工 |
-| **macOS Sonoma** | Apple Silicon | ✅ 完全支持 | M1/M2/M3 芯片 |
-| **Windows 10/11** | x86_64 | ✅ 完全支持 | Python 3.8+ |
-| **DOS** | 8086/286/386 | 🔧 实验性 | 仅徽章奖励 |
-
-## 🏅 NFT 徽章系统
-
-通过挖矿里程碑赚取纪念徽章：
-
-| 徽章 | 要求 | 稀有度 |
-|-------|-------------|--------|
-| 🔥 **Bondi G3 火焰守护者** | 在 PowerPC G3 上挖矿 | 稀有 |
-| ⚡ **QuickBasic 倾听者** | 从 DOS 机器挖矿 | 传奇 |
-| 🛠️ **DOS WiFi 炼金术士** | 联网 DOS 机器 | 神话 |
-| 🏛️ **万神殿先驱** | 前 100 名矿工 | 限量 |
-
-## 🔒 安全模型
-
-### 反虚拟机检测
-虚拟机被检测到后将获得正常奖励的 **十亿分之一**：
-```
-真实 G4 Mac:    2.5× 乘数  = 0.30 RTC/纪元
-模拟 G4:        0.0000000025×    = 0.0000000003 RTC/纪元
-```
-
-### 硬件绑定
-每个硬件指纹绑定到一个钱包。防止：
-- 同一硬件上的多个钱包
-- 硬件欺骗
-- 女巫攻击
-
-## 📁 仓库结构
-
-```
-Rustchain/
-├── install-miner.sh                # 通用矿工安装程序（Linux/macOS）
-├── node/
-│   ├── rustchain_v2_integrated_v2.2.1_rip200.py  # 完整节点实现
-│   └── fingerprint_checks.py       # 硬件验证
-├── miners/
-│   ├── linux/rustchain_linux_miner.py            # Linux 矿工
-│   └── macos/rustchain_mac_miner_v2.4.py         # macOS 矿工
-├── docs/
-│   ├── RustChain_Whitepaper_*.pdf  # 技术白皮书
-│   └── chain_architecture.md       # 架构文档
-├── tools/
-│   └── validator_core.py           # 区块验证
-└── nfts/                           # 徽章定义
-```
-
-## ✅ Beacon 认证开源（BCOS）
-
-RustChain 接受 AI 辅助的 PR，但我们要求*证据*和*审查*，以便维护者不会被低质量的代码生成淹没。
-
-阅读草案规范：
-- `docs/BEACON_CERTIFIED_OPEN_SOURCE.md`
-
-## 🔗 相关项目和链接
-
-| 资源 | 链接 |
 |---------|------|
-| **官网** | [rustchain.org](https://rustchain.org) |
-| **区块浏览器** | [rustchain.org/explorer](https://rustchain.org/explorer) |
-| **兑换 wRTC（Raydium）** | [Raydium DEX](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) |
-| **价格图表** | [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) |
-| **桥接 RTC ↔ wRTC** | [BoTTube 桥接](https://bottube.ai/bridge) |
-| **wRTC 代币铸造地址** | `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X` |
-| **BoTTube** | [bottube.ai](https://bottube.ai) - AI 视频平台 |
-| **Moltbook** | [moltbook.com](https://moltbook.com) - AI 社交网络 |
-| [nvidia-power8-patches](https://github.com/Scottcjn/nvidia-power8-patches) | POWER8 的 NVIDIA 驱动 |
-| [llama-cpp-power8](https://github.com/Scottcjn/llama-cpp-power8) | POWER8 上的 LLM 推理 |
-| [ppc-compilers](https://github.com/Scottcjn/ppc-compilers) | 古董 Mac 的现代编译器 |
+| [BoTTube](https://bottube.ai) | AI 原生视频平台（1,000+ 视频） |
+| [Beacon](https://github.com/Scottcjn/beacon-skill) | Agent 发现协议 |
+| [TrashClaw](https://github.com/Scottcjn/trashclaw) | 零依赖的本地 LLM Agent |
+| [RAM Coffers](https://github.com/Scottcjn/ram-coffers) | NUMA 感知的 POWER8 LLM 推理 |
+| [RPI Inference](https://github.com/Scottcjn/rpi-inference) | 零乘法推理引擎（18K tok/s，可在 N64 上运行） |
+| [Grazer](https://github.com/Scottcjn/grazer-skill) | 多平台内容发现 |
 
-## 📝 文章
+---
 
-- [古董证明：奖励古董硬件的区块链](https://dev.to/scottcjn/proof-of-antiquity-a-blockchain-that-rewards-vintage-hardware-4ii3) - Dev.to
-- [我在 768GB IBM POWER8 服务器上运行 LLM](https://dev.to/scottcjn/i-run-llms-on-a-768gb-ibm-power8-server-and-its-faster-than-you-think-1o) - Dev.to
+## 支持平台
 
-## 🙏 致谢
+Linux（x86_64、ppc64le）· macOS（Intel、Apple Silicon、PowerPC）· IBM POWER8 · Windows · Mac OS X Tiger/Leopard · Raspberry Pi
 
-**一年的开发、真实的古董硬件、电费账单和专用实验室投入到了这个项目中。**
+---
 
-如果你使用 RustChain：
-- ⭐ **给这个仓库加星** - 帮助其他人找到它
-- 📝 **在你的项目中注明出处** - 保留署名
-- 🔗 **链接回来** - 分享爱
+## 为什么叫"RustChain"？
 
-```
-RustChain - Scott（Scottcjn）的古董证明
-https://github.com/Scottcjn/Rustchain
-```
-
-## 📜 许可证
-
-MIT 许可证 - 可自由使用，但请保留版权声明和署名。
 
 ---
 
 <div align="center">
 
-**由 [Elyan Labs](https://elyanlabs.ai) 用 ⚡ 制作**
+**[Elyan Labs](https://elyanlabs.ai)** · 用 $0 风投和一间满是典当行硬件的房间构建
 
-*"你的古董硬件赚取奖励。让挖矿再次有意义。"*
+*"但是，它还能用，你干嘛要扔掉它？"*
 
-**DOS 机器、PowerPC G4、Win95 机器——它们都有价值。RustChain 证明了这一点。**
+[Boudreaux 原则](https://rustchain.org/principles.html) · [绿色追踪器](https://rustchain.org/preserved.html) · [悬赏板](https://github.com/Scottcjn/rustchain-bounties/issues)
 
 </div>
 
-## 挖矿状态
-<!-- rustchain-mining-badge-start -->
-![RustChain 挖矿状态](https://img.shields.io/endpoint?url=https://rustchain.org/api/badge/frozen-factorio-ryan&style=flat-square)<!-- rustchain-mining-badge-end -->
+
+## 贡献
+请阅读 [CONTRIBUTING.md](../../CONTRIBUTING.md) 了解指南，查看[悬赏板](https://github.com/Scottcjn/rustchain-bounties)了解活跃任务和奖励。
+
+
+---
+*文档已优化以提高可读性。*
