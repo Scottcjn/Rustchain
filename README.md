@@ -379,11 +379,12 @@ Compare to Bitcoin's 21M (≈2.5x more), Ethereum's uncapped supply, and the typ
 | Zone | Allocation | RTC | Purpose |
 |------|-----------|-----|---------|
 | **Block Mining** | 94% | 7,885,292 | PoA validator rewards (paid to real vintage hardware) |
-| **Community Vault** | 3% | 251,658 | Airdrops, bounty program, grants |
-| **Dev Wallet** | 2.5% | 209,715 | Development funding |
-| **Foundation** | 0.5% | 41,943 | Governance & operations |
+| **Founders** | 1.5% | 125,829 | `founder_founders` — core team allocation |
+| **Dev Fund** | 1.5% | 125,829 | `founder_dev_fund` — development funding |
+| **Team / Bounty** | 1.5% | 125,829 | `founder_team_bounty` — contributor bounties |
+| **Community** | 1.5% | 125,829 | `founder_community` — airdrops, grants |
 
-Total premine: **6%** (503,316 RTC). Premine wallets have a 1-year on-chain unlock delay. No VC pre-sale. No private allocation. The early miners were `pawnshop_g4_115` and `dual-g4-125`.
+Total premine: **6%** (503,316 RTC = 4 × 125,829.12, one per founder wallet). Premine wallets have a 1-year on-chain unlock delay. No VC pre-sale. No private allocation. The early miners were `pawnshop_g4_115` and `dual-g4-125`.
 
 ### Emission schedule (halving)
 
