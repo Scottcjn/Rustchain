@@ -153,17 +153,41 @@ def money_view(row):
     return data
 
 
+# SQLite cannot parameterize identifiers (PRAGMA/ALTER/UPDATE take a literal
+# table name), so every table name interpolated into the DDL below MUST be
+# validated against this allowlist first — never against caller-supplied text.
+_KNOWN_TABLES = frozenset({"orders", "trades", "rate_limits"})
+# Integer precision columns we add (also literal, never caller-supplied).
+_PRECISION_COLUMNS = ("amount_micro_rtc", "price_per_rtc_nano_quote", "total_quote_nano")
+
+
+def _require_known_table(table_name):
+    """Guard before building DDL: refuse any table name not on the allowlist."""
+    if table_name not in _KNOWN_TABLES:
+        raise ValueError(f"refusing to build SQL for unknown table {table_name!r}")
+    return table_name
+
+
 def migrate_precision_columns(cursor, table_name):
+    # Validate before interpolation so only known-safe identifiers reach the SQL.
+    _require_known_table(table_name)
+
     columns = {row[1] for row in cursor.execute(f"PRAGMA table_info({table_name})")}
-    if "amount_micro_rtc" not in columns:
-        cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN amount_micro_rtc INTEGER")
-    if "price_per_rtc_nano_quote" not in columns:
-        cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN price_per_rtc_nano_quote INTEGER")
-    if "total_quote_nano" not in columns:
-        cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN total_quote_nano INTEGER")
+    for col in _PRECISION_COLUMNS:
+        if col in columns:
+            continue
+        try:
+            cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {col} INTEGER")
+        except sqlite3.OperationalError as exc:
+            # Idempotent under concurrent migrations: another worker may have
+            # added the column between the PRAGMA read above and this ALTER.
+            if "duplicate column name" not in str(exc).lower():
+                raise
 
     refreshed = {row[1] for row in cursor.execute(f"PRAGMA table_info({table_name})")}
     if {"amount_rtc", "price_per_rtc", "total_quote"}.issubset(refreshed):
+        # COALESCE keeps the backfill idempotent: re-runs converge to the same
+        # values, so concurrent migrations are safe without a write lock.
         cursor.execute(f"""
             UPDATE {table_name}
             SET amount_micro_rtc = COALESCE(amount_micro_rtc, CAST(ROUND(amount_rtc * ?) AS INTEGER)),
@@ -173,6 +197,7 @@ def migrate_precision_columns(cursor, table_name):
 
 
 def table_columns(cursor, table_name):
+    _require_known_table(table_name)
     return {row[1] for row in cursor.execute(f"PRAGMA table_info({table_name})")}
 
 
