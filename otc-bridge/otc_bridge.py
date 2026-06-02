@@ -30,6 +30,7 @@ import secrets
 import sqlite3
 import time
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from functools import wraps
 
@@ -195,6 +196,38 @@ def is_valid_wallet_id(wallet_id):
     return bool(_MINER_ID_RE.fullmatch(wallet_id))
 
 
+def _admin_transport_block_reason():
+    """Return a reason string if it is UNSAFE to send the admin key to the
+    configured node, else None.
+
+    Fail-closed: the RC_ADMIN_KEY must never leave over plaintext (http://) or
+    to a non-local host with TLS verification disabled (MITM credential theft).
+    Loopback hosts and an explicit OTC_ALLOW_INSECURE_ADMIN opt-out are allowed
+    for local development.
+    """
+    if os.environ.get("OTC_ALLOW_INSECURE_ADMIN", "").strip().lower() in ("1", "true", "yes"):
+        return None  # explicit operator opt-out (dev only)
+
+    parsed = urlparse(RUSTCHAIN_NODE)
+    host = (parsed.hostname or "").lower()
+    if host in ("localhost", "127.0.0.1", "::1"):
+        return None  # loopback dev is acceptable
+
+    if parsed.scheme != "https":
+        return (
+            f"insecure scheme '{parsed.scheme or 'none'}' for admin endpoint "
+            f"{RUSTCHAIN_NODE!r}: set RUSTCHAIN_NODE to https:// "
+            f"(or OTC_ALLOW_INSECURE_ADMIN=1 for local dev)"
+        )
+    if TLS_VERIFY is False:
+        return (
+            "TLS verification disabled (RUSTCHAIN_TLS_VERIFY=false) for a "
+            "non-local admin endpoint — MITM credential exposure; pin "
+            "RUSTCHAIN_CA_BUNDLE instead of disabling verification"
+        )
+    return None
+
+
 def send_bridge_alert(level, message, fields):
     """Best-effort alert hook for payout failures and manual recovery events."""
     webhook = os.environ.get("RC_SOPHIACHECK_WEBHOOK", "").strip()
@@ -230,6 +263,19 @@ def rtc_transfer_from_worker(recipient_wallet, amount_rtc, order_id):
     accepted into pending pool), or ``{"ok": False, "error": str, "details": {...}}``
     on terminal failure after retries.
     """
+    # Fail-closed BEFORE sending the admin key: never leak RC_ADMIN_KEY over an
+    # insecure transport. Refusing strands funds in otc_bridge_worker (alerted +
+    # recoverable) — strictly safer than exfiltrating the admin credential.
+    block_reason = _admin_transport_block_reason()
+    if block_reason:
+        log.error(f"OTC payout blocked for {order_id}: {block_reason}")
+        send_bridge_alert(
+            "critical",
+            "OTC payout blocked: insecure admin transport",
+            {"order_id": order_id, "node": RUSTCHAIN_NODE, "reason": block_reason},
+        )
+        return {"ok": False, "error": f"insecure_admin_transport: {block_reason}", "details": {}}
+
     last_error = "unknown payout error"
     last_payload = {}
     retry_delays = (0, 1, 2, 4)
@@ -247,6 +293,12 @@ def rtc_transfer_from_worker(recipient_wallet, amount_rtc, order_id):
                     "to_miner": recipient_wallet,
                     "amount_rtc": amount_rtc,
                     "reason": f"otc_payout:{order_id}",
+                    # Idempotency: stable, unique-per-payout key so retries (and
+                    # any double-confirm) dedup server-side in wallet_transfer_v2
+                    # instead of paying twice. Derived from the immutable
+                    # order_id (one worker payout per order), and kept equal to
+                    # `reason` so the server's reason-consistency check passes.
+                    "idempotency_key": f"otc_payout:{order_id}",
                 },
                 verify=TLS_VERIFY, timeout=15
             )
