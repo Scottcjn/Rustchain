@@ -6579,7 +6579,6 @@ def governance_proposal_detail(proposal_id: int):
 
 
 @app.route('/governance/vote', methods=['POST'])
-@admin_required
 def governance_vote():
     data = request.get_json(silent=True)
     if data is None:
