@@ -68,7 +68,7 @@
 
 支持的 CPU 系列包括 Linux `x86_64`、`ppc64le`、`aarch64`、`mips`、`sparc`、`m68k`、`riscv64`、`ia64` 和 `s390x`，以及 macOS Intel、Apple Silicon、PowerPC、IBM POWER8、Windows、老版 Mac OS X 和树莓派系统。现代 ARM NAS 或单板系统可以运行矿工，但会获得文档中所述的惩罚乘数。
 
-有关安装前提条件，请参见 [INSTALL.md](../INSTALL.md)。有关完整的古董乘数和架构验证模型，请参见 [CPU_ANTIQUITY_SYSTEM.md](../CPU_ANTIQUITY_SYSTEM.md)。
+有关安装前提条件，请参见 [INSTALL.md](../../INSTALL.md)。有关完整的古董乘数和架构验证模型，请参见 [CPU_ANTIQUITY_SYSTEM.md](../../CPU_ANTIQUITY_SYSTEM.md)。
 
 ---
 
@@ -169,7 +169,7 @@ python3 wallet/rustchain_wallet.py generate
 
 - 加入 [Discord](https://discord.gg/rustchain) 获取实时支持
 - 在 [GitHub](https://github.com/Scottcjn/rustchain/issues) 上提交 Issue 报告错误
-- 查看 [FAQ_TROUBLESHOOTING.md](FAQ_TROUBLESHOOTING.md) 获取常见解决方案
+- 查看 [FAQ_TROUBLESHOOTING.md](../FAQ_TROUBLESHOOTING.md) 获取常见解决方案
 
 ---
 
