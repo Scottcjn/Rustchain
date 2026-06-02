@@ -1,6 +1,6 @@
 # RIP-0310: Proof of Provenance (PoP)
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20502069.svg)](https://doi.org/10.5281/zenodo.20502069)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20502068.svg)](https://doi.org/10.5281/zenodo.20502068)
 
 ```yaml
 rip: 0310
@@ -12,10 +12,10 @@ category: Core
 created: 2026-06-01
 requires: RIP-0001, RIP-0007, RIP-0308
 external: Beacon agent-identity layer (agent.json / bcn_*); Ergo register anchoring
-doi: 10.5281/zenodo.20502069
+doi: 10.5281/zenodo.20502068
 ```
 
-> **Citation:** Boudreaux, S. (2026). *RIP-0310: Proof of Provenance (PoP) — Identity-Bound, Hardware-Bound Provenance for AI Content*. Elyan Labs. https://doi.org/10.5281/zenodo.20502069
+> **Citation:** Boudreaux, S. (2026). *RIP-0310: Proof of Provenance (PoP) — Identity-Bound, Hardware-Bound Provenance for AI Content*. Elyan Labs. https://doi.org/10.5281/zenodo.20502068
 
 > **Priority / coined-here.** The **Proof-of-Provenance binding** — a cryptographic chain
 > joining a persistent agent identity to a physically-verified machine and making that
