@@ -642,22 +642,6 @@ def rtc_create_escrow_job(poster_wallet, amount_rtc, title, description):
         return {"ok": False, "error": GENERIC_INTERNAL_ERROR}
 
 
-def rtc_release_escrow(job_id, poster_wallet):
-    """Release escrow -- accept delivery to pay the taker."""
-    try:
-        # First, claim the job as the taker (OTC bridge acts as intermediary)
-        # Then deliver and accept to release funds
-        r = requests.post(
-            f"{RUSTCHAIN_NODE}/agent/jobs/{job_id}/accept",
-            json={"poster_wallet": poster_wallet},
-            verify=TLS_VERIFY, timeout=15
-        )
-        return r.ok
-    except Exception as e:
-        log.error(f"Escrow release failed: {e}")
-        return False
-
-
 def rtc_cancel_escrow(job_id, poster_wallet):
     """Cancel escrow job -- refund to poster."""
     try:
@@ -1366,10 +1350,14 @@ def list_trades():
     limit, error = positive_int_arg("limit", 50, max_value=200)
     if error:
         return jsonify({"error": error}), 400
+    # Fail closed, not open: an unsupported (e.g. typo'd) pair must NOT fall
+    # through to the unfiltered full-history feed. Mirrors /api/orderbook.
+    if pair and pair not in SUPPORTED_PAIRS:
+        return jsonify({"error": "unsupported pair"}), 400
 
     conn = get_db()
     try:
-        if pair and pair in SUPPORTED_PAIRS:
+        if pair:
             trades = conn.execute(
                 "SELECT * FROM trades WHERE pair = ? ORDER BY completed_at DESC LIMIT ?",
                 (pair, limit)
@@ -1550,7 +1538,15 @@ def static_files(path):
 # Main
 # ---------------------------------------------------------------------------
 
+# Initialize the schema at import time so the app works under WSGI servers.
+# The Dockerfile runs `gunicorn otc_bridge:app`, where __name__ != "__main__"
+# and the block below never executes — without this, a fresh container has no
+# tables and 500s on first request. init_db() is idempotent (CREATE TABLE IF
+# NOT EXISTS + idempotent precision-column migration), so it is safe on every
+# import and across concurrent gunicorn workers.
+init_db()
+
+
 if __name__ == "__main__":
-    init_db()
     port = int(os.environ.get("OTC_PORT", 5580))
     app.run(host="0.0.0.0", port=port, debug=False)
