@@ -2,6 +2,9 @@
 """
 RustChain Server Proxy - Port 8089
 Allows G4 to connect via different port
+
+Safely handles non-JSON upstream responses by checking the Content-Type
+header before calling .json() and falling back to response.text (fix #1996).
 """
 
 from flask import Flask, request, jsonify
