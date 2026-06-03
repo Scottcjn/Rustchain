@@ -15,6 +15,14 @@ import random
 hall_bp = Blueprint('hall_of_rust', __name__)
 logger = logging.getLogger(__name__)
 
+
+def _json_object_required():
+    """Return parsed JSON only when the request body is a JSON object."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return None, (jsonify({'error': 'JSON object required'}), 400)
+    return data, None
+
 # Rust Score calculation weights
 RUST_WEIGHTS = {
     'age_years': 10,           # Points per year of hardware age
