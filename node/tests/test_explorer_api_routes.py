@@ -18,6 +18,7 @@ class TestExplorerApiRoutes(unittest.TestCase):
         cls._tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         cls._prev_db_path = os.environ.get("RUSTCHAIN_DB_PATH")
         cls._prev_admin_key = os.environ.get("RC_ADMIN_KEY")
+        cls._prev_rustchain_crypto = sys.modules.pop("rustchain_crypto", None)
         os.environ["RUSTCHAIN_DB_PATH"] = os.path.join(cls._tmp.name, "import.db")
         os.environ["RC_ADMIN_KEY"] = "0123456789abcdef0123456789abcdef"
 
@@ -36,6 +37,8 @@ class TestExplorerApiRoutes(unittest.TestCase):
             os.environ.pop("RC_ADMIN_KEY", None)
         else:
             os.environ["RC_ADMIN_KEY"] = cls._prev_admin_key
+        if cls._prev_rustchain_crypto is not None:
+            sys.modules["rustchain_crypto"] = cls._prev_rustchain_crypto
         cls._tmp.cleanup()
 
     def setUp(self):
@@ -199,6 +202,35 @@ class TestExplorerApiRoutes(unittest.TestCase):
 
         self.assertEqual(tx_resp.status_code, 200)
         self.assertEqual(tx_resp.get_json(), {"ok": True, "transactions": [], "count": 0, "total": 0})
+
+    def test_explorer_endpoints_default_empty_pagination_values(self):
+        blocks_resp = self.client.get("/api/blocks?limit=&offset=")
+        tx_resp = self.client.get("/api/transactions?limit=&offset=")
+
+        self.assertEqual(blocks_resp.status_code, 200)
+        self.assertEqual(blocks_resp.get_json(), {"ok": True, "blocks": [], "count": 0, "total": 0})
+
+        self.assertEqual(tx_resp.status_code, 200)
+        self.assertEqual(tx_resp.get_json(), {"ok": True, "transactions": [], "count": 0, "total": 0})
+
+    def test_explorer_dependencies_register_agent_and_anchor_routes(self):
+        stats = self.client.get("/agent/stats")
+        self.assertEqual(stats.status_code, 200)
+        self.assertTrue(stats.get_json()["ok"])
+
+        jobs = self.client.get("/agent/jobs?status=open&limit=1")
+        self.assertEqual(jobs.status_code, 200)
+        jobs_body = jobs.get_json()
+        self.assertTrue(jobs_body["ok"])
+        self.assertEqual(jobs_body["jobs"], [])
+
+        anchors = self.client.get("/anchors", follow_redirects=False)
+        self.assertEqual(anchors.status_code, 302)
+        self.assertEqual(anchors.headers["Location"], "/anchor/list")
+
+        anchor_list = self.client.get("/anchor/list")
+        self.assertEqual(anchor_list.status_code, 200)
+        self.assertEqual(anchor_list.get_json(), {"count": 0, "anchors": []})
 
     def test_explorer_endpoints_reject_invalid_pagination(self):
         blocks_resp = self.client.get("/api/blocks?limit=bad")

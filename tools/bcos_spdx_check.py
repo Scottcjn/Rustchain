@@ -58,6 +58,20 @@ def _git_diff_name_status(base_ref: str) -> List[Tuple[str, str]]:
     return rows
 
 
+def _ensure_base_ref(base_ref: str) -> str:
+    try:
+        _run(["git", "rev-parse", "--verify", base_ref])
+        return base_ref
+    except Exception:
+        if "/" in base_ref:
+            remote, branch = base_ref.split("/", 1)
+            _run(["git", "fetch", remote, branch, "--depth=1"])
+            return base_ref
+
+        _run(["git", "fetch", "origin", base_ref, "--depth=1"])
+        return f"origin/{base_ref}"
+
+
 def _top_lines(path: Path, max_lines: int = 25) -> List[str]:
     try:
         with path.open("r", encoding="utf-8", errors="replace") as f:
@@ -101,10 +115,7 @@ def main(argv: List[str]) -> int:
     os.chdir(repo_root)
 
     # Ensure base ref exists locally.
-    try:
-        _run(["git", "rev-parse", "--verify", base_ref])
-    except Exception:
-        _run(["git", "fetch", "origin", base_ref.split("/", 1)[1], "--depth=1"])
+    base_ref = _ensure_base_ref(base_ref)
 
     changes = _git_diff_name_status(base_ref)
     added = [p for st, p in changes if st == "A"]
@@ -133,4 +144,3 @@ def main(argv: List[str]) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))
-

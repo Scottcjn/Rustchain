@@ -5,6 +5,7 @@ rustchain-ae — Command-line interface for the RustChain Agent Economy (RIP-302
 import sys
 import json
 import argparse
+import ssl
 import urllib.request
 import urllib.error
 
@@ -12,16 +13,23 @@ BASE_URL = "https://50.28.86.131"
 VERIFY_SSL = False
 
 # Disable SSL verification
-import ssl
 SSL_CTX = ssl.create_default_context()
 SSL_CTX.check_hostname = False
 SSL_CTX.verify_mode = ssl.CERT_NONE
+
+
+def _decode_json_object(raw):
+    data = json.loads(raw.decode())
+    if not isinstance(data, dict):
+        raise ValueError("node response must be a JSON object")
+    return data
+
 
 def api_get(path):
     url = f"{BASE_URL}{path}"
     req = urllib.request.Request(url)
     with urllib.request.urlopen(req, context=SSL_CTX, timeout=15) as resp:
-        return json.loads(resp.read().decode())
+        return _decode_json_object(resp.read())
 
 def api_post(path, data):
     url = f"{BASE_URL}{path}"
@@ -30,9 +38,9 @@ def api_post(path, data):
         headers={'Content-Type': 'application/json'})
     try:
         with urllib.request.urlopen(req, context=SSL_CTX, timeout=15) as resp:
-            return json.loads(resp.read().decode())
+            return _decode_json_object(resp.read())
     except urllib.error.HTTPError as e:
-        return json.loads(e.read().decode())
+        return _decode_json_object(e.read())
 
 def cmd_list(args):
     """List open jobs in the Agent Economy marketplace"""

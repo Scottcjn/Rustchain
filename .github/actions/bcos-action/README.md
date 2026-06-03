@@ -31,7 +31,7 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Run BCOS Scan
-        uses: Scottcjn/bcos-action@v1
+        uses: Scottcjn/Rustchain/.github/actions/bcos-action@main
         id: bcos
         with:
           tier: L1
@@ -59,7 +59,7 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Run BCOS L2 Scan
-        uses: Scottcjn/bcos-action@v1
+        uses: Scottcjn/Rustchain/.github/actions/bcos-action@main
         id: bcos
         with:
           tier: L2
@@ -78,7 +78,7 @@ jobs:
 
 ```yaml
 - name: Scan Subdirectory
-  uses: Scottcjn/bcos-action@v1
+  uses: Scottcjn/Rustchain/.github/actions/bcos-action@main
   with:
     repo-path: ./packages/core
     tier: L1

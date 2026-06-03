@@ -12,6 +12,7 @@ Issue #1449: Anti-Double-Mining Enforcement
 import sqlite3
 import time
 import os
+import hmac
 try:
     from flask import request, jsonify
 except ImportError:
@@ -174,7 +175,13 @@ def settle_epoch_rip200(db_path, epoch: int, enable_anti_double_mining: bool = T
                 return result
             except Exception as e:
                 print(f"[WARN] Anti-double-mining failed, falling back to standard: {e}")
-                # Fall through to standard rewards
+                # Rollback partial ADM writes before falling through to standard rewards.
+                # Without this, ADM may have already written rewards on the shared `db`
+                # connection. The standard path then adds MORE rewards on top, resulting
+                # in double-credited miners on the single commit below.
+                db.rollback()
+                # Re-acquire the write lock after rollback (rollback releases it).
+                db.execute("BEGIN IMMEDIATE")
 
         # Standard RIP-200 rewards (no anti-double-mining)
         rewards = calculate_epoch_rewards_time_aged(
@@ -231,11 +238,19 @@ def settle_epoch_rip200(db_path, epoch: int, enable_anti_double_mining: bool = T
                 "device_arch": device_arch
             })
 
-        # Mark epoch as settled
-        db.execute(
-            "INSERT OR REPLACE INTO epoch_state (epoch, settled, settled_ts) VALUES (?, 1, ?)",
-            (epoch, ts_now)
-        )
+        # Mark epoch as settled without replacing the whole row.
+        # INSERT OR REPLACE deletes any existing epoch_state metadata columns
+        # (for example finalized/accepted_blocks/pot) before inserting the
+        # narrow settlement row. Preserve unrelated epoch state fields.
+        updated = db.execute(
+            "UPDATE epoch_state SET settled = 1, settled_ts = ? WHERE epoch = ?",
+            (ts_now, epoch)
+        ).rowcount
+        if updated == 0:
+            db.execute(
+                "INSERT INTO epoch_state (epoch, settled, settled_ts) VALUES (?, 1, ?)",
+                (epoch, ts_now)
+            )
 
         db.commit()
 
@@ -272,7 +287,6 @@ def register_rewards_rip200(app, DB_PATH):
     @app.route('/rewards/settle', methods=['POST'])
     def settle_rewards():
         # ── Authentication: settlement is a privileged operation ──────
-        import hmac
         settle_key = os.environ.get("RC_SETTLE_KEY", "")
         if not settle_key:
             return jsonify({"error": "RC_SETTLE_KEY not configured — settle endpoint disabled"}), 503
@@ -302,6 +316,13 @@ def register_rewards_rip200(app, DB_PATH):
 
     @app.route('/wallet/balance', methods=['GET'])
     def get_balance():
+        # SECURITY: Require admin key — exposes miner balance data without auth
+        admin_key = request.headers.get("X-Admin-Key", "")
+        expected_key = os.environ.get("RC_ADMIN_KEY", "")
+        if not expected_key:
+            return jsonify({"error": "RC_ADMIN_KEY not configured — endpoint disabled"}), 503
+        if not hmac.compare_digest(admin_key, expected_key):
+            return jsonify({"error": "Unauthorized — admin key required"}), 401
         miner_id = request.args.get('miner_id')
         if not miner_id:
             return jsonify({"error": "miner_id required"}), 400
@@ -328,6 +349,13 @@ def register_rewards_rip200(app, DB_PATH):
 
     @app.route('/wallet/balances/all', methods=['GET'])
     def get_all_balances():
+        # SECURITY: Require admin key — exposes ALL miner balances and total supply without auth
+        admin_key = request.headers.get("X-Admin-Key", "")
+        expected_key = os.environ.get("RC_ADMIN_KEY", "")
+        if not expected_key:
+            return jsonify({"error": "RC_ADMIN_KEY not configured — endpoint disabled"}), 503
+        if not hmac.compare_digest(admin_key, expected_key):
+            return jsonify({"error": "Unauthorized — admin key required"}), 401
         with sqlite3.connect(DB_PATH) as db:
             rows = db.execute(
                 "SELECT miner_id, amount_i64 FROM balances WHERE amount_i64 > 0 ORDER BY amount_i64 DESC"
@@ -353,6 +381,13 @@ def register_rewards_rip200(app, DB_PATH):
     @app.route('/lottery/eligibility', methods=['GET'])
     def check_eligibility():
         """RIP-200: Round-robin eligibility check"""
+        # SECURITY: Require admin key — exposes miner eligibility and epoch consensus info
+        admin_key = request.headers.get("X-Admin-Key", "")
+        expected_key = os.environ.get("RC_ADMIN_KEY", "")
+        if not expected_key:
+            return jsonify({"error": "RC_ADMIN_KEY not configured — endpoint disabled"}), 503
+        if not hmac.compare_digest(admin_key, expected_key):
+            return jsonify({"error": "Unauthorized — admin key required"}), 401
         miner_id = request.args.get('miner_id')
         if not miner_id:
             return jsonify({"error": "miner_id required"}), 400
@@ -366,6 +401,13 @@ def register_rewards_rip200(app, DB_PATH):
     @app.route('/consensus/round_robin_status', methods=['GET'])
     def round_robin_status():
         """Get current round-robin rotation status"""
+        # SECURITY: Require admin key — exposes all attested miners and consensus rotation
+        admin_key = request.headers.get("X-Admin-Key", "")
+        expected_key = os.environ.get("RC_ADMIN_KEY", "")
+        if not expected_key:
+            return jsonify({"error": "RC_ADMIN_KEY not configured — endpoint disabled"}), 503
+        if not hmac.compare_digest(admin_key, expected_key):
+            return jsonify({"error": "Unauthorized — admin key required"}), 401
         current = current_slot()
         current_ts = int(time.time())
 

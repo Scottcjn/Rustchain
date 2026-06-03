@@ -8,7 +8,17 @@ def test_leaderboard_normalizes_current_miners_api_envelope():
     html = LEADERBOARD_HTML.read_text(encoding="utf-8")
 
     assert "const minersPayload = await minersRes.json();" in html
-    assert "minersPayload.miners || minersPayload.data || []" in html
+    assert "function normalizeMinerRows(payload)" in html
+    assert "payload.miners || payload.data || payload.items || []" in html
+    assert "const miners = normalizeMinerRows(minersPayload);" in html
+
+
+def test_leaderboard_normalizes_miner_row_ids():
+    html = LEADERBOARD_HTML.read_text(encoding="utf-8")
+
+    assert "const miner = row.miner || row.miner_id || row.id;" in html
+    assert "return { ...row, miner: String(miner) };" in html
+    assert "}).filter(Boolean);" in html
 
 
 def test_leaderboard_rows_do_not_render_miner_fields_with_inner_html():
@@ -21,3 +31,12 @@ def test_leaderboard_rows_do_not_render_miner_fields_with_inner_html():
     assert "function appendTextCell(row, text)" in html
     assert "minerCell.title = miner;" in html
     assert "badge.textContent = isVintage ? 'Vintage' : 'Modern';" in html
+
+
+def test_leaderboard_error_row_uses_text_content():
+    html = LEADERBOARD_HTML.read_text(encoding="utf-8")
+
+    assert "function renderErrorRow(err)" in html
+    assert "cell.textContent = `Error: ${err.message}." in html
+    assert "renderErrorRow(err);" in html
+    assert 'class="error">Error: ${err.message}' not in html

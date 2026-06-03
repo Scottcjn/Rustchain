@@ -357,6 +357,22 @@
         // State
         let epochData = null;
         let minersData = [];
+
+        function normalizeMinersPayload(payload) {
+            if (Array.isArray(payload)) {
+                return payload;
+            }
+
+            if (Array.isArray(payload?.miners)) {
+                return payload.miners;
+            }
+
+            if (Array.isArray(payload?.data)) {
+                return payload.data;
+            }
+
+            return [];
+        }
         
         // Fetch data from RustChain node
         async function fetchEpoch() {
@@ -372,7 +388,7 @@
         async function fetchMiners() {
             try {
                 const resp = await fetch(`${NODE_URL}/api/miners`);
-                minersData = await resp.json();
+                minersData = normalizeMinersPayload(await resp.json());
                 updateMinersDisplay();
                 updateWeightsChart();
             } catch (e) {

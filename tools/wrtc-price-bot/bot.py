@@ -7,7 +7,7 @@ import logging
 import requests
 from dotenv import load_dotenv
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, JobQueue
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 # Configure logging
 logging.basicConfig(
@@ -21,27 +21,45 @@ WRTC_MINT = "12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X"
 DEXSCREENER_API = f"https://api.dexscreener.com/latest/dex/tokens/{WRTC_MINT}"
 ALERT_THRESHOLD = 10.0  # 10% movement
 
+def _as_dict(value):
+    return value if isinstance(value, dict) else {}
+
+def _as_float(value, default=0.0):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
 def get_price_data():
     """Fetch price data from DexScreener."""
     try:
         response = requests.get(DEXSCREENER_API, timeout=10)
         response.raise_for_status()
         data = response.json()
-        
+
+        if not isinstance(data, dict):
+            return None
+
         pairs = data.get('pairs', [])
+        if not isinstance(pairs, list):
+            return None
+        pairs = [pair for pair in pairs if isinstance(pair, dict)]
         if not pairs:
             return None
-            
+
         # Filter for Raydium pair
         raydium_pair = next((p for p in pairs if p.get('dexId') == 'raydium'), pairs[0])
+        price_change = _as_dict(raydium_pair.get('priceChange'))
+        liquidity = _as_dict(raydium_pair.get('liquidity'))
+        volume = _as_dict(raydium_pair.get('volume'))
         
         return {
-            'price_usd': float(raydium_pair.get('priceUsd', 0)),
+            'price_usd': _as_float(raydium_pair.get('priceUsd')),
             'price_native': raydium_pair.get('priceNative'),
-            'h24_change': raydium_pair.get('priceChange', {}).get('h24', 0),
-            'h1_change': raydium_pair.get('priceChange', {}).get('h1', 0),
-            'liquidity_usd': raydium_pair.get('liquidity', {}).get('usd', 0),
-            'volume_h24': raydium_pair.get('volume', {}).get('h24', 0),
+            'h24_change': _as_float(price_change.get('h24')),
+            'h1_change': _as_float(price_change.get('h1')),
+            'liquidity_usd': _as_float(liquidity.get('usd')),
+            'volume_h24': _as_float(volume.get('h24')),
             'url': raydium_pair.get('url')
         }
     except Exception as e:

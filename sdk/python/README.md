@@ -24,7 +24,7 @@ from rustchain_sdk import RustChainClient, RustChainWallet
 
 async def main():
     # Connect to a RustChain node
-    client = RustChainClient("https://50.28.86.131")
+    client = RustChainClient("https://rustchain.org")
 
     async with client:
         # Check node health
@@ -44,7 +44,7 @@ async def main():
         result = await client.wallet_transfer_with_wallet(
             wallet,
             to_address="RTCrecipient...",
-            amount=1000,
+            amount=10.5,  # RTC
             fee=0,
         )
         print("TX result:", result)

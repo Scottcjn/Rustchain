@@ -12,17 +12,30 @@ import sys
 import time
 import hmac
 import hashlib
+import tempfile
+from decimal import Decimal
 import pytest
+from pathlib import Path
 
-# Use a temp DB for testing
-os.environ["BRIDGE_DB_PATH"] = "/tmp/bridge_test_727.db"
+def _test_db_path(name):
+    return os.path.join(tempfile.gettempdir(), f"{name}_{os.getpid()}.db")
+
+
+def _remove_test_db(path):
+    if os.path.exists(path):
+        os.remove(path)
+
+
+# Use a platform-neutral temp DB for testing
+BRIDGE_TEST_DB_PATH = _test_db_path("bridge_test_727")
+
+os.environ["BRIDGE_DB_PATH"] = BRIDGE_TEST_DB_PATH
 os.environ["BRIDGE_ADMIN_KEY"] = "test-admin-key-12345"
 os.environ["BRIDGE_RECEIPT_SECRET"] = "test-bridge-receipt-secret-727"
 os.environ["BRIDGE_REQUIRE_PROOF"] = "true"  # Issue #727: require proof
 
 # Remove any stale test DB
-if os.path.exists("/tmp/bridge_test_727.db"):
-    os.remove("/tmp/bridge_test_727.db")
+_remove_test_db(BRIDGE_TEST_DB_PATH)
 
 # Import after env setup
 sys.path.insert(0, os.path.dirname(__file__))
@@ -30,11 +43,17 @@ import bridge_api
 from bridge_api import Flask, register_bridge_routes, STATE_REQUESTED, STATE_CONFIRMED
 
 
+def test_standalone_bridge_server_does_not_enable_debugger():
+    source = Path(bridge_api.__file__).read_text(encoding="utf-8")
+    assert "debug=True" not in source
+    assert 'debug=False' in source
+
+
 def _receipt_signature(sender_wallet, amount, target_chain, target_wallet, tx_hash):
     """Generate valid HMAC-SHA256 receipt signature for testing."""
     payload = {
         "sender_wallet": sender_wallet,
-        "amount_base": int(round(amount * 1_000_000)),
+        "amount_base": int(Decimal(str(amount)) * 1_000_000),
         "target_chain": target_chain,
         "target_wallet": target_wallet,
         "tx_hash": tx_hash,
@@ -51,7 +70,7 @@ def _receipt_signature_with_secret(sender_wallet, amount, target_chain, target_w
     """Generate receipt signature with custom secret (for testing invalid signatures)."""
     payload = {
         "sender_wallet": sender_wallet,
-        "amount_base": int(round(amount * 1_000_000)),
+        "amount_base": int(Decimal(str(amount)) * 1_000_000),
         "target_chain": target_chain,
         "target_wallet": target_wallet,
         "tx_hash": tx_hash,
@@ -344,10 +363,10 @@ class TestLegacyMode_ProofNotRequired:
     def test_legacy_mode_lock_without_proof_accepted(self):
         """When BRIDGE_REQUIRE_PROOF=false, locks without proof go to requested state."""
         # Create a new app with legacy mode - must reimport to pick up new env
+        legacy_db_path = _test_db_path("bridge_test_legacy_727")
         os.environ["BRIDGE_REQUIRE_PROOF"] = "false"
-        os.environ["BRIDGE_DB_PATH"] = "/tmp/bridge_test_legacy_727.db"
-        if os.path.exists("/tmp/bridge_test_legacy_727.db"):
-            os.remove("/tmp/bridge_test_legacy_727.db")
+        os.environ["BRIDGE_DB_PATH"] = legacy_db_path
+        _remove_test_db(legacy_db_path)
         
         # Force reimport to pick up new env vars
         import importlib
@@ -373,7 +392,7 @@ class TestLegacyMode_ProofNotRequired:
         
         # Restore test env and reload
         os.environ["BRIDGE_REQUIRE_PROOF"] = "true"
-        os.environ["BRIDGE_DB_PATH"] = "/tmp/bridge_test_727.db"
+        os.environ["BRIDGE_DB_PATH"] = BRIDGE_TEST_DB_PATH
         importlib.reload(bridge_api)
 
 
@@ -573,6 +592,19 @@ class TestLockEndpoint:
         })
         assert resp.status_code == 400
 
+    @pytest.mark.parametrize("amount", ["NaN", "Infinity", "-Infinity"])
+    def test_lock_rejects_non_finite_amount(self, client, amount):
+        resp = client.post("/bridge/lock", json={
+            "sender_wallet": "test-miner",
+            "amount": amount,
+            "target_chain": "solana",
+            "target_wallet": "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+            "tx_hash": f"rtc-lock-non-finite-{amount}",
+        })
+
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "invalid amount"
+
     def test_lock_missing_sender(self, client):
         resp = client.post("/bridge/lock", json={
             "amount": 10.0,
@@ -646,6 +678,72 @@ class TestBridgeRequestValidation:
         assert resp.status_code == 400
         assert resp.get_json()["error"] == "receipt_signature must be a string"
 
+    @pytest.mark.parametrize("amount", ["NaN", "Infinity", "-Infinity"])
+    def test_lock_rejects_non_finite_amount(self, client, amount):
+        resp = client.post("/bridge/lock", json={
+            "sender_wallet": "test-miner",
+            "amount": amount,
+            "target_chain": "solana",
+            "target_wallet": "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+            "tx_hash": f"rtc-lock-{amount.lower()}-amount",
+        })
+
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "invalid amount"
+
+    @pytest.mark.parametrize("amount", [True, False])
+    def test_lock_rejects_boolean_amount(self, client, amount):
+        resp = client.post("/bridge/lock", json={
+            "sender_wallet": "test-miner",
+            "amount": amount,
+            "target_chain": "solana",
+            "target_wallet": "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+            "tx_hash": f"rtc-lock-bool-{str(amount).lower()}-amount",
+        })
+
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "invalid amount"
+
+    @pytest.mark.parametrize("amount", ["1.0000004", 1.0000004])
+    def test_lock_rejects_overprecision_amount(self, client, amount):
+        resp = client.post("/bridge/lock", json={
+            "sender_wallet": "test-miner",
+            "amount": amount,
+            "target_chain": "solana",
+            "target_wallet": "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+            "tx_hash": f"rtc-lock-overprecision-{str(amount).replace('.', '-')}",
+            "receipt_signature": _receipt_signature(
+                "test-miner",
+                "1.000000",
+                "solana",
+                "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+                f"rtc-lock-overprecision-{str(amount).replace('.', '-')}",
+            ),
+        })
+
+        assert resp.status_code == 400
+        assert "at most 6 decimal places" in resp.get_json()["error"]
+
+    def test_lock_accepts_six_decimal_amount_exactly(self, client):
+        tx_hash = "rtc-lock-six-decimal-amount"
+        resp = client.post("/bridge/lock", json={
+            "sender_wallet": "test-miner",
+            "amount": "1.000001",
+            "target_chain": "solana",
+            "target_wallet": "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+            "tx_hash": tx_hash,
+            "receipt_signature": _receipt_signature(
+                "test-miner",
+                "1.000001",
+                "solana",
+                "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+                tx_hash,
+            ),
+        })
+
+        assert resp.status_code == 201
+        assert resp.get_json()["amount_rtc"] == 1.000001
+
     def test_confirm_rejects_non_object_json(self, client):
         resp = client.post(
             "/bridge/confirm",
@@ -705,10 +803,10 @@ class TestReleaseEndpoint:
 
     def test_release_requires_confirmed_lock(self, client):
         # Create lock without proof (legacy mode test)
+        temp_db_path = _test_db_path("bridge_test_temp_727")
         os.environ["BRIDGE_REQUIRE_PROOF"] = "false"
-        os.environ["BRIDGE_DB_PATH"] = "/tmp/bridge_test_temp_727.db"
-        if os.path.exists("/tmp/bridge_test_temp_727.db"):
-            os.remove("/tmp/bridge_test_temp_727.db")
+        os.environ["BRIDGE_DB_PATH"] = temp_db_path
+        _remove_test_db(temp_db_path)
         
         import importlib
         import bridge_api
@@ -739,7 +837,7 @@ class TestReleaseEndpoint:
         
         # Restore
         os.environ["BRIDGE_REQUIRE_PROOF"] = "true"
-        os.environ["BRIDGE_DB_PATH"] = "/tmp/bridge_test_727.db"
+        os.environ["BRIDGE_DB_PATH"] = BRIDGE_TEST_DB_PATH
         importlib.reload(bridge_api)
 
     def test_full_lock_confirm_release_cycle(self, client):
@@ -830,6 +928,13 @@ class TestLedgerEndpoint:
         resp = client.get("/bridge/ledger?offset=abc")
         assert resp.status_code == 400
         assert resp.get_json()["error"] == "limit and offset must be integers"
+
+    def test_ledger_uses_defaults_for_empty_pagination(self, client):
+        resp = client.get("/bridge/ledger?limit=&offset=")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["limit"] == 50
+        assert data["offset"] == 0
 
     def test_ledger_clamps_negative_limit_and_offset(self, client):
         tx_hash = f"rtc-lock-ledger-limit-{int(time.time())}"

@@ -109,7 +109,7 @@ class RustChainClient:
             except json.JSONDecodeError as e:
                 if attempt == self.retry_count - 1:
                     raise Exception(f"Invalid JSON response: {str(e)}")
-            except Exception as e:
+            except Exception:
                 if attempt == self.retry_count - 1:
                     raise
 
@@ -140,7 +140,15 @@ class RustChainClient:
         Returns:
             List of miner information dictionaries
         """
-        return self._get("/api/miners")
+        data = self._get("/api/miners")
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict):
+            for key in ("miners", "data", "items"):
+                miners = data.get(key)
+                if isinstance(miners, list):
+                    return miners
+        return []
 
     def get_miner_eligibility(self, miner_id: str) -> Dict[str, Any]:
         """Check miner's epoch eligibility"""

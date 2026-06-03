@@ -1,9 +1,17 @@
 # SPDX-License-Identifier: MIT
 
-from flask import Flask, request, jsonify
-from validator.validate_genesis import validate_genesis
-import tempfile
 import os
+import sys
+import tempfile
+from pathlib import Path
+
+from flask import Flask, jsonify, request
+
+POA_ROOT = Path(__file__).resolve().parents[1]
+if str(POA_ROOT) not in sys.path:
+    sys.path.insert(0, str(POA_ROOT))
+
+from validator.validate_genesis import validate_genesis
 
 app = Flask(__name__)
 
@@ -39,9 +47,6 @@ def validate():
     file = request.files['file']
     if file.filename == '':
         return jsonify({"error": "No selected file"}), 400
-
-    if request.content_length and request.content_length > MAX_UPLOAD_BYTES:
-        return jsonify({"error": f"File too large (max {MAX_UPLOAD_BYTES} bytes)"}), 413
 
     if not _is_json_upload(file):
         return jsonify({"error": "Only JSON files accepted"}), 400

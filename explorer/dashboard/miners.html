@@ -422,15 +422,78 @@
             "Apple Silicon": "🍎",
             "Modern": "💻"
         };
+
+        const archClasses = {
+            "G5": "g5",
+            "G4": "g4",
+            "POWER8": "power8",
+            "Apple Silicon": "apple",
+            "Modern": "modern"
+        };
         
         let miners = [];
+
+        function escapeHtml(value) {
+            const d = document.createElement('div');
+            d.textContent = String(value ?? '');
+            return d.innerHTML;
+        }
+
+        function safeNumber(value, fallback = 0) {
+            const n = Number(value);
+            return Number.isFinite(n) ? n : fallback;
+        }
+
+        function minerId(miner) {
+            return miner.id || miner.miner_id || miner.miner || miner.wallet || '-';
+        }
+
+        function minerArch(miner) {
+            return miner.arch || miner.device_arch || miner.device_family || 'Modern';
+        }
+
+        function minerMultiplier(miner) {
+            return safeNumber(miner.multiplier ?? miner.antiquity_multiplier, 0);
+        }
+
+        function minerWeight(miner) {
+            return safeNumber(miner.weight ?? miner.attestation_score ?? miner.score ?? miner.entropy_score, 0);
+        }
+
+        function minerLastAttestation(miner) {
+            const value = miner.lastAttestation ?? miner.last_attestation ?? miner.last_seen ?? miner.last_attest;
+            if (value === undefined || value === null || value === '') return '-';
+            const numeric = Number(value);
+            if (!Number.isFinite(numeric)) return value;
+            const ms = numeric > 1e12 ? numeric : numeric * 1000;
+            return new Date(ms).toLocaleString();
+        }
+
+        function minerStatus(miner) {
+            return String(miner.status || 'online').toLowerCase() === 'offline' ? 'offline' : 'online';
+        }
+
+        function archClass(arch) {
+            if (archClasses[arch]) return archClasses[arch];
+            const value = String(arch).toLowerCase();
+            if (value.includes('power')) return 'power8';
+            if (value.includes('apple') || value.includes('m1') || value.includes('m2') || value.includes('m3') || value.includes('m4')) return 'apple';
+            if (value.includes('g5')) return 'g5';
+            if (value.includes('g4')) return 'g4';
+            return 'modern';
+        }
+
+        function normalizeMinerRows(payload) {
+            const rows = Array.isArray(payload) ? payload : (Array.isArray(payload?.miners) ? payload.miners : []);
+            return rows.filter(row => row && typeof row === 'object');
+        }
         
         async function fetchMiners() {
             try {
                 const response = await fetch('https://explorer.rustchain.org/api/miners');
                 if (!response.ok) throw new Error('API not available');
                 const data = await response.json();
-                miners = data.miners || [];
+                miners = normalizeMinerRows(data);
             } catch (error) {
                 console.log('Using mock data:', error.message);
                 miners = mockMiners;
@@ -442,9 +505,9 @@
         function updateDashboard() {
             // Update stats
             const total = miners.length;
-            const online = miners.filter(m => m.status === 'online').length;
+            const online = miners.filter(m => minerStatus(m) === 'online').length;
             const offline = total - online;
-            const totalWeight = miners.reduce((sum, m) => sum + m.weight, 0);
+            const totalWeight = miners.reduce((sum, m) => sum + minerWeight(m), 0);
             
             document.getElementById('totalMiners').textContent = total;
             document.getElementById('onlineMiners').textContent = online;
@@ -464,36 +527,44 @@
                 return;
             }
             
-            tbody.innerHTML = data.map(miner => `
+            tbody.innerHTML = data.map(miner => {
+                const id = minerId(miner);
+                const arch = minerArch(miner);
+                const status = minerStatus(miner);
+                const multiplier = minerMultiplier(miner);
+                const lastAttestation = minerLastAttestation(miner);
+                const weight = minerWeight(miner);
+                return `
                 <tr>
                     <td>
                         <div class="miner-name">
-                            <strong>${miner.id}</strong>
+                            <strong>${escapeHtml(id)}</strong>
                         </div>
                     </td>
                     <td>
-                        <span class="arch-badge ${miner.arch.toLowerCase().replace(' ', '-')}">
-                            ${archIcons[miner.arch] || '⚙️'} ${archLabels[miner.arch] || miner.arch}
+                        <span class="arch-badge ${archClass(arch)}">
+                            ${archIcons[arch] || '⚙️'} ${escapeHtml(archLabels[arch] || arch)}
                         </span>
                     </td>
                     <td>
-                        <span class="status-badge ${miner.status}">
-                            ${miner.status === 'online' ? 'Online' : 'Offline'}
+                        <span class="status-badge ${status}">
+                            ${status === 'online' ? 'Online' : 'Offline'}
                         </span>
                     </td>
-                    <td><span class="multiplier">${miner.multiplier}x</span></td>
-                    <td class="timestamp">${miner.lastAttestation}</td>
-                    <td>${miner.weight.toLocaleString()}</td>
+                    <td><span class="multiplier">${escapeHtml(multiplier)}x</span></td>
+                    <td class="timestamp">${escapeHtml(lastAttestation)}</td>
+                    <td>${escapeHtml(weight.toLocaleString())}</td>
                 </tr>
-            `).join('');
+            `;
+            }).join('');
         }
         
         // Search functionality
         document.getElementById('searchInput').addEventListener('input', (e) => {
             const query = e.target.value.toLowerCase();
             const filtered = miners.filter(m => 
-                m.id.toLowerCase().includes(query) ||
-                m.arch.toLowerCase().includes(query)
+                minerId(m).toLowerCase().includes(query) ||
+                minerArch(m).toLowerCase().includes(query)
             );
             renderTable(filtered);
         });

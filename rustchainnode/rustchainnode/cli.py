@@ -19,7 +19,6 @@ import os
 import platform
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 from .hardware import detect_cpu_info, get_optimal_config
@@ -29,6 +28,7 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 PID_FILE = CONFIG_DIR / "node.pid"
 
 NODE_URL = "https://50.28.86.131"
+TESTNET_NODE_URL = "http://localhost:8099"
 
 
 # ---------------------------------------------------------------------------
@@ -46,11 +46,27 @@ def _save_config(cfg: dict):
     CONFIG_FILE.write_text(json.dumps(cfg, indent=2))
 
 
+def _resolve_node_url(cfg: dict, force_testnet: bool = False) -> str:
+    configured_url = cfg.get("node_url")
+    if force_testnet or cfg.get("testnet"):
+        if configured_url and configured_url != NODE_URL:
+            return configured_url
+        return TESTNET_NODE_URL
+    return configured_url or NODE_URL
+
+
+def _loads_json_object(raw: bytes | str) -> dict:
+    data = json.loads(raw)
+    if not isinstance(data, dict):
+        raise ValueError("JSON response must be an object")
+    return data
+
+
 def _check_health(node_url: str = NODE_URL) -> dict:
     try:
         import urllib.request
         with urllib.request.urlopen(f"{node_url}/health", timeout=5) as r:
-            return json.loads(r.read())
+            return _loads_json_object(r.read())
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -59,7 +75,7 @@ def _check_epoch(node_url: str = NODE_URL) -> dict:
     try:
         import urllib.request
         with urllib.request.urlopen(f"{node_url}/epoch", timeout=5) as r:
-            return json.loads(r.read())
+            return _loads_json_object(r.read())
     except Exception as e:
         return {"error": str(e)}
 
@@ -83,11 +99,14 @@ def cmd_init(args):
 
     cfg = get_optimal_config(wallet, port)
     cfg["testnet"] = testnet
+    if testnet:
+        cfg["node_url"] = TESTNET_NODE_URL
     _save_config(cfg)
 
     # Test connectivity
-    print(f"\n  Testing connectivity to {NODE_URL}...")
-    health = _check_health()
+    node_url = _resolve_node_url(cfg)
+    print(f"\n  Testing connectivity to {node_url}...")
+    health = _check_health(node_url)
     if health.get("ok"):
         print(f"  ✅ Node reachable: {health}")
     else:
@@ -95,7 +114,7 @@ def cmd_init(args):
 
     print(f"\n  ✅ Config saved to {CONFIG_FILE}")
     print(f"  Wallet: {wallet} | Port: {port} | Threads: {hw['optimal_threads']}")
-    print(f"\n  Next: rustchainnode start")
+    print("\n  Next: rustchainnode start")
 
 
 def cmd_start(args):
@@ -103,16 +122,16 @@ def cmd_start(args):
     cfg = _load_config()
     wallet = getattr(args, "wallet", None) or cfg.get("wallet")
     port = getattr(args, "port", None) or cfg.get("port", 8099)
-    testnet = getattr(args, "testnet", False)
+    testnet = getattr(args, "testnet", False) or bool(cfg.get("testnet", False))
 
     if not wallet:
         print("❌ No wallet configured. Run: rustchainnode init --wallet <name>")
         sys.exit(1)
 
     hw = detect_cpu_info()
-    node_url = "http://localhost:8099" if testnet else NODE_URL
+    node_url = _resolve_node_url(cfg, testnet)
 
-    print(f"🚀 Starting RustChain node...")
+    print("🚀 Starting RustChain node...")
     print(f"   Wallet: {wallet}")
     print(f"   Port: {port}")
     print(f"   CPU: {hw['arch']} | {hw['cpu_count']} threads")
@@ -153,7 +172,7 @@ def cmd_stop(args):
 def cmd_status(args):
     """Show node status."""
     cfg = _load_config()
-    node_url = NODE_URL
+    node_url = _resolve_node_url(cfg)
 
     print("🔍 RustChain Node Status")
     print(f"   Config: {CONFIG_FILE}")
@@ -161,12 +180,14 @@ def cmd_status(args):
     if cfg:
         print(f"   Wallet: {cfg.get('wallet', 'not set')}")
         print(f"   Port: {cfg.get('port', 8099)}")
+        print(f"   Network: {'testnet' if cfg.get('testnet') else 'mainnet'}")
         print(f"   Arch: {cfg.get('arch_type', 'unknown')}")
         print(f"   Antiquity: {cfg.get('antiquity_multiplier', 1.0)}x")
+        print(f"   Testnet: {cfg.get('testnet', False)}")
 
     health = _check_health(node_url)
     if health.get("ok"):
-        print(f"\n   🟢 Remote node: ONLINE")
+        print("\n   🟢 Remote node: ONLINE")
         print(f"   Version: {health.get('version', '?')}")
     else:
         print(f"\n   🔴 Remote node: OFFLINE ({health.get('error', '?')})")
@@ -188,7 +209,7 @@ def cmd_config(args):
 def cmd_dashboard(args):
     """Show TUI-style health dashboard."""
     cfg = _load_config()
-    node_url = NODE_URL
+    node_url = _resolve_node_url(cfg)
 
     print("\n" + "=" * 60)
     print("  🦀 RustChain Node Dashboard")
@@ -196,6 +217,7 @@ def cmd_dashboard(args):
 
     wallet = cfg.get("wallet", "not configured")
     print(f"  Wallet:      {wallet}")
+    print(f"  Network:     {'testnet' if cfg.get('testnet') else 'mainnet'}")
 
     hw = detect_cpu_info()
     print(f"  CPU:         {hw['arch']} ({hw['arch_type']})")
@@ -258,8 +280,8 @@ WantedBy=multi-user.target
     service_path.write_text(service_content)
 
     print(f"✅ systemd service written to {service_path}")
-    print(f"\nEnable and start:")
-    print(f"  systemctl --user daemon-reload")
+    print("\nEnable and start:")
+    print("  systemctl --user daemon-reload")
     print(f"  systemctl --user enable {service_name}")
     print(f"  systemctl --user start {service_name}")
     print(f"  systemctl --user status {service_name}")
@@ -299,7 +321,7 @@ def _install_launchd(wallet: str):
 """
     plist_path.write_text(plist_content)
     print(f"✅ launchd plist written to {plist_path}")
-    print(f"\nLoad and start:")
+    print("\nLoad and start:")
     print(f"  launchctl load {plist_path}")
     print(f"  launchctl start {plist_label}")
 

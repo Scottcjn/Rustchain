@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MIT
 
+import pytest
 from flask import Flask
 
 from node.rustchain_p2p_sync import add_p2p_endpoints
@@ -52,3 +53,27 @@ def test_p2p_announce_rejects_missing_peer_url():
 
     assert response.status_code == 400
     assert response.get_json() == {"ok": False, "error": "peer_url required"}
+
+
+@pytest.mark.parametrize(
+    "peer_url",
+    [1234, ["http://peer.example:8088"], {"url": "http://peer.example:8088"}],
+)
+def test_p2p_announce_rejects_non_string_peer_url(peer_url):
+    client, peer_manager = build_client()
+
+    response = client.post("/p2p/announce", json={"peer_url": peer_url})
+
+    assert response.status_code == 400
+    assert response.get_json() == {"ok": False, "error": "peer_url must be a string"}
+    assert peer_manager.peers == []
+
+
+def test_p2p_announce_rejects_blank_peer_url():
+    client, peer_manager = build_client()
+
+    response = client.post("/p2p/announce", json={"peer_url": "   "})
+
+    assert response.status_code == 400
+    assert response.get_json() == {"ok": False, "error": "peer_url required"}
+    assert peer_manager.peers == []

@@ -78,3 +78,66 @@ def test_trigger_settlement_returns_none_when_request_raises(monkeypatch, capsys
 
     assert module.trigger_settlement() is None
     assert "Error: node unavailable" in capsys.readouterr().out
+
+
+def test_trigger_settlement_rejects_missing_epoch(monkeypatch, capsys):
+    module = load_settle_epoch_module()
+    posted = False
+
+    def fake_post(*_args, **_kwargs):
+        nonlocal posted
+        posted = True
+        raise AssertionError("settlement should not be posted")
+
+    monkeypatch.setattr(
+        module.requests,
+        "get",
+        lambda url, timeout: FakeResponse(payload={"height": 42}),
+    )
+    monkeypatch.setattr(module.requests, "post", fake_post)
+
+    assert module.trigger_settlement() is None
+    assert posted is False
+    assert "field 'epoch' must be an integer" in capsys.readouterr().out
+
+
+def test_trigger_settlement_rejects_zero_epoch(monkeypatch, capsys):
+    module = load_settle_epoch_module()
+    posted = False
+
+    def fake_post(*_args, **_kwargs):
+        nonlocal posted
+        posted = True
+        raise AssertionError("settlement should not be posted")
+
+    monkeypatch.setattr(
+        module.requests,
+        "get",
+        lambda url, timeout: FakeResponse(payload={"epoch": 0}),
+    )
+    monkeypatch.setattr(module.requests, "post", fake_post)
+
+    assert module.trigger_settlement() is None
+    assert posted is False
+    assert "field 'epoch' must be greater than zero" in capsys.readouterr().out
+
+
+def test_trigger_settlement_rejects_non_object_epoch_response(monkeypatch, capsys):
+    module = load_settle_epoch_module()
+    posted = False
+
+    def fake_post(*_args, **_kwargs):
+        nonlocal posted
+        posted = True
+        raise AssertionError("settlement should not be posted")
+
+    monkeypatch.setattr(
+        module.requests,
+        "get",
+        lambda url, timeout: FakeResponse(payload=[{"epoch": 42}]),
+    )
+    monkeypatch.setattr(module.requests, "post", fake_post)
+
+    assert module.trigger_settlement() is None
+    assert posted is False
+    assert "/epoch response must be a JSON object" in capsys.readouterr().out
