@@ -1,0 +1,111 @@
+{
+  "locale": "fr-FR",
+  "language": "French",
+  "version": "1.0.0",
+  "description": "Localisation fr-FR pour les messages du mineur/portefeuille RustChain et le consentement de premier lancement.",
+  "errors": {
+    "wallet": {
+      "invalid_amount": "Montant invalide",
+      "please_load_wallet_first": "Veuillez d'abord charger le portefeuille",
+      "please_enter_recipient_wallet_id": "Veuillez saisir l'identifiant du portefeuille destinataire",
+      "amount_must_be_positive": "Le montant doit être positif",
+      "transaction_failed": "Échec de la transaction",
+      "please_enter_wallet_id": "Veuillez saisir l'identifiant du portefeuille",
+      "network_error_check_connection": "Erreur réseau - vérifiez votre connexion",
+      "request_timeout_node_busy": "Délai d'attente dépassé - le nœud est peut-être occupé",
+      "dns_resolution_failed": "Échec de la résolution DNS : {host} : {error}",
+      "cannot_connect_to_host": "Impossible de se connecter à {host}:{port} (code d'erreur : {result})",
+      "network_check_failed": "La vérification du réseau a échoué : {error}",
+      "network_unreachable": "Réseau inaccessible : {error}",
+      "request_timeout_after_retries": "La demande a expiré après {timeout} secondes ({max_retries} tentatives)",
+      "api_error_http": "Erreur API : HTTP {status}",
+      "request_failed": "La demande a échoué : {error}",
+      "request_failed_after_retries": "La demande a échoué après {max_retries} tentatives : {last_error}",
+      "new_wallet_created": "Nouveau portefeuille créé",
+      "save_wallet_id_warning": "Conservez cet identifiant - il sera nécessaire pour accéder à vos fonds",
+      "confirm_transfer": "Confirmer le transfert",
+      "send_confirmation": "Envoyer {amount:.6f} RTC à :\n{to_wallet}\n\nContinuer ?"
+    },
+    "miner": {
+      "attestation_failed": "L'attestation a échoué",
+      "epoch_enrollment_failed": "L'inscription à l'époque a échoué",
+      "challenge_failed_http": "Échec du défi : HTTP {status_code}",
+      "challenge_error": "Erreur de défi : {error}",
+      "attestation_rejected": "Attestation rejetée : {response}",
+      "attestation_submission_failed": "Échec de l'envoi de l'attestation : {error}",
+      "enrollment_failed": "L'inscription a échoué : {error}",
+      "enrollment_rejected": "Inscription rejetée : {response}",
+      "enrollment_http_error": "Erreur HTTP lors de l'inscription {status} : {text}",
+      "submit_error": "Erreur d'envoi : {error}",
+      "fingerprint_failed_reduced_rewards": "Empreinte matérielle : échec (récompenses réduites)",
+      "fingerprint_passed": "Empreinte matérielle : réussie",
+      "fingerprint_n_a": "Empreinte matérielle : non disponible (module manquant)",
+      "attestation_accepted": "Attestation acceptée",
+      "enrolled_success": "Inscription réussie. Époque : {epoch} Multiplicateur : {weight}x",
+      "miner_loop_error": "Erreur dans la boucle du mineur : {error}",
+      "fingerprint_checks_incomplete": "Vérifications d'empreinte incomplètes ou en échec",
+      "fingerprint_checks_complete": "Vérifications d'empreinte terminées",
+      "fingerprint_checks_failed": "Échec des vérifications d'empreinte : {failed_checks}"
+    },
+    "network": {
+      "troubleshooting_title": "Dépannage :",
+      "check_internet_connection": "1. Vérifiez votre connexion Internet",
+      "verify_dns_working": "2. Vérifiez si le DNS fonctionne (essayez : ping {node_url})",
+      "check_firewall_proxy": "3. Vérifiez le pare-feu/proxy",
+      "node_may_be_offline": "4. Le nœud est peut-être temporairement hors ligne",
+      "node_syncing_maintenance": "1. Le nœud est peut-être en cours de synchronisation ou en maintenance",
+      "try_again_later": "2. Réessayez plus tard",
+      "check_node_dashboard": "3. Vérifiez le tableau de bord d'état de RustChain",
+      "network_issue_detected": "Problème réseau détecté :",
+      "node_response_issue": "Problème de réponse du nœud :",
+      "network_error_title": "Erreur réseau",
+      "warning_title": "Avertissement",
+      "error_title": "Erreur",
+      "success_title": "Succès"
+    },
+    "common": {
+      "error": "Erreur",
+      "failed": "Échoué",
+      "success": "Succès",
+      "warning": "Avertissement",
+      "info": "Information",
+      "confirm": "Confirmer",
+      "cancel": "Annuler",
+      "ok": "OK",
+      "yes": "Oui",
+      "no": "Non",
+      "loading": "Chargement...",
+      "retry": "Réessayer",
+      "close": "Fermer"
+    }
+  },
+  "messages": {
+    "wallet": {
+      "balance_display": "Solde : {balance:.8f} RTC",
+      "wallet_id_label": "ID du portefeuille :",
+      "load_button": "Charger",
+      "new_wallet_button": "Nouveau portefeuille",
+      "send_rtc_button": "Envoyer RTC",
+      "to_label": "Destinataire :",
+      "amount_label": "Montant :",
+      "rtc_unit": "RTC",
+      "transaction_history": "Transactions récentes"
+    },
+    "miner": {
+      "cpu_info": "Processeur : {processor}",
+      "arch_info": "Architecture : {arch}",
+      "status_attesting": "Attestation en cours...",
+      "status_enrolling": "Inscription...",
+      "status_mining": "Minage...",
+      "status_waiting": "En attente de qualification...",
+      "status_error": "Erreur : {message}"
+    },
+    "miner_consent": {
+      "title": "Consentement de premier lancement du mineur RustChain",
+      "body": "Avant de miner, veuillez examiner les commandes --dry-run, --show-payload et --test-only. Le mineur transmettra les données d'empreinte et d'attestation au nœud RustChain. Le matériel doit être déclaré honnêtement ; ne simulez pas l'architecture, l'ancienneté (antiquity) ou les signaux matériels. Les récompenses RTC ne sont pas garanties.",
+      "prompt": "Saisissez OUI pour confirmer que vous comprenez et souhaitez continuer :",
+      "affirmative": "OUI",
+      "rejected": "Consentement non confirmé. Le minage ne démarrera pas."
+    }
+  }
+}
