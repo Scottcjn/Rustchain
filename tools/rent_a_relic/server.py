@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import math
 import os
 import sqlite3
 import time
@@ -31,9 +32,7 @@ from flask import Flask, jsonify, request, abort
 from tools.rent_a_relic.models import (
     MACHINE_REGISTRY,
     VALID_DURATIONS_HOURS,
-    EscrowStatus,
     EscrowTransaction,
-    Machine,
     Reservation,
     ReservationStatus,
 )
@@ -41,6 +40,7 @@ from tools.rent_a_relic.provenance import generate_receipt, verify_receipt
 
 app = Flask(__name__)
 DB_PATH = "rent_a_relic.db"
+SHA256_HEX_CHARS = frozenset("0123456789abcdefABCDEF")
 
 
 def get_db_path() -> str:
@@ -55,6 +55,41 @@ def _get_json_object_or_empty() -> dict:
     if not isinstance(data, dict):
         abort(400, description="JSON object required")
     return data
+
+
+def _optional_string_value(data: dict, key: str, max_length: int = 0) -> str | None:
+    value = data.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        abort(400, description=f"{key} must be a string")
+    value = value.strip()
+    if value == "":
+        return None
+    if max_length > 0 and len(value) > max_length:
+        abort(400, description=f"{key} exceeds maximum length of {max_length}")
+    return value
+
+
+def _required_string_value(data: dict, key: str, max_length: int = 0) -> str:
+    value = data.get(key)
+    if not isinstance(value, str):
+        abort(400, description=f"{key} must be a string")
+    value = value.strip()
+    if not value:
+        abort(400, description=f"{key} is required")
+    if max_length > 0 and len(value) > max_length:
+        abort(400, description=f"{key} exceeds maximum length of {max_length}")
+    return value
+
+
+def _optional_sha256_hex_value(data: dict, key: str) -> str | None:
+    value = _optional_string_value(data, key)
+    if value is None:
+        return None
+    if len(value) != 64 or any(char not in SHA256_HEX_CHARS for char in value):
+        abort(400, description=f"{key} must be a 64-character SHA-256 hex digest")
+    return value
 
 
 def _require_admin_key() -> None:
@@ -249,18 +284,22 @@ def post_reserve():
     """Reserve a machine and lock RTC in escrow."""
     data = _get_json_object_or_empty()
 
-    agent_id       = data.get("agent_id", "").strip()
-    machine_id     = data.get("machine_id", "").strip()
+    agent_id       = _required_string_value(data, "agent_id", max_length=128)
+    machine_id     = _required_string_value(data, "machine_id", max_length=128)
     duration_hours = data.get("duration_hours")
     rtc_amount     = data.get("rtc_amount")
 
-    if not agent_id:
-        abort(400, description="agent_id is required")
-    if not machine_id:
-        abort(400, description="machine_id is required")
+    if isinstance(duration_hours, bool):
+        abort(400, description="duration_hours must be one of [1, 4, 24]")
     if duration_hours not in VALID_DURATIONS_HOURS:
         abort(400, description=f"duration_hours must be one of {sorted(VALID_DURATIONS_HOURS)}")
-    if rtc_amount is None or not isinstance(rtc_amount, (int, float)) or rtc_amount <= 0:
+    if (
+        rtc_amount is None
+        or isinstance(rtc_amount, bool)
+        or not isinstance(rtc_amount, (int, float))
+        or not math.isfinite(rtc_amount)
+        or rtc_amount <= 0
+    ):
         abort(400, description="rtc_amount must be a positive number")
 
     machine = MACHINE_REGISTRY.get(machine_id)
@@ -439,8 +478,9 @@ def get_reservation(session_id: str):
 def post_complete(session_id: str):
     """Mark a session as completed and release escrow."""
     _require_admin_key()
-    data        = _get_json_object_or_empty()
-    output_hash = data.get("output_hash") or hashlib.sha256(session_id.encode()).hexdigest()
+    data                = _get_json_object_or_empty()
+    default_output_hash = hashlib.sha256(session_id.encode()).hexdigest()
+    output_hash         = _optional_sha256_hex_value(data, "output_hash") or default_output_hash
 
     with db_conn() as conn:
         row = conn.execute("SELECT * FROM reservations WHERE session_id=?", (session_id,)).fetchone()

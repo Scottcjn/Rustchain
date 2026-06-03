@@ -149,6 +149,46 @@ def _matches_secret(candidate: str, secrets: Iterable[str]) -> bool:
     return matched
 
 
+def _normalize_limit(value: Any, default: int = 10, maximum: int = 100) -> int:
+    if value is None or value == "":
+        return default
+    try:
+        limit = int(value)
+    except (TypeError, ValueError):
+        raise ValueError("limit must be an integer")
+    return max(1, min(limit, maximum))
+
+
+def _normalize_maintenance_limit(data: Any, default: int = 25, maximum: int = 200) -> int:
+    value = data.get("limit", default) if isinstance(data, dict) else default
+    if isinstance(value, bool):
+        raise ValueError("limit must be an integer")
+    if isinstance(value, int):
+        limit = value
+    elif isinstance(value, str):
+        cleaned = value.strip()
+        if not re.fullmatch(r"[+-]?\d+", cleaned):
+            raise ValueError("limit must be an integer")
+        limit = int(cleaned)
+    else:
+        raise ValueError("limit must be an integer")
+    if limit < 1:
+        raise ValueError("limit must be at least 1")
+    return min(limit, maximum)
+
+
+def _json_object_body_or_empty() -> tuple[dict[str, Any], Any | None]:
+    raw_body = request.get_data(cache=True)
+    data = request.get_json(silent=True)
+    if data is None:
+        if request.is_json and raw_body.strip():
+            return {}, (jsonify({"error": "JSON object required"}), 400)
+        return {}, None
+    if not isinstance(data, dict):
+        return {}, (jsonify({"error": "JSON object required"}), 400)
+    return data, None
+
+
 def _is_authorized(req) -> bool:
     required_admin = os.getenv("RC_ADMIN_KEY", "").strip()
     if required_admin:
@@ -193,9 +233,35 @@ def _relay_scott_notification(payload: dict[str, Any]) -> tuple[int, dict[str, A
     return response.status_code, body if isinstance(body, dict) else {"status": "error", "error": "invalid_response"}
 
 
+def _response_json_object(response: Any) -> dict[str, Any]:
+    try:
+        body = response.json()
+    except ValueError as exc:
+        raise RuntimeError(f"Ollama returned invalid JSON: {_text_excerpt(exc, 200)}") from exc
+    if not isinstance(body, dict):
+        raise RuntimeError(f"Ollama returned {type(body).__name__} JSON, expected object")
+    return body
+
+
 def _coerce_entry(data: dict[str, Any]) -> dict[str, Any]:
     entry = data.get("entry")
     return entry if isinstance(entry, dict) else {}
+
+
+def _validate_optional_string_field(values: dict[str, Any], field: str, error_field: str | None = None) -> None:
+    if field not in values or values[field] is None:
+        return
+    if not isinstance(values[field], str):
+        raise ValueError(f"{error_field or field}_must_be_string")
+
+
+def _validate_review_request(data: dict[str, Any]) -> None:
+    for field in ("review_prompt", "event_type", "risk_level", "stance", "source", "summary"):
+        _validate_optional_string_field(data, field)
+
+    entry = _coerce_entry(data)
+    for field in ("event_type", "risk_level", "stance", "source", "remote_agent", "remote_instance"):
+        _validate_optional_string_field(entry, field, f"entry_{field}")
 
 
 def _review_summary(data: dict[str, Any], entry: dict[str, Any], event_type: str) -> str:
@@ -404,7 +470,7 @@ def _call_ollama(prompt: str) -> tuple[str, str]:
         timeout=(5, 90),
     )
     response.raise_for_status()
-    body = response.json()
+    body = _response_json_object(response)
     review_text = _text_excerpt(body.get("response", ""), 4000)
     if review_text:
         return review_text, OLLAMA_MODEL
@@ -457,7 +523,7 @@ def _store_review(
 def _recent_reviews(limit: int = 10, db_path: str | None = None) -> list[dict[str, Any]]:
     db = db_path or DB_PATH
     init_db(db)
-    limit = max(1, min(int(limit), 100))
+    limit = _normalize_limit(limit)
     with sqlite3.connect(db) as conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
@@ -530,7 +596,7 @@ def _rebuild_review_row(review_id: int, request_json: str, db_path: str | None =
     try:
         raw_review_text, model_used = _call_ollama(prompt)
         review_text = _normalize_review_text(raw_review_text, data)
-    except Exception as exc:
+    except Exception:
         review_text = _normalize_review_text(_fallback_review_text(data), data)
         model_used = f"{OLLAMA_MODEL}@error"
     recommended_resolution = _build_recommended_resolution(review_text, data)
@@ -622,7 +688,10 @@ def health():
 def recent():
     if not _is_authorized(request):
         return jsonify({"error": "Unauthorized -- admin key or bearer required"}), 401
-    limit = request.args.get("limit", 10, type=int)
+    try:
+        limit = _normalize_limit(request.args.get("limit"))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     return jsonify({"ok": True, "reviews": _recent_reviews(limit=limit)})
 
 
@@ -631,8 +700,13 @@ def recent():
 def backfill_missing():
     if not _is_authorized(request):
         return jsonify({"error": "Unauthorized -- admin key or bearer required"}), 401
-    data = request.get_json(silent=True) or {}
-    limit = data.get("limit", 25) if isinstance(data, dict) else 25
+    data, body_error = _json_object_body_or_empty()
+    if body_error:
+        return body_error
+    try:
+        limit = _normalize_maintenance_limit(data)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     results = backfill_missing_reviews(limit=limit)
     return jsonify({"ok": True, "updated": results, "count": len(results)})
 
@@ -642,8 +716,13 @@ def backfill_missing():
 def normalize_existing():
     if not _is_authorized(request):
         return jsonify({"error": "Unauthorized -- admin key or bearer required"}), 401
-    data = request.get_json(silent=True) or {}
-    limit = data.get("limit", 25) if isinstance(data, dict) else 25
+    data, body_error = _json_object_body_or_empty()
+    if body_error:
+        return body_error
+    try:
+        limit = _normalize_maintenance_limit(data)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     results = normalize_existing_reviews(limit=limit)
     return jsonify({"ok": True, "updated": results, "count": len(results)})
 
@@ -654,9 +733,13 @@ def review():
     if not _is_authorized(request):
         return jsonify({"error": "Unauthorized -- admin key or bearer required"}), 401
 
-    data = request.get_json(silent=True) or {}
-    if not isinstance(data, dict):
-        return jsonify({"error": "JSON object required"}), 400
+    data, body_error = _json_object_body_or_empty()
+    if body_error:
+        return body_error
+    try:
+        _validate_review_request(data)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
     prompt = _build_prompt(data)
     try:
@@ -690,9 +773,9 @@ def queue_scott_notification():
     if not _is_authorized(request):
         return jsonify({"error": "Unauthorized -- admin key or bearer required"}), 401
 
-    data = request.get_json(silent=True) or {}
-    if not isinstance(data, dict):
-        return jsonify({"error": "JSON object required"}), 400
+    data, body_error = _json_object_body_or_empty()
+    if body_error:
+        return body_error
 
     status_code, body = _relay_scott_notification(data)
     return jsonify(body), status_code

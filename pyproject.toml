@@ -1,23 +1,32 @@
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-pythonpath = ["node", "."]
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
 
-[tool.ruff]
-line-length = 120
-exclude = ["deprecated", "node_backups"]
+[project]
+name = "rustchain"
+version = "2.2.1"
+description = "RustChain — Proof of Antiquity blockchain with hardware fingerprinting + RTC token"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    {name = "Scott Boudreaux / Elyan Labs", email = "scottbphone12@gmail.com"},
+]
+dependencies = [
+    "flask>=2.0",
+    "requests>=2.28",
+    "cryptography>=41",
+    "pynacl>=1.5",
+    "psutil>=5.9",
+]
 
-[tool.ruff.lint]
-select = ["E", "F", "W", "B", "I"]
-ignore = ["E501"] # Ignore long lines for legacy code
+[project.urls]
+Homepage = "https://github.com/Scottcjn/Rustchain"
+Repository = "https://github.com/Scottcjn/Rustchain"
+Issues = "https://github.com/Scottcjn/Rustchain/issues"
 
-[tool.bandit]
-# Skip assert checks (B101) — expected in pytest test files
-# Skip random (B311) — tests use pseudo-random intentionally
-# Skip try/except/pass (B110) — common in test error handling
-skips = ["B101", "B311", "B110"]
-exclude_dirs = ["deprecated", "node_backups"]
+[tool.setuptools]
+packages = ["node"]
 
-[tool.mypy]
-python_version = "3.11"
-ignore_missing_imports = true
-exclude = ["deprecated", "node_backups"]
+[tool.setuptools.package-data]
+"node" = ["*.sql", "*.json"]

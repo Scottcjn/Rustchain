@@ -112,6 +112,8 @@ def validate_translation_file(filepath: Path) -> Tuple[bool, List[str]]:
         data = json.loads(content)
     except json.JSONDecodeError as e:
         return False, [f"JSON 格式错误：{e}"]
+    if not isinstance(data, dict):
+        return False, [f"JSON 根节点必须是对象：{filepath.name}"], []
     
     # 验证结构
     valid, struct_errors = validate_json_structure(data)

@@ -32,6 +32,26 @@ def load_module():
     return module
 
 
+def test_read_lspci_output_uses_argument_list_timeout_and_suppressed_stderr():
+    module = load_module()
+    calls = []
+
+    def fake_check_output(*args, **kwargs):
+        calls.append((args, kwargs))
+        return b"VGA compatible controller: 3Dfx Voodoo SLI\n"
+
+    with patch.object(module.subprocess, "check_output", side_effect=fake_check_output):
+        output = module._read_lspci_output()
+
+    assert "voodoo sli" in output
+    assert calls == [
+        (
+            (["lspci"],),
+            {"stderr": module.subprocess.DEVNULL, "timeout": 10},
+        )
+    ]
+
+
 def test_detect_gpu_and_display_writes_matching_badges(tmp_path, monkeypatch, capsys):
     module = load_module()
     monkeypatch.chdir(tmp_path)
@@ -62,6 +82,21 @@ def test_detect_gpu_and_display_does_not_write_when_no_badges(tmp_path, monkeypa
         module.detect_gpu_and_display()
 
     assert not (tmp_path / "unlocked_badges.json").exists()
+    assert "No relic badges detected." in capsys.readouterr().out
+
+
+def test_detect_gpu_and_display_removes_stale_badges_when_no_matches(
+    tmp_path, monkeypatch, capsys
+):
+    module = load_module()
+    monkeypatch.chdir(tmp_path)
+    stale_badges = tmp_path / "unlocked_badges.json"
+    stale_badges.write_text('{"badges": [{"badge_id": "badge_voodoo_fx_g"}]}', encoding="utf-8")
+
+    with patch.object(module.subprocess, "check_output", return_value=b"ethernet controller\n"):
+        module.detect_gpu_and_display()
+
+    assert not stale_badges.exists()
     assert "No relic badges detected." in capsys.readouterr().out
 
 
@@ -105,7 +140,9 @@ def test_detect_gpu_and_display_matches_all_known_relic_terms(tmp_path, monkeypa
     ]
 
 
-def test_detect_gpu_and_display_invokes_lspci_without_touching_hardware(tmp_path, monkeypatch):
+def test_detect_gpu_and_display_invokes_lspci_without_shell_or_hanging_probe(
+    tmp_path, monkeypatch
+):
     module = load_module()
     calls = []
     monkeypatch.chdir(tmp_path)
@@ -120,7 +157,12 @@ def test_detect_gpu_and_display_invokes_lspci_without_touching_hardware(tmp_path
     ):
         module.detect_gpu_and_display()
 
-    assert calls == [((["lspci"],), {"stderr": module.subprocess.DEVNULL})]
+    assert calls == [
+        (
+            (["lspci"],),
+            {"stderr": module.subprocess.DEVNULL, "timeout": 10},
+        )
+    ]
     payload = json.loads((tmp_path / "unlocked_badges.json").read_text(encoding="utf-8"))
     assert [entry["badge_id"] for entry in payload["badges"]] == [
         "badge_matrox_ghost",

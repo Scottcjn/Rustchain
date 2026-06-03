@@ -49,6 +49,46 @@ def test_attestation_log_json_requires_core_fields(tmp_path):
     assert result["checks"]["json_valid"] is True
 
 
+def test_attestation_log_rejects_non_object_json_root(tmp_path):
+    validator = SubmissionValidator()
+    log_path = tmp_path / "attestation.json"
+    log_path.write_text('"miner_id device_arch fingerprint_hash timestamp"')
+
+    result = validator.validate_attestation_log(str(log_path))
+
+    assert result["status"] == "FAIL"
+    assert result["message"] == "Attestation log JSON root must be an object"
+    assert result["checks"]["json_valid"] is True
+
+
+def test_photo_validation_preserves_size_and_format_warnings(tmp_path):
+    validator = SubmissionValidator()
+    photo_path = tmp_path / "photo.txt"
+    photo_path.write_bytes(b"tiny")
+
+    result = validator.validate_photo(str(photo_path))
+
+    assert result["status"] == "WARN"
+    assert "too small" in result["message"]
+    assert "Unusual photo format" in result["message"]
+    assert result["checks"]["file_size_bytes"] == 4
+    assert result["checks"]["format"] == ".txt"
+    assert "Photo file is unusually small" in validator.warnings
+
+
+def test_screenshot_validation_preserves_small_file_warning(tmp_path):
+    validator = SubmissionValidator()
+    screenshot_path = tmp_path / "screenshot.png"
+    screenshot_path.write_bytes(b"tiny")
+
+    result = validator.validate_screenshot(str(screenshot_path))
+
+    assert result["status"] == "WARN"
+    assert "too small" in result["message"]
+    assert result["checks"]["file_size_bytes"] == 4
+    assert "Screenshot file is unusually small" in validator.warnings
+
+
 def test_validate_submission_extracts_arch_and_bounty_from_valid_log(tmp_path):
     validator = SubmissionValidator()
     log_path = tmp_path / "attestation.json"

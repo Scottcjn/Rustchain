@@ -2,6 +2,7 @@
 """Unit tests for the attestation fuzz corpus manager."""
 
 import importlib.util
+import json
 from pathlib import Path
 
 
@@ -102,6 +103,68 @@ def test_export_import_and_regression_suite(tmp_path):
     assert imported.import_corpus(str(export_path)) == 0
     suite_payloads = [payload for _hash, payload in imported.get_regression_suite()]
     assert set(suite_payloads) == {"critical", "high"}
+
+
+def test_import_corpus_skips_malformed_entries(tmp_path):
+    module, mgr = manager(tmp_path)
+    corpus_path = tmp_path / "mixed-corpus.json"
+    corpus_path.write_text(
+        json.dumps(
+            {
+                "crashes": [
+                    "not-an-entry",
+                    {"payload_data": "missing-fields"},
+                    {
+                        "payload_data": "bad-category",
+                        "category": "unknown",
+                        "severity": module.CrashSeverity.HIGH.value,
+                        "crash_type": "ValueError",
+                        "stack_trace": "trace",
+                    },
+                    {
+                        "payload_data": 123,
+                        "category": module.PayloadCategory.MALFORMED_JSON.value,
+                        "severity": module.CrashSeverity.HIGH.value,
+                        "crash_type": "ValueError",
+                        "stack_trace": "trace",
+                    },
+                    {
+                        "payload_data": "bad-notes",
+                        "category": module.PayloadCategory.MALFORMED_JSON.value,
+                        "severity": module.CrashSeverity.HIGH.value,
+                        "crash_type": "ValueError",
+                        "stack_trace": "trace",
+                        "notes": ["not", "text"],
+                    },
+                    {
+                        "payload_data": "valid",
+                        "category": module.PayloadCategory.MALFORMED_JSON.value,
+                        "severity": module.CrashSeverity.HIGH.value,
+                        "crash_type": "ValueError",
+                        "stack_trace": "trace",
+                        "notes": "imported",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert mgr.import_corpus(str(corpus_path)) == 1
+    imported = mgr.list_crashes()
+    assert [crash.payload_data for crash in imported] == ["valid"]
+
+
+def test_import_corpus_rejects_malformed_top_level_json(tmp_path):
+    _module, mgr = manager(tmp_path)
+    list_root_path = tmp_path / "list-root.json"
+    bad_crashes_path = tmp_path / "bad-crashes.json"
+    list_root_path.write_text("[]", encoding="utf-8")
+    bad_crashes_path.write_text('{"crashes": "not-a-list"}', encoding="utf-8")
+
+    assert mgr.import_corpus(str(list_root_path)) == 0
+    assert mgr.import_corpus(str(bad_crashes_path)) == 0
+    assert mgr.list_crashes() == []
 
 
 def test_deduplicate_similar_crashes_removes_same_type_only(tmp_path):

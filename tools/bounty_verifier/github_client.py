@@ -103,6 +103,7 @@ class GitHubClient:
             try:
                 with urlopen(req, timeout=30) as response:
                     response_headers = dict(response.headers)
+                    response_headers["status"] = str(response.status)
                     self._update_rate_limit(response_headers)
                     
                     if response.status == 204:  # No content

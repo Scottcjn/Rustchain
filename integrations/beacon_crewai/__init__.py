@@ -14,14 +14,38 @@ Modules:
     beacon_langgraph: LangGraph node integration
 """
 
-from beacon_crewai import BeaconAgent, BeaconConfig, create_beacon_crew
-from beacon_langgraph import (
-    BeaconNode,
-    BeaconConfig as LangGraphBeaconConfig,
-    BeaconGraphState,
-    create_beacon_graph,
-    create_beacon_tools,
-)
+try:
+    from .beacon_crewai import (
+        BeaconAgent,
+        BeaconConfig,
+        CREWAI_AVAILABLE,
+        create_beacon_crew,
+    )
+    from .beacon_langgraph import (
+        BeaconNode,
+        BeaconConfig as LangGraphBeaconConfig,
+        BeaconGraphState,
+        LANGCHAIN_AVAILABLE,
+        LANGGRAPH_AVAILABLE,
+        create_beacon_graph,
+        create_beacon_tools,
+    )
+except ImportError:
+    from beacon_crewai import (
+        BeaconAgent,
+        BeaconConfig,
+        CREWAI_AVAILABLE,
+        create_beacon_crew,
+    )
+    from beacon_langgraph import (
+        BeaconNode,
+        BeaconConfig as LangGraphBeaconConfig,
+        BeaconGraphState,
+        LANGCHAIN_AVAILABLE,
+        LANGGRAPH_AVAILABLE,
+        create_beacon_graph,
+        create_beacon_tools,
+    )
 
 __version__ = "0.1.0"
 __all__ = [
@@ -29,10 +53,13 @@ __all__ = [
     "BeaconAgent",
     "BeaconConfig",
     "create_beacon_crew",
+    "CREWAI_AVAILABLE",
     # LangGraph
     "BeaconNode",
     "LangGraphBeaconConfig",
     "BeaconGraphState",
     "create_beacon_graph",
     "create_beacon_tools",
+    "LANGCHAIN_AVAILABLE",
+    "LANGGRAPH_AVAILABLE",
 ]

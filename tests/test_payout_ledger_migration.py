@@ -121,6 +121,12 @@ class TestPayoutLedgerMigration(unittest.TestCase):
         with self.assertRaises(ValueError):
             payout_ledger.ledger_create("bounty-1", "alice", "0.0000001")
 
+    def test_amount_rtc_rejects_zero(self):
+        payout_ledger.init_payout_ledger_tables()
+
+        with self.assertRaisesRegex(ValueError, "positive finite"):
+            payout_ledger.ledger_create("bounty-1", "alice", "0")
+
 
 if __name__ == "__main__":
     unittest.main()

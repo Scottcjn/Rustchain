@@ -46,7 +46,7 @@
 typedef struct {
     uint32_t magic;
     uint8_t  version;
-    uint8_t  type;           /* 0=attest, 1=heartbeat, 2=balance_req */
+    uint8_t  type;           /* 0=attest, 1=heartbeat, 2=balance_req, 4=reattest_req */
     uint16_t payload_len;
 } packet_header_t;
 
@@ -54,6 +54,7 @@ typedef struct {
 #define PKT_TYPE_HEARTBEAT   1
 #define PKT_TYPE_BALANCE     2
 #define PKT_TYPE_EPOCH_ACK   3
+#define PKT_TYPE_REATTEST    4
 
 typedef struct {
     uint32_t count_drift_ns;

@@ -13,21 +13,22 @@ import urllib.request
 import urllib.error
 import hashlib
 import time
+import argparse
 from urllib.parse import urlparse
 from pathlib import Path
 
 MINER_ARTIFACTS = {
     "Linux": {
         "url": "https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/linux/rustchain_linux_miner.py",
-        "sha256": "9475fe15d149ef7b3824c0009453c55e17fb6d1d411ea37e9f24f58c6313871c",
+        "sha256": "c7af612bb2630d5fe6576bb132bdeb7a00ba0be042ec168887ab767a1f16c9f9",
     },
     "Darwin": {
         "url": "https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/macos/rustchain_mac_miner_v2.5.py",
-        "sha256": "e50cea51a24c8c0337e340287a05e6431f6d95883ab913a1a79c19e99bc03dd8",
+        "sha256": "163fafcf751d8fbd41bf936facaeb366c042f467fa34b79f2c4c0a45472ef70f",
     },
     "Windows": {
         "url": "https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/windows/rustchain_windows_miner.py",
-        "sha256": "51fe431cbee3c5b81218a738c221d45e675dafa5d67f9aff716d4ea11f304662",
+        "sha256": "7f663904031e5a4202be416682fd16ab51af2e96664d6db1567f716d8625f8e1",
     },
 }
 
@@ -87,7 +88,7 @@ class MinerSetup:
                 result = subprocess.run(["sysctl", "hw.memsize"], capture_output=True, text=True)
                 if result.returncode == 0:
                     hardware_info["memory_mb"] = int(result.stdout.split(":")[1].strip()) // (1024 * 1024)
-        except:
+        except Exception:
             pass
             
         # Basic GPU detection
@@ -100,7 +101,7 @@ class MinerSetup:
                 result = subprocess.run(["wmic", "path", "win32_VideoController", "get", "name"], capture_output=True, text=True)
                 if result.returncode == 0 and len(result.stdout.strip().split('\n')) > 2:
                     hardware_info["gpu_available"] = True
-        except:
+        except Exception:
             pass
             
         self.log(f"CPU Cores: {hardware_info['cpu_cores']}")
@@ -185,7 +186,7 @@ class RustChainMiner:
         try:
             with open(config_file, 'r') as f:
                 return json.load(f)
-        except:
+        except Exception:
             return {
                 "threads": 1,
                 "wallet_address": "RTC_DEFAULT_WALLET",
@@ -405,6 +406,19 @@ WantedBy=multi-user.target
             self.log(f"Setup failed: {e}")
             sys.exit(1)
 
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        description="Install and configure a RustChain Universal Miner."
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version="RustChain miner setup 1.0.0",
+    )
+    return parser.parse_args(argv)
+
+
 if __name__ == "__main__":
+    parse_args()
     setup = MinerSetup()
     setup.run_setup()

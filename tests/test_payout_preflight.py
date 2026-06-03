@@ -16,7 +16,6 @@ from payout_preflight import (
     validate_wallet_transfer_admin,
     validate_wallet_transfer_signed,
     PreflightResult,
-    MICRO_RTC,
 )
 
 
@@ -140,6 +139,43 @@ class TestValidateWalletTransferAdmin:
                 assert result.details["amount_rtc"] == 10.0
                 assert result.details["amount_i64"] == 10_000_000
 
+      def test_miner_ids_are_trimmed(self):
+          result = validate_wallet_transfer_admin({
+              "from_miner": " miner_alpha ",
+              "to_miner": " miner_beta ",
+              "amount_rtc": 10.0,
+          })
+          assert result.ok is True
+          assert result.details["from_miner"] == "miner_alpha"
+          assert result.details["to_miner"] == "miner_beta"
+
+      def test_structured_from_miner_rejected(self):
+          result = validate_wallet_transfer_admin({
+              "from_miner": ["miner_alpha"],
+              "to_miner": "miner_beta",
+              "amount_rtc": 10.0,
+          })
+          assert result.ok is False
+          assert result.error == "invalid_from_or_to_type"
+
+      def test_structured_to_miner_rejected(self):
+          result = validate_wallet_transfer_admin({
+              "from_miner": "miner_alpha",
+              "to_miner": {"id": "miner_beta"},
+              "amount_rtc": 10.0,
+          })
+          assert result.ok is False
+          assert result.error == "invalid_from_or_to_type"
+
+      def test_blank_miner_id_rejected_after_trim(self):
+          result = validate_wallet_transfer_admin({
+              "from_miner": "   ",
+              "to_miner": "miner_beta",
+              "amount_rtc": 10.0,
+          })
+          assert result.ok is False
+          assert result.error == "missing_from_or_to"
+
       def test_missing_from_miner(self):
                 result = validate_wallet_transfer_admin({
                               "to_miner": "miner_beta",
@@ -205,6 +241,15 @@ class TestValidateWalletTransferAdmin:
                 assert result.ok is True
                 assert result.details["amount_rtc"] == 5.5
 
+      def test_amount_above_i64_rejected(self):
+                result = validate_wallet_transfer_admin({
+                              "from_miner": "miner_alpha",
+                              "to_miner": "miner_beta",
+                              "amount_rtc": "9223372036854.775808",
+                })
+                assert result.ok is False
+                assert result.error == "amount_exceeds_i64"
+
 
 class TestValidateWalletTransferSigned:
       @staticmethod
@@ -228,6 +273,41 @@ class TestValidateWalletTransferSigned:
                 assert result.ok is True
                 assert result.error == ""
                 assert result.details["nonce"] == 1
+                assert result.details["fee_rtc"] == 0.0
+
+      def test_signed_transfer_accepts_fee_rtc(self):
+                result = validate_wallet_transfer_signed(self._valid_payload(fee_rtc="0.25"))
+                assert result.ok is True
+                assert result.details["fee_rtc"] == 0.25
+
+      def test_signed_transfer_rejects_negative_fee_rtc(self):
+                result = validate_wallet_transfer_signed(self._valid_payload(fee_rtc="-0.01"))
+                assert result.ok is False
+                assert result.error == "fee_must_be_non_negative"
+
+      def test_signed_transfer_accepts_bcn_sender_without_public_key(self):
+                result = validate_wallet_transfer_signed({
+                              "from_address": "bcn_sender001",
+                              "to_address": self._make_address("b"),
+                              "amount_rtc": 10.0,
+                              "nonce": 1,
+                              "signature": "sig_abc123",
+                })
+                assert result.ok is True
+
+      def test_signed_transfer_accepts_bcn_recipient(self):
+                result = validate_wallet_transfer_signed(self._valid_payload(
+                              to_address="bcn_receiver001",
+                ))
+                assert result.ok is True
+
+      def test_rtc_sender_still_requires_public_key(self):
+                payload = self._valid_payload()
+                payload.pop("public_key")
+                result = validate_wallet_transfer_signed(payload)
+                assert result.ok is False
+                assert result.error == "missing_required_fields"
+                assert result.details["missing"] == ["public_key"]
 
       def test_missing_required_fields(self):
                 result = validate_wallet_transfer_signed({
@@ -248,8 +328,20 @@ class TestValidateWalletTransferSigned:
                 assert result.ok is False
                 assert result.error == "invalid_from_address_format"
 
+      def test_invalid_from_address_characters(self):
+                payload = self._valid_payload(from_address="RTC" + "g" * 40)
+                result = validate_wallet_transfer_signed(payload)
+                assert result.ok is False
+                assert result.error == "invalid_from_address_format"
+
+      def test_invalid_to_address_characters(self):
+                payload = self._valid_payload(to_address="RTC" + "z" * 40)
+                result = validate_wallet_transfer_signed(payload)
+                assert result.ok is False
+                assert result.error == "invalid_to_address_format"
+
       def test_self_transfer_rejected(self):
-                addr = self._make_address("x")
+                addr = self._make_address("c")
                 payload = self._valid_payload(from_address=addr, to_address=addr)
                 result = validate_wallet_transfer_signed(payload)
                 assert result.ok is False
@@ -301,6 +393,12 @@ class TestValidateWalletTransferSigned:
                 result = validate_wallet_transfer_signed(None)
                 assert result.ok is False
                 assert result.error == "invalid_json_body"
+
+      def test_amount_above_i64_rejected(self):
+                payload = self._valid_payload(amount_rtc="9223372036854.775808")
+                result = validate_wallet_transfer_signed(payload)
+                assert result.ok is False
+                assert result.error == "amount_exceeds_i64"
 
 
 class TestPreflightResult:

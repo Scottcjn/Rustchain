@@ -221,6 +221,10 @@ class TestFilters(unittest.TestCase):
     def test_get_by_tag_nonexistent(self):
         self.assertEqual(self.disc.get_by_tag("doesnotexist"), [])
 
+    def test_get_by_tag_treats_like_wildcards_literally(self):
+        self.assertEqual(self.disc.get_by_tag("%"), [])
+        self.assertEqual(self.disc.get_by_tag("_"), [])
+
     def test_get_by_agent(self):
         results = self.disc.get_by_agent("alpha")
         ids = {r["video_id"] for r in results}

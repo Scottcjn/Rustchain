@@ -230,9 +230,11 @@ class OpenAPIValidator:
             
         # Check security usage in operations
         for path, path_item in self.spec.get('paths', {}).items():
+            if not isinstance(path_item, dict):
+                continue
             for method in ['get', 'post', 'put', 'patch', 'delete']:
                 operation = path_item.get(method)
-                if operation:
+                if isinstance(operation, dict):
                     security = operation.get('security', [])
                     for sec_req in security:
                         if isinstance(sec_req, dict):

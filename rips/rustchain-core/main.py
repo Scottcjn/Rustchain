@@ -322,6 +322,7 @@ class RustChainNode:
             voter=voter,
             support=support,
             token_balance=balance,
+            balance_resolver=self.utxo_set.get_balance,
         )
         return {"success": True, "weight": vote.weight}
 

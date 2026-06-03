@@ -3,15 +3,22 @@
 
 from flask import Flask, request, jsonify, render_template_string
 import html as html_utils
+import os
 import sqlite3
-import json
 import urllib.parse
-import hashlib
-from datetime import datetime
 
 app = Flask(__name__)
 
 DB_PATH = "rustchain.db"
+
+
+def debug_enabled() -> bool:
+    return os.environ.get("RUSTCHAIN_PROFILE_BADGE_DEBUG", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 def init_badge_db():
     with sqlite3.connect(DB_PATH) as conn:
@@ -26,6 +33,18 @@ def init_badge_db():
                 bounty_earned DECIMAL(10,2) DEFAULT 0.0,
                 custom_message TEXT
             )
+        ''')
+        cursor.execute('''
+            DELETE FROM profile_badges
+            WHERE id NOT IN (
+                SELECT MAX(id)
+                FROM profile_badges
+                GROUP BY github_username
+            )
+        ''')
+        cursor.execute('''
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_profile_badges_github_username
+            ON profile_badges(github_username)
         ''')
         conn.commit()
 
@@ -130,11 +149,13 @@ def badge_generator():
     return render_template_string(html)
 
 
-def text_field(data, name, default=''):
+def string_field(data, name, default=''):
     value = data.get(name, default)
     if value is None:
-        return ''
-    return str(value).strip()
+        return '', None
+    if not isinstance(value, str):
+        return None, (jsonify({'success': False, 'error': f'{name} must be a string'}), 400)
+    return value.strip(), None
 
 
 def escape_markdown_alt(text):
@@ -149,16 +170,28 @@ def escape_markdown_alt(text):
 @app.route('/api/badge/create', methods=['POST'])
 def create_badge():
     init_badge_db()
-    raw_data = request.get_json(silent=True) or {}
-    data = raw_data if isinstance(raw_data, dict) else {}
+    raw_data = request.get_json(silent=True)
+    if raw_data is None:
+        return jsonify({'success': False, 'error': 'Invalid or missing JSON body'}), 400
+    if not isinstance(raw_data, dict):
+        return jsonify({'success': False, 'error': 'JSON body must be an object'}), 400
+    data = raw_data
     
-    username = text_field(data, 'username')
-    wallet = text_field(data, 'wallet')
-    badge_type = text_field(data, 'badge_type', 'contributor')
-    custom_message = text_field(data, 'custom_message')
+    username, error_response = string_field(data, 'username')
+    if error_response:
+        return error_response
+    wallet, error_response = string_field(data, 'wallet')
+    if error_response:
+        return error_response
+    badge_type, error_response = string_field(data, 'badge_type', 'contributor')
+    if error_response:
+        return error_response
+    custom_message, error_response = string_field(data, 'custom_message')
+    if error_response:
+        return error_response
     
     if not username:
-        return jsonify({'success': False, 'error': 'Username required'})
+        return jsonify({'success': False, 'error': 'Username required'}), 400
     
     badge_colors = {
         'contributor': 'blue',
@@ -185,9 +218,15 @@ def create_badge():
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
         cursor.execute('''
-            INSERT OR REPLACE INTO profile_badges 
+            INSERT INTO profile_badges
             (github_username, wallet_address, badge_type, custom_message, bounty_earned)
             VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(github_username) DO UPDATE SET
+                wallet_address = excluded.wallet_address,
+                badge_type = excluded.badge_type,
+                custom_message = excluded.custom_message,
+                bounty_earned = excluded.bounty_earned,
+                created_at = CURRENT_TIMESTAMP
         ''', (username, wallet or None, badge_type, custom_message or None, 3.0))
         conn.commit()
     
@@ -246,4 +285,4 @@ def list_badges():
 
 if __name__ == '__main__':
     init_badge_db()
-    app.run(debug=True, port=5003)
+    app.run(debug=debug_enabled(), port=5003)

@@ -25,7 +25,11 @@ def test_history_and_activity_tables_do_not_render_api_fields_with_inner_html():
 def test_dashboard_normalizes_current_api_envelopes():
     html = DASHBOARD_HTML.read_text(encoding="utf-8")
 
-    assert "const miners = Array.isArray(payload) ? payload : (payload.miners || payload.data || []);" in html
+    assert "function normalizeMinerRows(payload)" in html
+    assert "payload?.miners || payload?.data || payload?.items || []" in html
+    assert "const miners = normalizeMinerRows(payload);" in html
+    assert "(m.miner || m.miner_id || m.id || m.name) === minerId" in html
+    assert "const miners = Array.isArray(payload) ? payload : (payload.miners || payload.data || []);" not in html
     assert "return Array.isArray(payload) ? payload : (payload.transactions || payload.history || []);" in html
 
 
