@@ -86,6 +86,25 @@ class TestGPURenderProtocol(unittest.TestCase):
         refund = self.proto.refund_escrow(job_id, "wallet-b", result["escrow_secret"])
         self.assertEqual(refund["status"], "refunded")
 
+    def test_escrow_transition_is_atomic_under_race(self):
+        # A concurrent winner transitions the row between our read and write;
+        # the WHERE status='locked' guard must make the loser fail (no double-spend).
+        result = self.proto.create_escrow("render", "wallet-a", "wallet-b", 10.0)
+        job_id = result["job_id"]
+        secret = result["escrow_secret"]
+        orig_auth = self.proto._authorize_escrow_action
+
+        def racing_auth(row, **kwargs):
+            c = self.proto._get_conn()
+            c.execute("UPDATE render_escrow SET status='released' WHERE job_id=?", (job_id,))
+            c.commit()
+            c.close()
+            return orig_auth(row, **kwargs)
+
+        self.proto._authorize_escrow_action = racing_auth
+        res = self.proto.refund_escrow(job_id, "wallet-b", secret)
+        self.assertIn("no longer locked", res.get("error", ""))
+
     def test_release_requires_payer_and_secret(self):
         result = self.proto.create_escrow("render", "wallet-a", "wallet-b", 10.0)
         job_id = result["job_id"]
@@ -327,7 +346,8 @@ def test_gpu_protocol_attest_requires_admin_key_before_write(tmp_path, monkeypat
 
     assert response.status_code == 401
     assert response.get_json() == {"error": "Unauthorized - admin key required"}
-    nodes = client.get("/gpu/nodes").get_json()
+    # /gpu/nodes became admin-gated in #6557; authenticate the read
+    nodes = client.get("/gpu/nodes", headers={"X-Admin-Key": "test-admin-key"}).get_json()
     assert nodes["count"] == 0
 
 
@@ -348,8 +368,8 @@ def test_gpu_protocol_attest_fails_closed_without_admin_key(tmp_path, monkeypatc
 
     assert response.status_code == 503
     assert response.get_json() == {"error": "RC_ADMIN_KEY not configured"}
-    nodes = client.get("/gpu/nodes").get_json()
-    assert nodes["count"] == 0
+    # with RC_ADMIN_KEY unset, the admin-gated /gpu/nodes also fails closed (#6557)
+    assert client.get("/gpu/nodes").status_code == 503
 
 
 def test_gpu_protocol_attest_accepts_api_key_header(tmp_path, monkeypatch):
@@ -369,7 +389,8 @@ def test_gpu_protocol_attest_accepts_api_key_header(tmp_path, monkeypatch):
 
     assert response.status_code == 200
     assert response.get_json()["status"] == "attested"
-    nodes = client.get("/gpu/nodes").get_json()
+    # /gpu/nodes' _admin_key_required (#6557) checks X-Admin-Key only (attest also takes X-API-Key)
+    nodes = client.get("/gpu/nodes", headers={"X-Admin-Key": "test-admin-key"}).get_json()
     assert nodes["count"] == 1
 
 

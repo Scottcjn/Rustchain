@@ -25,6 +25,7 @@
 | [Chinese Documentation](./zh-CN/README.md) | Community-maintained Chinese documentation entry point |
 | [Chinese API Quick Reference](./zh-CN/API.md) | Chinese quick reference for common public API queries |
 | [Japanese Quickstart (日本語)](./ja/README.md) | Community-maintained Japanese quickstart guide |
+| [Korean Documentation (한국어)](./ko-KR/README.md) | Community-maintained Korean documentation entry point |
 
 ## Live Network
 

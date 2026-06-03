@@ -134,8 +134,10 @@ tail -f ~/.rustchain/miner.log             # 查看日誌
 ```bash
 git clone https://github.com/Scottcjn/Rustchain.git
 cd Rustchain
-pip install -r requirements.txt
-python3 rustchain_universal_miner.py --wallet 你的錢包名稱
+bash install-miner.sh --wallet 你的錢包名稱
+
+# 如需先驗證環境，可執行：
+bash install-miner.sh --dry-run --wallet 你的錢包名稱
 ```
 
 ## 💰 古董倍率
@@ -284,10 +286,13 @@ open https://rustchain.org/explorer
 
 ```
 Rustchain/
-├── rustchain_universal_miner.py    # 主礦工程式（所有平台）
-├── rustchain_v2_integrated.py      # 完整節點實作
-├── fingerprint_checks.py           # 硬體驗證
-├── install.sh                      # 一行安裝程式
+├── install-miner.sh                # 一行礦工安裝程式
+├── miners/linux/
+│   ├── rustchain_linux_miner.py    # Linux 礦工入口
+│   └── fingerprint_checks.py       # 礦工硬體驗證
+├── node/
+│   ├── rustchain_v2_integrated_v2.2.1_rip200.py  # 完整節點實作
+│   └── fingerprint_checks.py       # 節點硬體驗證
 ├── docs/
 │   ├── RustChain_Whitepaper_*.pdf  # 技術白皮書
 │   └── chain_architecture.md       # 架構文件

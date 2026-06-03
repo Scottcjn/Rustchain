@@ -30,6 +30,7 @@ import secrets
 import sqlite3
 import time
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from functools import wraps
 
@@ -152,17 +153,41 @@ def money_view(row):
     return data
 
 
+# SQLite cannot parameterize identifiers (PRAGMA/ALTER/UPDATE take a literal
+# table name), so every table name interpolated into the DDL below MUST be
+# validated against this allowlist first — never against caller-supplied text.
+_KNOWN_TABLES = frozenset({"orders", "trades", "rate_limits"})
+# Integer precision columns we add (also literal, never caller-supplied).
+_PRECISION_COLUMNS = ("amount_micro_rtc", "price_per_rtc_nano_quote", "total_quote_nano")
+
+
+def _require_known_table(table_name):
+    """Guard before building DDL: refuse any table name not on the allowlist."""
+    if table_name not in _KNOWN_TABLES:
+        raise ValueError(f"refusing to build SQL for unknown table {table_name!r}")
+    return table_name
+
+
 def migrate_precision_columns(cursor, table_name):
+    # Validate before interpolation so only known-safe identifiers reach the SQL.
+    _require_known_table(table_name)
+
     columns = {row[1] for row in cursor.execute(f"PRAGMA table_info({table_name})")}
-    if "amount_micro_rtc" not in columns:
-        cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN amount_micro_rtc INTEGER")
-    if "price_per_rtc_nano_quote" not in columns:
-        cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN price_per_rtc_nano_quote INTEGER")
-    if "total_quote_nano" not in columns:
-        cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN total_quote_nano INTEGER")
+    for col in _PRECISION_COLUMNS:
+        if col in columns:
+            continue
+        try:
+            cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {col} INTEGER")
+        except sqlite3.OperationalError as exc:
+            # Idempotent under concurrent migrations: another worker may have
+            # added the column between the PRAGMA read above and this ALTER.
+            if "duplicate column name" not in str(exc).lower():
+                raise
 
     refreshed = {row[1] for row in cursor.execute(f"PRAGMA table_info({table_name})")}
     if {"amount_rtc", "price_per_rtc", "total_quote"}.issubset(refreshed):
+        # COALESCE keeps the backfill idempotent: re-runs converge to the same
+        # values, so concurrent migrations are safe without a write lock.
         cursor.execute(f"""
             UPDATE {table_name}
             SET amount_micro_rtc = COALESCE(amount_micro_rtc, CAST(ROUND(amount_rtc * ?) AS INTEGER)),
@@ -172,6 +197,7 @@ def migrate_precision_columns(cursor, table_name):
 
 
 def table_columns(cursor, table_name):
+    _require_known_table(table_name)
     return {row[1] for row in cursor.execute(f"PRAGMA table_info({table_name})")}
 
 
@@ -193,6 +219,38 @@ def is_valid_wallet_id(wallet_id):
     """Validate a wallet/miner identifier before using it as a transfer target."""
     wallet_id = str(wallet_id or "").strip()
     return bool(_MINER_ID_RE.fullmatch(wallet_id))
+
+
+def _admin_transport_block_reason():
+    """Return a reason string if it is UNSAFE to send the admin key to the
+    configured node, else None.
+
+    Fail-closed: the RC_ADMIN_KEY must never leave over plaintext (http://) or
+    to a non-local host with TLS verification disabled (MITM credential theft).
+    Loopback hosts and an explicit OTC_ALLOW_INSECURE_ADMIN opt-out are allowed
+    for local development.
+    """
+    if os.environ.get("OTC_ALLOW_INSECURE_ADMIN", "").strip().lower() in ("1", "true", "yes"):
+        return None  # explicit operator opt-out (dev only)
+
+    parsed = urlparse(RUSTCHAIN_NODE)
+    host = (parsed.hostname or "").lower()
+    if host in ("localhost", "127.0.0.1", "::1"):
+        return None  # loopback dev is acceptable
+
+    if parsed.scheme != "https":
+        return (
+            f"insecure scheme '{parsed.scheme or 'none'}' for admin endpoint "
+            f"{RUSTCHAIN_NODE!r}: set RUSTCHAIN_NODE to https:// "
+            f"(or OTC_ALLOW_INSECURE_ADMIN=1 for local dev)"
+        )
+    if TLS_VERIFY is False:
+        return (
+            "TLS verification disabled (RUSTCHAIN_TLS_VERIFY=false) for a "
+            "non-local admin endpoint — MITM credential exposure; pin "
+            "RUSTCHAIN_CA_BUNDLE instead of disabling verification"
+        )
+    return None
 
 
 def send_bridge_alert(level, message, fields):
@@ -230,6 +288,19 @@ def rtc_transfer_from_worker(recipient_wallet, amount_rtc, order_id):
     accepted into pending pool), or ``{"ok": False, "error": str, "details": {...}}``
     on terminal failure after retries.
     """
+    # Fail-closed BEFORE sending the admin key: never leak RC_ADMIN_KEY over an
+    # insecure transport. Refusing strands funds in otc_bridge_worker (alerted +
+    # recoverable) — strictly safer than exfiltrating the admin credential.
+    block_reason = _admin_transport_block_reason()
+    if block_reason:
+        log.error(f"OTC payout blocked for {order_id}: {block_reason}")
+        send_bridge_alert(
+            "critical",
+            "OTC payout blocked: insecure admin transport",
+            {"order_id": order_id, "node": RUSTCHAIN_NODE, "reason": block_reason},
+        )
+        return {"ok": False, "error": f"insecure_admin_transport: {block_reason}", "details": {}}
+
     last_error = "unknown payout error"
     last_payload = {}
     retry_delays = (0, 1, 2, 4)
@@ -247,6 +318,12 @@ def rtc_transfer_from_worker(recipient_wallet, amount_rtc, order_id):
                     "to_miner": recipient_wallet,
                     "amount_rtc": amount_rtc,
                     "reason": f"otc_payout:{order_id}",
+                    # Idempotency: stable, unique-per-payout key so retries (and
+                    # any double-confirm) dedup server-side in wallet_transfer_v2
+                    # instead of paying twice. Derived from the immutable
+                    # order_id (one worker payout per order), and kept equal to
+                    # `reason` so the server's reason-consistency check passes.
+                    "idempotency_key": f"otc_payout:{order_id}",
                 },
                 verify=TLS_VERIFY, timeout=15
             )
@@ -589,22 +666,6 @@ def rtc_create_escrow_job(poster_wallet, amount_rtc, title, description):
     except Exception:
         log_internal_error("Escrow job creation")
         return {"ok": False, "error": GENERIC_INTERNAL_ERROR}
-
-
-def rtc_release_escrow(job_id, poster_wallet):
-    """Release escrow -- accept delivery to pay the taker."""
-    try:
-        # First, claim the job as the taker (OTC bridge acts as intermediary)
-        # Then deliver and accept to release funds
-        r = requests.post(
-            f"{RUSTCHAIN_NODE}/agent/jobs/{job_id}/accept",
-            json={"poster_wallet": poster_wallet},
-            verify=TLS_VERIFY, timeout=15
-        )
-        return r.ok
-    except Exception as e:
-        log.error(f"Escrow release failed: {e}")
-        return False
 
 
 def rtc_cancel_escrow(job_id, poster_wallet):
@@ -1315,10 +1376,14 @@ def list_trades():
     limit, error = positive_int_arg("limit", 50, max_value=200)
     if error:
         return jsonify({"error": error}), 400
+    # Fail closed, not open: an unsupported (e.g. typo'd) pair must NOT fall
+    # through to the unfiltered full-history feed. Mirrors /api/orderbook.
+    if pair and pair not in SUPPORTED_PAIRS:
+        return jsonify({"error": "unsupported pair"}), 400
 
     conn = get_db()
     try:
-        if pair and pair in SUPPORTED_PAIRS:
+        if pair:
             trades = conn.execute(
                 "SELECT * FROM trades WHERE pair = ? ORDER BY completed_at DESC LIMIT ?",
                 (pair, limit)
@@ -1499,7 +1564,15 @@ def static_files(path):
 # Main
 # ---------------------------------------------------------------------------
 
+# Initialize the schema at import time so the app works under WSGI servers.
+# The Dockerfile runs `gunicorn otc_bridge:app`, where __name__ != "__main__"
+# and the block below never executes — without this, a fresh container has no
+# tables and 500s on first request. init_db() is idempotent (CREATE TABLE IF
+# NOT EXISTS + idempotent precision-column migration), so it is safe on every
+# import and across concurrent gunicorn workers.
+init_db()
+
+
 if __name__ == "__main__":
-    init_db()
     port = int(os.environ.get("OTC_PORT", 5580))
     app.run(host="0.0.0.0", port=port, debug=False)

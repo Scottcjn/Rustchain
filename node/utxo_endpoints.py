@@ -157,6 +157,17 @@ def _decimal_to_account_i64(amount: Decimal, field_name: str) -> int:
     return int(integral)
 
 
+def _nrtc_to_account_i64(amount_nrtc: int, field_name: str) -> int:
+    """Convert nanoRTC to legacy account units without dropping precision."""
+    scale = UNIT // ACCOUNT_UNIT
+    if amount_nrtc % scale != 0:
+        raise ValueError(
+            f"{field_name} cannot be mirrored by dual-write account model "
+            "(max 6 decimal places)"
+        )
+    return amount_nrtc // scale
+
+
 utxo_bp = Blueprint('utxo', __name__, url_prefix='/utxo')
 
 # These get set by register_utxo_blueprint() from the main server
@@ -204,6 +215,43 @@ def _missing_transfer_nonce(nonce) -> bool:
         or not isinstance(nonce, (int, str))
         or (isinstance(nonce, str) and nonce.strip() == '')
     )
+
+
+def _parse_transfer_nonce(nonce_raw):
+    if _missing_transfer_nonce(nonce_raw):
+        raise ValueError('nonce is required')
+
+    if isinstance(nonce_raw, int):
+        nonce_int = nonce_raw
+    elif isinstance(nonce_raw, str):
+        nonce_text = nonce_raw.strip()
+        if not nonce_text.isdigit():
+            raise ValueError('nonce must be an integer greater than or equal to 0')
+        nonce_int = int(nonce_text)
+    else:
+        raise ValueError('nonce must be an integer greater than or equal to 0')
+
+    if nonce_int < 0:
+        raise ValueError('nonce must be an integer greater than or equal to 0')
+
+    return str(nonce_int), nonce_int
+
+
+def _nonce_signature_forms(nonce_raw, nonce_int):
+    """
+    Return candidate nonce representations for signature verification.
+
+    Older clients could sign the raw string form that the endpoint previously
+    accepted, while newer clients may already sign the normalized integer.
+    """
+    forms = [nonce_int]
+    if isinstance(nonce_raw, str):
+        nonce_text = nonce_raw.strip()
+        if nonce_text and nonce_text != str(nonce_int):
+            forms.append(nonce_text)
+        elif nonce_text == str(nonce_int):
+            forms.append(nonce_text)
+    return forms
 
 
 def _transfer_string_field(data: dict, field: str):
@@ -469,13 +517,10 @@ def utxo_transfer():
         _ensure_signed_float_preserves_nrtc(amount_rtc, amount_nrtc, 'amount_rtc')
         _ensure_signed_float_preserves_nrtc(fee_rtc, fee_nrtc, 'fee_rtc')
         amount_i64_for_dual_write = None
-        fee_i64_for_dual_write = None
+        effective_fee_i64_for_dual_write = None
         if _dual_write:
             amount_i64_for_dual_write = _decimal_to_account_i64(
                 amount_rtc, 'amount_rtc'
-            )
-            fee_i64_for_dual_write = _decimal_to_account_i64(
-                fee_rtc, 'fee_rtc'
             )
     except ValueError as e:
         return jsonify({'error': f'Invalid amount: {e}'}), 400
@@ -507,6 +552,14 @@ def utxo_transfer():
             'got': from_address,
         }), 400
 
+    try:
+        nonce, nonce_int = _parse_transfer_nonce(nonce)
+    except ValueError as e:
+        return jsonify({
+            'error': str(e),
+            'code': 'INVALID_NONCE',
+        }), 400
+
     # Reconstruct signed message.
     # FIX(#2202): Include fee in signed data to prevent MITM fee manipulation.
     # Backward-compatible: try new format (with fee) first, fall back to legacy
@@ -518,28 +571,38 @@ def utxo_transfer():
     # keep the signed-payload bytes byte-identical to what the wallet computed.
     amount_for_sig = float(amount_rtc)
     fee_for_sig = float(fee_rtc)
-    tx_data_v2 = {
-        'from': from_address,
-        'to': to_address,
-        'amount': amount_for_sig,
-        'fee': fee_for_sig,
-        'memo': memo,
-        'nonce': nonce,
-    }
-    message_v2 = json.dumps(tx_data_v2, sort_keys=True, separators=(',', ':')).encode()
+    signature_verified = False
+    used_legacy_signature = False
+    for nonce_for_sig in _nonce_signature_forms(data.get('nonce'), nonce_int):
+        tx_data_v2 = {
+            'from': from_address,
+            'to': to_address,
+            'amount': amount_for_sig,
+            'fee': fee_for_sig,
+            'memo': memo,
+            'nonce': nonce_for_sig,
+        }
+        message_v2 = json.dumps(tx_data_v2, sort_keys=True, separators=(',', ':')).encode()
+        if _verify_sig_fn(public_key, message_v2, signature):
+            signature_verified = True
+            break
 
-    tx_data_legacy = {
-        'from': from_address,
-        'to': to_address,
-        'amount': amount_for_sig,
-        'memo': memo,
-        'nonce': nonce,
-    }
-    message_legacy = json.dumps(tx_data_legacy, sort_keys=True, separators=(',', ':')).encode()
+        tx_data_legacy = {
+            'from': from_address,
+            'to': to_address,
+            'amount': amount_for_sig,
+            'memo': memo,
+            'nonce': nonce_for_sig,
+        }
+        message_legacy = json.dumps(tx_data_legacy, sort_keys=True, separators=(',', ':')).encode()
+        if _verify_sig_fn(public_key, message_legacy, signature):
+            signature_verified = True
+            used_legacy_signature = True
+            break
 
-    if _verify_sig_fn(public_key, message_v2, signature):
-        pass  # New client — fee is signed, MITM-resistant
-    elif _verify_sig_fn(public_key, message_legacy, signature):
+    if not signature_verified:
+        return jsonify({'error': 'Invalid Ed25519 signature'}), 401
+    if used_legacy_signature:
         if fee_nrtc != 0:
             return jsonify({
                 'error': 'Legacy signature format cannot authorize nonzero fee',
@@ -555,8 +618,6 @@ def utxo_transfer():
             "Upgrade client to include fee in signed message.",
             from_address[:20],
         )
-    else:
-        return jsonify({'error': 'Invalid Ed25519 signature'}), 401
 
     # --- UTXO transaction ---------------------------------------------------
 
@@ -589,6 +650,14 @@ def utxo_transfer():
         return jsonify({'error': 'UTXO coin selection underfunded transaction'}), 500
     effective_fee_nrtc = fee_nrtc + absorbed_fee_nrtc
 
+    if _dual_write:
+        try:
+            effective_fee_i64_for_dual_write = _nrtc_to_account_i64(
+                effective_fee_nrtc, 'effective_fee_nrtc'
+            )
+        except ValueError as e:
+            return jsonify({'error': f'Invalid amount: {e}'}), 400
+
     # Build and apply UTXO transaction
     block_height = _current_slot_fn()
     tx = {
@@ -611,6 +680,21 @@ def utxo_transfer():
                 'error': 'Nonce already used (replay attack detected)',
                 'code': 'REPLAY_DETECTED',
                 'nonce': str(nonce),
+            }), 400
+        previous_nonce = conn.execute(
+            """
+            SELECT MAX(CAST(nonce AS INTEGER)) FROM transfer_nonces
+            WHERE from_address = ? AND nonce != ?
+            """,
+            (from_address, nonce),
+        ).fetchone()[0]
+        if previous_nonce is not None and int(previous_nonce) >= nonce_int:
+            conn.rollback()
+            return jsonify({
+                'error': 'Signed transfer nonce must increase for this wallet',
+                'code': 'OUT_OF_ORDER_NONCE',
+                'nonce': nonce,
+                'latest_nonce': int(previous_nonce),
             }), 400
 
         ok = _utxo_db.apply_transaction(tx, block_height, conn=conn)
@@ -635,7 +719,7 @@ def utxo_transfer():
             conn = sqlite3.connect(_db_path)
             c = conn.cursor()
             amount_i64 = amount_i64_for_dual_write
-            fee_i64 = fee_i64_for_dual_write
+            fee_i64 = effective_fee_i64_for_dual_write
             debit_i64 = amount_i64 + fee_i64
 
             # Re-check sender shadow-balance before debit (security: prevent

@@ -178,8 +178,10 @@ tail -f ~/.rustchain/miner.log             # 查看日志
 ```bash
 git clone https://github.com/Scottcjn/Rustchain.git
 cd Rustchain
-pip install -r requirements.txt
-python3 rustchain_universal_miner.py --wallet YOUR_WALLET_NAME
+bash install-miner.sh --wallet YOUR_WALLET_NAME
+
+# 如需先验证环境，可运行：
+bash install-miner.sh --dry-run --wallet YOUR_WALLET_NAME
 ```
 
 ## 💰 古董倍数
@@ -328,10 +330,13 @@ open https://rustchain.org/explorer
 
 ```
 Rustchain/
-├── rustchain_universal_miner.py    # 主矿工（所有平台）
-├── rustchain_v2_integrated.py      # 全节点实现
-├── fingerprint_checks.py           # 硬件验证
-├── install.sh                      # 一键安装器
+├── install-miner.sh                # 一键矿工安装器
+├── miners/linux/
+│   ├── rustchain_linux_miner.py    # Linux 矿工入口
+│   └── fingerprint_checks.py       # 矿工硬件验证
+├── node/
+│   ├── rustchain_v2_integrated_v2.2.1_rip200.py  # 全节点实现
+│   └── fingerprint_checks.py       # 节点硬件验证
 ├── docs/
 │   ├── RustChain_Whitepaper_*.pdf  # 技术白皮书
 │   └── chain_architecture.md       # 架构文档

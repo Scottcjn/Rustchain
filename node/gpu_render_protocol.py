@@ -338,11 +338,17 @@ class GPURenderProtocol:
                 return auth_error
 
             now = int(time.time())
-            conn.execute(
-                "UPDATE render_escrow SET status='released', released_at=? WHERE job_id=?",
+            # Atomic transition guarded on status='locked' so a concurrent
+            # release/refund cannot both win (TOCTOU between the read above and
+            # this write). rowcount==0 means we lost the race.
+            cur = conn.execute(
+                "UPDATE render_escrow SET status='released', released_at=? "
+                "WHERE job_id=? AND status='locked'",
                 (now, job_id),
             )
             conn.commit()
+            if cur.rowcount != 1:
+                return {"error": "escrow no longer locked (concurrent release/refund)"}
             return {
                 "status": "released",
                 "job_id": job_id,
@@ -374,11 +380,14 @@ class GPURenderProtocol:
                 return auth_error
 
             now = int(time.time())
-            conn.execute(
-                "UPDATE render_escrow SET status='refunded', released_at=? WHERE job_id=?",
+            cur = conn.execute(
+                "UPDATE render_escrow SET status='refunded', released_at=? "
+                "WHERE job_id=? AND status='locked'",
                 (now, job_id),
             )
             conn.commit()
+            if cur.rowcount != 1:
+                return {"error": "escrow no longer locked (concurrent release/refund)"}
             return {
                 "status": "refunded",
                 "job_id": job_id,

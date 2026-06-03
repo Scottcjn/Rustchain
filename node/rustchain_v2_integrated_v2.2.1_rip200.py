@@ -17,6 +17,11 @@ try:
     from payout_preflight import validate_wallet_transfer_admin, validate_wallet_transfer_signed
 except ImportError:
     from node.payout_preflight import validate_wallet_transfer_admin, validate_wallet_transfer_signed
+try:
+    # Deployment compatibility: production may run this file as a single script.
+    from db_helpers import fetch_page
+except ImportError:
+    from node.db_helpers import fetch_page
 
 # Hardware Binding v2.0 - Anti-Spoof with Entropy Validation
 try:
@@ -44,9 +49,14 @@ except Exception as e:
 # UTXO Layer (Phase 1 — dual-write alongside account model)
 UTXO_DUAL_WRITE = os.environ.get("UTXO_DUAL_WRITE", "0") == "1"
 try:
-    from utxo_db import UtxoDB, MAX_OUTPUTS as UTXO_MAX_OUTPUTS
+    from utxo_db import (
+        DUST_THRESHOLD as UTXO_DUST_THRESHOLD,
+        MAX_OUTPUTS as UTXO_MAX_OUTPUTS,
+        UtxoDB,
+    )
     HAVE_UTXO = True
 except ImportError:
+    UTXO_DUST_THRESHOLD = 1_000
     UTXO_MAX_OUTPUTS = 100
     HAVE_UTXO = False
     if UTXO_DUAL_WRITE:
@@ -1393,6 +1403,92 @@ if HAVE_BRIDGE:
     except Exception as e:
         print(f"[RIP-0305 Track C] Failed to register bridge endpoints: {e}")
 
+# RIP-302 Agent Economy endpoints used by the explorer dashboard
+try:
+    if REPO_ROOT not in sys.path:
+        sys.path.insert(0, REPO_ROOT)
+    from rip302_agent_economy import register_agent_economy
+
+    register_agent_economy(app, DB_PATH)
+    print("[RIP-302] Agent Economy endpoints registered")
+except ImportError as e:
+    print(f"[RIP-302] Agent Economy module not available: {e}")
+except Exception as e:
+    print(f"[RIP-302] Failed to register Agent Economy endpoints: {e}")
+
+# Ergo anchor transparency endpoints used by explorer/navigation links.
+_ANCHOR_ROUTES_REGISTERED = False
+try:
+    from rustchain_ergo_anchor import AnchorService, create_anchor_api_routes
+
+    create_anchor_api_routes(app, AnchorService(DB_PATH))
+    _ANCHOR_ROUTES_REGISTERED = True
+    print("[ANCHOR] Ergo anchor read-only endpoints registered")
+except ImportError as e:
+    print(f"[ANCHOR] Ergo anchor module not available: {e}")
+except Exception as e:
+    print(f"[ANCHOR] Failed to register Ergo anchor endpoints: {e}")
+
+
+if not _ANCHOR_ROUTES_REGISTERED:
+    def _fallback_anchor_int_arg(name, default, minimum, maximum=None):
+        raw_value = request.args.get(name)
+        if raw_value is None or raw_value == "":
+            return default, None
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError):
+            return None, f"{name}_must_be_integer"
+        if value < minimum:
+            return None, f"{name}_must_be_at_least_{minimum}"
+        if maximum is not None:
+            value = min(value, maximum)
+        return value, None
+
+    def _ensure_fallback_anchor_table(cursor):
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS ergo_anchors (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                rustchain_height INTEGER NOT NULL,
+                rustchain_hash TEXT NOT NULL,
+                commitment_hash TEXT NOT NULL,
+                ergo_tx_id TEXT NOT NULL,
+                ergo_height INTEGER,
+                confirmations INTEGER DEFAULT 0,
+                status TEXT DEFAULT 'pending',
+                created_at INTEGER NOT NULL
+            )
+        """)
+
+    @app.route("/anchor/list", methods=["GET"])
+    def fallback_anchor_list():
+        limit, error = _fallback_anchor_int_arg("limit", 50, 1, 100)
+        if error:
+            return jsonify({"error": error}), 400
+        offset, error = _fallback_anchor_int_arg("offset", 0, 0, 10_000)
+        if error:
+            return jsonify({"error": error}), 400
+
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            _ensure_fallback_anchor_table(cursor)
+            rows = cursor.execute("""
+                SELECT * FROM ergo_anchors
+                ORDER BY rustchain_height DESC
+                LIMIT ? OFFSET ?
+            """, (limit, offset)).fetchall()
+
+        return jsonify({
+            "count": len(rows),
+            "anchors": [dict(row) for row in rows],
+        })
+
+
+@app.route("/anchors", methods=["GET"])
+def anchors_alias():
+    return redirect("/anchor/list", code=302)
+
 # BoTTube RSS/Atom Feed endpoints (Issue #759)
 if HAVE_BOTTUBE_FEED:
     try:
@@ -1424,7 +1520,38 @@ def init_db():
         c.execute("CREATE TABLE IF NOT EXISTS tickets (ticket_id TEXT PRIMARY KEY, expires_at INTEGER, commitment TEXT)")
 
         # Epoch tables
-        c.execute("CREATE TABLE IF NOT EXISTS epoch_state (epoch INTEGER PRIMARY KEY, accepted_blocks INTEGER DEFAULT 0, finalized INTEGER DEFAULT 0)")
+        c.execute("CREATE TABLE IF NOT EXISTS epoch_state (epoch INTEGER PRIMARY KEY, accepted_blocks INTEGER DEFAULT 0, finalized INTEGER DEFAULT 0, settled INTEGER DEFAULT 0, settled_ts INTEGER)")
+        # Idempotent migration: settlement paths require settled/settled_ts; add
+        # them on pre-existing epoch_state tables so the replay guard cannot be
+        # silently disabled by a missing column.
+        _epoch_state_cols = {row[1] for row in c.execute("PRAGMA table_info(epoch_state)").fetchall()}
+        if "settled" not in _epoch_state_cols:
+            c.execute("ALTER TABLE epoch_state ADD COLUMN settled INTEGER DEFAULT 0")
+        if "settled_ts" not in _epoch_state_cols:
+            c.execute("ALTER TABLE epoch_state ADD COLUMN settled_ts INTEGER")
+        # Upgrade-safety backfill: any epoch already rewarded via the
+        # epoch_rewards settlement path must be marked settled so the atomic
+        # finalize_epoch guard cannot re-claim and re-credit it after upgrade.
+        try:
+            # (1) Insert a settled row for any rewarded epoch that has NO
+            # epoch_state row at all — otherwise finalize_epoch would INSERT it
+            # with settled=0 and credit the epoch a second time.
+            c.execute(
+                "INSERT OR IGNORE INTO epoch_state (epoch, settled, settled_ts) "
+                "SELECT DISTINCT epoch, 1, ? FROM epoch_rewards",
+                (int(time.time()),)
+            )
+            # (2) Mark any existing-but-unsettled rewarded epoch as settled.
+            c.execute(
+                "UPDATE epoch_state SET settled = 1 "
+                "WHERE settled = 0 AND epoch IN (SELECT DISTINCT epoch FROM epoch_rewards)"
+            )
+        except sqlite3.OperationalError as _bf_err:
+            # Only tolerate the expected absent optional epoch_rewards table;
+            # never silently skip the monetary backfill for any other error.
+            _bf_msg = str(_bf_err).lower()
+            if not ("no such table" in _bf_msg and "epoch_rewards" in _bf_msg):
+                raise
         c.execute("CREATE TABLE IF NOT EXISTS epoch_enroll (epoch INTEGER, miner_pk TEXT, weight INTEGER, PRIMARY KEY (epoch, miner_pk))")
         ensure_epoch_enroll_integer_weights(c)
         c.execute("CREATE TABLE IF NOT EXISTS balances (miner_pk TEXT PRIMARY KEY, balance_rtc REAL DEFAULT 0)")
@@ -3623,10 +3750,32 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
             print(f"[SECURITY] No valid miners for epoch {epoch} after RIP-309 filtering")
             return
 
-        # ATOMIC TRANSACTION: Wrap all updates in explicit transaction
+        # ATOMIC TRANSACTION: claim the epoch first, then credit — all under an
+        # IMMEDIATE write lock so two concurrent finalize_epoch calls cannot both
+        # credit balances (double-settlement / reward inflation past the cap).
         try:
-            c.execute("BEGIN TRANSACTION")
+            c.execute("BEGIN IMMEDIATE")
+
+            # Ensure the row exists, then atomically CLAIM settlement. If the
+            # claim affects 0 rows another settlement already won this epoch, so
+            # abort WITHOUT crediting. This (not the autocommit pre-check above)
+            # is the authoritative replay guard.
+            c.execute(
+                "INSERT INTO epoch_state (epoch, settled) VALUES (?, 0) "
+                "ON CONFLICT(epoch) DO NOTHING",
+                (epoch,)
+            )
+            claim = c.execute(
+                "UPDATE epoch_state SET settled = 1, settled_ts = ? WHERE epoch = ? AND settled = 0",
+                (int(time.time()), epoch)
+            )
+            if claim.rowcount != 1:
+                c.execute("ROLLBACK")
+                print(f"[SECURITY] Epoch {epoch} already settled (claim lost) — skipping to prevent double-reward")
+                return
+
             utxo_reward_outputs = []
+            skipped_utxo_dust_nrtc = 0
 
             # Distribute rewards with precision
             for pk, weight in miners:
@@ -3645,10 +3794,17 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
                 )
 
                 if UTXO_DUAL_WRITE:
-                    utxo_reward_outputs.append({
-                        "address": pk,
-                        "value_nrtc": amount_nrtc,
-                    })
+                    if amount_nrtc >= UTXO_DUST_THRESHOLD:
+                        utxo_reward_outputs.append({
+                            "address": pk,
+                            "value_nrtc": amount_nrtc,
+                        })
+                    else:
+                        # The UTXO layer intentionally rejects sub-dust boxes.
+                        # Keep the account-model reward settlement alive and
+                        # skip the unspendable UTXO output until a carry-forward
+                        # accumulator exists for tiny shares.
+                        skipped_utxo_dust_nrtc += max(0, amount_nrtc)
                 # Update metrics with decimal value for accuracy
                 balance_gauge.labels(miner_pk=pk).set(float(amount_decimal))
 
@@ -3681,14 +3837,14 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
                             "UTXO reward settlement failed for "
                             f"batch {batch_index + 1}/{len(reward_batches)}"
                         )
+                if skipped_utxo_dust_nrtc:
+                    print(
+                        "[UTXO] Skipped sub-dust epoch reward outputs totaling "
+                        f"{skipped_utxo_dust_nrtc} nRTC"
+                    )
 
-            # Mark epoch as settled - use UPDATE with WHERE settled=0 to prevent race
-            result = c.execute(
-                "UPDATE epoch_state SET settled = 1, settled_ts = ? WHERE epoch = ? AND settled = 0",
-                (int(time.time()), epoch)
-            )
-
-            # Commit transaction atomically
+            # Settlement was already CLAIMED atomically at the top of this
+            # transaction (settled=1). Commit the credits together with it.
             c.execute("COMMIT")
             print(f"[EPOCH] Finalized epoch {epoch} with {len(miners)} miners, total_weight={total_weight}")
 
@@ -4918,7 +5074,10 @@ def ingest_signed_header():
         
         if blocks_in_epoch >= EPOCH_SLOTS:
             # Check if already settled
-            settled_row = db.execute("SELECT 1 FROM epoch_rewards WHERE epoch=?", (current_epoch,)).fetchone()
+            # finalize_epoch records settlement in epoch_state.settled (it never
+            # writes epoch_rewards), so the guard must consult that flag — else
+            # it re-invokes finalize_epoch on every subsequent block in the epoch.
+            settled_row = db.execute("SELECT 1 FROM epoch_state WHERE epoch=? AND settled=1", (current_epoch,)).fetchone()
             if not settled_row:
                 # Call finalize_epoch to distribute rewards
                 try:
@@ -5195,8 +5354,8 @@ def admin_wallet_review_holds():
         if status:
             sql += " WHERE status = ?"
             params.append(status)
-        sql += " ORDER BY created_at DESC LIMIT 200"
-        rows = conn.execute(sql, params).fetchall()
+        sql += " ORDER BY created_at DESC"
+        rows = fetch_page(conn, sql, params, limit=200, max_limit=200)
     return jsonify({
         "ok": True,
         "count": len(rows),
@@ -5445,8 +5604,8 @@ def admin_wallet_review_holds_ui():
         if active_status:
             sql += " WHERE status = ?"
             params.append(active_status)
-        sql += " ORDER BY created_at DESC LIMIT 200"
-        rows = conn.execute(sql, params).fetchall()
+        sql += " ORDER BY created_at DESC"
+        rows = fetch_page(conn, sql, params, limit=200, max_limit=200)
 
     entries = [
         {
@@ -5934,14 +6093,13 @@ def withdrawal_history(miner_pk):
     limit = request.args.get('limit', 50, type=int)
 
     with sqlite3.connect(DB_PATH) as c:
-        rows = c.execute("""
+        rows = fetch_page(c, """
             SELECT withdrawal_id, amount, fee, destination, status,
                    created_at, processed_at, tx_hash
             FROM withdrawals
             WHERE miner_pk = ?
             ORDER BY created_at DESC
-            LIMIT ?
-        """, (miner_pk, limit)).fetchall()
+        """, (miner_pk,), limit=max(1, min(limit, 500)), max_limit=500)
 
         withdrawals = []
         for row in rows:
@@ -6112,7 +6270,8 @@ def gov_rotate_approve():
             sig = bytes.fromhex(sig_hex.replace("0x",""))
             nacl.signing.VerifyKey(pk).verify(msg, sig)
         except Exception as e:
-            return jsonify({"ok": False, "reason": "bad_signature", "error": str(e)}), 400
+            print(f"[ERROR] signature verify failed: {e!r}")
+            return jsonify({"ok": False, "reason": "bad_signature", "error": "verification_failed"}), 400
 
         db.execute("""INSERT OR IGNORE INTO gov_rotation_approvals
                       (epoch_effective, signer_id, sig_hex, approved_ts)
@@ -6316,16 +6475,18 @@ def governance_proposals():
 
         total = c.execute("SELECT COUNT(*) FROM governance_proposals").fetchone()[0]
 
-        rows = c.execute(
+        rows = fetch_page(
+            c,
             """
             SELECT id, proposer_wallet, title, description, created_at, activated_at, ends_at,
                    status, yes_weight, no_weight
             FROM governance_proposals
             ORDER BY id DESC
-            LIMIT ? OFFSET ?
             """,
-            (limit, offset),
-        ).fetchall()
+            limit=limit,
+            offset=offset,
+            max_limit=_PROPOSALS_MAX_LIMIT,
+        )
 
         proposals = []
         for row in rows:
@@ -6391,16 +6552,19 @@ def governance_proposal_detail(proposal_id: int):
             (proposal_id,),
         ).fetchone()[0]
 
-        votes = c.execute(
+        votes = fetch_page(
+            c,
             """
             SELECT voter_wallet, vote, weight, multiplier, base_balance_rtc, created_at
             FROM governance_votes
             WHERE proposal_id = ?
             ORDER BY created_at DESC
-            LIMIT ? OFFSET ?
             """,
-            (proposal_id, votes_limit, votes_offset),
-        ).fetchall()
+            (proposal_id,),
+            limit=votes_limit,
+            offset=votes_offset,
+            max_limit=_VOTES_MAX_LIMIT,
+        )
         conn.commit()
 
     yes_weight = float(row["yes_weight"] or 0.0)
@@ -6431,6 +6595,7 @@ def governance_proposal_detail(proposal_id: int):
 
 
 @app.route('/governance/vote', methods=['POST'])
+@admin_required
 def governance_vote():
     data = request.get_json(silent=True)
     if data is None:
@@ -6919,15 +7084,14 @@ def api_miners():
         total_count = c.execute("SELECT COUNT(*) FROM miner_attest_recent WHERE ts_ok > ?", (now - 3600,)).fetchone()[0]
         
         # Get paginated miners with their first attestation time (optimized subquery)
-        rows = c.execute("""
+        rows = fetch_page(c, """
             SELECT 
                 r.miner, r.ts_ok, r.device_family, r.device_arch, r.entropy_score,
                 (SELECT MIN(h.ts_ok) FROM miner_attest_history h WHERE h.miner = r.miner) as first_ts
             FROM miner_attest_recent r
             WHERE r.ts_ok > ?
             ORDER BY r.ts_ok DESC
-            LIMIT ? OFFSET ?
-        """, (now - 3600, limit, offset)).fetchall()
+        """, (now - 3600,), limit=limit, offset=offset, max_limit=1000)
         
         miners = []
         for r in rows:
@@ -7337,7 +7501,8 @@ def api_state_diff():
         for optional in ("state_root", "body_json", "data"):
             if optional in columns:
                 select_columns.append(optional)
-        rows = db.execute(
+        rows = fetch_page(
+            db,
             f"""
             SELECT {", ".join(select_columns)}
             FROM blocks
@@ -7345,7 +7510,9 @@ def api_state_diff():
             ORDER BY height ASC
             """,
             (start_height, end_height),
-        ).fetchall()
+            limit=(end_height - start_height + 1),
+            max_limit=STATE_DIFF_MAX_BLOCK_RANGE + 1,
+        )
 
     found_heights = {int(row["height"]) for row in rows}
     missing_blocks = [
@@ -7438,15 +7605,17 @@ def api_explorer_blocks():
                 select_columns.append(optional)
 
         total = db.execute("SELECT COUNT(*) FROM blocks").fetchone()[0]
-        rows = db.execute(
+        rows = fetch_page(
+            db,
             f"""
             SELECT {", ".join(select_columns)}
             FROM blocks
             ORDER BY height DESC
-            LIMIT ? OFFSET ?
             """,
-            (limit, offset),
-        ).fetchall()
+            limit=limit,
+            offset=offset,
+            max_limit=200,
+        )
 
     blocks = []
     for row in rows:
@@ -7741,13 +7910,12 @@ def api_miner_dashboard(miner_id):
             total_earned = (total_row['s'] or 0) / 1_000_000.0
             reward_events = int(total_row['cnt'] or 0)
 
-            hist = c.execute("""
+            hist = fetch_page(c, """
                 SELECT epoch, amount_i64, tx_hash, confirmed_at
                 FROM pending_ledger
                 WHERE to_miner = ? AND status = 'confirmed'
                 ORDER BY epoch DESC, confirmed_at DESC
-                LIMIT 20
-            """, (miner_id,)).fetchall()
+            """, (miner_id,), limit=20, max_limit=20)
             reward_history = [{
                 'epoch': int(r['epoch'] or 0),
                 'amount_rtc': round((r['amount_i64'] or 0)/1_000_000.0, 6),
@@ -7765,13 +7933,13 @@ def api_miner_dashboard(miner_id):
             if has_hist:
                 now_ts = int(time.time())
                 start = now_ts - 86400
-                rows = c.execute("""
+                rows = fetch_page(c, """
                     SELECT CAST((ts_ok/3600) AS INTEGER) AS bucket, COUNT(*) AS n
                     FROM miner_attest_history
                     WHERE miner = ? AND ts_ok >= ?
                     GROUP BY bucket
                     ORDER BY bucket ASC
-                """, (miner_id, start)).fetchall()
+                """, (miner_id, start), limit=24, max_limit=24)
                 timeline = [{'hour_bucket': int(r['bucket']), 'count': int(r['n'])} for r in rows]
 
             return jsonify({
@@ -7813,16 +7981,18 @@ def api_miner_attestations(miner_id: str):
         if not ok:
             return jsonify({"ok": False, "error": "miner_attest_history_missing"}), 404
 
-        rows = c.execute(
+        rows = fetch_page(
+            c,
             """
             SELECT ts_ok, device_family, device_arch
             FROM miner_attest_history
             WHERE miner = ?
             ORDER BY ts_ok DESC
-            LIMIT ?
             """,
-            (miner_id, limit),
-        ).fetchall()
+            (miner_id,),
+            limit=limit,
+            max_limit=500,
+        )
 
     items = [
         {
@@ -7861,10 +8031,12 @@ def api_balances():
 
         # Current schema: balances(miner_id, amount_i64, ...)
         if "miner_id" in cols and "amount_i64" in cols:
-            rows = c.execute(
-                "SELECT miner_id, amount_i64 FROM balances ORDER BY amount_i64 DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
+            rows = fetch_page(
+                c,
+                "SELECT miner_id, amount_i64 FROM balances ORDER BY amount_i64 DESC",
+                limit=limit,
+                max_limit=5000,
+            )
             out = [
                 {
                     "miner_id": r["miner_id"],
@@ -7877,10 +8049,12 @@ def api_balances():
 
         # Legacy schema: balances(miner_pk, balance_rtc)
         if "miner_pk" in cols and "balance_rtc" in cols:
-            rows = c.execute(
-                "SELECT miner_pk, balance_rtc FROM balances ORDER BY balance_rtc DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
+            rows = fetch_page(
+                c,
+                "SELECT miner_pk, balance_rtc FROM balances ORDER BY balance_rtc DESC",
+                limit=limit,
+                max_limit=5000,
+            )
             out = [
                 {
                     "miner_id": r["miner_pk"],
@@ -7899,7 +8073,12 @@ def list_oui_deny():
     if not is_admin(request):
         return jsonify({"ok": False, "error": "forbidden"}), 403
     with sqlite3.connect(DB_PATH) as conn:
-        rows = conn.execute("SELECT oui, vendor, added_ts, enforce FROM oui_deny ORDER BY vendor").fetchall()
+        rows = fetch_page(
+            conn,
+            "SELECT oui, vendor, added_ts, enforce FROM oui_deny ORDER BY vendor",
+            limit=1000,
+            max_limit=1000,
+        )
     return jsonify({
         "ok": True,
         "count": len(rows),
@@ -8061,10 +8240,13 @@ def attest_debug():
 
         # Check MACs
         day_ago = now - 86400
-        mac_rows = conn.execute(
+        mac_rows = fetch_page(
+            conn,
             "SELECT mac_hash, first_ts, last_ts, count FROM miner_macs WHERE miner = ? AND last_ts >= ?",
-            (miner, day_ago)
-        ).fetchall()
+            (miner, day_ago),
+            limit=256,
+            max_limit=256,
+        )
 
         result["macs"] = {
             "unique_24h": len(mac_rows),
@@ -8342,6 +8524,52 @@ def api_wallet_balance():
             bal_rtc = float(row[0]) if row else 0.0
             amt = int(round(bal_rtc * UNIT))
 
+    return jsonify({
+        "miner_id": miner_id,
+        "amount_i64": amt,
+        "amount_rtc": amt / UNIT
+    })
+
+
+# Conservative identifier grammar for /api/wallet/<id>: RTC address, wallet
+# name, or namespaced miner id (e.g. "github:user"). Bounds length so a
+# direct caller cannot use oversized ids for request/DB/response amplification.
+_API_WALLET_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,80}$")
+
+
+# NOTE: any future *static* route under /api/wallet/ (e.g. /api/wallet/list)
+# must be declared BEFORE this variable rule or Werkzeug will capture it here.
+@app.route('/api/wallet/<miner_id>', methods=['GET'])
+def api_wallet_lookup(miner_id):
+    """Canonical read-only balance lookup by miner_id / RTC address.
+
+    Alias of /wallet/balance so /api/wallet/<id> — the path used by the block
+    explorer, dashboard, and external tooling — resolves on the node origin
+    instead of returning 404 (the route previously lived only in the separate
+    rustchain_dashboard.py app, which is not the process nginx proxies to).
+    Read-only; mirrors existing public /wallet/balance behaviour, so it
+    exposes no data that was not already reachable. Malformed ids return 400
+    (not a zero balance) so the prefix still distinguishes bad input.
+    """
+    miner_id = (miner_id or "").strip()
+    if not _API_WALLET_ID_RE.match(miner_id):
+        return jsonify({"ok": False, "error": "invalid miner_id"}), 400
+    try:
+        with sqlite3.connect(DB_PATH) as db:
+            try:
+                # Newer schema: balances(miner_id, amount_i64)
+                row = db.execute("SELECT amount_i64 FROM balances WHERE miner_id=?", (miner_id,)).fetchone()
+                amt = int(row[0]) if row else 0
+            except sqlite3.OperationalError as schema_err:
+                # Only fall back for the expected missing-column case; re-raise
+                # genuine operational failures instead of masking them.
+                if "no such column" not in str(schema_err).lower():
+                    raise
+                # Legacy schema: balances(miner_pk, balance_rtc)
+                row = db.execute("SELECT balance_rtc FROM balances WHERE miner_pk=?", (miner_id,)).fetchone()
+                amt = int(round(float(row[0]) * UNIT)) if row else 0
+    except sqlite3.OperationalError:
+        return jsonify({"ok": False, "error": "balance lookup unavailable"}), 503
     return jsonify({
         "miner_id": miner_id,
         "amount_i64": amt,
@@ -8727,17 +8955,17 @@ def list_pending():
     
     with sqlite3.connect(DB_PATH) as db:
         if status_filter == 'all':
-            rows = db.execute("""
+            rows = fetch_page(db, """
                 SELECT id, ts, from_miner, to_miner, amount_i64, reason, status, 
                        confirms_at, voided_by, voided_reason, tx_hash
-                FROM pending_ledger ORDER BY id DESC LIMIT ?
-            """, (limit,)).fetchall()
+                FROM pending_ledger ORDER BY id DESC
+            """, limit=limit, max_limit=500)
         else:
-            rows = db.execute("""
+            rows = fetch_page(db, """
                 SELECT id, ts, from_miner, to_miner, amount_i64, reason, status,
                        confirms_at, voided_by, voided_reason, tx_hash
-                FROM pending_ledger WHERE status = ? ORDER BY id DESC LIMIT ?
-            """, (status_filter, limit)).fetchall()
+                FROM pending_ledger WHERE status = ? ORDER BY id DESC
+            """, (status_filter,), limit=limit, max_limit=500)
     
     items = []
     for r in rows:
@@ -8936,7 +9164,8 @@ def confirm_pending():
                     c.execute(f"RELEASE SAVEPOINT {savepoint}")
                 except Exception:
                     pass
-                errors.append({"id": pid, "error": str(e)})
+                print(f"[ERROR] confirm_pending {pid}: {e!r}")
+                errors.append({"id": pid, "error": "internal_error"})
         
         conn.commit()
         
@@ -9090,14 +9319,20 @@ def api_wallet_ledger():
 
     with sqlite3.connect(DB_PATH) as db:
         if miner_id:
-            rows = db.execute(
-                "SELECT ts, epoch, delta_i64, reason FROM ledger WHERE miner_id=? ORDER BY id DESC LIMIT 200",
-                (miner_id,)
-            ).fetchall()
+            rows = fetch_page(
+                db,
+                "SELECT ts, epoch, delta_i64, reason FROM ledger WHERE miner_id=? ORDER BY id DESC",
+                (miner_id,),
+                limit=200,
+                max_limit=200,
+            )
         else:
-            rows = db.execute(
-                "SELECT ts, epoch, miner_id, delta_i64, reason FROM ledger ORDER BY id DESC LIMIT 200"
-            ).fetchall()
+            rows = fetch_page(
+                db,
+                "SELECT ts, epoch, miner_id, delta_i64, reason FROM ledger ORDER BY id DESC",
+                limit=200,
+                max_limit=200,
+            )
 
     items = []
     for r in rows:
@@ -9203,7 +9438,8 @@ try:
             blocks = block_sync.get_blocks_for_sync(start_height, limit)
             return jsonify({"ok": True, "blocks": blocks})
         except Exception as e:
-            return jsonify({"ok": False, "error": str(e)}), 400
+            print(f"[ERROR] p2p request failed: {e!r}")
+            return jsonify({"ok": False, "error": "internal_error"}), 400
 
     @app.route('/p2p/add_peer', methods=['POST'])
     @require_peer_auth
@@ -9224,7 +9460,8 @@ try:
                 return jsonify({"ok": bool(success), "message": message})
             return jsonify({"ok": bool(result)})
         except Exception as e:
-            return jsonify({"ok": False, "error": str(e)}), 400
+            print(f"[ERROR] p2p request failed: {e!r}")
+            return jsonify({"ok": False, "error": "internal_error"}), 400
 
     # Start background sync unless an integration test explicitly disables it.
     if os.environ.get("RUSTCHAIN_DISABLE_P2P_AUTO_START") != "1":
@@ -9258,7 +9495,8 @@ def download_installer():
             mimetype="application/x-bat"
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 404
+        print(f"[ERROR] request failed: {e!r}")
+        return jsonify({"error": "not_found"}), 404
 
 @app.route("/download/miner")
 def download_miner():
@@ -9271,7 +9509,8 @@ def download_miner():
             mimetype="text/x-python"
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 404
+        print(f"[ERROR] request failed: {e!r}")
+        return jsonify({"error": "not_found"}), 404
 
 
 @app.route("/download/uninstaller")
@@ -10076,7 +10315,8 @@ def download_test_bat():
                 h.update(chunk)
         expected_sha256 = h.hexdigest().upper()
     except Exception as e:
-        return jsonify({"error": str(e)}), 404
+        print(f"[ERROR] request failed: {e!r}")
+        return jsonify({"error": "not_found"}), 404
 
     # Keep legacy HTTP download URL, but verify hash before running.
     bat = f"""@echo off

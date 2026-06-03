@@ -1,9 +1,17 @@
 # SPDX-License-Identifier: MIT
 
-from flask import Flask, request, jsonify
-from validator.validate_genesis import validate_genesis
-import tempfile
 import os
+import sys
+import tempfile
+from pathlib import Path
+
+from flask import Flask, jsonify, request
+
+POA_ROOT = Path(__file__).resolve().parents[1]
+if str(POA_ROOT) not in sys.path:
+    sys.path.insert(0, str(POA_ROOT))
+
+from validator.validate_genesis import validate_genesis
 
 app = Flask(__name__)
 

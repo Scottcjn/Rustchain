@@ -40,7 +40,7 @@ git clone https://github.com/Scottcjn/Rustchain.git
 cd Rustchain/miners/linux
 python3 -m venv .venv
 source .venv/bin/activate
-pip install requests
+pip install requests PyNaCl
 python3 rustchain_linux_miner.py --dry-run --show-payload
 ```
 

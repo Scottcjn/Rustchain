@@ -153,24 +153,34 @@ def test_count_user_stars_uses_supplied_repos_without_fetching_owner_repos(monke
     assert star_checker.count_user_stars("targetuser", "owner", "secret", repos=["alpha", "beta"]) == 1
 
 
-def test_check_wallet_exists_uses_local_cert_when_present(monkeypatch, tmp_path):
+def test_check_wallet_exists_uses_public_wallet_balance_endpoint(monkeypatch, tmp_path):
     cert = tmp_path / ".rustchain" / "node_cert.pem"
     cert.parent.mkdir()
     cert.write_text("certificate", encoding="utf-8")
     seen = {}
 
-    def fake_get(url, verify, timeout):
+    def fake_get(url, params, verify, timeout):
         seen["url"] = url
+        seen["params"] = params
         seen["verify"] = verify
         seen["timeout"] = timeout
-        return FakeResponse(status_code=200)
+        return FakeResponse(status_code=200, payload={"amount_rtc": 0.0, "miner_id": "rtc-wallet"})
 
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     monkeypatch.setattr(star_checker.requests, "get", fake_get)
 
     assert star_checker.check_wallet_exists("rtc-wallet") is True
-    assert seen == {
-        "url": f"{star_checker.RUSTCHAIN_NODE_URL}/api/balance/rtc-wallet",
-        "verify": str(cert),
-        "timeout": 10,
-    }
+    assert seen["url"] == f"{star_checker.RUSTCHAIN_NODE_URL}/wallet/balance"
+    assert seen["params"] == {"miner_id": "rtc-wallet"}
+    assert Path(seen["verify"]) == cert
+    assert seen["timeout"] == 10
+
+
+def test_check_wallet_exists_rejects_non_object_balance_payload(monkeypatch):
+    def fake_get(url, params, verify, timeout):
+        return FakeResponse(status_code=200, payload=["not", "a", "wallet"])
+
+    monkeypatch.setattr(star_checker.requests, "get", fake_get)
+
+    assert star_checker.check_wallet_exists("rtc-wallet") is False

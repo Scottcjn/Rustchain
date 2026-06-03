@@ -105,7 +105,7 @@ def print_miners(data):
         print(f"❌ Failed to fetch miners: {data['error']}")
         return
     miners = normalize_miners_payload(data)
-    if not isinstance(miners, list):
+    if not isinstance(miners, list):  # normalize preserves unknown shapes; only a list is printable
         print(f"⚠ Unexpected response: {data}")
         return
     print(f"📊 Active miners: {len(miners)}")

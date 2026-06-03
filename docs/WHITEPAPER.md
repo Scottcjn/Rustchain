@@ -575,9 +575,10 @@ TOTAL                      7.5×         100%      0.90 RTC
 | Zone | Allocation | RTC Amount | Purpose |
 |------|------------|------------|---------|
 | Block Mining | 94% | 7,885,292 | PoA Validator Rewards |
-| Dev Wallet | 2.5% | 209,715 | Development funding |
-| Foundation | 0.5% | 41,943 | Governance & operations |
-| Community Vault | 3% | 251,658 | Airdrops, bounties, grants |
+| Founders | 1.5% | 125,829 | `founder_founders` — core team |
+| Dev Fund | 1.5% | 125,829 | `founder_dev_fund` — development |
+| Team / Bounty | 1.5% | 125,829 | `founder_team_bounty` — contributor bounties |
+| Community | 1.5% | 125,829 | `founder_community` — airdrops, grants |
 
 ### 6.3 Emission Schedule
 

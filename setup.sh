@@ -78,17 +78,22 @@ detect_platform() {
       PLATFORM="linux"
       RC_MINER_PATH="miners/linux/rustchain_linux_miner.py"
       RC_FP_PATH="miners/linux/fingerprint_checks.py"
+      RC_CRYPTO_PATH="miners/linux/miner_crypto.py"
       ;;
     Darwin*)
       PLATFORM="macos"
       RC_MINER_PATH="miners/macos/rustchain_mac_miner_v2.5.py"
       RC_FP_PATH="miners/macos/fingerprint_checks.py"
+      RC_CRYPTO_PATH=""
       ;;
     *)        error "Unsupported OS: $OS" ;;
   esac
 
   RC_MINER_URL="${RC_BASE_URL}/${RC_MINER_PATH}"
   RC_FP_URL="${RC_BASE_URL}/${RC_FP_PATH}"
+  if [ -n "$RC_CRYPTO_PATH" ]; then
+    RC_CRYPTO_URL="${RC_BASE_URL}/${RC_CRYPTO_PATH}"
+  fi
 
   # CPU architecture and antiquity multiplier
   case "$ARCH" in
@@ -163,8 +168,13 @@ check_python() {
     PYTHON="python3"
   fi
 
-  # Install requests if needed
-  if ! "$PYTHON" -c "import requests" >/dev/null 2>&1; then
+  # Install miner runtime dependencies if needed.
+  if [ -n "${RC_CRYPTO_PATH:-}" ]; then
+    if ! "$PYTHON" -c "import requests, nacl" >/dev/null 2>&1; then
+      info "Installing requests and PyNaCl libraries..."
+      "$PYTHON" -m pip install requests PyNaCl --quiet 2>/dev/null || true
+    fi
+  elif ! "$PYTHON" -c "import requests" >/dev/null 2>&1; then
     info "Installing requests library..."
     "$PYTHON" -m pip install requests --quiet 2>/dev/null || true
   fi
@@ -183,6 +193,11 @@ download_files() {
 
   info "Downloading fingerprint_checks.py..."
   download_file "$RC_FP_URL" "$INSTALL_DIR/fingerprint_checks.py" "fingerprint checks"
+
+  if [ -n "${RC_CRYPTO_URL:-}" ]; then
+    info "Downloading miner_crypto.py..."
+    download_file "$RC_CRYPTO_URL" "$INSTALL_DIR/miner_crypto.py" "miner signing helper"
+  fi
 
   info "Files saved to $INSTALL_DIR/"
 }

@@ -182,7 +182,11 @@ def test_buy_order_defers_htlc_secret_to_matching_seller(tmp_path):
         assert "htlc_secret" not in public_order
 
         with patch.object(module.requests, "post") as mock_post:
-            mock_post.return_value = MagicMock(ok=True, text='{"ok": true}')
+            # .json() must return a serializable dict — the broadcast/escrow path
+            # does r.json().get(...) and embeds the result in the response.
+            mock_resp = MagicMock(ok=True, status_code=200, text='{"ok": true}')
+            mock_resp.json.return_value = {"ok": True, "status": "broadcast", "job_id": "job-test"}
+            mock_post.return_value = mock_resp
             confirm_response = client.post(
                 f"/api/orders/{order['order_id']}/confirm",
                 json={

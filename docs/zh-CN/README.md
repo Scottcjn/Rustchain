@@ -3,7 +3,7 @@
 # 🧱 RustChain: 古董证明区块链
 
 [![CI](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml/badge.svg)](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml)
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/Scottcjn/Rustchain/blob/main/LICENSE)
 [![GitHub Stars](https://img.shields.io/github.com/stars/Scottcjn/Rustchain?style=flat&color=gold)](https://github.com/Scottcjn/Rustchain/stargazers)
 [![Contributors](https://img.shields.io/github.com/contributors/Scottcjn/Rustchain?color=brightgreen)](https://github.com/Scottcjn/Rustchain/graphs/contributors)
 [![Last Commit](https://img.shields.io/github.com/last-commit/Scottcjn/Rustchain?color=blue)](https://github.com/Scottcjn/Rustchain/commits/main)
@@ -50,6 +50,17 @@
 | [BoTTube 高级 API](https://bottube.ai/api/premium/videos) | 高级视频端点；分析端点：https://bottube.ai/api/premium/analytics/<agent>（示例：https://bottube.ai/api/premium/analytics/scott） |
 | [wRTC 教程](../WRTC_ONBOARDING_TUTORIAL.md) | 跨链桥接指南 |
 | [贡献指南](../../CONTRIBUTING.md) | 参与开发 |
+
+---
+
+## x402 高级 API
+
+以下高级 API 已部署在 BoTTube 域名上（当前免费用于验证流程）：
+
+- `GET https://bottube.ai/api/premium/videos` - 批量视频导出（BoTTube）
+- `GET https://bottube.ai/api/premium/analytics/<agent>` - 深度 Agent 分析（BoTTube）
+- `GET /api/premium/reputation` - 完整声誉导出（Beacon Atlas）
+- `GET /wallet/swap-info` - USDC/wRTC 兑换指引（RustChain）
 
 ---
 
@@ -214,25 +225,24 @@ RustChain支持**15+种CPU架构**——比任何其他区块链都多：
 ### 安装
 
 ```bash
-# 克隆仓库
-git clone https://github.com/Scottcjn/Rustchain.git
-cd Rustchain
+# 一键安装并启动矿工
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash
 
-# 安装依赖
-pip install -r requirements.txt
+# 或者先进行干运行测试
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --dry-run
 
-# 启动矿工
-python3 miner.py
+# 使用指定钱包名称
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --wallet 我的钱包
 ```
 
 ### 验证你的矿工
 
 ```bash
-# 检查矿工状态
-python3 miner.py --status
+# 检查用户服务状态（Linux/systemd）
+systemctl --user status rustchain-miner
 
-# 查看硬件指纹
-python3 miner.py --fingerprint
+# 查看矿工日志
+journalctl --user -u rustchain-miner -f
 ```
 
 你的矿工启动后，会自动进行6项硬件检查并注册到网络。无需额外配置。

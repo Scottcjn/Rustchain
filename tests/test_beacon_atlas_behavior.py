@@ -61,7 +61,38 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         # Initialize database tables
         init_beacon_tables(cls.test_db_path)
         
-        cls.client = cls.app.test_client()
+        # Beacon read endpoints (/api/contracts, /api/reputation, ...) became
+        # admin-gated (#6322-era). Configure RC_ADMIN_KEY and inject X-Admin-Key
+        # on every request so these admin-context workflow tests reach the routes.
+        cls._orig_admin_key = os.environ.get("RC_ADMIN_KEY")
+        os.environ["RC_ADMIN_KEY"] = "beacon-admin-key"
+
+        class _AdminClient:
+            def __init__(self, c):
+                self._c = c
+
+            def _with_admin(self, kwargs):
+                headers = dict(kwargs.pop("headers", {}) or {})
+                headers.setdefault("X-Admin-Key", "beacon-admin-key")
+                kwargs["headers"] = headers
+                return kwargs
+
+            def get(self, *a, **k):
+                return self._c.get(*a, **self._with_admin(k))
+
+            def post(self, *a, **k):
+                return self._c.post(*a, **self._with_admin(k))
+
+            def put(self, *a, **k):
+                return self._c.put(*a, **self._with_admin(k))
+
+            def delete(self, *a, **k):
+                return self._c.delete(*a, **self._with_admin(k))
+
+            def __getattr__(self, name):
+                return getattr(self._c, name)
+
+        cls.client = _AdminClient(cls.app.test_client())
         cls.agent_keys = {
             agent_id: Ed25519PrivateKey.generate()
             for agent_id in [
@@ -77,6 +108,10 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         """Clean up after all tests."""
         cls.client = None
         cls.app = None
+        if cls._orig_admin_key is None:
+            os.environ.pop("RC_ADMIN_KEY", None)
+        else:
+            os.environ["RC_ADMIN_KEY"] = cls._orig_admin_key
         gc.collect()
         os.close(cls.test_db_fd)
         os.unlink(cls.test_db_path)
