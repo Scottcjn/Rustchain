@@ -149,7 +149,7 @@ function safeScore(v){
   const res=await fetch('/api/hall_of_fame/machine?id='+encodeURIComponent(id));
   if(!res.ok){ document.getElementById('status').innerHTML='<span class="err">Not found or unavailable.</span>'; return; }
   const data=await res.json();
-  const m=data.machine||{};
+  const m=data.machine||data||{};
   document.getElementById('status').style.display='none';
   const profile=document.getElementById('profile');
   profile.style.display='block';

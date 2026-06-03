@@ -91,6 +91,7 @@ CREATE INDEX IF NOT EXISTS idx_pending_nonce ON pending_transactions(from_addr, 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_pending_wallet_nonce_unique
     ON pending_transactions(from_addr, nonce)
     WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_pending_admission ON pending_transactions(created_at, tx_hash);
 CREATE INDEX IF NOT EXISTS idx_history_from ON transaction_history(from_addr);
 CREATE INDEX IF NOT EXISTS idx_history_to ON transaction_history(to_addr);
 CREATE INDEX IF NOT EXISTS idx_history_block ON transaction_history(block_height);
@@ -179,6 +180,7 @@ class TransactionPool:
                         if "already exists" not in str(e):
                             logger.warning(f"Schema statement failed: {e}")
 
+            self._ensure_pending_created_at(cursor)
             conn.commit()
 
     def _dedupe_pending_nonce_conflicts(self, cursor) -> None:
@@ -242,6 +244,29 @@ class TransactionPool:
         if "balances_old" in tables:
             cursor.execute("ALTER TABLE balances_old RENAME TO balances")
             logger.warning("Recovered interrupted balances migration from balances_old")
+
+    def _ensure_pending_created_at(self, cursor) -> None:
+        """Backfill admission-time ordering support for older pending tables."""
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='pending_transactions'"
+        )
+        if not cursor.fetchone():
+            return
+        cursor.execute("PRAGMA table_info(pending_transactions)")
+        columns = [col[1] for col in cursor.fetchall()]
+        if "created_at" not in columns:
+            cursor.execute(
+                "ALTER TABLE pending_transactions ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0"
+            )
+            if "timestamp" in columns:
+                cursor.execute(
+                    "UPDATE pending_transactions SET created_at = timestamp WHERE created_at = 0"
+                )
+            logger.info("Added created_at column to pending_transactions table")
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_pending_admission "
+            "ON pending_transactions(created_at, tx_hash)"
+        )
 
     @contextmanager
     def _get_connection(self):
@@ -544,13 +569,13 @@ class TransactionPool:
                 return False, f"Transaction already exists: {e}"
 
     def get_pending_transactions(self, limit: int = 100) -> List[SignedTransaction]:
-        """Get pending transactions ordered by nonce"""
+        """Get pending transactions in deterministic admission order."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """SELECT * FROM pending_transactions
                    WHERE status = 'pending'
-                   ORDER BY nonce ASC
+                   ORDER BY created_at ASC, rowid ASC
                    LIMIT ?""",
                 (limit,)
             )
