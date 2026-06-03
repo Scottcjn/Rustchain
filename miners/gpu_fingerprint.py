@@ -24,6 +24,8 @@ Usage:
 Author: Elyan Labs (RIP-0308: Proof of Physical AI)
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import hashlib
@@ -38,14 +40,22 @@ from typing import Optional
 
 try:
     import torch
-    import torch.cuda
 except ImportError:
-    print("ERROR: PyTorch with CUDA support required. Install: pip install torch")
-    sys.exit(1)
+    torch = None
+    HAS_TORCH = False
+else:
+    HAS_TORCH = True
+    try:
+        import torch.cuda
+    except ImportError:
+        pass
 
-if not torch.cuda.is_available():
-    print("ERROR: No CUDA-capable GPU detected.")
-    sys.exit(1)
+
+def check_requirements():
+    if not HAS_TORCH or torch is None:
+        raise RuntimeError("PyTorch with CUDA support required. Install: pip install torch")
+    if not hasattr(torch, "cuda") or not torch.cuda.is_available():
+        raise RuntimeError("No CUDA-capable GPU detected.")
 
 
 # ---------------------------------------------------------------------------
@@ -789,6 +799,7 @@ def cross_validate_gpu(device: torch.device) -> ChannelResult:
 
 def run_gpu_fingerprint(device_index: int = 0, samples: int = 200, epoch_salt: str = "") -> GPUFingerprint:
     """Run all GPU fingerprint channels and return results."""
+    check_requirements()
     device = torch.device(f"cuda:{device_index}")
 
     # GPU info
@@ -898,16 +909,20 @@ if __name__ == "__main__":
                         help="Epoch salt for privacy (prevents cross-epoch correlation)")
     args = parser.parse_args()
 
-    if args.json:
-        # Suppress banner output for clean JSON
-        import io, contextlib
-        with contextlib.redirect_stdout(io.StringIO()):
+    try:
+        if args.json:
+            # Suppress banner output for clean JSON
+            import io, contextlib
+            with contextlib.redirect_stdout(io.StringIO()):
+                fp = run_gpu_fingerprint(device_index=args.device, samples=args.samples, epoch_salt=args.epoch_salt)
+            print(json.dumps(fp.to_dict(), indent=2))
+        else:
             fp = run_gpu_fingerprint(device_index=args.device, samples=args.samples, epoch_salt=args.epoch_salt)
-        print(json.dumps(fp.to_dict(), indent=2))
-    else:
-        fp = run_gpu_fingerprint(device_index=args.device, samples=args.samples, epoch_salt=args.epoch_salt)
-        # Print channel summary
-        print("Channel Details:")
-        for ch in fp.channels:
-            status = "PASS" if ch["passed"] else "FAIL"
-            print(f"  [{status}] {ch['name']}: {ch['notes']}")
+            # Print channel summary
+            print("Channel Details:")
+            for ch in fp.channels:
+                status = "PASS" if ch["passed"] else "FAIL"
+                print(f"  [{status}] {ch['name']}: {ch['notes']}")
+    except RuntimeError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
