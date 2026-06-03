@@ -193,7 +193,7 @@ The attestation server doesn't trust self-reported data. It performs:
 | `/api/miners` | GET | List active miners |
 | `/epoch` | GET | Current epoch info |
 | `/wallet/balance?miner_id=X` | GET | Check wallet balance |
-| `/attest` | POST | Submit hardware fingerprint |
+| `/attest/submit` | POST | Submit hardware fingerprint |
 
 ---
 
@@ -308,13 +308,13 @@ curl -sk "https://rustchain.org/wallet/balance?miner_id=scott-laptop"
 }
 ```
 
-### POST /attest
+### POST /attest/submit
 
 Submit hardware fingerprint (miner only).
 
 **Request**:
 ```bash
-curl -sk -X POST https://rustchain.org/attest \
+curl -sk -X POST https://rustchain.org/attest/submit \
   -H "Content-Type: application/json" \
   -d '{
     "miner_id": "scott-laptop",
@@ -398,7 +398,7 @@ New contributors get **10 RTC** for their first merged PR:
 - **GitHub**: https://github.com/Scottcjn/Rustchain
 - **Bounties**: https://github.com/Scottcjn/rustchain-bounties
 - **Explorer**: https://rustchain.org/explorer
-- **Whitepaper**: `docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf`
+- **Whitepaper**: `docs/WHITEPAPER.md`
 - **BoTTube**: https://bottube.ai (AI video platform)
 
 ---

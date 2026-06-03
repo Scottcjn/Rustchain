@@ -125,7 +125,7 @@ scp target/riscv64gc-unknown-linux-gnu/release/rustchain-miner root@visionfive2:
 
 # 2. Configure environment
 echo "RUSTCHAIN_WALLET=your_wallet_address" >> ~/.bashrc
-echo "RUSTCHAIN_NODE_URL=https://50.28.86.131" >> ~/.bashrc
+echo "RUSTCHAIN_NODE_URL=https://rustchain.org" >> ~/.bashrc
 source ~/.bashrc
 
 # 3. Run miner
@@ -153,7 +153,7 @@ Type=simple
 User=miner
 WorkingDirectory=/opt/rustchain
 Environment=RUSTCHAIN_WALLET=your_wallet_address
-Environment=RUSTCHAIN_NODE_URL=https://50.28.86.131
+Environment=RUSTCHAIN_NODE_URL=https://rustchain.org
 ExecStart=/opt/rustchain/rustchain-miner
 Restart=always
 RestartSec=10
@@ -305,7 +305,7 @@ rustup target add riscv64gc-unknown-linux-gnu
 - [RISC-V Specification](https://riscv.org/specifications/)
 - [Cross-rs Documentation](https://github.com/cross-rs/cross)
 - [Rust RISC-V Support](https://rust-lang.github.io/rustup-components-history/riscv64gc-unknown-linux-gnu.html)
-- [VisionFive 2 Documentation](https://wiki.starfivetech.com/en/visionfive2)
+- [VisionFive 2 Quick Start Guide](https://doc-en.rvspace.org/VisionFive2/Quick_Start_Guide/)
 - [HiFive Unmatched Guide](https://www.sifive.com/boards/hifive-unmatched)
 
 ## 🤝 Contributing

@@ -404,9 +404,19 @@ class MutatingChallengeNetwork:
             confidence -= 20.0
 
         # 5. Verify proof hash (must have correct round count)
-        # In production, we'd recompute and verify
+        proof_ok = True
+        if not response.proof_hash:
+            proof_ok = False
+            failures.append("Missing proof hash")
+            confidence -= 50.0
+        else:
+            expected_proof = response.compute_proof(challenge, b'')
+            if not secrets.compare_digest(response.proof_hash, expected_proof):
+                proof_ok = False
+                failures.append("Proof hash mismatch")
+                confidence -= 50.0
 
-        valid = confidence >= 50.0
+        valid = confidence >= 50.0 and proof_ok
 
         # Record result
         self.round_robin.results_this_round[challenge.target] = valid
@@ -531,6 +541,7 @@ def demo_mutating_challenges():
                 proof_hash=b'',
                 timestamp_ms=int(time.time() * 1000)
             )
+            response.proof_hash = response.compute_proof(challenge, b'')
 
             valid, confidence, failures = network.validate_response(response)
 

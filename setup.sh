@@ -10,8 +10,13 @@ set -euo pipefail
 
 RC_NODE_PRIMARY="https://50.28.86.131"
 RC_NODE_BACKUP="https://50.28.86.153"
-RC_MINER_URL="https://raw.githubusercontent.com/Scottcjn/Rustchain/main/rustchain_linux_miner.py"
-RC_FP_URL="https://raw.githubusercontent.com/Scottcjn/Rustchain/main/fingerprint_checks.py"
+RC_REPO_REF="${RUSTCHAIN_REF:-main}"
+RC_BASE_URL="https://raw.githubusercontent.com/Scottcjn/Rustchain/${RC_REPO_REF}"
+RC_MINER_PATH=""
+RC_FP_PATH=""
+RC_MINER_URL=""
+RC_FP_URL=""
+MINER_SCRIPT="rustchain_miner.py"
 INSTALL_DIR="$HOME/.rustchain"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; BOLD='\033[1m'; NC='\033[0m'
@@ -34,6 +39,31 @@ warn()    { echo -e "  ${YELLOW}⚠${NC} $1"; }
 error()   { echo -e "  ${RED}✗ ERROR:${NC} $1"; exit 1; }
 heading() { echo -e "\n${BOLD}[$1]${NC}"; }
 
+download_file() {
+  local url="$1"
+  local dest="$2"
+  local label="$3"
+
+  case "$url" in
+    https://*) ;;
+    *) error "Refusing non-HTTPS ${label} URL: $url" ;;
+  esac
+
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL --proto '=https' --tlsv1.2 "$url" -o "$dest" || \
+      error "Could not download ${label} from $url"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -q --https-only "$url" -O "$dest" || \
+      error "Could not download ${label} from $url"
+  else
+    error "Neither curl nor wget found. Please install one."
+  fi
+
+  if [ ! -s "$dest" ]; then
+    error "Downloaded ${label} is empty: $dest"
+  fi
+}
+
 # ---------------------------------------------------------------------------- #
 # 1. Detect Platform
 # ---------------------------------------------------------------------------- #
@@ -44,10 +74,26 @@ detect_platform() {
   ARCH="$(uname -m)"
 
   case "$OS" in
-    Linux*)   PLATFORM="linux" ;;
-    Darwin*)  PLATFORM="macos" ;;
+    Linux*)
+      PLATFORM="linux"
+      RC_MINER_PATH="miners/linux/rustchain_linux_miner.py"
+      RC_FP_PATH="miners/linux/fingerprint_checks.py"
+      RC_CRYPTO_PATH="miners/linux/miner_crypto.py"
+      ;;
+    Darwin*)
+      PLATFORM="macos"
+      RC_MINER_PATH="miners/macos/rustchain_mac_miner_v2.5.py"
+      RC_FP_PATH="miners/macos/fingerprint_checks.py"
+      RC_CRYPTO_PATH=""
+      ;;
     *)        error "Unsupported OS: $OS" ;;
   esac
+
+  RC_MINER_URL="${RC_BASE_URL}/${RC_MINER_PATH}"
+  RC_FP_URL="${RC_BASE_URL}/${RC_FP_PATH}"
+  if [ -n "$RC_CRYPTO_PATH" ]; then
+    RC_CRYPTO_URL="${RC_BASE_URL}/${RC_CRYPTO_PATH}"
+  fi
 
   # CPU architecture and antiquity multiplier
   case "$ARCH" in
@@ -122,8 +168,13 @@ check_python() {
     PYTHON="python3"
   fi
 
-  # Install requests if needed
-  if ! "$PYTHON" -c "import requests" >/dev/null 2>&1; then
+  # Install miner runtime dependencies if needed.
+  if [ -n "${RC_CRYPTO_PATH:-}" ]; then
+    if ! "$PYTHON" -c "import requests, nacl" >/dev/null 2>&1; then
+      info "Installing requests and PyNaCl libraries..."
+      "$PYTHON" -m pip install requests PyNaCl --quiet 2>/dev/null || true
+    fi
+  elif ! "$PYTHON" -c "import requests" >/dev/null 2>&1; then
     info "Installing requests library..."
     "$PYTHON" -m pip install requests --quiet 2>/dev/null || true
   fi
@@ -137,21 +188,16 @@ download_files() {
 
   mkdir -p "$INSTALL_DIR"
 
-  if command -v curl >/dev/null 2>&1; then
-    DL="curl -sSL -o"
-  elif command -v wget >/dev/null 2>&1; then
-    DL="wget -qO"
-  else
-    error "Neither curl nor wget found. Please install one."
-  fi
-
-  info "Downloading rustchain_linux_miner.py..."
-  $DL "$INSTALL_DIR/rustchain_linux_miner.py" "$RC_MINER_URL" 2>/dev/null || \
-    warn "Could not download miner (may not exist yet in upstream)"
+  info "Downloading ${RC_MINER_PATH##*/}..."
+  download_file "$RC_MINER_URL" "$INSTALL_DIR/$MINER_SCRIPT" "miner"
 
   info "Downloading fingerprint_checks.py..."
-  $DL "$INSTALL_DIR/fingerprint_checks.py" "$RC_FP_URL" 2>/dev/null || \
-    warn "Could not download fingerprint checks"
+  download_file "$RC_FP_URL" "$INSTALL_DIR/fingerprint_checks.py" "fingerprint checks"
+
+  if [ -n "${RC_CRYPTO_URL:-}" ]; then
+    info "Downloading miner_crypto.py..."
+    download_file "$RC_CRYPTO_URL" "$INSTALL_DIR/miner_crypto.py" "miner signing helper"
+  fi
 
   info "Files saved to $INSTALL_DIR/"
 }
@@ -278,12 +324,13 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=$INSTALL_DIR
-ExecStart=$PYTHON $INSTALL_DIR/rustchain_linux_miner.py
+ExecStart=$PYTHON -u $INSTALL_DIR/$MINER_SCRIPT --wallet $WALLET_NAME
 Restart=on-failure
 RestartSec=30
 Environment="WALLET_NAME=$WALLET_NAME"
 Environment="NODE_URL=$NODE_URL"
 Environment="THREADS=$RECOMMENDED_THREADS"
+Environment="PYTHONUNBUFFERED=1"
 
 [Install]
 WantedBy=default.target
@@ -306,7 +353,10 @@ SVCEOF
   <key>ProgramArguments</key>
   <array>
     <string>$PYTHON</string>
-    <string>$INSTALL_DIR/rustchain_linux_miner.py</string>
+    <string>-u</string>
+    <string>$INSTALL_DIR/$MINER_SCRIPT</string>
+    <string>--wallet</string>
+    <string>$WALLET_NAME</string>
   </array>
   <key>RunAtLoad</key>    <true/>
   <key>KeepAlive</key>    <true/>
@@ -316,6 +366,7 @@ SVCEOF
     <key>WALLET_NAME</key> <string>$WALLET_NAME</string>
     <key>NODE_URL</key>    <string>$NODE_URL</string>
     <key>THREADS</key>     <string>$RECOMMENDED_THREADS</string>
+    <key>PYTHONUNBUFFERED</key> <string>1</string>
   </dict>
   <key>StandardOutPath</key>  <string>$INSTALL_DIR/miner.log</string>
   <key>StandardErrorPath</key> <string>$INSTALL_DIR/miner-error.log</string>
@@ -344,10 +395,10 @@ summary() {
   echo -e "  Multiplier:${GREEN} ${MULTIPLIER}x${NC}"
   echo ""
   echo -e "  ${BOLD}To start mining:${NC}"
-  echo -e "  cd $INSTALL_DIR && $PYTHON rustchain_linux_miner.py"
+  echo -e "  cd $INSTALL_DIR && $PYTHON -u $MINER_SCRIPT --wallet $WALLET_NAME"
   echo ""
   echo -e "  ${BOLD}Check your balance:${NC}"
-  echo -e "  curl -sk '$NODE_URL/wallet/$WALLET_NAME' | python3 -m json.tool"
+  echo -e "  curl -sk '$NODE_URL/wallet/balance?miner_id=$WALLET_NAME' | python3 -m json.tool"
   echo ""
   echo -e "  ${BOLD}Join the community:${NC}"
   echo -e "  Discord: https://discord.gg/rustchain"

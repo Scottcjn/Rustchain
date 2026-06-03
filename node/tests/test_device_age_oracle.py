@@ -13,6 +13,27 @@ except ModuleNotFoundError:
 
 
 class TestDeviceAgeOracle(unittest.TestCase):
+    def test_parse_linux_cpuinfo_maps_aliases_and_ignores_noise(self):
+        cpuinfo = "\n".join(
+            [
+                "not a key value line",
+                "model name\t: Intel(R) Core(TM) i7-4770 CPU @ 3.40GHz",
+                "Features\t: fp asimd evtstrm aes pmull sha1 sha2",
+                "cpu\t\t: should not replace model name",
+                "Hardware\t: BCM2711: rev 1.5",
+                "flags\t\t: should not replace features",
+                "stepping\t:    ",
+            ]
+        )
+
+        parsed = fingerprint_checks._parse_linux_cpuinfo(cpuinfo)
+
+        self.assertEqual(parsed["cpu_model"], "Intel(R) Core(TM) i7-4770 CPU @ 3.40GHz")
+        self.assertEqual(parsed["flags"], "fp asimd evtstrm aes pmull sha1 sha2")
+        self.assertEqual(parsed["hardware"], "BCM2711: rev 1.5")
+        self.assertNotIn("stepping", parsed)
+        self.assertNotIn("not a key value line", parsed)
+
     def test_intel_core_gen_maps_to_year_and_passes(self):
         cpuinfo = "\n".join(
             [

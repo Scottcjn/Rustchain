@@ -1,5 +1,7 @@
+import gc
 import os
 import tempfile
+import time
 
 import pytest
 from flask import Flask
@@ -8,6 +10,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
+import sophia_governor_inbox
 from sophia_governor_inbox import (
     get_governor_inbox_entry,
     get_governor_inbox_status,
@@ -24,7 +27,13 @@ def tmp_db():
         db_path = handle.name
     init_sophia_governor_inbox_schema(db_path)
     yield db_path
-    os.unlink(db_path)
+    for _ in range(5):
+        try:
+            os.unlink(db_path)
+            break
+        except PermissionError:
+            gc.collect()
+            time.sleep(0.05)
 
 
 @pytest.fixture
@@ -79,6 +88,23 @@ def _sample_envelope():
     }
 
 
+def _sample_envelope_with_id(event_id):
+    envelope = _sample_envelope()
+    envelope["event_id"] = event_id
+    envelope["payload"]["amount_rtc"] = event_id
+    return envelope
+
+
+def _ingest_inbox_entries(client, count):
+    for event_id in range(1, count + 1):
+        response = client.post(
+            "/api/sophia/governor/ingest",
+            headers={"X-Admin-Key": "test-admin"},
+            json=_sample_envelope_with_id(event_id),
+        )
+        assert response.status_code == 202
+
+
 def test_ingest_helper_persists_and_deduplicates(tmp_db):
     first = ingest_governor_envelope(_sample_envelope(), db_path=tmp_db)
     second = ingest_governor_envelope(_sample_envelope(), db_path=tmp_db)
@@ -98,6 +124,78 @@ def test_ingest_helper_persists_and_deduplicates(tmp_db):
 def test_ingest_endpoint_requires_admin(client):
     response = client.post("/api/sophia/governor/ingest", json=_sample_envelope())
     assert response.status_code == 401
+
+
+def test_admin_auth_uses_constant_time_compare(client, monkeypatch):
+    """Admin-gated inbox endpoints compare configured keys with hmac.compare_digest."""
+    calls = []
+
+    def spy_compare_digest(provided, expected):
+        calls.append((provided, expected))
+        return provided == expected
+
+    monkeypatch.setattr(sophia_governor_inbox.hmac, "compare_digest", spy_compare_digest)
+
+    denied = client.post(
+        "/api/sophia/governor/ingest",
+        headers={"X-Admin-Key": "wrong-admin"},
+        json=_sample_envelope(),
+    )
+    assert denied.status_code == 401
+
+    accepted = client.post(
+        "/api/sophia/governor/ingest",
+        headers={"X-API-Key": "test-admin"},
+        json=_sample_envelope(),
+    )
+    assert accepted.status_code == 202
+
+    assert calls == [
+        ("wrong-admin", "test-admin"),
+        ("test-admin", "test-admin"),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "error"),
+    [
+        ("event_type", ["pending_transfer"], "event_type_must_be_string"),
+        ("source", {"service": "wallet.transfer"}, "source_must_be_string"),
+    ],
+)
+def test_ingest_rejects_structured_envelope_identity_fields(client, field, value, error):
+    envelope = _sample_envelope()
+    envelope[field] = value
+
+    response = client.post(
+        "/api/sophia/governor/ingest",
+        headers={"X-Admin-Key": "test-admin"},
+        json=envelope,
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == error
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "error"),
+    [
+        ("agent", ["sophia-rustchain-governor"], "governor_agent_must_be_string"),
+        ("instance", {"node": "node-1"}, "governor_instance_must_be_string"),
+    ],
+)
+def test_ingest_rejects_structured_governor_identity_fields(client, field, value, error):
+    envelope = _sample_envelope()
+    envelope["governor"][field] = value
+
+    response = client.post(
+        "/api/sophia/governor/ingest",
+        headers={"X-Admin-Key": "test-admin"},
+        json=envelope,
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == error
 
 
 def test_ingest_and_list_endpoints(client):
@@ -128,6 +226,69 @@ def test_ingest_and_list_endpoints(client):
     assert detail.status_code == 200
     detail_body = detail.get_json()
     assert detail_body["entry"]["remote_instance"] == "node-1"
+
+
+@pytest.mark.parametrize("limit", ["abc", "10.5"])
+def test_inbox_list_rejects_malformed_limit(client, limit):
+    response = client.get(
+        f"/api/sophia/governor/inbox?limit={limit}",
+        headers={"X-Admin-Key": "test-admin"},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "limit must be an integer"
+
+
+@pytest.mark.parametrize("limit", [10.5, True, False])
+def test_inbox_helper_rejects_non_integer_limit_values(tmp_db, limit):
+    ingest_governor_envelope(_sample_envelope(), db_path=tmp_db)
+
+    with pytest.raises(ValueError, match="limit must be an integer"):
+        list_governor_inbox_entries(tmp_db, limit=limit)
+
+
+@pytest.mark.parametrize("query_string", ["", "?limit="])
+def test_inbox_list_uses_default_limit_for_missing_or_empty_limit(client, query_string):
+    _ingest_inbox_entries(client, 25)
+
+    response = client.get(
+        f"/api/sophia/governor/inbox{query_string}",
+        headers={"X-Admin-Key": "test-admin"},
+    )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["ok"] is True
+    assert len(body["entries"]) == 20
+
+
+@pytest.mark.parametrize("limit", ["0", "-5"])
+def test_inbox_list_clamps_zero_and_negative_limits_to_one(client, limit):
+    _ingest_inbox_entries(client, 3)
+
+    response = client.get(
+        f"/api/sophia/governor/inbox?limit={limit}",
+        headers={"X-Admin-Key": "test-admin"},
+    )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["ok"] is True
+    assert len(body["entries"]) == 1
+
+
+def test_inbox_list_clamps_oversized_limits_to_maximum(client):
+    _ingest_inbox_entries(client, 205)
+
+    response = client.get(
+        "/api/sophia/governor/inbox?limit=999",
+        headers={"X-Admin-Key": "test-admin"},
+    )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["ok"] is True
+    assert len(body["entries"]) == 200
 
 
 def test_update_status_endpoint(client):
@@ -161,6 +322,24 @@ def test_update_status_endpoint(client):
     assert updated_body["entry"]["assigned_agent"] == "elya-codex-xhigh"
     assert updated_body["entry"]["recommended_resolution"]["target_inbox_status"] == "resolved"
     assert updated_body["entry"]["recommended_resolution"]["resolution_type"] == "watch"
+
+
+def test_update_status_rejects_non_object_json(client):
+    ingest = client.post(
+        "/api/sophia/governor/ingest",
+        headers={"X-Admin-Key": "test-admin"},
+        json=_sample_envelope(),
+    )
+    inbox_id = ingest.get_json()["inbox"]["inbox_id"]
+
+    response = client.post(
+        f"/api/sophia/governor/inbox/{inbox_id}/status",
+        headers={"X-Admin-Key": "test-admin"},
+        json=["not", "an", "object"],
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "JSON object required"
 
 
 def test_status_helper_reports_totals(tmp_db):
@@ -221,6 +400,7 @@ def test_ingest_can_queue_scott_notification(client, monkeypatch):
         return DummyResponse()
 
     monkeypatch.setenv("SOPHIA_GOVERNOR_SCOTT_NOTIFY_QUEUE_URL", "https://example.com/scott-notifications/queue")
+    monkeypatch.setenv("SOPHIA_GOVERNOR_SCOTT_NOTIFY_BEARER", "relay-token")
     monkeypatch.setattr(
         "sophia_governor_inbox.requests",
         type("DummyRequests", (), {"post": staticmethod(fake_post)}),
@@ -237,8 +417,39 @@ def test_ingest_can_queue_scott_notification(client, monkeypatch):
     assert body["scott_notification"]["status"] == "queued"
     assert body["scott_notification"]["notification_id"] == "SN-GOV-INBOX-1"
     assert calls[0]["url"] == "https://example.com/scott-notifications/queue"
+    assert calls[0]["headers"]["Authorization"] == "Bearer relay-token"
     assert calls[0]["json"]["related_type"] == "rustchain_governor_inbox"
     assert calls[0]["json"]["related_id"] == str(body["inbox"]["inbox_id"])
+
+
+def test_ingest_does_not_queue_scott_notification_without_token(client, monkeypatch):
+    calls = []
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        calls.append({"url": url, "json": json, "headers": headers, "timeout": timeout})
+        raise AssertionError("notification queue should not be called without a bearer token")
+
+    monkeypatch.setenv("SOPHIA_GOVERNOR_SCOTT_NOTIFY_QUEUE_URL", "https://example.com/scott-notifications/queue")
+    monkeypatch.setattr(
+        "sophia_governor_inbox.requests",
+        type("DummyRequests", (), {"post": staticmethod(fake_post)}),
+        raising=False,
+    )
+
+    response = client.post(
+        "/api/sophia/governor/ingest",
+        headers={"X-Admin-Key": "test-admin"},
+        json=_sample_envelope(),
+    )
+
+    assert response.status_code == 202
+    body = response.get_json()
+    assert body["scott_notification"] == {
+        "status": "not_configured",
+        "phase": "ingest",
+        "error": "scott_notification_token_not_configured",
+    }
+    assert calls == []
 
 
 def test_manual_forward_endpoint_records_attempt(client, monkeypatch):
@@ -283,6 +494,7 @@ def test_manual_forward_endpoint_records_attempt(client, monkeypatch):
 
     monkeypatch.setenv("SOPHIA_GOVERNOR_INBOX_FORWARD_TARGETS", "https://example.com/sophia/review")
     monkeypatch.setenv("SOPHIA_GOVERNOR_SCOTT_NOTIFY_QUEUE_URL", "https://example.com/scott-notifications/queue")
+    monkeypatch.setenv("SOPHIA_GOVERNOR_SCOTT_NOTIFY_BEARER", "relay-token")
     monkeypatch.setattr(
         "sophia_governor_inbox.requests",
         type("DummyRequests", (), {"post": staticmethod(fake_post)}),
@@ -315,6 +527,24 @@ def test_manual_forward_endpoint_records_attempt(client, monkeypatch):
     assert len(body["entry"]["forward_attempts"]) == 1
     assert body["result"]["scott_notification"]["status"] == "queued"
     assert body["result"]["scott_notification"]["notification_id"] == "SN-GOV-REVIEW-1"
+
+
+def test_manual_forward_rejects_non_object_json(client):
+    ingest = client.post(
+        "/api/sophia/governor/ingest",
+        headers={"X-Admin-Key": "test-admin"},
+        json=_sample_envelope(),
+    )
+    inbox_id = ingest.get_json()["inbox"]["inbox_id"]
+
+    response = client.post(
+        f"/api/sophia/governor/inbox/{inbox_id}/forward",
+        headers={"X-Admin-Key": "test-admin"},
+        json=["not", "an", "object"],
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "JSON object required"
 
 
 def test_auto_forward_on_ingest_uses_configured_targets(client, monkeypatch):

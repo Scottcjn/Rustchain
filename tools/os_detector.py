@@ -1,7 +1,8 @@
+# SPDX-License-Identifier: MIT
+import os
 import platform
-import subprocess
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 def detect_legacy_os_badges():
     detected_os = platform.system()
@@ -45,11 +46,11 @@ def detect_legacy_os_badges():
 
     detected_keywords = []
     try:
-        output = subprocess.check_output("dir", shell=True).decode().lower()
+        output = "\n".join(os.listdir(".")).lower()
         for system_key, terms in simulated_os_data.items():
             if any(term.lower() in output for term in terms):
                 detected_keywords.append(system_key)
-    except:
+    except OSError:
         pass
 
     for key in detected_keywords:
@@ -62,7 +63,7 @@ def detect_legacy_os_badges():
             "emotional_resonance": {
                 "state": "boot memory echo",
                 "trigger": badge["trigger"],
-                "timestamp": datetime.utcnow().isoformat() + "Z"
+                "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
             },
             "symbol": "💾🧠",
             "visual_anchor": f"{key} startup interface glow",

@@ -43,6 +43,11 @@ DEFAULT_NODE = "https://rustchain.org"
 TIMEOUT = 10
 __version__ = "0.2.0"
 
+
+class RustChainAPIError(Exception):
+    """Raised when the CLI cannot fetch or decode node API data."""
+
+
 def get_node_url():
     """Get node URL from env var or default."""
     return os.environ.get("RUSTCHAIN_NODE", DEFAULT_NODE)
@@ -55,14 +60,11 @@ def fetch_api(endpoint):
         with urlopen(req, timeout=TIMEOUT) as response:
             return json.loads(response.read().decode())
     except HTTPError as e:
-        print(f"Error: API returned {e.code}", file=sys.stderr)
-        sys.exit(1)
+        raise RustChainAPIError(f"API returned {e.code}") from e
     except URLError as e:
-        print(f"Error: Cannot connect to node: {e.reason}", file=sys.stderr)
-        sys.exit(1)
+        raise RustChainAPIError(f"Cannot connect to node: {e.reason}") from e
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
+        raise RustChainAPIError(str(e)) from e
 
 def format_table(headers, rows):
     """Format data as a simple table."""
@@ -85,6 +87,29 @@ def format_table(headers, rows):
     
     return "\n".join(lines)
 
+def _as_float(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+def _format_uptime(value):
+    seconds = _as_float(value)
+    if seconds is None:
+        return "N/A"
+    return f"{seconds:.0f} seconds ({seconds/3600:.1f} hours)"
+
+def _format_hours(value):
+    hours = _as_float(value)
+    if hours is None:
+        return "N/A"
+    return f"{hours:.1f} hours"
+
+def _format_slots(value):
+    if value is None:
+        return "N/A"
+    return value
+
 def cmd_status(args):
     """Show node health and status."""
     data = fetch_api("/health")
@@ -96,20 +121,29 @@ def cmd_status(args):
     print("=== RustChain Node Status ===")
     print(f"Status:      {'✅ Online' if data.get('ok') else '❌ Offline'}")
     print(f"Version:     {data.get('version', 'N/A')}")
-    print(f"Uptime:      {data.get('uptime_s', 0):.0f} seconds ({data.get('uptime_s', 0)/3600:.1f} hours)")
+    print(f"Uptime:      {_format_uptime(data.get('uptime_s'))}")
     print(f"DB Read/Write: {'✅ Yes' if data.get('db_rw') else '❌ No'}")
-    print(f"Tip Age:     {data.get('tip_age_slots', 0)} slots")
-    print(f"Backup Age:  {data.get('backup_age_hours', 0):.1f} hours")
+    print(f"Tip Age:     {_format_slots(data.get('tip_age_slots'))} slots")
+    print(f"Backup Age:  {_format_hours(data.get('backup_age_hours'))}")
+
+def normalize_miners_response(data):
+    """Return miner rows from legacy arrays or current paginated envelopes."""
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict) and isinstance(data.get("miners"), list):
+        return data["miners"]
+    return []
 
 def cmd_miners(args):
     """List active miners."""
     data = fetch_api("/api/miners")
+    miners = normalize_miners_response(data)
     
     if args.count:
         if args.json:
-            print(json.dumps({"count": len(data)}, indent=2))
+            print(json.dumps({"count": len(miners)}, indent=2))
         else:
-            print(f"Active miners: {len(data)}")
+            print(f"Active miners: {len(miners)}")
         return
     
     if args.json:
@@ -119,15 +153,15 @@ def cmd_miners(args):
     # Format as table
     headers = ["Miner ID", "Architecture", "Last Attestation"]
     rows = []
-    for miner in data[:20]:  # Show top 20
-        miner_id = miner.get('miner_id', 'N/A')[:20]
-        arch = miner.get('arch', 'N/A')
-        last_attest = miner.get('last_attest', 'N/A')
+    for miner in miners[:20]:  # Show top 20
+        miner_id = (miner.get('miner') or miner.get('miner_id') or 'N/A')[:20]
+        arch = miner.get('arch') or miner.get('device_arch') or miner.get('device_family') or 'N/A'
+        last_attest = miner.get('last_attest', miner.get('ts_ok', 'N/A'))
         if isinstance(last_attest, (int, float)):
             last_attest = datetime.fromtimestamp(last_attest).strftime('%Y-%m-%d %H:%M')
         rows.append([miner_id, arch, str(last_attest)])
     
-    print(f"Active Miners ({len(data)} total, showing 20)\n")
+    print(f"Active Miners ({len(miners)} total, showing 20)\n")
     print(format_table(headers, rows))
 
 def cmd_balance(args):
@@ -775,7 +809,12 @@ def main():
     if args.node:
         os.environ["RUSTCHAIN_NODE"] = args.node
 
-    result = args.func(args)
+    try:
+        result = args.func(args)
+    except RustChainAPIError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
     if result is not None:
         sys.exit(result)
 

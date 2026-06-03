@@ -2,7 +2,7 @@
   "projects": [
     {
       "name": "RustChain Agent Framework",
-      "url": "https://rustchain.ai",
+      "url": "https://rustchain.org",
       "github_repo": "https://github.com/Scottcjn/Rustchain",
       "bcos_tier": "L1",
       "latest_sha": "a1b2c3d4e5f6789012345678901234567890abcd",

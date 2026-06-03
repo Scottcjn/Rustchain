@@ -2,7 +2,7 @@
 
 Cross-chain bridge endpoints for wRTC (Wrapped RTC) on Solana + Base L2.
 
-Part of [RIP-305: Cross-Chain Airdrop Protocol](../../docs/RIP-305-cross-chain-airdrop.md).
+Part of [RIP-305: Cross-Chain Airdrop Protocol](../docs/RIP-305-cross-chain-airdrop.md).
 
 ## Overview
 

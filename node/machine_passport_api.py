@@ -9,10 +9,10 @@ Issue: #2309
 """
 
 import os
-import json
 import time
+import hmac
 from typing import Optional
-from flask import Blueprint, request, jsonify, render_template_string
+from flask import Blueprint, request, jsonify
 
 from machine_passport import (
     MachinePassportLedger,
@@ -40,10 +40,79 @@ def get_ledger() -> MachinePassportLedger:
     return _ledger
 
 
+def require_admin():
+    """Require configured admin authentication for mutating passport routes."""
+    admin_key = request.headers.get('X-Admin-Key', '') or request.headers.get('X-API-Key', '')
+    expected_admin_key = os.environ.get('ADMIN_KEY', '')
+
+    if not expected_admin_key:
+        return jsonify({
+            'ok': False,
+            'error': 'unauthorized',
+            'message': 'ADMIN_KEY not configured',
+        }), 401
+
+    if not hmac.compare_digest(
+        admin_key.encode('utf-8'),
+        expected_admin_key.encode('utf-8'),
+    ):
+        return jsonify({
+            'ok': False,
+            'error': 'unauthorized',
+            'message': 'Admin key required',
+        }), 401
+
+    return None
+
+
+def get_optional_json_object():
+    """Return an optional JSON object body or an error response."""
+    data = request.get_json(silent=True)
+    if data is None:
+        return {}, None
+    if not isinstance(data, dict):
+        return None, (jsonify({
+            'ok': False,
+            'error': 'invalid_request',
+            'message': 'JSON object required',
+        }), 400)
+    return data, None
+
+
+def _parse_non_negative_int_arg(name: str, default: int, max_value: Optional[int] = None):
+    """Parse a non-negative integer query parameter."""
+    raw_value = request.args.get(name, default)
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        return None, jsonify({'ok': False, 'error': f'{name} must be an integer'}), 400
+
+    if value < 0:
+        return None, jsonify({'ok': False, 'error': f'{name} must be non-negative'}), 400
+
+    if max_value is not None:
+        value = min(value, max_value)
+
+    return value, None, None
+
+
+def _require_valid_machine_id(machine_id: str, max_len: int = 128):
+    """Reject overlong machine_id path parameters before DB work."""
+    if len(machine_id) > max_len:
+        return jsonify({
+            'ok': False, 'error': 'invalid_machine_id',
+            'message': f'machine_id exceeds {max_len} characters',
+        }), 400
+    return None
+
+
 # === Public Read Endpoints ===
 
 @machine_passport_bp.route('/<machine_id>', methods=['GET'])
 def get_passport(machine_id: str):
+    err = _require_valid_machine_id(machine_id)
+    if err:
+        return err
     """
     Get a machine passport by ID.
     
@@ -81,8 +150,13 @@ def list_passports():
     
     owner = request.args.get('owner')
     architecture = request.args.get('architecture')
-    limit = min(int(request.args.get('limit', 100)), 500)
-    offset = int(request.args.get('offset', 0))
+    limit, error_response, status = _parse_non_negative_int_arg('limit', 100, max_value=500)
+    if error_response is not None:
+        return error_response, status
+
+    offset, error_response, status = _parse_non_negative_int_arg('offset', 0, max_value=10_000)
+    if error_response is not None:
+        return error_response, status
     
     passports = ledger.list_passports(
         owner_miner_id=owner,
@@ -102,6 +176,9 @@ def list_passports():
 
 @machine_passport_bp.route('/<machine_id>/repair-log', methods=['GET'])
 def get_repair_log(machine_id: str):
+    err = _require_valid_machine_id(machine_id)
+    if err:
+        return err
     """Get repair log for a machine."""
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
@@ -118,6 +195,9 @@ def get_repair_log(machine_id: str):
 
 @machine_passport_bp.route('/<machine_id>/attestations', methods=['GET'])
 def get_attestations(machine_id: str):
+    err = _require_valid_machine_id(machine_id)
+    if err:
+        return err
     """Get attestation history for a machine."""
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
@@ -134,6 +214,9 @@ def get_attestations(machine_id: str):
 
 @machine_passport_bp.route('/<machine_id>/benchmarks', methods=['GET'])
 def get_benchmarks(machine_id: str):
+    err = _require_valid_machine_id(machine_id)
+    if err:
+        return err
     """Get benchmark signatures for a machine."""
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
@@ -150,6 +233,9 @@ def get_benchmarks(machine_id: str):
 
 @machine_passport_bp.route('/<machine_id>/lineage', methods=['GET'])
 def get_lineage(machine_id: str):
+    err = _require_valid_machine_id(machine_id)
+    if err:
+        return err
     """Get lineage notes for a machine."""
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
@@ -185,17 +271,13 @@ def create_passport():
     }
     """
     # Admin authentication
-    admin_key = request.headers.get('X-Admin-Key', '') or request.headers.get('X-API-Key', '')
-    expected_admin_key = os.environ.get('ADMIN_KEY', '')
+    auth_error = require_admin()
+    if auth_error is not None:
+        return auth_error
     
-    if expected_admin_key and admin_key != expected_admin_key:
-        return jsonify({
-            'ok': False,
-            'error': 'unauthorized',
-            'message': 'Admin key required',
-        }), 401
-    
-    data = request.get_json()
+    data, error = get_optional_json_object()
+    if error:
+        return error
     if not data:
         return jsonify({
             'ok': False,
@@ -268,13 +350,17 @@ def create_passport():
 
 @machine_passport_bp.route('/<machine_id>', methods=['PUT'])
 def update_passport(machine_id: str):
+    err = _require_valid_machine_id(machine_id)
+    if err:
+        return err
     """
     Update a machine passport.
-    
-    Requires admin authentication or owner verification.
+
+    Requires admin authentication.
     """
-    admin_key = request.headers.get('X-Admin-Key', '') or request.headers.get('X-API-Key', '')
-    expected_admin_key = os.environ.get('ADMIN_KEY', '')
+    auth_error = require_admin()
+    if auth_error is not None:
+        return auth_error
     
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
@@ -282,19 +368,9 @@ def update_passport(machine_id: str):
     if not passport:
         return jsonify({'ok': False, 'error': 'passport_not_found'}), 404
     
-    # Check authorization
-    if expected_admin_key:
-        if admin_key != expected_admin_key:
-            # Allow owner to update their own passport
-            data = request.get_json()
-            if data and data.get('owner_miner_id') != passport.owner_miner_id:
-                return jsonify({
-                    'ok': False,
-                    'error': 'unauthorized',
-                    'message': 'Admin key required or must be owner',
-                }), 401
-    
-    data = request.get_json()
+    data, error = get_optional_json_object()
+    if error:
+        return error
     if not data:
         return jsonify({
             'ok': False,
@@ -316,6 +392,9 @@ def update_passport(machine_id: str):
 
 @machine_passport_bp.route('/<machine_id>/repair-log', methods=['POST'])
 def add_repair_entry(machine_id: str):
+    err = _require_valid_machine_id(machine_id)
+    if err:
+        return err
     """
     Add a repair log entry.
     
@@ -330,20 +409,27 @@ def add_repair_entry(machine_id: str):
         "notes": "Machine now stable at 1.2V"
     }
     """
+    auth_error = require_admin()
+    if auth_error is not None:
+        return auth_error
+
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
-    
+
     if not passport:
         return jsonify({'ok': False, 'error': 'passport_not_found'}), 404
-    
-    data = request.get_json()
-    if not data or 'repair_type' not in data or 'description' not in data:
+
+    data, error = get_optional_json_object()
+    if error:
+        return error
+
+    if 'repair_type' not in data or 'description' not in data:
         return jsonify({
             'ok': False,
             'error': 'missing_field',
             'message': "Fields 'repair_type' and 'description' are required",
         }), 400
-    
+
     success, msg = ledger.add_repair_entry(
         machine_id=machine_id,
         repair_date=data.get('repair_date', int(time.time())),
@@ -367,18 +453,27 @@ def add_repair_entry(machine_id: str):
 
 @machine_passport_bp.route('/<machine_id>/attestations', methods=['POST'])
 def add_attestation(machine_id: str):
+    err = _require_valid_machine_id(machine_id)
+    if err:
+        return err
     """
     Record an attestation event.
     
     Typically called automatically during mining attestation.
     """
+    auth_error = require_admin()
+    if auth_error is not None:
+        return auth_error
+
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
     
     if not passport:
         return jsonify({'ok': False, 'error': 'passport_not_found'}), 404
     
-    data = request.get_json() or {}
+    data, error = get_optional_json_object()
+    if error:
+        return error
     
     success, msg = ledger.add_attestation(
         machine_id=machine_id,
@@ -403,6 +498,9 @@ def add_attestation(machine_id: str):
 
 @machine_passport_bp.route('/<machine_id>/benchmarks', methods=['POST'])
 def add_benchmark(machine_id: str):
+    err = _require_valid_machine_id(machine_id)
+    if err:
+        return err
     """
     Record a benchmark signature.
     
@@ -416,13 +514,19 @@ def add_benchmark(machine_id: str):
         "entropy_throughput": 500.0
     }
     """
+    auth_error = require_admin()
+    if auth_error is not None:
+        return auth_error
+
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
     
     if not passport:
         return jsonify({'ok': False, 'error': 'passport_not_found'}), 404
     
-    data = request.get_json() or {}
+    data, error = get_optional_json_object()
+    if error:
+        return error
     
     success, msg = ledger.add_benchmark(
         machine_id=machine_id,
@@ -447,6 +551,9 @@ def add_benchmark(machine_id: str):
 
 @machine_passport_bp.route('/<machine_id>/lineage', methods=['POST'])
 def add_lineage_note(machine_id: str):
+    err = _require_valid_machine_id(machine_id)
+    if err:
+        return err
     """
     Add a lineage note (ownership transfer, acquisition, etc.).
     
@@ -459,20 +566,27 @@ def add_lineage_note(machine_id: str):
         "tx_hash": "0x..."  # Optional blockchain transaction
     }
     """
+    auth_error = require_admin()
+    if auth_error is not None:
+        return auth_error
+
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
-    
+
     if not passport:
         return jsonify({'ok': False, 'error': 'passport_not_found'}), 404
-    
-    data = request.get_json()
-    if not data or 'event_type' not in data:
+
+    data, error = get_optional_json_object()
+    if error:
+        return error
+
+    if 'event_type' not in data:
         return jsonify({
             'ok': False,
             'error': 'missing_field',
             'message': "Field 'event_type' is required",
         }), 400
-    
+
     success, msg = ledger.add_lineage_note(
         machine_id=machine_id,
         lineage_ts=data.get('lineage_ts', int(time.time())),
@@ -501,6 +615,9 @@ def add_lineage_note(machine_id: str):
 
 @machine_passport_bp.route('/<machine_id>/qr', methods=['GET'])
 def generate_qr(machine_id: str):
+    err = _require_valid_machine_id(machine_id)
+    if err:
+        return err
     """
     Generate a QR code for the machine passport.
     
@@ -508,7 +625,6 @@ def generate_qr(machine_id: str):
     """
     import tempfile
     import base64
-    from io import BytesIO
     
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
@@ -550,6 +666,9 @@ def generate_qr(machine_id: str):
 
 @machine_passport_bp.route('/<machine_id>/pdf', methods=['GET'])
 def generate_pdf(machine_id: str):
+    err = _require_valid_machine_id(machine_id)
+    if err:
+        return err
     """
     Generate a printable PDF passport.
     
@@ -600,7 +719,9 @@ def compute_machine_id_endpoint():
     
     Request Body: Hardware fingerprint data (same as attestation)
     """
-    data = request.get_json()
+    data, error = get_optional_json_object()
+    if error:
+        return error
     if not data:
         return jsonify({
             'ok': False,

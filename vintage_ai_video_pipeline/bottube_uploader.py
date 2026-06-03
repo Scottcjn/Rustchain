@@ -102,7 +102,7 @@ class BoTTubeUploader:
                     )
                 elif data and method in ("POST", "PUT", "PATCH"):
                     headers["Content-Type"] = "application/json"
-                    req = Request(
+                    req = urllib.request.Request(
                         url,
                         data=json.dumps(data).encode("utf-8"),
                         headers=headers,

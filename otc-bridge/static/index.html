@@ -469,7 +469,7 @@
                             </div>
                             <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
                                 <span style="color: var(--text-secondary);">Total Supply</span>
-                                <span style="font-family: monospace;">8,300,000 RTC</span>
+                                <span style="font-family: monospace;">8,388,608 RTC</span>
                             </div>
                             <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
                                 <span style="color: var(--text-secondary);">FDV (at ref)</span>
@@ -533,6 +533,36 @@
     let currentTab = 'buy';
     let currentPair = 'RTC/USDC';
     let matchingOrderId = null;
+    let openOrdersById = new Map();
+
+    function escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, ch => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;'
+        }[ch]));
+    }
+
+    function safeSide(value) {
+        return value === 'sell' ? 'sell' : 'buy';
+    }
+
+    function safeNumber(value, fallback = 0) {
+        const number = Number(value);
+        return Number.isFinite(number) ? number : fallback;
+    }
+
+    function safeOptionalNumber(value) {
+        if (value === null || value === undefined) return null;
+        const number = Number(value);
+        return Number.isFinite(number) ? number : null;
+    }
+
+    function formatNumber(value, decimals) {
+        return safeNumber(value).toFixed(decimals);
+    }
 
     // Toast notifications
     function toast(msg, type = 'success') {
@@ -648,12 +678,14 @@
             const asksEl = document.getElementById('orderbook-asks');
             const bidsEl = document.getElementById('orderbook-bids');
             const emptyEl = document.getElementById('orderbook-empty');
+            const asks = Array.isArray(data.asks) ? data.asks : [];
+            const bids = Array.isArray(data.bids) ? data.bids : [];
 
             // Find max total for depth bars
-            const allTotals = [...data.asks, ...data.bids].map(o => o.total_rtc);
+            const allTotals = [...asks, ...bids].map(o => safeNumber(o?.total_rtc));
             const maxTotal = Math.max(...allTotals, 1);
 
-            if (data.asks.length === 0 && data.bids.length === 0) {
+            if (asks.length === 0 && bids.length === 0) {
                 asksEl.innerHTML = '';
                 bidsEl.innerHTML = '';
                 emptyEl.style.display = 'block';
@@ -665,45 +697,53 @@
             const decimals = quote === 'ETH' ? 6 : 4;
 
             // Asks (reversed so lowest is at bottom, near spread)
-            asksEl.innerHTML = [...data.asks].reverse().map(a => {
-                const pct = (a.total_rtc / maxTotal * 100).toFixed(0);
+            asksEl.innerHTML = [...asks].reverse().map(a => {
+                const price = safeNumber(a?.price);
+                const totalRtc = safeNumber(a?.total_rtc);
+                const orderCount = safeNumber(a?.order_count);
+                const pct = (totalRtc / maxTotal * 100).toFixed(0);
                 return `<tr class="ask-row">
-                    <td>${a.price.toFixed(decimals)}</td>
-                    <td>${a.total_rtc.toFixed(2)}</td>
-                    <td>${(a.price * a.total_rtc).toFixed(decimals)}</td>
-                    <td>${a.order_count}</td>
+                    <td>${formatNumber(price, decimals)}</td>
+                    <td>${formatNumber(totalRtc, 2)}</td>
+                    <td>${formatNumber(price * totalRtc, decimals)}</td>
+                    <td>${formatNumber(orderCount, 0)}</td>
                     <div class="depth-bar" style="width:${pct}%"></div>
                 </tr>`;
             }).join('');
 
             // Bids
-            bidsEl.innerHTML = data.bids.map(b => {
-                const pct = (b.total_rtc / maxTotal * 100).toFixed(0);
+            bidsEl.innerHTML = bids.map(b => {
+                const price = safeNumber(b?.price);
+                const totalRtc = safeNumber(b?.total_rtc);
+                const orderCount = safeNumber(b?.order_count);
+                const pct = (totalRtc / maxTotal * 100).toFixed(0);
                 return `<tr class="bid-row">
-                    <td>${b.price.toFixed(decimals)}</td>
-                    <td>${b.total_rtc.toFixed(2)}</td>
-                    <td>${(b.price * b.total_rtc).toFixed(decimals)}</td>
-                    <td>${b.order_count}</td>
+                    <td>${formatNumber(price, decimals)}</td>
+                    <td>${formatNumber(totalRtc, 2)}</td>
+                    <td>${formatNumber(price * totalRtc, decimals)}</td>
+                    <td>${formatNumber(orderCount, 0)}</td>
                     <div class="depth-bar" style="width:${pct}%"></div>
                 </tr>`;
             }).join('');
 
             // Spread
             const spreadEl = document.getElementById('spread-display');
-            if (data.spread !== null) {
-                spreadEl.textContent = `Spread: ${data.spread.toFixed(decimals)} ${quote}`;
+            const spread = safeOptionalNumber(data.spread);
+            if (spread !== null) {
+                spreadEl.textContent = `Spread: ${formatNumber(spread, decimals)} ${quote}`;
             } else {
                 spreadEl.textContent = 'Spread: --';
             }
 
             // Update ticker
-            if (data.last_price) {
+            const lastPrice = safeOptionalNumber(data.last_price);
+            if (lastPrice !== null) {
                 const tickId = quote === 'USDC' ? 'tick-usdc' : quote === 'ETH' ? 'tick-eth' : null;
-                if (tickId) document.getElementById(tickId).textContent = data.last_price.toFixed(decimals);
-                document.getElementById('nav-last-price').textContent = `$${data.last_price.toFixed(4)}`;
+                if (tickId) document.getElementById(tickId).textContent = formatNumber(lastPrice, decimals);
+                document.getElementById('nav-last-price').textContent = `$${formatNumber(lastPrice, 4)}`;
             }
-            document.getElementById('tick-trades').textContent = data.trades_24h;
-            document.getElementById('nav-volume').textContent = `${data.volume_24h_rtc.toFixed(0)} RTC`;
+            document.getElementById('tick-trades').textContent = safeNumber(data.trades_24h, 0);
+            document.getElementById('nav-volume').textContent = `${formatNumber(data.volume_24h_rtc, 0)} RTC`;
         } catch (e) {
             console.error('Orderbook load failed:', e);
         }
@@ -718,30 +758,44 @@
             if (!data.ok) return;
 
             const el = document.getElementById('orders-list');
-            document.getElementById('order-count').textContent = `${data.total} orders`;
-            document.getElementById('nav-orders').textContent = data.total;
+            const rawOrders = Array.isArray(data.orders) ? data.orders : [];
+            const orders = rawOrders.filter(o => o && typeof o === 'object' && String(o.order_id ?? '').trim() !== '');
+            const total = safeNumber(data.total, orders.length);
+            document.getElementById('order-count').textContent = `${total} orders`;
+            document.getElementById('nav-orders').textContent = total;
 
-            if (data.orders.length === 0) {
+            if (orders.length === 0) {
                 el.innerHTML = '<div class="empty">No open orders. Create the first one!</div>';
                 return;
             }
 
             const quote = pair.split('/')[1];
-            el.innerHTML = data.orders.map(o => {
-                const age = timeSince(o.created_at);
-                const escrowed = o.escrow_job_id ? '<span class="escrow-badge">Escrowed</span>' : '';
+            openOrdersById = new Map();
+            el.innerHTML = orders.map(o => {
+                const order = o;
+                const orderId = String(order.order_id ?? '');
+                openOrdersById.set(orderId, order);
+                const age = timeSince(order.created_at);
+                const escrowed = order.escrow_job_id ? '<span class="escrow-badge">Escrowed</span>' : '';
+                const side = safeSide(order.side);
+                const amount = safeNumber(order.amount_rtc);
+                const price = safeNumber(order.price_per_rtc);
+                const total = safeNumber(order.total_quote);
                 return `<div class="order-item">
-                    <span class="order-side ${o.side}">${o.side}</span>
+                    <span class="order-side ${side}">${escapeHtml(side)}</span>
                     <div class="order-info">
-                        <div class="order-amount">${o.amount_rtc} RTC @ ${o.price_per_rtc} ${quote}</div>
-                        <div class="order-price">Total: ${o.total_quote.toFixed(4)} ${quote} ${escrowed}</div>
-                        <div class="order-wallet">${o.maker_wallet} &bull; ${age}</div>
+                        <div class="order-amount">${formatNumber(amount, 2)} RTC @ ${formatNumber(price, 4)} ${escapeHtml(quote)}</div>
+                        <div class="order-price">Total: ${formatNumber(total, 4)} ${escapeHtml(quote)} ${escrowed}</div>
+                        <div class="order-wallet">${escapeHtml(order.maker_wallet)} &bull; ${escapeHtml(age)}</div>
                     </div>
                     <div class="order-actions">
-                        <button class="btn-sm btn-match" onclick="openMatch('${o.order_id}', '${o.side}', ${o.amount_rtc}, ${o.price_per_rtc}, '${quote}', '${o.maker_wallet}')">Match</button>
+                        <button class="btn-sm btn-match" data-order-id="${escapeHtml(orderId)}">Match</button>
                     </div>
                 </div>`;
             }).join('');
+            el.querySelectorAll('.btn-match[data-order-id]').forEach(btn => {
+                btn.addEventListener('click', () => openMatchFromOrder(btn.dataset.orderId));
+            });
         } catch (e) {
             console.error('Orders load failed:', e);
         }
@@ -755,21 +809,24 @@
             if (!data.ok) return;
 
             const el = document.getElementById('trades-body');
-            if (data.trades.length === 0) {
+            const trades = Array.isArray(data.trades) ? data.trades : [];
+            if (trades.length === 0) {
                 el.innerHTML = '<tr><td colspan="5" class="empty">No trades yet</td></tr>';
                 return;
             }
 
-            el.innerHTML = data.trades.map(t => {
-                const quote = t.pair.split('/')[1];
-                const time = new Date(t.completed_at * 1000).toLocaleTimeString();
-                const sideColor = t.side === 'buy' ? 'var(--green)' : 'var(--red)';
+            el.innerHTML = trades.map(t => {
+                const trade = t && typeof t === 'object' ? t : {};
+                const quote = String(trade.pair || '').split('/')[1] || 'USDC';
+                const time = new Date(safeNumber(trade.completed_at) * 1000).toLocaleTimeString();
+                const side = safeSide(trade.side);
+                const sideColor = side === 'buy' ? 'var(--green)' : 'var(--red)';
                 return `<tr>
-                    <td>${time}</td>
-                    <td style="color:${sideColor}; text-transform:uppercase; font-weight:600;">${t.side}</td>
-                    <td>${t.price_per_rtc.toFixed(4)}</td>
-                    <td>${t.amount_rtc.toFixed(2)}</td>
-                    <td>${t.total_quote.toFixed(4)} ${quote}</td>
+                    <td>${escapeHtml(time)}</td>
+                    <td style="color:${sideColor}; text-transform:uppercase; font-weight:600;">${escapeHtml(side)}</td>
+                    <td>${formatNumber(trade.price_per_rtc, 4)}</td>
+                    <td>${formatNumber(trade.amount_rtc, 2)}</td>
+                    <td>${formatNumber(trade.total_quote, 4)} ${escapeHtml(quote)}</td>
                 </tr>`;
             }).join('');
         } catch (e) {
@@ -778,14 +835,29 @@
     }
 
     // Match modal
+    function openMatchFromOrder(orderId) {
+        const order = openOrdersById.get(String(orderId));
+        if (!order) return;
+        const quote = document.getElementById('pair-select').value.split('/')[1];
+        openMatch(
+            order.order_id,
+            order.side,
+            safeNumber(order.amount_rtc),
+            safeNumber(order.price_per_rtc),
+            quote,
+            order.maker_wallet
+        );
+    }
+
     function openMatch(orderId, side, amount, price, quote, maker) {
         matchingOrderId = orderId;
-        const action = side === 'sell' ? 'buy' : 'sell';
+        const normalizedSide = safeSide(side);
+        const action = normalizedSide === 'sell' ? 'buy' : 'sell';
         document.getElementById('match-details').innerHTML =
-            `You will <strong>${action}</strong> <strong>${amount} RTC</strong> at ` +
-            `<strong>${price} ${quote}/RTC</strong> (total: ${(amount * price).toFixed(4)} ${quote}).<br/>` +
-            `Counterparty: ${maker}` +
-            (side === 'buy' ? '<br/><em style="color:var(--gold);">Your RTC will be locked in escrow.</em>' : '');
+            `You will <strong>${escapeHtml(action)}</strong> <strong>${formatNumber(amount, 2)} RTC</strong> at ` +
+            `<strong>${formatNumber(price, 4)} ${escapeHtml(quote)}/RTC</strong> (total: ${formatNumber(amount * price, 4)} ${escapeHtml(quote)}).<br/>` +
+            `Counterparty: ${escapeHtml(maker)}` +
+            (normalizedSide === 'buy' ? '<br/><em style="color:var(--gold);">Your RTC will be locked in escrow.</em>' : '');
 
         const btn = document.getElementById('match-btn');
         btn.className = `btn btn-${action === 'buy' ? 'buy' : 'sell'}`;
@@ -840,17 +912,18 @@
             const r = await fetch(`${API}/stats`);
             const data = await r.json();
             if (!data.ok) return;
-            const s = data.stats;
+            const s = data.stats && typeof data.stats === 'object' ? data.stats : {};
             // Update nav
-            if (s.last_price) {
-                document.getElementById('nav-last-price').textContent = `$${s.last_price.toFixed(4)}`;
+            const lastPrice = safeOptionalNumber(s.last_price);
+            if (lastPrice !== null) {
+                document.getElementById('nav-last-price').textContent = `$${formatNumber(lastPrice, 4)}`;
             }
         } catch (e) {}
     }
 
     // Helpers
     function timeSince(ts) {
-        const seconds = Math.floor(Date.now() / 1000 - ts);
+        const seconds = Math.floor(Date.now() / 1000 - safeNumber(ts));
         if (seconds < 60) return 'just now';
         if (seconds < 3600) return `${Math.floor(seconds/60)}m ago`;
         if (seconds < 86400) return `${Math.floor(seconds/3600)}h ago`;

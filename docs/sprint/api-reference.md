@@ -8,7 +8,7 @@
 
 | Node | URL |
 |------|-----|
-| Primary attestation node | `http://50.28.86.131:8088` |
+| Primary attestation node | `http://rustchain.org:8088` |
 | Ergo anchor node | `http://50.28.86.153:8088` |
 
 Both nodes expose identical public endpoints. Direct attestation submissions to
@@ -124,7 +124,7 @@ receives a reward multiplier based on hardware antiquity.
 #### Example curl
 
 ```bash
-curl -X POST http://50.28.86.131:8088/attest/submit \
+curl -X POST http://rustchain.org:8088/attest/submit \
   -H "Content-Type: application/json" \
   -d '{
     "miner_id": "mywalletRTC",
@@ -198,7 +198,7 @@ No parameters.
 #### Example curl
 
 ```bash
-curl http://50.28.86.131:8088/api/miners | python3 -m json.tool
+curl http://rustchain.org:8088/api/miners | python3 -m json.tool
 ```
 
 **Status codes:** `200` (success), `429` (rate limited), `500` (server error)
@@ -248,7 +248,7 @@ No parameters.
 #### Example curl
 
 ```bash
-curl http://50.28.86.131:8088/api/stats | python3 -m json.tool
+curl http://rustchain.org:8088/api/stats | python3 -m json.tool
 ```
 
 **Status codes:** `200` (success), `500` (server error)
@@ -308,7 +308,7 @@ Empty `rewards` array means no settlement data for that epoch.
 
 ```bash
 # Query epoch 74
-curl http://50.28.86.131:8088/rewards/epoch/74 | python3 -m json.tool
+curl http://rustchain.org:8088/rewards/epoch/74 | python3 -m json.tool
 
 # Query on the anchor node
 curl http://50.28.86.153:8088/rewards/epoch/74 | python3 -m json.tool
@@ -365,7 +365,7 @@ No parameters.
 
 ```bash
 # Quick liveness check — primary node
-curl http://50.28.86.131:8088/health
+curl http://rustchain.org:8088/health
 
 # Anchor node
 curl http://50.28.86.153:8088/health
@@ -404,4 +404,4 @@ done
 
 ---
 
-*API documented for RustChain v2.2.1-rip200 · Base URLs: http://50.28.86.131:8088, http://50.28.86.153:8088*
+*API documented for RustChain v2.2.1-rip200 · Base URLs: http://rustchain.org:8088, http://50.28.86.153:8088*

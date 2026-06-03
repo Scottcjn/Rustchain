@@ -1,6 +1,8 @@
+import gc
 import os
 import tempfile
 import sys
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -20,15 +22,20 @@ def client(monkeypatch):
     monkeypatch.delenv("SCOTT_NOTIFICATION_SERVICE_TOKEN", raising=False)
     review_service.DB_PATH = db_path
     review_service.SCOTT_NOTIFICATION_QUEUE_URL = ""
-    review_service.SCOTT_NOTIFICATION_SERVICE_TOKEN = "elya2025"
+    review_service.SCOTT_NOTIFICATION_SERVICE_TOKEN = ""
     review_service.app.config["TESTING"] = True
     try:
         yield review_service.app.test_client()
     finally:
-        try:
-            os.unlink(db_path)
-        except FileNotFoundError:
-            pass
+        for _ in range(5):
+            try:
+                os.unlink(db_path)
+                break
+            except FileNotFoundError:
+                break
+            except PermissionError:
+                gc.collect()
+                time.sleep(0.05)
 
 
 def _payload():
@@ -50,6 +57,45 @@ def _payload():
 def test_review_requires_auth(client):
     response = client.post("/review", json=_payload())
     assert response.status_code == 401
+
+
+def test_review_auth_uses_constant_time_compare(client, monkeypatch):
+    calls = []
+
+    def spy_compare_digest(provided, expected):
+        calls.append((provided, expected))
+        return provided == expected
+
+    monkeypatch.setattr(review_service.hmac, "compare_digest", spy_compare_digest)
+    monkeypatch.setenv("SOPHIA_GOVERNOR_REVIEW_BEARER", "review-token,other-token")
+    monkeypatch.setattr(
+        review_service,
+        "_call_ollama",
+        lambda prompt: ("Assessment: ok.\nRisk: low.\nNext step: approve.", "glm-test"),
+    )
+
+    denied = client.post("/review", headers={"X-Admin-Key": "wrong-admin"}, json=_payload())
+    assert denied.status_code == 401
+
+    denied_bearer = client.post("/review", headers={"Authorization": "Bearer wrong-token"}, json=_payload())
+    assert denied_bearer.status_code == 401
+
+    accepted_bearer = client.post("/review", headers={"Authorization": "Bearer review-token"}, json=_payload())
+    assert accepted_bearer.status_code == 200
+    assert accepted_bearer.get_json()["ok"] is True
+
+    accepted_admin = client.post("/review", headers={"X-API-Key": "test-admin"}, json=_payload())
+    assert accepted_admin.status_code == 200
+    assert accepted_admin.get_json()["ok"] is True
+
+    assert calls == [
+        ("wrong-admin", "test-admin"),
+        ("wrong-token", "review-token"),
+        ("wrong-token", "other-token"),
+        ("review-token", "review-token"),
+        ("review-token", "other-token"),
+        ("test-admin", "test-admin"),
+    ]
 
 
 def test_review_endpoint_calls_model_and_stores(client, monkeypatch):
@@ -75,6 +121,74 @@ def test_review_endpoint_calls_model_and_stores(client, monkeypatch):
     assert recent_body["ok"] is True
     assert len(recent_body["reviews"]) == 1
     assert recent_body["reviews"][0]["recommended_resolution"]["target_inbox_status"] == "resolved"
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "error"),
+    [
+        ("review_prompt", {"prompt": "review this"}, "review_prompt_must_be_string"),
+        ("event_type", ["pending_transfer"], "event_type_must_be_string"),
+        ("risk_level", {"level": "high"}, "risk_level_must_be_string"),
+        ("stance", ["watch"], "stance_must_be_string"),
+        ("summary", {"text": "Large manual bridge override requested."}, "summary_must_be_string"),
+    ],
+)
+def test_review_endpoint_rejects_structured_top_level_text_fields(client, monkeypatch, field, value, error):
+    model_calls = []
+
+    def fake_call(prompt):
+        model_calls.append(prompt)
+        return "Assessment: ok.\nRisk: low.\nNext step: approve.", "glm-test"
+
+    monkeypatch.setattr(review_service, "_call_ollama", fake_call)
+    payload = _payload()
+    payload[field] = value
+
+    response = client.post("/review", headers={"X-Admin-Key": "test-admin"}, json=payload)
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == error
+    assert model_calls == []
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "error"),
+    [
+        ("event_type", ["pending_transfer"], "entry_event_type_must_be_string"),
+        ("source", {"service": "wallet.transfer"}, "entry_source_must_be_string"),
+        ("remote_agent", ["sophia-rustchain-governor"], "entry_remote_agent_must_be_string"),
+        ("remote_instance", {"node": "node-1"}, "entry_remote_instance_must_be_string"),
+    ],
+)
+def test_review_endpoint_rejects_structured_entry_identity_fields(client, monkeypatch, field, value, error):
+    model_calls = []
+
+    def fake_call(prompt):
+        model_calls.append(prompt)
+        return "Assessment: ok.\nRisk: low.\nNext step: approve.", "glm-test"
+
+    monkeypatch.setattr(review_service, "_call_ollama", fake_call)
+    payload = _payload()
+    payload["entry"][field] = value
+    if field == "event_type":
+        payload.pop("event_type")
+
+    response = client.post("/review", headers={"X-Admin-Key": "test-admin"}, json=payload)
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == error
+    assert model_calls == []
+
+
+@pytest.mark.parametrize("limit", ["abc", "10.5"])
+def test_recent_rejects_malformed_limit(client, limit):
+    response = client.get(
+        f"/recent?limit={limit}",
+        headers={"X-Admin-Key": "test-admin"},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "limit must be an integer"
 
 
 def test_health_reports_status(client):
@@ -109,6 +223,24 @@ def test_call_ollama_sends_top_level_think_false(monkeypatch):
     assert "Assessment" in review_text
     assert model_used == review_service.OLLAMA_MODEL
     assert captured["json"]["think"] is False
+
+
+def test_call_ollama_rejects_non_object_json(monkeypatch):
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return ["not", "an", "object"]
+
+    monkeypatch.setattr(
+        review_service,
+        "requests",
+        SimpleNamespace(post=lambda *args, **kwargs: FakeResponse()),
+    )
+
+    with pytest.raises(RuntimeError, match="Ollama returned list JSON, expected object"):
+        review_service._call_ollama("prompt")
 
 
 def test_review_endpoint_falls_back_when_model_returns_thinking_only(client, monkeypatch):
@@ -150,6 +282,78 @@ def test_backfill_missing_updates_blank_reviews(client, monkeypatch):
     recent_body = recent.get_json()
     repaired = next(item for item in recent_body["reviews"] if item["id"] == review_id)
     assert "Assessment: repaired." in repaired["review_text"]
+
+
+@pytest.mark.parametrize(
+    ("path", "limit", "error"),
+    [
+        ("/api/sophia/governor/review/backfill-missing", "abc", "limit must be an integer"),
+        ("/api/sophia/governor/review/backfill-missing", "10.5", "limit must be an integer"),
+        ("/api/sophia/governor/review/backfill-missing", 10.5, "limit must be an integer"),
+        ("/api/sophia/governor/review/backfill-missing", True, "limit must be an integer"),
+        ("/api/sophia/governor/review/backfill-missing", False, "limit must be an integer"),
+        ("/api/sophia/governor/review/backfill-missing", 0, "limit must be at least 1"),
+        ("/api/sophia/governor/review/backfill-missing", -1, "limit must be at least 1"),
+        ("/api/sophia/governor/review/normalize-existing", "abc", "limit must be an integer"),
+        ("/api/sophia/governor/review/normalize-existing", "10.5", "limit must be an integer"),
+        ("/api/sophia/governor/review/normalize-existing", 10.5, "limit must be an integer"),
+        ("/api/sophia/governor/review/normalize-existing", True, "limit must be an integer"),
+        ("/api/sophia/governor/review/normalize-existing", False, "limit must be an integer"),
+        ("/api/sophia/governor/review/normalize-existing", 0, "limit must be at least 1"),
+        ("/api/sophia/governor/review/normalize-existing", -1, "limit must be at least 1"),
+    ],
+)
+def test_maintenance_routes_reject_invalid_limits(client, path, limit, error):
+    response = client.post(
+        path,
+        headers={"X-Admin-Key": "test-admin"},
+        json={"limit": limit},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == error
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/sophia/governor/review/backfill-missing",
+        "/api/sophia/governor/review/normalize-existing",
+        "/api/sophia/governor/review",
+        "/api/sophia/governor/scott-notifications/queue",
+    ],
+)
+@pytest.mark.parametrize("payload", [[], ["unexpected"], False, "not-object"])
+def test_post_routes_reject_non_object_json_bodies(client, path, payload):
+    response = client.post(
+        path,
+        headers={"X-Admin-Key": "test-admin"},
+        json=payload,
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "JSON object required"
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/sophia/governor/review/backfill-missing",
+        "/api/sophia/governor/review/normalize-existing",
+        "/api/sophia/governor/review",
+        "/api/sophia/governor/scott-notifications/queue",
+    ],
+)
+def test_post_routes_reject_malformed_json_bodies(client, path):
+    response = client.post(
+        path,
+        headers={"X-Admin-Key": "test-admin"},
+        data='{"bad"',
+        content_type="application/json",
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "JSON object required"
 
 
 def test_review_normalizes_verbose_action_reasoning(client, monkeypatch):
@@ -300,3 +504,28 @@ def test_scott_notification_queue_relay_endpoint(client, monkeypatch):
     assert body["notification"]["notification_id"] == "SN-RELAY0001"
     assert captured["url"] == "http://100.121.203.9:18790/scott-notifications/queue"
     assert captured["headers"]["Authorization"] == "Bearer relay-token"
+
+
+def test_scott_notification_queue_requires_configured_token(client, monkeypatch):
+    calls = []
+
+    def fake_post(*args, **kwargs):
+        calls.append((args, kwargs))
+        raise AssertionError("notification relay should not send without a token")
+
+    monkeypatch.setattr(review_service, "requests", SimpleNamespace(post=fake_post))
+    review_service.SCOTT_NOTIFICATION_QUEUE_URL = "http://100.121.203.9:18790/scott-notifications/queue"
+    review_service.SCOTT_NOTIFICATION_SERVICE_TOKEN = ""
+
+    response = client.post(
+        "/api/sophia/governor/scott-notifications/queue",
+        headers={"X-Admin-Key": "test-admin"},
+        json={
+            "title": "RustChain inbox 7 needs review",
+            "summary": "pending_transfer came in at high risk.",
+        },
+    )
+
+    assert response.status_code == 503
+    assert response.get_json()["error"] == "scott_notification_token_not_configured"
+    assert calls == []

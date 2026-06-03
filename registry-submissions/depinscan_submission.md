@@ -26,7 +26,7 @@
 | **Token Symbol** | RTC |
 | **Website** | https://rustchain.org |
 | **GitHub** | https://github.com/Scottcjn/rustchain |
-| **Block Explorer** | https://50.28.86.131/explorer |
+| **Block Explorer** | https://rustchain.org/explorer |
 | **Logo/Icon** | (need to provide — use RustChain logo from repo) |
 | **Chain** | Custom (Ergo-anchored private chain) |
 | **Total Devices** | 18+ (physical mining devices across PowerPC, SPARC, x86, Apple Silicon, POWER8) |

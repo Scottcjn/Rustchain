@@ -6,6 +6,7 @@ Extends bridge_api.py with dashboard-specific endpoints:
 - GET /bridge/dashboard/metrics - Aggregated metrics for dashboard
 - GET /bridge/dashboard/health - Bridge health status
 - GET /bridge/dashboard/transactions - Recent transactions with filtering
+- GET /bridge/dashboard/history - Bucketed bridge volume and transaction history
 - GET /bridge/dashboard/price - wRTC price data from Raydium/DexScreener
 - GET /bridge/dashboard/chart - Historical price chart data
 
@@ -14,6 +15,7 @@ Part of Bounty #2303: wRTC Solana Bridge Dashboard
 
 import os
 import json
+import logging
 import time
 from flask import Blueprint, jsonify, request
 
@@ -33,6 +35,7 @@ WRTC_MINT_ADDRESS = os.environ.get("WRTC_MINT_ADDRESS", "")
 # Cache configuration (in-memory for simplicity)
 CACHE_TTL = 30  # seconds
 _price_cache = {"data": None, "timestamp": 0}
+logger = logging.getLogger(__name__)
 
 # ─── Blueprint ────────────────────────────────────────────────────────────────
 dashboard_bp = Blueprint("dashboard", __name__, url_prefix="/bridge/dashboard")
@@ -152,8 +155,9 @@ def get_bridge_health():
             conn.execute("SELECT 1").fetchone()
         health["rustchain"] = True
         details["rustchain"] = "Database accessible"
-    except Exception as e:
-        details["rustchain"] = f"Database error: {str(e)}"
+    except Exception:
+        logger.exception("Dashboard health database check failed")
+        details["rustchain"] = "Database unavailable"
 
     # Check Solana RPC (sync version)
     try:
@@ -173,8 +177,9 @@ def get_bridge_health():
                 details["solana_rpc"] = "RPC responsive"
             else:
                 details["solana_rpc"] = "RPC returned unexpected response"
-    except Exception as e:
-        details["solana_rpc"] = f"RPC error: {str(e)}"
+    except Exception:
+        logger.exception("Dashboard health Solana RPC check failed")
+        details["solana_rpc"] = "RPC unavailable"
 
     # Bridge API is healthy if we got here
     health["bridge_api"] = True
@@ -200,8 +205,9 @@ def get_bridge_health():
                     details["wrtc_mint"] = "Mint account exists"
                 else:
                     details["wrtc_mint"] = "Mint account not found"
-        except Exception as e:
-            details["wrtc_mint"] = f"Mint check error: {str(e)}"
+        except Exception:
+            logger.exception("Dashboard health wRTC mint check failed")
+            details["wrtc_mint"] = "Mint check unavailable"
     else:
         health["wrtc_mint"] = True  # Skip if not configured
         details["wrtc_mint"] = "Mint address not configured"
@@ -242,11 +248,16 @@ def get_dashboard_transactions():
     }
     """
     tx_type = request.args.get("type", "all").lower()
+    if tx_type not in ("all", "wrap", "unwrap"):
+        return jsonify({"error": "type must be one of: all, wrap, unwrap"}), 400
+
     state_filter = request.args.get("state", "").strip() or None
     try:
-        limit = min(int(request.args.get("limit", 50)), 200)
-    except ValueError:
-        limit = 50
+        raw_limit = request.args.get("limit")
+        limit = int(raw_limit) if raw_limit not in (None, "") else 50
+    except (TypeError, ValueError):
+        return jsonify({"error": "limit must be an integer"}), 400
+    limit = max(1, min(limit, 200))
 
     now = int(time.time())
     day_ago = now - 86400
@@ -259,6 +270,12 @@ def get_dashboard_transactions():
         if state_filter:
             where_clauses.append("state = ?")
             params.append(state_filter)
+        if tx_type == "wrap":
+            where_clauses.append("target_chain = ?")
+            params.append("solana")
+        elif tx_type == "unwrap":
+            where_clauses.append("target_chain = ?")
+            params.append("base")
 
         # Calculate 24h volume
         volume_row = conn.execute(
@@ -313,6 +330,121 @@ def get_dashboard_transactions():
         "wrap_count": wrap_count,
         "unwrap_count": unwrap_count,
         "total_volume_24h": round(total_volume_24h, 2),
+    })
+
+
+@dashboard_bp.route("/history", methods=["GET"])
+def get_bridge_history():
+    """
+    Get bucketed bridge history for monitoring charts.
+
+    Query params:
+    - period: '1h' | '24h' | '7d' | '30d' (default: '24h')
+    - bucket: '5m' | '15m' | '1h' | '1d' (default chosen from period)
+
+    Returns:
+    {
+        "period": "24h",
+        "bucket": "1h",
+        "start_time": int,
+        "end_time": int,
+        "points": [
+            {
+                "timestamp": int,
+                "completed_count": int,
+                "total_volume_rtc": float,
+                "wrap_volume_rtc": float,
+                "unwrap_volume_rtc": float,
+                "wrap_count": int,
+                "unwrap_count": int
+            }
+        ]
+    }
+    """
+    periods = {
+        "1h": 3600,
+        "24h": 86400,
+        "7d": 604800,
+        "30d": 2592000,
+    }
+    buckets = {
+        "5m": 300,
+        "15m": 900,
+        "1h": 3600,
+        "1d": 86400,
+    }
+    default_buckets = {
+        "1h": "5m",
+        "24h": "1h",
+        "7d": "1d",
+        "30d": "1d",
+    }
+
+    period = request.args.get("period", "24h").lower()
+    if period not in periods:
+        return jsonify({"error": "period must be one of: 1h, 24h, 7d, 30d"}), 400
+
+    bucket = request.args.get("bucket", default_buckets[period]).lower()
+    if bucket not in buckets:
+        return jsonify({"error": "bucket must be one of: 5m, 15m, 1h, 1d"}), 400
+
+    period_seconds = periods[period]
+    bucket_seconds = buckets[bucket]
+    if bucket_seconds > period_seconds:
+        return jsonify({"error": "bucket cannot be larger than period"}), 400
+    if period_seconds // bucket_seconds > 720:
+        return jsonify({"error": "too many history buckets requested"}), 400
+
+    end_time = int(time.time())
+    start_time = end_time - period_seconds
+    first_bucket = (start_time // bucket_seconds) * bucket_seconds
+    bucket_count = ((end_time - first_bucket) // bucket_seconds) + 1
+
+    points = []
+    for index in range(bucket_count):
+        timestamp = first_bucket + (index * bucket_seconds)
+        points.append({
+            "timestamp": timestamp,
+            "completed_count": 0,
+            "total_volume_rtc": 0.0,
+            "wrap_volume_rtc": 0.0,
+            "unwrap_volume_rtc": 0.0,
+            "wrap_count": 0,
+            "unwrap_count": 0,
+        })
+
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT created_at, amount_rtc, target_chain
+            FROM bridge_locks
+            WHERE state = ? AND created_at >= ? AND created_at <= ?
+            ORDER BY created_at ASC
+            """,
+            (STATE_COMPLETE, start_time, end_time),
+        ).fetchall()
+
+    for row in rows:
+        index = int((row["created_at"] - first_bucket) // bucket_seconds)
+        if index < 0 or index >= len(points):
+            continue
+        amount = _amount_from_base(row["amount_rtc"])
+        point = points[index]
+        point["completed_count"] += 1
+        point["total_volume_rtc"] = round(point["total_volume_rtc"] + amount, 6)
+        if row["target_chain"] == "solana":
+            point["wrap_count"] += 1
+            point["wrap_volume_rtc"] = round(point["wrap_volume_rtc"] + amount, 6)
+        elif row["target_chain"] == "base":
+            point["unwrap_count"] += 1
+            point["unwrap_volume_rtc"] = round(point["unwrap_volume_rtc"] + amount, 6)
+
+    return jsonify({
+        "period": period,
+        "bucket": bucket,
+        "start_time": start_time,
+        "end_time": end_time,
+        "points": points,
     })
 
 

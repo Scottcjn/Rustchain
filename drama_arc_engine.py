@@ -27,6 +27,7 @@ Usage:
 
 import time
 import random
+import threading
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Callable
 from enum import Enum
@@ -175,6 +176,7 @@ class DramaArcEngine:
         self.rel_engine = relationship_engine
         self.auto_progress = auto_progress
         self._active_arcs: Dict[str, ArcStatus] = {}
+        self._arc_lock = threading.Lock()
         self._event_callbacks: List[Callable] = []
     
     def _get_arc_key(self, agent_a: str, agent_b: str) -> str:
@@ -233,38 +235,48 @@ class DramaArcEngine:
         Returns:
             Dictionary with arc initialization result
         """
-        # Initialize relationship with arc
-        result = self.rel_engine.start_drama_arc(agent_a, agent_b, arc_type)
-        
-        if not result["success"]:
-            return result
-        
-        template = DRAMA_ARC_TEMPLATES[arc_type]
-        now = time.time()
-        
-        arc_status = ArcStatus(
-            agent_a=agent_a,
-            agent_b=agent_b,
-            arc_type=arc_type,
-            phase=ArcPhase.INITIATION,
-            start_time=now,
-            last_progress=now,
-            events_triggered=0,
-            expected_duration_days=template["typical_duration_days"],
-            is_expired=False,
-        )
-        
-        self._active_arcs[self._get_arc_key(agent_a, agent_b)] = arc_status
-        
-        # Notify callbacks
+        arc_key = self._get_arc_key(agent_a, agent_b)
+        with self._arc_lock:
+            if arc_key in self._active_arcs:
+                existing = self._active_arcs[arc_key]
+                return {
+                    "success": True,
+                    "arc": existing.to_dict(),
+                    "relationship": self.rel_engine.get_relationship(agent_a, agent_b),
+                    "idempotent": True,
+                }
+
+            result = self.rel_engine.start_drama_arc(agent_a, agent_b, arc_type)
+            if not result["success"]:
+                return result
+
+            template = DRAMA_ARC_TEMPLATES[arc_type]
+            now = time.time()
+
+            arc_status = ArcStatus(
+                agent_a=agent_a,
+                agent_b=agent_b,
+                arc_type=arc_type,
+                phase=ArcPhase.INITIATION,
+                start_time=now,
+                last_progress=now,
+                events_triggered=0,
+                expected_duration_days=template["typical_duration_days"],
+                is_expired=False,
+            )
+
+            self._active_arcs[arc_key] = arc_status
+            relationship = result["relationship"]
+
+        # Notify callbacks outside the lock so callback code cannot block arc creation.
         self._notify_callbacks("arc_started", arc_status.to_dict())
-        
+
         return {
             "success": True,
             "arc": arc_status.to_dict(),
-            "relationship": result["relationship"],
+            "relationship": relationship,
         }
-    
+
     def progress_arc(self, agent_a: str, agent_b: str,
                     force_event: Optional[str] = None) -> Dict[str, Any]:
         """

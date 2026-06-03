@@ -16,8 +16,8 @@ import time
 import sqlite3
 import hashlib
 import argparse
+import hmac
 import logging
-import traceback
 from typing import Optional, Tuple, Dict, List
 
 try:
@@ -127,7 +127,7 @@ def _try_ollama_api(ep: str, prompt: str) -> Optional[str]:
     }
     resp = requests.post(url, json=payload, timeout=(10, OLLAMA_TIMEOUT))
     if resp.status_code == 200:
-        return resp.json().get("response", "")
+        return _response_json_object(resp).get("response", "")
     return None
 
 
@@ -146,7 +146,7 @@ def _try_llamaserver_api(ep: str, prompt: str) -> Optional[str]:
     }
     resp = requests.post(url, json=payload, timeout=(10, OLLAMA_TIMEOUT))
     if resp.status_code == 200:
-        return resp.json().get("content", "")
+        return _response_json_object(resp).get("content", "")
     return None
 
 
@@ -160,10 +160,23 @@ def _try_openai_api(ep: str, prompt: str) -> Optional[str]:
     }
     resp = requests.post(url, json=payload, timeout=OLLAMA_TIMEOUT)
     if resp.status_code == 200:
-        choices = resp.json().get("choices", [])
+        choices = _response_json_object(resp).get("choices", [])
         if choices:
             return choices[0].get("text", "")
     return None
+
+
+def _response_json_object(resp) -> Dict:
+    """Return a response JSON object, or an empty dict for invalid/non-object JSON."""
+    try:
+        body = resp.json()
+    except ValueError as exc:
+        log.warning("LLM returned invalid JSON: %s", exc)
+        return {}
+    if not isinstance(body, dict):
+        log.warning("LLM returned %s JSON, expected object", type(body).__name__)
+        return {}
+    return body
 
 
 def _call_ollama(prompt: str, endpoint: str = None) -> Optional[str]:
@@ -234,7 +247,7 @@ def _call_deep_model(prompt: str) -> Optional[str]:
         log.info("Escalating to GPT-OSS 120B on POWER8 for deep analysis...")
         resp = requests.post(url, json=payload, timeout=DEEP_TIMEOUT)
         if resp.status_code == 200:
-            body = resp.json()
+            body = _response_json_object(resp)
             # llama-server returns choices[0].text for /v1/completions
             choices = body.get("choices", [])
             if choices:
@@ -701,10 +714,21 @@ def register_sophia_endpoints(app, db_path: str = None):
     def _is_admin(req):
         need = os.environ.get("RC_ADMIN_KEY", "")
         got = req.headers.get("X-Admin-Key", "") or req.headers.get("X-API-Key", "")
-        return bool(need and got and need == got)
+        return bool(need and got and hmac.compare_digest(got, need))
+
+    def _json_object_body():
+        data = request.get_json(silent=True)
+        if data is None:
+            return {}, None
+        if not isinstance(data, dict):
+            return None, (jsonify({"error": "JSON object required"}), 400)
+        return data, None
 
     @app.route("/sophia/status/<miner_id>", methods=["GET"])
     def sophia_status_miner(miner_id):
+        # SECURITY: Require admin key — exposes miner verdict, device fingerprint, fingerprint score
+        if not _is_admin(request):
+            return jsonify({"error": "Unauthorized — admin key required"}), 401
         result = get_latest_verdict(miner_id, db_path=db)
         if result is None:
             return jsonify({
@@ -717,6 +741,9 @@ def register_sophia_endpoints(app, db_path: str = None):
 
     @app.route("/sophia/status", methods=["GET"])
     def sophia_status_all():
+        # SECURITY: Require admin key — exposes ALL miners' verdicts, device fingerprints, scores
+        if not _is_admin(request):
+            return jsonify({"error": "Unauthorized — admin key required"}), 401
         verdicts = get_all_latest_verdicts(db_path=db)
         summary = {}
         for v in verdicts:
@@ -732,8 +759,15 @@ def register_sophia_endpoints(app, db_path: str = None):
     def sophia_inspect():
         if not _is_admin(request):
             return jsonify({"error": "Unauthorized -- admin key required"}), 401
-        data = request.get_json(force=True, silent=True) or {}
+        data, error = _json_object_body()
+        if error:
+            return error
         miner_id = data.get("miner_id")
+        if not miner_id:
+            return jsonify({"error": "miner_id required"}), 400
+        if not isinstance(miner_id, str):
+            return jsonify({"error": "miner_id must be a string"}), 400
+        miner_id = miner_id.strip()
         if not miner_id:
             return jsonify({"error": "miner_id required"}), 400
         device = data.get("device")

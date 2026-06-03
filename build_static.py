@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT
 # SPDX-License-Identifier: MIT
 
 import json
@@ -271,7 +270,7 @@ def generate_index_html(projects):
         </div>
         
         <div class="projects-grid" id="projectsGrid">
-            {''.join(generate_project_card(project) for project in projects)}
+            {''.join(generate_project_card(project, index) for index, project in enumerate(projects))}
         </div>
         
         <div class="no-results" id="noResults" style="display: none;">
@@ -357,7 +356,7 @@ def generate_index_html(projects):
     
     return html_content
 
-def generate_project_card(project):
+def generate_project_card(project, index):
     """Generate HTML for a single project card"""
     categories_html = ''.join(
         f'<span class="category-tag">{category}</span>' 
@@ -365,9 +364,15 @@ def generate_project_card(project):
     )
     
     badge_embed = f'<img src="https://img.shields.io/badge/BCOS-{project.get("bcos_tier", "Unknown")}-{"green" if project.get("bcos_tier") == "L0" else "yellow" if project.get("bcos_tier") == "L1" else "red"}" alt="BCOS {project.get("bcos_tier", "Unknown")}" />'
+    review_note = project.get('review_note')
+    review_html = f'''
+        <div class="project-review">
+            <div class="review-label">Review Note:</div>
+            <div>{review_note}</div>
+        </div>''' if review_note else ''
     
     return f'''
-    <div class="project-card" data-project-index="{projects.index(project)}">
+    <div class="project-card" data-project-index="{index}">
         <div class="project-header">
             <div>
                 <a href="{project.get('url', '#')}" class="project-title" target="_blank">
@@ -405,10 +410,7 @@ def generate_project_card(project):
             </div>
         </div>
         
-        {f'''<div class="project-review">
-            <div class="review-label">Review Note:</div>
-            <div>{project.get('review_note', 'No review available')}</div>
-        </div>''' if project.get('review_note') else ''}
+        {review_html}
         
         <div class="badge-code" title="Click to copy badge embed code">
             {badge_embed}
@@ -418,6 +420,13 @@ def generate_project_card(project):
 
 def generate_project_page(project):
     """Generate individual project page HTML"""
+    review_note = project.get('review_note')
+    review_html = f'''
+        <h2>Review Note</h2>
+        <div style="background: #2a2a2a; padding: 15px; border-radius: 4px; border-left: 3px solid #ff6b35;">
+            {review_note}
+        </div>''' if review_note else ''
+
     return f'''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -492,10 +501,7 @@ def generate_project_page(project):
             <div class="meta-value">{', '.join(project.get('categories', []))}</div>
         </div>
         
-        {f'''<h2>Review Note</h2>
-        <div style="background: #2a2a2a; padding: 15px; border-radius: 4px; border-left: 3px solid #ff6b35;">
-            {project.get('review_note', 'No review available')}
-        </div>''' if project.get('review_note') else ''}
+        {review_html}
     </div>
 </body>
 </html>'''
@@ -534,6 +540,4 @@ def build_static_site():
     print(f"Build complete! Generated {len(projects) + 1} HTML files in dist/")
 
 if __name__ == '__main__':
-    # Make projects available globally for the template
-    projects = load_projects()
     build_static_site()

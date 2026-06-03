@@ -6,6 +6,7 @@ Central configuration for all chain constants.
 """
 
 from decimal import Decimal
+from datetime import datetime
 
 # =============================================================================
 # Core Chain Parameters
@@ -34,6 +35,8 @@ HALVING_COUNT: int = 4  # After 4 halvings, tail emission
 DECIMALS: int = 8
 ONE_RTC: int = 100_000_000  # 1 RTC = 10^8 units
 
+CURRENT_YEAR: int = datetime.now().year
+
 # =============================================================================
 # Founder Wallets
 # =============================================================================
@@ -48,8 +51,6 @@ FOUNDER_WALLETS = [
 # =============================================================================
 # Consensus Parameters
 # =============================================================================
-
-CURRENT_YEAR: int = 2025
 
 # Antiquity Score parameters
 AS_MAX: float = 100.0  # Maximum for reward capping
@@ -141,6 +142,9 @@ def get_multiplier_for_tier(tier: str) -> float:
 
 def calculate_block_reward(height: int) -> Decimal:
     """Calculate block reward at a given height"""
+    if height < 0:
+        raise ValueError(f"Block height cannot be negative: {height}")
+
     halvings = height // HALVING_INTERVAL_BLOCKS
     if halvings >= HALVING_COUNT:
         # Tail emission after 4 halvings

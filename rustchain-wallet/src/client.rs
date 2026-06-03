@@ -246,12 +246,7 @@ impl RustChainClient {
 
     /// Check if the API endpoint is reachable
     pub async fn health_check(&self) -> Result<bool> {
-        match self
-            .http_client
-            .get(&self.api_url)
-            .send()
-            .await
-        {
+        match self.http_client.get(&self.api_url).send().await {
             Ok(resp) => Ok(resp.status().is_success()),
             Err(_) => Ok(false),
         }

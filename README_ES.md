@@ -3,7 +3,7 @@
 # 🧱 RustChain: Blockchain Proof-of-Antiquity
 
 [![CI](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml/badge.svg)](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/Scottcjn/Rustchain?style=flat&color=gold)](https://github.com/Scottcjn/Rustchain/stargazers)
 [![Contributors](https://img.shields.io/github/contributors/Scottcjn/Rustchain?color=brightgreen)](https://github.com/Scottcjn/Rustchain/graphs/contributors)
 [![Last Commit](https://img.shields.io/github/last-commit/Scottcjn/Rustchain?color=blue)](https://github.com/Scottcjn/Rustchain/commits/main)
@@ -20,7 +20,7 @@
 
 *Tu PowerPC G4 gana más que un Threadripper moderno. Ese es el punto.*
 
-[Website](https://rustchain.org) • [Manifesto](https://rustchain.org/manifesto.html) • [Principios Boudreaux](docs/BOUDREAUX_COMPUTING_PRINCIPLES.md) • [Live Explorer](https://rustchain.org/explorer) • [Swap wRTC](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) • [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) • [wRTC Quickstart](docs/wrtc.md) • [Tutorial wRTC](docs/WRTC_ONBOARDING_TUTORIAL.md) • [Ref. Grokipedia](https://grokipedia.com/search?q=RustChain) • [Whitepaper](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf) • [Inicio Rápido](#-inicio-rápido) • [Cómo Funciona](#-cómo-funciona-proof-of-antiquity)
+[Website](https://rustchain.org) • [Manifesto](https://rustchain.org/manifesto.html) • [Principios Boudreaux](docs/Boudreaux_COMPUTING_PRINCIPLES.md) • [Live Explorer](https://rustchain.org/explorer) • [Swap wRTC](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) • [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) • [wRTC Quickstart](docs/wrtc.md) • [Tutorial wRTC](docs/WRTC_ONBOARDING_TUTORIAL.md) • [Ref. Grokipedia](https://grokipedia.com/search?q=RustChain) • [Whitepaper](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf) • [Inicio Rápido](#-inicio-rápido) • [Cómo Funciona](#-cómo-funciona-proof-of-antiquity)
 
 </div>
 
@@ -105,8 +105,8 @@ clawrtc wallet coinbase link 0xTuDireccionBase
 ```
 
 **Endpoints premium de API x402** están activos (actualmente gratuitos mientras se demuestra el flujo):
-- `GET /api/premium/videos` - Exportación masiva de videos (BoTTube)
-- `GET /api/premium/analytics/<agent>` - Análisis profundo de agentes (BoTTube)
+- `GET https://bottube.ai/api/premium/videos` - Exportación masiva de videos (BoTTube)
+- `GET https://bottube.ai/api/premium/analytics/<agent>` - Análisis profundo de agentes (BoTTube)
 - `GET /api/premium/reputation` - Exportación completa de reputación (Beacon Atlas)
 - `GET /wallet/swap-info` - Guía de swap USDC/wRTC (RustChain)
 
@@ -226,6 +226,8 @@ bash install-miner.sh --wallet TU_BILLETERA
 # Opcional: ver acciones sin cambiar tu sistema
 bash install-miner.sh --dry-run --wallet TU_BILLETERA
 ```
+
+Nota para Windows: `install-miner.sh --dry-run` es una ruta de vista previa para Linux/macOS/WSL. En Windows nativo, usa la guía de Windows o ejecuta la prueba dentro de WSL para evitar el error de plataforma no compatible.
 
 ## 💰 Tablero de Bounties
 
@@ -454,7 +456,7 @@ https://github.com/Scottcjn/Rustchain
 
 ## 📜 Licencia
 
-Licencia MIT - Libre de usar, pero por favor mantén el aviso de copyright y atribución.
+Licencia Apache 2.0 - Libre de usar, pero cumple los términos de Apache 2.0 y conserva el aviso de copyright y atribución.
 
 ---
 
@@ -480,6 +482,7 @@ clawrtc mine --dry-run
 ```
 
 Esperado: las 6 verificaciones de huella digital de hardware se ejecutan en ARM64 nativo sin errores de fallback de arquitectura.
+Nota: esta ruta de `clawrtc mine --dry-run` está pensada para Linux/macOS/WSL, no para Windows nativo.
 
 ---
 
@@ -534,6 +537,6 @@ Esperado: las 6 verificaciones de huella digital de hardware se ejecutan en ARM6
 
 **[Elyan Labs](https://github.com/Scottcjn)** · 1,882 commits · 97 repos · 1,334 stars · $0 recaudados
 
-[⭐ Star Rustchain](https://github.com/Scottcjn/Rustchain) · [📊 Informe de Tracción Q1 2026](https://github.com/Scottcjn/Rustchain/blob/main/docs/DEVELOPER_TRACTION_Q1_2026.md) · [Follow @Scottcjn](https://github.com/Scottcjn)
+[⭐ Star RustChain](https://github.com/Scottcjn/Rustchain) · [📊 Informe de Tracción Q1 2026](https://github.com/Scottcjn/Rustchain/blob/main/docs/DEVELOPER_TRACTION_Q1_2026.md) · [Follow @Scottcjn](https://github.com/Scottcjn)
 
 </div>

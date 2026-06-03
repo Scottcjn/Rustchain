@@ -54,6 +54,18 @@
     return await r.json();
   }
 
+  function normalizeMinerRows(payload) {
+    const rows = Array.isArray(payload) ? payload : (payload?.miners || payload?.data || payload?.items || []);
+    if (!Array.isArray(rows)) return [];
+    return rows
+      .filter((m) => m && typeof m === 'object')
+      .map((m) => ({
+        ...m,
+        miner: m.miner || m.miner_id || m.id || m.name || '',
+      }))
+      .filter((m) => m.miner);
+  }
+
   async function fetchJson(url) {
     const r = await fetch(url, { cache: 'no-store' });
     if (!r.ok) return null;
@@ -193,7 +205,12 @@
 
     const legend = el('div', { class: 'small-note' });
     legend.style.marginTop = '10px';
-    legend.innerHTML = entries.slice(0, 6).map(([n, c]) => `${c}x ${n}`).join('<br>') + (entries.length > 6 ? '<br>...' : '');
+    const legendEntries = entries.slice(0, 6).map(([n, c]) => `${c}x ${n}`);
+    if (entries.length > 6) legendEntries.push('...');
+    for (let i = 0; i < legendEntries.length; i++) {
+      if (i > 0) legend.appendChild(document.createElement('br'));
+      legend.appendChild(document.createTextNode(legendEntries[i]));
+    }
 
     const svg = `
       <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
@@ -356,7 +373,7 @@
 
     state.stats = stats;
     state.epoch = epoch;
-    state.miners = Array.isArray(miners) ? miners : (miners?.miners || []);
+    state.miners = normalizeMinerRows(miners);
     state.hunters = hunters;
     state.lastLoaded = Date.now();
 

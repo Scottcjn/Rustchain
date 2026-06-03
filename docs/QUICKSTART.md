@@ -20,6 +20,7 @@ You need two things:
 
 - **A computer** -- literally any computer. Linux, macOS, Windows, Raspberry Pi, PowerPC
   Mac, even a SPARC workstation. If it runs Python, it can mine.
+- **macOS only:** Python 3 via Homebrew -- run `brew install python3` before the installer.
 - **An internet connection** -- your miner talks to the RustChain network to prove your
   hardware is real.
 
@@ -29,16 +30,33 @@ That is it. No GPU required. No special hardware. No account signup.
 
 ## Step 1: Install the Miner
 
-Open a terminal (on macOS: search for "Terminal"; on Windows: use PowerShell) and run:
+Open a terminal on Linux or macOS and run:
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash
 ```
 
+### macOS Homebrew prerequisite
+
+The installer uses the system `python3`. On a fresh macOS install, install Python with
+Homebrew first:
+
+```bash
+brew update
+brew install python3
+python3 --version
+```
+
+Then run the RustChain installer command above.
+
+On Windows, use the Windows miner installer instead of the Bash one-liner. See
+`miners/windows/installer/README.md` and run `miners/windows/rustchain_miner_setup.bat`
+from the Windows miner bundle.
+
 **What this does:**
 
 1. Detects your operating system and CPU architecture
-2. Installs Python 3 if you do not have it (Linux only -- macOS/Windows users need Python
+2. Installs Python 3 if you do not have it (Linux only -- macOS users should run `brew install python3` first; Windows
    pre-installed)
 3. Downloads the miner script to `~/.rustchain/`
 4. Creates a Python virtual environment with dependencies
@@ -199,7 +217,7 @@ is running.
 
 You can also see the full network, all miners, and your rewards at:
 
-**https://rustchain.org/explorer**
+[https://rustchain.org/explorer/](https://rustchain.org/explorer/)
 
 ---
 
@@ -248,7 +266,7 @@ Mining is passive income. For bigger payouts, contribute code.
 
 ### Browse Open Bounties
 
-**https://github.com/Scottcjn/rustchain-bounties/issues**
+[https://github.com/Scottcjn/rustchain-bounties/issues](https://github.com/Scottcjn/rustchain-bounties/issues)
 
 Every issue tagged with a bounty has an RTC reward listed. Rewards range from 1 RTC
 (typo fix) to 200 RTC (security vulnerability).
@@ -280,7 +298,7 @@ Even fixing a single typo in the README earns RTC.
 
 See all miners, blocks, and balances at:
 
-**https://rustchain.org/explorer**
+[https://rustchain.org/explorer/](https://rustchain.org/explorer/)
 
 ### API Endpoints (for the curious)
 
@@ -306,6 +324,54 @@ the node uses a self-signed cert, not a commercial one.
 ---
 
 ## Troubleshooting
+
+### `ConnectionRefused` or "Cannot connect to bootstrap node"
+
+This usually means your machine cannot reach the RustChain node yet.
+
+1. Check whether the public node is responding:
+
+```bash
+curl -sk https://rustchain.org/health
+```
+
+2. If that fails, wait 30-60 seconds and retry. The node may be restarting.
+3. Confirm your internet connection, firewall, VPN, or proxy is not blocking outbound HTTPS.
+4. If you set a custom node URL, verify the hostname, port, and scheme.
+
+### `InsufficientBalance`
+
+Mining rewards do not require a paid account, but some wallet or bridge actions may require
+an existing RTC balance for fees.
+
+1. Confirm you are using the exact wallet name from install:
+
+```bash
+curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_EXACT_WALLET_NAME"
+```
+
+2. Wait at least one full epoch after the miner first starts. Rewards settle about every
+   10 minutes.
+3. If you are testing a wallet action before earning rewards, request help from the community
+   or use a faucet/testnet flow when one is available.
+
+### `HardwareFingerprintMismatch`
+
+This can happen after BIOS updates, firmware changes, VM/container changes, or moving the
+miner between different hardware.
+
+1. Run the miner on bare metal rather than inside a VM or container.
+2. Restart the miner so it performs a fresh attestation.
+3. If you recently updated BIOS or firmware, treat the machine as a changed hardware profile
+   and re-run the install/attestation flow with the same wallet name.
+
+### Miner Configuration Checklist
+
+- The wallet name in your command matches the wallet you want paid.
+- `curl -sk https://rustchain.org/health` returns `"ok": true`.
+- Your system clock is correct; TLS and attestation windows can fail when the clock is far off.
+- You are running on real hardware if you expect normal rewards.
+- You waited at least 2-3 epochs before deciding rewards are missing.
 
 ### "Python 3 not found"
 
@@ -365,8 +431,9 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 ### Get Help
 
 - **GitHub Issues:** https://github.com/Scottcjn/Rustchain/issues
+- **Discord:** https://discord.gg/VqVVS2CW9Q
 - **Moltbook:** https://www.moltbook.com/m/rustchain
-- **FAQ:** [FAQ_TROUBLESHOOTING.md](FAQ_TROUBLESHOOTING.md)
+- **FAQ:** [FAQ_TROUBLESHOOTING.md](./FAQ_TROUBLESHOOTING.md)
 
 ---
 
@@ -390,46 +457,11 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 
 - **Swap RTC for Solana tokens:** [wRTC Guide](wrtc.md)
 - **Run a full node:** [Protocol Docs](PROTOCOL.md)
-- **Deep dive into Proof-of-Antiquity:** [Whitepaper](RustChain_Whitepaper_Flameholder_v0.97-1.pdf)
-- **Contribute code:** [CONTRIBUTING.md](CONTRIBUTING.md)
+- **Deep dive into Proof-of-Antiquity:** [Whitepaper](WHITEPAPER.md)
+- **Contribute code:** [CONTRIBUTING.md](../CONTRIBUTING.md)
 - **API reference:** [API Walkthrough](API_WALKTHROUGH.md)
 
 ---
 
 *Built by [Elyan Labs](https://elyanlabs.ai) -- $0 VC, a room full of pawn shop hardware,
 and a belief that old machines still have dignity.*
-
----
-
-## Troubleshooting
-
-### Common Issues
-
-| Problem | Solution |
-|---------|----------|
-| `Connection refused` when checking balance | The node may be restarting. Wait 30 seconds and retry. |
-| `Python not found` | Install Python 3.8+ from [python.org](https://python.org) (macOS/Windows) or `apt install python3` (Linux) |
-| `ModuleNotFoundError: requests` | Activate the venv first: `source ~/.rustchain/venv/bin/activate` |
-| Miner shows 0 RTC after mining | Mining rewards are paid per epoch (~10 minutes). Check back after an epoch completes. |
-| `SSL certificate verify failed` | Your system clock may be wrong. Sync your clock: `sudo ntpdate pool.ntp.org` (Linux) |
-| `wallet name already taken` | Wallet names are globally unique. Try a different name with a unique prefix. |
-
-### Checking Node Status
-
-If you suspect the network is down, check all attestation nodes:
-
-```bash
-# Check primary node health
-curl -sk https://rustchain.org/health
-
-# Check epoch status
-curl -sk https://rustchain.org/epoch
-
-# If the primary is down, check the backup nodes listed in the README
-```
-
-### Getting Help
-
-- **GitHub Issues**: [Open an issue](https://github.com/Scottcjn/Rustchain/issues)
-- **Discord**: [Join the community](https://discord.gg/VqVVS2CW9Q)
-- **Bounties**: Browse [open bounties](https://github.com/Scottcjn/rustchain-bounties/issues) to earn RTC while learning

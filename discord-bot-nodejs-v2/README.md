@@ -11,7 +11,7 @@ A Discord bot that provides real-time RustChain blockchain information with **re
 - ❌ Chinese demo files → English documentation
 
 **V2 Improvements:**
-- ✅ **Real API Integration** - Uses actual RustChain node at `https://50.28.86.131`
+- ✅ **Real API Integration** - Uses actual RustChain node at `https://rustchain.org`
 - ✅ **Correct Data Models** - `device_arch`, `device_family`, `antiquity_multiplier`
 - ✅ **Real Wallet Signing** - Ed25519 signatures for /tip command
 - ✅ **English Documentation** - All files in English
@@ -146,7 +146,7 @@ discord-bot-nodejs-v2/
 
 All commands use the real RustChain API:
 
-- **Base URL:** `https://50.28.86.131`
+- **Base URL:** `https://rustchain.org`
 - **Health:** `GET /health`
 - **Epoch:** `GET /epoch`
 - **Miners:** `GET /api/miners`

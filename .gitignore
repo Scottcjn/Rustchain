@@ -2,6 +2,8 @@
 *founder*
 *premine*
 *genesis*
+!tests/**/*genesis*.py
+!test_*genesis*.py
 *private*key*
 *secret*
 *.env
@@ -9,6 +11,12 @@
 *.sqlite
 *.key
 *.pem
+
+# Keep genesis material ignored, but allow tests/tooling that validate
+# genesis file handling.
+!tools/validate_genesis.py
+!test_*genesis*.py
+!tests/**/test_*genesis*.py
 
 # Python
 __pycache__/

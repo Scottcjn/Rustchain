@@ -34,8 +34,10 @@ rate_limit:
 
 # Wallet validation settings
 validation:
-  # Require wallet address to start with prefix
-  required_prefix: "0x"
+  # Require wallet address to start with one of these prefixes
+  required_prefix:
+    - "0x"
+    - "RTC"
   
   # Minimum wallet length (including prefix)
   min_length: 10

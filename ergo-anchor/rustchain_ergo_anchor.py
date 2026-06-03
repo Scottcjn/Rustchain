@@ -490,6 +490,24 @@ def create_anchor_api_routes(app, anchor_service: AnchorService):
     """
     from flask import request, jsonify
 
+    def parse_int_query_arg(name: str, default: int, min_value: int, max_value: int = None):
+        raw_value = request.args.get(name)
+        if raw_value is None:
+            return default, None
+
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError):
+            return None, f"{name}_must_be_integer"
+
+        if value < min_value:
+            return None, f"{name}_must_be_at_least_{min_value}"
+
+        if max_value is not None:
+            value = min(value, max_value)
+
+        return value, None
+
     @app.route('/anchor/status', methods=['GET'])
     def anchor_status():
         """Get anchoring service status"""
@@ -516,8 +534,13 @@ def create_anchor_api_routes(app, anchor_service: AnchorService):
         """List all anchors"""
         import sqlite3
 
-        limit = request.args.get('limit', 50, type=int)
-        offset = request.args.get('offset', 0, type=int)
+        limit, error = parse_int_query_arg('limit', 50, 1, 100)
+        if error:
+            return jsonify({"error": error}), 400
+
+        offset, error = parse_int_query_arg('offset', 0, 0)
+        if error:
+            return jsonify({"error": error}), 400
 
         with sqlite3.connect(anchor_service.db_path) as conn:
             conn.row_factory = sqlite3.Row

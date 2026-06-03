@@ -48,7 +48,7 @@ pub struct Config {
 }
 
 fn default_node_url() -> String {
-    "https://50.28.86.131".to_string()
+    "https://rustchain.org".to_string()
 }
 
 fn default_block_time() -> u64 {
@@ -159,7 +159,7 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = Config::default();
-        assert_eq!(config.node_url, "https://50.28.86.131");
+        assert_eq!(config.node_url, "https://rustchain.org");
         assert_eq!(config.block_time_secs, 600);
         assert_eq!(config.attestation_ttl_secs, 580);
         assert!(!config.dry_run);

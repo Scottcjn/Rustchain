@@ -21,7 +21,7 @@ import time
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -30,7 +30,6 @@ from machine_passport import (
     MachinePassport,
     MachinePassportLedger,
     compute_machine_id,
-    init_machine_passport_schema,
     generate_qr_code,
     generate_passport_pdf,
 )
@@ -463,6 +462,9 @@ class TestAPIEndpoints(unittest.TestCase):
         """Set up test Flask app."""
         from flask import Flask
         from machine_passport_api import machine_passport_bp
+
+        self._prev_admin_key = os.environ.get('ADMIN_KEY')
+        os.environ.pop('ADMIN_KEY', None)
         
         self.app = Flask(__name__)
         self.app.config['TESTING'] = True
@@ -470,9 +472,9 @@ class TestAPIEndpoints(unittest.TestCase):
         
         # Set test database
         import machine_passport_api
-        machine_passport_api.PASSPORT_DB_PATH = tempfile.NamedTemporaryFile(
-            delete=False, suffix='.db'
-        ).name
+        temp_db = tempfile.NamedTemporaryFile(delete=False, suffix='.db')
+        temp_db.close()
+        machine_passport_api.PASSPORT_DB_PATH = temp_db.name
         machine_passport_api._ledger = None
         
         self.client = self.app.test_client()
@@ -480,8 +482,13 @@ class TestAPIEndpoints(unittest.TestCase):
     def tearDown(self):
         """Clean up."""
         import machine_passport_api
+        machine_passport_api._ledger = None
         if os.path.exists(machine_passport_api.PASSPORT_DB_PATH):
             os.unlink(machine_passport_api.PASSPORT_DB_PATH)
+        if self._prev_admin_key is None:
+            os.environ.pop('ADMIN_KEY', None)
+        else:
+            os.environ['ADMIN_KEY'] = self._prev_admin_key
     
     def test_list_passports_empty(self):
         """Test listing passports when empty."""
@@ -491,9 +498,36 @@ class TestAPIEndpoints(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(data['ok'])
         self.assertEqual(data['count'], 0)
+
+    def test_list_passports_rejects_non_integer_limit(self):
+        """Non-integer limits are invalid for list pagination."""
+        resp = self.client.get('/api/machine-passport?limit=abc')
+        data = json.loads(resp.data)
+
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(data['ok'])
+        self.assertEqual(data['error'], 'limit must be an integer')
+
+    def test_list_passports_rejects_negative_offset(self):
+        """Negative offsets are invalid for list pagination."""
+        resp = self.client.get('/api/machine-passport?offset=-1')
+        data = json.loads(resp.data)
+
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(data['ok'])
+        self.assertEqual(data['error'], 'offset must be non-negative')
+
+    def test_list_passports_clamps_large_limit(self):
+        """Large list limits are clamped to the documented maximum."""
+        resp = self.client.get('/api/machine-passport?limit=999')
+        data = json.loads(resp.data)
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(data['ok'])
+        self.assertEqual(data['limit'], 500)
     
-    def test_create_passport(self):
-        """Test creating a passport via API."""
+    def test_create_passport_fails_closed_without_admin_key(self):
+        """Passport creation is disabled when ADMIN_KEY is not configured."""
         passport_data = {
             'name': 'API Test',
             'owner_miner_id': 'miner_api',
@@ -504,14 +538,200 @@ class TestAPIEndpoints(unittest.TestCase):
         resp = self.client.post(
             '/api/machine-passport',
             json=passport_data,
-            # No admin key needed if ADMIN_KEY env var not set
         )
         data = json.loads(resp.data)
 
-        # Should succeed (no admin key required if ADMIN_KEY not set)
+        self.assertEqual(resp.status_code, 401)
+        self.assertFalse(data['ok'])
+        self.assertEqual(data['error'], 'unauthorized')
+        self.assertEqual(data['message'], 'ADMIN_KEY not configured')
+
+    def test_create_passport_accepts_valid_admin_key(self):
+        """Configured admin key authorizes passport creation."""
+        os.environ['ADMIN_KEY'] = 'expected-admin-key'
+        passport_data = {
+            'name': 'API Test',
+            'owner_miner_id': 'miner_api',
+            'architecture': 'TestArch',
+            'machine_id': 'api_test_001',  # Required field
+        }
+
+        resp = self.client.post(
+            '/api/machine-passport',
+            headers={'X-Admin-Key': 'expected-admin-key'},
+            json=passport_data,
+        )
+        data = json.loads(resp.data)
+
         self.assertEqual(resp.status_code, 201)
         self.assertTrue(data['ok'])
         self.assertIn('machine_id', data)
+
+    def test_create_passport_rejects_non_object_json(self):
+        """Passport creation requires a JSON object body."""
+        os.environ['ADMIN_KEY'] = 'expected-admin-key'
+
+        resp = self.client.post(
+            '/api/machine-passport',
+            headers={'X-Admin-Key': 'expected-admin-key'},
+            json=['name', 'owner_miner_id'],
+        )
+        data = json.loads(resp.data)
+
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(data['ok'])
+        self.assertEqual(data['error'], 'invalid_request')
+        self.assertEqual(data['message'], 'JSON object required')
+
+    def test_update_passport_rejects_owner_claim_without_admin_key(self):
+        """Client-supplied owner_miner_id is not proof of ownership."""
+        os.environ['ADMIN_KEY'] = 'expected-admin-key'
+        self.client.post(
+            '/api/machine-passport',
+            headers={'X-Admin-Key': 'expected-admin-key'},
+            json={
+                'name': 'Owner Claim Test',
+                'owner_miner_id': 'miner_owner',
+                'machine_id': 'owner_claim_test',
+            },
+        )
+
+        with patch('hmac.compare_digest', return_value=False) as compare_digest:
+            resp = self.client.put(
+                '/api/machine-passport/owner_claim_test',
+                headers={'X-Admin-Key': 'wrong-admin-key'},
+                json={
+                    'owner_miner_id': 'miner_owner',
+                    'name': 'Unauthorized Rename',
+                },
+            )
+
+        data = json.loads(resp.data)
+        self.assertEqual(resp.status_code, 401)
+        self.assertFalse(data['ok'])
+        self.assertEqual(data['error'], 'unauthorized')
+        compare_digest.assert_called_once_with(b'wrong-admin-key', b'expected-admin-key')
+
+        get_resp = self.client.get('/api/machine-passport/owner_claim_test')
+        passport = json.loads(get_resp.data)['passport']['passport']
+        self.assertEqual(passport['name'], 'Owner Claim Test')
+
+    def test_update_passport_accepts_valid_admin_key(self):
+        """Configured admin key still authorizes passport updates."""
+        os.environ['ADMIN_KEY'] = 'expected-admin-key'
+        self.client.post(
+            '/api/machine-passport',
+            headers={'X-Admin-Key': 'expected-admin-key'},
+            json={
+                'name': 'Admin Update Test',
+                'owner_miner_id': 'miner_owner',
+                'machine_id': 'admin_update_test',
+            },
+        )
+
+        with patch('hmac.compare_digest', return_value=True) as compare_digest:
+            resp = self.client.put(
+                '/api/machine-passport/admin_update_test',
+                headers={'X-Admin-Key': 'expected-admin-key'},
+                json={'name': 'Authorized Rename'},
+            )
+
+        data = json.loads(resp.data)
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(data['ok'])
+        compare_digest.assert_called_once_with(b'expected-admin-key', b'expected-admin-key')
+
+    def test_update_passport_rejects_non_object_json(self):
+        """Passport updates require a JSON object body."""
+        os.environ['ADMIN_KEY'] = 'expected-admin-key'
+        self.client.post(
+            '/api/machine-passport',
+            headers={'X-Admin-Key': 'expected-admin-key'},
+            json={
+                'name': 'Array Update Test',
+                'owner_miner_id': 'miner_owner',
+                'machine_id': 'array_update_test',
+            },
+        )
+
+        resp = self.client.put(
+            '/api/machine-passport/array_update_test',
+            headers={'X-Admin-Key': 'expected-admin-key'},
+            json=['name', 'Unauthorized Rename'],
+        )
+        data = json.loads(resp.data)
+
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(data['ok'])
+        self.assertEqual(data['error'], 'invalid_request')
+        self.assertEqual(data['message'], 'JSON object required')
+
+    def test_update_passport_fails_closed_without_admin_key(self):
+        """Passport updates fail closed before resource lookup when ADMIN_KEY is missing."""
+        resp = self.client.put(
+            '/api/machine-passport/admin_update_test',
+            json={'name': 'Unauthorized Rename'},
+        )
+
+        data = json.loads(resp.data)
+        self.assertEqual(resp.status_code, 401)
+        self.assertFalse(data['ok'])
+        self.assertEqual(data['error'], 'unauthorized')
+        self.assertEqual(data['message'], 'ADMIN_KEY not configured')
+
+    def test_mutating_subresources_fail_closed_without_admin_key(self):
+        """All passport subresource writes require configured admin auth."""
+        os.environ['ADMIN_KEY'] = 'expected-admin-key'
+        self.client.post(
+            '/api/machine-passport',
+            headers={'X-Admin-Key': 'expected-admin-key'},
+            json={
+                'name': 'Subresource Auth Test',
+                'owner_miner_id': 'miner_owner',
+                'machine_id': 'subresource_auth_test',
+            },
+        )
+        os.environ.pop('ADMIN_KEY', None)
+
+        requests = [
+            (
+                '/api/machine-passport/subresource_auth_test/repair-log',
+                {
+                    'repair_type': 'unauthorized_repair',
+                    'description': 'should not be recorded',
+                },
+            ),
+            (
+                '/api/machine-passport/subresource_auth_test/attestations',
+                {'epoch': 1},
+            ),
+            (
+                '/api/machine-passport/subresource_auth_test/benchmarks',
+                {'compute_score': 123.4},
+            ),
+            (
+                '/api/machine-passport/subresource_auth_test/lineage',
+                {'event_type': 'transfer', 'to_owner': 'attacker_owner'},
+            ),
+        ]
+
+        for path, payload in requests:
+            with self.subTest(path=path):
+                resp = self.client.post(path, json=payload)
+                data = json.loads(resp.data)
+                self.assertEqual(resp.status_code, 401)
+                self.assertFalse(data['ok'])
+                self.assertEqual(data['error'], 'unauthorized')
+                self.assertEqual(data['message'], 'ADMIN_KEY not configured')
+
+        full_passport = json.loads(
+            self.client.get('/api/machine-passport/subresource_auth_test').data
+        )['passport']
+        self.assertEqual(full_passport['passport']['owner_miner_id'], 'miner_owner')
+        self.assertEqual(full_passport['repair_log'], [])
+        self.assertEqual(full_passport['attestation_history'], [])
+        self.assertEqual(full_passport['benchmark_signatures'], [])
+        self.assertEqual(full_passport['lineage_notes'], [])
     
     def test_get_nonexistent_passport(self):
         """Test getting a nonexistent passport."""
@@ -521,6 +741,19 @@ class TestAPIEndpoints(unittest.TestCase):
         self.assertEqual(resp.status_code, 404)
         self.assertFalse(data['ok'])
         self.assertEqual(data['error'], 'passport_not_found')
+
+    def test_compute_machine_id_rejects_non_object_json(self):
+        """Machine ID computation requires fingerprint JSON objects."""
+        resp = self.client.post(
+            '/api/machine-passport/compute-machine-id',
+            json=['serial', 'logic-board-id'],
+        )
+        data = json.loads(resp.data)
+
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(data['ok'])
+        self.assertEqual(data['error'], 'invalid_request')
+        self.assertEqual(data['message'], 'JSON object required')
 
 
 class TestIntegration(unittest.TestCase):
@@ -616,6 +849,17 @@ class TestIntegration(unittest.TestCase):
         self.assertEqual(updated.name, 'Old Faithful (Upgraded)')
 
 
+
+class TestMachinePassportPdfRobustness(unittest.TestCase):
+    """Regression tests for PDF export input robustness."""
+
+    def test_format_repair_date_handles_malformed_values(self):
+        from machine_passport import _format_repair_date
+
+        self.assertEqual(_format_repair_date('not-a-timestamp'), 'Unknown')
+        self.assertEqual(_format_repair_date(None), 'Unknown')
+        self.assertEqual(_format_repair_date(0), '1970-01-01')
+
 def run_tests():
     """Run all tests and return results."""
     loader = unittest.TestLoader()
@@ -627,6 +871,7 @@ def run_tests():
     suite.addTests(loader.loadTestsFromTestCase(TestMachinePassportLedger))
     suite.addTests(loader.loadTestsFromTestCase(TestQRCodeGeneration))
     suite.addTests(loader.loadTestsFromTestCase(TestPDFGeneration))
+    suite.addTests(loader.loadTestsFromTestCase(TestMachinePassportPdfRobustness))
     suite.addTests(loader.loadTestsFromTestCase(TestAPIEndpoints))
     suite.addTests(loader.loadTestsFromTestCase(TestIntegration))
     

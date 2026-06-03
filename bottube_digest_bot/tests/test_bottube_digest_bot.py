@@ -184,6 +184,8 @@ class TestDigestFormatter(unittest.TestCase):
         self.assertIn("1,500.50 RTC", message)
         self.assertIn("━━━ TOP VIDEOS ━━━", message)
         self.assertIn("RustChain Tutorial #1", message)
+        self.assertIn("[RustChain](https://rustchain.org)", message)
+        self.assertNotIn("https://rustchain.io", message)
 
     def test_format_telegram(self):
         """Test Telegram formatting."""
@@ -195,6 +197,8 @@ class TestDigestFormatter(unittest.TestCase):
         self.assertIn("*━━━ NETWORK STATUS ━━━*", message)
         self.assertIn("🔗 *Epoch:* `95`", message)
         self.assertIn("━━━ TOP MINERS ━━━", message)
+        self.assertIn("[RustChain](https://rustchain.org)", message)
+        self.assertNotIn("https://rustchain.io", message)
 
     def test_format_email_html(self):
         """Test email HTML formatting."""
@@ -208,6 +212,8 @@ class TestDigestFormatter(unittest.TestCase):
         self.assertIn("scott-miner-001", html)
         self.assertIn("1,500.50 RTC", html)
         self.assertIn("RustChain Tutorial #1", html)
+        self.assertIn('href="https://rustchain.org"', html)
+        self.assertNotIn("https://rustchain.io", html)
 
         # Check styling
         self.assertIn("<style>", html)
@@ -316,6 +322,42 @@ class TestIntegration(unittest.TestCase):
         self.assertEqual(generator.config, self.config)
         self.assertIsNotNone(generator.rustchain_client)
         self.assertIsNotNone(generator.bottube_client)
+        asyncio.run(generator.close())
+
+    def test_format_uptime_edges(self):
+        """Test uptime formatting boundaries."""
+        generator = DigestGenerator(self.config)
+
+        self.assertEqual(generator._format_uptime(0), "N/A")
+        self.assertEqual(generator._format_uptime(3599), "59m")
+        self.assertEqual(generator._format_uptime(3600), "1h 0m")
+        self.assertEqual(generator._format_uptime(90061), "1d 1h 1m")
+
+        asyncio.run(generator.close())
+
+    def test_top_miners_uses_async_rate_limit_delay(self):
+        """Top-miner balance lookup should not crash on the async delay."""
+        generator = DigestGenerator(self.config)
+        generator.rustchain_client.wallet_balance = AsyncMock(
+            return_value={"ok": True, "amount_rtc": 42.5}
+        )
+
+        top_miners = asyncio.run(
+            generator._get_top_miners(
+                [{"miner_id": "miner-1", "architecture": "powerpc"}]
+            )
+        )
+
+        self.assertEqual(
+            top_miners,
+            [
+                {
+                    "miner_id": "miner-1",
+                    "balance_rtc": 42.5,
+                    "architecture": "powerpc",
+                }
+            ],
+        )
 
     def test_formatter_chain(self):
         """Test formatting chain for all channels."""

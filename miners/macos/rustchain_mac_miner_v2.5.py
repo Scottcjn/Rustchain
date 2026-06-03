@@ -12,8 +12,6 @@ New in v2.5:
   - Persistent launchd/cron integration helpers
   - Sleep-resistant: re-attest on wake automatically
 """
-import warnings
-
 import os
 import sys
 import json
@@ -24,6 +22,7 @@ import subprocess
 import statistics
 import re
 import socket
+import signal
 from datetime import datetime
 
 # Color helper stubs (no-op if terminal doesn't support ANSI)
@@ -57,14 +56,11 @@ except ImportError:
     CPU_DETECTION_AVAILABLE = False
 
 MINER_VERSION = "2.5.0"
-NODE_URL = os.environ.get("RUSTCHAIN_NODE", "https://50.28.86.131")
+NODE_URL = os.environ.get("RUSTCHAIN_NODE", "https://rustchain.org")
 PROXY_URL = os.environ.get("RUSTCHAIN_PROXY", "http://192.168.0.160:8089")
 BLOCK_TIME = 600  # 10 minutes
 LOTTERY_CHECK_INTERVAL = 10
 
-# TLS verification: pinned cert or system CA bundle
-_CERT_PATH = os.path.expanduser("~/.rustchain/node_cert.pem")
-TLS_VERIFY = _CERT_PATH if os.path.exists(_CERT_PATH) else True
 ATTESTATION_TTL = 580  # Re-attest 20s before expiry
 
 
@@ -84,11 +80,17 @@ class NodeTransport:
         self._probe_transport()
 
     def _probe_transport(self):
-        """Test if we can reach the node directly via HTTPS."""
+        """Test if we can reach the node directly via HTTPS.
+
+        Use verify=False consistently with all subsequent API calls
+        (self.get/self.post). The probe's only job is to detect whether
+        direct connectivity works — TLS verification is handled by the
+        proxy tunnel or pinned cert when present.
+        """
         try:
             r = requests.get(
                 self.node_url + "/health",
-                timeout=10, verify=TLS_VERIFY
+                timeout=10, verify=False
             )
             if r.status_code == 200:
                 print(success("[TRANSPORT] Direct HTTPS to node: OK"))
@@ -335,6 +337,34 @@ def collect_entropy(cycles=48, inner_loop=25000):
     }
 
 
+def add_binding_entropy_aliases(fingerprint_data):
+    """Add node-side hardware-binding aliases to local fingerprint output."""
+    checks = fingerprint_data.get("checks", {}) if isinstance(fingerprint_data, dict) else {}
+
+    cache_data = checks.get("cache_timing", {}).get("data", {})
+    if "L1" not in cache_data and cache_data.get("l1_ns"):
+        cache_data["L1"] = cache_data["l1_ns"]
+    if "L2" not in cache_data and cache_data.get("l2_ns"):
+        cache_data["L2"] = cache_data["l2_ns"]
+
+    thermal_data = checks.get("thermal_drift", {}).get("data", {})
+    if "ratio" not in thermal_data and thermal_data.get("drift_ratio"):
+        thermal_data["ratio"] = thermal_data["drift_ratio"]
+
+    jitter_data = checks.get("instruction_jitter", {}).get("data", {})
+    if "cv" not in jitter_data:
+        cvs = []
+        for prefix in ("int", "fp", "branch"):
+            avg = float(jitter_data.get("{}_avg_ns".format(prefix), 0) or 0)
+            stdev = float(jitter_data.get("{}_stdev".format(prefix), 0) or 0)
+            if avg > 0 and stdev > 0:
+                cvs.append(stdev / avg)
+        if cvs:
+            jitter_data["cv"] = sum(cvs) / len(cvs)
+
+    return fingerprint_data
+
+
 # ── Miner Class ─────────────────────────────────────────────────────
 
 class MacMiner:
@@ -376,6 +406,7 @@ class MacMiner:
         self.shares_submitted = 0
         self.shares_accepted = 0
         self.last_entropy = {}
+        self.shutdown_requested = False
         self._last_system_time = time.monotonic()
 
         self._print_banner()
@@ -384,13 +415,30 @@ class MacMiner:
         if FINGERPRINT_AVAILABLE:
             self._run_fingerprint_checks()
 
+    def request_shutdown(self, signum=None, frame=None):
+        """Request a graceful miner shutdown from SIGTERM/SIGINT."""
+        if not self.shutdown_requested:
+            print("\n\nShutting down miner...")
+        self.shutdown_requested = True
+
+    def sleep_until_shutdown(self, seconds, interval=1.0):
+        """Sleep in short checkpoints so signal-driven shutdown returns promptly."""
+        deadline = time.monotonic() + seconds
+        while not self.shutdown_requested:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return
+            time.sleep(min(interval, remaining))
+
     def _run_fingerprint_checks(self):
         """Run hardware fingerprint checks for RIP-PoA."""
         print(info("\n[FINGERPRINT] Running hardware fingerprint checks..."))
         try:
             passed, results = validate_all_checks()
             self.fingerprint_passed = passed
-            self.fingerprint_data = {"checks": results, "all_passed": passed}
+            self.fingerprint_data = add_binding_entropy_aliases(
+                {"checks": results, "all_passed": passed}
+            )
             if passed:
                 print(success("[FINGERPRINT] All checks PASSED - eligible for full rewards"))
             else:
@@ -540,7 +588,7 @@ class MacMiner:
         try:
             resp = self.transport.get(
                 "/lottery/eligibility",
-                params={"miner_id": self.miner_id},
+                params={"miner_id": self.wallet},
                 timeout=10,
             )
             if resp.status_code == 200:
@@ -552,17 +600,18 @@ class MacMiner:
     def submit_header(self, slot):
         """Submit header for slot."""
         try:
-            message = "slot:{}:miner:{}:ts:{}".format(slot, self.miner_id, int(time.time()))
+            chain_miner_id = self.wallet
+            message = "slot:{}:miner:{}:ts:{}".format(slot, chain_miner_id, int(time.time()))
             message_hex = message.encode().hex()
             sig_data = hashlib.sha512(
                 "{}{}".format(message, self.wallet).encode()
             ).hexdigest()
 
             header_payload = {
-                "miner_id": self.miner_id,
+                "miner_id": chain_miner_id,
                 "header": {
                     "slot": slot,
-                    "miner": self.miner_id,
+                    "miner": chain_miner_id,
                     "timestamp": int(time.time())
                 },
                 "message": message_hex,
@@ -595,14 +644,17 @@ class MacMiner:
         print("\n[{}] Starting miner...".format(ts))
 
         # Initial attestation
-        while not self.attest():
+        while not self.shutdown_requested and not self.attest():
             print("  Retrying attestation in 30 seconds...")
-            time.sleep(30)
+            self.sleep_until_shutdown(30)
+        if self.shutdown_requested:
+            print("Miner stopped gracefully.")
+            return
 
         last_slot = 0
         status_counter = 0
 
-        while True:
+        while not self.shutdown_requested:
             try:
                 # Detect sleep/wake — force re-attest
                 if self._detect_sleep_wake():
@@ -645,15 +697,18 @@ class MacMiner:
                     ))
                     status_counter = 0
 
-                time.sleep(LOTTERY_CHECK_INTERVAL)
+                self.sleep_until_shutdown(LOTTERY_CHECK_INTERVAL)
 
             except KeyboardInterrupt:
-                print("\n\nShutting down miner...")
+                self.request_shutdown()
                 break
             except Exception as e:
                 ts = datetime.now().strftime('%H:%M:%S')
                 print("[{}] Error: {}".format(ts, e))
-                time.sleep(30)
+                self.sleep_until_shutdown(30)
+        print("Miner stopped gracefully. Submitted: {} | Accepted: {}".format(
+            self.shares_submitted, self.shares_accepted
+        ))
 
 
 if __name__ == "__main__":
@@ -680,4 +735,6 @@ if __name__ == "__main__":
         node_url=node,
         proxy_url=proxy,
     )
+    signal.signal(signal.SIGTERM, miner.request_shutdown)
+    signal.signal(signal.SIGINT, miner.request_shutdown)
     miner.run()

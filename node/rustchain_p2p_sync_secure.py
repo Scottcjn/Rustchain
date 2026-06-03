@@ -24,6 +24,7 @@ import threading
 import hmac
 import hashlib
 import secrets
+from contextlib import closing
 from datetime import datetime
 from typing import List, Dict, Optional, Callable
 from functools import wraps
@@ -35,11 +36,6 @@ def address_from_pubkey(public_key_hex: str) -> str:
     """Generate RTC address: RTC + first 40 chars of SHA256(pubkey)"""
     pubkey_hash = hashlib.sha256(bytes.fromhex(public_key_hex)).hexdigest()[:40]
     return f"RTC{pubkey_hash}"
-
-
-
-# Trusted peer IPs - bypass auth for known nodes
-TRUSTED_PEER_IPS = {"50.28.86.131", "50.28.86.153", "127.0.0.1"}
 
 # ============================================================================
 # SECURITY: AUTHENTICATION & AUTHORIZATION
@@ -134,7 +130,7 @@ class RateLimiter:
 
     def __init__(self):
         self.requests = {}  # {peer_url: [(timestamp, endpoint), ...]}
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
 
         # Rate limits per endpoint (requests per minute)
         self.limits = {
@@ -219,6 +215,9 @@ class BlockValidator:
         Returns: (is_valid, error_message)
         """
         try:
+            if not isinstance(block_data, dict):
+                return False, "Block must be a JSON object"
+
             # 1. Check required fields
             required_fields = ['block_index', 'hash', 'previous_hash', 'timestamp', 'miner', 'transactions']
             for field in required_fields:
@@ -236,9 +235,13 @@ class BlockValidator:
                 return False, "Block timestamp in future"
 
             # 4. Validate transactions
-            for tx in block_data.get('transactions', []):
+            transactions = block_data.get('transactions', [])
+            if not isinstance(transactions, list):
+                return False, "Block transactions must be a list"
+            for tx in transactions:
                 if not self._validate_transaction(tx):
-                    return False, f"Invalid transaction: {tx.get('tx_hash', 'unknown')}"
+                    tx_hash = tx.get('tx_hash', 'unknown') if isinstance(tx, dict) else 'unknown'
+                    return False, f"Invalid transaction: {tx_hash}"
 
             # NEW: Verify producer signature
             if not self._verify_block_signature(block_data):
@@ -269,6 +272,8 @@ class BlockValidator:
 
     def _validate_transaction(self, tx: Dict) -> bool:
         """Validate transaction structure"""
+        if not isinstance(tx, dict):
+            return False
         required_tx_fields = ['tx_hash', 'sender', 'recipient', 'amount_nano']
         return all(field in tx for field in required_tx_fields)
 
@@ -291,7 +296,7 @@ class SybilProtection:
         self.peer_reputation = {}  # {peer_url: score}
         self.banned_peers = set()
         self.whitelist = set()
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
 
     def can_add_peer(self, peer_url: str) -> tuple:
         """Check if peer can be added"""
@@ -344,7 +349,7 @@ class SecurePeerManager:
         self.local_port = local_port
         self.local_url = f"http://{local_host}:{local_port}"
         self.peers: Dict[str, Dict] = {}
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
 
         # Security components
         self.auth_manager = P2PAuthManager()
@@ -357,7 +362,7 @@ class SecurePeerManager:
 
     def _init_peer_db(self):
         """Create peer tracking table with reputation"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS peers (
                     peer_url TEXT PRIMARY KEY,
@@ -382,7 +387,7 @@ class SecurePeerManager:
 
         with self.lock:
             try:
-                with sqlite3.connect(self.db_path) as conn:
+                with closing(sqlite3.connect(self.db_path)) as conn:
                     conn.execute("""
                         INSERT OR REPLACE INTO peers
                         (peer_url, peer_host, peer_port, last_seen, last_block_height, added_at)
@@ -401,7 +406,7 @@ class SecurePeerManager:
 
     def get_active_peers(self) -> List[str]:
         """Get list of active, non-banned peers"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.execute("""
                 SELECT peer_url FROM peers
                 WHERE is_active = 1 AND is_banned = 0
@@ -410,7 +415,7 @@ class SecurePeerManager:
 
     def get_network_stats(self):
         """Get P2P network statistics"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.execute("""
                 SELECT
                     COUNT(*) as total_peers,
@@ -445,13 +450,25 @@ class SecureBlockSync:
         self.db_path = db_path
         self.sync_interval = 30  # seconds
         self.running = False
+        self._stop_event = threading.Event()
+        self._sync_thread = None
 
     def start(self):
         """Start background sync thread"""
+        if self.running:
+            return
         self.running = True
-        sync_thread = threading.Thread(target=self._sync_loop, daemon=True)
-        sync_thread.start()
+        self._stop_event.clear()
+        self._sync_thread = threading.Thread(target=self._sync_loop, daemon=True)
+        self._sync_thread.start()
         logging.info("Secure block sync started")
+
+    def stop(self, timeout: float = 2.0):
+        """Stop background sync and wait briefly for open resources to close."""
+        self.running = False
+        self._stop_event.set()
+        if self._sync_thread and self._sync_thread is not threading.current_thread():
+            self._sync_thread.join(timeout=timeout)
 
     def _sync_loop(self):
         """Main sync loop"""
@@ -461,7 +478,8 @@ class SecureBlockSync:
             except Exception as e:
                 logging.error(f"Sync error: {e}")
 
-            time.sleep(self.sync_interval)
+            if self._stop_event.wait(self.sync_interval):
+                break
 
     def sync_from_peers(self):
         """Fetch and validate blocks from peers"""
@@ -514,7 +532,7 @@ class SecureBlockSync:
 
     def get_blocks_for_sync(self, start_height, limit=100):
         """Get RustChain headers formatted as validator-compatible block records."""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.execute("""
                 SELECT slot, miner_id, message_hex, signature_hex, pubkey_hex, ts
                 FROM headers
@@ -568,11 +586,6 @@ def create_p2p_auth_middleware(auth_manager: P2PAuthManager):
     def require_peer_auth(f: Callable) -> Callable:
         @wraps(f)
         def decorated(*args, **kwargs):
-            # Skip auth for trusted peers
-            peer_ip = request.remote_addr
-            if peer_ip in TRUSTED_PEER_IPS:
-                return f(*args, **kwargs)
-                
             signature = request.headers.get('X-Peer-Signature')
             timestamp = request.headers.get('X-Peer-Timestamp')
 

@@ -52,6 +52,7 @@ DEFAULT_NODE_URL = os.getenv("RUSTCHAIN_NODE", "http://localhost:5000")
 DEFAULT_POLL_INTERVAL = int(os.getenv("WEBHOOK_POLL_INTERVAL", "10"))
 DEFAULT_LARGE_TX_THRESHOLD = float(os.getenv("LARGE_TX_THRESHOLD", "100.0"))
 DEFAULT_DB_PATH = os.getenv("WEBHOOK_DB", "webhooks.db")
+MAX_ADMIN_BODY_BYTES = 1024 * 1024
 MAX_RETRIES = 5
 INITIAL_BACKOFF = 1.0  # seconds
 BACKOFF_MULTIPLIER = 2.0
@@ -75,6 +76,9 @@ _BLOCKED_NETWORKS = [
     ipaddress.ip_network("172.16.0.0/12"),      # RFC 1918
     ipaddress.ip_network("192.168.0.0/16"),     # RFC 1918
     ipaddress.ip_network("169.254.0.0/16"),     # Link-local / cloud metadata
+    ipaddress.ip_network("224.0.0.0/4"),        # IPv4 multicast
+    ipaddress.ip_network("240.0.0.0/4"),        # IPv4 reserved / future use
+    ipaddress.ip_network("255.255.255.255/32"), # IPv4 limited broadcast
     ipaddress.ip_network("0.0.0.0/8"),          # "This" network
     ipaddress.ip_network("100.64.0.0/10"),      # CGNAT
     ipaddress.ip_network("192.0.0.0/24"),       # IETF protocol assignments
@@ -83,6 +87,7 @@ _BLOCKED_NETWORKS = [
     ipaddress.ip_network("203.0.113.0/24"),     # TEST-NET-3 (documentation)
     ipaddress.ip_network("fc00::/7"),           # IPv6 unique-local
     ipaddress.ip_network("fe80::/10"),          # IPv6 link-local
+    ipaddress.ip_network("ff00::/8"),           # IPv6 multicast
 ]
 
 
@@ -260,6 +265,12 @@ def _sign_payload(payload_bytes: bytes, secret: str) -> str:
 
 def deliver_webhook(sub: Subscriber, event: WebhookEvent, store: SubscriberStore):
     """POST the event payload to the subscriber URL with retry + backoff."""
+    validation_error = validate_webhook_url(sub.url)
+    if validation_error:
+        log.warning("Skipping webhook delivery to %s: %s", sub.url, validation_error)
+        store.log_delivery(sub.id, event.event_type, "", None, 0, validation_error)
+        return
+
     payload = json.dumps({
         "event": event.event_type,
         "timestamp": event.timestamp,
@@ -347,7 +358,11 @@ class RustChainPoller:
         tip = self._get("/headers/tip")
         if not tip or tip.get("slot") is None:
             return
-        slot = int(tip["slot"])
+        try:
+            slot = int(tip["slot"])
+        except (TypeError, ValueError):
+            log.debug("Ignoring tip with invalid slot value: %r", tip.get("slot"))
+            return
         if self._prev_tip_slot is not None and slot > self._prev_tip_slot:
             dispatch_event(WebhookEvent(
                 event_type="new_block",
@@ -383,16 +398,33 @@ class RustChainPoller:
 
     def _check_miners(self):
         miners_data = self._get("/api/miners")
-        if not miners_data or not isinstance(miners_data, list):
+        if isinstance(miners_data, list):
+            miners = miners_data
+        elif isinstance(miners_data, dict):
+            miners = miners_data.get("miners") or miners_data.get("data") or []
+        else:
             return
-        current_miners = {m["miner"] for m in miners_data if "miner" in m}
+        if not isinstance(miners, list):
+            return
+        current_miners = {
+            miner_id
+            for miner_id in ((m.get("miner") or m.get("miner_id") or m.get("id")) for m in miners if isinstance(m, dict))
+            if miner_id
+        }
 
         if self._prev_miners:
             joined = current_miners - self._prev_miners
             left = self._prev_miners - current_miners
 
             for miner_id in joined:
-                miner_info = next((m for m in miners_data if m.get("miner") == miner_id), {})
+                miner_info = next(
+                    (
+                        m for m in miners
+                        if isinstance(m, dict)
+                        and (m.get("miner") or m.get("miner_id") or m.get("id")) == miner_id
+                    ),
+                    {},
+                )
                 dispatch_event(WebhookEvent(
                     event_type="miner_joined",
                     timestamp=time.time(),
@@ -415,7 +447,7 @@ class RustChainPoller:
 
     def _check_large_tx(self):
         balances_data = self._get("/api/balances")
-        if not balances_data or not isinstance(balances_data, list):
+        if balances_data is None or not isinstance(balances_data, list):
             return
 
         current_balances: Dict[str, float] = {}
@@ -478,6 +510,8 @@ class WebhookAdminHandler(BaseHTTPRequestHandler):
     """Simple HTTP handler for managing webhook subscriptions."""
 
     store: SubscriberStore  # injected via class attribute
+    # FIX(#2867 M3): API key for admin endpoints, read from env var
+    ADMIN_API_KEY: str = os.environ.get("WEBHOOK_ADMIN_API_KEY", "")
 
     def log_message(self, fmt, *args):
         log.debug(fmt, *args)
@@ -491,13 +525,41 @@ class WebhookAdminHandler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def _read_body(self) -> dict:
-        length = int(self.headers.get("Content-Length", 0))
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except ValueError as exc:
+            raise ValueError("invalid Content-Length") from exc
+        if length > MAX_ADMIN_BODY_BYTES:
+            raise ValueError("request body too large")
         if length == 0:
             return {}
         raw = self.rfile.read(length)
-        return json.loads(raw)
+        body = json.loads(raw)
+        if not isinstance(body, dict):
+            raise ValueError("JSON object body required")
+        return body
+
+    # FIX(#2867 M3): Authenticate admin API requests
+    def _check_api_key(self) -> bool:
+        if not self.ADMIN_API_KEY:
+            self._send_json(503, {"error": "WEBHOOK_ADMIN_API_KEY not configured"})
+            return False
+        provided = self.headers.get("X-Admin-API-Key", "")
+        if not hmac.compare_digest(
+            provided.encode("utf-8"),
+            self.ADMIN_API_KEY.encode("utf-8"),
+        ):
+            self._send_json(401, {"error": "invalid or missing API key"})
+            return False
+        return True
 
     def do_GET(self):
+        if self.path == "/health":
+            self._send_json(200, {"status": "ok"})
+            return
+
+        if not self._check_api_key():
+            return
         if self.path == "/webhooks":
             subs = self.store.list_all()
             self._send_json(200, {
@@ -510,12 +572,12 @@ class WebhookAdminHandler(BaseHTTPRequestHandler):
                     for s in subs
                 ],
             })
-        elif self.path == "/health":
-            self._send_json(200, {"status": "ok"})
         else:
             self._send_json(404, {"error": "not found"})
 
     def do_POST(self):
+        if not self._check_api_key():
+            return
         if self.path == "/webhooks/subscribe":
             self._handle_subscribe()
         elif self.path == "/webhooks/unsubscribe":
@@ -526,6 +588,10 @@ class WebhookAdminHandler(BaseHTTPRequestHandler):
     def _handle_subscribe(self):
         try:
             body = self._read_body()
+        except ValueError as exc:
+            status = 413 if "too large" in str(exc) else 400
+            self._send_json(status, {"error": str(exc)})
+            return
         except json.JSONDecodeError:
             self._send_json(400, {"error": "invalid JSON"})
             return
@@ -534,6 +600,9 @@ class WebhookAdminHandler(BaseHTTPRequestHandler):
         if not url:
             self._send_json(400, {"error": "url is required"})
             return
+        if not isinstance(url, str):
+            self._send_json(400, {"error": "url must be a string"})
+            return
 
         error = validate_webhook_url(url)
         if error:
@@ -541,7 +610,12 @@ class WebhookAdminHandler(BaseHTTPRequestHandler):
             return
 
         events_raw = body.get("events")
-        if events_raw:
+        if events_raw is not None:
+            if not isinstance(events_raw, list) or not all(
+                isinstance(event, str) for event in events_raw
+            ):
+                self._send_json(400, {"error": "events must be a list of strings"})
+                return
             events = set(events_raw) & ALL_EVENT_TYPES
             if not events:
                 self._send_json(400, {
@@ -553,7 +627,13 @@ class WebhookAdminHandler(BaseHTTPRequestHandler):
             events = set(ALL_EVENT_TYPES)
 
         sub_id = body.get("id") or hashlib.sha256(url.encode()).hexdigest()[:12]
+        if not isinstance(sub_id, str):
+            self._send_json(400, {"error": "id must be a string"})
+            return
         secret = body.get("secret")
+        if secret is not None and not isinstance(secret, str):
+            self._send_json(400, {"error": "secret must be a string"})
+            return
 
         sub = Subscriber(id=sub_id, url=url, secret=secret, events=events)
         self.store.add(sub)
@@ -568,6 +648,10 @@ class WebhookAdminHandler(BaseHTTPRequestHandler):
     def _handle_unsubscribe(self):
         try:
             body = self._read_body()
+        except ValueError as exc:
+            status = 413 if "too large" in str(exc) else 400
+            self._send_json(status, {"error": str(exc)})
+            return
         except json.JSONDecodeError:
             self._send_json(400, {"error": "invalid JSON"})
             return
@@ -575,6 +659,9 @@ class WebhookAdminHandler(BaseHTTPRequestHandler):
         sub_id = body.get("id")
         if not sub_id:
             self._send_json(400, {"error": "id is required"})
+            return
+        if not isinstance(sub_id, str):
+            self._send_json(400, {"error": "id must be a string"})
             return
 
         if self.store.remove(sub_id):

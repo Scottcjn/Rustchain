@@ -9,7 +9,7 @@ A reward modifier (1.0x - 2.5x) based on CPU age. Older hardware receives higher
 The process of proving hardware authenticity to the network. Miners submit 6 hardware fingerprints that are validated against known profiles.
 
 ### Attestation Node
-A trusted server that validates hardware fingerprints and enrolls miners into epochs. Primary node: `50.28.86.131`
+A trusted server that validates hardware fingerprints and enrolls miners into epochs. Primary node: `rustchain.org`
 
 ## C
 
@@ -78,7 +78,7 @@ IBM/Apple CPU architecture (1991-2006). G4 and G5 receive highest multipliers (2
 RustChain Iterative Protocol. The consensus mechanism defining how attestations are validated and rewards distributed.
 
 ### RTC (RustChain Token)
-Native cryptocurrency of RustChain. Capped supply of 8,000,000 RTC.
+Native cryptocurrency of RustChain. Capped supply of 8,388,608 RTC.
 
 ## S
 

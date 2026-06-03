@@ -25,6 +25,7 @@ import json
 import os
 import sqlite3
 import sys
+import tempfile
 import time
 import uuid
 from pathlib import Path
@@ -46,6 +47,7 @@ from cross_node_replay_defense import (
     get_cross_node_nonce_stats,
     get_replay_attack_report,
     NonceCleanupService,
+    create_defense_middleware,
     CROSS_NODE_NONCE_TTL,
     NODE_ID,
 )
@@ -517,6 +519,42 @@ class TestCleanupService:
 
 
 # =============================================================================
+# Tests: Flask Middleware Payload Validation
+# =============================================================================
+
+class TestDefenseMiddlewarePayloadValidation:
+    """Tests for request-shape handling in the Flask middleware."""
+
+    def test_attestation_middleware_rejects_non_object_json(self):
+        """Non-object JSON must not bypass nonce validation middleware."""
+        from flask import Flask, jsonify
+
+        fd, db_path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        try:
+            app = Flask(__name__)
+            app.config["TESTING"] = True
+
+            middleware = create_defense_middleware(db_path=db_path)
+            middleware.init_app(app)
+
+            @app.route("/attest/submit", methods=["POST"])
+            def attest_submit():
+                return jsonify({"ok": True})
+
+            response = app.test_client().post("/attest/submit", json=[])
+
+            assert response.status_code == 400
+            assert response.get_json() == {
+                "ok": False,
+                "error": "JSON object required",
+                "code": "INVALID_ATTESTATION_PAYLOAD",
+            }
+        finally:
+            os.unlink(db_path)
+
+
+# =============================================================================
 # Property-Based Tests
 # =============================================================================
 
@@ -570,6 +608,53 @@ class TestProperties:
         
         assert valid is False
         assert error == "nonce_belongs_to_different_miner"
+
+    def test_store_preserves_first_active_nonce_owner(self, test_db):
+        """Storing an already-active nonce must not replace its first owner."""
+        nonce = "nonce_first_owner_invariant"
+
+        with patch('cross_node_replay_defense.NODE_ID', "node-original"):
+            first_result = store_used_cross_node_nonce(test_db, nonce, "miner_original")
+
+        with patch('cross_node_replay_defense.NODE_ID', "node-replay"):
+            second_result = store_used_cross_node_nonce(test_db, nonce, "miner_replay")
+
+        row = test_db.execute(
+            """
+            SELECT miner_id, node_id
+            FROM cross_node_nonces
+            WHERE nonce = ?
+            """,
+            (nonce,),
+        ).fetchone()
+
+        assert first_result is True
+        assert second_result is False
+        assert row == ("miner_original", "node-original")
+
+    def test_store_can_reuse_nonce_after_expiration(self, test_db):
+        """Expired records are cleaned before a fresh nonce owner is stored."""
+        nonce = "nonce_expired_then_reused"
+        past_time = 1700000000
+        future_time = past_time + CROSS_NODE_NONCE_TTL + 100
+
+        with patch('cross_node_replay_defense.NODE_ID', "node-old"):
+            store_used_cross_node_nonce(test_db, nonce, "miner_old", now_ts=past_time)
+
+        with patch('cross_node_replay_defense.NODE_ID', "node-new"):
+            result = store_used_cross_node_nonce(test_db, nonce, "miner_new", now_ts=future_time)
+
+        row = test_db.execute(
+            """
+            SELECT miner_id, node_id
+            FROM cross_node_nonces
+            WHERE nonce = ?
+            """,
+            (nonce,),
+        ).fetchone()
+
+        assert result is True
+        assert row == ("miner_new", "node-new")
 
 
 # =============================================================================

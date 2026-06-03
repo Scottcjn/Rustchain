@@ -15,6 +15,7 @@ import json
 import time
 import hashlib
 import sqlite3
+from contextlib import contextmanager
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, asdict
 from datetime import datetime
@@ -39,6 +40,14 @@ try:
 except ImportError:
     HAVE_REPORTLAB = False
     print("[WARN] reportlab library not available - PDF generation disabled")
+
+
+def _format_repair_date(repair_date: Any) -> str:
+    """Format a repair timestamp for PDF output without crashing on bad data."""
+    try:
+        return datetime.fromtimestamp(float(repair_date)).strftime('%Y-%m-%d')
+    except (TypeError, ValueError, OSError, OverflowError):
+        return 'Unknown'
 
 
 @dataclass
@@ -246,11 +255,19 @@ class MachinePassportLedger:
         self.db_path = db_path
         self._ensure_schema()
     
-    def _get_connection(self) -> sqlite3.Connection:
-        """Get a database connection with row factory."""
+    @contextmanager
+    def _get_connection(self):
+        """Get a database connection with row factory and close it after use."""
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
-        return conn
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
     
     def _ensure_schema(self) -> None:
         """Ensure the database schema is initialized."""
@@ -723,11 +740,10 @@ def generate_passport_pdf(passport_data: Dict, output_path: str) -> Tuple[bool, 
         if repair_log:
             repair_data = [['Date', 'Type', 'Description', 'Parts']]
             for entry in repair_log[:10]:  # Limit to 10 entries
-                repair_date = datetime.fromtimestamp(entry['repair_date']).strftime('%Y-%m-%d')
                 repair_data.append([
-                    repair_date,
-                    entry['repair_type'],
-                    entry['description'][:40] + '...' if len(entry['description']) > 40 else entry['description'],
+                    _format_repair_date(entry.get('repair_date')),
+                    entry.get('repair_type', 'N/A'),
+                    str(entry.get('description', ''))[:40],
                     entry.get('parts_replaced', 'N/A') or 'N/A',
                 ])
             

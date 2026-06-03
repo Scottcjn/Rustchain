@@ -5,7 +5,7 @@
 > **日本語翻訳版** | [English Version](README.md)
 
 [![CI](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml/badge.svg)](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/Scottcjn/Rustchain?style=flat&color=gold)](https://github.com/Scottcjn/Rustchain/stargazers)
 [![Contributors](https://img.shields.io/github/contributors/Scottcjn/Rustchain?color=brightgreen)](https://github.com/Scottcjn/Rustchain/graphs/contributors)
 [![Last Commit](https://img.shields.io/github/last-commit/Scottcjn/Rustchain?color=blue)](https://github.com/Scottcjn/Rustchain/commits/main)
@@ -22,7 +22,7 @@
 
 *PowerPC G4は最新のThreadripperよりも多くの報酬を得られます。それがポイントです。*
 
-[Webサイト](https://rustchain.org) • [ライブエクスプローラー](https://rustchain.org/explorer) • [wRTCスワップ](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) • [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) • [wRTCクイックスタート](docs/wrtc.md) • [wRTCチュートリアル](docs/WRTC_ONBOARDING_TUTORIAL.md) • [Grokipedia参照](https://grokipedia.com/search?q=RustChain) • [ホワイトペーパー](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf) • [クイックスタート](#-quick-start) • [仕組み](#-how-proof-of-antiquity-works)
+[Webサイト](https://rustchain.org) • [ライブエクスプローラー](https://rustchain.org/explorer) • [wRTCスワップ](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) • [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) • [wRTCクイックスタート](docs/wrtc.md) • [wRTCチュートリアル](docs/WRTC_ONBOARDING_TUTORIAL.md) • [Grokipedia参照](https://grokipedia.com/search?q=RustChain) • [ホワイトペーパー](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf) • [クイックスタート](#-quick-start) • [仕組み](#-how-proof-of-antiquity-works)
 
 </div>
 
@@ -107,8 +107,8 @@ clawrtc wallet coinbase link 0xYourBaseAddress
 ```
 
 **x402プレミアムAPIエンドポイント**が稼働中（現在はフローを検証するため無料）：
-- `GET /api/premium/videos` - 一括動画エクスポート（BoTTube）
-- `GET /api/premium/analytics/<agent>` - 詳細エージェント分析（BoTTube）
+- `GET https://bottube.ai/api/premium/videos` - 一括動画エクスポート（BoTTube）
+- `GET https://bottube.ai/api/premium/analytics/<agent>` - 詳細エージェント分析（BoTTube）
 - `GET /api/premium/reputation` - 完全なレピュテーションエクスポート（Beacon Atlas）
 - `GET /wallet/swap-info` - USDC/wRTCスワップガイダンス（RustChain）
 
@@ -229,6 +229,8 @@ bash install-miner.sh --wallet YOUR_WALLET_NAME
 bash install-miner.sh --dry-run --wallet YOUR_WALLET_NAME
 ```
 
+Windows向け注記: `install-miner.sh --dry-run` は Linux/macOS/WSL 用のプレビュー手順です。ネイティブ Windows では Windows 向けガイドを使うか、WSL 内で実行してください。
+
 ## 💰 バウンティボード
 
 RustChainエコシステムへの貢献で**RTC**を獲得！
@@ -313,7 +315,7 @@ Modern PC (1.0×):  0.12 RTC  ████████
 
 | ノード | ロケーション | 役割 | ステータス |
 |------|----------|------|--------|
-| **Node 1** | 50.28.86.131 | プライマリ + エクスプローラー | ✅ アクティブ |
+| **Node 1** | rustchain.org | プライマリ + エクスプローラー | ✅ アクティブ |
 | **Node 2** | 50.28.86.153 | Ergoアンカー | ✅ アクティブ |
 | **Node 3** | 76.8.228.245 | 外部（コミュニティ） | ✅ アクティブ |
 
@@ -447,7 +449,7 @@ https://github.com/Scottcjn/Rustchain
 
 ## 📜 ライセンス
 
-MITライセンス - 自由に使用できますが、著作権表示と帰属を保持してください。
+Apache License 2.0 - 自由に使用できますが、Apache License 2.0 の条項を遵守し、著作権表示と帰属を保持してください。
 
 ---
 
@@ -473,3 +475,4 @@ clawrtc mine --dry-run
 ```
 
 期待される動作：6つすべてのハードウェアフィンガープリントチェックが、アーキテクチャフォールバックエラーなしでネイティブARM64で実行されます。
+注: この `clawrtc mine --dry-run` の確認手順は Linux/macOS/WSL 向けであり、ネイティブ Windows 向けではありません。

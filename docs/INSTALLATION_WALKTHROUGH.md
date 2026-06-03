@@ -6,9 +6,9 @@ Visual guides for installing RustChain and completing your first attestation.
 
 ### Miner Installation (45 seconds)
 
-Watch the complete installation process from cloning to running:
+The recording workflow is documented in the asciinema guide:
 
-![Miner Installation](asciinema/miner_install.cast)
+[Open the miner installation recording guide](asciinema/README.md)
 
 **What you'll see:**
 1. Cloning the RustChain repository
@@ -19,9 +19,9 @@ Watch the complete installation process from cloning to running:
 
 ### First Attestation (52 seconds)
 
-See how to complete your first hardware attestation and start mining:
+The attestation recording workflow is documented in the asciinema guide:
 
-![First Attestation](asciinema/first_attestation.cast)
+[Open the first attestation recording guide](asciinema/README.md)
 
 **What you'll see:**
 1. Starting the RustChain miner
@@ -61,7 +61,7 @@ We provide scripts to help you create consistent recordings:
 #### 1. Record Miner Installation
 
 ```bash
-cd /path/to/rustchain-bounties/issue1615
+cd /path/to/Rustchain
 chmod +x scripts/asciinema/record_miner_install.sh
 ./scripts/asciinema/record_miner_install.sh
 ```
@@ -120,13 +120,20 @@ GitHub doesn't support direct asciinema embedding, but you can:
 
 1. **Link to the cast file:**
    ```markdown
-   [Watch Installation](docs/asciinema/miner_install.cast)
+   [Watch Installation](./asciinema/miner_install.cast)
    ```
 
 2. **Convert to GIF and embed:**
-   ```markdown
-   ![Miner Installation](docs/asciinema/miner_install.gif)
+   ```bash
+   agg docs/asciinema/miner_install.cast docs/asciinema/miner_install.gif
    ```
+
+   Then embed the generated GIF:
+   ```markdown
+   ![Installation walkthrough](./asciinema/miner_install.gif)
+   ```
+
+   > Note: generate `miner_install.gif` before referencing it in documentation.
 
 3. **Use asciinema.org hosting:**
    ```bash
@@ -147,7 +154,7 @@ For HTML docs, use the asciinema player:
 Or host locally:
 
 ```html
-<asciinema-player src="docs/asciinema/miner_install.cast"></asciinema-player>
+<asciinema-player src="./asciinema/miner_install.cast"></asciinema-player>
 <script src="https://cdn.jsdelivr.net/npm/asciinema-player@3/dist/bundle/asciinema-player.min.js"></script>
 ```
 
@@ -158,11 +165,10 @@ Add to your README.md:
 ```markdown
 ## Installation
 
-See the [Installation Walkthrough](docs/INSTALLATION_WALKTHROUGH.md) for a 
-visual guide with asciinema recordings.
+See the [Installation Walkthrough](docs/INSTALLATION_WALKTHROUGH.md) for a visual guide with asciinema recordings.
 
 Quick preview:
-![Installation Preview](docs/asciinema/miner_install.gif)
+[Watch the installation walkthrough cast](docs/asciinema/miner_install.cast)
 ```
 
 ---

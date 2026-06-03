@@ -10,6 +10,9 @@ Endpoints:
   GET  /sophia/explorer/<miner_id> -- explorer-friendly verdict with emoji
 """
 
+import hmac
+import os
+
 from flask import Flask, request, jsonify
 
 from sophia_core import SophiaCoreInspector, VERDICTS
@@ -23,6 +26,49 @@ app = Flask(__name__)
 inspector = SophiaCoreInspector()
 
 
+def require_sophia_admin():
+    expected_key = os.getenv("SOPHIA_ADMIN_KEY", "").strip()
+    if not expected_key:
+        return jsonify({"error": "SOPHIA_ADMIN_KEY not configured"}), 503
+
+    provided_key = (
+        request.headers.get("X-Admin-Key")
+        or request.headers.get("X-API-Key")
+        or ""
+    ).strip()
+    try:
+        authorized = hmac.compare_digest(
+            provided_key.encode("utf-8"),
+            expected_key.encode("utf-8"),
+        )
+    except UnicodeError:
+        authorized = False
+
+    if not authorized:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    return None
+
+
+def positive_int_query_arg(name, default, max_value=None):
+    raw_value = request.args.get(name)
+    if raw_value is None:
+        return default, None
+
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        return None, f"{name} must be an integer"
+
+    if value < 1:
+        return None, f"{name} must be positive"
+
+    if max_value is not None:
+        value = min(value, max_value)
+
+    return value, None
+
+
 @app.before_request
 def _ensure_db():
     """Lazily init DB on first request."""
@@ -34,13 +80,21 @@ def _ensure_db():
 @app.route("/sophia/inspect", methods=["POST"])
 def inspect_fingerprint():
     """Submit a hardware fingerprint for Sophia inspection."""
-    data = request.get_json(force=True)
+    auth_error = require_sophia_admin()
+    if auth_error:
+        return auth_error
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "JSON body must be an object"}), 400
 
     miner_id = data.get("miner_id")
     fingerprint = data.get("fingerprint")
 
     if not miner_id:
         return jsonify({"error": "miner_id is required"}), 400
+    if not isinstance(miner_id, str) or len(miner_id) > 128:
+        return jsonify({"error": "miner_id too long"}), 400
     if not fingerprint or not isinstance(fingerprint, dict):
         return jsonify({"error": "fingerprint bundle (dict) is required"}), 400
 
@@ -51,6 +105,8 @@ def inspect_fingerprint():
 @app.route("/sophia/status/<miner_id>", methods=["GET"])
 def miner_status(miner_id):
     """Get the latest inspection result + history for a miner."""
+    if len(miner_id) > 128:
+        return jsonify({"error": "miner_id too long"}), 400
     conn = get_connection()
     try:
         latest = get_latest_inspection(conn, miner_id)
@@ -68,9 +124,17 @@ def miner_status(miner_id):
 @app.route("/sophia/history", methods=["GET"])
 def inspection_history():
     """Get paginated inspection history."""
-    page = request.args.get("page", 1, type=int)
-    per_page = request.args.get("per_page", 25, type=int)
-    per_page = min(per_page, 100)  # cap
+    auth_error = require_sophia_admin()
+    if auth_error:
+        return auth_error
+
+    page, error = positive_int_query_arg("page", 1)
+    if error:
+        return jsonify({"error": error}), 400
+
+    per_page, error = positive_int_query_arg("per_page", 25, max_value=100)
+    if error:
+        return jsonify({"error": error}), 400
 
     conn = get_connection()
     try:
@@ -84,6 +148,10 @@ def inspection_history():
 @app.route("/sophia/dashboard", methods=["GET"])
 def dashboard():
     """Admin dashboard: aggregate stats + spot-check queue (CAUTIOUS/SUSPICIOUS)."""
+    auth_error = require_sophia_admin()
+    if auth_error:
+        return auth_error
+
     conn = get_connection()
     try:
         stats = get_dashboard_stats(conn)
@@ -98,6 +166,8 @@ def dashboard():
 @app.route("/sophia/explorer/<miner_id>", methods=["GET"])
 def explorer_verdict(miner_id):
     """Emoji verdict for block explorer integration."""
+    if len(miner_id) > 128:
+        return jsonify({"error": "miner_id too long"}), 400
     conn = get_connection()
     try:
         row = get_latest_inspection(conn, miner_id)

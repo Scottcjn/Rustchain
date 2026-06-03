@@ -7,7 +7,10 @@ Integrates with RustChain node for miner attestation.
 
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
+import io
 import json
+import hmac
+import math
 import os
 import time
 import tempfile
@@ -32,6 +35,12 @@ API_PORT = int(os.getenv('BOOT_CHIME_API_PORT', '8085'))
 DB_PATH = os.getenv('BOOT_CHIME_DB_PATH', 'proof_of_iron.db')
 SIMILARITY_THRESHOLD = float(os.getenv('BOOT_CHIME_THRESHOLD', '0.85'))
 CHALLENGE_TTL = int(os.getenv('BOOT_CHIME_CHALLENGE_TTL', '300'))
+MAX_AUDIO_UPLOAD_BYTES = int(
+    os.getenv('BOOT_CHIME_MAX_AUDIO_BYTES', str(10 * 1024 * 1024))
+)
+ALLOWED_AUDIO_MIME_TYPES = {'audio/wav', 'audio/x-wav', 'audio/wave'}
+MIN_CAPTURE_DURATION = float(os.getenv('BOOT_CHIME_MIN_CAPTURE_DURATION', '0.1'))
+MAX_CAPTURE_DURATION = float(os.getenv('BOOT_CHIME_MAX_CAPTURE_DURATION', '30.0'))
 
 # Initialize Proof-of-Iron system
 poi_system = ProofOfIron(
@@ -49,6 +58,110 @@ capture_config = AudioCaptureConfig(
 
 audio_capture = BootChimeCapture(config=capture_config)
 fingerprint_extractor = AcousticFingerprint()
+
+
+class JsonBodyError(ValueError):
+    """Raised when a JSON endpoint receives a non-object body."""
+
+
+class AudioUploadError(ValueError):
+    """Raised when an uploaded boot-chime audio file is not acceptable."""
+
+    def __init__(self, message: str, status_code: int = 400):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def get_json_object() -> Dict[str, Any]:
+    """Return the request JSON body when it is an object."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        raise JsonBodyError("JSON object required")
+    return data
+
+
+def _configured_admin_key() -> str:
+    return (
+        os.getenv('BOOT_CHIME_ADMIN_KEY', '').strip()
+        or os.getenv('RC_ADMIN_KEY', '').strip()
+    )
+
+
+def _provided_admin_key() -> str:
+    header_key = (request.headers.get('X-Admin-Key') or request.headers.get('X-API-Key') or '').strip()
+    if header_key:
+        return header_key
+
+    auth_header = (request.headers.get('Authorization') or '').strip()
+    if auth_header.lower().startswith('bearer '):
+        return auth_header.split(' ', 1)[1].strip()
+    return ''
+
+
+def require_admin_auth():
+    """Fail closed unless a configured admin key matches the request."""
+    expected = _configured_admin_key()
+    if not expected:
+        return jsonify({'error': 'Admin key not configured'}), 503
+
+    provided = _provided_admin_key()
+    if not provided or not hmac.compare_digest(
+        provided.encode('utf-8'),
+        expected.encode('utf-8'),
+    ):
+        return jsonify({'error': 'Unauthorized - admin key required'}), 401
+    return None
+
+
+def validate_audio_upload(audio_file, *, required: bool = True):
+    """Validate an uploaded boot-chime WAV before saving it to disk."""
+    if audio_file is None:
+        if required:
+            raise AudioUploadError("audio file required")
+        return None
+
+    mimetype = (audio_file.mimetype or audio_file.content_type or "").lower()
+    if mimetype not in ALLOWED_AUDIO_MIME_TYPES:
+        raise AudioUploadError("only WAV files accepted")
+
+    stream = audio_file.stream
+    stream.seek(0, os.SEEK_END)
+    size = stream.tell()
+    stream.seek(0)
+
+    if size > MAX_AUDIO_UPLOAD_BYTES:
+        raise AudioUploadError("file too large", 413)
+
+    header = stream.read(12)
+    stream.seek(0)
+    if len(header) < 12 or not header.startswith(b"RIFF") or header[8:12] != b"WAVE":
+        raise AudioUploadError("invalid WAV file")
+
+    return audio_file
+
+
+def get_capture_duration() -> float:
+    """Return a bounded audio capture duration from query parameters."""
+    raw_duration = request.args.get('duration')
+    if raw_duration is None:
+        duration = capture_config.duration
+    else:
+        try:
+            duration = float(raw_duration)
+        except (TypeError, ValueError):
+            raise ValueError("duration must be a number")
+
+    if (
+        not math.isfinite(duration)
+        or duration < MIN_CAPTURE_DURATION
+        or duration > MAX_CAPTURE_DURATION
+    ):
+        raise ValueError(
+            f"duration must be between {MIN_CAPTURE_DURATION:g} "
+            f"and {MAX_CAPTURE_DURATION:g} seconds"
+        )
+
+    return duration
 
 
 # ============= Health & Info =============
@@ -102,7 +215,11 @@ def issue_challenge():
         }
     """
     try:
-        data = request.get_json() or {}
+        auth_error = require_admin_auth()
+        if auth_error:
+            return auth_error
+
+        data = get_json_object()
         miner_id = data.get('miner_id')
         
         if not miner_id:
@@ -118,6 +235,8 @@ def issue_challenge():
             'ttl_seconds': challenge.expires_at - challenge.issued_at
         })
         
+    except JsonBodyError as e:
+        return jsonify({'error': str(e)}), 400
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -145,6 +264,10 @@ def submit_proof():
         }
     """
     try:
+        auth_error = require_admin_auth()
+        if auth_error:
+            return auth_error
+
         miner_id = request.form.get('miner_id')
         challenge_id = request.form.get('challenge_id')
         timestamp = request.form.get('timestamp', type=int)
@@ -157,7 +280,7 @@ def submit_proof():
         # Load audio file if provided
         audio_data = None
         if 'audio' in request.files:
-            audio_file = request.files['audio']
+            audio_file = validate_audio_upload(request.files.get('audio'), required=False)
             with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp:
                 audio_file.save(tmp)
                 tmp_path = tmp.name
@@ -186,6 +309,8 @@ def submit_proof():
         
         return jsonify(result.to_dict()), status_code
         
+    except AudioUploadError as e:
+        return jsonify({'error': str(e)}), e.status_code
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -229,6 +354,10 @@ def enroll_miner():
         }
     """
     try:
+        auth_error = require_admin_auth()
+        if auth_error:
+            return auth_error
+
         miner_id = request.form.get('miner_id')
         
         if not miner_id:
@@ -237,7 +366,7 @@ def enroll_miner():
         # Check if audio file provided
         audio_file = None
         if 'audio' in request.files:
-            audio = request.files['audio']
+            audio = validate_audio_upload(request.files.get('audio'), required=False)
             with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp:
                 audio.save(tmp)
                 audio_file = tmp.name
@@ -248,6 +377,8 @@ def enroll_miner():
         
         return jsonify(result.to_dict()), status_code
         
+    except AudioUploadError as e:
+        return jsonify({'error': str(e)}), e.status_code
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -264,7 +395,11 @@ def capture_audio():
     Response: WAV file
     """
     try:
-        duration = request.args.get('duration', default=5.0, type=float)
+        auth_error = require_admin_auth()
+        if auth_error:
+            return auth_error
+
+        duration = get_capture_duration()
         trigger = request.args.get('trigger', default='false').lower() == 'true'
         
         captured = audio_capture.capture(duration=duration, trigger=trigger)
@@ -273,14 +408,24 @@ def capture_audio():
         with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp:
             audio_capture.save_audio(captured, tmp.name)
             tmp_path = tmp.name
-        
+
+        try:
+            wav_data = Path(tmp_path).read_bytes()
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except FileNotFoundError:
+                pass
+
         return send_file(
-            tmp_path,
+            io.BytesIO(wav_data),
             mimetype='audio/wav',
             as_attachment=True,
             download_name=f'boot_chime_{int(time.time())}.wav'
         )
-        
+
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -300,7 +445,11 @@ def revoke_attestation():
         { "success": true, "message": "..." }
     """
     try:
-        data = request.get_json() or {}
+        auth_error = require_admin_auth()
+        if auth_error:
+            return auth_error
+
+        data = get_json_object()
         miner_id = data.get('miner_id')
         reason = data.get('reason', '')
         
@@ -314,6 +463,8 @@ def revoke_attestation():
         else:
             return jsonify({'error': 'Miner not found'}), 404
             
+    except JsonBodyError as e:
+        return jsonify({'error': str(e)}), 400
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -409,10 +560,7 @@ def analyze_audio():
         }
     """
     try:
-        if 'audio' not in request.files:
-            return jsonify({'error': 'audio file required'}), 400
-        
-        audio_file = request.files['audio']
+        audio_file = validate_audio_upload(request.files.get('audio'), required=True)
         
         with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp:
             audio_file.save(tmp)
@@ -446,6 +594,8 @@ def analyze_audio():
         finally:
             os.unlink(tmp_path)
             
+    except AudioUploadError as e:
+        return jsonify({'error': str(e)}), e.status_code
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

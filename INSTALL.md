@@ -36,27 +36,34 @@ This skips the interactive wallet prompt and uses the specified wallet name.
 
 **Architectures:**
 - x86_64 (Intel/AMD 64-bit)
+- aarch64 (ARM64, e.g. Raspberry Pi)
 - ppc64le (PowerPC 64-bit Little-Endian)
-- ppc (PowerPC 32-bit)
+
+The one-line installer currently targets 64-bit Linux PowerPC (`ppc64le`). Legacy
+32-bit PowerPC systems may need a manual miner path instead of this installer.
 
 ### macOS
 - ✅ macOS 12 (Monterey) and later
 - ✅ macOS 11 (Big Sur) with limitations
 
+Big Sur support is limited to Intel and Apple Silicon Macs with a working Python
+3.8+ interpreter. Older PowerPC Mac OS X releases are not supported by the
+one-line installer because it creates a Python 3 virtualenv and runs modern
+Python miner code.
+
 **Architectures:**
 - arm64 (Apple Silicon M1/M2/M3)
 - x86_64 (Intel Mac)
-- powerpc (PowerPC G3/G4/G5)
 
 ### Special Hardware
 - ✅ IBM POWER8 systems
-- ✅ PowerPC G4/G5 Macs
+- ✅ 64-bit Linux PowerPC systems (`ppc64le`)
 - ✅ Vintage x86 CPUs (Pentium 4, Core 2 Duo, etc.)
 
 ## Requirements
 
 ### System Requirements
-- Python 3.6+ (or Python 2.5+ for vintage PowerPC systems)
+- Python 3.8+
 - curl or wget
 - 50 MB disk space
 - Internet connection
@@ -244,6 +251,10 @@ rm -f /usr/local/bin/rustchain-mine
 
 ## Troubleshooting
 
+For a focused guide to common miner runtime errors such as `Wallet not found`,
+`Connection refused`, `Insufficient balance`, and architecture mismatches, see
+[`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
+
 ### Python virtualenv creation fails
 
 **Error:** `Could not create virtual environment`
@@ -373,4 +384,4 @@ https://github.com/Scottcjn/Rustchain
 
 ## License
 
-RustChain is licensed under the MIT License. See LICENSE file for details.
+RustChain is licensed under the Apache License 2.0. See LICENSE file for details.

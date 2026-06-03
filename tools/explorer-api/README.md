@@ -10,6 +10,7 @@ explorer-friendly endpoints with built-in caching and CORS support.
 | GET | `/api/blocks` | Paginated block list (`?page=1&limit=20`) |
 | GET | `/api/blocks/:height` | Block detail by height |
 | GET | `/api/transactions` | Recent network transactions |
+| GET | `/api/mempool` | Pending UTXO mempool summary, fee metrics, and visible transaction history |
 | GET | `/api/address/:addr` | Address balance + transaction history |
 | GET | `/api/search?q=` | Search blocks, addresses, epochs |
 | GET | `/api/stats` | Aggregated network statistics |
@@ -53,6 +54,9 @@ curl http://localhost:6100/api/search?q=100
 
 # Network stats
 curl http://localhost:6100/api/stats
+
+# Mempool visualization data
+curl http://localhost:6100/api/mempool?limit=25
 ```
 
 ## Architecture

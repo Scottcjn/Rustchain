@@ -2,6 +2,7 @@
 # Author: @createkr (RayBot AI)
 # BCOS-Tier: L1
 import hashlib
+import hmac
 import math
 import secrets
 import sqlite3
@@ -30,6 +31,33 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
     def _hash_job_secret(secret):
         return hashlib.sha256((secret or "").encode("utf-8")).hexdigest()
 
+    def _json_object_body():
+        data = request.get_json(silent=True)
+        if data is None:
+            return {}, None
+        if not isinstance(data, dict):
+            return None, (jsonify({"error": "JSON object required"}), 400)
+        return data, None
+
+    def _string_field(data, name, default=None):
+        value = data.get(name)
+        if value is None or value == "":
+            return default, None
+        if not isinstance(value, str):
+            return None, (jsonify({"error": f"{name} must be a string"}), 400)
+        return value, None
+
+    def _require_admin_key():
+        if not admin_key:
+            return jsonify({"error": "Admin key not configured"}), 503
+        provided = request.headers.get("X-Admin-Key") or request.headers.get("X-API-Key") or ""
+        if not hmac.compare_digest(provided, admin_key):
+            return jsonify({"error": "Unauthorized - admin key required"}), 401
+        return None
+
+    def _database_error_response():
+        return jsonify({"error": "Database operation failed"}), 500
+
     def _ensure_escrow_secret_column(db):
         """Best-effort migration for older DBs."""
         try:
@@ -43,8 +71,15 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
     # 1. GPU Node Attestation (Extension)
     @app.route("/api/gpu/attest", methods=["POST"])
     def gpu_attest():
-        data = request.get_json(silent=True) or {}
-        miner_id = data.get("miner_id")
+        data, body_error = _json_object_body()
+        if body_error:
+            return body_error
+        auth_error = _require_admin_key()
+        if auth_error:
+            return auth_error
+        miner_id, field_error = _string_field(data, "miner_id")
+        if field_error:
+            return field_error
         if not miner_id:
             return jsonify({"error": "miner_id required"}), 400
 
@@ -52,6 +87,14 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
         # For the bounty, we implement the protocol storage and API.
         db = get_db()
         try:
+            # Validate pricing fields using existing _parse_positive_amount
+            price_render = _parse_positive_amount(data.get("price_render_minute", 0.1))
+            price_tts = _parse_positive_amount(data.get("price_tts_1k_chars", 0.05))
+            price_stt = _parse_positive_amount(data.get("price_stt_minute", 0.1))
+            price_llm = _parse_positive_amount(data.get("price_llm_1k_tokens", 0.02))
+            if None in (price_render, price_tts, price_stt, price_llm):
+                return jsonify({"error": "GPU pricing fields must be finite positive numbers"}), 400
+
             db.execute(
                 """
                 INSERT OR REPLACE INTO gpu_attestations (
@@ -66,10 +109,10 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
                     data.get("vram_gb"),
                     data.get("cuda_version"),
                     data.get("benchmark_score", 0),
-                    data.get("price_render_minute", 0.1),
-                    data.get("price_tts_1k_chars", 0.05),
-                    data.get("price_stt_minute", 0.1),
-                    data.get("price_llm_1k_tokens", 0.02),
+                    price_render,
+                    price_tts,
+                    price_stt,
+                    price_llm,
                     1 if data.get("supports_render") else 0,
                     1 if data.get("supports_tts") else 0,
                     1 if data.get("supports_stt") else 0,
@@ -80,18 +123,32 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
             db.commit()
             return jsonify({"ok": True, "message": "GPU attestation recorded"})
         except sqlite3.Error as e:
-            return jsonify({"error": str(e)}), 500
+            return _database_error_response()
         finally:
             db.close()
 
     # 2. Escrow: Lock funds for a job
     @app.route("/api/gpu/escrow", methods=["POST"])
     def gpu_escrow():
-        data = request.get_json(silent=True) or {}
-        job_id = data.get("job_id") or f"job_{secrets.token_hex(8)}"
-        job_type = data.get("job_type")  # render, tts, stt, llm
-        from_wallet = data.get("from_wallet")
-        to_wallet = data.get("to_wallet")
+        auth_error = _require_admin_key()
+        if auth_error:
+            return auth_error
+
+        data, body_error = _json_object_body()
+        if body_error:
+            return body_error
+        job_id, field_error = _string_field(data, "job_id", default=f"job_{secrets.token_hex(8)}")
+        if field_error:
+            return field_error
+        job_type, field_error = _string_field(data, "job_type")  # render, tts, stt, llm
+        if field_error:
+            return field_error
+        from_wallet, field_error = _string_field(data, "from_wallet")
+        if field_error:
+            return field_error
+        to_wallet, field_error = _string_field(data, "to_wallet")
+        if field_error:
+            return field_error
         amount = _parse_positive_amount(data.get("amount_rtc"))
 
         if not all([job_type, from_wallet, to_wallet]):
@@ -99,19 +156,24 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
         if amount is None:
             return jsonify({"error": "amount_rtc must be a finite number > 0"}), 400
 
-        escrow_secret = data.get("escrow_secret") or secrets.token_hex(16)
+        escrow_secret, field_error = _string_field(data, "escrow_secret", default=secrets.token_hex(16))
+        if field_error:
+            return field_error
 
         db = get_db()
         try:
             _ensure_escrow_secret_column(db)
 
-            # check balance (Simplified for bounty protocol)
-            res = db.execute("SELECT balance_rtc FROM balances WHERE miner_pk = ?", (from_wallet,)).fetchone()
-            if not res or res[0] < amount:
+            debited = db.execute(
+                """
+                UPDATE balances
+                SET balance_rtc = balance_rtc - ?
+                WHERE miner_pk = ? AND balance_rtc >= ?
+                """,
+                (amount, from_wallet, amount),
+            )
+            if debited.rowcount != 1:
                 return jsonify({"error": "Insufficient balance for escrow"}), 400
-
-            # Lock funds
-            db.execute("UPDATE balances SET balance_rtc = balance_rtc - ? WHERE miner_pk = ?", (amount, from_wallet))
 
             db.execute(
                 """
@@ -127,17 +189,29 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
             # escrow_secret is intentionally returned once to allow participant-auth for release/refund.
             return jsonify({"ok": True, "job_id": job_id, "status": "locked", "escrow_secret": escrow_secret})
         except sqlite3.Error as e:
-            return jsonify({"error": str(e)}), 500
+            return _database_error_response()
         finally:
             db.close()
 
     # 3. Release: Job finished successfully (payer authorizes provider payout)
     @app.route("/api/gpu/release", methods=["POST"])
     def gpu_release():
-        data = request.get_json(silent=True) or {}
-        job_id = data.get("job_id")
-        actor_wallet = data.get("actor_wallet")
-        escrow_secret = data.get("escrow_secret")
+        auth_error = _require_admin_key()
+        if auth_error:
+            return auth_error
+
+        data, body_error = _json_object_body()
+        if body_error:
+            return body_error
+        job_id, field_error = _string_field(data, "job_id")
+        if field_error:
+            return field_error
+        actor_wallet, field_error = _string_field(data, "actor_wallet")
+        if field_error:
+            return field_error
+        escrow_secret, field_error = _string_field(data, "escrow_secret")
+        if field_error:
+            return field_error
 
         if not all([job_id, actor_wallet, escrow_secret]):
             return jsonify({"error": "job_id, actor_wallet, escrow_secret are required"}), 400
@@ -154,7 +228,9 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
                 return jsonify({"error": "actor_wallet must be escrow participant"}), 403
             if actor_wallet != job["from_wallet"]:
                 return jsonify({"error": "only payer can release escrow"}), 403
-            if _hash_job_secret(escrow_secret) != (job["escrow_secret_hash"] or ""):
+            # Security fix: use hmac.compare_digest() to prevent timing
+            # side-channel attacks that could leak the escrow secret hash.
+            if not hmac.compare_digest(_hash_job_secret(escrow_secret), job["escrow_secret_hash"] or ""):
                 return jsonify({"error": "invalid escrow_secret"}), 403
 
             # Atomic state transition first to prevent races/double-processing.
@@ -166,22 +242,43 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
                 db.rollback()
                 return jsonify({"error": "Job was already processed"}), 409
 
-            # Transfer to provider
-            db.execute("UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk = ?", (job["amount_rtc"], job["to_wallet"]))
+            # Transfer to provider — verify the provider has a balances row
+            credited = db.execute(
+                "UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk = ?",
+                (job["amount_rtc"], job["to_wallet"]),
+            )
+            if credited.rowcount != 1:
+                # Provider has no balances row — create one before crediting
+                db.execute(
+                    "INSERT INTO balances (miner_pk, balance_rtc) VALUES (?, ?)",
+                    (job["to_wallet"], job["amount_rtc"]),
+                )
             db.commit()
             return jsonify({"ok": True, "status": "released"})
         except sqlite3.Error as e:
-            return jsonify({"error": str(e)}), 500
+            return _database_error_response()
         finally:
             db.close()
 
     # 4. Refund: Job failed (provider authorizes refund to payer)
     @app.route("/api/gpu/refund", methods=["POST"])
     def gpu_refund():
-        data = request.get_json(silent=True) or {}
-        job_id = data.get("job_id")
-        actor_wallet = data.get("actor_wallet")
-        escrow_secret = data.get("escrow_secret")
+        auth_error = _require_admin_key()
+        if auth_error:
+            return auth_error
+
+        data, body_error = _json_object_body()
+        if body_error:
+            return body_error
+        job_id, field_error = _string_field(data, "job_id")
+        if field_error:
+            return field_error
+        actor_wallet, field_error = _string_field(data, "actor_wallet")
+        if field_error:
+            return field_error
+        escrow_secret, field_error = _string_field(data, "escrow_secret")
+        if field_error:
+            return field_error
 
         if not all([job_id, actor_wallet, escrow_secret]):
             return jsonify({"error": "job_id, actor_wallet, escrow_secret are required"}), 400
@@ -198,7 +295,9 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
                 return jsonify({"error": "actor_wallet must be escrow participant"}), 403
             if actor_wallet != job["to_wallet"]:
                 return jsonify({"error": "only provider can request refund"}), 403
-            if _hash_job_secret(escrow_secret) != (job["escrow_secret_hash"] or ""):
+            # Security fix: use hmac.compare_digest() to prevent timing
+            # side-channel attacks that could leak the escrow secret hash.
+            if not hmac.compare_digest(_hash_job_secret(escrow_secret), job["escrow_secret_hash"] or ""):
                 return jsonify({"error": "invalid escrow_secret"}), 403
 
             # Atomic state transition first to prevent races/double-processing.
@@ -215,7 +314,7 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
             db.commit()
             return jsonify({"ok": True, "status": "refunded"})
         except sqlite3.Error as e:
-            return jsonify({"error": str(e)}), 500
+            return _database_error_response()
         finally:
             db.close()
 

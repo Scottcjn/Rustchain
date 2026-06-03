@@ -989,14 +989,51 @@ def register_fleet_endpoints(app, DB_PATH):
     """Register Flask endpoints for fleet immune system admin."""
     from flask import request, jsonify
 
+    def parse_positive_limit(default: int = 10, max_value: int = 1000) -> int:
+        raw_value = request.args.get('limit')
+        if raw_value is None:
+            return default
+
+        try:
+            limit = int(raw_value)
+        except ValueError:
+            raise ValueError("limit must be an integer") from None
+
+        if limit < 1:
+            raise ValueError("limit must be positive")
+
+        return min(limit, max_value)
+
+    def parse_positive_epoch() -> Optional[int]:
+        raw_value = request.args.get('epoch')
+        if raw_value is None:
+            return None
+
+        try:
+            epoch = int(raw_value)
+        except ValueError:
+            raise ValueError("epoch must be an integer") from None
+
+        if epoch < 1:
+            raise ValueError("epoch must be positive")
+
+        return epoch
+
     @app.route('/admin/fleet/report', methods=['GET'])
     def fleet_report():
-        admin_key = request.headers.get("X-Admin-Key", "")
-        import os
-        if admin_key != os.environ.get("RC_ADMIN_KEY", "rustchain_admin_key_2025_secure64"):
+        import os, hmac
+        admin_key = os.environ.get("RC_ADMIN_KEY", "")
+        if not admin_key:
+            return jsonify({"error": "RC_ADMIN_KEY not configured — endpoint disabled"}), 503
+        provided_key = request.headers.get("X-Admin-Key", "")
+        if not hmac.compare_digest(provided_key, admin_key):
             return jsonify({"error": "Unauthorized"}), 401
 
-        epoch = request.args.get('epoch', type=int)
+        try:
+            epoch = parse_positive_epoch()
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
         if epoch is None:
             from rewards_implementation_rip200 import current_slot, slot_to_epoch
             epoch = slot_to_epoch(current_slot()) - 1
@@ -1007,18 +1044,24 @@ def register_fleet_endpoints(app, DB_PATH):
 
     @app.route('/admin/fleet/scores', methods=['GET'])
     def fleet_scores():
-        admin_key = request.headers.get("X-Admin-Key", "")
-        import os
-        if admin_key != os.environ.get("RC_ADMIN_KEY", "rustchain_admin_key_2025_secure64"):
+        import os, hmac
+        admin_key = os.environ.get("RC_ADMIN_KEY", "")
+        if not admin_key:
+            return jsonify({"error": "RC_ADMIN_KEY not configured — endpoint disabled"}), 503
+        provided_key = request.headers.get("X-Admin-Key", "")
+        if not hmac.compare_digest(provided_key, admin_key):
             return jsonify({"error": "Unauthorized"}), 401
 
         miner = request.args.get('miner')
-        limit = request.args.get('limit', 10, type=int)
+        try:
+            limit = parse_positive_limit()
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
 
         with sqlite3.connect(DB_PATH) as db:
             if miner:
                 rows = db.execute("""
-                    SELECT epoch, fleet_score, ip_signal, timing_signal,
+                    SELECT miner, epoch, fleet_score, ip_signal, timing_signal,
                            fingerprint_signal, effective_multiplier
                     FROM fleet_scores WHERE miner = ?
                     ORDER BY epoch DESC LIMIT ?

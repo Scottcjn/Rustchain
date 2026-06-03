@@ -390,6 +390,49 @@ class TestWebhookProcessing:
             assert data["action"] == "delete"
             assert data["risk_score"] > 0.8
 
+    @pytest.mark.asyncio
+    async def test_webhook_processing_errors_hide_internal_details(
+        self, app: TestClient, sample_webhook_payload: dict, mock_config: MagicMock
+    ) -> None:
+        """Test webhook processing errors do not leak internal exception details."""
+        body = json.dumps(sample_webhook_payload).encode()
+        signature = generate_signature(body, mock_config.github_app.webhook_secret.get_secret_value())
+        sensitive_error = (
+            "database dsn=postgres://bot:secret@internal-db/moderation "
+            "at /srv/rustchain/private/moderation.py"
+        )
+
+        with (
+            patch.object(
+                app.app.state.moderation_service,
+                "process_comment_event",
+                new_callable=AsyncMock,
+            ) as mock_process,
+            patch.object(app.app.state.audit_logger, "log_error") as mock_log_error,
+        ):
+            mock_process.side_effect = RuntimeError(sensitive_error)
+
+            response = app.post(
+                "/webhook",
+                content=body,
+                headers={
+                    "X-GitHub-Event": "issue_comment",
+                    "X-GitHub-Delivery": "processing-error-delivery-id",
+                    "X-Hub-Signature-256": signature,
+                },
+            )
+
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        assert response.json()["detail"] == "Internal moderation processing error"
+        serialized_response = json.dumps(response.json())
+        assert "postgres://bot:secret@internal-db" not in serialized_response
+        assert "/srv/rustchain/private" not in serialized_response
+        mock_log_error.assert_called_once()
+        audit_kwargs = mock_log_error.call_args.kwargs
+        assert audit_kwargs["error_type"] == "processing_error"
+        assert sensitive_error in audit_kwargs["message"]
+        assert sensitive_error in audit_kwargs["traceback"]
+
     def test_webhook_missing_payload_data(
         self, app: TestClient, mock_config: MagicMock
     ) -> None:
@@ -429,3 +472,58 @@ class TestWebhookProcessing:
         )
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_webhook_rejects_non_object_json(
+        self, app: TestClient, mock_config: MagicMock
+    ) -> None:
+        """Test webhook with valid JSON that is not an object."""
+        body = json.dumps(["not", "an", "object"]).encode()
+        signature = generate_signature(body, mock_config.github_app.webhook_secret.get_secret_value())
+
+        response = app.post(
+            "/webhook",
+            content=body,
+            headers={
+                "X-GitHub-Event": "issue_comment",
+                "X-GitHub-Delivery": "test-delivery-id",
+                "X-Hub-Signature-256": signature,
+            },
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.json()["detail"] == "Webhook payload must be a JSON object"
+
+    @pytest.mark.parametrize(
+        ("field", "expected_detail"),
+        [
+            ("repository", "repository must be a JSON object"),
+            ("comment", "comment must be a JSON object"),
+            ("issue", "issue must be a JSON object"),
+            ("installation", "installation must be a JSON object"),
+        ],
+    )
+    def test_webhook_rejects_non_object_nested_payload_fields(
+        self,
+        app: TestClient,
+        sample_webhook_payload: dict,
+        mock_config: MagicMock,
+        field: str,
+        expected_detail: str,
+    ) -> None:
+        """Test webhook with malformed nested payload objects."""
+        sample_webhook_payload[field] = "not-an-object"
+        body = json.dumps(sample_webhook_payload).encode()
+        signature = generate_signature(body, mock_config.github_app.webhook_secret.get_secret_value())
+
+        response = app.post(
+            "/webhook",
+            content=body,
+            headers={
+                "X-GitHub-Event": "issue_comment",
+                "X-GitHub-Delivery": "test-delivery-id",
+                "X-Hub-Signature-256": signature,
+            },
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.json()["detail"] == expected_detail

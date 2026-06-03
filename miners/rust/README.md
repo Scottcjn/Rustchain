@@ -42,7 +42,7 @@ source $HOME/.cargo/env
 
 ```bash
 # Clone the repo (if you haven't already)
-git clone https://github.com/B1tor/Rustchain.git
+git clone https://github.com/Scottcjn/Rustchain.git
 cd Rustchain/miners/rust
 
 # Debug build (faster compile, slower binary)
@@ -158,7 +158,7 @@ cargo clippy
 
 ## Contributing
 
-See the main [CONTRIBUTING.md](../../CONTRIBUTING.md) and the open bounty issue [#1601](https://github.com/B1tor/Rustchain/issues/1601) for context on this implementation.
+See the main [CONTRIBUTING.md](../../CONTRIBUTING.md) and the open bounty issue [#1601](https://github.com/Scottcjn/Rustchain/issues/1601) for context on this implementation.
 
 ## License
 

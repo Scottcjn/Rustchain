@@ -7,16 +7,15 @@ and configuring the glitch engine.
 """
 
 from flask import Blueprint, jsonify, request, Response
-from typing import Dict, Any
-import json
-import time
+import hmac
+import os
 
 try:
     from .glitch_engine import GlitchEngine, GlitchConfig
-    from .personality import PERSONALITY_TEMPLATES
+    from .personality import PersonalityProfile, PERSONALITY_TEMPLATES
 except ImportError:
     from glitch_engine import GlitchEngine, GlitchConfig
-    from personality import PERSONALITY_TEMPLATES
+    from personality import PersonalityProfile, PERSONALITY_TEMPLATES
 
 
 # Create blueprint
@@ -31,6 +30,55 @@ def init_engine(config: GlitchConfig = None) -> GlitchEngine:
     global _engine
     _engine = GlitchEngine(config)
     return _engine
+
+
+def get_json_object():
+    """Return a JSON object body or a Flask error response."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return None, (jsonify({"error": "JSON object required"}), 400)
+    return data, None
+
+
+def require_admin():
+    """Require admin authentication for destructive/configuration routes."""
+    expected_key = os.environ.get("GLITCH_ADMIN_KEY", "")
+    if not expected_key:
+        return jsonify({
+            "error": "unauthorized",
+            "message": "GLITCH_ADMIN_KEY not configured"
+        }), 401
+
+    provided_key = (
+        request.headers.get("X-Admin-Key", "")
+        or request.headers.get("X-API-Key", "")
+    )
+    if not hmac.compare_digest(
+        provided_key.encode("utf-8"),
+        expected_key.encode("utf-8"),
+    ):
+        return jsonify({
+            "error": "unauthorized",
+            "message": "Invalid admin key"
+        }), 401
+
+    return None
+
+
+def parse_limit_arg(default: int = 50, max_value: int = 200):
+    raw_value = request.args.get("limit")
+    if raw_value is None:
+        return default, None
+
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        return None, "limit_must_be_integer"
+
+    if value < 1:
+        return None, "limit_must_be_positive"
+
+    return min(value, max_value), None
 
 
 def get_engine() -> GlitchEngine:
@@ -76,7 +124,9 @@ def process_message() -> Response:
     """
     engine = get_engine()
     
-    data = request.get_json() or {}
+    data, error = get_json_object()
+    if error:
+        return error
     
     agent_id = data.get("agent_id", "")
     message = data.get("message", "")
@@ -124,12 +174,12 @@ def register_agent(agent_id: str) -> Response:
     """
     engine = get_engine()
     
-    data = request.get_json() or {}
+    data, error = get_json_object()
+    if error:
+        return error
     template = data.get("template")
     personality_data = data.get("personality")
-    
-    from .personality import PersonalityProfile
-    
+
     personality = None
     if personality_data:
         personality = PersonalityProfile.from_dict(personality_data)
@@ -234,7 +284,9 @@ def get_history() -> Response:
     engine = get_engine()
     
     agent_id = request.args.get("agent_id")
-    limit = min(int(request.args.get("limit", 50)), 200)
+    limit, error = parse_limit_arg(50, 200)
+    if error:
+        return jsonify({"error": error}), 400
     
     history = engine.get_glitch_history(agent_id, limit)
     
@@ -269,6 +321,10 @@ def clear_history() -> Response:
     
     POST /api/glitch/history/clear
     """
+    auth_error = require_admin()
+    if auth_error is not None:
+        return auth_error
+
     engine = get_engine()
     
     engine._glitch_history.clear()
@@ -361,9 +417,15 @@ def update_config() -> Response:
         "base_probability": 0.2
     }
     """
+    data, error = get_json_object()
+    if error:
+        return error
+
+    auth_error = require_admin()
+    if auth_error is not None:
+        return auth_error
+
     engine = get_engine()
-    
-    data = request.get_json() or {}
     
     if "enabled" in data:
         if data["enabled"]:
@@ -387,6 +449,10 @@ def reset_config() -> Response:
     
     POST /api/glitch/config/reset
     """
+    auth_error = require_admin()
+    if auth_error is not None:
+        return auth_error
+
     engine = get_engine()
     
     engine.config.enabled = True
@@ -461,6 +527,10 @@ def enable_glitches() -> Response:
     
     POST /api/glitch/enable
     """
+    auth_error = require_admin()
+    if auth_error is not None:
+        return auth_error
+
     engine = get_engine()
     engine.enable()
     
@@ -474,6 +544,10 @@ def disable_glitches() -> Response:
     
     POST /api/glitch/disable
     """
+    auth_error = require_admin()
+    if auth_error is not None:
+        return auth_error
+
     engine = get_engine()
     engine.disable()
     
@@ -493,11 +567,24 @@ def trigger_glitch() -> Response:
         "message": "Test message"
     }
     """
+    data, error = get_json_object()
+    if error:
+        return error
+
+    auth_error = require_admin()
+    if auth_error is not None:
+        return auth_error
+
     engine = get_engine()
-    
-    data = request.get_json() or {}
     agent_id = data.get("agent_id", "test_agent")
     message = data.get("message", "Test message for glitch")
+    if (
+        not isinstance(agent_id, str)
+        or not isinstance(message, str)
+        or not agent_id
+        or not message
+    ):
+        return jsonify({"error": "agent_id and message must be non-empty strings"}), 400
     
     # Auto-register if needed
     if not engine.get_persona(agent_id):

@@ -102,6 +102,41 @@ class MinerInfo:
     status: str
 
 
+def normalize_miner_rows(payload: Any) -> list[dict[str, Any]]:
+    """Return miner rows from current and legacy /api/miners response shapes."""
+    if isinstance(payload, list):
+        rows = payload
+    elif isinstance(payload, dict):
+        rows = payload.get("miners") or payload.get("data") or payload.get("items") or []
+    else:
+        return []
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def parse_positive_int_arg(
+    args: dict[str, Any],
+    name: str,
+    default: int,
+) -> tuple[Optional[int], Optional[dict[str, str]]]:
+    value = args.get(name, default)
+    if isinstance(value, bool):
+        return None, {"error": f"{name} must be a positive integer"}
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return None, {"error": f"{name} must be a positive integer"}
+        try:
+            value = int(value)
+        except ValueError:
+            return None, {"error": f"{name} must be a positive integer"}
+    elif not isinstance(value, int):
+        return None, {"error": f"{name} must be a positive integer"}
+
+    if value < 1:
+        return None, {"error": f"{name} must be a positive integer"}
+    return value, None
+
+
 @dataclass
 class BlockInfo:
     epoch: int
@@ -660,14 +695,16 @@ class RustChainMCP:
             if resp.status != 200:
                 return {"error": f"API error: {resp.status}", "miner_id": miner_id}
 
-            miners = await resp.json()
+            miners = normalize_miner_rows(await resp.json())
 
             # Search for matching miner
-            for miner in miners.get("miners", []):
+            for miner in miners:
                 if (
-                    miner.get("miner_id") == miner_id
+                    miner.get("miner") == miner_id
+                    or miner.get("miner_id") == miner_id
                     or miner.get("wallet") == miner_id
                     or miner.get("id") == miner_id
+                    or miner.get("name") == miner_id
                 ):
                     return {"found": True, "miner": miner}
 
@@ -737,7 +774,9 @@ class RustChainMCP:
 
     async def _tool_get_active_miners(self, args: dict[str, Any]) -> dict[str, Any]:
         """Get active miners."""
-        limit = args.get("limit", 50)
+        limit, error = parse_positive_int_arg(args, "limit", 50)
+        if error:
+            return error
         hardware_type = args.get("hardware_type")
         min_score = args.get("min_score")
 
@@ -753,14 +792,14 @@ class RustChainMCP:
             if resp.status != 200:
                 return {"error": f"API error: {resp.status}"}
 
-            data = await resp.json()
-            miners = data.get("miners", [])
+            miners = normalize_miner_rows(await resp.json())
 
             # Apply filters
             if hardware_type:
 
                 def matches_hardware(m):
-                    return hardware_type.lower() in m.get("hardware", "").lower()
+                    hardware = m.get("hardware") or m.get("hardware_type") or ""
+                    return hardware_type.lower() in str(hardware).lower()
 
                 miners = [m for m in miners if matches_hardware(m)]
 
@@ -1129,7 +1168,7 @@ Visit the [live explorer](https://rustchain.org/explorer) to see your miner!
 ## Resources
 
 - [Full Documentation](https://github.com/Scottcjn/RustChain)
-- [Whitepaper](https://github.com/Scottcjn/RustChain/blob/main/docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf)
+- [Whitepaper](https://github.com/Scottcjn/RustChain/blob/main/docs/WHITEPAPER.md)
 - [Discord](https://discord.gg/rustchain)
 - [Bounties](https://github.com/Scottcjn/rustchain-bounties/issues)
 

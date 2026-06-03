@@ -149,6 +149,7 @@ class DashboardApp {
     }
 
     onBlock(block) {
+        if (!block || typeof block !== 'object') return;
         this.state.metrics.blocksReceived++;
         this.state.metrics.updatesReceived++;
         
@@ -165,6 +166,7 @@ class DashboardApp {
     }
 
     onTransaction(tx) {
+        if (!tx || typeof tx !== 'object') return;
         this.state.metrics.transactionsReceived++;
         this.state.metrics.updatesReceived++;
         
@@ -182,13 +184,16 @@ class DashboardApp {
     onMinerUpdate(data) {
         this.state.metrics.updatesReceived++;
         
-        const miners = data.miners || data;
-        if (Array.isArray(miners)) {
-            this.state.miners = miners;
-            this.updateMinersDisplay();
-            this.updateHardwareDistribution();
-            this.updateMinersChart();
+        const rawMiners = data?.miners || data;
+        if (!Array.isArray(rawMiners)) {
+            this.updateLastUpdateTime();
+            return;
         }
+        const miners = this.normalizeRows(rawMiners);
+        this.state.miners = miners;
+        this.updateMinersDisplay();
+        this.updateHardwareDistribution();
+        this.updateMinersChart();
         
         this.updateLastUpdateTime();
     }
@@ -211,9 +216,10 @@ class DashboardApp {
     }
 
     updateState(state) {
-        if (state.blocks) this.state.blocks = state.blocks;
-        if (state.transactions) this.state.transactions = state.transactions;
-        if (state.miners) this.state.miners = state.miners;
+        if (!state || typeof state !== 'object') return;
+        if (state.blocks) this.state.blocks = this.normalizeRows(state.blocks);
+        if (state.transactions) this.state.transactions = this.normalizeRows(state.transactions);
+        if (state.miners) this.state.miners = this.normalizeRows(state.miners);
         if (state.epoch) this.state.epoch = state.epoch;
         if (state.health) this.state.health = state.health;
         
@@ -388,10 +394,10 @@ class DashboardApp {
         tbody.innerHTML = sortedMiners.map((miner, index) => `
             <tr class="${miner.isNew ? 'new' : ''}">
                 <td>${index + 1}</td>
-                <td class="mono">${this.shortenAddress(miner.miner_id || 'unknown')}</td>
-                <td><span class="badge badge-${this.getArchitectureTier(miner.device_arch)}">${miner.device_arch || 'Unknown'}</span></td>
-                <td class="text-accent">${miner.score || 0}</td>
-                <td>${(miner.multiplier || 1).toFixed(2)}x</td>
+                <td class="mono">${this.escapeHtml(this.shortenAddress(miner.miner_id || miner.miner || 'unknown'))}</td>
+                <td><span class="badge badge-${this.getArchitectureTier(miner.device_arch)}">${this.escapeHtml(miner.device_arch || 'Unknown')}</span></td>
+                <td class="text-accent">${this.escapeHtml(miner.score || 0)}</td>
+                <td>${this.escapeHtml(this.formatNumber(miner.multiplier || 1, 2))}x</td>
                 <td><span class="badge badge-active">● ACTIVE</span></td>
             </tr>
         `).join('');
@@ -440,12 +446,12 @@ class DashboardApp {
             <div class="activity-item ${block.isNew ? 'new' : ''}">
                 <div class="activity-icon">📦</div>
                 <div class="activity-content">
-                    <div class="activity-title">Block #${block.height || 0}</div>
-                    <div class="activity-subtitle mono">${this.shortenHash(block.hash || '0x')}</div>
+                    <div class="activity-title">Block #${this.escapeHtml(block.height || 0)}</div>
+                    <div class="activity-subtitle mono">${this.escapeHtml(this.shortenHash(block.hash || '0x'))}</div>
                 </div>
                 <div class="activity-meta">
                     <div class="activity-time">${this.formatRelativeTime(block.timestamp)}</div>
-                    <div class="activity-value">${block.miners_count || 0} miners</div>
+                    <div class="activity-value">${this.escapeHtml(block.miners_count || 0)} miners</div>
                 </div>
             </div>
         `).join('');
@@ -473,12 +479,12 @@ class DashboardApp {
             <div class="activity-item ${tx.isNew ? 'new' : ''}">
                 <div class="activity-icon">💸</div>
                 <div class="activity-content">
-                    <div class="activity-title">${(tx.type || 'transfer').toUpperCase()}</div>
-                    <div class="activity-subtitle mono">${this.shortenAddress(tx.from || '0x')} → ${this.shortenAddress(tx.to || '0x')}</div>
+                    <div class="activity-title">${this.escapeHtml(String(tx.type || 'transfer').toUpperCase())}</div>
+                    <div class="activity-subtitle mono">${this.escapeHtml(this.shortenAddress(tx.from || '0x'))} → ${this.escapeHtml(this.shortenAddress(tx.to || '0x'))}</div>
                 </div>
                 <div class="activity-meta">
                     <div class="activity-time">${this.formatRelativeTime(tx.timestamp)}</div>
-                    <div class="activity-value">${this.formatNumber(tx.amount || 0)} RTC</div>
+                    <div class="activity-value">${this.escapeHtml(this.formatNumber(tx.amount || 0))} RTC</div>
                 </div>
             </div>
         `).join('');
@@ -518,10 +524,10 @@ class DashboardApp {
             <div class="hardware-legend-item">
                 <div class="hardware-legend-color" style="background: ${item.color}"></div>
                 <div class="hardware-legend-info">
-                    <div class="hardware-legend-label">${item.label}</div>
-                    <div class="hardware-legend-value">${item.percent}%</div>
+                    <div class="hardware-legend-label">${this.escapeHtml(item.label)}</div>
+                    <div class="hardware-legend-value">${this.escapeHtml(item.percent)}%</div>
                 </div>
-                <div class="hardware-legend-count">${item.value}</div>
+                <div class="hardware-legend-count">${this.escapeHtml(item.value)}</div>
             </div>
         `).join('');
     }
@@ -697,20 +703,24 @@ class DashboardApp {
      * Utility functions
      */
     shortenHash(hash, chars = 8) {
-        if (!hash) return '';
-        if (hash.length <= chars * 2) return hash;
-        return `${hash.slice(0, chars)}...${hash.slice(-chars)}`;
+        const value = String(hash ?? '');
+        if (!value) return '';
+        if (value.length <= chars * 2) return value;
+        return `${value.slice(0, chars)}...${value.slice(-chars)}`;
     }
 
     shortenAddress(addr, chars = 6) {
-        if (!addr) return '';
-        if (addr.length <= chars * 2) return addr;
-        return `${addr.slice(0, chars)}...${addr.slice(-chars)}`;
+        const value = String(addr ?? '');
+        if (!value) return '';
+        if (value.length <= chars * 2) return value;
+        return `${value.slice(0, chars)}...${value.slice(-chars)}`;
     }
 
     formatNumber(num, decimals = 2) {
         if (num === null || num === undefined) return '0';
-        return Number(num).toLocaleString(undefined, {
+        const value = Number(num);
+        if (!Number.isFinite(value)) return '0';
+        return value.toLocaleString(undefined, {
             minimumFractionDigits: decimals,
             maximumFractionDigits: decimals
         });
@@ -739,9 +749,19 @@ class DashboardApp {
         return `${days}d ${hours}h ${mins}m`;
     }
 
+    escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, char => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;'
+        })[char]);
+    }
+
     getArchitectureTier(arch) {
         if (!arch) return 'modern';
-        const archLower = arch.toLowerCase();
+        const archLower = String(arch).toLowerCase();
         if (archLower.includes('g3') || archLower.includes('g4') || archLower.includes('g5') ||
             archLower.includes('powerpc') || archLower.includes('sparc')) return 'vintage';
         if (archLower.includes('pentium') || archLower.includes('core 2') ||
@@ -749,6 +769,10 @@ class DashboardApp {
         if (archLower.includes('m1') || archLower.includes('m2') || archLower.includes('apple silicon')) return 'classic';
         if (archLower.includes('ancient') || archLower.includes('legacy')) return 'ancient';
         return 'modern';
+    }
+
+    normalizeRows(payload) {
+        return Array.isArray(payload) ? payload.filter(row => row && typeof row === 'object') : [];
     }
 }
 

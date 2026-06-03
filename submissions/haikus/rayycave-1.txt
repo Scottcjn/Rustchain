@@ -1,0 +1,6 @@
+Old Power Mac hums
+Night fans guard the warm ledger
+Time mints quiet coins
+archetype: vintage_powerpc
+hardware: 1.25 GHz Power Mac G4 (PowerMac3,6)
+wallet: RTC58795037f647767be4ce9a1fb2bde866594d4bcf

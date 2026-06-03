@@ -7,15 +7,36 @@ Web interface for viewing and managing Machine Passports.
 Deployable at rustchain.org/passport/<machine_id>
 """
 
-import json
 import os
 from datetime import datetime
+from typing import Any, Dict
 
-from flask import Flask, render_template, jsonify, request, Response
+from flask import Flask, render_template, jsonify, request
 from passport_ledger import MachinePassport, PassportLedger, RepairEntry, BenchmarkSignature
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 ledger = PassportLedger(data_dir=os.environ.get("PASSPORT_DATA_DIR", "/tmp/passport-ledger"))
+
+
+def get_json_object() -> Dict[str, Any]:
+    """Return the request JSON body when it is an object."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        raise ValueError("JSON object required")
+    return data
+
+
+def get_machine_id(data: Dict[str, Any]) -> str:
+    """Return a safe machine_id from a JSON payload."""
+    if "machine_id" not in data:
+        raise ValueError("machine_id required")
+
+    machine_id = data["machine_id"]
+    if not isinstance(machine_id, str) or not machine_id:
+        raise ValueError("machine_id must be a non-empty string")
+    if "/" in machine_id or "\\" in machine_id:
+        raise ValueError("machine_id cannot contain path separators")
+    return machine_id
 
 
 # ── Web Routes ────────────────────────────────────────────────────
@@ -69,12 +90,14 @@ def api_get(machine_id):
 @app.route("/api/passport", methods=["POST"])
 def api_create():
     """Create or update a machine passport."""
-    data = request.get_json()
-    if not data or "machine_id" not in data:
-        return jsonify({"error": "machine_id required"}), 400
+    try:
+        data = get_json_object()
+        machine_id = get_machine_id(data)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
     # Check if exists (update) or new (create)
-    existing = ledger.get(data["machine_id"])
+    existing = ledger.get(machine_id)
     if existing:
         # Update fields
         for field in ["name", "photo_hash", "provenance", "notes", "owner_address"]:
@@ -90,7 +113,7 @@ def api_create():
         })
         passport_hash = ledger.save(passport)
 
-    return jsonify({"passport_hash": passport_hash, "machine_id": data["machine_id"]}), 201
+    return jsonify({"passport_hash": passport_hash, "machine_id": machine_id}), 201
 
 
 @app.route("/api/passport/<machine_id>/repair", methods=["POST"])
@@ -100,8 +123,12 @@ def api_add_repair(machine_id):
     if not p:
         return jsonify({"error": "Passport not found"}), 404
 
-    data = request.get_json()
-    if not data or "date" not in data or "description" not in data:
+    try:
+        data = get_json_object()
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    if "date" not in data or "description" not in data:
         return jsonify({"error": "date and description required"}), 400
 
     p.add_repair(**{k: v for k, v in data.items() if k in RepairEntry.__dataclass_fields__})
@@ -116,7 +143,11 @@ def api_add_benchmark(machine_id):
     if not p:
         return jsonify({"error": "Passport not found"}), 404
 
-    data = request.get_json() or {}
+    try:
+        data = get_json_object()
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
     sig = BenchmarkSignature(**{k: v for k, v in data.items() if k in BenchmarkSignature.__dataclass_fields__})
     p.add_benchmark(sig)
     ledger.save(p)

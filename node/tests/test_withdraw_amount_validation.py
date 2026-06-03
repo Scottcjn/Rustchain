@@ -1,5 +1,7 @@
 import importlib.util
+import gc
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -12,10 +14,10 @@ MODULE_PATH = os.path.join(NODE_DIR, "rustchain_v2_integrated_v2.2.1_rip200.py")
 class TestWithdrawAmountValidation(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls._tmp = tempfile.TemporaryDirectory()
+        cls._tmp = tempfile.mkdtemp(prefix="withdraw-amount-validation-")
         cls._prev_db_path = os.environ.get("RUSTCHAIN_DB_PATH")
         cls._prev_admin_key = os.environ.get("RC_ADMIN_KEY")
-        os.environ["RUSTCHAIN_DB_PATH"] = os.path.join(cls._tmp.name, "import.db")
+        os.environ["RUSTCHAIN_DB_PATH"] = os.path.join(cls._tmp, "import.db")
         os.environ["RC_ADMIN_KEY"] = "0123456789abcdef0123456789abcdef"
 
         if NODE_DIR not in sys.path:
@@ -28,6 +30,12 @@ class TestWithdrawAmountValidation(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        try:
+            cls.mod.app.do_teardown_appcontext()
+        except Exception:
+            pass
+        cls.client = None
+        cls.mod = None
         if cls._prev_db_path is None:
             os.environ.pop("RUSTCHAIN_DB_PATH", None)
         else:
@@ -36,7 +44,8 @@ class TestWithdrawAmountValidation(unittest.TestCase):
             os.environ.pop("RC_ADMIN_KEY", None)
         else:
             os.environ["RC_ADMIN_KEY"] = cls._prev_admin_key
-        cls._tmp.cleanup()
+        gc.collect()
+        shutil.rmtree(cls._tmp, ignore_errors=True)
 
     def _payload(self, amount):
         return {
@@ -56,20 +65,33 @@ class TestWithdrawAmountValidation(unittest.TestCase):
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(resp.get_json().get("error"), "Invalid JSON body")
 
+    def test_top_level_array_body_rejected(self):
+        resp = self.client.post("/withdraw/request", json=["miner_pk", "amount"])
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.get_json().get("error"), "Invalid JSON body")
+
     def test_non_numeric_amount_rejected(self):
         resp = self.client.post("/withdraw/request", json=self._payload("abc"))
         self.assertEqual(resp.status_code, 400)
-        self.assertEqual(resp.get_json().get("error"), "Amount must be a number")
+        self.assertEqual(resp.get_json().get("error"), "amount must be a number")
+
+    def test_boolean_amounts_rejected_as_non_numeric(self):
+        for amount in (True, False):
+            with self.subTest(amount=amount):
+                resp = self.client.post("/withdraw/request", json=self._payload(amount))
+                self.assertEqual(resp.status_code, 400)
+                self.assertEqual(resp.get_json().get("error"), "amount must be a number")
+                self.assertEqual(resp.get_json().get("received"), "bool")
 
     def test_nan_amount_rejected(self):
         resp = self.client.post("/withdraw/request", json=self._payload("NaN"))
         self.assertEqual(resp.status_code, 400)
-        self.assertEqual(resp.get_json().get("error"), "Amount must be a finite positive number")
+        self.assertEqual(resp.get_json().get("error"), "amount must be a finite positive number")
 
     def test_infinite_amount_rejected(self):
         resp = self.client.post("/withdraw/request", json=self._payload("inf"))
         self.assertEqual(resp.status_code, 400)
-        self.assertEqual(resp.get_json().get("error"), "Amount must be a finite positive number")
+        self.assertEqual(resp.get_json().get("error"), "amount must be a finite positive number")
 
     def test_minimum_withdrawal_check_still_applies(self):
         amount = max(0.000001, float(self.mod.MIN_WITHDRAWAL) / 2.0)

@@ -24,6 +24,9 @@ import time
 import hashlib
 import json
 import logging
+import os
+import tempfile
+from contextlib import closing
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 
@@ -285,15 +288,17 @@ def log_duplicate_detection(duplicates: List[MachineIdentity], epoch: int):
 
 def select_representative_miner(
     conn: sqlite3.Connection,
-    miner_ids: List[str]
+    miner_ids: List[str],
+    epoch: Optional[int] = None,
 ) -> str:
     """
     Select one representative miner ID from a group of miner IDs belonging to the same machine.
     
     Selection criteria (in order of priority):
-    1. Highest entropy score (most authentic attestation)
-    2. Most recent attestation timestamp
-    3. First miner ID alphabetically (deterministic tie-breaker)
+    1. Highest enrolled epoch weight (when epoch is provided)
+    2. Highest entropy score (most authentic attestation)
+    3. Most recent attestation timestamp
+    4. First miner ID alphabetically (deterministic tie-breaker)
     
     This ensures consistent selection across re-runs.
     """
@@ -302,7 +307,21 @@ def select_representative_miner(
     
     cursor = conn.cursor()
     
-    # Get attestation details for all miner IDs
+    # Prefer the highest enrolled weight for this epoch so a low-weight alias on
+    # the same physical machine cannot displace the canonical rewarded miner.
+    if epoch is not None:
+        epoch_weights = _get_epoch_enrolled_weights(conn, epoch)
+        if epoch_weights:
+            best_weight = max(epoch_weights.get(miner_id, 0.0) for miner_id in miner_ids)
+            weighted_ids = [
+                miner_id for miner_id in miner_ids
+                if epoch_weights.get(miner_id, 0.0) == best_weight
+            ]
+            if len(weighted_ids) == 1:
+                return weighted_ids[0]
+            miner_ids = weighted_ids
+
+    # Get attestation details for the remaining candidate miner IDs
     placeholders = ",".join("?" * len(miner_ids))
     cursor.execute(f"""
         SELECT miner, entropy_score, ts_ok
@@ -409,6 +428,38 @@ def get_epoch_miner_groups(
     return groups
 
 
+def _get_epoch_enrolled_weights(conn: sqlite3.Connection, epoch: int) -> Dict[str, float]:
+    """Return canonical per-epoch weights from epoch_enroll when available.
+
+    Older test/legacy schemas only have (epoch, miner_pk).  In that case this
+    returns an empty map and callers fall back to the historical arch-derived
+    multiplier path.
+    """
+    try:
+        cols = conn.execute("PRAGMA table_info(epoch_enroll)").fetchall()
+    except sqlite3.Error:
+        return {}
+
+    if not any(col[1] == "weight" for col in cols):
+        return {}
+
+    try:
+        rows = conn.execute(
+            "SELECT miner_pk, weight FROM epoch_enroll WHERE epoch = ?",
+            (epoch,),
+        ).fetchall()
+    except sqlite3.Error:
+        return {}
+
+    weights: Dict[str, float] = {}
+    for miner_pk, weight in rows:
+        try:
+            weights[miner_pk] = max(float(weight or 0.0), 0.0)
+        except (TypeError, ValueError):
+            weights[miner_pk] = 0.0
+    return weights
+
+
 # =============================================================================
 # ANTI-DOUBLE-MINING REWARD CALCULATION
 # =============================================================================
@@ -448,7 +499,7 @@ def calculate_anti_double_mining_rewards(
     epoch_start_ts = GENESIS_TIMESTAMP + (epoch_start_slot * BLOCK_TIME)
     epoch_end_ts = GENESIS_TIMESTAMP + (epoch_end_slot * BLOCK_TIME)
 
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         conn.execute("BEGIN")
         
         # Detect duplicate identities
@@ -467,7 +518,7 @@ def calculate_anti_double_mining_rewards(
         for identity_hash, miner_ids in miner_groups.items():
             if len(miner_ids) > 1:
                 # Multiple miners for same machine - select one
-                rep = select_representative_miner(conn, miner_ids)
+                rep = select_representative_miner(conn, miner_ids, epoch=epoch)
                 representative_map[identity_hash] = rep
                 
                 # Track skipped miners for telemetry
@@ -485,6 +536,7 @@ def calculate_anti_double_mining_rewards(
         
         # Get device arch for each representative miner
         cursor = conn.cursor()
+        enrolled_weights = _get_epoch_enrolled_weights(conn, epoch)
         machine_data = []
         
         for identity_hash, miner_id in representative_map.items():
@@ -507,6 +559,12 @@ def calculate_anti_double_mining_rewards(
             if fingerprint_ok == 0:
                 weight = 0.0
                 logger.info(f"[REWARD] {miner_id[:20]}... fingerprint=FAIL -> weight=0")
+            elif miner_id in enrolled_weights:
+                # Preserve the canonical per-epoch weight snapshot used by the
+                # normal settlement path.  Recomputing from device_arch here can
+                # change the payout split for delayed settlements or RIP-309
+                # filtered weights.
+                weight = enrolled_weights[miner_id]
             else:
                 weight = get_time_aged_multiplier(device_arch, chain_age_years)
             
@@ -555,7 +613,7 @@ def calculate_anti_double_mining_rewards(
                 # Last miner gets remainder (prevents rounding issues)
                 share = remaining
             else:
-                share = int((weight / total_weight) * total_reward_urtc)
+                share = 0 if total_weight == 0 else int((weight / total_weight) * total_reward_urtc)
                 remaining -= share
 
             rewards[miner_id] = share
@@ -678,11 +736,19 @@ def settle_epoch_with_anti_double_mining(
                 "device_arch": device_arch
             })
 
-        # Mark epoch as settled
-        db.execute(
-            "INSERT OR REPLACE INTO epoch_state (epoch, settled, settled_ts) VALUES (?, 1, ?)",
-            (epoch, ts_now)
-        )
+        # Mark epoch as settled without replacing the whole row.
+        # INSERT OR REPLACE deletes any existing epoch_state metadata columns
+        # (for example finalized/accepted_blocks/pot) before inserting the
+        # narrow settlement row. Preserve unrelated epoch state fields.
+        updated = db.execute(
+            "UPDATE epoch_state SET settled = 1, settled_ts = ? WHERE epoch = ?",
+            (ts_now, epoch)
+        ).rowcount
+        if updated == 0:
+            db.execute(
+                "INSERT INTO epoch_state (epoch, settled, settled_ts) VALUES (?, 1, ?)",
+                (epoch, ts_now)
+            )
 
         if own_conn:
             db.commit()
@@ -744,7 +810,7 @@ def _calculate_anti_double_mining_rewards_conn(
 
     for identity_hash, miner_ids in miner_groups.items():
         if len(miner_ids) > 1:
-            rep = select_representative_miner(conn, miner_ids)
+            rep = select_representative_miner(conn, miner_ids, epoch=epoch)
             representative_map[identity_hash] = rep
             for mid in miner_ids:
                 if mid != rep:
@@ -753,6 +819,7 @@ def _calculate_anti_double_mining_rewards_conn(
             representative_map[identity_hash] = miner_ids[0]
 
     cursor = conn.cursor()
+    enrolled_weights = _get_epoch_enrolled_weights(conn, epoch)
     machine_data = []
 
     for identity_hash, miner_id in representative_map.items():
@@ -773,6 +840,12 @@ def _calculate_anti_double_mining_rewards_conn(
     for miner_id, device_arch, fingerprint_ok, identity_hash in machine_data:
         if fingerprint_ok == 0:
             weight = 0.0
+        elif miner_id in enrolled_weights:
+            # Preserve the canonical per-epoch weight snapshot used by the
+            # normal settlement path.  Recomputing from device_arch here can
+            # change the payout split for delayed settlements or RIP-309
+            # filtered weights.
+            weight = enrolled_weights[miner_id]
         else:
             weight = get_time_aged_multiplier(device_arch, chain_age_years)
 
@@ -814,7 +887,7 @@ def _calculate_anti_double_mining_rewards_conn(
         if i == len(positive_weight_miners) - 1:
             share = remaining
         else:
-            share = int((weight / total_weight) * total_reward_urtc)
+            share = 0 if total_weight == 0 else int((weight / total_weight) * total_reward_urtc)
             remaining -= share
         rewards[miner_id] = share
 
@@ -845,13 +918,11 @@ def setup_test_scenario(db_path: str):
     - Machine B: 1 miner ID (should reward normally)
     - Machine C: 2 miner IDs (should only reward 1)
     """
-    import os
-    
     # Remove existing test DB
     if os.path.exists(db_path):
         os.remove(db_path)
     
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         # Create tables
         conn.execute("""
             CREATE TABLE miner_attest_recent (
@@ -870,6 +941,13 @@ def setup_test_scenario(db_path: str):
                 miner TEXT NOT NULL,
                 ts INTEGER NOT NULL,
                 profile_json TEXT NOT NULL
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE epoch_enroll (
+                epoch INTEGER NOT NULL,
+                miner_pk TEXT NOT NULL
             )
         """)
         
@@ -995,7 +1073,7 @@ if __name__ == "__main__":
     import sys
     
     # Run tests
-    test_db = "/tmp/test_anti_double_mining.db"
+    test_db = os.path.join(tempfile.gettempdir(), "test_anti_double_mining.db")
     setup_test_scenario(test_db)
     
     print("\n=== Testing Anti-Double-Mining Detection ===\n")

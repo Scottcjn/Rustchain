@@ -2,7 +2,7 @@
 
 # 🧱 RustChain：古董證明區塊鏈
 
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![PowerPC](https://img.shields.io/badge/PowerPC-G3%2FG4%2FG5-orange)](https://github.com/Scottcjn/Rustchain)
 [![Blockchain](https://img.shields.io/badge/Consensus-Proof--of--Antiquity-green)](https://github.com/Scottcjn/Rustchain)
 [![Python](https://img.shields.io/badge/Python-3.x-yellow)](https://python.org)
@@ -13,7 +13,7 @@
 
 *你的 PowerPC G4 賺得比最新的 Threadripper 還多。這就是重點。*
 
-[官網](https://rustchain.org) • [區塊瀏覽器](https://rustchain.org/explorer) • [交換 wRTC](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) • [價格圖表](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) • [wRTC 快速入門](docs/wrtc.md) • [wRTC 教學](docs/WRTC_ONBOARDING_TUTORIAL.md) • [Grokipedia 參考](https://grokipedia.com/search?q=RustChain) • [白皮書](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf) • [快速開始](#-快速開始) • [運作原理](#-古董證明如何運作)
+[官網](https://rustchain.org) • [區塊瀏覽器](https://rustchain.org/explorer) • [交換 wRTC](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) • [價格圖表](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) • [wRTC 快速入門](docs/wrtc.md) • [wRTC 教學](docs/WRTC_ONBOARDING_TUTORIAL.md) • [Grokipedia 參考](https://grokipedia.com/search?q=RustChain) • [白皮書](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf) • [快速開始](#-快速開始) • [運作原理](#-古董證明如何運作)
 
 </div>
 
@@ -134,8 +134,10 @@ tail -f ~/.rustchain/miner.log             # 查看日誌
 ```bash
 git clone https://github.com/Scottcjn/Rustchain.git
 cd Rustchain
-pip install -r requirements.txt
-python3 rustchain_universal_miner.py --wallet 你的錢包名稱
+bash install-miner.sh --wallet 你的錢包名稱
+
+# 如需先驗證環境，可執行：
+bash install-miner.sh --dry-run --wallet 你的錢包名稱
 ```
 
 ## 💰 古董倍率
@@ -284,10 +286,13 @@ open https://rustchain.org/explorer
 
 ```
 Rustchain/
-├── rustchain_universal_miner.py    # 主礦工程式（所有平台）
-├── rustchain_v2_integrated.py      # 完整節點實作
-├── fingerprint_checks.py           # 硬體驗證
-├── install.sh                      # 一行安裝程式
+├── install-miner.sh                # 一行礦工安裝程式
+├── miners/linux/
+│   ├── rustchain_linux_miner.py    # Linux 礦工入口
+│   └── fingerprint_checks.py       # 礦工硬體驗證
+├── node/
+│   ├── rustchain_v2_integrated_v2.2.1_rip200.py  # 完整節點實作
+│   └── fingerprint_checks.py       # 節點硬體驗證
 ├── docs/
 │   ├── RustChain_Whitepaper_*.pdf  # 技術白皮書
 │   └── chain_architecture.md       # 架構文件
@@ -333,7 +338,7 @@ https://github.com/Scottcjn/Rustchain
 
 ## 📜 授權條款
 
-MIT 授權條款 - 可自由使用，但請保留版權聲明與出處。
+Apache License 2.0 - 可自由使用，但請遵守 Apache License 2.0 條款並保留版權聲明與署名。
 
 ---
 

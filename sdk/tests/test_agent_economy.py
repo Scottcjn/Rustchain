@@ -4,9 +4,8 @@ RustChain Agent Economy SDK - Unit Tests
 Tests for the RIP-302 Agent Economy client and modules.
 """
 
-import pytest
 import unittest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from datetime import datetime, timedelta
 
 from rustchain.agent_economy import (
@@ -16,11 +15,11 @@ from rustchain.agent_economy import (
     ReputationScore,
 )
 from rustchain.agent_economy.agents import AgentManager, AgentProfile
-from rustchain.agent_economy.payments import PaymentProcessor, PaymentStatus, PaymentIntent
-from rustchain.agent_economy.reputation import ReputationClient, ReputationTier, Attestation
-from rustchain.agent_economy.analytics import AnalyticsClient, AnalyticsPeriod, EarningsReport
+from rustchain.agent_economy.payments import PaymentProcessor, PaymentStatus
+from rustchain.agent_economy.reputation import ReputationClient, ReputationTier
+from rustchain.agent_economy.analytics import AnalyticsClient, AnalyticsPeriod
 from rustchain.agent_economy.bounties import BountyClient, BountyStatus, BountyTier, Bounty
-from rustchain.exceptions import ValidationError, APIError, ConnectionError
+from rustchain.exceptions import ValidationError, APIError
 
 
 class TestAgentWallet(unittest.TestCase):
@@ -216,6 +215,18 @@ class TestAgentEconomyClient(unittest.TestCase):
         
         self.assertEqual(result["status"], "ok")
         mock_request.assert_called_once_with("GET", "/api/agent/health")
+
+    def test_request_rejects_non_object_json(self):
+        """Test successful non-object JSON responses are rejected"""
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = ["not", "an", "object"]
+        response.text = '["not","an","object"]'
+
+        self.client.session.request = Mock(return_value=response)
+
+        with self.assertRaisesRegex(APIError, "Expected JSON object response"):
+            self.client.health()
     
     @patch.object(AgentEconomyClient, '_request')
     def test_get_agent_info(self, mock_request):
@@ -330,7 +341,23 @@ class TestPaymentProcessor(unittest.TestCase):
         
         with self.assertRaises(ValidationError):
             self.processor.send(to="sender-agent", amount=1.0)  # Same agent
-    
+
+    def test_request_payment_intent_expires_in_future(self):
+        """Test payment requests create a usable future expiry."""
+        self.mock_client._request.return_value = {"intent_id": "intent_test"}
+        before_request = datetime.utcnow()
+
+        intent = self.processor.request(
+            from_agent="payer-agent",
+            amount=2.5,
+            description="Premium data",
+            resource="/api/premium/data",
+        )
+
+        self.assertFalse(intent.is_expired())
+        self.assertGreaterEqual(intent.expires_at, before_request + timedelta(minutes=14))
+        self.mock_client._request.assert_called_once()
+
     def test_x402_challenge(self):
         """Test x402 challenge generation"""
         self.mock_client._request.return_value = {
@@ -538,6 +565,36 @@ class TestBountyClient(unittest.TestCase):
         
         self.assertTrue(expired_bounty.is_expired)
         self.assertFalse(active_bounty.is_expired)
+
+    def test_create_bounty_sets_deadline_and_payload(self):
+        """Test creating a bounty includes a computed deadline"""
+        self.mock_client._request.return_value = {"bounty_id": "bounty_new"}
+
+        bounty = self.bounties.create_bounty(
+            title="Fix SDK bug",
+            description="Repair bounty creation",
+            reward=12.5,
+            tier=BountyTier.MINOR,
+            requirements=["regression test"],
+            tags=["sdk"],
+            deadline_days=7,
+        )
+
+        self.assertEqual(bounty.bounty_id, "bounty_new")
+        self.assertEqual(bounty.issuer, "bounty-hunter")
+        self.assertEqual(bounty.tier, BountyTier.MINOR)
+        self.assertEqual(bounty.reward, 12.5)
+        self.assertIsNotNone(bounty.deadline)
+
+        self.mock_client._request.assert_called_once()
+        _, _, kwargs = self.mock_client._request.mock_calls[0]
+        payload = kwargs["json_payload"]
+        self.assertEqual(payload["issuer_id"], "bounty-hunter")
+        self.assertEqual(payload["title"], "Fix SDK bug")
+        self.assertEqual(payload["tier"], "minor")
+        self.assertEqual(payload["requirements"], ["regression test"])
+        self.assertEqual(payload["tags"], ["sdk"])
+        self.assertIn("deadline", payload)
 
 
 class TestIntegration(unittest.TestCase):

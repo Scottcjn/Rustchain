@@ -243,29 +243,58 @@ class FuzzCorpusManager:
 
     def export_corpus(self, output_file: str, category: Optional[PayloadCategory] = None):
         crashes = self.list_crashes(category=category, limit=10_000)
+        crash_data = []
+        for crash in crashes:
+            item = asdict(crash)
+            item["category"] = crash.category.value
+            item["severity"] = crash.severity.value
+            crash_data.append(item)
         data = {
             "metadata": {
                 "exported_at": time.time(),
                 "total_entries": len(crashes),
                 "category_filter": category.value if category else None,
             },
-            "crashes": [asdict(c) for c in crashes],
+            "crashes": crash_data,
         }
         with open(output_file, "w") as fh:
-            json.dump(data, fh, indent=2, default=str)
+            json.dump(data, fh, indent=2)
 
     def import_corpus(self, input_file: str) -> int:
         with open(input_file) as fh:
             data = json.load(fh)
+        if not isinstance(data, dict):
+            return 0
+
+        crashes = data.get("crashes", [])
+        if not isinstance(crashes, list):
+            return 0
+
         count = 0
-        for entry in data.get("crashes", []):
+        for entry in crashes:
+            if not isinstance(entry, dict):
+                continue
+            try:
+                payload_data = entry["payload_data"]
+                category = PayloadCategory(entry["category"])
+                severity = CrashSeverity(entry["severity"])
+                crash_type = entry["crash_type"]
+                stack_trace = entry["stack_trace"]
+            except (KeyError, ValueError):
+                continue
+            notes = entry.get("notes", "")
+            if not all(isinstance(value, str) for value in (
+                payload_data, crash_type, stack_trace, notes,
+            )):
+                continue
+
             ok = self.store_crash(
-                payload_data=entry["payload_data"],
-                category=PayloadCategory(entry["category"]),
-                severity=CrashSeverity(entry["severity"]),
-                crash_type=entry["crash_type"],
-                stack_trace=entry["stack_trace"],
-                notes=entry.get("notes", ""),
+                payload_data=payload_data,
+                category=category,
+                severity=severity,
+                crash_type=crash_type,
+                stack_trace=stack_trace,
+                notes=notes,
             )
             if ok:
                 count += 1

@@ -6,8 +6,11 @@
 #   curl -fsSL https://rustchain.org/install.sh | bash
 #   curl -fsSL https://rustchain.org/install.sh | bash -s -- --wallet MY_WALLET
 #
+# The --wallet option is optional; when omitted, the installer uses
+# a default wallet name based on <hostname>-<arch>.
+#
 # Or manually:
-#   bash install-rtc-miner.sh --wallet my-wallet-name
+#   bash install.sh --wallet my-wallet-name
 #
 # This installs the RTC miner alongside your existing GPU mining setup.
 # CPU overhead: <0.1% | GPU impact: 0% | RAM: <50MB
@@ -23,9 +26,10 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 INSTALL_DIR="$HOME/.rustchain"
-MINER_URL="https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/rustchain_universal_miner.py"
-FINGERPRINT_URL="https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/fingerprint_checks.py"
-NODE_URL="https://50.28.86.131"
+RUSTCHAIN_REF="${RUSTCHAIN_REF:-main}"
+BASE_URL="${RUSTCHAIN_BASE_URL:-https://raw.githubusercontent.com/Scottcjn/Rustchain/${RUSTCHAIN_REF}}"
+CHECKSUM_URL="${BASE_URL}/miners/checksums.sha256"
+NODE_URL="https://rustchain.org"
 VERSION="1.0.0"
 
 # ─── Parse Arguments ─────────────────────────────────────────────────
@@ -45,7 +49,7 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  --wallet, -w NAME    Set wallet name (prompted if not given)"
+            echo "  --wallet, -w NAME    Set wallet name (optional; defaults to <hostname>-<arch>)"
             echo "  --silent, -s         Run miner in background (daemon mode)"
             echo "  --dry-run            Show what would be installed without doing it"
             echo "  --help, -h           Show this help"
@@ -59,6 +63,44 @@ while [[ $# -gt 0 ]]; do
         *)              echo "Unknown option: $1"; exit 1 ;;
     esac
 done
+
+# ─── Early Dry Run Check ─────────────────────────────────────────────
+
+if [ "$DRY_RUN" -eq 1 ]; then
+    OS=$(uname -s)
+    ARCH=$(uname -m)
+
+    case "$OS" in
+        Linux)
+            MINER_PATH="linux/rustchain_linux_miner.py"
+            FINGERPRINT_PATH="linux/fingerprint_checks.py"
+            ;;
+        Darwin)
+            MINER_PATH="macos/rustchain_mac_miner_v2.4.py"
+            FINGERPRINT_PATH="macos/fingerprint_checks.py"
+            ;;
+        *)      echo -e "${RED}Unsupported OS: $OS${NC}"; exit 1 ;;
+    esac
+
+    if [ -z "$WALLET" ]; then
+        HOSTNAME=$(hostname 2>/dev/null | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-' | head -c 20)
+        WALLET="${HOSTNAME:-miner}-$(echo "$ARCH" | tr '[:upper:]' '[:lower:]')"
+    fi
+
+    MINER_URL="${BASE_URL}/miners/${MINER_PATH}"
+    FINGERPRINT_URL="${BASE_URL}/miners/${FINGERPRINT_PATH}"
+
+    echo -e "${YELLOW}[DRY RUN] Would install to: $INSTALL_DIR${NC}"
+    echo "  OS: $OS"
+    echo "  Architecture: $ARCH"
+    echo "  Miner: $MINER_URL"
+    echo "  Fingerprint: $FINGERPRINT_URL"
+    echo "  Checksums: $CHECKSUM_URL"
+    echo "  Wallet: $WALLET"
+    echo "  Node: $NODE_URL"
+    echo "  Silent: $SILENT"
+    exit 0
+fi
 
 # ─── Banner ──────────────────────────────────────────────────────────
 
@@ -78,10 +120,21 @@ OS=$(uname -s)
 ARCH=$(uname -m)
 
 case "$OS" in
-    Linux)  echo "  OS: Linux" ;;
-    Darwin) echo "  OS: macOS" ;;
+    Linux)
+        echo "  OS: Linux"
+        MINER_PATH="linux/rustchain_linux_miner.py"
+        FINGERPRINT_PATH="linux/fingerprint_checks.py"
+        ;;
+    Darwin)
+        echo "  OS: macOS"
+        MINER_PATH="macos/rustchain_mac_miner_v2.4.py"
+        FINGERPRINT_PATH="macos/fingerprint_checks.py"
+        ;;
     *)      echo -e "${RED}  Unsupported OS: $OS${NC}"; exit 1 ;;
 esac
+
+MINER_URL="${BASE_URL}/miners/${MINER_PATH}"
+FINGERPRINT_URL="${BASE_URL}/miners/${FINGERPRINT_PATH}"
 
 echo "  Architecture: $ARCH"
 
@@ -95,6 +148,57 @@ else
     CPU="$ARCH"
 fi
 echo "  CPU: $CPU"
+
+# ─── Download Helpers ────────────────────────────────────────────────
+
+download_file() {
+    url="$1"
+    output="$2"
+
+    if command -v curl &>/dev/null; then
+        curl -fsSL "$url" -o "$output"
+    elif command -v wget &>/dev/null; then
+        wget -q "$url" -O "$output"
+    else
+        echo -e "${RED}  Neither curl nor wget found. Cannot download.${NC}"
+        exit 1
+    fi
+}
+
+file_sha256() {
+    path="$1"
+
+    if command -v sha256sum &>/dev/null; then
+        sha256sum "$path" | awk '{print $1}'
+    elif command -v shasum &>/dev/null; then
+        shasum -a 256 "$path" | awk '{print $1}'
+    else
+        echo -e "${RED}  sha256sum or shasum is required to verify downloads.${NC}" >&2
+        exit 1
+    fi
+}
+
+verify_download() {
+    file="$1"
+    manifest_path="$2"
+    manifest="$3"
+
+    expected=$(awk -v p="$manifest_path" '$2 == p {print $1}' "$manifest")
+    if [ -z "$expected" ]; then
+        echo -e "${RED}  Missing checksum for $manifest_path${NC}"
+        exit 1
+    fi
+
+    actual=$(file_sha256 "$file")
+    if [ "$actual" != "$expected" ]; then
+        echo -e "${RED}  Checksum verification failed for $manifest_path${NC}"
+        echo "  Expected: $expected"
+        echo "  Actual:   $actual"
+        exit 1
+    fi
+
+    echo -e "  ${GREEN}✓ Verified:${NC} $manifest_path"
+}
 
 # Detect GPU (informational)
 if command -v nvidia-smi &>/dev/null; then
@@ -157,19 +261,6 @@ fi
 
 echo -e "  Wallet: ${CYAN}$WALLET${NC}"
 
-# ─── Dry Run Check ───────────────────────────────────────────────────
-
-if [ "$DRY_RUN" -eq 1 ]; then
-    echo ""
-    echo -e "${YELLOW}[DRY RUN] Would install to: $INSTALL_DIR${NC}"
-    echo "  Miner: $MINER_URL"
-    echo "  Fingerprint: $FINGERPRINT_URL"
-    echo "  Wallet: $WALLET"
-    echo "  Node: $NODE_URL"
-    echo "  Silent: $SILENT"
-    exit 0
-fi
-
 # ─── Download Miner ──────────────────────────────────────────────────
 
 echo ""
@@ -177,22 +268,17 @@ echo -e "${GREEN}[4/6]${NC} Downloading miner..."
 
 mkdir -p "$INSTALL_DIR"
 
-# Download miner script
-if command -v curl &>/dev/null; then
-    curl -fsSL "$MINER_URL" -o "$INSTALL_DIR/rustchain_miner.py" --insecure 2>/dev/null
-    curl -fsSL "$FINGERPRINT_URL" -o "$INSTALL_DIR/fingerprint_checks.py" --insecure 2>/dev/null
-elif command -v wget &>/dev/null; then
-    wget -q "$MINER_URL" -O "$INSTALL_DIR/rustchain_miner.py" --no-check-certificate 2>/dev/null
-    wget -q "$FINGERPRINT_URL" -O "$INSTALL_DIR/fingerprint_checks.py" --no-check-certificate 2>/dev/null
-else
-    echo -e "${RED}  Neither curl nor wget found. Cannot download.${NC}"
-    exit 1
-fi
+download_file "$CHECKSUM_URL" "$INSTALL_DIR/checksums.sha256"
+download_file "$MINER_URL" "$INSTALL_DIR/rustchain_miner.py"
+download_file "$FINGERPRINT_URL" "$INSTALL_DIR/fingerprint_checks.py"
 
 if [ ! -s "$INSTALL_DIR/rustchain_miner.py" ]; then
     echo -e "${RED}  Download failed. Check your internet connection.${NC}"
     exit 1
 fi
+
+verify_download "$INSTALL_DIR/rustchain_miner.py" "$MINER_PATH" "$INSTALL_DIR/checksums.sha256"
+verify_download "$INSTALL_DIR/fingerprint_checks.py" "$FINGERPRINT_PATH" "$INSTALL_DIR/checksums.sha256"
 
 echo "  Downloaded to: $INSTALL_DIR/"
 

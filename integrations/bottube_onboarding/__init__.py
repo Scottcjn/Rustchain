@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -441,6 +442,10 @@ def get_empty_state_display(agent_id: str = "Creator") -> str:
     """Get formatted empty-state display for UI."""
     return EMPTY_STATE_TEMPLATE
 
+def get_welcome_message(agent_id: str = "Creator") -> str:
+    """Get formatted welcome message for an agent."""
+    return OnboardingState(agent_id=agent_id).get_welcome_message()
+
 def get_checklist_complete_display() -> str:
     """Get formatted checklist complete display."""
     return CHECKLIST_COMPLETE_TEMPLATE
@@ -454,11 +459,19 @@ def get_first_upload_success_display(agent_id: str, video_title: str, video_url:
     )
 
 
+def _configure_cli_stdout() -> None:
+    """Use UTF-8 for CLI templates that include box drawing and emoji."""
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+
+
 # ============================================================================
 # CLI Interface
 # ============================================================================
 
 if __name__ == "__main__":
+    _configure_cli_stdout()
+
     import argparse
     
     parser = argparse.ArgumentParser(

@@ -4,7 +4,7 @@ Bounty #754: Agent Reputation Score — On-Chain Trust for Agent Economy
 
 Integration:
     from agent_reputation import reputation_bp, ReputationEngine
-    engine = ReputationEngine(db_path="rustchain.db", node_url="https://50.28.86.131")
+    engine = ReputationEngine(db_path="rustchain.db", node_url="https://rustchain.org")
     engine.start_cache_refresh()
     app.register_blueprint(reputation_bp)
 
@@ -21,17 +21,17 @@ import threading
 import sqlite3
 import os
 import json
-import ssl
 import urllib.request
 from flask import Blueprint, jsonify, request
+from node.tls_config import get_ssl_context
 
 # ─── Config ─────────────────────────────────────────────────────────────────── #
 DB_PATH       = os.environ.get("RUSTCHAIN_DB_PATH", "rustchain.db")
-NODE_URL      = os.environ.get("RUSTCHAIN_NODE_URL", "https://50.28.86.131")
+NODE_URL      = os.environ.get("RUSTCHAIN_NODE_URL", "https://rustchain.org")
 CACHE_TTL_S   = 3600       # Refresh reputation cache every epoch (~1hr)
 DECAY_DAYS    = 30         # Lose 1 point per 30 days inactive
 
-CTX = ssl._create_unverified_context()
+CTX = get_ssl_context()
 
 # ─── Reputation Levels ───────────────────────────────────────────────────────── #
 LEVELS = [
@@ -50,6 +50,7 @@ MAX_JOB_VALUE = {
 
 CAN_POST_JOBS       = {"trusted", "veteran"}
 CAN_POST_HIGH_VALUE = {"veteran"}
+HIGH_VALUE_THRESHOLD = 50  # RTC — jobs above this require veteran level
 
 
 def score_to_level(score):
@@ -87,7 +88,10 @@ class ReputationEngine:
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "rustchain-reputation/1.0"})
             with urllib.request.urlopen(req, timeout=8, context=CTX) as r:
-                return json.loads(r.read().decode())
+                data = json.loads(r.read().decode())
+                if isinstance(data, (dict, list)):
+                    return data
+                return None
         except Exception:
             return None
 
@@ -172,9 +176,25 @@ class ReputationEngine:
             # Try via API /api/miners
             miners_data = self._fetch("/api/miners")
             if miners_data:
-                miners = miners_data if isinstance(miners_data, list) else miners_data.get("miners", [])
+                miners = []
+                if isinstance(miners_data, list):
+                    miners = miners_data
+                elif isinstance(miners_data, dict):
+                    for key in ("miners", "data", "items"):
+                        raw_miners = miners_data.get(key)
+                        if isinstance(raw_miners, list):
+                            miners = raw_miners
+                            break
                 for m in miners:
-                    if m.get("wallet_name") == wallet or m.get("wallet") == wallet:
+                    if not isinstance(m, dict):
+                        continue
+                    miner_id = (
+                        m.get("wallet_name")
+                        or m.get("wallet")
+                        or m.get("miner")
+                        or m.get("miner_id")
+                    )
+                    if miner_id == wallet:
                         hardware_verified = True
                         break
 
@@ -284,17 +304,23 @@ class ReputationEngine:
             else:
                 self._cache.clear()
 
+    def _refresh_stale_cache_entries(self):
+        now = time.time()
+        with self._lock:
+            stale = [
+                w for w, (_, ts) in self._cache.items()
+                if now - ts > CACHE_TTL_S
+            ]
+        for w in stale:
+            refreshed = self.calculate(w)
+            with self._lock:
+                if w in self._cache:
+                    self._cache[w] = (refreshed, time.time())
+
     def _refresh_loop(self):
         while True:
             time.sleep(CACHE_TTL_S)
-            with self._lock:
-                stale = [w for w, (_, ts) in self._cache.items()
-                         if time.time() - ts > CACHE_TTL_S]
-            for w in stale:
-                self.calculate(w)
-                with self._lock:
-                    if w in self._cache:
-                        self._cache[w] = (self._cache[w][0], time.time())
+            self._refresh_stale_cache_entries()
 
     def start_cache_refresh(self):
         t = threading.Thread(target=self._refresh_loop, daemon=True)
@@ -330,23 +356,40 @@ def check_eligibility():
     Returns whether an agent is eligible to claim a job of given value.
     """
     agent_id  = request.args.get("agent_id", "").strip()
-    job_value = float(request.args.get("job_value", 0))
-
     if not agent_id:
         return jsonify({"error": "agent_id required"}), 400
 
+    try:
+        raw_job_value = request.args.get("job_value")
+        job_value = float(raw_job_value) if raw_job_value not in (None, "") else 0
+    except (ValueError, TypeError):
+        return jsonify({"error": "job_value must be a number"}), 400
+    if not math.isfinite(job_value) or job_value < 0:
+        return jsonify({"error": "job_value must be a finite non-negative number"}), 400
+
     rep = _engine.get(agent_id)
     max_val = rep["max_job_value_rtc"]
+    level = rep["level"]
     eligible = job_value <= max_val
+    reason = None
+
+    # High-value job gate: jobs above HIGH_VALUE_THRESHOLD require veteran level
+    if eligible and job_value > HIGH_VALUE_THRESHOLD:
+        if level not in CAN_POST_HIGH_VALUE:
+            eligible = False
+            reason = f"{level} level agents cannot claim high-value jobs (>{HIGH_VALUE_THRESHOLD} RTC)"
+    elif not eligible:
+        reason = f"{level} level agents can only claim jobs up to {max_val:g} RTC"
 
     return jsonify({
         "agent_id": agent_id,
         "job_value_rtc": job_value,
         "eligible": eligible,
         "reputation_score": rep["reputation_score"],
-        "level": rep["level"],
+        "level": level,
+        "can_post_high_value": level in CAN_POST_HIGH_VALUE,
         "max_job_value_rtc": max_val,
-        "reason": None if eligible else f"{rep['level']} level agents can only claim jobs up to {max_val} RTC",
+        "reason": reason,
     })
 
 
@@ -356,7 +399,13 @@ def leaderboard():
     GET /agent/reputation/leaderboard?limit=20
     Returns top agents by reputation (from cache).
     """
-    limit = min(int(request.args.get("limit", 20)), 100)
+    try:
+        raw_limit = request.args.get("limit")
+        limit = min(int(raw_limit), 100) if raw_limit not in (None, "") else 20
+    except (ValueError, TypeError):
+        return jsonify({"error": "limit must be an integer"}), 400
+    if limit < 1:
+        return jsonify({"error": "limit must be between 1 and 100"}), 400
     with _engine._lock:
         entries = [(w, d["reputation_score"]) for w, (d, _) in _engine._cache.items()]
     entries.sort(key=lambda x: x[1], reverse=True)
@@ -389,7 +438,7 @@ if __name__ == "__main__":
     print(f"  Level:          {result['level'].upper()} — {result['level_description']}")
     print(f"  Max Job Value:  {result['max_job_value_rtc']} RTC")
     print(f"  Can Post Jobs:  {'✓' if result['can_post_jobs'] else '✗'}")
-    print(f"")
+    print("")
     print(f"  Jobs Completed: {result['jobs_completed']}")
     print(f"  Jobs Accepted:  {result['jobs_accepted']}")
     print(f"  Jobs Disputed:  {result['jobs_disputed']}")

@@ -12,10 +12,12 @@ Phase 1 Implementation:
 All transactions MUST be signed with Ed25519.
 """
 
+import os
 import sqlite3
 import time
 import threading
 import logging
+import hmac
 from typing import Dict, Optional, Tuple, List
 from dataclasses import dataclass
 from contextlib import contextmanager
@@ -32,6 +34,8 @@ logging.basicConfig(
     format='%(asctime)s [TX] %(levelname)s: %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+SQLITE_INT64_MAX = 9_223_372_036_854_775_807
 
 
 # =============================================================================
@@ -84,6 +88,7 @@ CREATE TABLE IF NOT EXISTS wallet_pubkeys (
 -- Index for faster queries
 CREATE INDEX IF NOT EXISTS idx_pending_from ON pending_transactions(from_addr);
 CREATE INDEX IF NOT EXISTS idx_pending_nonce ON pending_transactions(from_addr, nonce);
+CREATE INDEX IF NOT EXISTS idx_pending_admission ON pending_transactions(created_at, tx_hash);
 CREATE INDEX IF NOT EXISTS idx_history_from ON transaction_history(from_addr);
 CREATE INDEX IF NOT EXISTS idx_history_to ON transaction_history(to_addr);
 CREATE INDEX IF NOT EXISTS idx_history_block ON transaction_history(block_height);
@@ -108,6 +113,8 @@ class TransactionPool:
         """Ensure database schema is up to date"""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
+
+            self._recover_interrupted_balances_migration(cursor)
 
             # Base case: create the balances table if it doesn't exist at all.
             # The migration steps below assume the table already exists (ALTER TABLE,
@@ -168,7 +175,52 @@ class TransactionPool:
                         if "already exists" not in str(e):
                             logger.warning(f"Schema statement failed: {e}")
 
+            self._ensure_pending_created_at(cursor)
             conn.commit()
+
+    def _recover_interrupted_balances_migration(self, cursor) -> None:
+        """Recover balances after a crash between SQLite table renames."""
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND name IN ('balances', 'balances_old', 'balances_new')"
+        )
+        tables = {row[0] for row in cursor.fetchall()}
+
+        if "balances" in tables:
+            return
+
+        if "balances_new" in tables:
+            cursor.execute("ALTER TABLE balances_new RENAME TO balances")
+            cursor.execute("DROP TABLE IF EXISTS balances_old")
+            logger.warning("Recovered interrupted balances migration from balances_new")
+            return
+
+        if "balances_old" in tables:
+            cursor.execute("ALTER TABLE balances_old RENAME TO balances")
+            logger.warning("Recovered interrupted balances migration from balances_old")
+
+    def _ensure_pending_created_at(self, cursor) -> None:
+        """Backfill admission-time ordering support for older pending tables."""
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='pending_transactions'"
+        )
+        if not cursor.fetchone():
+            return
+        cursor.execute("PRAGMA table_info(pending_transactions)")
+        columns = [col[1] for col in cursor.fetchall()]
+        if "created_at" not in columns:
+            cursor.execute(
+                "ALTER TABLE pending_transactions ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0"
+            )
+            if "timestamp" in columns:
+                cursor.execute(
+                    "UPDATE pending_transactions SET created_at = timestamp WHERE created_at = 0"
+                )
+            logger.info("Added created_at column to pending_transactions table")
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_pending_admission "
+            "ON pending_transactions(created_at, tx_hash)"
+        )
 
     @contextmanager
     def _get_connection(self):
@@ -467,13 +519,13 @@ class TransactionPool:
                 return False, f"Transaction already exists: {e}"
 
     def get_pending_transactions(self, limit: int = 100) -> List[SignedTransaction]:
-        """Get pending transactions ordered by nonce"""
+        """Get pending transactions in deterministic admission order."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """SELECT * FROM pending_transactions
                    WHERE status = 'pending'
-                   ORDER BY nonce ASC
+                   ORDER BY created_at ASC, rowid ASC
                    LIMIT ?""",
                 (limit,)
             )
@@ -670,11 +722,31 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
     """
     from flask import request, jsonify
 
+    def internal_error(route_name: str):
+        logger.exception("Internal error in %s", route_name)
+        return jsonify({"error": "internal_error"}), 500
+
+    def require_admin():
+        """Require admin key for sensitive operations."""
+        admin_key = request.headers.get("X-Admin-Key", "")
+        expected_key = os.environ.get("RC_ADMIN_KEY", "")
+        if not expected_key:
+            return jsonify({"error": "RC_ADMIN_KEY not configured — endpoint disabled"}), 503
+        if not hmac.compare_digest(admin_key, expected_key):
+            return jsonify({"error": "Unauthorized — admin key required"}), 401
+        return None
+
     @app.route('/tx/submit', methods=['POST'])
     def submit_transaction():
         """Submit a signed transaction"""
         try:
-            data = request.get_json()
+            data = request.get_json(silent=True)
+
+            if data is None:
+                return jsonify({"error": "No JSON data provided"}), 400
+
+            if not isinstance(data, dict):
+                return jsonify({"error": "JSON object required"}), 400
 
             if not data:
                 return jsonify({"error": "No JSON data provided"}), 400
@@ -701,22 +773,29 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
                     "error": result
                 }), 400
 
-        except Exception as e:
-            logger.error(f"Error submitting transaction: {e}")
-            return jsonify({"error": str(e)}), 500
+        except Exception:
+            return internal_error("submit_transaction")
 
     @app.route('/tx/status/<tx_hash>', methods=['GET'])
     def get_tx_status(tx_hash: str):
         """Get transaction status"""
+        # SECURITY: Require admin key — prevents unauthorized transaction surveillance
+        auth_err = require_admin()
+        if auth_err:
+            return auth_err
         try:
             status = tx_pool.get_transaction_status(tx_hash)
             return jsonify(status)
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
+        except Exception:
+            return internal_error("get_tx_status")
 
     @app.route('/tx/pending', methods=['GET'])
     def list_pending():
         """List pending transactions"""
+        # SECURITY: Require admin key — pending tx pool is internal state
+        auth_err = require_admin()
+        if auth_err:
+            return auth_err
         try:
             limit_raw = request.args.get('limit')
             if limit_raw is None:
@@ -737,12 +816,16 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
                 "count": len(pending),
                 "transactions": [tx.to_dict() for tx in pending]
             })
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
+        except Exception:
+            return internal_error("list_pending")
 
     @app.route('/wallet/<address>/balance', methods=['GET'])
     def get_wallet_balance(address: str):
         """Get wallet balance"""
+        # SECURITY: Require admin key — exposes wallet balances without auth
+        auth_err = require_admin()
+        if auth_err:
+            return auth_err
         try:
             balance = tx_pool.get_balance(address)
             available = tx_pool.get_available_balance(address)
@@ -756,12 +839,16 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
                 "balance_rtc": balance / 100_000_000,
                 "available_rtc": available / 100_000_000
             })
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
+        except Exception:
+            return internal_error("get_wallet_balance")
 
     @app.route('/wallet/<address>/nonce', methods=['GET'])
     def get_wallet_nonce(address: str):
         """Get wallet nonce (for transaction construction)"""
+        # SECURITY: Require admin key — exposes wallet nonces enabling nonce exhaustion attacks
+        auth_err = require_admin()
+        if auth_err:
+            return auth_err
         try:
             nonce = tx_pool.get_wallet_nonce(address)
             pending_nonces = tx_pool._get_pending_nonces(address)
@@ -777,12 +864,16 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
                 "next_nonce": next_nonce,
                 "pending_nonces": sorted(pending_nonces)
             })
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
+        except Exception:
+            return internal_error("get_wallet_nonce")
 
     @app.route('/wallet/<address>/history', methods=['GET'])
     def get_wallet_history(address: str):
         """Get transaction history for wallet"""
+        # SECURITY: Require admin key — exposes complete transaction history without auth
+        auth_err = require_admin()
+        if auth_err:
+            return auth_err
         try:
             limit_raw = request.args.get('limit')
             offset_raw = request.args.get('offset')
@@ -801,6 +892,8 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
             
             if offset < 0:
                 offset = 0
+            if offset > SQLITE_INT64_MAX:
+                return jsonify({"error": "offset exceeds SQLite integer maximum"}), 400
 
             with sqlite3.connect(tx_pool.db_path) as conn:
                 conn.row_factory = sqlite3.Row
@@ -821,8 +914,8 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
                 "count": len(transactions),
                 "transactions": transactions
             })
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
+        except Exception:
+            return internal_error("get_wallet_history")
 
 
 # =============================================================================

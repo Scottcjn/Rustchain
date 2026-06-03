@@ -24,7 +24,7 @@ import json
 import time
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
-from flask import Blueprint, request, Response, jsonify, render_template_string
+from flask import Blueprint, request, Response, jsonify, render_template_string, current_app
 
 
 # Create blueprint for embed routes
@@ -789,10 +789,12 @@ def _get_related_videos(video_id: str, limit: int = 5) -> List[Dict[str, Any]]:
 
 
 def _get_base_url() -> str:
-    """Get the base URL from request."""
+    """Get the base URL from request, trusting only configured proxy hosts."""
     base_url = request.host_url.rstrip("/")
-    if request.headers.get("X-Forwarded-Host"):
-        base_url = f"https://{request.headers['X-Forwarded-Host']}"
+    forwarded_host = request.headers.get("X-Forwarded-Host", "").strip()
+    trusted_hosts = current_app.config.get("TRUSTED_FORWARD_HOSTS") or []
+    if forwarded_host and forwarded_host in trusted_hosts:
+        base_url = f"https://{forwarded_host}"
     return base_url
 
 
@@ -814,6 +816,8 @@ def embed_player(video_id: str):
     Returns:
         HTML page with embedded video player
     """
+    if len(video_id) > 256:
+        return Response("<html><body><h1>Invalid video ID</h1></body></html>", status=400, mimetype="text/html")
     # Get video data
     video = _get_mock_video(video_id)
 
@@ -859,6 +863,8 @@ def oembed():
         JSON oEmbed response
     """
     url = request.args.get("url", "")
+    if len(url) > 2048:
+        return jsonify({"error": "URL too long"}), 400
     format_param = request.args.get("format", "json")
     maxwidth = request.args.get("maxwidth", 854)
     maxheight = request.args.get("maxheight", 480)
@@ -898,6 +904,10 @@ def oembed():
         maxheight = int(maxheight)
     except (ValueError, TypeError):
         maxwidth = 854
+        maxheight = 480
+    if maxwidth < 1:
+        maxwidth = 854
+    if maxheight < 1:
         maxheight = 480
     
     # Maintain 16:9 aspect ratio
@@ -950,6 +960,8 @@ def watch_page(video_id: str):
         Full HTML watch page
     """
     # Get video data
+    if len(video_id) > 256:
+        return Response("<html><body><h1>Invalid video ID</h1></body></html>", status=400, mimetype="text/html")
     video = _get_mock_video(video_id)
 
     if not video:

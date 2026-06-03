@@ -15,21 +15,21 @@ import hashlib
 import hmac
 import json
 import os
-import tempfile
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from auth import RateLimiter, is_authorized_sender, verify_webhook_signature
 from state import TipState
 from tip_bot import (
-    ParseResult,
     TipCommand,
     build_duplicate_comment,
     build_failure_comment,
     build_success_comment,
     build_unauthorized_comment,
+    github_commit_state,
+    main,
     parse_tip_command,
     process_event,
     validate_tip,
@@ -277,11 +277,10 @@ class TestWebhookVerification:
         with patch.dict(os.environ, {"WEBHOOK_SECRET": "mysecret"}):
             assert verify_webhook_signature(payload, None) is False
 
-    def test_no_secret_configured_allows_all(self):
+    def test_no_secret_configured_rejects_unsigned_payload(self):
         payload = b'{"action": "created"}'
         with patch.dict(os.environ, {}, clear=True):
-            # When WEBHOOK_SECRET is not set, verification is skipped
-            assert verify_webhook_signature(payload, None) is True
+            assert verify_webhook_signature(payload, None) is False
 
     def test_tampered_payload_rejected(self):
         original = b'{"action": "created"}'
@@ -290,6 +289,59 @@ class TestWebhookVerification:
         sig = self._sign(original, secret)
         with patch.dict(os.environ, {"WEBHOOK_SECRET": secret}):
             assert verify_webhook_signature(tampered, sig) is False
+
+
+# ---------------------------------------------------------------------------
+# Main entrypoint webhook gate tests
+# ---------------------------------------------------------------------------
+
+class TestMainWebhookGate:
+
+    def _write_event(self, tmp_path) -> str:
+        event_path = tmp_path / "event.json"
+        event_path.write_text(json.dumps(make_event("Just a normal comment.")))
+        return str(event_path)
+
+    def _base_env(self, event_path: str) -> dict[str, str]:
+        return {
+            "GITHUB_EVENT_PATH": event_path,
+            "GITHUB_TOKEN": "token",
+            "GITHUB_REPOSITORY": "org/repo",
+        }
+
+    def test_external_webhook_without_secret_or_signature_aborts(self, tmp_path):
+        env = self._base_env(self._write_event(tmp_path))
+        with patch.dict(os.environ, env, clear=True), \
+             patch("tip_bot.process_event") as mock_process:
+            with pytest.raises(SystemExit) as exc:
+                main()
+
+        assert exc.value.code == 1
+        mock_process.assert_not_called()
+
+    def test_external_webhook_with_secret_but_missing_signature_aborts(self, tmp_path):
+        env = self._base_env(self._write_event(tmp_path))
+        env["WEBHOOK_SECRET"] = "mysecret"
+        with patch.dict(os.environ, env, clear=True), \
+             patch("tip_bot.process_event") as mock_process:
+            with pytest.raises(SystemExit) as exc:
+                main()
+
+        assert exc.value.code == 1
+        mock_process.assert_not_called()
+
+    def test_github_actions_payload_without_signature_is_allowed(self, tmp_path, config):
+        event_path = self._write_event(tmp_path)
+        env = self._base_env(event_path)
+        env["GITHUB_ACTIONS"] = "true"
+        with patch.dict(os.environ, env, clear=True), \
+             patch("tip_bot.load_config", return_value=config), \
+             patch("tip_bot.TipState") as mock_state, \
+             patch("tip_bot.process_event", return_value="no_command") as mock_process:
+            main()
+
+        mock_state.assert_called_once_with(config["state_file"])
+        mock_process.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -357,6 +409,26 @@ class TestTipState:
             f.write("not valid json {{{")
         s = TipState(path)
         assert s.tip_log == []
+
+    def test_non_object_state_file_resets(self, tmp_path):
+        path = str(tmp_path / "bad_shape.json")
+        with open(path, "w") as f:
+            json.dump([], f)
+
+        s = TipState(path)
+
+        assert s.tip_log == []
+        assert s.is_processed("org/repo/111") is False
+
+    def test_invalid_state_collections_reset(self, tmp_path):
+        path = str(tmp_path / "bad_collections.json")
+        with open(path, "w") as f:
+            json.dump({"version": 1, "processed_comment_ids": {}, "tip_log": None}, f)
+
+        s = TipState(path)
+
+        assert s.tip_log == []
+        assert s.get_pending_payouts() == []
 
 
 # ---------------------------------------------------------------------------
@@ -463,10 +535,70 @@ class TestProcessEvent:
 
 
 # ---------------------------------------------------------------------------
+# GitHub API helper tests
+# ---------------------------------------------------------------------------
+
+class TestGitHubApiHelpers:
+
+    class Response:
+        def __init__(self, status_code, payload):
+            self.status_code = status_code
+            self._payload = payload
+
+        def json(self):
+            if isinstance(self._payload, Exception):
+                raise self._payload
+            return self._payload
+
+    def test_commit_state_uses_existing_file_sha(self, tmp_path):
+        state_file = tmp_path / "tip_state.json"
+        state_file.write_text('{"tip_log": []}', encoding="utf-8")
+        puts = []
+
+        def fake_put(url, headers, json, timeout):
+            puts.append(json)
+            return self.Response(200, {})
+
+        with patch("tip_bot.requests.get", return_value=self.Response(200, {"sha": "abc123"})), \
+             patch("tip_bot.requests.put", side_effect=fake_put):
+            assert github_commit_state("org/repo", str(state_file), "token") is True
+
+        assert puts[0]["sha"] == "abc123"
+
+    def test_commit_state_ignores_malformed_existing_file_sha(self, tmp_path):
+        state_file = tmp_path / "tip_state.json"
+        state_file.write_text('{"tip_log": []}', encoding="utf-8")
+        puts = []
+
+        def fake_put(url, headers, json, timeout):
+            puts.append(json)
+            return self.Response(201, {})
+
+        with patch("tip_bot.requests.get", return_value=self.Response(200, [])), \
+             patch("tip_bot.requests.put", side_effect=fake_put):
+            assert github_commit_state("org/repo", str(state_file), "token") is True
+
+        assert "sha" not in puts[0]
+
+
+# ---------------------------------------------------------------------------
 # Comment format tests
 # ---------------------------------------------------------------------------
 
 class TestCommentBuilders:
+
+    def test_comment_footers_link_current_source(self):
+        cmd = TipCommand(recipient="alice", amount=50, token="RTC", raw="")
+        bodies = [
+            build_success_comment("Scottcjn", cmd, "https://example.com"),
+            build_failure_comment("Scottcjn", "Minimum tip is 1 RTC."),
+            build_duplicate_comment("Scottcjn", cmd),
+            build_unauthorized_comment("hacker"),
+        ]
+
+        for body in bodies:
+            assert "https://github.com/Scottcjn/Rustchain/tree/main/integrations/rustchain-bounties" in body
+            assert "github.com/mtarcure/rustchain-tip-bot" not in body
 
     def test_success_comment_contains_fields(self):
         cmd = TipCommand(recipient="alice", amount=50, token="RTC", raw="")

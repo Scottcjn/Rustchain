@@ -10,6 +10,7 @@ and stores them in a durable inbox for bigger Sophia/Elyan agents.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 import sqlite3
@@ -226,7 +227,7 @@ def _is_authorized(req) -> bool:
     required_bearers = _bearer_tokens()
 
     provided_admin = (req.headers.get("X-Admin-Key") or req.headers.get("X-API-Key") or "").strip()
-    if required_admin and provided_admin and provided_admin == required_admin:
+    if required_admin and provided_admin and hmac.compare_digest(provided_admin, required_admin):
         return True
 
     auth_header = (req.headers.get("Authorization") or "").strip()
@@ -245,6 +246,32 @@ def _coerce_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _normalize_limit(value: Any, default: int = 20, maximum: int = 200) -> int:
+    if value is None or value == "":
+        return default
+    if isinstance(value, bool) or isinstance(value, float):
+        raise ValueError("limit must be an integer")
+    try:
+        limit = int(value)
+    except (TypeError, ValueError):
+        raise ValueError("limit must be an integer")
+    return max(1, min(limit, maximum))
+
+
+def _normalize_string_field(
+    values: dict[str, Any],
+    field: str,
+    default: str,
+    error_field: str | None = None,
+) -> str:
+    value = values.get(field, default)
+    if value is None:
+        value = default
+    if not isinstance(value, str):
+        raise ValueError(f"{error_field or field}_must_be_string")
+    return value.strip()
 
 
 def _normalize_envelope(envelope: dict[str, Any]) -> dict[str, Any]:
@@ -267,8 +294,8 @@ def _normalize_envelope(envelope: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(governor, dict):
         governor = {}
 
-    event_type = str(envelope.get("event_type", "")).strip()
-    source = str(envelope.get("source", "unknown")).strip() or "unknown"
+    event_type = _normalize_string_field(envelope, "event_type", "")
+    source = _normalize_string_field(envelope, "source", "unknown") or "unknown"
     if not event_type:
         raise ValueError("event_type_required")
 
@@ -276,8 +303,11 @@ def _normalize_envelope(envelope: dict[str, Any]) -> dict[str, Any]:
     remote_created_at = _coerce_int(envelope.get("created_at"))
     risk_level = _normalize_risk_level(decision.get("risk_level"))
     stance = _normalize_stance(decision.get("stance"))
-    remote_agent = str(governor.get("agent", "sophia-rustchain-governor")).strip() or "sophia-rustchain-governor"
-    remote_instance = str(governor.get("instance", "unknown")).strip() or "unknown"
+    remote_agent = (
+        _normalize_string_field(governor, "agent", "sophia-rustchain-governor", "governor_agent")
+        or "sophia-rustchain-governor"
+    )
+    remote_instance = _normalize_string_field(governor, "instance", "unknown", "governor_instance") or "unknown"
 
     fingerprint_seed = {
         "remote_event_id": remote_event_id,
@@ -553,15 +583,19 @@ def _scott_notification_queue_url() -> str:
     )
 
 
+def _scott_notification_bearer() -> str:
+    return (
+        os.getenv("SOPHIA_GOVERNOR_SCOTT_NOTIFY_BEARER", "").strip()
+        or os.getenv("SCOTT_NOTIFICATION_SERVICE_TOKEN", "").strip()
+    )
+
+
 def _scott_notification_headers() -> dict[str, str]:
     headers = {
         "Content-Type": "application/json",
         "X-Sophia-Inbox": "sophia-governor-inbox",
     }
-    bearer = (
-        os.getenv("SOPHIA_GOVERNOR_SCOTT_NOTIFY_BEARER", "").strip()
-        or os.getenv("SCOTT_NOTIFICATION_SERVICE_TOKEN", "elya2025").strip()
-    )
+    bearer = _scott_notification_bearer()
     if bearer:
         headers["Authorization"] = f"Bearer {bearer}"
     return headers
@@ -680,6 +714,12 @@ def _queue_scott_notification_for_entry(
     queue_url = _scott_notification_queue_url()
     if not queue_url:
         return {"status": "not_configured", "phase": phase}
+    if not _scott_notification_bearer():
+        return {
+            "status": "not_configured",
+            "phase": phase,
+            "error": "scott_notification_token_not_configured",
+        }
 
     sent_column = _phase_notify_column(phase)
     if entry.get(sent_column):
@@ -829,7 +869,7 @@ def list_governor_inbox_entries(
 ) -> list[dict[str, Any]]:
     db = db_path or DB_PATH
     init_sophia_governor_inbox_schema(db)
-    limit = max(1, min(int(limit), 200))
+    limit = _normalize_limit(limit)
 
     clauses = []
     params: list[Any] = []
@@ -956,7 +996,8 @@ def get_governor_inbox_status(db_path: str | None = None) -> dict[str, Any]:
         "review_relay": _review_relay_status(),
         "scott_notifications": {
             "queue_url": _scott_notification_queue_url(),
-            "configured": bool(_scott_notification_queue_url()),
+            "configured": bool(_scott_notification_queue_url() and _scott_notification_bearer()),
+            "token_configured": bool(_scott_notification_bearer()),
         },
         "totals": {
             "entries": int(total),
@@ -1087,6 +1128,14 @@ def register_sophia_governor_inbox_endpoints(app, db_path: str | None = None) ->
     db = db_path or DB_PATH
     init_sophia_governor_inbox_schema(db)
 
+    def _json_object_body():
+        data = request.get_json(silent=True)
+        if data is None:
+            return {}, None
+        if not isinstance(data, dict):
+            return None, (jsonify({"error": "JSON object required"}), 400)
+        return data, None
+
     @app.route("/api/sophia/governor/bridge/status", methods=["GET"])
     def sophia_governor_bridge_status():
         return jsonify(get_governor_inbox_status(db))
@@ -1122,7 +1171,7 @@ def register_sophia_governor_inbox_endpoints(app, db_path: str | None = None) ->
         if not _is_authorized(request):
             return jsonify({"error": "Unauthorized -- admin key or bearer required"}), 401
 
-        limit = request.args.get("limit", 20, type=int)
+        limit = request.args.get("limit")
         status = request.args.get("status")
         risk_level = request.args.get("risk_level")
         try:
@@ -1152,7 +1201,9 @@ def register_sophia_governor_inbox_endpoints(app, db_path: str | None = None) ->
         if not _is_authorized(request):
             return jsonify({"error": "Unauthorized -- admin key or bearer required"}), 401
 
-        data = request.get_json(silent=True) or {}
+        data, error = _json_object_body()
+        if error:
+            return error
         try:
             updated = update_governor_inbox_entry(
                 inbox_id,
@@ -1174,7 +1225,9 @@ def register_sophia_governor_inbox_endpoints(app, db_path: str | None = None) ->
         if not _is_authorized(request):
             return jsonify({"error": "Unauthorized -- admin key or bearer required"}), 401
 
-        data = request.get_json(silent=True) or {}
+        data, error = _json_object_body()
+        if error:
+            return error
         targets = data.get("targets")
         if targets is not None and not isinstance(targets, list):
             return jsonify({"error": "targets must be a list of URLs"}), 400

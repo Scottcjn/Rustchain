@@ -5,7 +5,7 @@ edition = "2021"
 authors = ["RustChain Contributors"]
 description = "Native Rust miner for the RustChain Proof-of-Antiquity network"
 license = "MIT"
-repository = "https://github.com/B1tor/Rustchain"
+repository = "https://github.com/Scottcjn/Rustchain"
 
 [[bin]]
 name = "rustchain-miner"

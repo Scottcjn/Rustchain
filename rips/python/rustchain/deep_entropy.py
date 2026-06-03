@@ -14,10 +14,8 @@ Layers:
 5. Architectural Quirk Entropy - Known hardware bugs/quirks
 """
 
-import hashlib
-import math
 import time
-import random
+import secrets
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple, Any
 from enum import Enum
@@ -30,6 +28,7 @@ from enum import Enum
 ENTROPY_SAMPLES_REQUIRED: int = 1000
 MIN_ENTROPY_BITS: int = 64
 EMULATION_COST_THRESHOLD_USD: float = 100.0  # Cheaper to buy real hardware
+_CSPRNG = secrets.SystemRandom()
 
 
 # =============================================================================
@@ -262,23 +261,27 @@ class DeepEntropyVerifier:
 
     def generate_challenge(self) -> Dict[str, Any]:
         """Generate a challenge for hardware to solve"""
-        nonce = hashlib.sha256(str(time.time()).encode()).digest()
+        nonce = secrets.token_bytes(32)
         # Multiply the 4-op template by 25 to produce 100 total operations.
-        # The randomised values ensure each challenge is unique, preventing
+        # The CSPRNG values ensure each challenge is unique, preventing
         # a cached replay attack where an attacker pre-records a real machine's response.
-        operations = [
-            {"op": "mul", "value": random.randint(1, 1000000)},
-            {"op": "div", "value": random.randint(1, 1000)},
-            {"op": "fadd", "value": random.uniform(0, 1000)},
-            {"op": "memory", "stride": random.choice([1, 4, 16, 64, 256])},
-        ] * 25  # 100 operations
+        operations = []
+        for _ in range(25):
+            operations.extend([
+                {"op": "mul", "value": _CSPRNG.randint(1, 1000000)},
+                {"op": "div", "value": _CSPRNG.randint(1, 1000)},
+                {"op": "fadd", "value": _CSPRNG.uniform(0, 1000)},
+                {"op": "memory", "stride": _CSPRNG.choice([1, 4, 16, 64, 256])},
+            ])
+
+        now = int(time.time())
 
         return {
             "nonce": nonce.hex(),
             "operations": operations,
             "expected_time_range_us": (1000, 100000),  # 1ms to 100ms
-            "timestamp": int(time.time()),
-            "expires_at": int(time.time()) + 300,  # 5 minute expiry
+            "timestamp": now,
+            "expires_at": now + 300,  # 5 minute expiry
         }
 
     def verify(self, proof: EntropyProof, claimed_hardware: str) -> VerificationResult:

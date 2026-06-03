@@ -68,8 +68,11 @@ bash install-miner.sh --dry-run --wallet YOUR_WALLET_NAME
 
 ```powershell
 # 使用 Python 安装
-pip install clawrtc
-clawrtc mine --dry-run
+curl -fsSL https://rustchain.org/install.sh | bash
+# Windows note: current clawrtc releases do not support `mine --dry-run`.
+# Use the installer preview path on Linux/macOS/WSL when you need a dry-run.
+bash install-miner.sh --dry-run --wallet YOUR_WALLET_NAME
+clawrtc --help
 ```
 
 ### 安装程序会做什么？
@@ -162,7 +165,7 @@ launchctl list | grep rustchain
 
 RTC (RustChain Token) 是 RustChain 的原生加密货币。
 
-- **参考汇率：** 1 RTC = $0.10 USD
+- **参考汇率：** 1 RTC = ~$0.01 USD (value varies; check current rates)
 - **wRTC：** RTC 在 Solana 上的封装版本
 
 ### 如何获取 RTC？
@@ -334,14 +337,14 @@ curl -sk https://rustchain.org/epoch
 curl -sk https://rustchain.org/api/miners
 
 # 区块浏览器
-open https://rustchain.org/explorer
+open https://rustchain.org/explorer/
 ```
 
 ### 节点架构
 
 | 节点 | 位置 | 角色 | 状态 |
 |-----|------|------|------|
-| Node 1 | 50.28.86.131 | 主节点 + 浏览器 | ✅ 活跃 |
+| Node 1 | rustchain.org | 主节点 + 浏览器 | ✅ 活跃 |
 | Node 2 | 50.28.86.153 | Ergo 锚点 | ✅ 活跃 |
 | Node 3 | 76.8.228.245 | 外部（社区） | ✅ 活跃 |
 
@@ -376,29 +379,33 @@ RustChain 使用链上治理系统：
 
 ```bash
 # 创建提案
-curl -sk -X POST https://rustchain.org/governance/propose \
+curl -sk -X POST https://rustchain.org/api/governance/propose \
  -H 'Content-Type: application/json' \
  -d '{
- "wallet":"RTC...",
+ "miner_id":"<ed25519_pubkey_hex>",
  "title":"启用参数 X",
- "description":"理由和实现细节"
+ "description":"理由和实现细节",
+ "proposal_type":"feature_activation",
+ "parameter_key":"",
+ "parameter_value":"",
+ "timestamp":1700000000,
+ "signature":"<ed25519_signature_hex>"
  }'
 
 # 列出提案
-curl -sk https://rustchain.org/governance/proposals
+curl -sk https://rustchain.org/api/governance/proposals
 
 # 提案详情
-curl -sk https://rustchain.org/governance/proposal/1
+curl -sk https://rustchain.org/api/governance/proposal/1
 
 # 提交签名投票
-curl -sk -X POST https://rustchain.org/governance/vote \
+curl -sk -X POST https://rustchain.org/api/governance/vote \
  -H 'Content-Type: application/json' \
  -d '{
  "proposal_id":1,
- "wallet":"RTC...",
- "vote":"yes",
- "nonce":"1700000000",
- "public_key":"<ed25519_pubkey_hex>",
+ "miner_id":"<ed25519_pubkey_hex>",
+ "vote":"for",
+ "timestamp":1700000000,
  "signature":"<ed25519_signature_hex>"
  }'
 ```
@@ -410,7 +417,7 @@ curl -sk -X POST https://rustchain.org/governance/vote \
 - **Discord:** [discord.gg/VqVVS2CW9Q](https://discord.gg/VqVVS2CW9Q)
 - **GitHub:** [github.com/Scottcjn/RustChain](https://github.com/Scottcjn/RustChain)
 - **网站:** [rustchain.org](https://rustchain.org)
-- **区块浏览器:** [rustchain.org/explorer](https://rustchain.org/explorer)
+- **区块浏览器:** [rustchain.org/explorer/](https://rustchain.org/explorer/)
 
 ### 相关项目
 
@@ -435,7 +442,7 @@ curl -sk -X POST https://rustchain.org/governance/vote \
 ```
 RustChain - Proof of Antiquity by Scott (Scottcjn)
 https://github.com/Scottcjn/Rustchain
-MIT License
+Apache License 2.0
 ```
 
 ---
@@ -444,7 +451,7 @@ MIT License
 
 ### 白皮书与技术文档
 
-- [RustChain 白皮书](https://github.com/Scottcjn/Rustchain/blob/main/docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf)
+- [RustChain 白皮书](https://github.com/Scottcjn/Rustchain/blob/main/docs/WHITEPAPER.md)
 - [链架构文档](https://github.com/Scottcjn/Rustchain/blob/main/docs/chain_architecture.md)
 - [开发者牵引报告](https://github.com/Scottcjn/Rustchain/blob/main/docs/DEVELOPER_TRACTION_Q1_2026.md)
 

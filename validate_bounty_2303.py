@@ -71,7 +71,7 @@ def validate_dashboard_html():
     """Validate dashboard HTML contains required elements."""
     print_header("Validating Dashboard HTML")
     
-    with open("bridge-dashboard/index.html", "r") as f:
+    with open("bridge-dashboard/index.html", "r", encoding="utf-8") as f:
         content = f.read()
     
     checks = [
@@ -174,7 +174,7 @@ def run_tests():
     
     import subprocess
     result = subprocess.run(
-        ["python3", "-m", "pytest", "bridge/test_dashboard_api.py", "-v", "--tb=short"],
+        [sys.executable, "-m", "pytest", "bridge/test_dashboard_api.py", "-v", "--tb=short"],
         capture_output=True,
         text=True
     )

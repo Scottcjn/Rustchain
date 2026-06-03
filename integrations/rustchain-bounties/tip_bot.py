@@ -188,6 +188,19 @@ def github_post_comment(repo: str, issue_number: int, body: str, token: str) -> 
     return resp.status_code == 201
 
 
+def _github_content_sha(resp) -> Optional[str]:
+    if resp.status_code != 200:
+        return None
+    try:
+        body = resp.json()
+    except ValueError:
+        return None
+    if not isinstance(body, dict):
+        return None
+    sha = body.get("sha")
+    return sha if isinstance(sha, str) and sha else None
+
+
 def github_commit_state(repo: str, state_file: str, token: str) -> bool:
     """
     Commit the updated state file back to the repository.
@@ -209,7 +222,7 @@ def github_commit_state(repo: str, state_file: str, token: str) -> bool:
 
     # Get current SHA (needed for updates)
     resp = requests.get(url, headers=headers, timeout=15)
-    sha = resp.json().get("sha") if resp.status_code == 200 else None
+    sha = _github_content_sha(resp)
 
     payload: dict = {
         "message": "chore: update tip state [skip ci]",
@@ -237,7 +250,7 @@ def build_success_comment(sender: str, cmd: TipCommand, context_url: str) -> str
         f"This tip has been logged and is **pending manual payout** by the maintainer. "
         f"@{cmd.recipient} will receive `{cmd.amount} {cmd.token}` once processed.\n\n"
         f"---\n"
-        f"*🤖 [rustchain-tip-bot](https://github.com/mtarcure/rustchain-tip-bot) — "
+        f"*🤖 [rustchain-tip-bot](https://github.com/Scottcjn/Rustchain/tree/main/integrations/rustchain-bounties) — "
         f"maintainer approval required for payout*"
     )
 
@@ -247,7 +260,7 @@ def build_failure_comment(sender: str, error: str) -> str:
         f"**Tip failed** ❌\n\n"
         f"@{sender}: {error}\n\n"
         f"---\n"
-        f"*🤖 [rustchain-tip-bot](https://github.com/mtarcure/rustchain-tip-bot)*"
+        f"*🤖 [rustchain-tip-bot](https://github.com/Scottcjn/Rustchain/tree/main/integrations/rustchain-bounties)*"
     )
 
 
@@ -257,7 +270,7 @@ def build_duplicate_comment(sender: str, cmd: TipCommand) -> str:
         f"@{sender}: This tip (`{cmd.amount} {cmd.token}` → @{cmd.recipient}) "
         f"was already recorded from this comment. No action taken.\n\n"
         f"---\n"
-        f"*🤖 [rustchain-tip-bot](https://github.com/mtarcure/rustchain-tip-bot)*"
+        f"*🤖 [rustchain-tip-bot](https://github.com/Scottcjn/Rustchain/tree/main/integrations/rustchain-bounties)*"
     )
 
 
@@ -266,7 +279,7 @@ def build_unauthorized_comment(sender: str) -> str:
         f"**Unauthorized** ❌\n\n"
         f"@{sender}: Only designated maintainers can issue `/tip` commands.\n\n"
         f"---\n"
-        f"*🤖 [rustchain-tip-bot](https://github.com/mtarcure/rustchain-tip-bot)*"
+        f"*🤖 [rustchain-tip-bot](https://github.com/Scottcjn/Rustchain/tree/main/integrations/rustchain-bounties)*"
     )
 
 
@@ -371,17 +384,24 @@ def main() -> None:
         print("No event payload found. Running in test mode — exiting.")
         sys.exit(0)
 
-    with open(event_path) as f:
-        event = json.load(f)
+    with open(event_path, "rb") as f:
+        raw_payload = f.read()
+    event = json.loads(raw_payload.decode("utf-8"))
 
-    # Verify webhook signature if secret is configured AND a signature header
-    # is present. In GitHub Actions, the payload comes from GitHub's own
-    # infrastructure (GITHUB_EVENT_PATH) — no HTTP signature header exists.
-    # WEBHOOK_SECRET is only useful for external webhook deployments.
+    # GitHub Actions supplies GITHUB_EVENT_PATH from GitHub infrastructure and
+    # does not include an HTTP signature header. Any non-Actions deployment is
+    # treated as an external webhook and must fail closed unless both the shared
+    # secret and signature header are present and valid.
     webhook_secret = os.environ.get("WEBHOOK_SECRET", "")
     sig = os.environ.get("HTTP_X_HUB_SIGNATURE_256", "")
-    if webhook_secret and sig:
-        raw_payload = open(event_path, "rb").read()
+    running_in_actions = os.environ.get("GITHUB_ACTIONS", "").lower() == "true"
+    if not running_in_actions or webhook_secret or sig:
+        if not webhook_secret:
+            print("WEBHOOK_SECRET must be set for external webhook payloads. Aborting.")
+            sys.exit(1)
+        if not sig:
+            print("Webhook signature header missing. Aborting.")
+            sys.exit(1)
         if not verify_webhook_signature(raw_payload, sig):
             print("Webhook signature verification failed. Aborting.")
             sys.exit(1)

@@ -1,4 +1,4 @@
-﻿"""Beacon integration demo for RustChain bounty #158.
+"""Beacon integration demo for RustChain bounty #158.
 
 Safe by default:
 - Uses loopback UDP unless you override host/bind.

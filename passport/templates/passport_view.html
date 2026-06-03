@@ -58,53 +58,64 @@
   <div class="passport" id="passport"><div class="empty">Loading passport...</div></div>
 </div>
 <script>
-const machineId = '{{ machine_id }}';
+const machineId = {{ machine_id|tojson }};
+function escapeHtml(value) {
+  const d = document.createElement('div');
+  d.textContent = String(value ?? '');
+  return d.innerHTML;
+}
+function safeTier(value) {
+  return String(value || 'modern').toLowerCase().replace(/[^a-z0-9_-]/g, '-') || 'modern';
+}
+function formatParts(parts) {
+  return Array.isArray(parts) ? parts.map(escapeHtml).join(', ') : '';
+}
 async function load() {
-  const resp = await fetch('/api/passport/' + machineId);
+  const resp = await fetch('/api/passport/' + encodeURIComponent(machineId));
   if (!resp.ok) { document.getElementById('passport').innerHTML = '<div class="empty">Passport not found</div>'; return; }
   const p = await resp.json();
-  document.title = `${p.name || machineId} — Machine Passport`;
+  document.title = `${p.name || machineId} - Machine Passport`;
   const el = document.getElementById('passport');
   el.innerHTML = `
     <div class="passport-header">
-      <div class="machine-name">${p.name || 'Unnamed Machine'}</div>
-      <div class="machine-id">${p.machine_id}</div>
-      <div class="tier-badge tier-${p.tier}">${p.tier} · ${p.hardware_age} years old</div>
+      <div class="machine-name">${escapeHtml(p.name || 'Unnamed Machine')}</div>
+      <div class="machine-id">${escapeHtml(p.machine_id || '')}</div>
+      <div class="tier-badge tier-${safeTier(p.tier)}">${escapeHtml(p.tier || 'modern')} &middot; ${escapeHtml(p.hardware_age || 0)} years old</div>
     </div>
 
     <div class="section">
-      <div class="section-title">⚙️ Identity</div>
-      <div class="field"><span class="field-label">Architecture</span><span class="field-value">${p.architecture || '—'}</span></div>
-      <div class="field"><span class="field-label">CPU Model</span><span class="field-value">${p.cpu_model || '—'}</span></div>
-      <div class="field"><span class="field-label">Manufacture Year</span><span class="field-value">${p.manufacture_year || '—'}</span></div>
-      <div class="field"><span class="field-label">ROM Hash</span><span class="field-value" style="font-family:monospace;font-size:0.8em">${p.rom_hash || '—'}</span></div>
-      ${p.provenance ? `<div class="field"><span class="field-label">Provenance</span><span class="provenance">"${p.provenance}"</span></div>` : ''}
+      <div class="section-title">Identity</div>
+      <div class="field"><span class="field-label">Architecture</span><span class="field-value">${escapeHtml(p.architecture || '-')}</span></div>
+      <div class="field"><span class="field-label">CPU Model</span><span class="field-value">${escapeHtml(p.cpu_model || '-')}</span></div>
+      <div class="field"><span class="field-label">Manufacture Year</span><span class="field-value">${escapeHtml(p.manufacture_year || '-')}</span></div>
+      <div class="field"><span class="field-label">ROM Hash</span><span class="field-value" style="font-family:monospace;font-size:0.8em">${escapeHtml(p.rom_hash || '-')}</span></div>
+      ${p.provenance ? `<div class="field"><span class="field-label">Provenance</span><span class="provenance">"${escapeHtml(p.provenance)}"</span></div>` : ''}
     </div>
 
     <div class="section">
-      <div class="section-title">📊 Attestation Record</div>
+      <div class="section-title">Attestation Record</div>
       <div class="stats-grid">
-        <div class="stat"><div class="stat-value">${p.attestation_history?.total_epochs || 0}</div><div class="stat-label">Epochs</div></div>
-        <div class="stat"><div class="stat-value">${p.attestation_history?.total_rtc_earned || 0}</div><div class="stat-label">RTC Earned</div></div>
-        <div class="stat"><div class="stat-value">${p.attestation_history?.multiplier || 1.0}x</div><div class="stat-label">Multiplier</div></div>
+        <div class="stat"><div class="stat-value">${escapeHtml(p.attestation_history?.total_epochs || 0)}</div><div class="stat-label">Epochs</div></div>
+        <div class="stat"><div class="stat-value">${escapeHtml(p.attestation_history?.total_rtc_earned || 0)}</div><div class="stat-label">RTC Earned</div></div>
+        <div class="stat"><div class="stat-value">${escapeHtml(p.attestation_history?.multiplier || 1.0)}x</div><div class="stat-label">Multiplier</div></div>
       </div>
     </div>
 
     <div class="section">
-      <div class="section-title">🔧 Repair Log</div>
+      <div class="section-title">Repair Log</div>
       ${(p.repair_log && p.repair_log.length) ? p.repair_log.map(r => `
         <div class="repair-entry">
-          <div class="repair-date">${r.date}</div>
-          <div class="repair-desc">${r.description}</div>
-          ${r.parts && r.parts.length ? `<div style="font-size:0.8em;color:var(--muted)">Parts: ${r.parts.join(', ')}</div>` : ''}
+          <div class="repair-date">${escapeHtml(r.date || '')}</div>
+          <div class="repair-desc">${escapeHtml(r.description || '')}</div>
+          ${r.parts && r.parts.length ? `<div style="font-size:0.8em;color:var(--muted)">Parts: ${formatParts(r.parts)}</div>` : ''}
         </div>
       `).join('') : '<div class="empty">No repairs logged yet</div>'}
     </div>
 
-    ${p.notes ? `<div class="section"><div class="section-title">📝 Notes</div><div class="notes">${p.notes}</div></div>` : ''}
+    ${p.notes ? `<div class="section"><div class="section-title">Notes</div><div class="notes">${escapeHtml(p.notes)}</div></div>` : ''}
 
     <div class="hash">
-      🔗 Passport Hash: ${p.passport_hash}
+      Passport Hash: ${escapeHtml(p.passport_hash || '')}
     </div>
 
     <div class="qr-section">

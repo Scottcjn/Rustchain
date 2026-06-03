@@ -30,14 +30,14 @@ Just open `chart-widget.html` in any modern browser. No build step, no dependenc
 
 ## API
 
-The widget connects to `https://50.28.86.131` (self-signed cert). It fetches:
+The widget connects to `https://rustchain.org` (self-signed cert). It fetches:
 
 - `GET /epoch` — current epoch, enrolled miners, epoch pot
 - `GET /api/miners` — live miner attestations
 
 Data refreshes automatically every 2 minutes. If the API is unreachable, the widget falls back to simulated data seeded from known network state.
 
-**Note on self-signed certs:** The browser will block the API fetch unless you've accepted the certificate exception for `https://50.28.86.131`. Visit that URL directly and accept the cert, then the widget will load live data.
+**Note on self-signed certs:** The browser will block the API fetch unless you've accepted the certificate exception for `https://rustchain.org`. Visit that URL directly and accept the cert, then the widget will load live data.
 
 ## Time ranges
 

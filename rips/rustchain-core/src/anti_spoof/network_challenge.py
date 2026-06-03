@@ -25,7 +25,7 @@ import secrets
 import struct
 import time
 from dataclasses import dataclass, asdict
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List, Tuple, Union
 from enum import Enum
 
 class ChallengeType(Enum):
@@ -438,12 +438,36 @@ class NetworkChallengeProtocol:
     MAX_FAILURES_BEFORE_SLASH = 3    # 3 failures = slashed
     FAILURE_PENALTY_PERCENT = 10     # 10% reward penalty per failure
 
-    def __init__(self, validator_pubkey: str, hardware_profile: Dict):
+    def __init__(
+        self,
+        validator_pubkey: str,
+        hardware_profile: Dict,
+        validator_signing_key: Optional[Union[bytes, str]] = None,
+    ):
         self.pubkey = validator_pubkey
         self.hardware = hardware_profile
+        self.signing_key = self._load_signing_key(validator_signing_key)
         self.validator = AntiSpoofValidator()
         self.pending_challenges: Dict[str, Challenge] = {}
         self.failure_count = 0
+
+    @staticmethod
+    def _load_signing_key(signing_key: Optional[Union[bytes, str]]) -> bytes:
+        """Load secret challenge-signing material without deriving it from public data."""
+        if signing_key is None:
+            env_key = os.getenv("RC_NETWORK_CHALLENGE_SIGNING_KEY", "").strip()
+            if env_key:
+                signing_key = env_key
+            else:
+                return secrets.token_bytes(32)
+
+        if isinstance(signing_key, str):
+            signing_key = signing_key.encode()
+
+        if not signing_key:
+            raise ValueError("validator_signing_key must not be empty")
+
+        return signing_key
 
     def should_challenge(self, block_height: int, target_pubkey: str) -> bool:
         """Determine if we should challenge another validator this block"""
@@ -458,13 +482,10 @@ class NetworkChallengeProtocol:
 
     def create_challenge(self, target_pubkey: str, target_hardware: Dict) -> Challenge:
         """Create a challenge for another validator"""
-        # Use pubkey as signing key for demo (use real keys in production)
-        privkey = hashlib.sha256(self.pubkey.encode()).digest()
-
         challenge = self.validator.generate_challenge(
             target_pubkey=target_pubkey,
             expected_hardware=target_hardware,
-            challenger_privkey=privkey,
+            challenger_privkey=self.signing_key,
             challenge_type=ChallengeType.FULL
         )
 

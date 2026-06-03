@@ -5,12 +5,16 @@ Tests for Audit Logger and GitHub Auth modules.
 import json
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from src.audit_logger import AuditLogger, JSONLFormatter
 from src.scorer import ScoreBreakdown
+
+if TYPE_CHECKING:
+    from src.github_auth import GitHubAuth
 
 
 class TestAuditLogger:

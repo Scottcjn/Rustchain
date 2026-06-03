@@ -4,6 +4,9 @@ Thanks for your interest in contributing to RustChain! We pay bounties in RTC to
 
 ## First-Time Contributor Quick Guide (10 RTC Bonus)
 
+> **Pro-tip:** Star the repo first! Starring repos is free and helps the community grow.
+> After your first PR is merged, you'll earn 10 RTC (≈ $1.00)!
+
 New to RustChain? Get 10 RTC for your **first merged PR** — even for small improvements:
 
 ### 5-Minute Wins That Count
@@ -36,10 +39,11 @@ New to RustChain? Get 10 RTC for your **first merged PR** — even for small imp
 ## Quick Start
 
 1. **Browse open bounties**: Check [Issues](https://github.com/Scottcjn/Rustchain/issues?q=is%3Aissue+is%3Aopen+label%3Abounty) labeled `bounty`
-2. **Comment on the issue** you want to work on (prevents duplicate work)
-3. **Fork the repo** and create a feature branch
-4. **Submit a PR** referencing the issue number
-5. **Get paid** in RTC on merge
+2. **Find Good First Issues**: Check [Good First Issues](https://github.com/Scottcjn/Rustchain/issues?q=is%3Aissue+is%3Aopen+label%3A%22good%20first%20issue%22) labeled `good first issue`
+3. **Comment on the issue** you want to work on (prevents duplicate work)
+4. **Fork the repo** and create a feature branch
+5. **Submit a PR** referencing the issue number
+6. **Get paid** in RTC on merge
 
 ## Bounty Tiers
 
@@ -68,6 +72,10 @@ New to RustChain? Get 10 RTC for your **first merged PR** — even for small imp
 - Submissions that don't match the bounty requirements
 - Placeholder data, fake screenshots, or fabricated metrics
 
+For AI-assisted contribution expectations, see the public
+[Sophia's Home for AI Agents](https://github.com/Scottcjn/rustchain-claim-portal/blob/main/SOPHIAS_HOME_FOR_AI_AGENTS.md)
+onboarding policy referenced in [#6655](https://github.com/Scottcjn/Rustchain/issues/6655).
+
 ## Development Setup
 
 ```bash
@@ -75,15 +83,40 @@ New to RustChain? Get 10 RTC for your **first merged PR** — even for small imp
 git clone https://github.com/Scottcjn/Rustchain.git
 cd Rustchain
 
+# Verify you are in the expected checkout
+test -f CONTRIBUTING.md && test -f pyproject.toml && test -f requirements.txt
+
 # Python environment
-python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
+python3 -m venv .venv && source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt -r requirements-node.txt
+
+# Verify key Python entry points parse correctly
+python -m py_compile node/wsgi.py node/rustchain_v2_integrated_v2.2.1_rip200.py wallet/__main__.py
+
+# Run focused tests for the area you changed
+python -m pytest node/tests/test_mock_signature_guard.py
+
+# SDK tests need the local SDK package dependencies first
+python -m pip install -e ./sdk
+python -m pytest sdk/tests/test_client_unit.py
 
 # Test against live node
 curl -sk https://rustchain.org/health
 curl -sk https://rustchain.org/api/miners
 curl -sk https://rustchain.org/epoch
 ```
+
+For package-specific work, use the closest local manifest or test folder:
+
+| Area | Example command |
+|------|-----------------|
+| Node API | `python -m pytest node/tests/test_mock_signature_guard.py` |
+| SDK | `python -m pip install -e ./sdk && python -m pytest sdk/tests/test_client_unit.py` |
+| Bridge | `python -m pytest bridge/test_bridge_api.py` |
+| Rust miner crate | `cargo check --manifest-path rustchain-miner/Cargo.toml` |
+| Native wallet crate | `cargo check --manifest-path rustchain-wallet/Cargo.toml` |
+| Onboarding script | `node --check onboard/index.js` |
 
 ## Live Infrastructure
 
@@ -92,7 +125,7 @@ curl -sk https://rustchain.org/epoch
 | Node Health | `https://rustchain.org/health` |
 | Active Miners | `https://rustchain.org/api/miners` |
 | Current Epoch | `https://rustchain.org/epoch` |
-| Block Explorer | `https://rustchain.org/explorer` |
+| Block Explorer | `https://rustchain.org/explorer/` |
 | wRTC Bridge | `https://bottube.ai/bridge` |
 
 ## RTC Payout Process
@@ -127,7 +160,7 @@ This keeps bounty-quality docs usable by new contributors and operators.
 
 ## Code Style
 
-- Python 3.8+ compatible
+- Python 3.11+ recommended for the main node and repository-level checks
 - Type hints appreciated but not yet enforced
 - Keep PRs focused — one issue per PR
 - Test against the live node, not just local mocks
@@ -145,13 +178,17 @@ When to pick a tier:
 - `BCOS-L1`: normal features, refactors, non-sensitive changes.
 - `BCOS-L2`: security-sensitive changes, transfer/wallet logic, consensus/rewards, auth/crypto, supply-chain touching changes.
 
+## Payout Authority
+
+Only `@Scottcjn` (or a clearly labeled project automation account speaking on his behalf, with a matching project-issued `pending_id` + `tx_hash`) authorizes RTC bounty disbursements. Anyone else posting "I'll send the RTC" on a bounty issue is not a valid payout notice — see [SECURITY.md § Payment-Authority Impersonation](SECURITY.md#payment-authority-impersonation).
+
 ## Start Mining
 
 Don't just code — mine! Install the miner and earn RTC while you contribute:
 
 ```bash
 pip install clawrtc
-clawrtc --wallet YOUR_NAME
+clawrtc mine --wallet YOUR_NAME
 ```
 
 Vintage hardware (PowerPC G4/G5, POWER8) earns **2-2.5x** more than modern PCs.
@@ -159,3 +196,20 @@ Vintage hardware (PowerPC G4/G5, POWER8) earns **2-2.5x** more than modern PCs.
 ## Questions?
 
 Open an issue or join the community. We're friendly.
+
+
+## Code Review Guidelines
+
+When reviewing PRs or preparing your own:
+
+- **Keep it small**: Small PRs get reviewed faster
+- **Test locally**: Run tests before submitting
+- **Document changes**: Update docs if behavior changes
+- **Be respectful**: Code reviews are about the code, not the person
+
+### Review Checklist
+
+- [ ] Code follows project style
+- [ ] Tests added/updated for changes
+- [ ] Documentation updated if needed
+- [ ] No unrelated changes in the PR

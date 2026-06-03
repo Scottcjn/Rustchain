@@ -25,34 +25,41 @@ API Endpoints:
 from __future__ import annotations
 
 import argparse
+import hmac
 import hashlib
 import json
 import os
 import re
+import secrets
 import sqlite3
-import subprocess
 import sys
 import time
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict
 
 # Try to import Flask, provide helpful error if missing
 try:
-    from flask import Flask, render_template_string, request, jsonify, send_from_directory
+    from flask import Flask, render_template_string, request, jsonify
 except ImportError:
     print("Flask not installed. Install with: pip install flask", file=sys.stderr)
     sys.exit(1)
 
+def load_secret_key() -> str:
+    """Load Flask secret key from env, or generate an ephemeral fallback."""
+    configured = os.environ.get('BADGE_SECRET_KEY', '').strip()
+    return configured or secrets.token_hex(32)
+
+
 # Initialize Flask app
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'bcos-badge-generator-dev-key'
+app.config['SECRET_KEY'] = load_secret_key()
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max upload
 
 # Database path
 DATABASE = 'bcos_badges.db'
+ADMIN_KEY_ENV = 'BCOS_ADMIN_KEY'
 
 # ── Badge Configuration ──────────────────────────────────────────────
 
@@ -88,6 +95,33 @@ BADGE_CONFIG = {
     'font_family': 'Verdana, Geneva, sans-serif',
     'font_size': 11,
 }
+
+CERT_ID_PATTERN = re.compile(r'^BCOS-[A-Za-z0-9_-]{1,64}$')
+
+
+def is_valid_cert_id(cert_id: object) -> bool:
+    """Return True for safe custom BCOS certificate IDs.
+
+    Rules:
+    - Must be a string.
+    - Must start with ``BCOS-``.
+    - May contain only ASCII letters, numbers, underscores, and hyphens after the prefix.
+    - The suffix must be 1 to 64 characters long.
+    """
+    if not isinstance(cert_id, str):
+        return False
+    return bool(CERT_ID_PATTERN.fullmatch(cert_id))
+
+
+def _load_metadata_object(raw_metadata: str) -> Dict:
+    """Return stored metadata when it is valid JSON object data."""
+    if not raw_metadata:
+        return {}
+    try:
+        metadata = json.loads(raw_metadata)
+    except json.JSONDecodeError:
+        return {}
+    return metadata if isinstance(metadata, dict) else {}
 
 # ── Database Functions ──────────────────────────────────────────────
 
@@ -222,6 +256,26 @@ def get_badge_stats() -> Dict:
 
 
 # ── Badge SVG Generation ──────────────────────────────────────────────
+
+
+def require_admin_key():
+    """Require an admin key before issuing trust-bearing BCOS badges."""
+    expected_key = os.environ.get(ADMIN_KEY_ENV, '').strip()
+    if not expected_key:
+        return jsonify({
+            'success': False,
+            'error': f'{ADMIN_KEY_ENV} is not configured',
+        }), 503
+
+    provided_key = (
+        request.headers.get('X-Admin-Key')
+        or request.headers.get('X-API-Key')
+        or ''
+    ).strip()
+    if not provided_key or not hmac.compare_digest(provided_key, expected_key):
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 401
+
+    return None
 
 
 def generate_badge_svg(
@@ -362,7 +416,7 @@ def verify_certificate(cert_id: str, use_cache: bool = True) -> Dict:
                 'valid': bool(cached[0]),
                 'cached': True,
                 'verified_at': cached[2],
-                'data': json.loads(cached[3]) if cached[3] else {},
+                'data': json.loads(cached[1]) if cached[1] else {},
             }
 
     # Check local database
@@ -385,7 +439,7 @@ def verify_certificate(cert_id: str, use_cache: bool = True) -> Dict:
             'commitment': result[4],
             'reviewer': result[5],
             'generated_at': result[6],
-            'metadata': json.loads(result[7]) if result[7] else {},
+            'metadata': _load_metadata_object(result[7]),
         }
 
         # Cache the result
@@ -786,6 +840,18 @@ MAIN_TEMPLATE = '''
                 </div>
 
                 <div class="form-group">
+                    <label for="adminKey">Admin Key *</label>
+                    <input
+                        type="password"
+                        id="adminKey"
+                        name="adminKey"
+                        placeholder="BCOS_ADMIN_KEY"
+                        required
+                    />
+                    <div class="hint">Required to issue trust-bearing badges; sent as X-Admin-Key.</div>
+                </div>
+
+                <div class="form-group">
                     <label for="certId">Certificate ID (optional)</label>
                     <input
                         type="text"
@@ -983,7 +1049,10 @@ MAIN_TEMPLATE = '''
 
             fetch('/api/badge/generate', {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'},
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Admin-Key': document.getElementById('adminKey').value,
+                },
                 body: JSON.stringify(formData),
             })
             .then(r => r.json())
@@ -1060,13 +1129,31 @@ def index():
 @app.route('/api/badge/generate', methods=['POST'])
 def generate_badge():
     """Generate a BCOS badge."""
-    data = request.get_json()
+    auth_error = require_admin_key()
+    if auth_error:
+        return auth_error
 
-    repo_name = data.get('repo_name', '').strip()
-    tier = data.get('tier', 'L1').upper()
-    trust_score = data.get('trust_score', 75)
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({
+            'success': False,
+            'error': 'JSON object body required',
+        }), 400
+
+    raw_repo_name = data.get('repo_name', '')
+    if not isinstance(raw_repo_name, str):
+        return jsonify({'success': False, 'error': 'Repository name must be a string'})
+    repo_name = raw_repo_name.strip()
+
+    raw_tier = data.get('tier', 'L1')
+    if not isinstance(raw_tier, str):
+        return jsonify({'success': False, 'error': 'Tier must be a string'})
+    tier = raw_tier.upper()
+    raw_trust_score = data.get('trust_score', 75)
     cert_id = data.get('cert_id', '')
     include_qr = data.get('include_qr', False)
+    if not isinstance(include_qr, bool):
+        return jsonify({'success': False, 'error': 'include_qr must be a boolean'})
 
     # Validation
     if not repo_name:
@@ -1078,6 +1165,13 @@ def generate_badge():
     if tier not in ['L0', 'L1', 'L2']:
         return jsonify({'success': False, 'error': 'Invalid tier. Must be L0, L1, or L2'})
 
+    if isinstance(raw_trust_score, bool):
+        return jsonify({'success': False, 'error': 'Trust score must be a number'})
+    try:
+        trust_score = int(raw_trust_score)
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'error': 'Trust score must be a number'})
+
     if not (0 <= trust_score <= 100):
         return jsonify({'success': False, 'error': 'Trust score must be between 0 and 100'})
 
@@ -1086,6 +1180,13 @@ def generate_badge():
         hash_input = f"{repo_name}{tier}{trust_score}{time.time()}"
         cert_hash = hashlib.blake2b(hash_input.encode(), digest_size=32).hexdigest()
         cert_id = f"BCOS-{cert_hash[:8]}"
+    elif not is_valid_cert_id(cert_id):
+        return jsonify({
+            'success': False,
+            'error': 'Invalid certificate ID. Use BCOS- followed by letters, numbers, underscores, or hyphens.',
+        })
+
+    cert_path = urllib.parse.quote(cert_id, safe='')
 
     # Generate SVG
     svg = generate_badge_svg(
@@ -1094,7 +1195,7 @@ def generate_badge():
         trust_score=trust_score,
         cert_id=cert_id,
         include_qr=include_qr,
-        verification_url=f"https://rustchain.org/bcos/verify/{cert_id}",
+        verification_url=f"https://rustchain.org/bcos/verify/{cert_path}",
     )
 
     # Record in database
@@ -1107,8 +1208,8 @@ def generate_badge():
         app.logger.error(f"Failed to record badge generation: {e}")
 
     # Generate embed codes
-    verification_url = f"https://rustchain.org/bcos/verify/{cert_id}"
-    svg_url = f"https://rustchain.org/bcos/badge/{cert_id}.svg"
+    verification_url = f"https://rustchain.org/bcos/verify/{cert_path}"
+    svg_url = f"https://rustchain.org/bcos/badge/{cert_path}.svg"
 
     markdown = f'[![BCOS {tier} Certified]({svg_url})]({verification_url})'
     html = f'<a href="{verification_url}"><img src="{svg_url}" alt="BCOS {tier} Certified"></a>'
@@ -1155,7 +1256,7 @@ def serve_badge_svg(cert_id):
         return 'Badge not found', 404
 
     repo_name, tier, trust_score, metadata = result
-    metadata_dict = json.loads(metadata) if metadata else {}
+    metadata_dict = _load_metadata_object(metadata)
 
     # Increment download count
     increment_download_count(cert_id)

@@ -15,6 +15,7 @@ import sys
 import unittest
 from pathlib import Path
 from typing import Any, Dict
+from unittest.mock import patch
 
 # Add src directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -98,6 +99,25 @@ class MemoryRoutesTestCase(unittest.TestCase):
         data = response.get_json()
         self.assertIn("error", data)
 
+    def test_json_routes_reject_non_object_bodies(self) -> None:
+        """Test JSON mutation routes reject arrays and other non-object bodies."""
+        routes = (
+            ("post", "/api/memory/record"),
+            ("post", "/api/memory/reference"),
+            ("post", "/api/memory/link"),
+        )
+
+        for method, path in routes:
+            with self.subTest(path=path):
+                response = getattr(self.client, method)(
+                    path,
+                    json=["not", "an", "object"],
+                    content_type="application/json"
+                )
+
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.get_json(), {"error": "JSON object required"})
+
     def test_get_recent(self) -> None:
         """Test getting recent content."""
         # First record some content
@@ -132,6 +152,16 @@ class MemoryRoutesTestCase(unittest.TestCase):
             "/api/memory/recent?agent_id=test-agent&limit=invalid"
         )
         self.assertEqual(response.status_code, 400)
+
+    def test_get_recent_rejects_non_positive_limit(self) -> None:
+        """Test recent content rejects zero and negative limits."""
+        for limit in ("0", "-1"):
+            with self.subTest(limit=limit):
+                response = self.client.get(
+                    f"/api/memory/recent?agent_id=test-agent&limit={limit}"
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.get_json(), {"error": "limit must be positive"})
 
     def test_search_topic(self) -> None:
         """Test searching by topic."""
@@ -174,6 +204,16 @@ class MemoryRoutesTestCase(unittest.TestCase):
             "/api/memory/search?agent_id=test-agent"
         )
         self.assertEqual(response.status_code, 400)
+
+    def test_search_topic_rejects_non_positive_limit(self) -> None:
+        """Test topic search rejects zero and negative limits."""
+        for limit in ("0", "-1"):
+            with self.subTest(limit=limit):
+                response = self.client.get(
+                    f"/api/memory/search?agent_id=test-agent&topic=mining&limit={limit}"
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.get_json(), {"error": "limit must be positive"})
 
     def test_search_by_tags(self) -> None:
         """Test searching by tags."""
@@ -238,6 +278,16 @@ class MemoryRoutesTestCase(unittest.TestCase):
         data = response.get_json()
         self.assertEqual(len(data["recalls"]), 1)
 
+    def test_search_by_tags_rejects_non_positive_limit(self) -> None:
+        """Test tag search rejects zero and negative limits."""
+        for limit in ("0", "-1"):
+            with self.subTest(limit=limit):
+                response = self.client.get(
+                    f"/api/memory/tags?agent_id=test-agent&tags=mining&limit={limit}"
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.get_json(), {"error": "limit must be positive"})
+
     def test_get_context(self) -> None:
         """Test building memory context."""
         # Record content
@@ -273,6 +323,16 @@ class MemoryRoutesTestCase(unittest.TestCase):
         """Test context without agent_id."""
         response = self.client.get("/api/memory/context")
         self.assertEqual(response.status_code, 400)
+
+    def test_get_context_rejects_non_positive_max_items(self) -> None:
+        """Test context rejects zero and negative max_items values."""
+        for max_items in ("0", "-1"):
+            with self.subTest(max_items=max_items):
+                response = self.client.get(
+                    f"/api/memory/context?agent_id=test-agent&max_items={max_items}"
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.get_json(), {"error": "max_items must be positive"})
 
     def test_generate_reference_casual(self) -> None:
         """Test generating casual self-reference."""
@@ -468,9 +528,11 @@ class MemoryRoutesTestCase(unittest.TestCase):
                 content_type="application/json"
             )
 
-        response = self.client.delete(
-            "/api/memory/clear?agent_id=test-agent"
-        )
+        with patch.dict("os.environ", {"MEMORY_ADMIN_KEY": "test-admin"}, clear=False):
+            response = self.client.delete(
+                "/api/memory/clear?agent_id=test-agent",
+                headers={"X-Admin-Key": "test-admin"},
+            )
 
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
@@ -483,6 +545,45 @@ class MemoryRoutesTestCase(unittest.TestCase):
         )
         recent_data = recent_response.get_json()
         self.assertEqual(len(recent_data["recalls"]), 0)
+
+    def test_clear_memory_requires_admin_key(self) -> None:
+        """Test clearing agent memory requires admin authentication."""
+        self.client.post(
+            "/api/memory/record",
+            json={
+                "agent_id": "test-agent",
+                "content_id": "video-unauthorized"
+            },
+            content_type="application/json"
+        )
+
+        for headers in ({}, {"X-Admin-Key": "wrong-admin"}):
+            with self.subTest(headers=headers):
+                with patch.dict("os.environ", {"MEMORY_ADMIN_KEY": "test-admin"}, clear=False):
+                    response = self.client.delete(
+                        "/api/memory/clear?agent_id=test-agent",
+                        headers=headers,
+                    )
+
+                self.assertEqual(response.status_code, 401)
+                self.assertEqual(response.get_json()["error"], "unauthorized")
+
+                recent_response = self.client.get(
+                    "/api/memory/recent?agent_id=test-agent"
+                )
+                recent_data = recent_response.get_json()
+                self.assertEqual(len(recent_data["recalls"]), 1)
+
+    def test_clear_memory_denies_when_admin_key_unconfigured(self) -> None:
+        """Test clear endpoint fails closed when MEMORY_ADMIN_KEY is absent."""
+        with patch.dict("os.environ", {}, clear=True):
+            response = self.client.delete(
+                "/api/memory/clear?agent_id=test-agent",
+                headers={"X-Admin-Key": "test-admin"},
+            )
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.get_json()["error"], "unauthorized")
 
     def test_record_with_importance(self) -> None:
         """Test recording content with importance score."""

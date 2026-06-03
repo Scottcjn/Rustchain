@@ -91,12 +91,22 @@ def register_sync_endpoints(app, db_path, admin_key):
 
         @wraps(f)
         def decorated(*args, **kwargs):
-            key = request.headers.get("X-Admin-Key") or request.headers.get("X-API-Key")
-            if not key or key != admin_key:
+            key = request.headers.get("X-Admin-Key") or request.headers.get("X-API-Key") or ""
+            if not key or not admin_key or not hmac.compare_digest(key, admin_key):
                 return jsonify({"error": "Unauthorized"}), 401
             return f(*args, **kwargs)
 
         return decorated
+
+    def _parse_sync_int_arg(name, default, minimum, maximum):
+        raw_value = request.args.get(name)
+        if raw_value is None or raw_value == "":
+            return default, None
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError):
+            return None, f"{name} must be an integer"
+        return max(minimum, min(value, maximum)), None
 
     @app.route("/api/sync/status", methods=["GET"])
     @require_admin
@@ -121,14 +131,14 @@ def register_sync_endpoints(app, db_path, admin_key):
         - offset: row offset (default 0)
         """
         table = request.args.get("table", "").strip()
-        try:
-            limit = int(request.args.get("limit", 200))
-            offset = int(request.args.get("offset", 0))
-        except ValueError:
-            return jsonify({"error": "limit/offset must be integers"}), 400
-
-        limit = max(1, min(limit, 1000))
-        offset = max(0, offset)
+        if len(table) > 128:
+            return jsonify({"error": "table name too long"}), 400
+        limit, error = _parse_sync_int_arg("limit", 200, 1, 1000)
+        if error:
+            return jsonify({"error": error}), 400
+        offset, error = _parse_sync_int_arg("offset", 0, 0, 10**12)
+        if error:
+            return jsonify({"error": error}), 400
 
         tables = sync_manager.SYNC_TABLES
         if table:
@@ -171,11 +181,17 @@ def register_sync_endpoints(app, db_path, admin_key):
         if not data or not isinstance(data, dict):
             return jsonify({"error": "Invalid payload"}), 400
 
+        valid_tables = set(sync_manager.SYNC_TABLES)
+        for table, rows in data.items():
+            if table not in valid_tables:
+                return jsonify({"error": f"invalid table: {table}"}), 400
+            if not isinstance(rows, list):
+                return jsonify({"error": f"{table} rows must be an array"}), 400
+            if any(not isinstance(row, dict) for row in rows):
+                return jsonify({"error": f"{table} rows must be objects"}), 400
+
         success = True
         for table, rows in data.items():
-            if not isinstance(rows, list):
-                success = False
-                continue
             if not sync_manager.apply_sync_payload(table, rows):
                 success = False
 

@@ -1,9 +1,3 @@
-import hashlib
-import random
-try:
-    from .rip_309_measurement_rotation import get_epoch_measurement_config, evaluate_fingerprint_rotation
-except ImportError:
-    from rip_309_measurement_rotation import get_epoch_measurement_config, evaluate_fingerprint_rotation
 #!/usr/bin/env python3
 """
 RIP-200: Round-Robin Consensus (1 CPU = 1 Vote)
@@ -19,17 +13,126 @@ Key Changes:
 4. Time-aging: Vintage hardware advantage decays over blockchain lifetime
 """
 
+import hashlib
+import json
 import logging
 import sqlite3
-import time
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import List, Tuple, Dict
 
 logger = logging.getLogger(__name__)
+
+try:
+    from rip_309_measurement_rotation import get_reward_active_fingerprint_checks
+except ImportError:  # package-style import from repo root
+    from .rip_309_measurement_rotation import get_reward_active_fingerprint_checks
+
+ROTATING_FINGERPRINT_CHECKS = (
+    "clock_drift",
+    "cache_timing",
+    "simd_bias",
+    "thermal_drift",
+    "instruction_jitter",
+    "anti_emulation",
+)
+ACTIVE_FINGERPRINT_CHECK_COUNT = 4
+
+
+def derive_measurement_nonce(previous_epoch_block_hash: str) -> str:
+    previous_epoch_block_hash = (previous_epoch_block_hash or ("0" * 64)).strip().lower()
+    seed = f"rip-309:{previous_epoch_block_hash}".encode()
+    return hashlib.sha256(seed).hexdigest()
+
+
+def select_active_fingerprint_checks(previous_epoch_block_hash: str, active_count: int = ACTIVE_FINGERPRINT_CHECK_COUNT) -> Tuple[str, ...]:
+    nonce = derive_measurement_nonce(previous_epoch_block_hash)
+    ranked = sorted(
+        ROTATING_FINGERPRINT_CHECKS,
+        key=lambda name: hashlib.sha256(f"{nonce}:{name}".encode()).hexdigest(),
+    )
+    return tuple(ranked[:active_count])
 
 # Genesis timestamp (adjust to actual genesis block timestamp)
 GENESIS_TIMESTAMP = 1764706927  # First actual block (Dec 2, 2025)
 BLOCK_TIME = 600  # 10 minutes
 ATTESTATION_TTL = 86400  # 24 hours - ancient hardware needs longer TTL  # 10 minutes
+EPOCH_WEIGHT_SCALE = 1_000_000_000
+MAX_EPOCH_WEIGHT = 10_000
+MAX_EPOCH_WEIGHT_UNITS = MAX_EPOCH_WEIGHT * EPOCH_WEIGHT_SCALE
+
+
+def _weight_to_units(weight) -> int:
+    try:
+        value = Decimal(str(weight))
+    except (InvalidOperation, TypeError, ValueError):
+        return 0
+    if not value.is_finite() or value <= 0:
+        return 0
+
+    units = int(
+        (value * Decimal(EPOCH_WEIGHT_SCALE)).to_integral_value(
+            rounding=ROUND_HALF_UP
+        )
+    )
+    return min(units, MAX_EPOCH_WEIGHT_UNITS)
+
+
+def _normalize_epoch_weight_units(raw_weight) -> int:
+    if isinstance(raw_weight, int):
+        return min(max(raw_weight, 0), MAX_EPOCH_WEIGHT_UNITS)
+    return _weight_to_units(raw_weight)
+
+
+def _apply_warthog_bonus(weight_units: int, warthog_bonus) -> int:
+    if weight_units <= 0:
+        return 0
+    try:
+        bonus = Decimal(str(warthog_bonus))
+    except (InvalidOperation, TypeError, ValueError):
+        return weight_units
+    if not bonus.is_finite() or bonus <= 1:
+        return weight_units
+
+    adjusted = int(
+        (Decimal(weight_units) * bonus).to_integral_value(
+            rounding=ROUND_HALF_UP
+        )
+    )
+    return min(adjusted, MAX_EPOCH_WEIGHT_UNITS)
+
+
+def _distribute_reward_by_weight(
+    weighted_miners: List[Tuple[str, int]], total_reward_urtc: int
+) -> Dict[str, int]:
+    eligible_miners = [(m, int(w)) for m, w in weighted_miners if int(w) > 0]
+    if not eligible_miners:
+        return {}
+
+    total_reward = max(int(total_reward_urtc), 0)
+    if total_reward == 0:
+        return {miner_id: 0 for miner_id, _ in eligible_miners}
+
+    total_weight = sum(weight for _, weight in eligible_miners)
+    if total_weight <= 0:
+        return {}
+
+    allocated = 0
+    allocations = []
+    for order, (miner_id, weight) in enumerate(eligible_miners):
+        product = total_reward * weight
+        share, remainder = divmod(product, total_weight)
+        allocated += share
+        allocations.append([miner_id, share, remainder, order])
+
+    leftover = total_reward - allocated
+    if leftover > 0:
+        for allocation in sorted(
+            allocations,
+            key=lambda row: (-row[2], row[3]),
+        )[:leftover]:
+            allocation[1] += 1
+
+    return {miner_id: share for miner_id, share, _remainder, _order in allocations}
 
 # Antiquity base multipliers
 ANTIQUITY_MULTIPLIERS = {
@@ -185,7 +288,17 @@ ANTIQUITY_MULTIPLIERS = {
     "pentium_pro": 2.3,
     "pentium_ii": 2.2,
     "pentium_iii": 2.0,
-    
+
+    # Intel Pentium M (2003-2006) — mobile P6 lineage, NOT NetBurst.
+    # Architecturally descended from Pentium III; predates Core 2 by 3 years.
+    # Verified against IBM ThinkPad T40 (2373-7CU) Banias 1.5GHz, 2003 silicon:
+    # all 7 hardware fingerprint checks pass, anti-emulation 0 indicators,
+    # SSE+SSE2 only (no SSE3), no LM (i686-only), 1MB L2 cache.
+    "pentium_m": 1.9,             # Generic Pentium M
+    "pentium_m_banias": 1.9,      # 2003, 130nm, 1MB L2, max 1.7GHz (T40 class)
+    "pentium_m_dothan": 1.8,      # 2004, 90nm, 2MB L2, up to 2.26GHz
+    "pentium_m_yonah": 1.6,       # 2006, dual-core, first Core/Core Duo
+
     # Intel Pentium 4 (2000-2006)
     "pentium4": 1.5,
     "pentium_d": 1.5,
@@ -339,33 +452,6 @@ ANTIQUITY_MULTIPLIERS = {
 DECAY_RATE_PER_YEAR = 0.15  # 15% decay per year (vintage bonus → 0 after ~16.67 years)
 
 
-
-
-
-def get_rip309_active_checks(epoch: int, prev_block_hash: bytes = b"") -> Tuple[List[str], bytes]:
-    """
-    RIP-309 Phase 1: Fingerprint Check Rotation
-    Deterministic rotation of 4 out of 6 fingerprint checks.
-    """
-    fp_checks = ["clock_drift", "cache_timing", "simd_bias", 
-                 "thermal_drift", "instruction_jitter", "anti_emulation"]
-                 
-    if epoch == 0:
-        return fp_checks[:4], b""
-        
-    if not prev_block_hash:
-        logger.warning(f"Epoch {epoch}: Missing prev_block_hash for RIP-309 rotation!")
-        # In strict mode, we should raise, but for stability, return full set + warn
-        return fp_checks, b""
-
-    nonce = hashlib.sha256(prev_block_hash + b"measurement_nonce").digest()
-    seed = int.from_bytes(nonce[:4], "big")
-    active = random.Random(seed).sample(fp_checks, 4)
-    return active, nonce
-
-
-
-
 def get_chain_age_years(current_slot: int) -> float:
     """Calculate blockchain age in years from slot number"""
     chain_age_seconds = current_slot * BLOCK_TIME
@@ -503,7 +589,9 @@ def calculate_epoch_rewards_time_aged(
     db_path: str,
     epoch: int,
     total_reward_urtc: int,
-    current_slot: int, prev_block_hash: bytes = None) -> Dict[str, int]:
+    current_slot: int,
+    prev_block_hash: bytes = b"",
+) -> Dict[str, int]:
     """
     Calculate reward distribution for an epoch with time-aged multipliers
 
@@ -525,6 +613,11 @@ def calculate_epoch_rewards_time_aged(
     Returns:
         Dict of {miner_id: reward_urtc}
     """
+    # RIP-309: Rotating fingerprint checks (4-of-6 per epoch).
+    # The helper is golden-tested against the former inline algorithm.
+    active_checks = set(get_reward_active_fingerprint_checks(prev_block_hash))
+    print(f"[RIP-309] Epoch {epoch} active checks: {sorted(active_checks)} (seed derived from prev_block_hash)")
+
     chain_age_years = get_chain_age_years(current_slot)
 
     epoch_start_slot = epoch * 144
@@ -535,30 +628,49 @@ def calculate_epoch_rewards_time_aged(
     with sqlite3.connect(db_path) as conn:
         cursor = conn.cursor()
 
+        # Schema compatibility: detect whether fingerprint_checks_json column exists
+        cols = cursor.execute("PRAGMA table_info(miner_attest_recent)").fetchall()
+        has_checks_col = any(col[1] == 'fingerprint_checks_json' for col in cols)
+        has_warthog_col = any(col[1] == 'warthog_bonus' for col in cols)
+        wart_sql = ", COALESCE(warthog_bonus, 1.0) " if has_warthog_col else ", 1.0 "
+
         # Primary source: epoch_enroll (per-epoch snapshot, matches finalize_epoch).
-        cursor.execute(
-            "SELECT miner_pk FROM epoch_enroll WHERE epoch = ?",
-            (epoch,)
-        )
-        enrolled = cursor.fetchall()
+        try:
+            cursor.execute(
+                "SELECT miner_pk, weight FROM epoch_enroll WHERE epoch = ?",
+                (epoch,)
+            )
+            enrolled = cursor.fetchall()
+        except sqlite3.Error:
+            enrolled = []
 
         if enrolled:
-            # Use enrolled miners; look up device_arch from latest attestation.
+            # Use enrolled miners; epoch_enroll.weight is the canonical per-epoch
+            # reward weight snapshot and may already include RIP-309 rotation.
             epoch_miners = []
-            for (miner_pk,) in enrolled:
+            check_sql = (
+                ", fingerprint_checks_json " if has_checks_col else ", '{}' as fingerprint_checks_json "
+            )
+            for miner_pk, enrolled_weight in enrolled:
                 arch_row = cursor.execute(
-                    "SELECT device_arch, COALESCE(fingerprint_passed, 1) "
-                    "FROM miner_attest_recent WHERE miner = ? LIMIT 1",
+                    "SELECT device_arch, COALESCE(fingerprint_passed, 1)"
+                    + check_sql
+                    + wart_sql
+                    + "FROM miner_attest_recent WHERE miner = ? LIMIT 1",
                     (miner_pk,)
                 ).fetchone()
                 if arch_row:
                     device_arch = arch_row[0] or "unknown"
                     fp = arch_row[1]
+                    checks_json = arch_row[2] or '{}' if has_checks_col else '{}'
+                    warthog_bonus = arch_row[3]
                 else:
                     # No attestation record — treat as unknown arch, fingerprint ok.
                     device_arch = "unknown"
                     fp = 1
-                epoch_miners.append((miner_pk, device_arch, fp))
+                    checks_json = '{}'
+                    warthog_bonus = 1.0
+                epoch_miners.append((miner_pk, device_arch, fp, enrolled_weight, checks_json, warthog_bonus))
         else:
             # SECURITY FIX #2159: Fallback for epochs without enrollment
             # records.  This path is vulnerable to the stale-attestation
@@ -570,81 +682,85 @@ def calculate_epoch_rewards_time_aged(
                 "miner_attest_recent time-window query (may drop miners "
                 "if settlement is delayed)", epoch
             )
-            cursor.execute("""
-                SELECT DISTINCT miner, device_arch, COALESCE(fingerprint_passed, 1) as fp
-                FROM miner_attest_recent
-                WHERE ts_ok >= ? AND ts_ok <= ?
-            """, (epoch_start_ts - ATTESTATION_TTL, epoch_end_ts))
+            bonus_expr = "COALESCE(warthog_bonus, 1.0)" if has_warthog_col else "1.0"
+            if has_checks_col:
+                cursor.execute(f"""
+                    SELECT DISTINCT miner, device_arch, COALESCE(fingerprint_passed, 1) as fp,
+                           NULL as enrolled_weight,
+                           COALESCE(fingerprint_checks_json, '{{}}') as checks_json,
+                           {bonus_expr} as warthog_bonus
+                    FROM miner_attest_recent
+                    WHERE ts_ok >= ? AND ts_ok <= ?
+                """, (epoch_start_ts - ATTESTATION_TTL, epoch_end_ts))
+            else:
+                cursor.execute(f"""
+                    SELECT DISTINCT miner, device_arch, COALESCE(fingerprint_passed, 1) as fp,
+                           NULL as enrolled_weight,
+                           '{{}}' as checks_json,
+                           {bonus_expr} as warthog_bonus
+                    FROM miner_attest_recent
+                    WHERE ts_ok >= ? AND ts_ok <= ?
+                """, (epoch_start_ts - ATTESTATION_TTL, epoch_end_ts))
             epoch_miners = cursor.fetchall()
 
     if not epoch_miners:
         return {}
 
-    # Calculate time-aged weights
+    # Calculate time-aged weights as capped fixed-point integers.  The
+    # integrated settlement path stores epoch_enroll.weight this way; keeping
+    # it integer here avoids float precision loss for large miner sets.
     weighted_miners = []
-    total_weight = 0.0
-
-    
-    
-    # RIP-309: Use canonical rotation module
-    config = get_epoch_measurement_config(prev_block_hash, epoch)
-    active_checks = config["active_checks"]
-    logger.info(f"Epoch {epoch}: RIP-309 Active Checks: {active_checks}")
+    total_weight = 0
 
     for row in epoch_miners:
         miner_id, device_arch = row[0], row[1]
-        
-        # Fetch raw fingerprint data (assuming it exists in the row or DB)
-        # For Phase 1, we map the aggregate fingerprint_ok to the evaluation
-        fingerprint_ok_legacy = row[2] if len(row) > 2 else 1
-        
-        # Use canonical evaluation function
-        # Mocking fingerprint_data as a dict of passed=True/False for simplicity
-        mock_data = {c: {"passed": True} for c in active_checks}
-        if fingerprint_ok_legacy == 0:
-            mock_data[active_checks[0]]["passed"] = False # force fail
+        fingerprint_ok = row[2] if len(row) > 2 else 1
+        enrolled_weight = row[3] if len(row) > 3 else None
+        checks_json = row[4] if len(row) > 4 else '{}'
+        warthog_bonus = row[5] if len(row) > 5 else 1.0
 
-        eval_result = evaluate_fingerprint_rotation(mock_data, active_checks)
-        
-        if not eval_result["passed"]:
-            weight = 0.0
-            print(f"[REWARD] {miner_id[:20]}... RIP-309 FAIL -> weight=0")
+        # RIP-309: Only active checks count toward reward weight.
+        # Inactive checks still run and log, but their pass/fail does not affect reward.
+        try:
+            checks_map = json.loads(checks_json) if checks_json else {}
+        except Exception:
+            checks_map = {}
+        active_passed = all(checks_map.get(c, True) for c in active_checks)
+        if not active_passed:
+            print(f"[RIP-309] {miner_id[:20]}... failed active check(s) -> weight=0")
+            fingerprint_ok = 0
+
+        # STRICT: VMs/emulators with failed fingerprint get ZERO weight
+        if fingerprint_ok == 0:
+            weight = 0  # No rewards for failed fingerprint
+            print(f"[REWARD] {miner_id[:20]}... fingerprint=FAIL -> weight=0")
+        elif enrolled_weight is not None:
+            weight = _normalize_epoch_weight_units(enrolled_weight)
         else:
-            weight = get_time_aged_multiplier(device_arch, chain_age_years)
-
-
+            weight = _weight_to_units(
+                get_time_aged_multiplier(device_arch, chain_age_years)
+            )
 
         # Apply Warthog dual-mining bonus (1.0x/1.1x/1.15x)
         # Double-gated: fingerprint must pass (weight>0) AND fingerprint_ok==1
         if weight > 0 and fingerprint_ok == 1:
-            try:
-                wart_row = cursor.execute(
-                    "SELECT warthog_bonus FROM miner_attest_recent WHERE miner=?",
-                    (miner_id,)
-                ).fetchone()
-                if wart_row and wart_row[0] and wart_row[0] > 1.0:
-                    weight *= wart_row[0]
-            except Exception:
-                pass  # Column may not exist on older schemas
+            weight = _apply_warthog_bonus(weight, warthog_bonus)
 
         weighted_miners.append((miner_id, weight))
         total_weight += weight
 
-    # Distribute rewards proportionally by weight
-    rewards = {}
-    remaining = total_reward_urtc
+    # Guard: if total weight is zero (all miners failed fingerprint or have
+    # zero multiplier), no rewards can be distributed.  Returning an empty
+    # dict prevents ZeroDivisionError and stops a zero-weight miner from
+    # capturing the entire pool via the "last miner gets remainder" logic.
+    if total_weight <= 0:
+        logger.warning(
+            "Epoch %d: total_weight=0 — all %d miners have zero weight, "
+            "no rewards distributed", epoch, len(weighted_miners)
+        )
+        return {}
 
-    for i, (miner_id, weight) in enumerate(weighted_miners):
-        if i == len(weighted_miners) - 1:
-            # Last miner gets remainder (prevents rounding issues)
-            share = remaining
-        else:
-            share = int((weight / total_weight) * total_reward_urtc)
-            remaining -= share
-
-        rewards[miner_id] = share
-
-    return rewards
+    return _distribute_reward_by_weight(weighted_miners, total_reward_urtc)
 
 
 # Example usage and testing
@@ -664,11 +780,11 @@ if __name__ == "__main__":
         total_reward = 150_000_000  # 1.5 RTC in uRTC
         total_weight = g4_mult + g5_mult + modern_mult
 
-        g4_share = (g4_mult / total_weight) * total_reward
-        g5_share = (g5_mult / total_weight) * total_reward
-        modern_share = (modern_mult / total_weight) * total_reward
+        g4_share = 0 if total_weight == 0 else (g4_mult / total_weight) * total_reward
+        g5_share = 0 if total_weight == 0 else (g5_mult / total_weight) * total_reward
+        modern_share = 0 if total_weight == 0 else (modern_mult / total_weight) * total_reward
 
-        print(f"\nReward distribution (1.5 RTC total):")
+        print("\nReward distribution (1.5 RTC total):")
         print(f"  G4: {g4_share / 100_000_000:.6f} RTC ({g4_share/total_reward*100:.1f}%)")
         print(f"  G5: {g5_share / 100_000_000:.6f} RTC ({g5_share/total_reward*100:.1f}%)")
         print(f"  Modern: {modern_share / 100_000_000:.6f} RTC ({modern_share/total_reward*100:.1f}%)")

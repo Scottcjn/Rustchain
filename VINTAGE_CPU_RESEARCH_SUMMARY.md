@@ -405,7 +405,7 @@ def validate_attestation(data):
 
 ### Community Resources
 - [AmigaOne History](https://en.wikipedia.org/wiki/AmigaOne)
-- [Pegasos](https://www.genesi-usa.com/pegasos)
+- [Pegasos](https://en.wikipedia.org/wiki/Pegasos)
 - [AmigaOS 4](https://www.amigaos.net/)
 - [Vintage Computer Federation](https://vcfed.org/)
 

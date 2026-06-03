@@ -146,7 +146,7 @@ brew style rustchain-miner
 brew test rustchain-miner
 
 # Verify checksums (before release)
-curl -sSL https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.5.0.tar.gz | sha256sum
+curl -sSL https://github.com/Scottcjn/Rustchain/archive/448e835cd76e28fef9bc76f9ddaaf38be0ffc2b8.tar.gz | sha256sum
 ```
 
 ---
@@ -203,12 +203,12 @@ rm -f ~/Library/LaunchAgents/homebrew.mxcl.rustchain-miner.plist
 
 1. **Checksum Verification**: Before deploying, compute and update the SHA256 in the formula:
    ```bash
-   curl -sSL https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.5.0.tar.gz | sha256sum
+   curl -sSL https://github.com/Scottcjn/Rustchain/archive/448e835cd76e28fef9bc76f9ddaaf38be0ffc2b8.tar.gz | sha256sum
    ```
 
 2. **Version Pinning**: For production, pin to a specific version:
    ```ruby
-   url "https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.5.0.tar.gz"
+   url "https://github.com/Scottcjn/Rustchain/archive/448e835cd76e28fef9bc76f9ddaaf38be0ffc2b8.tar.gz"
    version "2.5.0"
    ```
 
@@ -274,8 +274,8 @@ miners/
 
 - [Homebrew Formula Cookbook](https://docs.brew.sh/Formula-Cookbook)
 - [RustChain Repository](https://github.com/Scottcjn/Rustchain)
-- [RustChain Whitepaper](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf)
-- [Issue #1612](https://github.com/rustchain-bounties/rustchain-bounties/issues/1612)
+- [RustChain Whitepaper](../docs/RustChain_Whitepaper_Flameholder_v0.97.pdf)
+- [Issue #1612](https://github.com/Scottcjn/rustchain-bounties/issues/1612)
 
 ---
 

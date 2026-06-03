@@ -7,10 +7,10 @@ Usage in rustchain server:
     rustchain_x402.init_app(app, DB_PATH)
 """
 
+import hmac
 import logging
 import os
 import sqlite3
-import time
 
 from flask import jsonify, request
 
@@ -20,7 +20,7 @@ log = logging.getLogger("rustchain.x402")
 try:
     import sys
     sys.path.insert(0, "/root/shared")
-    from x402_config import SWAP_INFO, WRTC_BASE, USDC_BASE, AERODROME_POOL
+    from x402_config import SWAP_INFO
     X402_CONFIG_OK = True
 except ImportError:
     log.warning("x402_config not found — using inline swap info")
@@ -53,6 +53,50 @@ def _run_migration(db_path):
     conn.close()
 
 
+def _json_object_body():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return None, (jsonify({"error": "JSON object body is required"}), 400)
+    return data, None
+
+
+def _json_string_field(data, field_name, default=""):
+    value = data.get(field_name, default)
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise ValueError(f"{field_name} must be a string")
+    return value.strip()
+
+
+def _is_base_address(value: str) -> bool:
+    return (
+        value.startswith("0x")
+        and len(value) == 42
+        and all(char in "0123456789abcdefABCDEF" for char in value[2:])
+    )
+
+
+def _find_balance_row(conn, miner_id):
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(balances)").fetchall()}
+
+    if "miner_id" in columns:
+        row = conn.execute(
+            "SELECT miner_id FROM balances WHERE miner_id = ?", (miner_id,)
+        ).fetchone()
+        if row:
+            return row[0], "miner_id"
+
+    if "miner_pk" in columns:
+        row = conn.execute(
+            "SELECT miner_pk FROM balances WHERE miner_pk = ?", (miner_id,)
+        ).fetchone()
+        if row:
+            return row[0], "miner_pk"
+
+    return None, None
+
+
 def init_app(app, db_path):
     """Register x402 routes on the RustChain Flask app."""
 
@@ -73,38 +117,42 @@ def init_app(app, db_path):
         expected = os.environ.get("RC_ADMIN_KEY", "")
         if not expected:
             return jsonify({"error": "Admin key not configured"}), 503
-        if admin_key != expected:
+        if not hmac.compare_digest(admin_key, expected):
             return jsonify({"error": "Unauthorized — admin key required"}), 401
 
-        data = request.get_json(silent=True) or {}
-        miner_id = data.get("miner_id", "").strip()
-        coinbase_address = data.get("coinbase_address", "").strip()
+        data, error_response = _json_object_body()
+        if error_response:
+            return error_response
+        try:
+            miner_id = _json_string_field(data, "miner_id")
+            coinbase_address = _json_string_field(data, "coinbase_address")
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
 
         if not miner_id:
             return jsonify({"error": "miner_id is required"}), 400
-        if not coinbase_address or not coinbase_address.startswith("0x") or len(coinbase_address) != 42:
+        if not coinbase_address or not _is_base_address(coinbase_address):
             return jsonify({"error": "Invalid Base address (must be 0x + 40 hex chars)"}), 400
 
         conn = sqlite3.connect(db_path)
-        row = conn.execute(
-            "SELECT miner_id FROM balances WHERE miner_id = ?", (miner_id,)
-        ).fetchone()
-        if not row:
-            # Try miner_pk
-            row = conn.execute(
-                "SELECT miner_id FROM balances WHERE miner_pk = ?", (miner_id,)
-            ).fetchone()
-        if not row:
-            conn.close()
-            return jsonify({"error": f"Miner '{miner_id}' not found in balances"}), 404
+        try:
+            actual_id, id_column = _find_balance_row(conn, miner_id)
+            if not actual_id:
+                return jsonify({"error": f"Miner '{miner_id}' not found in balances"}), 404
 
-        actual_id = row[0]
-        conn.execute(
-            "UPDATE balances SET coinbase_address = ? WHERE miner_id = ?",
-            (coinbase_address, actual_id),
-        )
-        conn.commit()
-        conn.close()
+            if id_column == "miner_id":
+                conn.execute(
+                    "UPDATE balances SET coinbase_address = ? WHERE miner_id = ?",
+                    (coinbase_address, actual_id),
+                )
+            else:
+                conn.execute(
+                    "UPDATE balances SET coinbase_address = ? WHERE miner_pk = ?",
+                    (coinbase_address, actual_id),
+                )
+            conn.commit()
+        finally:
+            conn.close()
 
         return jsonify({
             "ok": True,

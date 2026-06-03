@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 """
 Hall of Rust - Immortal Registry for Dying Hardware
 ====================================================
@@ -6,12 +8,28 @@ This is the emotional core of RustChain.
 """
 
 from flask import Blueprint, jsonify, request
-import sqlite3
+from datetime import datetime, timezone
 import hashlib
+import hmac
+import logging
+import os
+import random
+import sqlite3
 import time
-import json
 
 hall_bp = Blueprint('hall_of_rust', __name__)
+logger = logging.getLogger(__name__)
+
+
+def _require_admin():
+    """Check X-Admin-Key header against RC_ADMIN_KEY env var."""
+    expected = os.environ.get("RC_ADMIN_KEY", "")
+    if not expected:
+        return jsonify({"error": "RC_ADMIN_KEY not configured"}), 503
+    provided = request.headers.get("X-Admin-Key", "")
+    if not hmac.compare_digest(provided, expected):
+        return jsonify({"error": "Unauthorized — admin key required"}), 401
+    return None
 
 # Rust Score calculation weights
 RUST_WEIGHTS = {
@@ -22,6 +40,11 @@ RUST_WEIGHTS = {
     'capacitor_plague': 100,   # Bonus for 2001-2006 bad cap era
     'first_attestation': 50,   # Bonus for being among first 100 miners
 }
+
+
+def _current_utc_year():
+    return datetime.now(timezone.utc).year
+
 
 # Capacitor plague era models (infamous bad electrolytic caps)
 CAPACITOR_PLAGUE_MODELS = [
@@ -80,13 +103,14 @@ def init_hall_tables(db_path):
     conn.commit()
     conn.close()
 
-def calculate_rust_score(machine):
+def calculate_rust_score(machine, current_year=None):
     """Calculate the Rust Score for a machine - higher = rustier = better."""
     score = 0
+    current_year = current_year if current_year is not None else _current_utc_year()
     
     # Age bonus (estimated from model/arch)
     if machine.get('manufacture_year'):
-        age = 2025 - machine['manufacture_year']
+        age = max(0, current_year - int(machine['manufacture_year']))
         score += age * RUST_WEIGHTS['age_years']
     
     # Attestation loyalty
@@ -146,12 +170,16 @@ def estimate_manufacture_year(model, arch):
 @hall_bp.route('/hall/induct', methods=['POST'])
 def induct_machine():
     """Automatically induct a machine into the Hall of Rust on first attestation."""
-    data = request.json or {}
+    data, error_response = _json_object_or_empty()
+    if error_response:
+        return error_response
     
     # Generate fingerprint hash from hardware identifiers
     # SECURITY FIX: Fingerprint based on HARDWARE ONLY (not wallet ID)
     # This prevents multiple wallets on same machine from getting multiple Hall entries
     hw_serial = data.get('cpu_serial', data.get('hardware_id', 'unknown'))
+    if not isinstance(hw_serial, str) or len(hw_serial) > 256:
+        hw_serial = 'unknown'
     fp_data = f"{data.get('device_model', '')}{data.get('device_arch', '')}{hw_serial}"
     fingerprint_hash = hashlib.sha256(fp_data.encode()).hexdigest()[:32]
     
@@ -167,8 +195,15 @@ def induct_machine():
         existing = c.fetchone()
         
         now = int(time.time())
-        model = data.get('device_model', 'Unknown')
-        arch = data.get('device_arch', 'modern')
+        miner_id = (data.get('miner_id') or 'anonymous')[:128]
+        model = (data.get('device_model', 'Unknown') or 'Unknown')[:256]
+        arch = (data.get('device_arch', 'modern') or 'modern')[:32]
+        device_family = (data.get('device_family', 'Unknown') or 'Unknown')[:128]
+
+        # Use defaults after truncation if empty
+        model = model or 'Unknown'
+        arch = arch or 'modern'
+        device_family = device_family or 'Unknown'
         
         if existing:
             # Update attestation count
@@ -197,8 +232,8 @@ def induct_machine():
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             fingerprint_hash,
-            data.get('miner_id', 'anonymous'),
-            data.get('device_family', 'Unknown'),
+            miner_id,
+            device_family,
             arch,
             model,
             mfg_year,
@@ -233,12 +268,16 @@ def induct_machine():
             'capacitor_plague': is_plague
         })
         
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        return _internal_error_response("induct_machine")
 
 @hall_bp.route('/hall/machine/<fingerprint>', methods=['GET'])
 def get_machine(fingerprint):
     """Get a machine's Hall of Rust entry."""
+    # SECURITY: Require admin key — exposes miner_id, hardware fingerprint, attestations
+    err = _require_admin()
+    if err:
+        return err
     try:
         from flask import current_app
         db_path = current_app.config.get('DB_PATH', '/root/rustchain/rustchain_v2.db')
@@ -254,12 +293,16 @@ def get_machine(fingerprint):
             return jsonify({'error': 'Machine not found in Hall of Rust'}), 404
         
         return jsonify(dict(row))
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        return _internal_error_response("get_machine")
 
 @hall_bp.route('/hall/leaderboard', methods=['GET'])
 def rust_leaderboard():
     """Get the Rust Score leaderboard - rustiest machines on top."""
+    # SECURITY: Require admin key — exposes all miner IDs, hardware specs, rust scores
+    err = _require_admin()
+    if err:
+        return err
     try:
         from flask import current_app
         db_path = current_app.config.get('DB_PATH', '/root/rustchain/rustchain_v2.db')
@@ -267,7 +310,9 @@ def rust_leaderboard():
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         
-        limit = request.args.get('limit', 50, type=int)
+        limit, error_response = _parse_limit_arg()
+        if error_response:
+            return error_response
         
         c.execute("""
             SELECT fingerprint_hash, miner_id, device_arch, device_model,
@@ -293,13 +338,22 @@ def rust_leaderboard():
             'total_machines': len(leaderboard),
             'generated_at': int(time.time())
         })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        return _internal_error_response("rust_leaderboard")
 
 @hall_bp.route('/hall/eulogy/<fingerprint>', methods=['POST'])
 def set_eulogy(fingerprint):
     """Set a eulogy/nickname for a machine. For when it finally dies."""
-    data = request.json or {}
+    data, error_response = _json_object_or_empty()
+    if error_response:
+        return error_response
+
+    nickname, error_response = _optional_text_field(data, 'nickname', 64)
+    if error_response:
+        return error_response
+    eulogy, error_response = _optional_text_field(data, 'eulogy', 500)
+    if error_response:
+        return error_response
     
     try:
         from flask import current_app
@@ -312,11 +366,11 @@ def set_eulogy(fingerprint):
         
         if 'nickname' in data:
             updates.append('nickname = ?')
-            params.append(data['nickname'][:64])
+            params.append(nickname)
         
         if 'eulogy' in data:
             updates.append('eulogy = ?')
-            params.append(data['eulogy'][:500])
+            params.append(eulogy)
         
         if 'is_deceased' in data and data['is_deceased']:
             updates.append('is_deceased = 1')
@@ -330,12 +384,16 @@ def set_eulogy(fingerprint):
         
         conn.close()
         return jsonify({'ok': True, 'message': 'Memorial updated'})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        return _internal_error_response("set_eulogy")
 
 @hall_bp.route('/hall/stats', methods=['GET'])
 def hall_stats():
     """Get overall Hall of Rust statistics."""
+    # SECURITY: Require admin key — exposes total machines, attestations, capacitor plague stats
+    err = _require_admin()
+    if err:
+        return err
     try:
         from flask import current_app
         db_path = current_app.config.get('DB_PATH', '/root/rustchain/rustchain_v2.db')
@@ -370,8 +428,8 @@ def hall_stats():
         
         conn.close()
         return jsonify(stats)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        return _internal_error_response("hall_stats")
 
 def get_rust_badge(score):
     """Get a badge based on Rust Score."""
@@ -437,14 +495,55 @@ def _table_exists(cursor, table_name):
     return row is not None
 
 
+def _parse_limit_arg(default=50, max_value=500):
+    raw_value = request.args.get('limit')
+    if raw_value is None or raw_value == '':
+        return default, None
+    try:
+        limit = int(raw_value)
+    except (TypeError, ValueError):
+        return None, ("limit must be an integer", 400)
+    if limit < 0:
+        return None, ("limit must be non-negative", 400)
+    return min(limit, max_value), None
+
+
+def _json_object_or_empty():
+    data = request.get_json(silent=True)
+    if data is None:
+        return {}, None
+    if not isinstance(data, dict):
+        return None, (jsonify({'error': 'JSON object required'}), 400)
+    return data, None
+
+
+def _optional_text_field(data, name, limit):
+    if name not in data:
+        return None, None
+    value = data[name]
+    if value is None:
+        return "", None
+    if not isinstance(value, str):
+        return None, (jsonify({'error': f'{name} must be a string'}), 400)
+    return value[:limit], None
+
+
+def _internal_error_response(context):
+    logger.exception("Hall of Rust endpoint failed: %s", context)
+    return jsonify({'error': 'internal_error'}), 500
+
+
 @hall_bp.route('/api/hall_of_fame/leaderboard', methods=['GET'])
 def api_hall_of_fame_leaderboard():
-    """Leaderboard endpoint for Hall of Fame index page.
+    """Public leaderboard API — for embedding in dashboards."""
+    # SECURITY: Require admin key — exposes all miner IDs, hardware specs, rust scores
+    err = _require_admin()
+    if err:
+        return err
 
-    GET /api/hall_of_fame/leaderboard?limit=50&deceased=0|1
-    Returns machines ordered by rust_score DESC with badge decoration.
-    """
-    limit = min(int(request.args.get('limit', 50) or 50), 500)
+    limit, error_response = _parse_limit_arg()
+    if error_response:
+        return error_response
     deceased_filter = request.args.get('deceased')  # '0', '1', or omitted (all)
 
     try:
@@ -492,13 +591,17 @@ def api_hall_of_fame_leaderboard():
             'total_machines': len(leaderboard),
             'generated_at': int(time.time()),
         })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        return _internal_error_response("api_hall_of_fame_leaderboard")
 
 
 @hall_bp.route('/api/hall_of_fame/machine', methods=['GET'])
 def api_hall_of_fame_machine():
-    """Machine profile endpoint for Hall of Fame detail page."""
+    """Get machine by ID - for embedding in dashboards."""
+    # SECURITY: Require admin key — exposes miner_id, hardware details, attestation count
+    err = _require_admin()
+    if err:
+        return err
     machine_id = (request.args.get('id') or '').strip()
     if not machine_id:
         return jsonify({'error': 'missing id'}), 400
@@ -616,8 +719,8 @@ def api_hall_of_fame_machine():
             'reward_participation': reward_participation,
             'generated_at': now,
         })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        return _internal_error_response("api_hall_of_fame_machine")
 
 def register_hall_endpoints(app, db_path):
     """Register Hall of Rust endpoints with Flask app."""
@@ -627,8 +730,6 @@ def register_hall_endpoints(app, db_path):
     print("[HALL OF RUST] Endpoints registered - The machines will be remembered!")
 
 # ============== ENHANCED STATS ==============
-
-import random
 
 # Fun facts about vintage hardware
 VINTAGE_FACTS = [
@@ -649,7 +750,11 @@ VINTAGE_FACTS = [
 
 @hall_bp.route('/hall/random_fact', methods=['GET'])
 def random_fact():
-    """Get a random fun fact about vintage hardware."""
+    """Get a random fun fact about machines in the Hall of Rust."""
+    # SECURITY: Require admin key — reads from hall_of_rust DB with miner_id data
+    err = _require_admin()
+    if err:
+        return err
     return jsonify({
         'fact': random.choice(VINTAGE_FACTS),
         'generated_at': int(time.time())
@@ -657,7 +762,11 @@ def random_fact():
 
 @hall_bp.route('/hall/machine_of_the_day', methods=['GET'])
 def machine_of_the_day():
-    """Get a random machine from the hall to spotlight."""
+    """Get the machine of the day (based on deterministic daily seed)."""
+    # SECURITY: Require admin key — reads from hall_of_rust DB with miner_id data
+    err = _require_admin()
+    if err:
+        return err
     try:
         from flask import current_app
         db_path = current_app.config.get('DB_PATH', '/root/rustchain/rustchain_v2.db')
@@ -682,15 +791,20 @@ def machine_of_the_day():
         machine = dict(row)
         machine['badge'] = get_rust_badge(machine['rust_score'])
         machine['fun_fact'] = random.choice(VINTAGE_FACTS)
-        machine['age_years'] = 2025 - machine.get('manufacture_year', 2020)
+        mfg_year = machine.get('manufacture_year') or 2020
+        machine['age_years'] = max(0, _current_utc_year() - int(mfg_year))
         
         return jsonify(machine)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        return _internal_error_response("machine_of_the_day")
 
 @hall_bp.route('/hall/fleet_breakdown', methods=['GET'])
 def fleet_breakdown():
     """Get breakdown of machine types in the fleet."""
+    # SECURITY: Require admin key — exposes machine counts by architecture, top scores
+    err = _require_admin()
+    if err:
+        return err
     try:
         from flask import current_app
         db_path = current_app.config.get('DB_PATH', '/root/rustchain/rustchain_v2.db')
@@ -725,12 +839,16 @@ def fleet_breakdown():
             'total_architectures': len(breakdown),
             'generated_at': int(time.time())
         })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        return _internal_error_response("fleet_breakdown")
 
 @hall_bp.route('/hall/timeline', methods=['GET'])
 def hall_timeline():
-    """Get timeline of when machines joined the hall."""
+    """Get timeline of Hall of Rust milestones."""
+    # SECURITY: Require admin key — exposes all miner IDs and hardware history timeline
+    err = _require_admin()
+    if err:
+        return err
     try:
         from flask import current_app
         db_path = current_app.config.get('DB_PATH', '/root/rustchain/rustchain_v2.db')
@@ -761,5 +879,5 @@ def hall_timeline():
             'timeline': timeline,
             'generated_at': int(time.time())
         })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        return _internal_error_response("hall_timeline")

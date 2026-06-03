@@ -85,6 +85,15 @@ function renderSteps(){
 
 function copyText(text){ navigator.clipboard?.writeText(text); }
 
+function h(value){
+  return String(value)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#39;');
+}
+
 function detectPlatform(){
   const ua=navigator.userAgent.toLowerCase();
   state.platform = ua.includes('mac')?'macOS':ua.includes('win')?'Windows':ua.includes('linux')?'Linux':'Unknown';
@@ -100,7 +109,7 @@ async function testNode(url){
 }
 
 function commandBlock(cmd){
-  return `<pre>${cmd}</pre><div class="copy" onclick="copyText(${JSON.stringify(cmd)})">Copy command</div>`;
+  return `<pre>${h(cmd)}</pre><div class="copy" data-copy="${h(cmd)}" onclick="copyText(this.dataset.copy)">Copy command</div>`;
 }
 
 function walletAddressFromPub(hex){
@@ -144,9 +153,9 @@ function renderPanel(){
     detectPlatform();
     p.innerHTML=`<h3 class='h'>Platform Detection</h3>
       <div class='kpi'>
-        <div class='card'><div class='muted'>OS</div><div>${state.platform}</div></div>
-        <div class='card'><div class='muted'>Architecture</div><div>${state.arch}</div></div>
-        <div class='card'><div class='muted'>Browser</div><div>${navigator.userAgent.split(')')[0]})</div></div>
+        <div class='card'><div class='muted'>OS</div><div>${h(state.platform)}</div></div>
+        <div class='card'><div class='muted'>Architecture</div><div>${h(state.arch)}</div></div>
+        <div class='card'><div class='muted'>Browser</div><div>${h(navigator.userAgent.split(')')[0] + ')')}</div></div>
       </div>
       <div class='row'><button class='btn' onclick="markDone('platform')">Mark step complete</button></div>`;
     return;
@@ -163,11 +172,11 @@ function renderPanel(){
   }
   if(active==='wallet'){
     p.innerHTML=`<h3 class='h'>Wallet Setup</h3>
-      <div class='row'><label>Wallet Name</label><input id='walletName' placeholder='e.g. my-miner-wallet' value='${state.walletName||''}'/></div>
+      <div class='row'><label>Wallet Name</label><input id='walletName' placeholder='e.g. my-miner-wallet' value='${h(state.walletName||'')}'/></div>
       <div class='row'><button class='btn' id='genWalletBtn'>Generate wallet + seed phrase</button></div>
-      <div class='row'><label>Address</label><input id='walletAddr' readonly value='${state.address||''}'/></div>
-      <div class='row'><label>Public Key (hex)</label><textarea id='walletPub' readonly>${state.pubkey||''}</textarea></div>
-      <div class='row'><label>Seed Phrase (24 words)</label><textarea id='walletSeed' readonly>${state.seed||''}</textarea></div>
+      <div class='row'><label>Address</label><input id='walletAddr' readonly value='${h(state.address||'')}'/></div>
+      <div class='row'><label>Public Key (hex)</label><textarea id='walletPub' readonly>${h(state.pubkey||'')}</textarea></div>
+      <div class='row'><label>Seed Phrase (24 words)</label><textarea id='walletSeed' readonly>${h(state.seed||'')}</textarea></div>
       <p class='warn pill'>Backup seed phrase offline. Do not share.</p>
       <div class='row'><button class='btn' onclick="markDone('wallet')">Wallet step done</button></div>`;
     setTimeout(()=>{
@@ -190,8 +199,8 @@ function renderPanel(){
   if(active==='config'){
     const nodeCfg = state.nodeUrl || 'https://rustchain.org';
     p.innerHTML=`<h3 class='h'>Configure</h3>
-      <div class='row'><label>Node URL</label><input id='nodeUrlInput' value='${nodeCfg}'/></div>
-      <div class='row'><label>Wallet name</label><input id='walletNameCfg' value='${state.walletName||''}' placeholder='my-miner-wallet'/></div>
+      <div class='row'><label>Node URL</label><input id='nodeUrlInput' value='${h(nodeCfg)}'/></div>
+      <div class='row'><label>Wallet name</label><input id='walletNameCfg' value='${h(state.walletName||'')}' placeholder='my-miner-wallet'/></div>
       <div class='row'><button class='btn' onclick='applyCfg()'>Apply</button></div>
       ${commandBlock(`clawrtc install --wallet ${state.address||'RTC_YOUR_WALLET_ADDRESS'}`)}
       <div class='row'><button class='btn' onclick="markDone('config')">Done</button></div>`;
@@ -199,7 +208,7 @@ function renderPanel(){
   }
   if(active==='connect'){
     p.innerHTML=`<h3 class='h'>Test Connection</h3>
-      <div class='row'><label>Node URL</label><input id='testNodeUrl' value='${node}'/></div>
+      <div class='row'><label>Node URL</label><input id='testNodeUrl' value='${h(node)}'/></div>
       <div class='row'><button class='btn' id='testBtn'>Run /health test</button></div>
       <div id='testOut' class='check muted'>No test run yet.</div>
       <div class='row'><button class='btn' onclick="markDone('connect')">Done</button></div>`;
@@ -209,8 +218,8 @@ function renderPanel(){
         state.nodeUrl = url;
         const r = await testNode(url);
         document.getElementById('testOut').innerHTML = r.ok
-          ? `<span class='pill ok'>Reachable</span> <pre>${r.text}</pre>`
-          : `<span class='pill bad'>Failed</span> <pre>${r.text}</pre><p class='muted'>If this is a CORS error, test with terminal: curl -sk ${url.replace(/\/$/,'')}/health</p>`;
+          ? `<span class='pill ok'>Reachable</span> <pre>${h(r.text)}</pre>`
+          : `<span class='pill bad'>Failed</span> <pre>${h(r.text)}</pre><p class='muted'>If this is a CORS error, test with terminal: curl -sk ${h(url.replace(/\/$/,''))}/health</p>`;
       }
     },0);
     return;
@@ -222,7 +231,7 @@ function renderPanel(){
       <p class='muted'>Run miner, then verify your wallet/miner appears in <code>/api/miners</code>.</p>
       ${commandBlock(`clawrtc start`)}
       ${commandBlock(checkCmd)}
-      <div class='row'><label>Search miner by wallet/id</label><input id='minerLookup' value='${wallet}'/></div>
+      <div class='row'><label>Search miner by wallet/id</label><input id='minerLookup' value='${h(wallet)}'/></div>
       <div class='row'><button class='btn' id='checkMinerBtn'>Check in /api/miners</button></div>
       <div id='minerOut' class='check muted'>No check yet.</div>
       <div class='row'><button class='btn warn' onclick="markDone('attest')">Mark setup complete</button></div>`;
@@ -235,10 +244,10 @@ function renderPanel(){
           const arr = Array.isArray(data)?data:(data.miners||[]);
           const hit = arr.find(x=>JSON.stringify(x).toLowerCase().includes(q));
           document.getElementById('minerOut').innerHTML = hit
-            ? `<span class='pill ok'>Found</span><pre>${JSON.stringify(hit,null,2)}</pre>`
+            ? `<span class='pill ok'>Found</span><pre>${h(JSON.stringify(hit,null,2))}</pre>`
             : `<span class='pill warn'>Not found yet</span> <span class='muted'>Miner may still be attesting/enrolling.</span>`;
         }catch(e){
-          document.getElementById('minerOut').innerHTML = `<span class='pill bad'>Check failed</span><pre>${String(e)}</pre>`;
+          document.getElementById('minerOut').innerHTML = `<span class='pill bad'>Check failed</span><pre>${h(String(e))}</pre>`;
         }
       }
     },0);

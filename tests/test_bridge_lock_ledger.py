@@ -23,6 +23,7 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 from dataclasses import dataclass
 from typing import Optional, Tuple, Dict, Any, List
+from flask import Flask
 
 # Add node directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "node"))
@@ -39,7 +40,7 @@ def get_bridge_api(db_path: str):
     
     # Read the source code
     source_path = str(Path(__file__).parent.parent / "node" / "bridge_api.py")
-    with open(source_path, 'r') as f:
+    with open(source_path, 'r', encoding='utf-8') as f:
         source = f.read()
     
     # Create module
@@ -58,7 +59,7 @@ def get_lock_ledger(db_path: str):
     
     # Read the source code
     source_path = str(Path(__file__).parent.parent / "node" / "lock_ledger.py")
-    with open(source_path, 'r') as f:
+    with open(source_path, 'r', encoding='utf-8') as f:
         source = f.read()
     
     # Create module
@@ -165,11 +166,17 @@ def funded_miner(setup_test_db):
     conn = sqlite3.connect(setup_test_db['db_path'])
     conn.execute(
         "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?)",
-        ("RTC_test_miner", 100 * 1000000)  # 100 RTC
+        ("RTC0123456789abcdef0123456789abcdef01234567", 100 * 1000000)  # 100 RTC
     )
     conn.commit()
     conn.close()
-    return "RTC_test_miner"
+    return "RTC0123456789abcdef0123456789abcdef01234567"
+
+
+def assert_generic_database_error(result):
+    assert result == {"error": "Database error"}
+    assert "details" not in result
+    assert "no such table" not in str(result).lower()
 
 
 # =============================================================================
@@ -251,6 +258,36 @@ class TestBridgeValidation:
         result = bridge_api.validate_bridge_request(data)
         assert result.ok is False
         assert "must be different" in result.error
+
+    def test_deposit_must_start_from_rustchain(self, setup_test_db):
+        """Deposits must be RustChain-to-external so balance locking applies."""
+        bridge_api = setup_test_db['bridge_api']
+        data = {
+            "direction": "deposit",
+            "source_chain": "solana",
+            "dest_chain": "rustchain",
+            "source_address": "4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXqXq",
+            "dest_address": "RTC_test123",
+            "amount_rtc": 10.0
+        }
+        result = bridge_api.validate_bridge_request(data)
+        assert result.ok is False
+        assert "Deposit source_chain must be rustchain" in result.error
+
+    def test_withdraw_must_end_on_rustchain(self, setup_test_db):
+        """Withdrawals must be external-to-RustChain, not disguised deposits."""
+        bridge_api = setup_test_db['bridge_api']
+        data = {
+            "direction": "withdraw",
+            "source_chain": "rustchain",
+            "dest_chain": "solana",
+            "source_address": "RTC_test123",
+            "dest_address": "4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXqXq",
+            "amount_rtc": 10.0
+        }
+        result = bridge_api.validate_bridge_request(data)
+        assert result.ok is False
+        assert "Withdraw source_chain must be external" in result.error
     
     def test_amount_below_minimum(self, setup_test_db):
         """Test amount below minimum fails validation."""
@@ -278,7 +315,7 @@ class TestAddressValidation:
     def test_valid_rustchain_address(self, setup_test_db):
         """Test valid RustChain address."""
         bridge_api = setup_test_db["bridge_api"]
-        valid, msg = bridge_api.validate_chain_address_format("rustchain", "RTC_test123abc")
+        valid, msg = bridge_api.validate_chain_address_format("rustchain", "RTC0123456789abcdef0123456789abcdef01234567")
         assert valid is True
     
     def test_invalid_rustchain_address_prefix(self, setup_test_db):
@@ -317,6 +354,13 @@ class TestAddressValidation:
         bridge_api = setup_test_db["bridge_api"]
         valid, msg = bridge_api.validate_chain_address_format("base", "742d35Cc6634C0532925a3b844Bc9e7595f0bEb0")
         assert valid is False
+
+    def test_invalid_base_address_non_hex(self, setup_test_db):
+        """Test Base address with non-hex characters."""
+        bridge_api = setup_test_db["bridge_api"]
+        valid, msg = bridge_api.validate_chain_address_format("base", "0xZZ2d35Cc6634C0532925a3b844Bc9e7595f0bEb0")
+        assert valid is False
+        assert "hex" in msg.lower()
 
 
 # =============================================================================
@@ -415,6 +459,112 @@ class TestBridgeTransferCreation:
         
         conn.close()
 
+    def test_database_errors_do_not_leak_details(self, setup_test_db):
+        """DB failures should not expose SQLite schema details to callers."""
+        bridge_api = setup_test_db["bridge_api"]
+        conn = sqlite3.connect(":memory:")
+
+        req = bridge_api.BridgeTransferRequest(
+            direction="withdraw",
+            source_chain="solana",
+            dest_chain="rustchain",
+            source_address="4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXqXq",
+            dest_address="RTC_dest123",
+            amount_rtc=5.0
+        )
+
+        success, result = bridge_api.create_bridge_transfer(conn, req)
+
+        assert success is False
+        assert_generic_database_error(result)
+
+        conn.close()
+
+
+class TestBridgeInitiateAuth:
+    """Test route-level authorization for bridge initiation."""
+
+    def _client(self, bridge_api, db_path):
+        bridge_api.DB_PATH = db_path
+        app = Flask(__name__)
+        bridge_api.register_bridge_routes(app)
+        return app.test_client()
+
+    def _deposit_payload(self, source_address):
+        return {
+            "direction": "deposit",
+            "source_chain": "rustchain",
+            "dest_chain": "solana",
+            "source_address": source_address,
+            "dest_address": "4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXqXq",
+            "amount_rtc": 10.0,
+        }
+
+    def _bridge_row_counts(self, db_path):
+        conn = sqlite3.connect(db_path)
+        try:
+            bridge_count = conn.execute(
+                "SELECT COUNT(*) FROM bridge_transfers"
+            ).fetchone()[0]
+            lock_count = conn.execute(
+                "SELECT COUNT(*) FROM lock_ledger"
+            ).fetchone()[0]
+            return bridge_count, lock_count
+        finally:
+            conn.close()
+
+    def test_deposit_requires_admin_key_before_creating_transfer(
+        self, setup_test_db, funded_miner, monkeypatch
+    ):
+        """Unauthenticated deposit initiation must not lock another address."""
+        bridge_api = setup_test_db["bridge_api"]
+        client = self._client(bridge_api, setup_test_db["db_path"])
+        monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin-key")
+
+        response = client.post(
+            "/api/bridge/initiate",
+            json=self._deposit_payload(funded_miner),
+        )
+
+        assert response.status_code == 401
+        assert response.get_json()["error"] == "unauthorized"
+        assert self._bridge_row_counts(setup_test_db["db_path"]) == (0, 0)
+
+    def test_deposit_accepts_valid_admin_key(
+        self, setup_test_db, funded_miner, monkeypatch
+    ):
+        """Configured admin key still allows bridge deposit initiation."""
+        bridge_api = setup_test_db["bridge_api"]
+        client = self._client(bridge_api, setup_test_db["db_path"])
+        monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin-key")
+
+        response = client.post(
+            "/api/bridge/initiate",
+            headers={"X-Admin-Key": "expected-admin-key"},
+            json=self._deposit_payload(funded_miner),
+        )
+
+        assert response.status_code == 200
+        assert response.get_json()["ok"] is True
+        assert self._bridge_row_counts(setup_test_db["db_path"]) == (1, 1)
+
+    def test_deposit_fails_closed_when_admin_key_unconfigured(
+        self, setup_test_db, funded_miner, monkeypatch
+    ):
+        """Bridge initiation must not become public when RC_ADMIN_KEY is unset."""
+        bridge_api = setup_test_db["bridge_api"]
+        client = self._client(bridge_api, setup_test_db["db_path"])
+        monkeypatch.delenv("RC_ADMIN_KEY", raising=False)
+
+        response = client.post(
+            "/api/bridge/initiate",
+            json=self._deposit_payload(funded_miner),
+        )
+
+        assert response.status_code == 503
+        assert response.get_json()["error"] == "RC_ADMIN_KEY not configured"
+        assert self._bridge_row_counts(setup_test_db["db_path"]) == (0, 0)
+
 
 # =============================================================================
 # Bridge Status Query Tests
@@ -489,6 +639,24 @@ class TestLockLedger:
         assert result["lock_id"] > 0
         assert result["amount_rtc"] == 10.0
         
+        conn.close()
+
+    def test_database_errors_do_not_leak_details(self, setup_test_db):
+        """DB failures should not expose SQLite schema details to callers."""
+        lock_ledger = setup_test_db["lock_ledger"]
+        conn = sqlite3.connect(":memory:")
+
+        success, result = lock_ledger.create_lock(
+            conn,
+            miner_id="RTC0123456789abcdef0123456789abcdef01234567",
+            amount_i64=10 * 1000000,
+            lock_type="bridge_deposit",
+            unlock_at=int(time.time()) + 3600
+        )
+
+        assert success is False
+        assert_generic_database_error(result)
+
         conn.close()
     
     def test_release_lock(self, setup_test_db, funded_miner):
@@ -615,6 +783,237 @@ class TestLockLedger:
         conn.close()
 
 
+class TestLockLedgerRoutes:
+    """Test lock ledger route-level validation and helper dispatch."""
+
+    def _client(self, lock_ledger, db_path):
+        lock_ledger.DB_PATH = db_path
+        app = Flask(__name__)
+        lock_ledger.register_lock_ledger_routes(app)
+        return app.test_client()
+
+    def _insert_locked_lock(self, db_path, miner_id, lock_id=1):
+        now = int(time.time())
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(
+                """INSERT INTO lock_ledger
+                   (id, miner_id, amount_i64, lock_type, locked_at, unlock_at, status, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (lock_id, miner_id, 5 * 1000000, "bridge_deposit", now - 3600, now + 3600, "locked", now - 3600),
+            )
+
+    def test_miner_locks_rejects_malformed_limit(self, setup_test_db, funded_miner, monkeypatch):
+        lock_ledger = setup_test_db["lock_ledger"]
+        monkeypatch.setenv("RC_ADMIN_KEY", "lock-admin-key")
+        client = self._client(lock_ledger, setup_test_db["db_path"])
+
+        response = client.get(f"/api/lock/miner/{funded_miner}?limit=abc", headers={"X-Admin-Key": "lock-admin-key"})
+
+        assert response.status_code == 400
+        assert response.get_json() == {"error": "limit must be an integer"}
+
+    def test_pending_unlock_rejects_malformed_before(self, setup_test_db, monkeypatch):
+        lock_ledger = setup_test_db["lock_ledger"]
+        monkeypatch.setenv("RC_ADMIN_KEY", "lock-admin-key")
+        client = self._client(lock_ledger, setup_test_db["db_path"])
+
+        response = client.get("/api/lock/pending-unlock?before=not-a-timestamp", headers={"X-Admin-Key": "lock-admin-key"})
+
+        assert response.status_code == 400
+        assert response.get_json() == {"error": "before must be an integer"}
+
+    def test_pending_unlock_route_calls_database_helper(self, setup_test_db, funded_miner, monkeypatch):
+        lock_ledger = setup_test_db["lock_ledger"]
+        monkeypatch.setenv("RC_ADMIN_KEY", "lock-admin-key")
+        db_path = setup_test_db["db_path"]
+        now = int(time.time())
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(
+                """INSERT INTO lock_ledger
+                   (miner_id, amount_i64, lock_type, locked_at, unlock_at, status, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    funded_miner,
+                    5 * 1000000,
+                    "bridge_deposit",
+                    now - 3600,
+                    now - 60,
+                    "locked",
+                    now - 3600,
+                ),
+            )
+
+        client = self._client(lock_ledger, db_path)
+
+        response = client.get("/api/lock/pending-unlock?limit=10", headers={"X-Admin-Key": "lock-admin-key"})
+
+        assert response.status_code == 200
+        body = response.get_json()
+        assert body["ok"] is True
+        assert body["count"] == 1
+        assert body["locks"][0]["miner_id"] == funded_miner
+
+    def test_pending_unlock_before_zero_applies_cutoff(self, setup_test_db, funded_miner, monkeypatch):
+        lock_ledger = setup_test_db["lock_ledger"]
+        monkeypatch.setenv("RC_ADMIN_KEY", "lock-admin-key")
+        db_path = setup_test_db["db_path"]
+        now = int(time.time())
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(
+                """INSERT INTO lock_ledger
+                   (miner_id, amount_i64, lock_type, locked_at, unlock_at, status, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    funded_miner,
+                    5 * 1000000,
+                    "bridge_deposit",
+                    now - 3600,
+                    now - 60,
+                    "locked",
+                    now - 3600,
+                ),
+            )
+
+        client = self._client(lock_ledger, db_path)
+
+        response = client.get("/api/lock/pending-unlock?before=0&limit=10", headers={"X-Admin-Key": "lock-admin-key"})
+
+        assert response.status_code == 200
+        body = response.get_json()
+        assert body["ok"] is True
+        assert body["count"] == 0
+        assert body["locks"] == []
+
+    @pytest.mark.parametrize("path", ["/api/lock/release", "/api/lock/forfeit"])
+    def test_admin_write_routes_reject_non_object_json(self, setup_test_db, monkeypatch, path):
+        lock_ledger = setup_test_db["lock_ledger"]
+        client = self._client(lock_ledger, setup_test_db["db_path"])
+        monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
+
+        response = client.post(
+            path,
+            headers={"X-Admin-Key": "expected-admin"},
+            json=[{"lock_id": 1}],
+        )
+
+        assert response.status_code == 400
+        assert response.get_json() == {"error": "JSON object required"}
+
+    @pytest.mark.parametrize("path", ["/api/lock/release", "/api/lock/forfeit"])
+    def test_admin_write_routes_reject_structured_lock_id(self, setup_test_db, monkeypatch, path):
+        lock_ledger = setup_test_db["lock_ledger"]
+        client = self._client(lock_ledger, setup_test_db["db_path"])
+        monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
+
+        response = client.post(
+            path,
+            headers={"X-Admin-Key": "expected-admin"},
+            json={"lock_id": {"id": 1}},
+        )
+
+        assert response.status_code == 400
+        assert response.get_json() == {"error": "lock_id must be an integer"}
+
+    @pytest.mark.parametrize("path", ["/api/lock/release", "/api/lock/forfeit"])
+    @pytest.mark.parametrize("lock_id", [0, -1])
+    def test_admin_write_routes_reject_non_positive_lock_id(self, setup_test_db, monkeypatch, path, lock_id):
+        lock_ledger = setup_test_db["lock_ledger"]
+        client = self._client(lock_ledger, setup_test_db["db_path"])
+        monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
+
+        response = client.post(
+            path,
+            headers={"X-Admin-Key": "expected-admin"},
+            json={"lock_id": lock_id},
+        )
+
+        assert response.status_code == 400
+        assert response.get_json() == {"error": "lock_id must be positive"}
+
+    @pytest.mark.parametrize("path", ["/api/lock/release", "/api/lock/forfeit"])
+    @pytest.mark.parametrize("lock_id", [True, False])
+    def test_admin_write_routes_reject_boolean_lock_id(self, setup_test_db, monkeypatch, path, lock_id):
+        lock_ledger = setup_test_db["lock_ledger"]
+        client = self._client(lock_ledger, setup_test_db["db_path"])
+        monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
+
+        response = client.post(
+            path,
+            headers={"X-Admin-Key": "expected-admin"},
+            json={"lock_id": lock_id},
+        )
+
+        assert response.status_code == 400
+        assert response.get_json() == {"error": "lock_id must be an integer"}
+
+    def test_release_route_rejects_structured_tx_hash(self, setup_test_db, funded_miner, monkeypatch):
+        lock_ledger = setup_test_db["lock_ledger"]
+        db_path = setup_test_db["db_path"]
+        self._insert_locked_lock(db_path, funded_miner)
+        client = self._client(lock_ledger, db_path)
+        monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
+
+        response = client.post(
+            "/api/lock/release",
+            headers={"X-Admin-Key": "expected-admin"},
+            json={"lock_id": 1, "release_tx_hash": {"tx": "abc"}},
+        )
+
+        assert response.status_code == 400
+        assert response.get_json() == {"error": "release_tx_hash must be a string"}
+
+    def test_release_route_treats_whitespace_tx_hash_as_empty(self, setup_test_db, funded_miner, monkeypatch):
+        lock_ledger = setup_test_db["lock_ledger"]
+        db_path = setup_test_db["db_path"]
+        self._insert_locked_lock(db_path, funded_miner)
+        client = self._client(lock_ledger, db_path)
+        monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
+
+        response = client.post(
+            "/api/lock/release",
+            headers={"X-Admin-Key": "expected-admin"},
+            json={"lock_id": 1, "release_tx_hash": "   "},
+        )
+
+        assert response.status_code == 200
+        assert response.get_json()["release_tx_hash"] is None
+        with sqlite3.connect(db_path) as conn:
+            stored = conn.execute("SELECT release_tx_hash FROM lock_ledger WHERE id = 1").fetchone()[0]
+        assert stored is None
+
+    def test_forfeit_route_rejects_structured_reason(self, setup_test_db, funded_miner, monkeypatch):
+        lock_ledger = setup_test_db["lock_ledger"]
+        db_path = setup_test_db["db_path"]
+        self._insert_locked_lock(db_path, funded_miner)
+        client = self._client(lock_ledger, db_path)
+        monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
+
+        response = client.post(
+            "/api/lock/forfeit",
+            headers={"X-Admin-Key": "expected-admin"},
+            json={"lock_id": 1, "reason": ["bad"]},
+        )
+
+        assert response.status_code == 400
+        assert response.get_json() == {"error": "reason must be a string"}
+
+    def test_forfeit_route_treats_whitespace_reason_as_default(self, setup_test_db, funded_miner, monkeypatch):
+        lock_ledger = setup_test_db["lock_ledger"]
+        db_path = setup_test_db["db_path"]
+        self._insert_locked_lock(db_path, funded_miner)
+        client = self._client(lock_ledger, db_path)
+        monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
+
+        response = client.post(
+            "/api/lock/forfeit",
+            headers={"X-Admin-Key": "expected-admin"},
+            json={"lock_id": 1, "reason": "   "},
+        )
+
+        assert response.status_code == 200
+        assert response.get_json()["reason"] == "admin_forfeit"
+
+
 # =============================================================================
 # Integration Tests
 # =============================================================================
@@ -662,7 +1061,77 @@ class TestIntegration:
         assert locks[0].status == "released"
         
         conn.close()
-    
+
+    def test_external_confirmation_rejects_lowered_required_threshold(self, setup_test_db, funded_miner):
+        """Bridge callbacks must not lower the stored confirmation threshold."""
+        bridge_api = setup_test_db["bridge_api"]
+        lock_ledger = setup_test_db["lock_ledger"]
+        conn = sqlite3.connect(setup_test_db["db_path"])
+
+        req = bridge_api.BridgeTransferRequest(
+            direction="deposit",
+            source_chain="rustchain",
+            dest_chain="solana",
+            source_address=funded_miner,
+            dest_address="4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXq",
+            amount_rtc=10.0
+        )
+        success, result = bridge_api.create_bridge_transfer(conn, req)
+        assert success is True
+        tx_hash = result["tx_hash"]
+
+        success, result = bridge_api.update_external_confirmation(
+            conn,
+            tx_hash,
+            external_tx_hash="ext_tx_threshold",
+            confirmations=1,
+            required_confirmations=1,
+        )
+
+        assert success is False
+        assert result["error"] == "required_confirmations cannot be lowered"
+        locks = lock_ledger.get_locks_by_miner(conn, funded_miner)
+        assert locks[0].status == "locked"
+        transfer = bridge_api.get_bridge_transfer_by_hash(conn, tx_hash)
+        assert transfer["status"] == "pending"
+        assert transfer["required_confirmations"] == bridge_api.BRIDGE_DEFAULT_CONFIRMATIONS
+        conn.close()
+
+    def test_external_confirmation_helper_rejects_unbounded_counts(self, setup_test_db, funded_miner):
+        """Core helper enforces bounds even when bypassing the HTTP parser."""
+        bridge_api = setup_test_db["bridge_api"]
+        lock_ledger = setup_test_db["lock_ledger"]
+        conn = sqlite3.connect(setup_test_db["db_path"])
+
+        req = bridge_api.BridgeTransferRequest(
+            direction="deposit",
+            source_chain="rustchain",
+            dest_chain="solana",
+            source_address=funded_miner,
+            dest_address="4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXq",
+            amount_rtc=10.0
+        )
+        success, result = bridge_api.create_bridge_transfer(conn, req)
+        assert success is True
+        tx_hash = result["tx_hash"]
+
+        success, result = bridge_api.update_external_confirmation(
+            conn,
+            tx_hash,
+            external_tx_hash="ext_tx_unbounded",
+            confirmations=bridge_api.BRIDGE_MAX_CONFIRMATIONS + 1,
+        )
+
+        assert success is False
+        assert result["error"] == (
+            f"confirmations must be between 0 and {bridge_api.BRIDGE_MAX_CONFIRMATIONS}"
+        )
+        locks = lock_ledger.get_locks_by_miner(conn, funded_miner)
+        assert locks[0].status == "locked"
+        transfer = bridge_api.get_bridge_transfer_by_hash(conn, tx_hash)
+        assert transfer["status"] == "pending"
+        conn.close()
+
     def test_void_releases_lock(self, setup_test_db, funded_miner):
         """Test that voiding a transfer releases the lock."""
         bridge_api = setup_test_db["bridge_api"]
@@ -693,6 +1162,100 @@ class TestIntegration:
         assert locks[0].status == "released"
         
         conn.close()
+
+
+class TestBridgeCallbackAuth:
+    """Test bridge service callback authentication."""
+
+    def _client(self, bridge_api):
+        app = Flask(__name__)
+        bridge_api.register_bridge_routes(app)
+        return app.test_client()
+
+    def test_update_external_fails_closed_when_api_key_unconfigured(
+        self, setup_test_db, monkeypatch
+    ):
+        bridge_api = setup_test_db["bridge_api"]
+        client = self._client(bridge_api)
+        monkeypatch.delenv("RC_BRIDGE_API_KEY", raising=False)
+
+        response = client.post(
+            "/api/bridge/update-external",
+            json={"tx_hash": "bridge_tx", "external_tx_hash": "external_tx"},
+        )
+
+        assert response.status_code == 503
+        assert response.get_json()["error"] == "Bridge API key not configured"
+
+    def test_update_external_uses_constant_time_api_key_compare(
+        self, setup_test_db, monkeypatch
+    ):
+        bridge_api = setup_test_db["bridge_api"]
+        client = self._client(bridge_api)
+        monkeypatch.setenv("RC_BRIDGE_API_KEY", "expected-key")
+        calls = []
+
+        def fake_compare(provided, expected):
+            calls.append((provided, expected))
+            return False
+
+        monkeypatch.setattr(bridge_api.hmac, "compare_digest", fake_compare)
+
+        response = client.post(
+            "/api/bridge/update-external",
+            headers={"X-API-Key": "wrong-key"},
+            json={"tx_hash": "bridge_tx", "external_tx_hash": "external_tx"},
+        )
+
+        assert response.status_code == 401
+        assert calls == [("wrong-key", "expected-key")]
+
+    def test_update_external_accepts_configured_api_key_before_payload_validation(
+        self, setup_test_db, monkeypatch
+    ):
+        bridge_api = setup_test_db["bridge_api"]
+        client = self._client(bridge_api)
+        monkeypatch.setenv("RC_BRIDGE_API_KEY", "expected-key")
+
+        response = client.post(
+            "/api/bridge/update-external",
+            headers={"X-API-Key": "expected-key"},
+        )
+
+        assert response.status_code == 400
+        assert response.get_json()["error"] == "Request body required"
+
+    def test_update_external_rejects_non_object_json_before_state_handling(
+        self, setup_test_db, monkeypatch
+    ):
+        bridge_api = setup_test_db["bridge_api"]
+        client = self._client(bridge_api)
+        monkeypatch.setenv("RC_BRIDGE_API_KEY", "expected-key")
+
+        response = client.post(
+            "/api/bridge/update-external",
+            headers={"X-API-Key": "expected-key"},
+            json=["not", "an", "object"],
+        )
+
+        assert response.status_code == 400
+        assert response.get_json()["error"] == "Request body required"
+
+    def test_void_bridge_rejects_non_object_json_before_state_handling(
+        self, setup_test_db, monkeypatch
+    ):
+        bridge_api = setup_test_db["bridge_api"]
+        client = self._client(bridge_api)
+        monkeypatch.setenv("RC_ADMIN_KEY", "expected-key")
+
+        response = client.post(
+            "/api/bridge/void",
+            headers={"X-Admin-Key": "expected-key"},
+            json=["not", "an", "object"],
+        )
+
+        assert response.status_code == 400
+        assert response.get_json()["error"] == "Request body required"
 
 
 if __name__ == "__main__":

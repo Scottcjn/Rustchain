@@ -393,7 +393,20 @@
       const path = sharePath(minerId);
       const full = window.location.origin + path;
       state.shareUrl = full;
-      el("shareRow").innerHTML = "Share link: <a href=\"" + full + "\" class=\"mono\">" + full + "</a>";
+      const row = el("shareRow");
+      row.textContent = "Share link: ";
+      const link = document.createElement("a");
+      link.href = full;
+      link.className = "mono";
+      link.textContent = full;
+      row.appendChild(link);
+    }
+
+    function appendTextCell(row, text, className) {
+      const cell = row.insertCell();
+      if (className) cell.className = className;
+      cell.textContent = text;
+      return cell;
     }
 
     async function getJson(url) {
@@ -430,6 +443,23 @@
         if (rid && rid === target) return r;
       }
       return null;
+    }
+
+    function normalizeMinerRows(payload) {
+      const rows = Array.isArray(payload)
+        ? payload
+        : (Array.isArray(payload?.miners)
+          ? payload.miners
+          : (Array.isArray(payload?.data)
+            ? payload.data
+            : (Array.isArray(payload?.items) ? payload.items : [])));
+
+      return rows.map(row => {
+        if (!row || typeof row !== "object") return null;
+        const miner = row.miner || row.miner_id || row.id;
+        if (!miner) return null;
+        return Object.assign({}, row, { miner: String(miner) });
+      }).filter(Boolean);
     }
 
     function badgeByScore(score) {
@@ -636,12 +666,15 @@
 
       for (const m of fleet) {
         const tr = document.createElement("tr");
-        tr.innerHTML =
-          "<td>" + m.machine + "</td>" +
-          "<td>" + m.arch + "</td>" +
-          "<td class=\"mono\">" + (Number.isFinite(Number(m.last)) ? fmtTs(Number(m.last)) : "-") + "</td>" +
-          "<td>" + fmtNum(m.score, 2) + "</td>" +
-          "<td>" + (m.badge || "-") + "</td>";
+        appendTextCell(tr, m.machine);
+        appendTextCell(tr, m.arch);
+        appendTextCell(
+          tr,
+          Number.isFinite(Number(m.last)) ? fmtTs(Number(m.last)) : "-",
+          "mono"
+        );
+        appendTextCell(tr, fmtNum(m.score, 2));
+        appendTextCell(tr, m.badge || "-");
         tbody.appendChild(tr);
       }
     }
@@ -715,7 +748,7 @@
           getJson(API_BASE + "/epoch")
         ]);
 
-        const miners = Array.isArray(minersRes) ? minersRes : (minersRes.miners || []);
+        const miners = normalizeMinerRows(minersRes);
         const minerRow = miners.find(m => String(m.miner || "").toLowerCase() === minerId.toLowerCase()) || null;
         const hallRows = normalizeHallRows(hofRes);
         const hallRow = findHallProfile(hallRows, minerId);

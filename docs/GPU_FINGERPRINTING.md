@@ -95,6 +95,6 @@ Minimum 3 violations even for same-architecture spoofs.
 
 ## Reference
 
-- [RIP-0308: Proof of Physical AI](rips/docs/RIP-0308-proof-of-physical-ai.md)
+- [RIP-0308: Proof of Physical AI](../rips/docs/RIP-0308-proof-of-physical-ai.md)
 - [DOI: 10.5281/zenodo.19442753](https://doi.org/10.5281/zenodo.19442753)
 - Khattak & Mikaitis, "Accurate Models of NVIDIA Tensor Cores" (arXiv:2512.07004)

@@ -2,10 +2,10 @@
 # Install with: pip install -r locust-requirements.txt
 
 # Core load testing framework
-locust>=2.20.0
+locust>=2.44.0
 
 # HTTP client (included with locust, but explicit for clarity)
-requests>=2.31.0
+requests>=2.34.2
 
 # Optional: For enhanced reporting
 # locust-plugins>=4.0.0

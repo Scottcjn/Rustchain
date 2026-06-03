@@ -228,7 +228,7 @@ Hardware diversity *is* decentralization. Ergo's accessible mining ethos aligns 
 ## Links
 
 - **Website**: https://rustchain.org
-- **Block Explorer**: https://50.28.86.131/explorer
+- **Block Explorer**: https://rustchain.org/explorer
 - **GitHub**: https://github.com/Scottcjn/rustchain
 - **Bounties**: https://github.com/Scottcjn/rustchain-bounties
 - **BoTTube**: https://bottube.ai

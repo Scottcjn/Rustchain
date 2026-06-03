@@ -66,6 +66,18 @@ Rewards are based on **rarity + preservation value**, not just age.
 | M3 | 1.1x | Third gen |
 | M4 | 1.05x | Latest |
 
+### RISC-V (Exotic / Open ISA)
+| Architecture | Multiplier | Notes |
+|-------------|-----------|-------|
+| SiFive U74 | 1.5x | Early Linux-capable RISC-V board class |
+| StarFive JH7110 | 1.4x | VisionFive 2 SoC, practical SBC mining target |
+| Allwinner D1 / T-Head C906 | 1.4x | Early single-core RISC-V SBC class |
+| RV32IM / RV32IMAC | 1.4x | Minimal extension set, older embedded profile |
+| RV64GC / riscv64 | 1.4x | Generic 64-bit RISC-V baseline |
+| RV64GCV / RVV-present | 1.2x | Vector extension present; treat as a modernity marker |
+
+RISC-V vector extension (`V`/RVV) should be treated as a modernity marker in future attestation scoring rather than a spoofable vendor string by itself.
+
 ## Rationale
 
 1. **Rarity matters more than age** - POWER8 (2014) gets 1.5x because enterprise servers are rare. Ivy Bridge (2012) gets 1.1x because old Intel laptops are everywhere.

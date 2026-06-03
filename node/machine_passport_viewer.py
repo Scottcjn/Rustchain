@@ -8,7 +8,7 @@ Includes vintage computer aesthetic styling.
 Issue: #2309
 """
 
-from flask import Blueprint, render_template_string, abort
+from flask import Blueprint, render_template_string, abort, request
 from machine_passport import MachinePassportLedger
 import os
 
@@ -25,6 +25,19 @@ def get_ledger():
     if _ledger is None:
         _ledger = MachinePassportLedger(PASSPORT_DB_PATH)
     return _ledger
+
+
+def _parse_limit_arg(default: int = 100, max_value: int = 500):
+    raw_value = request.args.get('limit')
+    if raw_value is None:
+        return default, None
+    try:
+        limit = int(raw_value)
+    except (TypeError, ValueError):
+        return None, ("limit must be an integer", 400)
+    if limit < 0:
+        return None, ("limit must be non-negative", 400)
+    return min(limit, max_value), None
 
 
 # HTML Template with vintage computer aesthetic
@@ -597,14 +610,14 @@ def view_passport(machine_id: str):
 @passport_viewer_bp.route('/')
 def list_passports():
     """List all machine passports."""
-    from flask import request, jsonify
-    
     ledger = get_ledger()
     
     # Get query parameters
     owner = request.args.get('owner')
     architecture = request.args.get('architecture')
-    limit = min(int(request.args.get('limit', 100)), 500)
+    limit, error_response = _parse_limit_arg()
+    if error_response:
+        return error_response
     
     passports = ledger.list_passports(
         owner_miner_id=owner,

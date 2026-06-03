@@ -2,7 +2,7 @@
 
 A live web dashboard displaying core RustChain network statistics with auto-refresh.
 
-![Dashboard Preview](./preview.png)
+[Open the dashboard](./index.html)
 
 ## Features
 

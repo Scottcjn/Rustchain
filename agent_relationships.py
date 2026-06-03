@@ -31,10 +31,9 @@ import json
 import time
 import random
 import threading
-from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Tuple
 from enum import Enum
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from contextlib import contextmanager
 
 
@@ -487,7 +486,7 @@ class RelationshipEngine:
         # Check forbidden words
         for forbidden in GUARDRAILS["forbidden_words"]:
             if forbidden in desc_lower:
-                return False, f"Description contains forbidden word pattern"
+                return False, "Description contains forbidden word pattern"
         
         return True, ""
     
@@ -1033,8 +1032,57 @@ class RelationshipEngine:
 def create_relationship_blueprint(engine: RelationshipEngine):
     """Create a Flask blueprint for relationship API endpoints."""
     from flask import Blueprint, jsonify, request
+    import hmac
     
     bp = Blueprint("relationships", __name__)
+
+    def _required_mutation_admin_key() -> str:
+        """Return the configured admin key for relationship mutation routes."""
+        return (
+            os.environ.get("RELATIONSHIPS_ADMIN_KEY")
+            or os.environ.get("RC_ADMIN_KEY")
+            or ""
+        ).strip()
+
+    def _constant_time_key_match(provided_key: str, required_key: str) -> bool:
+        try:
+            return hmac.compare_digest(
+                provided_key.encode("utf-8"),
+                required_key.encode("utf-8"),
+            )
+        except UnicodeError:
+            return False
+
+    def _require_mutation_admin():
+        required_key = _required_mutation_admin_key()
+        if not required_key:
+            return jsonify({"error": "Relationship mutation admin key is not configured"}), 401
+
+        provided_key = (
+            request.headers.get("X-Admin-Key")
+            or request.headers.get("X-API-Key")
+            or ""
+        ).strip()
+        if not provided_key or not _constant_time_key_match(provided_key, required_key):
+            return jsonify({"error": "Unauthorized relationship mutation"}), 401
+
+        return None
+
+    def _mutation_json_object():
+        data = request.get_json(silent=True)
+        if data is None:
+            return {}, None
+        if not isinstance(data, dict):
+            return None, (jsonify({"error": "JSON object required"}), 400)
+        return data, None
+
+    def _optional_string_field(data: Dict[str, Any], field: str, default: str = ""):
+        value = data.get(field, default)
+        if value is None:
+            return default, None
+        if not isinstance(value, str):
+            return None, (jsonify({"error": f"{field} must be a string"}), 400)
+        return value, None
     
     @bp.route("/api/relationships", methods=["GET"])
     def list_relationships():
@@ -1059,12 +1107,24 @@ def create_relationship_blueprint(engine: RelationshipEngine):
     
     @bp.route("/api/relationships/<agent_a>/<agent_b>/disagree", methods=["POST"])
     def disagree(agent_a: str, agent_b: str):
-        data = request.json or {}
+        auth_error = _require_mutation_admin()
+        if auth_error:
+            return auth_error
+
+        data, json_error = _mutation_json_object()
+        if json_error:
+            return json_error
+        topic, topic_error = _optional_string_field(data, "topic", "unspecified")
+        if topic_error:
+            return topic_error
+        description, description_error = _optional_string_field(data, "description")
+        if description_error:
+            return description_error
         try:
             result = engine.record_disagreement(
                 agent_a, agent_b,
-                topic=data.get("topic", "unspecified"),
-                description=data.get("description")
+                topic=topic,
+                description=description or None,
             )
             return jsonify(result)
         except ValueError as e:
@@ -1072,12 +1132,26 @@ def create_relationship_blueprint(engine: RelationshipEngine):
     
     @bp.route("/api/relationships/<agent_a>/<agent_b>/collaborate", methods=["POST"])
     def collaborate(agent_a: str, agent_b: str):
-        data = request.json or {}
+        auth_error = _require_mutation_admin()
+        if auth_error:
+            return auth_error
+
+        data, json_error = _mutation_json_object()
+        if json_error:
+            return json_error
+        description, description_error = _optional_string_field(
+            data, "description", "Collaboration"
+        )
+        if description_error:
+            return description_error
+        topic, topic_error = _optional_string_field(data, "topic")
+        if topic_error:
+            return topic_error
         try:
             result = engine.record_collaboration(
                 agent_a, agent_b,
-                description=data.get("description", "Collaboration"),
-                topic=data.get("topic")
+                description=description,
+                topic=topic or None,
             )
             return jsonify(result)
         except ValueError as e:
@@ -1085,11 +1159,22 @@ def create_relationship_blueprint(engine: RelationshipEngine):
     
     @bp.route("/api/relationships/<agent_a>/<agent_b>/reconcile", methods=["POST"])
     def reconcile(agent_a: str, agent_b: str):
-        data = request.json or {}
+        auth_error = _require_mutation_admin()
+        if auth_error:
+            return auth_error
+
+        data, json_error = _mutation_json_object()
+        if json_error:
+            return json_error
+        description, description_error = _optional_string_field(
+            data, "description", "Reconciliation"
+        )
+        if description_error:
+            return description_error
         try:
             result = engine.record_reconciliation(
                 agent_a, agent_b,
-                description=data.get("description", "Reconciliation")
+                description=description,
             )
             return jsonify(result)
         except ValueError as e:
@@ -1097,13 +1182,28 @@ def create_relationship_blueprint(engine: RelationshipEngine):
     
     @bp.route("/api/relationships/<agent_a>/<agent_b>/intervene", methods=["POST"])
     def admin_intervene(agent_a: str, agent_b: str):
-        data = request.json or {}
+        auth_error = _require_mutation_admin()
+        if auth_error:
+            return auth_error
+
+        data, json_error = _mutation_json_object()
+        if json_error:
+            return json_error
+        admin_id, admin_id_error = _optional_string_field(data, "admin_id", "admin")
+        if admin_id_error:
+            return admin_id_error
+        reason, reason_error = _optional_string_field(data, "reason", "Admin intervention")
+        if reason_error:
+            return reason_error
+        action, action_error = _optional_string_field(data, "action", "reset_to_neutral")
+        if action_error:
+            return action_error
         try:
             result = engine.admin_intervene(
                 agent_a, agent_b,
-                admin_id=data.get("admin_id", "admin"),
-                reason=data.get("reason", "Admin intervention"),
-                action=data.get("action", "reset_to_neutral")
+                admin_id=admin_id,
+                reason=reason,
+                action=action,
             )
             return jsonify(result)
         except ValueError as e:

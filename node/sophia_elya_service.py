@@ -4,15 +4,25 @@ RustChain v2 - RIP-0005 Epoch Pro-Rata Rewards
 Production Anti-Spoof System with Fair Distribution
 Issue #2295: Added WebSocket real-time feed for Block Explorer
 """
-import os, time, json, secrets, hashlib, sqlite3
+import math
+import hashlib
+import json
+import secrets
+import sqlite3
+import time
+from decimal import Decimal, ROUND_HALF_UP
 from flask import Flask, request, jsonify
-from datetime import datetime
 
 app = Flask(__name__)
 
 # WebSocket Feed Integration (Issue #2295)
 try:
-    from websocket_feed import init_websocket, broadcast_block, broadcast_attestation, broadcast_epoch_settlement, get_ws_feed
+    from websocket_feed import (
+        broadcast_attestation,
+        broadcast_block,
+        broadcast_epoch_settlement,
+        init_websocket,
+    )
     WS_ENABLED = True
     ws_feed = init_websocket(app)
     print("[WebSocket] Real-time feed enabled for Block Explorer")
@@ -31,6 +41,79 @@ LAST_EPOCH = None
 
 # Database setup
 DB_PATH = "./rustchain_v2.db"
+RTC_MICRO_UNITS = 1_000_000
+
+def _rtc_to_micro(amount_rtc):
+    """Convert public RTC values to canonical integer micro-RTC units."""
+    return int(
+        (Decimal(str(amount_rtc)) * RTC_MICRO_UNITS).to_integral_value(
+            rounding=ROUND_HALF_UP
+        )
+    )
+
+def _micro_to_rtc(amount_micro):
+    """Convert canonical micro-RTC values back to public RTC units."""
+    return int(amount_micro) / RTC_MICRO_UNITS
+
+def _ensure_balance_micro_schema(conn):
+    """Keep balances canonical in integer micro-RTC units."""
+    columns = conn.execute("PRAGMA table_info(balances)").fetchall()
+    if not columns:
+        conn.execute(
+            "CREATE TABLE balances (miner_pk TEXT PRIMARY KEY, balance_rtc INTEGER DEFAULT 0)"
+        )
+        return
+
+    by_name = {row[1]: row for row in columns}
+    balance_column = by_name.get("balance_rtc")
+    if balance_column and "INT" in (balance_column[2] or "").upper():
+        return
+
+    conn.execute("ALTER TABLE balances RENAME TO balances_legacy_real")
+    conn.execute(
+        "CREATE TABLE balances (miner_pk TEXT PRIMARY KEY, balance_rtc INTEGER DEFAULT 0)"
+    )
+    if "miner_pk" in by_name and balance_column:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO balances(miner_pk, balance_rtc)
+            SELECT miner_pk, CAST(ROUND(COALESCE(balance_rtc, 0) * ?) AS INTEGER)
+            FROM balances_legacy_real
+            """,
+            (RTC_MICRO_UNITS,),
+        )
+    conn.execute("DROP TABLE balances_legacy_real")
+
+def _ensure_epoch_state_settlement_schema(conn):
+    """Keep Sophia's epoch_state compatible with shared settlement guards."""
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS epoch_state ("
+        "epoch INTEGER PRIMARY KEY, "
+        "accepted_blocks INTEGER DEFAULT 0, "
+        "finalized INTEGER DEFAULT 0, "
+        "settled INTEGER DEFAULT 0, "
+        "settled_ts INTEGER)"
+    )
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(epoch_state)").fetchall()}
+    newly_added_settled = False
+    if "settled" not in columns:
+        try:
+            conn.execute("ALTER TABLE epoch_state ADD COLUMN settled INTEGER DEFAULT 0")
+            newly_added_settled = True
+        except sqlite3.OperationalError:
+            pass  # a concurrent migrator won the ADD COLUMN race; column now exists
+    if "settled_ts" not in columns:
+        try:
+            conn.execute("ALTER TABLE epoch_state ADD COLUMN settled_ts INTEGER")
+        except sqlite3.OperationalError:
+            pass
+    conn.execute("UPDATE epoch_state SET settled = 0 WHERE settled IS NULL")
+    # ONE-TIME backfill, only when we just added the column: rows finalized by the
+    # pre-settlement code path were already paid, so mark them settled exactly
+    # once during migration. Never re-run on later startups — that could suppress
+    # a legitimate finalized-but-not-yet-settled row in a two-phase/shared flow.
+    if newly_added_settled:
+        conn.execute("UPDATE epoch_state SET settled = 1 WHERE finalized = 1 AND COALESCE(settled, 0) = 0")
 
 def init_db():
     """Initialize database with epoch tables"""
@@ -40,9 +123,11 @@ def init_db():
         c.execute("CREATE TABLE IF NOT EXISTS tickets (ticket_id TEXT PRIMARY KEY, expires_at INTEGER, commitment TEXT)")
 
         # New epoch tables
-        c.execute("CREATE TABLE IF NOT EXISTS epoch_state (epoch INTEGER PRIMARY KEY, accepted_blocks INTEGER DEFAULT 0, finalized INTEGER DEFAULT 0)")
+        _ensure_epoch_state_settlement_schema(c)
+        # `weight` is a non-financial pro-rata multiplier; balances are financial
+        # and stay in integer micro-RTC units.
         c.execute("CREATE TABLE IF NOT EXISTS epoch_enroll (epoch INTEGER, miner_pk TEXT, weight REAL, PRIMARY KEY (epoch, miner_pk))")
-        c.execute("CREATE TABLE IF NOT EXISTS balances (miner_pk TEXT PRIMARY KEY, balance_rtc REAL DEFAULT 0)")
+        _ensure_balance_micro_schema(c)
 
 # Hardware multipliers
 HARDWARE_WEIGHTS = {
@@ -61,11 +146,42 @@ def slot_to_epoch(slot):
     """Convert slot number to epoch"""
     return int(slot) // max(EPOCH_SLOTS, 1)
 
+def _non_negative_int(value):
+    """Parse bounded slot-like values without truncating hostile shapes."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, float) and (not math.isfinite(value) or not value.is_integer()):
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if parsed < 0:
+        return None
+    return parsed
+
+def _finite_float(value, default=1.0):
+    """Parse weight factors without accepting non-finite or structured values."""
+    if value in (None, ""):
+        return default
+    if isinstance(value, bool):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not math.isfinite(parsed):
+        return None
+    return parsed
+
 def inc_epoch_block(epoch):
     """Increment accepted blocks for epoch"""
     with sqlite3.connect(DB_PATH) as c:
-        c.execute("INSERT OR IGNORE INTO epoch_state(epoch, accepted_blocks, finalized) VALUES (?,0,0)", (epoch,))
-        c.execute("UPDATE epoch_state SET accepted_blocks = accepted_blocks + 1 WHERE epoch=?", (epoch,))
+        c.execute("PRAGMA busy_timeout=5000")
+        c.execute("INSERT OR IGNORE INTO epoch_state(epoch, accepted_blocks, finalized, settled) VALUES (?,0,0,0)", (epoch,))
+        # Do not inflate the block count once the epoch is finalized/settled —
+        # a late block must not change the count the reward was computed against.
+        c.execute("UPDATE epoch_state SET accepted_blocks = accepted_blocks + 1 WHERE epoch=? AND COALESCE(finalized,0)=0 AND COALESCE(settled,0)=0", (epoch,))
 
 def enroll_epoch(epoch, miner_pk, weight):
     """Enroll miner in epoch with weight.
@@ -82,34 +198,65 @@ def enroll_epoch(epoch, miner_pk, weight):
 def finalize_epoch(epoch, per_block_rtc):
     """Finalize epoch and distribute rewards"""
     with sqlite3.connect(DB_PATH) as c:
-        row = c.execute("SELECT finalized, accepted_blocks FROM epoch_state WHERE epoch=?", (epoch,)).fetchone()
+        c.execute("PRAGMA busy_timeout=5000")
+        c.execute("BEGIN IMMEDIATE")
+        # COALESCE settled so a legacy/shared row whose column was added without
+        # a value cannot crash int() here.
+        row = c.execute(
+            "SELECT COALESCE(finalized, 0), COALESCE(accepted_blocks, 0), COALESCE(settled, 0) "
+            "FROM epoch_state WHERE epoch=?",
+            (epoch,),
+        ).fetchone()
         if not row:
+            c.rollback()
             return {"ok": False, "reason": "no_state"}
 
-        finalized, blocks = int(row[0]), int(row[1])
+        finalized, blocks, settled = int(row[0]), int(row[1]), int(row[2])
+        if settled:
+            c.rollback()
+            return {"ok": False, "reason": "already_settled"}
         if finalized:
+            # Status probe only — do NOT mutate on this read path. Legacy
+            # finalized-but-unsettled rows are reconciled by the init-time
+            # backfill in _ensure_epoch_state_settlement_schema().
+            c.rollback()
             return {"ok": False, "reason": "already_finalized"}
 
-        total_reward = per_block_rtc * blocks
-        miners = list(c.execute("SELECT miner_pk, weight FROM epoch_enroll WHERE epoch=?", (epoch,)))
-        sum_w = sum(w for _, w in miners) or 0.0
-        payouts = []
+        claim = c.execute(
+            "UPDATE epoch_state SET settled=1, settled_ts=?, finalized=1 WHERE epoch=? AND COALESCE(settled,0)=0",
+            (int(time.time()), epoch),
+        )
+        if claim.rowcount != 1:
+            c.rollback()
+            return {"ok": False, "reason": "already_settled"}
 
-        if sum_w > 0 and total_reward > 0:
-            for pk, w in miners:
-                amt = total_reward * (w / sum_w)
-                c.execute("INSERT OR IGNORE INTO balances(miner_pk, balance_rtc) VALUES (?,0)", (pk,))
-                c.execute("UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk=?", (amt, pk))
-                payouts.append((pk, amt))
+        try:
+            total_reward = per_block_rtc * blocks
+            miners = list(c.execute("SELECT miner_pk, weight FROM epoch_enroll WHERE epoch=?", (epoch,)))
+            sum_w = sum(w for _, w in miners) or 0.0
+            payouts = []
 
-        c.execute("UPDATE epoch_state SET finalized=1 WHERE epoch=?", (epoch,))
+            if sum_w > 0 and total_reward > 0:
+                for pk, w in miners:
+                    amt = total_reward * (w / sum_w)
+                    c.execute("INSERT OR IGNORE INTO balances(miner_pk, balance_rtc) VALUES (?,0)", (pk,))
+                    amount_micro = _rtc_to_micro(amt)
+                    c.execute("UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk=?", (amount_micro, pk))
+                    payouts.append((pk, _micro_to_rtc(amount_micro)))
+
+            c.commit()
+        except Exception:
+            # Roll back the settlement claim + any partial credits together so the
+            # epoch stays unsettled and can be retried (no half-paid epoch).
+            c.rollback()
+            raise
         return {"ok": True, "blocks": blocks, "total_reward": total_reward, "sum_w": sum_w, "payouts": payouts}
 
 def get_balance(miner_pk):
     """Get miner balance"""
     with sqlite3.connect(DB_PATH) as c:
         row = c.execute("SELECT balance_rtc FROM balances WHERE miner_pk=?", (miner_pk,)).fetchone()
-        return float(row[0]) if row else 0.0
+        return _micro_to_rtc(row[0]) if row else 0.0
 
 def get_hardware_weight(device):
     """Get hardware multiplier from device info"""
@@ -161,9 +308,11 @@ def get_epoch():
 
     # Get epoch state
     with sqlite3.connect(DB_PATH) as c:
-        row = c.execute("SELECT accepted_blocks, finalized FROM epoch_state WHERE epoch=?", (epoch,)).fetchone()
+        row = c.execute("SELECT accepted_blocks, finalized, COALESCE(settled,0), settled_ts FROM epoch_state WHERE epoch=?", (epoch,)).fetchone()
         blocks = int(row[0]) if row else 0
         finalized = bool(row[1]) if row else False
+        settled = bool(row[2]) if row else False
+        settled_ts = (row[3] if row else None)
 
         # Count enrolled miners
         miners = c.execute("SELECT COUNT(*), SUM(weight) FROM epoch_enroll WHERE epoch=?", (epoch,)).fetchone()
@@ -180,37 +329,50 @@ def get_epoch():
         "enrolled_miners": miner_count,
         "total_weight": total_weight,
         "finalized": finalized,
+        "settled": settled,
+        "settled_ts": settled_ts,
         "epoch_pot": PER_BLOCK_RTC * blocks
     })
 
 @app.post("/epoch/enroll")
 def epoch_enroll():
     """Enroll miner in current epoch"""
-    data = request.get_json(force=True) or {}
+    data, error = _json_object_body()
+    if error:
+        return error
 
     miner_pk = data.get("miner_pubkey", "")
-    weights = data.get("weights", {}) or {}
-    device = data.get("device", {}) or {}
+    weights = data.get("weights", {})
+    device = data.get("device", {})
     ticket_id = data.get("ticket_id", "")
+    if not isinstance(weights, dict):
+        return jsonify({"ok": False, "reason": "invalid_weights"}), 400
+    if not isinstance(device, dict):
+        return jsonify({"ok": False, "reason": "invalid_device"}), 400
 
     if not miner_pk or not ticket_id:
         return jsonify({"ok": False, "reason": "missing_params"}), 400
 
-    # Consume ticket (anti-replay)
-    if not consume_ticket(ticket_id):
-        return jsonify({"ok": False, "reason": "ticket_invalid"}), 400
-
     # Compute epoch
-    slot = int(data.get("slot", int(time.time() // BLOCK_TIME)))
+    slot = _non_negative_int(data.get("slot", int(time.time() // BLOCK_TIME)))
+    if slot is None:
+        return jsonify({"ok": False, "reason": "invalid_slot"}), 400
     epoch = slot_to_epoch(slot)
 
     # Calculate weight = temporal × rtc × hardware
-    temporal = float(weights.get("temporal", 1.0))
-    rtc = float(weights.get("rtc", 1.0))
+    temporal = _finite_float(weights.get("temporal", 1.0))
+    rtc = _finite_float(weights.get("rtc", 1.0))
+    if temporal is None or rtc is None:
+        return jsonify({"ok": False, "reason": "invalid_weights"}), 400
     hw = get_hardware_weight(device)
     total_weight = temporal * rtc * hw
 
     # Enroll
+    # Consume ticket after all request validation so malformed requests do not
+    # burn a valid ticket before the miner can retry.
+    if not consume_ticket(ticket_id):
+        return jsonify({"ok": False, "reason": "ticket_invalid"}), 400
+
     enroll_epoch(epoch, miner_pk, total_weight)
 
     return jsonify({
@@ -230,15 +392,25 @@ def balance(miner_pk):
         "balance_rtc": bal
     })
 
+
+def _json_object_body():
+    data = request.get_json(force=True, silent=True)
+    if not isinstance(data, dict):
+        return None, (jsonify({"error": "json_object_required"}), 400)
+    return data, None
+
+
 @app.post("/api/register")
 def api_register():
     """Register node with hardware fingerprint"""
-    data = request.get_json(force=True)
+    data, error = _json_object_body()
+    if error:
+        return error
 
     system_id = data.get("system_id")
     fingerprint = data.get("fingerprint", {})
 
-    if not system_id or not fingerprint:
+    if not system_id or not isinstance(fingerprint, dict) or not fingerprint:
         return jsonify({"error": "missing_data"}), 400
 
     # Check blacklist
@@ -272,8 +444,12 @@ def attest_challenge():
 @app.post("/attest/submit")
 def attest_submit():
     """Submit Silicon Ticket attestation"""
-    data = request.get_json(force=True)
+    data, error = _json_object_body()
+    if error:
+        return error
     report = data.get("report", {})
+    if not isinstance(report, dict):
+        return jsonify({"error": "invalid_report"}), 400
 
     # Basic validation
     if not report.get("commitment"):
@@ -282,6 +458,8 @@ def attest_submit():
     # Create ticket
     ticket_id = secrets.token_hex(8)
     device = report.get("device", {})
+    if not isinstance(device, dict):
+        return jsonify({"error": "invalid_device"}), 400
     hw_weight = get_hardware_weight(device)
     ticket = {
         "ticket_id": ticket_id,
@@ -316,9 +494,15 @@ def api_submit_block():
     """Submit block with VRF proof and Silicon Ticket"""
     global LAST_HASH_B3, LAST_EPOCH
 
-    data = request.get_json(force=True)
+    data, error = _json_object_body()
+    if error:
+        return error
     header = data.get("header", {})
     ext = data.get("header_ext", {})
+    if not isinstance(header, dict):
+        return jsonify({"error": "invalid_header"}), 400
+    if not isinstance(ext, dict):
+        return jsonify({"error": "invalid_header_ext"}), 400
 
     # Check previous hash
     if header.get("prev_hash_b3") != LAST_HASH_B3:
@@ -326,13 +510,19 @@ def api_submit_block():
 
     # Validate Silicon Ticket if enforced
     ticket = ext.get("ticket", {})
+    if ticket is None:
+        ticket = {}
+    if not isinstance(ticket, dict):
+        return jsonify({"error": "invalid_ticket"}), 400
     ticket_id = ticket.get("ticket_id")
 
     if ENFORCE and ticket_id and ticket_id not in tickets_db:
         return jsonify({"error": "invalid_ticket"}), 400
 
     # Epoch rollover & accounting
-    slot = int(header.get("slot", 0))
+    slot = _non_negative_int(header.get("slot", 0))
+    if slot is None:
+        return jsonify({"error": "invalid_slot"}), 400
     epoch = slot_to_epoch(slot)
 
     if LAST_EPOCH is None:

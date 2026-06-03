@@ -127,7 +127,7 @@ graph LR
 
 | Node | Location | Role | Status |
 |------|----------|------|--------|
-| **Node 1** | 50.28.86.131 | Primary + Explorer | ✅ Active |
+| **Node 1** | rustchain.org | Primary + Explorer | ✅ Active |
 | **Node 2** | 50.28.86.153 | Ergo Anchor | ✅ Active |
 | **Node 3** | 76.8.228.245 | Community | ✅ Active |
 
@@ -137,8 +137,8 @@ graph LR
 
 | Metric | Value |
 |--------|-------|
-| **Total Supply** | 8,000,000 RTC |
-| **Premine** | 75,000 RTC (dev/bounties) |
+| **Total Supply** | 8,388,608 RTC |
+| **Premine** | 503,316 RTC (dev/bounties) |
 | **Epoch Reward** | 1.5 RTC |
 | **Epoch Duration** | ~24 hours |
 | **Annual Inflation** | ~0.68% (decreasing) |
@@ -247,7 +247,7 @@ curl -sk https://rustchain.org/api/miners
 
 ## References
 
-- **Whitepaper**: [RustChain_Whitepaper_Flameholder_v0.97-1.pdf](./RustChain_Whitepaper_Flameholder_v0.97-1.pdf)
+- **Whitepaper**: [WHITEPAPER.md](./WHITEPAPER.md)
 - **API Documentation**: [API.md](./API.md)
 - **Protocol Spec**: [PROTOCOL.md](./PROTOCOL.md)
 - **Glossary**: [GLOSSARY.md](./GLOSSARY.md)

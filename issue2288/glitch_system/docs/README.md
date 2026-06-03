@@ -579,7 +579,7 @@ def handle_message(data):
 
 ## 📝 License
 
-Apache 2.0 - See [LICENSE](../../LICENSE) for details.
+Apache 2.0 - See [LICENSE](../../../LICENSE) for details.
 
 ---
 

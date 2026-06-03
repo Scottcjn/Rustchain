@@ -20,7 +20,9 @@ import json
 import time
 import sqlite3
 import tempfile
+import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch, MagicMock
@@ -37,6 +39,30 @@ from faucet_service import (
     get_client_ip,
     DEFAULT_CONFIG
 )
+
+
+class FakeAtomicRedis:
+    """Small Redis stand-in that serializes eval like Redis does."""
+
+    def __init__(self):
+        self.values = {}
+        self.ttls = {}
+        self.lock = threading.Lock()
+
+    def eval(self, _script, _numkeys, count_key, marker_key, max_requests, window_seconds, now_iso):
+        with self.lock:
+            max_requests = int(max_requests)
+            window_seconds = int(window_seconds)
+            current = int(self.values.get(count_key, 0))
+
+            if current >= max_requests:
+                return [0, self.ttls.get(marker_key, self.ttls.get(count_key, window_seconds))]
+
+            self.values[count_key] = current + 1
+            self.values[marker_key] = now_iso
+            self.ttls[count_key] = window_seconds
+            self.ttls[marker_key] = window_seconds
+            return [1, window_seconds]
 
 
 class TestConfiguration(unittest.TestCase):
@@ -106,6 +132,12 @@ class TestFaucetValidator(unittest.TestCase):
         valid, error = self.validator.validate_wallet('0x9683744B6b94F2b0966aBDb8C6BdD9805d207c6E')
         self.assertTrue(valid)
         self.assertIsNone(error)
+
+    def test_valid_native_rtc_wallet(self):
+        """Default config accepts native RTC wallet addresses."""
+        valid, error = self.validator.validate_wallet('RTCe4fbe4c9085b8b2ed3f1228504de66799025f6ce')
+        self.assertTrue(valid)
+        self.assertIsNone(error)
     
     def test_empty_wallet(self):
         """Test empty wallet address."""
@@ -127,6 +159,16 @@ class TestFaucetValidator(unittest.TestCase):
         valid, error = validator.validate_wallet('9683744B6b94F2b0966aBDb8C6BdD9805d207c6E')
         self.assertFalse(valid)
         self.assertIn("must start with", error)
+
+    def test_multiple_required_prefixes_rejects_unknown_prefix(self):
+        """List-style required_prefix rejects unsupported wallet prefixes."""
+        self.config['validation']['required_prefix'] = ['0x', 'RTC']
+        validator = FaucetValidator(self.config, self.logger)
+
+        valid, error = validator.validate_wallet('bc1qw5s80n4aqmrt95p6p9psf4q4echqye6279d36u')
+        self.assertFalse(valid)
+        self.assertIn("0x", error)
+        self.assertIn("RTC", error)
     
     def test_too_short(self):
         """Test wallet that is too short."""
@@ -170,6 +212,24 @@ class TestFaucetValidator(unittest.TestCase):
         valid, error = self.validator.validate_wallet('  0x9683744B6b94F2b0966aBDb8C6BdD9805d207c6E  ')
         self.assertTrue(valid)
         self.assertIsNone(error)
+
+    def test_checksum_validation_accepts_valid_eip55_wallet(self):
+        """Test checksum validation with a known-valid EIP-55 address."""
+        self.config['validation']['require_checksum'] = True
+        validator = FaucetValidator(self.config, self.logger)
+
+        valid, error = validator.validate_wallet('0x52908400098527886E0F7030069857D2E4169EE7')
+        self.assertTrue(valid)
+        self.assertIsNone(error)
+
+    def test_checksum_validation_rejects_invalid_eip55_wallet(self):
+        """Test checksum validation rejects bad casing without raising."""
+        self.config['validation']['require_checksum'] = True
+        validator = FaucetValidator(self.config, self.logger)
+
+        valid, error = validator.validate_wallet('0x52908400098527886e0f7030069857d2e4169ee7')
+        self.assertFalse(valid)
+        self.assertEqual(error, "Invalid wallet checksum")
 
 
 class TestRateLimiter(unittest.TestCase):
@@ -239,6 +299,64 @@ class TestRateLimiter(unittest.TestCase):
         # Should be allowed again
         allowed, next_available = self.rate_limiter.check_rate_limit('192.168.1.1', '0xwallet1')
         self.assertTrue(allowed)
+
+    def test_sqlite_record_request_if_allowed_is_atomic(self):
+        """Test concurrent SQLite drip attempts only record once."""
+        self.config['rate_limit']['window_seconds'] = 60
+        self.config['rate_limit']['max_requests'] = 1
+
+        def attempt_drip(_):
+            return self.rate_limiter.record_request_if_allowed(
+                '192.168.1.9:0xwallet-race',
+                '192.168.1.9',
+                '0xwallet-race',
+                0.5,
+            )[0]
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            results = list(executor.map(attempt_drip, range(8)))
+
+        self.assertEqual(results.count(True), 1)
+        self.assertEqual(results.count(False), 7)
+
+        conn = sqlite3.connect(self.temp_db.name)
+        try:
+            c = conn.cursor()
+            c.execute('''
+                SELECT COUNT(*) FROM drip_requests
+                WHERE ip_address = ? OR wallet = ?
+            ''', ('192.168.1.9', '0xwallet-race'))
+            self.assertEqual(c.fetchone()[0], 1)
+        finally:
+            conn.close()
+
+    def test_redis_record_request_if_allowed_is_atomic(self):
+        """Test Redis drip attempts use one atomic check-and-record operation."""
+        self.config['rate_limit']['window_seconds'] = 60
+        self.config['rate_limit']['max_requests'] = 1
+        self.config['rate_limit']['redis']['enabled'] = True
+        self.rate_limiter.redis_client = FakeAtomicRedis()
+
+        def attempt_drip(_):
+            return self.rate_limiter.record_request_if_allowed(
+                '192.168.1.10:0xwallet-redis-race',
+                '192.168.1.10',
+                '0xwallet-redis-race',
+                0.5,
+            )[0]
+
+        with patch('faucet_service.REDIS_AVAILABLE', True):
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                results = list(executor.map(attempt_drip, range(8)))
+
+        self.assertEqual(results.count(True), 1)
+        self.assertEqual(results.count(False), 7)
+        count_keys = [
+            key for key in self.rate_limiter.redis_client.values
+            if key.startswith('rustchain_faucet:count:192.168.1.10:0xwallet-redis-race:')
+        ]
+        self.assertEqual(len(count_keys), 1)
+        self.assertEqual(self.rate_limiter.redis_client.values[count_keys[0]], 1)
 
 
 class TestDatabase(unittest.TestCase):
@@ -350,6 +468,34 @@ class TestFlaskApp(unittest.TestCase):
         self.assertIn('wallet', data)
         self.assertIn('next_available', data)
     
+    def test_drip_success_with_checksum_validation_enabled(self):
+        """Test checksum validation does not turn drip requests into 500s."""
+        self.config['validation']['require_checksum'] = True
+        app = create_app(self.config)
+        client = app.test_client()
+
+        response = client.post('/faucet/drip',
+                               json={'wallet': '0x52908400098527886E0F7030069857D2E4169EE7'},
+                               content_type='application/json')
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertTrue(data['ok'])
+
+    def test_metrics_endpoint_uses_configured_database_path(self):
+        """Test metrics endpoint reads the configured faucet database."""
+        self.config['monitoring']['metrics_enabled'] = True
+        app = create_app(self.config)
+        client = app.test_client()
+
+        response = client.get('/metrics')
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn('faucet_drips_total 0', body)
+        self.assertIn('faucet_amount_total 0', body)
+        self.assertEqual(response.content_type, 'text/plain')
+
     def test_drip_missing_wallet(self):
         """Test drip request without wallet."""
         response = self.client.post('/faucet/drip',
@@ -360,7 +506,31 @@ class TestFlaskApp(unittest.TestCase):
         data = json.loads(response.data)
         self.assertFalse(data['ok'])
         self.assertEqual(data['error'], 'Wallet address required')
-    
+
+    def test_drip_rejects_non_object_json(self):
+        """Test drip request rejects non-object JSON."""
+        response = self.client.post('/faucet/drip',
+                                    json=['wallet'],
+                                    content_type='application/json')
+
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.data)
+        self.assertFalse(data['ok'])
+        self.assertEqual(data['error'], 'Wallet address required')
+
+    def test_drip_rejects_non_string_wallet(self):
+        """Test drip request rejects structured wallet values."""
+        for wallet in (['0x9683744B6b94F2b0966aBDb8C6BdD9805d207c6E'], {'address': '0xabc'}, 123):
+            with self.subTest(wallet=wallet):
+                response = self.client.post('/faucet/drip',
+                                            json={'wallet': wallet},
+                                            content_type='application/json')
+
+                self.assertEqual(response.status_code, 400)
+                data = json.loads(response.data)
+                self.assertFalse(data['ok'])
+                self.assertEqual(data['error'], 'Wallet address required')
+
     def test_drip_invalid_wallet(self):
         """Test drip request with invalid wallet."""
         response = self.client.post('/faucet/drip',
@@ -409,28 +579,105 @@ class TestFlaskApp(unittest.TestCase):
         data = json.loads(response.data)
         self.assertEqual(data['status'], 'healthy')
         self.assertIn('timestamp', data)
+
+    def test_metrics_endpoint_uses_configured_database(self):
+        """Test metrics endpoint reads from the configured database path."""
+        self.config['monitoring']['metrics_enabled'] = True
+        app = create_app(self.config)
+        client = app.test_client()
+
+        drip_response = client.post('/faucet/drip',
+                                    json={'wallet': '0x9683744B6b94F2b0966aBDb8C6BdD9805d207c6E'},
+                                    content_type='application/json')
+        self.assertEqual(drip_response.status_code, 200)
+
+        response = client.get('/metrics')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, 'text/plain')
+
+        metrics = response.get_data(as_text=True)
+        self.assertIn('faucet_drips_total 1', metrics)
+        self.assertIn('faucet_amount_total 0.5', metrics)
+        self.assertIn('faucet_up 1', metrics)
     
-    def test_client_ip_detection(self):
-        """Test client IP detection with headers."""
-        from flask import Flask
-        
+    def test_client_ip_detection_ignores_forwarded_headers_by_default(self):
+        """Untrusted clients cannot spoof rate-limit identity with proxy headers."""
+        with self.app.test_request_context(
+            '/',
+            headers={'X-Forwarded-For': '1.2.3.4, 5.6.7.8', 'X-Real-IP': '9.10.11.12'},
+            environ_base={'REMOTE_ADDR': '127.0.0.1'},
+        ):
+            from flask import request
+            ip = get_client_ip(request)
+            self.assertEqual(ip, '127.0.0.1')
+
+    def test_client_ip_detection_can_trust_proxy_headers_when_configured(self):
+        """Proxy deployments can explicitly opt in to forwarded client IPs."""
         # Test X-Forwarded-For
         with self.app.test_request_context('/', headers={'X-Forwarded-For': '1.2.3.4, 5.6.7.8'}):
             from flask import request
-            ip = get_client_ip(request)
+            ip = get_client_ip(request, trust_proxy_headers=True)
             self.assertEqual(ip, '1.2.3.4')
-        
+
         # Test X-Real-IP
         with self.app.test_request_context('/', headers={'X-Real-IP': '9.10.11.12'}):
             from flask import request
-            ip = get_client_ip(request)
+            ip = get_client_ip(request, trust_proxy_headers=True)
             self.assertEqual(ip, '9.10.11.12')
-        
+
         # Test remote_addr fallback
         with self.app.test_request_context('/', environ_base={'REMOTE_ADDR': '127.0.0.1'}):
             from flask import request
             ip = get_client_ip(request)
             self.assertEqual(ip, '127.0.0.1')
+
+    def test_drip_rate_limit_ignores_spoofed_forwarded_for_by_default(self):
+        """Changing X-Forwarded-For should not bypass the default IP+wallet bucket."""
+        wallet = '0x9683744B6b94F2b0966aBDb8C6BdD9805d207c6E'
+
+        first = self.client.post(
+            '/faucet/drip',
+            json={'wallet': wallet},
+            headers={'X-Forwarded-For': '1.2.3.4'},
+            content_type='application/json',
+            environ_base={'REMOTE_ADDR': '203.0.113.9'},
+        )
+        second = self.client.post(
+            '/faucet/drip',
+            json={'wallet': wallet},
+            headers={'X-Forwarded-For': '5.6.7.8'},
+            content_type='application/json',
+            environ_base={'REMOTE_ADDR': '203.0.113.9'},
+        )
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 429)
+
+    def test_drip_can_trust_forwarded_for_when_configured(self):
+        """Configured proxy deployments can keep existing forwarded-IP behavior."""
+        self.config['security']['trust_proxy_headers'] = True
+        app = create_app(self.config)
+        client = app.test_client()
+        wallet_one = '0x9683744B6b94F2b0966aBDb8C6BdD9805d207c6E'
+        wallet_two = '0x1234567890abcdef1234567890abcdef12345678'
+
+        first = client.post(
+            '/faucet/drip',
+            json={'wallet': wallet_one},
+            headers={'X-Forwarded-For': '1.2.3.4'},
+            content_type='application/json',
+            environ_base={'REMOTE_ADDR': '203.0.113.9'},
+        )
+        second = client.post(
+            '/faucet/drip',
+            json={'wallet': wallet_two},
+            headers={'X-Forwarded-For': '5.6.7.8'},
+            content_type='application/json',
+            environ_base={'REMOTE_ADDR': '203.0.113.9'},
+        )
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
 
 
 class TestIntegration(unittest.TestCase):

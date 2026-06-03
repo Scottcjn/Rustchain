@@ -448,5 +448,5 @@ MIT License
 
 - [RustChain GitHub](https://github.com/Scottcjn/Rustchain)
 - [RustChain Explorer](https://rustchain.org/explorer)
-- [RustChain Whitepaper](https://github.com/Scottcjn/Rustchain/blob/main/docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf)
+- [RustChain Whitepaper](https://github.com/Scottcjn/Rustchain/blob/main/docs/WHITEPAPER.md)
 - [Agent Economy SDK Docs](docs/AGENT_ECONOMY_SDK.md)

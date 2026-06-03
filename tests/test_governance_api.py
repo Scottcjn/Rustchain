@@ -1,12 +1,30 @@
+import gc
 import json
+import shutil
 import sqlite3
 import sys
 import tempfile
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
 integrated_node = sys.modules["integrated_node"]
+
+
+@contextmanager
+def _temporary_directory():
+    path = tempfile.mkdtemp()
+    try:
+        yield path
+    finally:
+        for _ in range(5):
+            try:
+                shutil.rmtree(path)
+                break
+            except PermissionError:
+                gc.collect()
+                time.sleep(0.05)
 
 
 def _vote_payload(proposal_id: int, wallet: str, vote: str, nonce: str):
@@ -20,28 +38,78 @@ def _vote_payload(proposal_id: int, wallet: str, vote: str, nonce: str):
 
 
 def test_governance_propose_requires_gt_10_rtc_balance():
-    with tempfile.TemporaryDirectory() as td:
+    with _temporary_directory() as td:
         db_path = str(Path(td) / "gov.db")
         integrated_node.DB_PATH = db_path
         integrated_node.app.config["DB_PATH"] = db_path
         integrated_node.init_db()
 
+        pub_hex = "22" * 32
+        wallet = integrated_node.address_from_pubkey(pub_hex)
         with sqlite3.connect(db_path) as c:
-            c.execute("INSERT INTO balances(miner_pk, balance_rtc) VALUES(?, ?)", ("RTC-low", 10.0))
+            c.execute("INSERT INTO balances(miner_pk, balance_rtc) VALUES(?, ?)", (wallet, 10.0))
             c.commit()
 
         integrated_node.app.config["TESTING"] = True
         with integrated_node.app.test_client() as client:
-            resp = client.post(
-                "/governance/propose",
-                json={"wallet": "RTC-low", "title": "No", "description": "insufficient"},
-            )
+            # propose now requires proposer authentication (signed); sig verify mocked
+            with patch("integrated_node.verify_rtc_signature", return_value=True):
+                resp = client.post(
+                    "/governance/propose",
+                    json={"wallet": wallet, "title": "No", "description": "insufficient",
+                          "nonce": "p-1", "signature": "ab" * 64, "public_key": pub_hex},
+                )
             assert resp.status_code == 403
             assert resp.get_json()["error"] == "insufficient_balance_to_propose"
 
 
-def test_governance_vote_flow_and_lifecycle_finalization():
-    with tempfile.TemporaryDirectory() as td:
+def test_governance_propose_rejects_non_object_json():
+    integrated_node.app.config["TESTING"] = True
+    with integrated_node.app.test_client() as client:
+        resp = client.post("/governance/propose", json=["not", "an", "object"])
+
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "JSON object required"
+
+
+def test_governance_vote_rejects_non_object_json(monkeypatch):
+    # /governance/vote is @admin_required since #6719; authenticate to reach validation
+    monkeypatch.setattr(integrated_node, "ADMIN_KEY", "gov-admin-key", raising=False)
+    integrated_node.app.config["TESTING"] = True
+    with integrated_node.app.test_client() as client:
+        resp = client.post("/governance/vote", json=["not", "an", "object"],
+                           headers={"X-Admin-Key": "gov-admin-key"})
+
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "JSON object required"
+
+
+def test_governance_vote_rejects_invalid_proposal_id(monkeypatch):
+    monkeypatch.setattr(integrated_node, "ADMIN_KEY", "gov-admin-key", raising=False)  # vote @admin_required (#6719)
+    integrated_node.app.config["TESTING"] = True
+    with integrated_node.app.test_client() as client:
+        resp = client.post(
+            "/governance/vote",
+            headers={"X-Admin-Key": "gov-admin-key"},
+            json={
+                "proposal_id": "not-an-int",
+                "wallet": "RTC-test",
+                "vote": "yes",
+                "nonce": "n-1",
+                "signature": "ab",
+                "public_key": "11" * 32,
+            },
+        )
+
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == (
+        "proposal_id, wallet, vote(yes/no), nonce, signature, public_key are required"
+    )
+
+
+def test_governance_vote_flow_and_lifecycle_finalization(monkeypatch):
+    monkeypatch.setattr(integrated_node, "ADMIN_KEY", "gov-admin-key", raising=False)  # vote @admin_required (#6719)
+    with _temporary_directory() as td:
         db_path = str(Path(td) / "gov.db")
         integrated_node.DB_PATH = db_path
         integrated_node.app.config["DB_PATH"] = db_path
@@ -78,11 +146,13 @@ def test_governance_vote_flow_and_lifecycle_finalization():
 
         integrated_node.app.config["TESTING"] = True
         with integrated_node.app.test_client() as client:
-            # Create proposal
-            r1 = client.post(
-                "/governance/propose",
-                json={"wallet": wallet, "title": "Raise testnet fee", "description": "for anti-spam"},
-            )
+            # Create proposal (propose now requires proposer auth; sig verify mocked)
+            with patch("integrated_node.verify_rtc_signature", return_value=True):
+                r1 = client.post(
+                    "/governance/propose",
+                    json={"wallet": wallet, "title": "Raise testnet fee", "description": "for anti-spam",
+                          "nonce": "p-1", "signature": "ab" * 64, "public_key": pub_hex},
+                )
             assert r1.status_code == 201
             proposal_id = r1.get_json()["proposal"]["id"]
 
@@ -91,6 +161,7 @@ def test_governance_vote_flow_and_lifecycle_finalization():
             with patch("integrated_node.verify_rtc_signature", return_value=True):
                 r2 = client.post(
                     "/governance/vote",
+                    headers={"X-Admin-Key": "gov-admin-key"},
                     json={
                         **payload,
                         "public_key": pub_hex,

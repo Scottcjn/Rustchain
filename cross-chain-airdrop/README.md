@@ -273,23 +273,23 @@ cargo test --test integration_tests
 
 ## Related Documentation
 
-- [RIP-305 Specification](../../docs/RIP-305-cross-chain-airdrop.md)
-- [Bridge API](../../bridge/README.md)
-- [Solana SPL Deployment](../../rips/docs/RIP-0305-solana-spl-token-deployment.md)
-- [Airdrop Claim Page](../../airdrop/README.md)
+- [RIP-305 Specification](../docs/RIP-305-cross-chain-airdrop.md)
+- [Bridge API](../bridge/README.md)
+- [Solana SPL Deployment](../rips/docs/RIP-0305-solana-spl-token-deployment.md)
+- [Airdrop Claim Page](../airdrop/README.md)
 
 ## License
 
 Licensed under either of:
 
-- Apache License, Version 2.0 ([LICENSE-APACHE](../../LICENSE-APACHE))
-- MIT license ([LICENSE-MIT](../../LICENSE-MIT))
+- Apache License, Version 2.0 ([LICENSE](../LICENSE))
+- MIT license ([MIT License](https://opensource.org/license/mit))
 
 at your option.
 
 ## Contributing
 
-See [CONTRIBUTING.md](../../CONTRIBUTING.md) for contribution guidelines.
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for contribution guidelines.
 
 ## Bounty
 

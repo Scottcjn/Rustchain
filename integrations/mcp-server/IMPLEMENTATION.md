@@ -304,4 +304,4 @@ tests/test_mcp_server.py::TestToolList::test_list_tools_registered PASSED
 - [Model Context Protocol](https://modelcontextprotocol.io)
 - [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk)
 - [RustChain Documentation](../../README.md)
-- [RustChain Whitepaper](../../docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf)
+- [RustChain Whitepaper](../../docs/RustChain_Whitepaper_Flameholder_v0.97.pdf)

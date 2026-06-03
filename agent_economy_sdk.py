@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT
 # SPDX-License-Identifier: MIT
 
 import asyncio
@@ -166,7 +165,7 @@ async def demo_workflow():
         
         delivered = await client.submit_delivery(
             job_id, "demo-worker",
-            "https://github.com/rustchain/docs/pull/123",
+            "https://github.com/Scottcjn/Rustchain/pull/123",
             "Comprehensive API documentation with examples"
         )
         print(f"Delivery submitted: {delivered['success']}")

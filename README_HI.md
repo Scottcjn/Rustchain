@@ -5,7 +5,7 @@
 > **हिंदी अनुवाद संस्करण** | [English Version](README.md)
 
 [![CI](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml/badge.svg)](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/Scottcjn/Rustchain?style=flat&color=gold)](https://github.com/Scottcjn/Rustchain/stargazers)
 [![Contributors](https://img.shields.io/github/contributors/Scottcjn/Rustchain?color=brightgreen)](https://github.com/Scottcjn/Rustchain/graphs/contributors)
 [![Last Commit](https://img.shields.io/github/last-commit/Scottcjn/Rustchain?color=blue)](https://github.com/Scottcjn/Rustchain/commits/main)
@@ -22,7 +22,7 @@
 
 *आपका PowerPC G4 एक आधुनिक Threadripper से भी अधिक कमा सकता है। यही इसका उद्देश्य है।*
 
-[वेबसाइट](https://rustchain.org) • [लाइव एक्सप्लोरर](https://rustchain.org/explorer) • [wRTC स्वैप](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) • [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) • [wRTC क्विकस्टार्ट](docs/wrtc.md) • [wRTC ट्यूटोरियल](docs/WRTC_ONBOARDING_TUTORIAL.md) • [Grokipedia संदर्भ](https://grokipedia.com/search?q=RustChain) • [व्हाइटपेपर](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf) • [क्विक स्टार्ट](#-quick-start) • [यह कैसे काम करता है](#-how-proof-of-antiquity-works)
+[वेबसाइट](https://rustchain.org) • [लाइव एक्सप्लोरर](https://rustchain.org/explorer) • [wRTC स्वैप](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) • [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) • [wRTC क्विकस्टार्ट](docs/wrtc.md) • [wRTC ट्यूटोरियल](docs/WRTC_ONBOARDING_TUTORIAL.md) • [Grokipedia संदर्भ](https://grokipedia.com/search?q=RustChain) • [व्हाइटपेपर](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf) • [क्विक स्टार्ट](#-quick-start) • [यह कैसे काम करता है](#-how-proof-of-antiquity-works)
 
 </div>
 ### ⚡ क्विक स्टार्ट

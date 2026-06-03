@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: MIT
 # SPDX-License-Identifier: MIT
 
 from flask import Flask, request, render_template_string, jsonify, make_response
@@ -13,6 +13,12 @@ app = Flask(__name__)
 app.secret_key = 'test_key_for_security_testing_only'
 
 DB_PATH = 'rustchain.db'
+
+
+def debug_enabled() -> bool:
+    return os.environ.get('SECURITY_TEST_WIDGET_DEBUG', '').strip().lower() in {
+        '1', 'true', 'yes', 'on'
+    }
 
 def init_db():
     with sqlite3.connect(DB_PATH) as conn:
@@ -272,4 +278,4 @@ def admin_login():
 if __name__ == '__main__':
     if not os.path.exists(DB_PATH):
         init_db()
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=debug_enabled(), host='0.0.0.0', port=5000)

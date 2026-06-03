@@ -65,7 +65,9 @@ except ImportError:
 try:
     from rewards_implementation_rip200 import PER_EPOCH_URTC
 except ImportError:
-    PER_EPOCH_URTC = 150_000_000  # 1.5 RTC in uRTC (default)
+    PER_EPOCH_URTC = 1_500_000  # 1.5 RTC in uRTC (default)
+
+URTC_PER_RTC = 1_000_000
 
 
 class ClaimsEligibilityError(Exception):
@@ -188,8 +190,45 @@ def check_epoch_participation(
         with sqlite3.connect(db_path) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
+
+            # Primary source: epoch_enroll is the canonical per-epoch snapshot.
+            # miner_attest_recent is a rolling/latest table and may no longer
+            # retain an in-window row by the time a delayed claim is checked.
+            try:
+                cursor.execute("""
+                    SELECT miner_pk
+                    FROM epoch_enroll
+                    WHERE epoch = ? AND miner_pk = ?
+                    LIMIT 1
+                """, (epoch, miner_id))
+                enrolled = cursor.fetchone()
+            except sqlite3.OperationalError:
+                enrolled = None
+
+            if enrolled:
+                cursor.execute("""
+                    SELECT
+                        device_arch,
+                        ts_ok,
+                        fingerprint_passed,
+                        entropy_score
+                    FROM miner_attest_recent
+                    WHERE miner = ?
+                    ORDER BY ts_ok DESC
+                    LIMIT 1
+                """, (miner_id,))
+                row = cursor.fetchone()
+
+                return True, {
+                    "epoch": epoch,
+                    "attestation_ts": row["ts_ok"] if row else None,
+                    "device_arch": row["device_arch"] if row else None,
+                    "fingerprint_passed": row["fingerprint_passed"] if row and "fingerprint_passed" in row.keys() else 1,
+                    "entropy_score": row["entropy_score"] if row and "entropy_score" in row.keys() else 0.0,
+                    "source": "epoch_enroll",
+                }
             
-            # Get any attestation during epoch window (with TTL consideration)
+            # Legacy fallback: get any attestation during epoch window (with TTL consideration)
             cursor.execute("""
                 SELECT 
                     miner,
@@ -218,7 +257,8 @@ def check_epoch_participation(
                 "attestation_ts": row["ts_ok"],
                 "device_arch": row["device_arch"],
                 "fingerprint_passed": row["fingerprint_passed"] if "fingerprint_passed" in row.keys() else 1,
-                "entropy_score": row["entropy_score"] if "entropy_score" in row.keys() else 0.0
+                "entropy_score": row["entropy_score"] if "entropy_score" in row.keys() else 0.0,
+                "source": "miner_attest_recent",
             }
     except sqlite3.Error as e:
         print(f"[CLAIMS] Database error checking epoch participation: {e}")
@@ -319,9 +359,54 @@ def is_epoch_settled(
     """
     Check if epoch has been settled
     
-    Epochs are typically settled within 1-2 epochs after completion.
-    For simplicity, we consider an epoch settled if we're at least 2 epochs past it.
+    Priority order:
+    1. Check epoch_state.settled in database (authoritative source)
+    2. Fallback to epoch_state.finalized for legacy schemas
+    3. Time-based heuristic only when database has no record for this epoch
+    
+    Security fix (#3960): Previously ignored db_path entirely, allowing claims
+    for epochs that were never actually settled (e.g., settlement failed,
+    rolled back, or had no eligible miners).
     """
+    # First, try to check the database for authoritative settlement status
+    try:
+        import sqlite3
+        with sqlite3.connect(db_path) as conn:
+            cursor = conn.cursor()
+            
+            # Check if epoch_state table exists and has a 'settled' column
+            try:
+                cursor.execute("""
+                    SELECT settled FROM epoch_state WHERE epoch = ?
+                """, (epoch,))
+                row = cursor.fetchone()
+                
+                if row is not None:
+                    # Database has a record for this epoch - use it as authoritative
+                    return bool(row[0])
+                
+                # No row yet - settlement may be in progress, fall back to time heuristic
+                
+            except sqlite3.OperationalError:
+                # Column 'settled' doesn't exist, try legacy 'finalized' column
+                try:
+                    cursor.execute("""
+                        SELECT finalized FROM epoch_state WHERE epoch = ?
+                    """, (epoch,))
+                    row = cursor.fetchone()
+                    
+                    if row is not None:
+                        return bool(row[0])
+                    
+                except sqlite3.OperationalError:
+                    # epoch_state table doesn't exist at all, fall back to time heuristic
+                    pass
+                    
+    except sqlite3.Error:
+        # Database unavailable, fall back to time heuristic
+        pass
+    
+    # Fallback: time-based heuristic for epochs without database records
     settled_epoch = max(0, current_slot // 144 - 2)
     return epoch <= settled_epoch
 
@@ -529,7 +614,7 @@ def check_claim_eligibility(
     # Calculate reward amount
     reward_urtc = calculate_epoch_reward(db_path, miner_id, epoch, current_slot)
     result["reward_urtc"] = reward_urtc
-    result["reward_rtc"] = reward_urtc / 100_000_000
+    result["reward_rtc"] = reward_urtc / URTC_PER_RTC
     
     # All checks passed
     result["eligible"] = True
@@ -644,7 +729,7 @@ def get_eligible_epochs(
         "miner_id": miner_id,
         "epochs": eligible_epochs,
         "total_unclaimed_urtc": total_unclaimed,
-        "total_unclaimed_rtc": total_unclaimed / 100_000_000
+        "total_unclaimed_rtc": total_unclaimed / URTC_PER_RTC
     }
 
 

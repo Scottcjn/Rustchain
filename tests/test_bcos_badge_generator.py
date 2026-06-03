@@ -9,11 +9,12 @@ Run with:
 
 import json
 import os
+import sqlite3
 import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -28,6 +29,8 @@ from tools.bcos_badge_generator import (
     get_badge_stats,
     record_badge_generation,
     increment_download_count,
+    load_secret_key,
+    is_valid_cert_id,
 )
 
 
@@ -52,6 +55,19 @@ class TestBadgeConfig(unittest.TestCase):
         self.assertEqual(BADGE_CONFIG['tiers']['L0']['min_score'], 40)
         self.assertEqual(BADGE_CONFIG['tiers']['L1']['min_score'], 60)
         self.assertEqual(BADGE_CONFIG['tiers']['L2']['min_score'], 80)
+
+    def test_secret_key_loads_from_environment(self):
+        """Test secret key loader prefers configured environment value."""
+        with patch.dict(os.environ, {'BADGE_SECRET_KEY': 'configured-secret'}, clear=False):
+            self.assertEqual(load_secret_key(), 'configured-secret')
+
+    def test_secret_key_fallback_is_not_hardcoded(self):
+        """Test secret key fallback no longer uses the public development key."""
+        with patch.dict(os.environ, {'BADGE_SECRET_KEY': ''}, clear=False):
+            secret = load_secret_key()
+
+        self.assertNotEqual(secret, 'bcos-badge-generator-dev-key')
+        self.assertRegex(secret, r'^[0-9a-f]{64}$')
 
 
 class TestBadgeSVGGeneration(unittest.TestCase):
@@ -228,6 +244,27 @@ class TestDatabaseOperations(unittest.TestCase):
         self.assertEqual(result['data']['tier'], 'L1')
         self.assertEqual(result['data']['trust_score'], 75)
 
+    def test_verify_certificate_cache_returns_response_data(self):
+        """Cached certificate verification should return the cached response data."""
+        init_db()
+        record_badge_generation(
+            cert_id='BCOS-CACHED',
+            repo_name='cache/repo',
+            tier='L2',
+            metadata={'trust_score': 90},
+        )
+
+        first = verify_certificate('BCOS-CACHED')
+        second = verify_certificate('BCOS-CACHED')
+
+        self.assertTrue(first['valid'])
+        self.assertFalse(first['cached'])
+        self.assertTrue(second['valid'])
+        self.assertTrue(second['cached'])
+        self.assertEqual(second['data']['repo_name'], 'cache/repo')
+        self.assertEqual(second['data']['tier'], 'L2')
+        self.assertEqual(second['data']['trust_score'], 90)
+
     def test_verify_certificate_invalid(self):
         """Test verifying an invalid certificate."""
         init_db()
@@ -281,6 +318,9 @@ class TestFlaskIntegration(unittest.TestCase):
         from tools.bcos_badge_generator import app
         self.test_db = tempfile.NamedTemporaryFile(delete=False, suffix='.db')
         self.test_db.close()
+        self.admin_key = 'test-admin-key'
+        self.env_patch = patch.dict(os.environ, {'BCOS_ADMIN_KEY': self.admin_key})
+        self.env_patch.start()
 
         import tools.bcos_badge_generator as bg
         self.original_db = bg.DATABASE
@@ -296,7 +336,37 @@ class TestFlaskIntegration(unittest.TestCase):
         """Clean up."""
         import tools.bcos_badge_generator as bg
         bg.DATABASE = self.original_db
+        self.env_patch.stop()
         os.unlink(self.test_db.name)
+
+    def post_generate_badge(self, payload, headers=None):
+        """Post to the admin-protected badge generator endpoint."""
+        request_headers = {'X-Admin-Key': self.admin_key}
+        if headers:
+            request_headers.update(headers)
+        return self.client.post(
+            '/api/badge/generate',
+            json=payload,
+            headers=request_headers,
+            content_type='application/json',
+        )
+
+    def insert_badge_with_metadata(self, cert_id, metadata):
+        """Insert a badge row with caller-provided raw metadata."""
+        import tools.bcos_badge_generator as bg
+
+        conn = sqlite3.connect(bg.DATABASE)
+        try:
+            conn.execute(
+                '''
+                INSERT INTO badges (cert_id, repo_name, github_url, tier, trust_score, metadata)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ''',
+                (cert_id, 'test/repo', 'https://github.com/test/repo', 'L1', 75, metadata),
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
     def test_index_page(self):
         """Test index page loads."""
@@ -315,14 +385,12 @@ class TestFlaskIntegration(unittest.TestCase):
 
     def test_generate_badge_success(self):
         """Test badge generation success."""
-        response = self.client.post(
-            '/api/badge/generate',
-            json={
+        response = self.post_generate_badge(
+            {
                 'repo_name': 'test/repo',
                 'tier': 'L1',
                 'trust_score': 75,
-            },
-            content_type='application/json',
+            }
         )
 
         self.assertEqual(response.status_code, 200)
@@ -333,53 +401,280 @@ class TestFlaskIntegration(unittest.TestCase):
         self.assertIn('markdown', data)
         self.assertIn('html', data)
 
-    def test_generate_badge_missing_repo(self):
-        """Test badge generation with missing repo name."""
+    def test_generate_badge_requires_admin_key(self):
+        """Badge generation should reject requests without an admin key."""
         response = self.client.post(
             '/api/badge/generate',
-            json={
-                'tier': 'L1',
-            },
+            json={'repo_name': 'test/repo', 'tier': 'L2', 'trust_score': 100},
             content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 401)
+        data = json.loads(response.data)
+        self.assertFalse(data['success'])
+        self.assertEqual(data['error'], 'Unauthorized')
+
+    def test_generate_badge_rejects_wrong_admin_key(self):
+        """Badge generation should reject an incorrect admin key."""
+        response = self.client.post(
+            '/api/badge/generate',
+            json={'repo_name': 'test/repo', 'tier': 'L2', 'trust_score': 100},
+            headers={'X-Admin-Key': 'wrong-key'},
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 401)
+        data = json.loads(response.data)
+        self.assertFalse(data['success'])
+        self.assertEqual(data['error'], 'Unauthorized')
+
+    def test_generate_badge_fails_closed_without_configured_admin_key(self):
+        """Badge generation should fail closed when BCOS_ADMIN_KEY is unset."""
+        with patch.dict(os.environ, {}, clear=True):
+            response = self.client.post(
+                '/api/badge/generate',
+                json={'repo_name': 'test/repo', 'tier': 'L2', 'trust_score': 100},
+                headers={'X-Admin-Key': self.admin_key},
+                content_type='application/json',
+            )
+
+        self.assertEqual(response.status_code, 503)
+        data = json.loads(response.data)
+        self.assertFalse(data['success'])
+        self.assertEqual(data['error'], 'BCOS_ADMIN_KEY is not configured')
+
+    def test_generate_badge_accepts_x_api_key(self):
+        """Badge generation should also accept X-API-Key for admin auth."""
+        response = self.client.post(
+            '/api/badge/generate',
+            json={'repo_name': 'test/repo', 'tier': 'L1', 'trust_score': 75},
+            headers={'X-API-Key': self.admin_key},
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertTrue(data['success'])
+        self.assertIn('cert_id', data)
+
+    def test_generate_badge_rejects_non_json_body(self):
+        """Non-JSON bodies should return JSON 400 responses, not HTML errors."""
+        response = self.client.post(
+            '/api/badge/generate',
+            data='not json',
+            headers={
+                'X-Admin-Key': self.admin_key,
+                'Content-Type': 'text/plain',
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.data)
+        self.assertFalse(data['success'])
+        self.assertEqual(data['error'], 'JSON object body required')
+
+    def test_generate_badge_rejects_non_object_json_body(self):
+        """JSON arrays should fail validation before route code calls .get()."""
+        response = self.client.post(
+            '/api/badge/generate',
+            json=['test/repo', 'L1'],
+            headers={'X-Admin-Key': self.admin_key},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.data)
+        self.assertFalse(data['success'])
+        self.assertEqual(data['error'], 'JSON object body required')
+
+    def test_generate_badge_rejects_scalar_repo_and_tier_fields(self):
+        """Scalar field validation should reject non-strings without 500s."""
+        cases = [
+            ({'repo_name': ['test/repo'], 'tier': 'L1'}, 'Repository name must be a string'),
+            ({'repo_name': 'test/repo', 'tier': True}, 'Tier must be a string'),
+        ]
+
+        for payload, error in cases:
+            with self.subTest(payload=payload):
+                response = self.post_generate_badge(payload)
+
+                self.assertEqual(response.status_code, 200)
+                data = json.loads(response.data)
+                self.assertFalse(data['success'])
+                self.assertEqual(data['error'], error)
+
+    def test_generate_badge_missing_repo(self):
+        """Test badge generation with missing repo name."""
+        response = self.post_generate_badge(
+            {
+                'tier': 'L1',
+            }
         )
 
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.data)
         self.assertFalse(data['success'])
         self.assertIn('error', data)
+
+    def test_generate_badge_rejects_non_object_json(self):
+        """Badge generation should reject JSON arrays without raising 500."""
+        response = self.post_generate_badge(['not', 'an', 'object'])
+
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.data)
+        self.assertFalse(data['success'])
+        self.assertEqual(data['error'], 'JSON object body required')
+
+    def test_generate_badge_rejects_non_string_repo_name(self):
+        """Non-string repo names should fail validation instead of raising 500."""
+        response = self.post_generate_badge(
+            {
+                'repo_name': {'owner': 'test', 'repo': 'repo'},
+                'tier': 'L1',
+                'trust_score': 75,
+            }
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertFalse(data['success'])
+        self.assertEqual(data['error'], 'Repository name must be a string')
 
     def test_generate_badge_invalid_tier(self):
         """Test badge generation with invalid tier."""
-        response = self.client.post(
-            '/api/badge/generate',
-            json={
+        response = self.post_generate_badge(
+            {
                 'repo_name': 'test/repo',
                 'tier': 'INVALID',
-            },
-            content_type='application/json',
+            }
         )
 
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.data)
         self.assertFalse(data['success'])
         self.assertIn('error', data)
+
+    def test_generate_badge_rejects_non_string_tier(self):
+        """Non-string tiers should fail validation instead of raising 500."""
+        response = self.post_generate_badge(
+            {
+                'repo_name': 'test/repo',
+                'tier': ['L1'],
+                'trust_score': 75,
+            }
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertFalse(data['success'])
+        self.assertEqual(data['error'], 'Tier must be a string')
 
     def test_generate_badge_invalid_score(self):
         """Test badge generation with invalid trust score."""
-        response = self.client.post(
-            '/api/badge/generate',
-            json={
+        response = self.post_generate_badge(
+            {
                 'repo_name': 'test/repo',
                 'tier': 'L1',
                 'trust_score': 150,
-            },
-            content_type='application/json',
+            }
         )
 
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.data)
         self.assertFalse(data['success'])
         self.assertIn('error', data)
+
+    def test_generate_badge_rejects_non_numeric_score(self):
+        """Test badge generation rejects non-numeric trust scores without 500s."""
+        invalid_scores = ['high', None, True]
+
+        for score in invalid_scores:
+            with self.subTest(score=score):
+                response = self.post_generate_badge(
+                    {
+                        'repo_name': 'test/repo',
+                        'tier': 'L1',
+                        'trust_score': score,
+                    }
+                )
+
+                self.assertEqual(response.status_code, 200)
+                data = json.loads(response.data)
+                self.assertFalse(data['success'])
+                self.assertEqual(data['error'], 'Trust score must be a number')
+
+    def test_generate_badge_rejects_non_boolean_include_qr(self):
+        """include_qr should not treat truthy strings as enabling QR output."""
+        for include_qr in ['false', 'true', 1, None]:
+            with self.subTest(include_qr=include_qr):
+                response = self.post_generate_badge(
+                    {
+                        'repo_name': 'test/repo',
+                        'tier': 'L1',
+                        'trust_score': 75,
+                        'include_qr': include_qr,
+                    }
+                )
+
+                self.assertEqual(response.status_code, 200)
+                data = json.loads(response.data)
+                self.assertFalse(data['success'])
+                self.assertEqual(data['error'], 'include_qr must be a boolean')
+
+    def test_generate_badge_rejects_attribute_breaking_cert_id(self):
+        """User-supplied cert IDs must not break generated embed attributes."""
+        payload = {
+            'repo_name': 'test/repo',
+            'tier': 'L1',
+            'trust_score': 75,
+            'cert_id': 'BCOS-abc" onerror="alert(1)',
+        }
+
+        response = self.post_generate_badge(payload)
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertFalse(data['success'])
+        self.assertIn('Invalid certificate ID', data['error'])
+        self.assertFalse(is_valid_cert_id(payload['cert_id']))
+
+    def test_generate_badge_rejects_non_string_cert_id(self):
+        """Non-string cert IDs should fail validation instead of raising 500."""
+        invalid_ids = [123, True, ['BCOS-safe'], {'id': 'BCOS-safe'}]
+
+        for cert_id in invalid_ids:
+            with self.subTest(cert_id=cert_id):
+                response = self.post_generate_badge(
+                    {
+                        'repo_name': 'test/repo',
+                        'tier': 'L1',
+                        'trust_score': 75,
+                        'cert_id': cert_id,
+                    }
+                )
+
+                self.assertEqual(response.status_code, 200)
+                data = json.loads(response.data)
+                self.assertFalse(data['success'])
+                self.assertIn('Invalid certificate ID', data['error'])
+                self.assertFalse(is_valid_cert_id(cert_id))
+
+    def test_generate_badge_accepts_safe_custom_cert_id(self):
+        """Safe custom cert IDs remain supported."""
+        response = self.post_generate_badge(
+            {
+                'repo_name': 'test/repo',
+                'tier': 'L1',
+                'trust_score': 75,
+                'cert_id': 'BCOS-safe_ID-123',
+            }
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertTrue(data['success'])
+        self.assertEqual(data['cert_id'], 'BCOS-safe_ID-123')
+        self.assertIn('https://rustchain.org/bcos/badge/BCOS-safe_ID-123.svg', data['html'])
+        self.assertNotIn('onerror=', data['html'])
 
     def test_stats_endpoint(self):
         """Test stats endpoint."""
@@ -390,6 +685,7 @@ class TestFlaskIntegration(unittest.TestCase):
                 'repo_name': 'test/repo',
                 'tier': 'L1',
             },
+            headers={'X-Admin-Key': self.admin_key},
         )
 
         response = self.client.get('/api/badge/stats')
@@ -401,12 +697,11 @@ class TestFlaskIntegration(unittest.TestCase):
     def test_verify_endpoint(self):
         """Test verify endpoint."""
         # Generate a badge first
-        gen_response = self.client.post(
-            '/api/badge/generate',
-            json={
+        gen_response = self.post_generate_badge(
+            {
                 'repo_name': 'test/repo',
                 'tier': 'L1',
-            },
+            }
         )
         cert_id = json.loads(gen_response.data)['cert_id']
 
@@ -423,15 +718,25 @@ class TestFlaskIntegration(unittest.TestCase):
         data = json.loads(response.data)
         self.assertFalse(data['valid'])
 
+    def test_verify_tolerates_corrupt_stored_metadata(self):
+        """Corrupt legacy metadata should not break badge verification."""
+        self.insert_badge_with_metadata('BCOS-CORRUPTVERIFY', '{bad-json')
+
+        response = self.client.get('/api/badge/verify/BCOS-CORRUPTVERIFY')
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertTrue(data['valid'])
+        self.assertEqual(data['data']['metadata'], {})
+
     def test_serve_badge_svg(self):
         """Test serving badge SVG."""
         # Generate a badge first
-        gen_response = self.client.post(
-            '/api/badge/generate',
-            json={
+        gen_response = self.post_generate_badge(
+            {
                 'repo_name': 'test/repo',
                 'tier': 'L1',
-            },
+            }
         )
         cert_id = json.loads(gen_response.data)['cert_id']
 
@@ -445,6 +750,16 @@ class TestFlaskIntegration(unittest.TestCase):
         """Test serving non-existent badge."""
         response = self.client.get('/badge/BCOS-NOTFOUND.svg')
         self.assertEqual(response.status_code, 404)
+
+    def test_serve_badge_svg_tolerates_corrupt_stored_metadata(self):
+        """Corrupt legacy metadata should not break badge SVG rendering."""
+        self.insert_badge_with_metadata('BCOS-CORRUPTSVG', 'not-json')
+
+        response = self.client.get('/badge/BCOS-CORRUPTSVG.svg')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content_type, 'image/svg+xml')
+        self.assertIn(b'<svg', response.data)
 
 
 class TestEdgeCases(unittest.TestCase):

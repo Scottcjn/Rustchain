@@ -45,11 +45,16 @@ import sqlite3
 import os
 import json
 import random
+import logging
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 from collections import deque
+
+from flask import Blueprint, jsonify, request
+
+logger = logging.getLogger(__name__)
 
 
 # ─── Mood States ────────────────────────────────────────────────────────────── #
@@ -390,7 +395,7 @@ class MoodEngine:
 
             conn.commit()
             conn.close()
-        except Exception as e:
+        except Exception:
             # Database errors are non-fatal - mood system works in memory-only mode
             pass
 
@@ -722,7 +727,6 @@ class MoodEngine:
         
         # Check if mood changed
         if new_mood != history.current_mood:
-            old_mood = history.current_mood
             history.current_mood = new_mood
             history.mood_started_at = time.time()
             history.history.insert(0, {
@@ -911,9 +915,6 @@ class MoodEngine:
         }
 
 
-# ─── Flask Blueprint ─────────────────────────────────────────────────────────── #
-from flask import Blueprint, jsonify, request
-
 mood_bp = Blueprint("bottube_mood", __name__, url_prefix="/api/v1/agents")
 
 
@@ -922,6 +923,37 @@ def get_mood_engine() -> MoodEngine:
     from flask import current_app
     db_path = current_app.config.get("DB_PATH", "rustchain.db")
     return MoodEngine(db_path=db_path)
+
+
+def _get_json_object(allow_empty: bool = False):
+    data = request.get_json(silent=True)
+    has_body = bool(request.get_data(cache=True))
+    if data is None:
+        if allow_empty and not has_body:
+            return {}, None
+        if not has_body:
+            return None, (jsonify({"error": "Request body required"}), 400)
+        return None, (jsonify({"error": "JSON object required"}), 400)
+    if not isinstance(data, dict):
+        return None, (jsonify({"error": "JSON object required"}), 400)
+    return data, None
+
+
+def _get_signal_weight(data: Dict[str, Any]):
+    raw_weight = data.get("weight", 1.0)
+    if isinstance(raw_weight, bool) or not isinstance(raw_weight, (int, float)):
+        return None, (jsonify({"error": "weight must be a number"}), 400)
+
+    weight = float(raw_weight)
+    if not math.isfinite(weight):
+        return None, (jsonify({"error": "weight must be finite"}), 400)
+
+    return weight, None
+
+
+def _mood_service_unavailable(operation: str):
+    logger.exception("BoTTube mood route failed during %s", operation)
+    return jsonify({"error": "Mood service unavailable"}), 500
 
 
 @mood_bp.route("/<agent_name>/mood", methods=["GET"])
@@ -946,8 +978,8 @@ def get_agent_mood_endpoint(agent_name: str):
 
         return jsonify(mood_info)
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        return _mood_service_unavailable("get_agent_mood")
 
 
 @mood_bp.route("/<agent_name>/mood/signal", methods=["POST"])
@@ -964,14 +996,15 @@ def record_mood_signal(agent_name: str):
     """
     try:
         engine = get_mood_engine()
-        data = request.get_json()
-
-        if not data:
-            return jsonify({"error": "Request body required"}), 400
+        data, error = _get_json_object()
+        if error:
+            return error
 
         signal_type = data.get("signal_type")
         value = data.get("value", {})
-        weight = data.get("weight", 1.0)
+        weight, weight_error = _get_signal_weight(data)
+        if weight_error:
+            return weight_error
 
         if not signal_type:
             return jsonify({"error": "signal_type required"}), 400
@@ -979,8 +1012,8 @@ def record_mood_signal(agent_name: str):
         result = engine.record_signal(agent_name, signal_type, value, weight)
         return jsonify(result)
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        return _mood_service_unavailable("record_mood_signal")
 
 
 @mood_bp.route("/<agent_name>/mood/title", methods=["POST"])
@@ -995,10 +1028,9 @@ def generate_mood_title(agent_name: str):
     """
     try:
         engine = get_mood_engine()
-        data = request.get_json()
-
-        if not data:
-            return jsonify({"error": "Request body required"}), 400
+        data, error = _get_json_object()
+        if error:
+            return error
 
         topic = data.get("topic", "New Video")
         title = engine.generate_title(agent_name, topic)
@@ -1010,8 +1042,8 @@ def generate_mood_title(agent_name: str):
             "current_mood": engine.get_agent_mood(agent_name)["current_mood"],
         })
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        return _mood_service_unavailable("generate_mood_title")
 
 
 @mood_bp.route("/<agent_name>/mood/comment", methods=["POST"])
@@ -1026,7 +1058,9 @@ def generate_mood_comment(agent_name: str):
     """
     try:
         engine = get_mood_engine()
-        data = request.get_json() or {}
+        data, error = _get_json_object(allow_empty=True)
+        if error:
+            return error
         base_comment = data.get("base_comment", "")
 
         comment = engine.generate_comment(agent_name, base_comment)
@@ -1037,8 +1071,8 @@ def generate_mood_comment(agent_name: str):
             "current_mood": engine.get_agent_mood(agent_name)["current_mood"],
         })
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        return _mood_service_unavailable("generate_mood_comment")
 
 
 @mood_bp.route("/<agent_name>/mood/post-probability", methods=["GET"])
@@ -1060,8 +1094,8 @@ def get_post_probability(agent_name: str):
             "current_mood": engine.get_agent_mood(agent_name)["current_mood"],
         })
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        return _mood_service_unavailable("get_post_probability")
 
 
 @mood_bp.route("/<agent_name>/mood/statistics", methods=["GET"])
@@ -1076,8 +1110,8 @@ def get_mood_statistics_endpoint(agent_name: str):
         stats = engine.get_mood_statistics(agent_name)
         return jsonify(stats)
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        return _mood_service_unavailable("get_mood_statistics")
 
 
 def init_mood_routes(app):
@@ -1155,7 +1189,7 @@ if __name__ == "__main__":
         print(f"  Signals:       {result['recent_signals_count']}")
         
         if result['history']:
-            print(f"\n  Recent History:")
+            print("\n  Recent History:")
             for entry in result['history'][:5]:
                 print(f"    - {entry['mood']} ({entry['triggered_by']}) @ {entry['created_at_iso']}")
         

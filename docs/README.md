@@ -10,34 +10,41 @@
 | [Protocol Specification](./PROTOCOL.md) | Full RIP-200 consensus protocol |
 | [Mechanism Spec + Falsification Matrix](./MECHANISM_SPEC_AND_FALSIFICATION_MATRIX.md) | One-page claim-to-test map with break conditions |
 | [API Reference](./API.md) | All endpoints with curl examples |
+| [Build Guide](./BUILD.md) | Local Python and Rust build commands |
+| [Local Devnet](./DEVNET.md) | Run a single-node development server |
+| [CLI Wallet Walkthrough](./CLI.md) | Create a wallet and simulate a transaction |
 | [Glossary](./GLOSSARY.md) | Terms and definitions |
 | [Tokenomics](./tokenomics_v1.md) | RTC supply and distribution |
 | [FAQ & Troubleshooting](./FAQ_TROUBLESHOOTING.md) | Common setup/runtime issues and recovery steps |
 | [Wallet User Guide](./WALLET_USER_GUIDE.md) | Wallet basics, balance checks, and safe operations |
 | [Contributing Guide](./CONTRIBUTING.md) | Contribution workflow, PR checklist, and bounty submission notes |
+| [Smart Contract Developer Guide](./SMART_CONTRACT_DEVELOPER_GUIDE.md) | Contract quickstart, lifecycle, deployment, and security checklist |
 | [Reward Analytics Dashboard](./REWARD_ANALYTICS_DASHBOARD.md) | Charts and API for RTC reward transparency |
 | [Cross-Node Sync Validator](./CROSS_NODE_SYNC_VALIDATOR.md) | Multi-node consistency checks and discrepancy reports |
 | [Discord Leaderboard Bot](./DISCORD_LEADERBOARD_BOT.md) | Webhook bot setup and usage |
+| [Chinese Documentation](./zh-CN/README.md) | Community-maintained Chinese documentation entry point |
+| [Chinese API Quick Reference](./zh-CN/API.md) | Chinese quick reference for common public API queries |
 | [Japanese Quickstart (日本語)](./ja/README.md) | Community-maintained Japanese quickstart guide |
+| [Korean Documentation (한국어)](./ko-KR/README.md) | Community-maintained Korean documentation entry point |
 
 ## Live Network
 
 - **Primary Node**: `https://rustchain.org`
-- **Explorer**: `https://rustchain.org/explorer`
-- **Health Check**: `curl -sk https://rustchain.org/health`
+- **Explorer**: `https://rustchain.org/explorer/`
+- **Health Check**: `curl -fsS https://rustchain.org/health`
 - **Network Status Page**: `docs/network-status.html` (GitHub Pages-hostable status dashboard)
 
 ## Current Stats
 
 ```bash
 # Check node health
-curl -sk https://rustchain.org/health | jq .
+curl -fsS https://rustchain.org/health | jq .
 
 # List active miners
-curl -sk https://rustchain.org/api/miners | jq .
+curl -fsS https://rustchain.org/api/miners | jq .
 
 # Current epoch info
-curl -sk https://rustchain.org/epoch | jq .
+curl -fsS https://rustchain.org/epoch | jq .
 ```
 
 ## Architecture Overview
@@ -45,7 +52,7 @@ curl -sk https://rustchain.org/epoch | jq .
 ```
 ┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
 │  Vintage Miner  │────▶│ Attestation Node │────▶│  Ergo Anchor    │
-│  (G4/G5/SPARC)  │     │  (50.28.86.131)  │     │ (Immutability)  │
+│  (G4/G5/SPARC)  │     │  (rustchain.org)  │     │ (Immutability)  │
 └─────────────────┘     └──────────────────┘     └─────────────────┘
         │                        │
         │ Hardware Fingerprint   │ Epoch Settlement
@@ -69,4 +76,3 @@ Active bounties: [github.com/Scottcjn/rustchain-bounties](https://github.com/Sco
 
 ---
 *Documentation maintained by the RustChain community.*
-

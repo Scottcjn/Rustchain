@@ -22,9 +22,10 @@ import time
 from dataclasses import dataclass, asdict, field
 from enum import Enum
 from typing import Dict, List, Optional, Set, Tuple, Any
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 import logging
 import requests
+from urllib.parse import urlparse
 
 # ---------------------------------------------------------------------------
 # P2P HMAC secret — MUST be set via the RC_P2P_SECRET environment variable.
@@ -32,6 +33,66 @@ import requests
 # strong, randomly generated secret (≥ 32 hex chars recommended).
 # ---------------------------------------------------------------------------
 _P2P_SECRET_RAW = os.environ.get("RC_P2P_SECRET", "").strip()
+
+
+# =============================================================================
+# TTL Cache for message deduplication (Issue #2755: Memory leak fix)
+# =============================================================================
+
+class TTLCache:
+    """Time-based LRU cache for message deduplication.
+    
+    Replaces the unbounded set with automatic TTL-based eviction.
+    Uses OrderedDict for O(1) operations and LRU eviction.
+    """
+    
+    def __init__(self, ttl: int = 3600, max_size: int = 10000):
+        """
+        Args:
+            ttl: Time-to-live in seconds (default: 1 hour, matching DB cleanup)
+            max_size: Maximum number of entries before LRU eviction kicks in
+        """
+        self._cache = OrderedDict()  # msg_id -> timestamp
+        self._ttl = ttl
+        self._max_size = max_size
+    
+    def contains(self, key: str) -> bool:
+        """Check if key exists and is not expired."""
+        self._cleanup_expired()
+        return key in self._cache
+    
+    def add(self, key: str) -> None:
+        """Add key with current timestamp. Evicts LRU if at capacity."""
+        self._cleanup_expired()
+        if key in self._cache:
+            self._cache.move_to_end(key)
+        else:
+            if len(self._cache) >= self._max_size:
+                self._cache.popitem(last=False)
+            self._cache[key] = time.time()
+
+    def discard(self, key: str) -> None:
+        """Remove key if present."""
+        self._cache.pop(key, None)
+    
+    def _cleanup_expired(self) -> None:
+        """Remove expired entries."""
+        now = time.time()
+        expired = [k for k, ts in self._cache.items() if now - ts > self._ttl]
+        for k in expired:
+            del self._cache[k]
+    
+    def __len__(self) -> int:
+        """Return number of entries (including expired)."""
+        return len(self._cache)
+    
+    def cleanup(self) -> int:
+        """Force cleanup of expired entries. Returns count of removed entries."""
+        before = len(self._cache)
+        self._cleanup_expired()
+        return before - len(self._cache)
+
+
 
 # Known insecure placeholders that must never be accepted in production.
 _INSECURE_DEFAULTS = {
@@ -57,7 +118,208 @@ GOSSIP_TTL = 3
 SYNC_INTERVAL = 30
 MESSAGE_EXPIRY = 300  # 5 minutes
 MAX_INV_BATCH = 1000
+MAX_GOSSIP_REQUEST_BYTES = 1024 * 1024
+MAX_GOSSIP_PAYLOAD_SERIALIZED_BYTES = 256 * 1024
+MAX_GOSSIP_PAYLOAD_DEPTH = 16
+MAX_GOSSIP_PAYLOAD_OBJECT_KEYS = 256
+MAX_GOSSIP_PAYLOAD_TOTAL_KEYS = 2048
+MAX_GOSSIP_PAYLOAD_LIST_ITEMS = 2048
+MAX_GOSSIP_PAYLOAD_STRING_BYTES = 8192
 DB_PATH = os.environ.get("RUSTCHAIN_DB", "/root/rustchain/rustchain_v2.db")
+
+
+MIN_P2P_PROTOCOL_VERSION = 1
+MAX_P2P_PROTOCOL_VERSION = 10
+MIN_P2P_K_BUCKET_SIZE = 1
+MAX_P2P_K_BUCKET_SIZE = 1000
+MIN_P2P_PING_INTERVAL = 5
+MAX_P2P_PING_INTERVAL = 3600
+MIN_P2P_HANDSHAKE_TIMEOUT = 1
+MAX_P2P_HANDSHAKE_TIMEOUT = 120
+_HANDSHAKE_BOUNDS = {
+    "protocol_version": (MIN_P2P_PROTOCOL_VERSION, MAX_P2P_PROTOCOL_VERSION),
+    "k_bucket_size": (MIN_P2P_K_BUCKET_SIZE, MAX_P2P_K_BUCKET_SIZE),
+    "ping_interval": (MIN_P2P_PING_INTERVAL, MAX_P2P_PING_INTERVAL),
+    "timeout": (MIN_P2P_HANDSHAKE_TIMEOUT, MAX_P2P_HANDSHAKE_TIMEOUT),
+}
+
+
+def _bounded_int(value: Any, default: int, min_value: int, max_value: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return min(max(parsed, min_value), max_value)
+
+
+P2P_PROTOCOL_VERSION = _bounded_int(
+    os.environ.get("RC_P2P_PROTOCOL_VERSION"),
+    1,
+    MIN_P2P_PROTOCOL_VERSION,
+    MAX_P2P_PROTOCOL_VERSION,
+)
+P2P_K_BUCKET_SIZE = _bounded_int(
+    os.environ.get("RC_P2P_K_BUCKET_SIZE"),
+    20,
+    MIN_P2P_K_BUCKET_SIZE,
+    MAX_P2P_K_BUCKET_SIZE,
+)
+P2P_PING_INTERVAL = _bounded_int(
+    os.environ.get("RC_P2P_PING_INTERVAL"),
+    SYNC_INTERVAL,
+    MIN_P2P_PING_INTERVAL,
+    MAX_P2P_PING_INTERVAL,
+)
+P2P_HANDSHAKE_TIMEOUT = _bounded_int(
+    os.environ.get("RC_P2P_HANDSHAKE_TIMEOUT"),
+    10,
+    MIN_P2P_HANDSHAKE_TIMEOUT,
+    MAX_P2P_HANDSHAKE_TIMEOUT,
+)
+_HANDSHAKE_FIELDS = (
+    "protocol_version",
+    "k_bucket_size",
+    "ping_interval",
+    "timeout",
+)
+
+
+def local_handshake_params() -> Dict[str, int]:
+    """Return the local P2P compatibility parameters advertised to peers."""
+    return {
+        "protocol_version": P2P_PROTOCOL_VERSION,
+        "k_bucket_size": P2P_K_BUCKET_SIZE,
+        "ping_interval": P2P_PING_INTERVAL,
+        "timeout": P2P_HANDSHAKE_TIMEOUT,
+    }
+
+
+def _normalise_handshake_params(
+    params: Optional[Dict],
+    defaults: Dict[str, int],
+) -> Dict[str, int]:
+    params = params if isinstance(params, dict) else {}
+    return {
+        field: _bounded_int(
+            params.get(field),
+            defaults[field],
+            *_HANDSHAKE_BOUNDS[field],
+        )
+        for field in _HANDSHAKE_FIELDS
+    }
+
+
+def negotiate_handshake_params(local: Dict, remote: Optional[Dict]) -> Dict[str, int]:
+    """Choose compatible P2P parameters for a local/remote handshake pair."""
+    local_values = _normalise_handshake_params(local, local_handshake_params())
+    remote_values = _normalise_handshake_params(remote, local_values)
+    return {
+        "protocol_version": min(
+            local_values["protocol_version"],
+            remote_values["protocol_version"],
+        ),
+        "k_bucket_size": min(
+            local_values["k_bucket_size"],
+            remote_values["k_bucket_size"],
+        ),
+        "ping_interval": min(
+            local_values["ping_interval"],
+            remote_values["ping_interval"],
+        ),
+        "timeout": max(local_values["timeout"], remote_values["timeout"]),
+    }
+
+
+def handshake_mismatches(
+    local: Dict,
+    remote: Optional[Dict],
+) -> Dict[str, Dict[str, int]]:
+    """Return advertised handshake fields where local and remote disagree."""
+    if not isinstance(remote, dict):
+        return {}
+    local_values = _normalise_handshake_params(local, local_handshake_params())
+    remote_values = _normalise_handshake_params(remote, local_values)
+    return {
+        field: {"local": local_values[field], "remote": remote_values[field]}
+        for field in _HANDSHAKE_FIELDS
+        if field in remote and local_values[field] != remote_values[field]
+    }
+
+
+def _validate_gossip_payload_value(
+    value: Any,
+    *,
+    depth: int = 0,
+    counters: Optional[Dict[str, int]] = None,
+) -> None:
+    """Reject oversized JSON payload trees before signature serialization."""
+    if counters is None:
+        counters = {"keys": 0}
+    if depth > MAX_GOSSIP_PAYLOAD_DEPTH:
+        raise ValueError("gossip payload exceeds maximum depth")
+
+    if isinstance(value, dict):
+        if len(value) > MAX_GOSSIP_PAYLOAD_OBJECT_KEYS:
+            raise ValueError("gossip payload object has too many keys")
+        counters["keys"] += len(value)
+        if counters["keys"] > MAX_GOSSIP_PAYLOAD_TOTAL_KEYS:
+            raise ValueError("gossip payload has too many keys")
+        for key, child in value.items():
+            if not isinstance(key, str):
+                raise ValueError("gossip payload keys must be strings")
+            if len(key.encode("utf-8")) > MAX_GOSSIP_PAYLOAD_STRING_BYTES:
+                raise ValueError("gossip payload key is too large")
+            _validate_gossip_payload_value(
+                child,
+                depth=depth + 1,
+                counters=counters,
+            )
+        return
+
+    if isinstance(value, list):
+        if len(value) > MAX_GOSSIP_PAYLOAD_LIST_ITEMS:
+            raise ValueError("gossip payload list is too large")
+        for child in value:
+            _validate_gossip_payload_value(
+                child,
+                depth=depth + 1,
+                counters=counters,
+            )
+        return
+
+    if isinstance(value, str):
+        if len(value.encode("utf-8")) > MAX_GOSSIP_PAYLOAD_STRING_BYTES:
+            raise ValueError("gossip payload string is too large")
+        return
+
+    if isinstance(value, bool) or value is None or isinstance(value, int):
+        return
+
+    if isinstance(value, float):
+        if not (float("-inf") < value < float("inf")):
+            raise ValueError("gossip payload float must be finite")
+        return
+
+    raise ValueError("gossip payload contains unsupported JSON value")
+
+
+def validate_gossip_payload(payload: Any) -> str:
+    """Validate an untrusted gossip payload and return canonical JSON."""
+    if not isinstance(payload, dict):
+        raise ValueError("invalid gossip message payload")
+    _validate_gossip_payload_value(payload)
+    try:
+        payload_json = json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError("invalid gossip message payload") from exc
+    if len(payload_json.encode("utf-8")) > MAX_GOSSIP_PAYLOAD_SERIALIZED_BYTES:
+        raise ValueError("gossip payload exceeds maximum serialized size")
+    return payload_json
 
 # TLS verification: defaults to True (secure).
 # Set RUSTCHAIN_TLS_VERIFY=false only for local development with self-signed certs.
@@ -126,7 +388,56 @@ class GossipMessage:
 
     @classmethod
     def from_dict(cls, data: Dict) -> 'GossipMessage':
-        return cls(**data)
+        """Validate and construct a gossip message from untrusted JSON."""
+        if not isinstance(data, dict):
+            raise ValueError("invalid gossip message: expected object")
+
+        required = {
+            "msg_type",
+            "msg_id",
+            "sender_id",
+            "timestamp",
+            "ttl",
+            "signature",
+            "payload",
+        }
+        if set(data) != required:
+            raise ValueError("invalid gossip message fields")
+
+        msg_type = data["msg_type"]
+        if not isinstance(msg_type, str) or msg_type not in {m.value for m in MessageType}:
+            raise ValueError("invalid gossip message type")
+
+        def require_string(name: str, max_len: int) -> str:
+            value = data[name]
+            if not isinstance(value, str) or not value or len(value) > max_len:
+                raise ValueError(f"invalid gossip message {name}")
+            return value
+
+        msg_id = require_string("msg_id", 128)
+        sender_id = require_string("sender_id", 128)
+        signature = require_string("signature", 4096)
+
+        timestamp = data["timestamp"]
+        if isinstance(timestamp, bool) or not isinstance(timestamp, int) or timestamp < 0:
+            raise ValueError("invalid gossip message timestamp")
+
+        ttl = data["ttl"]
+        if isinstance(ttl, bool) or not isinstance(ttl, int) or ttl < 0 or ttl > GOSSIP_TTL:
+            raise ValueError("invalid gossip message ttl")
+
+        payload = data["payload"]
+        validate_gossip_payload(payload)
+
+        return cls(
+            msg_type=msg_type,
+            msg_id=msg_id,
+            sender_id=sender_id,
+            timestamp=timestamp,
+            ttl=ttl,
+            signature=signature,
+            payload=payload,
+        )
 
     def compute_hash(self) -> str:
         """Compute hash of message content for deduplication"""
@@ -291,7 +602,7 @@ class GossipLayer:
         self.node_id = node_id
         self.peers = peers  # peer_id -> url
         self.db_path = db_path
-        self.seen_messages: Set[str] = set()
+        self.seen_messages: TTLCache = TTLCache(ttl=3600, max_size=10000)
         self.message_queue: List[GossipMessage] = []
         self.lock = threading.Lock()
 
@@ -299,14 +610,64 @@ class GossipLayer:
         self.attestation_crdt = LWWRegister()
         self.balance_crdt = PNCounter()
         self.epoch_crdt = GSet()
+        self._epoch_votes: Dict[Tuple[int, str], Dict[str, str]] = {}
+
+        # Phase F (#2256): per-peer Ed25519 identity, dual-mode signing.
+        # Only loaded/generated when needed by the current signing mode;
+        # legacy "hmac" mode does not require cryptography to be installed.
+        from p2p_identity import (
+            SIGNING_MODE,
+            LocalKeypair,
+            PeerRegistry,
+        )
+        self._signing_mode = SIGNING_MODE
+        self._keypair: Optional[LocalKeypair] = None
+        self._peer_registry: Optional[PeerRegistry] = None
+        if self._signing_mode != "hmac":
+            self._keypair = LocalKeypair()
+            self._peer_registry = PeerRegistry()
+            # Prime the keypair + registry so startup surfaces any issues.
+            _ = self._keypair.pubkey_hex
+            self._peer_registry.load()
 
         # Load initial state from DB
         self._load_state_from_db()
 
+    @staticmethod
+    def _valid_peer_url(peer_url: Any) -> Optional[str]:
+        if not isinstance(peer_url, str):
+            return None
+        peer_url = peer_url.strip().rstrip("/")
+        parsed = urlparse(peer_url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            return None
+        return peer_url
+
     def _load_state_from_db(self):
-        """Load existing state into CRDTs"""
+        """Load existing state into CRDTs and initialize P2P tables"""
         try:
             with sqlite3.connect(self.db_path) as conn:
+                # Initialize P2P seen messages table (Issue #2271)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS p2p_seen_messages (
+                        msg_id TEXT PRIMARY KEY,
+                        ts INTEGER NOT NULL
+                    )
+                """)
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_p2p_seen_ts ON p2p_seen_messages(ts)")
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS p2p_epoch_votes (
+                        epoch INTEGER NOT NULL,
+                        proposal_hash TEXT NOT NULL,
+                        voter TEXT NOT NULL,
+                        vote TEXT NOT NULL,
+                        ts INTEGER NOT NULL,
+                        PRIMARY KEY (epoch, proposal_hash, voter)
+                    )
+                """)
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_p2p_epoch_votes_epoch ON p2p_epoch_votes(epoch)")
+                conn.commit()
+
                 # Load attestations
                 rows = conn.execute("""
                     SELECT miner, ts_ok, device_family, device_arch, entropy_score
@@ -327,35 +688,115 @@ class GossipLayer:
                 for (epoch,) in rows:
                     self.epoch_crdt.add(epoch)
 
+                rows = conn.execute("""
+                    SELECT epoch, proposal_hash, voter, vote
+                    FROM p2p_epoch_votes
+                """).fetchall()
+                for epoch, proposal_hash, voter, vote in rows:
+                    key = (epoch, proposal_hash)
+                    self._epoch_votes.setdefault(key, {})[voter] = vote
+
                 logger.info(f"Loaded {len(self.attestation_crdt.data)} attestations, "
-                           f"{len(self.epoch_crdt.items)} settled epochs")
+                           f"{len(self.epoch_crdt.items)} settled epochs, "
+                           f"{sum(len(votes) for votes in self._epoch_votes.values())} epoch votes")
         except Exception as e:
             logger.error(f"Failed to load state from DB: {e}")
 
     def _sign_message(self, content: str) -> Tuple[str, int]:
-        """Generate HMAC signature for message"""
+        """Generate signature (HMAC, Ed25519, or dual) for message.
+
+        Mode-aware per Phase F:
+          - "hmac"     : HMAC only, raw hex (legacy wire format)
+          - "dual"     : HMAC + Ed25519, JSON-packed
+          - "ed25519"  : Ed25519 only, JSON-packed (HMAC still verified if present)
+          - "strict"   : Ed25519 only, JSON-packed (HMAC rejected)
+        """
         timestamp = int(time.time())
         message = f"{content}:{timestamp}"
-        sig = hmac.new(P2P_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
-        return sig, timestamp
+        mode = self._signing_mode
+
+        hmac_sig: Optional[str] = None
+        ed25519_sig: Optional[str] = None
+
+        if mode in ("hmac", "dual"):
+            hmac_sig = hmac.new(
+                P2P_SECRET.encode(), message.encode(), hashlib.sha256
+            ).hexdigest()
+
+        if mode in ("dual", "ed25519", "strict") and self._keypair is not None:
+            ed25519_sig = self._keypair.sign(message.encode())
+
+        from p2p_identity import pack_signature
+        return pack_signature(hmac_sig, ed25519_sig), timestamp
 
     def _verify_signature(self, content: str, signature: str, timestamp: int) -> bool:
-        """Verify HMAC signature"""
-        # Check timestamp freshness
+        """Verify a message signature.
+
+        Phase F: accepts HMAC and/or Ed25519 per current signing mode.
+        Timestamp freshness is always enforced.
+        """
         if abs(time.time() - timestamp) > MESSAGE_EXPIRY:
             return False
         message = f"{content}:{timestamp}"
-        expected = hmac.new(P2P_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
-        return hmac.compare_digest(signature, expected)
+        mode = self._signing_mode
+
+        from p2p_identity import unpack_signature, verify_ed25519
+        hmac_sig, ed25519_sig, _key_version = unpack_signature(signature)
+
+        # "strict" mode: only Ed25519 accepted. HMAC-only sigs are rejected
+        # even if valid (flag-day enforcement).
+        if mode == "strict":
+            if ed25519_sig is None:
+                return False
+            # Find sender's pubkey via the registry.
+            # NOTE: this classmethod-style helper is called with only
+            # (content, sig, ts). For Ed25519, we need sender_id. The handler
+            # that invokes this has the full msg — we expose a public
+            # verify_message() that threads sender_id through. Keep this
+            # method's signature stable for HMAC path.
+            return False  # strict mode must use verify_message()
+
+        # "hmac" mode: only HMAC accepted. Ed25519-only sigs are rejected.
+        if mode == "hmac":
+            if hmac_sig is None:
+                return False
+            expected = hmac.new(
+                P2P_SECRET.encode(), message.encode(), hashlib.sha256
+            ).hexdigest()
+            return hmac.compare_digest(hmac_sig, expected)
+
+        # "dual" or "ed25519" modes: accept either signature type.
+        # HMAC path:
+        if hmac_sig is not None:
+            expected = hmac.new(
+                P2P_SECRET.encode(), message.encode(), hashlib.sha256
+            ).hexdigest()
+            if hmac.compare_digest(hmac_sig, expected):
+                return True
+        # Ed25519 path (cannot run without sender_id; caller should use
+        # verify_message()). Fall through to reject if HMAC also absent.
+        return False
+
+    # SECURITY (#2256 + #2272): the signed content now includes sender_id, 
+    # msg_id, and ttl so the message metadata cannot be flipped post-sign.
+    @staticmethod
+    def _signed_content(msg_type: str, sender_id: str, msg_id: str, ttl: int, payload: Dict) -> str:
+        return f"{msg_type}:{sender_id}:{msg_id}:{ttl}:{json.dumps(payload, sort_keys=True)}"
 
     def create_message(self, msg_type: MessageType, payload: Dict, ttl: int = GOSSIP_TTL) -> GossipMessage:
         """Create a new gossip message"""
-        content = f"{msg_type.value}:{json.dumps(payload, sort_keys=True)}"
+        # Generate msg_id first for signature binding (Issue #2272)
+        # Issue #2268: Use cryptographically secure random nonce instead of predictable time.time()
+        temp_content = f"{msg_type.value}:{self.node_id}:{json.dumps(payload, sort_keys=True)}"
+        secure_nonce = secrets.token_hex(16)  # 128-bit cryptographically secure random value
+        msg_id = hashlib.sha256(f"{temp_content}:{secure_nonce}".encode()).hexdigest()[:24]
+        
+        content = self._signed_content(msg_type.value, self.node_id, msg_id, ttl, payload)
         sig, ts = self._sign_message(content)
 
         msg = GossipMessage(
             msg_type=msg_type.value,
-            msg_id=hashlib.sha256(f"{content}:{ts}".encode()).hexdigest()[:24],
+            msg_id=msg_id,
             sender_id=self.node_id,
             timestamp=ts,
             ttl=ttl,
@@ -364,10 +805,81 @@ class GossipLayer:
         )
         return msg
 
+    def create_ping(self) -> GossipMessage:
+        """Create a ping that advertises local P2P handshake parameters."""
+        return self.create_message(MessageType.PING, {
+            "node_id": self.node_id,
+            "handshake": local_handshake_params(),
+        })
+
     def verify_message(self, msg: GossipMessage) -> bool:
-        """Verify message signature and freshness"""
-        content = f"{msg.msg_type}:{json.dumps(msg.payload, sort_keys=True)}"
-        return self._verify_signature(content, msg.signature, msg.timestamp)
+        """Verify message signature and freshness.
+
+        SECURITY (#2256 + #2272): verifies sender_id, msg_id, and ttl as
+        part of the signed content — any post-sign flip of those fields
+        fails verification.
+
+        Phase F: if an Ed25519 signature is present in a migration-mode
+        bundle, require the sender to be registered and the Ed25519 signature
+        to verify. HMAC remains a legacy fallback only for HMAC-only messages
+        outside strict mode.
+        """
+        if abs(time.time() - msg.timestamp) > MESSAGE_EXPIRY:
+            return False
+
+        content = self._signed_content(msg.msg_type, msg.sender_id, msg.msg_id, msg.ttl, msg.payload)
+        message = f"{content}:{msg.timestamp}"
+        mode = self._signing_mode
+
+        from p2p_identity import unpack_signature, verify_ed25519
+        hmac_sig, ed25519_sig, _key_version = unpack_signature(msg.signature)
+
+        # 1) Try Ed25519 if available. A bundled Ed25519 signature must not
+        # silently downgrade to HMAC when the sender is unregistered or the
+        # signature fails.
+        if ed25519_sig and mode in ("dual", "ed25519", "strict"):
+            if self._peer_registry is None:
+                return False
+            pubkey = self._peer_registry.get_pubkey(msg.sender_id)
+            if pubkey is None:
+                return False
+            return verify_ed25519(pubkey, ed25519_sig, message.encode())
+
+        # 2) HMAC fallback (unless strict).
+        if mode == "strict":
+            return False
+        if hmac_sig is None:
+            return False
+        expected = hmac.new(
+            P2P_SECRET.encode(), message.encode(), hashlib.sha256
+        ).hexdigest()
+        return hmac.compare_digest(hmac_sig, expected)
+
+    def _has_trusted_ed25519_identity(self, msg: GossipMessage) -> bool:
+        """Return True only when msg has a valid trusted Ed25519 signature."""
+        from p2p_identity import unpack_signature, verify_ed25519
+
+        _hmac_sig, ed25519_sig, _key_version = unpack_signature(msg.signature)
+        if not ed25519_sig:
+            return False
+
+        pubkey = None
+        if self._peer_registry is not None:
+            pubkey = self._peer_registry.get_pubkey(msg.sender_id)
+        if pubkey is None and msg.sender_id == self.node_id and self._keypair is not None:
+            pubkey = self._keypair.pubkey_hex
+        if pubkey is None:
+            return False
+
+        content = self._signed_content(
+            msg.msg_type,
+            msg.sender_id,
+            msg.msg_id,
+            msg.ttl,
+            msg.payload,
+        )
+        message = f"{content}:{msg.timestamp}"
+        return verify_ed25519(pubkey, ed25519_sig, message.encode())
 
     def broadcast(self, msg: GossipMessage, exclude_peer: str = None):
         """Broadcast message to all peers"""
@@ -395,26 +907,40 @@ class GossipLayer:
 
     def handle_message(self, msg: GossipMessage) -> Optional[Dict]:
         """Handle received gossip message"""
-        # Deduplication
-        if msg.msg_id in self.seen_messages:
-            return {"status": "duplicate"}
-
-        # Verify signature
+        # Verify signature before persistent dedup.  Otherwise an invalid packet
+        # can reserve a msg_id and race/drop a later valid copy.
         if not self.verify_message(msg):
             logger.warning(f"Invalid signature from {msg.sender_id}")
             return {"status": "invalid_signature"}
 
-        self.seen_messages.add(msg.msg_id)
+        # Deduplication (Issue #2271: DB-backed persistent dedup)
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                now = int(time.time())
+                conn.execute("INSERT OR IGNORE INTO p2p_seen_messages (msg_id, ts) VALUES (?, ?)",
+                             (msg.msg_id, now))
+                if conn.execute("SELECT changes()").fetchone()[0] == 0:
+                    return {"status": "duplicate"}
+                # Prune old messages (> 1 hour)
+                conn.execute("DELETE FROM p2p_seen_messages WHERE ts < ?", (now - 3600,))
+                conn.commit()
+        except Exception as e:
+            logger.error(f"P2P dedup DB error: {e}")
+            # Fallback to memory if DB fails
+            with self.lock:
+                if self.seen_messages.contains(msg.msg_id):
+                    return {"status": "duplicate"}
+                self.seen_messages.add(msg.msg_id)
 
-        # Limit seen_messages size
-        if len(self.seen_messages) > 10000:
-            self.seen_messages = set(list(self.seen_messages)[-5000:])
+        # TTLCache handles automatic eviction (TTL + LRU)
 
         # Handle by type
         msg_type = MessageType(msg.msg_type)
 
         if msg_type == MessageType.PING:
             return self._handle_ping(msg)
+        elif msg_type == MessageType.PEER_ANNOUNCE:
+            return self._handle_peer_announce(msg)
         elif msg_type == MessageType.INV_ATTESTATION:
             return self._handle_inv_attestation(msg)
         elif msg_type == MessageType.INV_EPOCH:
@@ -425,6 +951,8 @@ class GossipLayer:
             return self._handle_epoch_propose(msg)
         elif msg_type == MessageType.EPOCH_VOTE:
             return self._handle_epoch_vote(msg)
+        elif msg_type == MessageType.EPOCH_COMMIT:
+            return self._handle_epoch_commit(msg)
         elif msg_type == MessageType.GET_STATE:
             return self._handle_get_state(msg)
         elif msg_type == MessageType.STATE:
@@ -437,13 +965,54 @@ class GossipLayer:
 
         return {"status": "ok"}
 
+    def _handle_peer_announce(self, msg: GossipMessage) -> Dict:
+        """Accept a signed peer announcement for NAT-discovered public URLs."""
+        payload = msg.payload if isinstance(msg.payload, dict) else {}
+        peer_id = payload.get("node_id") or msg.sender_id
+        peer_url = self._valid_peer_url(payload.get("url"))
+
+        if not isinstance(peer_id, str) or not peer_id.strip():
+            return {"status": "invalid_peer_announce", "reason": "node_id required"}
+        if peer_id == self.node_id:
+            return {"status": "ignored_self_announce"}
+        if peer_url is None:
+            return {"status": "invalid_peer_announce", "reason": "valid peer url required"}
+
+        with self.lock:
+            self.peers[peer_id.strip()] = peer_url
+
+        if msg.ttl > 0:
+            msg.ttl -= 1
+            self.broadcast(msg, exclude_peer=msg.sender_id)
+
+        return {"status": "peer_added", "node_id": peer_id.strip(), "url": peer_url}
+
     def _handle_ping(self, msg: GossipMessage) -> Dict:
         """Respond to ping with pong"""
-        pong = self.create_message(MessageType.PONG, {
+        local_handshake = local_handshake_params()
+        payload = msg.payload if isinstance(msg.payload, dict) else {}
+        remote_handshake = payload.get("handshake")
+        agreed_handshake = negotiate_handshake_params(local_handshake, remote_handshake)
+        mismatches = handshake_mismatches(local_handshake, remote_handshake)
+        if mismatches:
+            logger.info(
+                "P2P handshake with %s negotiated %s; mismatches=%s",
+                msg.sender_id,
+                agreed_handshake,
+                mismatches,
+            )
+
+        pong_payload = {
             "node_id": self.node_id,
             "attestation_count": len(self.attestation_crdt.data),
-            "settled_epochs": len(self.epoch_crdt.items)
-        })
+            "settled_epochs": len(self.epoch_crdt.items),
+            "handshake": local_handshake,
+            "agreed_handshake": agreed_handshake,
+        }
+        if mismatches:
+            pong_payload["handshake_mismatches"] = mismatches
+
+        pong = self.create_message(MessageType.PONG, pong_payload)
         return {"status": "ok", "pong": pong.to_dict()}
 
     def _handle_inv_attestation(self, msg: GossipMessage) -> Dict:
@@ -460,15 +1029,43 @@ class GossipLayer:
         return {"status": "have_data"}
 
     def _handle_attestation(self, msg: GossipMessage) -> Dict:
-        """Handle full attestation data"""
+        """Handle full attestation data.
+
+        SECURITY (#2256 Phase E): schema + timestamp sanity. Reject
+        attestations with future ts_ok beyond clock-skew tolerance to
+        prevent LWW-pinning of poisoned state. Reject malformed miner_id.
+        """
         attestation = msg.payload
+        if not isinstance(attestation, dict):
+            return {"status": "error", "reason": "bad_schema"}
+
         miner_id = attestation.get("miner")
-        ts_ok = attestation.get("ts_ok", int(time.time()))
+        if not miner_id or not isinstance(miner_id, str) or len(miner_id) > 256:
+            logger.warning(f"Attestation from {msg.sender_id}: invalid miner_id")
+            return {"status": "error", "reason": "invalid_miner_id"}
+
+        now = int(time.time())
+        MAX_FUTURE_SKEW_S = 300  # 5 minutes
+        ts_ok = attestation.get("ts_ok", now)
+        if not isinstance(ts_ok, (int, float)):
+            return {"status": "error", "reason": "invalid_ts_ok"}
+        if ts_ok > now + MAX_FUTURE_SKEW_S:
+            logger.warning(
+                f"Attestation from {msg.sender_id} for miner {miner_id[:16]}: "
+                f"rejecting future-dated ts_ok={ts_ok} (now={now})"
+            )
+            return {"status": "error", "reason": "future_timestamp"}
+        if miner_id != msg.sender_id:
+            logger.warning(
+                f"Attestation from {msg.sender_id}: rejecting write for "
+                f"foreign miner namespace {miner_id[:16]}"
+            )
+            return {"status": "error", "reason": "sender_namespace_mismatch"}
 
         # Update CRDT
-        if self.attestation_crdt.set(miner_id, attestation, ts_ok):
+        if self.attestation_crdt.set(miner_id, attestation, int(ts_ok)):
             # Also update database
-            self._save_attestation_to_db(attestation, ts_ok)
+            self._save_attestation_to_db(attestation, int(ts_ok))
             logger.info(f"Merged attestation for {miner_id[:16]}...")
 
         return {"status": "ok"}
@@ -517,18 +1114,33 @@ class GossipLayer:
         return {"status": "have_data"}
 
     def _handle_epoch_propose(self, msg: GossipMessage) -> Dict:
-        """Handle epoch settlement proposal"""
+        """Handle epoch settlement proposal.
+
+        SECURITY (#2256 Phase B, RR-delegate gate): proposer identity must
+        come from the authenticated sender, not a payload field. Only the
+        scheduled round-robin leader for this epoch is accepted. Supplemental
+        to Phase A signature coverage — doesn't close the shared-HMAC problem
+        (see Phase F Ed25519), but makes out-of-turn proposal acceptance
+        impossible via normal protocol paths.
+        """
         proposal = msg.payload
         epoch = proposal.get("epoch")
-        proposer = proposal.get("proposer")
+        # Bind proposer to authenticated sender; ignore payload claim entirely.
+        proposer = msg.sender_id
+        payload_proposer = proposal.get("proposer")
 
-        # Verify proposer is legitimate leader
+        # Verify proposer is the scheduled RR-delegate for this epoch
         nodes = sorted(list(self.peers.keys()) + [self.node_id])
         expected_leader = nodes[epoch % len(nodes)]
 
         if proposer != expected_leader:
-            logger.warning(f"Invalid proposer {proposer} for epoch {epoch}, expected {expected_leader}")
+            logger.warning(f"Epoch {epoch}: rejecting proposal from {proposer}, expected RR-delegate {expected_leader}")
             return {"status": "reject", "reason": "invalid_leader"}
+
+        # If payload carries a contradictory proposer claim, reject — likely tampering
+        if payload_proposer is not None and payload_proposer != proposer:
+            logger.warning(f"Epoch {epoch}: payload proposer {payload_proposer} != authenticated sender {proposer}")
+            return {"status": "reject", "reason": "proposer_identity_mismatch"}
 
         # Validate Merkle root of distribution
         distribution = proposal.get("distribution", {})
@@ -599,49 +1211,119 @@ class GossipLayer:
 
         Requires at least 3 of 4 nodes (or majority of known nodes)
         to agree before finalizing an epoch reward distribution.
+
+        SECURITY (#2256 Phase A + C + Ed25519 binding):
+        - Voter identity bound to msg.sender_id (not payload["voter"]).
+          Consensus votes require a registered Ed25519 identity because the
+          shared HMAC only proves cluster-secret possession, not which peer
+          sent the vote.
+        - Votes indexed by (epoch, proposal_hash), not just epoch. Mixed
+          votes for different proposals cannot aggregate into a false quorum;
+          only the specific proposal_hash that reached quorum finalizes.
+        - Idempotent per (epoch, proposal_hash, voter) — duplicate votes
+          silently ignored.
         """
         payload = msg.payload
         epoch = payload.get("epoch")
-        voter = payload.get("voter")
+        # Bind voter to authenticated sender — payload["voter"] is advisory only.
+        voter = msg.sender_id
+        payload_voter = payload.get("voter")
         vote = payload.get("vote", "reject")
         proposal_hash = payload.get("proposal_hash")
 
-        if epoch is None or voter is None:
-            return {"status": "error", "reason": "missing epoch or voter"}
+        if epoch is None:
+            return {"status": "error", "reason": "missing epoch"}
+        if proposal_hash is None:
+            return {"status": "error", "reason": "missing proposal_hash"}
 
-        # Initialize vote tracking for this epoch if needed
-        if not hasattr(self, '_epoch_votes'):
-            self._epoch_votes: Dict[int, Dict[str, str]] = {}
-        if epoch not in self._epoch_votes:
-            self._epoch_votes[epoch] = {}
+        # Reject contradictory payload voter claim (likely tampering).
+        if payload_voter is not None and payload_voter != voter:
+            logger.warning(
+                f"Epoch {epoch}: payload voter {payload_voter} != "
+                f"authenticated sender {voter}; rejecting vote"
+            )
+            return {"status": "error", "reason": "voter_identity_mismatch"}
 
-        # Record the vote
-        self._epoch_votes[epoch][voter] = vote
+        known_nodes = set(self.peers.keys()) | {self.node_id}
+        if voter not in known_nodes:
+            return {"status": "error", "reason": "unknown_voter"}
 
-        # Count votes
+        if not self._has_trusted_ed25519_identity(msg):
+            logger.warning(
+                f"Epoch {epoch}: rejecting vote from {voter}; "
+                "trusted Ed25519 identity required for consensus votes"
+            )
+            return {"status": "error", "reason": "epoch_vote_requires_ed25519"}
+
+        # Phase C: index by (epoch, proposal_hash) — not just epoch.
+        key = (epoch, proposal_hash)
+        if key not in self._epoch_votes:
+            self._epoch_votes[key] = {}
+
+        # Idempotent per (epoch, proposal_hash, voter).
+        if voter in self._epoch_votes[key]:
+            logger.warning(
+                f"Epoch {epoch} proposal {proposal_hash[:12]}: "
+                f"duplicate vote from {voter} ignored"
+            )
+            return {"status": "duplicate", "epoch": epoch, "voter": voter}
+
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO p2p_epoch_votes
+                    (epoch, proposal_hash, voter, vote, ts)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (epoch, proposal_hash, voter, vote, int(time.time())),
+                )
+                if conn.execute("SELECT changes()").fetchone()[0] == 0:
+                    logger.warning(
+                        f"Epoch {epoch} proposal {proposal_hash[:12]}: "
+                        f"persisted duplicate vote from {voter} ignored"
+                    )
+                    return {"status": "duplicate", "epoch": epoch, "voter": voter}
+                conn.commit()
+        except Exception as e:
+            logger.error(f"Failed to persist epoch vote from {voter}: {e}")
+            return {"status": "error", "reason": "vote_persist_failed"}
+
+        self._epoch_votes[key][voter] = vote
+
+        # Count votes for THIS specific proposal_hash only.
         total_nodes = len(self.peers) + 1  # peers + self
-        votes_for_epoch = self._epoch_votes[epoch]
-        accept_count = sum(1 for v in votes_for_epoch.values() if v == "accept")
-        reject_count = sum(1 for v in votes_for_epoch.values() if v == "reject")
+        votes_for_proposal = self._epoch_votes[key]
+        accept_count = sum(1 for v in votes_for_proposal.values() if v == "accept")
+        reject_count = sum(1 for v in votes_for_proposal.values() if v == "reject")
 
         # Quorum: require at least 3 nodes or strict majority, whichever is larger
         quorum = max(3, (total_nodes // 2) + 1)
 
         logger.info(
-            f"Epoch {epoch} vote from {voter}: {vote} "
+            f"Epoch {epoch} proposal {proposal_hash[:12]} vote from {voter}: {vote} "
             f"(accept={accept_count}, reject={reject_count}, quorum={quorum})"
         )
 
-        # Check if quorum reached for acceptance
+        # Check if quorum reached for acceptance — bound to this specific proposal_hash.
         if accept_count >= quorum:
-            logger.info(f"Epoch {epoch}: QUORUM REACHED ({accept_count}/{total_nodes} accept)")
+            logger.info(
+                f"Epoch {epoch}: QUORUM REACHED for proposal {proposal_hash[:12]} "
+                f"({accept_count}/{total_nodes} accept)"
+            )
             self.epoch_crdt.add(epoch, {"proposal_hash": proposal_hash, "finalized": True})
-            # Broadcast commit message
+            # Broadcast commit message with only accept voters. Reject votes are
+            # not quorum evidence for finality and must not be advertised as
+            # commit voters.
+            accept_voters = [
+                voter for voter, voter_vote in votes_for_proposal.items()
+                if voter_vote == "accept"
+            ]
             commit_msg = self.create_message(MessageType.EPOCH_COMMIT, {
                 "epoch": epoch,
                 "proposal_hash": proposal_hash,
                 "accept_count": accept_count,
-                "voters": list(votes_for_epoch.keys())
+                "voters": accept_voters
             })
             self.broadcast(commit_msg)
             return {"status": "committed", "epoch": epoch, "accept_count": accept_count}
@@ -651,7 +1333,65 @@ class GossipLayer:
             logger.warning(f"Epoch {epoch}: REJECTED ({reject_count} reject, cannot reach quorum)")
             return {"status": "rejected", "epoch": epoch, "reject_count": reject_count}
 
-        return {"status": "ok", "epoch": epoch, "votes_so_far": len(votes_for_epoch)}
+        return {"status": "ok", "epoch": epoch, "votes_so_far": len(votes_for_proposal)}
+
+    def _handle_epoch_commit(self, msg: GossipMessage) -> Dict:
+        """Handle finalized epoch commits only when backed by local votes.
+
+        A commit sender's signature authenticates the committer, not every
+        listed voter. Finality is accepted only when the receiver has already
+        validated accept votes from a quorum of the claimed known voters.
+        """
+        payload = msg.payload if isinstance(msg.payload, dict) else {}
+        epoch = payload.get("epoch")
+        proposal_hash = payload.get("proposal_hash")
+        accept_count = payload.get("accept_count", 0)
+        voters = payload.get("voters", [])
+
+        if epoch is None or not proposal_hash:
+            return {"status": "error", "reason": "missing_commit_fields"}
+        if not isinstance(epoch, int) or not isinstance(proposal_hash, str):
+            return {"status": "error", "reason": "invalid_commit_fields"}
+        if not isinstance(accept_count, int) or accept_count < 0:
+            return {"status": "error", "reason": "invalid_accept_count"}
+        if not isinstance(voters, list):
+            return {"status": "error", "reason": "invalid_voters"}
+
+        known_nodes = set(self.peers.keys()) | {self.node_id}
+        voter_set = {v for v in voters if isinstance(v, str)}
+        if len(voter_set) != len(voters):
+            return {"status": "error", "reason": "invalid_voters"}
+        if not voter_set.issubset(known_nodes):
+            return {"status": "error", "reason": "unknown_voter"}
+
+        total_nodes = len(self.peers) + 1
+        quorum = max(3, (total_nodes // 2) + 1)
+        if accept_count < quorum or len(voter_set) < quorum:
+            return {"status": "error", "reason": "insufficient_quorum"}
+
+        votes_for_proposal = self._epoch_votes.get((epoch, proposal_hash), {})
+        accepted_voters = {
+            voter for voter, vote in votes_for_proposal.items()
+            if vote == "accept"
+        }
+        unverified_voters = voter_set - accepted_voters
+        if unverified_voters:
+            return {
+                "status": "error",
+                "reason": "unverified_voters",
+                "voters": sorted(unverified_voters),
+            }
+        if len(accepted_voters) < quorum:
+            return {"status": "error", "reason": "insufficient_local_quorum"}
+
+        self.epoch_crdt.add(epoch, {
+            "proposal_hash": proposal_hash,
+            "finalized": True,
+            "accept_count": len(accepted_voters),
+            "voters": sorted(accepted_voters),
+            "committer": msg.sender_id,
+        })
+        return {"status": "committed", "epoch": epoch, "accept_count": len(accepted_voters)}
 
     def _handle_get_state(self, msg: GossipMessage) -> Dict:
         """Handle state request - return full CRDT state with signature"""
@@ -661,46 +1401,121 @@ class GossipLayer:
             "balances": self.balance_crdt.to_dict()
         }
         # Sign the state response so the requester can verify authenticity.
-        # The signature covers msg_type:json(payload) to match verify_message().
+        # Uses the Phase A signed-content shape (msg_type:sender_id:payload)
+        # so verify_message() on the requester side accepts it.
         payload = {"state": state_data}
-        content = f"{MessageType.STATE.value}:{json.dumps(payload, sort_keys=True)}"
+        # Issue #2268: Use cryptographically secure random nonce instead of predictable time.time()
+        state_nonce = secrets.token_hex(16)
+        state_msg_id = hashlib.sha256(
+            f"STATE:{self.node_id}:{json.dumps(payload, sort_keys=True)}:{state_nonce}".encode()
+        ).hexdigest()[:24]
+        
+        content = self._signed_content(MessageType.STATE.value, self.node_id, state_msg_id, 0, payload)
         signature, timestamp = self._sign_message(content)
         return {
             "status": "ok",
             "state": state_data,
             "signature": signature,
-            "timestamp": timestamp
+            "timestamp": timestamp,
+            "sender_id": self.node_id,
+            "msg_id": state_msg_id,
+            "ttl": 0
         }
 
     def _handle_state(self, msg: GossipMessage) -> Dict:
-        """Handle incoming state - merge with local"""
+        """Handle incoming state - merge with local.
+
+        SECURITY (#2256 Phase D): hardens the blind CRDT merge that was the
+        biggest poison sink in the old flow. Validations applied:
+          1. Valid signature covering sender_id (Phase A)
+          2. Schema validation on each CRDT section
+          3. Timestamp sanity: reject attestations with ts_ok > now + skew
+          4. Balance PN-counter entries scoped to authenticated sender's
+             namespace — the sender can only assert +/- values against its
+             own node_id key, not inject counter entries on behalf of others
+        """
         # SECURITY: Reject state messages without valid signatures.
-        # Previously, request_full_sync() passed signature="" which bypassed
-        # all authentication. Now we require a valid signature on ALL state.
         if not msg.signature:
             logger.warning(f"Rejected state merge from {msg.sender_id}: empty signature")
             return {"status": "error", "error": "missing_signature"}
         if not self.verify_message(msg):
             logger.warning(f"Rejected state merge from {msg.sender_id}: invalid signature")
             return {"status": "error", "error": "invalid_signature"}
+
         state = msg.payload.get("state", {})
+        sender = msg.sender_id
+        now = int(time.time())
+        # Accept attestations up to 5 minutes in the future (clock skew) — anything
+        # beyond is rejected as poisoning attempt.
+        MAX_FUTURE_SKEW_S = 300
 
-        # Merge attestations
+        # Phase D.1: Validate + merge attestations with timestamp sanity
         if "attestations" in state:
-            remote_attest = LWWRegister.from_dict(state["attestations"])
-            self.attestation_crdt.merge(remote_attest)
+            raw = state["attestations"]
+            if not isinstance(raw, dict):
+                logger.warning(f"State from {sender}: attestations not a dict, skipping")
+            else:
+                try:
+                    remote_attest = LWWRegister.from_dict(raw)
+                    # Drop any entries with future-dated ts_ok beyond skew tolerance
+                    filtered = LWWRegister()
+                    for key, (ts, value) in remote_attest.data.items():
+                        if ts > now + MAX_FUTURE_SKEW_S:
+                            logger.warning(
+                                f"State from {sender}: rejecting future-dated "
+                                f"attestation {key[:16]} (ts={ts}, now={now})"
+                            )
+                            continue
+                        if key != sender:
+                            logger.warning(
+                                f"State from {sender}: rejecting attestation "
+                                f"for foreign miner namespace {key[:16]}"
+                            )
+                            continue
+                        filtered.set(key, value, ts)
+                    self.attestation_crdt.merge(filtered)
+                except Exception as e:
+                    logger.warning(f"State from {sender}: attestation merge failed: {e}")
 
-        # Merge epochs
+        # Phase D.2: Epoch finality must not be imported from generic state sync.
+        # A valid peer signature authenticates who sent the snapshot, but it is
+        # not quorum evidence that an epoch was committed. Epochs enter
+        # epoch_crdt only through the EPOCH_COMMIT path, where votes/commit
+        # metadata are validated before marking finality.
         if "epochs" in state:
-            remote_epochs = GSet.from_dict(state["epochs"])
-            self.epoch_crdt.merge(remote_epochs)
+            raw = state["epochs"]
+            if not isinstance(raw, dict):
+                logger.warning(f"State from {sender}: epochs not a dict, skipping")
+            elif raw.get("epochs") or raw.get("metadata"):
+                logger.warning(
+                    f"State from {sender}: ignoring epoch finality data in STATE sync"
+                )
 
-        # Merge balances
+        # Phase D.3: Scope balance PN-counter entries to sender's own namespace.
+        # The sender can only contribute increments/decrements under its own
+        # node_id key. Entries under other node_ids are dropped.
         if "balances" in state:
-            remote_balances = PNCounter.from_dict(state["balances"])
-            self.balance_crdt.merge(remote_balances)
+            raw = state["balances"]
+            if not isinstance(raw, dict):
+                logger.warning(f"State from {sender}: balances not a dict, skipping")
+            else:
+                try:
+                    scoped = {"increments": {}, "decrements": {}}
+                    for section in ("increments", "decrements"):
+                        entries = raw.get(section, {}) or {}
+                        for miner_id, node_map in entries.items():
+                            if not isinstance(node_map, dict):
+                                continue
+                            # Only keep the sender's own contribution key
+                            own = node_map.get(sender)
+                            if own is not None:
+                                scoped[section].setdefault(miner_id, {})[sender] = own
+                    remote_balances = PNCounter.from_dict(scoped)
+                    self.balance_crdt.merge(remote_balances)
+                except Exception as e:
+                    logger.warning(f"State from {sender}: balances merge failed: {e}")
 
-        logger.info(f"Merged state from {msg.sender_id}")
+        logger.info(f"Merged state from {sender} (scoped)")
         return {"status": "ok"}
 
     def announce_attestation(self, miner_id: str, ts_ok: int, device_arch: str):
@@ -722,30 +1537,32 @@ class GossipLayer:
             resp = requests.post(
                 f"{peer_url}/p2p/gossip",
                 json=msg.to_dict(),
+                headers={"X-P2P-Key": P2P_SECRET},
                 timeout=30,
                 verify=TLS_VERIFY
             )
             if resp.status_code == 200:
                 data = resp.json()
                 if "state" in data:
-                    # SECURITY FIX #2154: Verify signature on state response.
+                    # SECURITY FIX #2154 & #2288: Verify signature on state response.
                     # The responder signs over {"state": <state_data>} (see
-                    # _handle_get_state), so the payload we feed into the
-                    # GossipMessage must match exactly — NOT the full HTTP
-                    # response which also contains "status", "signature", and
-                    # "timestamp" keys.
+                    # _handle_get_state), including msg_id and ttl for arity.
                     signature = data.get("signature", "")
                     timestamp = data.get("timestamp", int(time.time()))
+                    msg_id = data.get("msg_id", f"sync:{self.node_id}:{timestamp}")
+                    ttl = data.get("ttl", 0)
+
                     if not signature:
                         logger.error(f"Full sync from {peer_url}: no signature on state response")
                         return
                     state_payload = {"state": data["state"]}
+                    responder_id = data.get("sender_id") or peer_url
                     state_msg = GossipMessage(
                         msg_type=MessageType.STATE.value,
-                        msg_id=f"sync:{peer_url}:{timestamp}",
-                        sender_id=peer_url,
+                        msg_id=msg_id,
+                        sender_id=responder_id,
                         timestamp=timestamp,
-                        ttl=0,
+                        ttl=ttl,
                         signature=signature,
                         payload=state_payload
                     )
@@ -846,10 +1663,17 @@ class RustChainP2PNode:
     Manages gossip, CRDT state, and epoch consensus.
     """
 
-    def __init__(self, node_id: str, db_path: str, peers: Dict[str, str]):
+    def __init__(
+        self,
+        node_id: str,
+        db_path: str,
+        peers: Dict[str, str],
+        advertised_url: Optional[str] = None,
+    ):
         self.node_id = node_id
         self.db_path = db_path
         self.peers = peers
+        self.advertised_url = advertised_url
 
         # Initialize components
         self.gossip = GossipLayer(node_id, peers, db_path)
@@ -867,6 +1691,7 @@ class RustChainP2PNode:
         self.running = True
         self.sync_thread = threading.Thread(target=self._sync_loop, daemon=True)
         self.sync_thread.start()
+        self.announce_peer()
         logger.info(f"P2P Node {self.node_id} started with {len(self.peers)} peers")
 
     def stop(self):
@@ -924,6 +1749,17 @@ class RustChainP2PNode:
             attestation.get("device_arch", "unknown")
         )
 
+    def announce_peer(self):
+        """Broadcast this node's reachable URL when NAT traversal found one."""
+        if not self.advertised_url:
+            return
+
+        msg = self.gossip.create_message(MessageType.PEER_ANNOUNCE, {
+            "node_id": self.node_id,
+            "url": self.advertised_url,
+        })
+        self.gossip.broadcast(msg)
+
 
 # =============================================================================
 # FLASK ENDPOINTS REGISTRATION
@@ -933,27 +1769,99 @@ def register_p2p_endpoints(app, p2p_node: RustChainP2PNode):
     """Register P2P synchronization endpoints on Flask app"""
 
     from flask import request, jsonify
+    from collections import deque
+    from threading import Lock
+
+    # FIX(#2867 M5): Per-IP rate limit on /p2p/gossip POST.
+    # The endpoint does signature verification + CRDT merge + SQLite I/O on
+    # every request. Without throttling it's a cheap DoS amplifier — one
+    # attacker can saturate the node by hammering this with junk messages.
+    #
+    # Token bucket: 10 requests per IP per 1-second window.
+    # That's well above legitimate gossip traffic (peers normally send
+    # < 1 msg/sec each) but caps a single misbehaving IP at ~10x the
+    # background rate.
+    GOSSIP_RATE_WINDOW_S = 1.0
+    GOSSIP_RATE_LIMIT = 10
+    _gossip_rate: Dict[str, deque] = {}
+    _gossip_rate_lock = Lock()
+
+    def _gossip_rate_check(remote_ip: str) -> bool:
+        """Returns True if the IP is within rate limit, False if over."""
+        now = time.monotonic()
+        with _gossip_rate_lock:
+            q = _gossip_rate.get(remote_ip)
+            if q is None:
+                q = deque()
+                _gossip_rate[remote_ip] = q
+            # Evict timestamps outside the window
+            cutoff = now - GOSSIP_RATE_WINDOW_S
+            while q and q[0] < cutoff:
+                q.popleft()
+            if len(q) >= GOSSIP_RATE_LIMIT:
+                return False
+            q.append(now)
+            # Periodic pruning: if the dict gets large, drop empty queues
+            if len(_gossip_rate) > 10_000:
+                empties = [ip for ip, dq in _gossip_rate.items() if not dq]
+                for ip in empties:
+                    del _gossip_rate[ip]
+            return True
+
+    def _require_p2p_read_auth():
+        """Require the shared P2P secret for sensitive read-only sync endpoints."""
+        provided = request.headers.get("X-P2P-Key", "")
+        if not provided or not hmac.compare_digest(provided, P2P_SECRET):
+            return jsonify({"error": "unauthorized", "message": "valid X-P2P-Key required"}), 401
+        return None
 
     @app.route('/p2p/gossip', methods=['POST'])
     def receive_gossip():
         """Receive and process gossip message"""
-        data = request.get_json()
+        # FIX(#2867 M5): per-IP rate limit BEFORE expensive verify+CRDT work.
+        remote_ip = request.headers.get('X-Forwarded-For', request.remote_addr or 'unknown').split(',')[0].strip()
+        if not _gossip_rate_check(remote_ip):
+            return jsonify({"error": "rate_limited", "limit": f"{GOSSIP_RATE_LIMIT}/{GOSSIP_RATE_WINDOW_S}s"}), 429
+
+        if (
+            request.content_length is not None
+            and request.content_length > MAX_GOSSIP_REQUEST_BYTES
+        ):
+            return jsonify({"error": "gossip request too large"}), 413
+
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({"error": "JSON object required"}), 400
+        if "payload" in data:
+            try:
+                validate_gossip_payload(data["payload"])
+            except ValueError as exc:
+                return jsonify({"error": str(exc)}), 400
         result = p2p_node.handle_gossip(data)
         return jsonify(result)
 
     @app.route('/p2p/state', methods=['GET'])
     def get_state():
         """Get full CRDT state for sync"""
+        auth_error = _require_p2p_read_auth()
+        if auth_error:
+            return auth_error
         return jsonify(p2p_node.get_full_state())
 
     @app.route('/p2p/attestation_state', methods=['GET'])
     def get_attestation_state():
         """Get attestation timestamps for efficient sync"""
+        auth_error = _require_p2p_read_auth()
+        if auth_error:
+            return auth_error
         return jsonify(p2p_node.get_attestation_state())
 
     @app.route('/p2p/peers', methods=['GET'])
     def get_peers():
         """Get list of known peers"""
+        auth_error = _require_p2p_read_auth()
+        if auth_error:
+            return auth_error
         return jsonify({
             "node_id": p2p_node.node_id,
             "peers": list(p2p_node.peers.keys())
@@ -966,11 +1874,68 @@ def register_p2p_endpoints(app, p2p_node: RustChainP2PNode):
             "node_id": p2p_node.node_id,
             "running": p2p_node.running,
             "peer_count": len(p2p_node.peers),
+            "advertised_url": getattr(p2p_node, "advertised_url", None),
             "attestation_count": len(p2p_node.gossip.attestation_crdt.data),
             "settled_epochs": len(p2p_node.gossip.epoch_crdt.items)
         })
 
     logger.info("P2P endpoints registered")
+
+
+# =============================================================================
+# STANDALONE DEMO PEER CONFIG
+# =============================================================================
+
+DEFAULT_BOOTSTRAP_PEERS = {
+    "node1": "https://rustchain.org",
+}
+
+
+def _parse_peer_config(raw_peers: str) -> Dict[str, str]:
+    """
+    Parse RC_P2P_PEERS as: node2=https://peer.example,node3=http://localhost:8099
+
+    Remote peers must use HTTPS. Plain HTTP is accepted only for loopback
+    development nodes.
+    """
+    peers: Dict[str, str] = {}
+    for item in raw_peers.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        if "=" not in item:
+            raise ValueError("expected entries like node_id=https://host:port")
+
+        node_id, peer_url = (part.strip() for part in item.split("=", 1))
+        if not node_id or not peer_url:
+            raise ValueError("peer entries require both node_id and URL")
+
+        parsed = urlparse(peer_url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError(f"invalid URL for peer {node_id!r}: {peer_url!r}")
+
+        is_loopback = parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+        if parsed.scheme == "http" and not is_loopback:
+            raise ValueError(
+                f"remote peer {node_id!r} must use HTTPS, got {peer_url!r}"
+            )
+
+        peers[node_id] = peer_url.rstrip("/")
+    return peers
+
+
+def _load_demo_peers(node_id: str, raw_peers: Optional[str] = None) -> Dict[str, str]:
+    """Return configured standalone peers without including this node."""
+    if raw_peers is None:
+        raw_peers = os.environ.get("RC_P2P_PEERS", "")
+
+    peers = (
+        _parse_peer_config(raw_peers)
+        if raw_peers.strip()
+        else dict(DEFAULT_BOOTSTRAP_PEERS)
+    )
+    peers.pop(node_id, None)
+    return peers
 
 
 # =============================================================================
@@ -980,16 +1945,10 @@ def register_p2p_endpoints(app, p2p_node: RustChainP2PNode):
 if __name__ == "__main__":
     # Test configuration
     NODE_ID = os.environ.get("RC_NODE_ID", "node1")
-
-    PEERS = {
-        "node1": "https://rustchain.org",
-        "node2": "http://50.28.86.153:8099",
-        "node3": "http://76.8.228.245:8099"
-    }
-
-    # Remove self from peers
-    if NODE_ID in PEERS:
-        del PEERS[NODE_ID]
+    try:
+        PEERS = _load_demo_peers(NODE_ID)
+    except ValueError as exc:
+        raise SystemExit(f"[P2P] invalid RC_P2P_PEERS: {exc}") from exc
 
     # Create and start node
     node = RustChainP2PNode(NODE_ID, DB_PATH, PEERS)

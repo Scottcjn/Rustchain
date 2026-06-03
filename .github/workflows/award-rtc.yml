@@ -1,0 +1,29 @@
+name: Award RTC on PR Merge
+
+on:
+  pull_request_target:
+    types: [closed]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  award-rtc:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Award RTC to Contributor
+        uses: ./.github/actions/rtc-auto-bounty
+        with:
+          rtc-amount: '5'
+          rtc-api-url: ${{ secrets.RTC_API_URL }}
+          rtc-vps-host: ${{ secrets.RTC_VPS_HOST }}
+          rtc-admin-key: ${{ secrets.RTC_ADMIN_KEY }}
+          from-wallet: 'founder_community'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repo-path: ${{ github.workspace }}

@@ -366,6 +366,27 @@ def create_api_server(node: RustChainNode):
     app = Flask(__name__)
     CORS(app)
 
+    def require_json_object(required_fields: List[str]):
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return None, (jsonify({"error": "JSON object required"}), 400)
+
+        missing = [field for field in required_fields if field not in data]
+        if missing:
+            return None, (
+                jsonify({"error": "Missing required fields", "fields": missing}),
+                400,
+            )
+
+        return data, None
+
+    def build_hardware(data: Dict[str, Any]) -> HardwareInfo:
+        return HardwareInfo(
+            cpu_model=str(data["hardware"]),
+            release_year=int(data.get("release_year", 2000)),
+            uptime_days=int(data.get("uptime_days", 0)),
+        )
+
     @app.route("/api/stats")
     def stats():
         return jsonify(node.get_stats())
@@ -383,26 +404,33 @@ def create_api_server(node: RustChainNode):
 
     @app.route("/api/mine", methods=["POST"])
     def mine():
-        data = request.json
-        wallet = WalletAddress(data["wallet"])
-        hardware = HardwareInfo(
-            cpu_model=data["hardware"],
-            release_year=data.get("release_year", 2000),
-            uptime_days=data.get("uptime_days", 0),
-        )
-        result = node.submit_mining_proof(wallet, hardware)
+        data, error = require_json_object(["wallet", "hardware"])
+        if error:
+            return error
+
+        try:
+            wallet = WalletAddress(str(data["wallet"]))
+            hardware = build_hardware(data)
+            result = node.submit_mining_proof(wallet, hardware)
+        except (TypeError, ValueError) as exc:
+            return jsonify({"error": str(exc)}), 400
+
         return jsonify(result)
 
     @app.route("/api/node/antiquity", methods=["POST"])
     def antiquity():
-        data = request.json
-        wallet = WalletAddress(data["wallet"])
-        hardware = HardwareInfo(
-            cpu_model=data["hardware"],
-            release_year=data.get("release_year", 2000),
-            uptime_days=data.get("uptime_days", 0),
-        )
-        return jsonify(node.get_node_antiquity(wallet, hardware))
+        data, error = require_json_object(["wallet", "hardware"])
+        if error:
+            return error
+
+        try:
+            wallet = WalletAddress(str(data["wallet"]))
+            hardware = build_hardware(data)
+            result = node.get_node_antiquity(wallet, hardware)
+        except (TypeError, ValueError) as exc:
+            return jsonify({"error": str(exc)}), 400
+
+        return jsonify(result)
 
     @app.route("/api/governance/proposals")
     def proposals():
@@ -410,24 +438,38 @@ def create_api_server(node: RustChainNode):
 
     @app.route("/api/governance/create", methods=["POST"])
     def create_proposal():
-        data = request.json
-        result = node.create_proposal(
-            title=data["title"],
-            description=data["description"],
-            proposal_type=data["type"],
-            proposer=WalletAddress(data["proposer"]),
-            contract_hash=data.get("contract_hash"),
-        )
+        data, error = require_json_object(["title", "description", "type", "proposer"])
+        if error:
+            return error
+
+        try:
+            result = node.create_proposal(
+                title=data["title"],
+                description=data["description"],
+                proposal_type=data["type"],
+                proposer=WalletAddress(str(data["proposer"])),
+                contract_hash=data.get("contract_hash"),
+            )
+        except (TypeError, ValueError) as exc:
+            return jsonify({"error": str(exc)}), 400
+
         return jsonify(result)
 
     @app.route("/api/governance/vote", methods=["POST"])
     def vote():
-        data = request.json
-        result = node.vote_proposal(
-            proposal_id=data["proposal_id"],
-            voter=WalletAddress(data["voter"]),
-            support=data["support"],
-        )
+        data, error = require_json_object(["proposal_id", "voter", "support"])
+        if error:
+            return error
+
+        try:
+            result = node.vote_proposal(
+                proposal_id=data["proposal_id"],
+                voter=WalletAddress(str(data["voter"])),
+                support=data["support"],
+            )
+        except (TypeError, ValueError) as exc:
+            return jsonify({"error": str(exc)}), 400
+
         return jsonify(result)
 
     return app

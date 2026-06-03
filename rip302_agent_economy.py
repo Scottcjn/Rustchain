@@ -24,6 +24,7 @@ Date: 2026-03-05
 import hashlib
 import json
 import logging
+import math
 import sqlite3
 import time
 from flask import Flask, request, jsonify
@@ -195,6 +196,13 @@ def _log_job_action(c: sqlite3.Cursor, job_id: str, action: str,
 def _update_reputation(c: sqlite3.Cursor, wallet_id: str, field: str,
                        increment: int = 1):
     """Increment a reputation field for an agent."""
+    # FIX(#2867 H4): Whitelist allowed fields to prevent SQL injection via f-string
+    ALLOWED_REP_FIELDS = frozenset({
+        "jobs_posted", "jobs_completed_as_poster",
+        "jobs_completed_as_worker", "jobs_disputed", "jobs_expired",
+    })
+    if field not in ALLOWED_REP_FIELDS:
+        return
     now = int(time.time())
     c.execute("""
         INSERT INTO agent_reputation (wallet_id, first_seen, last_active)
@@ -211,6 +219,76 @@ def _get_client_ip():
     return request.headers.get("X-Real-IP", request.remote_addr)
 
 
+def _parse_non_negative_int_arg(name: str, default: int, max_value: int = None):
+    raw = request.args.get(name)
+    if raw is None:
+        return default, None
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None, f"{name} must be an integer"
+    if value < 0:
+        return None, f"{name} must be non-negative"
+    if max_value is not None:
+        value = min(value, max_value)
+    return value, None
+
+
+def _parse_non_negative_float_arg(name: str, default: float):
+    raw = request.args.get(name)
+    if raw is None:
+        return default, None
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None, f"{name} must be a number"
+    if not math.isfinite(value) or value < 0:
+        return None, f"{name} must be a non-negative number"
+    return value, None
+
+
+def _get_json_object(required: bool = True):
+    data = request.get_json(silent=True)
+    if data is None:
+        if required:
+            return None, (jsonify({"error": "JSON body required"}), 400)
+        return {}, None
+    if not isinstance(data, dict):
+        return None, (jsonify({"error": "JSON object required"}), 400)
+    return data, None
+
+
+def _parse_job_reward(raw):
+    if isinstance(raw, bool):
+        return None, "reward_rtc must be a finite number"
+    try:
+        reward = float(raw)
+    except (TypeError, ValueError):
+        return None, "reward_rtc must be a finite number"
+    if not math.isfinite(reward):
+        return None, "reward_rtc must be a finite number"
+    if reward < 0.01:
+        return None, "Minimum reward is 0.01 RTC"
+    if reward > 10000:
+        return None, "Maximum reward is 10,000 RTC"
+    return reward, None
+
+
+def _parse_ttl_seconds(raw):
+    if isinstance(raw, bool):
+        return None, "ttl_seconds must be an integer"
+    try:
+        ttl_seconds = int(raw)
+    except (TypeError, ValueError):
+        return None, "ttl_seconds must be an integer"
+    return min(max(ttl_seconds, 3600), JOB_TTL_MAX), None
+
+
+def _internal_error_response(action: str, exc: Exception):
+    log.exception("%s failed with %s", action, type(exc).__name__)
+    return jsonify({"error": "Internal error"}), 500
+
+
 # ---------------------------------------------------------------------------
 # Route Registration
 # ---------------------------------------------------------------------------
@@ -220,21 +298,44 @@ def register_agent_economy(app: Flask, db_path: str):
 
     init_agent_economy_tables(db_path)
 
+    def _expire_refundable_job(c: sqlite3.Cursor, job: dict, now: int) -> bool:
+        """Expire an open/claimed job past TTL and refund escrow once."""
+        if job["status"] not in (STATUS_OPEN, STATUS_CLAIMED):
+            return False
+        if int(job["expires_at"]) >= now:
+            return False
+
+        c.execute("""
+            UPDATE agent_jobs
+            SET status = ?
+            WHERE job_id = ?
+              AND status IN (?, ?)
+              AND expires_at < ?
+        """, (STATUS_EXPIRED, job["job_id"], STATUS_OPEN, STATUS_CLAIMED, now))
+        if c.rowcount == 0:
+            return False
+
+        _refund_escrow(c, job)
+        _update_reputation(c, job["poster_wallet"], "jobs_expired")
+        _log_job_action(c, job["job_id"], "expired", job["poster_wallet"],
+                       f"status={job['status']}")
+        return True
+
     # -----------------------------------------------------------------------
     # POST /agent/jobs — Create a new job (locks escrow)
     # -----------------------------------------------------------------------
     @app.route("/agent/jobs", methods=["POST"])
     def agent_post_job():
-        data = request.get_json(silent=True)
-        if not data:
-            return jsonify({"error": "JSON body required"}), 400
+        data, error = _get_json_object(required=True)
+        if error:
+            return error
 
         poster = str(data.get("poster_wallet", "")).strip()
         title = str(data.get("title", "")).strip()
         description = str(data.get("description", "")).strip()
         category = str(data.get("category", "other")).strip().lower()
         reward_rtc = data.get("reward_rtc", 0)
-        ttl_seconds = int(data.get("ttl_seconds", JOB_TTL_DEFAULT))
+        ttl_seconds = data.get("ttl_seconds", JOB_TTL_DEFAULT)
         tags = data.get("tags", [])
 
         # Validation
@@ -247,17 +348,13 @@ def register_agent_economy(app: Flask, db_path: str):
         if category not in VALID_CATEGORIES:
             return jsonify({"error": f"category must be one of: {VALID_CATEGORIES}"}), 400
 
-        try:
-            reward_rtc = float(reward_rtc)
-        except (TypeError, ValueError):
-            return jsonify({"error": "reward_rtc must be a number"}), 400
+        reward_rtc, error = _parse_job_reward(reward_rtc)
+        if error:
+            return jsonify({"error": error}), 400
 
-        if reward_rtc < 0.01:
-            return jsonify({"error": "Minimum reward is 0.01 RTC"}), 400
-        if reward_rtc > 10000:
-            return jsonify({"error": "Maximum reward is 10,000 RTC"}), 400
-
-        ttl_seconds = min(max(ttl_seconds, 3600), JOB_TTL_MAX)  # 1h to 30d
+        ttl_seconds, error = _parse_ttl_seconds(ttl_seconds)
+        if error:
+            return jsonify({"error": error}), 400
 
         reward_i64 = int(reward_rtc * 1000000)
         platform_fee_i64 = int(reward_i64 * PLATFORM_FEE_RATE)
@@ -330,8 +427,7 @@ def register_agent_economy(app: Flask, db_path: str):
 
         except Exception as e:
             conn.rollback()
-            log.error(f"agent_post_job error: {e}")
-            return jsonify({"error": "Internal error", "details": str(e)}), 500
+            return _internal_error_response("agent_post_job", e)
         finally:
             conn.close()
 
@@ -340,7 +436,9 @@ def register_agent_economy(app: Flask, db_path: str):
     # -----------------------------------------------------------------------
     @app.route("/agent/jobs/<job_id>/claim", methods=["POST"])
     def agent_claim_job(job_id):
-        data = request.get_json(silent=True) or {}
+        data, error = _get_json_object(required=False)
+        if error:
+            return error
         worker = str(data.get("worker_wallet", "")).strip()
 
         if not worker:
@@ -369,12 +467,14 @@ def register_agent_economy(app: Flask, db_path: str):
 
             now = int(time.time())
             if now > j["expires_at"]:
-                # Auto-expire
-                c.execute("UPDATE agent_jobs SET status = 'expired' WHERE job_id = ?",
-                         (job_id,))
-                _refund_escrow(c, j)
-                conn.commit()
-                return jsonify({"error": "Job has expired"}), 410
+                if _expire_refundable_job(c, j, now):
+                    conn.commit()
+                    return jsonify({"error": "Job has expired"}), 410
+                conn.rollback()
+                return jsonify({
+                    "error": "Job state changed under concurrent request — please retry",
+                    "code": "STATE_RACE",
+                }), 409
 
             # Claim it
             c.execute("""
@@ -401,8 +501,7 @@ def register_agent_economy(app: Flask, db_path: str):
 
         except Exception as e:
             conn.rollback()
-            log.error(f"agent_claim_job error: {e}")
-            return jsonify({"error": str(e)}), 500
+            return _internal_error_response("agent_claim_job", e)
         finally:
             conn.close()
 
@@ -411,7 +510,9 @@ def register_agent_economy(app: Flask, db_path: str):
     # -----------------------------------------------------------------------
     @app.route("/agent/jobs/<job_id>/deliver", methods=["POST"])
     def agent_deliver_job(job_id):
-        data = request.get_json(silent=True) or {}
+        data, error = _get_json_object(required=False)
+        if error:
+            return error
         worker = str(data.get("worker_wallet", "")).strip()
         deliverable_url = str(data.get("deliverable_url", "")).strip()
         deliverable_hash = str(data.get("deliverable_hash", "")).strip()
@@ -439,12 +540,28 @@ def register_agent_economy(app: Flask, db_path: str):
                 return jsonify({"error": "Only the assigned worker can deliver"}), 403
 
             now = int(time.time())
+            if now > j["expires_at"]:
+                if _expire_refundable_job(c, j, now):
+                    conn.commit()
+                    return jsonify({"error": "Job has expired"}), 410
+                conn.rollback()
+                return jsonify({
+                    "error": "Job state changed under concurrent request — please retry",
+                    "code": "STATE_RACE",
+                }), 409
+
             c.execute("""
                 UPDATE agent_jobs
                 SET status = 'delivered', deliverable_url = ?,
                     deliverable_hash = ?, result_summary = ?, delivered_at = ?
-                WHERE job_id = ?
-            """, (deliverable_url, deliverable_hash, result_summary, now, job_id))
+                WHERE job_id = ? AND status = ?
+            """, (deliverable_url, deliverable_hash, result_summary, now, job_id, STATUS_CLAIMED))
+            if c.rowcount == 0:
+                conn.rollback()
+                return jsonify({
+                    "error": "Job state changed under concurrent request — please retry",
+                    "code": "STATE_RACE",
+                }), 409
 
             _log_job_action(c, job_id, "delivered", worker,
                            f"url={deliverable_url}")
@@ -459,7 +576,7 @@ def register_agent_economy(app: Flask, db_path: str):
 
         except Exception as e:
             conn.rollback()
-            return jsonify({"error": str(e)}), 500
+            return _internal_error_response("agent_deliver_job", e)
         finally:
             conn.close()
 
@@ -468,7 +585,9 @@ def register_agent_economy(app: Flask, db_path: str):
     # -----------------------------------------------------------------------
     @app.route("/agent/jobs/<job_id>/accept", methods=["POST"])
     def agent_accept_delivery(job_id):
-        data = request.get_json(silent=True) or {}
+        data, error = _get_json_object(required=False)
+        if error:
+            return error
         poster = str(data.get("poster_wallet", "")).strip()
         rating = data.get("rating")  # 1-5 optional
 
@@ -497,16 +616,29 @@ def register_agent_economy(app: Flask, db_path: str):
             fee_i64 = j["platform_fee_i64"]
             escrow_i64 = j["escrow_i64"]
 
-            # Release escrow: pay worker + platform fee
-            _adjust_balance(c, ESCROW_WALLET, -escrow_i64)
-            _adjust_balance(c, worker, reward_i64)
-            _adjust_balance(c, PLATFORM_FEE_WALLET, fee_i64)
-
+            # FIX(#2867 F2 / 15183848750): Atomic state transition.
+            # Update FIRST, with WHERE status=? guard. If the row was
+            # already moved (e.g., concurrent /cancel or /accept), rows-
+            # affected = 0 and we abort BEFORE touching balances. This
+            # prevents the read-check-then-mutate race where two requests
+            # both pass the `if status` check and both apply escrow moves.
             c.execute("""
                 UPDATE agent_jobs
                 SET status = 'completed', completed_at = ?
-                WHERE job_id = ?
-            """, (now, job_id))
+                WHERE job_id = ? AND status = ?
+            """, (now, job_id, STATUS_DELIVERED))
+            if c.rowcount == 0:
+                conn.rollback()
+                return jsonify({
+                    "error": "Job state changed under concurrent request — please retry",
+                    "code": "STATE_RACE",
+                }), 409
+
+            # Release escrow: pay worker + platform fee (only after the
+            # status transition has been atomically claimed above).
+            _adjust_balance(c, ESCROW_WALLET, -escrow_i64)
+            _adjust_balance(c, worker, reward_i64)
+            _adjust_balance(c, PLATFORM_FEE_WALLET, fee_i64)
 
             # Update reputation
             _update_reputation(c, poster, "jobs_completed_as_poster")
@@ -561,7 +693,7 @@ def register_agent_economy(app: Flask, db_path: str):
 
         except Exception as e:
             conn.rollback()
-            return jsonify({"error": str(e)}), 500
+            return _internal_error_response("agent_accept_delivery", e)
         finally:
             conn.close()
 
@@ -570,7 +702,9 @@ def register_agent_economy(app: Flask, db_path: str):
     # -----------------------------------------------------------------------
     @app.route("/agent/jobs/<job_id>/dispute", methods=["POST"])
     def agent_dispute_job(job_id):
-        data = request.get_json(silent=True) or {}
+        data, error = _get_json_object(required=False)
+        if error:
+            return error
         poster = str(data.get("poster_wallet", "")).strip()
         reason = str(data.get("reason", "")).strip()
 
@@ -599,8 +733,14 @@ def register_agent_economy(app: Flask, db_path: str):
             c.execute("""
                 UPDATE agent_jobs
                 SET status = 'disputed', rejection_reason = ?
-                WHERE job_id = ?
-            """, (reason[:500], job_id))
+                WHERE job_id = ? AND status = ?
+            """, (reason[:500], job_id, STATUS_DELIVERED))
+            if c.rowcount == 0:
+                conn.rollback()
+                return jsonify({
+                    "error": "Job state changed under concurrent request — please retry",
+                    "code": "STATE_RACE",
+                }), 409
 
             _update_reputation(c, j["worker_wallet"], "jobs_disputed")
             _log_job_action(c, job_id, "disputed", poster, reason[:200])
@@ -615,7 +755,7 @@ def register_agent_economy(app: Flask, db_path: str):
 
         except Exception as e:
             conn.rollback()
-            return jsonify({"error": str(e)}), 500
+            return _internal_error_response("agent_dispute_job", e)
         finally:
             conn.close()
 
@@ -624,7 +764,9 @@ def register_agent_economy(app: Flask, db_path: str):
     # -----------------------------------------------------------------------
     @app.route("/agent/jobs/<job_id>/cancel", methods=["POST"])
     def agent_cancel_job(job_id):
-        data = request.get_json(silent=True) or {}
+        data, error = _get_json_object(required=False)
+        if error:
+            return error
         poster = str(data.get("poster_wallet", "")).strip()
 
         if not poster:
@@ -643,16 +785,46 @@ def register_agent_economy(app: Flask, db_path: str):
             if j["poster_wallet"] != poster:
                 return jsonify({"error": "Only the poster can cancel"}), 403
 
+            now = int(time.time())
+            if j["status"] == STATUS_CLAIMED and now > j["expires_at"]:
+                if _expire_refundable_job(c, j, now):
+                    conn.commit()
+                    return jsonify({
+                        "ok": True,
+                        "job_id": job_id,
+                        "status": STATUS_EXPIRED,
+                        "refunded_rtc": j["escrow_i64"] / 1000000,
+                        "message": "Job expired. Escrow refunded."
+                    })
+                conn.rollback()
+                return jsonify({
+                    "error": "Job state changed under concurrent request — please retry",
+                    "code": "STATE_RACE",
+                }), 409
+
             if j["status"] not in (STATUS_OPEN, STATUS_DISPUTED):
                 return jsonify({
                     "error": f"Can only cancel open or disputed jobs (current: {j['status']})"
                 }), 409
 
-            # Refund escrow to poster
-            _refund_escrow(c, j)
+            # FIX(#2867 F2 / 15183848750): Atomic state transition.
+            # Move status FIRST with WHERE-clause guard; if rows-affected
+            # is 0, another request already claimed this job (concurrent
+            # /accept or another /cancel) and we must abort before
+            # touching balances.
+            c.execute("""
+                UPDATE agent_jobs SET status = 'cancelled' WHERE job_id = ?
+                  AND status IN (?, ?)
+            """, (job_id, STATUS_OPEN, STATUS_DISPUTED))
+            if c.rowcount == 0:
+                conn.rollback()
+                return jsonify({
+                    "error": "Job state changed under concurrent request — please retry",
+                    "code": "STATE_RACE",
+                }), 409
 
-            c.execute("UPDATE agent_jobs SET status = 'cancelled' WHERE job_id = ?",
-                     (job_id,))
+            # Refund escrow only after status transition is atomically claimed.
+            _refund_escrow(c, j)
             _log_job_action(c, job_id, "cancelled", poster)
             conn.commit()
 
@@ -666,7 +838,7 @@ def register_agent_economy(app: Flask, db_path: str):
 
         except Exception as e:
             conn.rollback()
-            return jsonify({"error": str(e)}), 500
+            return _internal_error_response("agent_cancel_job", e)
         finally:
             conn.close()
 
@@ -677,9 +849,15 @@ def register_agent_economy(app: Flask, db_path: str):
     def agent_list_jobs():
         category = request.args.get("category", "").strip().lower()
         status_filter = request.args.get("status", STATUS_OPEN).strip().lower()
-        limit = min(int(request.args.get("limit", 50)), 100)
-        offset = max(int(request.args.get("offset", 0)), 0)
-        min_reward = float(request.args.get("min_reward", 0))
+        limit, error = _parse_non_negative_int_arg("limit", 50, max_value=100)
+        if error:
+            return jsonify({"error": error}), 400
+        offset, error = _parse_non_negative_int_arg("offset", 0)
+        if error:
+            return jsonify({"error": error}), 400
+        min_reward, error = _parse_non_negative_float_arg("min_reward", 0)
+        if error:
+            return jsonify({"error": error}), 400
 
         with sqlite3.connect(db_path) as conn:
             conn.row_factory = sqlite3.Row
@@ -688,16 +866,12 @@ def register_agent_economy(app: Flask, db_path: str):
             # Expire old jobs first
             now = int(time.time())
             expired = c.execute("""
-                SELECT job_id, poster_wallet, escrow_i64, platform_fee_i64, reward_i64
+                SELECT *
                 FROM agent_jobs
-                WHERE status = 'open' AND expires_at < ?
-            """, (now,)).fetchall()
+                WHERE status IN (?, ?) AND expires_at < ?
+            """, (STATUS_OPEN, STATUS_CLAIMED, now)).fetchall()
             for ej in expired:
-                _adjust_balance(c, ESCROW_WALLET, -ej["escrow_i64"])
-                _adjust_balance(c, ej["poster_wallet"], ej["escrow_i64"])
-                c.execute("UPDATE agent_jobs SET status = 'expired' WHERE job_id = ?",
-                         (ej["job_id"],))
-                _update_reputation(c, ej["poster_wallet"], "jobs_expired")
+                _expire_refundable_job(c, dict(ej), now)
             if expired:
                 conn.commit()
 
@@ -750,6 +924,13 @@ def register_agent_economy(app: Flask, db_path: str):
                 return jsonify({"error": "Job not found"}), 404
 
             j = dict(job)
+
+            now = int(time.time())
+            if _expire_refundable_job(c, j, now):
+                conn.commit()
+                job = c.execute("SELECT * FROM agent_jobs WHERE job_id = ?",
+                               (job_id,)).fetchone()
+                j = dict(job)
 
             # Get activity log
             log_rows = c.execute("""

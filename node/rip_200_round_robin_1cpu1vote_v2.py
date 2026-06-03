@@ -20,7 +20,7 @@ from datetime import datetime
 GENESIS_TIMESTAMP = 1764706927  # Production chain launch (Dec 2, 2025)
 BLOCK_TIME = 600  # 10 minutes
 ATTESTATION_TTL = 600  # 10 minutes
-CURRENT_YEAR = 2025
+CURRENT_YEAR = datetime.now().year
 
 # =============================================================================
 # ANTIQUITY MULTIPLIER SYSTEM v2
@@ -350,7 +350,7 @@ def calculate_epoch_rewards_v2(
         if i == len(weighted_miners) - 1:
             share = remaining
         else:
-            share = int((weight / total_weight) * total_reward_urtc)
+            share = 0 if total_weight == 0 else int((weight / total_weight) * total_reward_urtc)
             remaining -= share
 
         rewards[miner_id] = share
@@ -410,9 +410,9 @@ if __name__ == "__main__":
     print("-" * 62)
 
     for name, mult in weights:
-        share_urtc = int((mult / total_weight) * total_reward)
+        share_urtc = 0 if total_weight == 0 else int((mult / total_weight) * total_reward)
         share_rtc = share_urtc / 100_000_000
-        pct = (mult / total_weight) * 100
+        pct = 0 if total_weight == 0 else (mult / total_weight) * 100
         print(f"{name:<30} {mult:>8.2f}x {share_rtc:>10.6f} {pct:>7.1f}%")
 
     print("\n" + "=" * 70)

@@ -341,8 +341,8 @@ Potential additions for future versions:
 
 - [Model Context Protocol](https://modelcontextprotocol.io)
 - [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk)
-- [RustChain API Walkthrough](../../../API_WALKTHROUGH.md)
-- [RustChain API Reference](../../../docs/api-reference.md)
+- [RustChain API Walkthrough](../../API_WALKTHROUGH.md)
+- [RustChain API Reference](../../docs/api-reference.md)
 
 ---
 

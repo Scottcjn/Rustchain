@@ -2,13 +2,16 @@
 # Install with: pip install -r requirements.txt
 
 # Web framework
-Flask>=2.3.0
+Flask>=3.1.3
 
 # CORS support
-flask-cors>=4.0.0
+flask-cors>=6.0.2
 
 # Configuration
-PyYAML>=6.0
+PyYAML>=6.0.3
+
+# EIP-55 checksum validation
+pycryptodome>=3.23.0
 
 # Optional: Redis for distributed rate limiting
 # redis>=4.5.0
@@ -17,4 +20,4 @@ PyYAML>=6.0
 # prometheus-client>=0.17.0
 
 # Testing
-pytest>=7.4.0
+pytest>=9.0.3

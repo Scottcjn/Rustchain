@@ -32,7 +32,8 @@ jobs:
             Welcome to RustChain\! Thanks for your first pull request.
 
             **Before we review**, please make sure:
-            - [ ] Your PR has a `BCOS-L1` or `BCOS-L2` label
+            - [ ] Non-doc PRs have a `BCOS-L1` or `BCOS-L2` label
+            - [ ] Doc-only PRs are exempt from BCOS tier labels when they only touch `docs/**`, `*.md`, or common image/PDF files
             - [ ] New code files include an SPDX license header
             - [ ] You've tested your changes against the live node
 

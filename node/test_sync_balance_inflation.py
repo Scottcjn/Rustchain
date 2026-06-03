@@ -58,6 +58,14 @@ class TestSyncBalanceInflation(unittest.TestCase):
             ).fetchone()
             return row[0] if row else 0
 
+    def _has_balance_row(self, miner_id: str) -> bool:
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT 1 FROM balances WHERE miner_id = ?",
+                (miner_id,),
+            ).fetchone()
+            return row is not None
+
     # -- Tests ---------------------------------------------------------------
 
     def test_balance_increase_rejected(self):
@@ -88,18 +96,26 @@ class TestSyncBalanceInflation(unittest.TestCase):
         self.assertEqual(after, 5_000_000,
                          "Balance must not decrease via peer sync")
 
-    def test_new_wallet_from_sync_allowed(self):
-        """New wallets (no local row yet) CAN be created via sync.
-
-        This allows initial balance propagation for newly registered miners.
-        """
+    def test_new_wallet_nonzero_balance_rejected(self):
+        """Peers must not mint funds by creating unknown balance rows."""
         self.sync.apply_sync_payload("balances", [
             {"miner_id": "miner-bob", "amount_i64": 2_000_000},  # 2 RTC
         ])
 
+        self.assertFalse(self._has_balance_row("miner-bob"),
+                         "New nonzero balance row must not be created via sync")
+
+    def test_new_wallet_zero_balance_placeholder_allowed(self):
+        """Zero-balance placeholders may still propagate identity rows."""
+        self.sync.apply_sync_payload("balances", [
+            {"miner_id": "miner-bob", "amount_i64": 0},
+        ])
+
         bob_balance = self._get_balance("miner-bob")
-        self.assertEqual(bob_balance, 2_000_000,
-                         "New wallet should be created via sync")
+        self.assertEqual(bob_balance, 0,
+                         "Zero-balance placeholder should stay zero")
+        self.assertTrue(self._has_balance_row("miner-bob"),
+                        "Zero-balance placeholder row should be allowed")
 
     def test_unchanged_balance_passes(self):
         """Sync with identical balance value should succeed (no-op upsert)."""

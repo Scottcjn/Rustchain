@@ -41,6 +41,21 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+
+def _configure_console_output(streams=(sys.stdout, sys.stderr)) -> None:
+    """Avoid UnicodeEncodeError on legacy consoles while preserving UTF-8 output."""
+    for stream in streams:
+        reconfigure = getattr(stream, "reconfigure", None)
+        if not callable(reconfigure):
+            continue
+        try:
+            reconfigure(errors="replace")
+        except (OSError, ValueError):
+            continue
+
+
+_configure_console_output()
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -53,6 +68,19 @@ FUZZ_STATS_FILE = Path(__file__).parent / "fuzz_stats.json"
 
 TIMEOUT = 10
 DEFAULT_ITERATIONS = 1000
+
+
+def configure_stdio_encoding(stdout=None, stderr=None) -> None:
+    """Avoid UnicodeEncodeError on legacy consoles while preserving UTF-8 output."""
+    for stream in (stdout or sys.stdout, stderr or sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(errors="replace")
+        except (TypeError, ValueError):
+            pass
+
 
 # Known test values for realistic payloads
 KNOWN_WALLETS = [
@@ -884,6 +912,7 @@ def show_stats() -> None:
 # ---------------------------------------------------------------------------
 
 def main():
+    configure_stdio_encoding()
     parser = argparse.ArgumentParser(
         description="RustChain Attestation Fuzz Runner",
         formatter_class=argparse.RawDescriptionHelpFormatter,

@@ -18,6 +18,7 @@ Research Sources:
 - MIPS: https://en.wikipedia.org/wiki/MIPS_architecture
 - PA-RISC: https://en.wikipedia.org/wiki/PA-RISC
 - PowerPC Amiga: https://en.wikipedia.org/wiki/AmigaOne
+- RISC-V: https://en.wikipedia.org/wiki/RISC-V
 """
 
 import re
@@ -406,6 +407,53 @@ POWERPC_AMIGA = {
 # =============================================================================
 
 RISC_WORKSTATIONS = {
+    # RISC-V (2014+) - open ISA boards now common in SBC mining experiments
+    "riscv_sifive_u74": {
+        "years": (2020, 2022),
+        "patterns": [
+            r"SiFive.*U74",
+            r"sifive,u74",
+            r"HiFive Unmatched",
+        ],
+        "base_multiplier": 1.5,
+        "description": "RISC-V SiFive U74 (HiFive Unmatched / VisionFive class)"
+    },
+    "riscv_starfive_jh7110": {
+        "years": (2022, 2024),
+        "patterns": [
+            r"StarFive.*JH7110",
+            r"JH7110",
+            r"VisionFive\s*2",
+        ],
+        "base_multiplier": 1.4,
+        "description": "RISC-V StarFive JH7110 (VisionFive 2 SoC)"
+    },
+    "riscv_allwinner_d1": {
+        "years": (2021, 2022),
+        "patterns": [
+            r"Allwinner.*D1",
+            r"sun20i[-_ ]?d1",
+            r"T-Head.*C906",
+            r"\bC906\b",
+        ],
+        "base_multiplier": 1.4,
+        "description": "RISC-V Allwinner D1 / T-Head C906"
+    },
+    "riscv_generic": {
+        "years": (2014, 2025),
+        "patterns": [
+            r"\bRISC-V\b",
+            r"\briscv32\b",
+            r"\briscv64\b",
+            r"\bmisa\s*:\s*.*rv(?:32|64)",
+            r"\brvtest\b",
+            r"\brv32[imafdc]*\b",
+            r"\brv64[imafdcgv]*\b",
+        ],
+        "base_multiplier": 1.4,
+        "description": "Generic RISC-V ISA"
+    },
+
     # DEC Alpha (1992-2004) - Fastest CPU of the 1990s
     "alpha_21064": {
         "years": (1992, 1995),

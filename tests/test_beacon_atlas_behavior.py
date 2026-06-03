@@ -10,6 +10,12 @@ import sys
 import os
 import tempfile
 import sqlite3
+import gc
+from unittest.mock import Mock, patch
+import hashlib
+
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -54,11 +60,58 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         # Initialize database tables
         init_beacon_tables(cls.test_db_path)
         
-        cls.client = cls.app.test_client()
+        # Beacon read endpoints (/api/contracts, /api/reputation, ...) became
+        # admin-gated (#6322-era). Configure RC_ADMIN_KEY and inject X-Admin-Key
+        # on every request so these admin-context workflow tests reach the routes.
+        cls._orig_admin_key = os.environ.get("RC_ADMIN_KEY")
+        os.environ["RC_ADMIN_KEY"] = "beacon-admin-key"
+
+        class _AdminClient:
+            def __init__(self, c):
+                self._c = c
+
+            def _with_admin(self, kwargs):
+                headers = dict(kwargs.pop("headers", {}) or {})
+                headers.setdefault("X-Admin-Key", "beacon-admin-key")
+                kwargs["headers"] = headers
+                return kwargs
+
+            def get(self, *a, **k):
+                return self._c.get(*a, **self._with_admin(k))
+
+            def post(self, *a, **k):
+                return self._c.post(*a, **self._with_admin(k))
+
+            def put(self, *a, **k):
+                return self._c.put(*a, **self._with_admin(k))
+
+            def delete(self, *a, **k):
+                return self._c.delete(*a, **self._with_admin(k))
+
+            def __getattr__(self, name):
+                return getattr(self._c, name)
+
+        cls.client = _AdminClient(cls.app.test_client())
+        cls.agent_keys = {
+            agent_id: Ed25519PrivateKey.generate()
+            for agent_id in [
+                'bcn_alice_test',
+                'bcn_bob_test',
+                'bcn_test_from',
+                'bcn_test_to',
+            ]
+        }
 
     @classmethod
     def tearDownClass(cls):
         """Clean up after all tests."""
+        cls.client = None
+        cls.app = None
+        if cls._orig_admin_key is None:
+            os.environ.pop("RC_ADMIN_KEY", None)
+        else:
+            os.environ["RC_ADMIN_KEY"] = cls._orig_admin_key
+        gc.collect()
         os.close(cls.test_db_fd)
         os.unlink(cls.test_db_path)
 
@@ -69,7 +122,55 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
             conn.execute("DELETE FROM beacon_bounties")
             conn.execute("DELETE FROM beacon_reputation")
             conn.execute("DELETE FROM beacon_chat")
+            conn.execute("DELETE FROM relay_agents")
+            now = int(time.time())
+            conn.executemany(
+                """
+                INSERT INTO relay_agents
+                (agent_id, pubkey_hex, name, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (agent_id, self._pubkey_hex(agent_id), name, 'active', now, now)
+                    for agent_id, name in [
+                        ('bcn_alice_test', 'Alice Test'),
+                        ('bcn_bob_test', 'Bob Test'),
+                        ('bcn_test_from', 'From Test'),
+                        ('bcn_test_to', 'To Test'),
+                    ]
+                ],
+            )
             conn.commit()
+
+    @classmethod
+    def _pubkey_hex(cls, agent_id):
+        pubkey = cls.agent_keys[agent_id].public_key()
+        return pubkey.public_bytes(Encoding.Raw, PublicFormat.Raw).hex()
+
+    @classmethod
+    def _signed_headers(cls, agent_id, method, path, body):
+        body_bytes = body.encode('utf-8') if isinstance(body, str) else body
+        timestamp = str(int(time.time()))
+        nonce = hashlib.blake2b(
+            f"{agent_id}:{timestamp}:{time.time_ns()}:{body}".encode(),
+            digest_size=16,
+        ).hexdigest()
+        body_hash = hashlib.sha256(body_bytes or b'').hexdigest()
+        message = '\n'.join([
+            method.upper(),
+            path,
+            body_hash,
+            timestamp,
+            nonce,
+            agent_id,
+        ]).encode('utf-8')
+        signature = cls.agent_keys[agent_id].sign(message).hex()
+        return {
+            'X-Agent-Id': agent_id,
+            'X-Agent-Timestamp': timestamp,
+            'X-Agent-Nonce': nonce,
+            'X-Agent-Signature': signature,
+        }
 
     def test_health_endpoint_returns_ok(self):
         """Health check endpoint returns status ok."""
@@ -92,10 +193,12 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
             'term': '30d'
         }
         
+        create_body = json.dumps(contract_data)
         create_response = self.client.post(
             '/api/contracts',
-            data=json.dumps(contract_data),
-            content_type='application/json'
+            data=create_body,
+            content_type='application/json',
+            headers=self._signed_headers('bcn_alice_test', 'POST', '/api/contracts', create_body),
         )
         self.assertEqual(create_response.status_code, 201)
         
@@ -115,10 +218,17 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         self.assertEqual(contracts[0]['id'], contract_id)
         
         # Update contract state to active
+        update_body = json.dumps({'state': 'active'})
         update_response = self.client.put(
             f'/api/contracts/{contract_id}',
-            data=json.dumps({'state': 'active'}),
-            content_type='application/json'
+            data=update_body,
+            content_type='application/json',
+            headers=self._signed_headers(
+                'bcn_bob_test',
+                'PUT',
+                f'/api/contracts/{contract_id}',
+                update_body,
+            ),
         )
         self.assertEqual(update_response.status_code, 200)
         
@@ -126,6 +236,25 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         list_response2 = self.client.get('/api/contracts')
         contracts2 = json.loads(list_response2.data)
         self.assertEqual(contracts2[0]['state'], 'active')
+
+    def test_public_agent_id_bearer_rejected_for_contract_create(self):
+        """A public agent ID in X-Agent-Key is not enough to create contracts."""
+        contract_data = {
+            'from': 'bcn_alice_test',
+            'to': 'bcn_bob_test',
+            'type': 'rent',
+            'amount': 100.0,
+            'term': '30d'
+        }
+
+        response = self.client.post(
+            '/api/contracts',
+            data=json.dumps(contract_data),
+            content_type='application/json',
+            headers={'X-Agent-Key': 'bcn_alice_test'},
+        )
+
+        self.assertEqual(response.status_code, 401)
 
     def test_contract_validation_rejects_invalid(self):
         """Contract creation rejects invalid/missing fields."""
@@ -146,6 +275,36 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         data = json.loads(response.data)
         self.assertIn('error', data)
 
+    def test_contract_creation_rejects_invalid_amounts(self):
+        """Contract creation rejects malformed and non-positive amounts."""
+        for amount in ('not-a-number', 0, -1):
+            contract_data = {
+                'from': 'bcn_alice_test',
+                'to': 'bcn_bob_test',
+                'type': 'rent',
+                'amount': amount,
+                'term': '30d',
+            }
+            create_body = json.dumps(contract_data)
+
+            response = self.client.post(
+                '/api/contracts',
+                data=create_body,
+                content_type='application/json',
+                headers=self._signed_headers(
+                    'bcn_alice_test',
+                    'POST',
+                    '/api/contracts',
+                    create_body,
+                ),
+            )
+
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(
+                json.loads(response.data)['error'],
+                'amount must be a positive number',
+            )
+
     def test_bounty_lifecycle_workflow(self):
         """Full bounty lifecycle: create, claim, complete."""
         # Insert a test bounty directly
@@ -164,11 +323,12 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         self.assertEqual(len(bounties), 1)
         self.assertEqual(bounties[0]['difficulty'], 'MEDIUM')
         
-        # Claim bounty
+        # Claim bounty (admin-only per #2800 — requires X-Admin-Key)
         claim_response = self.client.post(
             '/api/bounties/gh_test_bounty/claim',
             data=json.dumps({'agent_id': 'bcn_claimer'}),
-            content_type='application/json'
+            content_type='application/json',
+            headers={'X-Admin-Key': os.environ['RC_ADMIN_KEY']},
         )
         self.assertEqual(claim_response.status_code, 200)
         
@@ -176,7 +336,39 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         response2 = self.client.get('/api/bounties')
         bounties2 = json.loads(response2.data)
         # Bounty should no longer appear in open list (state changed to claimed)
-        
+
+    def test_bounty_claim_rejects_non_object_json(self):
+        """Admin bounty claim route rejects malformed JSON shapes."""
+        response = self.client.post(
+            '/api/bounties/gh_test_bounty/claim',
+            data=json.dumps(['bcn_claimer']),
+            content_type='application/json',
+            headers={'X-Admin-Key': os.environ['RC_ADMIN_KEY']},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('JSON object body required', response.get_data(as_text=True))
+
+    def test_bounty_complete_rejects_non_string_agent_id(self):
+        """Admin bounty completion route rejects non-string agent IDs."""
+        response = self.client.post(
+            '/api/bounties/gh_test_bounty/complete',
+            data=json.dumps({'agent_id': {'nested': 'bcn_claimer'}}),
+            content_type='application/json',
+            headers={'X-Admin-Key': os.environ['RC_ADMIN_KEY']},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('Missing agent_id', response.get_data(as_text=True))
+
+    def test_chat_rejects_non_string_message(self):
+        """Chat route rejects non-string message bodies before storage."""
+        response = self.client.post(
+            '/api/chat',
+            data=json.dumps({'agent_id': 'bcn_alice_test', 'message': ['hello']}),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('Missing message', response.get_data(as_text=True))
+
     def test_reputation_tracking_workflow(self):
         """Reputation is tracked and updated correctly."""
         # Insert test reputation
@@ -245,20 +437,158 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
             'term': '7d'
         }
         
+        create_body = json.dumps(contract_data)
         create_response = self.client.post(
             '/api/contracts',
-            data=json.dumps(contract_data),
-            content_type='application/json'
+            data=create_body,
+            content_type='application/json',
+            headers=self._signed_headers('bcn_test_from', 'POST', '/api/contracts', create_body),
         )
         contract_id = json.loads(create_response.data)['id']
         
         # Try invalid state
+        update_body = json.dumps({'state': 'invalid_state'})
         update_response = self.client.put(
             f'/api/contracts/{contract_id}',
-            data=json.dumps({'state': 'invalid_state'}),
-            content_type='application/json'
+            data=update_body,
+            content_type='application/json',
+            headers=self._signed_headers(
+                'bcn_test_from',
+                'PUT',
+                f'/api/contracts/{contract_id}',
+                update_body,
+            ),
         )
         self.assertEqual(update_response.status_code, 400)
+
+    def test_recipient_can_reject_offered_contract(self):
+        """Offered contracts can move to the documented rejected terminal state."""
+        contract_data = {
+            'from': 'bcn_test_from',
+            'to': 'bcn_test_to',
+            'type': 'service',
+            'amount': 25.0,
+            'term': '7d'
+        }
+
+        create_body = json.dumps(contract_data)
+        create_response = self.client.post(
+            '/api/contracts',
+            data=create_body,
+            content_type='application/json',
+            headers=self._signed_headers('bcn_test_from', 'POST', '/api/contracts', create_body),
+        )
+        self.assertEqual(create_response.status_code, 201)
+        contract_id = json.loads(create_response.data)['id']
+
+        reject_body = json.dumps({'state': 'rejected'})
+        reject_response = self.client.put(
+            f'/api/contracts/{contract_id}',
+            data=reject_body,
+            content_type='application/json',
+            headers=self._signed_headers(
+                'bcn_test_to',
+                'PUT',
+                f'/api/contracts/{contract_id}',
+                reject_body,
+            ),
+        )
+        self.assertEqual(reject_response.status_code, 200)
+        self.assertEqual(json.loads(reject_response.data)['state'], 'rejected')
+
+        list_response = self.client.get('/api/contracts')
+        contracts = json.loads(list_response.data)
+        self.assertEqual(contracts[0]['state'], 'rejected')
+
+        for terminal_attempt in ('active', 'expired', 'completed'):
+            update_body = json.dumps({'state': terminal_attempt})
+            update_response = self.client.put(
+                f'/api/contracts/{contract_id}',
+                data=update_body,
+                content_type='application/json',
+                headers=self._signed_headers(
+                    'bcn_test_to',
+                    'PUT',
+                    f'/api/contracts/{contract_id}',
+                    update_body,
+                ),
+            )
+            self.assertEqual(update_response.status_code, 400)
+
+    def test_creator_cannot_reject_offered_contract(self):
+        """Only the recipient can reject an offered contract."""
+        contract_data = {
+            'from': 'bcn_test_from',
+            'to': 'bcn_test_to',
+            'type': 'service',
+            'amount': 25.0,
+            'term': '7d'
+        }
+
+        create_body = json.dumps(contract_data)
+        create_response = self.client.post(
+            '/api/contracts',
+            data=create_body,
+            content_type='application/json',
+            headers=self._signed_headers('bcn_test_from', 'POST', '/api/contracts', create_body),
+        )
+        self.assertEqual(create_response.status_code, 201)
+        contract_id = json.loads(create_response.data)['id']
+
+        reject_body = json.dumps({'state': 'rejected'})
+        reject_response = self.client.put(
+            f'/api/contracts/{contract_id}',
+            data=reject_body,
+            content_type='application/json',
+            headers=self._signed_headers(
+                'bcn_test_from',
+                'PUT',
+                f'/api/contracts/{contract_id}',
+                reject_body,
+            ),
+        )
+        self.assertEqual(reject_response.status_code, 403)
+
+        list_response = self.client.get('/api/contracts')
+        contracts = json.loads(list_response.data)
+        self.assertEqual(contracts[0]['state'], 'offered')
+
+    def test_offered_contract_can_be_rejected(self):
+        """Recipient can reject an offered contract as a terminal state."""
+        contract_data = {
+            'from': 'bcn_test_from',
+            'to': 'bcn_test_to',
+            'type': 'service',
+            'amount': 25.0,
+            'term': '7d',
+        }
+
+        create_body = json.dumps(contract_data)
+        create_response = self.client.post(
+            '/api/contracts',
+            data=create_body,
+            content_type='application/json',
+            headers=self._signed_headers('bcn_test_from', 'POST', '/api/contracts', create_body),
+        )
+        self.assertEqual(create_response.status_code, 201)
+        contract_id = json.loads(create_response.data)['id']
+
+        update_body = json.dumps({'state': 'rejected'})
+        update_response = self.client.put(
+            f'/api/contracts/{contract_id}',
+            data=update_body,
+            content_type='application/json',
+            headers=self._signed_headers(
+                'bcn_test_to',
+                'PUT',
+                f'/api/contracts/{contract_id}',
+                update_body,
+            ),
+        )
+        self.assertEqual(update_response.status_code, 200)
+
+        updated = json.loads(update_response.data)
+        self.assertEqual(updated['state'], 'rejected')
 
     def test_bounty_completion_updates_reputation(self):
         """Completing a bounty increases agent reputation."""
@@ -271,11 +601,12 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
             """, ('gh_complete_test', 'Complete Me (100 RTC)', 100.0, 'HARD', 'claimed', int(time.time())))
             conn.commit()
         
-        # Complete bounty
+        # Complete bounty (admin-only per security patch 93dc968 — requires X-Admin-Key)
         complete_response = self.client.post(
             '/api/bounties/gh_complete_test/complete',
             data=json.dumps({'agent_id': 'bcn_completer'}),
-            content_type='application/json'
+            content_type='application/json',
+            headers={'X-Admin-Key': os.environ['RC_ADMIN_KEY']},
         )
         self.assertEqual(complete_response.status_code, 200)
         
@@ -285,6 +616,95 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         rep = json.loads(rep_response.data)
         self.assertEqual(rep['bounties_completed'], 1)
         self.assertEqual(rep['score'], 10)  # 10 points per bounty
+
+    def test_bounty_sync_requires_admin_before_network_fetch(self):
+        """Unauthenticated sync cannot trigger GitHub fetches or DB writes."""
+        with patch.dict(os.environ, {'RC_ADMIN_KEY': 'test-admin'}, clear=False):
+            with patch('ssl.create_default_context', return_value=object()):
+                with patch('urllib.request.urlopen') as mock_urlopen:
+                    response = self.client.post('/api/bounties/sync')
+
+        self.assertEqual(response.status_code, 401)
+        mock_urlopen.assert_not_called()
+
+    def test_bounty_sync_requires_admin_configuration_before_network_fetch(self):
+        """Sync fails closed when no admin key is configured."""
+        with patch.dict(os.environ, {}, clear=True):
+            with patch('ssl.create_default_context', return_value=object()):
+                with patch('urllib.request.urlopen') as mock_urlopen:
+                    response = self.client.post('/api/bounties/sync')
+
+        self.assertEqual(response.status_code, 503)
+        mock_urlopen.assert_not_called()
+
+    def test_bounty_sync_preserves_existing_lifecycle_state(self):
+        """Sync refreshes metadata without reopening locally claimed bounties."""
+        created_at = int(time.time())
+        with sqlite3.connect(self.test_db_path) as conn:
+            conn.execute("""
+                INSERT INTO beacon_bounties
+                (id, github_number, title, reward_rtc, reward_text, difficulty,
+                 github_repo, github_url, state, claimant_agent, completed_by,
+                 description, labels, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                'gh_Rustchain_123',
+                123,
+                'Old title (10 RTC)',
+                10.0,
+                '10 RTC',
+                'EASY',
+                'Scottcjn/Rustchain',
+                'https://github.com/Scottcjn/Rustchain/issues/123',
+                'claimed',
+                'bcn_alice_test',
+                None,
+                'old description',
+                '["bounty"]',
+                created_at,
+                created_at,
+            ))
+            conn.commit()
+
+        response_payload = json.dumps([
+            {
+                'number': 123,
+                'title': 'Updated title (75 RTC)',
+                'html_url': 'https://github.com/Scottcjn/Rustchain/issues/123',
+                'body': 'Updated bounty body',
+                'labels': [{'name': 'bounty'}, {'name': 'major'}],
+                'created_at': '2026-05-11T00:00:00Z',
+            }
+        ]).encode()
+        fake_response = Mock()
+        fake_response.read.return_value = response_payload
+        fake_response.__enter__ = Mock(return_value=fake_response)
+        fake_response.__exit__ = Mock(return_value=False)
+
+        with patch.dict(os.environ, {'RC_ADMIN_KEY': 'test-admin'}, clear=False):
+            with patch('ssl.create_default_context', return_value=object()):
+                with patch('urllib.request.urlopen', return_value=fake_response):
+                    response = self.client.post(
+                        '/api/bounties/sync',
+                        headers={'X-Admin-Key': 'test-admin'},
+                    )
+
+        self.assertEqual(response.status_code, 200)
+
+        with sqlite3.connect(self.test_db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT title, reward_rtc, difficulty, state, claimant_agent, completed_by "
+                "FROM beacon_bounties WHERE id = ?",
+                ('gh_Rustchain_123',),
+            ).fetchone()
+
+        self.assertEqual(row['title'], 'Updated title (75 RTC)')
+        self.assertEqual(row['reward_rtc'], 75.0)
+        self.assertEqual(row['difficulty'], 'HARD')
+        self.assertEqual(row['state'], 'claimed')
+        self.assertEqual(row['claimant_agent'], 'bcn_alice_test')
+        self.assertIsNone(row['completed_by'])
 
 
 class TestBeaconAtlasDataValidation(unittest.TestCase):
@@ -341,16 +761,17 @@ class TestBeaconAtlasDataValidation(unittest.TestCase):
 
     def test_contract_state_machine(self):
         """Contract states follow valid transitions."""
-        valid_states = {'offered', 'active', 'renewed', 'completed', 'breached', 'expired'}
+        valid_states = {'offered', 'active', 'renewed', 'completed', 'breached', 'expired', 'rejected'}
         
         # Valid state transitions
         valid_transitions = {
-            'offered': {'active', 'expired'},
+            'offered': {'active', 'rejected', 'expired'},
             'active': {'completed', 'breached', 'renewed', 'expired'},
             'renewed': {'completed', 'breached', 'expired'},
             'completed': set(),  # Terminal state
             'breached': set(),  # Terminal state
             'expired': set(),  # Terminal state
+            'rejected': set(),  # Terminal state
         }
         
         # Verify all states have transitions defined

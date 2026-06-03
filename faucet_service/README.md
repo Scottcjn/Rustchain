@@ -64,7 +64,9 @@ rate_limit:
 
 # Wallet validation
 validation:
-  required_prefix: "0x"
+  required_prefix:
+    - "0x"
+    - "RTC"
   min_length: 10
   max_length: 66
   blocklist: []
@@ -98,7 +100,7 @@ distribution:
 #### Validation
 | Option | Default | Description |
 |--------|---------|-------------|
-| `required_prefix` | `0x` | Required wallet prefix |
+| `required_prefix` | `["0x", "RTC"]` | Required wallet prefix or prefixes |
 | `min_length` | `10` | Minimum wallet length |
 | `max_length` | `66` | Maximum wallet length |
 | `blocklist` | `[]` | Blocked wallet addresses |
@@ -117,7 +119,7 @@ Request test tokens.
 **Request:**
 ```json
 {
-  "wallet": "0x9683744B6b94F2b0966aBDb8C6BdD9805d207c6E"
+  "wallet": "RTCe4fbe4c9085b8b2ed3f1228504de66799025f6ce"
 }
 ```
 
@@ -126,7 +128,7 @@ Request test tokens.
 {
   "ok": true,
   "amount": 0.5,
-  "wallet": "0x9683744B6b94F2b0966aBDb8C6BdD9805d207c6E",
+  "wallet": "RTCe4fbe4c9085b8b2ed3f1228504de66799025f6ce",
   "tx_hash": null,
   "next_available": "2026-03-13T14:20:00.000000"
 }
@@ -349,7 +351,7 @@ Configure allowed origins:
 security:
   cors_origins:
     - "https://rustchain.org"
-    - "https://docs.rustchain.org"
+    - "https://rustchain.org/docs"
 ```
 
 ### Rate Limiting
@@ -446,6 +448,6 @@ See CONTRIBUTING.md for contribution guidelines.
 
 ## Support
 
-- Documentation: https://docs.rustchain.org/faucet
-- Issues: https://github.com/rustchain-bounties/rustchain-bounties/issues
+- Documentation: https://github.com/Scottcjn/Rustchain/tree/main/faucet_service
+- Issues: https://github.com/Scottcjn/rustchain-bounties/issues
 - Discord: https://discord.gg/rustchain

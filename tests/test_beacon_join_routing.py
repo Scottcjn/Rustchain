@@ -4,15 +4,23 @@ Test suite for Issue #2127 - Beacon Join Routing
 Tests POST /beacon/join and GET /beacon/atlas endpoints.
 """
 import unittest
+import gc
 import json
 import time
 import sys
 import os
 import tempfile
 import sqlite3
+import hashlib
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def _canonical_agent_id(pubkey_hex):
+    """根据 Ed25519 公钥派生规范 Beacon agent_id。"""
+    clean = pubkey_hex[2:] if pubkey_hex.startswith(('0x', '0X')) else pubkey_hex
+    return f"bcn_{hashlib.sha256(bytes.fromhex(clean)).hexdigest()[:12]}"
 
 
 class TestBeaconJoinRouting(unittest.TestCase):
@@ -60,7 +68,13 @@ class TestBeaconJoinRouting(unittest.TestCase):
     def tearDownClass(cls):
         """Clean up after all tests."""
         os.close(cls.test_db_fd)
-        os.unlink(cls.test_db_path)
+        cls.client = None
+        cls.app = None
+        gc.collect()
+        try:
+            os.unlink(cls.test_db_path)
+        except PermissionError:
+            pass
 
     def setUp(self):
         """Reset database state before each test."""
@@ -94,10 +108,16 @@ class TestBeaconJoinRouting(unittest.TestCase):
         self.assertIn('timestamp', data)
 
     def test_join_upsert_duplicate_agent(self):
-        """POST /beacon/join upserts (updates) duplicate agent_id without error."""
+        """POST /beacon/join upserts mutable fields for duplicate agent_id.
+
+        Per security patch 03bf96a, pubkey_hex is immutable after first
+        registration (prevents identity takeover). Re-sending the same
+        pubkey_hex with a changed name updates the mutable field only.
+        """
+        pubkey = '0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbbccccddddaaaabbbbccccdddd'
         payload1 = {
             'agent_id': 'bcn_upsert_test',
-            'pubkey_hex': '0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbbccccddddaaaabbbbccccdddd',
+            'pubkey_hex': pubkey,
             'name': 'Original Name',
         }
 
@@ -109,10 +129,10 @@ class TestBeaconJoinRouting(unittest.TestCase):
         )
         self.assertEqual(response1.status_code, 200)
 
-        # Update with new data
+        # Update mutable field only (name). pubkey_hex must stay the same.
         payload2 = {
             'agent_id': 'bcn_upsert_test',
-            'pubkey_hex': '0x1111222233334444555566667777888899990000aaaabbbbccccdddd11112222',
+            'pubkey_hex': pubkey,
             'name': 'Updated Name',
         }
 
@@ -135,6 +155,94 @@ class TestBeaconJoinRouting(unittest.TestCase):
                 ('bcn_upsert_test',)
             ).fetchone()[0]
             self.assertEqual(count, 1)
+
+    def test_join_pubkey_takeover_rejected(self):
+        """POST /beacon/join rejects pubkey_hex change for existing agent (403).
+
+        Security invariant from patch 03bf96a: an attacker sending a join
+        request with a victim's agent_id and their own public key must be
+        rejected, not silently overwrite the victim's identity.
+        """
+        payload1 = {
+            'agent_id': 'bcn_takeover_target',
+            'pubkey_hex': '0x1111' + '00' * 30,
+            'name': 'Victim',
+        }
+        r1 = self.client.post(
+            '/beacon/join',
+            data=json.dumps(payload1),
+            content_type='application/json',
+        )
+        self.assertEqual(r1.status_code, 200)
+
+        # Attacker attempts takeover with different pubkey_hex
+        payload2 = {
+            'agent_id': 'bcn_takeover_target',
+            'pubkey_hex': '0x2222' + '00' * 30,
+            'name': 'Attacker',
+        }
+        r2 = self.client.post(
+            '/beacon/join',
+            data=json.dumps(payload2),
+            content_type='application/json',
+        )
+        self.assertEqual(r2.status_code, 403)
+
+        # Verify pubkey was NOT overwritten
+        with sqlite3.connect(self.test_db_path) as conn:
+            row = conn.execute(
+                "SELECT pubkey_hex, name FROM relay_agents WHERE agent_id = ?",
+                ('bcn_takeover_target',)
+            ).fetchone()
+            self.assertEqual(row[0], payload1['pubkey_hex'])
+            self.assertEqual(row[1], 'Victim')
+
+    def test_join_rejects_canonical_agent_id_pubkey_mismatch(self):
+        """POST /beacon/join 拒绝抢占另一个公钥的规范 bcn_ ID。"""
+        victim_pubkey = '0x' + '11' * 32
+        attacker_pubkey = '0x' + '22' * 32
+        victim_agent_id = _canonical_agent_id(victim_pubkey)
+
+        response = self.client.post(
+            '/beacon/join',
+            data=json.dumps({
+                'agent_id': victim_agent_id,
+                'pubkey_hex': attacker_pubkey,
+                'name': 'Squatter',
+            }),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.data)
+        self.assertIn('agent_id', data['error'])
+
+        with sqlite3.connect(self.test_db_path) as conn:
+            row = conn.execute(
+                "SELECT agent_id FROM relay_agents WHERE agent_id = ?",
+                (victim_agent_id,),
+            ).fetchone()
+            self.assertIsNone(row)
+
+    def test_join_accepts_matching_canonical_agent_id(self):
+        """POST /beacon/join 接受由 pubkey_hex 派生出的规范 bcn_ ID。"""
+        pubkey = '0x' + '33' * 32
+        agent_id = _canonical_agent_id(pubkey)
+
+        response = self.client.post(
+            '/beacon/join',
+            data=json.dumps({
+                'agent_id': agent_id,
+                'pubkey_hex': pubkey,
+                'name': 'Canonical Agent',
+            }),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertTrue(data['ok'])
+        self.assertEqual(data['agent_id'], agent_id)
 
     def test_join_invalid_pubkey_hex_returns_400(self):
         """POST /beacon/join returns 400 for invalid pubkey_hex."""
@@ -204,6 +312,66 @@ class TestBeaconJoinRouting(unittest.TestCase):
         data = json.loads(response.data)
         self.assertIn('error', data)
 
+    def test_join_rejects_non_object_json(self):
+        """POST /beacon/join returns 400 for non-object JSON bodies."""
+        response = self.client.post(
+            '/beacon/join',
+            data=json.dumps(['agent_id']),
+            content_type='application/json'
+        )
+
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.data)
+        self.assertEqual(data['error'], 'Invalid or missing JSON body')
+
+    def test_join_rejects_non_string_required_fields(self):
+        """POST /beacon/join returns 400 for structured required fields."""
+        cases = [
+            (
+                {'agent_id': ['bcn_test'], 'pubkey_hex': '0x1234'},
+                'Invalid agent_id: must be a string',
+            ),
+            (
+                {'agent_id': 'bcn_test', 'pubkey_hex': ['0x1234']},
+                'Invalid pubkey_hex: must be a string',
+            ),
+        ]
+
+        for payload, expected_error in cases:
+            response = self.client.post(
+                '/beacon/join',
+                data=json.dumps(payload),
+                content_type='application/json'
+            )
+
+            self.assertEqual(response.status_code, 400)
+            data = json.loads(response.data)
+            self.assertEqual(data['error'], expected_error)
+
+    def test_join_rejects_non_string_optional_fields(self):
+        """POST /beacon/join returns 400 for structured optional string fields."""
+        cases = [
+            (
+                {'agent_id': 'bcn_test', 'pubkey_hex': '0x1234', 'name': {'display': 'agent'}},
+                'Invalid name: must be a string',
+            ),
+            (
+                {'agent_id': 'bcn_test', 'pubkey_hex': '0x1234', 'coinbase_address': ['0x123']},
+                'Invalid coinbase_address: must be a string',
+            ),
+        ]
+
+        for payload, expected_error in cases:
+            response = self.client.post(
+                '/beacon/join',
+                data=json.dumps(payload),
+                content_type='application/json'
+            )
+
+            self.assertEqual(response.status_code, 400)
+            data = json.loads(response.data)
+            self.assertEqual(data['error'], expected_error)
+
     def test_join_with_coinbase_address(self):
         """POST /beacon/join accepts valid coinbase_address."""
         payload = {
@@ -227,6 +395,83 @@ class TestBeaconJoinRouting(unittest.TestCase):
                 ('bcn_wallet_test',)
             ).fetchone()
             self.assertEqual(row[0], '0x1234567890123456789012345678901234567890')
+
+    def test_join_rejects_existing_agent_coinbase_address_change(self):
+        """POST /beacon/join cannot overwrite payment address for an existing agent."""
+        pubkey = '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef'
+        original_coinbase = '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd'
+        attacker_coinbase = '0x9999999999999999999999999999999999999999'
+        payload1 = {
+            'agent_id': 'bcn_wallet_takeover_target',
+            'pubkey_hex': pubkey,
+            'name': 'Victim Agent',
+            'coinbase_address': original_coinbase,
+        }
+        response1 = self.client.post(
+            '/beacon/join',
+            data=json.dumps(payload1),
+            content_type='application/json',
+        )
+        self.assertEqual(response1.status_code, 200)
+
+        payload2 = {
+            'agent_id': 'bcn_wallet_takeover_target',
+            'pubkey_hex': pubkey,
+            'name': 'Attacker Rename',
+            'coinbase_address': attacker_coinbase,
+        }
+        response2 = self.client.post(
+            '/beacon/join',
+            data=json.dumps(payload2),
+            content_type='application/json',
+        )
+        self.assertEqual(response2.status_code, 403)
+
+        with sqlite3.connect(self.test_db_path) as conn:
+            row = conn.execute(
+                "SELECT name, coinbase_address FROM relay_agents WHERE agent_id = ?",
+                ('bcn_wallet_takeover_target',)
+            ).fetchone()
+            self.assertEqual(row[0], 'Victim Agent')
+            self.assertEqual(row[1], original_coinbase)
+
+    def test_join_allows_idempotent_existing_coinbase_address(self):
+        """POST /beacon/join accepts the same payment address for an existing agent."""
+        pubkey = '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef'
+        original_coinbase = '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd'
+        payload1 = {
+            'agent_id': 'bcn_wallet_idempotent',
+            'pubkey_hex': pubkey,
+            'name': 'Original Name',
+            'coinbase_address': original_coinbase,
+        }
+        response1 = self.client.post(
+            '/beacon/join',
+            data=json.dumps(payload1),
+            content_type='application/json',
+        )
+        self.assertEqual(response1.status_code, 200)
+
+        payload2 = {
+            'agent_id': 'bcn_wallet_idempotent',
+            'pubkey_hex': pubkey,
+            'name': 'Updated Name',
+            'coinbase_address': original_coinbase.upper().replace('X', 'x', 1),
+        }
+        response2 = self.client.post(
+            '/beacon/join',
+            data=json.dumps(payload2),
+            content_type='application/json',
+        )
+        self.assertEqual(response2.status_code, 200)
+
+        with sqlite3.connect(self.test_db_path) as conn:
+            row = conn.execute(
+                "SELECT name, coinbase_address FROM relay_agents WHERE agent_id = ?",
+                ('bcn_wallet_idempotent',)
+            ).fetchone()
+            self.assertEqual(row[0], 'Updated Name')
+            self.assertEqual(row[1], original_coinbase)
 
     def test_join_invalid_coinbase_address_returns_400(self):
         """POST /beacon/join returns 400 for invalid coinbase_address."""
@@ -391,11 +636,17 @@ class TestBeaconJoinRouting(unittest.TestCase):
     # ============================================================
 
     def test_full_join_then_atlas_workflow(self):
-        """Full workflow: join agent, verify in atlas, update, verify update."""
+        """Full workflow: join agent, verify in atlas, update mutable field, verify update.
+
+        pubkey_hex is immutable after first registration (security patch 03bf96a),
+        so the "update" step changes the name while keeping the same pubkey_hex.
+        """
+        pubkey = '0x1111' + '00' * 30
+
         # Step 1: Register agent
         payload1 = {
             'agent_id': 'bcn_workflow',
-            'pubkey_hex': '0x1111' + '00' * 30,
+            'pubkey_hex': pubkey,
             'name': 'Workflow Agent v1',
         }
 
@@ -413,10 +664,10 @@ class TestBeaconJoinRouting(unittest.TestCase):
         self.assertEqual(data2['total'], 1)
         self.assertEqual(data2['agents'][0]['name'], 'Workflow Agent v1')
 
-        # Step 3: Update agent
+        # Step 3: Update mutable field (name) — same pubkey_hex
         payload3 = {
             'agent_id': 'bcn_workflow',
-            'pubkey_hex': '0x2222' + '00' * 30,
+            'pubkey_hex': pubkey,
             'name': 'Workflow Agent v2',
         }
 
@@ -433,7 +684,7 @@ class TestBeaconJoinRouting(unittest.TestCase):
         data4 = json.loads(response4.data)
         self.assertEqual(data4['total'], 1)
         self.assertEqual(data4['agents'][0]['name'], 'Workflow Agent v2')
-        self.assertEqual(data4['agents'][0]['pubkey_hex'], payload3['pubkey_hex'])
+        self.assertEqual(data4['agents'][0]['pubkey_hex'], pubkey)
 
 
 class TestBeaconJoinValidation(unittest.TestCase):

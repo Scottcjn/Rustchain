@@ -316,9 +316,9 @@ export GITHUB_TOKEN="..."
 ## References
 
 - [Issue #1149](https://github.com/Scottcjn/rustchain-bounties/issues/1149)
-- [RustChain Node Architecture](node/README.md)
-- [x402 Integration](node/x402_config.py)
-- [Wallet Integration](wallet/rustchain_wallet_secure.py)
+- [RustChain Node Architecture](../node/README.md)
+- [x402 Integration](../node/x402_config.py)
+- [Wallet Integration](../wallet/rustchain_wallet_secure.py)
 
 ## Payout Information
 

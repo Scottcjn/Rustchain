@@ -22,17 +22,19 @@ API Endpoints:
 """
 
 import os
+import re
 import sys
 import json
+import requests
 import sqlite3
 import logging
-import hashlib
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
 from contextlib import contextmanager
 
 import yaml
+from Crypto.Hash import keccak
 from flask import Flask, request, jsonify, render_template_string, g
 from flask_cors import CORS
 from functools import wraps
@@ -72,7 +74,7 @@ DEFAULT_CONFIG = {
         }
     },
     'validation': {
-        'required_prefix': '0x',
+        'required_prefix': ['0x', 'RTC'],
         'min_length': 10,
         'max_length': 66,
         'require_checksum': False,
@@ -280,14 +282,19 @@ class RateLimiter:
         conn.close()
         
         if count >= max_requests:
-            # Calculate next available time
-            c = sqlite3.connect(self.config['database']['path']).cursor()
-            c.execute('''
-                SELECT MAX(timestamp) FROM drip_requests
-                WHERE (ip_address = ? OR wallet = ?)
-                AND timestamp > ?
-            ''', (ip_address, wallet, cutoff.isoformat()))
-            last_request = c.fetchone()[0]
+            # Calculate next available time.
+            conn = sqlite3.connect(self.config['database']['path'])
+            try:
+                c = conn.cursor()
+                c.execute('''
+                    SELECT MAX(timestamp) FROM drip_requests
+                    WHERE (ip_address = ? OR wallet = ?)
+                    AND timestamp > ?
+                ''', (ip_address, wallet, cutoff.isoformat()))
+                last_request = c.fetchone()[0]
+            finally:
+                conn.close()
+
             if last_request:
                 last_time = datetime.fromisoformat(last_request)
                 next_available = last_time + timedelta(seconds=window_seconds)
@@ -301,6 +308,71 @@ class RateLimiter:
             self._record_redis(identifier)
         else:
             self._record_sqlite(ip_address, wallet, amount)
+
+    def record_request_if_allowed(
+        self,
+        identifier: str,
+        ip_address: str,
+        wallet: str,
+        amount: float,
+    ) -> Tuple[bool, Optional[str]]:
+        """Atomically check the active rate limit and record the drip."""
+        if not self.config.get('rate_limit', {}).get('enabled', True):
+            self.record_request(identifier, ip_address, wallet, amount)
+            return True, None
+
+        if self.redis_client and REDIS_AVAILABLE:
+            return self._record_redis_if_allowed(identifier)
+
+        return self._record_sqlite_if_allowed(ip_address, wallet, amount)
+
+    def _record_redis_if_allowed(self, identifier: str) -> Tuple[bool, Optional[str]]:
+        """Check and record the Redis rate limit in one atomic script."""
+        key = self._get_key(identifier, 'rl')
+        count_key = self._get_key(identifier, 'count')
+        max_requests = self.config['rate_limit'].get('max_requests', 1)
+        window_seconds = self.config['rate_limit']['window_seconds']
+        now_iso = datetime.now().isoformat()
+
+        result = self.redis_client.eval(
+            """
+            local count_key = KEYS[1]
+            local marker_key = KEYS[2]
+            local max_requests = tonumber(ARGV[1])
+            local window_seconds = tonumber(ARGV[2])
+            local now_iso = ARGV[3]
+
+            local current = tonumber(redis.call('GET', count_key) or '0')
+            if current >= max_requests then
+                local ttl = redis.call('TTL', marker_key)
+                if ttl < 0 then
+                    ttl = redis.call('TTL', count_key)
+                end
+                return {0, ttl}
+            end
+
+            local new_count = redis.call('INCR', count_key)
+            if new_count == 1 or redis.call('TTL', count_key) < 0 then
+                redis.call('EXPIRE', count_key, window_seconds)
+            end
+            redis.call('SET', marker_key, now_iso, 'EX', window_seconds)
+            return {1, redis.call('TTL', marker_key)}
+            """,
+            2,
+            count_key,
+            key,
+            max_requests,
+            window_seconds,
+            now_iso,
+        )
+
+        allowed = int(result[0]) == 1
+        if allowed:
+            return True, None
+
+        ttl = int(result[1]) if len(result) > 1 and result[1] is not None else 0
+        next_available = datetime.now() + timedelta(seconds=max(0, ttl))
+        return False, next_available.isoformat()
     
     def _record_redis(self, identifier: str) -> None:
         """Record request in Redis."""
@@ -325,14 +397,64 @@ class RateLimiter:
         conn.commit()
         conn.close()
 
+    def _record_sqlite_if_allowed(
+        self,
+        ip_address: str,
+        wallet: str,
+        amount: float,
+    ) -> Tuple[bool, Optional[str]]:
+        """Check and insert under one SQLite write transaction."""
+        conn = sqlite3.connect(self.config['database']['path'], timeout=30)
+        try:
+            conn.isolation_level = None
+            c = conn.cursor()
+            c.execute('PRAGMA busy_timeout = 30000')
+            c.execute('BEGIN IMMEDIATE')
+
+            window_seconds = self.config['rate_limit']['window_seconds']
+            cutoff = datetime.now() - timedelta(seconds=window_seconds)
+            c.execute('''
+                SELECT COUNT(*), MAX(timestamp) FROM drip_requests
+                WHERE (ip_address = ? OR wallet = ?)
+                AND timestamp > ?
+            ''', (ip_address, wallet, cutoff.isoformat()))
+
+            count, last_request = c.fetchone()
+            max_requests = self.config['rate_limit'].get('max_requests', 1)
+            if count >= max_requests:
+                c.execute('ROLLBACK')
+                if last_request:
+                    last_time = datetime.fromisoformat(last_request)
+                    next_available = last_time + timedelta(seconds=window_seconds)
+                    return False, next_available.isoformat()
+                return False, None
+
+            c.execute('''
+                INSERT INTO drip_requests (wallet, ip_address, amount, timestamp)
+                VALUES (?, ?, ?, ?)
+            ''', (wallet, ip_address, amount, datetime.now().isoformat()))
+            c.execute('COMMIT')
+            return True, None
+        except Exception:
+            try:
+                conn.execute('ROLLBACK')
+            except sqlite3.OperationalError:
+                pass
+            raise
+        finally:
+            conn.close()
+
 
 # =============================================================================
 # Validator
 # =============================================================================
 
+RTC_WALLET_RE = re.compile(r'^RTC[0-9a-fA-F]{40}$')
+
+
 class FaucetValidator:
     """Request validation with blocklist/allowlist support."""
-    
+
     def __init__(self, config: Dict[str, Any], logger: logging.Logger):
         self.config = config
         self.logger = logger
@@ -353,9 +475,15 @@ class FaucetValidator:
         wallet = wallet.strip()
         
         # Check prefix
-        required_prefix = self.validation_config.get('required_prefix', '0x')
-        if required_prefix and not wallet.startswith(required_prefix):
-            return False, f"Wallet must start with '{required_prefix}'"
+        required_prefix = self.validation_config.get('required_prefix', ['0x', 'RTC'])
+        if isinstance(required_prefix, str):
+            accepted_prefixes = [required_prefix]
+        else:
+            accepted_prefixes = list(required_prefix or [])
+
+        if accepted_prefixes and not any(wallet.startswith(prefix) for prefix in accepted_prefixes):
+            joined_prefixes = "', '".join(accepted_prefixes)
+            return False, f"Wallet must start with one of '{joined_prefixes}'"
         
         # Check length
         min_len = self.validation_config.get('min_length', 10)
@@ -366,7 +494,13 @@ class FaucetValidator:
         
         if len(wallet) > max_len:
             return False, f"Wallet address too long (max {max_len} characters)"
-        
+
+        # Tightened format validation for native RTC wallets: RTC + 40 hex chars.
+        # Mirrors the legacy faucet fix in commit 541c784 so malformed values like
+        # "RTCzzzzzzzzzz" or "RTC1234567890" cannot pass as distinct wallet identities.
+        if wallet.startswith('RTC') and not RTC_WALLET_RE.fullmatch(wallet):
+            return False, "Invalid RTC wallet format (expected 'RTC' + 40 hex chars)"
+
         # Check blocklist
         if wallet.lower() in self.blocklist:
             return False, "Wallet address is blocklisted"
@@ -391,8 +525,10 @@ class FaucetValidator:
         if not all(c in '0123456789abcdefABCDEF' for c in address):
             return False
         
-        # Simple checksum validation
-        hash_lower = hashlib.keccak256(address.lower().encode()).hexdigest()
+        # EIP-55 uses the original Keccak-256, not FIPS SHA3-256.
+        hasher = keccak.new(digest_bits=256)
+        hasher.update(address.lower().encode())
+        hash_lower = hasher.hexdigest()
         for i, c in enumerate(address):
             if c in '0123456789':
                 continue
@@ -515,7 +651,7 @@ def register_routes(app: Flask, config: Dict, logger: logging.Logger,
         Handle drip requests.
         
         Request body:
-            {"wallet": "0x..."}
+            {"wallet": "0x..."} or {"wallet": "RTC..."}
         
         Response:
             {"ok": true, "amount": 0.5, "wallet": "...", "next_available": "..."}
@@ -524,12 +660,18 @@ def register_routes(app: Flask, config: Dict, logger: logging.Logger,
         
         # Parse request
         data = request.get_json(silent=True)
-        if not data or 'wallet' not in data:
+        if not isinstance(data, dict) or 'wallet' not in data:
             logger.warning(f"Invalid request from {request.remote_addr}: missing wallet")
             return jsonify({'ok': False, 'error': 'Wallet address required'}), 400
         
-        wallet = data['wallet'].strip()
-        ip = get_client_ip(request)
+        wallet_value = data['wallet']
+        if not isinstance(wallet_value, str) or not wallet_value.strip():
+            logger.warning(f"Invalid request from {request.remote_addr}: invalid wallet type")
+            return jsonify({'ok': False, 'error': 'Wallet address required'}), 400
+
+        wallet = wallet_value.strip()
+        trust_proxy_headers = config.get('security', {}).get('trust_proxy_headers', False)
+        ip = get_client_ip(request, trust_proxy_headers=trust_proxy_headers)
         
         logger.info(f"Drip request: wallet={wallet}, ip={ip}")
         
@@ -539,8 +681,17 @@ def register_routes(app: Flask, config: Dict, logger: logging.Logger,
             logger.warning(f"Invalid wallet {wallet}: {error}")
             return jsonify({'ok': False, 'error': error}), 400
         
-        # Check rate limit
-        allowed, next_available = rate_limiter.check_rate_limit(ip, wallet)
+        # Process drip
+        amount = config.get('distribution', {}).get('amount', 0.5)
+
+        # Check and record under one operation so concurrent SQLite requests
+        # cannot pass the rate-limit check before either insert is visible.
+        allowed, next_available = rate_limiter.record_request_if_allowed(
+            f"{ip}:{wallet}",
+            ip,
+            wallet,
+            amount,
+        )
         if not allowed:
             logger.info(f"Rate limit exceeded for {ip}/{wallet}")
             return jsonify({
@@ -549,20 +700,48 @@ def register_routes(app: Flask, config: Dict, logger: logging.Logger,
                 'next_available': next_available
             }), 429
         
-        # Process drip
-        amount = config.get('distribution', {}).get('amount', 0.5)
-        
         # In mock mode, just record the request
         if config.get('distribution', {}).get('mock_mode', True):
             tx_hash = None
             logger.info(f"Mock drip: {amount} RTC to {wallet}")
         else:
-            # TODO: Implement actual token transfer
-            tx_hash = None
-            logger.info(f"Real drip: {amount} RTC to {wallet}")
-        
-        # Record the request
-        rate_limiter.record_request(f"{ip}:{wallet}", ip, wallet, amount)
+            # Real transfer via the node's admin transfer endpoint.
+            # The node exposes POST /wallet/transfer (admin-gated): body
+            # {from_miner, to_miner, amount_rtc} + header X-Admin-Key. It debits
+            # the faucet wallet and credits the requester. (The legacy
+            # /v1/transfer + ARCHESTRA_FAUCET_SECRET path never existed on the
+            # node and silently failed every real drip.)
+            try:
+                dist = config.get('distribution', {})
+                node_url = dist.get('node_url', 'http://127.0.0.1:8198')
+                faucet_wallet = dist.get('faucet_wallet', 'testnet_faucet')
+                admin_key = os.environ.get('RC_ADMIN_KEY') or dist.get('admin_key', '')
+
+                if not admin_key:
+                    logger.error("RC_ADMIN_KEY not set, cannot perform real drip")
+                    return jsonify({'ok': False, 'error': 'Faucet configuration error'}), 500
+
+                response = requests.post(
+                    f"{node_url}/wallet/transfer",
+                    json={
+                        "from_miner": faucet_wallet,
+                        "to_miner": wallet,
+                        "amount_rtc": amount,
+                    },
+                    headers={"X-Admin-Key": admin_key},
+                    timeout=10
+                )
+
+                if response.status_code == 200 and response.json().get('ok'):
+                    result = response.json()
+                    tx_hash = result.get('tx_hash')
+                    logger.info(f"Real drip success: {amount} RTC to {wallet}, tx={tx_hash}")
+                else:
+                    logger.error(f"Real drip failed: {response.text}")
+                    return jsonify({'ok': False, 'error': 'Transfer failed on node'}), 502
+            except Exception as e:
+                logger.error(f"Real drip exception: {str(e)}")
+                return jsonify({'ok': False, 'error': 'Internal transfer error'}), 500
         
         # Calculate next available time
         window_seconds = config.get('rate_limit', {}).get('window_seconds', 86400)
@@ -651,6 +830,7 @@ def register_routes(app: Flask, config: Dict, logger: logging.Logger,
         @app.route(metrics_path)
         def metrics():
             """Prometheus metrics endpoint."""
+            db_path = config.get('database', {}).get('path', 'faucet.db')
             conn = sqlite3.connect(db_path)
             c = conn.cursor()
             
@@ -677,11 +857,11 @@ faucet_up 1
             return metrics_text, 200, {'Content-Type': 'text/plain'}
 
 
-def get_client_ip(request) -> str:
-    """Get client IP address from request, handling proxies."""
-    if request.headers.get('X-Forwarded-For'):
+def get_client_ip(request, trust_proxy_headers: bool = False) -> str:
+    """Get client IP address, trusting proxy headers only when configured."""
+    if trust_proxy_headers and request.headers.get('X-Forwarded-For'):
         return request.headers.get('X-Forwarded-For').split(',')[0].strip()
-    if request.headers.get('X-Real-IP'):
+    if trust_proxy_headers and request.headers.get('X-Real-IP'):
         return request.headers.get('X-Real-IP')
     return request.remote_addr or '127.0.0.1'
 
@@ -882,7 +1062,7 @@ HTML_TEMPLATE = """
                 <div class="form-group">
                     <label for="wallet">Your RTC Wallet Address</label>
                     <input type="text" id="wallet" name="wallet" 
-                           placeholder="0xYourWalletAddress" required>
+                           placeholder="RTCe4fbe4c9085b8b2ed3f1228504de66799025f6ce" required>
                 </div>
                 <button type="submit" id="submitBtn">Request Test RTC</button>
             </form>

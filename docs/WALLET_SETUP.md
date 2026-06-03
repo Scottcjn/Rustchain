@@ -25,10 +25,10 @@ If you want to **send RTC yourself**, create or restore an **Ed25519-backed `RTC
 
 These are the main RustChain endpoints used in this guide:
 
-- Health: `https://50.28.86.131/health`
-- Active miners: `https://50.28.86.131/api/miners`
-- Current epoch: `https://50.28.86.131/epoch`
-- Wallet balance: `https://50.28.86.131/wallet/balance?miner_id=YOUR_WALLET`
+- Health: `https://rustchain.org/health`
+- Active miners: `https://rustchain.org/api/miners`
+- Current epoch: `https://rustchain.org/epoch`
+- Wallet balance: `https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET`
 - Explorer: `https://rustchain.org/explorer/`
 
 Use `curl -sk` because the public node uses a self-signed TLS certificate.
@@ -68,7 +68,7 @@ Example:
 ```json
 {
   "wallet_id": "victus-x86-scott",
-  "node_url": "https://50.28.86.131"
+  "node_url": "https://rustchain.org"
 }
 ```
 
@@ -149,13 +149,13 @@ What to save immediately:
 This is the most direct balance check:
 
 ```bash
-curl -sk 'https://50.28.86.131/wallet/balance?miner_id=YOUR_WALLET'
+curl -sk 'https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET'
 ```
 
 Example:
 
 ```bash
-curl -sk 'https://50.28.86.131/wallet/balance?miner_id=victus-x86-scott'
+curl -sk 'https://rustchain.org/wallet/balance?miner_id=victus-x86-scott'
 ```
 
 Typical response:
@@ -184,7 +184,7 @@ Use it like this:
 4. For the exact numeric balance, open the balance endpoint in your browser:
 
 ```text
-https://50.28.86.131/wallet/balance?miner_id=YOUR_WALLET
+https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET
 ```
 
 The explorer is the best visual way to confirm that your miner is online. The balance endpoint is the exact numeric source of truth.
@@ -208,9 +208,9 @@ Mining is automatic once your miner is installed and online.
 Useful checks:
 
 ```bash
-curl -sk https://50.28.86.131/health
-curl -sk https://50.28.86.131/api/miners
-curl -sk https://50.28.86.131/epoch
+curl -sk https://rustchain.org/health
+curl -sk https://rustchain.org/api/miners
+curl -sk https://rustchain.org/epoch
 ```
 
 What to expect:
@@ -274,7 +274,7 @@ If you are using `wallet/rustchain_wallet_secure.py`:
 Under the hood, the GUI signs your transfer and posts it to:
 
 ```text
-POST https://50.28.86.131/wallet/transfer/signed
+POST https://rustchain.org/wallet/transfer/signed
 ```
 
 ### Method 2: send via the signed transfer API
@@ -297,7 +297,7 @@ import time
 import requests
 from nacl.signing import SigningKey
 
-NODE_URL = "https://50.28.86.131"
+NODE_URL = "https://rustchain.org"
 PRIVATE_KEY_HEX = "YOUR_PRIVATE_KEY_HEX"
 TO_ADDRESS = "RTC_RECIPIENT_ADDRESS"
 AMOUNT_RTC = 1.0
@@ -405,7 +405,7 @@ Try these in order:
 ```bash
 cat /opt/rustchain-miner/config.json
 ls ~/.rustchain/wallets
-curl -sk https://50.28.86.131/api/miners
+curl -sk https://rustchain.org/api/miners
 ```
 
 If you still have the secure wallet keystore or seed phrase, you can usually recover the public `RTC...` address.
@@ -424,9 +424,9 @@ Common reasons:
 Quick checks:
 
 ```bash
-curl -sk https://50.28.86.131/health
-curl -sk https://50.28.86.131/api/miners
-curl -sk 'https://50.28.86.131/wallet/balance?miner_id=YOUR_WALLET'
+curl -sk https://rustchain.org/health
+curl -sk https://rustchain.org/api/miners
+curl -sk 'https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET'
 ```
 
 ### How long until I earn RTC?
@@ -457,14 +457,14 @@ curl -sL https://rustchain.org/install.sh | bash
 3. Check your balance:
 
 ```bash
-curl -sk 'https://50.28.86.131/wallet/balance?miner_id=YOUR_WALLET'
+curl -sk 'https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET'
 ```
 
 4. Confirm you are live:
 
 ```bash
-curl -sk https://50.28.86.131/api/miners
-curl -sk https://50.28.86.131/epoch
+curl -sk https://rustchain.org/api/miners
+curl -sk https://rustchain.org/epoch
 ```
 
 5. If you later want to send RTC yourself, create a secure `RTC...` wallet with the secure GUI or the Python wallet module.

@@ -338,7 +338,7 @@ For questions about this simulator:
 - Reference: Issue #2301
 
 For RustChain mining questions:
-- Documentation: https://rustchain.org/docs
+- Documentation: https://github.com/Scottcjn/Rustchain/tree/main/docs
 - Discord: RustChain Community Server
 
 ---

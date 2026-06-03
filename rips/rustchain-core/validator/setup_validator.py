@@ -29,6 +29,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass, asdict
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -61,7 +62,7 @@ BOOTSTRAP_NODES = [
     "192.168.0.126:9333",  # G4 Mirror Door Secondary
 ]
 
-CURRENT_YEAR = 2025
+CURRENT_YEAR = datetime.now().year
 
 # =============================================================================
 # Hardware Detection
@@ -199,8 +200,8 @@ def estimate_release_year(cpu_model: str, cpu_vendor: str) -> int:
     if "8086" in model_lower or "8088" in model_lower:
         return 1978
 
-    # Default to somewhat recent
-    return 2020
+    # Unknown CPUs should not receive free antiquity from an old fallback year.
+    return CURRENT_YEAR
 
 
 def determine_tier(release_year: int) -> Tuple[str, float]:

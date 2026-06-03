@@ -1,0 +1,1 @@
+"""RustChain Bounties MCP — Tests."""

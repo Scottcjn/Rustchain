@@ -48,6 +48,14 @@
 </div>
 <script>
 let passports = [];
+function escapeHtml(value) {
+  const d = document.createElement('div');
+  d.textContent = String(value ?? '');
+  return d.innerHTML;
+}
+function safeTier(value) {
+  return String(value || 'modern').toLowerCase().replace(/[^a-z0-9_-]/g, '-') || 'modern';
+}
 async function load() {
   const resp = await fetch('/api/passports');
   passports = await resp.json();
@@ -58,22 +66,27 @@ function render(list) {
   document.getElementById('count').textContent = `${list.length} machines documented`;
   if (!list.length) { el.innerHTML = '<div class="empty">No passports yet. Miners can register at POST /api/passport</div>'; return; }
   el.innerHTML = list.map(p => `
-    <div class="passport-card" onclick="location.href='/passport/${p.machine_id}'">
-      <div class="name">${p.name || p.machine_id.substring(0,12)+'...'}</div>
-      <div class="arch">${p.architecture || 'Unknown'} · ${p.manufacture_year || '?'}</div>
+    <div class="passport-card" data-machine-id="${escapeHtml(p.machine_id || '')}">
+      <div class="name">${escapeHtml(p.name || String(p.machine_id || '').substring(0,12)+'...')}</div>
+      <div class="arch">${escapeHtml(p.architecture || 'Unknown')} &middot; ${escapeHtml(p.manufacture_year || '?')}</div>
       <div class="meta">
-        <span class="tier-badge tier-${p.tier}">${p.tier}</span>
-        · ${p.total_epochs || 0} epochs · ${p.total_rtc || 0} RTC earned
+        <span class="tier-badge tier-${safeTier(p.tier)}">${escapeHtml(p.tier || 'modern')}</span>
+        &middot; ${escapeHtml(p.total_epochs || 0)} epochs &middot; ${escapeHtml(p.total_rtc || 0)} RTC earned
       </div>
     </div>
   `).join('');
+  el.querySelectorAll('.passport-card').forEach(card => {
+    card.addEventListener('click', () => {
+      location.href = '/passport/' + encodeURIComponent(card.dataset.machineId || '');
+    });
+  });
 }
 function filterList() {
   const q = document.getElementById('search').value.toLowerCase();
   render(passports.filter(p =>
     (p.name||'').toLowerCase().includes(q) ||
     (p.architecture||'').toLowerCase().includes(q) ||
-    p.machine_id.includes(q)
+    String(p.machine_id || '').includes(q)
   ));
 }
 load();

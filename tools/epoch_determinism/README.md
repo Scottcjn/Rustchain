@@ -38,7 +38,7 @@ Expected output:
 No extra dependencies beyond Python ≥ 3.8 and the repo itself.
 
 ```bash
-git clone https://github.com/B1tor/Rustchain.git
+git clone https://github.com/Scottcjn/Rustchain.git
 cd Rustchain
 python tools/epoch_determinism/replay.py tools/epoch_determinism/fixtures/normal_epoch.json
 ```
@@ -249,7 +249,7 @@ The replay tool guarantees determinism by:
 ## Reproduction Steps
 
 ```bash
-git clone https://github.com/B1tor/Rustchain.git
+git clone https://github.com/Scottcjn/Rustchain.git
 cd Rustchain
 git checkout scottcjn/epoch-determinism-474
 

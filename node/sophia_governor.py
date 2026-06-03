@@ -16,8 +16,10 @@ events that deserve a larger mind.
 
 from __future__ import annotations
 
+import hmac
 import json
 import logging
+import math
 import os
 import re
 import sqlite3
@@ -142,6 +144,18 @@ def _max_recent_rows() -> int:
     return max(1, min(int(os.getenv("SOPHIA_GOVERNOR_MAX_RECENT", "50")), 200))
 
 
+def _parse_recent_limit(value: Any, default: int = 20) -> int:
+    if value is None or value == "":
+        return default
+    try:
+        limit = int(value)
+    except (TypeError, ValueError):
+        raise ValueError("limit must be an integer")
+    if limit <= 0:
+        raise ValueError("limit must be positive")
+    return min(limit, _max_recent_rows())
+
+
 def _parse_csv_env(name: str) -> list[str]:
     raw = os.getenv(name, "")
     if not raw:
@@ -197,6 +211,34 @@ def _risk_rank(value: str) -> int:
 
 def _strongest_risk(left: str, right: str) -> str:
     return left if _risk_rank(left) >= _risk_rank(right) else right
+
+
+def _safe_nonnegative_float(value: Any) -> tuple[float | None, bool]:
+    """Parse JSON scalar numeric fields without accepting booleans/containers."""
+    if value is None or value == "":
+        return None, False
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        return None, True
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None, True
+    if not math.isfinite(parsed) or parsed < 0:
+        return None, True
+    return parsed, False
+
+
+def _pending_transfer_amount_rtc(payload: dict[str, Any]) -> tuple[float, bool]:
+    """Return best-effort pending transfer RTC amount and whether it was malformed."""
+    amount_rtc, invalid = _safe_nonnegative_float(payload.get("amount_rtc"))
+    if amount_rtc:
+        return amount_rtc, invalid
+
+    amount_i64, i64_invalid = _safe_nonnegative_float(payload.get("amount_i64"))
+    if amount_i64 is not None:
+        return amount_i64 / 1_000_000.0, invalid or i64_invalid
+
+    return 0.0, invalid or i64_invalid
 
 
 def _load_continuity_packet() -> dict[str, Any]:
@@ -296,6 +338,18 @@ def _extract_json_object(text: str) -> dict[str, Any] | None:
         return None
 
 
+def _response_json_object(response: Any) -> dict[str, Any]:
+    try:
+        body = response.json()
+    except ValueError as exc:
+        log.warning("Governor LLM returned invalid JSON: %s", exc)
+        return {}
+    if not isinstance(body, dict):
+        log.warning("Governor LLM returned %s JSON, expected object", type(body).__name__)
+        return {}
+    return body
+
+
 def _try_ollama_generate(base_url: str, prompt: str) -> tuple[str | None, str | None]:
     if requests is None:
         return None, None
@@ -311,7 +365,7 @@ def _try_ollama_generate(base_url: str, prompt: str) -> tuple[str | None, str | 
         timeout=(4, 12),
     )
     if response.status_code == 200:
-        body = response.json()
+        body = _response_json_object(response)
         return body.get("response", ""), model
     return None, None
 
@@ -326,7 +380,7 @@ def _try_llama_completion(base_url: str, prompt: str) -> tuple[str | None, str |
         timeout=(4, 12),
     )
     if response.status_code == 200:
-        body = response.json()
+        body = _response_json_object(response)
         return body.get("content", ""), model
     return None, None
 
@@ -346,7 +400,7 @@ def _try_openai_completion(base_url: str, prompt: str) -> tuple[str | None, str 
         timeout=(4, 12),
     )
     if response.status_code == 200:
-        body = response.json()
+        body = _response_json_object(response)
         choices = body.get("choices") or []
         if choices:
             return choices[0].get("text", ""), model
@@ -444,10 +498,14 @@ def _heuristic_review(event_type: str, payload: dict[str, Any]) -> dict[str, Any
             recommended_actions.append("keep proposal on local watchlist")
 
     elif event_type == "pending_transfer":
-        amount_rtc = float(payload.get("amount_rtc") or 0.0)
-        if not amount_rtc and payload.get("amount_i64") is not None:
-            amount_rtc = float(payload["amount_i64"]) / 1_000_000.0
+        amount_rtc, amount_invalid = _pending_transfer_amount_rtc(payload)
         reason_text = str(payload.get("reason", "")).lower()
+        if amount_invalid:
+            risk_level = "medium"
+            route = ROUTE_LOCAL_THEN_PHONE_HOME
+            stance = "watch"
+            signals.append("invalid_transfer_amount")
+            recommended_actions.append("review malformed transfer amount")
         if amount_rtc >= _transfer_critical_rtc():
             risk_level = "critical"
             route = ROUTE_IMMEDIATE_PHONE_HOME
@@ -938,7 +996,7 @@ def register_sophia_governor_endpoints(app, db_path: str | None = None) -> None:
         if not required:
             return False
         provided = (req.headers.get("X-Admin-Key") or req.headers.get("X-API-Key") or "").strip()
-        return bool(provided and provided == required)
+        return bool(provided and hmac.compare_digest(provided, required))
 
     @app.route("/sophia/governor/status", methods=["GET"])
     def sophia_governor_status():
@@ -946,19 +1004,33 @@ def register_sophia_governor_endpoints(app, db_path: str | None = None) -> None:
 
     @app.route("/sophia/governor/recent", methods=["GET"])
     def sophia_governor_recent():
-        limit = request.args.get("limit", 20)
+        if not _is_admin(request):
+            return jsonify({"error": "Unauthorized -- admin key required"}), 401
+        try:
+            limit = _parse_recent_limit(request.args.get("limit"))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
         return jsonify({
             "ok": True,
-            "events": get_recent_governor_events(db_path=db, limit=int(limit)),
+            "events": get_recent_governor_events(db_path=db, limit=limit),
         })
 
     @app.route("/sophia/governor/review", methods=["POST"])
     def sophia_governor_review():
         if not _is_admin(request):
             return jsonify({"error": "Unauthorized -- admin key required"}), 401
-        data = request.get_json(silent=True) or {}
-        event_type = str(data.get("event_type", "")).strip()
-        source = str(data.get("source", "manual")).strip() or "manual"
+        data = request.get_json(silent=True)
+        if data is not None and not isinstance(data, dict):
+            return jsonify({"error": "JSON object required"}), 400
+        data = data or {}
+        event_type_value = data.get("event_type", "")
+        if event_type_value is not None and not isinstance(event_type_value, str):
+            return jsonify({"error": "event_type must be a string"}), 400
+        event_type = (event_type_value or "").strip()
+        source_value = data.get("source", "manual")
+        if source_value is not None and not isinstance(source_value, str):
+            return jsonify({"error": "source must be a string"}), 400
+        source = (source_value or "manual").strip() or "manual"
         payload = data.get("payload") if isinstance(data.get("payload"), dict) else {}
         if not event_type:
             return jsonify({"error": "event_type required"}), 400

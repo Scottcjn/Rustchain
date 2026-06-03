@@ -222,7 +222,7 @@ RustChain's live mining fleet includes:
 | Multiple G4 PowerBooks | PowerPC G4 | 2.5x each | Moss Bluff, LA |
 
 **4 attestation nodes:**
-- Node 1: 50.28.86.131 (LiquidWeb VPS, primary)
+- Node 1: rustchain.org (LiquidWeb VPS, primary)
 - Node 2: 50.28.86.153 (LiquidWeb VPS, Ergo anchor)
 - Node 3: 76.8.228.245 (Ryan's Proxmox, Houma LA -- first external node)
 - Node 4: 38.76.217.189 (CognetCloud, Hong Kong -- first Asian node)
@@ -279,4 +279,4 @@ See [N64 Mining Guide](N64_MINING_GUIDE.md) for setup instructions.
 - [Console Mining Setup](CONSOLE_MINING_SETUP.md) -- mine on NES, SNES, Genesis, PS1, Game Boy, and N64
 - [Protocol Overview](protocol-overview.md) -- attestation protocol specification
 - [Green Tracker](https://rustchain.org/preserved.html) -- live environmental impact dashboard
-- [Whitepaper](RustChain_Whitepaper_Flameholder_v0.97-1.pdf) -- formal specification
+- [Whitepaper](WHITEPAPER.md) -- formal specification

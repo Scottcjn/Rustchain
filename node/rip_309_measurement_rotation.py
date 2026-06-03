@@ -37,6 +37,13 @@ ALL_FP_CHECKS = [
 # How many checks are active per epoch
 ACTIVE_FP_COUNT = 4
 
+# RIP-309 issue text used ``simd_bias`` while the emitted fingerprint payloads
+# use ``simd_identity``. Treat both names as aliases at evaluation boundaries.
+FP_CHECK_ALIASES = {
+    "simd_bias": ("simd_bias", "simd_identity"),
+    "simd_identity": ("simd_identity", "simd_bias"),
+}
+
 # Weighted decay factor for EMA (exponential moving average)
 # 0.95 means each epoch is worth 95% of the previous one
 # ~14 epochs (2.3 hours) half-life; ~46 epochs (7.7 hours) to 10% weight
@@ -51,9 +58,16 @@ SPIKE_MIN_HISTORY = 10
 
 # Observation window modes (bimodal, not uniform)
 # Fast mode catches sudden changes; slow mode catches gradual drift
-WINDOW_FAST_RANGE = (6, 24)  # hours
+WINDOW_FAST_RANGE = (6, 24)    # hours
 WINDOW_SLOW_RANGE = (72, 168)  # hours
 WINDOW_FAST_PROBABILITY = 0.6  # 60% chance of fast window
+
+
+def _prev_hash_hex_to_bytes(prev_block_hash: str) -> bytes:
+    """Decode a previous block hash hex string for reward-path helpers."""
+    if not prev_block_hash:
+        return b""
+    return bytes.fromhex(prev_block_hash.strip())
 
 
 def derive_epoch_nonce(prev_block_hash: str) -> bytes:
@@ -69,13 +83,14 @@ def derive_epoch_nonce(prev_block_hash: str) -> bytes:
     Returns:
         32-byte nonce
     """
-    if not prev_block_hash:
+    prev_hash_bytes = _prev_hash_hex_to_bytes(prev_block_hash)
+    reward_nonce = derive_reward_measurement_nonce(prev_hash_bytes)
+    if reward_nonce is None:
         # Genesis epoch or missing hash — use fixed seed
         # This is acceptable ONLY for epoch 0
         logger.warning("RIP-309: No prev_block_hash, using genesis fallback nonce")
         return hashlib.sha256(b"rip309_genesis_fallback").digest()
-
-    return hashlib.sha256(bytes.fromhex(prev_block_hash) + b"rip309_measurement_nonce").digest()
+    return reward_nonce
 
 
 def get_active_fp_checks(nonce: bytes) -> List[str]:
@@ -92,10 +107,30 @@ def get_active_fp_checks(nonce: bytes) -> List[str]:
         Sorted list of 4 active check names
     """
     seed = int.from_bytes(nonce[:4], "big")
-    # FIX: Deterministic sampling is required for consensus agreement across nodes.
-    # We use a seeded Random instance to ensure all nodes select the same checks.
-    active = random.Random(seed).sample(ALL_FP_CHECKS, ACTIVE_FP_COUNT)  # nosec B311
+    active = random.Random(seed).sample(ALL_FP_CHECKS, ACTIVE_FP_COUNT)
     return sorted(active)
+
+
+def derive_reward_measurement_nonce(prev_block_hash: bytes) -> Optional[bytes]:
+    """Derive the reward-path nonce without changing legacy consensus behavior."""
+    if not prev_block_hash:
+        return None
+    return hashlib.sha256(prev_block_hash + b"measurement_nonce").digest()
+
+
+def get_reward_active_fingerprint_checks(prev_block_hash: bytes) -> List[str]:
+    """Return the active reward checks used by the current RIP-200 path.
+
+    This helper intentionally preserves the existing inline algorithm in
+    ``calculate_epoch_rewards_time_aged()``:
+    ``sha256(prev_block_hash + b"measurement_nonce")`` seeded into
+    ``random.Random(...).sample(..., 4)``.  The empty-hash fallback remains
+    all checks active for backward compatibility.
+    """
+    nonce = derive_reward_measurement_nonce(prev_block_hash)
+    if nonce is None:
+        return list(ALL_FP_CHECKS)
+    return get_active_fp_checks(nonce)
 
 
 def get_observation_window_hours(nonce: bytes) -> int:
@@ -115,7 +150,7 @@ def get_observation_window_hours(nonce: bytes) -> int:
         Observation window in hours
     """
     seed = int.from_bytes(nonce[8:12], "big")
-    rng = random.Random(seed)  # nosec B311
+    rng = random.Random(seed)
 
     if rng.random() < WINDOW_FAST_PROBABILITY:
         return rng.randint(*WINDOW_FAST_RANGE)
@@ -145,8 +180,18 @@ def evaluate_fingerprint_rotation(
     active_total = len(active_checks)
 
     for check_name in active_checks:
-        check_result = checks.get(check_name, {})
-        if check_result.get("passed", False):
+        check_result = None
+        for alias in FP_CHECK_ALIASES.get(check_name, (check_name,)):
+            if alias in checks:
+                check_result = checks[alias]
+                break
+        if isinstance(check_result, bool):
+            passed_check = check_result
+        elif isinstance(check_result, dict):
+            passed_check = check_result.get("passed", False)
+        else:
+            passed_check = False
+        if passed_check:
             active_passed += 1
 
     # All active checks must pass for the miner to earn full weight
@@ -188,7 +233,7 @@ def compute_ema_score(
         age = current_epoch - epoch_num
         if age < 0:
             continue
-        w = decay**age
+        w = decay ** age
         weighted_sum += score * w
         weight_sum += w
 
@@ -240,7 +285,7 @@ def detect_score_spike(
             return True, float("inf")
         return False, 0.0
 
-    std_dev = variance**0.5
+    std_dev = variance ** 0.5
     z_score = (current_score - mean) / std_dev
 
     is_spike = abs(z_score) > threshold_sigma
@@ -264,15 +309,18 @@ def get_epoch_measurement_config(
     Returns:
         Dict with active_fingerprints, observation_window_hours, nonce
     """
+    prev_hash_bytes = _prev_hash_hex_to_bytes(prev_block_hash)
     nonce = derive_epoch_nonce(prev_block_hash)
-    active_fp = get_active_fp_checks(nonce)
+    active_fp = get_reward_active_fingerprint_checks(prev_hash_bytes)
     window_hours = get_observation_window_hours(nonce)
 
     config = {
         "epoch": epoch,
         "nonce": nonce.hex(),
         "active_fingerprints": active_fp,
-        "inactive_fingerprints": sorted(set(ALL_FP_CHECKS) - set(active_fp)),
+        "inactive_fingerprints": sorted(
+            set(ALL_FP_CHECKS) - set(active_fp)
+        ),
         "observation_window_hours": window_hours,
         "window_mode": "fast" if window_hours <= 24 else "slow",
     }
@@ -287,3 +335,62 @@ def get_epoch_measurement_config(
     )
 
     return config
+
+
+# ---------------------------------------------------------------------------
+# Self-test
+# ---------------------------------------------------------------------------
+if __name__ == "__main__":
+    print("RIP-309 Measurement Rotation — Self Test\n")
+
+    # Test deterministic rotation across 20 epochs with different hashes
+    print("=== Fingerprint Check Rotation (20 epochs) ===")
+    check_counts = {c: 0 for c in ALL_FP_CHECKS}
+    for i in range(20):
+        fake_hash = hashlib.sha256(f"block_{i}".encode()).hexdigest()
+        config = get_epoch_measurement_config(fake_hash, i)
+        for c in config["active_fingerprints"]:
+            check_counts[c] += 1
+        inactive = config["inactive_fingerprints"]
+        window = config["observation_window_hours"]
+        mode = config["window_mode"]
+        print(f"  Epoch {i:2d}: {config['active_fingerprints']}  "
+              f"window={window}h ({mode})")
+
+    print("\nCheck activation counts over 20 epochs:")
+    for check, count in sorted(check_counts.items()):
+        bar = "#" * count
+        print(f"  {check:20s}: {count:2d}/20 ({count/20*100:.0f}%) {bar}")
+
+    # Test EMA scoring
+    print("\n=== EMA Scoring ===")
+    # Simulate: low scores for 10 epochs, then improvement
+    scores = [(i, 0.3) for i in range(10)] + [(i, 0.9) for i in range(10, 20)]
+    for epoch in [10, 12, 15, 19]:
+        ema = compute_ema_score(scores[:epoch+1], epoch)
+        print(f"  Epoch {epoch}: EMA={ema:.3f}")
+
+    # Test spike detection
+    print("\n=== Spike Detection ===")
+    honest_scores = [(i, 0.8 + random.Random(42).gauss(0, 0.05)) for i in range(20)]
+    # Epoch 20: sudden drop (gaming attempt)
+    is_spike, z = detect_score_spike(honest_scores, 20, 0.2)
+    print(f"  Honest streak then drop to 0.2: spike={is_spike}, z={z:.2f}")
+    # Epoch 20: normal variation
+    is_spike, z = detect_score_spike(honest_scores, 20, 0.75)
+    print(f"  Honest streak then 0.75:        spike={is_spike}, z={z:.2f}")
+
+    # Test observation window distribution
+    print("\n=== Observation Window Distribution ===")
+    fast = slow = 0
+    for i in range(100):
+        fake_hash = hashlib.sha256(f"window_test_{i}".encode()).hexdigest()
+        nonce = derive_epoch_nonce(fake_hash)
+        hours = get_observation_window_hours(nonce)
+        if hours <= 24:
+            fast += 1
+        else:
+            slow += 1
+    print(f"  Fast (6-24h):   {fast}%")
+    print(f"  Slow (72-168h): {slow}%")
+    print("  (Expected: ~60/40)")

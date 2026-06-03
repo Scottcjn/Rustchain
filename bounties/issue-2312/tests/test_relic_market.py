@@ -15,7 +15,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from relic_market_api import (
-    VintageMachine, Reservation, ProvenanceReceipt,
+    VintageMachine,
     MachineRegistry, EscrowManager, ReceiptSigner,
     ReservationManager, MCPIntegration, BeaconIntegration,
     AccessDuration, ReservationStatus, app
@@ -527,6 +527,48 @@ class TestAPIEndpoints(unittest.TestCase):
         )
         
         self.assertEqual(response.status_code, 400)
+
+    def test_reserve_machine_rejects_structured_identity_fields(self):
+        base_payload = {
+            "machine_id": "vm-001",
+            "agent_id": "api-agent",
+            "duration_hours": 1,
+            "payment_rtc": 50.0
+        }
+
+        for field in ("machine_id", "agent_id"):
+            with self.subTest(field=field):
+                payload = dict(base_payload)
+                payload[field] = ["not", "a", "string"]
+
+                response = self.client.post(
+                    '/relic/reserve',
+                    json=payload,
+                    content_type='application/json'
+                )
+
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(
+                    response.get_json()["error"],
+                    f"{field} must be a non-empty string",
+                )
+
+    def test_reserve_machine_rejects_invalid_payment_type(self):
+        payload = {
+            "machine_id": "vm-001",
+            "agent_id": "api-agent",
+            "duration_hours": 1,
+            "payment_rtc": "50.0"
+        }
+
+        response = self.client.post(
+            '/relic/reserve',
+            json=payload,
+            content_type='application/json'
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["error"], "payment_rtc must be a positive number")
     
     def test_get_reservation(self):
         # Create reservation first
@@ -579,6 +621,62 @@ class TestAPIEndpoints(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.data)
         self.assertEqual(data['status'], 'confirmed')
+
+    def test_json_write_endpoints_reject_non_object_bodies(self):
+        endpoints = [
+            '/relic/reserve',
+            '/relic/reservation/missing/complete',
+            '/mcp/tool',
+            '/beacon/message',
+        ]
+
+        for endpoint in endpoints:
+            with self.subTest(endpoint=endpoint):
+                response = self.client.post(endpoint, json=["not", "an", "object"])
+
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.get_json()['error'], "JSON object required")
+
+    def test_json_write_endpoints_reject_malformed_bodies(self):
+        endpoints = [
+            '/relic/reserve',
+            '/relic/reservation/missing/complete',
+            '/mcp/tool',
+            '/beacon/message',
+        ]
+
+        for endpoint in endpoints:
+            with self.subTest(endpoint=endpoint):
+                response = self.client.post(
+                    endpoint,
+                    data="{",
+                    content_type='application/json',
+                )
+
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.get_json()['error'], "JSON object required")
+
+    def test_json_write_endpoints_reject_missing_bodies(self):
+        endpoints = [
+            '/relic/reserve',
+            '/relic/reservation/missing/complete',
+            '/mcp/tool',
+            '/beacon/message',
+        ]
+
+        for endpoint in endpoints:
+            with self.subTest(endpoint=endpoint):
+                response = self.client.post(endpoint)
+
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.get_json()['error'], "Request body required")
+
+    def test_leaderboard_rejects_invalid_limits(self):
+        for limit in ['abc', '0', '-1']:
+            with self.subTest(limit=limit):
+                response = self.client.get(f'/relic/leaderboard?limit={limit}')
+
+                self.assertEqual(response.status_code, 400)
 
 
 class TestAccessDuration(unittest.TestCase):

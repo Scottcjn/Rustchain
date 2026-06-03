@@ -240,7 +240,12 @@ async fn main() -> anyhow::Result<()> {
             cmd_receive(&storage, &name)?;
         }
         Commands::Balance { wallet, rpc } => {
-            cmd_balance(&storage, &wallet, rpc.as_deref().unwrap_or(network.api_url())).await?;
+            cmd_balance(
+                &storage,
+                &wallet,
+                rpc.as_deref().unwrap_or(network.api_url()),
+            )
+            .await?;
         }
         Commands::List => {
             cmd_list(&storage)?;
@@ -466,15 +471,19 @@ fn cmd_receive(storage: &WalletStorage, name: &str) -> Result<()> {
     Ok(())
 }
 
-async fn cmd_balance(storage: &WalletStorage, wallet_or_address: &str, api_url: &str) -> Result<()> {
+async fn cmd_balance(
+    storage: &WalletStorage,
+    wallet_or_address: &str,
+    api_url: &str,
+) -> Result<()> {
     let client = RustChainClient::new(api_url.to_string());
 
     // If it starts with RTC, treat as address; otherwise look up wallet name
     let address = if wallet_or_address.starts_with("RTC") {
         wallet_or_address.to_string()
     } else if storage.exists(wallet_or_address) {
-        let password = rpassword::prompt_password("Enter wallet password: ")
-            .unwrap_or_else(|_| String::new());
+        let password =
+            rpassword::prompt_password("Enter wallet password: ").unwrap_or_else(|_| String::new());
         let keypair = storage.load(wallet_or_address, &password)?;
         keypair.rtc_address()
     } else {

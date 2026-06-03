@@ -13,10 +13,12 @@ EXPLORER_PORT       – port to bind (default: 6100)
 CACHE_TTL           – response cache lifetime in seconds (default: 15)
 """
 
-import os
-import time
+from __future__ import annotations
+
 import hashlib
+import os
 import threading
+import time
 from functools import wraps
 
 import requests
@@ -92,9 +94,12 @@ def _get(path: str, params: dict | None = None, timeout: float | None = None):
             timeout=timeout or REQUEST_TIMEOUT,
         )
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        if isinstance(data, dict):
+            return data
     except Exception:
         return None
+    return None
 
 
 def _post(path: str, json_body: dict | None = None, timeout: float | None = None):
@@ -106,8 +111,41 @@ def _post(path: str, json_body: dict | None = None, timeout: float | None = None
             timeout=timeout or REQUEST_TIMEOUT,
         )
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        if isinstance(data, dict):
+            return data
     except Exception:
+        return None
+    return None
+
+
+def _positive_int_arg(name: str, default: int, max_value: int | None = None):
+    raw_value = request.args.get(name)
+    if raw_value is None:
+        return default, None
+
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        return None, f"{name}_must_be_integer"
+
+    if value < 1:
+        return None, f"{name}_must_be_positive"
+
+    if max_value is not None:
+        value = min(value, max_value)
+
+    return value, None
+
+
+def _tip_slot(tip: dict | None) -> int | None:
+    """Return a validated integer tip slot from an upstream tip payload."""
+    if not tip or tip.get("slot") is None:
+        return None
+
+    try:
+        return int(tip["slot"])
+    except (TypeError, ValueError):
         return None
 
 
@@ -125,15 +163,20 @@ def list_blocks():
         page  – 1-indexed page number (default 1)
         limit – items per page, max 100 (default 20)
     """
-    page = max(1, int(request.args.get("page", 1)))
-    limit = max(1, min(int(request.args.get("limit", 20)), 100))
+    page, error = _positive_int_arg("page", 1)
+    if error:
+        return jsonify({"ok": False, "error": error}), 400
+
+    limit, error = _positive_int_arg("limit", 20, max_value=100)
+    if error:
+        return jsonify({"ok": False, "error": error}), 400
 
     # Fetch chain tip to know the latest slot
     tip = _get("/headers/tip")
-    if not tip or tip.get("slot") is None:
+    tip_slot = _tip_slot(tip)
+    if tip_slot is None:
         return jsonify({"ok": False, "error": "node_unavailable"}), 502
 
-    tip_slot = int(tip["slot"])
     start = max(0, tip_slot - (page * limit) + 1)
     end = tip_slot - ((page - 1) * limit)
 
@@ -170,10 +213,10 @@ def list_blocks():
 def block_detail(height: int):
     """Return details for a specific block height/slot."""
     tip = _get("/headers/tip")
-    if not tip or tip.get("slot") is None:
+    tip_slot = _tip_slot(tip)
+    if tip_slot is None:
         return jsonify({"ok": False, "error": "node_unavailable"}), 502
 
-    tip_slot = int(tip["slot"])
     if height < 0 or height > tip_slot:
         return jsonify({"ok": False, "error": "block_not_found"}), 404
 
@@ -214,7 +257,9 @@ def list_transactions():
     Query params:
         limit – max items, capped at 100 (default 25)
     """
-    limit = max(1, min(int(request.args.get("limit", 25)), 100))
+    limit, error = _positive_int_arg("limit", 25, max_value=100)
+    if error:
+        return jsonify({"ok": False, "error": error}), 400
 
     # The node exposes /wallet/history per-wallet, but we can retrieve
     # recent withdrawal activity as a proxy for global transactions.
@@ -241,6 +286,88 @@ def list_transactions():
 
 
 # ---------------------------------------------------------------------------
+# GET /api/mempool – pending UTXO transactions and metrics
+# ---------------------------------------------------------------------------
+
+
+def _as_int(value, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _normalize_mempool_tx(tx: dict, now_ts: int) -> dict:
+    """Return dashboard-friendly mempool transaction fields."""
+    raw_inputs = tx.get("inputs")
+    raw_outputs = tx.get("outputs")
+    inputs: list = raw_inputs if isinstance(raw_inputs, list) else []
+    outputs: list = raw_outputs if isinstance(raw_outputs, list) else []
+    fee_nrtc = _as_int(tx.get("fee_nrtc"))
+    timestamp = _as_int(tx.get("timestamp"))
+    expires_at = _as_int(tx.get("expires_at"))
+
+    return {
+        "tx_id": tx.get("tx_id") or tx.get("id") or "",
+        "tx_type": tx.get("tx_type") or tx.get("type") or "unknown",
+        "fee_nrtc": fee_nrtc,
+        "fee_rtc": fee_nrtc / 1000000,
+        "input_count": len(inputs),
+        "output_count": len(outputs),
+        "timestamp": timestamp or None,
+        "age_seconds": max(0, now_ts - timestamp) if timestamp else None,
+        "expires_at": expires_at or None,
+        "expires_in_seconds": max(0, expires_at - now_ts) if expires_at else None,
+    }
+
+
+@app.route("/api/mempool", methods=["GET"])
+@cached("mempool", ttl=5)
+def mempool_summary():
+    """Return pending UTXO mempool transactions with dashboard metrics."""
+    limit, error = _positive_int_arg("limit", 50, max_value=100)
+    if error:
+        return jsonify({"ok": False, "error": error}), 400
+
+    mempool = _get("/utxo/mempool") or {}
+    stats = _get("/utxo/stats") or {}
+
+    raw_txs = mempool.get("transactions", [])
+    if not isinstance(raw_txs, list):
+        raw_txs = []
+
+    now_ts = int(time.time())
+    transactions = [
+        _normalize_mempool_tx(tx, now_ts)
+        for tx in raw_txs[:limit]
+        if isinstance(tx, dict)
+    ]
+
+    fees = [tx["fee_nrtc"] for tx in transactions]
+    total_fee_nrtc = sum(fees)
+    metrics = {
+        "mempool_size": stats.get("mempool_size", mempool.get("count", len(raw_txs))),
+        "visible_transactions": len(transactions),
+        "total_fee_nrtc": total_fee_nrtc,
+        "total_fee_rtc": total_fee_nrtc / 1000000,
+        "average_fee_nrtc": int(total_fee_nrtc / len(fees)) if fees else 0,
+        "max_fee_nrtc": max(fees) if fees else 0,
+    }
+
+    for key in ("unspent_boxes", "spent_boxes", "total_transactions", "state_root"):
+        if key in stats:
+            metrics[key] = stats[key]
+
+    return jsonify({
+        "ok": True,
+        "limit": limit,
+        "node_available": bool(mempool or stats),
+        "metrics": metrics,
+        "transactions": transactions,
+    })
+
+
+# ---------------------------------------------------------------------------
 # GET /api/address/<addr> – address info + transaction history
 # ---------------------------------------------------------------------------
 
@@ -252,6 +379,8 @@ def address_info(addr: str):
     addr = addr.strip()
     if not addr:
         return jsonify({"ok": False, "error": "address_required"}), 400
+    if len(addr) > 128:
+        return jsonify({"ok": False, "error": "address too long"}), 400
 
     # Fetch balance
     balance_data = _get(f"/balance/{addr}")
@@ -300,6 +429,8 @@ def search():
     query = request.args.get("q", "").strip()
     if not query:
         return jsonify({"ok": False, "error": "query_required"}), 400
+    if len(query) > 256:
+        return jsonify({"ok": False, "error": "query_too_long"}), 400
 
     results = []
 
@@ -307,7 +438,8 @@ def search():
     try:
         height = int(query)
         tip = _get("/headers/tip")
-        if tip and tip.get("slot") is not None and 0 <= height <= int(tip["slot"]):
+        tip_slot = _tip_slot(tip)
+        if tip_slot is not None and 0 <= height <= tip_slot:
             results.append({
                 "type": "block",
                 "height": height,

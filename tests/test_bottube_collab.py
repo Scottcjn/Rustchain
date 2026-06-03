@@ -145,6 +145,17 @@ class TestVoting:
         result = cs.vote(session_id, "bad-proposal-id", "agent-1")
         assert "error" in result
 
+    def test_voters_count_toward_max_agents(self, cs):
+        sess = cs.create_session("vid-voter-cap", max_agents=2)
+        sid = sess["session_id"]
+        proposal = cs.add_proposal(sid, "agent-1", "Response")
+
+        first_vote = cs.vote(sid, proposal["proposal_id"], "agent-2")
+        blocked_vote = cs.vote(sid, proposal["proposal_id"], "agent-3")
+
+        assert first_vote["vote_count"] == 1
+        assert blocked_vote == {"error": "max_agents_reached", "max_agents": 2}
+
 
 # ── Finalization & Publishing ─────────────────────────────────────────────────
 

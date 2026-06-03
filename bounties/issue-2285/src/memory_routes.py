@@ -23,6 +23,8 @@ Usage:
 
 from __future__ import annotations
 
+import hmac
+import os
 from typing import Any, Dict, List, Optional
 
 from flask import Blueprint, jsonify, request, current_app
@@ -33,6 +35,28 @@ from memory_engine import AgentMemoryEngine, MemoryContext
 
 # Create blueprint for memory routes
 memory_bp = Blueprint("agent_memory", __name__, url_prefix="/api/memory")
+
+
+def _require_admin() -> Optional[tuple]:
+    """Require an admin key for destructive memory operations."""
+    expected_key = os.environ.get("MEMORY_ADMIN_KEY", "")
+    if not expected_key:
+        return jsonify({
+            "error": "unauthorized",
+            "message": "MEMORY_ADMIN_KEY not configured"
+        }), 401
+
+    provided_key = (
+        request.headers.get("X-Admin-Key", "")
+        or request.headers.get("X-API-Key", "")
+    )
+    if not hmac.compare_digest(provided_key, expected_key):
+        return jsonify({
+            "error": "unauthorized",
+            "message": "Invalid admin key"
+        }), 401
+
+    return None
 
 
 def _get_engine() -> AgentMemoryEngine:
@@ -55,6 +79,31 @@ def _validate_agent_id(agent_id: Optional[str]) -> str:
     if len(agent_id) < 1 or len(agent_id) > 256:
         raise ValueError("agent_id must be between 1 and 256 characters")
     return agent_id
+
+
+def _get_json_object() -> Dict[str, Any]:
+    """Return the request JSON body when it is an object."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        raise ValueError("JSON object required")
+    return data
+
+
+def _get_positive_int_arg(name: str, default: int, max_value: int) -> int:
+    """Parse a positive integer query argument with an upper bound."""
+    raw_value = request.args.get(name)
+    if raw_value is None:
+        return default
+
+    try:
+        value = int(raw_value)
+    except ValueError:
+        raise ValueError(f"Invalid {name} parameter") from None
+
+    if value < 1:
+        raise ValueError(f"{name} must be positive")
+
+    return min(value, max_value)
 
 
 @memory_bp.route("/record", methods=["POST"])
@@ -80,7 +129,7 @@ def record_content() -> tuple:
         }
     """
     try:
-        data = request.get_json() or {}
+        data = _get_json_object()
 
         agent_id = _validate_agent_id(data.get("agent_id"))
         content_id = data.get("content_id")
@@ -133,10 +182,7 @@ def get_recent() -> tuple:
         agent_id = _validate_agent_id(request.args.get("agent_id"))
         content_type = request.args.get("content_type")
 
-        try:
-            limit = min(int(request.args.get("limit", 10)), 100)
-        except ValueError:
-            return jsonify({"error": "Invalid limit parameter"}), 400
+        limit = _get_positive_int_arg("limit", 10, 100)
 
         engine = _get_engine()
         recalls = engine.recall_recent(
@@ -180,10 +226,7 @@ def search_topic() -> tuple:
         if not topic:
             return jsonify({"error": "topic is required"}), 400
 
-        try:
-            limit = min(int(request.args.get("limit", 10)), 100)
-        except ValueError:
-            return jsonify({"error": "Invalid limit parameter"}), 400
+        limit = _get_positive_int_arg("limit", 10, 100)
 
         engine = _get_engine()
         recalls = engine.recall_by_topic(
@@ -234,10 +277,7 @@ def search_tags() -> tuple:
 
         match_all = request.args.get("match_all", "false").lower() == "true"
 
-        try:
-            limit = min(int(request.args.get("limit", 10)), 100)
-        except ValueError:
-            return jsonify({"error": "Invalid limit parameter"}), 400
+        limit = _get_positive_int_arg("limit", 10, 100)
 
         engine = _get_engine()
         recalls = engine.recall_by_tags(
@@ -293,10 +333,7 @@ def get_context() -> tuple:
         if tags_param:
             tags = [t.strip() for t in tags_param.split(",") if t.strip()]
 
-        try:
-            max_items = min(int(request.args.get("max_items", 5)), 20)
-        except ValueError:
-            return jsonify({"error": "Invalid max_items parameter"}), 400
+        max_items = _get_positive_int_arg("max_items", 5, 20)
 
         include_summary = request.args.get("include_summary", "true").lower() != "false"
 
@@ -338,7 +375,7 @@ def generate_reference() -> tuple:
         }
     """
     try:
-        data = request.get_json() or {}
+        data = _get_json_object()
 
         agent_id = _validate_agent_id(data.get("agent_id"))
         topic = data.get("topic")
@@ -386,7 +423,7 @@ def link_content() -> tuple:
         }
     """
     try:
-        data = request.get_json() or {}
+        data = _get_json_object()
 
         agent_id = _validate_agent_id(data.get("agent_id"))
         source_id = data.get("source_content_id")
@@ -481,6 +518,10 @@ def clear_memory() -> tuple:
         }
     """
     try:
+        auth_error = _require_admin()
+        if auth_error is not None:
+            return auth_error
+
         agent_id = _validate_agent_id(request.args.get("agent_id"))
 
         engine = _get_engine()

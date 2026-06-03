@@ -348,7 +348,7 @@ scp target/riscv64gc-unknown-linux-gnu/release/rustchain-miner \
 
 # Configure and run
 export RUSTCHAIN_WALLET=your_wallet_address
-export RUSTCHAIN_NODE_URL=https://50.28.86.131
+export RUSTCHAIN_NODE_URL=https://rustchain.org
 rustchain-miner --verbose
 ```
 

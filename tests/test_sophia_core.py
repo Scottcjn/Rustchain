@@ -34,7 +34,7 @@ from sophia_db import (
 )
 from sophia_core import (
     SophiaCoreInspector, VERDICTS, _build_analysis_prompt,
-    _rule_based_fallback, _parse_ollama_response, MODEL,
+    _rule_based_fallback, _parse_ollama_response, _query_ollama, MODEL,
 )
 
 
@@ -375,24 +375,28 @@ class TestOllamaFailover(unittest.TestCase):
     @patch("sophia_core.requests.post")
     def test_ollama_failover_to_second(self, mock_post):
         """First endpoint fails, second works."""
-        fail_resp = MagicMock()
-        fail_resp.raise_for_status.side_effect = Exception("connection refused")
-
         ok_resp = MagicMock()
         ok_resp.status_code = 200
         ok_resp.json.return_value = {
             "response": "VERDICT: CAUTIOUS\nCONFIDENCE: 0.6\nREASONING: hmm"
         }
 
-        mock_post.side_effect = [Exception("refused"), ok_resp]
+        mock_post.side_effect = [
+            Exception("refused"),
+            Exception("refused"),
+            Exception("refused"),
+            ok_resp,
+        ]
 
         inspector = SophiaCoreInspector(
             db_path=self.db_path,
             ollama_endpoints=["http://bad:11434", "http://good:11434"],
         )
-        result = inspector.inspect("miner_f", _good_fingerprint())
+        with patch("sophia_core.time.sleep") as mock_sleep:
+            result = inspector.inspect("miner_f", _good_fingerprint())
         self.assertEqual(result["verdict"], "CAUTIOUS")
-        self.assertEqual(mock_post.call_count, 2)
+        self.assertEqual(mock_post.call_count, 4)
+        self.assertEqual(mock_sleep.call_count, 2)
 
     @patch("sophia_core.requests.post")
     def test_ollama_all_fail_uses_fallback(self, mock_post):
@@ -403,9 +407,43 @@ class TestOllamaFailover(unittest.TestCase):
             db_path=self.db_path,
             ollama_endpoints=["http://a:11434", "http://b:11434"],
         )
-        result = inspector.inspect("miner_fb", _good_fingerprint())
+        with patch("sophia_core.time.sleep") as mock_sleep:
+            result = inspector.inspect("miner_fb", _good_fingerprint())
         self.assertEqual(result["model_used"], "rule-based-fallback-v1")
         self.assertIn(result["verdict"], VERDICTS)
+        self.assertEqual(mock_post.call_count, 6)
+        self.assertEqual(mock_sleep.call_count, 4)
+
+    @patch("sophia_core.requests.post")
+    def test_query_ollama_retries_endpoint_before_failing(self, mock_post):
+        """One endpoint is retried with exponential backoff before failover."""
+        mock_post.side_effect = Exception("temporary outage")
+
+        with patch("sophia_core.time.sleep") as mock_sleep:
+            with self.assertRaisesRegex(Exception, "temporary outage"):
+                _query_ollama("prompt", "http://down:11434")
+
+        self.assertEqual(mock_post.call_count, 3)
+        mock_sleep.assert_any_call(0.5)
+        mock_sleep.assert_any_call(1.0)
+        self.assertEqual(mock_sleep.call_count, 2)
+
+    @patch("sophia_core.requests.post")
+    def test_query_ollama_can_recover_on_retry(self, mock_post):
+        """A transient endpoint failure can recover before failover."""
+        ok_resp = MagicMock()
+        ok_resp.status_code = 200
+        ok_resp.json.return_value = {
+            "response": "VERDICT: APPROVED\nCONFIDENCE: 0.8\nREASONING: retry recovered"
+        }
+        mock_post.side_effect = [Exception("temporary outage"), ok_resp]
+
+        with patch("sophia_core.time.sleep") as mock_sleep:
+            result = _query_ollama("prompt", "http://flaky:11434")
+
+        self.assertEqual(result["verdict"], "APPROVED")
+        self.assertEqual(mock_post.call_count, 2)
+        mock_sleep.assert_called_once_with(0.5)
 
     @patch("sophia_core.requests.post")
     def test_cautious_queued_for_review(self, mock_post):
@@ -475,14 +513,23 @@ class TestSophiaAPI(unittest.TestCase):
         inspector.ollama_endpoints = []  # force rule-based
         app._db_initialized = True
         self.client = app.test_client()
+        self.admin_key = "test-sophia-admin"
 
     def tearDown(self):
         import sophia_db
         sophia_db.DB_PATH = self._orig_db_path
         os.unlink(self.db_path)
 
+    def _post_inspection(self, payload):
+        with patch.dict(os.environ, {"SOPHIA_ADMIN_KEY": self.admin_key}, clear=False):
+            return self.client.post(
+                "/sophia/inspect",
+                json=payload,
+                headers={"X-Admin-Key": self.admin_key},
+            )
+
     def test_inspect_endpoint(self):
-        resp = self.client.post("/sophia/inspect", json={
+        resp = self._post_inspection({
             "miner_id": "test_miner",
             "fingerprint": _good_fingerprint(),
         })
@@ -492,21 +539,96 @@ class TestSophiaAPI(unittest.TestCase):
         self.assertIn("confidence", data)
         self.assertIn("emoji", data)
 
+    def test_inspect_fails_closed_when_admin_key_unconfigured(self):
+        with patch.dict(os.environ, {}, clear=True):
+            resp = self.client.post("/sophia/inspect", json={
+                "miner_id": "unauth_miner",
+                "fingerprint": _good_fingerprint(),
+            })
+
+        self.assertEqual(resp.status_code, 503)
+        self.assertEqual(resp.get_json()["error"], "SOPHIA_ADMIN_KEY not configured")
+
+        conn = get_connection()
+        try:
+            self.assertIsNone(get_latest_inspection(conn, "unauth_miner"))
+        finally:
+            conn.close()
+
+    def test_inspect_requires_valid_admin_key_before_storing(self):
+        with patch.dict(os.environ, {"SOPHIA_ADMIN_KEY": self.admin_key}, clear=False):
+            missing = self.client.post("/sophia/inspect", json={
+                "miner_id": "auth_guard_miner",
+                "fingerprint": _good_fingerprint(),
+            })
+            wrong = self.client.post(
+                "/sophia/inspect",
+                json={
+                    "miner_id": "auth_guard_miner",
+                    "fingerprint": _good_fingerprint(),
+                },
+                headers={"X-Admin-Key": "wrong-secret"},
+            )
+
+        self.assertEqual(missing.status_code, 401)
+        self.assertEqual(wrong.status_code, 401)
+
+        conn = get_connection()
+        try:
+            self.assertIsNone(get_latest_inspection(conn, "auth_guard_miner"))
+        finally:
+            conn.close()
+
+    def test_inspect_rejects_non_ascii_admin_key_before_storing(self):
+        with patch.dict(os.environ, {"SOPHIA_ADMIN_KEY": self.admin_key}, clear=False):
+            resp = self.client.post(
+                "/sophia/inspect",
+                json={
+                    "miner_id": "unicode_guard_miner",
+                    "fingerprint": _good_fingerprint(),
+                },
+                headers={"X-Admin-Key": "\u00e9"},
+            )
+
+        self.assertEqual(resp.status_code, 401)
+        self.assertEqual(resp.get_json()["error"], "Unauthorized")
+
+        conn = get_connection()
+        try:
+            self.assertIsNone(get_latest_inspection(conn, "unicode_guard_miner"))
+        finally:
+            conn.close()
+
     def test_inspect_missing_miner_id(self):
-        resp = self.client.post("/sophia/inspect", json={
+        resp = self._post_inspection({
             "fingerprint": _good_fingerprint(),
         })
         self.assertEqual(resp.status_code, 400)
 
     def test_inspect_missing_fingerprint(self):
-        resp = self.client.post("/sophia/inspect", json={
+        resp = self._post_inspection({
             "miner_id": "test",
         })
         self.assertEqual(resp.status_code, 400)
 
+    def test_inspect_rejects_non_object_json(self):
+        resp = self._post_inspection([])
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.get_json()["error"], "JSON body must be an object")
+
+        with patch.dict(os.environ, {"SOPHIA_ADMIN_KEY": self.admin_key}, clear=False):
+            resp = self.client.post(
+                "/sophia/inspect",
+                data="not-json",
+                content_type="application/json",
+                headers={"X-Admin-Key": self.admin_key},
+            )
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.get_json()["error"], "JSON body must be an object")
+
     def test_status_endpoint(self):
         # First, create an inspection
-        self.client.post("/sophia/inspect", json={
+        self._post_inspection({
             "miner_id": "status_miner",
             "fingerprint": _good_fingerprint(),
         })
@@ -521,29 +643,146 @@ class TestSophiaAPI(unittest.TestCase):
         self.assertEqual(resp.status_code, 404)
 
     def test_history_endpoint(self):
-        self.client.post("/sophia/inspect", json={
+        self._post_inspection({
             "miner_id": "hist_m",
             "fingerprint": _good_fingerprint(),
         })
-        resp = self.client.get("/sophia/history?page=1&per_page=10")
+        with patch.dict(os.environ, {"SOPHIA_ADMIN_KEY": self.admin_key}, clear=False):
+            resp = self.client.get(
+                "/sophia/history?page=1&per_page=10",
+                headers={"X-Admin-Key": self.admin_key},
+            )
         self.assertEqual(resp.status_code, 200)
         data = resp.get_json()
         self.assertIn("inspections", data)
         self.assertIn("total", data)
 
+    def test_history_rejects_invalid_pagination(self):
+        with patch.dict(os.environ, {"SOPHIA_ADMIN_KEY": self.admin_key}, clear=False):
+            resp = self.client.get(
+                "/sophia/history?page=abc",
+                headers={"X-Admin-Key": self.admin_key},
+            )
+            self.assertEqual(resp.status_code, 400)
+            self.assertEqual(resp.get_json()["error"], "page must be an integer")
+
+            resp = self.client.get(
+                "/sophia/history?per_page=abc",
+                headers={"X-Admin-Key": self.admin_key},
+            )
+            self.assertEqual(resp.status_code, 400)
+            self.assertEqual(resp.get_json()["error"], "per_page must be an integer")
+
+    def test_history_rejects_non_positive_pagination(self):
+        with patch.dict(os.environ, {"SOPHIA_ADMIN_KEY": self.admin_key}, clear=False):
+            resp = self.client.get(
+                "/sophia/history?page=0",
+                headers={"X-Admin-Key": self.admin_key},
+            )
+            self.assertEqual(resp.status_code, 400)
+            self.assertEqual(resp.get_json()["error"], "page must be positive")
+
+            resp = self.client.get(
+                "/sophia/history?per_page=0",
+                headers={"X-Admin-Key": self.admin_key},
+            )
+            self.assertEqual(resp.status_code, 400)
+            self.assertEqual(resp.get_json()["error"], "per_page must be positive")
+
+    def test_history_caps_per_page(self):
+        for idx in range(3):
+            self._post_inspection({
+                "miner_id": f"hist_cap_{idx}",
+                "fingerprint": _good_fingerprint(),
+            })
+
+        with patch.dict(os.environ, {"SOPHIA_ADMIN_KEY": self.admin_key}, clear=False):
+            resp = self.client.get(
+                "/sophia/history?page=1&per_page=500",
+                headers={"X-Admin-Key": self.admin_key},
+            )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertEqual(data["page"], 1)
+        self.assertEqual(data["per_page"], 100)
+
+    def test_history_requires_valid_admin_key(self):
+        self._post_inspection({
+            "miner_id": "hist_auth_m",
+            "fingerprint": _good_fingerprint(),
+        })
+
+        with patch.dict(os.environ, {"SOPHIA_ADMIN_KEY": self.admin_key}, clear=False):
+            missing = self.client.get("/sophia/history")
+            wrong = self.client.get(
+                "/sophia/history",
+                headers={"X-Admin-Key": "wrong-secret"},
+            )
+
+        self.assertEqual(missing.status_code, 401)
+        self.assertEqual(wrong.status_code, 401)
+        self.assertEqual(missing.get_json()["error"], "Unauthorized")
+        self.assertEqual(wrong.get_json()["error"], "Unauthorized")
+
+    def test_history_fails_closed_when_admin_key_unconfigured(self):
+        self._post_inspection({
+            "miner_id": "hist_unconfigured_m",
+            "fingerprint": _good_fingerprint(),
+        })
+
+        with patch.dict(os.environ, {}, clear=True):
+            resp = self.client.get("/sophia/history")
+
+        self.assertEqual(resp.status_code, 503)
+        self.assertEqual(resp.get_json()["error"], "SOPHIA_ADMIN_KEY not configured")
+
     def test_dashboard_endpoint(self):
-        self.client.post("/sophia/inspect", json={
+        self._post_inspection({
             "miner_id": "dash_m",
             "fingerprint": _suspicious_fingerprint(),
         })
-        resp = self.client.get("/sophia/dashboard")
+        with patch.dict(os.environ, {"SOPHIA_ADMIN_KEY": self.admin_key}, clear=False):
+            resp = self.client.get(
+                "/sophia/dashboard",
+                headers={"X-Admin-Key": self.admin_key},
+            )
         self.assertEqual(resp.status_code, 200)
         data = resp.get_json()
         self.assertIn("total_inspections", data)
         self.assertIn("spot_check_queue", data)
 
+    def test_dashboard_requires_valid_admin_key(self):
+        self._post_inspection({
+            "miner_id": "dash_auth_m",
+            "fingerprint": _suspicious_fingerprint(),
+        })
+
+        with patch.dict(os.environ, {"SOPHIA_ADMIN_KEY": self.admin_key}, clear=False):
+            missing = self.client.get("/sophia/dashboard")
+            wrong = self.client.get(
+                "/sophia/dashboard",
+                headers={"X-Admin-Key": "wrong-secret"},
+            )
+
+        self.assertEqual(missing.status_code, 401)
+        self.assertEqual(wrong.status_code, 401)
+        self.assertEqual(missing.get_json()["error"], "Unauthorized")
+        self.assertEqual(wrong.get_json()["error"], "Unauthorized")
+
+    def test_dashboard_fails_closed_when_admin_key_unconfigured(self):
+        self._post_inspection({
+            "miner_id": "dash_unconfigured_m",
+            "fingerprint": _suspicious_fingerprint(),
+        })
+
+        with patch.dict(os.environ, {}, clear=True):
+            resp = self.client.get("/sophia/dashboard")
+
+        self.assertEqual(resp.status_code, 503)
+        self.assertEqual(resp.get_json()["error"], "SOPHIA_ADMIN_KEY not configured")
+
     def test_explorer_endpoint_with_record(self):
-        self.client.post("/sophia/inspect", json={
+        self._post_inspection({
             "miner_id": "exp_m",
             "fingerprint": _good_fingerprint(),
         })

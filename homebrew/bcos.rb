@@ -5,11 +5,11 @@
 class Bcos < Formula
   desc "BCOS v2 Engine — Beacon Certified Open Source verification"
   homepage "https://github.com/Scottcjn/Rustchain"
-  url "https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.5.0.tar.gz"
-  version "2.5.0"
+  url "https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.4.0.tar.gz"
+  version "2.4.0"
   # SHA256 checksum computed from the GitHub release tarball.
   # To verify or update: curl -sSL "<url>" | sha256sum
-  sha256 "a3e1c6f8e5c8d9b2a4f7e0c3d6b9a2e5f8c1d4b7a0e3f6c9d2b5a8e1f4c7d0b3"
+  sha256 "5123df374138327ba506b47c64fc4069c5f08014c6b21d5a86064b962ad2fd1b"
   license "MIT"
 
   depends_on "python@3.11"

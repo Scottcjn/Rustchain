@@ -86,8 +86,8 @@ class ImmutableRustChain:
         }
         
         # Proof of Work
-        while not block["hash"] := self._calculate_hash(block), \
-               block["hash"].startswith("0000"):
+        block["hash"] = self._calculate_hash(block)
+        while not block["hash"].startswith("0000"):
             block["nonce"] += 1
             block["hash"] = self._calculate_hash(block)
         

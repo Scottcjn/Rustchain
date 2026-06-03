@@ -9,6 +9,7 @@ Rustchain bounty #2261 (150 RTC).
 import json
 import logging
 import requests
+import time
 
 from sophia_db import (
     get_connection, store_inspection, enqueue_review, get_latest_inspection,
@@ -18,6 +19,8 @@ from sophia_db import (
 logger = logging.getLogger("sophia_core")
 
 MODEL = "elyan-sophia:7b-q4_K_M"
+OLLAMA_MAX_ATTEMPTS = 3
+OLLAMA_BACKOFF_BASE_SECONDS = 0.5
 
 OLLAMA_FAILOVER_CHAIN = [
     "http://localhost:11434",
@@ -89,8 +92,12 @@ def _parse_ollama_response(raw_text):
     }
 
 
-def _query_ollama(prompt, endpoint):
+def _query_ollama(prompt, endpoint, max_attempts=OLLAMA_MAX_ATTEMPTS,
+                  backoff_base=OLLAMA_BACKOFF_BASE_SECONDS):
     """Send a generate request to an Ollama endpoint. Returns parsed dict."""
+    if max_attempts < 1:
+        raise ValueError("max_attempts must be at least 1")
+
     url = f"{endpoint}/api/generate"
     payload = {
         "model": MODEL,
@@ -99,12 +106,28 @@ def _query_ollama(prompt, endpoint):
         "options": {"temperature": 0.1, "num_predict": 512},
     }
 
-    resp = requests.post(url, json=payload, timeout=30)
-    resp.raise_for_status()
-    body = resp.json()
-    raw = body.get("response", "")
+    last_exc = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            resp = requests.post(url, json=payload, timeout=30)
+            resp.raise_for_status()
+            body = resp.json()
+            raw = body.get("response", "")
 
-    return _parse_ollama_response(raw)
+            return _parse_ollama_response(raw)
+        except Exception as exc:
+            last_exc = exc
+            if attempt >= max_attempts:
+                break
+
+            delay = backoff_base * (2 ** (attempt - 1))
+            logger.warning(
+                "Ollama endpoint %s attempt %d/%d failed: %s; retrying in %.1fs",
+                endpoint, attempt, max_attempts, exc, delay
+            )
+            time.sleep(delay)
+
+    raise last_exc
 
 
 def _rule_based_fallback(fingerprint):

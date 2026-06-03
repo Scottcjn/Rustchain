@@ -1,0 +1,16 @@
+{
+  "_class": "PUBLIC_KEY_TYPE_CONFUSION",
+  "_expected_error_code": "INVALID_PUBLIC_KEY_TYPE",
+  "_description": "Regression for /attest/submit 500 when top-level public_key is not a string.",
+  "miner": "valid-miner",
+  "report": {
+    "nonce": "challenge-nonce",
+    "commitment": "deadbeef"
+  },
+  "signature": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+  "public_key": [
+    "not",
+    "a",
+    "key"
+  ]
+}

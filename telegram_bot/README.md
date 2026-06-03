@@ -58,7 +58,7 @@ Or set environment variables directly:
 
 ```bash
 export TELEGRAM_BOT_TOKEN='your_bot_token_here'
-export RUSTCHAIN_API_URL='https://50.28.86.131'
+export RUSTCHAIN_API_URL='https://rustchain.org'
 ```
 
 ### 4. Run the Bot
@@ -74,7 +74,7 @@ All configuration is done via environment variables:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `TELEGRAM_BOT_TOKEN` | (required) | Bot token from @BotFather |
-| `RUSTCHAIN_API_URL` | `https://50.28.86.131` | RustChain API endpoint |
+| `RUSTCHAIN_API_URL` | `https://rustchain.org` | RustChain API endpoint |
 | `RUSTCHAIN_VERIFY_SSL` | `false` | Verify SSL certificates |
 | `RATE_LIMIT_PER_MINUTE` | `10` | Max requests per user per minute |
 | `LOG_LEVEL` | `INFO` | Logging level |
@@ -95,7 +95,7 @@ Status: Online
 Version: 2.2.1-rip200
 Uptime: 5d 3h 42m
 
-API: https://50.28.86.131
+API: https://rustchain.org
 ```
 
 ### Get Epoch Information
@@ -144,7 +144,7 @@ Active Miners: 42
 Current Epoch: 95
 Block Height: 67890
 
-API: https://50.28.86.131
+API: https://rustchain.org
 ```
 
 ## Testing

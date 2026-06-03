@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """
 RustChain Universal Miner v3.0 - With Full Hardware Fingerprinting
 ===================================================================
 Runs all 6 RIP-PoA fingerprint checks to prove real hardware.
 Emulators/VMs will FAIL these checks and be denied RTC rewards.
 """
-import os, sys, json, time, hashlib, platform, subprocess, statistics, requests
+import os, sys, json, time, hashlib, platform, statistics, requests
 from datetime import datetime
 from typing import Dict, Tuple
 
@@ -235,7 +236,8 @@ def run_all_fingerprint_checks() -> Tuple[bool, Dict]:
         print(f"  Result: {status}")
     
     print("\n" + "=" * 50)
-    print(f"OVERALL: {[PASS] ALL CHECKS PASSED if all_passed else [FAIL] FAILED}")
+    overall_status = "[PASS] ALL CHECKS PASSED" if all_passed else "[FAIL] FAILED"
+    print(f"OVERALL: {overall_status}")
     
     return all_passed, results
 

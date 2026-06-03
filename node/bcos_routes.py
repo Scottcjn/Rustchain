@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import io
 import json
+import hmac
 import os
 import sqlite3
 import time
@@ -52,20 +53,98 @@ def _get_admin_key():
     return os.environ.get("RC_ADMIN_KEY", "")
 
 
+def _bcos_public_url(path: str) -> str:
+    """Build certificate-valid public BCOS URLs for API responses."""
+    base_url = (
+        os.environ.get("RUSTCHAIN_BCOS_PUBLIC_BASE_URL")
+        or os.environ.get("RUSTCHAIN_PUBLIC_BASE_URL")
+        or "https://rustchain.org"
+    )
+    return f"{base_url.rstrip('/')}{path}"
+
+
+def _parse_trust_score(raw_score) -> int:
+    """Validate BCOS trust scores before they are stored or rendered."""
+    if isinstance(raw_score, bool):
+        raise ValueError("trust_score must be a number")
+
+    try:
+        score = int(raw_score)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("trust_score must be a number") from exc
+
+    if not (0 <= score <= 100):
+        raise ValueError("trust_score must be between 0 and 100")
+
+    return score
+
+
+def _parse_bounded_int_arg(name: str, default: int, maximum: int):
+    """Parse a bounded integer query arg for public BCOS endpoints."""
+    raw = request.args.get(name, str(default))
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None, jsonify({"error": "invalid_pagination", "message": f"{name} must be an integer"}), 400
+
+    if value < 0:
+        return None, jsonify({"error": "invalid_pagination", "message": f"{name} must be non-negative"}), 400
+
+    return min(value, maximum), None, None
+
+
+# ── BCOS Attestation Length Limits ─────────────────────────────────
+
+# Maximum field lengths to prevent SQLite/DOS via unbounded TEXT fields
+MAX_CERT_ID_LENGTH = 128       # cert_id (UUID-like)
+MAX_REPO_LENGTH = 256          # org/repo name
+MAX_COMMIT_SHA_LENGTH = 64     # SHA-256 hex (40) → 64 is generous
+MAX_REVIEWER_LENGTH = 128      # reviewer username/identifier
+MAX_COMMITMENT_LENGTH = 256    # BLAKE2b hex commitment
+MAX_SIGNATURE_LENGTH = 1024    # Ed25519 sig (~128 bytes base64)
+MAX_PUBKEY_LENGTH = 256        # Ed25519 pubkey (~44 bytes base64)
+
+
+def _string_report_field(report: dict, name: str, default: str = "", *, required: bool = False):
+    raw = report.get(name, default)
+    if raw is None:
+        raw = default
+    if not isinstance(raw, str):
+        raise ValueError(f"{name} must be a string")
+    value = raw.strip()
+    if required and not value:
+        raise ValueError(f"{name} required")
+    return value
+
+
+def _report_commitment(report: dict) -> str:
+    """Compute the canonical BCOS report commitment."""
+    report_copy = {
+        k: v for k, v in report.items()
+        if k not in ("cert_id", "commitment")
+    }
+    canonical = json.dumps(report_copy, sort_keys=True, separators=(",", ":"))
+    return blake2b(canonical.encode(), digest_size=32).hexdigest()
+
+
 def _verify_commitment(report_json_str: str, claimed_commitment: str) -> bool:
     """Recompute BLAKE2b commitment and compare."""
     try:
-        # Reparse and re-serialize to canonical form
         report = json.loads(report_json_str)
-        # Remove cert_id and commitment before recomputing
-        # (they were added after the commitment was computed)
-        report_copy = {k: v for k, v in report.items()
-                       if k not in ("cert_id", "commitment")}
-        canonical = json.dumps(report_copy, sort_keys=True, separators=(",", ":"))
-        computed = blake2b(canonical.encode(), digest_size=32).hexdigest()
-        return computed == claimed_commitment
+        if not isinstance(report, dict):
+            return False
+        return hmac.compare_digest(_report_commitment(report), claimed_commitment)
     except Exception:
         return False
+
+
+def _load_report_object(report_json_str: str):
+    """Load a stored BCOS report only when it is a JSON object."""
+    try:
+        report = json.loads(report_json_str)
+    except (TypeError, json.JSONDecodeError):
+        return None
+    return report if isinstance(report, dict) else None
 
 
 def _verify_ed25519(commitment: str, signature_hex: str, pubkey_hex: str) -> bool:
@@ -169,29 +248,67 @@ def bcos_attest():
     - Valid Ed25519 signature in the report
     """
     admin_key = request.headers.get("X-Admin-Key", "")
-    is_admin = admin_key and admin_key == _get_admin_key()
+    is_admin = admin_key and hmac.compare_digest(admin_key, _get_admin_key() or "")
 
     data = request.get_json(silent=True)
     if not data:
         return jsonify({"error": "JSON body required"}), 400
+    if not isinstance(data, dict):
+        return jsonify({"error": "JSON object required"}), 400
 
     # Extract fields from report or from wrapper
     report = data.get("report", data)
-    cert_id = report.get("cert_id")
-    commitment = report.get("commitment")
-    repo = report.get("repo_name", report.get("repo", ""))
-    commit_sha = report.get("commit_sha", "")
-    tier = report.get("tier", "L1")
-    trust_score = report.get("trust_score", 0)
-    reviewer = report.get("reviewer", "")
-    signature = data.get("signature", report.get("signature", ""))
-    signer_pubkey = data.get("signer_pubkey", report.get("signer_pubkey", ""))
+    if not isinstance(report, dict):
+        return jsonify({"error": "report must be an object"}), 400
+    try:
+        cert_id = _string_report_field(report, "cert_id")
+        commitment = _string_report_field(report, "commitment")
+        if "repo_name" in report:
+            repo = _string_report_field(report, "repo_name")
+        else:
+            repo = _string_report_field(report, "repo")
+        commit_sha = _string_report_field(report, "commit_sha")
+        tier = _string_report_field(report, "tier", "L1")
+        reviewer = _string_report_field(report, "reviewer")
+        signature = _string_report_field(data, "signature") if "signature" in data else _string_report_field(report, "signature")
+        signer_pubkey = (
+            _string_report_field(data, "signer_pubkey")
+            if "signer_pubkey" in data
+            else _string_report_field(report, "signer_pubkey")
+        )
+    except ValueError as e:
+        return jsonify({"error": "invalid_report_field", "message": str(e)}), 400
+    raw_trust_score = report.get("trust_score", 0)
+
+    # Validate field lengths to prevent unbounded TEXT storage
+    field_limits = {
+        "cert_id": (cert_id, MAX_CERT_ID_LENGTH),
+        "repo": (repo, MAX_REPO_LENGTH),
+        "commit_sha": (commit_sha, MAX_COMMIT_SHA_LENGTH),
+        "reviewer": (reviewer, MAX_REVIEWER_LENGTH),
+        "commitment": (commitment, MAX_COMMITMENT_LENGTH),
+        "signature": (signature, MAX_SIGNATURE_LENGTH),
+        "signer_pubkey": (signer_pubkey, MAX_PUBKEY_LENGTH),
+    }
+    for fname, (fval, flimit) in field_limits.items():
+        if fval and len(fval) > flimit:
+            return jsonify({
+                "error": "field_too_long",
+                "field": fname,
+                "max_length": flimit,
+                "actual_length": len(fval),
+            }), 400
 
     # Validation
     if not cert_id or not commitment:
         return jsonify({"error": "cert_id and commitment required"}), 400
     if not repo:
         return jsonify({"error": "repo_name or repo required"}), 400
+    try:
+        trust_score = _parse_trust_score(raw_trust_score)
+    except ValueError as e:
+        return jsonify({"error": "invalid_trust_score", "message": str(e)}), 400
+    report["trust_score"] = trust_score
 
     # Auth: admin key OR valid Ed25519 signature
     sig_valid = False
@@ -206,6 +323,11 @@ def bcos_attest():
 
     # Verify commitment matches report
     report_json_str = json.dumps(report, sort_keys=True, separators=(",", ":"))
+    if not _verify_commitment(report_json_str, commitment):
+        return jsonify({
+            "error": "invalid_commitment",
+            "message": "commitment does not match report payload",
+        }), 400
 
     # Store
     now = int(time.time())
@@ -241,13 +363,15 @@ def bcos_attest():
             "tier": tier,
             "trust_score": trust_score,
             "anchored_epoch": epoch,
-            "verify_url": f"https://rustchain.org/bcos/verify/{cert_id}",
-            "badge_url": f"https://50.28.86.131/bcos/badge/{cert_id}.svg",
+            "verify_url": _bcos_public_url(f"/bcos/verify/{cert_id}"),
+            "badge_url": _bcos_public_url(f"/bcos/badge/{cert_id}.svg"),
         })
     except sqlite3.IntegrityError:
         return jsonify({"error": f"Certificate {cert_id} already exists"}), 409
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        import logging
+        logging.exception("bcos_handler failed")
+        return jsonify({"error": "internal_error"}), 500
 
 
 @bcos_bp.route("/bcos/verify/<cert_id>", methods=["GET"])
@@ -268,13 +392,14 @@ def bcos_verify(cert_id):
                 "hint": "Check the cert_id format: BCOS-xxxxxxxx",
             }), 404
 
-        # Recompute commitment from stored report
-        report = json.loads(row["report_json"])
-        report_copy = {k: v for k, v in report.items()
-                       if k not in ("cert_id", "commitment")}
-        canonical = json.dumps(report_copy, sort_keys=True, separators=(",", ":"))
-        recomputed = blake2b(canonical.encode(), digest_size=32).hexdigest()
-        commitment_valid = recomputed == row["commitment"]
+        # Recompute commitment from stored report when it is still parseable.
+        report = _load_report_object(row["report_json"])
+        if report is None:
+            report = {}
+            commitment_valid = False
+        else:
+            recomputed = _report_commitment(report)
+            commitment_valid = hmac.compare_digest(recomputed, row["commitment"])
 
         # Verify Ed25519 signature if present
         sig_valid = None
@@ -301,11 +426,13 @@ def bcos_verify(cert_id):
             "score_breakdown": report.get("score_breakdown", {}),
             "checks": report.get("checks", {}),
             "engine_version": report.get("engine_version", "unknown"),
-            "badge_url": f"https://50.28.86.131/bcos/badge/{cert_id}.svg",
-            "pdf_url": f"https://50.28.86.131/bcos/cert/{cert_id}.pdf",
+            "badge_url": _bcos_public_url(f"/bcos/badge/{cert_id}.svg"),
+            "pdf_url": _bcos_public_url(f"/bcos/cert/{cert_id}.pdf"),
         })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        import logging
+        logging.exception("bcos_handler failed")
+        return jsonify({"error": "internal_error"}), 500
 
 
 @bcos_bp.route("/bcos/cert/<cert_id>.pdf", methods=["GET"])
@@ -326,7 +453,13 @@ def bcos_certificate_pdf(cert_id):
             return jsonify({"error": f"Certificate {cert_id} not found"}), 404
 
         # Build attestation dict for PDF generator
-        report = json.loads(row["report_json"])
+        report = _load_report_object(row["report_json"])
+        if report is None:
+            return jsonify({
+                "error": "invalid_report",
+                "message": "Stored report JSON is not an object",
+            }), 422
+
         attestation = {
             **report,
             "cert_id": row["cert_id"],
@@ -344,8 +477,10 @@ def bcos_certificate_pdf(cert_id):
             as_attachment=True,
             download_name=f"{cert_id}.pdf",
         )
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        import logging
+        logging.exception("bcos_handler failed")
+        return jsonify({"error": "internal_error"}), 500
 
 
 @bcos_bp.route("/bcos/badge/<cert_id>.svg", methods=["GET"])
@@ -370,7 +505,7 @@ def bcos_badge_svg(cert_id):
 
         return Response(svg, mimetype="image/svg+xml",
                         headers={"Cache-Control": "max-age=300"})
-    except Exception as e:
+    except Exception:
         return Response(
             _generate_badge_svg("ERR", 0),
             mimetype="image/svg+xml",
@@ -381,8 +516,12 @@ def bcos_badge_svg(cert_id):
 def bcos_directory():
     """List all BCOS-certified repos with latest attestation."""
     tier_filter = request.args.get("tier", "").upper()
-    limit = min(int(request.args.get("limit", 100)), 500)
-    offset = int(request.args.get("offset", 0))
+    limit, error_response, status = _parse_bounded_int_arg("limit", 100, 500)
+    if error_response is not None:
+        return error_response, status
+    offset, error_response, status = _parse_bounded_int_arg("offset", 0, 10_000)
+    if error_response is not None:
+        return error_response, status
 
     try:
         with sqlite3.connect(_DB_PATH) as conn:
@@ -418,8 +557,8 @@ def bcos_directory():
                 "reviewer": row["reviewer"],
                 "anchored_epoch": row["anchored_epoch"],
                 "created_at": row["created_at"],
-                "verify_url": f"https://rustchain.org/bcos/verify/{row['cert_id']}",
-                "badge_url": f"https://50.28.86.131/bcos/badge/{row['cert_id']}.svg",
+                "verify_url": _bcos_public_url(f"/bcos/verify/{row['cert_id']}"),
+                "badge_url": _bcos_public_url(f"/bcos/badge/{row['cert_id']}.svg"),
             })
 
         return jsonify({
@@ -429,8 +568,10 @@ def bcos_directory():
             "offset": offset,
             "certificates": certs,
         })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        import logging
+        logging.exception("bcos_handler failed")
+        return jsonify({"error": "internal_error"}), 500
 
 
 # ── Registration ──────────────────────────────────────────────────

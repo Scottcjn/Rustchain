@@ -27,7 +27,7 @@ import threading
 import time
 from dataclasses import dataclass, asdict
 from enum import Enum
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, Iterable, List, Optional, Set, Tuple
 import requests
 
 # Configure logging
@@ -214,6 +214,37 @@ class BFTConsensus:
             conn.commit()
 
         logging.info(f"BFT consensus initialized for node {self.node_id}")
+
+        # Restore committed epochs from DB so restarts don't double-credit.
+        # Without this, committed_epochs starts empty and _finalize_epoch /
+        # _apply_settlement will re-apply settlements for already-committed
+        # epochs after a node restart.
+        self._restore_committed_state()
+
+    def _restore_committed_state(self):
+        """Restore committed epochs and view number from DB on startup.
+
+        Without this, a node restart forgets all committed epochs and the
+        consensus engine will re-apply settlements, double-crediting miners.
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                rows = conn.execute(
+                    "SELECT epoch, view FROM bft_committed_epochs"
+                ).fetchall()
+                for epoch, view in rows:
+                    self.committed_epochs.add(epoch)
+                    if view > self.current_view:
+                        self.current_view = view
+
+            if self.committed_epochs:
+                logging.info(
+                    f"Restored {len(self.committed_epochs)} committed epochs "
+                    f"(max epoch={max(self.committed_epochs)}, view={self.current_view})"
+                )
+        except sqlite3.OperationalError as e:
+            # Table may not exist on first run (will be created by _init_db)
+            logging.debug(f"Could not restore committed state: {e}")
 
     def register_peer(self, node_id: str, url: str):
         """Register a peer node"""
@@ -670,27 +701,48 @@ class BFTConsensus:
             self._apply_settlement(pre_prepare.proposal)
 
     def _apply_settlement(self, proposal: Dict):
-        """Apply the consensus settlement to database"""
+        """Apply the consensus settlement to database (idempotent).
+
+        Uses epoch-scoped ledger entries to ensure each epoch's rewards are
+        credited exactly once, even if _apply_settlement is called multiple
+        times for the same epoch (e.g. after a restart before
+        committed_epochs is fully restored).
+        """
         epoch = proposal.get('epoch')
         distribution = proposal.get('distribution', {})
 
         with sqlite3.connect(self.db_path) as conn:
+            # ── Idempotency guard ────────────────────────────────────
+            # If any ledger entry already exists for this epoch, the
+            # settlement was already applied.  Bail out.
+            existing = conn.execute(
+                "SELECT 1 FROM ledger WHERE memo = ? LIMIT 1",
+                (f"epoch_{epoch}_bft",)
+            ).fetchone()
+            if existing:
+                logging.warning(
+                    f"Settlement for epoch {epoch} already applied — skipping "
+                    f"to prevent reward doubling"
+                )
+                return
+
             for miner_id, reward in distribution.items():
-                # Update balance
                 # Store as integer micro-RTC (1 RTC = 1,000,000 uRTC) to avoid
                 # floating-point drift accumulating across many ledger entries.
+                reward_urtc = int(reward * 1_000_000)
+
                 conn.execute("""
                     INSERT INTO balances (miner_id, amount_i64)
                     VALUES (?, ?)
                     ON CONFLICT(miner_id) DO UPDATE SET
                     amount_i64 = amount_i64 + excluded.amount_i64
-                """, (miner_id, int(reward * 1_000_000)))
+                """, (miner_id, reward_urtc))
 
                 # Log in ledger
                 conn.execute("""
                     INSERT INTO ledger (miner_id, delta_i64, tx_type, memo, ts)
                     VALUES (?, ?, 'reward', ?, ?)
-                """, (miner_id, int(reward * 1_000_000), f"epoch_{epoch}_bft", int(time.time())))
+                """, (miner_id, reward_urtc, f"epoch_{epoch}_bft", int(time.time())))
 
             conn.commit()
 
@@ -746,7 +798,7 @@ class BFTConsensus:
             # Check if we have quorum for view change
             self._check_view_change_quorum(new_view)
 
-    def handle_view_change(self, msg_data: Dict):
+    def handle_view_change(self, msg_data: Dict) -> Tuple[bool, str, int]:
         """Handle received VIEW-CHANGE message"""
         with self.lock:
             new_view = msg_data.get('view')
@@ -756,9 +808,17 @@ class BFTConsensus:
             epoch = msg_data.get('epoch', 0)
 
             # -- Validation: reject garbage / missing fields -----------------
-            if not all([new_view, node_id, signature, timestamp]):
+            required_fields = (
+                'view',
+                'epoch',
+                'node_id',
+                'prepared_cert',
+                'signature',
+                'timestamp',
+            )
+            if any(field not in msg_data for field in required_fields):
                 logging.warning("[VIEW-CHANGE] Rejected: missing required fields")
-                return
+                return False, "missing required fields", 400
 
             # Must be requesting a *higher* view than current
             if new_view <= self.current_view:
@@ -766,7 +826,7 @@ class BFTConsensus:
                     f"[VIEW-CHANGE] Rejected stale view {new_view} "
                     f"(<= current {self.current_view})"
                 )
-                return
+                return False, "stale view", 400
 
             # -- Verify HMAC signature (same format as _trigger_view_change) --
             sign_data = (
@@ -776,7 +836,7 @@ class BFTConsensus:
                 logging.warning(
                     f"[VIEW-CHANGE] Invalid signature from {node_id}"
                 )
-                return
+                return False, "invalid signature", 401
 
             # -- Timestamp freshness -----------------------------------------
             if abs(time.time() - timestamp) > CONSENSUS_MESSAGE_TTL:
@@ -784,7 +844,7 @@ class BFTConsensus:
                     f"[VIEW-CHANGE] Stale message from {node_id} "
                     f"(age={int(time.time()) - timestamp}s)"
                 )
-                return
+                return False, "stale message", 400
 
             # -- Passed all checks, store ------------------------------------
             if new_view not in self.view_change_log:
@@ -795,6 +855,7 @@ class BFTConsensus:
                 logging.info(f"[VIEW-CHANGE] Received from {node_id} for view {new_view}")
 
             self._check_view_change_quorum(new_view)
+            return True, "", 200
 
     def _check_view_change_quorum(self, new_view: int):
         """Check if we have quorum for view change"""
@@ -964,6 +1025,18 @@ def create_bft_routes(app, bft: BFTConsensus):
     """Add BFT consensus routes to Flask app"""
     from flask import request, jsonify
 
+    def _json_object():
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return None, ({'error': 'JSON object required'}, 400)
+        return data, None
+
+    def _missing_fields(data: Dict, required: Iterable[str]) -> List[str]:
+        return [field for field in required if field not in data]
+
+    def _internal_error_response(message: str, status_code: int):
+        return jsonify({'error': message}), status_code
+
     @app.route('/bft/status', methods=['GET'])
     def bft_status():
         """Get BFT consensus status"""
@@ -973,41 +1046,78 @@ def create_bft_routes(app, bft: BFTConsensus):
     def bft_receive_message():
         """Receive consensus message from peer"""
         try:
-            msg_data = request.get_json()
+            msg_data, error = _json_object()
+            if error:
+                return jsonify(error[0]), error[1]
+
+            msg_type = msg_data.get('msg_type')
+            valid_types = {
+                MessageType.PRE_PREPARE.value,
+                MessageType.PREPARE.value,
+                MessageType.COMMIT.value,
+            }
+            if msg_type not in valid_types:
+                return jsonify({'error': 'invalid msg_type'}), 400
+
             bft.receive_message(msg_data)
             return jsonify({'status': 'ok'})
-        except Exception as e:
-            logging.error(f"BFT message error: {e}")
-            return jsonify({'error': str(e)}), 400
+        except Exception:
+            logging.exception("BFT message error")
+            return _internal_error_response('BFT message processing failed', 400)
 
     @app.route('/bft/view_change', methods=['POST'])
     def bft_view_change():
         """Receive view change message"""
         try:
-            msg_data = request.get_json()
-            bft.handle_view_change(msg_data)
+            msg_data, error = _json_object()
+            if error:
+                return jsonify(error[0]), error[1]
+
+            missing = _missing_fields(
+                msg_data,
+                ('view', 'epoch', 'node_id', 'prepared_cert', 'signature', 'timestamp'),
+            )
+            if missing:
+                return jsonify({'error': f"missing required fields: {', '.join(missing)}"}), 400
+
+            ok, error, status_code = bft.handle_view_change(msg_data)
+            if not ok:
+                return jsonify({'error': error}), status_code
             return jsonify({'status': 'ok'})
-        except Exception as e:
-            logging.error(f"BFT view change error: {e}")
-            return jsonify({'error': str(e)}), 400
+        except Exception:
+            logging.exception("BFT view change error")
+            return _internal_error_response('BFT view change processing failed', 400)
 
     @app.route('/bft/propose', methods=['POST'])
     def bft_propose():
         """Manually trigger epoch proposal (admin)"""
         try:
-            data = request.get_json()
+            data = request.get_json(silent=True)
+            if not isinstance(data, dict):
+                return jsonify({'error': 'JSON object required'}), 400
             epoch = data.get('epoch')
             miners = data.get('miners', [])
             distribution = data.get('distribution', {})
+
+            if epoch is None:
+                return jsonify({'error': 'Missing epoch field'}), 400
+            if isinstance(epoch, bool) or not isinstance(epoch, int):
+                return jsonify({'error': 'epoch must be an integer'}), 400
+            if epoch < 0:
+                return jsonify({'error': 'epoch must be non-negative'}), 400
+            if not isinstance(miners, list):
+                return jsonify({'error': 'miners must be a list'}), 400
+            if not isinstance(distribution, dict):
+                return jsonify({'error': 'distribution must be an object'}), 400
 
             msg = bft.propose_epoch_settlement(epoch, miners, distribution)
             if msg:
                 return jsonify({'status': 'proposed', 'digest': msg.digest})
             else:
                 return jsonify({'error': 'not_leader_or_already_committed'}), 400
-        except Exception as e:
-            logging.error(f"BFT propose error: {e}")
-            return jsonify({'error': str(e)}), 500
+        except Exception:
+            logging.exception("BFT propose error")
+            return _internal_error_response('BFT proposal failed', 500)
 
 
 # ============================================================================

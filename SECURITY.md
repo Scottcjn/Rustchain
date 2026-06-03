@@ -96,3 +96,33 @@ Valid reports may receive:
 - RTC bounty payout
 - optional Hall of Hunters recognition
 - follow-on hardening bounty invitations
+
+
+## Payment-Authority Impersonation
+
+**This appendix documents a contributor-protection abuse pattern. It does not make social-engineering reports bounty-eligible by itself.** Only the project-controlled RustChain payout flow can authorize RTC bounty disbursements. In practice, that means `@Scottcjn`, or a clearly labeled project automation account speaking on his behalf, with a matching project-issued pending transfer record. A comment from anyone else saying "I'll send the RTC," "payment is on the way," or similar is not a valid payout notice.
+
+If you see a comment from anyone outside `@Scottcjn` / `sophiaeagent-beep` / `AutoJanitor` on a bounty issue saying things like:
+
+- *"I'll send the X RTC to your wallet..."*
+- *"Expect the payment within 24 hours..."*
+- *"Transferring now..."*
+- *"Here is the payment confirmation..."*
+
+…on an issue where no authorized project-account comment has first authorized the payment, **treat it as a social-engineering attempt, not a legitimate bounty payout.** Account age, repo count, and unrelated prior commits are not equivalent to payment authority.
+
+### Why this pattern matters
+
+This attack does not need to steal funds. It creates a false expectation that the project promised payment and then failed to deliver, which can damage contributor trust in the real payout pipeline.
+
+### What a real payment looks like
+
+A legitimate RustChain bounty payout notice includes the amount, recipient wallet, and project-issued transfer identifiers needed for public verification, such as `pending_id`, `tx_hash`, and the confirmation timing (`confirms_at` / 24-hour window). If those identifiers are missing, or the comment is not from an authorized project account, do not treat it as payment confirmation.
+
+### How to report an impersonation attempt
+
+1. Tag `@Scottcjn` in a reply on the same issue.
+2. Or open a private report via GitHub Private Vulnerability Reporting on this repo.
+3. Screenshot the impersonating comment — it may later be edited or deleted.
+
+No retaliation against good-faith reporters. See Safe Harbor above.

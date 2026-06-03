@@ -411,7 +411,7 @@ scipy>=1.7.0
 
 ## License
 
-Apache 2.0 — See [LICENSE](../../LICENSE) for details.
+Apache 2.0 — See [LICENSE](../LICENSE) for details.
 
 ## Authors
 

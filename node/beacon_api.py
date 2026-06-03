@@ -4,15 +4,25 @@ Beacon Atlas API - Flask routes for 3D visualization backend
 Provides endpoints for agents, contracts, bounties, reputation, and chat.
 """
 import json
+import html
+import hmac
+import math
+import os
 import time
 import hashlib
 import sqlite3
 from datetime import datetime
 from flask import Blueprint, jsonify, request, g
 
+try:
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+except Exception:  # pragma: no cover
+    Ed25519PublicKey = None
+
 beacon_api = Blueprint('beacon_api', __name__)
 
 DB_PATH = 'rustchain_v2.db'
+BEACON_AUTH_WINDOW_SECONDS = 300
 
 # In-memory cache for bounties (synced from GitHub)
 bounty_cache = {
@@ -26,6 +36,39 @@ contract_store = []
 
 # Chat session store
 chat_sessions = {}
+
+
+def _json_object_body():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return None, jsonify({'error': 'JSON object body required'}), 400
+    return data, None, None
+
+
+def _required_text_field(data, field_name, max_length=0):
+    value = data.get(field_name)
+    if not value or not isinstance(value, str):
+        return None, jsonify({'error': f'Missing {field_name}'}), 400
+    value = value.strip()
+    if max_length > 0 and len(value) > max_length:
+        return None, jsonify({'error': f'{field_name} too long (max {max_length})'}), 400
+    return value, None, None
+
+
+def _positive_float_field(data, field_name):
+    value = data.get(field_name)
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None, jsonify({'error': f'{field_name} must be a positive number'}), 400
+    if not math.isfinite(number) or number <= 0:
+        return None, jsonify({'error': f'{field_name} must be a positive number'}), 400
+    return number, None, None
+
+
+def _coinbase_addresses_match(left, right):
+    """Compare optional EVM-style payment addresses without case sensitivity."""
+    return (left or '').strip().casefold() == (right or '').strip().casefold()
 
 
 def get_db():
@@ -62,7 +105,7 @@ def init_beacon_tables(db_path=DB_PATH):
                 updated_at INTEGER
             )
         """)
-        
+
         # Bounties table (synced from GitHub)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS beacon_bounties (
@@ -83,7 +126,7 @@ def init_beacon_tables(db_path=DB_PATH):
                 updated_at INTEGER
             )
         """)
-        
+
         # Reputation table
         conn.execute("""
             CREATE TABLE IF NOT EXISTS beacon_reputation (
@@ -96,7 +139,7 @@ def init_beacon_tables(db_path=DB_PATH):
                 last_updated INTEGER
             )
         """)
-        
+
         # Chat messages table
         conn.execute("""
             CREATE TABLE IF NOT EXISTS beacon_chat (
@@ -122,6 +165,15 @@ def init_beacon_tables(db_path=DB_PATH):
             )
         """)
 
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS beacon_agent_nonces (
+                agent_id TEXT NOT NULL,
+                nonce TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                PRIMARY KEY (agent_id, nonce)
+            )
+        """)
+
         # Create indexes
         conn.execute("CREATE INDEX IF NOT EXISTS idx_contracts_from ON beacon_contracts(from_agent)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_contracts_to ON beacon_contracts(to_agent)")
@@ -129,8 +181,114 @@ def init_beacon_tables(db_path=DB_PATH):
         conn.execute("CREATE INDEX IF NOT EXISTS idx_bounties_state ON beacon_bounties(state)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_agent ON beacon_chat(agent_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_relay_agents_status ON relay_agents(status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_beacon_agent_nonces_created ON beacon_agent_nonces(created_at)")
 
         conn.commit()
+
+
+def _clean_pubkey_hex(pubkey_hex):
+    pubkey_clean = str(pubkey_hex or '').strip()
+    if pubkey_clean.startswith(('0x', '0X')):
+        pubkey_clean = pubkey_clean[2:]
+    return pubkey_clean
+
+
+def _agent_id_from_pubkey(pubkey_bytes):
+    """根据 Ed25519 公钥派生规范 Beacon agent_id。"""
+    return f"bcn_{hashlib.sha256(pubkey_bytes).hexdigest()[:12]}"
+
+
+def _is_canonical_agent_id(agent_id):
+    """识别 bcn_<12 hex> 规范 ID，兼容历史非规范测试/本地标签。"""
+    if not isinstance(agent_id, str):
+        return False
+    suffix = agent_id[4:]
+    return (
+        agent_id.startswith('bcn_')
+        and len(suffix) == 12
+        and all(ch in '0123456789abcdef' for ch in suffix)
+    )
+
+
+def _canonical_agent_request(agent_id, timestamp, nonce, body_bytes):
+    body_hash = hashlib.sha256(body_bytes or b'').hexdigest()
+    return '\n'.join([
+        request.method.upper(),
+        request.path,
+        body_hash,
+        str(timestamp),
+        str(nonce),
+        str(agent_id),
+    ]).encode('utf-8')
+
+
+def _verify_agent_signature(pubkey_hex, signature_hex, message):
+    if Ed25519PublicKey is None:
+        return False
+    try:
+        pubkey = Ed25519PublicKey.from_public_bytes(bytes.fromhex(_clean_pubkey_hex(pubkey_hex)))
+        pubkey.verify(bytes.fromhex(str(signature_hex or '').strip()), message)
+        return True
+    except Exception:
+        return False
+
+
+def _authenticate_contract_agent(db, allowed_agents, body_bytes):
+    allowed = {str(agent) for agent in allowed_agents if agent}
+
+    if os.environ.get('BEACON_ALLOW_LEGACY_AGENT_KEY') == '1':
+        legacy_key = request.headers.get('X-Agent-Key', '')
+        if legacy_key in allowed:
+            return legacy_key, None
+
+    agent_id = request.headers.get('X-Agent-Id', '')
+    timestamp_raw = request.headers.get('X-Agent-Timestamp', '')
+    nonce = request.headers.get('X-Agent-Nonce', '')
+    signature = request.headers.get('X-Agent-Signature', '')
+
+    if not all([agent_id, timestamp_raw, nonce, signature]):
+        return None, (jsonify({
+            'error': 'Missing Beacon signature headers: X-Agent-Id, X-Agent-Timestamp, X-Agent-Nonce, X-Agent-Signature'
+        }), 401)
+
+    if agent_id not in allowed:
+        return None, (jsonify({'error': 'Unauthorized — caller is not an allowed contract party'}), 403)
+
+    try:
+        timestamp = int(timestamp_raw)
+    except (TypeError, ValueError):
+        return None, (jsonify({'error': 'Invalid X-Agent-Timestamp'}), 400)
+
+    now = int(time.time())
+    if abs(now - timestamp) > BEACON_AUTH_WINDOW_SECONDS:
+        return None, (jsonify({'error': 'Stale Beacon signature timestamp'}), 401)
+
+    if not isinstance(nonce, str) or not nonce.strip() or len(nonce) > 128:
+        return None, (jsonify({'error': 'Invalid X-Agent-Nonce'}), 400)
+
+    row = db.execute(
+        "SELECT pubkey_hex FROM relay_agents WHERE agent_id = ?",
+        (agent_id,)
+    ).fetchone()
+    if not row:
+        return None, (jsonify({'error': f'agent not found: {agent_id}'}), 400)
+
+    message = _canonical_agent_request(agent_id, timestamp, nonce, body_bytes)
+    if not _verify_agent_signature(row['pubkey_hex'], signature, message):
+        return None, (jsonify({'error': 'Invalid Beacon agent signature'}), 401)
+
+    cutoff = now - BEACON_AUTH_WINDOW_SECONDS
+    db.execute("DELETE FROM beacon_agent_nonces WHERE created_at < ?", (cutoff,))
+    try:
+        db.execute(
+            "INSERT INTO beacon_agent_nonces (agent_id, nonce, created_at) VALUES (?, ?, ?)",
+            (agent_id, nonce, now)
+        )
+        db.commit()
+    except sqlite3.IntegrityError:
+        return None, (jsonify({'error': 'Replay detected for Beacon agent nonce'}), 401)
+
+    return agent_id, None
 
 
 # ============================================================
@@ -140,6 +298,13 @@ def init_beacon_tables(db_path=DB_PATH):
 @beacon_api.route('/api/agents', methods=['GET'])
 def get_agents():
     """Get all registered agents."""
+    # SECURITY: Require admin key — exposes all relay agents with pubkeys, coinbase addresses, status
+    admin_key = os.environ.get("RC_ADMIN_KEY", "")
+    if not admin_key:
+        return jsonify({'error': 'RC_ADMIN_KEY not configured'}), 503
+    provided_key = request.headers.get("X-Admin-Key", "")
+    if not hmac.compare_digest(provided_key, admin_key):
+        return jsonify({'error': 'Unauthorized'}), 401
     try:
         db = get_db()
         rows = db.execute(
@@ -159,12 +324,19 @@ def get_agents():
 
         return jsonify(agents)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'internal_error'}), 500
 
 
 @beacon_api.route('/api/agent/<agent_id>', methods=['GET'])
 def get_agent(agent_id):
     """Get single agent details."""
+    # SECURITY: Require admin key — exposes agent pubkey, coinbase address, status
+    admin_key = os.environ.get("RC_ADMIN_KEY", "")
+    if not admin_key:
+        return jsonify({'error': 'RC_ADMIN_KEY not configured'}), 503
+    provided_key = request.headers.get("X-Admin-Key", "")
+    if not hmac.compare_digest(provided_key, admin_key):
+        return jsonify({'error': 'Unauthorized'}), 401
     try:
         db = get_db()
         row = db.execute(
@@ -185,7 +357,7 @@ def get_agent(agent_id):
             'updated_at': row['updated_at'],
         })
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'internal_error'}), 500
 
 
 # ============================================================
@@ -196,17 +368,17 @@ def get_agent(agent_id):
 def beacon_join():
     """
     Register or update a relay agent in the beacon atlas.
-    
+
     Accepts JSON with:
         - agent_id: Unique agent identifier (required)
         - pubkey_hex: Hex-encoded public key (required, must be valid hex)
         - name: Optional human-readable name
         - coinbase_address: Optional Base network address for payments
-    
+
     Returns:
         - 200: Agent registered/updated successfully
         - 400: Invalid input (missing fields, invalid pubkey_hex format)
-    
+
     Upsert behavior: Duplicate agent_id updates existing record.
     """
     if request.method == 'OPTIONS':
@@ -218,7 +390,7 @@ def beacon_join():
 
     try:
         data = request.get_json(silent=True)
-        if not data:
+        if not isinstance(data, dict):
             return jsonify({'error': 'Invalid or missing JSON body'}), 400
 
         # Validate required fields
@@ -229,25 +401,42 @@ def beacon_join():
             return jsonify({'error': 'Missing required field: agent_id'}), 400
         if not pubkey_hex:
             return jsonify({'error': 'Missing required field: pubkey_hex'}), 400
+        if not isinstance(agent_id, str):
+            return jsonify({'error': 'Invalid agent_id: must be a string'}), 400
+        if not isinstance(pubkey_hex, str):
+            return jsonify({'error': 'Invalid pubkey_hex: must be a string'}), 400
 
         # Validate pubkey_hex format (must be valid hex string, optionally with 0x prefix)
         pubkey_clean = pubkey_hex.strip()
         if pubkey_clean.startswith('0x') or pubkey_clean.startswith('0X'):
             pubkey_clean = pubkey_clean[2:]
-        
+
         if not pubkey_clean:
             return jsonify({'error': 'Invalid pubkey_hex: empty after prefix removal'}), 400
-        
+
         try:
             # Validate it's proper hex
-            bytes.fromhex(pubkey_clean)
+            pubkey_bytes = bytes.fromhex(pubkey_clean)
         except ValueError:
             return jsonify({'error': 'Invalid pubkey_hex: must be valid hexadecimal string'}), 400
 
         # Optional fields
         name = data.get('name')
         coinbase_address = data.get('coinbase_address')
-        
+        if name is not None and not isinstance(name, str):
+            return jsonify({'error': 'Invalid name: must be a string'}), 400
+        if coinbase_address is not None and not isinstance(coinbase_address, str):
+            return jsonify({'error': 'Invalid coinbase_address: must be a string'}), 400
+        if len(pubkey_bytes) != 32:
+            return jsonify({'error': 'Invalid pubkey_hex: must be 32 bytes'}), 400
+
+        if _is_canonical_agent_id(agent_id):
+            expected_agent_id = _agent_id_from_pubkey(pubkey_bytes)
+            if agent_id != expected_agent_id:
+                return jsonify({
+                    'error': 'Invalid agent_id: canonical bcn_<hash> must match pubkey_hex'
+                }), 400
+
         # Validate coinbase_address if provided (should be 0x-prefixed, 40 hex chars)
         if coinbase_address:
             cb_clean = coinbase_address.strip()
@@ -266,7 +455,7 @@ def beacon_join():
         # Check if agent already exists
         db = get_db()
         existing = db.execute(
-            "SELECT pubkey_hex FROM relay_agents WHERE agent_id = ?",
+            "SELECT pubkey_hex, coinbase_address FROM relay_agents WHERE agent_id = ?",
             (agent_id,)
         ).fetchone()
 
@@ -280,16 +469,23 @@ def beacon_join():
                     'error': 'Cannot change pubkey_hex for existing agent — '
                              'public key is immutable after registration'
                 }), 403
+            if coinbase_address and not _coinbase_addresses_match(
+                coinbase_address,
+                existing['coinbase_address'],
+            ):
+                return jsonify({
+                    'error': 'Cannot change coinbase_address for existing agent — '
+                             'payment address is immutable after registration'
+                }), 403
 
             # Update mutable fields only
             db.execute("""
                 UPDATE relay_agents
                 SET name = COALESCE(?, name),
-                    coinbase_address = COALESCE(?, coinbase_address),
                     status = 'active',
                     updated_at = ?
                 WHERE agent_id = ?
-            """, (name, coinbase_address, now, agent_id))
+            """, (name, now, agent_id))
         else:
             # New agent — insert with pubkey_hex
             db.execute("""
@@ -309,14 +505,14 @@ def beacon_join():
         })
 
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'internal_error'}), 500
 
 
 @beacon_api.route('/beacon/atlas', methods=['GET', 'OPTIONS'])
 def beacon_atlas():
     """
     Get list of all registered relay agents in the beacon atlas.
-    
+
     Returns array of agent objects with:
         - agent_id: Unique identifier
         - pubkey_hex: Public key (hex)
@@ -324,7 +520,7 @@ def beacon_atlas():
         - status: Agent status (active, inactive, etc.)
         - created_at: Registration timestamp
         - updated_at: Last update timestamp
-    
+
     Query params:
         - status: Optional filter by status (e.g., ?status=active)
     """
@@ -337,22 +533,22 @@ def beacon_atlas():
 
     try:
         db = get_db()
-        
+
         # Optional status filter
         status_filter = request.args.get('status')
-        
+
         if status_filter:
             rows = db.execute(
-                """SELECT agent_id, pubkey_hex, name, status, coinbase_address, created_at, updated_at 
-                   FROM relay_agents 
-                   WHERE status = ? 
+                """SELECT agent_id, pubkey_hex, name, status, coinbase_address, created_at, updated_at
+                   FROM relay_agents
+                   WHERE status = ?
                    ORDER BY created_at DESC""",
                 (status_filter,)
             ).fetchall()
         else:
             rows = db.execute(
-                """SELECT agent_id, pubkey_hex, name, status, coinbase_address, created_at, updated_at 
-                   FROM relay_agents 
+                """SELECT agent_id, pubkey_hex, name, status, coinbase_address, created_at, updated_at
+                   FROM relay_agents
                    ORDER BY created_at DESC"""
             ).fetchall()
 
@@ -375,7 +571,7 @@ def beacon_atlas():
         })
 
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'internal_error'}), 500
 
 
 # ============================================================
@@ -385,12 +581,19 @@ def beacon_atlas():
 @beacon_api.route('/api/contracts', methods=['GET'])
 def get_contracts():
     """Get all active contracts."""
+    # SECURITY: Require admin key — exposes all beacon contracts, agent IDs, contract terms
+    admin_key = os.environ.get("RC_ADMIN_KEY", "")
+    if not admin_key:
+        return jsonify({'error': 'RC_ADMIN_KEY not configured'}), 503
+    provided_key = request.headers.get("X-Admin-Key", "")
+    if not hmac.compare_digest(provided_key, admin_key):
+        return jsonify({'error': 'Unauthorized'}), 401
     try:
         db = get_db()
         rows = db.execute(
             "SELECT * FROM beacon_contracts ORDER BY created_at DESC"
         ).fetchall()
-        
+
         contracts = []
         for row in rows:
             contracts.append({
@@ -404,43 +607,99 @@ def get_contracts():
                 'state': row['state'],
                 'created_at': row['created_at'],
             })
-        
+
         return jsonify(contracts)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'internal_error'}), 500
 
 
 @beacon_api.route('/api/contracts', methods=['POST'])
 def create_contract():
-    """Create a new contract between agents."""
+    """Create a new contract between agents.
+
+    Requires Beacon Ed25519 signature headers to authenticate the contract creator.
+    Validates that the from_agent exists in the relay_agents table.
+    """
     try:
-        data = request.get_json()
-        
+        body_bytes = request.get_data(cache=True)
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({'error': 'Invalid or missing JSON body'}), 400
+
         # Validate required fields
         required = ['from', 'to', 'type', 'amount', 'term']
         for field in required:
             if field not in data:
                 return jsonify({'error': f'Missing field: {field}'}), 400
-        
+
+        # Validate from_agent is a non-empty string (catches arrays, objects, etc.)
+        from_agent = data['from']
+        if not isinstance(from_agent, str) or not from_agent.strip():
+            return jsonify({'error': 'from: must be a non-empty string'}), 400
+        from_agent = from_agent.strip()
+
+        # Verify from_agent exists in relay_agents table
+        db = get_db()
+        existing = db.execute(
+            "SELECT agent_id FROM relay_agents WHERE agent_id = ?",
+            (from_agent,)
+        ).fetchone()
+        if not existing:
+            return jsonify({
+                'error': f'from_agent not found: {from_agent}'
+            }), 400
+
+        _, auth_error = _authenticate_contract_agent(db, [from_agent], body_bytes)
+        if auth_error:
+            return auth_error
+
         # Generate contract ID
         contract_id = f"ctr_{int(time.time())}_{hashlib.blake2b(str(time.time()).encode(), digest_size=4).hexdigest()}"
-        
+
+        amount, amount_error, amount_status = _positive_float_field(data, 'amount')
+        if amount_error:
+            return amount_error, amount_status
+
+        # Validate string fields — reject non-string JSON types (lists, dicts)
+        to_val = data.get("to")
+        if not isinstance(to_val, str) or not to_val.strip():
+            return jsonify({"error": "to: must be a non-empty string"}), 400
+        to_agent = to_val.strip()
+
+        type_val = data.get("type")
+        if not isinstance(type_val, str) or not type_val.strip():
+            return jsonify({"error": "type: must be a non-empty string"}), 400
+        contract_type_val = type_val.strip()
+
+        term_val = data.get("term")
+        if not isinstance(term_val, str) or not term_val.strip():
+            return jsonify({"error": "term: must be a non-empty string"}), 400
+        term_text = term_val.strip()
+
+        # Validate currency if provided
+        currency_val = str(data.get('currency', 'RTC')).strip().upper()
+        ALLOWED_CURRENCIES = {'RTC', 'ERC', 'ERG', 'USD'}
+        if currency_val not in ALLOWED_CURRENCIES:
+            return jsonify({
+                'error': f'currency: must be one of: {", ".join(sorted(ALLOWED_CURRENCIES))}'
+            }), 400
+
         contract = {
             'id': contract_id,
             'from': data['from'],
-            'to': data['to'],
-            'type': data['type'],
-            'amount': float(data['amount']),
-            'currency': data.get('currency', 'RTC'),
-            'term': data['term'],
+            'to': to_agent,
+            'type': contract_type_val,
+            'amount': amount,
+            'currency': currency_val,
+            'term': term_text,
             'state': 'offered',  # Initial state
             'created_at': int(time.time()),
         }
-        
+
         # Store in database
         db = get_db()
         db.execute(
-            """INSERT INTO beacon_contracts 
+            """INSERT INTO beacon_contracts
                (id, from_agent, to_agent, type, amount, currency, term, state, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (contract['id'], contract['from'], contract['to'], contract['type'],
@@ -448,41 +707,100 @@ def create_contract():
              contract['state'], contract['created_at'])
         )
         db.commit()
-        
+
         return jsonify(contract), 201
-        
+
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'internal_error'}), 500
 
 
 @beacon_api.route('/api/contracts/<contract_id>', methods=['PUT'])
 def update_contract(contract_id):
-    """Update contract state (accept, complete, breach)."""
+    """Update contract state (accept, complete, breach).
+
+    Requires Beacon Ed25519 signature headers to verify caller is a party to the contract.
+    Validates state transitions to prevent invalid jumps.
+    """
     try:
-        data = request.get_json()
+        body_bytes = request.get_data(cache=True)
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({'error': 'Invalid or missing JSON body'}), 400
         new_state = data.get('state')
-        
+
         if not new_state:
             return jsonify({'error': 'Missing state field'}), 400
-        
-        valid_states = {'offered', 'active', 'renewed', 'completed', 'breached', 'expired'}
+
+        valid_states = {'offered', 'active', 'renewed', 'completed', 'breached', 'expired', 'rejected'}
         if new_state not in valid_states:
             return jsonify({'error': f'Invalid state: {new_state}'}), 400
-        
+
+        # Valid state transitions — prevent arbitrary jumps
+        allowed_transitions = {
+            'offered': {'active', 'rejected', 'expired'},
+            'active': {'completed', 'breached', 'renewed'},
+            'renewed': {'completed', 'breached', 'expired'},
+            'completed': set(),  # terminal state
+            'breached': set(),   # terminal state
+            'expired': set(),    # terminal state
+            'rejected': set(),   # terminal state
+        }
+
         db = get_db()
+
+        # Fetch current contract to verify ownership and current state
+        contract = db.execute(
+            "SELECT id, from_agent, to_agent, state FROM beacon_contracts WHERE id = ?",
+            (contract_id,)
+        ).fetchone()
+
+        if not contract:
+            return jsonify({'error': 'Contract not found'}), 404
+
+        current_state = contract['state']
+
+        # Validate state transition
+        if new_state not in allowed_transitions.get(current_state, set()):
+            return jsonify({
+                'error': f'Invalid state transition: {current_state} -> {new_state}'
+            }), 400
+
+        from_agent = contract['from_agent']
+        to_agent = contract['to_agent'] if 'to_agent' in contract.keys() else ''
+
+        caller_agent, auth_error = _authenticate_contract_agent(db, [from_agent, to_agent], body_bytes)
+        if auth_error:
+            return auth_error
+
+        # Only to_agent can accept or reject an offered contract
+        if current_state == 'offered' and new_state == 'active':
+            if caller_agent != to_agent:
+                return jsonify({
+                    'error': 'Only the recipient (to_agent) can accept this contract'
+                }), 403
+        if current_state == 'offered' and new_state == 'rejected':
+            if caller_agent != to_agent:
+                return jsonify({
+                    'error': 'Only the recipient (to_agent) can reject this contract'
+                }), 403
+
+        # Only from_agent can mark as breached
+        if new_state == 'breached':
+            if caller_agent != from_agent:
+                return jsonify({
+                    'error': 'Only the contract creator (from_agent) can mark as breached'
+                }), 403
+
         db.execute(
             "UPDATE beacon_contracts SET state = ?, updated_at = ? WHERE id = ?",
             (new_state, int(time.time()), contract_id)
         )
         db.commit()
-        
-        if db.total_changes == 0:
-            return jsonify({'error': 'Contract not found'}), 404
-        
+
         return jsonify({'ok': True, 'contract_id': contract_id, 'state': new_state})
-        
+
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'internal_error'}), 500
 
 
 # ============================================================
@@ -492,12 +810,19 @@ def update_contract(contract_id):
 @beacon_api.route('/api/bounties', methods=['GET'])
 def get_bounties():
     """Get all active bounties (from cache or DB)."""
+    # SECURITY: Require admin key — exposes all beacon bounties with reward amounts and agent info
+    admin_key = os.environ.get("RC_ADMIN_KEY", "")
+    if not admin_key:
+        return jsonify({'error': 'RC_ADMIN_KEY not configured'}), 503
+    provided_key = request.headers.get("X-Admin-Key", "")
+    if not hmac.compare_digest(provided_key, admin_key):
+        return jsonify({'error': 'Unauthorized'}), 401
     try:
         db = get_db()
         rows = db.execute(
             "SELECT * FROM beacon_bounties WHERE state = 'open' ORDER BY reward_rtc DESC"
         ).fetchall()
-        
+
         bounties = []
         for row in rows:
             bounties.append({
@@ -514,45 +839,56 @@ def get_bounties():
                 'completed_by': row['completed_by'],
                 'desc': row['description'] or '',
             })
-        
+
         return jsonify(bounties)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'internal_error'}), 500
 
 
 @beacon_api.route('/api/bounties/sync', methods=['POST'])
 def sync_bounties():
     """Sync bounties from GitHub API."""
     try:
+        import hmac
         import urllib.request
         import ssl
-        
+
+        admin_key = os.environ.get("RC_ADMIN_KEY", "")
+        if not admin_key:
+            return jsonify({'error': 'RC_ADMIN_KEY not configured — endpoint disabled'}), 503
+        provided_key = request.headers.get("X-Admin-Key", "")
+        if not hmac.compare_digest(provided_key, admin_key):
+            return jsonify({'error': 'Unauthorized — admin key required to sync bounties'}), 401
+
         # GitHub repos to scan
         repos = [
             {'owner': 'Scottcjn', 'repo': 'rustchain-bounties'},
             {'owner': 'Scottcjn', 'repo': 'Rustchain'},
             {'owner': 'Scottcjn', 'repo': 'bottube'},
         ]
-        
+
         all_bounties = []
-        
-        # Create SSL context that doesn't verify (for demo)
+
+        # SSL verification: enabled by default, set RC_DISABLE_SSL_VERIFY=1 to skip
         ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        
+        if os.environ.get('RC_DISABLE_SSL_VERIFY', '0') == '1':
+            import logging
+            logging.warning('[beacon_api] SSL verification disabled via RC_DISABLE_SSL_VERIFY — not recommended for production')
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+
         for repo in repos:
             try:
                 url = f"https://api.github.com/repos/{repo['owner']}/{repo['repo']}/issues?state=open&labels=bounty&per_page=30"
-                
+
                 req = urllib.request.Request(url, headers={'Accept': 'application/vnd.github.v3+json'})
                 with urllib.request.urlopen(req, timeout=10, context=ctx) as resp:
                     issues = json.loads(resp.read().decode())
-                
+
                 for issue in issues:
                     if 'pull_request' in issue:
                         continue
-                    
+
                     # Extract reward from title
                     reward_text = None
                     reward_rtc = None
@@ -564,10 +900,10 @@ def sync_bounties():
                         num_match = re.search(r'(\d+(?:\.\d+)?)', reward_text)
                         if num_match:
                             reward_rtc = float(num_match.group(1).replace(',', ''))
-                    
+
                     if not reward_text:
                         continue
-                    
+
                     # Determine difficulty from labels
                     difficulty = 'ANY'
                     label_map = {
@@ -580,7 +916,7 @@ def sync_bounties():
                         if label_name in label_map:
                             difficulty = label_map[label_name]
                             break
-                    
+
                     bounty = {
                         'id': f"gh_{repo['repo']}_{issue['number']}",
                         'github_number': issue['number'],
@@ -596,57 +932,77 @@ def sync_bounties():
                         'created_at': int(time.time()),
                     }
                     all_bounties.append(bounty)
-                
+
             except Exception as e:
                 print(f"Failed to fetch bounties from {repo['repo']}: {e}")
                 continue
-        
+
         # Store in database
         db = get_db()
         for bounty in all_bounties:
             db.execute(
-                """INSERT OR REPLACE INTO beacon_bounties 
-                   (id, github_number, title, reward_rtc, reward_text, difficulty, 
+                """INSERT INTO beacon_bounties
+                   (id, github_number, title, reward_rtc, reward_text, difficulty,
                     github_repo, github_url, state, description, labels, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET
+                       github_number = excluded.github_number,
+                       title = excluded.title,
+                       reward_rtc = excluded.reward_rtc,
+                       reward_text = excluded.reward_text,
+                       difficulty = excluded.difficulty,
+                       github_repo = excluded.github_repo,
+                       github_url = excluded.github_url,
+                       description = excluded.description,
+                       labels = excluded.labels,
+                       updated_at = excluded.updated_at""",
                 (bounty['id'], bounty['github_number'], bounty['title'],
                  bounty['reward_rtc'], bounty['reward_text'], bounty['difficulty'],
                  bounty['github_repo'], bounty['github_url'], bounty['state'],
                  bounty['description'], bounty['labels'], bounty['created_at'], bounty['created_at'])
             )
-        
+
         db.commit()
-        
+
         return jsonify({'synced': len(all_bounties), 'ok': True})
-        
+
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'internal_error'}), 500
 
 
 @beacon_api.route('/api/bounties/<bounty_id>/claim', methods=['POST'])
 def claim_bounty(bounty_id):
-    """Claim a bounty for an agent."""
+    """Claim a bounty for an agent (admin-only)."""
     try:
-        data = request.get_json()
-        agent_id = data.get('agent_id')
-        
-        if not agent_id:
-            return jsonify({'error': 'Missing agent_id'}), 400
-        
+        import os, hmac
+        admin_key = os.environ.get("RC_ADMIN_KEY", "")
+        if not admin_key:
+            return jsonify({'error': 'RC_ADMIN_KEY not configured — endpoint disabled'}), 503
+        provided_key = request.headers.get("X-Admin-Key", "")
+        if not hmac.compare_digest(provided_key, admin_key):
+            return jsonify({'error': 'Unauthorized — admin key required to claim bounties'}), 401
+
+        data, body_error, status = _json_object_body()
+        if body_error:
+            return body_error, status
+        agent_id, field_error, status = _required_text_field(data, 'agent_id', max_length=128)
+        if field_error:
+            return field_error, status
+
         db = get_db()
         db.execute(
             "UPDATE beacon_bounties SET state = 'claimed', claimant_agent = ?, updated_at = ? WHERE id = ?",
             (agent_id, int(time.time()), bounty_id)
         )
-        db.commit()
-        
+
+        db = get_db()
         if db.total_changes == 0:
             return jsonify({'error': 'Bounty not found'}), 404
-        
+
         return jsonify({'ok': True, 'bounty_id': bounty_id, 'claimant': agent_id})
-        
+
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'internal_error'}), 500
 
 
 @beacon_api.route('/api/bounties/<bounty_id>/complete', methods=['POST'])
@@ -661,12 +1017,13 @@ def complete_bounty(bounty_id):
         if not hmac.compare_digest(provided_key, admin_key):
             return jsonify({'error': 'Unauthorized — admin key required to complete bounties'}), 401
 
-        data = request.get_json()
-        agent_id = data.get('agent_id')
-        
-        if not agent_id:
-            return jsonify({'error': 'Missing agent_id'}), 400
-        
+        data, body_error, status = _json_object_body()
+        if body_error:
+            return body_error, status
+        agent_id, field_error, status = _required_text_field(data, 'agent_id', max_length=128)
+        if field_error:
+            return field_error, status
+
         db = get_db()
 
         # Verify bounty exists and is in claimable state
@@ -684,7 +1041,7 @@ def complete_bounty(bounty_id):
             (agent_id, int(time.time()), bounty_id)
         )
         db.commit()
-        
+
         # Update agent reputation
         rep = db.execute("SELECT * FROM beacon_reputation WHERE agent_id = ?", (agent_id,)).fetchone()
         if rep:
@@ -698,11 +1055,11 @@ def complete_bounty(bounty_id):
                 (agent_id, int(time.time()))
             )
         db.commit()
-        
+
         return jsonify({'ok': True, 'bounty_id': bounty_id, 'completed_by': agent_id})
-        
+
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'internal_error'}), 500
 
 
 # ============================================================
@@ -712,10 +1069,17 @@ def complete_bounty(bounty_id):
 @beacon_api.route('/api/reputation', methods=['GET'])
 def get_reputation():
     """Get all agent reputations."""
+    # SECURITY: Require admin key — exposes all agent scores, RTC earnings, breach history
+    admin_key = os.environ.get("RC_ADMIN_KEY", "")
+    if not admin_key:
+        return jsonify({'error': 'RC_ADMIN_KEY not configured'}), 503
+    provided_key = request.headers.get("X-Admin-Key", "")
+    if not hmac.compare_digest(provided_key, admin_key):
+        return jsonify({'error': 'Unauthorized'}), 401
     try:
         db = get_db()
         rows = db.execute("SELECT * FROM beacon_reputation ORDER BY score DESC").fetchall()
-        
+
         reputations = []
         for row in rows:
             reputations.append({
@@ -726,22 +1090,29 @@ def get_reputation():
                 'contracts_breached': row['contracts_breached'],
                 'total_rtc_earned': row['total_rtc_earned'],
             })
-        
+
         return jsonify(reputations)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'internal_error'}), 500
 
 
 @beacon_api.route('/api/reputation/<agent_id>', methods=['GET'])
 def get_agent_reputation(agent_id):
     """Get single agent reputation."""
+    # SECURITY: Require admin key — exposes agent score, RTC earnings, breach count
+    admin_key = os.environ.get("RC_ADMIN_KEY", "")
+    if not admin_key:
+        return jsonify({'error': 'RC_ADMIN_KEY not configured'}), 503
+    provided_key = request.headers.get("X-Admin-Key", "")
+    if not hmac.compare_digest(provided_key, admin_key):
+        return jsonify({'error': 'Unauthorized'}), 401
     try:
         db = get_db()
         row = db.execute("SELECT * FROM beacon_reputation WHERE agent_id = ?", (agent_id,)).fetchone()
-        
+
         if not row:
             return jsonify({'error': 'Agent not found'}), 404
-        
+
         return jsonify({
             'agent_id': row['agent_id'],
             'score': row['score'],
@@ -751,7 +1122,7 @@ def get_agent_reputation(agent_id):
             'total_rtc_earned': row['total_rtc_earned'],
         })
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'internal_error'}), 500
 
 
 # ============================================================
@@ -760,48 +1131,96 @@ def get_agent_reputation(agent_id):
 
 @beacon_api.route('/api/chat', methods=['POST'])
 def chat():
-    """Send message to an agent (mock response for demo)."""
+    """Send message to an agent (LLM-backed with canned fallback)."""
     try:
-        data = request.get_json()
-        agent_id = data.get('agent_id')
-        message = data.get('message')
-        
+        data, body_error, status = _json_object_body()
+        if body_error:
+            return body_error, status
+        agent_id, field_error, status = _required_text_field(data, 'agent_id', max_length=128)
+        if field_error:
+            return field_error, status
+        message, field_error, status = _required_text_field(data, 'message', max_length=4096)
+        if field_error:
+            return field_error, status
+
         if not agent_id or not message:
             return jsonify({'error': 'Missing agent_id or message'}), 400
-        
+        safe_agent_id = html.escape(str(agent_id), quote=True)
+        safe_message = html.escape(str(message), quote=True)
+
         # Store user message
         db = get_db()
         db.execute(
             "INSERT INTO beacon_chat (agent_id, role, content, created_at) VALUES (?, ?, ?, ?)",
-            (agent_id, 'user', message, int(time.time()))
+            (agent_id, 'user', safe_message, int(time.time()))
         )
-        
-        # Generate mock response (in production, call LLM)
-        responses = [
-            f"Acknowledged. I am {agent_id}. How can I assist?",
-            "Transmission received. Processing request...",
-            "Beacon signal strong. Standing by for instructions.",
-            "Contract terms acceptable. Ready to proceed.",
-            "Reputation check complete. Trust level adequate.",
-        ]
-        import random
-        response = random.choice(responses)
-        
+
+        # Generate response — LLM when configured, canned fallback
+        llm_url = os.environ.get("BEACON_LLM_API_URL", "").rstrip("/")
+        llm_key = os.environ.get("BEACON_LLM_API_KEY", "")
+        llm_model = os.environ.get("BEACON_LLM_MODEL", "gpt-4o-mini")
+        response = None
+
+        if llm_url:
+            try:
+                import requests as _req
+                headers = {"Content-Type": "application/json"}
+                if llm_key:
+                    headers["Authorization"] = f"Bearer {llm_key}"
+                llm_payload = {
+                    "model": llm_model,
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": f"You are agent {safe_agent_id} on the RustChain beacon network. "
+                                       "Keep responses brief (<200 chars)."
+                        },
+                        {"role": "user", "content": safe_message},
+                    ],
+                    "max_tokens": 150,
+                }
+                llm_resp = _req.post(
+                    f"{llm_url}/v1/chat/completions",
+                    json=llm_payload,
+                    headers=headers,
+                    timeout=15,
+                )
+                if llm_resp.status_code == 200:
+                    choices = llm_resp.json().get("choices", [])
+                    if choices:
+                        content = choices[0].get("message", {}).get("content", "")
+                        if content:
+                            response = content.strip()
+            except Exception:
+                pass  # fall through to canned
+
+        if response is None:
+            # ── Fallback: canned random responses ──────────────────
+            responses = [
+                f"Acknowledged. I am {safe_agent_id}. How can I assist?",
+                "Transmission received. Processing request...",
+                "Beacon signal strong. Standing by for instructions.",
+                "Contract terms acceptable. Ready to proceed.",
+                "Reputation check complete. Trust level adequate.",
+            ]
+            import random
+            response = random.choice(responses)
+
         # Store agent response
         db.execute(
             "INSERT INTO beacon_chat (agent_id, role, content, created_at) VALUES (?, ?, ?, ?)",
             (agent_id, 'assistant', response, int(time.time()))
         )
         db.commit()
-        
+
         return jsonify({
             'response': response,
-            'agent': agent_id,
+            'agent': safe_agent_id,
             'timestamp': int(time.time()),
         })
-        
+
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'internal_error'}), 500
 
 
 # ============================================================

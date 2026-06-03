@@ -27,24 +27,29 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from tools.rent_a_relic.models import (
     MACHINE_REGISTRY,
     VALID_DURATIONS_HOURS,
-    EscrowStatus,
-    EscrowTransaction,
     Machine,
     Reservation,
-    ReservationStatus,
 )
 from tools.rent_a_relic.provenance import generate_receipt, verify_receipt
 
+ADMIN_KEY = "test-rent-relic-admin"
+
 
 @pytest.fixture()
-def app(tmp_path):
+def app(tmp_path, monkeypatch):
     from tools.rent_a_relic import server
     db_file = str(tmp_path / "test_relic.db")
+    monkeypatch.setenv("RC_ADMIN_KEY", ADMIN_KEY)
     server.app.config["TESTING"] = True
     server.app.config["DB_PATH"]  = db_file
     server.init_db()
     with server.app.test_client() as client:
         yield client
+
+
+def complete_session(client, session_id: str, payload: dict | list | None = None, admin_key: str | None = ADMIN_KEY):
+    headers = {"X-Admin-Key": admin_key} if admin_key else {}
+    return client.post(f"/relic/complete/{session_id}", headers=headers, json=payload)
 
 
 @pytest.fixture()
@@ -148,10 +153,102 @@ class TestReservationFlow:
             "duration_hours": 1, "rtc_amount": 15.0,
         })
         assert r.status_code == 201
-        cr = app.post(f"/relic/complete/{r.json['session_id']}",
-                      json={"output_hash": hashlib.sha256(b"output").hexdigest()})
+        cr = complete_session(
+            app,
+            r.json["session_id"],
+            {"output_hash": hashlib.sha256(b"output").hexdigest()},
+        )
         assert cr.status_code == 200
         assert cr.json["status"] == "completed"
+
+    def test_complete_requires_admin_key(self, app):
+        r = app.post("/relic/reserve", json={
+            "agent_id": "agent_auth_complete", "machine_id": "riscv-hifive",
+            "duration_hours": 1, "rtc_amount": 10.0,
+        })
+        assert r.status_code == 201
+
+        cr = complete_session(app, r.json["session_id"], admin_key=None)
+
+        assert cr.status_code == 401
+        assert cr.json["error"] == "unauthorized"
+        sr = app.get(f"/relic/reservation/{r.json['session_id']}")
+        assert sr.json["status"] == "active"
+        assert sr.json["escrow"]["status"] == "locked"
+
+    def test_complete_rejects_wrong_admin_key(self, app):
+        r = app.post("/relic/reserve", json={
+            "agent_id": "agent_wrong_key", "machine_id": "riscv-hifive",
+            "duration_hours": 1, "rtc_amount": 10.0,
+        })
+        assert r.status_code == 201
+
+        cr = complete_session(app, r.json["session_id"], admin_key="wrong-key")
+
+        assert cr.status_code == 401
+        assert cr.json["error"] == "unauthorized"
+        sr = app.get(f"/relic/reservation/{r.json['session_id']}")
+        assert sr.json["status"] == "active"
+        assert sr.json["escrow"]["status"] == "locked"
+
+    def test_complete_fails_closed_when_admin_key_unconfigured(self, app, monkeypatch):
+        r = app.post("/relic/reserve", json={
+            "agent_id": "agent_no_key", "machine_id": "riscv-hifive",
+            "duration_hours": 1, "rtc_amount": 10.0,
+        })
+        assert r.status_code == 201
+        monkeypatch.delenv("RC_ADMIN_KEY", raising=False)
+
+        cr = complete_session(app, r.json["session_id"])
+
+        assert cr.status_code == 503
+        assert cr.json["error"] == "RC_ADMIN_KEY not configured"
+        sr = app.get(f"/relic/reservation/{r.json['session_id']}")
+        assert sr.json["status"] == "active"
+        assert sr.json["escrow"]["status"] == "locked"
+
+    def test_complete_rejects_non_object_json(self, app):
+        r = app.post("/relic/reserve", json={
+            "agent_id": "agent_bad_complete", "machine_id": "riscv-hifive",
+            "duration_hours": 1, "rtc_amount": 10.0,
+        })
+        assert r.status_code == 201
+
+        cr = complete_session(app, r.json["session_id"], ["not", "object"])
+        assert cr.status_code == 400
+        assert cr.json["error"] == "JSON object required"
+
+    @pytest.mark.parametrize("output_hash", [["not-a-string"], {"hash": "abc"}, 123, True])
+    def test_complete_rejects_non_string_output_hash(self, app, output_hash):
+        r = app.post("/relic/reserve", json={
+            "agent_id": "agent_bad_output_hash", "machine_id": "riscv-hifive",
+            "duration_hours": 1, "rtc_amount": 10.0,
+        })
+        assert r.status_code == 201
+
+        cr = complete_session(app, r.json["session_id"], {"output_hash": output_hash})
+
+        assert cr.status_code == 400
+        assert cr.json["error"] == "output_hash must be a string"
+        sr = app.get(f"/relic/reservation/{r.json['session_id']}")
+        assert sr.json["status"] == "active"
+        assert sr.json["escrow"]["status"] == "locked"
+
+    @pytest.mark.parametrize("output_hash", ["abc", "g" * 64])
+    def test_complete_rejects_invalid_sha256_output_hash(self, app, output_hash):
+        r = app.post("/relic/reserve", json={
+            "agent_id": "agent_malformed_output_hash", "machine_id": "riscv-hifive",
+            "duration_hours": 1, "rtc_amount": 10.0,
+        })
+        assert r.status_code == 201
+
+        cr = complete_session(app, r.json["session_id"], {"output_hash": output_hash})
+
+        assert cr.status_code == 400
+        assert cr.json["error"] == "output_hash must be a 64-character SHA-256 hex digest"
+        sr = app.get(f"/relic/reservation/{r.json['session_id']}")
+        assert sr.json["status"] == "active"
+        assert sr.json["escrow"]["status"] == "locked"
 
     def test_status_endpoint(self, app):
         r = app.post("/relic/reserve", json={
@@ -170,6 +267,46 @@ class TestReservationFlow:
         })
         assert resp.status_code == 400
 
+    def test_reserve_rejects_non_string_agent_id(self, app):
+        resp = app.post("/relic/reserve", json={
+            "agent_id": ["agent"],
+            "machine_id": "g3-beige",
+            "duration_hours": 1,
+            "rtc_amount": 4.0,
+        })
+        assert resp.status_code == 400
+        assert resp.json["error"] == "agent_id must be a string"
+
+    def test_reserve_rejects_non_string_machine_id(self, app):
+        resp = app.post("/relic/reserve", json={
+            "agent_id": "agent-a",
+            "machine_id": {"machine": "g3-beige"},
+            "duration_hours": 1,
+            "rtc_amount": 4.0,
+        })
+        assert resp.status_code == 400
+        assert resp.json["error"] == "machine_id must be a string"
+
+    def test_reserve_rejects_non_object_json(self, app):
+        resp = app.post("/relic/reserve", json=["not", "object"])
+        assert resp.status_code == 400
+        assert resp.json["error"] == "JSON object required"
+
+    def test_reserve_rejects_non_string_identity_fields(self, app):
+        for field in ("agent_id", "machine_id"):
+            payload = {
+                "agent_id": "a",
+                "machine_id": "g3-beige",
+                "duration_hours": 1,
+                "rtc_amount": 4.0,
+            }
+            payload[field] = ["not", "a", "string"]
+
+            resp = app.post("/relic/reserve", json=payload)
+
+            assert resp.status_code == 400
+            assert resp.json["error"] == f"{field} must be a string"
+
     def test_unknown_machine_returns_404(self, app):
         resp = app.post("/relic/reserve", json={
             "agent_id": "a", "machine_id": "nonexistent",
@@ -184,6 +321,37 @@ class TestReservationFlow:
         })
         assert resp.status_code == 400
         assert "RTC" in resp.json["error"]
+
+    def test_reserve_rejects_boolean_duration_hours(self, app):
+        resp = app.post("/relic/reserve", json={
+            "agent_id": "bool-duration",
+            "machine_id": "g3-beige",
+            "duration_hours": True,
+            "rtc_amount": 4.0,
+        })
+        assert resp.status_code == 400
+        assert "duration_hours" in resp.json["error"]
+
+    def test_reserve_rejects_boolean_rtc_amount(self, app):
+        resp = app.post("/relic/reserve", json={
+            "agent_id": "bool-rtc",
+            "machine_id": "g3-beige",
+            "duration_hours": 1,
+            "rtc_amount": False,
+        })
+        assert resp.status_code == 400
+        assert resp.json["error"] == "rtc_amount must be a positive number"
+
+    def test_reserve_rejects_non_finite_rtc_amount(self, app):
+        for amount in (float("nan"), float("inf"), float("-inf")):
+            resp = app.post("/relic/reserve", json={
+                "agent_id": "finite-rtc",
+                "machine_id": "g3-beige",
+                "duration_hours": 1,
+                "rtc_amount": amount,
+            })
+            assert resp.status_code == 400
+            assert resp.json["error"] == "rtc_amount must be a positive number"
 
 
 class TestEscrow:
@@ -202,7 +370,7 @@ class TestEscrow:
             "duration_hours": 1, "rtc_amount": 10.0,
         })
         sid = r.json["session_id"]
-        app.post(f"/relic/complete/{sid}")
+        complete_session(app, sid)
         sr = app.get(f"/relic/reservation/{sid}")
         assert sr.json["escrow"]["status"] == "released"
         assert sr.json["escrow"]["release_reason"] == "completed"
@@ -311,7 +479,7 @@ class TestLeaderboard:
                 "duration_hours": 1, "rtc_amount": 5.0,
             })
             if r.status_code == 201:
-                app.post(f"/relic/complete/{r.json['session_id']}")
+                complete_session(app, r.json["session_id"])
         ranks = [e["rank"] for e in app.get("/relic/leaderboard").json["leaderboard"]]
         assert ranks == sorted(ranks)
 
