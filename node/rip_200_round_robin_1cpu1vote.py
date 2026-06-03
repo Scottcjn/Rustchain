@@ -17,7 +17,16 @@ import hashlib
 import json
 import logging
 import sqlite3
+import os
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+
+try:
+    from auto_epoch_settler import SLOTS_PER_EPOCH
+except ImportError:
+    try:
+        from node.auto_epoch_settler import SLOTS_PER_EPOCH
+    except ImportError:
+        SLOTS_PER_EPOCH = 144
 from typing import List, Tuple, Dict
 
 logger = logging.getLogger(__name__)
@@ -620,8 +629,8 @@ def calculate_epoch_rewards_time_aged(
 
     chain_age_years = get_chain_age_years(current_slot)
 
-    epoch_start_slot = epoch * 144
-    epoch_end_slot = epoch_start_slot + 143
+    epoch_start_slot = epoch * SLOTS_PER_EPOCH
+    epoch_end_slot = epoch_start_slot + (SLOTS_PER_EPOCH - 1)
     epoch_start_ts = GENESIS_TIMESTAMP + (epoch_start_slot * BLOCK_TIME)
     epoch_end_ts = GENESIS_TIMESTAMP + (epoch_end_slot * BLOCK_TIME)
 

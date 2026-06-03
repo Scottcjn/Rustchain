@@ -94,13 +94,22 @@ PER_EPOCH_URTC = int(1.5 * UNIT)  # 1,500,000 uRTC
 BLOCK_TIME = 600
 GENESIS_TIMESTAMP = 1764706927  # Production chain launch (Dec 2, 2025)
 
+# Canonical slot count — imported from node runtime, not hardcoded.
+try:
+    from auto_epoch_settler import SLOTS_PER_EPOCH
+except ImportError:
+    try:
+        from node.auto_epoch_settler import SLOTS_PER_EPOCH
+    except ImportError:
+        SLOTS_PER_EPOCH = 144
+
 def current_slot():
     """Get current blockchain slot"""
     return (int(time.time()) - GENESIS_TIMESTAMP) // BLOCK_TIME
 
 def slot_to_epoch(slot):
-    """Convert slot to epoch (144 blocks per epoch)"""
-    return slot // 144
+    """Convert slot to epoch"""
+    return slot // SLOTS_PER_EPOCH
 
 def settle_epoch_rip200(db_path, epoch: int, enable_anti_double_mining: bool = True):
     """

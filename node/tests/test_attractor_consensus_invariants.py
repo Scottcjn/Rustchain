@@ -88,7 +88,7 @@ except ImportError:
 
 
 # ---------------------------------------------------------------------------
-# Schema helper — mirrors the full production schema used by anti_double_mining
+# Schema helper — initializes a minimal settlement schema
 # ---------------------------------------------------------------------------
 
 def _init_minimal_settlement_schema(db_path: str) -> sqlite3.Connection:
