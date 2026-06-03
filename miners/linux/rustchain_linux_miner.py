@@ -1,13 +1,28 @@
 #!/usr/bin/env python3
 """
-RustChain Local x86 Miner - Modern Ryzen
+RustChain Local Miner
 With RIP-PoA Hardware Fingerprint Attestation + Serial Binding v2.0
 """
 import warnings
 # warnings.filterwarnings('ignore', message='Unverified HTTPS request')  # No longer needed — TLS verification enabled
 
-import os, sys, json, time, hashlib, uuid, requests, socket, subprocess, platform, statistics, re
+import os, sys, json, time, hashlib, uuid, math, requests, socket, subprocess, platform, statistics, re
 from datetime import datetime
+
+# ── Ed25519 signing (issue #6798) ──
+# If miner_crypto.py + PyNaCl are available, sign every attestation with
+# Ed25519 over the pipe-delimited string the node verifies:
+#   miner_id|miner|nonce|report.commitment
+# Previously the miner signed the canonical JSON of the full attestation,
+# but the node verifies the pipe-string, causing all Ed25519 attestations
+# to be rejected (issue #6798).
+# Without signing, miner falls back to legacy sha512 / unsigned — server
+# accepts with WARNING but offers no wallet-hijack protection.
+try:
+    from miner_crypto import get_or_create_keypair, sign_payload  # noqa: F401
+    CRYPTO_AVAILABLE = True
+except ImportError:
+    CRYPTO_AVAILABLE = False
 
 # Import fingerprint checks
 try:
@@ -26,10 +41,141 @@ except ImportError:
 
 NODE_URL = "https://rustchain.org"  # Use HTTPS via nginx
 BLOCK_TIME = 600  # 10 minutes
+NETWORK_RETRY_ATTEMPTS = 3
+NETWORK_RETRY_BASE_DELAY = 2
+MICRO_UNITS_PER_RTC = 1_000_000
 
 # TLS verification: use pinned cert if available, else system CA bundle
 _CERT_PATH = os.path.expanduser("~/.rustchain/node_cert.pem")
 TLS_VERIFY = _CERT_PATH if os.path.exists(_CERT_PATH) else True
+
+
+def _parse_lscpu_model(output):
+    for line in output.splitlines():
+        key, _, value = line.partition(":")
+        if key.strip().lower() == "model name" and value.strip():
+            return value.strip()
+    return ""
+
+
+def _parse_free_memory_gb(output):
+    for line in output.splitlines():
+        parts = line.split()
+        if parts and parts[0].lower().rstrip(":") == "mem" and len(parts) > 1:
+            try:
+                return int(parts[1])
+            except ValueError:
+                return None
+    return None
+
+
+def _parse_int_output(output):
+    try:
+        return int(str(output).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_memory_bytes_to_gb(output):
+    memory_bytes = _parse_int_output(output)
+    if memory_bytes is None or memory_bytes <= 0:
+        return None
+    return max(1, round(memory_bytes / (1024 ** 3)))
+
+
+def _parse_wmic_value(output, key):
+    prefix = f"{key}="
+    for line in str(output or "").splitlines():
+        line = line.strip()
+        if line.lower().startswith(prefix.lower()):
+            return line[len(prefix):].strip()
+    return ""
+
+
+def _linux_miner_platform_warning(system):
+    if system in ("Linux", "Darwin"):
+        return ""
+    system_name = system or "unknown"
+    return (
+        f"{system_name} is not a primary supported platform for this Linux miner; "
+        "hardware probes may be incomplete, so CPU, serial, and fingerprint results "
+        "can be degraded. Use a native Linux runtime for reliable attestation."
+    )
+
+
+def _safe_id_part(value):
+    slug = re.sub(r"[^a-zA-Z0-9_.:-]+", "-", str(value or "").strip().lower()).strip("-")
+    return slug or "unknown"
+
+
+def _miner_id_from_hw(hw_info):
+    arch = _safe_id_part(hw_info.get("arch") or hw_info.get("machine") or "linux")
+    hostname = _safe_id_part(hw_info.get("hostname") or socket.gethostname())
+    return f"{arch}-{hostname}"
+
+
+def _finite_float(value):
+    if isinstance(value, bool):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) else None
+
+
+def _wallet_balance_rtc(data):
+    if not isinstance(data, dict):
+        return None
+
+    value = _finite_float(data.get("amount_rtc"))
+    if value is not None:
+        return value
+
+    value = _finite_float(data.get("amount_i64"))
+    if value is not None:
+        return value / MICRO_UNITS_PER_RTC
+
+    for key in ("balance_rtc", "rtc_balance", "balance", "amount"):
+        value = _finite_float(data.get(key))
+        if value is not None:
+            return value
+
+    for key in ("balance_i64", "balance_urtc"):
+        value = _finite_float(data.get(key))
+        if value is not None:
+            return value / MICRO_UNITS_PER_RTC
+
+    return None
+
+
+def _request_with_network_retry(method, url, action, retries=NETWORK_RETRY_ATTEMPTS,
+                                base_delay=NETWORK_RETRY_BASE_DELAY, sleep_func=None,
+                                **kwargs):
+    """Run an HTTP request with bounded retries for transient network failures."""
+    if sleep_func is None:
+        sleep_func = time.sleep
+
+    for attempt in range(1, retries + 1):
+        try:
+            return method(url, **kwargs)
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as exc:
+            print(
+                "[WARN] Cannot connect to bootstrap node while {} "
+                "(attempt {}/{}): {}".format(action, attempt, retries, exc)
+            )
+            if attempt >= retries:
+                print("[ERROR] Cannot connect to bootstrap node.")
+                print("[ERROR] Check network connectivity and the RustChain node URL, then retry.")
+                return None
+            delay = base_delay * (2 ** (attempt - 1))
+            print("[WARN] Retrying in {}s...".format(delay))
+            sleep_func(delay)
+        except requests.exceptions.RequestException as exc:
+            print("[ERROR] Network request failed while {}: {}".format(action, exc))
+            return None
+    return None
+
 
 def get_linux_serial():
     """Get hardware serial number for Linux systems"""
@@ -59,7 +205,7 @@ def get_linux_serial():
 
 class LocalMiner:
     def __init__(self, wallet=None, wart_address=None, wart_pool=None,
-                 bzminer_path=None, manage_bzminer=False):
+                 bzminer_path=None, manage_bzminer=False, verbose=False, show_payload=False):
         self.node_url = NODE_URL
         self.wallet = wallet or self._gen_wallet()
         self.hw_info = {}
@@ -67,7 +213,19 @@ class LocalMiner:
         self.attestation_valid_until = 0
         self.last_entropy = {}
         self.fingerprint_data = {}
+
+        # Ed25519 keypair — generated/loaded once per install. Used to sign
+        # /attest/submit (canonical JSON) and /epoch/enroll (3-field MAC).
+        # Persisted via miner_crypto.get_or_create_keypair so reinstall
+        # preserves identity.
+        self.keypair = {}
+        self.public_key = ""
+        if CRYPTO_AVAILABLE:
+            self.keypair = get_or_create_keypair()
+            self.public_key = self.keypair.get("public_key", "")
         self.fingerprint_passed = False
+        self.verbose = verbose
+        self.show_payload = show_payload
 
         # Warthog dual-mining sidecar
         self.warthog = None
@@ -81,7 +239,7 @@ class LocalMiner:
 
         self.serial = get_linux_serial()
         print("="*70)
-        print("RustChain Local Miner - HP Victus Ryzen 5 8645HS")
+        print("RustChain Local Linux Miner")
         print("RIP-PoA Hardware Fingerprint + Serial Binding v2.0")
         if self.warthog:
             print("+ Warthog Dual-Mining Sidecar ACTIVE")
@@ -89,11 +247,40 @@ class LocalMiner:
         print(f"Node: {self.node_url}")
         print(f"Wallet: {self.wallet}")
         print(f"Serial: {self.serial}")
+        platform_warning = _linux_miner_platform_warning(platform.system())
+        if platform_warning:
+            print(f"[WARN] {platform_warning}")
         print("="*70)
 
         # Run initial fingerprint check
         if FINGERPRINT_AVAILABLE:
             self._run_fingerprint_checks()
+
+    def _get(self, path, action, **kwargs):
+        return _request_with_network_retry(
+            requests.get,
+            f"{self.node_url}{path}",
+            action,
+            **kwargs,
+        )
+
+    def _post(self, path, action, **kwargs):
+        return _request_with_network_retry(
+            requests.post,
+            f"{self.node_url}{path}",
+            action,
+            **kwargs,
+        )
+
+    def check_node_connectivity(self):
+        """Verify the configured RustChain node is reachable before mining."""
+        resp = self._get("/health", "checking bootstrap connectivity", timeout=10, verify=TLS_VERIFY)
+        if resp is None:
+            return False
+        if resp.status_code != 200:
+            print(f"[ERROR] Bootstrap node health check failed: HTTP {resp.status_code}")
+            return False
+        return True
 
     def _run_fingerprint_checks(self):
         """Run 6 hardware fingerprint checks for RIP-PoA"""
@@ -114,13 +301,16 @@ class LocalMiner:
             self.fingerprint_data = {"error": str(e), "all_passed": False}
 
     def _gen_wallet(self):
-        data = f"ryzen5-{uuid.uuid4().hex}-{time.time()}"
+        data = f"linux-miner-{platform.machine()}-{uuid.uuid4().hex}-{time.time()}"
         return hashlib.sha256(data.encode()).hexdigest()[:38] + "RTC"
 
-    def _run_cmd(self, cmd):
+    def _miner_id(self):
+        return _miner_id_from_hw(self.hw_info)
+
+    def _run_cmd(self, args):
         try:
-            return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                text=True, timeout=10, shell=True).stdout.strip()
+            return subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                text=True, timeout=10).stdout.strip()
         except:
             return ""
 
@@ -194,14 +384,16 @@ class LocalMiner:
 
     def _get_hw_info(self):
         """Collect hardware info"""
+        system = platform.system()
         machine = platform.machine().lower()
         hw = {
-            "platform": platform.system(),
+            "platform": system,
             "machine": platform.machine(),
             "hostname": socket.gethostname(),
             "family": "x86",
             "arch": "modern",  # Less than 10 years old
-            "serial": get_linux_serial()  # Hardware serial for v2 binding
+            "serial": get_linux_serial(),  # Hardware serial for v2 binding
+            "probe_warning": _linux_miner_platform_warning(system)
         }
 
         # Detect architecture family from platform.machine() FIRST
@@ -238,16 +430,45 @@ class LocalMiner:
             hw["arch"] = machine
 
         # Get CPU
-        cpu = self._run_cmd("lscpu | grep 'Model name' | cut -d: -f2 | xargs")
+        if system == "Darwin":
+            cpu = (self._run_cmd(["sysctl", "-n", "machdep.cpu.brand_string"]) or "").strip()
+        elif system == "Windows":
+            cpu = (
+                _parse_wmic_value(self._run_cmd(["wmic", "cpu", "get", "Name", "/value"]), "Name")
+                or platform.processor()
+                or ""
+            ).strip()
+        else:
+            cpu = _parse_lscpu_model(self._run_cmd(["lscpu"]))
         hw["cpu"] = cpu or "Unknown"
 
         # Get cores
-        cores = self._run_cmd("nproc")
-        hw["cores"] = int(cores) if cores else 6
+        if system == "Darwin":
+            cores = _parse_int_output(self._run_cmd(["sysctl", "-n", "hw.ncpu"]))
+        elif system == "Windows":
+            cores = _parse_int_output(
+                _parse_wmic_value(
+                    self._run_cmd(["wmic", "cpu", "get", "NumberOfLogicalProcessors", "/value"]),
+                    "NumberOfLogicalProcessors",
+                )
+            )
+        else:
+            cores = _parse_int_output(self._run_cmd(["nproc"]))
+        hw["cores"] = cores or os.cpu_count() or 1
 
         # Get memory
-        mem = self._run_cmd("free -g | grep Mem | awk '{print $2}'")
-        hw["memory_gb"] = int(mem) if mem else 32
+        if system == "Darwin":
+            mem = _parse_memory_bytes_to_gb(self._run_cmd(["sysctl", "-n", "hw.memsize"]))
+        elif system == "Windows":
+            mem = _parse_memory_bytes_to_gb(
+                _parse_wmic_value(
+                    self._run_cmd(["wmic", "computersystem", "get", "TotalPhysicalMemory", "/value"]),
+                    "TotalPhysicalMemory",
+                )
+            )
+        else:
+            mem = _parse_free_memory_gb(self._run_cmd(["free", "-g"]))
+        hw["memory_gb"] = mem if mem is not None else 32
 
         # Get MACs (ensures PoA signal uses real hardware data)
         macs = self._get_mac_addresses()
@@ -265,7 +486,15 @@ class LocalMiner:
 
         try:
             # Get challenge (verify=TLS_VERIFY for self-signed certs)
-            resp = requests.post(f"{self.node_url}/attest/challenge", json={}, timeout=10, verify=TLS_VERIFY)
+            resp = self._post(
+                "/attest/challenge",
+                "requesting attestation challenge",
+                json={},
+                timeout=10,
+                verify=TLS_VERIFY,
+            )
+            if resp is None:
+                return False
             if resp.status_code != 200:
                 print(f"❌ Challenge failed: {resp.status_code}")
                 return False
@@ -289,7 +518,7 @@ class LocalMiner:
         # Submit attestation with fingerprint data
         attestation = {
             "miner": self.wallet,
-            "miner_id": f"ryzen5-{self.hw_info['hostname']}",
+            "miner_id": self._miner_id(),
             "nonce": nonce,
             "report": {
                 "nonce": nonce,
@@ -319,9 +548,37 @@ class LocalMiner:
             "warthog": self.warthog.collect_proof() if self.warthog else None
         }
 
+        # ── Ed25519 signature (issue #6798) ──
+        # Sign the pipe-delimited string the node verifies:
+        #   miner_id|miner|nonce|report.commitment
+        # NOT the canonical JSON of the attestation (which would produce a
+        # different byte-for-byte value than what the node reconstructs).
+        if CRYPTO_AVAILABLE and self.keypair:
+            try:
+                sign_message = "{}|{}|{}|{}".format(
+                    self._miner_id(),
+                    self.wallet,
+                    nonce,
+                    attestation["report"]["commitment"],
+                ).encode("utf-8")
+                attestation["signature"] = sign_payload(
+                    sign_message, self.keypair["private_key"]
+                )
+                attestation["public_key"] = self.public_key
+                attestation["signature_type"] = "ed25519"
+            except Exception:
+                pass  # Fall through unsigned; server accepts with warning
+
         try:
-            resp = requests.post(f"{self.node_url}/attest/submit",
-                               json=attestation, timeout=30, verify=TLS_VERIFY)
+            resp = self._post(
+                "/attest/submit",
+                "submitting attestation",
+                json=attestation,
+                timeout=30,
+                verify=TLS_VERIFY,
+            )
+            if resp is None:
+                return False
 
             if resp.status_code == 200:
                 result = resp.json()
@@ -372,18 +629,53 @@ class LocalMiner:
 
         print(f"\n📝 [{datetime.now().strftime('%H:%M:%S')}] Enrolling...")
 
+        # Fetch current epoch so we can sign the enrollment. Server expects
+        # 3-field MAC (miner_pubkey|miner_id|epoch) verified against the
+        # SAME Ed25519 key used during attestation (cross-checked via
+        # signing_pubkey column in miner_attest_recent). Race with epoch
+        # rollover is mild — server returns invalid_enrollment_signature on
+        # mismatch and the miner retries on next cycle.
+        current_epoch = None
+        try:
+            ep_resp = requests.get(
+                f"{self.node_url}/epoch", timeout=10, verify=TLS_VERIFY
+            )
+            if ep_resp.ok:
+                current_epoch = ep_resp.json().get("epoch")
+        except Exception:
+            pass
+
+        miner_id = self._miner_id()
         payload = {
             "miner_pubkey": self.wallet,
-            "miner_id": f"ryzen5-{self.hw_info['hostname']}",
+            "miner_id": miner_id,
             "device": {
                 "family": self.hw_info["family"],
                 "arch": self.hw_info["arch"]
             }
         }
 
+        # Ed25519-sign the enrollment if we have a keypair AND a fresh epoch.
+        if CRYPTO_AVAILABLE and self.keypair and current_epoch is not None:
+            enroll_message = f"{self.wallet}|{miner_id}|{current_epoch}"
+            try:
+                payload["signature"] = sign_payload(
+                    enroll_message.encode(), self.keypair["private_key"]
+                )
+                payload["public_key"] = self.public_key
+            except Exception:
+                pass  # Best-effort; server still accepts unsigned with warning
+
         try:
-            resp = requests.post(f"{self.node_url}/epoch/enroll",
-                                json=payload, timeout=30, verify=TLS_VERIFY)
+            resp = self._post(
+                "/epoch/enroll",
+                "enrolling miner",
+                json=payload,
+                timeout=30,
+                verify=TLS_VERIFY,
+            )
+            if resp is None:
+                return False
 
             if resp.status_code == 200:
                 result = resp.json()
@@ -430,14 +722,25 @@ class LocalMiner:
     def check_balance(self):
         """Check balance"""
         try:
-            resp = requests.get(f"{self.node_url}/balance/{self.wallet}", timeout=10, verify=TLS_VERIFY)
+            resp = self._get(
+                "/wallet/balance",
+                "checking wallet balance",
+                params={"miner_id": self._miner_id()},
+                timeout=10,
+                verify=TLS_VERIFY,
+            )
+            if resp is None:
+                return 0
             if resp.status_code == 200:
                 result = resp.json()
-                balance = result.get('balance_rtc', 0)
+                balance = _wallet_balance_rtc(result)
+                if balance is None:
+                    print("[WARN] Invalid wallet balance response")
+                    return 0
                 print(f"\n💰 Balance: {balance} RTC")
                 return balance
-        except:
-            pass
+        except Exception as e:
+            print(f"[WARN] Balance check failed: {e}")
         return 0
 
 
@@ -446,7 +749,15 @@ class LocalMiner:
         print("\n[DRY-RUN] RustChain Linux Miner preflight")
         print("[DRY-RUN] No mining or network state will be modified")
 
+        if self.verbose:
+            print("[DRY-RUN] Verbose mode: ON")
+            print(f"[DRY-RUN] Node URL: {self.node_url}")
+            print(f"[DRY-RUN] API endpoint: {self.node_url}/health")
+            print(f"[DRY-RUN] TLS verify: {True}")
+
         self._get_hw_info()
+        if self.hw_info.get("probe_warning"):
+            print(f"[DRY-RUN] Platform warning: {self.hw_info['probe_warning']}")
         print(f"[DRY-RUN] Node URL: {self.node_url}")
         print(f"[DRY-RUN] Wallet: {self.wallet}")
         print(f"[DRY-RUN] Hostname: {self.hw_info.get('hostname')}")
@@ -466,13 +777,27 @@ class LocalMiner:
 
         # Optional health probe (read-only)
         try:
-            r = requests.get(f"{self.node_url}/health", timeout=8, verify=TLS_VERIFY)
+            url = f"{self.node_url}/health"
+            if self.verbose:
+                print(f"[DRY-RUN] GET {url}")
+                print(f"[DRY-RUN] Headers: {{'User-Agent': 'RustChain-Miner/2.2.1'}}")
+            r = self._get("/health", "running dry-run health probe", timeout=8, verify=TLS_VERIFY)
+            if r is None:
+                return True
             print(f"[DRY-RUN] Health probe: HTTP {r.status_code}")
+            if self.verbose:
+                print(f"[DRY-RUN] Response headers: {dict(r.headers)}")
             if r.ok:
                 data = r.json()
                 print(f"[DRY-RUN] Node version: {data.get('version', 'n/a')}")
+                if self.show_payload:
+                    import json
+                    print(f"[DRY-RUN] Response body: {json.dumps(data, indent=2)}")
         except Exception as e:
             print(f"[DRY-RUN] Health probe failed: {e}")
+            if self.verbose:
+                import traceback
+                traceback.print_exc()
 
         print("[DRY-RUN] Next real steps would be: attest -> enroll -> mine loop")
         return True
@@ -482,6 +807,10 @@ class LocalMiner:
         print(f"\n⛏️  Starting mining...")
         print(f"Block time: {BLOCK_TIME//60} minutes")
         print(f"Press Ctrl+C to stop\n")
+
+        if not self.check_node_connectivity():
+            print("[ERROR] Miner startup aborted before mining began.")
+            return 1
 
         # Save wallet
         with open("/tmp/local_miner_wallet.txt", "w") as f:
@@ -516,6 +845,7 @@ class LocalMiner:
             print(f"\n\n⛔ Mining stopped")
             print(f"   Wallet: {self.wallet}")
             self.check_balance()
+            return 0
 
 if __name__ == "__main__":
     import argparse
@@ -527,7 +857,13 @@ if __name__ == "__main__":
     parser.add_argument("--wart-pool", help="Warthog mining pool API URL")
     parser.add_argument("--bzminer-path", help="Path to BzMiner binary")
     parser.add_argument("--manage-bzminer", action="store_true", help="Auto-start/stop BzMiner")
-    parser.add_argument("--dry-run", action="store_true", help="Run preflight checks only; do not start mining")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Run preflight checks only; print hardware fingerprint info; do not start mining",
+    )
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose output showing API endpoints, headers, and response details")
+    parser.add_argument("--show-payload", action="store_true", help="Show request payload in dry-run mode")
     args = parser.parse_args()
 
     miner = LocalMiner(
@@ -536,8 +872,12 @@ if __name__ == "__main__":
         wart_pool=args.wart_pool,
         bzminer_path=args.bzminer_path,
         manage_bzminer=args.manage_bzminer,
+            verbose=args.verbose,
+            show_payload=args.show_payload,
     )
     if args.dry_run:
-        miner.dry_run()
+        result = miner.dry_run()
     else:
-        miner.mine()
+        result = miner.mine()
+
+    sys.exit(0 if result in (None, True) else int(result))
