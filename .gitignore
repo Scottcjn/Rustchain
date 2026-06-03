@@ -54,3 +54,4 @@ Rustchain/miners/windows/python-3.11.5-embed-win32.zip
 miners/windows/dist/
 miners/windows/release/
 tests/.hypothesis/
+tests/.tmp_signed_transfer/

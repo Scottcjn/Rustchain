@@ -28,6 +28,7 @@ import os
 import re
 import secrets
 import sqlite3
+import threading
 import time
 from datetime import datetime, timezone
 from urllib.parse import urlparse
@@ -419,6 +420,17 @@ def init_db():
                 timestamp INTEGER NOT NULL
             )
         """)
+        # Single-row advisory lock so only one worker reconciles at a time (the
+        # reconciler makes external node/refund calls; without this every gunicorn
+        # worker would race them). Holder is time-boxed so a crashed holder frees
+        # the lock automatically. See _acquire_reconcile_lock().
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS reconcile_lock (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                locked_until INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        c.execute("INSERT OR IGNORE INTO reconcile_lock (id, locked_until) VALUES (1, 0)")
 
         migrate_precision_columns(c, "orders")
         migrate_precision_columns(c, "trades")
@@ -702,6 +714,245 @@ def safe_refund_escrow(job_id, poster_wallet, alert_title, alert_fields):
     return False
 
 
+# ---------------------------------------------------------------------------
+# Settlement reconciliation (crash recovery + async payout confirmation)
+# ---------------------------------------------------------------------------
+# The durable, recoverable states the confirm/expiry/cancel paths can leave an
+# order in, and which this reconciler is responsible for driving to terminal:
+#   'settling'        confirm crashed AFTER claiming but before resolving payout
+#   'payout_pending'  escrow released, worker payout QUEUED but not yet confirmed
+#   'refund_pending'  expiry/cancel committed but the escrow refund hasn't landed
+# Reconciliation is idempotent: the worker payout is keyed otc_payout:<order_id>
+# (so re-driving never double-pays) and every transition is a guarded CAS.
+def _int_env(name, default):
+    """Parse an int env var, falling back (never raising) on a bad value so a
+    typo in config can't crash the worker at import time."""
+    try:
+        return int(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        log.warning("invalid %s=%r; using default %s", name, os.environ.get(name), default)
+        return default
+
+
+SETTLEMENT_STUCK_SECONDS = _int_env("OTC_SETTLEMENT_STUCK_SECONDS", 120)
+RECONCILE_INTERVAL_SECONDS = _int_env("OTC_RECONCILE_INTERVAL_SECONDS", 60)
+
+
+def _acquire_reconcile_lock(conn, ttl=300):
+    """Time-boxed single-row advisory lock. True iff this process won the lock;
+    a crashed holder's lock auto-expires after ``ttl`` seconds. Cheap CAS:
+    UPDATE only succeeds when the current lease has expired."""
+    now = int(time.time())
+    c = conn.cursor()
+    c.execute("UPDATE reconcile_lock SET locked_until = ? WHERE id = 1 AND locked_until < ?",
+              (now + ttl, now))
+    won = c.execute("SELECT changes()").fetchone()[0] == 1
+    conn.commit()
+    return won
+
+
+def _release_reconcile_lock(conn):
+    """Release the lock early (best-effort) so the next tick isn't delayed a full TTL."""
+    try:
+        conn.execute("UPDATE reconcile_lock SET locked_until = 0 WHERE id = 1")
+        conn.commit()
+    except Exception:
+        log.exception("failed to release reconcile lock")
+
+
+def _lookup_worker_payout_status(order_id):
+    """Authoritatively derive the worker payout's status from the node by its
+    stable idempotency key (otc_payout:<order_id>). Scans BOTH the pending and the
+    confirmed/voided ledgers, paginated, so 'missing' means *never queued* — never
+    'confirmed-but-already-swept-out-of-the-pending-window'. Returns
+    'confirmed' | 'pending' | 'voided' | 'missing' | 'unknown' (network/partial
+    error -> 'unknown', which the caller treats as "leave for next pass")."""
+    key = f"otc_payout:{order_id}"
+    headers = {"X-Admin-Key": RC_ADMIN_KEY} if RC_ADMIN_KEY else {}
+    PAGE = 500
+    # Query confirmed/voided first: a confirmed payout is terminal truth and must
+    # win over any stale pending row. Each status is fully paginated so a large
+    # backlog can't push the target row outside a single fixed window.
+    for status in ("confirmed", "voided", "pending"):
+        offset = 0
+        while True:
+            try:
+                r = requests.get(
+                    f"{RUSTCHAIN_NODE}/pending/list", headers=headers,
+                    params={"status": status, "limit": PAGE, "offset": offset},
+                    verify=TLS_VERIFY, timeout=15,
+                )
+                if not r.ok:
+                    return "unknown"
+                body = r.json()
+            except Exception:
+                return "unknown"
+            items = body.get("pending", []) if isinstance(body, dict) else []
+            if not isinstance(items, list):
+                items = []
+            for it in items:
+                if it.get("reason") == key or it.get("idempotency_key") == key:
+                    st = str(it.get("status", status)).lower()
+                    if st in ("confirmed", "completed"):
+                        return "confirmed"
+                    if st in ("voided", "cancelled", "failed", "rejected"):
+                        return "voided"
+                    return "pending"
+            if len(items) < PAGE:
+                break  # last page for this status
+            offset += PAGE
+    return "missing"  # authoritatively absent across confirmed + voided + pending
+
+
+def _record_completed_trade(c, order, quote_tx, now):
+    """Insert the trades row for a confirmed settlement (shared by confirm + reconcile)."""
+    trade_id = generate_trade_id(order["order_id"], order["taker_wallet"])
+    insert_columns = [
+        "trade_id", "order_id", "pair", "side", "maker_wallet", "taker_wallet",
+        "amount_micro_rtc", "price_per_rtc_nano_quote", "total_quote_nano",
+        "quote_tx", "completed_at",
+    ]
+    values = [
+        trade_id, order["order_id"], order["pair"], order["side"],
+        order["maker_wallet"], order["taker_wallet"],
+        order["amount_micro_rtc"], order["price_per_rtc_nano_quote"],
+        order["total_quote_nano"], quote_tx, now,
+    ]
+    include_legacy_money_columns_if_present(
+        table_columns(c, "trades"), insert_columns, values,
+        order["amount_rtc"], order["price_per_rtc"], order["total_quote"],
+    )
+    placeholders = ", ".join("?" for _ in values)
+    c.execute(f"INSERT OR IGNORE INTO trades ({', '.join(insert_columns)}) VALUES ({placeholders})", values)
+    return trade_id
+
+
+def reconcile_settlements():
+    """One reconciliation pass. Idempotent; safe to call at startup and on a timer.
+
+    Drives every order stuck in a recoverable state to a terminal one without
+    ever double-paying (payout idempotency) or revealing a preimage before its
+    payout confirms (the secret is only readable once status reaches 'completed').
+    Returns a small summary dict for observability / tests.
+    """
+    summary = {"promoted": 0, "recovered": 0, "reverted": 0, "refunded": 0, "left": 0, "skipped_locked": 0}
+    now = int(time.time())
+    cutoff = now - SETTLEMENT_STUCK_SECONDS
+    conn = get_db()
+    acquired = False
+    try:
+        # Leader election: only one process reconciles at a time, so concurrent
+        # gunicorn workers (and the timer + /admin/reconcile + startup pass) can't
+        # race the external refund/payout calls. Idempotency keeps funds safe even
+        # without this; the lock keeps the work single-driver and counters honest.
+        if not _acquire_reconcile_lock(conn):
+            summary["skipped_locked"] = 1
+            return summary
+        acquired = True
+        c = conn.cursor()
+        rows = c.execute(
+            "SELECT * FROM orders WHERE status IN "
+            "('payout_pending', 'settling', 'refund_pending', 'settlement_recovery')",
+            ()).fetchall()
+        for row in rows:
+            order = money_view(row)
+            oid = order["order_id"]
+            st = order["status"]
+
+            if st == "refund_pending":
+                # The escrow on a cancelled/expired order was posted by the order
+                # MAKER (the order creator) — always refund to them. Do NOT derive
+                # the recipient from side+taker: refund_pending is reached from OPEN
+                # orders that may have no taker, so a side-based taker recipient
+                # could refund to a NULL/wrong party (funds loss). This matches the
+                # cancel/expiry happy paths, which both refund maker_wallet.
+                poster = order["maker_wallet"]
+                if order["escrow_job_id"] and safe_refund_escrow(
+                        order["escrow_job_id"], poster,
+                        "OTC refund retry (reconcile)", {"order_id": oid}):
+                    # 'refund_pending' is produced by BOTH cancel and expiry. The
+                    # happy paths set their own terminal ('cancelled'/'expired')
+                    # after a successful refund; this branch only runs for crash-
+                    # stranded rows, where the origin is unknown — infer it from the
+                    # TTL: past expires_at => 'expired', otherwise 'cancelled'. Both
+                    # are existing terminal states already out of the open book.
+                    terminal = "expired" if (order.get("expires_at") or 0) <= now else "cancelled"
+                    c.execute("UPDATE orders SET status = ? "
+                              "WHERE order_id = ? AND status = 'refund_pending'", (terminal, oid))
+                    conn.commit(); summary["refunded"] += 1
+                else:
+                    summary["left"] += 1
+                continue
+
+            # 'settling' that hasn't moved is only actionable once it's plausibly
+            # crashed (give the live confirm handler time to finish first).
+            if st == "settling" and (order.get("matched_at") or 0) > cutoff and (order.get("created_at") or 0) > cutoff:
+                summary["left"] += 1
+                continue
+
+            payout = _lookup_worker_payout_status(oid)
+            if payout == "confirmed":
+                # Only finalize a GENUINELY-matched settlement: require the taker +
+                # the quote-settlement reference. A stale or operator-set recovery
+                # row that lacks these must NOT auto-complete — doing so would expose
+                # the HTLC secret and record a trade with no verified quote leg.
+                # Leave it for an operator (alert) instead.
+                if not order.get("taker_wallet") or not order.get("settlement_tx"):
+                    send_bridge_alert(
+                        "warning",
+                        "OTC reconcile: confirmed payout but order missing taker/settlement_tx",
+                        {"order_id": oid, "status": st})
+                    summary["left"] += 1
+                    continue
+                # Promote payout_pending / settling / settlement_recovery -> completed
+                # and record the trade exactly once (INSERT OR IGNORE on the
+                # deterministic trade_id). Sweeping 'settlement_recovery' here is what
+                # rescues a row whose payout DID confirm after its claim was lost —
+                # without it that completed trade would be permanently missing.
+                quote_tx = order.get("settlement_tx")
+                _record_completed_trade(c, order, quote_tx, now)
+                c.execute("UPDATE orders SET status = 'completed', confirmed_at = ? "
+                          "WHERE order_id = ? AND status IN "
+                          "('payout_pending', 'settling', 'settlement_recovery')",
+                          (now, oid))
+                if c.execute("SELECT changes()").fetchone()[0]:
+                    conn.commit(); summary["promoted"] += 1
+                else:
+                    conn.rollback(); summary["left"] += 1
+            elif payout == "voided" and st in ("payout_pending", "settling"):
+                c.execute("UPDATE orders SET status = 'settlement_recovery' "
+                          "WHERE order_id = ? AND status IN ('payout_pending', 'settling')", (oid,))
+                conn.commit()
+                send_bridge_alert("critical", "OTC queued payout voided after escrow release",
+                                  {"order_id": oid, "amount_rtc": order["amount_rtc"]})
+                summary["recovered"] += 1
+            elif payout == "missing" and st == "settling":
+                # A 'settling' order with NO worker payout by its idempotency key.
+                # 'missing' is AMBIGUOUS — never-queued OR confirmed-and-already-swept
+                # — so we must NOT revert to a retryable 'matched': a swept-after-
+                # payout order would become re-confirmable and could double-deliver
+                # escrow. Route to settlement_recovery for an operator (the payout is
+                # idempotent, so a re-drive is safe) and alert. (v2: this replaces the
+                # unsafe missing->matched revert flagged in review.)
+                c.execute("UPDATE orders SET status = 'settlement_recovery' "
+                          "WHERE order_id = ? AND status = 'settling'", (oid,))
+                conn.commit()
+                send_bridge_alert("critical",
+                                  "OTC settling order has no payout by idempotency key — needs recovery",
+                                  {"order_id": oid})
+                summary["recovered"] += 1
+            else:
+                # 'pending'/'unknown', or 'missing' for a non-settling row — leave for
+                # the next pass (payout still queued, or transient node error). A
+                # 'settlement_recovery' row with a non-confirmed payout stays put.
+                summary["left"] += 1
+        return summary
+    finally:
+        if acquired:
+            _release_reconcile_lock(conn)
+        conn.close()
+
+
 def parse_order_ttl(value):
     if value is None:
         return ORDER_TTL_DEFAULT
@@ -926,21 +1177,34 @@ def list_orders():
         ).fetchall()
         to_refund = []
         for ex in expired:
+            # Escrow orders move to the durable 'refund_pending' transient so a
+            # crash before the refund leaves a reconcilable row, not a terminal
+            # 'expired' with stranded escrow. Non-escrow orders expire straight
+            # to terminal. Both are out of the open book (not re-matchable).
+            target = "refund_pending" if ex["escrow_job_id"] else "expired"
             c.execute(
-                "UPDATE orders SET status = 'expired' WHERE order_id = ? AND status = 'open'",
-                (ex["order_id"],))
+                "UPDATE orders SET status = ? WHERE order_id = ? AND status = 'open'",
+                (target, ex["order_id"]))
             if c.execute("SELECT changes()").fetchone()[0] == 0:
                 continue  # already matched/cancelled concurrently — leave it alone
             if ex["escrow_job_id"]:
                 to_refund.append((ex["order_id"], ex["escrow_job_id"], ex["maker_wallet"]))
         if expired:
             conn.commit()
-        # Now that expiry is durable, refund escrow best-effort (raise-proof, so
-        # a refund/alert failure can't 500 this hot GET path).
+        # Expiry is durable; refund escrow best-effort (raise-proof, so a refund/
+        # alert failure can't 500 this hot GET path). On success promote
+        # 'refund_pending' -> terminal 'expired'; on failure the row stays
+        # 'refund_pending' and reconcile_settlements() retries + alerts.
+        refunded_any = False
         for order_id_x, job_id, maker in to_refund:
-            safe_refund_escrow(
-                job_id, maker, "OTC escrow refund failed on order expiry",
-                {"order_id": order_id_x, "escrow_job_id": job_id, "maker_wallet": maker})
+            if safe_refund_escrow(
+                    job_id, maker, "OTC escrow refund failed on order expiry",
+                    {"order_id": order_id_x, "escrow_job_id": job_id, "maker_wallet": maker}):
+                c.execute("UPDATE orders SET status = 'expired' "
+                          "WHERE order_id = ? AND status = 'refund_pending'", (order_id_x,))
+                refunded_any = True
+        if refunded_any:
+            conn.commit()
 
         # Build query
         where = ["status = 'open'"]
@@ -1043,19 +1307,26 @@ def match_order(order_id):
 
         now = int(time.time())
         if now > order["expires_at"]:
+            # Escrow orders → durable 'refund_pending' (reconcilable on crash);
+            # non-escrow → terminal 'expired'.
+            target = "refund_pending" if order["escrow_job_id"] else "expired"
             c.execute(
-                "UPDATE orders SET status = 'expired' WHERE order_id = ? AND status = 'open'",
-                (order_id,))
+                "UPDATE orders SET status = ? WHERE order_id = ? AND status = 'open'",
+                (target, order_id))
             won_expire = c.execute("SELECT changes()").fetchone()[0] != 0
             if won_expire:
-                conn.commit()  # commit expiry BEFORE the irreversible refund
+                conn.commit()  # commit the out-of-book state BEFORE the refund
                 # Only refund if THIS request expired the row (not a racing match).
                 if order["escrow_job_id"]:
-                    safe_refund_escrow(
-                        order["escrow_job_id"], order["maker_wallet"],
-                        "OTC escrow refund failed on order expiry",
-                        {"order_id": order_id, "escrow_job_id": order["escrow_job_id"],
-                         "maker_wallet": order["maker_wallet"]})
+                    if safe_refund_escrow(
+                            order["escrow_job_id"], order["maker_wallet"],
+                            "OTC escrow refund failed on order expiry",
+                            {"order_id": order_id, "escrow_job_id": order["escrow_job_id"],
+                             "maker_wallet": order["maker_wallet"]}):
+                        c.execute("UPDATE orders SET status = 'expired' "
+                                  "WHERE order_id = ? AND status = 'refund_pending'", (order_id,))
+                        conn.commit()
+                    # else: stays 'refund_pending'; reconcile_settlements() retries it.
             else:
                 conn.rollback()
             return jsonify({"error": "Order has expired"}), 410
@@ -1362,19 +1633,35 @@ def confirm_order(order_id):
         #       escrow into otc_bridge_worker; payout is idempotent (#6799) so an
         #       operator can re-drive it — NOT retryable as a fresh confirm)
         #   escrow never released          -> revert to matched (safe to retry)
-        payout_succeeded = isinstance(payout_result, dict) and bool(payout_result.get("ok"))
+        # CONFIRM-BEFORE-FINALIZE. rtc_transfer_from_worker QUEUES the payout into
+        # the node's pending pool (phase 'pending') — it settles later and can
+        # still be voided inside the confirmation window. Revealing the HTLC
+        # preimage or recording the trade on a merely-queued payout breaks
+        # atomicity: the counterparty could claim the quote side off the revealed
+        # preimage while the RTC payout never lands. So ONLY a CONFIRMED payout
+        # finalizes (completed + preimage). A queued payout parks in the durable
+        # 'payout_pending' state; reconcile_settlements() promotes it later to
+        # 'completed' (on confirm) or 'settlement_recovery' (on void). The payout
+        # is idempotent (key otc_payout:<order_id>, #6799), so reconciliation can
+        # always re-derive its status from the node's pending pool by that key.
+        payout_ok = isinstance(payout_result, dict) and bool(payout_result.get("ok"))
+        payout_phase = payout_details.get("phase") if (payout_ok and isinstance(payout_details, dict)) else None
+        payout_confirmed = payout_ok and payout_phase == "confirmed"
+        payout_queued = payout_ok and not payout_confirmed
         trade_id = generate_trade_id(order_id, order["taker_wallet"])
 
-        if payout_succeeded:
+        if payout_confirmed:
             final_status = "completed"
+        elif payout_queued:
+            final_status = "payout_pending"   # escrow released + payout queued — NOT yet atomic-final
         elif payout_status == "manual_recovery_required":
             final_status = "settlement_recovery"
         else:
             final_status = "matched"  # escrow untouched (claim/deliver/accept failed) — retryable
 
-        # Record the trade ONLY on a genuinely completed settlement, so trade
-        # history / volume stats never count failed or pending settlements.
-        if payout_succeeded:
+        # Record the trade ONLY on a CONFIRMED settlement, so trade history /
+        # volume stats never count queued, failed, or pending settlements.
+        if payout_confirmed:
             insert_columns = [
                 "trade_id", "order_id", "pair", "side", "maker_wallet", "taker_wallet",
                 "amount_micro_rtc", "price_per_rtc_nano_quote", "total_quote_nano",
@@ -1404,22 +1691,49 @@ def confirm_order(order_id):
                 WHERE order_id = ? AND status = 'settling'
             """, (now, quote_tx, order_id))
             if c.execute("SELECT changes()").fetchone()[0] == 0:
-                # Our 'settling' claim vanished (recovered by an error handler or
-                # an operator). Do NOT leave an orphan trade row for a
-                # non-completed order — roll back the insert with it.
+                # Our 'settling' claim vanished AFTER a confirmed payout. The funds
+                # are gone; the order must NOT be left in a retryable state. Force
+                # 'settlement_recovery' (idempotent payout means a re-drive can't
+                # double-pay) and alert — never a bare 409 that leaves the row in
+                # an ambiguous, re-confirmable state (the double-pay window).
                 conn.rollback()
-                return jsonify({"error": "Settlement state changed during payout; not completed"}), 409
+                rec = conn.cursor()
+                rec.execute(
+                    "UPDATE orders SET status = 'settlement_recovery', settlement_tx = ? "
+                    "WHERE order_id = ? AND status NOT IN ('completed', 'settlement_recovery')",
+                    (quote_tx, order_id))
+                conn.commit()
+                send_bridge_alert(
+                    "critical",
+                    "OTC settlement claim lost after confirmed payout",
+                    {"order_id": order_id, "recipient": rtc_recipient,
+                     "amount_rtc": order["amount_rtc"], "payout_tx": payout_tx},
+                )
+                return jsonify({
+                    "ok": False, "status": "settlement_recovery", "order_id": order_id,
+                    "error": "Settlement claim lost after confirmed payout; routed to recovery",
+                }), 409
         else:
-            # Release our 'settling' claim to the correct recovery/retry state.
+            # Queued/failed: store the quote_tx (so a later promotion can record the
+            # trade) and release our 'settling' claim to its durable next state.
+            # 'payout_pending' is picked up by reconcile_settlements(); 'matched' is
+            # a safe retry; 'settlement_recovery' needs an operator.
             c.execute(
-                "UPDATE orders SET status = ? WHERE order_id = ? AND status = 'settling'",
-                (final_status, order_id))
+                "UPDATE orders SET status = ?, settlement_tx = ? "
+                "WHERE order_id = ? AND status = 'settling'",
+                (final_status, quote_tx if payout_queued else None, order_id))
         conn.commit()
 
         if final_status == "completed":
             message = (
                 f"Trade completed. {order['amount_rtc']} RTC payout to {rtc_recipient} "
                 "succeeded. HTLC secret verified and revealed."
+            )
+        elif final_status == "payout_pending":
+            message = (
+                f"Escrow released; {order['amount_rtc']} RTC payout to {rtc_recipient} is "
+                "QUEUED and pending confirmation. The HTLC secret is withheld until the "
+                f"payout confirms — poll GET /orders/{order_id} for completion."
             )
         elif final_status == "settlement_recovery":
             message = (
@@ -1434,7 +1748,7 @@ def confirm_order(order_id):
             )
 
         response = {
-            "ok": payout_succeeded,
+            "ok": payout_confirmed,
             "order_id": order_id,
             "status": final_status,
             "amount_rtc": order["amount_rtc"],
@@ -1444,8 +1758,10 @@ def confirm_order(order_id):
             "rtc_transfer_tx_hash": payout_tx,
             "message": message,
         }
-        if payout_succeeded:
-            # Only echo the preimage + trade_id on a genuinely completed swap.
+        if final_status == "completed":
+            # Reveal the preimage + trade_id ONLY on a CONFIRMED swap. A queued
+            # payout must not leak the secret (that is the atomicity break #6803
+            # was holding on) — it is released by reconciliation on confirmation.
             response["trade_id"] = trade_id
             response["htlc_secret"] = secret
         # Always HTTP 200: the request was processed and the outcome is in the
@@ -1522,32 +1838,45 @@ def cancel_order(order_id):
         #    back to 'open' after we've already refunded (which would let it be
         #    re-matched with no escrow). Once cancelled is durable, the refund is
         #    best-effort + alerted.
+        # Escrow-bearing orders move to the durable 'refund_pending' transient
+        # (not straight to 'cancelled'): if the process crashes between this
+        # commit and the refund call, the reconciler finds 'refund_pending' and
+        # retries — a terminal 'cancelled' would strand the escrow forever. Both
+        # states are out of the open book, so neither is re-matchable. Orders with
+        # no escrow go straight to the terminal 'cancelled'.
+        has_escrow = bool(order["escrow_job_id"])
+        target = "refund_pending" if has_escrow else "cancelled"
         c.execute(
-            "UPDATE orders SET status = 'cancelled' WHERE order_id = ? AND status = 'open'",
-            (order_id,))
+            "UPDATE orders SET status = ? WHERE order_id = ? AND status = 'open'",
+            (target, order_id))
         if c.execute("SELECT changes()").fetchone()[0] == 0:
             conn.rollback()
             return jsonify({"error": "Order is no longer open (matched or cancelled concurrently)"}), 409
         conn.commit()
 
-        # Order is durably cancelled; now refund escrow (raise-proof). If the
-        # refund fails the order stays cancelled (maker's intent) and we alert
-        # for manual recovery rather than silently claiming success.
         escrow_refunded = True
-        if order["escrow_job_id"]:
+        if has_escrow:
             escrow_refunded = safe_refund_escrow(
                 order["escrow_job_id"], wallet,
                 "OTC escrow refund failed after order cancel",
                 {"order_id": order_id, "escrow_job_id": order["escrow_job_id"],
                  "maker_wallet": wallet})
+            if escrow_refunded:
+                # Refund landed — finalize to terminal 'cancelled'. If the row was
+                # already swept by a racing reconcile pass, leave it (equivalent).
+                c.execute("UPDATE orders SET status = 'cancelled' "
+                          "WHERE order_id = ? AND status = 'refund_pending'", (order_id,))
+                conn.commit()
+            # else: stays 'refund_pending'; reconcile_settlements() retries + alerts.
 
         return jsonify({
             "ok": True,
             "order_id": order_id,
-            "status": "cancelled",
+            "status": "cancelled" if escrow_refunded else "refund_pending",
             "escrow_refunded": escrow_refunded,
             "message": "Order cancelled. Escrow refunded." if escrow_refunded
-                       else "Order cancelled. Escrow refund FAILED — operators alerted for manual recovery.",
+                       else "Order cancel accepted; escrow refund is pending and will be "
+                            "retried automatically by settlement reconciliation.",
         })
     except Exception:
         conn.rollback()
@@ -1747,6 +2076,19 @@ def static_files(path):
     return send_from_directory("static", path)
 
 
+@app.route("/admin/reconcile", methods=["POST"])
+def admin_reconcile():
+    """Admin-triggered settlement reconciliation pass (ops + tests).
+
+    Idempotent and CAS-guarded — running it concurrently with the timer or
+    another caller cannot double-pay or finalize a still-pending payout.
+    """
+    if not RC_ADMIN_KEY or not hmac.compare_digest(
+            request.headers.get("X-Admin-Key", ""), RC_ADMIN_KEY):
+        return jsonify({"error": "unauthorized"}), 401
+    return jsonify({"ok": True, "summary": reconcile_settlements()})
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -1758,6 +2100,55 @@ def static_files(path):
 # NOT EXISTS + idempotent precision-column migration), so it is safe on every
 # import and across concurrent gunicorn workers.
 init_db()
+
+
+# Settlement reconciliation runs in a background thread, started LAZILY on the
+# first HTTP request — NOT at import time. Importing this module (tests, CLI
+# tools, gunicorn worker boot, reloaders, `from otc_bridge import X`) must never
+# make node calls, mutate settlement state, or spawn a forever-thread. The
+# once-guard starts exactly one thread per worker process on its first request;
+# that thread does a crash-recovery pass then (if enabled) loops. The work is
+# idempotent + CAS-guarded, so per-worker redundancy is safe. Set
+# OTC_RECONCILE_INTERVAL_SECONDS=0 to skip the timer (the one-shot startup pass
+# still runs; drive ongoing reconciliation via POST /admin/reconcile). Set
+# OTC_RECONCILE_DISABLED=1 to disable ALL automatic reconciliation (startup pass
+# AND timer) — for read-only / admin-less / pure-test environments where no
+# settlement mutation or node calls should ever happen implicitly.
+RECONCILE_DISABLED = os.environ.get("OTC_RECONCILE_DISABLED", "").strip() not in ("", "0", "false", "False")
+
+
+def _reconcile_loop():
+    while True:
+        time.sleep(RECONCILE_INTERVAL_SECONDS)
+        try:
+            reconcile_settlements()
+        except Exception:
+            log.exception("reconcile_settlements timer pass failed")
+
+
+_reconcile_started = False
+_reconcile_start_lock = threading.Lock()
+
+
+def _reconcile_startup_and_loop():
+    try:
+        reconcile_settlements()
+    except Exception:
+        log.exception("startup reconcile_settlements pass failed")
+    if RECONCILE_INTERVAL_SECONDS > 0:
+        _reconcile_loop()
+
+
+@app.before_request
+def _start_reconciler_once():
+    global _reconcile_started
+    if _reconcile_started or RECONCILE_DISABLED:
+        return
+    with _reconcile_start_lock:
+        if _reconcile_started:
+            return
+        _reconcile_started = True
+    threading.Thread(target=_reconcile_startup_and_loop, name="otc-reconcile", daemon=True).start()
 
 
 if __name__ == "__main__":

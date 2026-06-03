@@ -245,6 +245,12 @@
         .status-open { background: var(--green-dim); color: white; }
         .status-matched { background: var(--gold-dim); color: white; }
         .status-completed { background: var(--blue); color: white; }
+        /* Async settlement states (v3): payout queued / refund queued / needs ops */
+        .status-payout_pending { background: var(--gold-dim); color: white; }
+        .status-refund_pending { background: var(--gold-dim); color: white; }
+        .status-settlement_recovery { background: #a33; color: white; }
+        .status-expired { background: #555; color: #ccc; }
+        .status-cancelled { background: #555; color: #ccc; }
 
         /* Escrow indicator */
         .escrow-badge {
