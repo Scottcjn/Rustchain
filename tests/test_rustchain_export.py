@@ -147,8 +147,8 @@ class RustChainExportTests(unittest.TestCase):
     def test_empty_csv_still_has_header_line(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "empty.csv"
-            exporter.write_csv(path, [])
-            self.assertEqual(path.read_text(encoding="utf-8").strip(), "")
+            exporter.write_csv(path, [], ["col1", "col2"])
+            self.assertEqual(path.read_text(encoding="utf-8").strip(), "col1,col2")
 
     def test_balance_amount_normalizes_micro_columns_by_source(self):
         self.assertEqual(exporter.balance_amount_rtc({"amount_i64": 1}), 0.000001)

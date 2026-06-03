@@ -207,7 +207,6 @@ def select_time_filtered(
     table: str,
     timestamp_column: str | None,
     order_column: str | None = None,
-    projection: str = "*",
 ) -> list[dict[str, Any]]:
     if not table_exists(conn, table):
         return []
@@ -221,7 +220,7 @@ def select_time_filtered(
         if getattr(select_time_filtered, "end_ts", None) is not None:
             where.append(f"{timestamp_column} <= ?")
             params.append(select_time_filtered.end_ts)
-    sql = f"SELECT {projection} FROM {table}"
+    sql = f"SELECT * FROM {table}"
     if where:
         sql += " WHERE " + " AND ".join(where)
     if order_column and order_column in table_columns:
@@ -271,11 +270,42 @@ def db_exports(options: ExportOptions) -> dict[str, list[dict[str, Any]]]:
     }
 
 
-def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
-    fieldnames = sorted({key for row in rows for key in row.keys()})
+DEFAULT_HEADERS = {
+    "miners": [
+        "antiquity_multiplier",
+        "device_arch",
+        "device_family",
+        "entropy_score",
+        "hardware_type",
+        "last_attestation",
+        "miner_id",
+        "total_earnings_rtc",
+    ],
+    "epochs": [
+        "blocks_per_epoch",
+        "epoch",
+        "epoch_pot",
+        "enrolled_miners",
+        "settled",
+        "slot",
+        "timestamp",
+    ],
+    "rewards": ["epoch", "miner_id", "share_i64", "amount_rtc"],
+    "attestations": ["miner_id", "timestamp", "device_arch", "hardware_type", "source"],
+    "balances": ["miner_id", "amount_rtc"],
+    "ledger": ["ts", "epoch", "miner_id", "delta_i64", "reason"],
+}
+
+
+def write_csv(path: Path, rows: list[dict[str, Any]], default_headers: list[str] | None = None) -> None:
+    if rows:
+        fieldnames = sorted({key for row in rows for key in row.keys()})
+    else:
+        fieldnames = sorted(default_headers) if default_headers else []
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
+        if fieldnames:
+            writer.writeheader()
         writer.writerows(rows)
 
 
@@ -292,11 +322,15 @@ def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
 def write_exports(exports: dict[str, list[dict[str, Any]]], options: ExportOptions) -> None:
     options.output_dir.mkdir(parents=True, exist_ok=True)
     suffix = "jsonl" if options.output_format == "jsonl" else options.output_format
-    writers = {"csv": write_csv, "json": write_json, "jsonl": write_jsonl}
     for table in TABLES:
         rows = exports.get(table, [])
         path = options.output_dir / f"{table}.{suffix}"
-        writers[options.output_format](path, rows)
+        if options.output_format == "csv":
+            write_csv(path, rows, DEFAULT_HEADERS.get(table))
+        elif options.output_format == "json":
+            write_json(path, rows)
+        elif options.output_format == "jsonl":
+            write_jsonl(path, rows)
     manifest = {
         "mode": options.mode,
         "format": options.output_format,
