@@ -514,3 +514,25 @@ def test_governor_review_amount_precedence(tmp_db, monkeypatch):
     assert result2["stance"] != "hold"
 
 
+def test_governor_review_explicit_null_amount_rtc(tmp_db, monkeypatch):
+    monkeypatch.setenv("SOPHIA_GOVERNOR_TRANSFER_CRITICAL_RTC", "100")
+    # If amount_rtc is explicit null (None), it should be treated as absent and fall back to amount_i64
+    result = review_rustchain_event(
+        event_type="pending_transfer",
+        source="pytest",
+        payload={"amount_rtc": None, "amount_i64": 500000000},
+        db_path=tmp_db,
+    )
+    # Falls back to 500.0 RTC from amount_i64, triggering hold
+    assert result["stance"] == "hold"
+    assert result["risk_level"] == "critical"
+
+    # If both are null, it should default to 0.0 without triggering malformed
+    result2 = review_rustchain_event(
+        event_type="pending_transfer",
+        source="pytest",
+        payload={"amount_rtc": None, "amount_i64": None},
+        db_path=tmp_db,
+    )
+    assert result2["stance"] != "hold"
+    assert "malformed_amount" not in result2["signals"]

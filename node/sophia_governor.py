@@ -507,8 +507,6 @@ def _heuristic_review(event_type: str, payload: dict[str, Any]) -> dict[str, Any
             amount_rtc = rtc_parsed
         elif i64_parsed is not None:
             amount_rtc = i64_parsed
-        elif rtc_parsed is not None:
-            amount_rtc = rtc_parsed
         else:
             amount_rtc = 0.0
 
