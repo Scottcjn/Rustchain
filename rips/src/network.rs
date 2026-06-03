@@ -5,7 +5,7 @@
 // Author: Flamekeeper Scott
 // Created: 2025-11-28
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 use sha2::{Sha256, Digest};
@@ -34,6 +34,9 @@ pub const PEER_TIMEOUT_SECS: u64 = 120;
 
 /// Block propagation timeout
 pub const BLOCK_PROPAGATION_TIMEOUT_SECS: u64 = 30;
+
+/// Default maximum number of block hashes retained by the propagation cache.
+pub const DEFAULT_SEEN_BLOCKS_CAPACITY: usize = 10_000;
 
 /// Message types for the RustChain protocol
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -494,14 +497,24 @@ impl NetworkManager {
 pub struct BlockPropagator {
     /// Blocks we've seen (to avoid re-broadcasting)
     seen_blocks: HashMap<BlockHash, Instant>,
+    /// Insertion order for seen block eviction
+    seen_order: VecDeque<BlockHash>,
+    /// Maximum seen block hashes retained in memory
+    seen_blocks_capacity: usize,
     /// Pending block announcements
     pending_announcements: Vec<(BlockHash, Instant)>,
 }
 
 impl BlockPropagator {
     pub fn new() -> Self {
+        Self::with_seen_blocks_capacity(DEFAULT_SEEN_BLOCKS_CAPACITY)
+    }
+
+    pub fn with_seen_blocks_capacity(seen_blocks_capacity: usize) -> Self {
         BlockPropagator {
             seen_blocks: HashMap::new(),
+            seen_order: VecDeque::new(),
+            seen_blocks_capacity,
             pending_announcements: Vec::new(),
         }
     }
@@ -513,13 +526,35 @@ impl BlockPropagator {
 
     /// Mark block as seen
     pub fn mark_seen(&mut self, hash: BlockHash) {
-        self.seen_blocks.insert(hash, Instant::now());
+        if self.seen_blocks_capacity == 0 {
+            return;
+        }
+
+        if self.seen_blocks.contains_key(&hash) {
+            self.seen_order.retain(|existing| existing != &hash);
+        }
+
+        self.seen_blocks.insert(hash.clone(), Instant::now());
+        self.seen_order.push_back(hash);
+        self.enforce_seen_blocks_capacity();
     }
 
     /// Clean up old seen blocks (keep last hour)
     pub fn cleanup(&mut self) {
         let cutoff = Instant::now() - Duration::from_secs(3600);
         self.seen_blocks.retain(|_, when| *when > cutoff);
+        self.seen_order.retain(|hash| self.seen_blocks.contains_key(hash));
+        self.enforce_seen_blocks_capacity();
+    }
+
+    fn enforce_seen_blocks_capacity(&mut self) {
+        while self.seen_blocks.len() > self.seen_blocks_capacity {
+            if let Some(oldest) = self.seen_order.pop_front() {
+                self.seen_blocks.remove(&oldest);
+            } else {
+                break;
+            }
+        }
     }
 }
 
@@ -634,6 +669,43 @@ mod tests {
         assert!(!propagator.has_seen(&hash));
         propagator.mark_seen(hash.clone());
         assert!(propagator.has_seen(&hash));
+    }
+
+    #[test]
+    fn test_block_propagator_evicts_oldest_seen_blocks() {
+        let mut propagator = BlockPropagator::with_seen_blocks_capacity(2);
+
+        let first = BlockHash::from_bytes([1u8; 32]);
+        let second = BlockHash::from_bytes([2u8; 32]);
+        let third = BlockHash::from_bytes([3u8; 32]);
+
+        propagator.mark_seen(first.clone());
+        propagator.mark_seen(second.clone());
+        propagator.mark_seen(third.clone());
+
+        assert!(!propagator.has_seen(&first));
+        assert!(propagator.has_seen(&second));
+        assert!(propagator.has_seen(&third));
+        assert_eq!(propagator.seen_blocks.len(), 2);
+    }
+
+    #[test]
+    fn test_block_propagator_refreshes_seen_block_before_eviction() {
+        let mut propagator = BlockPropagator::with_seen_blocks_capacity(2);
+
+        let first = BlockHash::from_bytes([1u8; 32]);
+        let second = BlockHash::from_bytes([2u8; 32]);
+        let third = BlockHash::from_bytes([3u8; 32]);
+
+        propagator.mark_seen(first.clone());
+        propagator.mark_seen(second.clone());
+        propagator.mark_seen(first.clone());
+        propagator.mark_seen(third.clone());
+
+        assert!(propagator.has_seen(&first));
+        assert!(!propagator.has_seen(&second));
+        assert!(propagator.has_seen(&third));
+        assert_eq!(propagator.seen_blocks.len(), 2);
     }
 
     #[test]

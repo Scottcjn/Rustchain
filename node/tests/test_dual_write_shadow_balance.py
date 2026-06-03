@@ -84,12 +84,14 @@ class TestDualWriteShadowBalanceGuard(unittest.TestCase):
         os.unlink(self.db_path)
 
     def _seed_coinbase(self, address, value_nrtc, height=1):
-        self.utxo_db.apply_transaction({
+        ok = self.utxo_db.apply_transaction({
             'tx_type': 'mining_reward',
             'inputs': [],
             'outputs': [{'address': address, 'value_nrtc': value_nrtc}],
             'timestamp': int(time.time()),
+            '_allow_minting': True,
         }, block_height=height)
+        self.assertTrue(ok, "Coinbase fixture should seed UTXO balance")
 
     def _get_account_balance_i64(self, miner_id):
         conn = sqlite3.connect(self.db_path)
@@ -311,12 +313,14 @@ class TestDualWriteShadowBalanceGuardDisabled(unittest.TestCase):
         os.unlink(self.db_path)
 
     def _seed_coinbase(self, address, value_nrtc, height=1):
-        self.utxo_db.apply_transaction({
+        ok = self.utxo_db.apply_transaction({
             'tx_type': 'mining_reward',
             'inputs': [],
             'outputs': [{'address': address, 'value_nrtc': value_nrtc}],
             'timestamp': int(time.time()),
+            '_allow_minting': True,
         }, block_height=height)
+        self.assertTrue(ok, "Coinbase fixture should seed UTXO balance")
 
     def test_utxo_succeeds_when_dual_write_disabled(self):
         """UTXO transfer succeeds regardless of shadow balance when

@@ -24,6 +24,7 @@ import json
 import os
 import sqlite3
 import time
+from contextlib import closing
 from typing import Dict, List, Tuple, Optional, Any
 from collections import defaultdict
 
@@ -48,7 +49,7 @@ CORE_ENTROPY_FIELDS = [
 
 def init_replay_defense_schema():
     """Initialize database tables for replay attack defense."""
-    with sqlite3.connect(get_db_path()) as conn:
+    with closing(sqlite3.connect(get_db_path())) as conn:
         # Table 1: Track submitted fingerprint hashes with timestamps
         conn.execute('''
             CREATE TABLE IF NOT EXISTS fingerprint_submissions (

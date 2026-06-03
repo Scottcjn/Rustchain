@@ -22,6 +22,15 @@ def test_leaderboard_rejects_non_integer_limit(tmp_path):
     assert response.get_data(as_text=True) == "limit must be an integer"
 
 
+def test_legacy_leaderboard_rejects_non_integer_limit(tmp_path):
+    app = _app_with_hall_db(tmp_path)
+
+    response = app.test_client().get("/hall/leaderboard?limit=abc")
+
+    assert response.status_code == 400
+    assert response.get_data(as_text=True) == "limit must be an integer"
+
+
 def test_leaderboard_rejects_negative_limit(tmp_path):
     app = _app_with_hall_db(tmp_path)
 
@@ -31,10 +40,29 @@ def test_leaderboard_rejects_negative_limit(tmp_path):
     assert response.get_data(as_text=True) == "limit must be non-negative"
 
 
+def test_legacy_leaderboard_rejects_negative_limit(tmp_path):
+    app = _app_with_hall_db(tmp_path)
+
+    response = app.test_client().get("/hall/leaderboard?limit=-1")
+
+    assert response.status_code == 400
+    assert response.get_data(as_text=True) == "limit must be non-negative"
+
+
 def test_leaderboard_uses_default_for_empty_limit(tmp_path):
     app = _app_with_hall_db(tmp_path)
 
     response = app.test_client().get("/api/hall_of_fame/leaderboard?limit=")
+
+    assert response.status_code == 200
+    assert response.get_json()["leaderboard"] == []
+    assert response.get_json()["total_machines"] == 0
+
+
+def test_legacy_leaderboard_uses_default_for_empty_limit(tmp_path):
+    app = _app_with_hall_db(tmp_path)
+
+    response = app.test_client().get("/hall/leaderboard?limit=")
 
     assert response.status_code == 200
     assert response.get_json()["leaderboard"] == []

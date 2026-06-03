@@ -64,6 +64,48 @@ def test_blocks_caps_valid_limit_without_contacting_invalid_input_path(monkeypat
     assert payload["page"] == 1
 
 
+def test_blocks_treats_non_object_tip_response_as_unavailable(monkeypatch):
+    explorer_api = load_explorer_api()
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return ["not", "an", "object"]
+
+    def fake_requests_get(url, params=None, timeout=None):
+        assert url.endswith("/headers/tip")
+        return FakeResponse()
+
+    monkeypatch.setattr(explorer_api.requests, "get", fake_requests_get)
+
+    with explorer_api.app.test_client() as client:
+        response = client.get("/api/blocks")
+
+    assert response.status_code == 502
+    assert response.get_json() == {"ok": False, "error": "node_unavailable"}
+
+
+def test_blocks_treats_malformed_tip_slot_as_unavailable(monkeypatch):
+    explorer_api = load_explorer_api()
+
+    def fake_get(path, params=None, timeout=None):
+        assert path == "/headers/tip"
+        return {"slot": "not-an-integer", "miner": "alice", "tip_age": 7}
+
+    monkeypatch.setattr(explorer_api, "_get", fake_get)
+
+    with explorer_api.app.test_client() as client:
+        list_response = client.get("/api/blocks")
+        detail_response = client.get("/api/blocks/1")
+
+    assert list_response.status_code == 502
+    assert list_response.get_json() == {"ok": False, "error": "node_unavailable"}
+    assert detail_response.status_code == 502
+    assert detail_response.get_json() == {"ok": False, "error": "node_unavailable"}
+
+
 def test_transactions_rejects_bad_limit_params():
     explorer_api = load_explorer_api()
 
@@ -103,3 +145,21 @@ def test_transactions_caps_valid_limit(monkeypatch):
     assert payload["ok"] is True
     assert payload["limit"] == 100
     assert payload["pending_withdrawals"] == 3
+
+
+def test_get_ignores_non_object_upstream_json(monkeypatch):
+    explorer_api = load_explorer_api()
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return ["not", "an", "object"]
+
+    def fake_requests_get(url, params=None, timeout=None):
+        return FakeResponse()
+
+    monkeypatch.setattr(explorer_api.requests, "get", fake_requests_get)
+
+    assert explorer_api._get("/health") is None

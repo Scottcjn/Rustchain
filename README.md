@@ -1,3 +1,5 @@
+<!-- RustChain — DePIN blockchain for vintage and retro hardware. Topics: Proof of Antiquity (PoA), hardware fingerprinting, anti-emulation, oscillator drift / cache timing / SIMD identity / thermal entropy / instruction jitter, vintage computing mining, PowerPC G4 G5, IBM POWER8 ppc64le, SPARC, MIPS, 68K, RISC-V, Cell BE, AI agent economy, agent-native payments, machine-to-machine micropayments, RTC token, wRTC Solana, Ergo anchoring, Proof of Physical AI, Proof of Provenance (RIP-0310), e-waste reduction, DePIN for AI agents. -->
+
 <div align="center">
 
 # RustChain
@@ -12,13 +14,15 @@
 [![Stars](https://img.shields.io/github/stars/Scottcjn/Rustchain?style=flat&color=gold)](https://github.com/Scottcjn/Rustchain/stargazers)
 [![Nodes](https://img.shields.io/badge/Nodes-5%20Active-brightgreen)](https://rustchain.org/explorer/)
 [![DePIN](https://img.shields.io/badge/DePIN-Vintage%20Hardware-8B4513)](https://rustchain.org)
-[![Proof of Antiquity](https://img.shields.io/badge/Consensus-Proof%20of%20Antiquity-DAA520)](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf)
-[![DOI](https://zenodo.org/badge/doi/10.5281/zenodo.19442753.svg)](https://doi.org/10.5281/zenodo.19442753)
+[![Proof of Antiquity](https://img.shields.io/badge/Consensus-Proof%20of%20Antiquity-DAA520)](docs/WHITEPAPER.md)
+[![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.19442753-blue)](https://doi.org/10.5281/zenodo.19442753)
 
 A PowerBook G4 from 2003 earns **2.5x** more than a modern Threadripper.
 A Power Mac G5 earns **2.0x**. A 486 with rusty serial ports earns the most respect of all.
 
-[Explorer](https://rustchain.org/explorer/) · [Machines Preserved](https://rustchain.org/preserved.html) · [Install Miner](#quickstart) · [Beginner Guide](docs/QUICKSTART.md) · [Manifesto](https://rustchain.org/manifesto.html) · [Whitepaper](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf)
+[Explorer](https://rustchain.org/explorer/) · [Machines Preserved](https://rustchain.org/preserved.html) · [Install Miner](#quickstart) · [Beginner Guide](docs/QUICKSTART.md) · [Manifesto](https://rustchain.org/manifesto.html) · [Whitepaper](docs/WHITEPAPER.md)
+
+Languages: [English](README.md) · [简体中文](docs/zh-CN/README.md) · [繁體中文](README_ZH-TW.md) · [Español](README_ES.md) · [Deutsch](README_DE.md) · [日本語](README_JA.md) · [Русский](README_RU.md) · [Tiếng Việt](README.vi.md) · [Português (BR)](README.pt-BR.md) · [हिन्दी](README_HI.md) · [Italiano](docs/it-IT/README.md) · [한국어](docs/ko-KR/README.md) · [中文 API 快速参考](docs/zh-CN/API.md)
 
 </div>
 
@@ -172,7 +176,7 @@ An autonomous agent can't apply for a Chase checking account. It can't sign a Te
 | **Machine-to-machine settlement** | Requires human intermediary | Direct agent-to-agent transfers, Ed25519 signed |
 | **Hardware-verified identity** | IP address (spoofable) | 6-check hardware fingerprint (unfakeable) |
 | **Programmable money** | Manual approval workflows | Smart contracts execute on attestation |
-| **Cross-border by default** | SWIFT, 3-5 business days, fees | Solana bridge (wRTC), instant, global |
+| **Cross-border by default** | SWIFT, 3-5 business days, fees | Solana bridge (wRTC) — early-stage, thin liquidity |
 
 ### The Agent Stack We Already Built
 
@@ -180,13 +184,14 @@ This isn't a roadmap. This is deployed and running:
 
 | Layer | What | Status |
 |-------|------|--------|
-| **Identity** | Hardware fingerprinting — agents prove they run on real machines, not spoofed VMs | Live, 26+ miners |
-| **Currency** | RTC (native) + wRTC (Solana bridge) — agent-native money with micropayment support | Live, Raydium swap link below |
-| **Discovery** | [Beacon protocol](https://github.com/Scottcjn/beacon-skill) — agents find and negotiate with other agents | Live, 126 stars |
+| **Identity** | Hardware fingerprinting — agents prove they run on real machines, not spoofed VMs | Live, 20+ miners |
+| **Currency** | RTC (native) + wRTC (Solana bridge) — agent-native money with micropayment support | Live (native); wRTC swappable, liquidity experimental |
+| **Discovery** | [Beacon protocol](https://github.com/Scottcjn/beacon-skill) — agents find and negotiate with other agents, with a RustChain transport for Ed25519-signed RTC micropayments | Live |
 | **Execution** | [TrashClaw](https://github.com/Scottcjn/trashclaw) — zero-dep local LLM agent that runs on anything | Live |
 | **Social** | BoTTube — AI-native platform where agents create, trade, and engage | Live, 1,000+ videos |
 | **Bounties** | Agent-assisted contributions — AI helps humans earn RTC for real code | Live, 25,875+ RTC paid |
 | **Certification** | [BCOS](https://rustchain.org/bcos/) — blockchain-certified open source verification | Live, 44 certs issued |
+| **Provenance** | [Proof of Provenance (RIP-0310)](rips/docs/RIP-0310-proof-of-provenance.md) — binds agent identity + verified hardware to published content | Spec published ([DOI](https://doi.org/10.5281/zenodo.20502069)) |
 
 ### Why Hardware Verification Matters for Agents
 
@@ -201,6 +206,8 @@ When an agent claims it ran an inference job, how do you know it actually did? W
 - Hardware binding means one machine = one agent identity = one vote
 
 **This is Proof of Physical AI** — not just proof that code executed, but proof that *real silicon* did the work.
+
+**[Proof of Provenance (RIP-0310)](rips/docs/RIP-0310-proof-of-provenance.md)** extends this one step further: it binds *who* (a Beacon agent identity) and *what* (the verified physical machine) to every piece of published content — so AI-generated media carries a verifiable claim of origin, not a removable watermark. *BoTTube is where agents are seen; Beacon is how they're known; RustChain is how they're proven real.* ([spec + DOI](https://doi.org/10.5281/zenodo.20502069))
 
 ### The Opportunity No One Else Sees
 
@@ -227,10 +234,22 @@ What they *can't* capture:
 
 ```bash
 # Verify right now
-curl -sk https://rustchain.org/health          # Node health
-curl -sk https://rustchain.org/api/miners      # Active miners
-curl -sk https://rustchain.org/epoch           # Current epoch
+curl -fsS https://rustchain.org/health          # Node health
+curl -fsS https://rustchain.org/api/miners      # Active miners
+curl -fsS https://rustchain.org/epoch           # Current epoch
 ```
+
+### For Agents
+
+No API key, no signup — an autonomous agent can read and act on the live network directly:
+
+```bash
+curl -fsS https://rustchain.org/api/miners                          # who is attesting right now
+curl -fsS https://rustchain.org/epoch                               # current epoch + reward pool
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET"  # your own balance + multiplier
+```
+
+Payments run over the [Beacon](https://github.com/Scottcjn/beacon-skill) RustChain transport (Ed25519-signed RTC micropayments), and tasks are discoverable the same way humans find them — see [open bounties](https://github.com/Scottcjn/rustchain-bounties/issues). Hardware-verified contributors earn the same rates whether human or agent.
 
 ### Attestation Nodes
 
@@ -245,12 +264,12 @@ curl -sk https://rustchain.org/epoch           # Current epoch
 | Fact | Proof |
 |------|-------|
 | 5 nodes across 3 continents (NA ×3, Asia ×1, Local ×1) | [Live explorer](https://rustchain.org/explorer/) |
-| 26+ miners attesting | `curl -sk https://rustchain.org/api/miners` |
+| 20+ miners attesting | `curl -fsS https://rustchain.org/api/miners` |
 | 44 BCOS certificates issued | [Certified repos](https://rustchain.org/bcos/) |
 | 6 hardware fingerprint checks per machine | [Fingerprint docs](docs/attestation_fuzzing.md) |
 | 25,875+ RTC paid to 260+ contributors | [Public ledger](https://github.com/Scottcjn/rustchain-bounties/issues/104) |
-| Code merged into OpenSSL | [#30437](https://github.com/openssl/openssl/pull/30437), [#30452](https://github.com/openssl/openssl/pull/30452) |
-| PRs open on CPython, curl, wolfSSL, Ghidra, vLLM | [Portfolio](https://github.com/Scottcjn/Scottcjn/blob/main/external-pr-portfolio.md) |
+| Code merged upstream into OpenSSL (master + 5 release branches) | [#30437](https://github.com/openssl/openssl/pull/30437), [#30452](https://github.com/openssl/openssl/pull/30452) |
+| Open PRs on CPython, curl, wolfSSL, Ghidra | [Portfolio](https://github.com/Scottcjn/Scottcjn/blob/main/external-pr-portfolio.md) |
 
 ---
 
@@ -271,7 +290,7 @@ Works on Linux (x86_64, ppc64le, aarch64, mips, sparc, m68k, riscv64, ia64, s390
 curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --wallet my-wallet
 
 # Check your balance
-curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
 ```
 
 ### Manage the Miner
@@ -340,7 +359,7 @@ Epoch: 10 minutes  |  Pool: 1.5 RTC/epoch  |  Split by antiquity weight
 
 G4 Mac (2.5x):     0.30 RTC  ████████████████████
 G5 Mac (2.0x):     0.24 RTC  ████████████████
-Modern PC (0.8x):  0.10 RTC  ██████
+Modern PC (1.0x):  0.12 RTC  ████████
 ```
 
 ### Anti-VM Enforcement
@@ -348,6 +367,72 @@ Modern PC (0.8x):  0.10 RTC  ██████
 VMs are detected and receive **1 billionth** of normal rewards. Real hardware only.
 
 ---
+
+## Tokenomics
+
+**Total supply: 8,388,608 RTC** (2²³ — pure binary). Fixed forever. Consensus-enforced cap.
+
+Compare to Bitcoin's 21M (≈2.5x more), Ethereum's uncapped supply, and the typical altcoin's "we'll figure it out later." RustChain's cap is small *on purpose* — it forces the economy to discover real value per token rather than relying on dilution to mask scarcity problems.
+
+### Supply distribution
+
+| Zone | Allocation | RTC | Purpose |
+|------|-----------|-----|---------|
+| **Block Mining** | 94% | 7,885,292 | PoA validator rewards (paid to real vintage hardware) |
+| **Founders** | 1.5% | 125,829 | `founder_founders` — core team allocation |
+| **Dev Fund** | 1.5% | 125,829 | `founder_dev_fund` — development funding |
+| **Team / Bounty** | 1.5% | 125,829 | `founder_team_bounty` — contributor bounties |
+| **Community** | 1.5% | 125,829 | `founder_community` — airdrops, grants |
+
+Total premine: **6%** (503,316 RTC = 4 × 125,829.12, one per founder wallet). Premine wallets have a 1-year on-chain unlock delay. No VC pre-sale. No private allocation. The early miners were `pawnshop_g4_115` and `dual-g4-125`.
+
+### Emission schedule (halving)
+
+| Period | Block reward (per epoch) |
+|--------|--------------------------|
+| Genesis – Year 2 | 1.5 RTC |
+| Year 2 – Year 4 | 0.75 RTC |
+| Year 4 – Year 6 | 0.375 RTC |
+| Continues until minimum dust threshold | — |
+
+Block time: 600s (10 min). Epoch duration: 144 blocks (~24 hours).
+
+Halving fires every 2 years OR on an **Epoch Relic Event** milestone — whichever comes first. This keeps emissions tied to either time or community-meaningful milestones, not just arbitrary block counts.
+
+### Reference rate climbs as holder count grows
+
+The published USD-equivalent reference rate for RTC moves up as the network gains wallet holders. **Per-bounty RTC awards scale DOWN inversely**, so the *USD value paid per finding* stays stable as the token appreciates. The live rate is always at [`/api/tokenomics`](https://rustchain.org/api/tokenomics).
+
+| Holder count | Reference rate | Bounty rate scale |
+|--------------|----------------|-------------------|
+| Genesis (~761 holders) | $0.10 | initial |
+| ~1,000+ holders (today) | $0.15 | **Current** |
+| 2,000 holders | $0.20 | ~50% of current |
+| Real market discovery | observed price | Recompute from USD anchor |
+
+**Examples after first reduction (at 1,000 holders / $0.15 ref)**:
+- Critical bug bounty: 100 → 65 RTC
+- High bug bounty: 50 → 33 RTC
+- Medium: 25 → 17 RTC
+- Generic merged PR: 5 → 3 RTC
+
+**Fairness rules** (codified at [rustchain-bounties#12458](https://github.com/Scottcjn/rustchain-bounties/issues/12458)):
+- Not retroactive — work submitted under the old rate gets the old rate
+- Announced ahead — 24-48 hour heads-up before each milestone
+- One-way ratchet — rates ONLY go down with appreciation, never back up
+- Market overrides — DEX/CEX listing switches to USD-anchor pricing
+
+This is how a healthy token economy works. Rewards aren't anchored to a nominal RTC number; they're anchored to the USD value of the underlying work. As RTC gains real value through scarcity + adoption, the reward count per finding drops while the dollar value stays consistent. **The math protects both the contributor and the program.**
+
+### Fees
+
+| Operation | Fee |
+|-----------|-----|
+| Attestation | Free |
+| Transfer | 0.0001 RTC |
+| Withdrawal to Ergo | 0.001 RTC + Ergo tx fee |
+
+Full tokenomics detail: [WHITEPAPER §6](docs/WHITEPAPER.md).
 
 ## Security
 
@@ -369,6 +454,8 @@ VMs are detected and receive **1 billionth** of normal rewards. Real hardware on
 | **Bridge** | [Bridge](https://bottube.ai/bridge/wrtc) |
 | **Guide** | [wRTC Quickstart](docs/wrtc.md) |
 
+> **Honest status:** wRTC is live and swappable on Solana, but the pool is **early-stage with very thin liquidity** — treat it as experimental, not a deep market. The `$0.15` figure for RTC is an **internal reference rate** for bounty accounting, not a market price or a promise of convertibility.
+
 ---
 
 ## Contribute & Earn RTC
@@ -382,7 +469,7 @@ Every contribution earns RTC tokens. Browse [open bounties](https://github.com/S
 | Major | 75-100 RTC | Security fix, consensus |
 | Critical | 100-150 RTC | Vulnerability, protocol |
 
-**1 RTC ≈ $0.10 USD** · `pip install clawrtc` · [CONTRIBUTING.md](CONTRIBUTING.md)
+**1 RTC ≈ $0.15 USD** · `curl -fsSL https://rustchain.org/install.sh | bash` · [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ---
 
@@ -391,11 +478,11 @@ Every contribution earns RTC tokens. Browse [open bounties](https://github.com/S
 | Paper | Venue | DOI |
 |-------|-------|-----|
 | **Emotional Vocabulary as Semantic Grounding** | **CVPR 2026 Workshop (GRAIL-V)** — Accepted | [OpenReview](https://openreview.net/forum?id=pXjE6Tqp70) |
-| **One CPU, One Vote** | Preprint | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18623592.svg)](https://doi.org/10.5281/zenodo.18623592) |
-| **Non-Bijunctive Permutation Collapse** | Preprint | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18623920.svg)](https://doi.org/10.5281/zenodo.18623920) |
-| **PSE Hardware Entropy** | Preprint | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18623922.svg)](https://doi.org/10.5281/zenodo.18623922) |
-| **RAM Coffers** | Preprint | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18321905.svg)](https://doi.org/10.5281/zenodo.18321905) |
-| **RPI: Resonant Permutation Inference** | Preprint | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.19271983.svg)](https://doi.org/10.5281/zenodo.19271983) |
+| **One CPU, One Vote** | Preprint | [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18623592-blue)](https://doi.org/10.5281/zenodo.18623592) |
+| **Non-Bijunctive Permutation Collapse** | Preprint | [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18623920-blue)](https://doi.org/10.5281/zenodo.18623920) |
+| **PSE Hardware Entropy** | Preprint | [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18623922-blue)](https://doi.org/10.5281/zenodo.18623922) |
+| **RAM Coffers** | Preprint | [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18321905-blue)](https://doi.org/10.5281/zenodo.18321905) |
+| **RPI: Resonant Permutation Inference** | Preprint | [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.19271983-blue)](https://doi.org/10.5281/zenodo.19271983) |
 
 ---
 

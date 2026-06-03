@@ -20,8 +20,9 @@ import hmac
 import hashlib
 import logging
 import os
+import re
 from typing import Optional, Tuple, Dict, Any
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from dataclasses import dataclass
 from enum import Enum
 
@@ -53,9 +54,11 @@ except ImportError:
 # =============================================================================
 
 BRIDGE_DEFAULT_CONFIRMATIONS = int(os.environ.get("RC_BRIDGE_DEFAULT_CONFIRMATIONS", "12"))
+BRIDGE_MAX_CONFIRMATIONS = int(os.environ.get("RC_BRIDGE_MAX_CONFIRMATIONS", "1000"))
 BRIDGE_LOCK_EXPIRY_SECONDS = int(os.environ.get("RC_BRIDGE_LOCK_EXPIRY_SECONDS", "604800"))  # 7 days
 BRIDGE_MIN_AMOUNT_RTC = float(os.environ.get("RC_BRIDGE_MIN_AMOUNT_RTC", "1.0"))
 BRIDGE_UNIT = 1000000  # Micro-units per RTC
+DB_TIMEOUT = 5.0  # seconds: timeout for SQLite connection locks
 logger = logging.getLogger(__name__)
 
 
@@ -120,6 +123,8 @@ def validate_bridge_request(data: Optional[Dict]) -> ValidationResult:
     """Validate bridge transfer request payload."""
     if not data:
         return ValidationResult(ok=False, error="Request body is required")
+    if not isinstance(data, dict):
+        return ValidationResult(ok=False, error="Request body must be a JSON object")
     
     # Required fields
     required = ["direction", "source_chain", "dest_chain", "source_address", "dest_address", "amount_rtc"]
@@ -129,12 +134,20 @@ def validate_bridge_request(data: Optional[Dict]) -> ValidationResult:
     
     # Validate direction
     direction = data.get("direction")
+    if not isinstance(direction, str):
+        return ValidationResult(ok=False, error="direction must be a string")
     if direction not in ["deposit", "withdraw"]:
         return ValidationResult(ok=False, error=f"Invalid direction: {direction}. Must be 'deposit' or 'withdraw'")
     
     # Validate chains
-    source_chain = data.get("source_chain", "").lower()
-    dest_chain = data.get("dest_chain", "").lower()
+    source_chain_raw = data.get("source_chain", "")
+    dest_chain_raw = data.get("dest_chain", "")
+    if not isinstance(source_chain_raw, str):
+        return ValidationResult(ok=False, error="source_chain must be a string")
+    if not isinstance(dest_chain_raw, str):
+        return ValidationResult(ok=False, error="dest_chain must be a string")
+    source_chain = source_chain_raw.lower()
+    dest_chain = dest_chain_raw.lower()
     
     if source_chain not in VALID_CHAINS:
         return ValidationResult(ok=False, error=f"Invalid source_chain: {source_chain}")
@@ -156,6 +169,10 @@ def validate_bridge_request(data: Optional[Dict]) -> ValidationResult:
     # Validate addresses
     source_address = data.get("source_address", "")
     dest_address = data.get("dest_address", "")
+    if not isinstance(source_address, str):
+        return ValidationResult(ok=False, error="source_address must be a string")
+    if not isinstance(dest_address, str):
+        return ValidationResult(ok=False, error="dest_address must be a string")
     
     if not source_address or len(source_address) < 10:
         return ValidationResult(ok=False, error="Invalid source_address (too short)")
@@ -163,23 +180,28 @@ def validate_bridge_request(data: Optional[Dict]) -> ValidationResult:
         return ValidationResult(ok=False, error="Invalid dest_address (too short)")
     
     # Validate amount
+    amount_raw = data.get("amount_rtc", 0)
     try:
-        amount_rtc = float(data.get("amount_rtc", 0))
-    except (TypeError, ValueError):
-        return ValidationResult(ok=False, error="amount_rtc must be a number")
+        amount_i64 = parse_bridge_amount_i64(amount_raw)
+    except ValueError as exc:
+        return ValidationResult(ok=False, error=str(exc))
     
-    if amount_rtc <= 0:
+    if amount_i64 <= 0:
         return ValidationResult(ok=False, error="amount_rtc must be positive")
-    if amount_rtc < BRIDGE_MIN_AMOUNT_RTC:
+    if amount_i64 < int(Decimal(str(BRIDGE_MIN_AMOUNT_RTC)) * BRIDGE_UNIT):
         return ValidationResult(ok=False, error=f"amount_rtc must be >= {BRIDGE_MIN_AMOUNT_RTC} RTC")
     
     # Validate bridge type (optional)
     bridge_type = data.get("bridge_type", "bottube")
+    if not isinstance(bridge_type, str):
+        return ValidationResult(ok=False, error="bridge_type must be a string")
     if bridge_type not in VALID_BRIDGE_TYPES:
         return ValidationResult(ok=False, error=f"Invalid bridge_type: {bridge_type}")
     
     # Validate memo (optional)
     memo = data.get("memo")
+    if memo is not None and not isinstance(memo, str):
+        return ValidationResult(ok=False, error="memo must be a string")
     if memo and len(memo) > 256:
         return ValidationResult(ok=False, error="Memo must be <= 256 characters")
     
@@ -191,11 +213,28 @@ def validate_bridge_request(data: Optional[Dict]) -> ValidationResult:
             "dest_chain": dest_chain,
             "source_address": source_address,
             "dest_address": dest_address,
-            "amount_rtc": amount_rtc,
+            "amount_rtc": amount_i64 / BRIDGE_UNIT,
             "memo": memo,
             "bridge_type": bridge_type
         }
     )
+
+
+def parse_bridge_amount_i64(raw_amount) -> int:
+    """Parse RTC bridge amount exactly into bridge micro-units."""
+    if isinstance(raw_amount, bool):
+        raise ValueError("amount_rtc must be a number")
+    try:
+        amount = Decimal(str(raw_amount))
+    except (InvalidOperation, ValueError):
+        raise ValueError("amount_rtc must be a number")
+    if not amount.is_finite():
+        raise ValueError("amount_rtc must be finite")
+
+    scaled = amount * BRIDGE_UNIT
+    if scaled != scaled.to_integral_value():
+        raise ValueError("amount_rtc supports at most 6 decimal places")
+    return int(scaled)
 
 
 def validate_chain_address_format(chain: str, address: str) -> Tuple[bool, str]:
@@ -204,15 +243,15 @@ def validate_chain_address_format(chain: str, address: str) -> Tuple[bool, str]:
         return False, "Address is required"
     
     if chain == "rustchain":
-        if not address.startswith("RTC"):
-            return False, "RustChain addresses must start with 'RTC'"
-        if len(address) < 10:
-            return False, "RustChain address too short"
+        if not re.match(r"^RTC[0-9a-fA-F]{40}$", address):
+            return False, "RustChain address must be RTC + 40 hex characters"
     
     elif chain == "solana":
         # Solana addresses are base58, 32-44 chars
         if len(address) < 32 or len(address) > 44:
             return False, "Invalid Solana address length"
+        if not all(c in "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz" for c in address):
+            return False, "Invalid Solana address: contains non-base58 characters"
     
     elif chain == "ergo":
         # Ergo addresses start with '9' or '3'
@@ -227,6 +266,8 @@ def validate_chain_address_format(chain: str, address: str) -> Tuple[bool, str]:
             return False, "Base addresses must start with '0x'"
         if len(address) != 42:
             return False, "Invalid Base address length"
+        if not all(char in "0123456789abcdefABCDEF" for char in address[2:]):
+            return False, "Invalid Base address hex"
     
     return True, ""
 
@@ -291,7 +332,7 @@ def create_bridge_transfer(
     now = int(time.time())
     current_epoch = slot_to_epoch(current_slot())
     
-    amount_i64 = int(Decimal(str(request.amount_rtc)) * BRIDGE_UNIT)
+    amount_i64 = parse_bridge_amount_i64(request.amount_rtc)
     tx_hash = generate_bridge_tx_hash(
         request.direction,
         request.source_chain,
@@ -440,6 +481,7 @@ def get_bridge_transfer_by_hash(
         "dest_chain": row[3],
         "source_address": row[4],
         "dest_address": row[5],
+        "amount_i64": row[6],
         "amount_rtc": row[7],
         "bridge_type": row[8],
         "external_tx_hash": row[10],
@@ -621,12 +663,41 @@ def update_external_confirmation(
     
     if transfer["status"] in ("completed", "failed", "voided"):
         return False, {
-            "error": f"Cannot update completed/failed/voided transfer",
+            "error": "Cannot update completed/failed/voided transfer",
             "current_status": transfer["status"]
+        }
+
+    try:
+        confirmations = int(confirmations)
+    except (TypeError, ValueError):
+        return False, {"error": "confirmations must be an integer"}
+    if confirmations < 0 or confirmations > BRIDGE_MAX_CONFIRMATIONS:
+        return False, {
+            "error": f"confirmations must be between 0 and {BRIDGE_MAX_CONFIRMATIONS}"
         }
     
     now = int(time.time())
-    req_conf = required_confirmations or transfer["required_confirmations"] or BRIDGE_DEFAULT_CONFIRMATIONS
+    existing_req_conf = transfer["required_confirmations"] or BRIDGE_DEFAULT_CONFIRMATIONS
+    if required_confirmations is None:
+        req_conf = existing_req_conf
+    else:
+        try:
+            req_conf = int(required_confirmations)
+        except (TypeError, ValueError):
+            return False, {"error": "required_confirmations must be an integer"}
+        if req_conf < existing_req_conf:
+            return False, {
+                "error": "required_confirmations cannot be lowered",
+                "required_confirmations": existing_req_conf,
+            }
+        if req_conf > BRIDGE_MAX_CONFIRMATIONS:
+            return False, {
+                "error": (
+                    f"required_confirmations must be between "
+                    f"{existing_req_conf} and {BRIDGE_MAX_CONFIRMATIONS}"
+                ),
+                "required_confirmations": existing_req_conf,
+            }
     
     # Determine new status
     if confirmations >= req_conf:
@@ -640,6 +711,7 @@ def update_external_confirmation(
         completed_at = None
     
     try:
+        cursor.execute("BEGIN IMMEDIATE")
         cursor.execute("""
             UPDATE bridge_transfers
             SET external_tx_hash = ?,
@@ -649,7 +721,21 @@ def update_external_confirmation(
                 completed_at = ?,
                 updated_at = ?
             WHERE tx_hash = ?
+              AND status IN ('pending', 'locked', 'confirming')
         """, (external_tx_hash, confirmations, req_conf, new_status, completed_at, now, tx_hash))
+
+        if cursor.rowcount != 1:
+            current = cursor.execute(
+                "SELECT status FROM bridge_transfers WHERE tx_hash = ?",
+                (tx_hash,),
+            ).fetchone()
+            db_conn.rollback()
+            if not current:
+                return False, {"error": "Bridge transfer not found"}
+            return False, {
+                "error": "Cannot update completed/failed/voided transfer",
+                "current_status": current[0],
+            }
         
         # If completed, release the lock
         if new_status == "completed":
@@ -661,6 +747,15 @@ def update_external_confirmation(
                 WHERE bridge_transfer_id = ?
                   AND status = 'locked'
             """, (now, external_tx_hash, transfer["id"]))
+            if transfer["direction"] == "withdraw":
+                cursor.execute(
+                    "INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)",
+                    (transfer["dest_address"],),
+                )
+                cursor.execute(
+                    "UPDATE balances SET amount_i64 = amount_i64 + ? WHERE miner_id = ?",
+                    (transfer["amount_i64"], transfer["dest_address"]),
+                )
         
         db_conn.commit()
         
@@ -687,6 +782,14 @@ def update_external_confirmation(
 def register_bridge_routes(app):
     """Register bridge API routes with Flask app."""
     from flask import request, jsonify
+
+    def _body_string_field(data: Dict[str, Any], name: str, default: Optional[str] = None):
+        value = data.get(name, default)
+        if value is None:
+            return default, None
+        if not isinstance(value, str):
+            return None, f"{name} must be a string"
+        return value.strip(), None
     
     @app.route('/api/bridge/initiate', methods=['POST'])
     def initiate_bridge():
@@ -697,11 +800,12 @@ def register_bridge_routes(app):
         validation = validate_bridge_request(data)
         if not validation.ok:
             return jsonify({"error": validation.error}), 400
+        details = validation.details or {}
         
         # Validate address formats
         for chain, addr in [
-            (data["source_chain"], data["source_address"]),
-            (data["dest_chain"], data["dest_address"])
+            (details["source_chain"], details["source_address"]),
+            (details["dest_chain"], details["dest_address"])
         ]:
             valid, msg = validate_chain_address_format(chain, addr)
             if not valid:
@@ -711,7 +815,7 @@ def register_bridge_routes(app):
         admin_key = request.headers.get("X-Admin-Key", "")
         expected_admin_key = os.environ.get("RC_ADMIN_KEY", "")
         admin_initiated = bool(expected_admin_key) and hmac.compare_digest(admin_key, expected_admin_key)
-        if data["direction"] == "deposit":
+        if details["direction"] == "deposit":
             # Deposits create balance locks by source_address; require operator
             # authorization until a wallet-owner signature flow exists.
             if not expected_admin_key:
@@ -721,17 +825,17 @@ def register_bridge_routes(app):
         
         # Create bridge transfer
         req = BridgeTransferRequest(
-            direction=data["direction"],
-            source_chain=data["source_chain"],
-            dest_chain=data["dest_chain"],
-            source_address=data["source_address"],
-            dest_address=data["dest_address"],
-            amount_rtc=data["amount_rtc"],
-            memo=data.get("memo"),
-            bridge_type=data.get("bridge_type", "bottube")
+            direction=details["direction"],
+            source_chain=details["source_chain"],
+            dest_chain=details["dest_chain"],
+            source_address=details["source_address"],
+            dest_address=details["dest_address"],
+            amount_rtc=details["amount_rtc"],
+            memo=details.get("memo"),
+            bridge_type=details["bridge_type"]
         )
         
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=5.0)
         try:
             success, result = create_bridge_transfer(conn, req, admin_initiated)
             if success:
@@ -744,14 +848,22 @@ def register_bridge_routes(app):
     @app.route('/api/bridge/status/<tx_hash>', methods=['GET'])
     @app.route('/api/bridge/status', methods=['GET'])
     def get_bridge_status(tx_hash: Optional[str] = None):
-        """Get bridge transfer status by tx_hash or id."""
+        """Get bridge transfer status by tx_hash or id. Requires admin key."""
+        # SECURITY: Bridge transfer details include source/dest addresses and amounts
+        admin_key = request.headers.get("X-Admin-Key", "")
+        expected_admin_key = os.environ.get("RC_ADMIN_KEY", "")
+        if not expected_admin_key:
+            return jsonify({"error": "RC_ADMIN_KEY not configured — endpoint disabled"}), 503
+        if not hmac.compare_digest(admin_key, expected_admin_key):
+            return jsonify({"error": "unauthorized"}), 401
+
         if not tx_hash:
             tx_hash = request.args.get("id") or request.args.get("tx_hash")
         
         if not tx_hash:
             return jsonify({"error": "tx_hash or id parameter required"}), 400
         
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=5.0)
         try:
             transfer = get_bridge_transfer_by_hash(conn, tx_hash)
             if not transfer:
@@ -766,7 +878,15 @@ def register_bridge_routes(app):
     
     @app.route('/api/bridge/list', methods=['GET'])
     def list_bridges():
-        """List bridge transfers with filters."""
+        """List bridge transfers with filters. Requires admin key."""
+        # SECURITY: Bridge transfers expose source/dest addresses and amounts
+        admin_key = request.headers.get("X-Admin-Key", "")
+        expected_admin_key = os.environ.get("RC_ADMIN_KEY", "")
+        if not expected_admin_key:
+            return jsonify({"error": "RC_ADMIN_KEY not configured — endpoint disabled"}), 503
+        if not hmac.compare_digest(admin_key, expected_admin_key):
+            return jsonify({"error": "unauthorized"}), 401
+
         status = request.args.get("status")
         source = request.args.get("source_address")
         dest = request.args.get("dest_address")
@@ -775,7 +895,7 @@ def register_bridge_routes(app):
         if error:
             return jsonify({"error": error}), 400
         
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=5.0)
         try:
             transfers = list_bridge_transfers(
                 conn,
@@ -803,17 +923,23 @@ def register_bridge_routes(app):
             return jsonify({"error": "unauthorized"}), 401
         
         data = request.get_json(silent=True)
-        if not data:
+        if not isinstance(data, dict) or not data:
             return jsonify({"error": "Request body required"}), 400
         
-        tx_hash = data.get("tx_hash")
-        reason = data.get("reason", "admin_void")
-        voided_by = data.get("voided_by", "admin")
+        tx_hash, error = _body_string_field(data, "tx_hash")
+        if error:
+            return jsonify({"error": error}), 400
+        reason, error = _body_string_field(data, "reason", "admin_void")
+        if error:
+            return jsonify({"error": error}), 400
+        voided_by, error = _body_string_field(data, "voided_by", "admin")
+        if error:
+            return jsonify({"error": error}), 400
         
         if not tx_hash:
             return jsonify({"error": "tx_hash required"}), 400
         
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=5.0)
         try:
             success, result = void_bridge_transfer(conn, tx_hash, reason, voided_by)
             if success:
@@ -834,18 +960,33 @@ def register_bridge_routes(app):
             return jsonify({"error": "Unauthorized"}), 401
         
         data = request.get_json(silent=True)
-        if not data:
+        if not isinstance(data, dict) or not data:
             return jsonify({"error": "Request body required"}), 400
         
-        tx_hash = data.get("tx_hash")
-        external_tx_hash = data.get("external_tx_hash")
-        confirmations = data.get("confirmations", 0)
-        required_confirmations = data.get("required_confirmations")
+        tx_hash, error = _body_string_field(data, "tx_hash")
+        if error:
+            return jsonify({"error": error}), 400
+        external_tx_hash, error = _body_string_field(data, "external_tx_hash")
+        if error:
+            return jsonify({"error": error}), 400
+        confirmations, error = _parse_non_negative_int_arg(data.get("confirmations"), "confirmations", 0, max_value=1000)
+        if error:
+            return jsonify({"error": error}), 400
+        required_confirmations = None
+        if data.get("required_confirmations") is not None:
+            required_confirmations, error = _parse_non_negative_int_arg(
+                data.get("required_confirmations"),
+                "required_confirmations",
+                0,
+                max_value=1000,
+            )
+            if error:
+                return jsonify({"error": error}), 400
         
         if not tx_hash or not external_tx_hash:
             return jsonify({"error": "tx_hash and external_tx_hash required"}), 400
 
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=5.0)
         try:
             success, result = update_external_confirmation(
                 conn, tx_hash, external_tx_hash, confirmations, required_confirmations

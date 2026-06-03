@@ -25,6 +25,7 @@ import os
 import re
 import sys
 import json
+import requests
 import sqlite3
 import logging
 from datetime import datetime, timedelta
@@ -669,7 +670,8 @@ def register_routes(app: Flask, config: Dict, logger: logging.Logger,
             return jsonify({'ok': False, 'error': 'Wallet address required'}), 400
 
         wallet = wallet_value.strip()
-        ip = get_client_ip(request)
+        trust_proxy_headers = config.get('security', {}).get('trust_proxy_headers', False)
+        ip = get_client_ip(request, trust_proxy_headers=trust_proxy_headers)
         
         logger.info(f"Drip request: wallet={wallet}, ip={ip}")
         
@@ -703,9 +705,43 @@ def register_routes(app: Flask, config: Dict, logger: logging.Logger,
             tx_hash = None
             logger.info(f"Mock drip: {amount} RTC to {wallet}")
         else:
-            # TODO: Implement actual token transfer
-            tx_hash = None
-            logger.info(f"Real drip: {amount} RTC to {wallet}")
+            # Real transfer via the node's admin transfer endpoint.
+            # The node exposes POST /wallet/transfer (admin-gated): body
+            # {from_miner, to_miner, amount_rtc} + header X-Admin-Key. It debits
+            # the faucet wallet and credits the requester. (The legacy
+            # /v1/transfer + ARCHESTRA_FAUCET_SECRET path never existed on the
+            # node and silently failed every real drip.)
+            try:
+                dist = config.get('distribution', {})
+                node_url = dist.get('node_url', 'http://127.0.0.1:8198')
+                faucet_wallet = dist.get('faucet_wallet', 'testnet_faucet')
+                admin_key = os.environ.get('RC_ADMIN_KEY') or dist.get('admin_key', '')
+
+                if not admin_key:
+                    logger.error("RC_ADMIN_KEY not set, cannot perform real drip")
+                    return jsonify({'ok': False, 'error': 'Faucet configuration error'}), 500
+
+                response = requests.post(
+                    f"{node_url}/wallet/transfer",
+                    json={
+                        "from_miner": faucet_wallet,
+                        "to_miner": wallet,
+                        "amount_rtc": amount,
+                    },
+                    headers={"X-Admin-Key": admin_key},
+                    timeout=10
+                )
+
+                if response.status_code == 200 and response.json().get('ok'):
+                    result = response.json()
+                    tx_hash = result.get('tx_hash')
+                    logger.info(f"Real drip success: {amount} RTC to {wallet}, tx={tx_hash}")
+                else:
+                    logger.error(f"Real drip failed: {response.text}")
+                    return jsonify({'ok': False, 'error': 'Transfer failed on node'}), 502
+            except Exception as e:
+                logger.error(f"Real drip exception: {str(e)}")
+                return jsonify({'ok': False, 'error': 'Internal transfer error'}), 500
         
         # Calculate next available time
         window_seconds = config.get('rate_limit', {}).get('window_seconds', 86400)
@@ -821,11 +857,11 @@ faucet_up 1
             return metrics_text, 200, {'Content-Type': 'text/plain'}
 
 
-def get_client_ip(request) -> str:
-    """Get client IP address from request, handling proxies."""
-    if request.headers.get('X-Forwarded-For'):
+def get_client_ip(request, trust_proxy_headers: bool = False) -> str:
+    """Get client IP address, trusting proxy headers only when configured."""
+    if trust_proxy_headers and request.headers.get('X-Forwarded-For'):
         return request.headers.get('X-Forwarded-For').split(',')[0].strip()
-    if request.headers.get('X-Real-IP'):
+    if trust_proxy_headers and request.headers.get('X-Real-IP'):
         return request.headers.get('X-Real-IP')
     return request.remote_addr or '127.0.0.1'
 

@@ -38,6 +38,20 @@ class ProofOfIronStub:
         raise AssertionError("invalid uploads should be rejected before proof submission")
 
 
+class BootChimeCaptureStub:
+    def __init__(self, *args, **kwargs):
+        self.calls = []
+        self.saved_paths = []
+
+    def capture(self, duration=None, trigger=False):
+        self.calls.append((duration, trigger))
+        return object()
+
+    def save_audio(self, captured, path):
+        self.saved_paths.append(path)
+        Path(path).write_bytes(b"RIFF\x00\x00\x00\x00WAVE")
+
+
 def install_dependency_stubs(monkeypatch):
     flask_cors = types.ModuleType("flask_cors")
     flask_cors.CORS = lambda app: app
@@ -51,12 +65,12 @@ def install_dependency_stubs(monkeypatch):
     boot_chime_capture.AudioCaptureConfig = type(
         "AudioCaptureConfig",
         (),
-        {"__init__": lambda self, **kwargs: None},
+        {"__init__": lambda self, **kwargs: self.__dict__.update(kwargs)},
     )
     boot_chime_capture.BootChimeCapture = type(
         "BootChimeCapture",
-        (),
-        {"__init__": lambda self, *args, **kwargs: None},
+        (BootChimeCaptureStub,),
+        {},
     )
     monkeypatch.setitem(sys.modules, "boot_chime_capture", boot_chime_capture)
 
@@ -82,21 +96,74 @@ def api_module(monkeypatch):
 
 
 @pytest.fixture
-def client(api_module):
+def client(api_module, monkeypatch):
+    monkeypatch.setenv("BOOT_CHIME_ADMIN_KEY", "boot-admin-secret")
+    monkeypatch.delenv("RC_ADMIN_KEY", raising=False)
     api_module.app.config["TESTING"] = True
     return api_module.app.test_client()
 
 
+AUTH_HEADERS = {"X-Admin-Key": "boot-admin-secret"}
+
+
+@pytest.mark.parametrize(
+    "path",
+    (
+        "/api/v1/challenge",
+        "/api/v1/submit",
+        "/api/v1/enroll",
+        "/api/v1/capture",
+        "/api/v1/revoke",
+    ),
+)
+def test_mutating_endpoints_fail_closed_without_admin_key(client, monkeypatch, path):
+    monkeypatch.delenv("BOOT_CHIME_ADMIN_KEY", raising=False)
+    monkeypatch.delenv("RC_ADMIN_KEY", raising=False)
+
+    response = client.post(path)
+
+    assert response.status_code == 503
+    assert response.get_json() == {"error": "Admin key not configured"}
+
+
+@pytest.mark.parametrize(
+    "path",
+    (
+        "/api/v1/challenge",
+        "/api/v1/submit",
+        "/api/v1/enroll",
+        "/api/v1/capture",
+        "/api/v1/revoke",
+    ),
+)
+def test_mutating_endpoints_reject_wrong_admin_key(client, path):
+    response = client.post(path, headers={"X-Admin-Key": "wrong"})
+
+    assert response.status_code == 401
+    assert response.get_json() == {"error": "Unauthorized - admin key required"}
+
+
+def test_challenge_accepts_authorization_bearer_admin_key(client, api_module):
+    response = client.post(
+        "/api/v1/challenge",
+        json={"miner_id": "miner-bearer"},
+        headers={"Authorization": "Bearer boot-admin-secret"},
+    )
+
+    assert response.status_code == 200
+    assert api_module.poi_system.issued_for == "miner-bearer"
+
+
 @pytest.mark.parametrize("path", ("/api/v1/challenge", "/api/v1/revoke"))
 def test_json_endpoints_reject_non_object_bodies(client, path):
-    response = client.post(path, json=["not", "object"])
+    response = client.post(path, json=["not", "object"], headers=AUTH_HEADERS)
 
     assert response.status_code == 400
     assert response.get_json() == {"error": "JSON object required"}
 
 
 def test_challenge_accepts_valid_json_body(client, api_module):
-    response = client.post("/api/v1/challenge", json={"miner_id": "miner-1"})
+    response = client.post("/api/v1/challenge", json={"miner_id": "miner-1"}, headers=AUTH_HEADERS)
 
     assert response.status_code == 200
     assert api_module.poi_system.issued_for == "miner-1"
@@ -107,6 +174,7 @@ def test_revoke_accepts_valid_json_body(client, api_module):
     response = client.post(
         "/api/v1/revoke",
         json={"miner_id": "miner-1", "reason": "retired"},
+        headers=AUTH_HEADERS,
     )
 
     assert response.status_code == 200
@@ -128,7 +196,7 @@ def test_audio_upload_endpoints_reject_non_wav_mime_type(client, path):
     elif path == "/api/v1/enroll":
         data["miner_id"] = "miner-1"
 
-    response = client.post(path, data=data, content_type="multipart/form-data")
+    response = client.post(path, data=data, content_type="multipart/form-data", headers=AUTH_HEADERS)
 
     assert response.status_code == 400
     assert response.get_json() == {"error": "only WAV files accepted"}
@@ -156,3 +224,23 @@ def test_audio_upload_rejects_files_larger_than_configured_limit(client, api_mod
 
     assert response.status_code == 413
     assert response.get_json() == {"error": "file too large"}
+
+
+@pytest.mark.parametrize("duration", ("0", "-1", "30.01", "inf", "not-a-number"))
+def test_capture_rejects_out_of_range_duration(client, api_module, duration):
+    response = client.post(f"/api/v1/capture?duration={duration}", headers=AUTH_HEADERS)
+
+    assert response.status_code == 400
+    assert response.get_json()["error"].startswith("duration must")
+    assert api_module.audio_capture.calls == []
+
+
+def test_capture_accepts_bounded_duration(client, api_module):
+    response = client.post("/api/v1/capture?duration=30&trigger=true", headers=AUTH_HEADERS)
+
+    assert response.status_code == 200
+    assert response.mimetype == "audio/wav"
+    assert response.get_data() == b"RIFF\x00\x00\x00\x00WAVE"
+    assert api_module.audio_capture.calls == [(30.0, True)]
+    assert api_module.audio_capture.saved_paths
+    assert not Path(api_module.audio_capture.saved_paths[-1]).exists()

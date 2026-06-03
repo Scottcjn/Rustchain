@@ -12,8 +12,8 @@ scipy>=1.7.0
 # spidev>=3.5
 
 # Testing
-pytest>=7.0.0
-pytest-cov>=3.0.0
+pytest>=9.0.3
+pytest-cov>=7.1.0
 
 # Documentation
 # sphinx>=4.0.0

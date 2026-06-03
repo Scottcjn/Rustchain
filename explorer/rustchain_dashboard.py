@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """
 RustChain Mining Dashboard - Enhanced
 --------------------------------------
@@ -189,59 +190,100 @@ DASHBOARD_HTML = """
         .sys-stat .value { font-size: 1.8em; font-weight: bold; }
     </style>
     <script>
-        function escapeHtml(s) {
-            return String(s)
-                .replaceAll('&', '&amp;')
-                .replaceAll('<', '&lt;')
-                .replaceAll('>', '&gt;')
-                .replaceAll('\"', '&quot;')
-                .replaceAll(\"'\", '&#39;');
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, ch => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;',
+            }[ch]));
+        }
+
+        function safeToken(value, allowed, fallback = 'unknown') {
+            const token = String(value ?? '').toLowerCase();
+            return allowed.includes(token) ? token : fallback;
+        }
+
+        function safeNumber(value, fallback = 0) {
+            const number = Number(value);
+            return Number.isFinite(number) ? number : fallback;
+        }
+
+        function displayText(value, fallback = '') {
+            if (value === undefined || value === null || value === '') return fallback;
+            return String(value);
+        }
+
+        function asArray(value) {
+            return Array.isArray(value) ? value.filter(item => item && typeof item === 'object') : [];
+        }
+
+        function asObject(value) {
+            return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
         }
 
         function updateDashboard() {
             fetch('/api/stats')
                 .then(r => r.json())
                 .then(data => {
+                    data = asObject(data);
                     // Update mining stats
-                    document.getElementById('enrolled-miners').textContent = data.enrolled_miners;
-                    document.getElementById('current-epoch').textContent = data.current_epoch;
-                    document.getElementById('epoch-pot').textContent = data.epoch_pot.toFixed(2);
-                    document.getElementById('total-balance').textContent = data.total_balance.toFixed(2);
+                    document.getElementById('enrolled-miners').textContent = safeNumber(data.enrolled_miners);
+                    document.getElementById('current-epoch').textContent = safeNumber(data.current_epoch);
+                    document.getElementById('epoch-pot').textContent = safeNumber(data.epoch_pot).toFixed(2);
+                    document.getElementById('total-balance').textContent = safeNumber(data.total_balance).toFixed(2);
 
                     // Update system stats
-                    if (data.system_stats) {
-                        document.getElementById('sys-cpu').textContent = data.system_stats.cpu + '%';
-                        document.getElementById('sys-mem').textContent = data.system_stats.memory + '%';
-                        document.getElementById('sys-disk').textContent = data.system_stats.disk + '%';
-                        document.getElementById('sys-uptime').textContent = data.system_stats.uptime;
-                        document.getElementById('sys-load').textContent = data.system_stats.load_avg;
+                    const systemStats = asObject(data.system_stats);
+                    if (Object.keys(systemStats).length) {
+                        document.getElementById('sys-cpu').textContent = safeNumber(systemStats.cpu) + '%';
+                        document.getElementById('sys-mem').textContent = safeNumber(systemStats.memory) + '%';
+                        document.getElementById('sys-disk').textContent = safeNumber(systemStats.disk) + '%';
+                        document.getElementById('sys-uptime').textContent = displayText(systemStats.uptime);
+                        document.getElementById('sys-load').textContent = displayText(systemStats.load_avg);
                     }
 
                     // Update miners table
                     const minersTable = document.getElementById('miners-tbody');
-                    minersTable.innerHTML = data.active_miners.map(m => `
-                        <tr>
-                            <td class="mono">${escapeHtml(m.wallet_short)}...</td>
-                            <td><span class="badge badge-${m.arch}">${m.arch.toUpperCase()}</span></td>
-                            <td><strong>${m.weight}x</strong></td>
-                            <td class="green">${m.balance.toFixed(6)} RTC</td>
-                            <td class="mono">${escapeHtml(m.last_seen)}</td>
-                            <td class="blue">${escapeHtml(m.age_on_network || 'New')}</td>
-                            <td><span class="badge badge-active pulse">ACTIVE</span></td>
-                        </tr>
-                    `).join('');
+                    const archTokens = ['active', 'classic', 'retro', 'ancient', 'modern'];
+                    const activeMiners = asArray(data.active_miners);
+                    if (activeMiners.length === 0) {
+                        minersTable.innerHTML = '<tr><td colspan="7">No active miners</td></tr>';
+                    } else {
+                        minersTable.innerHTML = activeMiners.map(m => {
+                            const archToken = safeToken(m.arch, archTokens, 'modern');
+                            const balance = safeNumber(m.balance).toFixed(6);
+                            return `
+                                <tr>
+                                    <td class="mono">${escapeHtml(m.wallet_short)}...</td>
+                                    <td><span class="badge badge-${archToken}">${escapeHtml(m.arch || 'unknown').toUpperCase()}</span></td>
+                                    <td><strong>${escapeHtml(m.weight)}x</strong></td>
+                                    <td class="green">${balance} RTC</td>
+                                    <td class="mono">${escapeHtml(m.last_seen)}</td>
+                                    <td class="blue">${escapeHtml(m.age_on_network || 'New')}</td>
+                                    <td><span class="badge badge-active pulse">ACTIVE</span></td>
+                                </tr>
+                            `;
+                        }).join('');
+                    }
 
                     // Update recent blocks
                     const blocksTable = document.getElementById('blocks-tbody');
-                    blocksTable.innerHTML = data.recent_blocks.map(b => `
-                        <tr>
-                            <td><strong>${b.height}</strong></td>
-                            <td class="mono">${escapeHtml(b.hash_short)}...</td>
-                            <td>${escapeHtml(b.timestamp)}</td>
-                            <td><span class="badge">${b.miners_count} miners</span></td>
-                            <td class="green">${b.reward} RTC</td>
-                        </tr>
-                    `).join('');
+                    const recentBlocks = asArray(data.recent_blocks);
+                    if (recentBlocks.length === 0) {
+                        blocksTable.innerHTML = '<tr><td colspan="5">No recent blocks</td></tr>';
+                    } else {
+                        blocksTable.innerHTML = recentBlocks.map(b => `
+                            <tr>
+                                <td><strong>${escapeHtml(b.height)}</strong></td>
+                                <td class="mono">${escapeHtml(b.hash_short)}...</td>
+                                <td>${escapeHtml(b.timestamp)}</td>
+                                <td><span class="badge">${escapeHtml(b.miners_count)} miners</span></td>
+                                <td class="green">${escapeHtml(b.reward)} RTC</td>
+                            </tr>
+                        `).join('');
+                    }
 
                     document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
                 });
@@ -251,16 +293,18 @@ DASHBOARD_HTML = """
             const wallet = document.getElementById('wallet-search').value.trim();
             if (!wallet) return;
 
-            fetch(`/api/wallet/${wallet}`)
+            fetch(`/api/wallet/${encodeURIComponent(wallet)}`)
                 .then(r => r.json())
                 .then(data => {
+                    data = asObject(data);
                     const resultDiv = document.getElementById('search-result');
                     if (data.found) {
+                        const tierToken = safeToken(data.tier, ['classic', 'retro', 'ancient', 'modern'], 'modern');
                         resultDiv.innerHTML = `
                             <h3>✅ Wallet Found</h3>
                             <p><strong>Address:</strong> <span class="mono">${escapeHtml(data.wallet)}</span></p>
                             <p><strong>Balance:</strong> <span class="green">${escapeHtml(data.balance)} RTC</span></p>
-                            <p><strong>Weight:</strong> ${escapeHtml(data.weight)}x (${escapeHtml(data.tier)})</p>
+                            <p><strong>Weight:</strong> ${escapeHtml(data.weight)}x (<span class="badge badge-${tierToken}">${escapeHtml(data.tier)}</span>)</p>
                             <p><strong>Age on Network:</strong> ${escapeHtml(data.age_on_network || 'Unknown')}</p>
                             <p><strong>Status:</strong> ${data.enrolled ? '✅ Enrolled in current epoch' : '⏸️ Not currently enrolled'}</p>
                             <p><strong>Last Seen:</strong> ${escapeHtml(data.last_seen || 'Never')}</p>
@@ -274,7 +318,8 @@ DASHBOARD_HTML = """
                     resultDiv.style.display = 'block';
                 })
                 .catch(err => {
-                    document.getElementById('search-result').innerHTML = `<h3>❌ Error</h3><p>${escapeHtml(err)}</p>`;
+                    err = escapeHtml(err.message || err);
+                    document.getElementById('search-result').innerHTML = `<h3>❌ Error</h3><p>${err}</p>`;
                     document.getElementById('search-result').style.display = 'block';
                 });
         }
@@ -491,6 +536,18 @@ REWARD_ANALYTICS_HTML = """
         }
         .panel h3 { margin: 0 0 8px 0; font-size: 16px; }
         .hint { font-size: 12px; opacity: 0.8; margin-top: 8px; }
+        .transition-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        .transition-table th,
+        .transition-table td {
+            border-bottom: 1px solid rgba(255,255,255,0.12);
+            padding: 8px 6px;
+            text-align: left;
+        }
+        .transition-table th { opacity: 0.75; font-weight: 600; }
         a { color: #9ad1ff; }
         @media (max-width: 900px) {
             .grid { grid-template-columns: 1fr; }
@@ -507,6 +564,8 @@ REWARD_ANALYTICS_HTML = """
             <div class="card"><div class="k">Epoch Pot (RTC)</div><div class="v" id="m-pot">-</div></div>
             <div class="card"><div class="k">Tracked Epochs</div><div class="v" id="m-epochs">-</div></div>
             <div class="card"><div class="k">Tracked Miners</div><div class="v" id="m-miners">-</div></div>
+            <div class="card"><div class="k">Epoch Transitions</div><div class="v" id="m-transitions">-</div></div>
+            <div class="card"><div class="k">Avg Transition</div><div class="v" id="m-transition-avg">-</div></div>
         </div>
         <div class="hint"><a href="/">Back to mining dashboard</a></div>
     </div>
@@ -529,6 +588,21 @@ REWARD_ANALYTICS_HTML = """
             <canvas id="multiplierChart"></canvas>
             <div class="hint">Compares equal-share baseline vs weight-adjusted share from current enrollment.</div>
         </div>
+        <div class="panel">
+            <h3>Epoch Transition History</h3>
+            <table class="transition-table">
+                <thead>
+                    <tr>
+                        <th>From</th>
+                        <th>To</th>
+                        <th>Transition Time</th>
+                        <th>Interval</th>
+                    </tr>
+                </thead>
+                <tbody id="transition-tbody"></tbody>
+            </table>
+            <div class="hint">Uses the local epoch start history to show observed transitions and timing gaps.</div>
+        </div>
     </div>
 </div>
 
@@ -547,6 +621,21 @@ function shortMiner(id) {
     return id.length > 14 ? id.slice(0, 12) + '..' : id;
 }
 
+function formatSeconds(seconds) {
+    if (!seconds && seconds !== 0) return '-';
+    const value = Number(seconds);
+    if (!Number.isFinite(value)) return '-';
+    if (value < 60) return `${Math.round(value)}s`;
+    if (value < 3600) return `${Math.round(value / 60)}m`;
+    return `${(value / 3600).toFixed(1)}h`;
+}
+
+function formatTimestamp(ts) {
+    if (!ts) return '-';
+    const date = new Date(Number(ts) * 1000);
+    return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString();
+}
+
 async function refresh() {
     const res = await fetch('/api/reward-analytics');
     const data = await res.json();
@@ -556,6 +645,8 @@ async function refresh() {
     document.getElementById('m-pot').textContent = (data.epoch_pot_rtc ?? 0).toFixed(3);
     document.getElementById('m-epochs').textContent = (data.epoch_distribution || []).length;
     document.getElementById('m-miners').textContent = (data.miner_series || []).length;
+    document.getElementById('m-transitions').textContent = data.epoch_transition_metrics?.transition_count ?? 0;
+    document.getElementById('m-transition-avg').textContent = formatSeconds(data.epoch_transition_metrics?.average_interval_seconds);
 
     const epochLabels = (data.epoch_distribution || []).map(x => `E${x.epoch}`);
     const epochVals = (data.epoch_distribution || []).map(x => x.reward_rtc);
@@ -583,6 +674,17 @@ async function refresh() {
     multiplierChart.data.datasets[0].data = (data.multiplier_impact || []).map(x => x.base_share_rtc);
     multiplierChart.data.datasets[1].data = (data.multiplier_impact || []).map(x => x.weighted_share_rtc);
     multiplierChart.update();
+
+    const transitionRows = data.epoch_transition_history || [];
+    const transitionBody = document.getElementById('transition-tbody');
+    transitionBody.innerHTML = transitionRows.map(row => `
+        <tr>
+            <td>E${row.from_epoch}</td>
+            <td>E${row.to_epoch}</td>
+            <td>${formatTimestamp(row.transition_at)}</td>
+            <td>${formatSeconds(row.interval_seconds)}</td>
+        </tr>
+    `).join('') || '<tr><td colspan="4">No epoch transition history available</td></tr>';
 }
 
 refresh();
@@ -740,12 +842,14 @@ def api_stats():
             'active_miners': [],
             'recent_blocks': [],
             'system_stats': {},
-            'error': str(e)
+            'error': 'stats_unavailable'
         }), 500
 
 @app.route('/api/wallet/<wallet_address>')
 def api_wallet_lookup(wallet_address):
     """Look up wallet balance and info"""
+    if len(wallet_address) > 128:
+        return jsonify({"error": "Wallet address too long"}), 400
     try:
         with sqlite3.connect(DB_PATH) as conn:
             # Get balance
@@ -824,13 +928,68 @@ def api_wallet_lookup(wallet_address):
 
     except Exception as e:
         print(f"Error in wallet lookup: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'wallet_lookup_unavailable'}), 500
 
 
 @app.route('/reward-analytics')
 def reward_analytics_dashboard():
     """Reward analytics dashboard page."""
     return render_template_string(REWARD_ANALYTICS_HTML)
+
+
+def build_epoch_transition_analytics(conn, limit=20):
+    """Build observed epoch transition history from local epoch start rows."""
+    try:
+        rows = conn.execute(
+            """
+            SELECT epoch, start_time
+            FROM epochs
+            WHERE start_time IS NOT NULL
+            ORDER BY epoch DESC
+            LIMIT ?
+            """,
+            (limit + 1,),
+        ).fetchall()
+    except Exception:
+        return [], {
+            "transition_count": 0,
+            "average_interval_seconds": None,
+            "last_transition_at": None,
+            "last_from_epoch": None,
+            "last_to_epoch": None,
+        }
+
+    ordered = list(reversed(rows))
+    transitions = []
+    intervals = []
+
+    for previous, current in zip(ordered, ordered[1:]):  # noqa: B905 - Python 3.9 runtime
+        from_epoch = int(previous["epoch"])
+        to_epoch = int(current["epoch"])
+        previous_start = int(previous["start_time"])
+        current_start = int(current["start_time"])
+        interval = max(0, current_start - previous_start)
+        intervals.append(interval)
+        transitions.append(
+            {
+                "from_epoch": from_epoch,
+                "to_epoch": to_epoch,
+                "transition_at": current_start,
+                "interval_seconds": interval,
+            }
+        )
+
+    transitions = transitions[-limit:]
+    last_transition = transitions[-1] if transitions else {}
+    average_interval = round(sum(intervals) / len(intervals), 2) if intervals else None
+
+    return transitions, {
+        "transition_count": len(transitions),
+        "average_interval_seconds": average_interval,
+        "last_transition_at": last_transition.get("transition_at"),
+        "last_from_epoch": last_transition.get("from_epoch"),
+        "last_to_epoch": last_transition.get("to_epoch"),
+    }
 
 
 @app.route('/api/reward-analytics')
@@ -854,6 +1013,7 @@ def api_reward_analytics():
             miner_series = []
             architecture_breakdown = []
             multiplier_impact = []
+            epoch_transition_history, epoch_transition_metrics = build_epoch_transition_analytics(conn)
 
             # 1) Reward distribution per epoch.
             try:
@@ -970,6 +1130,8 @@ def api_reward_analytics():
                 "miner_series": miner_series,
                 "architecture_breakdown": architecture_breakdown,
                 "multiplier_impact": multiplier_impact,
+                "epoch_transition_history": epoch_transition_history,
+                "epoch_transition_metrics": epoch_transition_metrics,
                 "generated_at": int(time.time()),
             }
         )
