@@ -72,6 +72,10 @@ New to RustChain? Get 10 RTC for your **first merged PR** — even for small imp
 - Submissions that don't match the bounty requirements
 - Placeholder data, fake screenshots, or fabricated metrics
 
+For AI-assisted contribution expectations, see the public
+[Sophia's Home for AI Agents](https://github.com/Scottcjn/rustchain-claim-portal/blob/main/SOPHIAS_HOME_FOR_AI_AGENTS.md)
+onboarding policy referenced in [#6655](https://github.com/Scottcjn/Rustchain/issues/6655).
+
 ## Development Setup
 
 ```bash
