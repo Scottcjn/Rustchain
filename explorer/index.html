@@ -132,12 +132,15 @@
                                     <th scope="col">Height</th>
                                     <th scope="col">Hash</th>
                                     <th scope="col">Timestamp</th>
+                                    <th scope="col">Proposer</th>
+                                    <th scope="col">Txs</th>
+                                    <th scope="col">Gas</th>
                                     <th scope="col">Miners</th>
                                     <th scope="col">Reward</th>
                                 </tr>
                             </thead>
                             <tbody id="blocks-tbody">
-                                <tr><td colspan="5" class="loading"><div class="spinner" aria-hidden="true"></div>Loading blocks...</td></tr>
+                                <tr><td colspan="8" class="loading"><div class="spinner" aria-hidden="true"></div>Loading blocks...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -179,6 +182,40 @@
                             <span aria-hidden="true">🔄</span> Refresh
                         </button>
                     </div>
+                    <form class="block-filter-grid" role="search" aria-label="Filter blocks" onsubmit="return false;">
+                        <label>
+                            <span>Proposer</span>
+                            <input type="search" id="block-filter-proposer" data-block-filter placeholder="Miner, proposer, or producer">
+                        </label>
+                        <label>
+                            <span>From Time</span>
+                            <input type="datetime-local" id="block-filter-from-time" data-block-filter>
+                        </label>
+                        <label>
+                            <span>To Time</span>
+                            <input type="datetime-local" id="block-filter-to-time" data-block-filter>
+                        </label>
+                        <label>
+                            <span>Min Txs</span>
+                            <input type="number" id="block-filter-min-tx" data-block-filter min="0" step="1">
+                        </label>
+                        <label>
+                            <span>Max Txs</span>
+                            <input type="number" id="block-filter-max-tx" data-block-filter min="0" step="1">
+                        </label>
+                        <label>
+                            <span>Min Gas</span>
+                            <input type="number" id="block-filter-min-gas" data-block-filter min="0" step="1">
+                        </label>
+                        <label>
+                            <span>Max Gas</span>
+                            <input type="number" id="block-filter-max-gas" data-block-filter min="0" step="1">
+                        </label>
+                        <div class="block-filter-actions">
+                            <button type="button" id="clear-block-filters" class="btn btn-secondary btn-sm">Clear</button>
+                            <span id="block-filter-summary" class="text-muted" aria-live="polite">0 of 0 blocks</span>
+                        </div>
+                    </form>
                     <div class="table-container" role="region" aria-label="All blocks" tabindex="0">
                         <table>
                             <caption class="sr-only">Complete list of blocks on the RustChain network</caption>
@@ -187,12 +224,15 @@
                                     <th scope="col">Height</th>
                                     <th scope="col">Hash</th>
                                     <th scope="col">Timestamp</th>
+                                    <th scope="col">Proposer</th>
+                                    <th scope="col">Txs</th>
+                                    <th scope="col">Gas</th>
                                     <th scope="col">Miners</th>
                                     <th scope="col">Reward</th>
                                 </tr>
                             </thead>
                             <tbody id="blocks-tbody-full">
-                                <tr><td colspan="5" class="loading"><div class="spinner" aria-hidden="true"></div>Loading blocks...</td></tr>
+                                <tr><td colspan="8" class="loading"><div class="spinner" aria-hidden="true"></div>Loading blocks...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -383,10 +423,8 @@
             
             // Sync blocks table
             if (viewName === 'blocks') {
-                const blocksTbody = document.getElementById('blocks-tbody-full');
-                const blocksTbodyOverview = document.getElementById('blocks-tbody');
-                if (blocksTbody && blocksTbodyOverview) {
-                    blocksTbody.innerHTML = blocksTbodyOverview.innerHTML;
+                if (window.RustChainExplorer && window.RustChainExplorer.renderBlocksTable) {
+                    window.RustChainExplorer.renderBlocksTable();
                 }
             }
             
