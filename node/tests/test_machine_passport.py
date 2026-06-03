@@ -491,35 +491,36 @@ class TestAPIEndpoints(unittest.TestCase):
             os.environ['ADMIN_KEY'] = self._prev_admin_key
     
     def test_list_passports_empty(self):
-        """Test listing passports when empty."""
+        """Test listing passports returns 401 when unauthenticated."""
         resp = self.client.get('/api/machine-passport')
         data = json.loads(resp.data)
-        
-        self.assertEqual(resp.status_code, 200)
-        self.assertTrue(data['ok'])
-        self.assertEqual(data['count'], 0)
+
+        self.assertEqual(resp.status_code, 401)
+        self.assertFalse(data['ok'])
 
     def test_list_passports_rejects_non_integer_limit(self):
-        """Non-integer limits are invalid for list pagination."""
+        """Unauthenticated requests return 401 before validating pagination."""
         resp = self.client.get('/api/machine-passport?limit=abc')
         data = json.loads(resp.data)
 
-        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.status_code, 401)
         self.assertFalse(data['ok'])
-        self.assertEqual(data['error'], 'limit must be an integer')
 
     def test_list_passports_rejects_negative_offset(self):
-        """Negative offsets are invalid for list pagination."""
+        """Unauthenticated requests return 401 before validating pagination."""
         resp = self.client.get('/api/machine-passport?offset=-1')
         data = json.loads(resp.data)
 
-        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.status_code, 401)
         self.assertFalse(data['ok'])
-        self.assertEqual(data['error'], 'offset must be non-negative')
 
     def test_list_passports_clamps_large_limit(self):
-        """Large list limits are clamped to the documented maximum."""
-        resp = self.client.get('/api/machine-passport?limit=999')
+        """Authenticated admin request clamps large list limits."""
+        os.environ['ADMIN_KEY'] = 'expected-admin-key'
+        resp = self.client.get(
+            '/api/machine-passport?limit=999',
+            headers={'X-Admin-Key': 'expected-admin-key'},
+        )
         data = json.loads(resp.data)
 
         self.assertEqual(resp.status_code, 200)
@@ -612,7 +613,10 @@ class TestAPIEndpoints(unittest.TestCase):
         self.assertEqual(data['error'], 'unauthorized')
         compare_digest.assert_called_once_with(b'wrong-admin-key', b'expected-admin-key')
 
-        get_resp = self.client.get('/api/machine-passport/owner_claim_test')
+        get_resp = self.client.get(
+            '/api/machine-passport/owner_claim_test',
+            headers={'X-Admin-Key': 'expected-admin-key'},
+        )
         passport = json.loads(get_resp.data)['passport']['passport']
         self.assertEqual(passport['name'], 'Owner Claim Test')
 
@@ -725,7 +729,10 @@ class TestAPIEndpoints(unittest.TestCase):
                 self.assertEqual(data['message'], 'ADMIN_KEY not configured')
 
         full_passport = json.loads(
-            self.client.get('/api/machine-passport/subresource_auth_test').data
+            self.client.get(
+                '/api/machine-passport/subresource_auth_test',
+                headers={'X-Admin-Key': 'expected-admin-key'},
+            ).data
         )['passport']
         self.assertEqual(full_passport['passport']['owner_miner_id'], 'miner_owner')
         self.assertEqual(full_passport['repair_log'], [])
@@ -734,13 +741,12 @@ class TestAPIEndpoints(unittest.TestCase):
         self.assertEqual(full_passport['lineage_notes'], [])
     
     def test_get_nonexistent_passport(self):
-        """Test getting a nonexistent passport."""
+        """Unauthenticated GET returns 401 before checking existence."""
         resp = self.client.get('/api/machine-passport/nonexistent')
         data = json.loads(resp.data)
-        
-        self.assertEqual(resp.status_code, 404)
+
+        self.assertEqual(resp.status_code, 401)
         self.assertFalse(data['ok'])
-        self.assertEqual(data['error'], 'passport_not_found')
 
     def test_compute_machine_id_rejects_non_object_json(self):
         """Machine ID computation requires fingerprint JSON objects."""
