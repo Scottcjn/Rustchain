@@ -19,6 +19,18 @@ logger = logging.getLogger(__name__)
 RUSTCHAIN_NODE_URL = "https://50.28.86.131"
 
 
+def _response_json_list(resp) -> list:
+    try:
+        body = resp.json()
+    except ValueError as exc:
+        logger.warning("GitHub API returned invalid JSON: %s", exc)
+        return []
+    if not isinstance(body, list):
+        logger.warning("GitHub API returned %s JSON, expected list", type(body).__name__)
+        return []
+    return [item for item in body if isinstance(item, dict)]
+
+
 def check_user_starred_repo(
     username: str,
     owner: str,
@@ -52,7 +64,7 @@ def check_user_starred_repo(
                 )
                 return False
 
-            stargazers = resp.json()
+            stargazers = _response_json_list(resp)
             if not stargazers:
                 break
 
@@ -100,10 +112,10 @@ def count_user_stars(
                 resp = requests.get(url, headers=headers, timeout=10)
                 if resp.status_code != 200:
                     break
-                data = resp.json()
+                data = _response_json_list(resp)
                 if not data:
                     break
-                repos.extend(r["name"] for r in data)
+                repos.extend(r["name"] for r in data if isinstance(r.get("name"), str))
                 if len(data) < 100:
                     break
                 page += 1
@@ -120,13 +132,22 @@ def count_user_stars(
 def check_wallet_exists(wallet_address: str) -> bool:
     """Verify that a wallet address exists on the RustChain node."""
     try:
-        url = f"{RUSTCHAIN_NODE_URL}/api/balance/{wallet_address}"
+        url = f"{RUSTCHAIN_NODE_URL}/wallet/balance"
         import os
         _cert = os.path.expanduser("~/.rustchain/node_cert.pem")
         _verify = _cert if os.path.exists(_cert) else True
-        resp = requests.get(url, verify=_verify, timeout=10)
+        resp = requests.get(
+            url,
+            params={"miner_id": wallet_address},
+            verify=_verify,
+            timeout=10,
+        )
         if resp.status_code == 200:
-            return True
+            try:
+                body = resp.json()
+            except ValueError:
+                return False
+            return isinstance(body, dict)
     except Exception as exc:
         logger.error("Error checking wallet %s: %s", wallet_address, exc)
     return False

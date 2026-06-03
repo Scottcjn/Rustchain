@@ -236,7 +236,7 @@ def _load_history():
 def create_app():
     """Create Flask application with all endpoints."""
     try:
-        from flask import Flask, jsonify
+        from flask import Flask, jsonify, send_from_directory
         from flask_cors import CORS
     except ImportError:
         print("❌ Flask not installed. Run: pip install flask flask-cors")
@@ -250,11 +250,11 @@ def create_app():
 
     @app.route("/api/health")
     def api_health():
-        return jsonify(_fork_store.get("health", {"ok": False}))
+        return jsonify(_fork_store.get("health") or {"ok": False})
 
     @app.route("/api/epoch")
     def api_epoch():
-        return jsonify(_fork_store.get("epoch", {"epoch": 0, "slot": 0, "height": 0}))
+        return jsonify(_fork_store.get("epoch") or {"epoch": 0, "slot": 0, "height": 0})
 
     @app.route("/api/forks")
     def api_forks():
@@ -269,7 +269,7 @@ def create_app():
         return jsonify({
             "metrics": _fork_store["metrics"],
             "forks": _fork_store["forks"],
-            "health": _fork_store["health"],
+            "health": _fork_store["health"] or {"ok": False},
             "last_update": _fork_store["last_update"]
         })
 
@@ -280,8 +280,14 @@ def create_app():
 
     @app.route("/")
     def index():
-        return """<html><head><meta http-equiv="refresh" content="0;url=fork_choice_graph.html"></head>
-<body><a href="fork_choice_graph.html">→ Open Fork Choice Graph Visualizer</a></body></html>"""
+        return fork_choice_dashboard()
+
+    @app.route("/fork_choice_graph.html")
+    def fork_choice_dashboard():
+        return send_from_directory(
+            os.path.dirname(__file__),
+            "fork_choice_graph.html",
+        )
 
     return app
 

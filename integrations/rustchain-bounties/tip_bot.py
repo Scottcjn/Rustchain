@@ -188,6 +188,19 @@ def github_post_comment(repo: str, issue_number: int, body: str, token: str) -> 
     return resp.status_code == 201
 
 
+def _github_content_sha(resp) -> Optional[str]:
+    if resp.status_code != 200:
+        return None
+    try:
+        body = resp.json()
+    except ValueError:
+        return None
+    if not isinstance(body, dict):
+        return None
+    sha = body.get("sha")
+    return sha if isinstance(sha, str) and sha else None
+
+
 def github_commit_state(repo: str, state_file: str, token: str) -> bool:
     """
     Commit the updated state file back to the repository.
@@ -209,7 +222,7 @@ def github_commit_state(repo: str, state_file: str, token: str) -> bool:
 
     # Get current SHA (needed for updates)
     resp = requests.get(url, headers=headers, timeout=15)
-    sha = resp.json().get("sha") if resp.status_code == 200 else None
+    sha = _github_content_sha(resp)
 
     payload: dict = {
         "message": "chore: update tip state [skip ci]",
@@ -237,7 +250,7 @@ def build_success_comment(sender: str, cmd: TipCommand, context_url: str) -> str
         f"This tip has been logged and is **pending manual payout** by the maintainer. "
         f"@{cmd.recipient} will receive `{cmd.amount} {cmd.token}` once processed.\n\n"
         f"---\n"
-        f"*🤖 [rustchain-tip-bot](https://github.com/mtarcure/rustchain-tip-bot) — "
+        f"*🤖 [rustchain-tip-bot](https://github.com/Scottcjn/Rustchain/tree/main/integrations/rustchain-bounties) — "
         f"maintainer approval required for payout*"
     )
 
@@ -247,7 +260,7 @@ def build_failure_comment(sender: str, error: str) -> str:
         f"**Tip failed** ❌\n\n"
         f"@{sender}: {error}\n\n"
         f"---\n"
-        f"*🤖 [rustchain-tip-bot](https://github.com/mtarcure/rustchain-tip-bot)*"
+        f"*🤖 [rustchain-tip-bot](https://github.com/Scottcjn/Rustchain/tree/main/integrations/rustchain-bounties)*"
     )
 
 
@@ -257,7 +270,7 @@ def build_duplicate_comment(sender: str, cmd: TipCommand) -> str:
         f"@{sender}: This tip (`{cmd.amount} {cmd.token}` → @{cmd.recipient}) "
         f"was already recorded from this comment. No action taken.\n\n"
         f"---\n"
-        f"*🤖 [rustchain-tip-bot](https://github.com/mtarcure/rustchain-tip-bot)*"
+        f"*🤖 [rustchain-tip-bot](https://github.com/Scottcjn/Rustchain/tree/main/integrations/rustchain-bounties)*"
     )
 
 
@@ -266,7 +279,7 @@ def build_unauthorized_comment(sender: str) -> str:
         f"**Unauthorized** ❌\n\n"
         f"@{sender}: Only designated maintainers can issue `/tip` commands.\n\n"
         f"---\n"
-        f"*🤖 [rustchain-tip-bot](https://github.com/mtarcure/rustchain-tip-bot)*"
+        f"*🤖 [rustchain-tip-bot](https://github.com/Scottcjn/Rustchain/tree/main/integrations/rustchain-bounties)*"
     )
 
 

@@ -2,8 +2,11 @@ import importlib.util
 from pathlib import Path
 from unittest.mock import Mock
 
-import matplotlib
 import pytest
+
+pytest.importorskip("matplotlib")
+
+import matplotlib
 
 
 matplotlib.use("Agg", force=True)

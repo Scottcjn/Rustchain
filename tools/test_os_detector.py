@@ -1,22 +1,16 @@
 # SPDX-License-Identifier: MIT
-import importlib.util
-from pathlib import Path
 from unittest.mock import patch
 
-
-MODULE_PATH = Path(__file__).resolve().parent / "os_detector.py"
-spec = importlib.util.spec_from_file_location("os_detector", MODULE_PATH)
-os_detector = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(os_detector)
+import tools.os_detector as os_detector
 
 
 class FixedDateTime:
     @staticmethod
-    def utcnow():
+    def now(_tz):
         class FixedNow:
             @staticmethod
             def isoformat():
-                return "2026-05-11T12:00:00"
+                return "2026-05-11T12:00:00+00:00"
 
         return FixedNow()
 
@@ -51,3 +45,17 @@ def test_detect_legacy_os_badges_returns_empty_list_when_directory_probe_fails()
         result = os_detector.detect_legacy_os_badges()
 
     assert result == {"badges": []}
+
+
+def test_detect_legacy_os_badges_uses_filesystem_listing_not_shell():
+    calls = []
+
+    def fake_listdir(path):
+        calls.append(path)
+        return ["command.com", "config.sys"]
+
+    with patch.object(os_detector.os, "listdir", fake_listdir):
+        result = os_detector.detect_legacy_os_badges()
+
+    assert calls == ["."]
+    assert [badge["title"] for badge in result["badges"]] == ["DOS Cowboy", "Explorer Awakener"]
