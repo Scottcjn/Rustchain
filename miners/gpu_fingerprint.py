@@ -40,18 +40,21 @@ from typing import Optional
 
 try:
     import torch
-    import torch.cuda
 except ImportError:
     torch = None
     HAS_TORCH = False
 else:
     HAS_TORCH = True
+    try:
+        import torch.cuda
+    except ImportError:
+        pass
 
 
 def check_requirements():
     if not HAS_TORCH or torch is None:
         raise RuntimeError("PyTorch with CUDA support required. Install: pip install torch")
-    if not torch.cuda.is_available():
+    if not hasattr(torch, "cuda") or not torch.cuda.is_available():
         raise RuntimeError("No CUDA-capable GPU detected.")
 
 
