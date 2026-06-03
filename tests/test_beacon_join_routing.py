@@ -632,6 +632,122 @@ class TestBeaconJoinRouting(unittest.TestCase):
         self.assertIn('GET', headers.get('Access-Control-Allow-Methods', ''))
 
     # ============================================================
+    # GET /beacon/agent Tests
+    # ============================================================
+
+    def test_public_agent_returns_registered_agent_without_admin_fields(self):
+        """GET /beacon/agent/<id> returns a redacted registered agent profile."""
+        payload = {
+            'agent_id': 'bcn_public_profile',
+            'pubkey_hex': '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
+            'name': 'Public Profile Agent',
+            'coinbase_address': '0x1234567890123456789012345678901234567890',
+        }
+
+        self.client.post(
+            '/beacon/join',
+            data=json.dumps(payload),
+            content_type='application/json'
+        )
+
+        response = self.client.get('/beacon/agent/bcn_public_profile')
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertEqual(data['agent_id'], 'bcn_public_profile')
+        self.assertEqual(data['name'], 'Public Profile Agent')
+        self.assertEqual(data['status'], 'active')
+        self.assertEqual(data['profile_source'], 'relay_agents')
+        self.assertNotIn('pubkey_hex', data)
+        self.assertNotIn('coinbase_address', data)
+
+    def test_public_agent_resolves_registered_agent_by_slugged_name(self):
+        """GET /beacon/agent/<id> resolves registered agents by name slug."""
+        payload = {
+            'agent_id': 'bcn_slug_lookup',
+            'pubkey_hex': '0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd',
+            'name': 'Slug Lookup Agent',
+        }
+
+        self.client.post(
+            '/beacon/join',
+            data=json.dumps(payload),
+            content_type='application/json'
+        )
+
+        response = self.client.get('/beacon/agent/slug-lookup-agent')
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertEqual(data['agent_id'], 'bcn_slug_lookup')
+        self.assertEqual(data['requested_id'], 'slug-lookup-agent')
+
+    def test_public_agent_resolves_sophia_legacy_slug(self):
+        """GET /beacon/agent/sophia-elya resolves the Sophia Atlas profile."""
+        response = self.client.get('/beacon/agent/sophia-elya')
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertEqual(data['agent_id'], 'bcn_sophia_elya')
+        self.assertEqual(data['slug'], 'sophia-elya')
+        self.assertEqual(data['name'], 'Sophia Elya')
+        self.assertEqual(data['beacon_id'], 'bcn_c850ea702e8f')
+        self.assertEqual(data['atlas_url'], 'https://rustchain.org/beacon/agent/sophia-elya')
+        self.assertEqual(data['profile_source'], 'legacy_atlas_override')
+
+    def test_public_agent_legacy_slug_is_not_shadowed_by_registered_name(self):
+        """Registered agent aliases cannot shadow the reserved Sophia Atlas slug."""
+        payload = {
+            'agent_id': 'bcn_shadow_attempt',
+            'pubkey_hex': '0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabce',
+            'name': 'Sophia Elya',
+        }
+
+        join_response = self.client.post(
+            '/beacon/join',
+            data=json.dumps(payload),
+            content_type='application/json'
+        )
+        self.assertEqual(join_response.status_code, 200)
+
+        response = self.client.get('/beacon/agent/sophia-elya')
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertEqual(data['agent_id'], 'bcn_sophia_elya')
+        self.assertEqual(data['slug'], 'sophia-elya')
+        self.assertEqual(data['profile_source'], 'legacy_atlas_override')
+
+    def test_public_agent_resolves_sophia_beacon_id(self):
+        """GET /beacon/agent/<beacon_id> resolves Sophia's machine-readable ID."""
+        response = self.client.get('/beacon/agent/bcn_c850ea702e8f')
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertEqual(data['agent_id'], 'bcn_sophia_elya')
+        self.assertEqual(data['beacon_id'], 'bcn_c850ea702e8f')
+        self.assertEqual(data['requested_id'], 'bcn_c850ea702e8f')
+
+    def test_public_agent_missing_returns_404_with_requested_id(self):
+        """GET /beacon/agent/<id> keeps the public 404 shape for unknown agents."""
+        response = self.client.get('/beacon/agent/missing-agent')
+
+        self.assertEqual(response.status_code, 404)
+        data = json.loads(response.data)
+        self.assertEqual(data['agent_id'], 'missing-agent')
+        self.assertEqual(data['error'], 'Agent not found')
+
+    def test_public_agent_options_returns_cors_headers(self):
+        """OPTIONS /beacon/agent/<id> returns CORS headers."""
+        response = self.client.options('/beacon/agent/sophia-elya')
+
+        self.assertEqual(response.status_code, 200)
+        headers = response.headers
+        self.assertEqual(headers.get('Access-Control-Allow-Origin'), '*')
+        self.assertIn('Content-Type', headers.get('Access-Control-Allow-Headers', ''))
+        self.assertIn('GET', headers.get('Access-Control-Allow-Methods', ''))
+
+    # ============================================================
     # Integration Tests
     # ============================================================
 
