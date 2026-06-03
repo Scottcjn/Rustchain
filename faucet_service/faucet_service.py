@@ -899,13 +899,11 @@ def register_routes(app: Flask, config: Dict, logger: logging.Logger,
                 c.execute('ROLLBACK')
                 return jsonify({'ok': False, 'error': 'Event code expired'}), 410
 
-            tx_hash = _perform_faucet_transfer(config, logger, wallet, float(amount))
-
             c.execute('''
                 UPDATE event_claim_codes
-                SET claimed_wallet = ?, claimed_ip = ?, claimed_at = ?, tx_hash = ?
+                SET claimed_wallet = ?, claimed_ip = ?, claimed_at = ?
                 WHERE code = ? AND claimed_at IS NULL
-            ''', (wallet, ip, now.isoformat(), tx_hash, code))
+            ''', (wallet, ip, now.isoformat(), code))
             if c.rowcount != 1:
                 c.execute('ROLLBACK')
                 return jsonify({'ok': False, 'error': 'Event code already claimed'}), 409
@@ -913,7 +911,8 @@ def register_routes(app: Flask, config: Dict, logger: logging.Logger,
             c.execute('''
                 INSERT INTO drip_requests (wallet, ip_address, amount, timestamp, status, tx_hash)
                 VALUES (?, ?, ?, ?, ?, ?)
-            ''', (wallet, ip, float(amount), now.isoformat(), 'completed', tx_hash))
+            ''', (wallet, ip, float(amount), now.isoformat(), 'pending', None))
+            drip_request_id = c.lastrowid
             c.execute('COMMIT')
         except Exception as exc:
             try:
@@ -924,6 +923,34 @@ def register_routes(app: Flask, config: Dict, logger: logging.Logger,
             return jsonify({'ok': False, 'error': 'Internal transfer error'}), 500
         finally:
             conn.close()
+
+        try:
+            tx_hash = _perform_faucet_transfer(config, logger, wallet, float(amount))
+            with sqlite3.connect(db_path, timeout=30) as conn:
+                c = conn.cursor()
+                c.execute('PRAGMA busy_timeout = 30000')
+                c.execute('''
+                    UPDATE event_claim_codes
+                    SET tx_hash = ?
+                    WHERE code = ?
+                ''', (tx_hash, code))
+                c.execute('''
+                    UPDATE drip_requests
+                    SET status = ?, tx_hash = ?
+                    WHERE id = ?
+                ''', ('completed', tx_hash, drip_request_id))
+        except Exception as exc:
+            try:
+                with sqlite3.connect(db_path, timeout=30) as conn:
+                    conn.execute('''
+                        UPDATE drip_requests
+                        SET status = ?
+                        WHERE id = ?
+                    ''', ('transfer_failed', drip_request_id))
+            except Exception:
+                logger.exception(f"Failed to mark event claim transfer failure for code={code}")
+            logger.error(f"Event claim transfer failed for code={code}: {exc}")
+            return jsonify({'ok': False, 'error': 'Internal transfer error'}), 500
 
         return jsonify({
             'ok': True,

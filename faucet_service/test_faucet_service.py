@@ -676,6 +676,113 @@ class TestFlaskApp(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_event_code_claim_locks_code_before_transfer_finalization(self):
+        """A post-transfer DB error must not make an event code reusable."""
+        conn = sqlite3.connect(self.temp_db.name)
+        try:
+            conn.execute('''
+                INSERT INTO event_claim_codes (code, amount, expires_at, created_at)
+                VALUES (?, ?, ?, ?)
+            ''', (
+                'EVENT-durable',
+                0.5,
+                (datetime.now() + timedelta(days=1)).isoformat(),
+                datetime.now().isoformat(),
+            ))
+            conn.commit()
+        finally:
+            conn.close()
+
+        real_connect = sqlite3.connect
+        state = {'transfer_started': False, 'fail_tx_hash_update': True, 'transfer_calls': 0}
+
+        class CursorWrapper:
+            def __init__(self, cursor):
+                self.cursor = cursor
+
+            def execute(self, sql, params=()):
+                if (
+                    state['fail_tx_hash_update']
+                    and 'UPDATE event_claim_codes' in sql
+                    and 'SET tx_hash' in sql
+                ):
+                    state['fail_tx_hash_update'] = False
+                    raise sqlite3.OperationalError('simulated finalization failure')
+                return self.cursor.execute(sql, params)
+
+            def __getattr__(self, name):
+                return getattr(self.cursor, name)
+
+        class ConnectionWrapper:
+            def __init__(self, conn):
+                self.conn = conn
+
+            def cursor(self):
+                return CursorWrapper(self.conn.cursor())
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, _exc, _tb):
+                if exc_type:
+                    self.conn.rollback()
+                else:
+                    self.conn.commit()
+                self.conn.close()
+                return False
+
+            def __getattr__(self, name):
+                return getattr(self.conn, name)
+
+        def connect_with_finalization_failure(*args, **kwargs):
+            conn = real_connect(*args, **kwargs)
+            if state['transfer_started']:
+                return ConnectionWrapper(conn)
+            return conn
+
+        def fake_transfer(_config, _logger, _wallet, _amount):
+            state['transfer_started'] = True
+            state['transfer_calls'] += 1
+            return 'tx-success-before-db-error'
+
+        with patch('faucet_service.sqlite3.connect', side_effect=connect_with_finalization_failure), \
+             patch('faucet_service._perform_faucet_transfer', side_effect=fake_transfer):
+            first_response = self.client.post(
+                '/faucet/event-claim',
+                json={
+                    'code': 'EVENT-durable',
+                    'wallet': 'RTCe4fbe4c9085b8b2ed3f1228504de66799025f6ce',
+                },
+                content_type='application/json',
+            )
+            retry_response = self.client.post(
+                '/faucet/event-claim',
+                json={
+                    'code': 'EVENT-durable',
+                    'wallet': 'RTCe4fbe4c9085b8b2ed3f1228504de66799025f6ce',
+                },
+                content_type='application/json',
+            )
+
+        self.assertEqual(first_response.status_code, 500)
+        self.assertEqual(retry_response.status_code, 409)
+        self.assertEqual(state['transfer_calls'], 1)
+
+        conn = sqlite3.connect(self.temp_db.name)
+        try:
+            claimed_at, tx_hash = conn.execute('''
+                SELECT claimed_at, tx_hash FROM event_claim_codes WHERE code = ?
+            ''', ('EVENT-durable',)).fetchone()
+            status = conn.execute('''
+                SELECT status FROM drip_requests WHERE wallet = ?
+            ''', ('RTCe4fbe4c9085b8b2ed3f1228504de66799025f6ce',)).fetchone()[0]
+        finally:
+            conn.close()
+
+        self.assertIsNotNone(claimed_at)
+        self.assertIsNone(tx_hash)
+        self.assertEqual(status, 'transfer_failed')
+
     def test_event_code_claim_rejects_expired_code(self):
         """Expired event codes are not claimable."""
         conn = sqlite3.connect(self.temp_db.name)
