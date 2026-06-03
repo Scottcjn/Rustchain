@@ -91,3 +91,39 @@ def test_generate_report_uses_verified_reward_inputs_without_network():
     assert "alice-wallet" in report
     assert "12.5 RTC" in report
     assert "**28.0 RTC**" in report
+
+
+def test_verify_wallet_uses_amount_rtc_balance_field(monkeypatch):
+    class Response:
+        status_code = 200
+
+        def json(self):
+            return {"amount_rtc": 12.5}
+
+    def fake_get(url, verify, timeout):
+        return Response()
+
+    monkeypatch.setattr(verifier.requests, "get", fake_get)
+    subject = verifier.BountyVerifier.__new__(verifier.BountyVerifier)
+
+    result = subject.verify_wallet("alice-wallet")
+
+    assert result == {"exists": True, "balance": 12.5}
+
+
+def test_verify_wallet_rejects_non_object_balance_response(monkeypatch):
+    class Response:
+        status_code = 200
+
+        def json(self):
+            return [{"amount_rtc": 12.5}]
+
+    def fake_get(url, verify, timeout):
+        return Response()
+
+    monkeypatch.setattr(verifier.requests, "get", fake_get)
+    subject = verifier.BountyVerifier.__new__(verifier.BountyVerifier)
+
+    result = subject.verify_wallet("alice-wallet")
+
+    assert result == {"exists": False, "error": "wallet_response_not_object"}

@@ -11,7 +11,7 @@ def test_otc_bridge_escapes_order_wallet_fields_before_rendering():
     html = OTC_HTML.read_text(encoding="utf-8")
 
     assert "function escapeHtml(value)" in html
-    assert "${escapeHtml(o.maker_wallet)}" in html
+    assert "${escapeHtml(order.maker_wallet)}" in html
     assert "Counterparty: ${escapeHtml(maker)}" in html
 
 

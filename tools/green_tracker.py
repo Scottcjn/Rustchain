@@ -5,7 +5,6 @@ Bounty #2218
 """
 
 import sqlite3
-import json
 import datetime
 from typing import Optional, List, Dict, Any
 
@@ -121,10 +120,18 @@ class GreenTracker:
         with self._connect() as conn:
             conn.execute(
                 """
-                INSERT OR REPLACE INTO machines
+                INSERT INTO machines
                     (machine_id, name, arch, year_manufactured, condition,
                      location, photo_url, registered_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(machine_id) DO UPDATE SET
+                    name = excluded.name,
+                    arch = excluded.arch,
+                    year_manufactured = excluded.year_manufactured,
+                    condition = excluded.condition,
+                    location = excluded.location,
+                    photo_url = excluded.photo_url,
+                    registered_at = excluded.registered_at
                 """,
                 (machine_id, name, arch, year_manufactured, condition,
                  location, photo_url, now),
@@ -234,6 +241,9 @@ class GreenTracker:
 
     def get_leaderboard(self, limit: int = 10) -> List[Dict[str, Any]]:
         """Return top machines ranked by RTC earned."""
+        if limit < 1:
+            raise ValueError("limit must be a positive integer")
+
         with self._connect() as conn:
             rows = conn.execute(
                 """

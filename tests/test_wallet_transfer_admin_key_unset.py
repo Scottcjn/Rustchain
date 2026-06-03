@@ -38,6 +38,13 @@ def client():
 # Endpoints that previously fell through to compare_digest with empty env.
 # Each entry: (method, path, json_body_or_none, expected_503_when_unset)
 ADMIN_GATED_ENDPOINTS = [
+    ("POST", "/withdraw/register", {"miner_pk": "a", "pubkey_sr25519": "00"}),
+    ("GET", "/withdraw/history/a", None),
+    ("POST", "/gov/rotate/stage", {"epoch_effective": 1, "members": []}),
+    ("GET", "/genesis/export", None),
+    ("GET", "/api/miner/a/attestations", None),
+    ("GET", "/api/balances", None),
+    ("POST", "/ops/attest/debug", {"miner": "a"}),
     ("POST", "/wallet/transfer", {"from_miner": "a", "to_miner": "b", "amount_rtc": 1}),
     ("POST", "/rewards/settle", {"epoch": 1}),
     ("GET", "/pending/list", None),
@@ -59,6 +66,7 @@ def _request(client, method, path, body):
 def test_admin_endpoint_returns_503_when_admin_key_unset(monkeypatch, client, method, path, body):
     """When RC_ADMIN_KEY is empty, endpoint must return 503 ADMIN_KEY_UNSET, not 401."""
     monkeypatch.setenv("RC_ADMIN_KEY", "")
+    monkeypatch.setattr(integrated_node, "ADMIN_KEY", "")
 
     resp = _request(client, method, path, body)
 
@@ -97,6 +105,7 @@ def test_wallet_transfer_does_not_authenticate_empty_to_empty(monkeypatch, clien
     without a configured key, regardless of header content.
     """
     monkeypatch.setenv("RC_ADMIN_KEY", "")
+    monkeypatch.setattr(integrated_node, "ADMIN_KEY", "")
 
     # No header at all
     resp1 = client.post("/wallet/transfer", json={"from_miner": "a", "to_miner": "b", "amount_rtc": 1})
@@ -117,3 +126,48 @@ def test_wallet_transfer_does_not_authenticate_empty_to_empty(monkeypatch, clien
         headers={"X-Admin-Key": "anything"},
     )
     assert resp3.status_code == 503
+
+
+@pytest.mark.parametrize("configured_key", ["", "   ", 0, True, object()])
+def test_withdraw_register_rejects_invalid_configured_admin_key(
+    monkeypatch,
+    client,
+    configured_key,
+):
+    """Whitespace-only and non-string admin keys are treated as unset, not coerced."""
+    monkeypatch.setattr(integrated_node, "ADMIN_KEY", configured_key)
+
+    resp = client.post(
+        "/withdraw/register",
+        json={"miner_pk": "a", "pubkey_sr25519": "00"},
+        headers={"X-Admin-Key": str(configured_key).strip()},
+    )
+
+    assert resp.status_code == 503
+    payload = resp.get_json() or {}
+    assert payload.get("code") == "ADMIN_KEY_UNSET"
+
+
+def test_withdraw_register_logs_unset_admin_key(monkeypatch, client, caplog):
+    monkeypatch.setattr(integrated_node, "ADMIN_KEY", " ")
+
+    with caplog.at_level("WARNING"):
+        client.post(
+            "/withdraw/register",
+            json={"miner_pk": "a", "pubkey_sr25519": "00"},
+        )
+
+    assert "admin route hit with no key configured" in caplog.text
+
+
+def test_withdraw_register_logs_wrong_admin_key(monkeypatch, client, caplog):
+    monkeypatch.setattr(integrated_node, "ADMIN_KEY", "a" * 32)
+
+    with caplog.at_level("WARNING"):
+        client.post(
+            "/withdraw/register",
+            json={"miner_pk": "a", "pubkey_sr25519": "00"},
+            headers={"X-Admin-Key": "wrong"},
+        )
+
+    assert "admin auth failure" in caplog.text

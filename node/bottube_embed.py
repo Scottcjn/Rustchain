@@ -816,6 +816,8 @@ def embed_player(video_id: str):
     Returns:
         HTML page with embedded video player
     """
+    if len(video_id) > 256:
+        return Response("<html><body><h1>Invalid video ID</h1></body></html>", status=400, mimetype="text/html")
     # Get video data
     video = _get_mock_video(video_id)
 
@@ -861,6 +863,8 @@ def oembed():
         JSON oEmbed response
     """
     url = request.args.get("url", "")
+    if len(url) > 2048:
+        return jsonify({"error": "URL too long"}), 400
     format_param = request.args.get("format", "json")
     maxwidth = request.args.get("maxwidth", 854)
     maxheight = request.args.get("maxheight", 480)
@@ -956,6 +960,8 @@ def watch_page(video_id: str):
         Full HTML watch page
     """
     # Get video data
+    if len(video_id) > 256:
+        return Response("<html><body><h1>Invalid video ID</h1></body></html>", status=400, mimetype="text/html")
     video = _get_mock_video(video_id)
 
     if not video:

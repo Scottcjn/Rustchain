@@ -9,13 +9,17 @@ import hashlib
 import json
 import secrets
 import time
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, asdict
 from enum import Enum
 import numpy as np
 
-from .acoustic_fingerprint import AcousticFingerprint, FingerprintFeatures
-from .boot_chime_capture import BootChimeCapture, CapturedAudio
+try:
+    from .acoustic_fingerprint import AcousticFingerprint, FingerprintFeatures
+    from .boot_chime_capture import BootChimeCapture
+except ImportError:
+    from acoustic_fingerprint import AcousticFingerprint, FingerprintFeatures
+    from boot_chime_capture import BootChimeCapture
 
 
 class AttestationStatus(Enum):
@@ -471,7 +475,7 @@ class ProofOfIron:
                   challenge.issued_at, challenge.expires_at))
             conn.commit()
             conn.close()
-        except:
+        except Exception:
             pass
     
     def _save_attestation(self, result: AttestationResult) -> None:
@@ -488,7 +492,7 @@ class ProofOfIron:
                   result.verified_at, result.message, result.ttl_seconds))
             conn.commit()
             conn.close()
-        except:
+        except Exception:
             pass
     
     def _save_features(self, features_hash: str,
@@ -521,7 +525,7 @@ class ProofOfIron:
             
             conn.commit()
             conn.close()
-        except:
+        except Exception:
             pass
     
     def _load_features(self, features_hash: str) -> Optional[FingerprintFeatures]:

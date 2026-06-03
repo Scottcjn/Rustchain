@@ -885,7 +885,8 @@ def validate_all_checks(include_rom_check: bool = True) -> Tuple[bool, Dict]:
             passed, data = func()
         except Exception as e:
             passed = False
-            data = {"error": str(e)}
+            print(f"[FINGERPRINT] check error: {e!r}")
+            data = {"error": "internal_error"}
         results[key] = {"passed": passed, "data": data}
         if not passed:
             all_passed = False

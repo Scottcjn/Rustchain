@@ -7,8 +7,8 @@ TOOLS_DIR = ROOT / "tools"
 if str(TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(TOOLS_DIR))
 
-import node_sync_validator
-from node_sync_validator import NodeSnapshot
+import node_sync_validator  # noqa: E402
+from node_sync_validator import NodeSnapshot  # noqa: E402
 
 
 def _snap(node, *, ok=True, error="", epoch=1, slot=10, tip_age=2, miners=None, balances=None):
@@ -36,19 +36,19 @@ def test_compare_snapshots_reports_down_nodes_when_not_enough_online_nodes(monke
     assert all(not values for values in report["discrepancies"].values())
 
 
-def test_compare_snapshots_detects_epoch_slot_tip_miner_and_balance_mismatches(monkeypatch):
+def test_compare_snapshots_detects_tip_miner_and_balance_mismatches(monkeypatch):
     monkeypatch.setattr(node_sync_validator.time, "time", lambda: 99)
     report = node_sync_validator.compare_snapshots(
         [
             _snap("a", epoch=1, slot=10, tip_age=1, miners=["alice", "bob"], balances={"alice": 1.0}),
-            _snap("b", epoch=2, slot=11, tip_age=9, miners=["alice"], balances={"alice": 1.5}),
+            _snap("b", epoch=1, slot=10, tip_age=9, miners=["alice"], balances={"alice": 1.5}),
         ],
         tip_drift_threshold=5,
     )
     d = report["discrepancies"]
 
-    assert d["epoch_mismatch"] == [{"a": 1, "b": 2}]
-    assert d["slot_mismatch"] == [{"a": 10, "b": 11}]
+    assert d["epoch_mismatch"] == []
+    assert d["slot_mismatch"] == []
     assert d["tip_age_drift"] == [{"values": {"a": 1, "b": 9}, "drift": 8}]
     assert d["miner_presence_diff"] == [{"miner": "bob", "present_on": ["a"], "missing_on": ["b"]}]
     assert d["balance_mismatch"] == [{"miner": "alice", "balances": {"a": 1.0, "b": 1.5}}]

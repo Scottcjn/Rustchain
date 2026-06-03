@@ -148,6 +148,10 @@ class RustChainMCP:
             await self.client.close()
         logger.info("RustChain MCP Server stopped")
 
+    def create_initialization_options(self) -> dict[str, Any]:
+        """Return MCP initialization options from the underlying app."""
+        return self.app.create_initialization_options()
+
     def _setup_handlers(self) -> None:
         """Setup MCP request handlers."""
 
@@ -408,6 +412,8 @@ class RustChainMCP:
 
         elif uri.startswith("rustchain://wallet/"):
             miner_id = uri.split("/")[-1]
+            if not miner_id:
+                raise ValueError("miner_id is required")
             balance = await self.client.balance(miner_id)
             data = {
                 "miner_id": balance.miner_id,

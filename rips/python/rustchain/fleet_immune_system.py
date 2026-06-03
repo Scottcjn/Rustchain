@@ -1004,6 +1004,21 @@ def register_fleet_endpoints(app, DB_PATH):
 
         return min(limit, max_value)
 
+    def parse_positive_epoch() -> Optional[int]:
+        raw_value = request.args.get('epoch')
+        if raw_value is None:
+            return None
+
+        try:
+            epoch = int(raw_value)
+        except ValueError:
+            raise ValueError("epoch must be an integer") from None
+
+        if epoch < 1:
+            raise ValueError("epoch must be positive")
+
+        return epoch
+
     @app.route('/admin/fleet/report', methods=['GET'])
     def fleet_report():
         import os, hmac
@@ -1014,7 +1029,11 @@ def register_fleet_endpoints(app, DB_PATH):
         if not hmac.compare_digest(provided_key, admin_key):
             return jsonify({"error": "Unauthorized"}), 401
 
-        epoch = request.args.get('epoch', type=int)
+        try:
+            epoch = parse_positive_epoch()
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
         if epoch is None:
             from rewards_implementation_rip200 import current_slot, slot_to_epoch
             epoch = slot_to_epoch(current_slot()) - 1
@@ -1042,7 +1061,7 @@ def register_fleet_endpoints(app, DB_PATH):
         with sqlite3.connect(DB_PATH) as db:
             if miner:
                 rows = db.execute("""
-                    SELECT epoch, fleet_score, ip_signal, timing_signal,
+                    SELECT miner, epoch, fleet_score, ip_signal, timing_signal,
                            fingerprint_signal, effective_multiplier
                     FROM fleet_scores WHERE miner = ?
                     ORDER BY epoch DESC LIMIT ?

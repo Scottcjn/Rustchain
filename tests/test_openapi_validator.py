@@ -96,6 +96,30 @@ def test_validate_references_and_security_report_undefined_names():
     assert "Undefined security scheme 'ApiKeyAuth' used in GET /wallet" in validator.errors
 
 
+def test_validate_security_skips_malformed_path_items():
+    module = load_validator_module()
+    validator = module.OpenAPIValidator("unused.yaml")
+    validator.spec = {
+        "paths": {
+            "/broken": [],
+            "/also-broken": {"get": []},
+            "/wallet": {
+                "get": {
+                    "security": [{"ApiKeyAuth": []}],
+                    "responses": {"200": {"description": "ok"}},
+                }
+            },
+        },
+        "components": {"securitySchemes": {}},
+    }
+
+    assert validator.validate_security() is False
+
+    assert validator.errors == [
+        "Undefined security scheme 'ApiKeyAuth' used in GET /wallet"
+    ]
+
+
 def test_validate_accepts_minimal_valid_spec(tmp_path, capsys):
     module = load_validator_module()
     spec_path = write_spec(

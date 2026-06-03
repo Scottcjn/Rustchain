@@ -4,15 +4,16 @@ Provides async access to the RustChain network RPC API.
 """
 
 import httpx
-import json
 from typing import Dict, List, Any, Optional
 
 from .exceptions import (
     RustChainError,
     ConnectionError as RCConnectionError,
     APIError,
-    ValidationError,
 )
+
+
+DEFAULT_NODE_URL = "https://rustchain.org"
 
 
 class RustChainClient:
@@ -21,7 +22,7 @@ class RustChainClient:
 
     Args:
         base_url: Base URL of the RustChain node RPC endpoint.
-                   Defaults to "https://50.28.86.131".
+                   Defaults to "https://rustchain.org".
         timeout: Request timeout in seconds. Defaults to 30.
 
     Example:
@@ -40,7 +41,7 @@ class RustChainClient:
 
     def __init__(
         self,
-        base_url: str = "https://50.28.86.131",
+        base_url: str = DEFAULT_NODE_URL,
         timeout: float = 30.0,
         verify: Optional[bool] = None,
     ):
@@ -75,7 +76,7 @@ class RustChainClient:
         path: str,
         params: Optional[Dict[str, Any]] = None,
         json_data: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+    ) -> Any:
         """
         Internal POST helper.
 
@@ -119,7 +120,7 @@ class RustChainClient:
         self,
         path: str,
         params: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+    ) -> Any:
         """
         Internal GET helper.
 
@@ -136,7 +137,13 @@ class RustChainClient:
         """
         try:
             client = await self._get_client()
-            response = await client.get(path, params=params)
+            response = await client.get(path, params=params, follow_redirects=False)
+            if 300 <= response.status_code < 400:
+                location = response.headers.get("location", "")
+                raise APIError(
+                    f"API redirected: HTTP {response.status_code} to {location}",
+                    status_code=response.status_code,
+                )
             response.raise_for_status()
             return response.json()
         except httpx.ConnectError as e:
@@ -153,6 +160,27 @@ class RustChainClient:
             )
         except Exception as e:
             raise RustChainError(f"Unexpected error: {e}")
+
+    async def _post_object(
+        self,
+        path: str,
+        params: Optional[Dict[str, Any]] = None,
+        json_data: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        result = await self._post(path, params=params, json_data=json_data)
+        if not isinstance(result, dict):
+            raise APIError("Expected JSON object response")
+        return result
+
+    async def _get_object(
+        self,
+        path: str,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        result = await self._get(path, params=params)
+        if not isinstance(result, dict):
+            raise APIError("Expected JSON object response")
+        return result
 
     async def close(self) -> None:
         """Close the underlying HTTP client."""
@@ -177,7 +205,7 @@ class RustChainClient:
         Returns:
             Health status dict with node info.
         """
-        return await self._get("/health")
+        return await self._get_object("/health")
 
     async def get_epoch(self) -> Dict[str, Any]:
         """
@@ -186,7 +214,7 @@ class RustChainClient:
         Returns:
             Dict with epoch number, start_time, end_time, etc.
         """
-        return await self._get("/epoch")
+        return await self._get_object("/epoch")
 
     async def get_headers_tip(self) -> Dict[str, Any]:
         """
@@ -195,7 +223,7 @@ class RustChainClient:
         Returns:
             Dict with header height, hash, timestamp, etc.
         """
-        return await self._get("/headers/tip")
+        return await self._get_object("/headers/tip")
 
     # ─────────────────────────────────────────────────────────────────
     # Miners & Attestation
@@ -211,7 +239,12 @@ class RustChainClient:
         result = await self._get("/miners")
         if isinstance(result, list):
             return result
-        return result.get("miners", [])
+        if isinstance(result, dict):
+            for key in ("miners", "data", "items"):
+                miners = result.get(key)
+                if isinstance(miners, list):
+                    return miners
+        return []
 
     async def get_attestation_status(self, miner_public_key: str) -> Dict[str, Any]:
         """
@@ -223,7 +256,7 @@ class RustChainClient:
         Returns:
             Attestation status dict.
         """
-        return await self._get(
+        return await self._get_object(
             "/attestation/status",
             params={"miner_public_key": miner_public_key},
         )
@@ -238,7 +271,7 @@ class RustChainClient:
         Returns:
             Challenge dict with challenge string and expiry.
         """
-        return await self._post(
+        return await self._post_object(
             "/attestation/challenge",
             json_data={"miner_public_key": miner_public_key},
         )
@@ -260,7 +293,7 @@ class RustChainClient:
         Returns:
             Submission result dict.
         """
-        return await self._post(
+        return await self._post_object(
             "/attestation/submit",
             json_data={
                 "miner_public_key": miner_public_key,
@@ -276,7 +309,7 @@ class RustChainClient:
         Returns:
             Bounty multiplier info.
         """
-        return await self._get("/attestation/bounty_multiplier")
+        return await self._get_object("/attestation/bounty_multiplier")
 
     # ─────────────────────────────────────────────────────────────────
     # Wallet & Balances
@@ -292,7 +325,7 @@ class RustChainClient:
         Returns:
             Dict with balance, nonce, etc.
         """
-        return await self._get(
+        return await self._get_object(
             "/wallet/balance",
             params={"address": wallet_address},
         )
@@ -307,7 +340,7 @@ class RustChainClient:
         Returns:
             Dict with wallet balance info.
         """
-        return await self._get(
+        return await self._get_object(
             "/wallet/balance",
             params={"miner_id": miner_id},
         )
@@ -327,7 +360,7 @@ class RustChainClient:
         Returns:
             Dict with transactions list and metadata.
         """
-        return await self._get(
+        return await self._get_object(
             "/wallet/history",
             params={"address": wallet_address, "limit": limit},
         )
@@ -336,8 +369,8 @@ class RustChainClient:
         self,
         wallet,
         to_address: str,
-        amount: int,
-        fee: int = 0,
+        amount: float,
+        fee: float = 0,
     ) -> Dict[str, Any]:
         """
         Build and submit a signed transfer using a RustChainWallet.
@@ -345,20 +378,23 @@ class RustChainClient:
         Args:
             wallet: A RustChainWallet instance.
             to_address: Recipient wallet address.
-            amount: Amount to transfer (in smallest units).
-            fee: Transaction fee (default 0).
+            amount: Amount to transfer in RTC.
+            fee: Transaction fee in RTC.
 
         Returns:
             Transaction result dict.
         """
         transfer = wallet.sign_transfer(to_address, amount, fee)
         return await self.transfer_signed(
-            from_address=transfer["from"],
-            to_address=transfer["to"],
-            amount=transfer["amount"],
-            fee=transfer["fee"],
+            from_address=transfer["from_address"],
+            to_address=transfer["to_address"],
+            amount=transfer["amount_rtc"],
+            fee=transfer["fee_rtc"],
             signature=transfer["signature"],
-            timestamp=transfer["timestamp"],
+            timestamp=transfer["nonce"],
+            public_key=transfer["public_key"],
+            memo=transfer.get("memo", ""),
+            chain_id=transfer.get("chain_id"),
         )
 
     # ─────────────────────────────────────────────────────────────────
@@ -369,10 +405,13 @@ class RustChainClient:
         self,
         from_address: str,
         to_address: str,
-        amount: int,
-        fee: int,
+        amount: float,
+        fee: float,
         signature: str,
         timestamp: int,
+        public_key: Optional[str] = None,
+        memo: str = "",
+        chain_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Submit a signed transfer transaction.
@@ -380,25 +419,32 @@ class RustChainClient:
         Args:
             from_address: Sender wallet address.
             to_address: Recipient wallet address.
-            amount: Amount in smallest units.
-            fee: Transaction fee.
+            amount: Amount in RTC.
+            fee: Transaction fee in RTC.
             signature: Hex-encoded Ed25519 signature.
-            timestamp: Unix timestamp of the transaction.
+            timestamp: Unique transfer nonce.
+            public_key: Sender public key matching from_address.
+            memo: Optional transfer memo.
+            chain_id: Optional chain/network id.
 
         Returns:
             Transaction result dict with tx_hash, status, etc.
         """
-        return await self._post(
-            "/transfer",
-            json_data={
-                "from": from_address,
-                "to": to_address,
-                "amount": amount,
-                "fee": fee,
-                "signature": signature,
-                "timestamp": timestamp,
-            },
-        )
+        payload = {
+            "from_address": from_address,
+            "to_address": to_address,
+            "amount_rtc": amount,
+            "fee_rtc": fee,
+            "nonce": timestamp,
+            "signature": signature,
+            "public_key": public_key or "",
+        }
+        if memo:
+            payload["memo"] = memo
+        if chain_id:
+            payload["chain_id"] = chain_id
+
+        return await self._post_object("/wallet/transfer/signed", json_data=payload)
 
     # ─────────────────────────────────────────────────────────────────
     # Beacon
@@ -414,7 +460,7 @@ class RustChainClient:
         Returns:
             Submission result.
         """
-        return await self._post("/beacon/submit", json_data={"envelope": envelope})
+        return await self._post_object("/beacon/submit", json_data={"envelope": envelope})
 
     # ─────────────────────────────────────────────────────────────────
     # Governance
@@ -439,7 +485,7 @@ class RustChainClient:
         Returns:
             Proposal result with proposal_id.
         """
-        return await self._post(
+        return await self._post_object(
             "/governance/propose",
             json_data={
                 "proposer": proposer,
@@ -468,7 +514,7 @@ class RustChainClient:
         Returns:
             Vote submission result.
         """
-        return await self._post(
+        return await self._post_object(
             "/governance/vote",
             json_data={
                 "voter": voter,
@@ -494,7 +540,11 @@ class RustChainClient:
         result = await self._get("/governance/proposals", params=params)
         if isinstance(result, list):
             return result
-        return result.get("proposals", [])
+        if isinstance(result, dict):
+            proposals = result.get("proposals", [])
+            if isinstance(proposals, list):
+                return proposals
+        return []
 
     # ─────────────────────────────────────────────────────────────────
     # Explorer
@@ -513,7 +563,11 @@ class RustChainClient:
         result = await self._get("/explorer/blocks", params={"limit": limit})
         if isinstance(result, list):
             return result
-        return result.get("blocks", [])
+        if isinstance(result, dict):
+            blocks = result.get("blocks", [])
+            if isinstance(blocks, list):
+                return blocks
+        return []
 
     async def explorer_transactions(
         self,
@@ -536,7 +590,11 @@ class RustChainClient:
         result = await self._get("/explorer/transactions", params=params)
         if isinstance(result, list):
             return result
-        return result.get("transactions", [])
+        if isinstance(result, dict):
+            transactions = result.get("transactions", [])
+            if isinstance(transactions, list):
+                return transactions
+        return []
 
     # ─────────────────────────────────────────────────────────────────
     # Epoch & Rewards
@@ -552,7 +610,7 @@ class RustChainClient:
         Returns:
             Dict with reward distribution info.
         """
-        return await self._get(
+        return await self._get_object(
             "/epoch/rewards",
             params={"epoch_number": epoch_number},
         )

@@ -269,6 +269,7 @@ const RustChainWebSocket = (function() {
      * Handle new block event
      */
     function handleNewBlock(block) {
+        if (!block || typeof block !== 'object') return;
         if (window.RustChainExplorer && window.RustChainExplorer.state) {
             // Add to blocks array
             const blocks = window.RustChainExplorer.state.blocks || [];
@@ -290,6 +291,7 @@ const RustChainWebSocket = (function() {
      * Handle new attestation event
      */
     function handleNewAttestation(attestation) {
+        if (!attestation || typeof attestation !== 'object') return;
         if (window.RustChainExplorer && window.RustChainExplorer.state) {
             // Update miners if this miner is new or updated
             const miners = window.RustChainExplorer.state.miners || [];
@@ -310,7 +312,7 @@ const RustChainWebSocket = (function() {
             
             // Show notification
             showNotification('attestation', 'New Attestation', 
-                `Miner: ${attestation.miner_id?.slice(0, 16)}... | Arch: ${attestation.device_arch}`);
+                `Miner: ${shortenValue(attestation.miner_id, 16)}... | Arch: ${attestation.device_arch ?? ''}`);
         }
     }
 
@@ -318,8 +320,10 @@ const RustChainWebSocket = (function() {
      * Handle epoch settlement event (bonus feature)
      */
     function handleEpochSettlement(settlement) {
-        showNotification('settlement', `🎉 Epoch #${settlement.epoch} Settled!`, 
-            `Total Reward: ${settlement.total_reward?.toFixed(2)} RTC | Miners: ${settlement.miners_count}`);
+        if (!settlement || typeof settlement !== 'object') return;
+        const reward = Number(settlement.total_reward);
+        showNotification('settlement', `🎉 Epoch #${settlement.epoch ?? 0} Settled!`,
+            `Total Reward: ${Number.isFinite(reward) ? reward.toFixed(2) : '0.00'} RTC | Miners: ${settlement.miners_count ?? 0}`);
         
         // Play sound notification (bonus feature)
         if (window.playNotificationSound) {
@@ -538,16 +542,37 @@ const RustChainWebSocket = (function() {
         const container = document.getElementById('ws-notifications');
         if (!container) return;
 
+        const safeType = getNotificationType(type);
         const notification = document.createElement('div');
-        notification.className = `ws-notification ws-notification-${type}`;
-        notification.innerHTML = `
-            <div class="ws-notification-header">
-                <span class="ws-notification-icon">${getNotificationIcon(type)}</span>
-                <span class="ws-notification-title">${escapeHtml(title)}</span>
-                <button class="ws-notification-close" onclick="this.parentElement.parentElement.remove()">×</button>
-            </div>
-            <div class="ws-notification-body">${escapeHtml(body)}</div>
-        `;
+        notification.className = `ws-notification ws-notification-${safeType}`;
+
+        const header = document.createElement('div');
+        header.className = 'ws-notification-header';
+
+        const icon = document.createElement('span');
+        icon.className = 'ws-notification-icon';
+        icon.textContent = getNotificationIcon(safeType);
+
+        const titleEl = document.createElement('span');
+        titleEl.className = 'ws-notification-title';
+        titleEl.textContent = String(title ?? '');
+
+        const close = document.createElement('button');
+        close.className = 'ws-notification-close';
+        close.type = 'button';
+        close.textContent = '×';
+        close.addEventListener('click', () => notification.remove());
+
+        header.appendChild(icon);
+        header.appendChild(titleEl);
+        header.appendChild(close);
+
+        const bodyEl = document.createElement('div');
+        bodyEl.className = 'ws-notification-body';
+        bodyEl.textContent = String(body ?? '');
+
+        notification.appendChild(header);
+        notification.appendChild(bodyEl);
 
         container.appendChild(notification);
 
@@ -571,6 +596,16 @@ const RustChainWebSocket = (function() {
             default: '🔔'
         };
         return icons[type] || icons.default;
+    }
+
+    function getNotificationType(type) {
+        const value = String(type || 'default').toLowerCase();
+        return ['block', 'attestation', 'settlement'].includes(value) ? value : 'default';
+    }
+
+    function shortenValue(value, chars = 16) {
+        const text = String(value ?? '');
+        return text.length > chars ? text.slice(0, chars) : text;
     }
 
     /**

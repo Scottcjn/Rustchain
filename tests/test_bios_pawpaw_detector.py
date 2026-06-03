@@ -55,3 +55,20 @@ def test_bios_query_failure_returns_none(monkeypatch):
     monkeypatch.setattr(detector.subprocess, "check_output", fake_check_output)
 
     assert detector.get_bios_date() is None
+
+
+def test_bios_query_does_not_swallow_system_exit(monkeypatch):
+    detector = load_detector_module()
+
+    def fake_check_output(args, **kwargs):
+        raise SystemExit("stop")
+
+    monkeypatch.setattr(detector.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(detector.subprocess, "check_output", fake_check_output)
+
+    try:
+        detector.get_bios_date()
+    except SystemExit as exc:
+        assert str(exc) == "stop"
+    else:
+        raise AssertionError("SystemExit should not be swallowed")

@@ -75,7 +75,7 @@ class AudienceTracker:
         total_video_secs: float = 600.0,
     ):
         """Record a viewer interaction with a video."""
-        ts = watched_at or int(time.time())
+        ts = watched_at if watched_at is not None else int(time.time())
         with self._conn() as conn:
             conn.execute(
                 """INSERT INTO views (viewer_id, video_id, watched_at, duration, liked, commented)

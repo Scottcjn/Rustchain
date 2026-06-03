@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['Z:\\home\\scott\\Rustchain\\miners\\windows\\rustchain_windows_miner.py'],
+    ['rustchain_windows_miner.py'],
     pathex=[],
     binaries=[],
     datas=[],

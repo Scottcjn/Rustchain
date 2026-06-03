@@ -137,8 +137,8 @@ graph LR
 
 | Metric | Value |
 |--------|-------|
-| **Total Supply** | 8,000,000 RTC |
-| **Premine** | 75,000 RTC (dev/bounties) |
+| **Total Supply** | 8,388,608 RTC |
+| **Premine** | 503,316 RTC (dev/bounties) |
 | **Epoch Reward** | 1.5 RTC |
 | **Epoch Duration** | ~24 hours |
 | **Annual Inflation** | ~0.68% (decreasing) |
