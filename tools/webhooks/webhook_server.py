@@ -398,16 +398,33 @@ class RustChainPoller:
 
     def _check_miners(self):
         miners_data = self._get("/api/miners")
-        if miners_data is None or not isinstance(miners_data, list):
+        if isinstance(miners_data, list):
+            miners = miners_data
+        elif isinstance(miners_data, dict):
+            miners = miners_data.get("miners") or miners_data.get("data") or []
+        else:
             return
-        current_miners = {m["miner"] for m in miners_data if "miner" in m}
+        if not isinstance(miners, list):
+            return
+        current_miners = {
+            miner_id
+            for miner_id in ((m.get("miner") or m.get("miner_id") or m.get("id")) for m in miners if isinstance(m, dict))
+            if miner_id
+        }
 
         if self._prev_miners:
             joined = current_miners - self._prev_miners
             left = self._prev_miners - current_miners
 
             for miner_id in joined:
-                miner_info = next((m for m in miners_data if m.get("miner") == miner_id), {})
+                miner_info = next(
+                    (
+                        m for m in miners
+                        if isinstance(m, dict)
+                        and (m.get("miner") or m.get("miner_id") or m.get("id")) == miner_id
+                    ),
+                    {},
+                )
                 dispatch_event(WebhookEvent(
                     event_type="miner_joined",
                     timestamp=time.time(),
@@ -517,7 +534,10 @@ class WebhookAdminHandler(BaseHTTPRequestHandler):
         if length == 0:
             return {}
         raw = self.rfile.read(length)
-        return json.loads(raw)
+        body = json.loads(raw)
+        if not isinstance(body, dict):
+            raise ValueError("JSON object body required")
+        return body
 
     # FIX(#2867 M3): Authenticate admin API requests
     def _check_api_key(self) -> bool:
@@ -580,6 +600,9 @@ class WebhookAdminHandler(BaseHTTPRequestHandler):
         if not url:
             self._send_json(400, {"error": "url is required"})
             return
+        if not isinstance(url, str):
+            self._send_json(400, {"error": "url must be a string"})
+            return
 
         error = validate_webhook_url(url)
         if error:
@@ -587,7 +610,12 @@ class WebhookAdminHandler(BaseHTTPRequestHandler):
             return
 
         events_raw = body.get("events")
-        if events_raw:
+        if events_raw is not None:
+            if not isinstance(events_raw, list) or not all(
+                isinstance(event, str) for event in events_raw
+            ):
+                self._send_json(400, {"error": "events must be a list of strings"})
+                return
             events = set(events_raw) & ALL_EVENT_TYPES
             if not events:
                 self._send_json(400, {
@@ -599,7 +627,13 @@ class WebhookAdminHandler(BaseHTTPRequestHandler):
             events = set(ALL_EVENT_TYPES)
 
         sub_id = body.get("id") or hashlib.sha256(url.encode()).hexdigest()[:12]
+        if not isinstance(sub_id, str):
+            self._send_json(400, {"error": "id must be a string"})
+            return
         secret = body.get("secret")
+        if secret is not None and not isinstance(secret, str):
+            self._send_json(400, {"error": "secret must be a string"})
+            return
 
         sub = Subscriber(id=sub_id, url=url, secret=secret, events=events)
         self.store.add(sub)
@@ -625,6 +659,9 @@ class WebhookAdminHandler(BaseHTTPRequestHandler):
         sub_id = body.get("id")
         if not sub_id:
             self._send_json(400, {"error": "id is required"})
+            return
+        if not isinstance(sub_id, str):
+            self._send_json(400, {"error": "id must be a string"})
             return
 
         if self.store.remove(sub_id):

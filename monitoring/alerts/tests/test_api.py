@@ -6,7 +6,7 @@ import pytest
 import respx
 import httpx
 
-from rustchain_alerts.api import RustChainClient, MinerInfo, WalletBalance, EpochInfo, HealthInfo
+from rustchain_alerts.api import RustChainClient
 
 
 BASE = "https://test.rustchain.local"
@@ -50,6 +50,24 @@ async def test_get_miners_returns_list():
             miners = await client.get_miners()
             assert len(miners) == 1
             assert miners[0].miner == "miner-abc"
+
+
+@pytest.mark.anyio
+async def test_get_miners_accepts_envelope_and_aliases():
+    with respx.mock(base_url=BASE) as mock:
+        mock.get("/api/miners").mock(return_value=httpx.Response(200, json={
+            "data": [
+                {"miner_id": "miner-def", "hardware": "PowerPC G4"},
+                {"name": "miner-ghi", "hardware_type": "GPU"},
+                "not-a-row",
+            ],
+            "pagination": {"total": 3},
+        }))
+        async with RustChainClient(BASE, verify_ssl=False) as client:
+            miners = await client.get_miners()
+            assert [miner.miner for miner in miners] == ["miner-def", "miner-ghi"]
+            assert miners[0].hardware_type == "PowerPC G4"
+            assert miners[1].hardware_type == "GPU"
 
 
 @pytest.mark.anyio

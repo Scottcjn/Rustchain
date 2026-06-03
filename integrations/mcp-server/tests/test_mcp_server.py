@@ -115,6 +115,33 @@ class TestMinerInfo:
         assert result["found"] is False
         assert "hint" in result
 
+    @pytest.mark.asyncio
+    async def test_get_miner_info_accepts_data_envelope_and_miner_alias(self, mcp_server):
+        """Test miner info lookup with current paginated API row shapes."""
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(
+            return_value={
+                "data": [
+                    {
+                        "miner": "miner-from-data",
+                        "hardware_type": "PowerPC G5",
+                        "score": 245.8,
+                    }
+                ],
+                "total": 1,
+            }
+        )
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=AsyncContextManagerMock(mock_response))
+        mcp_server.session = mock_session
+
+        result = await mcp_server._tool_get_miner_info({"miner_id": "miner-from-data"})
+
+        assert result["found"] is True
+        assert result["miner"]["miner"] == "miner-from-data"
+
 
 class TestBlockInfo:
     """Tests for block info tools."""
@@ -230,6 +257,62 @@ class TestActiveMiners:
         assert result["count"] == 2
         for miner in result["miners"]:
             assert "PowerPC" in miner["hardware"]
+
+    @pytest.mark.asyncio
+    async def test_get_active_miners_accepts_items_envelope(self, mcp_server):
+        """Test active miner listing with current API envelope variants."""
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(
+            return_value={
+                "items": [
+                    {"miner": "m1", "hardware_type": "PowerPC G4", "score": 300},
+                    {"miner": "m2", "hardware_type": "x86_64", "score": 200},
+                ],
+                "total": 2,
+            }
+        )
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=AsyncContextManagerMock(mock_response))
+        mcp_server.session = mock_session
+
+        result = await mcp_server._tool_get_active_miners({"limit": 10, "hardware_type": "PowerPC"})
+
+        assert result["count"] == 1
+        assert result["miners"][0]["miner"] == "m1"
+
+    @pytest.mark.asyncio
+    async def test_get_active_miners_coerces_string_limit(self, mcp_server):
+        """Test active miner listing accepts numeric string limits from MCP clients."""
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(
+            return_value={
+                "miners": [
+                    {"miner_id": "m1", "score": 300},
+                    {"miner_id": "m2", "score": 200},
+                    {"miner_id": "m3", "score": 100},
+                ]
+            }
+        )
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=AsyncContextManagerMock(mock_response))
+        mcp_server.session = mock_session
+
+        result = await mcp_server._tool_get_active_miners({"limit": "2"})
+
+        assert result["count"] == 3
+        assert result["limit"] == 2
+        assert [miner["miner_id"] for miner in result["miners"]] == ["m1", "m2"]
+
+    @pytest.mark.asyncio
+    async def test_get_active_miners_rejects_invalid_limit(self, mcp_server):
+        """Test active miner listing rejects limits that cannot slice safely."""
+        result = await mcp_server._tool_get_active_miners({"limit": -1})
+
+        assert result == {"error": "limit must be a positive integer"}
 
 
 class TestWalletBalance:

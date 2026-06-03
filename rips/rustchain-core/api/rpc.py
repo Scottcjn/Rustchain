@@ -12,15 +12,21 @@ Endpoints:
 - /api/governance/* - Governance operations
 """
 
+import hmac
 import json
 import os
 import time
 from dataclasses import dataclass
-from typing import Dict, Any, Optional, Callable
+from typing import Dict, Any, Optional, Callable, Set
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 import threading
 
+
+ALLOWED_ORIGINS_ENV = "RUSTCHAIN_API_ALLOWED_ORIGINS"
+CSRF_TOKEN_ENV = "RUSTCHAIN_API_CSRF_TOKEN"
+CSRF_HEADER = "X-RustChain-CSRF-Token"
+LEGACY_CSRF_HEADER = "X-CSRF-Token"
 
 RPC_PUBLIC_METHODS = frozenset({
     "getStats",
@@ -281,21 +287,40 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
 
     @staticmethod
     def _allowed_cors_origins() -> set[str]:
-        raw = os.getenv("RUSTCHAIN_API_ALLOWED_ORIGINS", "")
+        raw = os.getenv(ALLOWED_ORIGINS_ENV, "")
         return {origin.strip() for origin in raw.split(",") if origin.strip() and origin.strip() != "*"}
 
     @staticmethod
     def _configured_csrf_token() -> str:
-        return os.getenv("RUSTCHAIN_API_CSRF_TOKEN", "").strip()
+        return os.getenv(CSRF_TOKEN_ENV, "").strip()
+
+    def _is_allowed_origin(self, origin: Optional[str]) -> bool:
+        """Check whether a request Origin is explicitly allowed."""
+        return bool(origin and origin in self._allowed_cors_origins())
 
     def _send_cors_headers(self):
         """Emit CORS headers only for explicitly allowed origins."""
-        origin = self.headers.get("Origin", "")
-        if origin and origin in self._allowed_cors_origins():
+        origin = self.headers.get("Origin")
+        if self._is_allowed_origin(origin):
             self.send_header("Access-Control-Allow-Origin", origin)
             self.send_header("Vary", "Origin")
-            self.send_header("Access-Control-Allow-Headers", "Content-Type, X-CSRF-Token")
+            self.send_header(
+                "Access-Control-Allow-Headers",
+                f"Content-Type, {CSRF_HEADER}, {LEGACY_CSRF_HEADER}",
+            )
             self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+
+    def do_OPTIONS(self):
+        """Handle CORS preflight requests"""
+        origin = self.headers.get("Origin")
+        if not self._is_allowed_origin(origin):
+            self.send_response(403)
+            self.end_headers()
+            return
+
+        self.send_response(204)
+        self._send_cors_headers()
+        self.end_headers()
 
     def do_GET(self):
         """Handle GET requests"""
@@ -320,17 +345,14 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         csrf_error = self._csrf_error(parsed.path, params)
         if csrf_error:
-            self._send_response(ApiResponse(success=False, error=csrf_error))
+            self._send_response(
+                ApiResponse(success=False, error="CSRF token required"),
+                status_code=403,
+            )
             return
 
         response = self._route_request(parsed.path, params)
         self._send_response(response)
-
-    def do_OPTIONS(self):
-        """Handle CORS preflight without wildcard access."""
-        self.send_response(204)
-        self._send_cors_headers()
-        self.end_headers()
 
     def _route_request(self, path: str, params: Dict[str, Any]) -> ApiResponse:
         """Route request to appropriate handler"""
@@ -352,10 +374,14 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
         # Dynamic routes
         if path.startswith("/api/wallet/"):
             address = path.split("/")[-1]
+            if len(address) > 128:
+                return ApiResponse(success=False, error="address too long")
             return self.api.rpc.call("getWallet", {"address": address})
 
         if path.startswith("/api/block/"):
             height = path.split("/")[-1]
+            if len(height) > 128:
+                return ApiResponse(success=False, error="block hash too long")
             try:
                 return self.api.rpc.call("getBlock", {"height": int(height)})
             except ValueError:
@@ -363,6 +389,8 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
 
         if path.startswith("/api/proposal/"):
             proposal_id = path.split("/")[-1]
+            if len(proposal_id) > 128:
+                return ApiResponse(success=False, error="proposal_id too long")
             return self.api.rpc.call("getProposal", {"proposal_id": proposal_id})
 
         # POST endpoints
@@ -404,15 +432,18 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
         if not expected:
             return "RUSTCHAIN_API_CSRF_TOKEN not configured"
 
-        provided = self.headers.get("X-CSRF-Token", "").strip()
-        if not provided or provided != expected:
+        provided = (
+            self.headers.get(CSRF_HEADER, "").strip()
+            or self.headers.get(LEGACY_CSRF_HEADER, "").strip()
+        )
+        if not provided or not hmac.compare_digest(provided, expected):
             return "invalid or missing CSRF token"
 
         return None
 
-    def _send_response(self, response: ApiResponse):
+    def _send_response(self, response: ApiResponse, status_code: Optional[int] = None):
         """Send HTTP response"""
-        self.send_response(200 if response.success else 400)
+        self.send_response(status_code or (200 if response.success else 400))
         self.send_header("Content-Type", "application/json")
         self._send_cors_headers()
         self.end_headers()

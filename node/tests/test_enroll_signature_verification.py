@@ -13,6 +13,7 @@ ENROLL_ALLOW_UNSIGNED_LEGACY=1.
 """
 
 import importlib.util
+import gc
 import os
 import sqlite3
 import sys
@@ -69,8 +70,10 @@ class TestEnrollSignatureVerification(unittest.TestCase):
         cls._tmp = tempfile.TemporaryDirectory()
         cls._prev_admin_key = os.environ.get("RC_ADMIN_KEY")
         cls._prev_db_path = os.environ.get("RUSTCHAIN_DB_PATH")
+        cls._prev_disable_p2p = os.environ.get("RUSTCHAIN_DISABLE_P2P_AUTO_START")
         cls._loaded_modules = []
         os.environ["RC_ADMIN_KEY"] = "0123456789abcdef0123456789abcdef"
+        os.environ["RUSTCHAIN_DISABLE_P2P_AUTO_START"] = "1"
 
         if NODE_DIR not in sys.path:
             sys.path.insert(0, NODE_DIR)
@@ -85,8 +88,20 @@ class TestEnrollSignatureVerification(unittest.TestCase):
             os.environ.pop("RUSTCHAIN_DB_PATH", None)
         else:
             os.environ["RUSTCHAIN_DB_PATH"] = cls._prev_db_path
+        if cls._prev_disable_p2p is None:
+            os.environ.pop("RUSTCHAIN_DISABLE_P2P_AUTO_START", None)
+        else:
+            os.environ["RUSTCHAIN_DISABLE_P2P_AUTO_START"] = cls._prev_disable_p2p
         cls._release_loaded_modules()
-        cls._tmp.cleanup()
+        for attempt in range(5):
+            try:
+                cls._tmp.cleanup()
+                break
+            except PermissionError:
+                if attempt == 4:
+                    raise
+                gc.collect()
+                time.sleep(0.2)
 
     @classmethod
     def _release_loaded_modules(cls):
@@ -99,7 +114,11 @@ class TestEnrollSignatureVerification(unittest.TestCase):
         for mod in cls._loaded_modules:
             block_sync = getattr(mod, "block_sync", None)
             if block_sync is not None:
-                block_sync.running = False
+                stop = getattr(block_sync, "stop", None)
+                if callable(stop):
+                    stop()
+                else:
+                    block_sync.running = False
 
             for metric_name in (
                 "withdrawal_requests",
@@ -117,6 +136,7 @@ class TestEnrollSignatureVerification(unittest.TestCase):
                 except (KeyError, ValueError):
                     pass
         cls._loaded_modules = []
+        gc.collect()
 
     def tearDown(self):
         self._release_loaded_modules()

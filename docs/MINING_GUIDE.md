@@ -54,6 +54,24 @@ VMs (VMware, VirtualBox, QEMU, WSL) are detected and receive **1 billionth** of 
 
 ---
 
+## Hardware Requirements
+
+Proof-of-Antiquity mining favors real, identifiable hardware age over raw speed. A miner only needs enough local resources to run the Python client, keep the hardware fingerprint checks stable, and reach the RustChain node.
+
+Minimum requirements:
+
+- CPU: any real hardware supported by Python 3.8 or newer; no GPU is required.
+- Memory: enough RAM to create a Python virtual environment and run the miner process.
+- Storage: at least 50 MB of free disk space for the miner, virtual environment, logs, and updates.
+- Network: stable outbound HTTPS connectivity to `https://rustchain.org` for health checks, attestations, balance lookups, and explorer access.
+- Tools: `curl` or `wget`, plus a working Python 3.8+ interpreter. The installer can attempt Python setup on Linux.
+
+Supported CPU families include Linux `x86_64`, `ppc64le`, `aarch64`, `mips`, `sparc`, `m68k`, `riscv64`, `ia64`, and `s390x`, plus macOS Intel, Apple Silicon, PowerPC, IBM POWER8, Windows, older Mac OS X, and Raspberry Pi systems. Modern ARM NAS or single-board systems can run the miner, but they receive the documented penalty multiplier.
+
+For installation prerequisites, see [INSTALL.md](../INSTALL.md). For the full antiquity multiplier and architecture validation model, see [CPU_ANTIQUITY_SYSTEM.md](../CPU_ANTIQUITY_SYSTEM.md).
+
+---
+
 ## Installation
 
 ### One-Line Install

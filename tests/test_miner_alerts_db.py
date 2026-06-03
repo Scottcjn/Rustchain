@@ -57,6 +57,32 @@ def test_add_subscription_upserts_and_filters_by_alert_type(tmp_path):
         db.close()
 
 
+def test_add_subscription_upserts_phone_only_subscription(tmp_path):
+    db = AlertDB(str(tmp_path / "alerts.db"))
+    try:
+        first_id = db.add_subscription(
+            "miner-1",
+            phone="+15550001111",
+            alerts={"alert_rewards": 0},
+        )
+        second_id = db.add_subscription(
+            "miner-1",
+            phone="+15550001111",
+            alerts={"alert_rewards": 1},
+        )
+
+        all_subs = db.get_subscriptions("miner-1")
+        reward_subs = db.get_subscriptions("miner-1", "rewards")
+
+        assert second_id == first_id
+        assert len(all_subs) == 1
+        assert all_subs[0]["email"] is None
+        assert all_subs[0]["phone"] == "+15550001111"
+        assert len(reward_subs) == 1
+    finally:
+        db.close()
+
+
 def test_remove_subscription_deactivates_without_deleting(tmp_path):
     db = AlertDB(str(tmp_path / "alerts.db"))
     try:

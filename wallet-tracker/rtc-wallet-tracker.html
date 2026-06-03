@@ -353,7 +353,7 @@
     <script>
         const MINERS_API_URL = 'https://rustchain.org/api/miners';
         const BALANCE_API_URL = 'https://rustchain.org/wallet/balance';
-        const TOTAL_SUPPLY = 8300000;
+        const TOTAL_SUPPLY = 8388608;
         const WHALE_THRESHOLD = 0.01; // 1% of supply
 
         const FOUNDER_WALLETS = {
@@ -376,6 +376,23 @@
         function founderBadge(w, className = 'badge-founder') {
             if (!w.founder) return '';
             return `<span class="${className}">${escapeHtml(w.founderLabel)}</span>`;
+        }
+
+        function normalizeMinerRows(payload) {
+            const rows = Array.isArray(payload)
+                ? payload
+                : (Array.isArray(payload?.miners)
+                    ? payload.miners
+                    : (Array.isArray(payload?.data)
+                        ? payload.data
+                        : (Array.isArray(payload?.items) ? payload.items : [])));
+
+            return rows.map(row => {
+                if (!row || typeof row !== 'object') return null;
+                const miner = row.miner || row.miner_id || row.id;
+                if (!miner) return null;
+                return { ...row, miner: String(miner) };
+            }).filter(Boolean);
         }
 
         async function getBalance(minerId) {
@@ -403,7 +420,7 @@
                 const minersResponse = await fetch(MINERS_API_URL);
                 if (!minersResponse.ok) throw new Error('Failed to fetch miners');
 
-                const miners = await minersResponse.json();
+                const miners = normalizeMinerRows(await minersResponse.json());
                 console.log(`Found ${miners.length} miners`);
 
                 // Fetch balances for all miners

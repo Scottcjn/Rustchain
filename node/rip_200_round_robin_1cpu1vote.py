@@ -16,12 +16,16 @@ Key Changes:
 import hashlib
 import json
 import logging
-import random
 import sqlite3
-import time
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import List, Tuple, Dict
 
 logger = logging.getLogger(__name__)
+
+try:
+    from rip_309_measurement_rotation import get_reward_active_fingerprint_checks
+except ImportError:  # package-style import from repo root
+    from .rip_309_measurement_rotation import get_reward_active_fingerprint_checks
 
 ROTATING_FINGERPRINT_CHECKS = (
     "clock_drift",
@@ -52,6 +56,83 @@ def select_active_fingerprint_checks(previous_epoch_block_hash: str, active_coun
 GENESIS_TIMESTAMP = 1764706927  # First actual block (Dec 2, 2025)
 BLOCK_TIME = 600  # 10 minutes
 ATTESTATION_TTL = 86400  # 24 hours - ancient hardware needs longer TTL  # 10 minutes
+EPOCH_WEIGHT_SCALE = 1_000_000_000
+MAX_EPOCH_WEIGHT = 10_000
+MAX_EPOCH_WEIGHT_UNITS = MAX_EPOCH_WEIGHT * EPOCH_WEIGHT_SCALE
+
+
+def _weight_to_units(weight) -> int:
+    try:
+        value = Decimal(str(weight))
+    except (InvalidOperation, TypeError, ValueError):
+        return 0
+    if not value.is_finite() or value <= 0:
+        return 0
+
+    units = int(
+        (value * Decimal(EPOCH_WEIGHT_SCALE)).to_integral_value(
+            rounding=ROUND_HALF_UP
+        )
+    )
+    return min(units, MAX_EPOCH_WEIGHT_UNITS)
+
+
+def _normalize_epoch_weight_units(raw_weight) -> int:
+    if isinstance(raw_weight, int):
+        return min(max(raw_weight, 0), MAX_EPOCH_WEIGHT_UNITS)
+    return _weight_to_units(raw_weight)
+
+
+def _apply_warthog_bonus(weight_units: int, warthog_bonus) -> int:
+    if weight_units <= 0:
+        return 0
+    try:
+        bonus = Decimal(str(warthog_bonus))
+    except (InvalidOperation, TypeError, ValueError):
+        return weight_units
+    if not bonus.is_finite() or bonus <= 1:
+        return weight_units
+
+    adjusted = int(
+        (Decimal(weight_units) * bonus).to_integral_value(
+            rounding=ROUND_HALF_UP
+        )
+    )
+    return min(adjusted, MAX_EPOCH_WEIGHT_UNITS)
+
+
+def _distribute_reward_by_weight(
+    weighted_miners: List[Tuple[str, int]], total_reward_urtc: int
+) -> Dict[str, int]:
+    eligible_miners = [(m, int(w)) for m, w in weighted_miners if int(w) > 0]
+    if not eligible_miners:
+        return {}
+
+    total_reward = max(int(total_reward_urtc), 0)
+    if total_reward == 0:
+        return {miner_id: 0 for miner_id, _ in eligible_miners}
+
+    total_weight = sum(weight for _, weight in eligible_miners)
+    if total_weight <= 0:
+        return {}
+
+    allocated = 0
+    allocations = []
+    for order, (miner_id, weight) in enumerate(eligible_miners):
+        product = total_reward * weight
+        share, remainder = divmod(product, total_weight)
+        allocated += share
+        allocations.append([miner_id, share, remainder, order])
+
+    leftover = total_reward - allocated
+    if leftover > 0:
+        for allocation in sorted(
+            allocations,
+            key=lambda row: (-row[2], row[3]),
+        )[:leftover]:
+            allocation[1] += 1
+
+    return {miner_id: share for miner_id, share, _remainder, _order in allocations}
 
 # Antiquity base multipliers
 ANTIQUITY_MULTIPLIERS = {
@@ -207,7 +288,17 @@ ANTIQUITY_MULTIPLIERS = {
     "pentium_pro": 2.3,
     "pentium_ii": 2.2,
     "pentium_iii": 2.0,
-    
+
+    # Intel Pentium M (2003-2006) — mobile P6 lineage, NOT NetBurst.
+    # Architecturally descended from Pentium III; predates Core 2 by 3 years.
+    # Verified against IBM ThinkPad T40 (2373-7CU) Banias 1.5GHz, 2003 silicon:
+    # all 7 hardware fingerprint checks pass, anti-emulation 0 indicators,
+    # SSE+SSE2 only (no SSE3), no LM (i686-only), 1MB L2 cache.
+    "pentium_m": 1.9,             # Generic Pentium M
+    "pentium_m_banias": 1.9,      # 2003, 130nm, 1MB L2, max 1.7GHz (T40 class)
+    "pentium_m_dothan": 1.8,      # 2004, 90nm, 2MB L2, up to 2.26GHz
+    "pentium_m_yonah": 1.6,       # 2006, dual-core, first Core/Core Duo
+
     # Intel Pentium 4 (2000-2006)
     "pentium4": 1.5,
     "pentium_d": 1.5,
@@ -522,16 +613,9 @@ def calculate_epoch_rewards_time_aged(
     Returns:
         Dict of {miner_id: reward_urtc}
     """
-    # RIP-309: Rotating fingerprint checks (4-of-6 per epoch)
-    fp_checks = ['clock_drift', 'cache_timing', 'simd_identity',
-                 'thermal_drift', 'instruction_jitter', 'anti_emulation']
-    if prev_block_hash:
-        nonce = hashlib.sha256(prev_block_hash + b"measurement_nonce").digest()
-        seed = int.from_bytes(nonce[:4], 'big')
-        active_checks = set(random.Random(seed).sample(fp_checks, 4))
-    else:
-        # Fallback when no prev_block_hash provided: all checks active (backward compat)
-        active_checks = set(fp_checks)
+    # RIP-309: Rotating fingerprint checks (4-of-6 per epoch).
+    # The helper is golden-tested against the former inline algorithm.
+    active_checks = set(get_reward_active_fingerprint_checks(prev_block_hash))
     print(f"[RIP-309] Epoch {epoch} active checks: {sorted(active_checks)} (seed derived from prev_block_hash)")
 
     chain_age_years = get_chain_age_years(current_slot)
@@ -622,9 +706,11 @@ def calculate_epoch_rewards_time_aged(
     if not epoch_miners:
         return {}
 
-    # Calculate time-aged weights
+    # Calculate time-aged weights as capped fixed-point integers.  The
+    # integrated settlement path stores epoch_enroll.weight this way; keeping
+    # it integer here avoids float precision loss for large miner sets.
     weighted_miners = []
-    total_weight = 0.0
+    total_weight = 0
 
     for row in epoch_miners:
         miner_id, device_arch = row[0], row[1]
@@ -646,21 +732,19 @@ def calculate_epoch_rewards_time_aged(
 
         # STRICT: VMs/emulators with failed fingerprint get ZERO weight
         if fingerprint_ok == 0:
-            weight = 0.0  # No rewards for failed fingerprint
+            weight = 0  # No rewards for failed fingerprint
             print(f"[REWARD] {miner_id[:20]}... fingerprint=FAIL -> weight=0")
         elif enrolled_weight is not None:
-            weight = max(float(enrolled_weight or 0.0), 0.0)
+            weight = _normalize_epoch_weight_units(enrolled_weight)
         else:
-            weight = get_time_aged_multiplier(device_arch, chain_age_years)
+            weight = _weight_to_units(
+                get_time_aged_multiplier(device_arch, chain_age_years)
+            )
 
         # Apply Warthog dual-mining bonus (1.0x/1.1x/1.15x)
         # Double-gated: fingerprint must pass (weight>0) AND fingerprint_ok==1
         if weight > 0 and fingerprint_ok == 1:
-            try:
-                if warthog_bonus and warthog_bonus > 1.0:
-                    weight *= warthog_bonus
-            except Exception:
-                pass  # Column may not exist on older schemas
+            weight = _apply_warthog_bonus(weight, warthog_bonus)
 
         weighted_miners.append((miner_id, weight))
         total_weight += weight
@@ -676,24 +760,7 @@ def calculate_epoch_rewards_time_aged(
         )
         return {}
 
-    # Filter out zero-weight miners — they should receive nothing
-    eligible_miners = [(m, w) for m, w in weighted_miners if w > 0]
-
-    # Distribute rewards proportionally by weight
-    rewards = {}
-    remaining = total_reward_urtc
-
-    for i, (miner_id, weight) in enumerate(eligible_miners):
-        if i == len(eligible_miners) - 1:
-            # Last miner gets remainder (prevents rounding issues)
-            share = remaining
-        else:
-            share = 0 if total_weight == 0 else int((weight / total_weight) * total_reward_urtc)
-            remaining -= share
-
-        rewards[miner_id] = share
-
-    return rewards
+    return _distribute_reward_by_weight(weighted_miners, total_reward_urtc)
 
 
 # Example usage and testing
@@ -717,7 +784,7 @@ if __name__ == "__main__":
         g5_share = 0 if total_weight == 0 else (g5_mult / total_weight) * total_reward
         modern_share = 0 if total_weight == 0 else (modern_mult / total_weight) * total_reward
 
-        print(f"\nReward distribution (1.5 RTC total):")
+        print("\nReward distribution (1.5 RTC total):")
         print(f"  G4: {g4_share / 100_000_000:.6f} RTC ({g4_share/total_reward*100:.1f}%)")
         print(f"  G5: {g5_share / 100_000_000:.6f} RTC ({g5_share/total_reward*100:.1f}%)")
         print(f"  Modern: {modern_share / 100_000_000:.6f} RTC ({modern_share/total_reward*100:.1f}%)")

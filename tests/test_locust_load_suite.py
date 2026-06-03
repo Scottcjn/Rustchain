@@ -30,6 +30,12 @@ def load_module(monkeypatch, miner_id=None):
     locust.task = lambda _weight: (lambda func: func)
     locust.events = events
     monkeypatch.setitem(sys.modules, "locust", locust)
+
+    urllib3 = types.ModuleType("urllib3")
+    urllib3.exceptions = types.SimpleNamespace(InsecureRequestWarning=Warning)
+    urllib3.disable_warnings = lambda _warning: None
+    monkeypatch.setitem(sys.modules, "urllib3", urllib3)
+
     if miner_id is not None:
         monkeypatch.setenv("RUSTCHAIN_MINER_ID", miner_id)
     else:
@@ -45,9 +51,10 @@ def load_module(monkeypatch, miner_id=None):
 
 
 class FakeResponse:
-    def __init__(self, status_code=200, payload=None):
+    def __init__(self, status_code=200, payload=None, json_error=None):
         self.status_code = status_code
         self.payload = payload if payload is not None else {}
+        self.json_error = json_error
         self.failures = []
 
     def __enter__(self):
@@ -57,6 +64,8 @@ class FakeResponse:
         return False
 
     def json(self):
+        if self.json_error is not None:
+            raise self.json_error
         return self.payload
 
     def failure(self, message):
@@ -118,6 +127,23 @@ def test_tasks_mark_bad_status_and_missing_keys_as_failures(monkeypatch):
     assert headers.failures == ["status 503"]
     assert miners.failures == ["status 500"]
     assert balance.failures == ["missing 'amount_rtc' key"]
+
+
+def test_tasks_mark_invalid_json_as_failures(monkeypatch):
+    module = load_module(monkeypatch)
+    health = FakeResponse(json_error=ValueError("bad json"))
+    epoch = FakeResponse(payload=[])
+    balance = FakeResponse(json_error=ValueError("bad json"))
+    client = FakeClient([health, epoch, balance])
+    user = user_with_client(module, client)
+
+    user.health()
+    user.epoch()
+    user.wallet_balance()
+
+    assert health.failures == ["invalid JSON response"]
+    assert epoch.failures == ["JSON response must be an object"]
+    assert balance.failures == ["invalid JSON response"]
 
 
 def test_wallet_balance_uses_configured_miner_id(monkeypatch):

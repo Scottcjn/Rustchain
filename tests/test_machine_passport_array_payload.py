@@ -46,6 +46,9 @@ class LedgerStub:
         self.passport_updates.append((machine_id, fields))
         return True
 
+    def create_passport(self, passport):
+        return True, "passport created"
+
 
 @pytest.fixture
 def ledger(monkeypatch):
@@ -63,6 +66,47 @@ def client(ledger, monkeypatch):
 
 
 # --- /repair-log array-payload regressions ------------------------------------
+
+def test_create_passport_rejects_non_object_array_payload(client):
+    response = client.post(
+        "/api/machine-passport",
+        headers=ADMIN_HEADERS,
+        json=["name", "owner_miner_id"],
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {
+        "ok": False,
+        "error": "invalid_request",
+        "message": "JSON object required",
+    }
+
+
+def test_update_passport_rejects_non_object_array_payload(client, ledger):
+    response = client.put(
+        "/api/machine-passport/machine-1",
+        headers=ADMIN_HEADERS,
+        json=["owner_miner_id"],
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "invalid_request"
+    assert ledger.passport_updates == []
+
+
+def test_compute_machine_id_rejects_non_object_array_payload(client):
+    response = client.post(
+        "/api/machine-passport/compute-machine-id",
+        json=["cpu", "gpu"],
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {
+        "ok": False,
+        "error": "invalid_request",
+        "message": "JSON object required",
+    }
+
 
 def test_repair_log_rejects_empty_array_payload(client):
     response = client.post(

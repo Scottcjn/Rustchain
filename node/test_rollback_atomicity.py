@@ -339,6 +339,103 @@ class TestRollbackAtomicity(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_10_rollback_refuses_after_non_genesis_state_exists(self):
+        """Rollback must not delete genesis once later UTXO history exists."""
+        migrate(self.db_path, dry_run=False)
+
+        conn = UtxoDB(self.db_path)._conn()
+        try:
+            genesis = conn.execute(
+                """SELECT box_id, value_nrtc, owner_address
+                   FROM utxo_boxes
+                   WHERE transaction_id IN (
+                       SELECT tx_id FROM utxo_transactions
+                       WHERE tx_type = 'genesis'
+                   )
+                   ORDER BY owner_address ASC
+                   LIMIT 1"""
+            ).fetchone()
+            self.assertIsNotNone(genesis)
+
+            transfer_tx_id = "3" * 64
+            transfer_box_id = "4" * 64
+            recipient = "recipient_wallet"
+            now = 2
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute(
+                """UPDATE utxo_boxes
+                   SET spent_at = ?, spent_by_tx = ?
+                   WHERE box_id = ?""",
+                (now, transfer_tx_id, genesis["box_id"]),
+            )
+            conn.execute(
+                """INSERT INTO utxo_transactions
+                   (tx_id, tx_type, inputs_json, outputs_json,
+                    data_inputs_json, fee_nrtc, timestamp,
+                    block_height, status)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                (
+                    transfer_tx_id,
+                    "transfer",
+                    '[{"box_id":"%s"}]' % genesis["box_id"],
+                    '[{"box_id":"%s","value_nrtc":%d,"owner":"%s"}]' % (
+                        transfer_box_id,
+                        genesis["value_nrtc"],
+                        recipient,
+                    ),
+                    "[]",
+                    0,
+                    now,
+                    GENESIS_HEIGHT + 1,
+                    "confirmed",
+                ),
+            )
+            conn.execute(
+                """INSERT INTO utxo_boxes
+                   (box_id, value_nrtc, proposition, owner_address,
+                    creation_height, transaction_id, output_index,
+                    tokens_json, registers_json, created_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    transfer_box_id,
+                    genesis["value_nrtc"],
+                    address_to_proposition(recipient),
+                    recipient,
+                    GENESIS_HEIGHT + 1,
+                    transfer_tx_id,
+                    0,
+                    "[]",
+                    "{}",
+                    now,
+                ),
+            )
+            conn.execute("COMMIT")
+        finally:
+            conn.close()
+
+        with self.assertRaisesRegex(RuntimeError, "non-genesis UTXO state"):
+            rollback_genesis(self.db_path)
+
+        conn = UtxoDB(self.db_path)._conn()
+        try:
+            genesis_count = conn.execute(
+                "SELECT COUNT(*) FROM utxo_transactions WHERE tx_type = 'genesis'",
+            ).fetchone()[0]
+            transfer_count = conn.execute(
+                "SELECT COUNT(*) FROM utxo_transactions WHERE tx_type = 'transfer'",
+            ).fetchone()[0]
+            spent_input_count = conn.execute(
+                """SELECT COUNT(*) FROM utxo_boxes
+                   WHERE box_id = ? AND spent_by_tx = ?""",
+                (genesis["box_id"], transfer_tx_id),
+            ).fetchone()[0]
+
+            self.assertEqual(genesis_count, 3)
+            self.assertEqual(transfer_count, 1)
+            self.assertEqual(spent_input_count, 1)
+        finally:
+            conn.close()
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

@@ -10,7 +10,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-
 # ---------------------------------------------------------------------------
 # Health  (GET /health)
 # ---------------------------------------------------------------------------
@@ -106,13 +105,16 @@ class MinerInfo:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "MinerInfo":
         return cls(
-            miner=data.get("miner", ""),
+            miner=data.get(
+                "miner",
+                data.get("miner_id", data.get("id", data.get("name", ""))),
+            ),
             last_attest=int(data.get("last_attest", 0)),
             device_family=data.get("device_family", "unknown"),
             device_arch=data.get("device_arch", "unknown"),
             entropy_score=float(data.get("entropy_score", 0)),
             antiquity_multiplier=float(data.get("antiquity_multiplier", 1.0)),
-            hardware_type=data.get("hardware_type", "Unknown/Other"),
+            hardware_type=data.get("hardware_type", data.get("hardware", "Unknown/Other")),
             first_attest=data.get("first_attest"),
         )
 

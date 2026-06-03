@@ -72,6 +72,7 @@ def test_generate_validator_entry_writes_current_year_proof_and_badge(
 
 def test_generate_validator_entry_skips_badge_when_entropy_is_low(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
+    (tmp_path / "relic_rewards.json").write_text('{"badges": [{"nft_id": "stale"}]}')
     monkeypatch.setattr(validator_badge, "datetime", FixedDatetime)
     monkeypatch.setattr(validator_badge, "simulate_entropy_score", lambda _cpu, _bios: 2.99)
 

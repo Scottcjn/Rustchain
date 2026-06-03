@@ -1,4 +1,6 @@
+import json
 import sqlite3
+from hashlib import blake2b
 
 import pytest
 from flask import Flask
@@ -6,8 +8,22 @@ from flask import Flask
 from bcos_routes import init_bcos_table, register_bcos_routes
 
 
+def _with_commitment(report):
+    report = dict(report)
+    commitment_report = {
+        k: v for k, v in report.items()
+        if k not in ("cert_id", "commitment")
+    }
+    if "trust_score" in commitment_report and not isinstance(commitment_report["trust_score"], bool):
+        commitment_report["trust_score"] = int(commitment_report["trust_score"])
+    canonical = json.dumps(commitment_report, sort_keys=True, separators=(",", ":"))
+    report["commitment"] = blake2b(canonical.encode(), digest_size=32).hexdigest()
+    return report
+
+
 @pytest.fixture
-def bcos_client(tmp_path):
+def bcos_client(tmp_path, monkeypatch):
+    monkeypatch.setenv("RC_ADMIN_KEY", "0" * 32)
     db_path = tmp_path / "bcos.sqlite"
     with sqlite3.connect(db_path) as conn:
         init_bcos_table(conn)
@@ -98,17 +114,18 @@ def test_bcos_attest_rejects_invalid_trust_score(bcos_client, trust_score, messa
 
 
 def test_bcos_attest_stores_numeric_trust_score(bcos_client):
+    report = _with_commitment({
+        "cert_id": "cert-good-score",
+        "repo": "Scottcjn/Rustchain",
+        "commit_sha": "abcdef1234567890",
+        "tier": "L1",
+        "trust_score": "81",
+    })
+
     response = bcos_client.post(
         "/bcos/attest",
         headers={"X-Admin-Key": "0" * 32},
-        json={
-            "cert_id": "cert-good-score",
-            "commitment": "commitment",
-            "repo": "Scottcjn/Rustchain",
-            "commit_sha": "abcdef1234567890",
-            "tier": "L1",
-            "trust_score": "81",
-        },
+        json=report,
     )
 
     assert response.status_code == 200
@@ -136,18 +153,18 @@ def test_bcos_public_urls_default_to_certificate_valid_host(bcos_client):
 def test_bcos_attest_uses_configured_public_url(monkeypatch, bcos_client):
     monkeypatch.setenv("RC_ADMIN_KEY", "test-admin")
     monkeypatch.setenv("RUSTCHAIN_BCOS_PUBLIC_BASE_URL", "https://bcos.example/")
+    report = _with_commitment({
+        "cert_id": "cert-custom-host",
+        "repo": "Scottcjn/Rustchain",
+        "commit_sha": "abcdef1234567890",
+        "tier": "L1",
+        "trust_score": 82,
+    })
 
     response = bcos_client.post(
         "/bcos/attest",
         headers={"X-Admin-Key": "test-admin"},
-        json={
-            "cert_id": "cert-custom-host",
-            "commitment": "commitment",
-            "repo": "Scottcjn/Rustchain",
-            "commit_sha": "abcdef1234567890",
-            "tier": "L1",
-            "trust_score": 82,
-        },
+        json=report,
     )
 
     assert response.status_code == 200

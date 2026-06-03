@@ -7,18 +7,15 @@ and configuring the glitch engine.
 """
 
 from flask import Blueprint, jsonify, request, Response
-from typing import Dict, Any
 import hmac
-import json
 import os
-import time
 
 try:
     from .glitch_engine import GlitchEngine, GlitchConfig
-    from .personality import PERSONALITY_TEMPLATES
+    from .personality import PersonalityProfile, PERSONALITY_TEMPLATES
 except ImportError:
     from glitch_engine import GlitchEngine, GlitchConfig
-    from personality import PERSONALITY_TEMPLATES
+    from personality import PersonalityProfile, PERSONALITY_TEMPLATES
 
 
 # Create blueprint
@@ -182,9 +179,7 @@ def register_agent(agent_id: str) -> Response:
         return error
     template = data.get("template")
     personality_data = data.get("personality")
-    
-    from .personality import PersonalityProfile
-    
+
     personality = None
     if personality_data:
         personality = PersonalityProfile.from_dict(personality_data)
@@ -583,6 +578,13 @@ def trigger_glitch() -> Response:
     engine = get_engine()
     agent_id = data.get("agent_id", "test_agent")
     message = data.get("message", "Test message for glitch")
+    if (
+        not isinstance(agent_id, str)
+        or not isinstance(message, str)
+        or not agent_id
+        or not message
+    ):
+        return jsonify({"error": "agent_id and message must be non-empty strings"}), 400
     
     # Auto-register if needed
     if not engine.get_persona(agent_id):

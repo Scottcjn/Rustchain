@@ -463,6 +463,21 @@
             { multiplier: 1.15, count: 2 }, // Apple Silicon
             { multiplier: 1.0, count: 2 }   // Modern x86
         ];
+
+        function normalizeNetworkPayload(payload) {
+            if (Array.isArray(payload)) {
+                return { miners: payload, total: payload.length };
+            }
+
+            const miners = Array.isArray(payload?.miners)
+                ? payload.miners
+                : (Array.isArray(payload?.data) ? payload.data : []);
+            const total = Number(payload?.pagination?.total);
+            return {
+                miners,
+                total: Number.isFinite(total) ? total : miners.length
+            };
+        }
         
         async function fetchNetworkData() {
             try {
@@ -477,15 +492,16 @@
                     throw new Error('Network request failed');
                 }
                 
-                const miners = await response.json();
-                return miners;
+                const payload = await response.json();
+                return normalizeNetworkPayload(payload);
             } catch (error) {
                 console.log('Using default network data:', error);
                 return null;
             }
         }
         
-        function calculateTotalWeight(miners, userMultiplier) {
+        function calculateTotalWeight(networkData, userMultiplier) {
+            const miners = networkData?.miners || [];
             if (!miners || miners.length === 0) {
                 // Use default network composition
                 let total = 0;
@@ -500,6 +516,11 @@
             miners.forEach(miner => {
                 total += miner.multiplier || 1.0;
             });
+
+            if (networkData.total > miners.length) {
+                const averageMultiplier = total / miners.length;
+                total += (networkData.total - miners.length) * averageMultiplier;
+            }
             
             return total;
         }
@@ -526,15 +547,15 @@
             
             if (networkMode === 'auto') {
                 // Fetch from API
-                fetchNetworkData().then(miners => {
+                fetchNetworkData().then(networkData => {
                     loadingDiv.style.display = 'none';
                     
                     let totalWeight;
                     let activeMiners;
                     
-                    if (miners && miners.length > 0) {
-                        totalWeight = calculateTotalWeight(miners, userMultiplier);
-                        activeMiners = miners.length;
+                    if (networkData && networkData.miners.length > 0) {
+                        totalWeight = calculateTotalWeight(networkData, userMultiplier);
+                        activeMiners = networkData.total;
                     } else {
                         // Use default
                         totalWeight = calculateTotalWeight(null, userMultiplier);

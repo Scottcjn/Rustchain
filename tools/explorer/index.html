@@ -359,6 +359,18 @@
       return await res.json();
     }
 
+    function normalizeMinerRows(payload) {
+      const rows = Array.isArray(payload) ? payload : (payload?.miners || payload?.data || payload?.items || []);
+      if (!Array.isArray(rows)) return [];
+      return rows
+        .filter((m) => m && typeof m === "object")
+        .map((m) => ({
+          ...m,
+          miner: m.miner || m.miner_id || m.id || m.name || "",
+        }))
+        .filter((m) => m.miner);
+    }
+
     function applyFiltersAndSort() {
       let rows = [...state.miners];
       if (state.archFilter !== "all") {
@@ -553,7 +565,7 @@
           fetchJson("/agent/stats").catch(() => ({ stats: {} })),
           fetchJson("/agent/jobs").catch(() => ({ jobs: [] })),
         ]);
-        state.miners = Array.isArray(miners) ? miners : (miners.miners || miners.data || []);
+        state.miners = normalizeMinerRows(miners);
         state.agentStats = agentStats;
         state.agentJobs = Array.isArray(agentJobs.jobs) ? agentJobs.jobs : [];
         renderTopCards(health, epoch);

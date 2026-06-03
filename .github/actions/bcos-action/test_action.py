@@ -5,6 +5,7 @@ BCOS v2 Action - Test Suite
 Tests the main.py action script functionality.
 """
 
+import base64
 import json
 import os
 import sys
@@ -22,11 +23,16 @@ from main import (
     anchor_to_rustchain,
     set_github_output
 )
+import post_comment as post_comment_script
+
+
+BCOS_ACTION_URL = "https://github.com/Scottcjn/Rustchain/tree/main/.github/actions/bcos-action"
+DEAD_BCOS_ACTION_URL = "https://github.com/Scottcjn/bcos-action"
 
 
 class TestMinimalBCOSScanner(unittest.TestCase):
     """Test the minimal BCOS scanner."""
-    
+
     def setUp(self):
         """Create a temporary test repository."""
         self.temp_dir = tempfile.TemporaryDirectory()
@@ -145,15 +151,9 @@ class TestMinimalBCOSScanner(unittest.TestCase):
 
 class TestGitHubComment(unittest.TestCase):
     """Test GitHub comment posting."""
-    
-    @patch('main.urlopen')
-    def test_post_comment_success(self, mock_urlopen):
-        """Test successful comment posting."""
-        mock_response = MagicMock()
-        mock_response.status = 201
-        mock_urlopen.return_value = mock_response
-        
-        report = {
+
+    def _sample_report(self):
+        return {
             "trust_score": 75,
             "tier_met": True,
             "cert_id": "BCOS-test123",
@@ -172,16 +172,63 @@ class TestGitHubComment(unittest.TestCase):
                 "review_attestation": 10
             }
         }
+
+    @patch('main.urlopen')
+    def test_post_comment_success(self, mock_urlopen):
+        """Test successful comment posting."""
+        mock_response = MagicMock()
+        mock_response.status = 201
+        mock_urlopen.return_value = mock_response
         
         result = post_github_comment(
             repo="test/repo",
             pr_number="42",
-            report=report,
+            report=self._sample_report(),
             token="fake-token"
         )
         
         self.assertTrue(result)
         mock_urlopen.assert_called_once()
+
+    @patch('main.urlopen')
+    def test_post_comment_links_to_in_repo_action_source(self, mock_urlopen):
+        """Generated comments should not link to the unpublished action repo."""
+        mock_response = MagicMock()
+        mock_response.status = 201
+        mock_urlopen.return_value = mock_response
+
+        post_github_comment(
+            repo="test/repo",
+            pr_number="42",
+            report=self._sample_report(),
+            token="fake-token"
+        )
+
+        request = mock_urlopen.call_args.args[0]
+        body = json.loads(request.data.decode("utf-8"))["body"]
+        self.assertIn(BCOS_ACTION_URL, body)
+        self.assertNotIn(DEAD_BCOS_ACTION_URL, body)
+
+    @patch('post_comment.urlopen')
+    def test_standalone_post_comment_links_to_in_repo_action_source(self, mock_urlopen):
+        """The standalone comment script should use the same live action link."""
+        mock_response = MagicMock()
+        mock_response.status = 201
+        mock_urlopen.return_value = mock_response
+        report_json = json.dumps(self._sample_report()).encode("utf-8")
+
+        with patch.dict(os.environ, {
+            "GITHUB_TOKEN": "fake-token",
+            "REPO": "test/repo",
+            "PR_NUMBER": "42",
+            "REPORT_JSON": base64.b64encode(report_json).decode("ascii"),
+        }):
+            post_comment_script.main()
+
+        request = mock_urlopen.call_args.args[0]
+        body = json.loads(request.data.decode("utf-8"))["body"]
+        self.assertIn(BCOS_ACTION_URL, body)
+        self.assertNotIn(DEAD_BCOS_ACTION_URL, body)
 
 
 class TestRustChainAnchoring(unittest.TestCase):

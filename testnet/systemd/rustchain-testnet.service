@@ -1,0 +1,34 @@
+[Unit]
+Description=RustChain TESTNET node (isolated, mirrors mainnet rules)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@USER@
+WorkingDirectory=@REPO@/node
+EnvironmentFile=@ENV@
+# Runs the SAME node code as mainnet; RC_CHAIN_ID / RC_GENESIS_TIMESTAMP /
+# RC_PORT / RUSTCHAIN_DB_PATH from the env file make it a separate chain.
+ExecStart=@VENV@/bin/python @REPO@/node/rustchain_v2_integrated_v2.2.1_rip200.py
+Restart=always
+RestartSec=5
+StandardOutput=append:@HOME@/testnet-node.log
+StandardError=append:@HOME@/testnet-node.log
+
+# ── Adversarial-sandbox bounding: a dev hammering the testnet cannot starve
+#    the host. Generous on a 512GB box, but hard ceilings exist. ──
+MemoryMax=4G
+CPUQuota=600%
+TasksMax=512
+
+# ── Hardening ──
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=@HOME@
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target
