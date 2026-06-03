@@ -18,6 +18,7 @@ Checks:
 import hashlib
 import os
 import platform
+import random
 import statistics
 import subprocess
 import time
@@ -77,28 +78,50 @@ def check_clock_drift(samples: int = 200) -> Tuple[bool, Dict]:
 
 
 def check_cache_timing(iterations: int = 100) -> Tuple[bool, Dict]:
-    """Check 2: Cache Timing Fingerprint (L1/L2/L3 Latency)"""
+    """Check 2: Cache Timing Fingerprint (L1/L2/L3 Latency)
+
+    Uses pointer-chasing: a single randomized dependency cycle of
+    cache-line-sized hops where each load address depends on the value
+    of the previous load. Because the loads are serialized, the CPU
+    cannot overlap them out-of-order and the hardware prefetcher cannot
+    predict the (randomized) stream, so each access pays its true memory
+    latency on top of the (constant) interpreter overhead. A throughput
+    loop of *independent* indexed reads -- the previous implementation --
+    lets the core overlap dozens of in-flight loads and the prefetcher
+    stream them, collapsing L1/L2/L3 to a single ~interpreter-bound time
+    and falsely reporting "no_cache_hierarchy" on genuine hardware.
+    """
     l1_size = 8 * 1024
     l2_size = 128 * 1024
     l3_size = 4 * 1024 * 1024
 
-    def measure_access_time(buffer_size: int, accesses: int = 1000) -> float:
-        buf = bytearray(buffer_size)
-        for i in range(0, buffer_size, 64):
-            buf[i] = i % 256
-        start = time.perf_counter_ns()
-        for i in range(accesses):
-            _ = buf[(i * 64) % buffer_size]
-        elapsed = time.perf_counter_ns() - start
-        return elapsed / accesses
+    def measure_access_time(buffer_size: int, accesses: int = 200000) -> float:
+        n = max(64, buffer_size // 64)  # one slot per 64-byte cache line
+        order = list(range(n))
+        random.shuffle(order)
+        nxt = [0] * n
+        for i in range(n):
+            nxt[order[i]] = order[(i + 1) % n]  # one Hamiltonian cycle, no short loops
+        # warm the working set into the target cache level
+        p = 0
+        for _ in range(n):
+            p = nxt[p]
+        best = None
+        for _ in range(5):
+            p = 0
+            start = time.perf_counter_ns()
+            for _ in range(accesses):
+                p = nxt[p]
+            elapsed = (time.perf_counter_ns() - start) / accesses
+            best = elapsed if best is None else min(best, elapsed)
+        if p < 0:  # keep `p` live so the chase isn't optimized away
+            raise RuntimeError("unreachable")
+        return best
 
-    l1_times = [measure_access_time(l1_size) for _ in range(iterations)]
-    l2_times = [measure_access_time(l2_size) for _ in range(iterations)]
-    l3_times = [measure_access_time(l3_size) for _ in range(iterations)]
-
-    l1_avg = statistics.mean(l1_times)
-    l2_avg = statistics.mean(l2_times)
-    l3_avg = statistics.mean(l3_times)
+    reps = max(3, iterations // 20)
+    l1_avg = min(measure_access_time(l1_size) for _ in range(reps))
+    l2_avg = min(measure_access_time(l2_size) for _ in range(reps))
+    l3_avg = min(measure_access_time(l3_size) for _ in range(reps))
 
     l2_l1_ratio = l2_avg / l1_avg if l1_avg > 0 else 0
     l3_l2_ratio = l3_avg / l2_avg if l2_avg > 0 else 0
