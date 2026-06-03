@@ -49,13 +49,11 @@ def _normalize_job_type(job_type):
 
 def _admin_key_required():
     """Return (None, None) on success or (error_dict, status_code) on failure."""
-    if current_app.config.get("TESTING"):
-        return None, None
     admin_key = os.environ.get("RC_ADMIN_KEY", "")
     if not admin_key:
         return {'error': 'RC_ADMIN_KEY not configured — endpoint disabled'}, 503
     provided_key = request.headers.get("X-Admin-Key", "")
-    if not hmac.compare_digest(provided_key, admin_key):
+    if not provided_key or not hmac.compare_digest(provided_key, admin_key):
         return {'error': 'Unauthorized — admin key required'}, 401
     return None, None
 
