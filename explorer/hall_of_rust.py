@@ -15,6 +15,16 @@ import random
 hall_bp = Blueprint('hall_of_rust', __name__)
 logger = logging.getLogger(__name__)
 
+
+def _json_object_required():
+    """Return parsed JSON object data or a 400 response for non-object JSON."""
+    data = request.get_json(silent=True)
+    if data is None:
+        return {}, None
+    if not isinstance(data, dict):
+        return None, (jsonify({'error': 'JSON object required'}), 400)
+    return data, None
+
 # Rust Score calculation weights
 RUST_WEIGHTS = {
     'age_years': 10,           # Points per year of hardware age
@@ -152,11 +162,10 @@ def estimate_manufacture_year(model, arch):
 @hall_bp.route('/hall/induct', methods=['POST'])
 def induct_machine():
     """Automatically induct a machine into the Hall of Rust on first attestation."""
-    data = request.get_json(silent=True)
-    if data is None:
-        data = {}
-    if not isinstance(data, dict):
-        return jsonify({"error": "JSON object required"}), 400
+    data, error_response = _json_object_required()
+    if error_response:
+        return error_response
+    assert data is not None
     
     # Generate fingerprint hash from hardware identifiers
     # SECURITY FIX: Fingerprint based on HARDWARE ONLY (not wallet ID)
@@ -309,11 +318,10 @@ def rust_leaderboard():
 @hall_bp.route('/hall/eulogy/<fingerprint>', methods=['POST'])
 def set_eulogy(fingerprint):
     """Set a eulogy/nickname for a machine. For when it finally dies."""
-    data = request.get_json(silent=True)
-    if data is None:
-        data = {}
-    if not isinstance(data, dict):
-        return jsonify({"error": "JSON object required"}), 400
+    data, error_response = _json_object_required()
+    if error_response:
+        return error_response
+    assert data is not None
     
     try:
         from flask import current_app
