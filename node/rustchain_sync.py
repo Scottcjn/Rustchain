@@ -215,13 +215,21 @@ class RustChainSyncManager:
                             break
 
                     if candidate_balance_col and candidate_balance_col in sanitized:
+                        try:
+                            remote_val = int(sanitized[candidate_balance_col])
+                        except (TypeError, ValueError):
+                            self.logger.warning(
+                                f"Rejected sync: invalid balance value for "
+                                f"{sanitized[pk]}"
+                            )
+                            continue
+
                         cursor.execute(
                             f"SELECT {candidate_balance_col} FROM {table_name} WHERE {pk} = ?",
                             (sanitized[pk],),
                         )
                         local_row = cursor.fetchone()
                         if local_row and local_row[0] is not None:
-                            remote_val = int(sanitized[candidate_balance_col])
                             local_val = int(local_row[0])
                             if remote_val != local_val:
                                 self.logger.warning(
@@ -230,6 +238,12 @@ class RustChainSyncManager:
                                     f"remote={remote_val})"
                                 )
                                 continue
+                        elif remote_val != 0:
+                            self.logger.warning(
+                                f"Rejected sync: New balance row with nonzero "
+                                f"value for {sanitized[pk]} (remote={remote_val})"
+                            )
+                            continue
 
                 # Safe upsert (avoid INSERT OR REPLACE data loss semantics)
                 columns = list(sanitized.keys())

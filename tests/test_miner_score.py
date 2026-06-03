@@ -55,6 +55,28 @@ def test_score_handles_dict_payload_filters_by_id_and_fallback_fields(monkeypatc
     assert "skip-me" not in output
 
 
+def test_score_handles_enveloped_rows_and_skips_malformed_entries(monkeypatch, capsys):
+    payload = {
+        "data": [
+            ["bad"],
+            {
+                "miner_id": "data-miner",
+                "blocks_mined": "not-a-number",
+                "antiquity_multiplier": "bad",
+                "uptime": "bad",
+            },
+        ]
+    }
+    monkeypatch.setattr(miner_score, "api", lambda path: payload)
+
+    miner_score.score()
+
+    output = capsys.readouterr().out
+    assert "data-miner" in output
+    assert "Score: 25" in output
+    assert "blocks:0 mult:1.0 uptime:50%" in output
+
+
 def test_score_defaults_missing_metrics_and_ids(monkeypatch, capsys):
     monkeypatch.setattr(miner_score, "api", lambda path: {"miners": [{}]})
 

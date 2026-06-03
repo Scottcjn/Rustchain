@@ -166,27 +166,32 @@ def generate_checklist(collection: Dict[str, Any]) -> str:
     
     def process_items(items, folder_name=""):
         for item in items:
+            if not isinstance(item, dict):
+                continue
             if 'request' in item:
-                request = item['request']
+                request = item['request'] if isinstance(item['request'], dict) else {}
                 method = request.get('method', 'GET')
                 name = item.get('name', 'Unknown')
                 url = request.get('url', {})
                 
                 if isinstance(url, dict):
-                    path = '/'.join(url.get('path', []))
+                    path_parts = url.get('path', [])
+                    path = '/'.join(path_parts) if isinstance(path_parts, list) else ""
                     full_url = f"{{{{base_url}}}}/{path}" if path else "N/A"
                 else:
                     full_url = url
+                responses = item.get('response', [])
                 
                 checklist.append({
                     'folder': folder_name,
                     'name': name,
                     'method': method,
                     'url': full_url,
-                    'has_examples': 'response' in item and len(item['response']) > 0
+                    'has_examples': isinstance(responses, list) and len(responses) > 0
                 })
             elif 'item' in item:
-                process_items(item['item'], item.get('name', ''))
+                children = item['item'] if isinstance(item['item'], list) else []
+                process_items(children, item.get('name', ''))
     
     process_items(collection['item'])
     return checklist

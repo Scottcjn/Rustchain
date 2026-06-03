@@ -209,9 +209,9 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/api/hall_of_fame",
+              "raw": "{{base_url}}/api/hall_of_fame/leaderboard",
               "host": ["{{base_url}}"],
-              "path": ["api", "hall_of_fame"]
+              "path": ["api", "hall_of_fame", "leaderboard"]
             },
             "description": "Leaderboard for 5 categories of miners/participants."
           },
@@ -224,7 +224,7 @@
               "body": "{\n  \"top_miners\": [\n    {\n      \"rank\": 1,\n      \"miner_id\": \"eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC\",\n      \"category\": \"vintage_computing\",\n      \"score\": 450.5,\n      \"blocks_mined\": 125\n    }\n  ],\n  \"categories\": [\n    \"vintage_computing\",\n    \"antiquity_champion\",\n    \"entropy_master\",\n    \"block_producer\",\n    \"community_contributor\"\n  ]\n}",
               "originalRequest": {
                 "method": "GET",
-                "url": "{{base_url}}/api/hall_of_fame"
+                "url": "{{base_url}}/api/hall_of_fame/leaderboard"
               }
             }
           ]
@@ -273,9 +273,9 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/balance?miner_id={{miner_id}}",
+              "raw": "{{base_url}}/wallet/balance?miner_id={{miner_id}}",
               "host": ["{{base_url}}"],
-              "path": ["balance"],
+              "path": ["wallet", "balance"],
               "query": [
                 {
                   "key": "miner_id",
@@ -292,10 +292,10 @@
               "status": "OK",
               "code": 200,
               "_postman_previewlanguage": "json",
-              "body": "{\n  \"balance\": 150.5,\n  \"miner_id\": \"eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC\",\n  \"amount_i64\": 150500000\n}",
+              "body": "{\n  \"amount_i64\": 150500000,\n  \"amount_rtc\": 150.5,\n  \"miner_id\": \"eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC\"\n}",
               "originalRequest": {
                 "method": "GET",
-                "url": "{{base_url}}/balance?miner_id={{miner_id}}"
+                "url": "{{base_url}}/wallet/balance?miner_id={{miner_id}}"
               }
             },
             {
@@ -306,7 +306,7 @@
               "body": "{\n  \"error\": \"MINER_NOT_FOUND\",\n  \"message\": \"Unknown miner ID\"\n}",
               "originalRequest": {
                 "method": "GET",
-                "url": "{{base_url}}/balance?miner_id={{miner_id}}"
+                "url": "{{base_url}}/wallet/balance?miner_id={{miner_id}}"
               }
             }
           ]

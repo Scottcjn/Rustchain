@@ -13,11 +13,13 @@ This dashboard adds reward transparency views on top of the existing explorer se
 2. Top miner earnings over time (line chart)
 3. Architecture reward breakdown (doughnut chart)
 4. Multiplier impact model for current epoch (equal share vs weighted share)
+5. Epoch transition count, average transition interval, and recent transition history
 
 ## Data Sources
 
 - Node API: `GET /epoch`
 - Local DB:
+  - `epochs` (epoch transition history)
   - `epoch_rewards` (reward history)
   - `epoch_enroll` (current epoch weights)
   - `miner_attest_recent` (architecture mapping)

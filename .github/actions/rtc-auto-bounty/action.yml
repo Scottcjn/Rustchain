@@ -19,6 +19,10 @@ inputs:
     description: 'RustChain VPS host (IP or hostname)'
     required: false
     default: ''
+  rtc-api-url:
+    description: 'Full RustChain transfer API URL, for example https://rustchain.org/wallet/transfer'
+    required: false
+    default: ''
   rtc-admin-key:
     description: 'Admin key for the /wallet/transfer endpoint'
     required: false
@@ -76,6 +80,7 @@ runs:
       shell: bash
       env:
         INPUT_RTC_AMOUNT: ${{ inputs.rtc-amount }}
+        INPUT_RTC_API_URL: ${{ inputs.rtc-api-url }}
         INPUT_RTC_VPS_HOST: ${{ inputs.rtc-vps-host }}
         INPUT_RTC_ADMIN_KEY: ${{ inputs.rtc-admin-key }}
         INPUT_FROM_WALLET: ${{ inputs.from-wallet }}

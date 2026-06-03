@@ -16,29 +16,40 @@ from flask import Flask
 from node.rustchain_tx_handler import TransactionPool, create_tx_api_routes
 
 @pytest.fixture
-def app_context():
+def app_context(monkeypatch):
     """Set up a test Flask app with an isolated TransactionPool database."""
+    # These GET endpoints are admin-gated (PR #6295: prevents unauthorized
+    # transaction surveillance / wallet-balance exposure). Configure a known
+    # admin key for the duration of the test (monkeypatch auto-restores it)
+    # and have the client send it on every request, so these tests exercise
+    # the limit/validation logic rather than bouncing off the 401 gate.
+    admin_key = "test-admin-key-0123456789abcdef"
+    monkeypatch.setenv("RC_ADMIN_KEY", admin_key)
+
     db_fd, db_path = tempfile.mkstemp()
     app = Flask(__name__)
     app.config['TESTING'] = True
-    
+
     pool = TransactionPool(db_path)
     create_tx_api_routes(app, pool)
-    
+
     # Seed some data for history tests
     with sqlite3.connect(db_path) as conn:
         conn.execute("INSERT INTO balances (wallet, balance_urtc) VALUES (?, ?)", ("test_addr", 1000000))
         for i in range(10):
             conn.execute(
-                """INSERT INTO transaction_history 
+                """INSERT INTO transaction_history
                    (tx_hash, from_addr, to_addr, amount_urtc, nonce, timestamp, signature, public_key, confirmed_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (f"hash_{i}", "test_addr", "recv_addr", 100, i, 1000, "sig", "pub", 2000 + i)
             )
-    
+
     client = app.test_client()
+    # Werkzeug maps the WSGI env var HTTP_X_ADMIN_KEY back to the
+    # "X-Admin-Key" request header that require_admin() reads.
+    client.environ_base['HTTP_X_ADMIN_KEY'] = admin_key
     yield client
-    
+
     os.close(db_fd)
     os.unlink(db_path)
 
@@ -129,6 +140,14 @@ def test_history_offset_exceeding_records(app_context):
     assert response.status_code == 200
     data = json.loads(response.data)
     assert len(data["transactions"]) == 0
+
+def test_history_offset_exceeding_sqlite_integer_range(app_context):
+    """Scenario: Offset beyond SQLite int64 range returns validation error."""
+    huge_offset = "9223372036854775808"
+    response = app_context.get(f'/wallet/test_addr/history?offset={huge_offset}')
+    assert response.status_code == 400
+    data = json.loads(response.data)
+    assert data["error"] == "offset exceeds SQLite integer maximum"
 
 def test_history_non_integer_params(app_context):
     """Scenario: Non-integer limit or offset parameter (expect 400)"""

@@ -81,6 +81,18 @@ def test_req_uses_unverified_ssl_context_when_insecure():
     assert urlopen.call_args.kwargs["context"] is marker
 
 
+def test_req_rejects_non_object_json_response():
+    module = load_module()
+
+    with patch.object(module.urllib.request, "urlopen", return_value=FakeResponse(["not", "an", "object"])):
+        try:
+            module._req("GET", "https://node.example/pending/list", "key", insecure=False)
+        except ValueError as exc:
+            assert str(exc) == "node response must be a JSON object"
+        else:
+            raise AssertionError("_req accepted a non-object JSON response")
+
+
 def test_cmd_list_formats_status_and_limit_query(capsys):
     module = load_module()
     args = argparse.Namespace(

@@ -232,10 +232,10 @@ This document provides an objective, technical comparison between **RustChain** 
 #### RustChain (RTC)
 | Parameter | Value |
 |-----------|-------|
-| **Total Supply** | 8,000,000 RTC (fixed) |
+| **Total Supply** | 8,388,608 RTC (fixed) |
 | **Supply Cap** | Hard cap (no inflation) |
-| **Premine** | 75,000 RTC (0.94%) |
-| **Mining Allocation** | 7,925,000 RTC (99.06%) |
+| **Premine** | 503,316 RTC (6%) |
+| **Mining Allocation** | 7,885,292 RTC (94%) |
 | **Current Emission** | ~1.5 RTC/epoch (~547.5 RTC/year) |
 | **Years to Full Emission** | ~14,500 years |
 
@@ -243,11 +243,11 @@ This document provides an objective, technical comparison between **RustChain** 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    RTC Total Supply                         │
-│                      8,000,000 RTC                          │
+│                      8,388,608 RTC                          │
 ├─────────────────────────────────────────────────────────────┤
 │  Premine (Dev/Bounties)  │  Mining Rewards                  │
-│       75,000 RTC         │    7,925,000 RTC                 │
-│         0.94%            │       99.06%                     │
+│       503,316 RTC         │    7,885,292 RTC                 │
+│         6%            │       94%                     │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -560,7 +560,7 @@ This document provides an objective, technical comparison between **RustChain** 
 | Factor | Ethereum | RustChain |
 |--------|----------|-----------|
 | **Decentralization** | High (1M+ validators) | Moderate (federated nodes) |
-| **Premine/Allocation** | Fair launch (no premine) | 0.94% premine (dev/bounties) |
+| **Premine/Allocation** | Fair launch (no premine) | 6% premine (dev/bounties) |
 | **Staking Rewards** | Yield-like (regulatory risk) | Mining rewards (potentially clearer) |
 | **Utility** | Clear (smart contracts, DeFi) | Niche (hardware preservation) |
 

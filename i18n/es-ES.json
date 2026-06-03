@@ -2,8 +2,7 @@
   "locale": "es-ES",
   "language": "Spanish",
   "version": "1.0.0",
-  "description": "Traducción al español de mensajes de error de la interfaz de usuario de RustChain Miner/Billetera",
-
+  "description": "Traducción al español de mensajes de error de la interfaz de usuario de RustChain Miner/Billetera y consentimiento de primera ejecución",
   "errors": {
     "wallet": {
       "invalid_amount": "Cantidad inválida",
@@ -95,7 +94,6 @@
       "close": "Cerrar"
     }
   },
-
   "messages": {
     "wallet": {
       "balance_display": "Saldo: {balance:.8f} RTC",
@@ -122,6 +120,13 @@
       "status_mining": "Minando...",
       "status_waiting": "Esperando calificación...",
       "status_error": "Error: {message}"
+    },
+    "miner_consent": {
+      "title": "Consentimiento de primera ejecución de RustChain Miner",
+      "body": "Antes de minar, revisa los comandos --dry-run, --show-payload y --test-only. El miner enviará datos de fingerprint y attestation al nodo RustChain. El hardware debe declararse de forma honesta; no fabriques arquitectura, antiquity ni señales de hardware. Las recompensas en RTC no están garantizadas.",
+      "prompt": "Escribe SI para confirmar que entiendes y quieres continuar:",
+      "affirmative": "SI",
+      "rejected": "Consentimiento no confirmado. La minería no se iniciará."
     }
   }
 }

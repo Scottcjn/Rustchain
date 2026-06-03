@@ -23,12 +23,12 @@ try:
     sys.path.insert(0, "/root/shared")
     from x402_config import (
         BEACON_TREASURY, FACILITATOR_URL, X402_NETWORK, USDC_BASE,
-        PRICE_BEACON_CONTRACT, PRICE_RELAY_REGISTER, PRICE_REPUTATION_EXPORT,
-        is_free, has_cdp_credentials, create_agentkit_wallet, SWAP_INFO,
+        PRICE_BEACON_CONTRACT, PRICE_REPUTATION_EXPORT,
+        is_free, has_cdp_credentials, SWAP_INFO,
     )
     X402_CONFIG_OK = True
 except ImportError:
-    log.warning("x402_config not found — x402 features disabled")
+    log.warning("x402_config not found ? x402 features disabled")
     X402_CONFIG_OK = False
 
 
@@ -83,6 +83,10 @@ def _run_migrations(db_path):
     conn.close()
 
 
+def _ensure_x402_tables(conn):
+    conn.executescript(X402_BEACON_SCHEMA)
+
+
 # ---------------------------------------------------------------------------
 # CORS helper (match beacon_chat.py pattern)
 # ---------------------------------------------------------------------------
@@ -104,13 +108,36 @@ def _json_object_body():
     return data, None
 
 
-def _json_string_field(data, field_name, default=""):
+def _json_string_field(data, field_name, default="", max_length=0):
     value = data.get(field_name, default)
     if value is None:
         return ""
     if not isinstance(value, str):
         raise ValueError(f"{field_name} must be a string")
-    return value.strip()
+    value = value.strip()
+    if max_length > 0 and len(value) > max_length:
+        raise ValueError(f"{field_name} exceeds maximum length of {max_length}")
+    return value
+
+
+def _is_base_address(value: str) -> bool:
+    return (
+        value.startswith("0x")
+        and len(value) == 42
+        and all(char in "0123456789abcdefABCDEF" for char in value[2:])
+    )
+
+
+def _require_beacon_admin():
+    expected = os.environ.get("BEACON_ADMIN_KEY", "")
+    if not expected:
+        return _cors_json({"error": "Admin key not configured"}, 503)
+
+    admin_key = request.headers.get("X-Admin-Key", "")
+    if not hmac.compare_digest(admin_key, expected):
+        return _cors_json({"error": "Unauthorized - admin key required"}, 401)
+
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -122,7 +149,17 @@ def _check_x402_payment(price_str, action_name):
     Check for x402 payment. Returns (passed, response_or_none).
     When price is "0", always passes.
     """
-    if not X402_CONFIG_OK or is_free(price_str):
+    if not X402_CONFIG_OK:
+        log.warning(
+            "Rejected premium Beacon x402 action=%s because payment config is unavailable",
+            action_name,
+        )
+        return False, _cors_json({
+            "error": "Payment verification unavailable",
+            "message": "Beacon x402 premium exports are disabled until payment configuration is available.",
+        }, 503)
+
+    if is_free(price_str):
         return True, None
 
     payment_header = request.headers.get("X-PAYMENT", "")
@@ -182,7 +219,7 @@ def init_app(app, get_db_func):
         log.error(f"Beacon x402 migration failed: {e}")
 
     # ---------------------------------------------------------------
-    # Wallet Management — Native Agents
+    # Wallet Management ? Native Agents
     # ---------------------------------------------------------------
 
     @app.route("/api/agents/<agent_id>/wallet", methods=["POST", "OPTIONS"])
@@ -191,13 +228,13 @@ def init_app(app, get_db_func):
         if request.method == "OPTIONS":
             return _cors_json({"ok": True})
 
-        # Simple admin check — require admin key in header
-        admin_key = request.headers.get("X-Admin-Key", "")
-        expected = os.environ.get("BEACON_ADMIN_KEY", "")
-        if not expected:
-            return _cors_json({"error": "Admin key not configured"}, 503)
-        if not hmac.compare_digest(admin_key, expected):
-            return _cors_json({"error": "Unauthorized — admin key required"}, 401)
+        if len(agent_id) > 128:
+            return _cors_json({"error": "agent_id too long"}, 400)
+
+        # Simple admin check ? require admin key in header
+        admin_error = _require_beacon_admin()
+        if admin_error:
+            return admin_error
 
         data, error_response = _json_object_body()
         if error_response:
@@ -206,10 +243,11 @@ def init_app(app, get_db_func):
             address = _json_string_field(data, "coinbase_address")
         except ValueError as exc:
             return _cors_json({"error": str(exc)}, 400)
-        if not address or not address.startswith("0x") or len(address) != 42:
+        if not address or not _is_base_address(address):
             return _cors_json({"error": "Invalid Base address"}, 400)
 
         db = get_db_func()
+        _ensure_x402_tables(db)
         db.execute(
             """INSERT INTO beacon_wallets (agent_id, coinbase_address, created_at)
                VALUES (?, ?, ?)
@@ -230,8 +268,16 @@ def init_app(app, get_db_func):
         """Get a beacon agent's Coinbase wallet info."""
         if request.method == "OPTIONS":
             return _cors_json({"ok": True})
+        if len(agent_id) > 128:
+            return _cors_json({"error": "agent_id too long"}, 400)
+
+        # SECURITY: Require admin key — exposes coinbase_address for any beacon agent
+        admin_error = _require_beacon_admin()
+        if admin_error:
+            return admin_error
 
         db = get_db_func()
+        _ensure_x402_tables(db)
 
         # Check beacon_wallets table (native agents)
         row = db.execute(
@@ -254,7 +300,7 @@ def init_app(app, get_db_func):
                 "SELECT coinbase_address FROM relay_agents WHERE agent_id = ?",
                 (agent_id,),
             ).fetchone()
-            if relay and relay.get("coinbase_address"):
+            if relay and relay["coinbase_address"]:
                 return _cors_json({
                     "agent_id": agent_id,
                     "coinbase_address": relay["coinbase_address"],
@@ -317,9 +363,12 @@ def init_app(app, get_db_func):
             return err_resp
 
         db = get_db_func()
-        rows = db.execute(
-            "SELECT * FROM contracts ORDER BY created_at DESC"
-        ).fetchall()
+        try:
+            rows = db.execute(
+                "SELECT * FROM contracts ORDER BY created_at DESC"
+            ).fetchall()
+        except sqlite3.OperationalError:
+            rows = []
 
         contracts = []
         for r in rows:
@@ -349,6 +398,10 @@ def init_app(app, get_db_func):
         """View x402 payment history for beacon."""
         if request.method == "OPTIONS":
             return _cors_json({"ok": True})
+
+        admin_error = _require_beacon_admin()
+        if admin_error:
+            return admin_error
 
         db = get_db_func()
         try:

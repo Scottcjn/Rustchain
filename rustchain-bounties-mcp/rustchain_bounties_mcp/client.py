@@ -87,7 +87,7 @@ class RustChainClient:
         *,
         params: Optional[dict[str, Any]] = None,
         json_data: Optional[dict[str, Any]] = None,
-    ) -> dict[str, Any]:
+    ) -> Any:
         """HTTP request with retry and self-signed-cert handling."""
         await self._ensure_session()
         url = f"{self.node_url}{path}"
@@ -145,8 +145,20 @@ class RustChainClient:
         """GET /api/miners — the live API returns `miners` list + `pagination` dict."""
         params: dict[str, Any] = {"limit": min(max(limit, 1), 1000)}
         data = await self._request("GET", "/api/miners", params=params)
-        miners_raw = data.get("miners", [])
-        miners = [MinerInfo.from_dict(m) for m in miners_raw]
+        if isinstance(data, list):
+            miners_raw = data
+            pagination = {}
+        elif isinstance(data, dict):
+            miners_raw = data.get("miners") or data.get("data") or data.get("items") or []
+            pagination = data.get("pagination", {})
+        else:
+            miners_raw = []
+            pagination = {}
+
+        if not isinstance(miners_raw, list):
+            miners_raw = []
+
+        miners = [MinerInfo.from_dict(m) for m in miners_raw if isinstance(m, dict)]
 
         if hardware_type:
             ht = hardware_type.lower()
@@ -155,7 +167,6 @@ class RustChainClient:
         limited = miners[: params["limit"]]
 
         # Live API returns pagination as a nested dict: {"miners": [...], "pagination": {"total": N, ...}}
-        pagination = data.get("pagination", {})
         total_count = pagination.get("total", len(miners))
 
         return {

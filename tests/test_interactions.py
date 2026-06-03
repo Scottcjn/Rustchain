@@ -3,13 +3,12 @@ Tests for BoTTube Interaction Tracker (tools/bottube_interactions.py)
 """
 
 import pytest
-import time
 import sys
 import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools"))
 
-from bottube_interactions import InteractionTracker, VALID_TYPES, TYPE_WEIGHTS
+from bottube_interactions import InteractionTracker, VALID_TYPES
 
 
 @pytest.fixture
@@ -41,6 +40,11 @@ class TestRecordInteraction:
         tracker.record_interaction("A", "B", "collab", metadata={"key": "value"})
         history = tracker.get_interaction_history(from_agent="A")
         assert history[0]["metadata"] == {"key": "value"}
+
+    def test_empty_metadata_stored(self, tracker):
+        tracker.record_interaction("A", "B", "collab", metadata={})
+        history = tracker.get_interaction_history(from_agent="A")
+        assert history[0]["metadata"] == {}
 
     def test_video_id_stored(self, tracker):
         tracker.record_interaction("A", "B", "react", video_id="vid_999")
