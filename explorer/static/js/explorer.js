@@ -42,6 +42,15 @@ const state = {
     },
     activeTab: 'overview',
     searchQuery: '',
+    blockFilters: {
+        proposer: '',
+        fromTime: '',
+        toTime: '',
+        minTransactions: '',
+        maxTransactions: '',
+        minGas: '',
+        maxGas: ''
+    },
     lastUpdate: null
 };
 
@@ -108,6 +117,73 @@ function normalizeMinersResponse(payload) {
         (Array.isArray(payload?.miners) ? payload.miners :
         (Array.isArray(payload?.data) ? payload.data : []));
     return rows.filter(row => row && typeof row === 'object');
+}
+
+function normalizeBlocksResponse(payload) {
+    const rows = Array.isArray(payload) ? payload :
+        (Array.isArray(payload?.blocks) ? payload.blocks :
+        (Array.isArray(payload?.data) ? payload.data : []));
+    return rows.filter(row => row && typeof row === 'object');
+}
+
+function blockProposer(block) {
+    return block.proposer || block.miner || block.producer || block.validator || '';
+}
+
+function blockTransactionCount(block) {
+    return block.tx_count ?? block.transactions_count ?? block.transaction_count ??
+        (Array.isArray(block.transactions) ? block.transactions.length : undefined);
+}
+
+function blockGasUsed(block) {
+    return block.gas_used ?? block.gasUsed ?? block.total_gas_used ?? block.gas;
+}
+
+function parseFilterNumber(value) {
+    if (value === null || value === undefined || String(value).trim() === '') return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function blockTimestampMillis(block) {
+    const value = block.timestamp ?? block.time ?? block.created_at ?? block.createdAt;
+    if (value === null || value === undefined || value === '') return null;
+    if (typeof value === 'number') {
+        return value < 100000000000 ? value * 1000 : value;
+    }
+    const parsed = Date.parse(String(value));
+    return Number.isNaN(parsed) ? null : parsed;
+}
+
+function filterBlocks(blocks = state.blocks) {
+    const filters = state.blockFilters;
+    const proposerQuery = filters.proposer.trim().toLowerCase();
+    const fromTime = filters.fromTime ? Date.parse(filters.fromTime) : null;
+    const toTime = filters.toTime ? Date.parse(filters.toTime) : null;
+    const minTransactions = parseFilterNumber(filters.minTransactions);
+    const maxTransactions = parseFilterNumber(filters.maxTransactions);
+    const minGas = parseFilterNumber(filters.minGas);
+    const maxGas = parseFilterNumber(filters.maxGas);
+
+    return blocks.filter(block => {
+        if (proposerQuery && !String(blockProposer(block)).toLowerCase().includes(proposerQuery)) {
+            return false;
+        }
+
+        const timestamp = blockTimestampMillis(block);
+        if (fromTime && (timestamp === null || timestamp < fromTime)) return false;
+        if (toTime && (timestamp === null || timestamp > toTime)) return false;
+
+        const txCount = parseFilterNumber(blockTransactionCount(block));
+        if (minTransactions !== null && (txCount === null || txCount < minTransactions)) return false;
+        if (maxTransactions !== null && (txCount === null || txCount > maxTransactions)) return false;
+
+        const gasUsed = parseFilterNumber(blockGasUsed(block));
+        if (minGas !== null && (gasUsed === null || gasUsed < minGas)) return false;
+        if (maxGas !== null && (gasUsed === null || gasUsed > maxGas)) return false;
+
+        return true;
+    });
 }
 
 function getArchitectureTier(arch) {
@@ -231,7 +307,7 @@ async function fetchBlocks() {
     try {
         state.loading.blocks = true;
         state.error.blocks = null;
-        const blocks = await fetchAPI('/blocks') || [];
+        const blocks = normalizeBlocksResponse(await fetchAPI('/blocks'));
         state.blocks = blocks.slice(0, CONFIG.MAX_RECENT_BLOCKS);
     } catch (error) {
         state.error.blocks = error.message;
@@ -455,13 +531,13 @@ function renderBlocksTable() {
     if (!container) return;
     
     if (state.loading.blocks) {
-        container.innerHTML = '<tr><td colspan="5" class="loading"><div class="spinner"></div>Loading blocks...</td></tr>';
+        container.innerHTML = '<tr><td colspan="8" class="loading"><div class="spinner"></div>Loading blocks...</td></tr>';
         return;
     }
     
     if (state.error.blocks && state.blocks.length === 0) {
         container.innerHTML = `
-            <tr><td colspan="5">
+            <tr><td colspan="8">
                 <div class="error-message">
                     <span class="error-icon">⚠️</span>
                     <span>${escapeHtml(state.error.blocks)}</span>
@@ -472,19 +548,46 @@ function renderBlocksTable() {
     }
     
     if (!state.blocks || state.blocks.length === 0) {
-        container.innerHTML = '<tr><td colspan="5" class="empty-state"><div class="empty-icon">📦</div>No blocks found</td></tr>';
+        container.innerHTML = '<tr><td colspan="8" class="empty-state"><div class="empty-icon">📦</div>No blocks found</td></tr>';
         return;
     }
-    
-    container.innerHTML = state.blocks.map(block => `
+
+    const blocks = filterBlocks();
+    renderBlockFilterSummary(blocks.length);
+    if (blocks.length === 0) {
+        container.innerHTML = '<tr><td colspan="8" class="empty-state"><div class="empty-icon">🔎</div>No blocks match the current filters</td></tr>';
+        syncFullBlocksTable();
+        return;
+    }
+
+    container.innerHTML = blocks.map(block => `
         <tr>
             <td><strong class="text-accent">#${formatNumber(block.height, 0)}</strong></td>
             <td class="mono" title="${escapeHtml(block.hash)}">${escapeHtml(shortenHash(block.hash || '0x'))}</td>
             <td class="mono">${formatTimestamp(block.timestamp)}</td>
+            <td class="mono" title="${escapeHtml(blockProposer(block))}">${escapeHtml(shortenAddress(blockProposer(block) || 'N/A'))}</td>
+            <td>${formatNumber(blockTransactionCount(block) || 0, 0)}</td>
+            <td>${formatNumber(blockGasUsed(block) || 0, 0)}</td>
             <td><span class="badge badge-info">${formatNumber(block.miners_count || 0, 0)} miners</span></td>
             <td class="text-success">${formatNumber(block.reward || 0, 2)} RTC</td>
         </tr>
     `).join('');
+    syncFullBlocksTable();
+}
+
+function renderBlockFilterSummary(matchingCount) {
+    const summary = document.getElementById('block-filter-summary');
+    if (!summary) return;
+    const total = state.blocks.length;
+    summary.textContent = `${matchingCount} of ${total} blocks`;
+}
+
+function syncFullBlocksTable() {
+    const blocksTbody = document.getElementById('blocks-tbody-full');
+    const blocksTbodyOverview = document.getElementById('blocks-tbody');
+    if (blocksTbody && blocksTbodyOverview) {
+        blocksTbody.innerHTML = blocksTbodyOverview.innerHTML;
+    }
 }
 
 function renderTransactionsTable() {
@@ -699,6 +802,36 @@ function handleSearch(query) {
     renderSearchResults();
 }
 
+function handleBlockFilterChange() {
+    const getValue = id => document.getElementById(id)?.value || '';
+    state.blockFilters = {
+        proposer: getValue('block-filter-proposer'),
+        fromTime: getValue('block-filter-from-time'),
+        toTime: getValue('block-filter-to-time'),
+        minTransactions: getValue('block-filter-min-tx'),
+        maxTransactions: getValue('block-filter-max-tx'),
+        minGas: getValue('block-filter-min-gas'),
+        maxGas: getValue('block-filter-max-gas')
+    };
+    renderBlocksTable();
+}
+
+function resetBlockFilters() {
+    [
+        'block-filter-proposer',
+        'block-filter-from-time',
+        'block-filter-to-time',
+        'block-filter-min-tx',
+        'block-filter-max-tx',
+        'block-filter-min-gas',
+        'block-filter-max-gas'
+    ].forEach(id => {
+        const input = document.getElementById(id);
+        if (input) input.value = '';
+    });
+    handleBlockFilterChange();
+}
+
 // Initial Load
 async function initialize() {
     console.log('[Explorer] Initializing...');
@@ -743,6 +876,15 @@ document.addEventListener('DOMContentLoaded', () => {
             handleSearch(e.target.value);
         });
     }
+
+    document.querySelectorAll('[data-block-filter]').forEach(input => {
+        input.addEventListener('input', handleBlockFilterChange);
+    });
+
+    const clearBlockFiltersBtn = document.getElementById('clear-block-filters');
+    if (clearBlockFiltersBtn) {
+        clearBlockFiltersBtn.addEventListener('click', resetBlockFilters);
+    }
     
     // Manual refresh button
     const refreshBtn = document.getElementById('refresh-btn');
@@ -772,5 +914,10 @@ window.RustChainExplorer = {
         fetchTransactions()
     ]),
     search: handleSearch,
+    filterBlocks,
+    setBlockFilters: filters => {
+        state.blockFilters = { ...state.blockFilters, ...filters };
+        renderBlocksTable();
+    },
     switchTab
 };
