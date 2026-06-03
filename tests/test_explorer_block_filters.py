@@ -107,3 +107,91 @@ console.log(result);
 
     assert data["filteredHeights"] == [3]
     assert data["envelopeHeights"] == [9]
+
+
+def test_all_blocks_filter_uses_untruncated_fetched_blocks():
+    js = EXPLORER_JS.read_text(encoding="utf-8")
+    probe = f"""
+const vm = require('vm');
+const script = {json.dumps(js)};
+
+(async () => {{
+  const elements = {{}};
+  const elementFor = id => {{
+    if (!elements[id]) {{
+      elements[id] = {{
+        value: '',
+        innerHTML: '',
+        textContent: '',
+        addEventListener() {{}},
+        classList: {{ toggle() {{}}, add() {{}}, remove() {{}} }},
+        setAttribute() {{}},
+        removeAttribute() {{}}
+      }};
+    }}
+    return elements[id];
+  }};
+  const context = {{
+    window: {{ EXPLORER_API_BASE: 'https://example.test' }},
+    document: {{
+      addEventListener() {{}},
+      getElementById: elementFor,
+      querySelectorAll() {{ return []; }},
+      querySelector() {{ return null; }},
+    }},
+    console: {{ log() {{}}, error() {{}} }},
+    setInterval() {{ return 1; }},
+    clearInterval() {{}},
+    setTimeout() {{ return 1; }},
+    clearTimeout() {{}},
+    fetch(url) {{
+      const blocks = [
+        {{ height: 103, hash: '0x103', timestamp: '2026-06-03T10:00:00', proposer: 'recent-a', tx_count: 1, gas_used: 100 }},
+        {{ height: 102, hash: '0x102', timestamp: '2026-06-03T09:00:00', proposer: 'recent-b', tx_count: 2, gas_used: 200 }},
+        {{ height: 101, hash: '0x101', timestamp: '2026-06-03T08:00:00', proposer: 'archive-miner', tx_count: 9, gas_used: 900 }}
+      ];
+      const payload = url.endsWith('/blocks') ? blocks :
+        (url.endsWith('/api/miners') ? [] :
+        (url.endsWith('/api/transactions') ? [] :
+        (url.endsWith('/epoch') ? {{ epoch: 1, slot: 1, blocks_per_epoch: 144 }} :
+        {{ status: 'ok', version: 'test' }})));
+      return Promise.resolve({{ ok: true, json: () => Promise.resolve(payload) }});
+    }},
+    AbortController: function() {{ this.signal = {{}}; this.abort = function() {{}}; }},
+  }};
+  vm.createContext(context);
+  vm.runInContext(script, context);
+  const result = await vm.runInContext(`
+    (async () => {{
+      const api = window.RustChainExplorer;
+      api.CONFIG.MAX_RECENT_BLOCKS = 2;
+      await api.refresh();
+      api.setBlockFilters({{ proposer: 'archive-miner' }});
+      return JSON.stringify({{
+        storedBlockCount: api.state.blocks.length,
+        summary: document.getElementById('block-filter-summary').textContent,
+        recentHtml: document.getElementById('blocks-tbody').innerHTML,
+        fullHtml: document.getElementById('blocks-tbody-full').innerHTML,
+        filteredHeights: api.filterBlocks().map(block => block.height)
+      }});
+    }})()
+  `, context);
+  console.log(result);
+}})().catch(error => {{
+  console.error(error);
+  process.exit(1);
+}});
+"""
+    result = subprocess.run(
+        ["node", "-e", probe],
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    data = json.loads(result.stdout)
+
+    assert data["storedBlockCount"] == 3
+    assert data["summary"] == "1 of 3 blocks"
+    assert data["filteredHeights"] == [101]
+    assert "#101" not in data["recentHtml"]
+    assert "#101" in data["fullHtml"]

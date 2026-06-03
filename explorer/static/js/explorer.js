@@ -308,7 +308,7 @@ async function fetchBlocks() {
         state.loading.blocks = true;
         state.error.blocks = null;
         const blocks = normalizeBlocksResponse(await fetchAPI('/blocks'));
-        state.blocks = blocks.slice(0, CONFIG.MAX_RECENT_BLOCKS);
+        state.blocks = blocks;
     } catch (error) {
         state.error.blocks = error.message;
         // Fallback mock data
@@ -527,16 +527,17 @@ function renderMinersTable() {
 }
 
 function renderBlocksTable() {
-    const container = document.getElementById('blocks-tbody');
-    if (!container) return;
+    const recentContainer = document.getElementById('blocks-tbody');
+    const fullContainer = document.getElementById('blocks-tbody-full');
     
     if (state.loading.blocks) {
-        container.innerHTML = '<tr><td colspan="8" class="loading"><div class="spinner"></div>Loading blocks...</td></tr>';
+        setBlockTableHtml(recentContainer, '<tr><td colspan="8" class="loading"><div class="spinner"></div>Loading blocks...</td></tr>');
+        setBlockTableHtml(fullContainer, '<tr><td colspan="8" class="loading"><div class="spinner"></div>Loading blocks...</td></tr>');
         return;
     }
     
     if (state.error.blocks && state.blocks.length === 0) {
-        container.innerHTML = `
+        const errorHtml = `
             <tr><td colspan="8">
                 <div class="error-message">
                     <span class="error-icon">⚠️</span>
@@ -544,23 +545,39 @@ function renderBlocksTable() {
                 </div>
             </td></tr>
         `;
+        setBlockTableHtml(recentContainer, errorHtml);
+        setBlockTableHtml(fullContainer, errorHtml);
+        renderBlockFilterSummary(0);
         return;
     }
     
     if (!state.blocks || state.blocks.length === 0) {
-        container.innerHTML = '<tr><td colspan="8" class="empty-state"><div class="empty-icon">📦</div>No blocks found</td></tr>';
+        const emptyHtml = '<tr><td colspan="8" class="empty-state"><div class="empty-icon">📦</div>No blocks found</td></tr>';
+        setBlockTableHtml(recentContainer, emptyHtml);
+        setBlockTableHtml(fullContainer, emptyHtml);
+        renderBlockFilterSummary(0);
         return;
     }
 
-    const blocks = filterBlocks();
+    const recentBlocks = state.blocks.slice(0, CONFIG.MAX_RECENT_BLOCKS);
+    setBlockTableHtml(recentContainer, renderBlockRows(recentBlocks));
+
+    const blocks = filterBlocks(state.blocks);
     renderBlockFilterSummary(blocks.length);
     if (blocks.length === 0) {
-        container.innerHTML = '<tr><td colspan="8" class="empty-state"><div class="empty-icon">🔎</div>No blocks match the current filters</td></tr>';
-        syncFullBlocksTable();
+        setBlockTableHtml(fullContainer, '<tr><td colspan="8" class="empty-state"><div class="empty-icon">🔎</div>No blocks match the current filters</td></tr>');
         return;
     }
 
-    container.innerHTML = blocks.map(block => `
+    setBlockTableHtml(fullContainer, renderBlockRows(blocks));
+}
+
+function setBlockTableHtml(container, html) {
+    if (container) container.innerHTML = html;
+}
+
+function renderBlockRows(blocks) {
+    return blocks.map(block => `
         <tr>
             <td><strong class="text-accent">#${formatNumber(block.height, 0)}</strong></td>
             <td class="mono" title="${escapeHtml(block.hash)}">${escapeHtml(shortenHash(block.hash || '0x'))}</td>
@@ -572,7 +589,6 @@ function renderBlocksTable() {
             <td class="text-success">${formatNumber(block.reward || 0, 2)} RTC</td>
         </tr>
     `).join('');
-    syncFullBlocksTable();
 }
 
 function renderBlockFilterSummary(matchingCount) {
@@ -583,11 +599,7 @@ function renderBlockFilterSummary(matchingCount) {
 }
 
 function syncFullBlocksTable() {
-    const blocksTbody = document.getElementById('blocks-tbody-full');
-    const blocksTbodyOverview = document.getElementById('blocks-tbody');
-    if (blocksTbody && blocksTbodyOverview) {
-        blocksTbody.innerHTML = blocksTbodyOverview.innerHTML;
-    }
+    renderBlocksTable();
 }
 
 function renderTransactionsTable() {
@@ -915,6 +927,7 @@ window.RustChainExplorer = {
     ]),
     search: handleSearch,
     filterBlocks,
+    renderBlocksTable,
     setBlockFilters: filters => {
         state.blockFilters = { ...state.blockFilters, ...filters };
         renderBlocksTable();

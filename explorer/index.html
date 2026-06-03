@@ -423,10 +423,8 @@
             
             // Sync blocks table
             if (viewName === 'blocks') {
-                const blocksTbody = document.getElementById('blocks-tbody-full');
-                const blocksTbodyOverview = document.getElementById('blocks-tbody');
-                if (blocksTbody && blocksTbodyOverview) {
-                    blocksTbody.innerHTML = blocksTbodyOverview.innerHTML;
+                if (window.RustChainExplorer && window.RustChainExplorer.renderBlocksTable) {
+                    window.RustChainExplorer.renderBlocksTable();
                 }
             }
             
