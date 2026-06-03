@@ -1972,6 +1972,13 @@ class TestCoinSelect(unittest.TestCase):
         # Should switch to largest-first and pick the 200 UNIT box
         self.assertLessEqual(len(selected), 20)
 
+    def test_equal_value_utxos_fail_if_input_limit_cannot_be_met(self):
+        """Equal-value inputs should not return an oversized fallback selection."""
+        utxos = [self._box(1 * UNIT) for _ in range(25)]
+        selected, change = coin_select(utxos, 21 * UNIT)
+        self.assertEqual(selected, [])
+        self.assertEqual(change, 0)
+
 
 class TestMultiInputTransfer(unittest.TestCase):
     """Test transfers that consume multiple UTXOs."""
