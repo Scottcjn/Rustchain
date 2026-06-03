@@ -92,6 +92,46 @@ def enforce_mock_signature_runtime_guard():
             "TESTNET_ALLOW_MOCK_SIG must not be enabled outside test/dev runtimes"
         )
 
+
+def _ensure_miner_header_key_tables(conn: sqlite3.Connection):
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS miner_header_keys (
+            miner_id TEXT PRIMARY KEY,
+            pubkey_hex TEXT NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS miner_header_key_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            miner_id TEXT NOT NULL,
+            pubkey_hex TEXT NOT NULL,
+            previous_pubkey_hex TEXT,
+            rotated_at INTEGER NOT NULL,
+            rotated_by TEXT NOT NULL,
+            reason TEXT NOT NULL DEFAULT ''
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_miner_header_key_history_miner
+        ON miner_header_key_history(miner_id, rotated_at DESC, id DESC)
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS miner_header_key_audit (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            miner_id TEXT NOT NULL,
+            action TEXT NOT NULL,
+            pubkey_hex TEXT NOT NULL,
+            previous_pubkey_hex TEXT,
+            created_at INTEGER NOT NULL,
+            actor TEXT NOT NULL,
+            reason TEXT NOT NULL DEFAULT ''
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_miner_header_key_audit_miner
+        ON miner_header_key_audit(miner_id, created_at DESC, id DESC)
+    """)
+
 try:
     from nacl.signing import VerifyKey
     from nacl.exceptions import BadSignatureError
@@ -1641,19 +1681,7 @@ def init_db():
                 last_withdrawal INTEGER
             )
         """)
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS miner_header_keys (
-                miner_id TEXT PRIMARY KEY,
-                pubkey_hex TEXT NOT NULL
-            )
-        """)
-
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS miner_header_keys (
-                miner_id TEXT PRIMARY KEY,
-                pubkey_hex TEXT NOT NULL
-            )
-        """)
+        _ensure_miner_header_key_tables(c)
 
         # Withdrawal nonce tracking (replay protection)
         c.execute("""
@@ -1797,12 +1825,7 @@ def init_db():
                 header_json TEXT NOT NULL
             )
         """)
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS miner_header_keys(
-                miner_id TEXT PRIMARY KEY,
-                pubkey_hex TEXT NOT NULL
-            )
-        """)
+        _ensure_miner_header_key_tables(c)
         c.execute("""
             CREATE TABLE IF NOT EXISTS schema_version(
                 version INTEGER PRIMARY KEY,
@@ -4885,7 +4908,7 @@ def lottery_eligibility():
 @app.route('/miner/headerkey', methods=['POST'])
 def miner_set_header_key():
     """Admin-set or update the header-signing ed25519 public key for a miner.
-    Body: {"miner_id":"...","pubkey_hex":"<64 hex chars>"}
+    Body: {"miner_id":"...","pubkey_hex":"<64 hex chars>","reason":"optional"}
     """
     # Simple admin key check
     admin_key = os.getenv("RC_ADMIN_KEY")
@@ -4910,8 +4933,38 @@ def miner_set_header_key():
         pubkey_bytes = b""
     if not miner_id or len(pubkey_bytes) != 32:
         return jsonify({"ok":False,"error":"invalid miner_id or pubkey_hex"}), 400
+    raw_reason = body.get("reason", "")
+    reason = raw_reason.strip()[:240] if isinstance(raw_reason, str) else ""
+    rotated_at = int(time.time())
     with sqlite3.connect(DB_PATH) as db:
-        db.execute("INSERT INTO miner_header_keys(miner_id,pubkey_hex) VALUES(?,?) ON CONFLICT(miner_id) DO UPDATE SET pubkey_hex=excluded.pubkey_hex", (miner_id, pubkey_hex))
+        _ensure_miner_header_key_tables(db)
+        row = db.execute(
+            "SELECT pubkey_hex FROM miner_header_keys WHERE miner_id=?",
+            (miner_id,),
+        ).fetchone()
+        previous_pubkey_hex = row[0] if row else None
+        if previous_pubkey_hex == pubkey_hex:
+            action = "unchanged"
+        else:
+            action = "registered" if previous_pubkey_hex is None else "rotated"
+            db.execute(
+                """INSERT INTO miner_header_keys(miner_id,pubkey_hex)
+                   VALUES(?,?)
+                   ON CONFLICT(miner_id) DO UPDATE SET pubkey_hex=excluded.pubkey_hex""",
+                (miner_id, pubkey_hex),
+            )
+            db.execute(
+                """INSERT INTO miner_header_key_history
+                   (miner_id, pubkey_hex, previous_pubkey_hex, rotated_at, rotated_by, reason)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (miner_id, pubkey_hex, previous_pubkey_hex, rotated_at, "admin", reason),
+            )
+        db.execute(
+            """INSERT INTO miner_header_key_audit
+               (miner_id, action, pubkey_hex, previous_pubkey_hex, created_at, actor, reason)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (miner_id, action, pubkey_hex, previous_pubkey_hex, rotated_at, "admin", reason),
+        )
         db.commit()
     return jsonify({"ok":True,"miner_id":miner_id,"pubkey_hex":pubkey_hex})
 

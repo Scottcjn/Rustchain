@@ -57,26 +57,144 @@ class TestMinerHeaderKeySchema(unittest.TestCase):
             table = conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='miner_header_keys'",
             ).fetchone()
+            history_table = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='miner_header_key_history'",
+            ).fetchone()
+            audit_table = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='miner_header_key_audit'",
+            ).fetchone()
 
         self.assertIsNotNone(table)
+        self.assertIsNotNone(history_table)
+        self.assertIsNotNone(audit_table)
 
         with self.mod.app.test_client() as client:
             response = client.post(
                 "/miner/headerkey",
                 headers={"X-API-Key": "0123456789abcdef0123456789abcdef"},
-                json={"miner_id": "miner-1", "pubkey_hex": "a" * 64},
+                json={"miner_id": "miner-1", "pubkey_hex": "a" * 64, "reason": "initial key"},
             )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.get_json()["ok"], True)
+        body = response.get_json()
+        self.assertEqual(body, {"ok": True, "miner_id": "miner-1", "pubkey_hex": "a" * 64})
 
         with sqlite3.connect(self.db_path) as conn:
             stored = conn.execute(
                 "SELECT pubkey_hex FROM miner_header_keys WHERE miner_id = ?",
                 ("miner-1",),
             ).fetchone()
+            history = conn.execute(
+                """SELECT pubkey_hex, previous_pubkey_hex, reason
+                   FROM miner_header_key_history WHERE miner_id = ?""",
+                ("miner-1",),
+            ).fetchall()
+            audit = conn.execute(
+                """SELECT action, pubkey_hex, previous_pubkey_hex, reason
+                   FROM miner_header_key_audit WHERE miner_id = ?""",
+                ("miner-1",),
+            ).fetchall()
 
         self.assertEqual(stored, ("a" * 64,))
+        self.assertEqual(history, [("a" * 64, None, "initial key")])
+        self.assertEqual(audit, [("registered", "a" * 64, None, "initial key")])
+
+    def test_headerkey_rotation_preserves_identity_and_records_history(self):
+        with self.mod.app.test_client() as client:
+            first = client.post(
+                "/miner/headerkey",
+                headers={"X-API-Key": "0123456789abcdef0123456789abcdef"},
+                json={"miner_id": "validator-1", "pubkey_hex": "a" * 64, "reason": "initial"},
+            )
+            second = client.post(
+                "/miner/headerkey",
+                headers={"X-API-Key": "0123456789abcdef0123456789abcdef"},
+                json={"miner_id": "validator-1", "pubkey_hex": "b" * 64, "reason": "rotation"},
+            )
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(
+            second.get_json(),
+            {"ok": True, "miner_id": "validator-1", "pubkey_hex": "b" * 64},
+        )
+
+        with sqlite3.connect(self.db_path) as conn:
+            active = conn.execute(
+                "SELECT miner_id, pubkey_hex FROM miner_header_keys WHERE miner_id = ?",
+                ("validator-1",),
+            ).fetchone()
+            history = conn.execute(
+                """SELECT pubkey_hex, previous_pubkey_hex, reason
+                   FROM miner_header_key_history
+                   WHERE miner_id = ?
+                   ORDER BY id""",
+                ("validator-1",),
+            ).fetchall()
+            audit = conn.execute(
+                """SELECT action, pubkey_hex, previous_pubkey_hex, reason
+                   FROM miner_header_key_audit
+                   WHERE miner_id = ?
+                   ORDER BY id""",
+                ("validator-1",),
+            ).fetchall()
+
+        self.assertEqual(active, ("validator-1", "b" * 64))
+        self.assertEqual(
+            history,
+            [
+                ("a" * 64, None, "initial"),
+                ("b" * 64, "a" * 64, "rotation"),
+            ],
+        )
+        self.assertEqual(
+            audit,
+            [
+                ("registered", "a" * 64, None, "initial"),
+                ("rotated", "b" * 64, "a" * 64, "rotation"),
+            ],
+        )
+
+    def test_headerkey_same_key_is_audited_without_extra_history(self):
+        with self.mod.app.test_client() as client:
+            client.post(
+                "/miner/headerkey",
+                headers={"X-API-Key": "0123456789abcdef0123456789abcdef"},
+                json={"miner_id": "validator-2", "pubkey_hex": "c" * 64},
+            )
+            duplicate = client.post(
+                "/miner/headerkey",
+                headers={"X-API-Key": "0123456789abcdef0123456789abcdef"},
+                json={"miner_id": "validator-2", "pubkey_hex": "c" * 64, "reason": "repeat"},
+            )
+
+        self.assertEqual(duplicate.status_code, 200)
+        self.assertEqual(
+            duplicate.get_json(),
+            {"ok": True, "miner_id": "validator-2", "pubkey_hex": "c" * 64},
+        )
+
+        with sqlite3.connect(self.db_path) as conn:
+            history_count = conn.execute(
+                "SELECT COUNT(*) FROM miner_header_key_history WHERE miner_id = ?",
+                ("validator-2",),
+            ).fetchone()[0]
+            audit = conn.execute(
+                """SELECT action, pubkey_hex, previous_pubkey_hex, reason
+                   FROM miner_header_key_audit
+                   WHERE miner_id = ?
+                   ORDER BY id""",
+                ("validator-2",),
+            ).fetchall()
+
+        self.assertEqual(history_count, 1)
+        self.assertEqual(
+            audit,
+            [
+                ("registered", "c" * 64, None, ""),
+                ("unchanged", "c" * 64, "c" * 64, "repeat"),
+            ],
+        )
 
 
 if __name__ == "__main__":
