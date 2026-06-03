@@ -538,12 +538,19 @@
             return await response.json();
         }
 
+        function normalizeMinerRows(payload) {
+            const rows = Array.isArray(payload) ? payload : (payload?.miners || payload?.data || payload?.items || []);
+            return Array.isArray(rows) ? rows.filter((item) => item && typeof item === 'object') : [];
+        }
+
         function updateDashboard(data) {
             const { epoch, health, miners, transactions } = data;
+            const minerRows = normalizeMinerRows(miners);
+            const enrolledMiners = Number(epoch.enrolled_miners ?? minerRows.length);
 
             // Update main stats
             updateStat('epochValue', epoch.epoch || 0, '', previousStats?.epoch?.epoch);
-            updateStat('minersValue', epoch.enrolled_miners || 0, '', previousStats?.epoch?.enrolled_miners);
+            updateStat('minersValue', enrolledMiners, '', previousStats?.minersCount);
             
             // Calculate circulating supply
             const supply = calculateSupply(epoch);
@@ -562,6 +569,7 @@
             previousStats = {
                 epoch: epoch,
                 supply: supply,
+                minersCount: enrolledMiners,
                 transactions: transactions
             };
 

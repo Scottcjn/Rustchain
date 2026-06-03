@@ -41,7 +41,10 @@ def test_request_helpers_call_expected_endpoints(rustchain_monitor_module, monke
     calls = []
     responses = {
         "https://node.example/health": {"ok": True},
-        "https://node.example/api/miners": [{"miner": "alice"}],
+        "https://node.example/api/miners": {
+            "items": [{"miner": "alice"}],
+            "pagination": {"total": 1},
+        },
         "https://node.example/epoch": {"epoch": 7},
     }
 
@@ -60,6 +63,18 @@ def test_request_helpers_call_expected_endpoints(rustchain_monitor_module, monke
         ("https://node.example/api/miners", 10),
         ("https://node.example/epoch", 10),
     ]
+
+
+def test_normalize_miners_payload_preserves_unexpected_shapes(rustchain_monitor_module):
+    assert rustchain_monitor_module.normalize_miners_payload([{"miner": "alice"}]) == [
+        {"miner": "alice"}
+    ]
+    assert rustchain_monitor_module.normalize_miners_payload(
+        {"miners": [{"miner": "bob"}]}
+    ) == [{"miner": "bob"}]
+    assert rustchain_monitor_module.normalize_miners_payload(
+        {"pagination": {"total": 0}}
+    ) == {"pagination": {"total": 0}}
 
 
 def test_request_helpers_return_error_dict_on_failure(rustchain_monitor_module, monkeypatch):
@@ -94,6 +109,17 @@ def test_print_health_formats_success_and_error(rustchain_monitor_module, capsys
     assert "Health check failed: offline" in output
 
 
+def test_print_health_handles_partial_payload(rustchain_monitor_module, capsys):
+    rustchain_monitor_module.print_health({"ok": True})
+
+    output = capsys.readouterr().out
+    assert "Node is healthy" in output
+    assert "Version: N/A" in output
+    assert "Uptime: N/A" in output
+    assert "Backup age: N/A" in output
+    assert "DB RW: N/A" in output
+
+
 def test_print_miners_limits_rows_and_formats_last_attest(
     rustchain_monitor_module, monkeypatch, capsys
 ):
@@ -126,6 +152,28 @@ def test_print_miners_limits_rows_and_formats_last_attest(
     assert "... and 2 more" in output
     assert "Unexpected response" in output
     assert "Failed to fetch miners: bad gateway" in output
+
+
+def test_print_miners_accepts_paginated_envelope(rustchain_monitor_module, capsys):
+    rustchain_monitor_module.print_miners(
+        {
+            "miners": [
+                {
+                    "miner": "alice",
+                    "hardware_type": "ARM",
+                    "antiquity_multiplier": 1.25,
+                    "last_attest": 0,
+                }
+            ],
+            "pagination": {"total": 1, "page": 1},
+        }
+    )
+
+    output = capsys.readouterr().out
+    assert "Active miners: 1" in output
+    assert "alice" in output
+    assert "HW: ARM" in output
+    assert "Unexpected response" not in output
 
 
 def test_print_epoch_formats_success_and_error(rustchain_monitor_module, capsys):

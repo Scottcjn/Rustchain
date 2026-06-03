@@ -41,6 +41,21 @@ python3 wrtc_price_bot.py
 
 - `/price` - Get current wRTC price
 
+### CLI Monitoring Modes
+
+You can also run the script locally without Telegram to check price data in different formats:
+
+```bash
+# One-shot human-readable status
+python3 wrtc_price_bot.py
+
+# Machine-readable JSON for scripts/automation
+python3 wrtc_price_bot.py --json
+
+# Watch mode with periodic status updates
+python3 wrtc_price_bot.py --watch --interval 300 --threshold 10
+```
+
 ## Features
 
 - ✅ Real-time wRTC price from Raydium DEX
@@ -54,7 +69,7 @@ python3 wrtc_price_bot.py
 ## Token Details
 
 - **Mint:** `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X`
-- **Supply:** 8,300,000 wRTC
+- **Supply:** 8,388,608 wRTC
 - **Raydium Pool:** `8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb`
 
 ## Example Output

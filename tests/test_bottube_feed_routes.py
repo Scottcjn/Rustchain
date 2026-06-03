@@ -98,6 +98,13 @@ class TestFeedRoutes(unittest.TestCase):
         response = self.client.get("/api/feed/rss?limit=5")
         self.assertEqual(response.status_code, 200)
 
+    def test_feed_routes_default_empty_limit_parameter(self):
+        """Test optional blank limits use the default limit."""
+        for path in ("/api/feed/rss", "/api/feed/atom", "/api/feed"):
+            with self.subTest(path=path):
+                response = self.client.get(f"{path}?limit=")
+                self.assertEqual(response.status_code, 200)
+
     def test_rss_feed_invalid_limit(self):
         """Test RSS feed handles invalid limit."""
         response = self.client.get("/api/feed/rss?limit=invalid")

@@ -200,18 +200,37 @@
                 if (!minersRes) throw new Error('Could not connect to RustChain node');
 
                 const minersPayload = await minersRes.json();
-                const miners = Array.isArray(minersPayload)
-                    ? minersPayload
-                    : (minersPayload.miners || minersPayload.data || []);
+                const miners = normalizeMinerRows(minersPayload);
                 const epochData = epochRes ? await epochRes.json() : {};
 
                 updateStats(miners, epochData);
                 updateTable(miners);
             } catch (err) {
-                document.getElementById('leaderboard-body').innerHTML = `
-                    <tr><td colspan="5" class="error">Error: ${err.message}<br>Make sure you've accepted the self-signed certificate at https://rustchain.org</td></tr>
-                `;
+                renderErrorRow(err);
             }
+        }
+
+        function normalizeMinerRows(payload) {
+            const rows = Array.isArray(payload)
+                ? payload
+                : (payload.miners || payload.data || payload.items || []);
+
+            return rows.map(row => {
+                if (!row || typeof row !== 'object') return null;
+                const miner = row.miner || row.miner_id || row.id;
+                if (!miner) return null;
+                return { ...row, miner: String(miner) };
+            }).filter(Boolean);
+        }
+
+        function renderErrorRow(err) {
+            const tbody = document.getElementById('leaderboard-body');
+            tbody.innerHTML = '';
+            const row = tbody.insertRow();
+            const cell = row.insertCell();
+            cell.colSpan = 5;
+            cell.className = 'error';
+            cell.textContent = `Error: ${err.message}. Make sure you've accepted the self-signed certificate at https://rustchain.org`;
         }
 
         function updateStats(miners, epochData) {

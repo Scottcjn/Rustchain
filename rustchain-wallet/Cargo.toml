@@ -35,7 +35,7 @@ tokio = { version = "1.35", features = ["full"] }
 reqwest = { version = "0.13", features = ["json", "rustls"], default-features = false }
 
 # Error handling
-thiserror = "1.0"
+thiserror = "2.0"
 anyhow = "1.0"
 
 # Logging
@@ -48,14 +48,14 @@ secrecy = "0.10"
 
 # Key derivation
 hmac = "0.13"
-pbkdf2 = "0.12"
+pbkdf2 = "0.13"
 
 # Random number generation
 rand = "0.10"
 getrandom = "0.4"
 
 # Filesystem
-dirs = "5.0"
+dirs = "6.0"
 
 # Time
 chrono = { version = "0.4", features = ["serde"] }

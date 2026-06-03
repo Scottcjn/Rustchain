@@ -11,11 +11,11 @@ RustChain Token (RTC) is the native cryptocurrency of the RustChain network. Unl
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    RTC Total Supply                         │
-│                      8,000,000 RTC                          │
+│                      8,388,608 RTC                          │
 ├─────────────────────────────────────────────────────────────┤
-│  Premine (Dev/Bounties)  │  Mining Rewards                  │
-│       75,000 RTC         │    7,925,000 RTC                 │
-│         0.94%            │       99.06%                     │
+│  Premine (4 founders)   │  Mining Rewards                  │
+│       503,316 RTC         │    7,885,292 RTC                 │
+│         6%            │       94%                     │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -23,10 +23,12 @@ RustChain Token (RTC) is the native cryptocurrency of the RustChain network. Unl
 
 | Allocation | Amount | Percentage | Purpose |
 |------------|--------|------------|---------|
-| **Mining Rewards** | 7,925,000 RTC | 99.06% | Epoch rewards for miners |
-| **Development** | 50,000 RTC | 0.63% | Core development funding |
-| **Bounties** | 25,000 RTC | 0.31% | Community contributions |
-| **Total** | 8,000,000 RTC | 100% | Fixed, no inflation |
+| **Block Mining** | 7,885,292 RTC | 94% | Epoch rewards for miners |
+| **Founders** | 125,829 RTC | 1.5% | `founder_founders` core team |
+| **Dev Fund** | 125,829 RTC | 1.5% | `founder_dev_fund` development |
+| **Team / Bounty** | 125,829 RTC | 1.5% | `founder_team_bounty` contributions |
+| **Community** | 125,829 RTC | 1.5% | `founder_community` airdrops, grants |
+| **Total** | 8,388,608 RTC | 100% | Fixed (2^23), no inflation |
 
 ### Distribution Milestones (March 2026)
 

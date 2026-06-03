@@ -246,6 +246,11 @@ class WRtcBridge:
         Returns:
             BridgeQuote with expected amounts and fees
         """
+        if amount < 0:
+            raise ValueError("Bridge amount must be non-negative")
+        if not 0 <= slippage_bps <= 10000:
+            raise ValueError("Slippage must be between 0 and 10000 basis points")
+
         # Calculate fee
         fee = (amount * self.bridge_fee_bps) // 10000
         
@@ -283,6 +288,9 @@ class WRtcBridge:
         Returns:
             BridgeTransaction with status tracking
         """
+        if amount < 0:
+            raise ValueError("Bridge amount must be non-negative")
+
         # In production, this would:
         # 1. Lock tokens on source chain
         # 2. Emit bridge event

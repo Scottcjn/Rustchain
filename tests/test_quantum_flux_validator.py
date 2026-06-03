@@ -43,6 +43,16 @@ def test_award_quantum_flux_badge_writes_badge_when_flux_detected(tmp_path, monk
     assert "Quantum Flux detected" in capsys.readouterr().out
 
 
+def test_award_quantum_flux_badge_creates_missing_relics_dir(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(quantum_flux_validator, "detect_network_flux", lambda: True)
+
+    quantum_flux_validator.award_quantum_flux_badge()
+
+    payload = json.loads((tmp_path / "relics" / "badge_quantum_flux_validator.json").read_text())
+    assert payload["badges"][0]["nft_id"] == "badge_quantum_flux_validator"
+
+
 def test_award_quantum_flux_badge_does_not_write_when_no_flux(tmp_path, monkeypatch, capsys):
     relics_dir = tmp_path / "relics"
     relics_dir.mkdir()

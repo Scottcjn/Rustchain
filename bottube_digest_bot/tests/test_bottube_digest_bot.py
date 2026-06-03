@@ -184,6 +184,8 @@ class TestDigestFormatter(unittest.TestCase):
         self.assertIn("1,500.50 RTC", message)
         self.assertIn("━━━ TOP VIDEOS ━━━", message)
         self.assertIn("RustChain Tutorial #1", message)
+        self.assertIn("[RustChain](https://rustchain.org)", message)
+        self.assertNotIn("https://rustchain.io", message)
 
     def test_format_telegram(self):
         """Test Telegram formatting."""
@@ -195,6 +197,8 @@ class TestDigestFormatter(unittest.TestCase):
         self.assertIn("*━━━ NETWORK STATUS ━━━*", message)
         self.assertIn("🔗 *Epoch:* `95`", message)
         self.assertIn("━━━ TOP MINERS ━━━", message)
+        self.assertIn("[RustChain](https://rustchain.org)", message)
+        self.assertNotIn("https://rustchain.io", message)
 
     def test_format_email_html(self):
         """Test email HTML formatting."""
@@ -208,6 +212,8 @@ class TestDigestFormatter(unittest.TestCase):
         self.assertIn("scott-miner-001", html)
         self.assertIn("1,500.50 RTC", html)
         self.assertIn("RustChain Tutorial #1", html)
+        self.assertIn('href="https://rustchain.org"', html)
+        self.assertNotIn("https://rustchain.io", html)
 
         # Check styling
         self.assertIn("<style>", html)

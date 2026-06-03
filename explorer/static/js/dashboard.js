@@ -149,6 +149,7 @@ class DashboardApp {
     }
 
     onBlock(block) {
+        if (!block || typeof block !== 'object') return;
         this.state.metrics.blocksReceived++;
         this.state.metrics.updatesReceived++;
         
@@ -165,6 +166,7 @@ class DashboardApp {
     }
 
     onTransaction(tx) {
+        if (!tx || typeof tx !== 'object') return;
         this.state.metrics.transactionsReceived++;
         this.state.metrics.updatesReceived++;
         
@@ -182,13 +184,16 @@ class DashboardApp {
     onMinerUpdate(data) {
         this.state.metrics.updatesReceived++;
         
-        const miners = data.miners || data;
-        if (Array.isArray(miners)) {
-            this.state.miners = miners;
-            this.updateMinersDisplay();
-            this.updateHardwareDistribution();
-            this.updateMinersChart();
+        const rawMiners = data?.miners || data;
+        if (!Array.isArray(rawMiners)) {
+            this.updateLastUpdateTime();
+            return;
         }
+        const miners = this.normalizeRows(rawMiners);
+        this.state.miners = miners;
+        this.updateMinersDisplay();
+        this.updateHardwareDistribution();
+        this.updateMinersChart();
         
         this.updateLastUpdateTime();
     }
@@ -211,9 +216,10 @@ class DashboardApp {
     }
 
     updateState(state) {
-        if (state.blocks) this.state.blocks = state.blocks;
-        if (state.transactions) this.state.transactions = state.transactions;
-        if (state.miners) this.state.miners = state.miners;
+        if (!state || typeof state !== 'object') return;
+        if (state.blocks) this.state.blocks = this.normalizeRows(state.blocks);
+        if (state.transactions) this.state.transactions = this.normalizeRows(state.transactions);
+        if (state.miners) this.state.miners = this.normalizeRows(state.miners);
         if (state.epoch) this.state.epoch = state.epoch;
         if (state.health) this.state.health = state.health;
         
@@ -697,20 +703,24 @@ class DashboardApp {
      * Utility functions
      */
     shortenHash(hash, chars = 8) {
-        if (!hash) return '';
-        if (hash.length <= chars * 2) return hash;
-        return `${hash.slice(0, chars)}...${hash.slice(-chars)}`;
+        const value = String(hash ?? '');
+        if (!value) return '';
+        if (value.length <= chars * 2) return value;
+        return `${value.slice(0, chars)}...${value.slice(-chars)}`;
     }
 
     shortenAddress(addr, chars = 6) {
-        if (!addr) return '';
-        if (addr.length <= chars * 2) return addr;
-        return `${addr.slice(0, chars)}...${addr.slice(-chars)}`;
+        const value = String(addr ?? '');
+        if (!value) return '';
+        if (value.length <= chars * 2) return value;
+        return `${value.slice(0, chars)}...${value.slice(-chars)}`;
     }
 
     formatNumber(num, decimals = 2) {
         if (num === null || num === undefined) return '0';
-        return Number(num).toLocaleString(undefined, {
+        const value = Number(num);
+        if (!Number.isFinite(value)) return '0';
+        return value.toLocaleString(undefined, {
             minimumFractionDigits: decimals,
             maximumFractionDigits: decimals
         });
@@ -759,6 +769,10 @@ class DashboardApp {
         if (archLower.includes('m1') || archLower.includes('m2') || archLower.includes('apple silicon')) return 'classic';
         if (archLower.includes('ancient') || archLower.includes('legacy')) return 'ancient';
         return 'modern';
+    }
+
+    normalizeRows(payload) {
+        return Array.isArray(payload) ? payload.filter(row => row && typeof row === 'object') : [];
     }
 }
 

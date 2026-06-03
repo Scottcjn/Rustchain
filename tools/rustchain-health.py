@@ -23,7 +23,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import platform
 import ssl
 import sys
 import time
@@ -133,7 +132,7 @@ def check_miners(base: str, timeout: int) -> Dict[str, Any]:
         result["miner_count"] = len(data)
         result["miners"] = data[:10]  # first 10 for display
     elif ok and isinstance(data, dict):
-        miners = data.get("miners", data.get("data", []))
+        miners = data.get("miners", data.get("data", data.get("items", [])))
         result["miner_count"] = len(miners) if isinstance(miners, list) else data.get("count", "?")
         if isinstance(miners, list):
             result["miners"] = miners[:10]
@@ -177,8 +176,10 @@ def _fmt_uptime(secs: Optional[int]) -> str:
     h, rem = divmod(rem, 3600)
     m, _ = divmod(rem, 60)
     parts = []
-    if d: parts.append(f"{d}d")
-    if h: parts.append(f"{h}h")
+    if d:
+        parts.append(f"{d}d")
+    if h:
+        parts.append(f"{h}h")
     parts.append(f"{m}m")
     return " ".join(parts)
 

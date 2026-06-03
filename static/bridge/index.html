@@ -145,28 +145,58 @@
         return Number.isFinite(number) ? number : fallback;
     }
 
+    function safeArray(value) {
+        return Array.isArray(value) ? value : [];
+    }
+
+    function isPlainObject(value) {
+        return value && typeof value === 'object' && !Array.isArray(value);
+    }
+
+    function safeObject(value) {
+        return isPlainObject(value) ? value : {};
+    }
+
+    function formatTimestamp(value) {
+        if (!value) return 'unavailable';
+        const date = new Date(value);
+        return Number.isNaN(date.getTime()) ? 'unavailable' : date.toLocaleTimeString();
+    }
+
+    function renderFallback() {
+        document.getElementById('lockedRtc').innerText = '0 RTC';
+        document.getElementById('circulatingWrtc').innerText = '0 wRTC';
+        document.getElementById('nodeStatus').innerHTML = '';
+        document.getElementById('txBody').innerHTML = '';
+        document.getElementById('lastUpdate').innerText = 'LAST_SYNC: unavailable';
+    }
+
     async function refresh() {
         try {
             const resp = await fetch('bridge_status.json');
-            const data = await resp.json();
+            if (!resp.ok) {
+                throw new Error(`HTTP ${resp.status}`);
+            }
+            const data = safeObject(await resp.json());
             
-            document.getElementById('lockedRtc').innerText = data.total_locked_rtc.toLocaleString() + ' RTC';
-            document.getElementById('circulatingWrtc').innerText = (data.circulating_wrtc || 0).toLocaleString() + ' wRTC';
+            document.getElementById('lockedRtc').innerText = safeNumber(data.total_locked_rtc).toLocaleString() + ' RTC';
+            document.getElementById('circulatingWrtc').innerText = safeNumber(data.circulating_wrtc).toLocaleString() + ' wRTC';
             
             // Update node status
             const statusDiv = document.getElementById('nodeStatus');
             statusDiv.innerHTML = '';
-            data.bridge_nodes.forEach(node => {
+            safeArray(data.bridge_nodes).filter(isPlainObject).forEach(node => {
                 const pill = document.createElement('span');
-                pill.className = `status-pill ${node.status === 'up' ? 'online' : ''}`;
-                pill.innerText = `${node.name}: ${node.status.toUpperCase()}`;
+                const status = safeClassToken(node.status, ['up', 'down'], 'down');
+                pill.className = `status-pill ${status === 'up' ? 'online' : ''}`;
+                pill.innerText = `${String(node.name ?? 'Unknown')}: ${status.toUpperCase()}`;
                 statusDiv.appendChild(pill);
             });
 
             // Update transactions
             const body = document.getElementById('txBody');
             body.innerHTML = '';
-            data.recent_transactions.forEach(tx => {
+            safeArray(data.recent_transactions).filter(isPlainObject).forEach(tx => {
                 const row = document.createElement('tr');
                 const lockId = escapeHtml(String(tx.lock_id ?? '').substring(0, 12));
                 const targetChain = safeClassToken(tx.target_chain, ['solana', 'base'], 'solana');
@@ -181,9 +211,10 @@
                 body.appendChild(row);
             });
 
-            document.getElementById('lastUpdate').innerText = 'LAST_SYNC: ' + new Date(data.timestamp).toLocaleTimeString();
+            document.getElementById('lastUpdate').innerText = 'LAST_SYNC: ' + formatTimestamp(data.timestamp);
         } catch (e) {
             console.error(e);
+            renderFallback();
         }
     }
 

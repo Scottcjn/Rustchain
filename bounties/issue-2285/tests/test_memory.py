@@ -128,6 +128,29 @@ class TestAgentMemoryStore(unittest.TestCase):
         self.assertEqual(len(refs), 1)
         self.assertEqual(refs[0]["content_id"], "video-001")
 
+    def test_get_references_by_tags_fills_limit(self) -> None:
+        """Ensure tag filtering returns matches even when they fall outside the first SQL page."""
+        # Add many high-importance references that do NOT match the tag filter.
+        for i in range(30):
+            self.store.add_reference(
+                agent_id="test-agent",
+                content_id=f"noise-{i}",
+                tags=["noise"],
+                importance_score=10.0
+            )
+
+        # Add a low-importance reference that DOES match the tag filter.
+        self.store.add_reference(
+            agent_id="test-agent",
+            content_id="video-tagged",
+            tags=["tutorial"],
+            importance_score=0.1
+        )
+
+        refs = self.store.get_references("test-agent", tags=["tutorial"], limit=5)
+        self.assertEqual(len(refs), 1)
+        self.assertEqual(refs[0]["content_id"], "video-tagged")
+
     def test_get_references_limit(self) -> None:
         """Test limit is applied."""
         for i in range(20):

@@ -3,7 +3,7 @@
 RustChain POWER8 S824 Miner
 With RIP-PoA Hardware Fingerprint Attestation
 """
-import os, sys, json, time, hashlib, uuid, requests, socket, subprocess, platform, statistics, re, warnings
+import os, sys, json, time, hashlib, uuid, math, requests, socket, subprocess, platform, statistics, re, warnings
 from datetime import datetime
 
 # TLS verification: use pinned cert if available, else system CA bundle
@@ -20,6 +20,7 @@ except ImportError:
 
 NODE_URL = "https://rustchain.org"  # Use HTTPS via nginx
 BLOCK_TIME = 600  # 10 minutes
+MICRO_UNITS_PER_RTC = 1_000_000
 
 WALLET_FILE = os.path.expanduser("~/rustchain/power8_wallet.txt")
 
@@ -48,6 +49,41 @@ def _parse_free_memory_gb(output):
                 return int(parts[1])
             except ValueError:
                 return None
+    return None
+
+
+def _finite_float(value):
+    if isinstance(value, bool):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) else None
+
+
+def _wallet_balance_rtc(data):
+    if not isinstance(data, dict):
+        return None
+
+    value = _finite_float(data.get("amount_rtc"))
+    if value is not None:
+        return value
+
+    value = _finite_float(data.get("amount_i64"))
+    if value is not None:
+        return value / MICRO_UNITS_PER_RTC
+
+    for key in ("balance_rtc", "rtc_balance", "balance", "amount"):
+        value = _finite_float(data.get(key))
+        if value is not None:
+            return value
+
+    for key in ("balance_i64", "balance_urtc"):
+        value = _finite_float(data.get(key))
+        if value is not None:
+            return value / MICRO_UNITS_PER_RTC
+
     return None
 
 
@@ -113,6 +149,10 @@ class LocalMiner:
     def _gen_wallet(self):
         data = f"power8-s824-{uuid.uuid4().hex}-{time.time()}"
         return hashlib.sha256(data.encode()).hexdigest()[:38] + "RTC"
+
+    def _miner_id(self):
+        hostname = self.hw_info.get("hostname") or socket.gethostname()
+        return f"power8-s824-{hostname}"
 
     def _run_cmd(self, args):
         try:
@@ -254,7 +294,7 @@ class LocalMiner:
         # Submit attestation with fingerprint data
         attestation = {
             "miner": self.wallet,
-            "miner_id": f"power8-s824-{self.hw_info['hostname']}",
+            "miner_id": self._miner_id(),
             "nonce": nonce,
             "report": {
                 "nonce": nonce,
@@ -332,7 +372,7 @@ class LocalMiner:
         try:
             # Get challenge
             resp = requests.post(f"{self.node_url}/epoch/enroll", json={
-                "miner_id": f"power8-s824-{self.hw_info['hostname']}",
+                "miner_id": self._miner_id(),
                 "miner_pubkey": self.wallet,  # Testnet: wallet as pubkey
                 "signature": "0" * 128   # Testnet: mock signature
             }, timeout=10, verify=TLS_VERIFY)
@@ -381,14 +421,22 @@ class LocalMiner:
     def check_balance(self):
         """Check balance"""
         try:
-            resp = requests.get(f"{self.node_url}/balance/{self.wallet}", timeout=10, verify=TLS_VERIFY)
+            resp = requests.get(
+                f"{self.node_url}/wallet/balance",
+                params={"miner_id": self._miner_id()},
+                timeout=10,
+                verify=TLS_VERIFY,
+            )
             if resp.status_code == 200:
                 result = resp.json()
-                balance = result.get('balance_rtc', 0)
+                balance = _wallet_balance_rtc(result)
+                if balance is None:
+                    print("[WARN] Invalid wallet balance response")
+                    return 0
                 print(f"\n[BALANCE] {balance} RTC")
                 return balance
-        except:
-            pass
+        except Exception as e:
+            print(f"[WARN] Balance check failed: {e}")
         return 0
 
     def mine(self):

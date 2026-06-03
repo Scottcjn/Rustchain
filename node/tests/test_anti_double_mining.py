@@ -16,6 +16,7 @@ import time
 import json
 import os
 import sys
+import tempfile
 import unittest
 from typing import Dict, List
 
@@ -29,8 +30,13 @@ from anti_double_mining import (
     select_representative_miner,
     get_epoch_miner_groups,
     calculate_anti_double_mining_rewards,
-    setup_test_scenario
+    _calculate_anti_double_mining_rewards_conn,
+    setup_test_scenario,
+    GENESIS_TIMESTAMP
 )
+
+def _test_db_path(name: str) -> str:
+    return os.path.join(tempfile.gettempdir(), f"{name}_{os.getpid()}.db")
 
 
 class TestMachineIdentity(unittest.TestCase):
@@ -120,7 +126,7 @@ class TestDuplicateDetection(unittest.TestCase):
     
     def setUp(self):
         """Create test database."""
-        self.test_db = "/tmp/test_1449_duplicate_detection.db"
+        self.test_db = _test_db_path("test_1449_duplicate_detection")
         if os.path.exists(self.test_db):
             os.remove(self.test_db)
         
@@ -144,6 +150,12 @@ class TestDuplicateDetection(unittest.TestCase):
                 entropy_score REAL
             )
         """)
+        self.conn.execute("""
+            CREATE TABLE epoch_enroll (
+                epoch INTEGER NOT NULL,
+                miner_pk TEXT NOT NULL
+            )
+        """)
         
         self.conn.execute("""
             CREATE TABLE miner_fingerprint_history (
@@ -156,7 +168,7 @@ class TestDuplicateDetection(unittest.TestCase):
     
     def test_detect_same_machine_multiple_miners(self):
         """Should detect same machine running multiple miner IDs."""
-        epoch_start_ts = 1728000000
+        epoch_start_ts = GENESIS_TIMESTAMP
         current_ts = int(time.time())
         
         # Same fingerprint for 3 miners
@@ -191,7 +203,7 @@ class TestDuplicateDetection(unittest.TestCase):
     
     def test_no_duplicates_distinct_machines(self):
         """Should not report duplicates for distinct machines."""
-        epoch_start_ts = 1728000000
+        epoch_start_ts = GENESIS_TIMESTAMP
         current_ts = int(time.time())
         
         # Different fingerprints for 3 miners
@@ -229,7 +241,7 @@ class TestRepresentativeSelection(unittest.TestCase):
     
     def setUp(self):
         """Create test database."""
-        self.test_db = "/tmp/test_1449_representive.db"
+        self.test_db = _test_db_path("test_1449_representive")
         if os.path.exists(self.test_db):
             os.remove(self.test_db)
         
@@ -251,6 +263,14 @@ class TestRepresentativeSelection(unittest.TestCase):
                 ts_ok INTEGER,
                 fingerprint_passed INTEGER DEFAULT 1,
                 entropy_score REAL
+            )
+        """)
+        self.conn.execute("""
+            CREATE TABLE epoch_enroll (
+                epoch INTEGER,
+                miner_pk TEXT,
+                weight REAL,
+                PRIMARY KEY (epoch, miner_pk)
             )
         """)
     
@@ -307,13 +327,44 @@ class TestRepresentativeSelection(unittest.TestCase):
         selected = select_representative_miner(self.conn, miners)
         self.assertEqual(selected, "miner-a", "Should select alphabetically first on full tie")
 
+    def test_select_highest_enrolled_weight_before_entropy(self):
+        """Epoch weight should beat a fresher low-weight alias on the same machine."""
+        epoch = 175
+        rows = [
+            ("t40-thinkpad-banias", 1.9, 1728000000, 0.40),
+            ("alias-low", 0.000000001, 1728001000, 0.95),
+        ]
+
+        for miner_id, weight, ts_ok, entropy in rows:
+            self.conn.execute("""
+                INSERT INTO miner_attest_recent (miner, device_arch, ts_ok, entropy_score)
+                VALUES (?, ?, ?, ?)
+            """, (miner_id, "pentium_m_banias", ts_ok, entropy))
+            self.conn.execute(
+                "INSERT INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)",
+                (epoch, miner_id, weight),
+            )
+
+        self.conn.commit()
+
+        selected = select_representative_miner(
+            self.conn,
+            [row[0] for row in rows],
+            epoch=epoch,
+        )
+        self.assertEqual(
+            selected,
+            "t40-thinkpad-banias",
+            "Representative selection should preserve the highest enrolled weight for the machine",
+        )
+
 
 class TestAntiDoubleMiningRewards(unittest.TestCase):
     """Test complete anti-double-mining reward calculation."""
     
     def setUp(self):
         """Setup test scenario."""
-        self.test_db = "/tmp/test_1449_rewards.db"
+        self.test_db = _test_db_path("test_1449_rewards")
         setup_test_scenario(self.test_db)
     
     def tearDown(self):
@@ -369,12 +420,90 @@ class TestAntiDoubleMiningRewards(unittest.TestCase):
         self.assertGreater(rewards["miner-b1"], 0, "Unique machine should receive positive reward")
 
 
+class TestAntiDoubleMiningEnrolledWeights(unittest.TestCase):
+    """Reward weights must match the canonical epoch_enroll snapshot."""
+
+    def setUp(self):
+        self.test_db = _test_db_path("test_1449_enrolled_weights")
+        if os.path.exists(self.test_db):
+            os.remove(self.test_db)
+
+        self.conn = sqlite3.connect(self.test_db)
+        self.conn.executescript("""
+            CREATE TABLE epoch_enroll (
+                epoch INTEGER NOT NULL,
+                miner_pk TEXT NOT NULL,
+                weight REAL NOT NULL,
+                PRIMARY KEY(epoch, miner_pk)
+            );
+            CREATE TABLE miner_attest_recent (
+                miner TEXT PRIMARY KEY,
+                device_arch TEXT,
+                ts_ok INTEGER,
+                fingerprint_passed INTEGER DEFAULT 1,
+                entropy_score REAL DEFAULT 0.5,
+                warthog_bonus REAL DEFAULT 1.0
+            );
+            CREATE TABLE miner_fingerprint_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                miner TEXT NOT NULL,
+                ts INTEGER NOT NULL,
+                profile_json TEXT NOT NULL
+            );
+        """)
+
+        # Same device_arch but different enrolled weights.  The anti-double-mining
+        # path should preserve the canonical epoch_enroll split, not recompute a
+        # fresh equal arch-based split.
+        epoch_start_ts = GENESIS_TIMESTAMP + (7 * 144 * 600)
+        for miner, weight, serial in [
+            ("miner-heavy", 100.0, "ADM-WEIGHT-A"),
+            ("miner-light", 1.0, "ADM-WEIGHT-B"),
+        ]:
+            self.conn.execute(
+                "INSERT INTO epoch_enroll(epoch, miner_pk, weight) VALUES (7, ?, ?)",
+                (miner, weight),
+            )
+            self.conn.execute("""
+                INSERT INTO miner_attest_recent
+                    (miner, device_arch, ts_ok, fingerprint_passed, entropy_score, warthog_bonus)
+                VALUES (?, 'modern', ?, 1, 0.5, 1.0)
+            """, (miner, epoch_start_ts))
+            profile = json.dumps({
+                "checks": {"cpu_serial": {"data": {"serial": serial}}}
+            })
+            self.conn.execute(
+                "INSERT INTO miner_fingerprint_history(miner, ts, profile_json) VALUES (?, ?, ?)",
+                (miner, epoch_start_ts, profile),
+            )
+        self.conn.commit()
+
+    def tearDown(self):
+        self.conn.close()
+        if os.path.exists(self.test_db):
+            os.remove(self.test_db)
+
+    def test_path_opening_own_connection_uses_enrolled_weights(self):
+        rewards, _ = calculate_anti_double_mining_rewards(
+            self.test_db, epoch=7, total_reward_urtc=10_100, current_slot=7 * 144 + 1
+        )
+
+        self.assertEqual(rewards, {"miner-heavy": 10_000, "miner-light": 100})
+
+    def test_existing_connection_path_uses_enrolled_weights(self):
+        rewards, _ = _calculate_anti_double_mining_rewards_conn(
+            self.conn, epoch=7, total_reward_urtc=10_100, current_slot=7 * 144 + 1
+        )
+
+        self.assertEqual(rewards, {"miner-heavy": 10_000, "miner-light": 100})
+
+
 class TestIdempotency(unittest.TestCase):
     """Test idempotent re-runs of reward calculation."""
     
     def setUp(self):
         """Setup test scenario."""
-        self.test_db = "/tmp/test_1449_idempotent.db"
+        self.test_db = _test_db_path("test_1449_idempotent")
         setup_test_scenario(self.test_db)
     
     def tearDown(self):
@@ -426,7 +555,7 @@ class TestEdgeCases(unittest.TestCase):
     
     def setUp(self):
         """Create test database."""
-        self.test_db = "/tmp/test_1449_edge.db"
+        self.test_db = _test_db_path("test_1449_edge")
         if os.path.exists(self.test_db):
             os.remove(self.test_db)
         
@@ -458,6 +587,13 @@ class TestEdgeCases(unittest.TestCase):
                 miner TEXT NOT NULL,
                 ts INTEGER NOT NULL,
                 profile_json TEXT NOT NULL
+            )
+        """)
+
+        self.conn.execute("""
+            CREATE TABLE epoch_enroll (
+                epoch INTEGER NOT NULL,
+                miner_pk TEXT NOT NULL
             )
         """)
         
@@ -498,7 +634,7 @@ class TestEdgeCases(unittest.TestCase):
     
     def test_fingerprint_failure_zero_weight(self):
         """Miners with failed fingerprint should get zero weight."""
-        epoch_start_ts = 1728000000
+        epoch_start_ts = GENESIS_TIMESTAMP
         
         # One miner with fingerprint_passed=0
         self.conn.execute("""
@@ -518,7 +654,7 @@ class TestEdgeCases(unittest.TestCase):
     
     def test_missing_fingerprint_profile(self):
         """Missing fingerprint profile should be handled gracefully."""
-        epoch_start_ts = 1728000000
+        epoch_start_ts = GENESIS_TIMESTAMP
         
         # Miner with no fingerprint history
         self.conn.execute("""

@@ -127,3 +127,12 @@ def test_anchor_list_clamps_oversized_limit():
 
     assert response.status_code == 200
     assert response.get_json()["count"] == 3
+
+
+def test_anchor_list_returns_empty_when_table_missing():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "anchors.db"
+        response = _client(db_path).get("/anchor/list")
+
+    assert response.status_code == 200
+    assert response.get_json() == {"count": 0, "anchors": []}

@@ -290,6 +290,10 @@ class ROMClusterDetector:
         self.cluster_threshold = cluster_threshold
         self.rom_reports: Dict[str, List[str]] = {}  # hash -> list of miner_ids
 
+    def _effective_cluster_threshold(self) -> int:
+        # Keep the first report valid; a duplicate ROM starts at two miners.
+        return max(2, int(self.cluster_threshold))
+
     def report_rom(self, miner_id: str, rom_hash: str, hash_type: str = "sha1") -> Tuple[bool, str]:
         """
         Record a ROM hash report from a miner.
@@ -314,7 +318,7 @@ class ROMClusterDetector:
             return False, f"known_emulator_rom:{rom_info.get('platform')}:{rom_info.get('models', [])}"
 
         # Check for clustering (multiple miners with same ROM)
-        if len(self.rom_reports[key]) > self.cluster_threshold:
+        if len(self.rom_reports[key]) >= self._effective_cluster_threshold():
             other_miners = [m for m in self.rom_reports[key] if m != miner_id]
             return False, f"rom_clustering_detected:shared_with:{other_miners}"
 
@@ -328,7 +332,7 @@ class ROMClusterDetector:
         """Get list of miners involved in clustering."""
         suspicious = set()
         for miners in self.rom_reports.values():
-            if len(miners) > self.cluster_threshold:
+            if len(miners) >= self._effective_cluster_threshold():
                 suspicious.update(miners)
         return list(suspicious)
 

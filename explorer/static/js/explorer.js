@@ -47,7 +47,7 @@ const state = {
 
 // Utility Functions
 function escapeHtml(str) {
-    if (!str) return '';
+    if (str === null || str === undefined) return '';
     return String(str)
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
@@ -57,20 +57,24 @@ function escapeHtml(str) {
 }
 
 function shortenHash(hash, chars = 8) {
-    if (!hash) return '';
-    if (hash.length <= chars * 2) return hash;
-    return `${hash.slice(0, chars)}...${hash.slice(-chars)}`;
+    const value = String(hash ?? '');
+    if (!value) return '';
+    if (value.length <= chars * 2) return value;
+    return `${value.slice(0, chars)}...${value.slice(-chars)}`;
 }
 
 function shortenAddress(addr, chars = 6) {
-    if (!addr) return '';
-    if (addr.length <= chars * 2) return addr;
-    return `${addr.slice(0, chars)}...${addr.slice(-chars)}`;
+    const value = String(addr ?? '');
+    if (!value) return '';
+    if (value.length <= chars * 2) return value;
+    return `${value.slice(0, chars)}...${value.slice(-chars)}`;
 }
 
 function formatNumber(num, decimals = 2) {
     if (num === null || num === undefined) return '0';
-    return Number(num).toLocaleString(undefined, {
+    const value = Number(num);
+    if (!Number.isFinite(value)) return '0';
+    return value.toLocaleString(undefined, {
         minimumFractionDigits: decimals,
         maximumFractionDigits: decimals
     });
@@ -99,9 +103,16 @@ function formatRelativeTime(ts) {
     return 'Just now';
 }
 
+function normalizeMinersResponse(payload) {
+    const rows = Array.isArray(payload) ? payload :
+        (Array.isArray(payload?.miners) ? payload.miners :
+        (Array.isArray(payload?.data) ? payload.data : []));
+    return rows.filter(row => row && typeof row === 'object');
+}
+
 function getArchitectureTier(arch) {
     if (!arch) return 'modern';
-    const archLower = arch.toLowerCase();
+    const archLower = String(arch).toLowerCase();
     if (archLower.includes('g3') || archLower.includes('g4') || archLower.includes('g5') || 
         archLower.includes('powerpc') || archLower.includes('sparc')) return 'vintage';
     if (archLower.includes('pentium') || archLower.includes('core 2') || 
@@ -204,7 +215,7 @@ async function fetchMiners() {
     try {
         state.loading.miners = true;
         state.error.miners = null;
-        state.miners = await fetchAPI('/api/miners') || [];
+        state.miners = normalizeMinersResponse(await fetchAPI('/api/miners'));
     } catch (error) {
         state.error.miners = error.message;
         // Fallback mock data
@@ -413,20 +424,26 @@ function renderMinersTable() {
     }
     
     const sortedMiners = [...state.miners].sort((a, b) => 
-        (b.score || b.multiplier || 0) - (a.score || b.multiplier || 0)
+        (b.score || b.multiplier || b.antiquity_multiplier || 0) -
+        (a.score || a.multiplier || a.antiquity_multiplier || 0)
     ).slice(0, 20);
     
     container.innerHTML = sortedMiners.map(miner => {
-        const tier = getArchitectureTier(miner.device_arch);
-        const badgeClass = getArchitectureBadge(miner.device_arch);
+        const minerId = miner.miner_id || miner.miner || 'unknown';
+        const arch = miner.device_arch || miner.device_family || miner.hardware_type || 'Unknown';
+        const multiplier = miner.multiplier || miner.antiquity_multiplier || 1.0;
+        const balance = miner.balance || miner.balance_rtc || miner.amount_rtc || 0;
+        const lastSeen = miner.last_seen || miner.last_attest || miner.last_attestation;
+        const tier = getArchitectureTier(arch);
+        const badgeClass = getArchitectureBadge(arch);
         return `
             <tr>
-                <td class="mono" title="${escapeHtml(miner.miner_id)}">${shortenAddress(miner.miner_id || 'unknown')}</td>
-                <td><span class="badge ${badgeClass}">${escapeHtml(miner.device_arch || 'Unknown')}</span></td>
+                <td class="mono" title="${escapeHtml(minerId)}">${shortenAddress(minerId)}</td>
+                <td><span class="badge ${badgeClass}">${escapeHtml(arch)}</span></td>
                 <td><span class="badge badge-${tier}">${tier.toUpperCase()}</span></td>
-                <td class="text-accent">${formatNumber(miner.multiplier || 1.0, 2)}x</td>
-                <td class="text-success">${formatNumber(miner.balance || 0, 6)} RTC</td>
-                <td class="mono">${formatRelativeTime(miner.last_seen)}</td>
+                <td class="text-accent">${formatNumber(multiplier, 2)}x</td>
+                <td class="text-success">${formatNumber(balance, 6)} RTC</td>
+                <td class="mono">${formatRelativeTime(lastSeen)}</td>
                 <td><span class="badge badge-active">● ACTIVE</span></td>
             </tr>
         `;
@@ -462,9 +479,9 @@ function renderBlocksTable() {
     container.innerHTML = state.blocks.map(block => `
         <tr>
             <td><strong class="text-accent">#${formatNumber(block.height, 0)}</strong></td>
-            <td class="mono" title="${escapeHtml(block.hash)}">${shortenHash(block.hash || '0x')}</td>
+            <td class="mono" title="${escapeHtml(block.hash)}">${escapeHtml(shortenHash(block.hash || '0x'))}</td>
             <td class="mono">${formatTimestamp(block.timestamp)}</td>
-            <td><span class="badge badge-info">${block.miners_count || 0} miners</span></td>
+            <td><span class="badge badge-info">${formatNumber(block.miners_count || 0, 0)} miners</span></td>
             <td class="text-success">${formatNumber(block.reward || 0, 2)} RTC</td>
         </tr>
     `).join('');
@@ -498,10 +515,10 @@ function renderTransactionsTable() {
     
     container.innerHTML = state.transactions.map(tx => `
         <tr>
-            <td class="mono" title="${escapeHtml(tx.hash)}">${shortenHash(tx.hash || '0x', 6)}</td>
+            <td class="mono" title="${escapeHtml(tx.hash)}">${escapeHtml(shortenHash(tx.hash || '0x', 6))}</td>
             <td class="mono">${escapeHtml(tx.type || 'transfer')}</td>
-            <td class="mono" title="${escapeHtml(tx.from)}">${shortenAddress(tx.from || '0x')}</td>
-            <td class="mono" title="${escapeHtml(tx.to)}">${shortenAddress(tx.to || '0x')}</td>
+            <td class="mono" title="${escapeHtml(tx.from)}">${escapeHtml(shortenAddress(tx.from || '0x'))}</td>
+            <td class="mono" title="${escapeHtml(tx.to)}">${escapeHtml(shortenAddress(tx.to || '0x'))}</td>
             <td class="text-success">${formatNumber(tx.amount || 0, 6)} RTC</td>
             <td class="mono">${formatRelativeTime(tx.timestamp)}</td>
         </tr>
@@ -519,10 +536,10 @@ function renderHardwareBreakdown() {
     
     const breakdown = {};
     state.miners.forEach(miner => {
-        const arch = miner.device_arch || 'Unknown';
+        const arch = miner.device_arch || miner.device_family || miner.hardware_type || 'Unknown';
         if (!breakdown[arch]) breakdown[arch] = { count: 0, totalMultiplier: 0 };
         breakdown[arch].count++;
-        breakdown[arch].totalMultiplier += miner.multiplier || 1;
+        breakdown[arch].totalMultiplier += miner.multiplier || miner.antiquity_multiplier || 1;
     });
     
     const sorted = Object.entries(breakdown)
@@ -605,10 +622,11 @@ function renderSearchResults() {
         return;
     }
     
-    const matchingMiners = state.miners.filter(m => 
-        (m.miner_id || '').toLowerCase().includes(query) ||
-        (m.device_arch || '').toLowerCase().includes(query)
-    );
+    const matchingMiners = state.miners.filter(m => {
+        const minerId = String(m.miner_id ?? '').toLowerCase();
+        const arch = String(m.device_arch ?? '').toLowerCase();
+        return minerId.includes(query) || arch.includes(query);
+    });
     
     if (matchingMiners.length === 0) {
         container.innerHTML = `

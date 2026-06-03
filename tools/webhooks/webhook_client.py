@@ -20,12 +20,13 @@ Usage:
   # 3. Watch events stream in
 """
 
+from __future__ import annotations
+
 import argparse
 import hashlib
 import hmac
 import json
 import logging
-import sys
 from datetime import datetime, timezone
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
@@ -37,6 +38,15 @@ log = logging.getLogger("webhook-client")
 
 # Will be set from CLI args
 SHARED_SECRET: str | None = None
+
+
+def parse_content_length(raw_value: str | None) -> int:
+    """Return a safe request body length from a Content-Length header."""
+    try:
+        content_length = int(raw_value or "0")
+    except ValueError:
+        return 0
+    return content_length if content_length > 0 else 0
 
 
 def verify_signature(payload: bytes, received_sig: str | None, secret: str) -> bool:
@@ -73,8 +83,12 @@ def format_event(event_type: str, data: dict, ts: float) -> str:
         lines.append(f"  Miner:     {data.get('miner', '?')}")
 
     elif event_type == "large_tx":
+        try:
+            delta = f"{float(data.get('delta', 0)):+.6f}"
+        except (TypeError, ValueError):
+            delta = "?"
         lines.append(f"  Miner:     {data.get('miner', '?')}")
-        lines.append(f"  Delta:     {data.get('delta', 0):+.6f} RTC ({data.get('direction', '?')})")
+        lines.append(f"  Delta:     {delta} RTC ({data.get('direction', '?')})")
         lines.append(f"  Balance:   {data.get('previous_balance', '?')} -> {data.get('new_balance', '?')} RTC")
 
     else:
@@ -91,7 +105,7 @@ class WebhookReceiver(BaseHTTPRequestHandler):
         pass  # suppress default logging
 
     def do_POST(self):
-        content_length = int(self.headers.get("Content-Length", 0))
+        content_length = parse_content_length(self.headers.get("Content-Length"))
         if content_length == 0:
             self.send_response(400)
             self.end_headers()
