@@ -61,7 +61,7 @@ We provide scripts to help you create consistent recordings:
 #### 1. Record Miner Installation
 
 ```bash
-cd /path/to/rustchain-bounties/issue1615
+cd /path/to/Rustchain
 chmod +x scripts/asciinema/record_miner_install.sh
 ./scripts/asciinema/record_miner_install.sh
 ```
