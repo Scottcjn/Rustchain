@@ -28,6 +28,7 @@ import urllib.error
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlencode
 
 # ---------------------------------------------------------------------------
 # Node configuration
@@ -213,6 +214,67 @@ def compute_merkle_root(miner_list: List[dict]) -> str:
 # Node querying
 # ---------------------------------------------------------------------------
 
+def _non_negative_int(value: Any) -> Optional[int]:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed >= 0 else None
+
+
+def _extract_miners_payload(payload: Any) -> Tuple[List[dict], Optional[int], Optional[int], int]:
+    """Return miners plus pagination metadata from legacy and current API shapes."""
+    if isinstance(payload, list):
+        return [m for m in payload if isinstance(m, dict)], None, None, 0
+
+    if not isinstance(payload, dict):
+        return [], None, None, 0
+
+    miners_value = payload.get("miners", [])
+    miners = [m for m in miners_value if isinstance(m, dict)] if isinstance(miners_value, list) else []
+
+    pagination = payload.get("pagination") if isinstance(payload.get("pagination"), dict) else {}
+    total = _non_negative_int(pagination.get("total"))
+    limit = _non_negative_int(pagination.get("limit"))
+    offset = _non_negative_int(pagination.get("offset")) or 0
+    return miners, total, limit, offset
+
+
+def fetch_miners(base: str) -> Tuple[List[dict], Optional[int]]:
+    """Fetch active miners, following paginated /api/miners envelopes when needed."""
+    first_payload = fetch(f"{base}/api/miners")
+    if not first_payload:
+        return [], None
+
+    miners, total, limit, offset = _extract_miners_payload(first_payload)
+    if total is None:
+        return miners, None
+
+    page_size = limit or len(miners) or 100
+    next_offset = offset + len(miners)
+    seen_offsets = {offset}
+
+    while len(miners) < total and next_offset not in seen_offsets:
+        seen_offsets.add(next_offset)
+        query = urlencode({"limit": page_size, "offset": next_offset})
+        page_payload = fetch(f"{base}/api/miners?{query}")
+        if not page_payload:
+            break
+
+        page_miners, page_total, page_limit, page_offset = _extract_miners_payload(page_payload)
+        if page_total is not None:
+            total = page_total
+        if page_limit:
+            page_size = page_limit
+        if not page_miners:
+            break
+
+        miners.extend(page_miners)
+        next_offset = page_offset + len(page_miners)
+
+    return miners, total
+
+
 def query_node(node: dict) -> dict:
     """Query all relevant endpoints for a single node."""
     base = node["url"]
@@ -255,10 +317,9 @@ def query_node(node: dict) -> dict:
         result["raw_data"]["spot_balance"] = balance_data
 
     # Miners list (for Merkle)
-    miners_data = fetch(f"{base}/api/miners")
-    if miners_data:
-        miners = miners_data if isinstance(miners_data, list) else miners_data.get("miners", [])
-        result["active_miner_count"] = len(miners)
+    miners, miner_total = fetch_miners(base)
+    if miners or miner_total is not None:
+        result["active_miner_count"] = miner_total if miner_total is not None else len(miners)
         result["merkle_root"] = compute_merkle_root(miners)
         result["raw_data"]["miners_sample"] = miners[:3]  # Save a sample, not all
 

@@ -3,14 +3,12 @@
 
 import json
 import os
-import tempfile
 from pathlib import Path
 import pytest
 
 from passport_ledger import (
     MachinePassport,
     PassportLedger,
-    RepairEntry,
     BenchmarkSignature,
     AttestationHistory,
 )
@@ -249,6 +247,22 @@ class TestAPI:
     def test_api_create_requires_machine_id(self, client):
         resp = client.post("/api/passport", json={"name": "No ID"})
         assert resp.status_code == 400
+
+    def test_api_create_rejects_invalid_machine_ids(self, client, tmp_path):
+        invalid_payloads = (
+            (["bad"], "machine_id must be a non-empty string"),
+            ({}, "machine_id must be a non-empty string"),
+            ("", "machine_id must be a non-empty string"),
+            ("../escape", "machine_id cannot contain path separators"),
+            ("nested\\escape", "machine_id cannot contain path separators"),
+        )
+
+        for machine_id, error in invalid_payloads:
+            resp = client.post("/api/passport", json={"machine_id": machine_id, "name": "Bad ID"})
+            assert resp.status_code == 400
+            assert resp.get_json() == {"error": error}
+
+        assert not (tmp_path.parent / "escape.json").exists()
 
     def test_api_json_routes_reject_non_object_bodies(self, client):
         client.post("/api/passport", json={"machine_id": "json-test", "name": "JSON Test"})

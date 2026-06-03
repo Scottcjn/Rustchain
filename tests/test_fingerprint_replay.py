@@ -33,29 +33,35 @@ poc = _load_module("poc", "tools/rip_poa_fingerprint_replay_poc.py")
 fleet = _load_module("fleet", "rips/python/rustchain/fleet_immune_system.py")
 
 
+def _fingerprint_path(tmp_path, name: str) -> str:
+    return str(tmp_path / name)
+
+
 class TestFingerprintReplay:
     """Attack 1: Replay a captured fingerprint from a different machine."""
 
-    def test_capture_produces_valid_fingerprint(self):
-        captured = poc.capture_fingerprint("/tmp/test_fp_capture.json")
+    def test_capture_produces_valid_fingerprint(self, tmp_path):
+        captured = poc.capture_fingerprint(_fingerprint_path(tmp_path, "test_fp_capture.json"))
         assert captured["all_passed"] is True
         assert len(captured["checks"]) == 6
 
-    def test_replay_loads_captured_data(self):
-        poc.capture_fingerprint("/tmp/test_fp_replay.json")
+    def test_replay_loads_captured_data(self, tmp_path):
+        fingerprint_path = _fingerprint_path(tmp_path, "test_fp_replay.json")
+        poc.capture_fingerprint(fingerprint_path)
         random.seed(999)
-        replayed = poc.replay_fingerprint("/tmp/test_fp_replay.json")
+        replayed = poc.replay_fingerprint(fingerprint_path)
         assert replayed["all_passed"] is True
         assert "clock_drift" in replayed["checks"]
 
-    def test_replayed_fingerprint_accepted_by_fleet_system(self):
+    def test_replayed_fingerprint_accepted_by_fleet_system(self, tmp_path):
         """Server accepts replayed fingerprint without question."""
         db = sqlite3.connect(":memory:")
         fleet.ensure_schema(db)
 
-        captured = poc.capture_fingerprint("/tmp/test_fp_fleet.json")
+        fingerprint_path = _fingerprint_path(tmp_path, "test_fp_fleet.json")
+        captured = poc.capture_fingerprint(fingerprint_path)
         random.seed(42)
-        replayed = poc.replay_fingerprint("/tmp/test_fp_fleet.json")
+        replayed = poc.replay_fingerprint(fingerprint_path)
 
         # Record the replayed fingerprint as if from a different miner
         fleet.record_fleet_signals_from_request(
@@ -70,13 +76,14 @@ class TestFingerprintReplay:
         assert "attacker-vm" in scores or len(scores) == 0
         # The point: NO verification step rejected the replay
 
-    def test_replay_with_jitter_produces_unique_values(self):
+    def test_replay_with_jitter_produces_unique_values(self, tmp_path):
         """Replayed fingerprints can be jittered to avoid exact-match detection."""
-        poc.capture_fingerprint("/tmp/test_fp_jitter.json")
+        fingerprint_path = _fingerprint_path(tmp_path, "test_fp_jitter.json")
+        poc.capture_fingerprint(fingerprint_path)
         replays = []
         for seed in range(5):
             random.seed(seed)
-            r = poc.replay_fingerprint("/tmp/test_fp_jitter.json")
+            r = poc.replay_fingerprint(fingerprint_path)
             replays.append(r["checks"]["clock_drift"]["data"]["cv"])
 
         # Each replay has slightly different CV due to jitter

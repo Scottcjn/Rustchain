@@ -490,6 +490,21 @@ function createChart(containerId, color) {
   return { chart, series: s };
 }
 
+function normalizeMinersPayload(payload) {
+  if (Array.isArray(payload)) {
+    return { miners: payload, total: payload.length };
+  }
+
+  const miners = Array.isArray(payload?.miners)
+    ? payload.miners
+    : (Array.isArray(payload?.data) ? payload.data : []);
+  const total = Number(payload?.pagination?.total);
+  return {
+    miners,
+    total: Number.isFinite(total) ? total : miners.length,
+  };
+}
+
 // ─── Fetch & init ──────────────────────────────────────────────────────────
 async function fetchData() {
   try {
@@ -501,13 +516,14 @@ async function fetchData() {
     if (!epochRes.ok || !minersRes.ok) throw new Error('API error');
 
     const epoch  = await epochRes.json();
-    const miners = await minersRes.json();
+    const minersPayload = await minersRes.json();
+    const { total: activeMiners } = normalizeMinersPayload(minersPayload);
 
     // Update stat cards
     document.getElementById('s-epoch').textContent  = epoch.epoch;
     document.getElementById('s-slot').textContent   = `slot ${epoch.slot.toLocaleString()}`;
     document.getElementById('s-miners').textContent = epoch.enrolled_miners;
-    document.getElementById('s-miner-sub').textContent = `${miners.length} attesting now`;
+    document.getElementById('s-miner-sub').textContent = `${activeMiners} attesting now`;
     document.getElementById('s-pot').textContent    = epoch.epoch_pot.toFixed(2);
     document.getElementById('s-supply').textContent = (epoch.total_supply_rtc / 1e6).toFixed(1) + 'M';
 

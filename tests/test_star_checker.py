@@ -73,6 +73,24 @@ def test_check_user_starred_repo_returns_false_on_api_error(monkeypatch):
     assert star_checker.check_user_starred_repo("targetuser", "owner", "repo", "secret") is False
 
 
+def test_check_user_starred_repo_ignores_non_list_json(monkeypatch):
+    def fake_get(url, headers, timeout):
+        return FakeResponse(payload={"message": "not a stargazer list"})
+
+    monkeypatch.setattr(star_checker.requests, "get", fake_get)
+
+    assert star_checker.check_user_starred_repo("targetuser", "owner", "repo", "secret") is False
+
+
+def test_check_user_starred_repo_skips_malformed_rows(monkeypatch):
+    def fake_get(url, headers, timeout):
+        return FakeResponse(payload=["bad-row", {"login": "TargetUser"}])
+
+    monkeypatch.setattr(star_checker.requests, "get", fake_get)
+
+    assert star_checker.check_user_starred_repo("targetuser", "owner", "repo", "secret") is True
+
+
 def test_count_user_stars_fetches_owner_repos_and_counts_matches(monkeypatch):
     checked_repos = []
 
@@ -95,6 +113,32 @@ def test_count_user_stars_fetches_owner_repos_and_counts_matches(monkeypatch):
     ]
 
 
+def test_count_user_stars_ignores_non_list_repo_payload(monkeypatch):
+    def fake_get(url, headers, timeout):
+        return FakeResponse(payload={"message": "not a repo list"})
+
+    monkeypatch.setattr(star_checker.requests, "get", fake_get)
+
+    assert star_checker.count_user_stars("targetuser", "owner", "secret") == 0
+
+
+def test_count_user_stars_skips_repos_without_string_names(monkeypatch):
+    checked_repos = []
+
+    def fake_get(url, headers, timeout):
+        return FakeResponse(payload=[{"name": "alpha"}, {"name": 123}, {"full_name": "owner/beta"}])
+
+    def fake_check_user_starred_repo(username, owner, repo, token):
+        checked_repos.append(repo)
+        return True
+
+    monkeypatch.setattr(star_checker.requests, "get", fake_get)
+    monkeypatch.setattr(star_checker, "check_user_starred_repo", fake_check_user_starred_repo)
+
+    assert star_checker.count_user_stars("targetuser", "owner", "secret") == 1
+    assert checked_repos == ["alpha"]
+
+
 def test_count_user_stars_uses_supplied_repos_without_fetching_owner_repos(monkeypatch):
     def fail_if_fetching_repos(*args, **kwargs):
         raise AssertionError("owner repo list should not be fetched")
@@ -109,24 +153,34 @@ def test_count_user_stars_uses_supplied_repos_without_fetching_owner_repos(monke
     assert star_checker.count_user_stars("targetuser", "owner", "secret", repos=["alpha", "beta"]) == 1
 
 
-def test_check_wallet_exists_uses_local_cert_when_present(monkeypatch, tmp_path):
+def test_check_wallet_exists_uses_public_wallet_balance_endpoint(monkeypatch, tmp_path):
     cert = tmp_path / ".rustchain" / "node_cert.pem"
     cert.parent.mkdir()
     cert.write_text("certificate", encoding="utf-8")
     seen = {}
 
-    def fake_get(url, verify, timeout):
+    def fake_get(url, params, verify, timeout):
         seen["url"] = url
+        seen["params"] = params
         seen["verify"] = verify
         seen["timeout"] = timeout
-        return FakeResponse(status_code=200)
+        return FakeResponse(status_code=200, payload={"amount_rtc": 0.0, "miner_id": "rtc-wallet"})
 
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     monkeypatch.setattr(star_checker.requests, "get", fake_get)
 
     assert star_checker.check_wallet_exists("rtc-wallet") is True
-    assert seen == {
-        "url": f"{star_checker.RUSTCHAIN_NODE_URL}/api/balance/rtc-wallet",
-        "verify": str(cert),
-        "timeout": 10,
-    }
+    assert seen["url"] == f"{star_checker.RUSTCHAIN_NODE_URL}/wallet/balance"
+    assert seen["params"] == {"miner_id": "rtc-wallet"}
+    assert Path(seen["verify"]) == cert
+    assert seen["timeout"] == 10
+
+
+def test_check_wallet_exists_rejects_non_object_balance_payload(monkeypatch):
+    def fake_get(url, params, verify, timeout):
+        return FakeResponse(status_code=200, payload=["not", "a", "wallet"])
+
+    monkeypatch.setattr(star_checker.requests, "get", fake_get)
+
+    assert star_checker.check_wallet_exists("rtc-wallet") is False

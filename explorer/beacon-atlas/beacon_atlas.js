@@ -15,8 +15,8 @@ const ARCH_COLORS = {
 };
 
 const ARCH_FROM_FAMILY = f => {
-  if (!f) return "unknown";
-  const l = f.toLowerCase();
+  const l = String(f ?? "").toLowerCase();
+  if (!l) return "unknown";
   if (l.includes("g4") || l.includes("powerpc")) return "G4";
   if (l.includes("g5") || l.includes("power mac g5")) return "G5";
   if (l.includes("power8") || l.includes("ppc64")) return "POWER8";
@@ -24,6 +24,34 @@ const ARCH_FROM_FAMILY = f => {
   if (l.includes("x86") || l.includes("intel") || l.includes("amd") || l.includes("i386") || l.includes("i686") || l.includes("x64")) return "x86";
   return "unknown";
 };
+
+function asText(value, fallback = "") {
+  if (value === undefined || value === null || value === "") return fallback;
+  return String(value);
+}
+
+function firstPresent(...values) {
+  return values.find(value => value !== undefined && value !== null && value !== "");
+}
+
+function safeId(value, fallback) {
+  return asText(value, fallback).trim() || fallback;
+}
+
+function safeNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function escapeHtml(value) {
+  return asText(value).replace(/[&<>"']/g, char => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  })[char]);
+}
 
 // ── State ───────────────────────────────────────────────────────
 let nodes = [], links = [], simulation;
@@ -57,30 +85,37 @@ function buildGraph(data) {
   const newLinks = [];
 
   // Add miners as nodes
-  const minerList = Array.isArray(data.miners) ? data.miners : [];
-  minerList.forEach(m => {
-    const id = m.miner || m.miner_id || m.id || `miner-${Math.random().toString(36).slice(2,8)}`;
-    const arch = ARCH_FROM_FAMILY(m.device_family || m.device_arch || "");
+  const minerList = Array.isArray(data.miners)
+    ? data.miners
+    : (Array.isArray(data.miners?.miners) ? data.miners.miners : []);
+  minerList.forEach((m, index) => {
+    if (!m || typeof m !== "object") return;
+    const id = safeId(firstPresent(m.miner, m.miner_id, m.id), `miner-${index}`);
+    const device = asText(firstPresent(m.device_family, m.device_arch), "unknown");
+    const arch = ARCH_FROM_FAMILY(device);
     nodeMap.set(id, {
       id, type: "miner", arch,
-      name: m.miner || id,
-      multiplier: m.antiquity_multiplier || 1.0,
-      device: m.device_family || m.device_arch || "unknown",
-      lastAttest: m.last_attest || null,
-      balance: m.balance || 0,
-      score: (m.antiquity_multiplier || 1) * 10
+      name: asText(firstPresent(m.miner, m.miner_id, m.id), id),
+      multiplier: safeNumber(m.antiquity_multiplier, 1.0),
+      device,
+      lastAttest: safeNumber(m.last_attest, 0),
+      balance: safeNumber(m.balance, 0),
+      score: safeNumber(m.antiquity_multiplier, 1) * 10
     });
   });
 
   // Add beacon agents
-  const agentList = Array.isArray(data.agents) ? data.agents : (data.agents?.agents || []);
-  agentList.forEach(a => {
-    const id = a.agent_id || a.id || `agent-${Math.random().toString(36).slice(2,8)}`;
+  const agentList = Array.isArray(data.agents)
+    ? data.agents
+    : (Array.isArray(data.agents?.agents) ? data.agents.agents : []);
+  agentList.forEach((a, index) => {
+    if (!a || typeof a !== "object") return;
+    const id = safeId(firstPresent(a.agent_id, a.id), `agent-${index}`);
     nodeMap.set(id, {
       id, type: "beacon", arch: "beacon",
-      name: a.name || id,
-      pubkey: a.pubkey_hex || "",
-      status: a.status || "active",
+      name: asText(a.name, id),
+      pubkey: asText(a.pubkey_hex),
+      status: asText(a.status, "active"),
       score: 15
     });
   });
@@ -174,7 +209,7 @@ function filteredData() {
   }
   if (searchQuery) {
     const q = searchQuery.toLowerCase();
-    fn = fn.filter(n => n.name.toLowerCase().includes(q) || n.id.toLowerCase().includes(q));
+    fn = fn.filter(n => asText(n.name).toLowerCase().includes(q) || asText(n.id).toLowerCase().includes(q));
   }
   const ids = new Set(fn.map(n => n.id));
   const fl = links.filter(l => {
@@ -222,8 +257,9 @@ function updateGraph() {
         .attr("stroke-width", 1);
     }
     // Label
+    const name = asText(d.name, d.id);
     el.append("text")
-      .text(d.name.length > 14 ? d.name.slice(0, 12) + "…" : d.name)
+      .text(name.length > 14 ? name.slice(0, 12) + "…" : name)
       .attr("dy", nodeRadius(d) + 12)
       .attr("text-anchor", "middle")
       .attr("fill", "#94a3b8")
@@ -271,8 +307,8 @@ function drag(sim) {
 // ── Tooltip ─────────────────────────────────────────────────────
 const tooltip = d3.select("#tooltip");
 function showTooltip(event, d) {
-  const label = d.type === "beacon" ? `🔷 ${d.name}` : `⛏ ${d.name} (${d.arch})`;
-  tooltip.html(label).style("display", "block")
+  const label = d.type === "beacon" ? `🔷 ${asText(d.name)}` : `⛏ ${asText(d.name)} (${asText(d.arch)})`;
+  tooltip.text(label).style("display", "block")
     .style("left", (event.pageX + 12) + "px").style("top", (event.pageY - 20) + "px");
 }
 function hideTooltip() { tooltip.style("display", "none"); }
@@ -280,17 +316,17 @@ function hideTooltip() { tooltip.style("display", "none"); }
 // ── Info panel ──────────────────────────────────────────────────
 function showInfo(d) {
   selectedNode = d;
-  d3.select("#info-name").text(d.name);
+  d3.select("#info-name").text(asText(d.name, d.id));
   let html = "";
-  const row = (l, v) => `<div class="row"><span class="label">${l}</span><span class="value">${v}</span></div>`;
+  const row = (l, v) => `<div class="row"><span class="label">${escapeHtml(l)}</span><span class="value">${escapeHtml(v)}</span></div>`;
   html += row("ID", d.id);
   html += row("Type", d.type === "beacon" ? "Beacon Agent" : "Miner");
   if (d.arch) html += row("Architecture", d.arch);
   if (d.multiplier) html += row("Multiplier", d.multiplier + "x");
   if (d.device) html += row("Device", d.device);
   if (d.status) html += row("Status", d.status);
-  if (d.pubkey) html += row("Pubkey", d.pubkey.slice(0, 16) + "…");
-  if (d.lastAttest) html += row("Last Attestation", new Date(d.lastAttest * 1000).toLocaleString());
+  if (d.pubkey) html += row("Pubkey", asText(d.pubkey).slice(0, 16) + "…");
+  if (d.lastAttest) html += row("Last Attestation", new Date(safeNumber(d.lastAttest) * 1000).toLocaleString());
   if (d.balance) html += row("Balance", d.balance + " RTC");
 
   const conns = links.filter(l => {

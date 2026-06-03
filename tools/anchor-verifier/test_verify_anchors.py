@@ -5,12 +5,13 @@ Tests for Ergo Anchor Chain Proof Verifier
 Run: python -m pytest tools/anchor-verifier/test_verify_anchors.py -v
 """
 
-import hashlib
 import json
 import os
 import sqlite3
 import sys
+import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from verify_anchors import (
@@ -27,6 +28,9 @@ from verify_anchors import (
     R5_PREFIX,
     print_results,
 )
+
+def _test_db_path(name: str) -> str:
+    return os.path.join(tempfile.gettempdir(), f"{name}_{os.getpid()}.db")
 
 
 # ── Blake2b256 Tests ─────────────────────────────────────────────
@@ -96,6 +100,44 @@ class TestErgoClient(unittest.TestCase):
     def setUp(self):
         self.client = ErgoClient("http://localhost:9053")
 
+    def test_get_transaction_rejects_non_object_json(self):
+        class FakeResponse:
+            def read(self):
+                return b"[]"
+
+        with patch("urllib.request.urlopen", return_value=FakeResponse()):
+            result = self.client.get_transaction("tx-array")
+
+        self.assertIsNone(result)
+
+    def test_get_transaction_uses_unconfirmed_object_after_malformed_confirmed(self):
+        class FakeResponse:
+            def __init__(self, payload: bytes):
+                self.payload = payload
+
+            def read(self):
+                return self.payload
+
+        responses = [
+            FakeResponse(b"[]"),
+            FakeResponse(b'{"id":"tx-unconfirmed","outputs":[]}'),
+        ]
+
+        with patch("urllib.request.urlopen", side_effect=responses):
+            result = self.client.get_transaction("tx-unconfirmed")
+
+        self.assertEqual(result, {"id": "tx-unconfirmed", "outputs": []})
+
+    def test_get_box_by_id_rejects_non_object_json(self):
+        class FakeResponse:
+            def read(self):
+                return b'"not-a-box"'
+
+        with patch("urllib.request.urlopen", return_value=FakeResponse()):
+            result = self.client.get_box_by_id("box-scalar")
+
+        self.assertIsNone(result)
+
     def test_extract_commitment_r5(self):
         """Test extracting commitment from R5 register."""
         commitment = "a" * 64
@@ -137,6 +179,23 @@ class TestErgoClient(unittest.TestCase):
         result = self.client.extract_commitment_from_tx(tx)
         self.assertIsNone(result)
 
+    def test_extract_ignores_malformed_outputs_shape(self):
+        tx = {"outputs": {"additionalRegisters": {"R5": f"{R5_PREFIX}{'d' * 64}"}}}
+        result = self.client.extract_commitment_from_tx(tx)
+        self.assertIsNone(result)
+
+    def test_extract_skips_non_object_outputs_and_registers(self):
+        commitment = "e" * 64
+        tx = {
+            "outputs": [
+                ["not", "an", "output"],
+                {"additionalRegisters": ["not", "registers"]},
+                {"additionalRegisters": {"R5": f"{R5_PREFIX}{commitment}"}},
+            ]
+        }
+        result = self.client.extract_commitment_from_tx(tx)
+        self.assertEqual(result, commitment)
+
     def test_extract_wrong_prefix(self):
         tx = {
             "outputs": [{
@@ -153,7 +212,7 @@ class TestErgoClient(unittest.TestCase):
 
 class TestDatabaseReader(unittest.TestCase):
     def setUp(self):
-        self.db_path = "/tmp/test_anchors.db"
+        self.db_path = _test_db_path("test_anchors")
         conn = sqlite3.connect(self.db_path)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS ergo_anchors (
@@ -193,13 +252,21 @@ class TestDatabaseReader(unittest.TestCase):
         anchors = read_anchors(self.db_path, limit=2)
         self.assertEqual(len(anchors), 2)
 
+    def test_read_zero_limit_returns_no_anchors(self):
+        anchors = read_anchors(self.db_path, limit=0)
+        self.assertEqual(anchors, [])
+
+    def test_read_negative_limit_returns_no_anchors(self):
+        anchors = read_anchors(self.db_path, limit=-1)
+        self.assertEqual(anchors, [])
+
     def test_read_ordered_desc(self):
         anchors = read_anchors(self.db_path)
         heights = [a.rustchain_height for a in anchors]
         self.assertEqual(heights, sorted(heights, reverse=True))
 
     def test_read_nonexistent_db(self):
-        anchors = read_anchors("/tmp/nonexistent_db.db")
+        anchors = read_anchors(_test_db_path("nonexistent_db"))
         self.assertEqual(anchors, [])
 
     def test_anchor_fields(self):
@@ -213,14 +280,14 @@ class TestDatabaseReader(unittest.TestCase):
 
 class TestAttestationReader(unittest.TestCase):
     def setUp(self):
-        self.db_path = "/tmp/test_attestations.db"
+        self.db_path = _test_db_path("test_attestations")
 
     def tearDown(self):
         if os.path.exists(self.db_path):
             os.remove(self.db_path)
 
     def test_read_attestations_nonexistent_db(self):
-        rows = read_attestations_for_epoch("/tmp/nonexistent_attestations.db", 100)
+        rows = read_attestations_for_epoch(_test_db_path("nonexistent_attestations"), 100)
 
         self.assertEqual(rows, [])
 
@@ -262,7 +329,7 @@ class TestAttestationReader(unittest.TestCase):
 
 class TestAnchorVerifier(unittest.TestCase):
     def setUp(self):
-        self.db_path = "/tmp/test_verify.db"
+        self.db_path = _test_db_path("test_verify")
         conn = sqlite3.connect(self.db_path)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS ergo_anchors (

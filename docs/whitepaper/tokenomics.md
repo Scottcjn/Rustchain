@@ -2,13 +2,13 @@
 
 ## Summary
 
-RustChain has a fixed total supply of **8.3M RTC** (per project reference docs). The protocol distributes RTC primarily through mining rewards tied to Proof-of-Antiquity (PoA): real, vintage hardware earns higher multipliers than modern commodity hardware. Transfers are designed to be fee-free (or near-zero fee) at the protocol level, emphasizing distribution via contribution rather than transaction tolls.
+RustChain has a fixed total supply of **8,388,608 RTC** (per project reference docs). The protocol distributes RTC primarily through mining rewards tied to Proof-of-Antiquity (PoA): real, vintage hardware earns higher multipliers than modern commodity hardware. Transfers are designed to be fee-free (or near-zero fee) at the protocol level, emphasizing distribution via contribution rather than transaction tolls.
 
 This section documents the token supply framing, reward distribution mechanics, and the practical implications for miners and node operators.
 
 ## Supply
 
-- **Total supply**: 8.3M RTC (fixed reference supply).
+- **Total supply**: 8,388,608 RTC (fixed reference supply).
 - **Unit convention**: internal accounting often uses integer micro-units (uRTC) with display in RTC; conversions should be explicit in APIs and code.
 - **No gas-style transfer fee model**: RustChain aims for free transfers; spam protection is handled via rate limiting, admin-gated sensitive endpoints, and validation logic rather than per-tx fees.
 

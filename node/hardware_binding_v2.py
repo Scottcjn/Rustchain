@@ -43,23 +43,60 @@ def compute_serial_hash(serial: str, arch: str) -> str:
     data = f'{serial.strip().upper()}|{arch.lower()}'
     return hashlib.sha256(data.encode()).hexdigest()[:40]
 
+def _derive_cv(avg, stdev) -> float:
+    """Coefficient of variation from average + standard deviation.
+
+    Used when the fingerprint emits raw avg/stdev pairs but not a pre-computed CV.
+    Returns 0 when avg is zero or non-numeric.
+    """
+    try:
+        a = float(avg)
+        s = float(stdev)
+    except (TypeError, ValueError):
+        return 0
+    return (s / a) if a > 0 else 0
+
+
 def extract_entropy_profile(fingerprint: dict) -> Dict:
-    """Extract comparable entropy values from fingerprint data."""
+    """Extract comparable entropy values from fingerprint data.
+
+    Tolerates two naming conventions across `fingerprint_checks.py` versions:
+      - Legacy: cache fields 'L1'/'L2', thermal 'ratio', jitter 'cv'.
+      - v3 (current): cache 'l1_ns'/'l2_ns', thermal 'drift_ratio',
+        jitter exposes 'int_avg_ns' + 'int_stdev' instead of a pre-computed 'cv'.
+
+    Without this tolerance, every miner running v3 fingerprint_checks.py
+    reports only 1 of 5 entropy fields (clock_cv — the one key that matches
+    across formats), trips the MIN_COMPARABLE_FIELDS=3 threshold inside
+    `bind_hardware_v2`, and gets a `HARDWARE_BINDING_FAILED:entropy_insufficient`
+    response on first attestation. Verified against IBM ThinkPad T40 Pentium M
+    on 2026-05-27.
+    """
     checks = fingerprint.get('checks', {})
     data = fingerprint.get('data', {})
-    
+
+    clock_data = checks.get('clock_drift', {}).get('data', {}) or {}
+    cache_data = checks.get('cache_timing', {}).get('data', {}) or {}
+    thermal_data = checks.get('thermal_drift', {}).get('data', {}) or {}
+    jitter_data = checks.get('instruction_jitter', {}).get('data', {}) or {}
+
     profile = {
-        'clock_cv': checks.get('clock_drift', {}).get('data', {}).get('cv', 0),
-        'cache_l1': checks.get('cache_timing', {}).get('data', {}).get('L1', 0),
-        'cache_l2': checks.get('cache_timing', {}).get('data', {}).get('L2', 0),
-        'thermal_ratio': checks.get('thermal_drift', {}).get('data', {}).get('ratio', 0),
-        'jitter_cv': checks.get('instruction_jitter', {}).get('data', {}).get('cv', 0),
+        'clock_cv': clock_data.get('cv', 0),
+        # Accept legacy 'L1'/'L2' OR v3 'l1_ns'/'l2_ns'.
+        'cache_l1': cache_data.get('L1') or cache_data.get('l1_ns') or 0,
+        'cache_l2': cache_data.get('L2') or cache_data.get('l2_ns') or 0,
+        # Accept legacy 'ratio' OR v3 'drift_ratio'.
+        'thermal_ratio': thermal_data.get('ratio') or thermal_data.get('drift_ratio') or 0,
+        # Accept legacy 'cv' OR derive CV from v3's avg+stdev exposure.
+        'jitter_cv': jitter_data.get('cv') or _derive_cv(
+            jitter_data.get('int_avg_ns'), jitter_data.get('int_stdev')
+        ),
     }
-    
-    # Also check data section for alternate format
+
+    # Backward-compat: also check the data section for alternate clock_cv format.
     if not profile['clock_cv']:
         profile['clock_cv'] = data.get('clock_cv', 0)
-    
+
     return profile
 
 

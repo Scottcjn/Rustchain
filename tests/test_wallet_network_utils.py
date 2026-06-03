@@ -114,6 +114,7 @@ class TestFetchWithRetry(unittest.TestCase):
         mock_response = MagicMock()
         mock_response.json.return_value = {"balance": 100.5}
         mock_response.raise_for_status = MagicMock()
+        mock_response.is_redirect = False  # not a redirect (allow_redirects=False guard)
         mock_get.return_value = mock_response
         
         data, error = self.wallet._fetch_with_retry("https://rustchain.org/wallet/balance")
@@ -124,6 +125,20 @@ class TestFetchWithRetry(unittest.TestCase):
         mock_get.assert_called_once()
 
     @patch('requests.get')
+    def test_fetch_with_retry_rejects_non_object_json(self, mock_get):
+        """Test successful non-object JSON is rejected before GUI callers use it."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = [{"balance": 100.5}]
+        mock_response.raise_for_status = MagicMock()
+        mock_response.is_redirect = False  # not a redirect (allow_redirects=False guard)
+        mock_get.return_value = mock_response
+
+        data, error = self.wallet._fetch_with_retry("https://rustchain.org/wallet/balance")
+
+        self.assertIsNone(data)
+        self.assertEqual(error, "API returned JSON but not an object")
+
+    @patch('requests.get')
     @patch('time.sleep')
     def test_fetch_with_retry_success_after_retry(self, mock_sleep, mock_get):
         """Test successful fetch after one retry."""
@@ -131,7 +146,8 @@ class TestFetchWithRetry(unittest.TestCase):
         mock_response = MagicMock()
         mock_response.json.return_value = {"balance": 100.5}
         mock_response.raise_for_status = MagicMock()
-        
+        mock_response.is_redirect = False  # not a redirect (allow_redirects=False guard)
+
         mock_get.side_effect = [
             ConnectionError("Connection failed"),
             mock_response
@@ -191,6 +207,7 @@ class TestFetchWithRetry(unittest.TestCase):
         mock_response = MagicMock()
         mock_response.json.return_value = {"ok": True}
         mock_response.raise_for_status = MagicMock()
+        mock_response.is_redirect = False  # not a redirect (allow_redirects=False guard)
         mock_post.return_value = mock_response
         
         post_data = {"from": "RTC123", "to": "RTC456", "amount": 10.0}

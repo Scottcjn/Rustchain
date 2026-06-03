@@ -17,25 +17,68 @@ Install:
 
 import argparse
 import json
+import os
 import sys
 import requests
-from typing import Optional, Dict, List
+from typing import Any, Dict, List, Optional
 
 # API Base URL
-BASE_URL = "https://rustchain.org"
+BASE_URL = "https://50.28.86.131"
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.lower() in {"1", "true", "yes", "on"}
+
+
+def _unwrap_dict(payload: Any, key: str) -> Optional[Dict]:
+    """Accept both legacy bare objects and live API envelope objects."""
+    if not isinstance(payload, dict):
+        return None
+    if key in payload:
+        value = payload.get(key)
+        return value if isinstance(value, dict) else None
+    return payload
+
+
+def _unwrap_list(payload: Any, key: str) -> List[Dict]:
+    """Accept both legacy bare lists and live API envelope lists."""
+    if isinstance(payload, dict):
+        payload = payload.get(key, [])
+    if not isinstance(payload, list):
+        return []
+    return [item for item in payload if isinstance(item, dict)]
+
 
 class RustChainAgentCLI:
-    def __init__(self, wallet: str = "cli-user"):
+    def __init__(
+        self,
+        wallet: str = "cli-user",
+        base_url: Optional[str] = None,
+        verify_ssl: Optional[bool] = None,
+    ):
         self.wallet = wallet
-        self.base_url = BASE_URL
+        self.base_url = (
+            base_url
+            or os.getenv("RUSTCHAIN_AGENT_API")
+            or os.getenv("RUSTCHAIN_NODE_URL")
+            or BASE_URL
+        )
+        self.verify_ssl = (
+            verify_ssl
+            if verify_ssl is not None
+            else _env_bool("RUSTCHAIN_AGENT_VERIFY_SSL", False)
+        )
     
     def list_jobs(self, category: Optional[str] = None) -> List[Dict]:
         """List open jobs"""
         url = f"{self.base_url}/agent/jobs"
         try:
-            response = requests.get(url, timeout=10)
+            response = requests.get(url, timeout=10, verify=self.verify_ssl)
             response.raise_for_status()
-            jobs = response.json()
+            jobs = _unwrap_list(response.json(), "jobs")
             
             if category:
                 jobs = [j for j in jobs if j.get('category') == category]
@@ -59,7 +102,7 @@ class RustChainAgentCLI:
         }
         
         try:
-            response = requests.post(url, json=data, timeout=10)
+            response = requests.post(url, json=data, timeout=10, verify=self.verify_ssl)
             response.raise_for_status()
             return response.json()
         except requests.RequestException as e:
@@ -72,7 +115,7 @@ class RustChainAgentCLI:
         data = {"worker_wallet": self.wallet}
         
         try:
-            response = requests.post(url, json=data, timeout=10)
+            response = requests.post(url, json=data, timeout=10, verify=self.verify_ssl)
             response.raise_for_status()
             return response.json()
         except requests.RequestException as e:
@@ -89,7 +132,7 @@ class RustChainAgentCLI:
         }
         
         try:
-            response = requests.post(url, json=data, timeout=10)
+            response = requests.post(url, json=data, timeout=10, verify=self.verify_ssl)
             response.raise_for_status()
             return response.json()
         except requests.RequestException as e:
@@ -101,9 +144,9 @@ class RustChainAgentCLI:
         url = f"{self.base_url}/agent/jobs/{job_id}"
         
         try:
-            response = requests.get(url, timeout=10)
+            response = requests.get(url, timeout=10, verify=self.verify_ssl)
             response.raise_for_status()
-            return response.json()
+            return _unwrap_dict(response.json(), "job")
         except requests.RequestException as e:
             print(f"Error fetching job: {e}")
             return None
@@ -113,9 +156,9 @@ class RustChainAgentCLI:
         url = f"{self.base_url}/agent/stats"
         
         try:
-            response = requests.get(url, timeout=10)
+            response = requests.get(url, timeout=10, verify=self.verify_ssl)
             response.raise_for_status()
-            return response.json()
+            return _unwrap_dict(response.json(), "stats")
         except requests.RequestException as e:
             print(f"Error fetching stats: {e}")
             return None
@@ -134,7 +177,8 @@ def cmd_list(args):
     print("-" * 75)
     
     for job in jobs:
-        job_id = job.get('id', 'N/A')[:18] + '...' if len(job.get('id', '')) > 20 else job.get('id', 'N/A')
+        raw_job_id = job.get('id') or job.get('job_id') or 'N/A'
+        job_id = raw_job_id[:18] + '...' if len(raw_job_id) > 20 else raw_job_id
         title = job.get('title', '')[:28] + '...' if len(job.get('title', '')) > 30 else job.get('title', '')
         category = job.get('category', 'N/A')
         reward = f"{job.get('reward_rtc', 0)} RTC"
@@ -153,8 +197,8 @@ def cmd_post(args):
     
     if result:
         print(f"\n✅ Job posted successfully!")
-        print(f"   Job ID: {result.get('id')}")
-        print(f"   Title: {result.get('title')}")
+        print(f"   Job ID: {result.get('id') or result.get('job_id')}")
+        print(f"   Title: {result.get('title') or args.title}")
     else:
         print("❌ Failed to post job")
 
@@ -216,7 +260,8 @@ def cmd_stats(args):
     print(f"  Total Jobs:      {stats.get('total_jobs', 'N/A')}")
     print(f"  Open Jobs:      {stats.get('open_jobs', 'N/A')}")
     print(f"  Completed Jobs: {stats.get('completed_jobs', 'N/A')}")
-    print(f"  Total Volume:   {stats.get('total_volume_rtc', 'N/A')} RTC")
+    total_volume = stats.get('total_rtc_volume', stats.get('total_volume_rtc', 'N/A'))
+    print(f"  Total Volume:   {total_volume} RTC")
     print(f"  Active Agents:  {stats.get('active_agents', 'N/A')}")
 
 

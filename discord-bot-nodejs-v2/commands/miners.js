@@ -31,12 +31,17 @@ module.exports = {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       
-      let miners = await response.json();
+      const payload = await response.json();
+      let miners = Array.isArray(payload)
+        ? payload
+        : Array.isArray(payload?.miners)
+          ? payload.miners
+          : [];
       
       // Filter by address if provided
       if (address) {
         miners = miners.filter(m => 
-          m.miner.toLowerCase().includes(address.toLowerCase())
+          getMinerId(m).toLowerCase().includes(address.toLowerCase())
         );
       }
       
@@ -58,13 +63,13 @@ module.exports = {
           .setColor(0x0099FF)
           .setTitle('⛏️ Miner Details')
           .addFields(
-            { name: 'Miner ID', value: `\`${miner.miner}\``, inline: false },
-            { name: 'Hardware', value: `${miner.hardware_type}`, inline: true },
-            { name: 'Architecture', value: `${miner.device_arch}`, inline: true },
-            { name: 'Family', value: `${miner.device_family}`, inline: true },
-            { name: 'Antiquity Multiplier', value: `**${miner.antiquity_multiplier}x**`, inline: true },
-            { name: 'Entropy Score', value: `${miner.entropy_score}`, inline: true },
-            { name: 'Last Attest', value: `${formatTimestamp(miner.last_attest)}`, inline: true }
+            { name: 'Miner ID', value: `\`${getMinerId(miner)}\``, inline: false },
+            { name: 'Hardware', value: `${miner.hardware_type || 'N/A'}`, inline: true },
+            { name: 'Architecture', value: `${miner.device_arch || 'N/A'}`, inline: true },
+            { name: 'Family', value: `${miner.device_family || 'N/A'}`, inline: true },
+            { name: 'Antiquity Multiplier', value: `**${miner.antiquity_multiplier ?? 'N/A'}x**`, inline: true },
+            { name: 'Entropy Score', value: `${miner.entropy_score ?? 'N/A'}`, inline: true },
+            { name: 'Last Attest', value: `${formatTimestamp(miner.last_attest || miner.ts_ok)}`, inline: true }
           )
           .setFooter({ text: 'RustChain Proof-of-Antiquity' })
           .setTimestamp();
@@ -73,7 +78,7 @@ module.exports = {
       } else {
         // Multiple miners list
         const description = miners.map((m, i) => 
-          `**${i + 1}.** ${m.miner}\n   Hardware: ${m.hardware_type} | Multiplier: **${m.antiquity_multiplier}x**`
+          `**${i + 1}.** ${getMinerId(m)}\n   Hardware: ${m.hardware_type || 'N/A'} | Multiplier: **${m.antiquity_multiplier ?? 'N/A'}x**`
         ).join('\n\n');
         
         const embed = new EmbedBuilder()
@@ -99,4 +104,8 @@ function formatTimestamp(unixTime) {
   if (!unixTime) return 'Never';
   const date = new Date(unixTime * 1000);
   return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+}
+
+function getMinerId(miner) {
+  return String(miner?.miner || miner?.miner_id || 'unknown');
 }

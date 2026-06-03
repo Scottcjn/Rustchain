@@ -84,3 +84,33 @@ def test_explorer_machine_of_the_day_uses_current_year_for_age(tmp_path, monkeyp
 
     assert response.status_code == 200
     assert response.get_json()["age_years"] == 23
+
+
+def test_explorer_hall_stats_hides_sqlite_error_details(tmp_path):
+    hall = load_explorer_hall()
+    db_path = tmp_path / "missing_schema.db"
+    sqlite3.connect(db_path).close()
+    client = client_for(hall, db_path)
+
+    response = client.get("/hall/stats")
+
+    assert response.status_code == 500
+    assert response.get_json() == {"error": "internal_error"}
+    body = response.get_data(as_text=True)
+    assert "no such table" not in body
+    assert "hall_of_rust" not in body
+
+
+def test_explorer_hall_machine_of_the_day_hides_sqlite_error_details(tmp_path):
+    hall = load_explorer_hall()
+    db_path = tmp_path / "missing_schema.db"
+    sqlite3.connect(db_path).close()
+    client = client_for(hall, db_path)
+
+    response = client.get("/hall/machine_of_the_day")
+
+    assert response.status_code == 500
+    assert response.get_json() == {"error": "internal_error"}
+    body = response.get_data(as_text=True)
+    assert "no such table" not in body
+    assert "hall_of_rust" not in body
