@@ -5,13 +5,12 @@ Main client for interacting with RustChain's Agent Economy APIs.
 Provides unified access to agent wallets, x402 payments, reputation, and analytics.
 """
 
-from typing import Dict, List, Optional, Any, Union
+from typing import Dict, Optional, Any
 import requests
 import json
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import dataclass
 
-from rustchain.exceptions import RustChainError, ConnectionError, ValidationError, APIError
+from rustchain.exceptions import ConnectionError, ValidationError, APIError
 
 
 @dataclass
@@ -161,9 +160,13 @@ class AgentEconomyClient:
                 ) from e
             
             try:
-                return response.json()
+                data = response.json()
             except json.JSONDecodeError:
                 return {"raw_response": response.text}
+
+            if not isinstance(data, dict):
+                raise APIError("Expected JSON object response")
+            return data
                 
         except requests.exceptions.ConnectionError as e:
             raise ConnectionError(f"Failed to connect to {url}: {e}") from e

@@ -71,3 +71,51 @@ def test_process_withdrawal_leaves_pending_when_production_broadcast_is_not_conf
     assert status == "pending"
     assert "not configured" in error_msg
     assert tx_hash is None
+
+
+def test_process_withdrawal_does_not_refund_after_broadcast_tx_hash(
+    tmp_path, monkeypatch
+):
+    class BroadcastThenCompletionUpdateFailsWorker(payout_worker.PayoutWorker):
+        def execute_withdrawal(self, withdrawal):
+            return "tx-broadcasted"
+
+    monkeypatch.setattr(payout_worker, "MOCK_MODE", True)
+    db_path = str(tmp_path / "payout_worker.db")
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("CREATE TABLE accounts (public_key TEXT PRIMARY KEY, balance INTEGER)")
+        conn.execute(
+            "CREATE TABLE withdrawals ("
+            "withdrawal_id TEXT PRIMARY KEY, miner_pk TEXT, amount INTEGER, fee INTEGER, "
+            "destination TEXT, status TEXT, error_msg TEXT, tx_hash TEXT, created_at INTEGER)"
+        )
+        conn.execute(
+            "INSERT INTO accounts (public_key, balance) VALUES (?, ?)",
+            ("miner-pubkey", 100),
+        )
+        conn.execute(
+            "INSERT INTO withdrawals "
+            "(withdrawal_id, miner_pk, amount, fee, destination, status, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            ("wd-1", "miner-pubkey", 10, 1, "RTCdest", "pending", 1234567890),
+        )
+
+    worker = BroadcastThenCompletionUpdateFailsWorker()
+    worker.db_path = db_path
+
+    assert worker.process_withdrawal(withdrawal()) is False
+
+    with sqlite3.connect(db_path) as conn:
+        balance = conn.execute(
+            "SELECT balance FROM accounts WHERE public_key = ?",
+            ("miner-pubkey",),
+        ).fetchone()[0]
+        status, error_msg, tx_hash = conn.execute(
+            "SELECT status, error_msg, tx_hash FROM withdrawals WHERE withdrawal_id = ?",
+            ("wd-1",),
+        ).fetchone()
+
+    assert balance == 89
+    assert status == "processing"
+    assert tx_hash == "tx-broadcasted"
+    assert "manual reconciliation required" in error_msg

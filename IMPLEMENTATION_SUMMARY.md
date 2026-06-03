@@ -200,7 +200,7 @@ Assuming 10 total miners, 3 in retro_console bucket:
 - [RIP-0683 Specification](docs/CONSOLE_MINING_SETUP.md)
 - [RIP-0304: Original Console Mining Spec](rips/docs/RIP-0304-retro-console-mining.md)
 - [RIP-201: Fleet Immune System](rips/docs/RIP-0201-fleet-immune-system.md)
-- [Legend of Elya](https://github.com/ilya-kh/legend-of-elya) - N64 neural network demo
+- [Legend of Elya](https://github.com/Scottcjn/legend-of-elya-n64) - N64 neural network demo
 - [Console Mining Setup Guide](docs/CONSOLE_MINING_SETUP.md)
 
 ## Acknowledgments

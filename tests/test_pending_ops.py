@@ -24,7 +24,7 @@ pending_ops = _load_pending_ops()
 
 
 class FakeResponse:
-    def __init__(self, payload: dict):
+    def __init__(self, payload):
         self.payload = payload
 
     def __enter__(self):
@@ -83,6 +83,20 @@ def test_req_uses_unverified_context_when_insecure(monkeypatch):
 
     assert pending_ops._req("GET", "https://node.test/pending/list", "key", insecure=True) == {"ok": True}
     assert seen["context"] is marker
+
+
+def test_req_rejects_non_object_json_response(monkeypatch):
+    def fake_urlopen(req, timeout, context):
+        return FakeResponse(["not", "an", "object"])
+
+    monkeypatch.setattr(pending_ops.urllib.request, "urlopen", fake_urlopen)
+
+    try:
+        pending_ops._req("GET", "https://node.test/pending/list", "key", insecure=False)
+    except ValueError as exc:
+        assert str(exc) == "node response must be a JSON object"
+    else:
+        raise AssertionError("_req accepted a non-object JSON response")
 
 
 def test_cmd_list_formats_url_and_prints_response(monkeypatch, capsys):
@@ -157,6 +171,18 @@ def test_main_rejects_missing_admin_key(monkeypatch, capsys):
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "missing --admin-key or RC_ADMIN_KEY" in captured.err
+
+
+def test_main_rejects_non_positive_list_limit(capsys):
+    try:
+        pending_ops.main(["--admin-key", "secret", "list", "--limit", "0"])
+    except SystemExit as exc:
+        assert exc.code == 2
+    else:
+        raise AssertionError("non-positive limit was accepted")
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "limit must be a positive integer" in captured.err
 
 
 def test_main_prints_http_error_body(monkeypatch, capsys):

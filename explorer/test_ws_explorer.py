@@ -4,7 +4,7 @@
 import json
 import pytest
 from unittest.mock import patch, MagicMock
-from ws_explorer_server import app, socketio, state, fetch_api
+from ws_explorer_server import app, socketio, state, fetch_api, poll_and_broadcast
 
 
 @pytest.fixture
@@ -106,3 +106,44 @@ class TestStateTracking:
     def test_started_at_set(self):
         assert state["started_at"] is not None
         assert "Z" in state["started_at"]
+
+
+class TestPolling:
+    def test_poll_and_broadcast_handles_bare_miner_array(self):
+        emitted = []
+
+        def fake_fetch(path):
+            if path == "/api/miners":
+                return [{"miner_id": "miner-a", "hardware": "gpu", "multiplier": 1.5}]
+            return None
+
+        def fake_emit(event, payload, namespace="/"):
+            emitted.append((event, payload, namespace))
+
+        with (
+            patch("ws_explorer_server.fetch_api", side_effect=fake_fetch),
+            patch("ws_explorer_server.socketio.emit", side_effect=fake_emit),
+            patch("ws_explorer_server.time.sleep", side_effect=KeyboardInterrupt),
+        ):
+            with pytest.raises(KeyboardInterrupt):
+                poll_and_broadcast()
+
+        assert emitted == [
+            (
+                "explorer_update",
+                {
+                    "miners": {
+                        "count": 1,
+                        "miners": [
+                            {
+                                "miner_id": "miner-a",
+                                "hardware": "gpu",
+                                "multiplier": 1.5,
+                            }
+                        ],
+                    },
+                    "server_time": emitted[0][1]["server_time"],
+                },
+                "/",
+            )
+        ]

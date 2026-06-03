@@ -293,6 +293,33 @@ class TestGitHubClient:
         mock_urlopen.assert_not_called()
 
     @patch('tools.bounty_verifier.github_client.urlopen')
+    def test_check_following_treats_204_as_following(self, mock_urlopen):
+        """GitHub returns 204 No Content when a user follows the target."""
+
+        class FakeResponse:
+            def __init__(self, status, payload=b"{}"):
+                self.status = status
+                self.headers = {}
+                self._payload = payload
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return self._payload
+
+        client = GitHubClient(token="test_token")
+        mock_urlopen.side_effect = [
+            FakeResponse(200, b'{"login":"user"}'),
+            FakeResponse(204, b""),
+        ]
+
+        assert client.check_following("user") is True
+
+    @patch('tools.bounty_verifier.github_client.urlopen')
     def test_get_starred_repos_count_cached(self, mock_urlopen):
         """Test star count uses cache."""
         import time
@@ -394,13 +421,31 @@ class TestBountyVerifier:
     def test_extract_wallet_label(self):
         """Test extracting wallet with label."""
         verifier = BountyVerifier(Config())
-        
+
         text = "Wallet: 1d48d848a5aa5ecf2c5f01aa5fb64837daaf2f35"
         wallet = verifier._extract_wallet(text)
         
         assert wallet is not None
         assert "1d48d848a5aa5ecf2c5f01aa5fb64837daaf2f35" in wallet
-    
+
+    def test_extract_wallet_rejects_non_hex_labeled_value(self):
+        """Do not turn arbitrary labeled alphanumeric text into an RTC wallet."""
+        verifier = BountyVerifier(Config())
+
+        text = "Wallet: zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+        wallet = verifier._extract_wallet(text)
+
+        assert wallet is None
+
+    def test_extract_wallet_rejects_short_rtc_value(self):
+        """RTC addresses must include the full 40-character hex suffix."""
+        verifier = BountyVerifier(Config())
+
+        text = "Wallet: RTC1d48d848a5aa5ecf2c5f01aa5fb64837daaf2"
+        wallet = verifier._extract_wallet(text)
+
+        assert wallet is None
+
     def test_extract_urls(self):
         """Test extracting URLs from text."""
         verifier = BountyVerifier(Config())
@@ -410,6 +455,48 @@ class TestBountyVerifier:
         
         assert len(urls) == 2
         assert "https://github.com/user" in urls
+
+    def test_verify_url_liveness_rejects_suffix_impersonation(self, sample_config):
+        """Allowlist matching should not accept github.com.evil.example."""
+        sample_config.url_check.enabled = True
+        sample_config.url_check.allowed_domains = ["github.com"]
+        verifier = BountyVerifier(sample_config)
+
+        checks = verifier.verify_url_liveness([
+            "https://github.com.evil.example/proof",
+        ])
+
+        assert len(checks) == 1
+        assert checks[0].status == VerificationStatus.FAILED
+        assert "Domain not in allowlist" in checks[0].message
+
+    def test_verify_url_liveness_rejects_off_allowlist_redirect(self, sample_config):
+        """An allowlisted URL that redirects away should fail verification."""
+        sample_config.url_check.enabled = True
+        sample_config.url_check.allowed_domains = ["github.com"]
+        verifier = BountyVerifier(sample_config)
+
+        class FakeResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def geturl(self):
+                return "https://evil.example/proof"
+
+        fake_opener = MagicMock()
+        fake_opener.open.return_value = FakeResponse()
+
+        with patch("tools.bounty_verifier.verifier.build_opener", return_value=fake_opener):
+            checks = verifier.verify_url_liveness(["https://github.com/user/proof"])
+
+        assert len(checks) == 1
+        assert checks[0].status == VerificationStatus.FAILED
+        assert "Redirect target domain not in allowlist" in checks[0].message
     
     def test_parse_claim_comment(self, sample_claim_comment):
         """Test parsing claim comment."""

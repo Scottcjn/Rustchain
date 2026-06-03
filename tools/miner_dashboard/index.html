@@ -445,6 +445,23 @@
       return null;
     }
 
+    function normalizeMinerRows(payload) {
+      const rows = Array.isArray(payload)
+        ? payload
+        : (Array.isArray(payload?.miners)
+          ? payload.miners
+          : (Array.isArray(payload?.data)
+            ? payload.data
+            : (Array.isArray(payload?.items) ? payload.items : [])));
+
+      return rows.map(row => {
+        if (!row || typeof row !== "object") return null;
+        const miner = row.miner || row.miner_id || row.id;
+        if (!miner) return null;
+        return Object.assign({}, row, { miner: String(miner) });
+      }).filter(Boolean);
+    }
+
     function badgeByScore(score) {
       const s = Number(score) || 0;
       if (s >= 240) return "Oxidized Titan";
@@ -731,7 +748,7 @@
           getJson(API_BASE + "/epoch")
         ]);
 
-        const miners = Array.isArray(minersRes) ? minersRes : (minersRes.miners || []);
+        const miners = normalizeMinerRows(minersRes);
         const minerRow = miners.find(m => String(m.miner || "").toLowerCase() === minerId.toLowerCase()) || null;
         const hallRows = normalizeHallRows(hofRes);
         const hallRow = findHallProfile(hallRows, minerId);

@@ -144,6 +144,25 @@ def test_check_article_warns_but_passes_when_author_is_missing(monkeypatch):
     assert details["warning"] == "Author 'alice' not found in article text"
 
 
+def test_check_article_ignores_blank_expected_author(monkeypatch):
+    _enable_fake_parser(monkeypatch)
+    monkeypatch.setattr(
+        article_checker.requests,
+        "get",
+        lambda url, headers, timeout, allow_redirects: FakeResponse(text="<p>RTC bounty guide</p>"),
+    )
+
+    passed, details = article_checker.ArticleChecker().check_article(
+        "https://example.test/rtc",
+        expected_author="   ",
+    )
+
+    assert passed is True
+    assert details["mentions_rustchain"] == "True"
+    assert "author_found" not in details
+    assert "warning" not in details
+
+
 def test_check_article_handles_request_timeout(monkeypatch):
     _enable_fake_parser(monkeypatch)
 
