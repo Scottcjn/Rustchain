@@ -10,6 +10,9 @@ A static browser dashboard for monitoring validator activity from the public Rus
 | Average attestations | `/api/miners` attestation count fields |
 | Average latency | `/api/miners` latency fields |
 | Top validator | Highest available performance, score, antiquity, or attestation value |
+| Inclusion rate | Included/successful attestations divided by expected/scheduled attestations when available; otherwise active validators divided by returned validators |
+| Effectiveness score | Explicit effectiveness/performance score when available; otherwise inclusion rate or current activity fallback |
+| Peer comparison | Top validators ranked by effectiveness score, then attestation count |
 | Recent history | In-browser samples from each refresh |
 
 ## Usage
