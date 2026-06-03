@@ -11,6 +11,7 @@ A production-ready Flask-based faucet service for dispensing free test RTC token
 - **Web UI**: Modern, responsive HTML interface
 - **Monitoring**: Health checks and Prometheus metrics support
 - **Mock Mode**: Test without actual token transfers
+- **Event Claim Codes**: Admin-gated one-time codes with per-code amounts and expiration dates
 
 ## Quick Start
 
@@ -76,6 +77,14 @@ validation:
 distribution:
   amount: 0.5
   mock_mode: true  # Set to false for actual transfers
+
+# Event claim codes
+event_codes:
+  enabled: true
+  admin_token: null  # Prefer FAUCET_EVENT_ADMIN_TOKEN in production
+  default_amount: 0.5
+  max_batch_size: 500
+  code_prefix: "EVENT"
 ```
 
 ### Configuration Options
@@ -105,6 +114,15 @@ distribution:
 | `max_length` | `66` | Maximum wallet length |
 | `blocklist` | `[]` | Blocked wallet addresses |
 | `allowlist` | `[]` | Allowed wallet addresses (empty = all) |
+
+#### Event Codes
+| Option | Default | Description |
+|--------|---------|-------------|
+| `enabled` | `true` | Enable event claim-code endpoints |
+| `admin_token` | `null` | Admin token for creating codes; `FAUCET_EVENT_ADMIN_TOKEN` takes precedence |
+| `default_amount` | `0.5` | RTC amount for created codes when request omits `amount` |
+| `max_batch_size` | `500` | Maximum codes created in a single request |
+| `code_prefix` | `EVENT` | Default prefix for generated event codes |
 
 ## API Endpoints
 
@@ -148,6 +166,66 @@ Request test tokens.
 {
   "ok": false,
   "error": "Invalid wallet address"
+}
+```
+
+### POST /faucet/event-codes
+
+Create one-time claim codes for a community event. This endpoint requires `X-Faucet-Admin-Token` and returns generated codes that organizers can distribute to participants.
+
+**Request:**
+```bash
+curl -X POST http://localhost:8090/faucet/event-codes \
+  -H "Content-Type: application/json" \
+  -H "X-Faucet-Admin-Token: $FAUCET_EVENT_ADMIN_TOKEN" \
+  -d '{
+    "count": 25,
+    "amount": 0.5,
+    "expires_at": "2026-07-01T00:00:00Z",
+    "prefix": "MEETUP"
+  }'
+```
+
+**Response:**
+```json
+{
+  "ok": true,
+  "amount": 0.5,
+  "expires_at": "2026-07-01T00:00:00",
+  "codes": [
+    "MEETUP-dpSrU6YGRSZVIWll"
+  ]
+}
+```
+
+### POST /faucet/event-claim
+
+Redeem one event code for a wallet. Each code can be claimed once and cannot be claimed after `expires_at`.
+
+**Request:**
+```json
+{
+  "code": "MEETUP-dpSrU6YGRSZVIWll",
+  "wallet": "RTCe4fbe4c9085b8b2ed3f1228504de66799025f6ce"
+}
+```
+
+**Response (Success):**
+```json
+{
+  "ok": true,
+  "amount": 0.5,
+  "wallet": "RTCe4fbe4c9085b8b2ed3f1228504de66799025f6ce",
+  "code": "MEETUP-dpSrU6YGRSZVIWll",
+  "tx_hash": null
+}
+```
+
+**Response (Already Claimed):**
+```json
+{
+  "ok": false,
+  "error": "Event code already claimed"
 }
 ```
 

@@ -384,6 +384,7 @@ class TestDatabase(unittest.TestCase):
         
         self.assertIn('drip_requests', tables)
         self.assertIn('faucet_stats', tables)
+        self.assertIn('event_claim_codes', tables)
         
         # Check indexes exist
         c.execute("SELECT name FROM sqlite_master WHERE type='index'")
@@ -393,6 +394,31 @@ class TestDatabase(unittest.TestCase):
         self.assertTrue(any('idx_drip_ip' in idx for idx in indexes))
         
         conn.close()
+
+    def test_event_claim_codes_schema(self):
+        """Test event code table supports one-time faucet claims."""
+        init_database(self.temp_db.name)
+
+        conn = sqlite3.connect(self.temp_db.name)
+        try:
+            c = conn.cursor()
+            c.execute('''
+                INSERT INTO event_claim_codes (code, amount, expires_at, created_at)
+                VALUES (?, ?, ?, ?)
+            ''', (
+                'EVENT-test-code',
+                0.5,
+                (datetime.now() + timedelta(days=1)).isoformat(),
+                datetime.now().isoformat(),
+            ))
+            conn.commit()
+
+            c.execute('SELECT amount, claimed_at FROM event_claim_codes WHERE code = ?', ('EVENT-test-code',))
+            amount, claimed_at = c.fetchone()
+            self.assertEqual(amount, 0.5)
+            self.assertIsNone(claimed_at)
+        finally:
+            conn.close()
     
     def test_insert_drip_request(self):
         """Test inserting drip request."""
@@ -431,6 +457,7 @@ class TestFlaskApp(unittest.TestCase):
         self.config['server']['debug'] = False
         self.config['monitoring']['health_enabled'] = True
         self.config['monitoring']['metrics_enabled'] = False
+        self.config['event_codes']['admin_token'] = 'test-admin-token'
         # Clear allowlist for testing
         self.config['validation']['allowlist'] = []
         
@@ -579,6 +606,106 @@ class TestFlaskApp(unittest.TestCase):
         data = json.loads(response.data)
         self.assertEqual(data['status'], 'healthy')
         self.assertIn('timestamp', data)
+
+    def test_event_code_creation_requires_admin_token(self):
+        """Event organizers cannot mint claim codes without admin auth."""
+        expires_at = (datetime.now() + timedelta(days=1)).isoformat()
+
+        response = self.client.post('/faucet/event-codes',
+                                    json={'count': 1, 'expires_at': expires_at},
+                                    content_type='application/json')
+
+        self.assertEqual(response.status_code, 401)
+        data = json.loads(response.data)
+        self.assertFalse(data['ok'])
+        self.assertEqual(data['error'], 'Unauthorized')
+
+    def test_event_code_create_and_claim_once(self):
+        """Created event codes can be claimed once by a valid wallet."""
+        expires_at = (datetime.now() + timedelta(days=1)).isoformat()
+        create_response = self.client.post(
+            '/faucet/event-codes',
+            json={'count': 1, 'amount': 0.75, 'expires_at': expires_at, 'prefix': 'MEETUP'},
+            headers={'X-Faucet-Admin-Token': 'test-admin-token'},
+            content_type='application/json',
+        )
+
+        self.assertEqual(create_response.status_code, 201)
+        created = json.loads(create_response.data)
+        self.assertTrue(created['ok'])
+        self.assertEqual(created['amount'], 0.75)
+        self.assertEqual(len(created['codes']), 1)
+        self.assertTrue(created['codes'][0].startswith('MEETUP-'))
+
+        claim_response = self.client.post(
+            '/faucet/event-claim',
+            json={
+                'code': created['codes'][0],
+                'wallet': 'RTCe4fbe4c9085b8b2ed3f1228504de66799025f6ce',
+            },
+            content_type='application/json',
+        )
+
+        self.assertEqual(claim_response.status_code, 200)
+        claimed = json.loads(claim_response.data)
+        self.assertTrue(claimed['ok'])
+        self.assertEqual(claimed['amount'], 0.75)
+        self.assertEqual(claimed['tx_hash'], None)
+
+        duplicate_response = self.client.post(
+            '/faucet/event-claim',
+            json={
+                'code': created['codes'][0],
+                'wallet': 'RTCe4fbe4c9085b8b2ed3f1228504de66799025f6ce',
+            },
+            content_type='application/json',
+        )
+
+        self.assertEqual(duplicate_response.status_code, 409)
+        duplicate = json.loads(duplicate_response.data)
+        self.assertFalse(duplicate['ok'])
+        self.assertEqual(duplicate['error'], 'Event code already claimed')
+
+        conn = sqlite3.connect(self.temp_db.name)
+        try:
+            c = conn.cursor()
+            c.execute('SELECT COUNT(*) FROM drip_requests WHERE wallet = ?', (
+                'RTCe4fbe4c9085b8b2ed3f1228504de66799025f6ce',
+            ))
+            self.assertEqual(c.fetchone()[0], 1)
+        finally:
+            conn.close()
+
+    def test_event_code_claim_rejects_expired_code(self):
+        """Expired event codes are not claimable."""
+        conn = sqlite3.connect(self.temp_db.name)
+        try:
+            conn.execute('''
+                INSERT INTO event_claim_codes (code, amount, expires_at, created_at)
+                VALUES (?, ?, ?, ?)
+            ''', (
+                'EVENT-expired',
+                0.5,
+                (datetime.now() - timedelta(seconds=1)).isoformat(),
+                (datetime.now() - timedelta(days=1)).isoformat(),
+            ))
+            conn.commit()
+        finally:
+            conn.close()
+
+        response = self.client.post(
+            '/faucet/event-claim',
+            json={
+                'code': 'EVENT-expired',
+                'wallet': 'RTCe4fbe4c9085b8b2ed3f1228504de66799025f6ce',
+            },
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 410)
+        data = json.loads(response.data)
+        self.assertFalse(data['ok'])
+        self.assertEqual(data['error'], 'Event code expired')
 
     def test_metrics_endpoint_uses_configured_database(self):
         """Test metrics endpoint reads from the configured database path."""
