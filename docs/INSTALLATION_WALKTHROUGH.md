@@ -128,12 +128,12 @@ GitHub doesn't support direct asciinema embedding, but you can:
    agg docs/asciinema/miner_install.cast docs/asciinema/miner_install.gif
    ```
 
-   Then embed the generated GIF:
+   Or link to the checked-in cast recording:
    ```markdown
-   ![Installation walkthrough](./asciinema/miner_install.gif)
+   [Watch the installation walkthrough cast](./asciinema/miner_install.cast)
    ```
 
-   > Note: generate `miner_install.gif` before referencing it in documentation.
+   > Note: generate `miner_install.gif` before embedding it in documentation.
 
 3. **Use asciinema.org hosting:**
    ```bash
@@ -165,10 +165,10 @@ Add to your README.md:
 ```markdown
 ## Installation
 
-See the [Installation Walkthrough](docs/INSTALLATION_WALKTHROUGH.md) for a visual guide with asciinema recordings.
+See docs/INSTALLATION_WALKTHROUGH.md for a visual guide with asciinema recordings.
 
 Quick preview:
-[Watch the installation walkthrough cast](docs/asciinema/miner_install.cast)
+docs/asciinema/miner_install.cast
 ```
 
 ---
