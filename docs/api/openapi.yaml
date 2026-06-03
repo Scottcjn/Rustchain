@@ -240,7 +240,7 @@ paths:
                 total_miners: 25
                 active_miners: 10
 
-  /api/hall_of_fame:
+  /api/hall_of_fame/leaderboard:
     get:
       tags:
         - Miners
@@ -291,7 +291,7 @@ paths:
                 total_fees_collected_rtc: 0
                 withdrawal_fee_rtc: 0.01
 
-  /api/settlement/{epoch}:
+  /rewards/epoch/{epoch}:
     get:
       tags:
         - Epoch & Network
@@ -1285,47 +1285,6 @@ paths:
                 total_amount_rtc: 500.0
                 errors: []
                 processed_at: 1709859600
-
-  /api/premium/videos:
-    get:
-      tags:
-        - Premium
-      summary: Bulk video export
-      description: |
-        Bulk video export endpoint (BoTTube integration).
-        Supports x402 payment protocol (free during beta).
-      operationId: getPremiumVideos
-      responses:
-        '200':
-          description: Video data retrieved
-          content:
-            application/json:
-              schema:
-                type: object
-
-  /api/premium/analytics/{agent}:
-    get:
-      tags:
-        - Premium
-      summary: Agent analytics
-      description: |
-        Deep analytics for a specific agent.
-        Supports x402 payment protocol (free during beta).
-      operationId: getPremiumAnalytics
-      parameters:
-        - name: agent
-          in: path
-          required: true
-          schema:
-            type: string
-          description: Agent identifier
-      responses:
-        '200':
-          description: Analytics retrieved
-          content:
-            application/json:
-              schema:
-                type: object
 
   /api/premium/reputation:
     get:

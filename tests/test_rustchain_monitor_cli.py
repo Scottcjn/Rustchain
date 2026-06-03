@@ -43,8 +43,23 @@ def test_api_helpers_fetch_expected_endpoints_and_return_json():
         f"{module.NODE_URL}/api/miners",
         f"{module.NODE_URL}/epoch",
     ]
+    assert get.call_args_list[1].args[0] == f"{module.NODE_URL}/api/miners"
     assert all(call.kwargs["timeout"] == 10 for call in get.call_args_list)
 
+
+def test_get_miners_fetches_all_paginated_pages():
+    module = load_module()
+
+    with patch.object(module.requests, "get", side_effect=[
+        response({"miners": [{"miner": "m1"}], "pagination": {"total": 2, "count": 1}}),
+        response({"miners": [{"miner": "m2"}], "pagination": {"total": 2, "count": 1}}),
+    ]) as get:
+        assert module.get_miners() == [{"miner": "m1"}, {"miner": "m2"}]
+
+    assert [call.args[0] for call in get.call_args_list] == [
+        f"{module.NODE_URL}/api/miners",
+        f"{module.NODE_URL}/api/miners?limit=1000&offset=1",
+    ]
 
 def test_api_helpers_return_error_dict_on_request_failure():
     module = load_module()
@@ -85,6 +100,19 @@ def test_print_health_renders_success_and_error(capsys):
     assert "Health check failed: offline" in output
 
 
+def test_print_health_handles_partial_payload(capsys):
+    module = load_module()
+
+    module.print_health({"ok": True})
+
+    output = capsys.readouterr().out
+    assert "Node is healthy" in output
+    assert "Version: N/A" in output
+    assert "Uptime: N/A" in output
+    assert "Backup age: N/A" in output
+    assert "DB RW: N/A" in output
+
+
 def test_print_miners_renders_lists_unexpected_and_errors(capsys):
     module = load_module()
 
@@ -101,6 +129,23 @@ def test_print_miners_renders_lists_unexpected_and_errors(capsys):
     assert "never" in output
     assert "Unexpected response" in output
     assert "Failed to fetch miners: down" in output
+
+
+def test_print_miners_renders_paginated_api_envelope(capsys):
+    module = load_module()
+
+    module.print_miners({
+        "miners": [
+            {"miner": "carol", "hardware_type": "ARM", "antiquity_multiplier": 1.25, "last_attest": 0},
+        ],
+        "pagination": {"page": 1, "total": 1},
+    })
+
+    output = capsys.readouterr().out
+    assert "Active miners: 1" in output
+    assert "carol" in output
+    assert "HW: ARM" in output
+    assert "Unexpected response" not in output
 
 
 def test_print_epoch_renders_success_and_error(capsys):

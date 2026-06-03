@@ -184,6 +184,54 @@ Hypervisors leave detectable signatures in CPUID, MAC address OUI, DMI/SMBIOS da
 }
 ```
 
+## ARM / AArch64 Classification Notes
+
+Issue reports for `device_family: arm` and `device_arch: modern` should be
+triaged with the raw CPU and platform evidence, because ARM covers very
+different reward and risk profiles. Use the installer and miner probes as the
+source of truth, then map the result into one of these buckets:
+
+| Bucket | Evidence to collect | Recommended `device_arch` | Reward guidance |
+|--------|---------------------|----------------------------|-----------------|
+| Raspberry Pi 3/4/5 | `/proc/device-tree/model` includes `Raspberry Pi`; `lscpu` shows Cortex-A53/A72/A76 class cores | `rpi`, `rpi4`, or `rpi5` | Minimal mining multiplier (`0.0005x`); prefer arcade or educational mining |
+| Apple Silicon | `uname -m` is `arm64`; `sysctl machdep.cpu.brand_string` reports Apple M1/M2/M3/M4 | `apple_silicon` | Desktop-class ARM, currently `1.2x` |
+| Cloud/server ARM | `lscpu` reports ARM vendor with Neoverse cores such as N1/V1/N2, or DMI/cloud VM indicators are present | `aarch64` | Treat as modern/cloud ARM; keep the minimal ARM multiplier unless a maintainer creates a separate server bucket |
+| Generic SBC / embedded ARM | `lscpu` reports Cortex-A class cores but the board is not a Raspberry Pi | `aarch64` | Modern ARM baseline; do not infer vintage status from ARM alone |
+| Legacy ARM | Physical legacy boards with dated ARM2/ARM6/StrongARM/XScale evidence | maintainer-defined vintage ARM bucket | Needs explicit maintainer review before any antiquity bonus |
+
+### Data collection checklist
+
+Ask the miner for the exact command output rather than a summary:
+
+```bash
+cat /proc/cpuinfo | head -30
+uname -a
+cat /sys/firmware/devicetree/base/model 2>/dev/null || echo "N/A"
+lscpu | grep -i "model\|arch\|vendor\|cpu"
+```
+
+For macOS ARM miners, collect:
+
+```bash
+uname -a
+sysctl -n machdep.cpu.brand_string
+sysctl hw.optional.arm64
+system_profiler SPHardwareDataType | grep -E "Model Name|Model Identifier|Chip|Memory"
+```
+
+### Validation guidance
+
+- Do not upgrade a generic `aarch64` miner just because it is ARM. Most modern
+  ARM boards and ARM cloud instances should remain at the minimal ARM mining
+  multiplier unless they have a dedicated profile.
+- Use VM/container indicators before reward classification. A Neoverse cloud VM
+  may be useful test coverage, but it should not be treated like rare physical
+  hardware.
+- Apple Silicon is a physical desktop/laptop ARM platform and should map to
+  `apple_silicon`, not generic `aarch64`, when the macOS probes confirm it.
+- Raspberry Pi detection should prefer `/proc/device-tree/model` over CPU model
+  names because multiple Pi generations share broad Cortex family labels.
+
 ## Combined Validation
 
 ### Scoring System

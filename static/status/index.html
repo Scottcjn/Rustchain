@@ -122,24 +122,67 @@
         return Number.isFinite(number) ? number : fallback;
     }
 
+    function safeArray(value) {
+        return Array.isArray(value) ? value : [];
+    }
+
+    function safeObject(value) {
+        return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    }
+
+    function isValidNode(value) {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+        return value.name != null || value.url != null;
+    }
+
+    function formatTimestamp(value) {
+        if (!value) return 'unavailable';
+        const date = new Date(value);
+        return Number.isNaN(date.getTime()) ? 'unavailable' : date.toLocaleTimeString();
+    }
+
+    function renderEmptyState(grid, message) {
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.textContent = message;
+        grid.appendChild(card);
+    }
+
+    function renderUnavailable(grid) {
+        grid.innerHTML = '';
+        renderEmptyState(grid, 'No node status data available');
+        document.getElementById('lastUpdate').innerText = 'LAST_UPDATE: unavailable';
+        document.getElementById('sysTime').innerText = new Date().toISOString();
+    }
+
     async function updateStatus() {
+        const grid = document.getElementById('nodeGrid');
         try {
             const resp = await fetch('node_status.json');
-            const history = await resp.json();
-            const latest = history[history.length - 1];
+            if (!resp.ok) {
+                throw new Error(`HTTP ${resp.status}`);
+            }
+            const history = safeArray(await resp.json()).map(safeObject);
+            const latest = history.length > 0 ? history[history.length - 1] : {};
+            const latestNodes = safeArray(latest.nodes).filter(isValidNode).map(safeObject);
             
-            const grid = document.getElementById('nodeGrid');
             grid.innerHTML = '';
+
+            if (latestNodes.length === 0) {
+                renderUnavailable(grid);
+                return;
+            }
             
-            latest.nodes.forEach(node => {
+            latestNodes.forEach(node => {
                 const card = document.createElement('div');
                 card.className = 'card';
                 const status = safeStatus(node.status);
                 const statusColor = status === 'up' ? 'var(--green)' : 'var(--red)';
+                const nodeUrl = node.url == null ? '' : String(node.url);
                 
                 // Get node history for uptime bar
                 const nodeHistory = history.map(h => {
-                    const found = h.nodes.find(n => n.url === node.url);
+                    const found = nodeUrl ? safeArray(h.nodes).filter(isValidNode).map(safeObject).find(n => n.url === nodeUrl) : null;
                     return found ? safeStatus(found.status) === 'up' : false;
                 }).slice(-50); // Show last 50 checks
                 
@@ -182,11 +225,12 @@
                 grid.appendChild(card);
             });
             
-            document.getElementById('lastUpdate').innerText = 'LAST_UPDATE: ' + new Date(latest.time).toLocaleTimeString();
+            document.getElementById('lastUpdate').innerText = 'LAST_UPDATE: ' + formatTimestamp(latest.time);
             document.getElementById('sysTime').innerText = new Date().toISOString();
             
         } catch (e) {
             console.error('Failed to fetch status', e);
+            renderUnavailable(grid);
         }
     }
 

@@ -52,7 +52,7 @@ The dashboard connects to the public RustChain APIs:
 | Metric | Description |
 |--------|-------------|
 | Total wallets | Number of wallets with non-zero balance |
-| Total supply | 8,300,000 RTC (fixed) |
+| Total supply | 8,388,608 RTC (fixed) |
 | In circulation | Sum of all wallet balances |
 | % minted | Percentage of total supply in circulation |
 | Gini coefficient | 0 = equality, 1 = extreme concentration |
@@ -177,7 +177,7 @@ Returns:
 
 ## Notes
 
-- **Total supply:** Fixed at 8,300,000 RTC (no inflation)
+- **Total supply:** Fixed at 8,388,608 RTC (no inflation)
 - **Pre-mine:** 6% reserved for founder wallets
 - **API rate limits:** None enforced at time of development
 - **SSL:** Self-signed certificate (browsers may warn)

@@ -81,6 +81,14 @@ class BountyTracker:
             "User-Agent": "rustchain-bounty-tracker/1.0",
         })
         self._load_state()
+
+    @staticmethod
+    def _response_json_object(resp) -> Dict[str, Any]:
+        try:
+            data = resp.json()
+        except ValueError:
+            return {}
+        return data if isinstance(data, dict) else {}
     
     def _load_state(self):
         """Load state from file"""
@@ -88,10 +96,17 @@ class BountyTracker:
         if path.exists():
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
-                for b_data in data.get("bounties", []):
+                if not isinstance(data, dict):
+                    return
+                bounties = data.get("bounties", [])
+                if not isinstance(bounties, list):
+                    return
+                for b_data in bounties:
+                    if not isinstance(b_data, dict):
+                        continue
                     bounty = Bounty.from_dict(b_data)
                     self.bounties[bounty.issue_number] = bounty
-            except (json.JSONDecodeError, KeyError):
+            except (json.JSONDecodeError, KeyError, TypeError, ValueError):
                 pass
     
     def _save_state(self):
@@ -105,7 +120,7 @@ class BountyTracker:
     
     def scan_bounties(self) -> List[Bounty]:
         """Scan repo for bounty issues"""
-        url = f"https://api.github.com/search/issues"
+        url = "https://api.github.com/search/issues"
         params = {
             "q": f"repo:{self.repo} is:issue state:open label:bounty",
             "per_page": 100,
@@ -114,22 +129,38 @@ class BountyTracker:
         try:
             resp = self.session.get(url, params=params, timeout=30)
             resp.raise_for_status()
-            data = resp.json()
+            data = self._response_json_object(resp)
             
-            for item in data.get("items", []):
+            items = data.get("items", [])
+            if not isinstance(items, list):
+                items = []
+
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
                 issue_number = item.get("number")
+                if not isinstance(issue_number, int):
+                    continue
                 if issue_number in self.bounties:
                     continue
+
+                body = item.get("body", "")
+                body = body if isinstance(body, str) else ""
+                labels = item.get("labels", [])
+                labels = labels if isinstance(labels, list) else []
                 
                 # Parse reward from issue body or labels
-                reward = self._parse_reward(item.get("body", ""), item.get("labels", []))
+                reward = self._parse_reward(body, labels)
                 
                 bounty = Bounty(
                     issue_number=issue_number,
-                    title=item.get("title", ""),
-                    description=item.get("body", "")[:500],
+                    title=str(item.get("title", "")),
+                    description=body[:500],
                     reward_rtc=reward,
-                    labels=[l.get("name") for l in item.get("labels", [])],
+                    labels=[
+                        label.get("name", "") if isinstance(label, dict) else str(label)
+                        for label in labels
+                    ],
                 )
                 self.bounties[issue_number] = bounty
             
@@ -157,7 +188,10 @@ class BountyTracker:
                 return float(match.group(1))
         
         # Default rewards by label
-        label_names = [l.get("name", "") for l in labels] if isinstance(labels[0], dict) else labels
+        label_names = [
+            label.get("name", "") if isinstance(label, dict) else str(label)
+            for label in (labels or [])
+        ]
         
         if "bounty-critical" in label_names:
             return 150.0

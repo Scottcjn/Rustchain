@@ -263,6 +263,36 @@ class TestEndToEndClaimFlow:
         assert history["total_claimed_urtc"] == final_status["reward_urtc"]
         assert len(history["claims"]) == 1
         assert history["claims"][0]["status"] == "settled"
+
+    def test_claim_history_negative_limit_returns_no_rows(self, integration_db, current_ts):
+        """Negative limits must not ask SQLite for an unlimited result set."""
+        miner_id = "test-miner-history-limit"
+
+        with sqlite3.connect(integration_db) as conn:
+            for index in range(3):
+                conn.execute("""
+                    INSERT INTO claims (
+                        claim_id, miner_id, epoch, wallet_address,
+                        reward_urtc, status, submitted_at, signature,
+                        public_key, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)
+                """, (
+                    f"claim-history-limit-{index}",
+                    miner_id,
+                    index,
+                    "RTC1HistoryLimitWallet12345",
+                    100,
+                    current_ts + index,
+                    "mock_signature",
+                    "mock_public_key",
+                    current_ts,
+                    current_ts,
+                ))
+
+        history = get_claim_history(integration_db, miner_id, limit=-1)
+
+        assert history["total_claims"] == 3
+        assert history["claims"] == []
     
     def test_claim_rejection_flow(self, integration_db, current_ts, current_slot):
         """Test: Submit → Verify → Reject"""

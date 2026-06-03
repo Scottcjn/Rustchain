@@ -455,6 +455,8 @@ def api_status():
 @app.route('/api/history/<node_id>')
 def api_history(node_id: str):
     """API endpoint for historical data (24 hours)"""
+    if len(node_id) > 128:
+        return jsonify({"error": "Invalid node_id", "history": []}), 400
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()

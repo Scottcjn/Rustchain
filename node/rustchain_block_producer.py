@@ -12,28 +12,33 @@ Phase 1 & 2 Implementation:
 Implements secure block production for Proof of Antiquity consensus.
 """
 
-import sqlite3
-import time
-import threading
-import logging
 import json
+import logging
 import os
+import sqlite3
+import threading
+import time
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
-from dataclasses import dataclass, field
 
 try:
     import redis
 except ImportError:  # pragma: no cover - Redis is optional for local nodes/tests.
     redis = None
 
+from randomness_beacon import (
+    GENESIS_RANDOMNESS,
+    build_randomness_record,
+    verify_randomness_record,
+)
 from rustchain_crypto import (
     CanonicalBlockHeader,
+    Ed25519Signer,
     MerkleTree,
     SignedTransaction,
-    Ed25519Signer,
     blake2b256_hex,
-    canonical_json
+    canonical_json,
 )
 from rustchain_tx_handler import TransactionPool
 
@@ -50,6 +55,10 @@ logger = logging.getLogger(__name__)
 
 GENESIS_TIMESTAMP = 1764706927  # Production chain launch (Dec 2, 2025)
 BLOCK_TIME = 600  # 10 minutes (600 seconds)
+
+# Public allowlist for /block/producers device_info (prevents future
+# fields leaking through this unauthenticated endpoint).
+_DEVICE_PUBLIC_FIELDS = ("arch", "family", "model", "year", "enroll_weight")
 MAX_TXS_PER_BLOCK = 1000
 ATTESTATION_TTL = 600  # 10 minutes
 MAX_BATCH_BLOCKS = 100
@@ -216,15 +225,40 @@ class BlockProducer:
         """Get start timestamp for a slot"""
         return GENESIS_TIMESTAMP + (slot * BLOCK_TIME)
 
+    EPOCH_SLOTS = 144  # must match rustchain_v2_integrated EPOCH_SLOTS
+
+    def _current_epoch(self, current_ts: int) -> int:
+        """Derive epoch number from a slot timestamp."""
+        slot = (current_ts - GENESIS_TIMESTAMP) // BLOCK_TIME
+        return slot // self.EPOCH_SLOTS
+
     def get_attested_miners(self, current_ts: int) -> List[Tuple[str, str, Dict]]:
         """
         Get all currently attested miners (within TTL window).
 
-        Returns: List of (miner_id, device_arch, device_info) tuples, sorted alphabetically
+        Returns: List of (miner_id, device_arch, device_info) tuples, sorted alphabetically.
+        The device_info dict includes an ``enroll_weight`` key sourced from the
+        authoritative ``epoch_enroll`` table for the current epoch.  A value of
+        0 means the miner was flagged (e.g. VM/emulator) and must not receive
+        producer duties.
         """
+        epoch = self._current_epoch(current_ts)
+
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
+
+            # Fetch authoritative enroll weights for the current epoch
+            enroll_weights: Dict[str, int] = {}
+            try:
+                for row in cursor.execute(
+                    "SELECT miner_pk, weight FROM epoch_enroll WHERE epoch = ?",
+                    (epoch,),
+                ):
+                    enroll_weights[row["miner_pk"]] = int(row["weight"])
+            except sqlite3.OperationalError:
+                # epoch_enroll table may not exist yet in test environments
+                pass
 
             cursor.execute("""
                 SELECT miner, device_arch, device_family, device_model, device_year, ts_ok
@@ -239,7 +273,8 @@ class BlockProducer:
                     "arch": row["device_arch"] or "modern_x86",
                     "family": row["device_family"] or "",
                     "model": row["device_model"] if "device_model" in row.keys() else "",
-                    "year": row["device_year"] if "device_year" in row.keys() else 2025
+                    "year": row["device_year"] if "device_year" in row.keys() else 2025,
+                    "enroll_weight": enroll_weights.get(row["miner"], None),
                 }
                 results.append((row["miner"], row["device_arch"], device_info))
 
@@ -247,7 +282,7 @@ class BlockProducer:
 
     def get_round_robin_producer(self, slot: int) -> Optional[str]:
         """
-        Deterministic round-robin block producer selection.
+        Deterministic weighted-fair block producer selection.
 
         Returns wallet address of the selected producer for this slot.
         """
@@ -257,8 +292,107 @@ class BlockProducer:
         if not attested_miners:
             return None
 
-        producer_index = slot % len(attested_miners)
-        return attested_miners[producer_index][0]
+        rotation = self._build_balanced_producer_rotation(attested_miners)
+        if not rotation:
+            return None
+        producer_index = slot % len(rotation)
+        return rotation[producer_index]
+
+    @staticmethod
+    def _miner_selection_weight(attested_miner) -> float:
+        """Return a bounded producer-selection weight for an attested miner.
+
+        If the miner's authoritative ``epoch_enroll`` weight is 0 (e.g. flagged
+        as VM/emulator), this returns 0 regardless of the local heuristic so
+        that the miner is excluded from producer duties.
+        """
+        device_info = attested_miner[2] if len(attested_miner) > 2 and attested_miner[2] else {}
+
+        # Authoritative gate: zero enroll weight → zero producer weight
+        enroll_weight = device_info.get("enroll_weight")
+        if enroll_weight is not None and enroll_weight <= 0:
+            return 0.0
+
+        explicit_weight = device_info.get("weight")
+        if explicit_weight is not None:
+            try:
+                return min(max(float(explicit_weight), 1.0), 10.0)
+            except (TypeError, ValueError):
+                pass
+
+        family = str(device_info.get("family") or "").lower()
+        arch = str(attested_miner[1] or device_info.get("arch") or "").lower()
+        combined = f"{family} {arch}"
+
+        if "g5" in combined:
+            return 2.0
+        if "g4" in combined or "powerpc" in combined or "ppc" in combined:
+            return 2.5
+        if "power8" in combined or "power9" in combined:
+            return 1.5
+
+        return 1.0
+
+    @classmethod
+    def _build_balanced_producer_rotation(cls, attested_miners) -> List[str]:
+        """
+        Build a deterministic weighted-fair rotation for the active miners.
+
+        Equal weights preserve the previous alphabetical round-robin order. When
+        miners carry explicit or device-derived weights, the cycle repeats each
+        miner proportional to its bounded weight while spreading duties across
+        the cycle instead of clustering them.
+        """
+        weighted_miners = [
+            (miner[0], cls._miner_selection_weight(miner))
+            for miner in attested_miners
+        ]
+        # Exclude miners with zero authoritative weight (e.g. VM/emulator
+        # flagged in epoch_enroll) from the producer rotation entirely.
+        weighted_miners = [(m, w) for m, w in weighted_miners if w > 0]
+        if not weighted_miners:
+            return []
+
+        cycle_len = sum(max(1, int(round(weight))) for _, weight in weighted_miners)
+        assigned = {miner_id: 0 for miner_id, _ in weighted_miners}
+        rotation = []
+
+        for _ in range(cycle_len):
+            miner_id, _ = min(
+                weighted_miners,
+                key=lambda item: (
+                    assigned[item[0]] / item[1],
+                    item[0],
+                ),
+            )
+            assigned[miner_id] += 1
+            rotation.append(miner_id)
+
+        return rotation
+
+    def get_producer_balance_summary(self, start_slot: int, slots: int = 32) -> Dict:
+        """Return scheduled producer duties over a bounded future slot window."""
+        slots = max(1, min(int(slots), 256))
+        current_ts = self.get_slot_start_time(start_slot)
+        attested_miners = self.get_attested_miners(current_ts)
+        rotation = self._build_balanced_producer_rotation(attested_miners)
+
+        duty_counts = {miner[0]: 0 for miner in attested_miners}
+        schedule = []
+        if rotation:
+            for offset in range(slots):
+                slot = start_slot + offset
+                producer = rotation[slot % len(rotation)]
+                duty_counts[producer] += 1
+                schedule.append({"slot": slot, "producer": producer})
+
+        return {
+            "start_slot": start_slot,
+            "slots": slots,
+            "rotation_size": len(rotation),
+            "duty_counts": duty_counts,
+            "schedule": schedule,
+        }
 
     def is_my_turn(self, slot: int = None) -> bool:
         """Check if it's this node's turn to produce a block"""
@@ -421,6 +555,11 @@ class BlockProducer:
 
     def save_block(self, block: Block) -> bool:
         """Save a block to database"""
+        with self._lock:
+            return self._save_block_unlocked(block)
+
+    def _save_block_unlocked(self, block: Block) -> bool:
+        """Save a block while the producer lock is already held."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
 
@@ -440,9 +579,29 @@ class BlockProducer:
                         tx_count INTEGER NOT NULL,
                         attestation_count INTEGER NOT NULL,
                         body_json TEXT NOT NULL,
+                        randomness_beacon TEXT,
+                        randomness_proof_json TEXT,
                         created_at INTEGER NOT NULL
                     )
                 """)
+                _ensure_block_randomness_columns(conn)
+
+                prev_randomness = _latest_randomness(conn)
+                randomness_record = build_randomness_record(
+                    height=block.height,
+                    block_hash=block.hash,
+                    prev_hash=block.header.prev_hash,
+                    prev_randomness=prev_randomness,
+                    merkle_root=block.header.merkle_root,
+                    attestations_hash=block.header.attestations_hash,
+                    producer=block.header.producer,
+                    timestamp=block.header.timestamp,
+                )
+                randomness_proof_json = json.dumps(
+                    randomness_record["proof"],
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
 
                 # Insert block
                 cursor.execute("""
@@ -450,8 +609,8 @@ class BlockProducer:
                         height, block_hash, prev_hash, timestamp,
                         merkle_root, state_root, attestations_hash,
                         producer, producer_sig, tx_count, attestation_count,
-                        body_json, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        body_json, randomness_beacon, randomness_proof_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     block.height,
                     block.hash,
@@ -465,6 +624,8 @@ class BlockProducer:
                     len(block.body.transactions),
                     len(block.body.attestations),
                     json.dumps(block.body.to_dict()),
+                    randomness_record["randomness"],
+                    randomness_proof_json,
                     int(time.time())
                 ))
 
@@ -562,7 +723,7 @@ class BlockValidator:
                 )
                 result = cursor.fetchone()
                 if result and result[0] != block.header.prev_hash:
-                    return False, f"Invalid prev_hash"
+                    return False, "Invalid prev_hash"
 
         # 5. Validate producer signature (if we have pubkey)
         if producer_pubkey:
@@ -649,6 +810,11 @@ def _row_to_block(row: sqlite3.Row) -> Dict:
             block["body"] = json.loads(block["body_json"])
         except (TypeError, ValueError):
             pass
+    if block.get("randomness_proof_json"):
+        try:
+            block["randomness_proof"] = json.loads(block["randomness_proof_json"])
+        except (TypeError, ValueError):
+            pass
     return block
 
 
@@ -671,9 +837,33 @@ def _blocks_table_missing(exc: sqlite3.Error) -> bool:
     )
 
 
+def _sqlite_table_columns(conn: sqlite3.Connection, table: str) -> set:
+    return {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+
+
+def _ensure_block_randomness_columns(conn: sqlite3.Connection):
+    columns = _sqlite_table_columns(conn, "blocks")
+    if "randomness_beacon" not in columns:
+        conn.execute("ALTER TABLE blocks ADD COLUMN randomness_beacon TEXT")
+    if "randomness_proof_json" not in columns:
+        conn.execute("ALTER TABLE blocks ADD COLUMN randomness_proof_json TEXT")
+
+
+def _latest_randomness(conn: sqlite3.Connection) -> str:
+    try:
+        row = conn.execute(
+            "SELECT randomness_beacon FROM blocks "
+            "WHERE randomness_beacon IS NOT NULL "
+            "ORDER BY height DESC LIMIT 1"
+        ).fetchone()
+    except sqlite3.Error:
+        return GENESIS_RANDOMNESS
+    return row[0] if row and row[0] else GENESIS_RANDOMNESS
+
+
 def create_block_api_routes(app, producer: BlockProducer, validator: BlockValidator):
     """Create Flask routes for block API"""
-    from flask import request, jsonify
+    from flask import jsonify, request
 
     @app.route('/block/latest', methods=['GET'])
     def get_latest_block():
@@ -708,6 +898,79 @@ def create_block_api_routes(app, producer: BlockProducer, validator: BlockValida
             if row:
                 return jsonify(dict(row))
             return jsonify({"error": "Block not found"}), 404
+
+    def _randomness_response(row):
+        try:
+            proof = json.loads(row["randomness_proof_json"])
+        except (TypeError, ValueError, json.JSONDecodeError):
+            logger.exception(
+                "Stored randomness proof is invalid for block height %s",
+                row["height"],
+            )
+            return {
+                "ok": False,
+                "error": "Stored randomness proof is invalid",
+            }, 500
+        randomness = row["randomness_beacon"]
+        return {
+            "ok": True,
+            "height": row["height"],
+            "block_hash": row["block_hash"],
+            "randomness": randomness,
+            "proof": proof,
+            "verified": verify_randomness_record(randomness, proof),
+        }
+
+    def _jsonify_randomness_response(row):
+        response = _randomness_response(row)
+        if isinstance(response, tuple):
+            body, status_code = response
+            return jsonify(body), status_code
+        return jsonify(response)
+
+    @app.route('/block/randomness/latest', methods=['GET'])
+    @app.route('/api/randomness/latest', methods=['GET'])
+    def get_latest_randomness():
+        """Return the latest stored on-chain randomness beacon."""
+        with sqlite3.connect(producer.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            try:
+                _ensure_block_randomness_columns(conn)
+                row = conn.execute(
+                    "SELECT height, block_hash, randomness_beacon, randomness_proof_json "
+                    "FROM blocks WHERE randomness_beacon IS NOT NULL "
+                    "ORDER BY height DESC LIMIT 1"
+                ).fetchone()
+            except sqlite3.Error as exc:
+                if _blocks_table_missing(exc):
+                    return jsonify({"ok": False, "error": "No blocks found"}), 404
+                logger.exception("Randomness lookup failed")
+                return jsonify({"ok": False, "error": "Block database unavailable"}), 500
+        if not row:
+            return jsonify({"ok": False, "error": "No blocks found"}), 404
+        return _jsonify_randomness_response(row)
+
+    @app.route('/block/randomness/<int:height>', methods=['GET'])
+    @app.route('/api/randomness/<int:height>', methods=['GET'])
+    def get_randomness_by_height(height: int):
+        """Return the stored on-chain randomness beacon for a block height."""
+        with sqlite3.connect(producer.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            try:
+                _ensure_block_randomness_columns(conn)
+                row = conn.execute(
+                    "SELECT height, block_hash, randomness_beacon, randomness_proof_json "
+                    "FROM blocks WHERE height = ? AND randomness_beacon IS NOT NULL",
+                    (height,),
+                ).fetchone()
+            except sqlite3.Error as exc:
+                if _blocks_table_missing(exc):
+                    return jsonify({"ok": False, "error": "Block not found"}), 404
+                logger.exception("Randomness lookup failed")
+                return jsonify({"ok": False, "error": "Block database unavailable"}), 500
+        if not row:
+            return jsonify({"ok": False, "error": "Block not found"}), 404
+        return _jsonify_randomness_response(row)
 
     @app.route('/v1/blocks/batch', methods=['POST'])
     @app.route('/api/blocks/batch', methods=['POST'])
@@ -821,6 +1084,7 @@ def create_block_api_routes(app, producer: BlockProducer, validator: BlockValida
         return jsonify({
             "slot": slot,
             "expected_producer": expected_producer,
+            "balance": producer.get_producer_balance_summary(slot, slots=16),
             "slot_start": slot_start,
             "slot_end": slot_end,
             "time_remaining": max(0, slot_end - int(time.time())),
@@ -833,13 +1097,25 @@ def create_block_api_routes(app, producer: BlockProducer, validator: BlockValida
         current_ts = int(time.time())
         miners = producer.get_attested_miners(current_ts)
 
+        # Intentionally PUBLIC consensus transparency. device_info is exposed via
+        # an explicit field allowlist so a future column added to it (e.g. an
+        # IP/hostname) can never leak through this unauthenticated endpoint.
+        # Behaviour for current data is unchanged (these are the only fields
+        # device_info carries); a non-dict/None row degrades to {} instead of 500.
         return jsonify({
             "count": len(miners),
+            "balance": producer.get_producer_balance_summary(
+                producer.get_current_slot(),
+                slots=max(len(miners), 1)
+            ),
             "producers": [
                 {
                     "wallet": m[0],
                     "arch": m[1],
-                    "device_info": m[2]
+                    "selection_weight": producer._miner_selection_weight(m),
+                    "device_info": {
+                        k: m[2].get(k) for k in _DEVICE_PUBLIC_FIELDS
+                    } if isinstance(m[2], dict) else {},
                 }
                 for m in miners
             ]
@@ -851,8 +1127,8 @@ def create_block_api_routes(app, producer: BlockProducer, validator: BlockValida
 # =============================================================================
 
 if __name__ == "__main__":
-    import tempfile
     import os
+    import tempfile
 
     print("=" * 70)
     print("RustChain Block Producer - Test Suite")
@@ -872,7 +1148,7 @@ if __name__ == "__main__":
         addr, pub, priv = generate_wallet_keypair()
         signer = Ed25519Signer(bytes.fromhex(priv))
 
-        print(f"\n=== Test Wallet ===")
+        print("\n=== Test Wallet ===")
         print(f"Address: {addr}")
 
         # Seed balance
@@ -904,14 +1180,14 @@ if __name__ == "__main__":
             wallet_address=addr
         )
 
-        print(f"\n=== Slot Info ===")
+        print("\n=== Slot Info ===")
         slot = producer.get_current_slot()
         print(f"Current slot: {slot}")
         print(f"Expected producer: {producer.get_round_robin_producer(slot)}")
         print(f"Is my turn: {producer.is_my_turn()}")
 
         # Create a test transaction
-        print(f"\n=== Creating Test Transaction ===")
+        print("\n=== Creating Test Transaction ===")
         addr2, _, _ = generate_wallet_keypair()
 
         tx = SignedTransaction(
@@ -928,7 +1204,7 @@ if __name__ == "__main__":
         print(f"TX submitted: {success}, {result}")
 
         # Produce block
-        print(f"\n=== Producing Block ===")
+        print("\n=== Producing Block ===")
         block = producer.produce_block()
 
         if block:
@@ -940,12 +1216,12 @@ if __name__ == "__main__":
             print(f"Attestation count: {len(block.body.attestations)}")
 
             # Save block
-            print(f"\n=== Saving Block ===")
+            print("\n=== Saving Block ===")
             saved = producer.save_block(block)
             print(f"Saved: {saved}")
 
             # Validate
-            print(f"\n=== Validating Block ===")
+            print("\n=== Validating Block ===")
             validator = BlockValidator(db_path)
             # Need to fake the expected producer since we only have one attester
             is_valid, error = block.validate_structure()
@@ -953,7 +1229,7 @@ if __name__ == "__main__":
 
             # Check block in DB
             latest = producer.get_latest_block()
-            print(f"\n=== Latest Block in DB ===")
+            print("\n=== Latest Block in DB ===")
             print(f"Height: {latest['height']}")
             print(f"Hash: {latest['block_hash'][:32]}...")
 

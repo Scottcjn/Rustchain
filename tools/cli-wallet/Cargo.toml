@@ -18,7 +18,6 @@ sha2 = "0.10"
 hex = "0.4"
 rand = "0.8"
 secp256k1 = "0.27"
-base58 = "0.2"
 anyhow = "1.0"
 
 [[bin]]

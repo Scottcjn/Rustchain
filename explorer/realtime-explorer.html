@@ -966,36 +966,66 @@
             renderFeed();
         }
 
+        function textElement(tagName, className, text) {
+            const element = document.createElement(tagName);
+            if (className) element.className = className;
+            element.textContent = text;
+            return element;
+        }
+
         function renderFeed() {
             const feed = document.getElementById('live-feed');
-            feed.innerHTML = feedItems.map(item => `
-                <div class="feed-item new-entry">
-                    <span class="feed-icon">${item.icon}</span>
-                    <div class="feed-content">
-                        <div class="feed-title">${item.title}</div>
-                        <div style="color: var(--text-secondary); font-size: 13px;">${item.subtitle}</div>
-                    </div>
-                    <span class="feed-time">${item.time}</span>
-                </div>
-            `).join('');
+            const items = feedItems.map(item => {
+                const row = document.createElement('div');
+                row.className = 'feed-item new-entry';
+
+                const icon = textElement('span', 'feed-icon', item.icon);
+                const content = document.createElement('div');
+                content.className = 'feed-content';
+
+                const title = textElement('div', 'feed-title', item.title);
+                const subtitle = textElement('div', null, item.subtitle);
+                subtitle.style.color = 'var(--text-secondary)';
+                subtitle.style.fontSize = '13px';
+
+                const time = textElement('span', 'feed-time', item.time);
+                content.append(title, subtitle);
+                row.append(icon, content, time);
+                return row;
+            });
+            feed.replaceChildren(...items);
         }
 
         function showEpochNotification(data) {
             // Create notification element
             const notification = document.createElement('div');
             notification.className = 'epoch-notification';
-            notification.innerHTML = `
-                <div class="notification-title">
-                    <span aria-hidden="true">🎉</span> Epoch Settlement!
-                </div>
-                <div class="notification-content">
-                    <p>Epoch ${data.epoch} → ${data.new_epoch}</p>
-                    <p style="margin-top: 8px;">
-                        <strong>Pot:</strong> ${data.total_rtc || 0} RTC<br>
-                        <strong>Miners:</strong> ${data.miners || 0}
-                    </p>
-                </div>
-            `;
+
+            const title = document.createElement('div');
+            title.className = 'notification-title';
+            const icon = textElement('span', null, '🎉');
+            icon.setAttribute('aria-hidden', 'true');
+            title.append(icon, document.createTextNode(' Epoch Settlement!'));
+
+            const content = document.createElement('div');
+            content.className = 'notification-content';
+            content.append(
+                textElement('p', null, `Epoch ${data.epoch ?? '?'} → ${data.new_epoch ?? '?'}`)
+            );
+
+            const stats = document.createElement('p');
+            stats.style.marginTop = '8px';
+            const potLabel = textElement('strong', null, 'Pot:');
+            const minersLabel = textElement('strong', null, 'Miners:');
+            stats.append(
+                potLabel,
+                document.createTextNode(` ${data.total_rtc || 0} RTC`),
+                document.createElement('br'),
+                minersLabel,
+                document.createTextNode(` ${data.miners || 0}`)
+            );
+            content.append(stats);
+            notification.append(title, content);
 
             document.body.appendChild(notification);
 
@@ -1130,6 +1160,13 @@
         }
 
         function esc(s) { const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
+        function safeNumber(value, fallback = 0) {
+            const number = Number(value);
+            return Number.isFinite(number) ? number : fallback;
+        }
+        function formatNumber(value, decimals) {
+            return safeNumber(value).toFixed(decimals);
+        }
 
         async function loadHealth() {
             const health = await fetchAPI('/health');
@@ -1157,7 +1194,7 @@
                         <td><span class="multiplier">x${esc(miner.multiplier || miner.antiquity_multiplier || '1.0')}</span></td>
                         <td><span class="badge badge-success">Online</span></td>
                         <td>${esc(formatTime(miner.last_attestation || miner.last_seen))}</td>
-                        <td>${esc((miner.earnings || miner.total_earned || 0).toFixed(2))} RTC</td>
+                        <td>${esc(formatNumber(miner.earnings || miner.total_earned, 2))} RTC</td>
                     </tr>
                 `).join('');
 
@@ -1170,7 +1207,7 @@
                         <td><span class="badge badge-success">Online</span></td>
                         <td>${esc(formatTime(miner.last_attestation || miner.last_seen))}</td>
                         <td><code>${esc(miner.wallet || miner.wallet_address || 'N/A')}</code></td>
-                        <td>${esc((miner.earnings || miner.total_earned || 0).toFixed(2))} RTC</td>
+                        <td>${esc(formatNumber(miner.earnings || miner.total_earned, 2))} RTC</td>
                     </tr>
                 `).join('');
             }
@@ -1186,7 +1223,7 @@
                 document.getElementById('epoch-slot-num').textContent = epoch.slot || 'N/A';
                 document.getElementById('epoch-height').textContent = epoch.height || 'N/A';
                 document.getElementById('epoch-timestamp').textContent = epoch.timestamp ? new Date(epoch.timestamp).toLocaleString() : 'N/A';
-                document.getElementById('epoch-pot').textContent = (epoch.pot || epoch.pot_rtc || 0).toFixed(2);
+                document.getElementById('epoch-pot').textContent = formatNumber(epoch.pot || epoch.pot_rtc, 2);
             }
         }
 
@@ -1206,7 +1243,7 @@
                         <td><code>${esc((block.hash || '').substring(0, 16))}...</code></td>
                         <td>${esc(formatTime(block.timestamp))}</td>
                         <td>${esc(block.miners_count || 0)}</td>
-                        <td>${esc((block.reward || 0).toFixed(4))} RTC</td>
+                        <td>${esc(formatNumber(block.reward, 4))} RTC</td>
                     </tr>
                 `).join('');
             }

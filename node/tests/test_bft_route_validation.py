@@ -47,6 +47,10 @@ def _signed_view_change(bft, *, view=1, epoch=0):
     }
 
 
+def _raise_runtime_error(message):
+    raise RuntimeError(message)
+
+
 @pytest.mark.parametrize("payload", (None, [], "not-object"))
 def test_bft_message_requires_json_object(bft_client, payload):
     response = bft_client.post("/bft/message", json=payload)
@@ -61,6 +65,23 @@ def test_bft_message_rejects_invalid_message_type(bft_client, payload):
 
     assert response.status_code == 400
     assert response.get_json() == {"error": "invalid msg_type"}
+
+
+def test_bft_message_hides_internal_exception_details(bft_context, monkeypatch):
+    client, bft = bft_context
+    secret_detail = "sqlite error: no such table: bft_message_log"
+    monkeypatch.setattr(
+        bft,
+        "receive_message",
+        lambda _data: _raise_runtime_error(secret_detail),
+    )
+
+    response = client.post("/bft/message", json={"msg_type": "prepare"})
+
+    assert response.status_code == 400
+    body = response.get_json()
+    assert body == {"error": "BFT message processing failed"}
+    assert secret_detail not in str(body)
 
 
 @pytest.mark.parametrize("payload", (None, [], "not-object"))
@@ -112,3 +133,40 @@ def test_bft_view_change_accepts_valid_signature(bft_context):
     assert response.status_code == 200
     assert response.get_json() == {"status": "ok"}
     assert bft.view_change_log[payload["view"]]["peer-a"].node_id == "peer-a"
+
+
+def test_bft_view_change_hides_internal_exception_details(bft_context, monkeypatch):
+    client, bft = bft_context
+    secret_detail = "config path leaked: /var/lib/rustchain/bft.db"
+    monkeypatch.setattr(
+        bft,
+        "handle_view_change",
+        lambda _data: _raise_runtime_error(secret_detail),
+    )
+
+    response = client.post("/bft/view_change", json=_signed_view_change(bft))
+
+    assert response.status_code == 400
+    body = response.get_json()
+    assert body == {"error": "BFT view change processing failed"}
+    assert secret_detail not in str(body)
+
+
+def test_bft_propose_hides_internal_exception_details(bft_context, monkeypatch):
+    client, bft = bft_context
+    secret_detail = "sqlite error: no such table: bft_committed_epochs"
+    monkeypatch.setattr(
+        bft,
+        "propose_epoch_settlement",
+        lambda _epoch, _miners, _distribution: _raise_runtime_error(secret_detail),
+    )
+
+    response = client.post(
+        "/bft/propose",
+        json={"epoch": 1, "miners": [], "distribution": {}},
+    )
+
+    assert response.status_code == 500
+    body = response.get_json()
+    assert body == {"error": "BFT proposal failed"}
+    assert secret_detail not in str(body)

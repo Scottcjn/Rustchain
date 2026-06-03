@@ -77,6 +77,53 @@ class TestGenesisMigrationUnits(unittest.TestCase):
         self.assertEqual(db.get_balance("alice"), 10 * UNIT)
         self.assertTrue(result["integrity"]["models_agree"])
 
+    def test_legacy_balance_rtc_fallback_does_not_truncate_real_math(self):
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("""
+            CREATE TABLE balances (
+                miner_pk TEXT PRIMARY KEY,
+                balance_rtc REAL NOT NULL
+            )
+        """)
+        conn.executemany(
+            "INSERT INTO balances VALUES (?, ?)",
+            [
+                ("alice", 0.29),
+                ("bob", 0.58),
+            ],
+        )
+        conn.commit()
+        conn.close()
+
+        balances = load_account_balances(self.db_path)
+        self.assertEqual(balances, [
+            ("alice", 29_000_000),
+            ("bob", 58_000_000),
+        ])
+
+        result = migrate(self.db_path, dry_run=False)
+        db = UtxoDB(self.db_path)
+
+        self.assertEqual(result["total_nrtc"], 87_000_000)
+        self.assertEqual(db.get_balance("alice"), 29_000_000)
+        self.assertEqual(db.get_balance("bob"), 58_000_000)
+        self.assertTrue(result["integrity"]["models_agree"])
+
+    def test_legacy_balance_rtc_fallback_rejects_sub_nrtc_values(self):
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("""
+            CREATE TABLE balances (
+                miner_pk TEXT PRIMARY KEY,
+                balance_rtc REAL NOT NULL
+            )
+        """)
+        conn.execute("INSERT INTO balances VALUES (?, ?)", ("alice", 0.000000001))
+        conn.commit()
+        conn.close()
+
+        with self.assertRaises(ValueError):
+            load_account_balances(self.db_path)
+
 
 if __name__ == '__main__':
     unittest.main()

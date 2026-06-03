@@ -193,7 +193,7 @@ The attestation server doesn't trust self-reported data. It performs:
 | `/api/miners` | GET | List active miners |
 | `/epoch` | GET | Current epoch info |
 | `/wallet/balance?miner_id=X` | GET | Check wallet balance |
-| `/attest` | POST | Submit hardware fingerprint |
+| `/attest/submit` | POST | Submit hardware fingerprint |
 
 ---
 
@@ -308,13 +308,13 @@ curl -sk "https://rustchain.org/wallet/balance?miner_id=scott-laptop"
 }
 ```
 
-### POST /attest
+### POST /attest/submit
 
 Submit hardware fingerprint (miner only).
 
 **Request**:
 ```bash
-curl -sk -X POST https://rustchain.org/attest \
+curl -sk -X POST https://rustchain.org/attest/submit \
   -H "Content-Type: application/json" \
   -d '{
     "miner_id": "scott-laptop",

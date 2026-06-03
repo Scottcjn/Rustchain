@@ -18,6 +18,7 @@ from urllib.request import urlopen
 
 
 Fetcher = Callable[..., dict]
+MINER_LIST_KEYS = ("miners", "data", "items", "results")
 
 
 @dataclass
@@ -42,6 +43,38 @@ def _fetch_json(node_url: str, endpoint: str, timeout_s: int, fetcher: Fetcher):
     return fetcher(url, timeout=timeout_s)
 
 
+def _coerce_int(value) -> Optional[int]:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _miner_count(payload) -> int:
+    if isinstance(payload, list):
+        return len(payload)
+    if not isinstance(payload, dict):
+        return 0
+
+    pagination = payload.get("pagination")
+    if isinstance(pagination, dict):
+        total = _coerce_int(pagination.get("total"))
+        if total is not None:
+            return total
+
+    for key in ("total_miners", "total"):
+        total = _coerce_int(payload.get(key))
+        if total is not None:
+            return total
+
+    for key in MINER_LIST_KEYS:
+        rows = payload.get(key)
+        if isinstance(rows, list):
+            return len(rows)
+
+    return 0
+
+
 def collect_snapshot(node_url: str, timeout_s: int = 8, fetcher: Fetcher = _default_fetcher) -> NodeSnapshot:
     try:
         health = _fetch_json(node_url, "/health", timeout_s, fetcher)
@@ -49,14 +82,12 @@ def collect_snapshot(node_url: str, timeout_s: int = 8, fetcher: Fetcher = _defa
         stats = _fetch_json(node_url, "/api/stats", timeout_s, fetcher)
         miners = _fetch_json(node_url, "/api/miners", timeout_s, fetcher)
 
-        miners_count = len(miners) if isinstance(miners, list) else 0
-
         return NodeSnapshot(
             node=node_url,
             ok=bool(health.get("ok", False)),
             version=health.get("version"),
             enrolled_miners=epoch.get("enrolled_miners"),
-            miners_count=miners_count,
+            miners_count=_miner_count(miners),
             total_balance=stats.get("total_balance"),
             error=None,
         )

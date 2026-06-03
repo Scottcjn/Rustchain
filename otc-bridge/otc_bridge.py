@@ -25,16 +25,25 @@ import hmac
 import json
 import logging
 import os
+import re
 import secrets
 import sqlite3
 import time
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from functools import wraps
 
 import requests
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
+
+try:
+    from cryptography.exceptions import InvalidSignature
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+except ImportError:  # pragma: no cover - stripped-down deployments should fail closed
+    InvalidSignature = None
+    Ed25519PublicKey = None
 
 # ---------------------------------------------------------------------------
 # Config
@@ -60,6 +69,10 @@ elif _tls_verify_env in ("false", "0", "no"):
 else:
     TLS_VERIFY = True                 # Default: full CA verification
 
+# Admin key for /wallet/transfer payouts from otc_bridge_worker → real recipient.
+# Required for confirm_order() to complete OTC settlement. Without it, escrow funds
+# stay trapped in otc_bridge_worker.
+RC_ADMIN_KEY = os.environ.get("RC_ADMIN_KEY", "").strip()
 ESCROW_WALLET = "otc_bridge_escrow"
 ORDER_TTL_DEFAULT = 7 * 86400       # 7 days
 ORDER_TTL_MAX = 30 * 86400          # 30 days
@@ -71,6 +84,9 @@ RATE_LIMIT_MAX = 10                 # 10 requests per minute per IP
 RTC_REFERENCE_RATE = 0.10           # $0.10 USD reference
 RTC_UNIT = 1_000_000                # 1 micro-RTC
 QUOTE_PRICE_SCALE = 1_000_000_000   # 9 decimal places for quote units
+WALLET_AUTH_MAX_AGE_SECONDS = 300
+RTC_WALLET_RE = re.compile(r"^RTC[0-9a-fA-F]{40}$")
+CREATE_ORDER_AUTH_ID = "create_order"
 
 SUPPORTED_PAIRS = {
     "RTC/ETH": {"quote": "ETH", "decimals": 18},
@@ -80,6 +96,12 @@ SUPPORTED_PAIRS = {
 
 log = logging.getLogger("otc_bridge")
 logging.basicConfig(level=logging.INFO)
+
+GENERIC_INTERNAL_ERROR = "Internal server error"
+
+
+def log_internal_error(context):
+    log.exception("%s failed", context)
 
 app = Flask(__name__, static_folder="static")
 
@@ -131,17 +153,41 @@ def money_view(row):
     return data
 
 
+# SQLite cannot parameterize identifiers (PRAGMA/ALTER/UPDATE take a literal
+# table name), so every table name interpolated into the DDL below MUST be
+# validated against this allowlist first — never against caller-supplied text.
+_KNOWN_TABLES = frozenset({"orders", "trades", "rate_limits"})
+# Integer precision columns we add (also literal, never caller-supplied).
+_PRECISION_COLUMNS = ("amount_micro_rtc", "price_per_rtc_nano_quote", "total_quote_nano")
+
+
+def _require_known_table(table_name):
+    """Guard before building DDL: refuse any table name not on the allowlist."""
+    if table_name not in _KNOWN_TABLES:
+        raise ValueError(f"refusing to build SQL for unknown table {table_name!r}")
+    return table_name
+
+
 def migrate_precision_columns(cursor, table_name):
+    # Validate before interpolation so only known-safe identifiers reach the SQL.
+    _require_known_table(table_name)
+
     columns = {row[1] for row in cursor.execute(f"PRAGMA table_info({table_name})")}
-    if "amount_micro_rtc" not in columns:
-        cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN amount_micro_rtc INTEGER")
-    if "price_per_rtc_nano_quote" not in columns:
-        cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN price_per_rtc_nano_quote INTEGER")
-    if "total_quote_nano" not in columns:
-        cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN total_quote_nano INTEGER")
+    for col in _PRECISION_COLUMNS:
+        if col in columns:
+            continue
+        try:
+            cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {col} INTEGER")
+        except sqlite3.OperationalError as exc:
+            # Idempotent under concurrent migrations: another worker may have
+            # added the column between the PRAGMA read above and this ALTER.
+            if "duplicate column name" not in str(exc).lower():
+                raise
 
     refreshed = {row[1] for row in cursor.execute(f"PRAGMA table_info({table_name})")}
     if {"amount_rtc", "price_per_rtc", "total_quote"}.issubset(refreshed):
+        # COALESCE keeps the backfill idempotent: re-runs converge to the same
+        # values, so concurrent migrations are safe without a write lock.
         cursor.execute(f"""
             UPDATE {table_name}
             SET amount_micro_rtc = COALESCE(amount_micro_rtc, CAST(ROUND(amount_rtc * ?) AS INTEGER)),
@@ -151,6 +197,7 @@ def migrate_precision_columns(cursor, table_name):
 
 
 def table_columns(cursor, table_name):
+    _require_known_table(table_name)
     return {row[1] for row in cursor.execute(f"PRAGMA table_info({table_name})")}
 
 
@@ -158,6 +205,162 @@ def include_legacy_money_columns_if_present(columns, insert_columns, values, amo
     if {"amount_rtc", "price_per_rtc", "total_quote"}.issubset(columns):
         insert_columns.extend(["amount_rtc", "price_per_rtc", "total_quote"])
         values.extend([amount_rtc, price_per_rtc, total_quote])
+
+
+# ---------------------------------------------------------------------------
+# OTC payout helpers (close fund-trap bug: escrow accept releases to
+# otc_bridge_worker, then we must transfer from there to the real recipient)
+# ---------------------------------------------------------------------------
+
+_MINER_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+
+
+def is_valid_wallet_id(wallet_id):
+    """Validate a wallet/miner identifier before using it as a transfer target."""
+    wallet_id = str(wallet_id or "").strip()
+    return bool(_MINER_ID_RE.fullmatch(wallet_id))
+
+
+def _admin_transport_block_reason():
+    """Return a reason string if it is UNSAFE to send the admin key to the
+    configured node, else None.
+
+    Fail-closed: the RC_ADMIN_KEY must never leave over plaintext (http://) or
+    to a non-local host with TLS verification disabled (MITM credential theft).
+    Loopback hosts and an explicit OTC_ALLOW_INSECURE_ADMIN opt-out are allowed
+    for local development.
+    """
+    if os.environ.get("OTC_ALLOW_INSECURE_ADMIN", "").strip().lower() in ("1", "true", "yes"):
+        return None  # explicit operator opt-out (dev only)
+
+    parsed = urlparse(RUSTCHAIN_NODE)
+    host = (parsed.hostname or "").lower()
+    if host in ("localhost", "127.0.0.1", "::1"):
+        return None  # loopback dev is acceptable
+
+    if parsed.scheme != "https":
+        return (
+            f"insecure scheme '{parsed.scheme or 'none'}' for admin endpoint "
+            f"{RUSTCHAIN_NODE!r}: set RUSTCHAIN_NODE to https:// "
+            f"(or OTC_ALLOW_INSECURE_ADMIN=1 for local dev)"
+        )
+    if TLS_VERIFY is False:
+        return (
+            "TLS verification disabled (RUSTCHAIN_TLS_VERIFY=false) for a "
+            "non-local admin endpoint — MITM credential exposure; pin "
+            "RUSTCHAIN_CA_BUNDLE instead of disabling verification"
+        )
+    return None
+
+
+def send_bridge_alert(level, message, fields):
+    """Best-effort alert hook for payout failures and manual recovery events."""
+    webhook = os.environ.get("RC_SOPHIACHECK_WEBHOOK", "").strip()
+    if not webhook:
+        return
+
+    colors = {
+        "warning": 16776960,
+        "critical": 16711680,
+        "info": 3447003,
+    }
+    embed = {
+        "title": f"OTC Bridge {level.upper()}",
+        "description": message,
+        "color": colors.get(level, 3447003),
+        "fields": [
+            {"name": str(k), "value": str(v), "inline": True}
+            for k, v in (fields or {}).items()
+        ],
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+    try:
+        requests.post(webhook, json={"embeds": [embed]}, timeout=5)
+    except Exception as exc:
+        log.warning(f"Bridge alert delivery failed: {exc}")
+
+
+def rtc_transfer_from_worker(recipient_wallet, amount_rtc, order_id):
+    """Queue admin payout from the bridge worker to the actual OTC recipient.
+
+    Returns ``{"ok": True, "details": {...}}`` on success (transfer queued or
+    accepted into pending pool), or ``{"ok": False, "error": str, "details": {...}}``
+    on terminal failure after retries.
+    """
+    # Fail-closed BEFORE sending the admin key: never leak RC_ADMIN_KEY over an
+    # insecure transport. Refusing strands funds in otc_bridge_worker (alerted +
+    # recoverable) — strictly safer than exfiltrating the admin credential.
+    block_reason = _admin_transport_block_reason()
+    if block_reason:
+        log.error(f"OTC payout blocked for {order_id}: {block_reason}")
+        send_bridge_alert(
+            "critical",
+            "OTC payout blocked: insecure admin transport",
+            {"order_id": order_id, "node": RUSTCHAIN_NODE, "reason": block_reason},
+        )
+        return {"ok": False, "error": f"insecure_admin_transport: {block_reason}", "details": {}}
+
+    last_error = "unknown payout error"
+    last_payload = {}
+    retry_delays = (0, 1, 2, 4)
+
+    for attempt, delay_seconds in enumerate(retry_delays, start=1):
+        if delay_seconds:
+            time.sleep(delay_seconds)
+
+        try:
+            transfer_r = requests.post(
+                f"{RUSTCHAIN_NODE}/wallet/transfer",
+                headers={"X-Admin-Key": RC_ADMIN_KEY},
+                json={
+                    "from_miner": "otc_bridge_worker",
+                    "to_miner": recipient_wallet,
+                    "amount_rtc": amount_rtc,
+                    "reason": f"otc_payout:{order_id}",
+                    # Idempotency: stable, unique-per-payout key so retries (and
+                    # any double-confirm) dedup server-side in wallet_transfer_v2
+                    # instead of paying twice. Derived from the immutable
+                    # order_id (one worker payout per order), and kept equal to
+                    # `reason` so the server's reason-consistency check passes.
+                    "idempotency_key": f"otc_payout:{order_id}",
+                },
+                verify=TLS_VERIFY, timeout=15
+            )
+        except Exception as exc:
+            last_error = str(exc)
+            if attempt < len(retry_delays):
+                log.warning(
+                    f"Worker payout attempt {attempt}/{len(retry_delays)} failed for "
+                    f"{order_id}: {last_error}"
+                )
+                continue
+            return {"ok": False, "error": last_error, "details": last_payload}
+
+        try:
+            last_payload = transfer_r.json()
+        except ValueError:
+            last_payload = {}
+
+        if transfer_r.ok:
+            last_payload.setdefault("phase", "pending")
+            return {"ok": True, "details": last_payload}
+
+        last_error = last_payload.get("error") or transfer_r.text.strip() or f"HTTP {transfer_r.status_code}"
+        should_retry = (
+            transfer_r.status_code >= 500
+            or "insufficient available balance" in last_error.lower()
+        )
+        if should_retry and attempt < len(retry_delays):
+            log.warning(
+                f"Worker payout attempt {attempt}/{len(retry_delays)} for {order_id} "
+                f"failed, retrying: {last_error}"
+            )
+            continue
+
+        break
+
+    return {"ok": False, "error": last_error, "details": last_payload}
 
 
 # ---------------------------------------------------------------------------
@@ -251,6 +454,79 @@ def generate_trade_id(order_id, taker):
 
 def hash_ip(ip):
     return hashlib.sha256(f"otc_salt_{ip}".encode()).hexdigest()[:16]
+
+
+def rtc_address_from_public_key(public_key_hex):
+    public_key_bytes = bytes.fromhex(public_key_hex)
+    return f"RTC{hashlib.sha256(public_key_bytes).hexdigest()[:40]}"
+
+
+def wallet_auth_message(action, order_id, wallet, timestamp, bound_fields=None):
+    payload = {
+        "action": action,
+        "order_id": order_id,
+        "timestamp": int(timestamp),
+        "wallet": wallet,
+    }
+    if bound_fields:
+        payload.update(bound_fields)
+    return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def create_order_auth_fields(
+    side,
+    pair,
+    amount_micro_rtc,
+    price_per_rtc_nano_quote,
+    ttl_seconds,
+    eth_address,
+):
+    return {
+        "side": side,
+        "pair": pair,
+        "amount_micro_rtc": int(amount_micro_rtc),
+        "price_per_rtc_nano_quote": int(price_per_rtc_nano_quote),
+        "ttl_seconds": int(ttl_seconds),
+        "eth_address": eth_address,
+    }
+
+
+def require_wallet_auth(data, action, order_id, wallet, bound_fields=None):
+    if Ed25519PublicKey is None:
+        return "wallet_auth_unavailable"
+    if not RTC_WALLET_RE.fullmatch(wallet):
+        return "wallet_must_be_native_rtc_address"
+
+    auth = data.get("wallet_auth")
+    if not isinstance(auth, dict):
+        return "wallet_auth_required"
+
+    public_key = str(auth.get("public_key", "")).strip()
+    signature = str(auth.get("signature", "")).strip()
+    timestamp_raw = auth.get("timestamp")
+    if not public_key or not signature or timestamp_raw is None:
+        return "wallet_auth_public_key_signature_timestamp_required"
+
+    try:
+        timestamp = int(timestamp_raw)
+        if isinstance(timestamp_raw, bool):
+            return "wallet_auth_invalid_timestamp"
+        if abs(int(time.time()) - timestamp) > WALLET_AUTH_MAX_AGE_SECONDS:
+            return "wallet_auth_timestamp_expired"
+        if rtc_address_from_public_key(public_key).lower() != wallet.lower():
+            return "wallet_auth_public_key_does_not_match_wallet"
+
+        verify_key = Ed25519PublicKey.from_public_bytes(bytes.fromhex(public_key))
+        verify_key.verify(
+            bytes.fromhex(signature),
+            wallet_auth_message(action, order_id, wallet, timestamp, bound_fields),
+        )
+    except (TypeError, ValueError):
+        return "wallet_auth_invalid_encoding"
+    except InvalidSignature:
+        return "wallet_auth_invalid_signature"
+
+    return None
 
 
 def get_client_ip():
@@ -387,24 +663,8 @@ def rtc_create_escrow_job(poster_wallet, amount_rtc, title, description):
         else:
             return {"ok": False, "error": r.json().get("error", "Unknown error")}
     except Exception:
-        log.exception("Escrow job creation failed")
-        return {"ok": False, "error": "escrow_create_failed"}
-
-
-def rtc_release_escrow(job_id, poster_wallet):
-    """Release escrow -- accept delivery to pay the taker."""
-    try:
-        # First, claim the job as the taker (OTC bridge acts as intermediary)
-        # Then deliver and accept to release funds
-        r = requests.post(
-            f"{RUSTCHAIN_NODE}/agent/jobs/{job_id}/accept",
-            json={"poster_wallet": poster_wallet},
-            verify=TLS_VERIFY, timeout=15
-        )
-        return r.ok
-    except Exception as e:
-        log.error(f"Escrow release failed: {e}")
-        return False
+        log_internal_error("Escrow job creation")
+        return {"ok": False, "error": GENERIC_INTERNAL_ERROR}
 
 
 def rtc_cancel_escrow(job_id, poster_wallet):
@@ -421,6 +681,19 @@ def rtc_cancel_escrow(job_id, poster_wallet):
         return False
 
 
+def parse_order_ttl(value):
+    if value is None:
+        return ORDER_TTL_DEFAULT
+    if isinstance(value, bool):
+        raise ValueError("ttl_seconds must be an integer")
+    if isinstance(value, float) and not value.is_integer():
+        raise ValueError("ttl_seconds must be an integer")
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("ttl_seconds must be an integer") from exc
+
+
 # ---------------------------------------------------------------------------
 # API Routes
 # ---------------------------------------------------------------------------
@@ -430,6 +703,10 @@ def rtc_cancel_escrow(job_id, poster_wallet):
 def create_order():
     """Create a new buy or sell order."""
     data = request.get_json(silent=True)
+    if data is None:
+        return jsonify({"error": "JSON body required"}), 400
+    if not isinstance(data, dict):
+        return jsonify({"error": "JSON object required"}), 400
     if not data:
         return jsonify({"error": "JSON body required"}), 400
 
@@ -439,7 +716,10 @@ def create_order():
     amount_rtc = data.get("amount_rtc", 0)
     price_per_rtc = data.get("price_per_rtc", 0)
     maker_eth_address = str(data.get("eth_address", "")).strip()
-    ttl = int(data.get("ttl_seconds", ORDER_TTL_DEFAULT))
+    try:
+        ttl = parse_order_ttl(data.get("ttl_seconds"))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
     # Validation
     if side not in ("buy", "sell"):
@@ -478,6 +758,23 @@ def create_order():
     total_quote = units_to_float(total_quote_nano, QUOTE_PRICE_SCALE)
     now = int(time.time())
     order_id = generate_order_id(maker_wallet, side)
+
+    auth_error = require_wallet_auth(
+        data,
+        "create_order",
+        CREATE_ORDER_AUTH_ID,
+        maker_wallet,
+        create_order_auth_fields(
+            side,
+            pair,
+            amount_micro_rtc,
+            price_per_rtc_nano_quote,
+            ttl,
+            maker_eth_address,
+        ),
+    )
+    if auth_error:
+        return jsonify({"error": auth_error}), 401
 
     # For sell orders: lock RTC in escrow via RIP-302
     escrow_job_id = None
@@ -672,11 +969,23 @@ def get_order(order_id):
 def match_order(order_id):
     """Match an open order as the counterparty."""
     data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        return jsonify({"error": "JSON object required"}), 400
+
     taker_wallet = str(data.get("wallet", "")).strip()
     taker_eth_address = str(data.get("eth_address", "")).strip()
 
     if not taker_wallet:
         return jsonify({"error": "wallet required"}), 400
+    auth_error = require_wallet_auth(
+        data,
+        "match_order",
+        order_id,
+        taker_wallet,
+        {"eth_address": taker_eth_address},
+    )
+    if auth_error:
+        return jsonify({"error": auth_error}), 401
 
     conn = get_db()
     try:
@@ -794,7 +1103,14 @@ def match_order(order_id):
 @rate_limited
 def confirm_order(order_id):
     """Confirm settlement -- verifies HTLC preimage, releases escrow."""
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if data is None:
+        if request.is_json and request.get_data(cache=True).strip():
+            return jsonify({"error": "JSON object required"}), 400
+        data = {}
+    elif not isinstance(data, dict):
+        return jsonify({"error": "JSON object required"}), 400
+
     wallet = str(data.get("wallet", "")).strip()
     quote_tx = str(data.get("quote_tx", "")).strip()
     secret = str(data.get("secret", "")).strip()
@@ -837,6 +1153,25 @@ def confirm_order(order_id):
 
         now = int(time.time())
 
+        # Determine RTC recipient + validate BEFORE touching escrow.
+        rtc_recipient = order["taker_wallet"] if order["side"] == "sell" else order["maker_wallet"]
+        if not is_valid_wallet_id(rtc_recipient):
+            return jsonify({
+                "error": "Invalid RTC recipient wallet on matched order",
+                "rtc_recipient": rtc_recipient,
+            }), 400
+
+        # Without an admin key we cannot transfer escrow proceeds from
+        # otc_bridge_worker to the real recipient — refuse to release escrow
+        # rather than trap funds.
+        if not RC_ADMIN_KEY:
+            return jsonify({
+                "error": "Bridge payout unavailable: RC_ADMIN_KEY not configured"
+            }), 500
+
+        payout_status = "not_started"
+        payout_result = {}
+
         # Release RTC escrow
         if order["escrow_job_id"]:
             # Determine who posted the escrow job
@@ -861,21 +1196,50 @@ def confirm_order(order_id):
                     verify=TLS_VERIFY, timeout=15
                 )
 
-                # Accept (releases funds to otc_bridge_worker, then we transfer to actual recipient)
+                # Accept releases funds to otc_bridge_worker. We then transfer
+                # from worker → recipient via admin /wallet/transfer.
                 if deliver_r.ok:
                     accept_r = requests.post(
                         f"{RUSTCHAIN_NODE}/agent/jobs/{order['escrow_job_id']}/accept",
                         json={"poster_wallet": escrow_poster, "rating": 5},
                         verify=TLS_VERIFY, timeout=15
                     )
-                    if not accept_r.ok:
+                    if accept_r.ok:
+                        payout_result = rtc_transfer_from_worker(
+                            rtc_recipient,
+                            order["amount_rtc"],
+                            order_id,
+                        )
+                        if payout_result["ok"]:
+                            payout_status = payout_result["details"].get("phase", "pending")
+                        else:
+                            payout_status = "manual_recovery_required"
+                            log.error(
+                                f"Bridge payout failed after escrow accept for {order_id}: "
+                                f"{payout_result['error']}"
+                            )
+                            send_bridge_alert(
+                                "critical",
+                                "OTC payout failed after escrow accept",
+                                {
+                                    "order_id": order_id,
+                                    "recipient": rtc_recipient,
+                                    "amount_rtc": order["amount_rtc"],
+                                    "error": payout_result["error"],
+                                },
+                            )
+                    else:
+                        payout_status = "escrow_accept_failed"
                         log.error(f"Escrow accept failed: {accept_r.text}")
-
-        # Determine RTC recipient
-        if order["side"] == "sell":
-            rtc_recipient = order["taker_wallet"]
+                else:
+                    payout_status = "escrow_deliver_failed"
+            else:
+                payout_status = "escrow_claim_failed"
         else:
-            rtc_recipient = order["maker_wallet"]
+            payout_status = "missing_escrow_job"
+
+        payout_details = payout_result.get("details", {}) if isinstance(payout_result, dict) else {}
+        payout_tx = payout_details.get("tx_hash") if isinstance(payout_details, dict) else None
 
         # Record trade
         trade_id = generate_trade_id(order_id, order["taker_wallet"])
@@ -912,6 +1276,27 @@ def confirm_order(order_id):
         """, (now, quote_tx, order_id))
         conn.commit()
 
+        if payout_status == "pending":
+            message = (
+                f"Trade completed. {order['amount_rtc']} RTC payout to {rtc_recipient} "
+                "was queued successfully. HTLC secret verified and revealed."
+            )
+        elif payout_status == "manual_recovery_required":
+            message = (
+                f"Trade completed, but payout to {rtc_recipient} failed after escrow "
+                "accept. Operators were alerted for manual recovery."
+            )
+        elif payout_status == "escrow_accept_failed":
+            message = (
+                "Trade recorded, but escrow accept failed before payout could be queued. "
+                "Manual review required."
+            )
+        else:
+            message = (
+                f"Trade completed with payout status '{payout_status}'. "
+                "HTLC secret verified and revealed."
+            )
+
         return jsonify({
             "ok": True,
             "order_id": order_id,
@@ -920,7 +1305,10 @@ def confirm_order(order_id):
             "htlc_secret": secret,
             "amount_rtc": order["amount_rtc"],
             "rtc_recipient": rtc_recipient,
-            "message": f"Trade completed. {order['amount_rtc']} RTC released to {rtc_recipient}. HTLC secret verified and revealed."
+            "rtc_transfer_status": payout_status,
+            "rtc_transfer_pending_id": payout_details.get("pending_id") if isinstance(payout_details, dict) else None,
+            "rtc_transfer_tx_hash": payout_tx,
+            "message": message,
         })
 
     except Exception:
@@ -935,10 +1323,16 @@ def confirm_order(order_id):
 def cancel_order(order_id):
     """Cancel an open order and refund escrow."""
     data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        return jsonify({"error": "JSON object required"}), 400
+
     wallet = str(data.get("wallet", "")).strip()
 
     if not wallet:
         return jsonify({"error": "wallet required"}), 400
+    auth_error = require_wallet_auth(data, "cancel_order", order_id, wallet)
+    if auth_error:
+        return jsonify({"error": auth_error}), 401
 
     conn = get_db()
     try:
@@ -981,10 +1375,14 @@ def list_trades():
     limit, error = positive_int_arg("limit", 50, max_value=200)
     if error:
         return jsonify({"error": error}), 400
+    # Fail closed, not open: an unsupported (e.g. typo'd) pair must NOT fall
+    # through to the unfiltered full-history feed. Mirrors /api/orderbook.
+    if pair and pair not in SUPPORTED_PAIRS:
+        return jsonify({"error": "unsupported pair"}), 400
 
     conn = get_db()
     try:
-        if pair and pair in SUPPORTED_PAIRS:
+        if pair:
             trades = conn.execute(
                 "SELECT * FROM trades WHERE pair = ? ORDER BY completed_at DESC LIMIT ?",
                 (pair, limit)
@@ -1165,7 +1563,15 @@ def static_files(path):
 # Main
 # ---------------------------------------------------------------------------
 
+# Initialize the schema at import time so the app works under WSGI servers.
+# The Dockerfile runs `gunicorn otc_bridge:app`, where __name__ != "__main__"
+# and the block below never executes — without this, a fresh container has no
+# tables and 500s on first request. init_db() is idempotent (CREATE TABLE IF
+# NOT EXISTS + idempotent precision-column migration), so it is safe on every
+# import and across concurrent gunicorn workers.
+init_db()
+
+
 if __name__ == "__main__":
-    init_db()
     port = int(os.environ.get("OTC_PORT", 5580))
     app.run(host="0.0.0.0", port=port, debug=False)
