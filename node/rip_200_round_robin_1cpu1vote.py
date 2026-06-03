@@ -1,6 +1,9 @@
 import hashlib
 import random
-from .rip_309_measurement_rotation import get_epoch_measurement_config, evaluate_fingerprint_rotation
+try:
+    from .rip_309_measurement_rotation import get_epoch_measurement_config, evaluate_fingerprint_rotation
+except ImportError:
+    from rip_309_measurement_rotation import get_epoch_measurement_config, evaluate_fingerprint_rotation
 #!/usr/bin/env python3
 """
 RIP-200: Round-Robin Consensus (1 CPU = 1 Vote)
@@ -499,7 +502,7 @@ def check_eligibility_round_robin(
 def calculate_epoch_rewards_time_aged(
     db_path: str,
     epoch: int,
-    total_reward_urtc: int, current_slot: int,
+    total_reward_urtc: int,
     current_slot: int, prev_block_hash: bytes = None) -> Dict[str, int]:
     """
     Calculate reward distribution for an epoch with time-aged multipliers

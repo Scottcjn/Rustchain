@@ -65,6 +65,27 @@ def test_collect_snapshot_success():
     assert snap.total_balance == 123.45
 
 
+def test_collect_snapshot_success_dict():
+    payloads = {
+        "/health": {"ok": True, "version": "2.2.1-rip200"},
+        "/epoch": {"enrolled_miners": 12},
+        "/api/stats": {"total_balance": 123.45},
+        "/api/miners": {"miners": [{"miner": "a"}, {"miner": "b"}]},
+    }
+
+    def fake_fetcher(url, timeout):
+        for endpoint, payload in payloads.items():
+            if url.endswith(endpoint):
+                return payload
+        raise AssertionError(f"unexpected url {url}")
+
+    snap = cp.collect_snapshot("http://node", timeout_s=3, fetcher=fake_fetcher)
+
+    assert snap.error is None
+    assert snap.ok is True
+    assert snap.miners_count == 2
+
+
 def test_collect_snapshot_error():
     def failing_fetcher(url, timeout):
         raise RuntimeError("boom")
