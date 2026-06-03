@@ -11,9 +11,16 @@ import sys
 import os
 import tempfile
 import sqlite3
+import hashlib
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def _canonical_agent_id(pubkey_hex):
+    """根据 Ed25519 公钥派生规范 Beacon agent_id。"""
+    clean = pubkey_hex[2:] if pubkey_hex.startswith(('0x', '0X')) else pubkey_hex
+    return f"bcn_{hashlib.sha256(bytes.fromhex(clean)).hexdigest()[:12]}"
 
 
 class TestBeaconJoinRouting(unittest.TestCase):
@@ -189,6 +196,53 @@ class TestBeaconJoinRouting(unittest.TestCase):
             ).fetchone()
             self.assertEqual(row[0], payload1['pubkey_hex'])
             self.assertEqual(row[1], 'Victim')
+
+    def test_join_rejects_canonical_agent_id_pubkey_mismatch(self):
+        """POST /beacon/join 拒绝抢占另一个公钥的规范 bcn_ ID。"""
+        victim_pubkey = '0x' + '11' * 32
+        attacker_pubkey = '0x' + '22' * 32
+        victim_agent_id = _canonical_agent_id(victim_pubkey)
+
+        response = self.client.post(
+            '/beacon/join',
+            data=json.dumps({
+                'agent_id': victim_agent_id,
+                'pubkey_hex': attacker_pubkey,
+                'name': 'Squatter',
+            }),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.data)
+        self.assertIn('agent_id', data['error'])
+
+        with sqlite3.connect(self.test_db_path) as conn:
+            row = conn.execute(
+                "SELECT agent_id FROM relay_agents WHERE agent_id = ?",
+                (victim_agent_id,),
+            ).fetchone()
+            self.assertIsNone(row)
+
+    def test_join_accepts_matching_canonical_agent_id(self):
+        """POST /beacon/join 接受由 pubkey_hex 派生出的规范 bcn_ ID。"""
+        pubkey = '0x' + '33' * 32
+        agent_id = _canonical_agent_id(pubkey)
+
+        response = self.client.post(
+            '/beacon/join',
+            data=json.dumps({
+                'agent_id': agent_id,
+                'pubkey_hex': pubkey,
+                'name': 'Canonical Agent',
+            }),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertTrue(data['ok'])
+        self.assertEqual(data['agent_id'], agent_id)
 
     def test_join_invalid_pubkey_hex_returns_400(self):
         """POST /beacon/join returns 400 for invalid pubkey_hex."""

@@ -6,7 +6,7 @@ import logging
 from typing import Any, Optional
 
 import httpx
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +68,29 @@ class RustChainClient:
     async def get_miners(self) -> list[MinerInfo]:
         resp = await self._client.get("/api/miners")
         resp.raise_for_status()
-        return [MinerInfo(**m) for m in resp.json()]
+        data = resp.json()
+        if isinstance(data, list):
+            rows = data
+        elif isinstance(data, dict):
+            rows = data.get("miners") or data.get("data") or data.get("items") or []
+        else:
+            rows = []
+
+        if not isinstance(rows, list):
+            rows = []
+
+        miners = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            normalized = dict(row)
+            normalized.setdefault(
+                "miner",
+                row.get("miner_id") or row.get("id") or row.get("name") or "",
+            )
+            normalized.setdefault("hardware_type", row.get("hardware", ""))
+            miners.append(MinerInfo(**normalized))
+        return miners
 
     async def wallet_balance(self, miner_id: str) -> WalletBalance:
         resp = await self._client.get("/wallet/balance", params={"miner_id": miner_id})

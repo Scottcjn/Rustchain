@@ -260,12 +260,31 @@ class RustChainPrometheusExporter:
     def _scrape_miners(self):
         """GET /api/miners -> active miner count."""
         data = self._make_request('/api/miners')
-        if data and isinstance(data, list):
-            rustchain_active_miners.labels(node_url=self.node_url).set(len(data))
-            rustchain_total_miners.labels(node_url=self.node_url).set(len(data))
+        if isinstance(data, list):
+            miners = data
+            total = len(data)
+        elif isinstance(data, dict):
+            miners = data.get('miners', data.get('data', []))
+            if not isinstance(miners, list):
+                miners = []
+            pagination = data.get('pagination') if isinstance(data.get('pagination'), dict) else {}
+            total = pagination.get('total', data.get('total', len(miners)))
+            try:
+                total = int(total)
+            except (TypeError, ValueError):
+                total = len(miners)
+            total = max(total, len(miners))
+        else:
+            return
+
+        if miners or total:
+            rustchain_active_miners.labels(node_url=self.node_url).set(len(miners))
+            rustchain_total_miners.labels(node_url=self.node_url).set(total)
 
             # v2: miner antiquity score distribution
-            for miner in data:
+            for miner in miners:
+                if not isinstance(miner, dict):
+                    continue
                 antiquity = miner.get('antiquity_score', 0)
                 rustchain_miner_antiquity_distribution.labels(
                     node_url=self.node_url,
@@ -305,7 +324,7 @@ class RustChainPrometheusExporter:
     # Main loop
     # -------------------------------------------------------------------------
 
-    def start_scrapping(self):
+    def start_scraping(self):
         self.running = True
         logger.info("Scrape loop started (%ds interval)", self.scrape_interval)
         while self.running:
@@ -405,7 +424,7 @@ def main():
     start_http_server(listen_port)
     logger.info("Metrics server started on http://0.0.0.0:%d", listen_port)
 
-    scrape_thread = Thread(target=exporter.start_scrapping, daemon=True)
+    scrape_thread = Thread(target=exporter.start_scraping, daemon=True)
     scrape_thread.start()
 
     try:

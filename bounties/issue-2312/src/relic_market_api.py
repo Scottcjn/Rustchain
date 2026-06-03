@@ -14,14 +14,14 @@ import time
 import hashlib
 import secrets
 import base64
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any, Tuple
+from datetime import datetime
+from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, asdict, field
 from enum import Enum
 import threading
 import logging
 
-from flask import Flask, jsonify, request, Response
+from flask import Flask, jsonify, request
 import nacl.signing
 import nacl.encoding
 
@@ -990,6 +990,20 @@ def _positive_limit(default: int = 10):
     return limit, None
 
 
+def _required_string_field(data: Dict, field_name: str):
+    value = data.get(field_name)
+    if not isinstance(value, str) or not value.strip():
+        return None, (jsonify({"error": f"{field_name} must be a non-empty string"}), 400)
+    return value.strip(), None
+
+
+def _positive_number_field(data: Dict, field_name: str):
+    value = data.get(field_name)
+    if not isinstance(value, (int, float)) or isinstance(value, bool) or value <= 0:
+        return None, (jsonify({"error": f"{field_name} must be a positive number"}), 400)
+    return value, None
+
+
 # ============== API Endpoints ==============
 
 @app.route('/health', methods=['GET'])
@@ -1042,12 +1056,22 @@ def reserve_machine():
     required = ["machine_id", "agent_id", "duration_hours", "payment_rtc"]
     if not all(k in data for k in required):
         return jsonify({"error": "Missing required fields", "required": required}), 400
+
+    machine_id, error = _required_string_field(data, "machine_id")
+    if error:
+        return error
+    agent_id, error = _required_string_field(data, "agent_id")
+    if error:
+        return error
+    payment_rtc, error = _positive_number_field(data, "payment_rtc")
+    if error:
+        return error
     
     reservation, error = reservation_manager.create_reservation(
-        machine_id=data["machine_id"],
-        agent_id=data["agent_id"],
+        machine_id=machine_id,
+        agent_id=agent_id,
         duration_hours=data["duration_hours"],
-        payment_rtc=data["payment_rtc"]
+        payment_rtc=payment_rtc
     )
     
     if error:

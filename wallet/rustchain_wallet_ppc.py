@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 RustChain Wallet for PowerPC Macs (Tiger/Leopard)
-Requires: Python 2.3+ with Tkinter (included in Mac OS X)
+Requires: Python 2.3+ with Tkinter (included in Mac OS X) or Python 3.x
 
 Usage: python rustchain_wallet_ppc.py [wallet_address]
 """
@@ -10,13 +10,23 @@ Usage: python rustchain_wallet_ppc.py [wallet_address]
 import os
 import sys
 import hashlib
-import urllib
-import urllib2
 import socket
+
+# HTTP library: urllib.request (Python 3) or urllib2 (Python 2)
+try:
+    from urllib.request import urlopen, Request
+except ImportError:
+    from urllib2 import urlopen, Request
 
 # Set default socket timeout for Python 2.3 compatibility
 # (urllib2.urlopen timeout param added in Python 2.6)
 socket.setdefaulttimeout(15)
+
+# Python 2 has basestring (covers str+unicode); Python 3 has only str
+try:
+    _str_types = basestring  # type: ignore[name-defined]
+except NameError:
+    _str_types = str
 
 # JSON support for Python 2.3-2.5 (json module added in 2.6)
 try:
@@ -86,7 +96,7 @@ except ImportError:
                     return '{%s}' % ', '.join(pairs)
                 elif isinstance(obj, (list, tuple)):
                     return '[%s]' % ', '.join(self.dumps(x) for x in obj)
-                elif isinstance(obj, str):
+                elif isinstance(obj, _str_types):
                     return '"%s"' % obj
                 elif isinstance(obj, bool):
                     return 'true' if obj else 'false'
@@ -97,14 +107,19 @@ except ImportError:
 
         json = SimpleJSON()
 
-# Tkinter import (Python 2 style)
+# Tkinter import: try Python 3 names first, fall back to Python 2 names
 try:
-    import Tkinter as tk
-    import tkMessageBox
-    import tkSimpleDialog
+    import tkinter as tk
+    import tkinter.messagebox as tkMessageBox
+    import tkinter.simpledialog as tkSimpleDialog
 except ImportError:
-    print("Error: Tkinter not available")
-    sys.exit(1)
+    try:
+        import Tkinter as tk
+        import tkMessageBox
+        import tkSimpleDialog
+    except ImportError:
+        print("Error: Tkinter not available")
+        sys.exit(1)
 
 # Configuration
 NODE_URL = "https://rustchain.org"
@@ -137,7 +152,9 @@ class RustChainWallet:
         # Generate deterministic wallet from hostname
         hostname = os.uname()[1]
         miner_id = "ppc-wallet-%s" % hostname
-        wallet_hash = hashlib.sha256(miner_id).hexdigest()[:40]
+        # bytes check: on Python 2 str IS bytes, so already fine; on Python 3 str is text
+        miner_id_bytes = miner_id if isinstance(miner_id, bytes) else miner_id.encode("utf-8")
+        wallet_hash = hashlib.sha256(miner_id_bytes).hexdigest()[:40]
         wallet_addr = "%sRTC" % wallet_hash
 
         # Save it
@@ -219,8 +236,11 @@ class RustChainWallet:
 
         try:
             url = "%s/balance/%s" % (NODE_URL, self.wallet_address)
-            response = urllib2.urlopen(url)
-            data = json.loads(response.read())
+            response = urlopen(url)
+            response_data = response.read()
+            if isinstance(response_data, bytes):
+                response_data = response_data.decode("utf-8")
+            data = json.loads(response_data)
 
             # Server returns balance_rtc directly in RTC
             balance_rtc = data.get("balance_rtc", 0)
@@ -275,11 +295,18 @@ class RustChainWallet:
             }
 
             url = "%s/wallet/transfer" % NODE_URL
-            req = urllib2.Request(url, json.dumps(payload))
+            json_data = json.dumps(payload)
+            # Python 3 urllib requires bytes for the request body
+            if isinstance(json_data, str):
+                json_data = json_data.encode("utf-8")
+            req = Request(url, json_data)
             req.add_header("Content-Type", "application/json")
 
-            response = urllib2.urlopen(req)
-            result = json.loads(response.read())
+            response = urlopen(req)
+            result_data = response.read()
+            if isinstance(result_data, bytes):
+                result_data = result_data.decode("utf-8")
+            result = json.loads(result_data)
 
             if result.get("ok"):
                 tkMessageBox.showinfo("Success", "Transaction sent successfully!")

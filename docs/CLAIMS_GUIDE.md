@@ -44,7 +44,7 @@ Before claiming rewards, ensure you have:
 
 If you don't have a wallet address:
 
-1. Download the [RustChain Wallet](/wallet) (Note: wallet download page not yet live — use `pip install clawrtc` or build from source)
+1. Use `pip install clawrtc` or build from the [RustChain Wallet source](../wallet) (wallet download page not yet live)
 2. Generate a new address
 3. Save your private key securely (never share it!)
 4. Copy the public address (starts with `RTC`)
@@ -433,7 +433,7 @@ Rewards are calculated based on:
 2. **Antiquity Multiplier** - Bonus for vintage hardware (1.0x - 3.0x)
 3. **Fleet Adjustments** - Penalties for suspicious fleet activity
 
-See [RIP-200](WHITEPAPER.md#3-rip-200-round-robin-consensus) for full details.
+See [RIP-200](./WHITEPAPER.md#3-rip-200-round-robin-consensus) for full details.
 
 ### Settlement Process
 

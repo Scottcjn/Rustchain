@@ -8,6 +8,7 @@ Coverage:
 - Dashboard metrics endpoint
 - Health check endpoint
 - Transactions endpoint
+- History endpoint
 - Price endpoint
 - Chart endpoint
 """
@@ -17,12 +18,14 @@ import json
 import time
 import sys
 import os
+import urllib.request
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from flask import Flask
 from bridge.bridge_api import register_bridge_routes, init_bridge_db, get_db, _amount_to_base, STATE_COMPLETE
+import bridge.dashboard_api as dashboard_api
 from bridge.dashboard_api import register_dashboard_routes
 
 
@@ -67,7 +70,7 @@ def insert_sample_lock(db_path, lock_data):
     """Insert sample lock into database with unique tx_hash."""
     import uuid
     with get_db() as conn:
-        now = int(time.time())
+        now = lock_data.get('created_at', int(time.time()))
         tx_hash = lock_data.get('tx_hash', f'test-tx-{uuid.uuid4().hex[:8]}')
         conn.execute(
             """
@@ -186,6 +189,66 @@ class TestBridgeHealth:
         now = int(time.time())
         assert abs(data['last_checked'] - now) < 5  # Within 5 seconds
 
+    def test_health_hides_database_exception_details(self, client, monkeypatch):
+        """Health checks should not expose local DB paths or exception text."""
+        secret_error = "sqlite failure at C:/srv/rustchain/private/bridge.db"
+
+        class FailingDb:
+            def __enter__(self):
+                raise RuntimeError(secret_error)
+
+            def __exit__(self, *_args):
+                return False
+
+        def fail_rpc(*_args, **_kwargs):
+            raise RuntimeError("rpc unavailable")
+
+        monkeypatch.setattr(dashboard_api, "get_db", lambda: FailingDb())
+        monkeypatch.setattr(urllib.request, "urlopen", fail_rpc)
+
+        response = client.get('/bridge/dashboard/health')
+
+        assert response.status_code == 200
+        body = json.loads(response.data)
+        assert body["components"]["rustchain"] is False
+        assert body["details"]["rustchain"] == "Database unavailable"
+        assert secret_error not in response.get_data(as_text=True)
+
+    def test_health_hides_rpc_exception_details(self, client, monkeypatch):
+        """Health checks should not expose RPC URLs or network exception text."""
+        secret_error = "GET https://internal-solana.local/rpc?token=secret failed"
+
+        def fail_rpc(*_args, **_kwargs):
+            raise RuntimeError(secret_error)
+
+        monkeypatch.setattr(urllib.request, "urlopen", fail_rpc)
+
+        response = client.get('/bridge/dashboard/health')
+
+        assert response.status_code == 200
+        body = json.loads(response.data)
+        assert body["components"]["solana_rpc"] is False
+        assert body["details"]["solana_rpc"] == "RPC unavailable"
+        assert secret_error not in response.get_data(as_text=True)
+
+    def test_health_hides_mint_exception_details(self, client, monkeypatch):
+        """Health checks should not expose configured mint lookup errors."""
+        secret_error = "mint lookup failed for account 7xPrivateInternalMint"
+
+        def fail_rpc(*_args, **_kwargs):
+            raise RuntimeError(secret_error)
+
+        monkeypatch.setattr(dashboard_api, "WRTC_MINT_ADDRESS", "7xPrivateInternalMint")
+        monkeypatch.setattr(urllib.request, "urlopen", fail_rpc)
+
+        response = client.get('/bridge/dashboard/health')
+
+        assert response.status_code == 200
+        body = json.loads(response.data)
+        assert body["components"]["wrtc_mint"] is False
+        assert body["details"]["wrtc_mint"] == "Mint check unavailable"
+        assert secret_error not in response.get_data(as_text=True)
+
 
 class TestDashboardTransactions:
     """Test /bridge/dashboard/transactions endpoint."""
@@ -235,6 +298,13 @@ class TestDashboardTransactions:
         
         # Should cap at 200
         assert len(data['transactions']) <= 200
+
+    def test_transactions_uses_default_for_empty_limit(self, client):
+        """Test transactions limit treats blank optional values as omitted."""
+        response = client.get('/bridge/dashboard/transactions?limit=')
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert 'transactions' in data
 
     def test_transactions_rejects_non_integer_limit(self, client):
         """Test transactions limit rejects malformed values."""
@@ -314,6 +384,86 @@ class TestDashboardTransactions:
         assert isinstance(data['wrap_count'], int)
         assert isinstance(data['unwrap_count'], int)
         assert isinstance(data['total_volume_24h'], (int, float))
+
+
+class TestBridgeHistory:
+    """Test /bridge/dashboard/history endpoint."""
+
+    def test_history_endpoint_exists(self, client):
+        """History endpoint returns bucketed monitoring points."""
+        response = client.get('/bridge/dashboard/history')
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data['period'] == '24h'
+        assert data['bucket'] == '1h'
+        assert isinstance(data['points'], list)
+        assert data['points']
+        assert {
+            'timestamp',
+            'completed_count',
+            'total_volume_rtc',
+            'wrap_volume_rtc',
+            'unwrap_volume_rtc',
+            'wrap_count',
+            'unwrap_count',
+        }.issubset(data['points'][0])
+
+    def test_history_aggregates_wrap_and_unwrap_volume(self, app, client):
+        """Completed locks are grouped into the requested bucket by target chain."""
+        import uuid
+
+        now = int(time.time())
+        bucket_start = (now // 3600) * 3600
+
+        insert_sample_lock(app.config['BRIDGE_DB_PATH'], {
+            'lock_id': f'lock_history_wrap_{uuid.uuid4().hex[:8]}',
+            'sender_wallet': 'wallet-history-wrap',
+            'amount_rtc': 25.5,
+            'target_chain': 'solana',
+            'target_wallet': '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU',
+            'tx_hash': f'tx-history-wrap-{uuid.uuid4().hex[:8]}',
+            'state': STATE_COMPLETE,
+            'created_at': bucket_start + 60,
+        })
+        insert_sample_lock(app.config['BRIDGE_DB_PATH'], {
+            'lock_id': f'lock_history_unwrap_{uuid.uuid4().hex[:8]}',
+            'sender_wallet': 'wallet-history-unwrap',
+            'amount_rtc': 10.25,
+            'target_chain': 'base',
+            'target_wallet': '0x4215a73199d56b7e9c71575bec1632cd1d36908f',
+            'tx_hash': f'tx-history-unwrap-{uuid.uuid4().hex[:8]}',
+            'state': STATE_COMPLETE,
+            'created_at': bucket_start + 120,
+        })
+
+        response = client.get('/bridge/dashboard/history?period=24h&bucket=1h')
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        point = next(item for item in data['points'] if item['timestamp'] == bucket_start)
+        assert point['completed_count'] >= 2
+        assert point['wrap_count'] >= 1
+        assert point['unwrap_count'] >= 1
+        assert point['wrap_volume_rtc'] >= 25.5
+        assert point['unwrap_volume_rtc'] >= 10.25
+        assert point['total_volume_rtc'] >= 35.75
+
+    @pytest.mark.parametrize(
+        "query, expected_error",
+        [
+            ("period=12h", "period must be one of: 1h, 24h, 7d, 30d"),
+            ("period=1h&bucket=1d", "bucket cannot be larger than period"),
+            ("period=24h&bucket=2h", "bucket must be one of: 5m, 15m, 1h, 1d"),
+        ],
+    )
+    def test_history_rejects_invalid_queries(self, client, query, expected_error):
+        """Invalid history query parameters return clear 400 errors."""
+        response = client.get(f'/bridge/dashboard/history?{query}')
+
+        assert response.status_code == 400
+        data = json.loads(response.data)
+        assert data['error'] == expected_error
 
 
 class TestWrtcPrice:

@@ -1,13 +1,30 @@
 from flask import Flask, render_template, jsonify
 import requests
 import json
+import os
+import logging
 from datetime import datetime
 
 app = Flask(__name__)
+logger = logging.getLogger(__name__)
 
 # Configuration
 API_BASE_URL = "http://localhost:8000"
 MINERS_ENDPOINT = f"{API_BASE_URL}/api/miners"
+
+
+def debug_enabled() -> bool:
+    return os.environ.get('RUSTCHAIN_EXPLORER_DEBUG', '').strip().lower() in {
+        '1', 'true', 'yes', 'on'
+    }
+
+
+def _upstream_node_unavailable(include_miners=False):
+    logger.exception("Explorer upstream node request failed")
+    payload = {"error": "Upstream node unavailable"}
+    if include_miners:
+        payload["miners"] = []
+    return jsonify(payload), 500
 
 @app.route('/')
 def dashboard():
@@ -31,26 +48,28 @@ def get_miners():
                     try:
                         timestamp = datetime.fromtimestamp(miner['last_seen'])
                         miner['last_seen_formatted'] = timestamp.strftime('%Y-%m-%d %H:%M:%S')
-                    except:
+                    except (TypeError, ValueError, OSError, OverflowError):
                         miner['last_seen_formatted'] = 'Unknown'
                 
                 # Set status based on last seen
-                if 'last_seen' in miner:
-                    time_diff = datetime.now().timestamp() - miner['last_seen']
+                try:
+                    last_seen = float(miner['last_seen'])
+                except (KeyError, TypeError, ValueError):
+                    miner['status'] = 'unknown'
+                else:
+                    time_diff = datetime.now().timestamp() - last_seen
                     if time_diff < 300:  # 5 minutes
                         miner['status'] = 'online'
                     elif time_diff < 3600:  # 1 hour
                         miner['status'] = 'idle'
                     else:
                         miner['status'] = 'offline'
-                else:
-                    miner['status'] = 'unknown'
             
             return jsonify(miners_data)
         else:
             return jsonify({'error': 'Failed to fetch miners data', 'miners': []}), 500
-    except requests.exceptions.RequestException as e:
-        return jsonify({'error': f'Connection error: {str(e)}', 'miners': []}), 500
+    except requests.exceptions.RequestException:
+        return _upstream_node_unavailable(include_miners=True)
 
 @app.route('/api/network/stats')
 def get_network_stats():
@@ -80,15 +99,19 @@ def get_network_stats():
             return jsonify(stats)
         else:
             return jsonify({'error': 'Failed to fetch network stats'}), 500
-    except requests.exceptions.RequestException as e:
-        return jsonify({'error': f'Connection error: {str(e)}'}), 500
+    except requests.exceptions.RequestException:
+        return _upstream_node_unavailable()
 
 @app.route('/miner/<miner_id>')
 def miner_detail(miner_id):
+    if len(miner_id) > 128:
+        return "Miner ID too long", 400
     return render_template('miner_detail.html', miner_id=miner_id)
 
 @app.route('/api/miner/<miner_id>')
 def get_miner_detail(miner_id):
+    if len(miner_id) > 128:
+        return jsonify({"error": "Miner ID too long"}), 400
     try:
         response = requests.get(MINERS_ENDPOINT, timeout=5)
         if response.status_code == 200:
@@ -104,12 +127,16 @@ def get_miner_detail(miner_id):
                     try:
                         timestamp = datetime.fromtimestamp(miner['last_seen'])
                         miner['last_seen_formatted'] = timestamp.strftime('%Y-%m-%d %H:%M:%S')
-                    except:
+                    except (TypeError, ValueError, OSError, OverflowError):
                         miner['last_seen_formatted'] = 'Unknown'
                 
                 # Calculate status
-                if 'last_seen' in miner:
-                    time_diff = datetime.now().timestamp() - miner['last_seen']
+                try:
+                    last_seen = float(miner['last_seen'])
+                except (KeyError, TypeError, ValueError):
+                    miner['status'] = 'unknown'
+                else:
+                    time_diff = datetime.now().timestamp() - last_seen
                     if time_diff < 300:
                         miner['status'] = 'online'
                     elif time_diff < 3600:
@@ -122,8 +149,8 @@ def get_miner_detail(miner_id):
                 return jsonify({'error': 'Miner not found'}), 404
         else:
             return jsonify({'error': 'Failed to fetch miner data'}), 500
-    except requests.exceptions.RequestException as e:
-        return jsonify({'error': f'Connection error: {str(e)}'}), 500
+    except requests.exceptions.RequestException:
+        return _upstream_node_unavailable()
 
 @app.errorhandler(404)
 def not_found(error):
@@ -134,4 +161,4 @@ def internal_error(error):
     return render_template('500.html'), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=debug_enabled())

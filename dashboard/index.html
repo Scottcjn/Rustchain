@@ -135,6 +135,27 @@
 
     <script>
         const API_BASE = 'https://rustchain.org';
+
+        function getMinerCount(payload) {
+            if (Array.isArray(payload)) {
+                return payload.length;
+            }
+
+            const paginationTotal = Number(payload?.pagination?.total);
+            if (Number.isFinite(paginationTotal)) {
+                return paginationTotal;
+            }
+
+            if (Array.isArray(payload?.miners)) {
+                return payload.miners.length;
+            }
+
+            if (Array.isArray(payload?.data)) {
+                return payload.data.length;
+            }
+
+            return Number(payload?.count) || 0;
+        }
         
         async function fetchStats() {
             try {
@@ -163,7 +184,7 @@
                 // Miners
                 if (minersRes && minersRes.ok) {
                     const miners = await minersRes.json();
-                    document.getElementById('miners').textContent = miners.count || miners.length || '0';
+                    document.getElementById('miners').textContent = getMinerCount(miners);
                 } else {
                     document.getElementById('miners').textContent = '?';
                 }

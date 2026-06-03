@@ -9,6 +9,7 @@ Complete code examples for interacting with the RustChain REST API.
 - [JavaScript/Node.js Examples](#javascriptnodejs-examples)
 - [Go Examples](#go-examples)
 - [Rust Examples](#rust-examples)
+- [Error Handling Cookbook](#error-handling-cookbook)
 - [Bash Script](#bash-script)
 
 ---
@@ -97,7 +98,7 @@ curl -sk https://rustchain.org/api/stats | jq
 ### Get Hall of Fame
 
 ```bash
-curl -sk https://rustchain.org/api/hall_of_fame | jq
+curl -sk https://rustchain.org/api/hall_of_fame/leaderboard | jq
 ```
 
 ### Get Fee Pool Statistics
@@ -109,7 +110,7 @@ curl -sk https://rustchain.org/api/fee_pool | jq
 ### Get Settlement Data
 
 ```bash
-curl -sk https://rustchain.org/api/settlement/75 | jq
+curl -sk https://rustchain.org/rewards/epoch/75 | jq
 ```
 
 ### Submit Hardware Attestation
@@ -148,6 +149,55 @@ curl -sk -X POST https://rustchain.org/wallet/transfer \
     "amount_rtc": 10.0,
     "memo": "Bounty payment #123"
   }' | jq
+```
+
+---
+
+## Error Handling Cookbook
+
+### Capture Status Codes in Scripts
+
+Use `--write-out` when a script needs to branch on HTTP status instead of only
+printing the response body.
+
+```bash
+response_file="$(mktemp)"
+status_code="$(
+  curl -sk \
+    --output "$response_file" \
+    --write-out "%{http_code}" \
+    "https://rustchain.org/wallet/balance?miner_id=scott"
+)"
+
+case "$status_code" in
+  200)
+    jq . "$response_file"
+    ;;
+  400)
+    echo "Bad request; check query parameters or JSON field names" >&2
+    jq . "$response_file" >&2
+    ;;
+  401|403)
+    echo "Authentication failed; check X-Admin-Key or request signature" >&2
+    jq . "$response_file" >&2
+    ;;
+  404)
+    echo "Resource not found; verify wallet, miner, epoch, or route path" >&2
+    jq . "$response_file" >&2
+    ;;
+  429)
+    echo "Rate limited; back off before retrying" >&2
+    ;;
+  5*)
+    echo "Node error; retry later or check /health and /ready" >&2
+    jq . "$response_file" >&2
+    ;;
+  *)
+    echo "Unexpected HTTP status: $status_code" >&2
+    jq . "$response_file" >&2
+    ;;
+esac
+rm -f "$response_file"
 ```
 
 ---
@@ -245,7 +295,7 @@ class RustChainClient:
     
     def get_hall_of_fame(self) -> Dict[str, Any]:
         """Get Hall of Fame leaderboard."""
-        resp = self.session.get(f"{self.base_url}/api/hall_of_fame")
+        resp = self.session.get(f"{self.base_url}/api/hall_of_fame/leaderboard")
         resp.raise_for_status()
         return resp.json()
     
@@ -257,7 +307,7 @@ class RustChainClient:
     
     def get_settlement(self, epoch: int) -> Dict[str, Any]:
         """Get settlement data for a specific epoch."""
-        resp = self.session.get(f"{self.base_url}/api/settlement/{epoch}")
+        resp = self.session.get(f"{self.base_url}/rewards/epoch/{epoch}")
         resp.raise_for_status()
         return resp.json()
     
@@ -483,7 +533,7 @@ class RustChainClient {
   }
 
   async getHallOfFame() {
-    return this.request('/api/hall_of_fame');
+    return this.request('/api/hall_of_fame/leaderboard');
   }
 
   async getFeePool() {
@@ -491,7 +541,7 @@ class RustChainClient {
   }
 
   async getSettlement(epoch) {
-    return this.request(`/api/settlement/${epoch}`);
+    return this.request(`/rewards/epoch/${epoch}`);
   }
 
   async getSwapInfo() {
@@ -1087,7 +1137,7 @@ cmd_stats() {
 
 cmd_hall_of_fame() {
     print_header "Hall of Fame"
-    $CURL "$BASE_URL/api/hall_of_fame" | jq
+    $CURL "$BASE_URL/api/hall_of_fame/leaderboard" | jq
 }
 
 cmd_fee_pool() {
@@ -1103,7 +1153,7 @@ cmd_settlement() {
         exit 1
     fi
     print_header "Settlement for Epoch: $epoch"
-    $CURL "$BASE_URL/api/settlement/$epoch" | jq
+    $CURL "$BASE_URL/rewards/epoch/$epoch" | jq
 }
 
 cmd_swap_info() {

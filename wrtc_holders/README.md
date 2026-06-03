@@ -29,10 +29,10 @@ wRTC Token Holder Snapshot
 ======================================================================
 
 Mint: 12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X
-Total Supply: 8,300,000 wRTC
+Total Supply: 8,388,608 wRTC
 
 Fetching token supply...
-Actual Supply: 8,300,000 wRTC
+Actual Supply: 8,388,608 wRTC
 
 Fetching token holders...
 Holders found: 15
@@ -63,7 +63,7 @@ Labels:
 
 - **Mint:** `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X`
 - **Decimals:** 6
-- **Supply:** 8,300,000 wRTC (fixed, mint authority revoked)
+- **Supply:** 8,388,608 wRTC (fixed, mint authority revoked)
 
 ## Known Wallet Labels
 

@@ -547,7 +547,7 @@ TOTAL                      7.5×         100%      0.90 RTC
 |----------|-------|
 | **Name** | RustChain Token |
 | **Ticker** | RTC |
-| **Total Supply** | 8,192,000 RTC |
+| **Total Supply** | 8,388,608 RTC |
 | **Decimals** | 8 (1 RTC = 100,000,000 μRTC) |
 | **Block Reward** | 1.5 RTC per epoch |
 | **Block Time** | 600 seconds (10 minutes) |
@@ -565,7 +565,7 @@ TOTAL                      7.5×         100%      0.90 RTC
 │   █░                                        0.5% Foundation │
 │   ███                                       3% Community    │
 │                                                             │
-│   Total Premine: 6% (491,520 RTC)                          │
+│   Total Premine: 6% (503,316 RTC)                          │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -574,10 +574,11 @@ TOTAL                      7.5×         100%      0.90 RTC
 
 | Zone | Allocation | RTC Amount | Purpose |
 |------|------------|------------|---------|
-| Block Mining | 94% | 7,700,480 | PoA Validator Rewards |
-| Dev Wallet | 2.5% | 204,800 | Development funding |
-| Foundation | 0.5% | 40,960 | Governance & operations |
-| Community Vault | 3% | 245,760 | Airdrops, bounties, grants |
+| Block Mining | 94% | 7,885,292 | PoA Validator Rewards |
+| Founders | 1.5% | 125,829 | `founder_founders` — core team |
+| Dev Fund | 1.5% | 125,829 | `founder_dev_fund` — development |
+| Team / Bounty | 1.5% | 125,829 | `founder_team_bounty` — contributor bounties |
+| Community | 1.5% | 125,829 | `founder_community` — airdrops, grants |
 
 ### 6.3 Emission Schedule
 
@@ -888,6 +889,6 @@ Response: {"epoch": 62, "slot": 8928, "next_settlement": 1707000000}
 
 ---
 
-*Copyright © 2025-2026 Scott Johnson / Elyan Labs. Released under MIT License.*
+*Copyright © 2025-2026 Scott Johnson / Elyan Labs. Released under Apache License 2.0.*
 
 *RustChain — Making vintage hardware valuable again.*

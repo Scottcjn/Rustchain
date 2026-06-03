@@ -265,18 +265,6 @@ class G4Miner:
             print(f"   Headers: {self.shares_accepted}/{self.shares_submitted} accepted")
             self.check_balance()
 
-def main():
-    import argparse
-    parser = argparse.ArgumentParser(description="RustChain G4 Miner - FIXED")
-    parser.add_argument("--id", default="dual-g4-125", help="Miner ID")
-    parser.add_argument("--wallet", help="Wallet address")
-    args = parser.parse_args()
-
-    miner = G4Miner(miner_id=args.id, wallet=args.wallet)
-    miner.mine_forever()
-
-if __name__ == "__main__":
-    main()
     def _detect_hardware(self):
         """Best-effort hardware survey on Mac OS X Tiger/Leopard."""
         info = {
@@ -350,3 +338,17 @@ if __name__ == "__main__":
             "sample_count": len(samples),
             "samples_preview": samples[:12],
         }
+
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="RustChain G4 Miner - FIXED")
+    parser.add_argument("--id", default="dual-g4-125", help="Miner ID")
+    parser.add_argument("--wallet", help="Wallet address")
+    args = parser.parse_args()
+
+    miner = G4Miner(miner_id=args.id, wallet=args.wallet)
+    miner.mine_forever()
+
+if __name__ == "__main__":
+    main()

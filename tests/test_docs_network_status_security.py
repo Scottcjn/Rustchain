@@ -41,3 +41,20 @@ def test_architecture_breakdown_escapes_miner_fields():
 
     assert "<span>${safeText(arch)}</span><span>${safeText(n)} (${pct}%)</span>" in html
     assert "<span>${arch}</span><span>${n} (${pct}%)</span>" not in html
+
+
+def test_network_status_normalizes_current_miners_api_envelopes():
+    html = source()
+
+    assert "function normalizeMinerRows(payload)" in html
+    assert "payload?.miners || payload?.data || payload?.items || []" in html
+    assert "const list = normalizeMinerRows(miners);" in html
+    assert "rows.filter(row => row && typeof row === 'object')" in html
+
+
+def test_network_status_architecture_breakdown_uses_current_miner_fields():
+    html = source()
+
+    assert "function minerArch(row)" in html
+    assert "return row.device_arch || row.arch || row.device_family || row.family || row.machine || 'unknown';" in html
+    assert "const key = minerArch(m);" in html

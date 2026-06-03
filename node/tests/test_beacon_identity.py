@@ -166,6 +166,24 @@ class TestLearnKeyFromEnvelope:
         assert accepted is False
         assert reason == "invalid_pubkey_encoding"
 
+    def test_rejects_non_string_pubkey(self, init_db, db_path):
+        bi = init_db
+        envelope = {"agent_id": "bcn_000000000000", "pubkey": ["00"]}
+        accepted, reason = bi.learn_key_from_envelope(envelope, db_path)
+        assert accepted is False
+        assert reason == "invalid_pubkey_encoding"
+
+    def test_rejects_wrong_length_pubkey(self, init_db, db_path):
+        bi = init_db
+        pubkey_bytes = b"\x01" * 31
+        agent_id = bi.agent_id_from_pubkey(pubkey_bytes)
+
+        envelope = {"agent_id": agent_id, "pubkey": pubkey_bytes.hex()}
+        accepted, reason = bi.learn_key_from_envelope(envelope, db_path)
+
+        assert accepted is False
+        assert reason == "invalid_pubkey_length"
+
     def test_rejects_mismatched_agent_id(self, init_db, db_path):
         bi = init_db
         wrong_agent = "bcn_000000000000"

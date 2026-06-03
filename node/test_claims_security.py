@@ -4,7 +4,10 @@ Tests for CRIT-CLAIMS-1 (signature bypass) and MED-CLAIMS-2 (UNIT mismatch).
 """
 
 import os
+import sqlite3
 import sys
+import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -42,6 +45,73 @@ class TestClaimsSignatureBypass(unittest.TestCase):
             public_key="1" * 64,  # fake key
         )
         self.assertFalse(valid, "Fake signature must be rejected")
+
+
+    def test_claim_submission_rejects_unregistered_signing_key(self):
+        """A valid signature from an attacker key must not claim another miner."""
+        import claims_submission as cs
+        from claims_eligibility import BLOCK_TIME, GENESIS_TIMESTAMP
+
+        if not cs.HAVE_NACL:
+            self.skipTest("PyNaCl not installed, skipping real submit test")
+
+        from nacl.signing import SigningKey
+
+        fd, db_path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        try:
+            current_ts = int(time.time())
+            current_slot = (current_ts - GENESIS_TIMESTAMP) // BLOCK_TIME
+            epoch = max(0, current_slot // 144 - 3)
+            epoch_ts = GENESIS_TIMESTAMP + ((epoch * 144 + 72) * BLOCK_TIME)
+            miner_id = "victim-miner"
+            wallet = "RTC" + "A" * 24
+            victim_key = SigningKey.generate()
+            attacker_key = SigningKey.generate()
+            victim_public_key = victim_key.verify_key.encode().hex()
+
+            with sqlite3.connect(db_path) as conn:
+                conn.execute(
+                    """
+                    CREATE TABLE miner_attest_recent (
+                        miner TEXT,
+                        device_arch TEXT,
+                        ts_ok INTEGER,
+                        fingerprint_passed INTEGER DEFAULT 1,
+                        entropy_score REAL,
+                        warthog_bonus REAL DEFAULT 1.0,
+                        wallet_address TEXT,
+                        public_key TEXT
+                    )
+                    """
+                )
+                conn.execute("CREATE TABLE epoch_state (epoch INTEGER, settled INTEGER)")
+                conn.executemany(
+                    "INSERT INTO miner_attest_recent VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    [
+                        (miner_id, "modern", current_ts - 3600, 1, 0.5, 1.0, wallet, victim_public_key),
+                        (miner_id, "modern", epoch_ts, 1, 0.5, 1.0, wallet, victim_public_key),
+                    ],
+                )
+                conn.execute("INSERT INTO epoch_state VALUES (?, 1)", (epoch,))
+
+            payload = cs.create_claim_payload(miner_id, epoch, wallet, current_ts)
+            attacker_signature = attacker_key.sign(payload.encode("utf-8")).signature.hex()
+            result = cs.submit_claim(
+                db_path=db_path,
+                miner_id=miner_id,
+                epoch=epoch,
+                wallet_address=wallet,
+                signature=attacker_signature,
+                public_key=attacker_key.verify_key.encode().hex(),
+                current_slot=current_slot,
+                current_ts=current_ts,
+            )
+
+            self.assertFalse(result["success"])
+            self.assertEqual(result["error"], "public_key_mismatch")
+        finally:
+            os.unlink(db_path)
 
 
 class TestClaimsUnitConsistency(unittest.TestCase):

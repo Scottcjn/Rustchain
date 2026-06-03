@@ -60,6 +60,17 @@ def test_rom_cluster_detector_flags_second_unique_miner_when_threshold_exceeded(
     assert set(detector.get_suspicious_miners()) == {"miner-a", "miner-b"}
 
 
+def test_rom_cluster_detector_default_threshold_flags_duplicate_miner():
+    detector = rom_db.ROMClusterDetector()
+
+    assert detector.report_rom("miner-a", "unique_hash") == (True, "unique_rom")
+    ok, reason = detector.report_rom("miner-b", "unique_hash")
+
+    assert ok is False
+    assert reason == "rom_clustering_detected:shared_with:['miner-a']"
+    assert set(detector.get_suspicious_miners()) == {"miner-a", "miner-b"}
+
+
 def test_rom_cluster_detector_rejects_known_emulator_rom_immediately():
     detector = rom_db.ROMClusterDetector(cluster_threshold=99)
 

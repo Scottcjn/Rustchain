@@ -6,8 +6,21 @@ With RIP-PoA Hardware Fingerprint Attestation + Serial Binding v2.0
 import warnings
 # warnings.filterwarnings('ignore', message='Unverified HTTPS request')  # No longer needed — TLS verification enabled
 
-import os, sys, json, time, hashlib, uuid, requests, socket, subprocess, platform, statistics, re
+import os, sys, json, time, hashlib, uuid, math, requests, socket, subprocess, platform, statistics, re
 from datetime import datetime
+
+# ── Ed25519 signing (GPT-5.4 audit finding #2) ──
+# If miner_crypto.py + PyNaCl are available, sign every attestation with
+# Ed25519 over the canonical JSON of the full payload, and sign every
+# enrollment with the 3-field MAC server expects. Server-side acceptance:
+# PR #6426 (canonical-JSON) + the existing 3-field MAC path for enrollment.
+# Without signing, miner falls back to legacy sha512 / unsigned — server
+# accepts with WARNING but offers no wallet-hijack protection.
+try:
+    from miner_crypto import get_or_create_keypair, sign_payload  # noqa: F401
+    CRYPTO_AVAILABLE = True
+except ImportError:
+    CRYPTO_AVAILABLE = False
 
 # Import fingerprint checks
 try:
@@ -28,6 +41,7 @@ NODE_URL = "https://rustchain.org"  # Use HTTPS via nginx
 BLOCK_TIME = 600  # 10 minutes
 NETWORK_RETRY_ATTEMPTS = 3
 NETWORK_RETRY_BASE_DELAY = 2
+MICRO_UNITS_PER_RTC = 1_000_000
 
 # TLS verification: use pinned cert if available, else system CA bundle
 _CERT_PATH = os.path.expanduser("~/.rustchain/node_cert.pem")
@@ -53,6 +67,40 @@ def _parse_free_memory_gb(output):
     return None
 
 
+def _parse_int_output(output):
+    try:
+        return int(str(output).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_memory_bytes_to_gb(output):
+    memory_bytes = _parse_int_output(output)
+    if memory_bytes is None or memory_bytes <= 0:
+        return None
+    return max(1, round(memory_bytes / (1024 ** 3)))
+
+
+def _parse_wmic_value(output, key):
+    prefix = f"{key}="
+    for line in str(output or "").splitlines():
+        line = line.strip()
+        if line.lower().startswith(prefix.lower()):
+            return line[len(prefix):].strip()
+    return ""
+
+
+def _linux_miner_platform_warning(system):
+    if system in ("Linux", "Darwin"):
+        return ""
+    system_name = system or "unknown"
+    return (
+        f"{system_name} is not a primary supported platform for this Linux miner; "
+        "hardware probes may be incomplete, so CPU, serial, and fingerprint results "
+        "can be degraded. Use a native Linux runtime for reliable attestation."
+    )
+
+
 def _safe_id_part(value):
     slug = re.sub(r"[^a-zA-Z0-9_.:-]+", "-", str(value or "").strip().lower()).strip("-")
     return slug or "unknown"
@@ -62,6 +110,41 @@ def _miner_id_from_hw(hw_info):
     arch = _safe_id_part(hw_info.get("arch") or hw_info.get("machine") or "linux")
     hostname = _safe_id_part(hw_info.get("hostname") or socket.gethostname())
     return f"{arch}-{hostname}"
+
+
+def _finite_float(value):
+    if isinstance(value, bool):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) else None
+
+
+def _wallet_balance_rtc(data):
+    if not isinstance(data, dict):
+        return None
+
+    value = _finite_float(data.get("amount_rtc"))
+    if value is not None:
+        return value
+
+    value = _finite_float(data.get("amount_i64"))
+    if value is not None:
+        return value / MICRO_UNITS_PER_RTC
+
+    for key in ("balance_rtc", "rtc_balance", "balance", "amount"):
+        value = _finite_float(data.get(key))
+        if value is not None:
+            return value
+
+    for key in ("balance_i64", "balance_urtc"):
+        value = _finite_float(data.get(key))
+        if value is not None:
+            return value / MICRO_UNITS_PER_RTC
+
+    return None
 
 
 def _request_with_network_retry(method, url, action, retries=NETWORK_RETRY_ATTEMPTS,
@@ -128,6 +211,16 @@ class LocalMiner:
         self.attestation_valid_until = 0
         self.last_entropy = {}
         self.fingerprint_data = {}
+
+        # Ed25519 keypair — generated/loaded once per install. Used to sign
+        # /attest/submit (canonical JSON) and /epoch/enroll (3-field MAC).
+        # Persisted via miner_crypto.get_or_create_keypair so reinstall
+        # preserves identity.
+        self.keypair = {}
+        self.public_key = ""
+        if CRYPTO_AVAILABLE:
+            self.keypair = get_or_create_keypair()
+            self.public_key = self.keypair.get("public_key", "")
         self.fingerprint_passed = False
         self.verbose = verbose
         self.show_payload = show_payload
@@ -152,6 +245,9 @@ class LocalMiner:
         print(f"Node: {self.node_url}")
         print(f"Wallet: {self.wallet}")
         print(f"Serial: {self.serial}")
+        platform_warning = _linux_miner_platform_warning(platform.system())
+        if platform_warning:
+            print(f"[WARN] {platform_warning}")
         print("="*70)
 
         # Run initial fingerprint check
@@ -286,14 +382,16 @@ class LocalMiner:
 
     def _get_hw_info(self):
         """Collect hardware info"""
+        system = platform.system()
         machine = platform.machine().lower()
         hw = {
-            "platform": platform.system(),
+            "platform": system,
             "machine": platform.machine(),
             "hostname": socket.gethostname(),
             "family": "x86",
             "arch": "modern",  # Less than 10 years old
-            "serial": get_linux_serial()  # Hardware serial for v2 binding
+            "serial": get_linux_serial(),  # Hardware serial for v2 binding
+            "probe_warning": _linux_miner_platform_warning(system)
         }
 
         # Detect architecture family from platform.machine() FIRST
@@ -330,15 +428,44 @@ class LocalMiner:
             hw["arch"] = machine
 
         # Get CPU
-        cpu = _parse_lscpu_model(self._run_cmd(["lscpu"]))
+        if system == "Darwin":
+            cpu = (self._run_cmd(["sysctl", "-n", "machdep.cpu.brand_string"]) or "").strip()
+        elif system == "Windows":
+            cpu = (
+                _parse_wmic_value(self._run_cmd(["wmic", "cpu", "get", "Name", "/value"]), "Name")
+                or platform.processor()
+                or ""
+            ).strip()
+        else:
+            cpu = _parse_lscpu_model(self._run_cmd(["lscpu"]))
         hw["cpu"] = cpu or "Unknown"
 
         # Get cores
-        cores = self._run_cmd(["nproc"])
-        hw["cores"] = int(cores) if cores else 6
+        if system == "Darwin":
+            cores = _parse_int_output(self._run_cmd(["sysctl", "-n", "hw.ncpu"]))
+        elif system == "Windows":
+            cores = _parse_int_output(
+                _parse_wmic_value(
+                    self._run_cmd(["wmic", "cpu", "get", "NumberOfLogicalProcessors", "/value"]),
+                    "NumberOfLogicalProcessors",
+                )
+            )
+        else:
+            cores = _parse_int_output(self._run_cmd(["nproc"]))
+        hw["cores"] = cores or os.cpu_count() or 1
 
         # Get memory
-        mem = _parse_free_memory_gb(self._run_cmd(["free", "-g"]))
+        if system == "Darwin":
+            mem = _parse_memory_bytes_to_gb(self._run_cmd(["sysctl", "-n", "hw.memsize"]))
+        elif system == "Windows":
+            mem = _parse_memory_bytes_to_gb(
+                _parse_wmic_value(
+                    self._run_cmd(["wmic", "computersystem", "get", "TotalPhysicalMemory", "/value"]),
+                    "TotalPhysicalMemory",
+                )
+            )
+        else:
+            mem = _parse_free_memory_gb(self._run_cmd(["free", "-g"]))
         hw["memory_gb"] = mem if mem is not None else 32
 
         # Get MACs (ensures PoA signal uses real hardware data)
@@ -419,6 +546,23 @@ class LocalMiner:
             "warthog": self.warthog.collect_proof() if self.warthog else None
         }
 
+        # ── Ed25519 signature (GPT-5.4 audit finding #2) ──
+        # Sign canonical JSON of the full attestation BEFORE adding signature
+        # fields. Server (PR #6426) strips signature/public_key/signature_type
+        # before re-canonicalizing for verification.
+        if CRYPTO_AVAILABLE and self.keypair:
+            try:
+                payload_bytes = json.dumps(
+                    attestation, sort_keys=True, separators=(",", ":")
+                ).encode()
+                attestation["signature"] = sign_payload(
+                    payload_bytes, self.keypair["private_key"]
+                )
+                attestation["public_key"] = self.public_key
+                attestation["signature_type"] = "ed25519"
+            except Exception:
+                pass  # Fall through unsigned; server accepts with warning
+
         try:
             resp = self._post(
                 "/attest/submit",
@@ -479,14 +623,42 @@ class LocalMiner:
 
         print(f"\n📝 [{datetime.now().strftime('%H:%M:%S')}] Enrolling...")
 
+        # Fetch current epoch so we can sign the enrollment. Server expects
+        # 3-field MAC (miner_pubkey|miner_id|epoch) verified against the
+        # SAME Ed25519 key used during attestation (cross-checked via
+        # signing_pubkey column in miner_attest_recent). Race with epoch
+        # rollover is mild — server returns invalid_enrollment_signature on
+        # mismatch and the miner retries on next cycle.
+        current_epoch = None
+        try:
+            ep_resp = requests.get(
+                f"{self.node_url}/epoch", timeout=10, verify=TLS_VERIFY
+            )
+            if ep_resp.ok:
+                current_epoch = ep_resp.json().get("epoch")
+        except Exception:
+            pass
+
+        miner_id = self._miner_id()
         payload = {
             "miner_pubkey": self.wallet,
-            "miner_id": self._miner_id(),
+            "miner_id": miner_id,
             "device": {
                 "family": self.hw_info["family"],
                 "arch": self.hw_info["arch"]
             }
         }
+
+        # Ed25519-sign the enrollment if we have a keypair AND a fresh epoch.
+        if CRYPTO_AVAILABLE and self.keypair and current_epoch is not None:
+            enroll_message = f"{self.wallet}|{miner_id}|{current_epoch}"
+            try:
+                payload["signature"] = sign_payload(
+                    enroll_message.encode(), self.keypair["private_key"]
+                )
+                payload["public_key"] = self.public_key
+            except Exception:
+                pass  # Best-effort; server still accepts unsigned with warning
 
         try:
             resp = self._post(
@@ -544,12 +716,21 @@ class LocalMiner:
     def check_balance(self):
         """Check balance"""
         try:
-            resp = self._get(f"/balance/{self.wallet}", "checking wallet balance", timeout=10, verify=TLS_VERIFY)
+            resp = self._get(
+                "/wallet/balance",
+                "checking wallet balance",
+                params={"miner_id": self._miner_id()},
+                timeout=10,
+                verify=TLS_VERIFY,
+            )
             if resp is None:
                 return 0
             if resp.status_code == 200:
                 result = resp.json()
-                balance = result.get('balance_rtc', 0)
+                balance = _wallet_balance_rtc(result)
+                if balance is None:
+                    print("[WARN] Invalid wallet balance response")
+                    return 0
                 print(f"\n💰 Balance: {balance} RTC")
                 return balance
         except Exception as e:
@@ -569,6 +750,8 @@ class LocalMiner:
             print(f"[DRY-RUN] TLS verify: {True}")
 
         self._get_hw_info()
+        if self.hw_info.get("probe_warning"):
+            print(f"[DRY-RUN] Platform warning: {self.hw_info['probe_warning']}")
         print(f"[DRY-RUN] Node URL: {self.node_url}")
         print(f"[DRY-RUN] Wallet: {self.wallet}")
         print(f"[DRY-RUN] Hostname: {self.hw_info.get('hostname')}")
@@ -668,7 +851,11 @@ if __name__ == "__main__":
     parser.add_argument("--wart-pool", help="Warthog mining pool API URL")
     parser.add_argument("--bzminer-path", help="Path to BzMiner binary")
     parser.add_argument("--manage-bzminer", action="store_true", help="Auto-start/stop BzMiner")
-    parser.add_argument("--dry-run", action="store_true", help="Run preflight checks only; do not start mining")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Run preflight checks only; print hardware fingerprint info; do not start mining",
+    )
     parser.add_argument("--verbose", action="store_true", help="Enable verbose output showing API endpoints, headers, and response details")
     parser.add_argument("--show-payload", action="store_true", help="Show request payload in dry-run mode")
     args = parser.parse_args()

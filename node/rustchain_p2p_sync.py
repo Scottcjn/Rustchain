@@ -9,9 +9,70 @@ import sqlite3
 import time
 import json
 import threading
+import ipaddress
 from typing import List, Dict
+from urllib.parse import urlparse
 
 from flask import jsonify, request
+
+
+def _parse_int_query_arg(
+    raw_value,
+    name: str,
+    default: int,
+    minimum: int | None = None,
+    maximum: int | None = None,
+) -> int:
+    if raw_value is None or raw_value == "":
+        value = default
+    else:
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError):
+            raise ValueError(f"{name} must be an integer")
+
+    if minimum is not None and value < minimum:
+        raise ValueError(f"{name} must be >= {minimum}")
+    if maximum is not None and value > maximum:
+        return maximum
+    return value
+
+
+def _validate_public_peer_url(peer_url: str) -> str | None:
+    """Return an error message when peer_url is not safe to contact."""
+    try:
+        parsed = urlparse(peer_url)
+    except Exception:
+        return "invalid peer_url format"
+
+    if parsed.scheme not in ("http", "https"):
+        return "peer_url must start with http:// or https://"
+
+    hostname = parsed.hostname
+    if not hostname:
+        return "invalid peer_url format"
+
+    normalized_host = hostname.rstrip(".").lower()
+    if normalized_host == "localhost" or normalized_host.endswith(".localhost"):
+        return "peer_url must be a public address"
+
+    try:
+        address = ipaddress.ip_address(normalized_host)
+    except ValueError:
+        return None
+
+    if (
+        address.is_private
+        or address.is_loopback
+        or address.is_link_local
+        or address.is_multicast
+        or address.is_reserved
+        or address.is_unspecified
+    ):
+        return "peer_url must be a public address"
+
+    return None
+
 
 # ============================================================================
 # PEER DISCOVERY & MANAGEMENT
@@ -49,6 +110,8 @@ class PeerManager:
 
     def add_peer(self, peer_url: str) -> bool:
         """Add a new peer to the network"""
+        if len(peer_url) > 2048:
+            return False  # URL too long
         if peer_url == self.local_url:
             return False  # Don't add self
 
@@ -60,10 +123,22 @@ class PeerManager:
 
             with self.lock:
                 with sqlite3.connect(self.db_path) as conn:
+                    existing = conn.execute(
+                        "SELECT 1 FROM peers WHERE peer_url = ?", (peer_url,)
+                    ).fetchone()
+                    if not existing:
+                        host_count = conn.execute(
+                            "SELECT COUNT(*) FROM peers WHERE peer_host = ?", (peer_host,)
+                        ).fetchone()[0]
+                        if host_count >= self._MAX_PEERS_PER_HOST:
+                            return False
                     conn.execute("""
-                        INSERT OR REPLACE INTO peers
+                        INSERT INTO peers
                         (peer_url, peer_host, peer_port, last_seen, is_active, added_at)
                         VALUES (?, ?, ?, ?, 1, ?)
+                        ON CONFLICT(peer_url) DO UPDATE SET
+                            last_seen = excluded.last_seen,
+                            is_active = 1
                     """, (peer_url, peer_host, peer_port, int(time.time()), int(time.time())))
                     conn.commit()
 
@@ -82,17 +157,49 @@ class PeerManager:
             print(f"[P2P] Failed to add peer {peer_url}: {e}")
             return False
 
+    _MAX_ACTIVE_PEERS = 500
+    _FRESH_FRACTION = 0.75   # fraction of cap from most-recently-seen peers
+    _MAX_PEERS_PER_HOST = 3  # per-source admission cap
+
     def get_active_peers(self) -> List[str]:
-        """Get list of active peer URLs"""
+        """Return active peer URLs using flood-resistant two-bucket selection.
+
+        75 % of the cap comes from the freshest peers (last_seen DESC).
+        The remaining 25 % comes from the oldest-admitted peers (added_at ASC)
+        that were not already included in the fresh bucket.  This prevents an
+        attacker who floods /p2p/announce from fully eclipsing long-standing
+        honest peers by keeping their entries perpetually 'freshest'.
+        """
+        cap = self._MAX_ACTIVE_PEERS
+        fresh_n = int(cap * self._FRESH_FRACTION)
+        trust_n = cap - fresh_n
+        cutoff = int(time.time()) - 300
+
         with self.lock:
             with sqlite3.connect(self.db_path) as conn:
-                rows = conn.execute("""
-                    SELECT peer_url FROM peers
-                    WHERE is_active = 1
-                    AND last_seen > ?
-                """, (int(time.time()) - 300,)).fetchall()  # 5 minute timeout
+                fresh = [
+                    row[0] for row in conn.execute("""
+                        SELECT peer_url FROM peers
+                        WHERE is_active = 1 AND last_seen > ?
+                        ORDER BY last_seen DESC
+                        LIMIT ?
+                    """, (cutoff, fresh_n)).fetchall()
+                ]
 
-                return [row[0] for row in rows]
+                fresh_set = set(fresh)
+
+                trust = [
+                    row[0]
+                    for row in conn.execute("""
+                        SELECT peer_url FROM peers
+                        WHERE is_active = 1 AND last_seen > ?
+                        ORDER BY added_at ASC
+                        LIMIT ?
+                    """, (cutoff, cap)).fetchall()
+                    if row[0] not in fresh_set
+                ][:trust_n]
+
+                return fresh + trust
 
     def update_peer_status(self, peer_url: str, block_height: int = None):
         """Update peer last seen timestamp"""
@@ -415,6 +522,20 @@ def add_p2p_endpoints(app, peer_manager, block_sync, tx_gossip):
             return jsonify({"ok": False, "error": "JSON object required"}), 400
 
         peer_url = data.get('peer_url')
+        if peer_url is None:
+            return jsonify({"ok": False, "error": "peer_url required"}), 400
+
+        if not isinstance(peer_url, str):
+            return jsonify({"ok": False, "error": "peer_url must be a string"}), 400
+
+        peer_url = peer_url.strip()
+
+        # SECURITY: Validate URL scheme and reject private/internal addresses
+        if not peer_url:
+            return jsonify({"ok": False, "error": "peer_url required"}), 400
+        peer_url_error = _validate_public_peer_url(peer_url)
+        if peer_url_error:
+            return jsonify({"ok": False, "error": peer_url_error}), 400
 
         if peer_url:
             success = peer_manager.add_peer(peer_url)
@@ -431,13 +552,24 @@ def add_p2p_endpoints(app, peer_manager, block_sync, tx_gossip):
     @app.route('/api/blocks', methods=['GET'])
     def get_blocks():
         """Get blocks for sync (start height, limit)"""
-        start = request.args.get('start', 0, type=int)
-        limit = request.args.get('limit', 100, type=int)
+        try:
+            start = _parse_int_query_arg(request.args.get('start'), "start", 0, minimum=0)
+            limit = _parse_int_query_arg(request.args.get('limit'), "limit", 100, minimum=1, maximum=1000)
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
 
         # Fetch blocks from database
         with sqlite3.connect(peer_manager.db_path) as conn:
-            rows = conn.execute("""
-                SELECT height, hash, data FROM blocks
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(blocks)")}
+            if {"hash", "data"}.issubset(columns):
+                hash_column = "hash"
+                data_column = "data"
+            else:
+                hash_column = "block_hash"
+                data_column = "body_json"
+
+            rows = conn.execute(f"""
+                SELECT height, {hash_column}, {data_column} FROM blocks
                 WHERE height >= ?
                 ORDER BY height ASC
                 LIMIT ?

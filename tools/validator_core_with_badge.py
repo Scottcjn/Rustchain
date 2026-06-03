@@ -3,6 +3,7 @@
 import json
 import hashlib
 from datetime import datetime
+from pathlib import Path
 
 def simulate_entropy_score(cpu_model, bios_date, current_year=None):
     year = int(bios_date.split("-")[0])
@@ -54,6 +55,8 @@ def generate_validator_entry():
         with open("relic_rewards.json", "w") as b:
             json.dump({"badges": [badge]}, b, indent=4)
         print("NFT badge unlocked and written to relic_rewards.json.")
+    else:
+        Path("relic_rewards.json").unlink(missing_ok=True)
 
 if __name__ == "__main__":
     generate_validator_entry()

@@ -9,7 +9,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools"))
 
-from green_tracker import GreenTracker, EWASTE_WEIGHTS_KG, NEW_HARDWARE_CO2_KG
+from green_tracker import GreenTracker, EWASTE_WEIGHTS_KG
 
 
 @pytest.fixture
@@ -50,6 +50,17 @@ class TestRegisterMachine:
         stats = tracker.get_machine_stats("dup")
         assert stats["name"] == "New Name"
         assert stats["arch"] == "G5"
+
+    def test_register_duplicate_preserves_existing_sessions(self, tracker):
+        tracker.register_machine("dup-sessions", "Old Name", "G4", 2002, "Poor", "NYC")
+        tracker.record_mining_session("dup-sessions", 1, 1.25, 180.0)
+
+        tracker.register_machine("dup-sessions", "New Name", "G5", 2004, "Good", "LA")
+
+        stats = tracker.get_machine_stats("dup-sessions")
+        assert stats["name"] == "New Name"
+        assert stats["total_epochs"] == 1
+        assert stats["total_rtc_earned"] == 1.25
 
 
 class TestRecordMiningSession:
@@ -104,6 +115,13 @@ class TestGetLeaderboard:
     def test_leaderboard_limit(self, populated):
         lb = populated.get_leaderboard(2)
         assert len(lb) <= 2
+
+    def test_leaderboard_rejects_non_positive_limit(self, populated):
+        with pytest.raises(ValueError, match="positive integer"):
+            populated.get_leaderboard(0)
+
+        with pytest.raises(ValueError, match="positive integer"):
+            populated.get_leaderboard(-1)
 
     def test_leaderboard_top_is_g5(self, populated):
         lb = populated.get_leaderboard(10)

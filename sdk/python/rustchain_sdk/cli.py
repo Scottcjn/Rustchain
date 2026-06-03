@@ -19,7 +19,7 @@ from typing import Optional
 
 import click
 
-from .client import RustChainClient
+from .client import DEFAULT_NODE_URL, RustChainClient
 from .wallet import RustChainWallet
 from .exceptions import RustChainError
 
@@ -66,7 +66,10 @@ def wallet_group():
 def wallet_create(words: int, as_json: bool):
     """Create a new RustChain wallet with BIP39 seed phrase."""
     try:
-        wallet = RustChainWallet.create(strength=words * 8 + 4)
+        if words not in (12, 24):
+            raise ValueError("Number of seed words must be 12 or 24")
+        strength = 128 if words == 12 else 256
+        wallet = RustChainWallet.create(strength=strength)
         if as_json:
             click.echo(json.dumps(wallet.export(), indent=2))
         else:
@@ -87,7 +90,7 @@ def wallet_create(words: int, as_json: bool):
 @click.argument("address")
 @click.option(
     "--node",
-    default="https://50.28.86.131",
+    default=DEFAULT_NODE_URL,
     help="RustChain node URL.",
 )
 @click.option(
@@ -136,7 +139,7 @@ async def _wallet_balance(address: str, node: str, as_json: bool):
 )
 @click.option(
     "--node",
-    default="https://50.28.86.131",
+    default=DEFAULT_NODE_URL,
     help="RustChain node URL.",
 )
 @click.option(
@@ -206,7 +209,7 @@ async def _wallet_send(
 @main.command(name="node")
 @click.option(
     "--node",
-    default="https://50.28.86.131",
+    default=DEFAULT_NODE_URL,
     help="RustChain node URL.",
 )
 @click.option(
@@ -244,7 +247,7 @@ async def _node_status(node: str, as_json: bool):
 @main.command(name="epoch")
 @click.option(
     "--node",
-    default="https://50.28.86.131",
+    default=DEFAULT_NODE_URL,
     help="RustChain node URL.",
 )
 @click.option(
@@ -286,7 +289,7 @@ def miners_group():
 @miners_group.command(name="list")
 @click.option(
     "--node",
-    default="https://50.28.86.131",
+    default=DEFAULT_NODE_URL,
     help="RustChain node URL.",
 )
 @click.option(
@@ -329,7 +332,7 @@ async def _miners_list(node: str, as_json: bool):
 )
 @click.option(
     "--node",
-    default="https://50.28.86.131",
+    default=DEFAULT_NODE_URL,
     help="RustChain node URL.",
 )
 @click.option(
