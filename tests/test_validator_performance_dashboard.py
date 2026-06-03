@@ -38,6 +38,8 @@ def test_validator_performance_dashboard_computes_metrics_from_miner_fields():
 
     assert "function computeValidatorMetrics(minerRows)" in html
     assert "const activeRows = minerRows.filter(isActiveValidator);" in html
+    assert 'row?.attested === true' not in html.split("function isActiveValidator(row)", 1)[1].split("function hasAttested(row)", 1)[0]
+    assert "function hasAttested(row)" in html
     assert '["latency_ms", "avg_latency_ms", "response_time_ms", "last_latency_ms"]' in html
     assert "MAX_HISTORY_SAMPLES = 20" in html
 
@@ -51,7 +53,17 @@ def test_validator_performance_dashboard_computes_attestation_effectiveness():
     assert "const fallbackInclusionRate = minerRows.length ? (activeRows.length / minerRows.length) * 100 : null;" in html
     assert 'readNumber(row, ["effectiveness_score", "performance_score", "score"])' in html
     assert "inclusionRate: average(inclusionRates) ?? fallbackInclusionRate" in html
-    assert "effectivenessScore: average(peerScores)" in html
+    assert "const peerScores = rankedPeers.map((row) => row.effectivenessScore).filter((value) => value !== null);" in html
+    assert 'console.warn("Validator effectiveness score out of expected 0-100 range:", explicitScore, row);' in html
+    assert "const freshnessScore = isActiveValidator(row) || hasAttested(row) ? 100 : 0;" in html
+
+
+def test_validator_performance_dashboard_avoids_nan_and_misleading_zero_bars():
+    html = DASHBOARD_HTML.read_text(encoding="utf-8")
+
+    assert "if (!values.length) return null;" in html
+    assert 'bar.style.height = sample.effectivenessScore === null ? "0" : `${sample.effectivenessScore}%`;' in html
+    assert 'bar.style.minHeight = sample.effectivenessScore === 0 ? "0" : "4px";' in html
 
 
 def test_validator_performance_dashboard_renders_trend_and_peer_comparison():

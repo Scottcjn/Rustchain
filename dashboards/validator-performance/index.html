@@ -342,11 +342,15 @@
             const status = String(row?.status || row?.state || "").toLowerCase();
             return row?.active === true
                 || row?.online === true
-                || row?.attested === true
                 || status === "active"
                 || status === "online"
                 || status === "up"
                 || Boolean(row?.last_attest || row?.last_attestation || row?.last_seen);
+        }
+
+        function hasAttested(row) {
+            return row?.attested === true
+                || readNumber(row, ["included_attestations", "attestations_included", "successful_attestations", "attestations", "attestation_count", "total_attestations", "attest_count"]) !== null;
         }
 
         function validatorName(row) {
@@ -364,7 +368,7 @@
             const latencyValues = minerRows
                 .map((row) => readNumber(row, ["latency_ms", "avg_latency_ms", "response_time_ms", "last_latency_ms"]))
                 .filter((value) => value !== null);
-            const peerScores = rankedPeers.map((row) => row.effectivenessScore);
+            const peerScores = rankedPeers.map((row) => row.effectivenessScore).filter((value) => value !== null);
             const inclusionRates = rankedPeers.map((row) => row.inclusionRate).filter((value) => value !== null);
             const fallbackInclusionRate = minerRows.length ? (activeRows.length / minerRows.length) * 100 : null;
 
@@ -386,7 +390,10 @@
             const inclusionRate = expected && attestations !== null
                 ? clamp((attestations / expected) * 100, 0, 100)
                 : null;
-            const freshnessScore = isActiveValidator(row) ? 100 : 0;
+            const freshnessScore = isActiveValidator(row) || hasAttested(row) ? 100 : 0;
+            if (explicitScore !== null && (explicitScore < 0 || explicitScore > 100)) {
+                console.warn("Validator effectiveness score out of expected 0-100 range:", explicitScore, row);
+            }
             const effectivenessScore = explicitScore !== null
                 ? clamp(explicitScore, 0, 100)
                 : (inclusionRate ?? freshnessScore);
@@ -456,7 +463,8 @@
             validatorHistory.forEach((sample) => {
                 const bar = document.createElement("div");
                 bar.className = "trend-bar";
-                bar.style.height = `${Math.max(4, sample.effectivenessScore ?? 0)}%`;
+                bar.style.height = sample.effectivenessScore === null ? "0" : `${sample.effectivenessScore}%`;
+                bar.style.minHeight = sample.effectivenessScore === 0 ? "0" : "4px";
                 bar.title = `${sample.time.toLocaleTimeString()}: ${formatPercent(sample.effectivenessScore)}`;
                 chart.appendChild(bar);
             });
