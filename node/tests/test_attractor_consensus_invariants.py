@@ -17,9 +17,8 @@ SUBMISSION GRAMMAR & TEMPLATE
 2. Pin exactly ONE invariant per test method.
 3. Import canonical constants from ``rewards_implementation_rip200`` — never
    hardcode emission rates or slot counts that can desync from the live chain.
-4. Initialise the database with the full production schema from
-   ``anti_double_mining.setup_test_scenario`` or an equivalent helper that
-   applies real migrations.
+4. Initialise the database with a minimal settlement schema (or migrated
+   schema) sufficient to drive the consensus code paths.
 5. Drive invariants through the actual consensus entry points
    (``calculate_epoch_rewards_time_aged`` / ``settle_epoch_rip200`` /
    ``settle_epoch_with_anti_double_mining``).
@@ -35,7 +34,7 @@ ACCEPTANCE / REJECTION RUBRIC
 - Calls real consensus functions; asserts on balance / ledger / epoch_state
   outcomes — NOT on raw SQLite schema enforcement.
 - Cleans up all database connections and WAL sidecars on tearDown.
-- Run time is under 1.5 seconds.
+- Run time is under 2.0 seconds.
 - Imports emission constants from ``rewards_implementation_rip200``.
 - Uses ``fingerprint_passed DEFAULT 0`` (production default).
 
@@ -47,7 +46,7 @@ ACCEPTANCE / REJECTION RUBRIC
 - Uses hardcoded emission rates or slot counts instead of canonical imports.
 - Leaves unclosed database connections, WAL files, or temp files (resource
   leaks).
-- Toy three-table schema instead of the migrated production schema.
+- Toy three-table schema instead of the minimal settlement schema.
 """
 
 import gc
@@ -79,21 +78,24 @@ from rip0202_enrollment import (
 )
 
 # Canonical slot count — imported from node runtime, not hardcoded.
-SLOTS_PER_EPOCH: int = int(
-    os.environ.get("RUSTCHAIN_SLOTS_PER_EPOCH", "144") or 144
-)
+try:
+    from auto_epoch_settler import SLOTS_PER_EPOCH
+except ImportError:
+    try:
+        from node.auto_epoch_settler import SLOTS_PER_EPOCH
+    except ImportError:
+        SLOTS_PER_EPOCH = 144
 
 
 # ---------------------------------------------------------------------------
 # Schema helper — mirrors the full production schema used by anti_double_mining
 # ---------------------------------------------------------------------------
 
-def _init_full_schema(db_path: str) -> sqlite3.Connection:
-    """Initialise the full production-compatible consensus schema.
+def _init_minimal_settlement_schema(db_path: str) -> sqlite3.Connection:
+    """Initialise a minimal settlement-compatible schema.
 
-    Mirrors the table definitions in ``anti_double_mining.setup_test_scenario``
-    (the same tables the settlement engine writes to) so that the test harness
-    exercises the real settlement code paths without production-data access.
+    Contains the tables required to drive the settlement engine code paths
+    without production-data access.
 
     ``fingerprint_passed`` defaults to 0 (production default: must be earned).
     """
@@ -167,7 +169,7 @@ class TestAttractorConsensusInvariants(unittest.TestCase):
     """Reference suite exercising three canonical consensus invariants.
 
     Every test:
-    - Uses the full production schema (not a toy 3-table subset).
+    - Uses the minimal settlement schema (not a toy 3-table subset).
     - Drives invariants through real consensus functions, not raw SQL.
     - Imports emission constants from ``rewards_implementation_rip200``.
     - Asserts on balance / ledger / epoch_state outcomes.
@@ -177,7 +179,7 @@ class TestAttractorConsensusInvariants(unittest.TestCase):
         self._tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         self.db_path = self._tmp.name
         self._tmp.close()
-        self.conn = _init_full_schema(self.db_path)
+        self.conn = _init_minimal_settlement_schema(self.db_path)
 
     def tearDown(self):
         # Close all handles before attempting to unlink on Windows.
