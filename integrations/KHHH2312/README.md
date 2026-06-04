@@ -21,15 +21,15 @@ checking that:
 From the repository root:
 
 ```bash
-python integrations/KHHH2312/rustchain_t2_verifier.py --miner-id power8-s824-sophia
+python3.10 integrations/KHHH2312/rustchain_t2_verifier.py --miner-id power8-s824-sophia
 ```
 
 Optional arguments:
 
 ```bash
-python integrations/KHHH2312/rustchain_t2_verifier.py --base-url https://rustchain.org
-python integrations/KHHH2312/rustchain_t2_verifier.py --miner-id power8-s824-sophia
-python integrations/KHHH2312/rustchain_t2_verifier.py --json
+python3.10 integrations/KHHH2312/rustchain_t2_verifier.py --base-url https://rustchain.org
+python3.10 integrations/KHHH2312/rustchain_t2_verifier.py --miner-id power8-s824-sophia
+python3.10 integrations/KHHH2312/rustchain_t2_verifier.py --json
 ```
 
 `--base-url` is validated before use. The script accepts HTTPS endpoints and
