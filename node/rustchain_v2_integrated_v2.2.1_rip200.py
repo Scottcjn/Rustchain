@@ -4505,6 +4505,7 @@ def _submit_attestation_impl():
                 epoch,
                 fingerprint if isinstance(fingerprint, dict) else {},
             )
+            enroll_conn.execute("BEGIN IMMEDIATE")
             if not fingerprint_passed:
                 enroll_weight_units = FAILED_FINGERPRINT_WEIGHT_UNITS
             else:
@@ -4818,6 +4819,7 @@ def enroll_epoch():
             epoch,
             data.get('fingerprint') if isinstance(data.get('fingerprint'), dict) else {},
         )
+        c.execute("BEGIN IMMEDIATE")
         if fingerprint_failed:
             weight_units = FAILED_FINGERPRINT_WEIGHT_UNITS
             weight = epoch_weight_units_to_display(weight_units)

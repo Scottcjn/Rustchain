@@ -264,6 +264,30 @@ class TestMinerHeaderKeySchema(unittest.TestCase):
         self.assertIn('db.execute("BEGIN IMMEDIATE")', route_source)
         self.assertIn("_record_miner_header_key(", route_source)
 
+    def test_enroll_and_attest_headerkey_writes_use_immediate_transaction(self):
+        source = Path(MODULE_PATH).read_text(encoding="utf-8")
+        attest_auto_enroll_source = source[
+            source.index('with closing(sqlite3.connect(DB_PATH)) as enroll_conn:'):
+            source.index('actor="attest_auto_enroll"')
+        ]
+        epoch_enroll_source = source[
+            source.index('with sqlite3.connect(DB_PATH) as c:', source.index("def enroll_epoch()")):
+            source.index('actor="epoch_enroll"')
+        ]
+
+        self.assertIn('enroll_conn.execute("BEGIN IMMEDIATE")', attest_auto_enroll_source)
+        self.assertIn("_record_miner_header_key(", attest_auto_enroll_source)
+        self.assertLess(
+            attest_auto_enroll_source.index('enroll_conn.execute("BEGIN IMMEDIATE")'),
+            attest_auto_enroll_source.index("_record_miner_header_key("),
+        )
+        self.assertIn('c.execute("BEGIN IMMEDIATE")', epoch_enroll_source)
+        self.assertIn("_record_miner_header_key(", epoch_enroll_source)
+        self.assertLess(
+            epoch_enroll_source.index('c.execute("BEGIN IMMEDIATE")'),
+            epoch_enroll_source.index("_record_miner_header_key("),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
