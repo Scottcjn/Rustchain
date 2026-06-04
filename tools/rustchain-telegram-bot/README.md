@@ -11,7 +11,7 @@ info, and RTC price.  Built for [bounty #2869](https://github.com/Scottcjn/rustc
 2. Send `/newbot` and follow the prompts
 3. Copy the bot token (looks like `123456:ABCdef...`)
 
-### 2. Install dependancies
+### 2. Install dependencies
 
 ```bash
 pip install python-telegram-bot requests
