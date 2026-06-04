@@ -6,17 +6,29 @@ that the node verifier reconstructs, NOT the canonical JSON of the full attestat
 Before the fix, both miners signed canonical JSON, but the server verified
 a pipe-delimited string, causing every signed attestation to fail with
 INVALID_SIGNATURE.
+
+This test imports the actual signing helper used by both miners so that a
+regression in the miner code would be caught here (tri-brain review feedback
+on PR #6839).
 """
 import json
 import hashlib
+import sys
+import os
 import unittest
+
+# Add miners/ to path so we can import signing_helpers
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "miners"))
+
+from signing_helpers import build_pipe_sign_message
 
 
 class TestAttestationSigningMessage(unittest.TestCase):
     """Verify the signing message matches what the node verifier expects."""
 
-    def _build_sign_message_pipe(self, attestation):
-        """Reproduce the node-side verification message."""
+    def _node_verifier_reconstruction(self, attestation):
+        """Reproduce the server-side 4-part pipe reconstruction
+        (node/rustchain_v2_integrated_v2.2.1_rip200.py:3949)."""
         return "{}|{}|{}|{}".format(
             attestation["miner_id"],
             attestation["miner"],
@@ -57,20 +69,31 @@ class TestAttestationSigningMessage(unittest.TestCase):
             "warthog": None,
         }
 
-    def test_pipe_message_matches_node_verifier(self):
-        """The pipe-delimited message must match the node's sign_message."""
+    def test_shared_helper_matches_node_verifier(self):
+        """The shared build_pipe_sign_message must produce the same bytes the
+        node verifier reconstructs from the 4-part pipe split."""
         att = self._build_sample_attestation()
-        pipe_msg = self._build_sign_message_pipe(att)
-        expected = "min-001|RTC1EXAMPLEWALLETADDR|test-nonce-abc123|{}".format(
-            att["report"]["commitment"]
-        )
-        self.assertEqual(pipe_msg, expected)
+        miner_bytes = build_pipe_sign_message(att)
+        verifier_str = self._node_verifier_reconstruction(att)
+        self.assertEqual(miner_bytes, verifier_str.encode("utf-8"))
+
+    def test_round_trip_four_parts(self):
+        """Round-trip: the signed bytes split on '|' yield exactly the four
+        fields the node verifier extracts."""
+        att = self._build_sample_attestation()
+        signed_bytes = build_pipe_sign_message(att)
+        parts = signed_bytes.decode("utf-8").split("|")
+        self.assertEqual(len(parts), 4)
+        self.assertEqual(parts[0], att["miner_id"])
+        self.assertEqual(parts[1], att["miner"])
+        self.assertEqual(parts[2], att["nonce"])
+        self.assertEqual(parts[3], att["report"]["commitment"])
 
     def test_pipe_message_differs_from_canonical_json(self):
         """Confirm the old canonical-JSON approach produces different bytes
         than the pipe-string — this is the root cause of issue #6798."""
         att = self._build_sample_attestation()
-        pipe_msg = self._build_sign_message_pipe(att).encode("utf-8")
+        pipe_msg = build_pipe_sign_message(att)
         canonical_bytes = json.dumps(
             att, sort_keys=True, separators=(",", ":")
         ).encode()
@@ -79,8 +102,8 @@ class TestAttestationSigningMessage(unittest.TestCase):
     def test_pipe_message_deterministic(self):
         """Same attestation fields always produce the same signing message."""
         att = self._build_sample_attestation()
-        msg1 = self._build_sign_message_pipe(att)
-        msg2 = self._build_sign_message_pipe(att)
+        msg1 = build_pipe_sign_message(att)
+        msg2 = build_pipe_sign_message(att)
         self.assertEqual(msg1, msg2)
 
     def test_different_nonce_changes_message(self):
@@ -92,20 +115,21 @@ class TestAttestationSigningMessage(unittest.TestCase):
         att2["report"]["commitment"] = hashlib.sha256(
             (att2["nonce"] + att2["miner"] + json.dumps({"variance_ns": 42.5, "source": "timer_jitter"}, sort_keys=True)).encode()
         ).hexdigest()
-        msg1 = self._build_sign_message_pipe(att1)
-        msg2 = self._build_sign_message_pipe(att2)
+        msg1 = build_pipe_sign_message(att1)
+        msg2 = build_pipe_sign_message(att2)
         self.assertNotEqual(msg1, msg2)
 
-    def test_signing_message_format(self):
-        """Verify the pipe-delimited format has exactly 4 components."""
+    def test_pipe_delimiter_in_field_raises(self):
+        """If any field contains a pipe character the builder must reject it."""
         att = self._build_sample_attestation()
-        pipe_msg = self._build_sign_message_pipe(att)
-        parts = pipe_msg.split("|")
-        self.assertEqual(len(parts), 4)
-        self.assertEqual(parts[0], att["miner_id"])
-        self.assertEqual(parts[1], att["miner"])
-        self.assertEqual(parts[2], att["nonce"])
-        self.assertEqual(parts[3], att["report"]["commitment"])
+        att["nonce"] = "bad|nonce"
+        with self.assertRaises(ValueError):
+            build_pipe_sign_message(att)
+
+    def test_missing_field_raises(self):
+        """Missing required fields must raise ValueError."""
+        with self.assertRaises(ValueError):
+            build_pipe_sign_message({"miner_id": "x", "miner": "y"})
 
 
 if __name__ == "__main__":

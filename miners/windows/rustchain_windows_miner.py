@@ -62,6 +62,17 @@ try:
 except ImportError:
     CRYPTO_AVAILABLE = False
 
+# Shared pipe-message builder (PR #6839 review)
+try:
+    from miners.signing_helpers import build_pipe_sign_message
+    _SIGNING_HELPERS = True
+except ImportError:
+    try:
+        from signing_helpers import build_pipe_sign_message
+        _SIGNING_HELPERS = True
+    except ImportError:
+        _SIGNING_HELPERS = False
+
 # Configuration
 RUSTCHAIN_API = "http://50.28.86.131:8088"
 WALLET_DIR = Path.home() / ".rustchain"
@@ -543,16 +554,22 @@ class RustChainMiner:
         # causing every signed attestation to fail with INVALID_SIGNATURE.
         # See issue #6798.
         if CRYPTO_AVAILABLE and self.keypair:
-            sign_msg = "{}|{}|{}|{}".format(
-                attestation["miner_id"],
-                attestation["miner"],
-                attestation["nonce"],
-                attestation["report"]["commitment"],
-            ).encode("utf-8")
-            signature = sign_payload(sign_msg, self.keypair["private_key"])
-            attestation["signature"] = signature
-            attestation["public_key"] = self.public_key
-            attestation["signature_type"] = "ed25519"
+            try:
+                if _SIGNING_HELPERS:
+                    sign_msg = build_pipe_sign_message(attestation)
+                else:
+                    sign_msg = "{}|{}|{}|{}".format(
+                        attestation["miner_id"],
+                        attestation["miner"],
+                        attestation["nonce"],
+                        attestation["report"]["commitment"],
+                    ).encode("utf-8")
+                signature = sign_payload(sign_msg, self.keypair["private_key"])
+                attestation["signature"] = signature
+                attestation["public_key"] = self.public_key
+                attestation["signature_type"] = "ed25519"
+            except Exception:
+                pass  # Fall through unsigned; server accepts with warning
         else:
             # Legacy fallback — sha512 pseudo-signature. Server accepts but
             # logs a warning. Real wallet-hijack protection requires PyNaCl.

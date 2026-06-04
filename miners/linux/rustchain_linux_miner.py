@@ -22,6 +22,17 @@ try:
 except ImportError:
     CRYPTO_AVAILABLE = False
 
+# Shared pipe-message builder (PR #6839 review)
+try:
+    from miners.signing_helpers import build_pipe_sign_message
+    _SIGNING_HELPERS = True
+except ImportError:
+    try:
+        from signing_helpers import build_pipe_sign_message
+        _SIGNING_HELPERS = True
+    except ImportError:
+        _SIGNING_HELPERS = False
+
 # Import fingerprint checks
 try:
     from fingerprint_checks import validate_all_checks
@@ -554,12 +565,15 @@ class LocalMiner:
         # See issue #6798.
         if CRYPTO_AVAILABLE and self.keypair:
             try:
-                sign_msg = "{}|{}|{}|{}".format(
-                    attestation["miner_id"],
-                    attestation["miner"],
-                    attestation["nonce"],
-                    attestation["report"]["commitment"],
-                ).encode("utf-8")
+                if _SIGNING_HELPERS:
+                    sign_msg = build_pipe_sign_message(attestation)
+                else:
+                    sign_msg = "{}|{}|{}|{}".format(
+                        attestation["miner_id"],
+                        attestation["miner"],
+                        attestation["nonce"],
+                        attestation["report"]["commitment"],
+                    ).encode("utf-8")
                 attestation["signature"] = sign_payload(
                     sign_msg, self.keypair["private_key"]
                 )
