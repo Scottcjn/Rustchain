@@ -20,7 +20,7 @@ from pathlib import Path
 MINER_ARTIFACTS = {
     "Linux": {
         "url": "https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/linux/rustchain_linux_miner.py",
-        "sha256": "c7af612bb2630d5fe6576bb132bdeb7a00ba0be042ec168887ab767a1f16c9f9",
+        "sha256": "9c78f330dda67e225def31e37236b8d92a4b7091928dc7a8c6a9a4db48d9b0be",
     },
     "Darwin": {
         "url": "https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/macos/rustchain_mac_miner_v2.5.py",
