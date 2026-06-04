@@ -38,6 +38,8 @@ from faucet_service import (
     create_app,
     get_client_ip,
     _ensure_column,
+    _event_claim_idempotency_key,
+    _perform_faucet_transfer,
     DEFAULT_CONFIG
 )
 
@@ -896,7 +898,7 @@ class TestFlaskApp(unittest.TestCase):
                 return ConnectionWrapper(conn)
             return conn
 
-        def fake_transfer(_config, _logger, _wallet, _amount):
+        def fake_transfer(_config, _logger, _wallet, _amount, **_kwargs):
             state['transfer_started'] = True
             state['transfer_calls'] += 1
             return 'tx-success-before-db-error'
@@ -938,6 +940,33 @@ class TestFlaskApp(unittest.TestCase):
         self.assertIsNotNone(claimed_at)
         self.assertIsNone(tx_hash)
         self.assertEqual(status, 'pending')
+
+    def test_event_claim_transfer_uses_node_idempotency_key(self):
+        """Real event payouts use stable node-side idempotency keys."""
+        self.config['distribution']['mock_mode'] = False
+        self.config['distribution']['admin_key'] = 'test-admin-key'
+        expected_key = _event_claim_idempotency_key('EVENT-idempotent')
+
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {'ok': True, 'tx_hash': 'tx-idempotent'}
+
+        with patch('faucet_service.requests.post', return_value=response) as post:
+            tx_hash = _perform_faucet_transfer(
+                self.config,
+                self.app.logger,
+                'RTCe4fbe4c9085b8b2ed3f1228504de66799025f6ce',
+                0.5,
+                idempotency_key=expected_key,
+                reason='event_claim:EVENT-idempotent',
+            )
+
+        self.assertEqual(tx_hash, 'tx-idempotent')
+        post.assert_called_once()
+        payload = post.call_args.kwargs['json']
+        self.assertEqual(payload['idempotency_key'], expected_key)
+        self.assertEqual(payload['reason'], 'event_claim:EVENT-idempotent')
+        self.assertEqual(payload['amount_rtc'], 0.5)
 
     def test_event_claims_do_not_affect_drip_rate_limit_or_status(self):
         """Event claims use their own ledger and do not skew normal faucet stats."""

@@ -26,6 +26,7 @@ import re
 import sys
 import json
 import math
+import hashlib
 import secrets
 import requests
 import sqlite3
@@ -981,7 +982,14 @@ def register_routes(app: Flask, config: Dict, logger: logging.Logger,
             conn.close()
 
         try:
-            tx_hash = _perform_faucet_transfer(config, logger, wallet, float(amount))
+            tx_hash = _perform_faucet_transfer(
+                config,
+                logger,
+                wallet,
+                float(amount),
+                idempotency_key=_event_claim_idempotency_key(code),
+                reason=f"event_claim:{code}",
+            )
         except Exception as exc:
             try:
                 _release_event_claim(db_path, code, claim_id, 'transfer_failed')
@@ -1150,7 +1158,20 @@ def _generate_event_code(prefix: str) -> str:
     return f"{safe_prefix}-{secrets.token_urlsafe(12)}"
 
 
-def _perform_faucet_transfer(config: Dict, logger: logging.Logger, wallet: str, amount: float) -> Optional[str]:
+def _event_claim_idempotency_key(code: str) -> str:
+    """Build a stable node idempotency key for a one-time event claim code."""
+    digest = hashlib.sha256(code.encode()).hexdigest()[:32]
+    return f"event_claim:{digest}"
+
+
+def _perform_faucet_transfer(
+    config: Dict,
+    logger: logging.Logger,
+    wallet: str,
+    amount: float,
+    idempotency_key: Optional[str] = None,
+    reason: Optional[str] = None,
+) -> Optional[str]:
     """Perform a faucet transfer or return None in mock mode."""
     if config.get('distribution', {}).get('mock_mode', True):
         logger.info(f"Mock event faucet claim: {amount} RTC to {wallet}")
@@ -1164,13 +1185,19 @@ def _perform_faucet_transfer(config: Dict, logger: logging.Logger, wallet: str, 
     if not admin_key:
         raise RuntimeError('RC_ADMIN_KEY not set, cannot perform real drip')
 
+    payload = {
+        "from_miner": faucet_wallet,
+        "to_miner": wallet,
+        "amount_rtc": amount,
+    }
+    if idempotency_key:
+        payload["idempotency_key"] = idempotency_key
+    if reason:
+        payload["reason"] = reason
+
     response = requests.post(
         f"{node_url}/wallet/transfer",
-        json={
-            "from_miner": faucet_wallet,
-            "to_miner": wallet,
-            "amount_rtc": amount,
-        },
+        json=payload,
         headers={"X-Admin-Key": admin_key},
         timeout=10
     )
