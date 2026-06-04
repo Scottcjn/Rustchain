@@ -83,6 +83,7 @@ event_codes:
   enabled: true
   admin_token: null  # Prefer FAUCET_EVENT_ADMIN_TOKEN in production
   default_amount: 0.5
+  max_amount: 1.0
   max_batch_size: 500
   code_prefix: "EVENT"
 ```
@@ -121,6 +122,7 @@ event_codes:
 | `enabled` | `true` | Enable event claim-code endpoints |
 | `admin_token` | `null` | Admin token for creating codes; `FAUCET_EVENT_ADMIN_TOKEN` takes precedence |
 | `default_amount` | `0.5` | RTC amount for created codes when request omits `amount` |
+| `max_amount` | `1.0` | Maximum RTC amount allowed for a single event code |
 | `max_batch_size` | `500` | Maximum codes created in a single request |
 | `code_prefix` | `EVENT` | Default prefix for generated event codes |
 

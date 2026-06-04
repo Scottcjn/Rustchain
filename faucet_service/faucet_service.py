@@ -25,6 +25,7 @@ import os
 import re
 import sys
 import json
+import math
 import secrets
 import requests
 import sqlite3
@@ -98,6 +99,7 @@ DEFAULT_CONFIG = {
         'enabled': True,
         'admin_token': None,
         'default_amount': 0.5,
+        'max_amount': 1.0,
         'max_batch_size': 500,
         'code_prefix': 'EVENT'
     },
@@ -569,6 +571,8 @@ def init_database(db_path: str) -> None:
             tx_hash TEXT
         )
     ''')
+    _ensure_column(c, 'drip_requests', 'status', "TEXT DEFAULT 'completed'")
+    _ensure_column(c, 'drip_requests', 'tx_hash', 'TEXT')
     
     c.execute('''
         CREATE TABLE IF NOT EXISTS faucet_stats (
@@ -614,6 +618,14 @@ def init_database(db_path: str) -> None:
     
     conn.commit()
     conn.close()
+
+
+def _ensure_column(c: sqlite3.Cursor, table: str, column: str, definition: str) -> None:
+    """Add a SQLite column when upgrading an existing faucet database."""
+    c.execute(f'PRAGMA table_info({table})')
+    columns = {row[1] for row in c.fetchall()}
+    if column not in columns:
+        c.execute(f'ALTER TABLE {table} ADD COLUMN {column} {definition}')
 
 
 # =============================================================================
@@ -813,8 +825,19 @@ def register_routes(app: Flask, config: Dict, logger: logging.Logger,
             return jsonify({'ok': False, 'error': f'count exceeds max batch size {max_batch_size}'}), 400
 
         amount = data.get('amount', event_config.get('default_amount', 0.5))
-        if not isinstance(amount, (int, float)) or amount <= 0:
+        max_amount = float(event_config.get(
+            'max_amount',
+            config.get('rate_limit', {}).get('max_amount', 0.5),
+        ))
+        if (
+            not isinstance(amount, (int, float))
+            or isinstance(amount, bool)
+            or not math.isfinite(float(amount))
+            or amount <= 0
+        ):
             return jsonify({'ok': False, 'error': 'amount must be a positive number'}), 400
+        if float(amount) > max_amount:
+            return jsonify({'ok': False, 'error': f'amount exceeds max event amount {max_amount}'}), 400
 
         expires_at_raw = data.get('expires_at')
         expires_at = _parse_future_datetime(expires_at_raw)
@@ -856,6 +879,9 @@ def register_routes(app: Flask, config: Dict, logger: logging.Logger,
         data = request.get_json(silent=True)
         if not isinstance(data, dict):
             return jsonify({'ok': False, 'error': 'JSON object required'}), 400
+
+        if not config.get('event_codes', {}).get('enabled', True):
+            return jsonify({'ok': False, 'error': 'Event codes disabled'}), 404
 
         code = str(data.get('code') or '').strip()
         wallet_value = data.get('wallet')
@@ -926,30 +952,18 @@ def register_routes(app: Flask, config: Dict, logger: logging.Logger,
 
         try:
             tx_hash = _perform_faucet_transfer(config, logger, wallet, float(amount))
-            with sqlite3.connect(db_path, timeout=30) as conn:
-                c = conn.cursor()
-                c.execute('PRAGMA busy_timeout = 30000')
-                c.execute('''
-                    UPDATE event_claim_codes
-                    SET tx_hash = ?
-                    WHERE code = ?
-                ''', (tx_hash, code))
-                c.execute('''
-                    UPDATE drip_requests
-                    SET status = ?, tx_hash = ?
-                    WHERE id = ?
-                ''', ('completed', tx_hash, drip_request_id))
         except Exception as exc:
             try:
-                with sqlite3.connect(db_path, timeout=30) as conn:
-                    conn.execute('''
-                        UPDATE drip_requests
-                        SET status = ?
-                        WHERE id = ?
-                    ''', ('transfer_failed', drip_request_id))
-            except Exception:
-                logger.exception(f"Failed to mark event claim transfer failure for code={code}")
+                _finalize_event_claim(db_path, code, drip_request_id, None, 'transfer_failed')
+            except Exception as finalize_exc:
+                logger.error(f"Event claim failure finalization failed for code={code}: {finalize_exc}")
             logger.error(f"Event claim transfer failed for code={code}: {exc}")
+            return jsonify({'ok': False, 'error': 'Internal transfer error'}), 500
+
+        try:
+            _finalize_event_claim(db_path, code, drip_request_id, tx_hash, 'completed')
+        except Exception as exc:
+            logger.error(f"Event claim finalization failed for code={code}: {exc}")
             return jsonify({'ok': False, 'error': 'Internal transfer error'}), 500
 
         return jsonify({
@@ -1138,6 +1152,32 @@ def _perform_faucet_transfer(config: Dict, logger: logging.Logger, wallet: str, 
     if not result.get('ok'):
         raise RuntimeError('Transfer failed on node')
     return result.get('tx_hash')
+
+
+def _finalize_event_claim(
+    db_path: str,
+    code: str,
+    request_id: Optional[int],
+    tx_hash: Optional[str],
+    status: str,
+) -> None:
+    """Finalize the durable event claim record after the transfer attempt."""
+    conn = sqlite3.connect(db_path, timeout=30)
+    try:
+        c = conn.cursor()
+        c.execute('''
+            UPDATE event_claim_codes
+            SET tx_hash = ?
+            WHERE code = ?
+        ''', (tx_hash, code))
+        c.execute('''
+            UPDATE drip_requests
+            SET status = ?, tx_hash = ?
+            WHERE id = ?
+        ''', (status, tx_hash, request_id))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def get_template_vars(config: Dict) -> Dict:
