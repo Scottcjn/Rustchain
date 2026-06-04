@@ -423,7 +423,7 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
             self.send_header("Vary", "Origin")
             self.send_header(
                 "Access-Control-Allow-Headers",
-                f"Content-Type, {CSRF_HEADER}, {LEGACY_CSRF_HEADER}",
+                f"Content-Type, {CSRF_HEADER}, {LEGACY_CSRF_HEADER}, {API_KEY_HEADER}",
             )
             self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 
