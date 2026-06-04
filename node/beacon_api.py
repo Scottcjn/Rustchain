@@ -291,6 +291,106 @@ def _authenticate_contract_agent(db, allowed_agents, body_bytes):
     return agent_id, None
 
 
+PUBLIC_ATLAS_AGENT_PROFILES = {
+    'sophia-elya': {
+        'agent_id': 'bcn_sophia_elya',
+        'slug': 'sophia-elya',
+        'name': 'Sophia Elya',
+        'status': 'active',
+        'city': 'compiler_heights',
+        'role': 'Inference Orchestrator | #1 Creator',
+        'beacon_id': 'bcn_c850ea702e8f',
+        'grade': 'S',
+        'atlas_url': 'https://rustchain.org/beacon/agent/sophia-elya',
+        'profile_source': 'legacy_atlas_override',
+    },
+}
+
+
+def _agent_lookup_variants(value):
+    if not isinstance(value, str):
+        return set()
+    raw = ' '.join(value.strip().casefold().split())
+    if not raw:
+        return set()
+    variants = {
+        raw,
+        raw.replace('_', '-'),
+        raw.replace('-', '_'),
+        raw.replace(' ', '-'),
+        raw.replace(' ', '_'),
+    }
+    return {variant for variant in variants if variant}
+
+
+def _build_public_agent_aliases():
+    aliases = {}
+    for slug, profile in PUBLIC_ATLAS_AGENT_PROFILES.items():
+        alias_values = [
+            slug,
+            profile.get('agent_id'),
+            profile.get('beacon_id'),
+            profile.get('name'),
+        ]
+        for alias_value in alias_values:
+            for key in _agent_lookup_variants(alias_value):
+                aliases[key] = slug
+    return aliases
+
+
+PUBLIC_ATLAS_AGENT_ALIASES = _build_public_agent_aliases()
+
+
+def _legacy_public_agent_profile(agent_id):
+    for key in _agent_lookup_variants(agent_id):
+        slug = PUBLIC_ATLAS_AGENT_ALIASES.get(key)
+        if slug:
+            profile = dict(PUBLIC_ATLAS_AGENT_PROFILES[slug])
+            profile['requested_id'] = agent_id
+            return profile
+    return None
+
+
+def _public_agent_profile_from_row(row, requested_id):
+    profile = {
+        'agent_id': row['agent_id'],
+        'name': row['name'],
+        'status': row['status'],
+        'created_at': row['created_at'],
+        'updated_at': row['updated_at'],
+        'profile_source': 'relay_agents',
+    }
+    if requested_id != row['agent_id']:
+        profile['requested_id'] = requested_id
+    return profile
+
+
+def _find_public_agent_row(db, agent_id):
+    row = db.execute(
+        """SELECT agent_id, name, status, created_at, updated_at
+           FROM relay_agents
+           WHERE agent_id = ? OR LOWER(name) = LOWER(?)""",
+        (agent_id, agent_id)
+    ).fetchone()
+    if row:
+        return row
+
+    lookup_keys = _agent_lookup_variants(agent_id)
+    if not lookup_keys:
+        return None
+    rows = db.execute(
+        "SELECT agent_id, name, status, created_at, updated_at FROM relay_agents"
+    ).fetchall()
+    for candidate in rows:
+        candidate_keys = (
+            _agent_lookup_variants(candidate['agent_id'])
+            | _agent_lookup_variants(candidate['name'])
+        )
+        if lookup_keys & candidate_keys:
+            return candidate
+    return None
+
+
 # ============================================================
 # AGENTS ENDPOINTS
 # ============================================================
@@ -356,6 +456,37 @@ def get_agent(agent_id):
             'created_at': row['created_at'],
             'updated_at': row['updated_at'],
         })
+    except Exception as e:
+        return jsonify({'error': 'internal_error'}), 500
+
+
+@beacon_api.route('/beacon/agent/<agent_id>', methods=['GET', 'OPTIONS'])
+def get_public_beacon_agent(agent_id):
+    """Get a redacted public Beacon Atlas agent profile."""
+    if request.method == 'OPTIONS':
+        resp = jsonify({'ok': True})
+        resp.headers['Access-Control-Allow-Origin'] = '*'
+        resp.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        resp.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        return resp
+
+    try:
+        legacy_profile = _legacy_public_agent_profile(agent_id)
+        if legacy_profile:
+            resp = jsonify(legacy_profile)
+            resp.headers['Access-Control-Allow-Origin'] = '*'
+            return resp
+
+        db = get_db()
+        row = _find_public_agent_row(db, agent_id)
+        if row:
+            resp = jsonify(_public_agent_profile_from_row(row, agent_id))
+            resp.headers['Access-Control-Allow-Origin'] = '*'
+            return resp
+
+        resp = jsonify({'agent_id': agent_id, 'error': 'Agent not found'})
+        resp.headers['Access-Control-Allow-Origin'] = '*'
+        return resp, 404
     except Exception as e:
         return jsonify({'error': 'internal_error'}), 500
 

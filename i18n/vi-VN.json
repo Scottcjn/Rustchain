@@ -1,0 +1,111 @@
+{
+  "locale": "vi-VN",
+  "language": "Vietnamese (Vietnam)",
+  "version": "1.0.0",
+  "description": "Bản địa hóa vi-VN cho thông báo lỗi miner/wallet RustChain và đồng ý lần chạy đầu tiên.",
+  "errors": {
+    "wallet": {
+      "invalid_amount": "Giá trị không hợp lệ",
+      "please_load_wallet_first": "Hãy tải wallet trước",
+      "please_enter_recipient_wallet_id": "Hãy nhập ID wallet người nhận",
+      "amount_must_be_positive": "Số tiền phải lớn hơn 0",
+      "transaction_failed": "Giao dịch thất bại",
+      "please_enter_wallet_id": "Hãy nhập ID wallet",
+      "network_error_check_connection": "Lỗi mạng - hãy kiểm tra kết nối",
+      "request_timeout_node_busy": "Hết thời gian chờ - node có thể đang bận",
+      "dns_resolution_failed": "Không phân giải được DNS: {host}: {error}",
+      "cannot_connect_to_host": "Không thể kết nối tới {host}:{port} (mã lỗi: {result})",
+      "network_check_failed": "Kiểm tra mạng thất bại: {error}",
+      "network_unreachable": "Không truy cập được mạng: {error}",
+      "request_timeout_after_retries": "Yêu cầu hết thời gian sau {timeout} giây ({max_retries} lần thử)",
+      "api_error_http": "Lỗi API: HTTP {status}",
+      "request_failed": "Yêu cầu thất bại: {error}",
+      "request_failed_after_retries": "Yêu cầu thất bại sau {max_retries} lần thử: {last_error}",
+      "new_wallet_created": "Đã tạo wallet mới",
+      "save_wallet_id_warning": "Hãy lưu ID này - bạn sẽ cần nó để truy cập tiền",
+      "confirm_transfer": "Xác nhận chuyển",
+      "send_confirmation": "Gửi {amount:.6f} RTC tới:\n{to_wallet}\n\nTiếp tục?"
+    },
+    "miner": {
+      "attestation_failed": "attestation thất bại",
+      "epoch_enrollment_failed": "Đăng ký epoch thất bại",
+      "challenge_failed_http": "Challenge thất bại: HTTP {status_code}",
+      "challenge_error": "Lỗi challenge: {error}",
+      "attestation_rejected": "attestation bị từ chối: {response}",
+      "attestation_submission_failed": "Gửi attestation thất bại: {error}",
+      "enrollment_failed": "Đăng ký thất bại: {error}",
+      "enrollment_rejected": "Đăng ký bị từ chối: {response}",
+      "enrollment_http_error": "Lỗi HTTP khi đăng ký {status}: {text}",
+      "submit_error": "Lỗi gửi dữ liệu: {error}",
+      "fingerprint_failed_reduced_rewards": "fingerprint phần cứng: thất bại (phần thưởng giảm)",
+      "fingerprint_passed": "fingerprint phần cứng: đạt",
+      "fingerprint_n_a": "fingerprint phần cứng: không có sẵn (thiếu module)",
+      "attestation_accepted": "attestation đã được chấp nhận",
+      "enrolled_success": "Đăng ký thành công. Epoch: {epoch} Weight: {weight}x",
+      "miner_loop_error": "Lỗi vòng lặp miner: {error}",
+      "fingerprint_checks_incomplete": "Kiểm tra fingerprint chưa đủ hoặc thất bại",
+      "fingerprint_checks_complete": "Kiểm tra fingerprint hoàn tất",
+      "fingerprint_checks_failed": "Kiểm tra fingerprint thất bại: {failed_checks}"
+    },
+    "network": {
+      "troubleshooting_title": "Hướng xử lý:",
+      "check_internet_connection": "1. Kiểm tra kết nối internet",
+      "verify_dns_working": "2. Kiểm tra DNS có hoạt động không (thử: ping {node_url})",
+      "check_firewall_proxy": "3. Kiểm tra firewall/proxy",
+      "node_may_be_offline": "4. Node có thể đang tạm thời offline",
+      "node_syncing_maintenance": "1. Node có thể đang sync hoặc bảo trì",
+      "try_again_later": "2. Thử lại sau",
+      "check_node_dashboard": "3. Kiểm tra dashboard trạng thái RustChain",
+      "network_issue_detected": "Phát hiện vấn đề mạng:",
+      "node_response_issue": "Vấn đề phản hồi của node:",
+      "network_error_title": "Lỗi mạng",
+      "warning_title": "Cảnh báo",
+      "error_title": "Lỗi",
+      "success_title": "Thành công"
+    },
+    "common": {
+      "error": "Lỗi",
+      "failed": "Thất bại",
+      "success": "Thành công",
+      "warning": "Cảnh báo",
+      "info": "Thông tin",
+      "confirm": "Xác nhận",
+      "cancel": "Hủy",
+      "ok": "OK",
+      "yes": "Có",
+      "no": "Không",
+      "loading": "Đang tải...",
+      "retry": "Thử lại",
+      "close": "Đóng"
+    }
+  },
+  "messages": {
+    "wallet": {
+      "balance_display": "Số dư: {balance:.8f} RTC",
+      "wallet_id_label": "ID wallet:",
+      "load_button": "Tải",
+      "new_wallet_button": "Wallet mới",
+      "send_rtc_button": "Gửi RTC",
+      "to_label": "Người nhận:",
+      "amount_label": "Số tiền:",
+      "rtc_unit": "RTC",
+      "transaction_history": "Giao dịch gần đây"
+    },
+    "miner": {
+      "cpu_info": "CPU: {processor}",
+      "arch_info": "Kiến trúc: {arch}",
+      "status_attesting": "Đang chạy attestation...",
+      "status_enrolling": "Đang đăng ký...",
+      "status_mining": "Đang mining...",
+      "status_waiting": "Đang chờ đủ điều kiện...",
+      "status_error": "Lỗi: {message}"
+    },
+    "miner_consent": {
+      "title": "Đồng ý lần chạy đầu tiên của RustChain Miner",
+      "body": "Trước khi mining, hãy xem lại các lệnh --dry-run, --show-payload và --test-only. Miner sẽ gửi dữ liệu fingerprint và attestation tới node RustChain. Phần cứng phải được khai báo trung thực; không tạo giả kiến trúc, antiquity hoặc tín hiệu phần cứng. Phần thưởng bằng RTC không được đảm bảo.",
+      "prompt": "Nhập CO (dạng không dấu của Có) để xác nhận rằng bạn hiểu và muốn tiếp tục:",
+      "affirmative": "CO",
+      "rejected": "Chưa xác nhận đồng ý. Mining sẽ không được bắt đầu."
+    }
+  }
+}
