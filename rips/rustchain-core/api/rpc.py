@@ -84,30 +84,49 @@ class SlidingWindowRateLimiter:
     def __init__(self):
         self._lock = threading.Lock()
         self._requests: Dict[Tuple[str, str], list[float]] = {}
+        self._last_sweep = 0.0
+
+    def _sweep_expired_locked(self, cutoff: float):
+        expired_keys = []
+        for key, timestamps in self._requests.items():
+            active_timestamps = [timestamp for timestamp in timestamps if timestamp > cutoff]
+            if active_timestamps:
+                self._requests[key] = active_timestamps
+            else:
+                expired_keys.append(key)
+
+        for key in expired_keys:
+            del self._requests[key]
 
     def check(self, client_id: str, limit: int, window_seconds: int = 60) -> tuple[bool, int]:
         now = time.monotonic()
         cutoff = now - window_seconds
+        key = (client_id, str(limit))
 
         with self._lock:
+            if now - self._last_sweep >= window_seconds:
+                self._sweep_expired_locked(cutoff)
+                self._last_sweep = now
+
             timestamps = [
                 timestamp
-                for timestamp in self._requests.get((client_id, str(limit)), [])
+                for timestamp in self._requests.get(key, [])
                 if timestamp > cutoff
             ]
 
             if len(timestamps) >= limit:
                 retry_after = max(1, int(window_seconds - (now - timestamps[0])) + 1)
-                self._requests[(client_id, str(limit))] = timestamps
+                self._requests[key] = timestamps
                 return False, retry_after
 
             timestamps.append(now)
-            self._requests[(client_id, str(limit))] = timestamps
+            self._requests[key] = timestamps
             return True, 0
 
     def reset(self):
         with self._lock:
             self._requests.clear()
+            self._last_sweep = 0.0
 
 
 # =============================================================================

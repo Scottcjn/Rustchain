@@ -123,3 +123,18 @@ def test_configured_api_key_uses_higher_rate_limit_bucket():
         assert ApiRequestHandler._rate_limit_error(handler) is None
         assert ApiRequestHandler._rate_limit_error(handler) is not None
         ApiRequestHandler.rate_limiter.reset()
+
+
+def test_rate_limiter_removes_expired_idle_client_buckets():
+    limiter = RPC.SlidingWindowRateLimiter()
+
+    with patch.object(RPC.time, "monotonic", return_value=100.0):
+        assert limiter.check("ip:192.0.2.10", limit=10, window_seconds=60) == (True, 0)
+        assert limiter.check("ip:198.51.100.20", limit=10, window_seconds=60) == (True, 0)
+
+    assert len(limiter._requests) == 2
+
+    with patch.object(RPC.time, "monotonic", return_value=161.0):
+        assert limiter.check("ip:203.0.113.30", limit=10, window_seconds=60) == (True, 0)
+
+    assert list(limiter._requests) == [("ip:203.0.113.30", "10")]
