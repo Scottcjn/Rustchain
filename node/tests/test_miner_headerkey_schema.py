@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 NODE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -36,6 +37,18 @@ class TestMinerHeaderKeySchema(unittest.TestCase):
         self.mod.DB_PATH = self.db_path
         self.mod.init_db()
         self.mod.app.config["TESTING"] = True
+
+    def _rotation_eval(self):
+        return {
+            "measurement_nonce": "nonce",
+            "previous_epoch_block_hash": "prev",
+            "active_checks": [],
+            "passed_active_checks": [],
+            "failed_active_checks": [],
+            "active_pass_count": 0,
+            "active_total": 0,
+            "active_ratio": 1.0,
+        }
 
     def tearDown(self):
         if self._prev_admin_key is None:
@@ -267,11 +280,11 @@ class TestMinerHeaderKeySchema(unittest.TestCase):
     def test_enroll_and_attest_headerkey_writes_use_immediate_transaction(self):
         source = Path(MODULE_PATH).read_text(encoding="utf-8")
         attest_auto_enroll_source = source[
-            source.index('with closing(sqlite3.connect(DB_PATH)) as enroll_conn:'):
+            source.index('with closing(sqlite3.connect(DB_PATH, isolation_level=None)) as enroll_conn:'):
             source.index('actor="attest_auto_enroll"')
         ]
         epoch_enroll_source = source[
-            source.index('with sqlite3.connect(DB_PATH) as c:', source.index("def enroll_epoch()")):
+            source.index('with sqlite3.connect(DB_PATH, isolation_level=None) as c:', source.index("def enroll_epoch()")):
             source.index('actor="epoch_enroll"')
         ]
 
@@ -287,6 +300,85 @@ class TestMinerHeaderKeySchema(unittest.TestCase):
             epoch_enroll_source.index('c.execute("BEGIN IMMEDIATE")'),
             epoch_enroll_source.index("_record_miner_header_key("),
         )
+
+    def test_epoch_enroll_headerkey_write_executes_end_to_end(self):
+        previous_legacy = self.mod.ENROLL_ALLOW_UNSIGNED_LEGACY
+        previous_ticket = self.mod.ENROLL_REQUIRE_TICKET
+        previous_mac = self.mod.ENROLL_REQUIRE_MAC
+        self.mod.ENROLL_ALLOW_UNSIGNED_LEGACY = True
+        self.mod.ENROLL_REQUIRE_TICKET = False
+        self.mod.ENROLL_REQUIRE_MAC = False
+        try:
+            with patch.object(self.mod, "current_slot", return_value=0), \
+                 patch.object(self.mod, "evaluate_rotating_fingerprint_checks", return_value=self._rotation_eval()):
+                with self.mod.app.test_client() as client:
+                    response = client.post(
+                        "/epoch/enroll",
+                        json={
+                            "miner_pubkey": "f" * 64,
+                            "miner_id": "epoch-runtime-miner",
+                            "device": {"family": "x86", "arch": "default"},
+                        },
+                    )
+        finally:
+            self.mod.ENROLL_ALLOW_UNSIGNED_LEGACY = previous_legacy
+            self.mod.ENROLL_REQUIRE_TICKET = previous_ticket
+            self.mod.ENROLL_REQUIRE_MAC = previous_mac
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        with sqlite3.connect(self.db_path) as conn:
+            active = conn.execute(
+                "SELECT pubkey_hex FROM miner_header_keys WHERE miner_id = ?",
+                ("epoch-runtime-miner",),
+            ).fetchone()
+            audit = conn.execute(
+                """SELECT action, actor, pubkey_hex
+                   FROM miner_header_key_audit
+                   WHERE miner_id = ?""",
+                ("epoch-runtime-miner",),
+            ).fetchone()
+
+        self.assertEqual(active, ("f" * 64,))
+        self.assertEqual(audit, ("registered", "epoch_enroll", "f" * 64))
+
+    def test_attest_auto_enroll_headerkey_write_executes_end_to_end(self):
+        payload = {
+            "miner": "runtime-attest-wallet",
+            "miner_id": "attest-runtime-miner",
+            "public_key": "a" * 64,
+            "report": {"nonce": "runtime-nonce", "commitment": "runtime-commitment"},
+            "device": {"family": "x86", "arch": "default", "model": "runtime-box", "cores": 4},
+            "signals": {"hostname": "runtime-host", "macs": []},
+            "fingerprint": {"checks": {"cpu_brand": "Intel test CPU"}},
+        }
+
+        with patch.object(self.mod, "check_ip_rate_limit", return_value=(True, "ok")), \
+             patch.object(self.mod, "attest_validate_and_store_nonce", return_value=(True, None, None)), \
+             patch.object(self.mod, "_check_hardware_binding", return_value=(True, "ok", payload["miner"])), \
+             patch.object(self.mod, "validate_fingerprint_data", return_value=(True, "ok")), \
+             patch.object(self.mod, "check_vm_signatures_server_side", return_value=(True, "clean")), \
+             patch.object(self.mod, "_check_welcome_bonus", return_value=None), \
+             patch.object(self.mod, "record_macs", return_value=None), \
+             patch.object(self.mod, "current_slot", return_value=0), \
+             patch.object(self.mod, "evaluate_rotating_fingerprint_checks", return_value=self._rotation_eval()):
+            with self.mod.app.test_client() as client:
+                response = client.post("/attest/submit", json=payload)
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        with sqlite3.connect(self.db_path) as conn:
+            active = conn.execute(
+                "SELECT pubkey_hex FROM miner_header_keys WHERE miner_id = ?",
+                ("attest-runtime-miner",),
+            ).fetchone()
+            audit = conn.execute(
+                """SELECT action, actor, pubkey_hex
+                   FROM miner_header_key_audit
+                   WHERE miner_id = ?""",
+                ("attest-runtime-miner",),
+            ).fetchone()
+
+        self.assertEqual(active, ("a" * 64,))
+        self.assertEqual(audit, ("registered", "attest_auto_enroll", "a" * 64))
 
 
 if __name__ == "__main__":

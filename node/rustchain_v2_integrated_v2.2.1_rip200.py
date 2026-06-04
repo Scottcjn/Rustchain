@@ -4499,7 +4499,7 @@ def _submit_attestation_impl():
         hw_weight = HARDWARE_WEIGHTS.get(family, {}).get(arch_for_weight, HARDWARE_WEIGHTS.get(family, {}).get("default", 1.0))
         miner_id = _attest_valid_miner(data.get("miner_id")) or miner
 
-        with closing(sqlite3.connect(DB_PATH)) as enroll_conn:
+        with closing(sqlite3.connect(DB_PATH, isolation_level=None)) as enroll_conn:
             rotation_eval = evaluate_rotating_fingerprint_checks(
                 enroll_conn,
                 epoch,
@@ -4813,7 +4813,7 @@ def enroll_epoch():
     # RIP-PoA Phase 2: failed fingerprints are tracked but receive zero rewards.
     fingerprint_failed = check_result.get('fingerprint_failed', False)
 
-    with sqlite3.connect(DB_PATH) as c:
+    with sqlite3.connect(DB_PATH, isolation_level=None) as c:
         rotation_eval = evaluate_rotating_fingerprint_checks(
             c,
             epoch,
