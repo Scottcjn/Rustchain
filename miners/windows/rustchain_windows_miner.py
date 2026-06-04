@@ -536,17 +536,20 @@ class RustChainMiner:
         if self._pow_proof:
             attestation["pow_proof"] = self._pow_proof
 
-        # ── Ed25519 signature (GPT-5.4 audit finding #2) ──
-        # Sign canonical JSON of the full attestation BEFORE adding the
-        # signature/public_key/signature_type fields. Server reproduces the
-        # same canonical bytes by stripping those three fields and verifying.
-        # Legacy sha512 fallback for installs without PyNaCl — server flags
-        # it but still accepts (see PR #6426 server-side handling).
+        # ── Ed25519 signature ──
+        # Sign the pipe-delimited message that the node verifier reconstructs
+        # (miner_id|miner|nonce|commitment). Previous code signed the canonical
+        # JSON of the full attestation, but the server verifies the pipe-string,
+        # causing every signed attestation to fail with INVALID_SIGNATURE.
+        # See issue #6798.
         if CRYPTO_AVAILABLE and self.keypair:
-            payload_bytes = json.dumps(
-                attestation, sort_keys=True, separators=(",", ":")
-            ).encode()
-            signature = sign_payload(payload_bytes, self.keypair["private_key"])
+            sign_msg = "{}|{}|{}|{}".format(
+                attestation["miner_id"],
+                attestation["miner"],
+                attestation["nonce"],
+                attestation["report"]["commitment"],
+            ).encode("utf-8")
+            signature = sign_payload(sign_msg, self.keypair["private_key"])
             attestation["signature"] = signature
             attestation["public_key"] = self.public_key
             attestation["signature_type"] = "ed25519"
