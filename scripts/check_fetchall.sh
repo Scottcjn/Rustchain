@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
 # check_fetchall.sh — CI guard against unbounded .fetchall() in node code.
 #
 # This check supports a migration baseline: existing raw .fetchall() sites are
