@@ -1,3 +1,6 @@
+# Existing unannotated .fetchall() migration baseline for issue #6627.
+# Expected to shrink as legacy callers migrate to node.db_helpers.fetch_page()
+# or receive a narrow fetchall-ok annotation. Do not add new entries manually.
 node/utxo_genesis_migration.py:91:        ).fetchall()
 node/utxo_genesis_migration.py:104:        ).fetchall()
 node/utxo_db.py:379:            ).fetchall()

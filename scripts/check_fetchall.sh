@@ -41,9 +41,11 @@ trap 'rm -f "$scan_tmp" "$baseline_tmp" "$unannotated_tmp" "$new_tmp" "$stale_tm
 : > "$scan_tmp"
 : > "$unannotated_tmp"
 
+FETCHALL_PATTERN='\.fetchall[[:space:]]*\('
+
 if command -v rg >/dev/null 2>&1; then
     set +e
-    rg -n '\.fetchall\(\)' node \
+    rg -n "$FETCHALL_PATTERN" node \
         --glob '!node/tests/**' \
         --glob '!node/test_*' \
         --glob '!node/__pycache__/**' \
@@ -57,7 +59,7 @@ if command -v rg >/dev/null 2>&1; then
     fi
 else
     set +e
-    grep -rn '\.fetchall()' node \
+    grep -rnE "$FETCHALL_PATTERN" node \
         --include='*.py' \
         --exclude-dir=tests \
         --exclude-dir=__pycache__ \
@@ -72,7 +74,7 @@ else
 fi
 
 if [ -f "$BASELINE_FILE" ]; then
-    sed '/^$/d' "$BASELINE_FILE" | sort -u > "$baseline_tmp"
+    grep -vE '^($|#)' "$BASELINE_FILE" | sort -u > "$baseline_tmp"
 else
     : > "$baseline_tmp"
 fi
@@ -104,6 +106,12 @@ while IFS= read -r hit; do
 done < "$scan_tmp"
 
 sort -u "$unannotated_tmp" -o "$unannotated_tmp"
+
+if [ "${1:-}" = "--print-baseline" ]; then
+    cat "$unannotated_tmp"
+    exit 0
+fi
+
 comm -23 "$unannotated_tmp" "$baseline_tmp" > "$new_tmp"
 comm -13 "$unannotated_tmp" "$baseline_tmp" > "$stale_tmp"
 
@@ -125,7 +133,8 @@ fi
 
 if [ -s "$stale_tmp" ]; then
     echo "ERROR: fetchall baseline has stale entries."
-    echo "Remove these from $BASELINE_FILE or regenerate the baseline:"
+    echo "Remove these from $BASELINE_FILE or regenerate the baseline with:"
+    echo "  bash scripts/check_fetchall.sh --print-baseline > $BASELINE_FILE"
     sed 's/^/  /' "$stale_tmp"
     exit 1
 fi
