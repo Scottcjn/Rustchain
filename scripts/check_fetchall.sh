@@ -5,46 +5,82 @@
 # listed in scripts/baselines/fetchall_existing.txt so CI can prevent new
 # unannotated sites while the large legacy backlog is converted incrementally.
 
-set -u
+set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+case "$SCRIPT_PATH" in
+    */*) SCRIPT_DIR="${SCRIPT_PATH%/*}" ;;
+    *) SCRIPT_DIR="." ;;
+esac
+SCRIPT_DIR="$(cd -- "$SCRIPT_DIR" && pwd)"
+ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 cd "$ROOT"
 
 BASELINE_FILE="${FETCHALL_BASELINE:-scripts/baselines/fetchall_existing.txt}"
 VALID_REASONS_RE='bounded-by-schema|pragma-result|internal-test-helper|already-paginated'
 
+require_cmd() {
+    if ! command -v "$1" >/dev/null 2>&1; then
+        echo "ERROR: required command '$1' is not available" >&2
+        exit 2
+    fi
+}
+
+for cmd in grep sed sort comm mktemp wc tr; do
+    require_cmd "$cmd"
+done
+
+scan_tmp="$(mktemp)"
+baseline_tmp="$(mktemp)"
+unannotated_tmp="$(mktemp)"
+new_tmp="$(mktemp)"
+stale_tmp="$(mktemp)"
+trap 'rm -f "$scan_tmp" "$baseline_tmp" "$unannotated_tmp" "$new_tmp" "$stale_tmp"' EXIT
+
+: > "$scan_tmp"
+: > "$unannotated_tmp"
+
 if command -v rg >/dev/null 2>&1; then
-    MATCHES="$(rg -n '\.fetchall\(\)' node \
+    set +e
+    rg -n '\.fetchall\(\)' node \
         --glob '!node/tests/**' \
         --glob '!node/test_*' \
         --glob '!node/__pycache__/**' \
         --glob '!node/db_helpers.py' \
-        --glob '!deprecated/**' || true)"
+        --glob '!deprecated/**' > "$scan_tmp"
+    scan_status=$?
+    set -e
+    if [ "$scan_status" -ne 0 ] && [ "$scan_status" -ne 1 ]; then
+        echo "ERROR: rg scan failed with status $scan_status" >&2
+        exit 2
+    fi
 else
-    MATCHES="$(grep -rn '\.fetchall()' node \
+    set +e
+    grep -rn '\.fetchall()' node \
         --include='*.py' \
         --exclude-dir=tests \
         --exclude-dir=__pycache__ \
         --exclude='test_*' \
-        --exclude='db_helpers.py' 2>/dev/null || true)"
+        --exclude='db_helpers.py' > "$scan_tmp"
+    scan_status=$?
+    set -e
+    if [ "$scan_status" -ne 0 ] && [ "$scan_status" -ne 1 ]; then
+        echo "ERROR: grep scan failed with status $scan_status" >&2
+        exit 2
+    fi
 fi
 
-MATCHES="$(echo "$MATCHES" | grep -v '\`\`\.fetchall()' || true)"
-
-baseline_tmp="$(mktemp)"
 if [ -f "$BASELINE_FILE" ]; then
     sed '/^$/d' "$BASELINE_FILE" | sort -u > "$baseline_tmp"
 else
     : > "$baseline_tmp"
 fi
 
-unannotated_tmp="$(mktemp)"
-new_tmp="$(mktemp)"
-stale_tmp="$(mktemp)"
-trap 'rm -f "$baseline_tmp" "$unannotated_tmp" "$new_tmp" "$stale_tmp"' EXIT
-
 while IFS= read -r hit; do
     [ -z "$hit" ] && continue
+    if echo "$hit" | grep -q '\`\`\.fetchall()'; then
+        continue
+    fi
 
     file="${hit%%:*}"
     rest="${hit#*:}"
@@ -64,7 +100,7 @@ while IFS= read -r hit; do
     fi
 
     echo "$hit" >> "$unannotated_tmp"
-done <<< "$MATCHES"
+done < "$scan_tmp"
 
 sort -u "$unannotated_tmp" -o "$unannotated_tmp"
 comm -23 "$unannotated_tmp" "$baseline_tmp" > "$new_tmp"

@@ -51,3 +51,18 @@ def test_fetchall_guard_allows_annotated_call():
         assert result.returncode == 0, result.stdout
     finally:
         TMP_VIOLATION.unlink(missing_ok=True)
+
+
+def test_fetchall_guard_fails_closed_when_required_tools_are_missing():
+    result = subprocess.run(
+        ["/bin/bash", str(SCRIPT)],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+        env={"PATH": "/nonexistent"},
+    )
+
+    assert result.returncode == 2
+    assert "required command" in result.stdout
