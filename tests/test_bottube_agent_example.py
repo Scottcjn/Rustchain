@@ -92,14 +92,6 @@ def test_upload_video_posts_metadata_when_not_dry_run(capsys):
 def test_main_dispatches_public_only_flow(monkeypatch):
     module = load_example()
     session = FakeSession()
-    monkeypatch.setattr("requests.Session", lambda: session)
-
-    result = module.main(["--public-only", "--base-url", "https://test.example"])
-
-    assert result == 0
-    assert len(session.get_calls) == 3  # health, videos, feed
-    assert len(session.post_calls) == 0  # no upload when public-onlyd_example()
-    session = FakeSession()
     monkeypatch.setattr(module.requests, "Session", lambda: session)
 
     result = module.main(
