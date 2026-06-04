@@ -93,6 +93,26 @@ def main(argv: list[str]) -> int:
     p.add_argument("--cursor", default=None)
     p.add_argument("--public-only", action="store_true")
     p.add_argument("--dry-run", action="store_true", help="Prepare upload payload only, no POST to /api/upload")
+    args = p.parse_args(argv)
+
+    session = requests.Session()
+    session.trust_env = False
+
+    if args.public_only:
+        check_health(session, args.base_url, args.api_key)
+        list_videos(session, args.base_url, args.api_key, args.agent)
+        fetch_feed(session, args.base_url, args.api_key, args.cursor)
+    else:
+        check_health(session, args.base_url, args.api_key)
+        list_videos(session, args.base_url, args.api_key, args.agent)
+        fetch_feed(session, args.base_url, args.api_key, args.cursor)
+        upload_video(session, args.base_url, args.api_key, args.dry_run)
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
     p.add_argument("--run-upload", action="store_true", help="Also run upload call")
     args = p.parse_args(argv)
 
