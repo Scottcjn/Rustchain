@@ -18,6 +18,13 @@ if str(SDK_PATH) not in sys.path:
 integrated_node = sys.modules["integrated_node"]
 
 
+@pytest.fixture(autouse=True)
+def _clear_admin_rate_limit_bucket():
+    integrated_node._ADMIN_RATE_LIMIT_BUCKETS.clear()
+    yield
+    integrated_node._ADMIN_RATE_LIMIT_BUCKETS.clear()
+
+
 def _init_signed_transfer_db(db_path: Path) -> None:
     conn = sqlite3.connect(db_path)
     conn.executescript(
@@ -692,6 +699,154 @@ def test_pending_confirm_concurrent_workers_claim_each_transfer_once(monkeypatch
         (from_wallet, -amount_i64, f"transfer_out:{to_wallet}:concurrent-confirm-tx"),
         (to_wallet, amount_i64, f"transfer_in:{from_wallet}:concurrent-confirm-tx"),
     ]
+
+    if db_path.exists():
+        db_path.unlink()
+
+
+def test_pending_confirm_bounds_overdue_batch_and_preserves_not_yet_due(monkeypatch):
+    local_tmp_dir = Path(__file__).parent / ".tmp_signed_transfer"
+    local_tmp_dir.mkdir(exist_ok=True)
+    db_path = local_tmp_dir / f"{uuid.uuid4().hex}.sqlite3"
+    _init_signed_transfer_db(db_path)
+
+    admin_key = "test-admin-key"
+    monkeypatch.setattr(integrated_node, "DB_PATH", str(db_path))
+    monkeypatch.setattr(integrated_node, "send_sophiacheck_alert", lambda *args, **kwargs: None)
+    monkeypatch.setenv("RC_ADMIN_KEY", admin_key)
+    integrated_node.app.config["TESTING"] = True
+
+    from_wallet = "RTC" + "a" * 40
+    due_to_wallet = "RTC" + "b" * 40
+    future_to_wallet = "RTC" + "c" * 40
+    now = int(time.time())
+
+    with closing(sqlite3.connect(db_path)) as conn:
+        conn.execute("INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?)", (from_wallet, 5_000_000))
+        conn.execute("INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?)", (due_to_wallet, 0))
+        conn.execute("INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?)", (future_to_wallet, 0))
+        conn.execute(
+            """
+            INSERT INTO pending_ledger
+                (ts, epoch, from_miner, to_miner, amount_i64, reason, created_at, confirms_at, tx_hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (now - 200, 7, from_wallet, due_to_wallet, 1_000_000, "due", now - 200, now - 60, "due-tx"),
+        )
+        conn.execute(
+            """
+            INSERT INTO pending_ledger
+                (ts, epoch, from_miner, to_miner, amount_i64, reason, created_at, confirms_at, tx_hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (now - 100, 7, from_wallet, future_to_wallet, 1_000_000, "future", now - 100, now + 3600, "future-tx"),
+        )
+        conn.commit()
+
+    with integrated_node.app.test_client() as client:
+        response = client.post("/pending/confirm", headers={"X-Admin-Key": admin_key}, json={"limit": 10})
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["limit"] == 10
+    assert body["selected_count"] == 1
+    assert body["confirmed_count"] == 1
+    assert body["stale_pending_count_before"] == 1
+    assert body["stale_pending_count"] == 0
+    assert body["max_confirm_overdue_seconds_before"] >= 1
+
+    with closing(sqlite3.connect(db_path)) as conn:
+        balances = dict(conn.execute("SELECT miner_id, amount_i64 FROM balances").fetchall())
+        statuses = dict(conn.execute("SELECT tx_hash, status FROM pending_ledger ORDER BY id").fetchall())
+
+    assert balances[from_wallet] == 4_000_000
+    assert balances[due_to_wallet] == 1_000_000
+    assert balances[future_to_wallet] == 0
+    assert statuses == {"due-tx": "confirmed", "future-tx": "pending"}
+
+    if db_path.exists():
+        db_path.unlink()
+
+
+def test_pending_list_reports_stale_pending_counts_and_overdue_age(monkeypatch):
+    local_tmp_dir = Path(__file__).parent / ".tmp_signed_transfer"
+    local_tmp_dir.mkdir(exist_ok=True)
+    db_path = local_tmp_dir / f"{uuid.uuid4().hex}.sqlite3"
+    _init_signed_transfer_db(db_path)
+
+    admin_key = "test-admin-key"
+    monkeypatch.setattr(integrated_node, "DB_PATH", str(db_path))
+    monkeypatch.setenv("RC_ADMIN_KEY", admin_key)
+    integrated_node.app.config["TESTING"] = True
+
+    from_wallet = "RTC" + "a" * 40
+    to_wallet = "RTC" + "b" * 40
+    now = int(time.time())
+
+    with closing(sqlite3.connect(db_path)) as conn:
+        for tx_hash, confirms_at in (("overdue-list-tx", now - 90), ("future-list-tx", now + 90)):
+            conn.execute(
+                """
+                INSERT INTO pending_ledger
+                    (ts, epoch, from_miner, to_miner, amount_i64, reason, created_at, confirms_at, tx_hash)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (now - 100, 7, from_wallet, to_wallet, 500_000, "list", now - 100, confirms_at, tx_hash),
+            )
+        conn.commit()
+
+    with integrated_node.app.test_client() as client:
+        response = client.get("/pending/list?status=pending&limit=10", headers={"X-Admin-Key": admin_key})
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["stale_pending_count"] == 1
+    assert body["max_confirm_overdue_seconds"] >= 1
+    by_hash = {item["tx_hash"]: item for item in body["pending"]}
+    assert by_hash["overdue-list-tx"]["confirm_overdue_seconds"] >= 1
+    assert by_hash["future-list-tx"]["confirm_overdue_seconds"] == 0
+
+    if db_path.exists():
+        db_path.unlink()
+
+
+def test_wallet_history_marks_overdue_pending_transfer(monkeypatch):
+    local_tmp_dir = Path(__file__).parent / ".tmp_signed_transfer"
+    local_tmp_dir.mkdir(exist_ok=True)
+    db_path = local_tmp_dir / f"{uuid.uuid4().hex}.sqlite3"
+    _init_signed_transfer_db(db_path)
+
+    monkeypatch.setattr(integrated_node, "DB_PATH", str(db_path))
+    integrated_node.app.config["TESTING"] = True
+
+    from_wallet = "RTC" + "a" * 40
+    to_wallet = "RTC" + "b" * 40
+    now = int(time.time())
+
+    with closing(sqlite3.connect(db_path)) as conn:
+        conn.execute(
+            """
+            INSERT INTO pending_ledger
+                (ts, epoch, from_miner, to_miner, amount_i64, reason, created_at, confirms_at, tx_hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (now - 120, 7, from_wallet, to_wallet, 750_000, "history", now - 120, now - 30, "history-overdue-tx"),
+        )
+        conn.commit()
+
+    with integrated_node.app.test_client() as client:
+        response = client.get(f"/wallet/history?miner_id={to_wallet}&limit=10")
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["ok"] is True
+    tx = body["transactions"][0]
+    assert tx["tx_hash"] == "history-overdue-tx"
+    assert tx["status"] == "pending"
+    assert tx["raw_status"] == "pending"
+    assert tx["confirms_at"] == now - 30
+    assert tx["confirmed_at"] is None
+    assert tx["confirm_overdue_seconds"] >= 1
 
     if db_path.exists():
         db_path.unlink()

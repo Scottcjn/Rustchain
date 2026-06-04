@@ -55,7 +55,11 @@ def cmd_list(args: argparse.Namespace) -> int:
 
 def cmd_confirm(args: argparse.Namespace) -> int:
     url = f"{args.node.rstrip('/')}/pending/confirm"
-    out = _req("POST", url, args.admin_key, payload={}, insecure=args.insecure)
+    payload = {}
+    limit = getattr(args, "limit", None)
+    if limit is not None:
+        payload["limit"] = limit
+    out = _req("POST", url, args.admin_key, payload=payload, insecure=args.insecure)
     print(json.dumps(out, indent=2, sort_keys=True))
     return 0
 
@@ -77,6 +81,7 @@ def main(argv: list[str]) -> int:
     sp.set_defaults(fn=cmd_list)
 
     sp = sub.add_parser("confirm", help="Confirm ready pending transfers")
+    sp.add_argument("--limit", type=positive_int, default=None, help="Maximum overdue transfers to confirm in this run")
     sp.set_defaults(fn=cmd_confirm)
 
     args = ap.parse_args(argv)

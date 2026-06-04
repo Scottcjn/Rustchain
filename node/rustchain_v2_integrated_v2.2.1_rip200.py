@@ -8595,10 +8595,35 @@ def api_wallet_history():
         return jsonify({"ok": False, "error": "offset must be an integer"}), 400
 
     transactions = []
+    now_ts = int(time.time())
+    _history_cap = offset + limit
 
     with sqlite3.connect(DB_PATH) as db:
+        pending_meta_by_hash = {}
+        try:
+            pending_meta_rows = db.execute(
+                """
+                SELECT tx_hash, status, confirms_at, confirmed_at, voided_reason
+                FROM pending_ledger
+                WHERE (from_miner = ? OR to_miner = ?) AND tx_hash IS NOT NULL
+                ORDER BY COALESCE(created_at, ts) DESC
+                LIMIT ?
+                """,
+                (miner_id, miner_id, _history_cap),
+            ).fetchall()
+            for tx_hash, status, confirms_at, confirmed_at, voided_reason in pending_meta_rows:
+                if tx_hash:
+                    pending_meta_by_hash[str(tx_hash)] = {
+                        "raw_status": status,
+                        "confirms_at": confirms_at,
+                        "confirmed_at": confirmed_at,
+                        "voided_reason": voided_reason,
+                    }
+        except Exception:
+            pass
+
         # --- Ledger entries (transfers) ---
-        _history_cap = offset + limit
+        ledger_transfer_hashes = set()
         try:
             ledger_rows = db.execute(
                 """
@@ -8618,16 +8643,24 @@ def api_wallet_history():
                     tx_type = "transfer_in"
                     from_addr = parts[1] if len(parts) > 1 else None
                     tx_hash = parts[2] if len(parts) > 2 else None
+                    if tx_hash:
+                        ledger_transfer_hashes.add(tx_hash)
                 elif reason_str.startswith("transfer_out:"):
                     parts = reason_str.split(":")
                     tx_type = "transfer_out"
                     from_addr = parts[1] if len(parts) > 1 else None
                     tx_hash = parts[2] if len(parts) > 2 else None
+                    if tx_hash:
+                        ledger_transfer_hashes.add(tx_hash)
                 else:
                     tx_type = "ledger"
                     from_addr = None
                     tx_hash = None
 
+                pending_meta = pending_meta_by_hash.get(str(tx_hash or ""), {})
+                raw_status = pending_meta.get("raw_status") or "confirmed"
+                confirmed_at = pending_meta.get("confirmed_at") or (int(ts) if tx_type.startswith("transfer_") else None)
+                confirms_at = pending_meta.get("confirms_at")
                 entry = {
                     "type": tx_type,
                     "amount": abs(int(delta_i64)) / UNIT,
@@ -8635,6 +8668,13 @@ def api_wallet_history():
                     "timestamp": int(ts) if ts else 0,
                     "tx_hash": tx_hash,
                     "reason": reason_str or None,
+                    "status": _normalized_transfer_status(raw_status),
+                    "raw_status": raw_status,
+                    "confirms_at": int(confirms_at) if confirms_at else None,
+                    "confirmed_at": int(confirmed_at) if confirmed_at else None,
+                    "confirm_overdue_seconds": _confirm_overdue_seconds(
+                        raw_status, confirms_at, confirmed_at, now_ts
+                    ),
                 }
                 if tx_type == "transfer_in":
                     entry["from"] = from_addr
@@ -8674,7 +8714,8 @@ def api_wallet_history():
             pending_rows = db.execute(
                 """
                 SELECT ts, from_miner, to_miner, amount_i64, reason,
-                       status, tx_hash, COALESCE(created_at, ts) as created
+                       status, tx_hash, COALESCE(created_at, ts) as created,
+                       confirms_at, confirmed_at, voided_reason
                 FROM pending_ledger
                 WHERE from_miner = ? OR to_miner = ?
                 ORDER BY COALESCE(created_at, ts) DESC
@@ -8683,17 +8724,25 @@ def api_wallet_history():
                 (miner_id, miner_id, _history_cap),
             ).fetchall()
 
-            for ts, from_m, to_m, amt, reason, status, tx_hash, created in pending_rows:
-                if status == "confirmed":
-                    continue  # already captured in ledger table
+            for ts, from_m, to_m, amt, reason, status, tx_hash, created, confirms_at, confirmed_at, voided_reason in pending_rows:
+                if status == "confirmed" and tx_hash and tx_hash in ledger_transfer_hashes:
+                    continue  # already captured in ledger table with pending metadata
                 tx_type = "transfer_out" if from_m == miner_id else "transfer_in"
+                normalized_status = _normalized_transfer_status(status)
                 entry = {
                     "type": tx_type,
                     "amount": abs(int(amt)) / UNIT,
                     "epoch": None,
                     "timestamp": int(created or ts or 0),
                     "tx_hash": tx_hash,
-                    "status": status,
+                    "status": normalized_status,
+                    "raw_status": status,
+                    "confirms_at": int(confirms_at) if confirms_at else None,
+                    "confirmed_at": int(confirmed_at) if confirmed_at else None,
+                    "confirm_overdue_seconds": _confirm_overdue_seconds(
+                        status, confirms_at, confirmed_at, now_ts
+                    ),
+                    "status_reason": voided_reason if normalized_status == "failed" else None,
                 }
                 if tx_type == "transfer_in":
                     entry["from"] = from_m
@@ -8724,11 +8773,59 @@ def api_wallet_history():
 
 # Configuration
 CONFIRMATION_DELAY_SECONDS = int(os.environ.get("RC_CONFIRMATION_DELAY_SECONDS", "86400"))  # mainnet 24h; testnet sets 0 for instant faucet drips
+PENDING_CONFIRM_DEFAULT_LIMIT = int(os.environ.get("RC_PENDING_CONFIRM_DEFAULT_LIMIT", "100"))
+PENDING_CONFIRM_MAX_LIMIT = int(os.environ.get("RC_PENDING_CONFIRM_MAX_LIMIT", "500"))
 SOPHIACHECK_WEBHOOK = None  # Set via env var RC_SOPHIACHECK_WEBHOOK
 
 # Alert thresholds
 ALERT_THRESHOLD_WARNING = 1000 * 1000000     # 1000 RTC in micro-units
 ALERT_THRESHOLD_CRITICAL = 10000 * 1000000   # 10000 RTC in micro-units
+
+
+def _pending_confirm_limit(raw_limit=None):
+    if raw_limit in (None, ""):
+        raw_limit = PENDING_CONFIRM_DEFAULT_LIMIT
+    try:
+        limit = int(raw_limit)
+    except (TypeError, ValueError):
+        raise ValueError("limit must be an integer")
+    return max(1, min(limit, PENDING_CONFIRM_MAX_LIMIT))
+
+
+def _normalized_transfer_status(raw_status):
+    raw = str(raw_status or "confirmed").lower()
+    if raw == "confirmed":
+        return "confirmed"
+    if raw == "voided":
+        return "failed"
+    return "pending"
+
+
+def _confirm_overdue_seconds(raw_status, confirms_at, confirmed_at, now):
+    if _normalized_transfer_status(raw_status) != "pending" or confirmed_at:
+        return 0
+    try:
+        due_at = int(confirms_at or 0)
+    except (TypeError, ValueError):
+        return 0
+    if due_at <= 0 or now <= due_at:
+        return 0
+    return now - due_at
+
+
+def _pending_overdue_stats(c, now):
+    row = c.execute(
+        """
+        SELECT COUNT(*), COALESCE(MAX(? - confirms_at), 0)
+        FROM pending_ledger
+        WHERE status = 'pending' AND confirms_at <= ?
+        """,
+        (now, now),
+    ).fetchone()
+    return {
+        "stale_pending_count": int(row[0] or 0),
+        "max_confirm_overdue_seconds": max(0, int(row[1] or 0)),
+    }
 
 def send_sophiacheck_alert(alert_type, message, data):
     """Send alert to SophiaCheck Discord webhook"""
@@ -8937,6 +9034,7 @@ def list_pending():
         return jsonify({"ok": False, "error": "limit must be an integer"}), 400
     limit = max(1, min(limit, 500))
     
+    now = int(time.time())
     with sqlite3.connect(DB_PATH) as db:
         if status_filter == 'all':
             rows = fetch_page(db, """
@@ -8950,6 +9048,7 @@ def list_pending():
                        confirms_at, voided_by, voided_reason, tx_hash
                 FROM pending_ledger WHERE status = ? ORDER BY id DESC
             """, (status_filter,), limit=limit, max_limit=500)
+        overdue_stats = _pending_overdue_stats(db, now)
     
     items = []
     for r in rows:
@@ -8962,12 +9061,13 @@ def list_pending():
             "reason": r[5],
             "status": r[6],
             "confirms_at": r[7],
+            "confirm_overdue_seconds": _confirm_overdue_seconds(r[6], r[7], None, now),
             "voided_by": r[8],
             "voided_reason": r[9],
             "tx_hash": r[10]
         })
     
-    return jsonify({"ok": True, "count": len(items), "pending": items})
+    return jsonify({"ok": True, "count": len(items), "pending": items, **overdue_stats})
 
 
 @app.route('/pending/void', methods=['POST'])
@@ -9054,17 +9154,9 @@ def void_pending():
         conn.close()
 
 
-@app.route('/pending/confirm', methods=['POST'])
-def confirm_pending():
-    """Worker: Confirm pending transfers that have passed the delay period"""
-    admin_key_env = os.environ.get("RC_ADMIN_KEY", "")
-    if not admin_key_env:
-        return jsonify({"error": "RC_ADMIN_KEY not configured on server", "code": "ADMIN_KEY_UNSET"}), 503
-    admin_key = request.headers.get("X-Admin-Key", "")
-    if not hmac.compare_digest(admin_key, admin_key_env):
-        return jsonify({"error": "Unauthorized"}), 401
-    
-    now = int(time.time())
+def _run_pending_confirm(now=None, limit=None):
+    now = int(time.time()) if now is None else int(now)
+    limit = _pending_confirm_limit(limit)
     confirmed_count = 0
     confirmed_ids = []
     errors = []
@@ -9074,14 +9166,17 @@ def confirm_pending():
         c = conn.cursor()
         _ensure_transfer_ledger_table(c)
         balance_cols = _balance_columns(c)
+        c.execute("BEGIN IMMEDIATE")
+        before_stats = _pending_overdue_stats(c, now)
         
-        # Get all pending transfers ready for confirmation
+        # Get a bounded batch of pending transfers ready for confirmation.
         ready = c.execute("""
             SELECT id, from_miner, to_miner, amount_i64, reason, epoch, tx_hash
             FROM pending_ledger 
             WHERE status = 'pending' AND confirms_at <= ?
             ORDER BY id ASC
-        """, (now,)).fetchall()
+            LIMIT ?
+        """, (now, limit)).fetchall()
         
         for row in ready:
             pid, from_m, to_m, amount, reason, epoch, tx_hash = row
@@ -9150,24 +9245,54 @@ def confirm_pending():
                     pass
                 print(f"[ERROR] confirm_pending {pid}: {e!r}")
                 errors.append({"id": pid, "error": "internal_error"})
-        
+
+        after_stats = _pending_overdue_stats(c, now)
         conn.commit()
-        
-        if confirmed_count > 0:
-            send_sophiacheck_alert("info", f"Confirmed {confirmed_count} pending transfer(s)", {
-                "confirmed_ids": str(confirmed_ids[:10]),  # First 10
-                "errors": len(errors)
-            })
-        
-        return jsonify({
+
+        return {
             "ok": True,
+            "limit": limit,
+            "selected_count": len(ready),
             "confirmed_count": confirmed_count,
             "confirmed_ids": confirmed_ids,
-            "errors": errors if errors else None
-        })
+            "errors": errors if errors else None,
+            "stale_pending_count_before": before_stats["stale_pending_count"],
+            "max_confirm_overdue_seconds_before": before_stats["max_confirm_overdue_seconds"],
+            **after_stats,
+        }
     
     finally:
         conn.close()
+
+
+@app.route('/pending/confirm', methods=['POST'])
+def confirm_pending():
+    """Worker: Confirm a bounded batch of pending transfers past the delay period."""
+    admin_key_env = os.environ.get("RC_ADMIN_KEY", "")
+    if not admin_key_env:
+        return jsonify({"error": "RC_ADMIN_KEY not configured on server", "code": "ADMIN_KEY_UNSET"}), 503
+    admin_key = request.headers.get("X-Admin-Key", "")
+    if not hmac.compare_digest(admin_key, admin_key_env):
+        return jsonify({"error": "Unauthorized"}), 401
+
+    body = request.get_json(silent=True)
+    raw_limit = request.args.get("limit")
+    if isinstance(body, dict) and body.get("limit") not in (None, ""):
+        raw_limit = body.get("limit")
+    try:
+        limit = _pending_confirm_limit(raw_limit)
+    except ValueError:
+        return jsonify({"ok": False, "error": "limit must be an integer"}), 400
+
+    result = _run_pending_confirm(limit=limit)
+
+    if result["confirmed_count"] > 0:
+        send_sophiacheck_alert("info", f"Confirmed {result['confirmed_count']} pending transfer(s)", {
+            "confirmed_ids": str(result["confirmed_ids"][:10]),  # First 10
+            "errors": len(result["errors"] or [])
+        })
+
+    return jsonify(result)
 
 
 @app.route('/pending/integrity', methods=['GET'])

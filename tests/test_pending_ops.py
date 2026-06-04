@@ -163,6 +163,35 @@ def test_cmd_confirm_posts_empty_payload(monkeypatch, capsys):
     assert json.loads(capsys.readouterr().out) == {"confirmed": 2}
 
 
+def test_cmd_confirm_posts_limit_payload(monkeypatch, capsys):
+    seen = {}
+
+    def fake_req(method, url, admin_key, payload=None, *, insecure):
+        seen.update(
+            {
+                "method": method,
+                "url": url,
+                "admin_key": admin_key,
+                "payload": payload,
+                "insecure": insecure,
+            }
+        )
+        return {"confirmed": 1}
+
+    monkeypatch.setattr(pending_ops, "_req", fake_req)
+    args = argparse.Namespace(node="https://node.test", admin_key="admin-secret", insecure=False, limit=25)
+
+    assert pending_ops.cmd_confirm(args) == 0
+    assert seen == {
+        "method": "POST",
+        "url": "https://node.test/pending/confirm",
+        "admin_key": "admin-secret",
+        "payload": {"limit": 25},
+        "insecure": False,
+    }
+    assert json.loads(capsys.readouterr().out) == {"confirmed": 1}
+
+
 def test_main_rejects_missing_admin_key(monkeypatch, capsys):
     monkeypatch.delenv("RC_ADMIN_KEY", raising=False)
 
