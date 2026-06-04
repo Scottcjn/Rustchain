@@ -96,7 +96,7 @@ DEFAULT_CONFIG = {
         'wallet_key': None
     },
     'event_codes': {
-        'enabled': True,
+        'enabled': False,
         'admin_token': None,
         'default_amount': 0.5,
         'max_amount': 1.0,
@@ -597,6 +597,19 @@ def init_database(db_path: str) -> None:
             tx_hash TEXT
         )
     ''')
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS event_claims (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT NOT NULL,
+            wallet TEXT NOT NULL,
+            ip_address TEXT NOT NULL,
+            amount REAL NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            tx_hash TEXT,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL
+        )
+    ''')
     
     c.execute('''
         CREATE INDEX IF NOT EXISTS idx_drip_wallet ON drip_requests(wallet)
@@ -615,6 +628,18 @@ def init_database(db_path: str) -> None:
         CREATE INDEX IF NOT EXISTS idx_event_claim_codes_claimed_wallet
         ON event_claim_codes(claimed_wallet)
     ''')
+    c.execute('''
+        CREATE INDEX IF NOT EXISTS idx_event_claims_code
+        ON event_claims(code)
+    ''')
+    c.execute('''
+        CREATE INDEX IF NOT EXISTS idx_event_claims_wallet
+        ON event_claims(wallet)
+    ''')
+    c.execute('''
+        CREATE INDEX IF NOT EXISTS idx_event_claims_status
+        ON event_claims(status)
+    ''')
     
     conn.commit()
     conn.close()
@@ -625,7 +650,11 @@ def _ensure_column(c: sqlite3.Cursor, table: str, column: str, definition: str) 
     c.execute(f'PRAGMA table_info({table})')
     columns = {row[1] for row in c.fetchall()}
     if column not in columns:
-        c.execute(f'ALTER TABLE {table} ADD COLUMN {column} {definition}')
+        try:
+            c.execute(f'ALTER TABLE {table} ADD COLUMN {column} {definition}')
+        except sqlite3.OperationalError as exc:
+            if 'duplicate column name' not in str(exc).lower():
+                raise
 
 
 # =============================================================================
@@ -880,7 +909,7 @@ def register_routes(app: Flask, config: Dict, logger: logging.Logger,
         if not isinstance(data, dict):
             return jsonify({'ok': False, 'error': 'JSON object required'}), 400
 
-        if not config.get('event_codes', {}).get('enabled', True):
+        if not config.get('event_codes', {}).get('enabled', False):
             return jsonify({'ok': False, 'error': 'Event codes disabled'}), 404
 
         code = str(data.get('code') or '').strip()
@@ -935,10 +964,11 @@ def register_routes(app: Flask, config: Dict, logger: logging.Logger,
                 return jsonify({'ok': False, 'error': 'Event code already claimed'}), 409
 
             c.execute('''
-                INSERT INTO drip_requests (wallet, ip_address, amount, timestamp, status, tx_hash)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (wallet, ip, float(amount), now.isoformat(), 'pending', None))
-            drip_request_id = c.lastrowid
+                INSERT INTO event_claims
+                    (code, wallet, ip_address, amount, status, tx_hash, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (code, wallet, ip, float(amount), 'pending', None, now.isoformat(), now.isoformat()))
+            claim_id = c.lastrowid
             c.execute('COMMIT')
         except Exception as exc:
             try:
@@ -954,14 +984,14 @@ def register_routes(app: Flask, config: Dict, logger: logging.Logger,
             tx_hash = _perform_faucet_transfer(config, logger, wallet, float(amount))
         except Exception as exc:
             try:
-                _finalize_event_claim(db_path, code, drip_request_id, None, 'transfer_failed')
+                _release_event_claim(db_path, code, claim_id, 'transfer_failed')
             except Exception as finalize_exc:
                 logger.error(f"Event claim failure finalization failed for code={code}: {finalize_exc}")
             logger.error(f"Event claim transfer failed for code={code}: {exc}")
             return jsonify({'ok': False, 'error': 'Internal transfer error'}), 500
 
         try:
-            _finalize_event_claim(db_path, code, drip_request_id, tx_hash, 'completed')
+            _finalize_event_claim(db_path, code, claim_id, tx_hash, 'completed')
         except Exception as exc:
             logger.error(f"Event claim finalization failed for code={code}: {exc}")
             return jsonify({'ok': False, 'error': 'Internal transfer error'}), 500
@@ -1085,7 +1115,7 @@ def get_client_ip(request, trust_proxy_headers: bool = False) -> str:
 def _require_event_admin(config: Dict) -> Optional[Tuple[Any, int]]:
     """Require an event faucet admin token before minting claim codes."""
     event_config = config.get('event_codes', {})
-    if not event_config.get('enabled', True):
+    if not event_config.get('enabled', False):
         return jsonify({'ok': False, 'error': 'Event codes disabled'}), 404
 
     expected = os.environ.get('FAUCET_EVENT_ADMIN_TOKEN') or event_config.get('admin_token')
@@ -1157,7 +1187,7 @@ def _perform_faucet_transfer(config: Dict, logger: logging.Logger, wallet: str, 
 def _finalize_event_claim(
     db_path: str,
     code: str,
-    request_id: Optional[int],
+    claim_id: Optional[int],
     tx_hash: Optional[str],
     status: str,
 ) -> None:
@@ -1171,10 +1201,36 @@ def _finalize_event_claim(
             WHERE code = ?
         ''', (tx_hash, code))
         c.execute('''
-            UPDATE drip_requests
-            SET status = ?, tx_hash = ?
+            UPDATE event_claims
+            SET status = ?, tx_hash = ?, updated_at = ?
             WHERE id = ?
-        ''', (status, tx_hash, request_id))
+        ''', (status, tx_hash, datetime.now().isoformat(), claim_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _release_event_claim(
+    db_path: str,
+    code: str,
+    claim_id: Optional[int],
+    status: str,
+) -> None:
+    """Release a code when no transfer was completed, allowing a later retry."""
+    now = datetime.now().isoformat()
+    conn = sqlite3.connect(db_path, timeout=30)
+    try:
+        c = conn.cursor()
+        c.execute('''
+            UPDATE event_claim_codes
+            SET claimed_wallet = NULL, claimed_ip = NULL, claimed_at = NULL, tx_hash = NULL
+            WHERE code = ?
+        ''', (code,))
+        c.execute('''
+            UPDATE event_claims
+            SET status = ?, updated_at = ?
+            WHERE id = ?
+        ''', (status, now, claim_id))
         conn.commit()
     finally:
         conn.close()

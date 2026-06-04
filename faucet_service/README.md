@@ -80,7 +80,7 @@ distribution:
 
 # Event claim codes
 event_codes:
-  enabled: true
+  enabled: false
   admin_token: null  # Prefer FAUCET_EVENT_ADMIN_TOKEN in production
   default_amount: 0.5
   max_amount: 1.0
@@ -119,7 +119,7 @@ event_codes:
 #### Event Codes
 | Option | Default | Description |
 |--------|---------|-------------|
-| `enabled` | `true` | Enable event claim-code endpoints |
+| `enabled` | `false` | Enable event claim-code endpoints |
 | `admin_token` | `null` | Admin token for creating codes; `FAUCET_EVENT_ADMIN_TOKEN` takes precedence |
 | `default_amount` | `0.5` | RTC amount for created codes when request omits `amount` |
 | `max_amount` | `1.0` | Maximum RTC amount allowed for a single event code |
@@ -202,7 +202,7 @@ curl -X POST http://localhost:8090/faucet/event-codes \
 
 ### POST /faucet/event-claim
 
-Redeem one event code for a wallet. Each code can be claimed once and cannot be claimed after `expires_at`.
+Redeem one event code for a wallet. Each code can be claimed once after a successful transfer and cannot be claimed after `expires_at`. Event claims are recorded in a separate ledger from normal faucet drips, so they do not affect `/faucet/drip` rate limits or `/faucet/status` drip statistics.
 
 **Request:**
 ```json
