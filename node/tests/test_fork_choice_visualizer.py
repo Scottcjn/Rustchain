@@ -7,7 +7,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fork_choice_visualizer import build_fork_choice_graph, normalize_blocks
+from fork_choice_visualizer import _descendant_hashes, build_fork_choice_graph, normalize_blocks
 
 
 def test_build_graph_marks_weighted_canonical_path():
@@ -135,3 +135,10 @@ def test_reorg_metrics_track_duration_buckets_and_alerts():
         "max_depth": False,
         "duration_seconds": True,
     }
+
+
+def test_descendant_hashes_ignores_malformed_cycles():
+    assert _descendant_hashes("b", {
+        "b": ["c"],
+        "c": ["b"],
+    }) == ["c"]

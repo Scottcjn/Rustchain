@@ -284,9 +284,13 @@ def _reorg_resistance_metrics(
 
 def _descendant_hashes(root_hash: str, children: Dict[str, List[str]]) -> List[str]:
     descendants = []
+    visited = {root_hash}
     stack = list(children.get(root_hash, []))
     while stack:
         block_hash = stack.pop()
+        if block_hash in visited:
+            continue
+        visited.add(block_hash)
         descendants.append(block_hash)
         stack.extend(children.get(block_hash, []))
     return descendants
