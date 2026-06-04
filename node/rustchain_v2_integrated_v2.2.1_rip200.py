@@ -132,6 +132,52 @@ def _ensure_miner_header_key_tables(conn: sqlite3.Connection):
         ON miner_header_key_audit(miner_id, created_at DESC, id DESC)
     """)
 
+
+def _record_miner_header_key(
+    conn: sqlite3.Connection,
+    miner_id: str,
+    pubkey_hex: str,
+    *,
+    actor: str,
+    reason: str = "",
+    rotated_at=None,
+):
+    _ensure_miner_header_key_tables(conn)
+    rotated_at = int(time.time()) if rotated_at is None else int(rotated_at)
+    row = conn.execute(
+        "SELECT pubkey_hex FROM miner_header_keys WHERE miner_id=?",
+        (miner_id,),
+    ).fetchone()
+    previous_pubkey_hex = row[0] if row else None
+    if previous_pubkey_hex == pubkey_hex:
+        action = "unchanged"
+    else:
+        action = "registered" if previous_pubkey_hex is None else "rotated"
+        conn.execute(
+            """INSERT INTO miner_header_keys(miner_id,pubkey_hex)
+               VALUES(?,?)
+               ON CONFLICT(miner_id) DO UPDATE SET pubkey_hex=excluded.pubkey_hex""",
+            (miner_id, pubkey_hex),
+        )
+        conn.execute(
+            """INSERT INTO miner_header_key_history
+               (miner_id, pubkey_hex, previous_pubkey_hex, rotated_at, rotated_by, reason)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (miner_id, pubkey_hex, previous_pubkey_hex, rotated_at, actor, reason),
+        )
+    conn.execute(
+        """INSERT INTO miner_header_key_audit
+           (miner_id, action, pubkey_hex, previous_pubkey_hex, created_at, actor, reason)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (miner_id, action, pubkey_hex, previous_pubkey_hex, rotated_at, actor, reason),
+    )
+    return {
+        "action": action,
+        "previous_pubkey_hex": previous_pubkey_hex,
+        "pubkey_hex": pubkey_hex,
+        "rotated_at": rotated_at,
+    }
+
 try:
     from nacl.signing import VerifyKey
     from nacl.exceptions import BadSignatureError
@@ -4478,9 +4524,12 @@ def _submit_attestation_impl():
             )
             header_pubkey = _valid_ed25519_pubkey_hex(pubkey_hex) or _valid_ed25519_pubkey_hex(miner)
             if header_pubkey:
-                enroll_conn.execute(
-                    "INSERT OR REPLACE INTO miner_header_keys (miner_id, pubkey_hex) VALUES (?, ?)",
-                    (miner_id, header_pubkey)
+                _record_miner_header_key(
+                    enroll_conn,
+                    miner_id,
+                    header_pubkey,
+                    actor="attest_auto_enroll",
+                    reason="attestation auto-enroll",
                 )
             enroll_conn.commit()
 
@@ -4799,9 +4848,12 @@ def enroll_epoch():
         # Register a real Ed25519 pubkey for block-header verification when available.
         header_pubkey = _valid_ed25519_pubkey_hex(pubkey_hex) or _valid_ed25519_pubkey_hex(miner_pk)
         if header_pubkey:
-            c.execute(
-                "INSERT OR REPLACE INTO miner_header_keys (miner_id, pubkey_hex) VALUES (?, ?)",
-                (miner_id, header_pubkey)
+            _record_miner_header_key(
+                c,
+                miner_id,
+                header_pubkey,
+                actor="epoch_enroll",
+                reason="epoch enroll",
             )
 
     app.logger.info(
@@ -4935,35 +4987,16 @@ def miner_set_header_key():
         return jsonify({"ok":False,"error":"invalid miner_id or pubkey_hex"}), 400
     raw_reason = body.get("reason", "")
     reason = raw_reason.strip()[:240] if isinstance(raw_reason, str) else ""
-    rotated_at = int(time.time())
     with sqlite3.connect(DB_PATH) as db:
         _ensure_miner_header_key_tables(db)
-        row = db.execute(
-            "SELECT pubkey_hex FROM miner_header_keys WHERE miner_id=?",
-            (miner_id,),
-        ).fetchone()
-        previous_pubkey_hex = row[0] if row else None
-        if previous_pubkey_hex == pubkey_hex:
-            action = "unchanged"
-        else:
-            action = "registered" if previous_pubkey_hex is None else "rotated"
-            db.execute(
-                """INSERT INTO miner_header_keys(miner_id,pubkey_hex)
-                   VALUES(?,?)
-                   ON CONFLICT(miner_id) DO UPDATE SET pubkey_hex=excluded.pubkey_hex""",
-                (miner_id, pubkey_hex),
-            )
-            db.execute(
-                """INSERT INTO miner_header_key_history
-                   (miner_id, pubkey_hex, previous_pubkey_hex, rotated_at, rotated_by, reason)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (miner_id, pubkey_hex, previous_pubkey_hex, rotated_at, "admin", reason),
-            )
-        db.execute(
-            """INSERT INTO miner_header_key_audit
-               (miner_id, action, pubkey_hex, previous_pubkey_hex, created_at, actor, reason)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (miner_id, action, pubkey_hex, previous_pubkey_hex, rotated_at, "admin", reason),
+        db.commit()
+        db.execute("BEGIN IMMEDIATE")
+        _record_miner_header_key(
+            db,
+            miner_id,
+            pubkey_hex,
+            actor="admin",
+            reason=reason,
         )
         db.commit()
     return jsonify({"ok":True,"miner_id":miner_id,"pubkey_hex":pubkey_hex})

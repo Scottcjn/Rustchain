@@ -196,6 +196,74 @@ class TestMinerHeaderKeySchema(unittest.TestCase):
             ],
         )
 
+    def test_headerkey_record_helper_audits_enroll_and_attest_paths(self):
+        with sqlite3.connect(self.db_path) as conn:
+            self.mod._record_miner_header_key(
+                conn,
+                "validator-3",
+                "d" * 64,
+                actor="attest_auto_enroll",
+                reason="attestation auto-enroll",
+                rotated_at=100,
+            )
+            self.mod._record_miner_header_key(
+                conn,
+                "validator-3",
+                "d" * 64,
+                actor="epoch_enroll",
+                reason="epoch enroll",
+                rotated_at=101,
+            )
+            self.mod._record_miner_header_key(
+                conn,
+                "validator-3",
+                "e" * 64,
+                actor="epoch_enroll",
+                reason="epoch enroll",
+                rotated_at=102,
+            )
+
+            history = conn.execute(
+                """SELECT pubkey_hex, previous_pubkey_hex, rotated_by, reason
+                   FROM miner_header_key_history
+                   WHERE miner_id = ?
+                   ORDER BY id""",
+                ("validator-3",),
+            ).fetchall()
+            audit = conn.execute(
+                """SELECT action, pubkey_hex, previous_pubkey_hex, actor, reason
+                   FROM miner_header_key_audit
+                   WHERE miner_id = ?
+                   ORDER BY id""",
+                ("validator-3",),
+            ).fetchall()
+
+        self.assertEqual(
+            history,
+            [
+                ("d" * 64, None, "attest_auto_enroll", "attestation auto-enroll"),
+                ("e" * 64, "d" * 64, "epoch_enroll", "epoch enroll"),
+            ],
+        )
+        self.assertEqual(
+            audit,
+            [
+                ("registered", "d" * 64, None, "attest_auto_enroll", "attestation auto-enroll"),
+                ("unchanged", "d" * 64, "d" * 64, "epoch_enroll", "epoch enroll"),
+                ("rotated", "e" * 64, "d" * 64, "epoch_enroll", "epoch enroll"),
+            ],
+        )
+
+    def test_headerkey_route_uses_immediate_transaction_for_rotation(self):
+        source = Path(MODULE_PATH).read_text(encoding="utf-8")
+        route_source = source[
+            source.index("@app.route('/miner/headerkey'"):
+            source.index("@app.route('/headers/ingest_signed'")
+        ]
+
+        self.assertIn('db.execute("BEGIN IMMEDIATE")', route_source)
+        self.assertIn("_record_miner_header_key(", route_source)
+
 
 if __name__ == "__main__":
     unittest.main()
