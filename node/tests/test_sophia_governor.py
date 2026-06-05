@@ -346,10 +346,12 @@ def test_governor_review_handles_malformed_pending_transfer_amount(client, paylo
 
     assert response.status_code == 200
     review = response.get_json()["review"]
-    assert review["risk_level"] == "medium"
-    assert review["route"] == "local_then_phone_home"
+    assert review["risk_level"] == "critical"
+    assert review["route"] == ROUTE_IMMEDIATE_PHONE_HOME
+    assert review["stance"] == "hold"
     assert "invalid_transfer_amount" in review["signals"]
-    assert "review malformed transfer amount" in review["recommended_actions"]
+    assert "retain transfer in pending state" in review["recommended_actions"]
+    assert "page bigger Sophia agents immediately" in review["recommended_actions"]
 
 
 def test_governor_admin_auth_uses_constant_time_compare(client, monkeypatch):

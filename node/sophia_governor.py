@@ -501,11 +501,14 @@ def _heuristic_review(event_type: str, payload: dict[str, Any]) -> dict[str, Any
         amount_rtc, amount_invalid = _pending_transfer_amount_rtc(payload)
         reason_text = str(payload.get("reason", "")).lower()
         if amount_invalid:
-            risk_level = "medium"
-            route = ROUTE_LOCAL_THEN_PHONE_HOME
-            stance = "watch"
+            risk_level = "critical"
+            route = ROUTE_IMMEDIATE_PHONE_HOME
+            stance = "hold"
             signals.append("invalid_transfer_amount")
-            recommended_actions.append("review malformed transfer amount")
+            recommended_actions.extend([
+                "retain transfer in pending state",
+                "page bigger Sophia agents immediately",
+            ])
         if amount_rtc >= _transfer_critical_rtc():
             risk_level = "critical"
             route = ROUTE_IMMEDIATE_PHONE_HOME
