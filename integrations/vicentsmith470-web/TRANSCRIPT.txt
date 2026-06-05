@@ -1,0 +1,5 @@
+RustChain wallet supply verifier
+health: ok=True version=2.2.1-rip200 tip_age_slots=0
+balance: miner=RTCf69dd944558d4e843a4a676495a97638055caea2 amount_i64=0 amount_rtc=0.0 verified_micro_units=True
+tokenomics: chain_id=rustchain-mainnet-v2 total_supply_rtc=8388608 total_supply_urtc=8388608000000 verified_supply_units=True reference_rate_usd=0.15
+verification: PASS - live wallet balance and token supply unit checks succeeded
