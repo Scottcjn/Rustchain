@@ -166,8 +166,6 @@ node/sophia_attestation_inspector.py:576:            ).fetchall()
 node/sophia_attestation_inspector.py:679:            ).fetchall()
 node/sophia_elya_service.py:60:    columns = conn.execute("PRAGMA table_info(balances)").fetchall()
 node/sophia_elya_service.py:97:    columns = {row[1] for row in conn.execute("PRAGMA table_info(epoch_state)").fetchall()}
-node/sophia_governor.py:910:        ).fetchall()
-node/sophia_governor.py:951:        ).fetchall()
 node/sophia_governor_inbox.py:535:        ).fetchall()
 node/sophia_governor_inbox.py:894:        rows = conn.execute(query, params).fetchall()
 node/sophia_governor_inbox.py:968:        ).fetchall()
