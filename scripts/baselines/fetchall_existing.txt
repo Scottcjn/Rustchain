@@ -59,13 +59,6 @@ node/rustchain_v2_integrated_v2.2.1_rip200.py:9192:        """).fetchall())
 node/rustchain_v2_integrated_v2.2.1_rip200.py:9199:        """).fetchall())
 node/rustchain_v2_integrated_v2.2.1_rip200.py:9360:        ).fetchall()
 node/rustchain_v2_integrated_v2.2.1_rip200.py:9719:    return {row[1] for row in c.execute("PRAGMA table_info(balances)").fetchall()}
-node/rustchain_tx_handler.py:133:            columns = [col[1] for col in cursor.fetchall()]
-node/rustchain_tx_handler.py:187:        tables = {row[0] for row in cursor.fetchall()}
-node/rustchain_tx_handler.py:210:        columns = [col[1] for col in cursor.fetchall()]
-node/rustchain_tx_handler.py:368:            return {row["nonce"] for row in cursor.fetchall()}
-node/rustchain_tx_handler.py:451:            pending_nonces = {row["nonce"] for row in cursor.fetchall()}
-node/rustchain_tx_handler.py:545:                for row in cursor.fetchall()
-node/rustchain_tx_handler.py:910:                transactions = [dict(row) for row in cursor.fetchall()]
 node/rustchain_sync.py:93:            rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
 node/rustchain_sync.py:139:            rows = cursor.fetchall()
 node/rustchain_sync.py:179:        data = [dict(row) for row in cursor.fetchall()]
