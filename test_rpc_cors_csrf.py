@@ -64,6 +64,16 @@ class _ApiServerFixture:
         finally:
             connection.close()
 
+    def options(self, path, headers=None):
+        connection = HTTPConnection("127.0.0.1", self.server.server_port, timeout=5)
+        try:
+            connection.request("OPTIONS", path, headers=headers or {})
+            response = connection.getresponse()
+            response.read()
+            return response.status, response.headers
+        finally:
+            connection.close()
+
 
 def test_default_response_does_not_send_wildcard_cors():
     with patch.dict(os.environ, {}, clear=True):
@@ -94,6 +104,28 @@ def test_configured_origin_is_reflected_in_cors_response():
     assert body["success"] is True
     assert headers.get("Access-Control-Allow-Origin") == "https://wallet.example"
     assert headers.get("Vary") == "Origin"
+
+
+def test_api_key_header_is_allowed_for_browser_preflight():
+    with patch.dict(
+        os.environ,
+        {"RUSTCHAIN_API_ALLOWED_ORIGINS": "https://wallet.example"},
+        clear=True,
+    ):
+        with _ApiServerFixture() as server:
+            status, headers = server.options(
+                "/api/stats",
+                headers={
+                    "Origin": "https://wallet.example",
+                    "Access-Control-Request-Method": "GET",
+                    "Access-Control-Request-Headers": "x-rustchain-api-key",
+                },
+            )
+
+    allowed_headers = headers.get("Access-Control-Allow-Headers", "")
+    assert status == 204
+    assert headers.get("Access-Control-Allow-Origin") == "https://wallet.example"
+    assert "X-RustChain-API-Key" in allowed_headers
 
 
 def test_browser_state_changing_post_requires_csrf_token():

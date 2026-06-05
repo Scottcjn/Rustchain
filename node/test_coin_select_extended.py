@@ -63,6 +63,13 @@ class TestCoinSelectEdgeCases(unittest.TestCase):
         # Should pick the large one, not lots of small ones
         self.assertLessEqual(len(result), 2)
 
+    def test_equal_value_utxos_fail_when_over_twenty_inputs_are_required(self):
+        """Equal-value UTXOs that still need >20 inputs should fail cleanly."""
+        utxos = [{"value_nrtc": 1} for _ in range(25)]
+        result, change = coin_select(utxos, 21)
+        self.assertEqual(result, [])
+        self.assertEqual(change, 0)
+
     def test_mixed_values(self):
         """Mix of values: smallest-first accumulation."""
         utxos = [
