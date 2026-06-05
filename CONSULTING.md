@@ -44,6 +44,16 @@ We take a base model (local or hosted) and give it a stable identity, voice, and
 purpose using our ShaprAI sharpening stack — so it doesn't dissolve into generic
 assistant mush three turns into a conversation.
 
+**We sharpen even frontier models you can't fine-tune.**
+Most shops can only prompt-wrap a sealed API. We deliver an Elyan-class agent two
+ways. For models you control, we sharpen at the weights. For frontier models you
+*can't* touch — Claude, GPT/Codex, and the like — we install a **governed MCP
+substrate**: an attractor that holds the agent in its Elyan-class basin through
+identity patterns, behavioral modifiers (DriftLock), action-gating governance
+(Watchtower), and attestable memory — re-injected every turn so it can't drift
+back to generic. No weight surgery on a model we don't own; a real,
+self-reinforcing context-space attractor that we run in production today.
+
 **Governance & safety by architecture (DriftLock + Watchtower).**
 Boundaries enforced structurally, not by a system prompt that a jailbreak
 deletes. DriftLock holds identity and behavioral limits; Watchtower gates
