@@ -37,6 +37,13 @@ class TestRustChainClient:
         assert client.timeout == 60
         client.close()
 
+    def test_init_with_retry_settings(self):
+        """Test client initialization with retry settings"""
+        client = RustChainClient("https://rustchain.org", retry_count=5, retry_backoff=0.25)
+        assert client.retry_count == 5
+        assert client.retry_backoff == 0.25
+        client.close()
+
     def test_init_strips_trailing_slash(self):
         """Test that trailing slash is stripped from base URL"""
         client = RustChainClient("https://rustchain.org/")
@@ -56,7 +63,7 @@ class TestHealthEndpoint:
     @patch("requests.Session.request")
     def test_health_success(self, mock_request):
         """Test successful health check"""
-        mock_response = Mock()
+        mock_response = Mock(status_code=200)
         mock_response.status_code = 200
         mock_response.json.return_value = {
             "ok": True,
@@ -92,7 +99,7 @@ class TestHealthEndpoint:
     @patch("requests.Session.request")
     def test_health_rejects_non_object_json(self, mock_request):
         """Object-returning endpoints reject array/scalar JSON payloads."""
-        mock_response = Mock()
+        mock_response = Mock(status_code=200)
         mock_response.json.return_value = ["not", "an", "object"]
         mock_response.raise_for_status = Mock()
         mock_request.return_value = mock_response
@@ -108,7 +115,7 @@ class TestEpochEndpoint:
     @patch("requests.Session.request")
     def test_epoch_success(self, mock_request):
         """Test successful epoch query"""
-        mock_response = Mock()
+        mock_response = Mock(status_code=200)
         mock_response.json.return_value = {
             "epoch": 74,
             "slot": 10745,
@@ -135,7 +142,7 @@ class TestMinersEndpoint:
     @patch("requests.Session.request")
     def test_miners_success(self, mock_request):
         """Test successful miners query"""
-        mock_response = Mock()
+        mock_response = Mock(status_code=200)
         mock_response.json.return_value = [
             {
                 "miner": "eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC",
@@ -165,7 +172,7 @@ class TestMinersEndpoint:
     @patch("requests.Session.request")
     def test_miners_empty_list(self, mock_request):
         """Test miners endpoint returning empty list"""
-        mock_response = Mock()
+        mock_response = Mock(status_code=200)
         mock_response.json.return_value = []
         mock_response.raise_for_status = Mock()
         mock_request.return_value = mock_response
@@ -178,7 +185,7 @@ class TestMinersEndpoint:
     @patch("requests.Session.request")
     def test_miners_envelope_response(self, mock_request):
         """Test miners endpoint returning an envelope."""
-        mock_response = Mock()
+        mock_response = Mock(status_code=200)
         mock_response.json.return_value = {
             "data": [
                 {
@@ -203,7 +210,7 @@ class TestBalanceEndpoint:
     @patch("requests.Session.request")
     def test_balance_success(self, mock_request):
         """Test successful balance query"""
-        mock_response = Mock()
+        mock_response = Mock(status_code=200)
         mock_response.status_code = 200
         mock_response.json.return_value = {
             "miner_pk": "test_wallet_address",
@@ -227,7 +234,7 @@ class TestBalanceEndpoint:
 
     @patch("requests.Session.request")
     def test_balance_redirect_reports_location(self, mock_request):
-        mock_response = Mock()
+        mock_response = Mock(status_code=200)
         mock_response.status_code = 307
         mock_response.headers = {"Location": "http://redirect.netprotect.mk/passthrough"}
         mock_request.return_value = mock_response
@@ -256,13 +263,95 @@ class TestBalanceEndpoint:
         assert "miner_id" in str(exc_info.value)
 
 
+class TestEligibilityEndpoint:
+    """Test /lottery/eligibility endpoint"""
+
+    @patch("requests.Session.request")
+    def test_check_eligibility_success(self, mock_request):
+        """Test successful eligibility query"""
+        mock_response = Mock(status_code=200)
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "eligible": True,
+            "reason": "attested_and_enrolled",
+            "epoch": 91,
+            "slot": 13227,
+        }
+        mock_response.raise_for_status = Mock()
+        mock_request.return_value = mock_response
+
+        with RustChainClient("https://rustchain.org") as client:
+            result = client.check_eligibility("aliceRTC")
+
+        assert result["eligible"] is True
+        assert result["reason"] == "attested_and_enrolled"
+        assert mock_request.call_args.kwargs["url"] == "https://rustchain.org/lottery/eligibility"
+        assert mock_request.call_args.kwargs["params"] == {"miner_id": "aliceRTC"}
+        assert mock_request.call_args.kwargs["allow_redirects"] is False
+
+    def test_check_eligibility_empty_miner_id(self):
+        """Test eligibility with empty miner_id raises ValidationError"""
+        with pytest.raises(ValidationError) as exc_info:
+            with RustChainClient("https://rustchain.org") as client:
+                client.check_eligibility("")
+
+        assert "miner_id" in str(exc_info.value)
+
+
+class TestRequestRetry:
+    """Test retry behavior for transient failures"""
+
+    @patch("time.sleep")
+    @patch("requests.Session.request")
+    def test_retries_transient_connection_error(self, mock_request, mock_sleep):
+        """Retry connection errors before succeeding"""
+        import requests
+
+        mock_response = Mock(status_code=200)
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"ok": True}
+        mock_response.raise_for_status = Mock()
+        mock_request.side_effect = [
+            requests.exceptions.ConnectionError("temporary"),
+            mock_response,
+        ]
+
+        with RustChainClient("https://rustchain.org", retry_count=2, retry_backoff=0.01) as client:
+            result = client.health()
+
+        assert result["ok"] is True
+        assert mock_request.call_count == 2
+        mock_sleep.assert_called_once_with(0.01)
+
+    @patch("time.sleep")
+    @patch("requests.Session.request")
+    def test_retries_http_503(self, mock_request, mock_sleep):
+        """Retry transient HTTP server errors"""
+        first = Mock()
+        first.status_code = 503
+
+        second = Mock(status_code=200)
+        second.status_code = 200
+        second.raise_for_status = Mock()
+        second.json.return_value = {"ok": True}
+
+        mock_request.side_effect = [first, second]
+
+        with RustChainClient("https://rustchain.org", retry_count=2, retry_backoff=0.01) as client:
+            result = client.health()
+
+        assert result["ok"] is True
+        assert mock_request.call_count == 2
+        mock_sleep.assert_called_once_with(0.01)
+
+
 class TestTransferEndpoint:
     """Test /wallet/transfer/signed endpoint"""
 
     @patch("requests.Session.request")
     def test_transfer_success(self, mock_request):
         """Test successful transfer"""
-        mock_response = Mock()
+        mock_response = Mock(status_code=200)
         mock_response.json.return_value = {
             "success": True,
             "tx_id": "tx_abc123",
@@ -286,7 +375,7 @@ class TestTransferEndpoint:
     @patch("requests.Session.request")
     def test_transfer_with_signature(self, mock_request):
         """Test transfer with signature"""
-        mock_response = Mock()
+        mock_response = Mock(status_code=200)
         mock_response.json.return_value = {
             "success": True,
             "tx_id": "tx_def456",
@@ -345,7 +434,7 @@ class TestAttestationEndpoint:
     @patch("requests.Session.request")
     def test_submit_attestation_success(self, mock_request):
         """Test successful attestation submission"""
-        mock_response = Mock()
+        mock_response = Mock(status_code=200)
         mock_response.json.return_value = {
             "success": True,
             "epoch": 74,
@@ -410,7 +499,7 @@ class TestTransferHistory:
     @patch("requests.Session.request")
     def test_transfer_history_success(self, mock_request):
         """Test successful transfer history query"""
-        mock_response = Mock()
+        mock_response = Mock(status_code=200)
         mock_response.json.return_value = [
             {
                 "tx_id": "tx_abc123",

@@ -118,7 +118,9 @@ Main client for interacting with RustChain node API.
 RustChainClient(
     base_url: str,
     verify_ssl: bool = True,
-    timeout: int = 30
+    timeout: int = 30,
+    retry_count: int = 3,
+    retry_backoff: float = 0.5
 )
 ```
 
@@ -126,6 +128,14 @@ RustChainClient(
 - `base_url`: Base URL of RustChain node (e.g., "https://rustchain.org")
 - `verify_ssl`: Whether to verify SSL certificates (default: True)
 - `timeout`: Request timeout in seconds (default: 30)
+- `retry_count`: Total attempts for transient failures such as timeouts, connection errors, 429, and 5xx responses
+- `retry_backoff`: Initial exponential backoff delay in seconds between retry attempts
+
+For self-signed or IP-based node certificates, pass `verify_ssl=False`:
+
+```python
+client = RustChainClient("https://50.28.86.131", verify_ssl=False)
+```
 
 #### Methods
 
@@ -189,6 +199,23 @@ balance = client.balance("wallet_address")
 - `balance` (float): Current balance in RTC
 - `epoch_rewards` (float): Rewards in current epoch
 - `total_earned` (float): Total RTC earned
+
+##### check_eligibility(miner_id)
+
+Check current epoch mining eligibility.
+
+```python
+eligibility = client.check_eligibility("wallet_address")
+```
+
+**Parameters:**
+- `miner_id`: Miner wallet address or miner identifier
+
+**Returns:**
+- `eligible` (bool): Whether the miner is eligible in the current epoch
+- `reason` (str): Eligibility reason when provided by the node
+- `epoch` (int): Current epoch when provided
+- `slot` (int): Current slot when provided
 
 ##### transfer(from_addr, to_addr, amount, signature=None, fee=0.01)
 

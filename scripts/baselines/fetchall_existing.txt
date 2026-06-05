@@ -1,0 +1,185 @@
+# Existing unannotated .fetchall() migration baseline for issue #6627.
+# Expected to shrink as legacy callers migrate to node.db_helpers.fetch_page()
+# or receive a narrow fetchall-ok annotation. Do not add new entries manually.
+node/utxo_genesis_migration.py:91:        ).fetchall()
+node/utxo_genesis_migration.py:104:        ).fetchall()
+node/utxo_db.py:379:            ).fetchall()
+node/utxo_db.py:940:            ).fetchall()
+node/utxo_db.py:1281:            ).fetchall()
+node/utxo_db.py:1346:            ).fetchall()
+node/utxo_db.py:1420:                ).fetchall()
+node/sophia_governor_review_service.py:540:        ).fetchall()
+node/sophia_governor_review_service.py:568:        ).fetchall()
+node/sophia_governor_review_service.py:640:        ).fetchall()
+node/sophia_governor_inbox.py:535:        ).fetchall()
+node/sophia_governor_inbox.py:894:        rows = conn.execute(query, params).fetchall()
+node/sophia_governor_inbox.py:968:        ).fetchall()
+node/sophia_governor_inbox.py:975:        ).fetchall()
+node/sophia_governor_inbox.py:982:        ).fetchall()
+node/sophia_governor.py:910:        ).fetchall()
+node/sophia_governor.py:951:        ).fetchall()
+node/sophia_elya_service.py:60:    columns = conn.execute("PRAGMA table_info(balances)").fetchall()
+node/sophia_elya_service.py:97:    columns = {row[1] for row in conn.execute("PRAGMA table_info(epoch_state)").fetchall()}
+node/sophia_attestation_inspector.py:413:                ).fetchall()
+node/sophia_attestation_inspector.py:576:            ).fetchall()
+node/sophia_attestation_inspector.py:679:            ).fetchall()
+node/slashing_penalties.py:433:    return tuple(row[1] for row in conn.execute(f'PRAGMA table_info("{table_name}")').fetchall())
+node/rustchain_x402.py:45:    existing = {row[1] for row in cursor.fetchall()}
+node/rustchain_x402.py:81:    columns = {row[1] for row in conn.execute("PRAGMA table_info(balances)").fetchall()}
+node/rustchain_v2_integrated_v2.2.1_rip200.py:1316:    columns = conn.execute("PRAGMA table_info(epoch_enroll)").fetchall()
+node/rustchain_v2_integrated_v2.2.1_rip200.py:1323:    rows = conn.execute("SELECT epoch, miner_pk, weight FROM epoch_enroll").fetchall()
+node/rustchain_v2_integrated_v2.2.1_rip200.py:1478:            """, (limit, offset)).fetchall()
+node/rustchain_v2_integrated_v2.2.1_rip200.py:1525:        _epoch_state_cols = {row[1] for row in c.execute("PRAGMA table_info(epoch_state)").fetchall()}
+node/rustchain_v2_integrated_v2.2.1_rip200.py:2667:    return {row[1] for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()}
+node/rustchain_v2_integrated_v2.2.1_rip200.py:2814:            ).fetchall()
+node/rustchain_v2_integrated_v2.2.1_rip200.py:3015:    ).fetchall()
+node/rustchain_v2_integrated_v2.2.1_rip200.py:3030:    ).fetchall()
+node/rustchain_v2_integrated_v2.2.1_rip200.py:3670:        ).fetchall()
+node/rustchain_v2_integrated_v2.2.1_rip200.py:4833:        ).fetchall()
+node/rustchain_v2_integrated_v2.2.1_rip200.py:5253:        ).fetchall()
+node/rustchain_v2_integrated_v2.2.1_rip200.py:6015:        ).fetchall():
+node/rustchain_v2_integrated_v2.2.1_rip200.py:6024:        ).fetchall():
+node/rustchain_v2_integrated_v2.2.1_rip200.py:6747:                            WHERE active=1 ORDER BY signer_id""").fetchall()
+node/rustchain_v2_integrated_v2.2.1_rip200.py:6777:        cols = {r[1] for r in cur.execute("PRAGMA table_info(balances)").fetchall()}
+node/rustchain_v2_integrated_v2.2.1_rip200.py:6973:            for row in c.fetchall():
+node/rustchain_v2_integrated_v2.2.1_rip200.py:7160:        rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+node/rustchain_v2_integrated_v2.2.1_rip200.py:7258:            ).fetchall()
+node/rustchain_v2_integrated_v2.2.1_rip200.py:7277:            ).fetchall()
+node/rustchain_v2_integrated_v2.2.1_rip200.py:7668:    ).fetchall()
+node/rustchain_v2_integrated_v2.2.1_rip200.py:7701:        ).fetchall()
+node/rustchain_v2_integrated_v2.2.1_rip200.py:7732:    ).fetchall()
+node/rustchain_v2_integrated_v2.2.1_rip200.py:8011:            for r in c.execute("PRAGMA table_info(balances)").fetchall():
+node/rustchain_v2_integrated_v2.2.1_rip200.py:8467:        ).fetchall()
+node/rustchain_v2_integrated_v2.2.1_rip200.py:8612:            ).fetchall()
+node/rustchain_v2_integrated_v2.2.1_rip200.py:8659:            ).fetchall()
+node/rustchain_v2_integrated_v2.2.1_rip200.py:8684:            ).fetchall()
+node/rustchain_v2_integrated_v2.2.1_rip200.py:9084:        """, (now,)).fetchall()
+node/rustchain_v2_integrated_v2.2.1_rip200.py:9187:        """).fetchall())
+node/rustchain_v2_integrated_v2.2.1_rip200.py:9192:        """).fetchall())
+node/rustchain_v2_integrated_v2.2.1_rip200.py:9199:        """).fetchall())
+node/rustchain_v2_integrated_v2.2.1_rip200.py:9360:        ).fetchall()
+node/rustchain_v2_integrated_v2.2.1_rip200.py:9719:    return {row[1] for row in c.execute("PRAGMA table_info(balances)").fetchall()}
+node/rustchain_tx_handler.py:133:            columns = [col[1] for col in cursor.fetchall()]
+node/rustchain_tx_handler.py:187:        tables = {row[0] for row in cursor.fetchall()}
+node/rustchain_tx_handler.py:210:        columns = [col[1] for col in cursor.fetchall()]
+node/rustchain_tx_handler.py:368:            return {row["nonce"] for row in cursor.fetchall()}
+node/rustchain_tx_handler.py:451:            pending_nonces = {row["nonce"] for row in cursor.fetchall()}
+node/rustchain_tx_handler.py:545:                for row in cursor.fetchall()
+node/rustchain_tx_handler.py:910:                transactions = [dict(row) for row in cursor.fetchall()]
+node/rustchain_sync.py:93:            rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+node/rustchain_sync.py:139:            rows = cursor.fetchall()
+node/rustchain_sync.py:179:        data = [dict(row) for row in cursor.fetchall()]
+node/rustchain_p2p_sync_secure.py:414:            return [row[0] for row in cursor.fetchall()]
+node/rustchain_p2p_sync_secure.py:543:            rows = cursor.fetchall()
+node/rustchain_p2p_sync.py:186:                    """, (cutoff, fresh_n)).fetchall()
+node/rustchain_p2p_sync.py:198:                    """, (cutoff, cap)).fetchall()
+node/rustchain_p2p_sync.py:576:            """, (start, limit)).fetchall()
+node/rustchain_p2p_gossip.py:675:                """).fetchall()
+node/rustchain_p2p_gossip.py:687:                """).fetchall()
+node/rustchain_p2p_gossip.py:694:                """).fetchall()
+node/rustchain_p2p_gossip.py:1172:                attested_miners = {row[0] for row in cursor.fetchall()}
+node/rustchain_migration.py:123:                tables = [row[0] for row in cursor.fetchall()]
+node/rustchain_migration.py:360:                attestations = cursor.fetchall()
+node/rustchain_migration.py:493:                metadata = dict(cursor.fetchall())
+node/rustchain_ergo_anchor.py:472:                    for row in cursor.fetchall():
+node/rustchain_ergo_anchor.py:561:            anchors = [dict(row) for row in cursor.fetchall()]
+node/rustchain_dashboard.py:504:            """, (epoch_data['epoch'],)).fetchall()
+node/rustchain_dashboard.py:557:            """).fetchall()
+node/rustchain_block_producer.py:314:            for row in cursor.fetchall():
+node/rustchain_block_producer.py:485:            for row in cursor.fetchall():
+node/rustchain_block_producer.py:516:                for row in cursor.fetchall()
+node/rustchain_block_producer.py:884:    return {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+node/rustchain_block_producer.py:1068:                    ).fetchall()
+node/rustchain_block_producer.py:1088:                    ).fetchall()
+node/rustchain_bft_consensus.py:234:                ).fetchall()
+node/rom_clustering_server.py:85:    duplicate_keys = [(row[0], row[1]) for row in cur.fetchall()]
+node/rom_clustering_server.py:95:        rows = cur.fetchall()
+node/rom_clustering_server.py:235:        other_miners = [row[0] for row in cur.fetchall()]
+node/rom_clustering_server.py:317:        for row in cur.fetchall():
+node/rom_clustering_server.py:345:        for row in cur.fetchall():
+node/rip_node_sync.py:63:            return set(row[0] for row in cursor.fetchall())
+node/rip_200_round_robin_1cpu1vote_v2.py:275:        for row in cursor.fetchall():
+node/rip_200_round_robin_1cpu1vote_v2.py:321:        epoch_miners = cursor.fetchall()
+node/rip_200_round_robin_1cpu1vote.py:502:        return cursor.fetchall()
+node/rip_200_round_robin_1cpu1vote.py:632:        cols = cursor.execute("PRAGMA table_info(miner_attest_recent)").fetchall()
+node/rip_200_round_robin_1cpu1vote.py:643:            enrolled = cursor.fetchall()
+node/rip_200_round_robin_1cpu1vote.py:704:            epoch_miners = cursor.fetchall()
+node/rip0202_evidence.py:124:        rows = conn.execute(sql, params).fetchall()
+node/rewards_implementation_rip200.py:362:            ).fetchall()
+node/proposer_duty_calendar.py:95:            ).fetchall()
+node/payout_worker.py:47:            """, (limit,)).fetchall()
+node/payout_worker.py:109:                """).fetchall()
+node/payout_worker.py:302:                """).fetchall()
+node/payout_worker.py:400:                """, (cutoff,)).fetchall()
+node/migrate_machine_passport.py:49:        result['tables'] = [row[0] for row in cursor.fetchall()]
+node/machine_passport.py:450:            """, params).fetchall()
+node/machine_passport.py:495:            """, (machine_id,)).fetchall()
+node/machine_passport.py:529:            """, (machine_id,)).fetchall()
+node/machine_passport.py:567:            """, (machine_id,)).fetchall()
+node/machine_passport.py:601:            """, (machine_id,)).fetchall()
+node/lock_ledger.py:480:    rows = cursor.execute(query, params).fetchall()
+node/lock_ledger.py:538:    rows = cursor.execute(query, params).fetchall()
+node/lock_ledger.py:587:    """, (miner_id,)).fetchall()
+node/hardware_fingerprint_replay.py:266:        recent_submissions = c.fetchall()
+node/hardware_fingerprint_replay.py:347:        collisions = c.fetchall()
+node/hardware_fingerprint_replay.py:554:        history = c.fetchall()
+node/hardware_binding_v2.py:193:        for row in c.fetchall():
+node/hall_of_rust.py:326:        rows = c.fetchall()
+node/hall_of_rust.py:576:        rows = c.fetchall()
+node/hall_of_rust.py:656:                for r in c.fetchall()
+node/hall_of_rust.py:678:                for r in c.fetchall()
+node/hall_of_rust.py:827:        for row in c.fetchall():
+node/hall_of_rust.py:870:        for row in c.fetchall():
+node/gpu_render_protocol.py:152:        cols = {row[1] for row in conn.execute("PRAGMA table_info(render_escrow)").fetchall()}
+node/gpu_render_protocol.py:272:            rows = conn.execute(query, params).fetchall()
+node/gpu_render_protocol.py:427:            ).fetchall()
+node/gpu_render_endpoints.py:64:            cols = {row[1] for row in db.execute("PRAGMA table_info(render_escrow)").fetchall()}
+node/governance.py:280:            ).fetchall()
+node/governance.py:511:                    ).fetchall()
+node/governance.py:516:                    ).fetchall()
+node/governance.py:546:                ).fetchall()
+node/ergo_raw_tx.py:77:        miners = [dict(row) for row in cur.fetchall()]
+node/ergo_miner_anchor.py:38:        miners = [dict(row) for row in cur.fetchall()]
+node/coalition.py:322:            ).fetchall()
+node/coalition.py:874:                    ).fetchall()
+node/coalition.py:879:                    ).fetchall()
+node/coalition.py:915:                ).fetchall()
+node/coalition.py:960:                    ).fetchall()
+node/coalition.py:966:                    ).fetchall()
+node/claims_submission.py:116:                    columns = {row[1] for row in cursor.fetchall()}
+node/claims_submission.py:640:            for row in cursor.fetchall():
+node/claims_settlement.py:86:            for row in cursor.fetchall():
+node/claims_settlement.py:131:            for row in cursor.fetchall():
+node/claims_settlement.py:416:            """, (max_claims,)).fetchall()
+node/claims_settlement.py:443:                """, (batch_id, max_claims)).fetchall()
+node/claims_eligibility.py:675:            epochs = [row[0] for row in cursor.fetchall() if row[0] >= 0]
+node/bridge_api.py:547:    rows = cursor.execute(query, params).fetchall()
+node/bottube_feed_routes.py:128:            rows = cursor_obj.fetchall()
+node/beacon_x402.py:72:                     for row in cursor.fetchall()}
+node/beacon_x402.py:341:            ).fetchall()
+node/beacon_x402.py:369:            ).fetchall()
+node/beacon_x402.py:410:            ).fetchall()
+node/beacon_identity.py:125:        ).fetchall()
+node/beacon_identity.py:259:        ).fetchall()
+node/beacon_api.py:383:    ).fetchall()
+node/beacon_api.py:412:        ).fetchall()
+node/beacon_api.py:678:            ).fetchall()
+node/beacon_api.py:684:            ).fetchall()
+node/beacon_api.py:726:        ).fetchall()
+node/beacon_api.py:955:        ).fetchall()
+node/beacon_api.py:1212:        rows = db.execute("SELECT * FROM beacon_reputation ORDER BY score DESC").fetchall()
+node/beacon_anchor.py:79:        for row in conn.execute("PRAGMA table_info(beacon_envelopes)").fetchall()
+node/beacon_anchor.py:236:        ).fetchall()
+node/beacon_anchor.py:305:        ).fetchall()
+node/bcos_routes.py:544:            rows = conn.execute(query, params).fetchall()
+node/anti_double_mining.py:160:    enrolled = cursor.fetchall()
+node/anti_double_mining.py:210:        rows = cursor.fetchall()
+node/anti_double_mining.py:333:    rows = cursor.fetchall()
+node/anti_double_mining.py:367:    enrolled = cursor.fetchall()
+node/anti_double_mining.py:407:        rows = cursor.fetchall()
+node/anti_double_mining.py:439:        cols = conn.execute("PRAGMA table_info(epoch_enroll)").fetchall()
+node/anti_double_mining.py:450:        ).fetchall()
+node/airdrop_v2.py:1142:        rows = cursor.fetchall()
+node/airdrop_v2.py:1193:        rows = cursor.fetchall()
+node/airdrop_v2.py:1226:            for row in cursor.fetchall()
+node/airdrop_v2.py:1238:            for row in cursor.fetchall()

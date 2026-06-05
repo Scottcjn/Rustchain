@@ -213,3 +213,31 @@ When reviewing PRs or preparing your own:
 - [ ] Tests added/updated for changes
 - [ ] Documentation updated if needed
 - [ ] No unrelated changes in the PR
+
+
+---
+
+## Editing miner files (avoid the red `test` check)
+
+Four miner artifacts are pinned by SHA256 in `miners/checksums.sha256` and verified by
+`tests/test_install_miner_checksums.py`. If you edit any of them, regenerate the manifest
+in the same commit or the `test` CI check goes red (`AssertionError`, while the other
+3000+ tests pass):
+
+- `miners/linux/rustchain_linux_miner.py`
+- `miners/linux/fingerprint_checks.py`
+- `miners/macos/rustchain_mac_miner_v2.4.py`
+- `miners/macos/rustchain_mac_miner_v2.5.py`
+
+**One command:**
+```bash
+./scripts/regenerate_miner_checksums.sh
+```
+
+**Or enable the pre-commit hook once** (auto-regenerates + re-stages when you commit a miner file):
+```bash
+git config core.hooksPath .githooks
+```
+
+A red checksum `test` means the manifest is stale — it is **not** a code bug, and it does
+**not** indicate `tests/test_p2p_mtls_gate.py` or any global gate (that test passes).

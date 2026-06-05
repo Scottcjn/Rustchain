@@ -1,0 +1,6 @@
+RustChain T2 live verification
+health: ok=True version=2.2.1-rip200 tip_age_slots=0
+epoch: epoch=182 slot=26348 blocks_per_epoch=144 verified_slot_epoch=True
+miners: enrolled_epoch=25 listed=20 selected=power8-s824-sophia selected_is_enrolled=True
+balance: miner=power8-s824-sophia amount_i64=89958498 amount_rtc=89.958498 verified_micro_units=True
+verification: PASS - live miner enrollment and balance unit checks succeeded

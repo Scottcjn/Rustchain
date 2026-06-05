@@ -1,86 +1,99 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
 # check_fetchall.sh — CI guard against unbounded .fetchall() in node code.
 #
-# Background: issue #6627. The project shipped 6 [UTXO-BUG] fixes in one
-# week, all the same shape: an unbounded .fetchall() on a public/semi-public
-# endpoint, materializing attacker-influenced row counts into a Python list,
-# exhausting node memory. The architectural fix is node/db_helpers.py
-# (fetch_page / fetch_one_or_none). This script makes the fix structural by
-# refusing to land new raw .fetchall() calls in node/ without an opt-in
-# annotation justifying why bounded materialization is safe at that site.
-#
-# Opt-in annotation:
-#   # fetchall-ok: <reason>
-# on the same line as .fetchall() OR on the immediately preceding line.
-#
-# Valid reasons:
-#   bounded-by-schema     — query selects from a table whose row count is
-#                           bounded by the schema (e.g. one row per epoch,
-#                           one row per known fingerprint check).
-#   pragma-result         — PRAGMA table_info / index_list / etc.; SQLite
-#                           caps the row count by schema metadata.
-#   internal-test-helper  — test-only path, no attacker influence.
-#   already-paginated     — caller's SQL has its own bound, kept for clarity
-#                           (only use this for grandfathered code being
-#                           audited in a follow-up sweep).
-#
-# Usage:   bash scripts/check_fetchall.sh
-# Exit:    0 if every hit is annotated or migrated, 1 otherwise.
+# This check supports a migration baseline: existing raw .fetchall() sites are
+# listed in scripts/baselines/fetchall_existing.txt so CI can prevent new
+# unannotated sites while the large legacy backlog is converted incrementally.
 
-set -u
+set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+case "$SCRIPT_PATH" in
+    */*) SCRIPT_DIR="${SCRIPT_PATH%/*}" ;;
+    *) SCRIPT_DIR="." ;;
+esac
+SCRIPT_DIR="$(cd -- "$SCRIPT_DIR" && pwd)"
+ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 cd "$ROOT"
 
-# Prefer ripgrep when available — much faster on this 10k-line file —
-# fall back to grep so the script also runs in a minimal CI image.
+BASELINE_FILE="${FETCHALL_BASELINE:-scripts/baselines/fetchall_existing.txt}"
+VALID_REASONS_RE='bounded-by-schema|pragma-result|internal-test-helper|already-paginated'
+
+require_cmd() {
+    if ! command -v "$1" >/dev/null 2>&1; then
+        echo "ERROR: required command '$1' is not available" >&2
+        exit 2
+    fi
+}
+
+for cmd in grep sed sort comm mktemp wc tr; do
+    require_cmd "$cmd"
+done
+
+scan_tmp="$(mktemp)"
+baseline_tmp="$(mktemp)"
+unannotated_tmp="$(mktemp)"
+new_tmp="$(mktemp)"
+stale_tmp="$(mktemp)"
+trap 'rm -f "$scan_tmp" "$baseline_tmp" "$unannotated_tmp" "$new_tmp" "$stale_tmp"' EXIT
+
+: > "$scan_tmp"
+: > "$unannotated_tmp"
+
+FETCHALL_PATTERN='\.fetchall[[:space:]]*\('
+
 if command -v rg >/dev/null 2>&1; then
-    MATCHES="$(rg -n '\.fetchall\(\)' node \
+    set +e
+    rg -n "$FETCHALL_PATTERN" node \
         --glob '!node/tests/**' \
         --glob '!node/test_*' \
         --glob '!node/__pycache__/**' \
         --glob '!node/db_helpers.py' \
-        --glob '!deprecated/**' || true)"
+        --glob '!deprecated/**' > "$scan_tmp"
+    scan_status=$?
+    set -e
+    if [ "$scan_status" -ne 0 ] && [ "$scan_status" -ne 1 ]; then
+        echo "ERROR: rg scan failed with status $scan_status" >&2
+        exit 2
+    fi
 else
-    MATCHES="$(grep -rn '\.fetchall()' node \
+    set +e
+    grep -rnE "$FETCHALL_PATTERN" node \
         --include='*.py' \
         --exclude-dir=tests \
         --exclude-dir=__pycache__ \
         --exclude='test_*' \
-        --exclude='db_helpers.py' 2>/dev/null || true)"
+        --exclude='db_helpers.py' > "$scan_tmp"
+    scan_status=$?
+    set -e
+    if [ "$scan_status" -ne 0 ] && [ "$scan_status" -ne 1 ]; then
+        echo "ERROR: grep scan failed with status $scan_status" >&2
+        exit 2
+    fi
 fi
 
-# Filter docstring / comment / string-literal matches: only treat lines
-# whose first non-whitespace .fetchall() occurrence is preceded by an
-# unbalanced quote pair as code. The cheap-but-good-enough heuristic: if
-# a line contains a triple-quote OR has more than one " or ' before the
-# .fetchall() and no `=` / `(` / `.` immediately before it as code, drop
-# it. We keep the simpler approach: ignore lines that look like rST
-# literal-rendered backticks (``.fetchall()``) which is how the helper
-# module documents the bug class.
-MATCHES="$(echo "$MATCHES" | grep -v '\`\`\.fetchall()' || true)"
+if [ -f "$BASELINE_FILE" ]; then
+    grep -vE '^($|#)' "$BASELINE_FILE" | sort -u > "$baseline_tmp"
+else
+    : > "$baseline_tmp"
+fi
 
-VALID_REASONS_RE='bounded-by-schema|pragma-result|internal-test-helper|already-paginated'
-
-unannotated_count=0
-unannotated_list=""
-
-# IFS reset so we iterate line-by-line, not whitespace-by-whitespace.
 while IFS= read -r hit; do
     [ -z "$hit" ] && continue
+    if echo "$hit" | grep -q '\`\`\.fetchall()'; then
+        continue
+    fi
 
-    # rg/grep emit `path:lineno:content` — split that.
     file="${hit%%:*}"
     rest="${hit#*:}"
     lineno="${rest%%:*}"
     content="${rest#*:}"
 
-    # 1) Same-line annotation?
     if echo "$content" | grep -qE "#\s*fetchall-ok:\s*($VALID_REASONS_RE)"; then
         continue
     fi
 
-    # 2) Prior-line annotation? Look at lineno-1.
     prior=$(( lineno - 1 ))
     if [ "$prior" -ge 1 ] && [ -f "$file" ]; then
         prior_line=$(sed -n "${prior}p" "$file")
@@ -89,29 +102,44 @@ while IFS= read -r hit; do
         fi
     fi
 
-    unannotated_count=$(( unannotated_count + 1 ))
-    unannotated_list="${unannotated_list}${file}:${lineno}:${content}
-"
-done <<< "$MATCHES"
+    echo "$hit" >> "$unannotated_tmp"
+done < "$scan_tmp"
 
-if [ "$unannotated_count" -gt 0 ]; then
-    echo "ERROR: $unannotated_count unannotated .fetchall() call(s) in node/ — these"
-    echo "are candidates for the UTXO-OOM bug class (issue #6627)."
+sort -u "$unannotated_tmp" -o "$unannotated_tmp"
+
+if [ "${1:-}" = "--print-baseline" ]; then
+    cat "$unannotated_tmp"
+    exit 0
+fi
+
+comm -23 "$unannotated_tmp" "$baseline_tmp" > "$new_tmp"
+comm -13 "$unannotated_tmp" "$baseline_tmp" > "$stale_tmp"
+
+if [ -s "$new_tmp" ]; then
+    count=$(wc -l < "$new_tmp" | tr -d ' ')
+    echo "ERROR: $count new unannotated .fetchall() call(s) in node/."
+    echo "These are candidates for the UTXO-OOM bug class (issue #6627)."
     echo ""
     echo "Fix options:"
-    echo "  1) Migrate to node.db_helpers.fetch_page() — bounded, safe."
-    echo "  2) If bounded materialization is genuinely safe at that site,"
-    echo "     add an annotation comment:"
+    echo "  1) Migrate to node.db_helpers.fetch_page() / fetch_one_or_none()."
+    echo "  2) If bounded materialization is genuinely safe, add:"
     echo "         # fetchall-ok: <reason>"
-    echo "     on the same line or the preceding line. Valid reasons:"
-    echo "         bounded-by-schema, pragma-result, internal-test-helper,"
-    echo "         already-paginated"
+    echo "     Valid reasons: bounded-by-schema, pragma-result, internal-test-helper, already-paginated"
     echo ""
-    echo "Unannotated hits:"
-    echo "$unannotated_list" | sed 's/^/  /'
+    echo "New unannotated hits:"
+    sed 's/^/  /' "$new_tmp"
     exit 1
 fi
 
-echo "OK: every .fetchall() in node/ is either migrated to fetch_page() or"
-echo "annotated with a valid reason. (issue #6627)"
+if [ -s "$stale_tmp" ]; then
+    echo "ERROR: fetchall baseline has stale entries."
+    echo "Remove these from $BASELINE_FILE or regenerate the baseline with:"
+    echo "  bash scripts/check_fetchall.sh --print-baseline > $BASELINE_FILE"
+    sed 's/^/  /' "$stale_tmp"
+    exit 1
+fi
+
+legacy_count=$(wc -l < "$unannotated_tmp" | tr -d ' ')
+echo "OK: no new unannotated .fetchall() calls in node/."
+echo "Legacy baseline count: $legacy_count (issue #6627 migration backlog)."
 exit 0
