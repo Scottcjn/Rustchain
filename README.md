@@ -348,8 +348,8 @@ For command examples, backup guidance, and the signed-transfer payload format, s
 ### 1 CPU = 1 Vote
 
 Unlike Proof-of-Work where hash power = votes:
-- Each unique hardware device gets exactly 1 vote per epoch
-- Rewards split equally, then multiplied by antiquity
+- Each unique hardware device gets one consensus participation slot per epoch
+- Reward shares are then weighted by the device's antiquity multiplier
 - No advantage from faster CPUs or multiple threads
 
 ### Epoch Rewards
