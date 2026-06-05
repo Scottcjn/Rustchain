@@ -768,6 +768,18 @@ def test_pending_confirm_bounds_overdue_batch_and_preserves_not_yet_due(monkeypa
         db_path.unlink()
 
 
+def test_pending_confirm_rejects_non_positive_limit(monkeypatch):
+    admin_key = "test-admin-key"
+    monkeypatch.setenv("RC_ADMIN_KEY", admin_key)
+    integrated_node.app.config["TESTING"] = True
+
+    with integrated_node.app.test_client() as client:
+        response = client.post("/pending/confirm", headers={"X-Admin-Key": admin_key}, json={"limit": 0})
+
+    assert response.status_code == 400
+    assert response.get_json() == {"ok": False, "error": "limit must be a positive integer"}
+
+
 def test_pending_list_reports_stale_pending_counts_and_overdue_age(monkeypatch):
     local_tmp_dir = Path(__file__).parent / ".tmp_signed_transfer"
     local_tmp_dir.mkdir(exist_ok=True)

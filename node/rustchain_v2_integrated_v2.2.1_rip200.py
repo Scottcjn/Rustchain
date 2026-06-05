@@ -8799,7 +8799,9 @@ def _pending_confirm_limit(raw_limit=None):
         limit = int(raw_limit)
     except (TypeError, ValueError):
         raise ValueError("limit must be an integer")
-    return max(1, min(limit, PENDING_CONFIRM_MAX_LIMIT))
+    if limit < 1:
+        raise ValueError("limit must be a positive integer")
+    return min(limit, PENDING_CONFIRM_MAX_LIMIT)
 
 
 def _normalized_transfer_status(raw_status):
@@ -9291,8 +9293,8 @@ def confirm_pending():
         raw_limit = body.get("limit")
     try:
         limit = _pending_confirm_limit(raw_limit)
-    except ValueError:
-        return jsonify({"ok": False, "error": "limit must be an integer"}), 400
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
 
     result = _run_pending_confirm(limit=limit)
 
