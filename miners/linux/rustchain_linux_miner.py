@@ -324,8 +324,35 @@ class LocalMiner:
             return ""
 
     def _get_mac_addresses(self):
-        """Return list of real MAC addresses present on the system."""
+        """Return list of real (physical) MAC addresses, filtering out virtual interfaces.
+
+        Filters out:
+        - Docker bridge/veth interfaces
+        - Tailscale/WireGuard VPN interfaces
+        - VirtualBox/VMware virtual NICs
+        - Loopback/null MACs
+        """
         macs = []
+        # Known virtual interface name prefixes
+        VIRTUAL_PREFIXES = (
+            "docker", "veth", "br-", "virbr", "vnet",
+            "tailscale", "wg", "zt", "tun", "tap",
+            "vmnet", "vboxnet", "ppp", "dummy", "bond",
+        )
+        # Known virtual MAC prefixes (OUI)
+        VIRTUAL_MAC_PREFIXES = (
+            "02:42",       # Docker default bridge
+            "fe:ff:ff",    # Tailscale/WireGuard synthetic
+        )
+
+        def _is_virtual_iface(iface_name: str, mac: str) -> bool:
+            """Check if interface is virtual/container/VPN."""
+            if any(iface_name.startswith(p) for p in VIRTUAL_PREFIXES):
+                return True
+            if any(mac.startswith(p) for p in VIRTUAL_MAC_PREFIXES):
+                return True
+            return False
+
         # Try `ip -o link`
         try:
             output = subprocess.run(
@@ -336,11 +363,18 @@ class LocalMiner:
                 timeout=5,
             ).stdout.splitlines()
             for line in output:
+                # Extract interface name
+                iface_match = re.search(r"^\d+:\s+([^:@\s]+)", line)
+                iface_name = iface_match.group(1) if iface_match else ""
+                # Extract MAC
                 m = re.search(r"link/(?:ether|loopback)\s+([0-9a-f:]{17})", line, re.IGNORECASE)
                 if m:
                     mac = m.group(1).lower()
-                    if mac != "00:00:00:00:00:00":
-                        macs.append(mac)
+                    if mac == "00:00:00:00:00:00":
+                        continue
+                    if _is_virtual_iface(iface_name, mac):
+                        continue
+                    macs.append(mac)
         except Exception:
             pass
 
@@ -354,12 +388,19 @@ class LocalMiner:
                     text=True,
                     timeout=5,
                 ).stdout.splitlines()
+                current_iface = ""
                 for line in output:
+                    iface_match = re.search(r"^(\S+):", line)
+                    if iface_match:
+                        current_iface = iface_match.group(1)
                     m = re.search(r"(?:ether|HWaddr)\s+([0-9a-f:]{17})", line, re.IGNORECASE)
                     if m:
                         mac = m.group(1).lower()
-                        if mac != "00:00:00:00:00:00":
-                            macs.append(mac)
+                        if mac == "00:00:00:00:00:00":
+                            continue
+                        if _is_virtual_iface(current_iface, mac):
+                            continue
+                        macs.append(mac)
             except Exception:
                 pass
 
@@ -369,6 +410,12 @@ class LocalMiner:
         """
         Collect simple timing entropy by measuring tight CPU loops.
         Returns summary statistics the node can score.
+
+        Field aliases match node-side extract_entropy_profile() expectations:
+          - cache_timing.data.L1  = min_ns (best-case L1 latency)
+          - cache_timing.data.L2  = max_ns (worst-case L2 latency)
+          - thermal_drift.data.ratio = mean_ns normalized
+          - instruction_jitter.data.cv = coefficient of variation (stdev/mean)
         """
         samples = []
         for _ in range(cycles):
@@ -381,14 +428,36 @@ class LocalMiner:
 
         mean_ns = sum(samples) / len(samples)
         variance_ns = statistics.pvariance(samples) if len(samples) > 1 else 0.0
+        stdev_ns = math.sqrt(variance_ns)
+        cv = stdev_ns / mean_ns if mean_ns > 0 else 0.0
+        min_ns = min(samples)
+        max_ns = max(samples)
 
         return {
+            # Primary fields (backward-compatible)
             "mean_ns": mean_ns,
             "variance_ns": variance_ns,
-            "min_ns": min(samples),
-            "max_ns": max(samples),
+            "min_ns": min_ns,
+            "max_ns": max_ns,
             "sample_count": len(samples),
             "samples_preview": samples[:12],
+            # Node-side field aliases (issue #4820 fix)
+            "cache_timing": {
+                "data": {
+                    "L1": round(min_ns, 2),
+                    "L2": round(max_ns, 2),
+                }
+            },
+            "thermal_drift": {
+                "data": {
+                    "ratio": round(mean_ns / 1e6, 6),  # normalized to ms
+                }
+            },
+            "instruction_jitter": {
+                "data": {
+                    "cv": round(cv, 6),
+                }
+            },
         }
 
     def _get_hw_info(self):
