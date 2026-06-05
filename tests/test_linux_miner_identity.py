@@ -35,3 +35,69 @@ def test_linux_miner_source_does_not_hardcode_victus_identity():
     assert "HP Victus" not in source
     assert "ryzen5-" not in source
     assert "RustChain Local Linux Miner" in source
+
+
+def test_local_miner_can_use_ephemeral_keypair_without_persisting(monkeypatch):
+    miner = load_miner_module()
+    calls = {"ephemeral": 0, "persisted": 0}
+
+    def generate_ephemeral():
+        calls["ephemeral"] += 1
+        return {"private_key": "ephemeral-private", "public_key": "ephemeral-public"}
+
+    def persist_key():
+        calls["persisted"] += 1
+        raise AssertionError("dry-run should not persist miner keys")
+
+    monkeypatch.setattr(miner, "CRYPTO_AVAILABLE", True)
+    monkeypatch.setattr(miner, "FINGERPRINT_AVAILABLE", False)
+    monkeypatch.setattr(miner, "generate_keypair", generate_ephemeral)
+    monkeypatch.setattr(miner, "get_or_create_keypair", persist_key)
+    monkeypatch.setattr(miner, "get_linux_serial", lambda: "test-serial")
+
+    instance = miner.LocalMiner(wallet="RTC-test-wallet", persist_key=False)
+
+    assert instance.public_key == "ephemeral-public"
+    assert calls == {"ephemeral": 1, "persisted": 0}
+
+
+def test_main_dry_run_disables_key_persistence(monkeypatch):
+    miner = load_miner_module()
+    seen = {}
+
+    class FakeMiner:
+        def __init__(self, **kwargs):
+            seen["persist_key"] = kwargs["persist_key"]
+
+        def dry_run(self):
+            seen["dry_run"] = True
+            return True
+
+        def mine(self):
+            raise AssertionError("dry-run should not start mining")
+
+    monkeypatch.setattr(miner, "LocalMiner", FakeMiner)
+
+    assert miner.main(["--dry-run"]) == 0
+    assert seen == {"persist_key": False, "dry_run": True}
+
+
+def test_main_normal_mode_keeps_key_persistence(monkeypatch):
+    miner = load_miner_module()
+    seen = {}
+
+    class FakeMiner:
+        def __init__(self, **kwargs):
+            seen["persist_key"] = kwargs["persist_key"]
+
+        def dry_run(self):
+            raise AssertionError("normal mode should not run dry-run")
+
+        def mine(self):
+            seen["mine"] = True
+            return 0
+
+    monkeypatch.setattr(miner, "LocalMiner", FakeMiner)
+
+    assert miner.main([]) == 0
+    assert seen == {"persist_key": True, "mine": True}
