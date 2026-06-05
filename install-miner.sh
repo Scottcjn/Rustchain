@@ -119,19 +119,28 @@ download_miner() {
         cd "$INSTALL_DIR"
     fi
     case "$PLATFORM" in
-        macos) FILE="macos/rustchain_mac_miner_v2.5.py" ;;
-        rpi|linux) FILE="linux/rustchain_linux_miner.py" ;;
-        *) FILE="linux/rustchain_linux_miner.py" ;;
+        macos)
+            FILE="macos/rustchain_mac_miner_v2.5.py"
+            FINGERPRINT_FILE="macos/fingerprint_checks.py"
+            ;;
+        rpi|linux)
+            FILE="linux/rustchain_linux_miner.py"
+            FINGERPRINT_FILE="linux/fingerprint_checks.py"
+            ;;
+        *)
+            FILE="linux/rustchain_linux_miner.py"
+            FINGERPRINT_FILE="linux/fingerprint_checks.py"
+            ;;
     esac
     
     echo -e "${CYAN}[*] Downloading miner...${NC}"
     run_cmd curl -sSL "$REPO_BASE/$FILE" -o rustchain_miner.py
-    run_cmd curl -sSL "$REPO_BASE/linux/fingerprint_checks.py" -o fingerprint_checks.py
+    run_cmd curl -sSL "$REPO_BASE/$FINGERPRINT_FILE" -o fingerprint_checks.py
     
     if [ "$SKIP_CHECKSUM" != true ] && [ "$DRY_RUN" != true ]; then
         curl -fsSL "$CHECKSUM_URL" -o sums
         MINER_SUM=$(checksum_for "$FILE")
-        FINGERPRINT_SUM=$(checksum_for "linux/fingerprint_checks.py")
+        FINGERPRINT_SUM=$(checksum_for "$FINGERPRINT_FILE")
         verify_sum "rustchain_miner.py" "$MINER_SUM"
         verify_sum "fingerprint_checks.py" "$FINGERPRINT_SUM"
         rm -f sums
