@@ -27,6 +27,7 @@ def test_checksum_manifest_matches_installer_download_artifacts():
         "linux/fingerprint_checks.py",
         "macos/rustchain_mac_miner_v2.4.py",
         "macos/rustchain_mac_miner_v2.5.py",
+        "macos/fingerprint_checks.py",
     ]:
         expected = hashlib.sha256((ROOT / "miners" / artifact).read_bytes()).hexdigest()
         assert entries[artifact] == expected
@@ -37,7 +38,12 @@ def test_installers_verify_fingerprint_helper_checksum():
         script = installer.read_text(encoding="utf-8")
 
         assert 'MINER_SUM=$(checksum_for "$FILE")' in script
-        assert 'FINGERPRINT_SUM=$(checksum_for "linux/fingerprint_checks.py")' in script
+        if installer.name == "install-miner.sh" and installer.parent == ROOT:
+            assert 'FINGERPRINT_FILE="macos/fingerprint_checks.py"' in script
+            assert 'FINGERPRINT_FILE="linux/fingerprint_checks.py"' in script
+            assert 'FINGERPRINT_SUM=$(checksum_for "$FINGERPRINT_FILE")' in script
+        else:
+            assert 'FINGERPRINT_SUM=$(checksum_for "linux/fingerprint_checks.py")' in script
         assert 'verify_sum "rustchain_miner.py" "$MINER_SUM"' in script
         assert 'verify_sum "fingerprint_checks.py" "$FINGERPRINT_SUM"' in script
         assert 'curl -fsSL "$CHECKSUM_URL" -o sums' in script
