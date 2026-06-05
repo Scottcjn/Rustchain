@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Auto-regenerate miners/checksums.sha256 when a tracked miner artifact is staged.
+# Enable once with:  git config core.hooksPath .githooks
+set -euo pipefail
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+MANIFEST="$REPO_ROOT/miners/checksums.sha256"
+[ -f "$MANIFEST" ] || exit 0
+mapfile -t TRACKED < <(awk '{print "miners/"$2}' "$MANIFEST")
+staged="$(git diff --cached --name-only)"
+for f in "${TRACKED[@]}"; do
+  if grep -qxF "$f" <<<"$staged"; then
+    "$REPO_ROOT/scripts/regenerate_miner_checksums.sh"
+    git add miners/checksums.sha256
+    echo "[pre-commit] miner artifact changed -> regenerated + staged checksums.sha256"
+    break
+  fi
+done
