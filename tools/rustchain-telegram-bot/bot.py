@@ -90,19 +90,30 @@ async def cmd_miners(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not data:
         await update.message.reply_text("Could not fetch miner data.")
         return
-    count = data.get("count", data.get("active_miners", data.get("miners", "N/A")))
-    total_hashrate = data.get("hashrate", data.get("total_hashrate"))
-    top_miners = data.get("top", data.get("top_miners", []))[:5]
 
-    msg = f"RustChain Miners\n\nActive Miners: {count}\n"
-    if total_hashrate:
-        msg += f"Total Hashrate: {fmt_num(float(total_hashrate))} H/s\n"
+    pagination = data.get("pagination", {})
+    total = pagination.get("total", None)
+    miners_list = data.get("miners", [])
+
+    if total is None:
+        total = len(miners_list) or "N/A"
+
+    top_miners = miners_list[:5]
+    extra = max(0, total - len(top_miners)) if isinstance(total, int) else 0
+
+    msg = f"*RustChain Miners*\n\n*Active Miners:* `{total}`\n"
+
     if top_miners:
-        msg += "\nTop Miners:\n"
+        msg += "\n*Top Miners:*\n"
         for i, m in enumerate(top_miners, 1):
-            name = m.get("name", m.get("wallet", f"Miner {i}"))
-            hashrate = m.get("hashrate", "?")
-            msg += f"  {i}. {name} - {hashrate} H/s\n"
+            name = m.get("miner", m.get("name", m.get("wallet", f"Miner {i}")))
+            arch = m.get("device_arch", m.get("arch", "?"))
+            mult = m.get("antiquity_multiplier", m.get("multiplier", "?"))
+            msg += f"  {i}. `{name}` — {arch} ({mult}x)\n"
+
+    if extra > 0:
+        msg += f"\n_... and {extra} more_"
+
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 
