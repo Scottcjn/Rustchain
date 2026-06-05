@@ -149,6 +149,7 @@ node/rustchain_v2_integrated_v2.2.1_rip200.py:7701:        ).fetchall()
 node/rustchain_v2_integrated_v2.2.1_rip200.py:7732:    ).fetchall()
 node/rustchain_v2_integrated_v2.2.1_rip200.py:8011:            for r in c.execute("PRAGMA table_info(balances)").fetchall():
 node/rustchain_v2_integrated_v2.2.1_rip200.py:8467:        ).fetchall()
+node/rustchain_v2_integrated_v2.2.1_rip200.py:9493:        ).fetchall()
 node/rustchain_x402.py:45:    existing = {row[1] for row in cursor.fetchall()}
 node/rustchain_x402.py:81:    columns = {row[1] for row in conn.execute("PRAGMA table_info(balances)").fetchall()}
 node/slashing_penalties.py:433:    return tuple(row[1] for row in conn.execute(f'PRAGMA table_info("{table_name}")').fetchall())

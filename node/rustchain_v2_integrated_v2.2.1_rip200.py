@@ -8620,11 +8620,10 @@ def api_wallet_history():
                         "confirmed_at": confirmed_at,
                         "voided_reason": voided_reason,
                     }
-        except Exception:
-            pass
+        except Exception as e:
+            app.logger.warning("[WALLET_HISTORY] pending metadata lookup failed: %s", e)
 
         # --- Ledger entries (transfers) ---
-        ledger_transfer_hashes = set()
         try:
             ledger_rows = db.execute(
                 """
@@ -8645,15 +8644,11 @@ def api_wallet_history():
                     tx_type = "transfer_in"
                     from_addr = parts[1] if len(parts) > 1 else None
                     tx_hash = parts[2] if len(parts) > 2 else None
-                    if tx_hash:
-                        ledger_transfer_hashes.add(tx_hash)
                 elif reason_str.startswith("transfer_out:"):
                     parts = reason_str.split(":")
                     tx_type = "transfer_out"
                     from_addr = parts[1] if len(parts) > 1 else None
                     tx_hash = parts[2] if len(parts) > 2 else None
-                    if tx_hash:
-                        ledger_transfer_hashes.add(tx_hash)
                 else:
                     tx_type = "ledger"
                     from_addr = None
@@ -8729,8 +8724,8 @@ def api_wallet_history():
             ).fetchall()
 
             for ts, from_m, to_m, amt, reason, status, tx_hash, created, confirms_at, confirmed_at, voided_reason in pending_rows:
-                if status == "confirmed" and tx_hash and tx_hash in ledger_transfer_hashes:
-                    continue  # already captured in ledger table with pending metadata
+                if status == "confirmed":
+                    continue  # already captured in ledger table
                 tx_type = "transfer_out" if from_m == miner_id else "transfer_in"
                 normalized_status = _normalized_transfer_status(status)
                 entry = {
@@ -8777,8 +8772,17 @@ def api_wallet_history():
 
 # Configuration
 CONFIRMATION_DELAY_SECONDS = int(os.environ.get("RC_CONFIRMATION_DELAY_SECONDS", "86400"))  # mainnet 24h; testnet sets 0 for instant faucet drips
-PENDING_CONFIRM_DEFAULT_LIMIT = int(os.environ.get("RC_PENDING_CONFIRM_DEFAULT_LIMIT", "100"))
-PENDING_CONFIRM_MAX_LIMIT = int(os.environ.get("RC_PENDING_CONFIRM_MAX_LIMIT", "500"))
+
+
+def _env_int(name, default):
+    try:
+        return int(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+PENDING_CONFIRM_DEFAULT_LIMIT = _env_int("RC_PENDING_CONFIRM_DEFAULT_LIMIT", 100)
+PENDING_CONFIRM_MAX_LIMIT = _env_int("RC_PENDING_CONFIRM_MAX_LIMIT", 500)
 SOPHIACHECK_WEBHOOK = None  # Set via env var RC_SOPHIACHECK_WEBHOOK
 
 # Alert thresholds
@@ -9484,12 +9488,9 @@ def api_wallet_balances_all():
         return jsonify({"ok": False, "reason": "admin_required"}), 401
 
     with sqlite3.connect(DB_PATH) as db:
-        rows = fetch_page(
-            db,
-            "SELECT miner_id, amount_i64 FROM balances ORDER BY amount_i64 DESC",
-            limit=500,
-            max_limit=500,
-        )
+        rows = db.execute(
+            "SELECT miner_id, amount_i64 FROM balances ORDER BY amount_i64 DESC"
+        ).fetchall()
 
     return jsonify({
         "balances": [

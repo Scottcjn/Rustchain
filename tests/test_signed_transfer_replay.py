@@ -850,3 +850,89 @@ def test_wallet_history_marks_overdue_pending_transfer(monkeypatch):
 
     if db_path.exists():
         db_path.unlink()
+
+
+def test_wallet_history_skips_confirmed_pending_transfer_even_without_hash(monkeypatch):
+    local_tmp_dir = Path(__file__).parent / ".tmp_signed_transfer"
+    local_tmp_dir.mkdir(exist_ok=True)
+    db_path = local_tmp_dir / f"{uuid.uuid4().hex}.sqlite3"
+    _init_signed_transfer_db(db_path)
+
+    monkeypatch.setattr(integrated_node, "DB_PATH", str(db_path))
+    integrated_node.app.config["TESTING"] = True
+
+    from_wallet = "RTC" + "a" * 40
+    to_wallet = "RTC" + "b" * 40
+    now = int(time.time())
+
+    with closing(sqlite3.connect(db_path)) as conn:
+        conn.execute(
+            """
+            CREATE TABLE ledger (
+                ts INTEGER,
+                epoch INTEGER,
+                miner_id TEXT,
+                delta_i64 INTEGER,
+                reason TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (now, 7, to_wallet, 750_000, f"transfer_in:{from_wallet}:"),
+        )
+        conn.execute(
+            """
+            INSERT INTO pending_ledger
+                (ts, epoch, from_miner, to_miner, amount_i64, reason, status,
+                 created_at, confirms_at, confirmed_at, tx_hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (now, 7, from_wallet, to_wallet, 750_000, "history", "confirmed", now, now, now, None),
+        )
+        conn.commit()
+
+    with integrated_node.app.test_client() as client:
+        response = client.get(f"/wallet/history?miner_id={to_wallet}&limit=10")
+
+    assert response.status_code == 200
+    body = response.get_json()
+    transfers = [tx for tx in body["transactions"] if tx["type"] == "transfer_in"]
+    assert len(transfers) == 1
+    assert transfers[0]["status"] == "confirmed"
+
+    if db_path.exists():
+        db_path.unlink()
+
+
+def test_wallet_balances_all_does_not_silently_cap_at_500(monkeypatch):
+    local_tmp_dir = Path(__file__).parent / ".tmp_signed_transfer"
+    local_tmp_dir.mkdir(exist_ok=True)
+    db_path = local_tmp_dir / f"{uuid.uuid4().hex}.sqlite3"
+    _init_signed_transfer_db(db_path)
+
+    admin_key = "0123456789abcdef0123456789abcdef"
+    monkeypatch.setenv("RC_ADMIN_KEY", admin_key)
+    monkeypatch.setattr(integrated_node, "DB_PATH", str(db_path))
+    integrated_node.app.config["TESTING"] = True
+
+    with closing(sqlite3.connect(db_path)) as conn:
+        conn.executemany(
+            "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?)",
+            [(f"miner-{idx:03d}", idx) for idx in range(501)],
+        )
+        conn.commit()
+
+    with integrated_node.app.test_client() as client:
+        response = client.get("/wallet/balances/all", headers={"X-Admin-Key": admin_key})
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert len(body["balances"]) == 501
+    assert body["total_i64"] == sum(range(501))
+
+    if db_path.exists():
+        db_path.unlink()
