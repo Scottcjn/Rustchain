@@ -36,7 +36,8 @@ baseline_tmp="$(mktemp)"
 unannotated_tmp="$(mktemp)"
 new_tmp="$(mktemp)"
 stale_tmp="$(mktemp)"
-trap 'rm -f "$scan_tmp" "$baseline_tmp" "$unannotated_tmp" "$new_tmp" "$stale_tmp"' EXIT
+unannotated_normalized_tmp="$(mktemp)"
+trap 'rm -f "$scan_tmp" "$baseline_tmp" "$unannotated_tmp" "$unannotated_normalized_tmp" "$new_tmp" "$stale_tmp"' EXIT
 
 : > "$scan_tmp"
 : > "$unannotated_tmp"
@@ -74,7 +75,7 @@ else
 fi
 
 if [ -f "$BASELINE_FILE" ]; then
-    grep -vE '^($|#)' "$BASELINE_FILE" | sort -u > "$baseline_tmp"
+    grep -vE '^($|#)' "$BASELINE_FILE" | sed -E 's/^([^:]+):[0-9]+:/\1:/' | sort > "$baseline_tmp"
 else
     : > "$baseline_tmp"
 fi
@@ -105,15 +106,17 @@ while IFS= read -r hit; do
     echo "$hit" >> "$unannotated_tmp"
 done < "$scan_tmp"
 
-sort -u "$unannotated_tmp" -o "$unannotated_tmp"
+sort "$unannotated_tmp" -o "$unannotated_tmp"
 
 if [ "${1:-}" = "--print-baseline" ]; then
-    cat "$unannotated_tmp"
+    sed -E 's/^([^:]+):[0-9]+:/\1:/' "$unannotated_tmp" | sort
     exit 0
 fi
 
-comm -23 "$unannotated_tmp" "$baseline_tmp" > "$new_tmp"
-comm -13 "$unannotated_tmp" "$baseline_tmp" > "$stale_tmp"
+sed -E 's/^([^:]+):[0-9]+:/\1:/' "$unannotated_tmp" | sort > "$unannotated_normalized_tmp"
+
+comm -23 "$unannotated_normalized_tmp" "$baseline_tmp" > "$new_tmp"
+comm -13 "$unannotated_normalized_tmp" "$baseline_tmp" > "$stale_tmp"
 
 if [ -s "$new_tmp" ]; then
     count=$(wc -l < "$new_tmp" | tr -d ' ')
