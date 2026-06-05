@@ -10199,6 +10199,59 @@ def beacon_envelopes_list():
     envelopes = get_recent_envelopes(limit=limit, offset=offset, db_path=DB_PATH)
     return jsonify({"ok": True, "count": len(envelopes), "envelopes": envelopes})
 
+
+GOVERNANCE_VOTE_RATE_LIMIT_MAX = int(
+    os.environ.get("RC_GOVERNANCE_VOTE_RATE_LIMIT_MAX", "20")
+)
+GOVERNANCE_VOTE_RATE_LIMIT_WINDOW = int(
+    os.environ.get("RC_GOVERNANCE_VOTE_RATE_LIMIT_WINDOW_SECONDS", "60")
+)
+_GOVERNANCE_VOTE_RATE_LIMIT_BUCKETS = {}
+_GOVERNANCE_VOTE_RATE_LIMIT_LOCK = Lock()
+
+
+def _check_governance_vote_rate_limit(client_ip: str, now_ts: Optional[int] = None):
+    """Bound signature-verification work for public governance vote attempts."""
+    if GOVERNANCE_VOTE_RATE_LIMIT_MAX <= 0:
+        return True, 0
+    now_ts = int(time.time()) if now_ts is None else int(now_ts)
+    window = max(1, GOVERNANCE_VOTE_RATE_LIMIT_WINDOW)
+    cutoff = now_ts - window
+    key = client_ip or "unknown"
+    with _GOVERNANCE_VOTE_RATE_LIMIT_LOCK:
+        attempts = [
+            ts
+            for ts in _GOVERNANCE_VOTE_RATE_LIMIT_BUCKETS.get(key, [])
+            if ts > cutoff
+        ]
+        if len(attempts) >= GOVERNANCE_VOTE_RATE_LIMIT_MAX:
+            _GOVERNANCE_VOTE_RATE_LIMIT_BUCKETS[key] = attempts
+            retry_after = max(1, window - (now_ts - attempts[0]))
+            return False, retry_after
+        attempts.append(now_ts)
+        _GOVERNANCE_VOTE_RATE_LIMIT_BUCKETS[key] = attempts
+        return True, 0
+
+
+@app.before_request
+def _limit_governance_vote_requests():
+    if request.method != "POST" or request.path != "/governance/vote":
+        return None
+    allowed, retry_after = _check_governance_vote_rate_limit(get_client_ip())
+    if allowed:
+        return None
+    response = jsonify({
+        "ok": False,
+        "error": "rate_limited",
+        "code": "GOVERNANCE_VOTE_RATE_LIMIT",
+        "limit": GOVERNANCE_VOTE_RATE_LIMIT_MAX,
+        "window_seconds": GOVERNANCE_VOTE_RATE_LIMIT_WINDOW,
+    })
+    response.status_code = 429
+    response.headers["Retry-After"] = str(retry_after)
+    return response
+
+
 if __name__ == "__main__":
     enforce_mock_signature_runtime_guard()
 
