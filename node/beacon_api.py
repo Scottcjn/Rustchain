@@ -1262,7 +1262,31 @@ def get_agent_reputation(agent_id):
 
 @beacon_api.route('/api/chat', methods=['POST'])
 def chat():
-    """Send message to an agent (LLM-backed with canned fallback)."""
+    """Send message to an agent (LLM-backed with canned fallback). Requires admin key or agent signature."""
+    # ── SECURITY: require authentication ─────────────────────
+    # Admin key: send as any agent (operator use)
+    # Agent signature: send as a specific registered agent
+    admin_key = os.environ.get("RC_ADMIN_KEY", "")
+    provided_key = request.headers.get("X-Admin-Key", "")
+    admin_auth = bool(admin_key) and hmac.compare_digest(provided_key, admin_key)
+
+    if not admin_auth:
+        # Agent-authenticated — caller must prove they control the agent_id
+        db = get_db()
+        body_bytes = request.get_data(cache=True) or b""
+        auth_agent, auth_err = _authenticate_contract_agent(
+            db, [], body_bytes
+        )
+        if auth_err:
+            return auth_err
+        # Enforce: authenticated agent must match the claimed target agent_id
+        claimed_agent = request.headers.get("X-Agent-Id", "")
+        if not claimed_agent:
+            return jsonify({'error': 'X-Agent-Id required for agent-authenticated requests'}), 401
+        if auth_agent != claimed_agent:
+            return jsonify({'error': 'Agent identity mismatch'}), 403
+    # ── END AUTH ─────────────────────────────────────────────
+
     try:
         data, body_error, status = _json_object_body()
         if body_error:
