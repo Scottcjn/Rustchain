@@ -1,0 +1,121 @@
+name: Elyan Labs Inquiry (Agents & Hardware)
+description: Hire Elyan Labs to build self-governing AI agents or optimize AI/LLM workloads on enterprise, legacy, or edge hardware
+title: "[Inquiry] "
+labels: [consulting]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Elyan Labs — Agents & Hardware Inquiry
+
+        We build **Elyan-class agents** (self-governing, memory-coherent, runnable
+        on-prem/edge) and we make **legacy, enterprise, and exotic hardware** run
+        modern AI. See
+        [CONSULTING.md](https://github.com/Scottcjn/Rustchain/blob/main/CONSULTING.md)
+        for proof points and how we engage.
+
+        **How this works:** the architecture/feasibility conversation is free.
+        Implementation, hardening, tuning, and integration are delivered under a
+        signed statement of work. We do not write a free proof-of-concept against
+        your hardware or data before a scope is signed.
+
+        Fill this out and we'll reply with a feasibility read.
+
+  - type: dropdown
+    id: engagement-type
+    attributes:
+      label: What do you need?
+      options:
+        - Elyan-class agent build (identity, governance, memory, deployment)
+        - Harden / govern an existing agent (DriftLock + Watchtower, injection resistance)
+        - Persistent / attestable agent memory system
+        - Agent-to-agent infrastructure (Beacon/Atlas, MCP integration)
+        - Legacy/enterprise hardware AI optimization (POWER, older Xeon, repurposed servers)
+        - Port modern software to a vintage/exotic architecture (PowerPC, POWER8, 68K, big-endian)
+        - Edge / air-gapped inference (constrained or offline hardware)
+        - Hardware attestation / anti-spoof / DePIN provenance
+        - Not sure yet — need a feasibility conversation
+    validations:
+      required: true
+
+  - type: input
+    id: org
+    attributes:
+      label: Organization
+      description: Company / institution (or "individual")
+      placeholder: Acme Corp
+    validations:
+      required: true
+
+  - type: textarea
+    id: hardware
+    attributes:
+      label: Target hardware / deployment environment
+      description: For hardware work — CPU/arch, sockets, RAM, NUMA layout (`numactl --hardware` if handy). For an agent build — where it runs (on-prem, edge, cloud, air-gapped) and any device limits. Leave blank if not sure yet.
+      placeholder: |
+        IBM POWER8 S824, 2 sockets / 16 cores, 256GB DDR3, 2 NUMA nodes
+        — or — agent must run fully on-prem on a single edge box, no outbound network
+    validations:
+      required: false
+
+  - type: textarea
+    id: workload
+    attributes:
+      label: What are you building?
+      description: For hardware — model(s) and what you run them for. For an agent — its job, who talks to it, and what it must never do.
+      placeholder: |
+        Internal document assistant, Llama-3-8B quantized, private/on-prem only.
+        — or — customer-facing support agent that must stay on-policy and never quote prices it can't verify.
+    validations:
+      required: true
+
+  - type: input
+    id: target-metric
+    attributes:
+      label: What does success look like?
+      description: The metric or behavior that defines "done."
+      placeholder: 20+ tok/s on-prem with no GPU — or — agent holds its boundaries under adversarial users
+    validations:
+      required: true
+
+  - type: dropdown
+    id: constraints
+    attributes:
+      label: Deployment constraints
+      multiple: true
+      options:
+        - 100% air-gapped / no outbound network
+        - On-prem only, no public cloud
+        - Hybrid cloud acceptable
+        - Compliance regime (HIPAA / GDPR / SOX / other)
+        - Power or thermal limited
+        - None of these
+    validations:
+      required: true
+
+  - type: dropdown
+    id: timeline
+    attributes:
+      label: Timeline
+      options:
+        - Exploring / no fixed date
+        - This quarter
+        - Urgent (weeks)
+    validations:
+      required: true
+
+  - type: textarea
+    id: anything-else
+    attributes:
+      label: Anything else
+      description: Budget range, prior attempts, links — optional but helpful.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: ack
+    attributes:
+      label: Acknowledgement
+      options:
+        - label: I understand the feasibility conversation is free and that implementation is delivered under a signed paid scope of work.
+          required: true
