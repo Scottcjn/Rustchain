@@ -7139,6 +7139,9 @@ def api_miners():
             "count": len(miners)
         }
     })
+    response.headers["X-Total-Count"] = str(total_count)
+    response.headers["X-Page-Limit"] = str(limit)
+    response.headers["X-Page-Offset"] = str(offset)
     add_rate_limit_headers(response, rate_info)
     return response
 
