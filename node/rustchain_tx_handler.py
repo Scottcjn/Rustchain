@@ -133,6 +133,7 @@ class TransactionPool:
 
             # Check if wallet_nonce column exists
             cursor.execute("PRAGMA table_info(balances)")
+            # fetchall-ok: pragma-result
             columns = [col[1] for col in cursor.fetchall()]
 
             if "wallet_nonce" not in columns:
@@ -191,30 +192,36 @@ class TransactionPool:
         if cursor.fetchone() is None:
             return
 
-        cursor.execute(
+        duplicate_cursor = cursor.connection.cursor()
+        duplicate_cursor.execute(
             """SELECT from_addr, nonce, COUNT(*) as duplicate_count
                FROM pending_transactions
                WHERE status = 'pending'
                GROUP BY from_addr, nonce
                HAVING COUNT(*) > 1"""
         )
-        duplicate_groups = cursor.fetchall()
 
-        for from_addr, nonce, duplicate_count in duplicate_groups:
+        for from_addr, nonce, duplicate_count in duplicate_cursor:
             cursor.execute(
                 """SELECT tx_hash
                    FROM pending_transactions
                    WHERE from_addr = ? AND nonce = ? AND status = 'pending'
-                   ORDER BY created_at ASC, timestamp ASC, tx_hash ASC""",
+                   ORDER BY created_at ASC, timestamp ASC, tx_hash ASC
+                   LIMIT 1""",
                 (from_addr, nonce)
             )
-            tx_hashes = [row[0] for row in cursor.fetchall()]
-            keep_hash, reject_hashes = tx_hashes[0], tx_hashes[1:]
-            cursor.executemany(
+            keep_row = cursor.fetchone()
+            if keep_row is None:
+                continue
+            keep_hash = keep_row[0]
+            cursor.execute(
                 """UPDATE pending_transactions
                    SET status = 'rejected'
-                   WHERE tx_hash = ?""",
-                [(tx_hash,) for tx_hash in reject_hashes]
+                   WHERE from_addr = ?
+                     AND nonce = ?
+                     AND status = 'pending'
+                     AND tx_hash <> ?""",
+                (from_addr, nonce, keep_hash)
             )
             logger.warning(
                 "Rejected %s duplicate pending tx(s) for %s nonce %s; kept %s",
@@ -230,6 +237,7 @@ class TransactionPool:
             "SELECT name FROM sqlite_master WHERE type='table' "
             "AND name IN ('balances', 'balances_old', 'balances_new')"
         )
+        # fetchall-ok: bounded-by-schema
         tables = {row[0] for row in cursor.fetchall()}
 
         if "balances" in tables:
@@ -253,6 +261,7 @@ class TransactionPool:
         if not cursor.fetchone():
             return
         cursor.execute("PRAGMA table_info(pending_transactions)")
+        # fetchall-ok: pragma-result
         columns = [col[1] for col in cursor.fetchall()]
         if "created_at" not in columns:
             cursor.execute(
@@ -411,6 +420,7 @@ class TransactionPool:
                 "SELECT nonce FROM pending_transactions WHERE from_addr = ? AND status = 'pending'",
                 (address,)
             )
+            # fetchall-ok: bounded-by-schema
             return {row["nonce"] for row in cursor.fetchall()}
 
     def _tx_exists(self, tx_hash: str) -> bool:
@@ -498,6 +508,7 @@ class TransactionPool:
                 "SELECT nonce FROM pending_transactions WHERE from_addr = ? AND status = 'pending'",
                 (tx.from_addr,)
             )
+            # fetchall-ok: bounded-by-schema
             pending_nonces = {row["nonce"] for row in cursor.fetchall()}
             while expected_nonce in pending_nonces:
                 expected_nonce += 1
@@ -592,6 +603,7 @@ class TransactionPool:
                     public_key=row["public_key"],
                     tx_hash=row["tx_hash"]
                 )
+                # fetchall-ok: already-paginated
                 for row in cursor.fetchall()
             ]
 
@@ -957,6 +969,7 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
                     (address, address, limit, offset)
                 )
 
+                # fetchall-ok: already-paginated
                 transactions = [dict(row) for row in cursor.fetchall()]
 
             return jsonify({
