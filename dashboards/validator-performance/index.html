@@ -156,6 +156,22 @@
             min-height: 1.4em;
         }
 
+        .trend {
+            align-items: end;
+            display: flex;
+            gap: 8px;
+            height: 120px;
+            margin-top: 16px;
+        }
+
+        .trend-bar {
+            background: var(--accent);
+            border-radius: 6px 6px 0 0;
+            flex: 1;
+            min-width: 10px;
+            min-height: 4px;
+        }
+
         @media (max-width: 640px) {
             body {
                 padding: 12px;
@@ -207,6 +223,14 @@
                     <div class="label">Top Validator</div>
                     <div class="value" id="topValidator">--</div>
                 </div>
+                <div class="card">
+                    <div class="label">Inclusion Rate</div>
+                    <div class="value" id="inclusionRate">--</div>
+                </div>
+                <div class="card">
+                    <div class="label">Effectiveness Score</div>
+                    <div class="value" id="effectivenessScore">--</div>
+                </div>
             </div>
         </section>
 
@@ -223,11 +247,37 @@
                         <th>Active</th>
                         <th>Avg Attestations</th>
                         <th>Avg Latency</th>
+                        <th>Inclusion</th>
+                        <th>Effectiveness</th>
                     </tr>
                 </thead>
                 <tbody id="historyBody">
                     <tr>
-                        <td colspan="4">No samples yet</td>
+                        <td colspan="6">No samples yet</td>
+                    </tr>
+                </tbody>
+            </table>
+            <div class="trend" id="trendChart" aria-label="Attestation effectiveness trend"></div>
+        </section>
+
+        <section>
+            <div class="toolbar">
+                <h2>Peer Comparison</h2>
+            </div>
+            <table aria-label="Validator peer comparison">
+                <thead>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Validator</th>
+                        <th>Attestations</th>
+                        <th>Expected</th>
+                        <th>Inclusion</th>
+                        <th>Effectiveness</th>
+                    </tr>
+                </thead>
+                <tbody id="peerBody">
+                    <tr>
+                        <td colspan="6">No validators yet</td>
                     </tr>
                 </tbody>
             </table>
@@ -298,31 +348,62 @@
                 || Boolean(row?.last_attest || row?.last_attestation || row?.last_seen);
         }
 
+        function hasAttested(row) {
+            return row?.attested === true
+                || readNumber(row, ["included_attestations", "attestations_included", "successful_attestations", "attestations", "attestation_count", "total_attestations", "attest_count"]) !== null;
+        }
+
         function validatorName(row) {
             return String(row?.miner || row?.miner_id || row?.id || row?.wallet || "unknown");
         }
 
         function computeValidatorMetrics(minerRows) {
             const activeRows = minerRows.filter(isActiveValidator);
-            const attestationValues = minerRows
-                .map((row) => readNumber(row, ["attestations", "attestation_count", "total_attestations", "attest_count"]))
+            const rankedPeers = minerRows
+                .map(computePeerEffectiveness)
+                .sort((a, b) => b.effectivenessScore - a.effectivenessScore || b.attestations - a.attestations);
+            const attestationValues = rankedPeers
+                .map((row) => row.attestations)
                 .filter((value) => value !== null);
             const latencyValues = minerRows
                 .map((row) => readNumber(row, ["latency_ms", "avg_latency_ms", "response_time_ms", "last_latency_ms"]))
                 .filter((value) => value !== null);
-            const scoredRows = minerRows
-                .map((row) => ({
-                    name: validatorName(row),
-                    score: readNumber(row, ["performance_score", "score", "antiquity_score", "attestations", "attestation_count"])
-                }))
-                .filter((row) => row.score !== null)
-                .sort((a, b) => b.score - a.score);
+            const peerScores = rankedPeers.map((row) => row.effectivenessScore).filter((value) => value !== null);
+            const inclusionRates = rankedPeers.map((row) => row.inclusionRate).filter((value) => value !== null);
+            const fallbackInclusionRate = minerRows.length ? (activeRows.length / minerRows.length) * 100 : null;
 
             return {
                 activeValidators: activeRows.length,
                 averageAttestations: average(attestationValues),
                 averageLatencyMs: average(latencyValues),
-                topValidator: scoredRows[0]?.name || "--"
+                topValidator: rankedPeers[0]?.name || "--",
+                inclusionRate: average(inclusionRates) ?? fallbackInclusionRate,
+                effectivenessScore: average(peerScores),
+                rankedPeers
+            };
+        }
+
+        function computePeerEffectiveness(row) {
+            const attestations = readNumber(row, ["included_attestations", "attestations_included", "successful_attestations", "attestations", "attestation_count", "total_attestations", "attest_count"]);
+            const expected = readNumber(row, ["expected_attestations", "attestation_slots", "scheduled_attestations", "total_slots"]);
+            const explicitScore = readNumber(row, ["effectiveness_score", "performance_score", "score"]);
+            const inclusionRate = expected && attestations !== null
+                ? clamp((attestations / expected) * 100, 0, 100)
+                : null;
+            const freshnessScore = isActiveValidator(row) || hasAttested(row) ? 100 : 0;
+            if (explicitScore !== null && (explicitScore < 0 || explicitScore > 100)) {
+                console.warn("Validator effectiveness score out of expected 0-100 range:", explicitScore, row);
+            }
+            const effectivenessScore = explicitScore !== null
+                ? clamp(explicitScore, 0, 100)
+                : (inclusionRate ?? freshnessScore);
+
+            return {
+                name: validatorName(row),
+                attestations,
+                expected,
+                inclusionRate,
+                effectivenessScore
             };
         }
 
@@ -331,22 +412,32 @@
             return values.reduce((sum, value) => sum + value, 0) / values.length;
         }
 
+        function clamp(value, min, max) {
+            return Math.min(Math.max(value, min), max);
+        }
+
         function updateDashboard(metrics) {
             setText("activeValidators", formatNumber(metrics.activeValidators));
             setText("avgAttestations", formatNullableNumber(metrics.averageAttestations));
             setText("avgLatency", metrics.averageLatencyMs === null ? "--" : `${formatNumber(metrics.averageLatencyMs)}ms`);
             setText("topValidator", metrics.topValidator);
+            setText("inclusionRate", formatPercent(metrics.inclusionRate));
+            setText("effectivenessScore", formatPercent(metrics.effectivenessScore));
 
             validatorHistory.push({
                 time: new Date(),
                 activeValidators: metrics.activeValidators,
                 averageAttestations: metrics.averageAttestations,
-                averageLatencyMs: metrics.averageLatencyMs
+                averageLatencyMs: metrics.averageLatencyMs,
+                inclusionRate: metrics.inclusionRate,
+                effectivenessScore: metrics.effectivenessScore
             });
             if (validatorHistory.length > MAX_HISTORY_SAMPLES) {
                 validatorHistory.shift();
             }
             renderHistory();
+            renderTrend();
+            renderPeerComparison(metrics.rankedPeers);
         }
 
         function renderHistory() {
@@ -359,6 +450,47 @@
                 appendTextCell(row, formatNumber(sample.activeValidators));
                 appendTextCell(row, formatNullableNumber(sample.averageAttestations));
                 appendTextCell(row, sample.averageLatencyMs === null ? "--" : `${formatNumber(sample.averageLatencyMs)}ms`);
+                appendTextCell(row, formatPercent(sample.inclusionRate));
+                appendTextCell(row, formatPercent(sample.effectivenessScore));
+                tbody.appendChild(row);
+            });
+        }
+
+        function renderTrend() {
+            const chart = document.getElementById("trendChart");
+            chart.textContent = "";
+
+            validatorHistory.forEach((sample) => {
+                const bar = document.createElement("div");
+                bar.className = "trend-bar";
+                bar.style.height = sample.effectivenessScore === null ? "0" : `${sample.effectivenessScore}%`;
+                bar.style.minHeight = sample.effectivenessScore === 0 ? "0" : "4px";
+                bar.title = `${sample.time.toLocaleTimeString()}: ${formatPercent(sample.effectivenessScore)}`;
+                chart.appendChild(bar);
+            });
+        }
+
+        function renderPeerComparison(rankedPeers) {
+            const tbody = document.getElementById("peerBody");
+            tbody.textContent = "";
+
+            if (!rankedPeers.length) {
+                const row = document.createElement("tr");
+                appendTextCell(row, "No validators yet");
+                const cell = row.firstElementChild;
+                cell.colSpan = 6;
+                tbody.appendChild(row);
+                return;
+            }
+
+            rankedPeers.slice(0, 10).forEach((peer, index) => {
+                const row = document.createElement("tr");
+                appendTextCell(row, `#${index + 1}`);
+                appendTextCell(row, peer.name);
+                appendTextCell(row, formatNullableNumber(peer.attestations));
+                appendTextCell(row, formatNullableNumber(peer.expected));
+                appendTextCell(row, formatPercent(peer.inclusionRate));
+                appendTextCell(row, formatPercent(peer.effectivenessScore));
                 tbody.appendChild(row);
             });
         }
@@ -389,6 +521,10 @@
 
         function formatNullableNumber(num) {
             return typeof num === "number" ? formatNumber(num) : "--";
+        }
+
+        function formatPercent(num) {
+            return typeof num === "number" ? `${formatNumber(num)}%` : "--";
         }
     </script>
 </body>
