@@ -102,7 +102,8 @@ DEFAULT_CONFIG = {
         'default_amount': 0.5,
         'max_amount': 1.0,
         'max_batch_size': 500,
-        'code_prefix': 'EVENT'
+        'code_prefix': 'EVENT',
+        'pending_claim_ttl_seconds': 300
     },
     'logging': {
         'level': 'INFO',
@@ -875,18 +876,28 @@ def register_routes(app: Flask, config: Dict, logger: logging.Logger,
             return jsonify({'ok': False, 'error': 'expires_at must be a future ISO timestamp'}), 400
 
         prefix = str(data.get('prefix') or event_config.get('code_prefix', 'EVENT')).strip() or 'EVENT'
-        codes = [_generate_event_code(prefix) for _ in range(count)]
         db_path = config.get('database', {}).get('path', 'faucet.db')
         created_at = datetime.now().isoformat()
+        codes = []
+        max_attempts = max(count * 5, count + 5)
 
         conn = sqlite3.connect(db_path)
         try:
             c = conn.cursor()
-            for code in codes:
-                c.execute('''
-                    INSERT INTO event_claim_codes (code, amount, expires_at, created_at)
-                    VALUES (?, ?, ?, ?)
-                ''', (code, float(amount), expires_at.isoformat(), created_at))
+            attempts = 0
+            while len(codes) < count and attempts < max_attempts:
+                attempts += 1
+                code = _generate_event_code(prefix)
+                try:
+                    c.execute('''
+                        INSERT INTO event_claim_codes (code, amount, expires_at, created_at)
+                        VALUES (?, ?, ?, ?)
+                    ''', (code, float(amount), expires_at.isoformat(), created_at))
+                except sqlite3.IntegrityError:
+                    continue
+                codes.append(code)
+            if len(codes) != count:
+                raise RuntimeError('Unable to generate unique event codes')
             conn.commit()
         finally:
             conn.close()
@@ -947,8 +958,11 @@ def register_routes(app: Flask, config: Dict, logger: logging.Logger,
 
             amount, expires_at_raw, claimed_at = row
             if claimed_at:
-                c.execute('ROLLBACK')
-                return jsonify({'ok': False, 'error': 'Event code already claimed'}), 409
+                if _release_stale_event_claim_reservation(c, code, now, config.get('event_codes', {})):
+                    claimed_at = None
+                else:
+                    c.execute('ROLLBACK')
+                    return jsonify({'ok': False, 'error': 'Event code already claimed'}), 409
 
             expires_at = datetime.fromisoformat(expires_at_raw)
             if expires_at <= now:
@@ -968,7 +982,7 @@ def register_routes(app: Flask, config: Dict, logger: logging.Logger,
                 INSERT INTO event_claims
                     (code, wallet, ip_address, amount, status, tx_hash, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (code, wallet, ip, float(amount), 'pending', None, now.isoformat(), now.isoformat()))
+            ''', (code, wallet, ip, float(amount), 'reserved', None, now.isoformat(), now.isoformat()))
             claim_id = c.lastrowid
             c.execute('COMMIT')
         except Exception as exc:
@@ -982,6 +996,7 @@ def register_routes(app: Flask, config: Dict, logger: logging.Logger,
             conn.close()
 
         try:
+            _mark_event_claim_transfer_started(db_path, claim_id)
             tx_hash = _perform_faucet_transfer(
                 config,
                 logger,
@@ -1162,6 +1177,66 @@ def _event_claim_idempotency_key(code: str) -> str:
     """Build a stable node idempotency key for a one-time event claim code."""
     digest = hashlib.sha256(code.encode()).hexdigest()[:32]
     return f"event_claim:{digest}"
+
+
+def _release_stale_event_claim_reservation(
+    c: sqlite3.Cursor,
+    code: str,
+    now: datetime,
+    event_config: Dict[str, Any],
+) -> bool:
+    """Release stale pre-transfer event claim reservations for retry."""
+    ttl_seconds = int(event_config.get('pending_claim_ttl_seconds', 300))
+    if ttl_seconds < 0:
+        return False
+
+    c.execute('''
+        SELECT id, status, updated_at FROM event_claims
+        WHERE code = ?
+        ORDER BY id DESC
+        LIMIT 1
+    ''', (code,))
+    row = c.fetchone()
+    if not row:
+        return False
+
+    claim_id, status, updated_at_raw = row
+    if status != 'reserved':
+        return False
+
+    try:
+        updated_at = datetime.fromisoformat(updated_at_raw)
+    except (TypeError, ValueError):
+        return False
+
+    if (now - updated_at).total_seconds() < ttl_seconds:
+        return False
+
+    c.execute('''
+        UPDATE event_claim_codes
+        SET claimed_wallet = NULL, claimed_ip = NULL, claimed_at = NULL, tx_hash = NULL
+        WHERE code = ?
+    ''', (code,))
+    c.execute('''
+        UPDATE event_claims
+        SET status = ?, updated_at = ?
+        WHERE id = ?
+    ''', ('released_stale_reservation', now.isoformat(), claim_id))
+    return True
+
+
+def _mark_event_claim_transfer_started(db_path: str, claim_id: Optional[int]) -> None:
+    """Mark an event claim past the locally retryable reservation point."""
+    conn = sqlite3.connect(db_path, timeout=30)
+    try:
+        conn.execute('''
+            UPDATE event_claims
+            SET status = ?, updated_at = ?
+            WHERE id = ?
+        ''', ('transfer_started', datetime.now().isoformat(), claim_id))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def _perform_faucet_transfer(

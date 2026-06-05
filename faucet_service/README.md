@@ -86,6 +86,7 @@ event_codes:
   max_amount: 1.0
   max_batch_size: 500
   code_prefix: "EVENT"
+  pending_claim_ttl_seconds: 300
 ```
 
 ### Configuration Options
@@ -125,6 +126,7 @@ event_codes:
 | `max_amount` | `1.0` | Maximum RTC amount allowed for a single event code |
 | `max_batch_size` | `500` | Maximum codes created in a single request |
 | `code_prefix` | `EVENT` | Default prefix for generated event codes |
+| `pending_claim_ttl_seconds` | `300` | Seconds before a pre-transfer event claim reservation may be retried |
 
 ## API Endpoints
 
@@ -202,7 +204,7 @@ curl -X POST http://localhost:8090/faucet/event-codes \
 
 ### POST /faucet/event-claim
 
-Redeem one event code for a wallet. Each code can be claimed once after a successful transfer and cannot be claimed after `expires_at`. Event claims are recorded in a separate ledger from normal faucet drips, so they do not affect `/faucet/drip` rate limits or `/faucet/status` drip statistics.
+Redeem one event code for a wallet. Each code can be claimed once after a successful transfer and cannot be claimed after `expires_at`. Event claims are recorded in a separate ledger from normal faucet drips, so they do not affect `/faucet/drip` rate limits or `/faucet/status` drip statistics. Stale pre-transfer reservations can be retried after `pending_claim_ttl_seconds`; claims that have reached transfer start remain locked for reconciliation.
 
 **Request:**
 ```json
