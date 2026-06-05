@@ -9,3 +9,6 @@ contact_links:
   - name: Create a New RTC Bounty
     url: https://github.com/Scottcjn/rustchain-bounties/issues/new?template=bounty.yml
     about: Open new bounty definitions in rustchain-bounties.
+  - name: Hire Elyan Labs (Consulting)
+    url: https://github.com/Scottcjn/Rustchain/blob/main/CONSULTING.md
+    about: Make legacy, enterprise, or edge hardware run modern AI. Read how we engage, then open an Engineering Optimization Inquiry.
