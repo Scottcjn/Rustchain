@@ -75,6 +75,59 @@ class TestResolveWalletFromPrBody(unittest.TestCase):
         body = "wallet: some-contributor\n"
         self.assertEqual(resolve_wallet_from_pr_body(body), "some-contributor")
 
+    # --- Extended directive variants (PR #6676) ---------------------------
+
+    def test_payout_wallet_directive(self):
+        wallet = "RTC" + "a" * 40
+        self.assertEqual(resolve_wallet_from_pr_body(f"Payout wallet: {wallet}\n"), wallet)
+
+    def test_payout_address_directive(self):
+        wallet = "RTC" + "b" * 40
+        self.assertEqual(resolve_wallet_from_pr_body(f"Payout address: {wallet}\n"), wallet)
+
+    def test_payout_address_if_accepted_directive(self):
+        wallet = "RTC" + "c" * 40
+        self.assertEqual(
+            resolve_wallet_from_pr_body(f"Payout address if accepted: {wallet}\n"), wallet
+        )
+
+    def test_rtc_wallet_directive_variants(self):
+        wallet = "RTC" + "d" * 40
+        for body in (f"RTC Wallet: {wallet}\n", f"RTC wallet: {wallet}\n"):
+            with self.subTest(body=body):
+                self.assertEqual(resolve_wallet_from_pr_body(body), wallet)
+
+    def test_labeled_rtc_address_line_without_exact_directive(self):
+        wallet = "RTC" + "e" * 40
+        self.assertEqual(
+            resolve_wallet_from_pr_body(f"Accepted payout destination -> {wallet}\n"), wallet
+        )
+
+    def test_unlabeled_rtc_address_is_ignored(self):
+        wallet = "RTC" + "f" * 40
+        self.assertIsNone(resolve_wallet_from_pr_body(f"Implementation note: {wallet}\n"))
+
+    def test_lazy_pay_miner_id_variants(self):
+        samples = {
+            "miner ID for payout if accepted: github:alice\n": "github:alice",
+            "miner ID: github:bob\n": "github:bob",
+            "miner_id: lazy-pay-carol\n": "lazy-pay-carol",
+        }
+        for body, expected in samples.items():
+            with self.subTest(body=body):
+                self.assertEqual(resolve_wallet_from_pr_body(body), expected)
+
+    def test_strips_markdown_backticks_and_sentence_punctuation(self):
+        wallet = "RTC" + "1" * 40
+        self.assertEqual(resolve_wallet_from_pr_body(f"Payout wallet: `{wallet}`.\n"), wallet)
+
+    def test_explicit_directive_precedes_contextual_scan(self):
+        # An explicit wallet: directive wins over an incidental RTC mention.
+        directive = "RTC" + "2" * 40
+        incidental = "RTC" + "3" * 40
+        body = f"wallet: {directive}\nfixes the wallet address bug near {incidental}\n"
+        self.assertEqual(resolve_wallet_from_pr_body(body), directive)
+
 
 class TestResolveWalletFromFile(unittest.TestCase):
     """Test reading wallet from .rtc-wallet file."""
@@ -737,6 +790,40 @@ class TestDistinctWalletDirectives(unittest.TestCase):
 
     def test_no_directive(self):
         self.assertEqual(distinct_wallet_directives("nothing here"), [])
+
+    # --- Conflict guard must cover the new resolution stages (PR #6676) ----
+
+    def test_conflicting_miner_id_directives_detected(self):
+        # Two lazy-pay directives previously slipped past the guard (which only
+        # scanned wallet: directives) and silently picked the first. They must
+        # now be flagged for manual review.
+        body = "miner ID: github:attacker\nsome text\nminer ID: github:legit\n"
+        result = distinct_wallet_directives(body)
+        self.assertEqual(len(result), 2)
+        self.assertIn("github:attacker", result)
+        self.assertIn("github:legit", result)
+
+    def test_conflicting_wallet_and_miner_id_directives_detected(self):
+        body = "wallet: RTC" + "a" * 40 + "\nminer ID: github:attacker\n"
+        self.assertEqual(len(distinct_wallet_directives(body)), 2)
+
+    def test_explicit_directive_suppresses_contextual_scan_in_guard(self):
+        # An explicit directive plus an incidental RTC mention in prose must NOT
+        # register as a conflict (mirrors resolver precedence — fail-open here
+        # would force needless manual review on legitimate PRs).
+        directive = "RTC" + "a" * 40
+        incidental = "RTC" + "b" * 40
+        body = f"wallet: {directive}\nrefactors the wallet address parser near {incidental}\n"
+        self.assertEqual(distinct_wallet_directives(body), [directive])
+
+    def test_conflicting_contextual_only_addresses_detected(self):
+        # With no explicit directive, two different contextually-scanned RTC
+        # addresses are a genuine ambiguity and must fail closed.
+        a = "RTC" + "a" * 40
+        b = "RTC" + "b" * 40
+        body = f"payout address {a}\nbackup wallet {b}\n"
+        result = distinct_wallet_directives(body)
+        self.assertEqual(len(result), 2)
 
 
 class TestIdempotencyKey(unittest.TestCase):
