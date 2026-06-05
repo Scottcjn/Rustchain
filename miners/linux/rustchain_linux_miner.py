@@ -17,10 +17,11 @@ from datetime import datetime
 # Without signing, miner falls back to legacy sha512 / unsigned — server
 # accepts with WARNING but offers no wallet-hijack protection.
 try:
-    from miner_crypto import get_or_create_keypair, sign_payload  # noqa: F401
+    from miner_crypto import generate_keypair, get_or_create_keypair, sign_payload  # noqa: F401
     CRYPTO_AVAILABLE = True
 except ImportError:
     CRYPTO_AVAILABLE = False
+    generate_keypair = get_or_create_keypair = sign_payload = None
 
 # Shared pipe-message builder (PR #6839 review)
 try:
@@ -214,7 +215,8 @@ def get_linux_serial():
 
 class LocalMiner:
     def __init__(self, wallet=None, wart_address=None, wart_pool=None,
-                 bzminer_path=None, manage_bzminer=False, verbose=False, show_payload=False):
+                 bzminer_path=None, manage_bzminer=False, verbose=False, show_payload=False,
+                 persist_key=True):
         self.node_url = NODE_URL
         self.wallet = wallet or self._gen_wallet()
         self.hw_info = {}
@@ -230,7 +232,12 @@ class LocalMiner:
         self.keypair = {}
         self.public_key = ""
         if CRYPTO_AVAILABLE:
-            self.keypair = get_or_create_keypair()
+            if persist_key:
+                self.keypair = get_or_create_keypair()
+            else:
+                self.keypair = generate_keypair()
+                if verbose:
+                    print("[CRYPTO] Using ephemeral keypair for dry-run; not saving miner_key.json")
             self.public_key = self.keypair.get("public_key", "")
         self.fingerprint_passed = False
         self.verbose = verbose
@@ -860,7 +867,7 @@ class LocalMiner:
             self.check_balance()
             return 0
 
-if __name__ == "__main__":
+def main(argv=None):
     import argparse
     parser = argparse.ArgumentParser(description="RustChain Miner with optional Warthog dual-mining")
     parser.add_argument("--version", "-v", action="version", version="RustChain Miner v2.2.1-rip200")
@@ -877,7 +884,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--verbose", action="store_true", help="Enable verbose output showing API endpoints, headers, and response details")
     parser.add_argument("--show-payload", action="store_true", help="Show request payload in dry-run mode")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     miner = LocalMiner(
         wallet=args.wallet,
@@ -885,12 +892,17 @@ if __name__ == "__main__":
         wart_pool=args.wart_pool,
         bzminer_path=args.bzminer_path,
         manage_bzminer=args.manage_bzminer,
-            verbose=args.verbose,
-            show_payload=args.show_payload,
+        verbose=args.verbose,
+        show_payload=args.show_payload,
+        persist_key=not args.dry_run,
     )
     if args.dry_run:
         result = miner.dry_run()
     else:
         result = miner.mine()
 
-    sys.exit(0 if result in (None, True) else int(result))
+    return 0 if result in (None, True) else int(result)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
