@@ -20,7 +20,7 @@ from pathlib import Path
 MINER_ARTIFACTS = {
     "Linux": {
         "url": "https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/linux/rustchain_linux_miner.py",
-        "sha256": "ca2931797a7a76fb7c9e61d69abdf75c57dab204ec77c2c5e9f23f323af63f9d",
+        "sha256": "99f060bb6357a15677dafd6811d767bf0d2bf55229326cdcf129896802654add",
     },
     "Darwin": {
         "url": "https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/macos/rustchain_mac_miner_v2.5.py",
@@ -28,8 +28,13 @@ MINER_ARTIFACTS = {
     },
     "Windows": {
         "url": "https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/windows/rustchain_windows_miner.py",
-        "sha256": "eceba6529ab4df35761d6778c6f97032b69a70301b021ff2e217f9b73616f93e",
+        "sha256": "82aefb15d5785db3187144cf8097c0d1430ee09db1dcd932b59ea501e3bd83d3",
     },
+}
+
+SIGNING_HELPER_ARTIFACT = {
+    "url": "https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/signing_helpers.py",
+    "sha256": "7c3bb2be0bc79c287cc71aa82f92c1f341e89f447f68dd53d36606daf3414ddc",
 }
 
 class MinerSetup:
@@ -150,6 +155,31 @@ class MinerSetup:
 
         with open(miner_file, 'wb') as f:
             f.write(content)
+
+        helper_url = SIGNING_HELPER_ARTIFACT["url"]
+        helper_hash = SIGNING_HELPER_ARTIFACT["sha256"]
+        helper_file = self.setup_dir / "signing_helpers.py"
+
+        parsed = urlparse(helper_url)
+        if parsed.scheme != "https":
+            raise Exception(f"Refusing non-HTTPS signing helper URL: {helper_url}")
+
+        try:
+            self.log(f"Downloading signing helper from: {helper_url}")
+            with urllib.request.urlopen(helper_url, timeout=30) as response:
+                helper_content = response.read()
+        except Exception as exc:
+            raise Exception(f"Failed to download RustChain signing helper: {exc}") from exc
+
+        actual_helper_hash = hashlib.sha256(helper_content).hexdigest()
+        if actual_helper_hash != helper_hash:
+            raise Exception(
+                "Downloaded signing helper SHA-256 mismatch: "
+                f"expected {helper_hash}, got {actual_helper_hash}"
+            )
+
+        with open(helper_file, 'wb') as f:
+            f.write(helper_content)
 
         self.log("Miner downloaded and verified successfully")
         

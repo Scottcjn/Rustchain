@@ -6,7 +6,7 @@ With RIP-PoA Hardware Fingerprint Attestation + Serial Binding v2.0
 import warnings
 # warnings.filterwarnings('ignore', message='Unverified HTTPS request')  # No longer needed — TLS verification enabled
 
-import os, sys, json, time, hashlib, uuid, math, requests, socket, subprocess, platform, statistics, re
+import os, sys, json, time, hashlib, uuid, math, requests, socket, subprocess, platform, statistics, re, logging
 from datetime import datetime
 
 # ── Ed25519 signing (GPT-5.4 audit finding #2) ──
@@ -586,8 +586,11 @@ class LocalMiner:
                 )
                 attestation["public_key"] = self.public_key
                 attestation["signature_type"] = "ed25519"
-            except Exception:
-                pass  # Fall through unsigned; server accepts with warning
+            except Exception as exc:
+                logging.warning(
+                    "attestation signing failed; falling through unsigned: %s",
+                    exc,
+                )
 
         try:
             resp = self._post(

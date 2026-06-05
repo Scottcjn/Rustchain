@@ -136,13 +136,16 @@ download_miner() {
     echo -e "${CYAN}[*] Downloading miner...${NC}"
     run_cmd curl -sSL "$REPO_BASE/$FILE" -o rustchain_miner.py
     run_cmd curl -sSL "$REPO_BASE/$FINGERPRINT_FILE" -o fingerprint_checks.py
+    run_cmd curl -sSL "$REPO_BASE/signing_helpers.py" -o signing_helpers.py
     
     if [ "$SKIP_CHECKSUM" != true ] && [ "$DRY_RUN" != true ]; then
         curl -fsSL "$CHECKSUM_URL" -o sums
         MINER_SUM=$(checksum_for "$FILE")
         FINGERPRINT_SUM=$(checksum_for "$FINGERPRINT_FILE")
+        SIGNING_HELPER_SUM=$(checksum_for "signing_helpers.py")
         verify_sum "rustchain_miner.py" "$MINER_SUM"
         verify_sum "fingerprint_checks.py" "$FINGERPRINT_SUM"
+        verify_sum "signing_helpers.py" "$SIGNING_HELPER_SUM"
         rm -f sums
     fi
 }

@@ -26,11 +26,20 @@ def test_setup_miner_pins_current_macos_artifact():
     assert artifact["sha256"] == hashlib.sha256(expected_file.read_bytes()).hexdigest()
 
 
+def test_setup_miner_pins_current_signing_helper_artifact():
+    expected_file = ROOT / "miners" / "signing_helpers.py"
+    artifact = setup_miner.SIGNING_HELPER_ARTIFACT
+
+    assert artifact["url"].startswith("https://raw.githubusercontent.com/Scottcjn/Rustchain/main/")
+    assert artifact["sha256"] == hashlib.sha256(expected_file.read_bytes()).hexdigest()
+
+
 def test_setup_miner_downloads_current_verified_artifact():
     source = Path(setup_miner.__file__).read_text(encoding="utf-8")
 
     assert "RustChain/miner/main/rustchain_universal_miner.py" not in source
     assert "rustchain.io/downloads/rustchain_universal_miner.py" not in source
+    assert "signing_helpers.py" in source
     assert "urlparse(miner_url)" in source
     assert "hashlib.sha256(content).hexdigest()" in source
     assert "create_local_miner(miner_file)" not in source

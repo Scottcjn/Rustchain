@@ -28,6 +28,7 @@ def test_checksum_manifest_matches_installer_download_artifacts():
         "macos/rustchain_mac_miner_v2.4.py",
         "macos/rustchain_mac_miner_v2.5.py",
         "macos/fingerprint_checks.py",
+        "signing_helpers.py",
     ]:
         expected = hashlib.sha256((ROOT / "miners" / artifact).read_bytes()).hexdigest()
         assert entries[artifact] == expected
@@ -44,8 +45,10 @@ def test_installers_verify_fingerprint_helper_checksum():
             assert 'FINGERPRINT_SUM=$(checksum_for "$FINGERPRINT_FILE")' in script
         else:
             assert 'FINGERPRINT_SUM=$(checksum_for "linux/fingerprint_checks.py")' in script
+        assert 'SIGNING_HELPER_SUM=$(checksum_for "signing_helpers.py")' in script
         assert 'verify_sum "rustchain_miner.py" "$MINER_SUM"' in script
         assert 'verify_sum "fingerprint_checks.py" "$FINGERPRINT_SUM"' in script
+        assert 'verify_sum "signing_helpers.py" "$SIGNING_HELPER_SUM"' in script
         assert 'curl -fsSL "$CHECKSUM_URL" -o sums' in script
         assert "(sha256sum \"$file\" 2>/dev/null || shasum -a 256 \"$file\" 2>/dev/null) | cut -d' ' -f1" in script
         assert "sha256sum \"$file\" 2>/dev/null | cut -d' ' -f1 || shasum" not in script
