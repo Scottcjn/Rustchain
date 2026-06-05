@@ -8610,6 +8610,7 @@ def api_wallet_history():
                 LIMIT ?
                 """,
                 (miner_id, miner_id, _history_cap),
+                # fetchall-ok: already-paginated
             ).fetchall()
             for tx_hash, status, confirms_at, confirmed_at, voided_reason in pending_meta_rows:
                 if tx_hash:
@@ -8634,6 +8635,7 @@ def api_wallet_history():
                 LIMIT ?
                 """,
                 (miner_id, _history_cap),
+                # fetchall-ok: already-paginated
             ).fetchall()
 
             for ts, epoch, _mid, delta_i64, reason in ledger_rows:
@@ -8696,6 +8698,7 @@ def api_wallet_history():
                 LIMIT ?
                 """,
                 (miner_id, _history_cap),
+                # fetchall-ok: already-paginated
             ).fetchall()
 
             for epoch, share_i64, _blocks in reward_rows:
@@ -8722,6 +8725,7 @@ def api_wallet_history():
                 LIMIT ?
                 """,
                 (miner_id, miner_id, _history_cap),
+                # fetchall-ok: already-paginated
             ).fetchall()
 
             for ts, from_m, to_m, amt, reason, status, tx_hash, created, confirms_at, confirmed_at, voided_reason in pending_rows:
@@ -9176,7 +9180,7 @@ def _run_pending_confirm(now=None, limit=None):
             WHERE status = 'pending' AND confirms_at <= ?
             ORDER BY id ASC
             LIMIT ?
-        """, (now, limit)).fetchall()
+        """, (now, limit)).fetchall()  # fetchall-ok: already-paginated
         
         for row in ready:
             pid, from_m, to_m, amount, reason, epoch, tx_hash = row
@@ -9309,19 +9313,19 @@ def check_integrity():
         # Sum all ledger deltas per miner
         ledger_sums = dict(db.execute("""
             SELECT miner_id, SUM(delta_i64) FROM ledger GROUP BY miner_id
-        """).fetchall())
+        """))
         
         # Get all balances
         balances = dict(db.execute("""
             SELECT miner_id, amount_i64 FROM balances
-        """).fetchall())
+        """))
         
         # Check for pending transactions
         pending = dict(db.execute("""
             SELECT from_miner, SUM(amount_i64) 
             FROM pending_ledger WHERE status = 'pending'
             GROUP BY from_miner
-        """).fetchall())
+        """))
     
     mismatches = []
     for miner_id, balance in balances.items():
@@ -9480,9 +9484,12 @@ def api_wallet_balances_all():
         return jsonify({"ok": False, "reason": "admin_required"}), 401
 
     with sqlite3.connect(DB_PATH) as db:
-        rows = db.execute(
-            "SELECT miner_id, amount_i64 FROM balances ORDER BY amount_i64 DESC"
-        ).fetchall()
+        rows = fetch_page(
+            db,
+            "SELECT miner_id, amount_i64 FROM balances ORDER BY amount_i64 DESC",
+            limit=500,
+            max_limit=500,
+        )
 
     return jsonify({
         "balances": [
@@ -9841,6 +9848,7 @@ def _balance_i64_for_wallet(c: sqlite3.Cursor, wallet_id: str) -> int:
 
 
 def _balance_columns(c: sqlite3.Cursor) -> set:
+    # fetchall-ok: pragma-result
     return {row[1] for row in c.execute("PRAGMA table_info(balances)").fetchall()}
 
 

@@ -46,8 +46,9 @@ FETCHALL_PATTERN='\.fetchall[[:space:]]*\('
 if command -v rg >/dev/null 2>&1; then
     set +e
     rg -n "$FETCHALL_PATTERN" node \
+        --glob '*.py' \
         --glob '!node/tests/**' \
-        --glob '!node/test_*' \
+        --glob '!node/test_*.py' \
         --glob '!node/__pycache__/**' \
         --glob '!node/db_helpers.py' \
         --glob '!deprecated/**' > "$scan_tmp"
