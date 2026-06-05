@@ -381,6 +381,7 @@ class LocalMiner:
 
         mean_ns = sum(samples) / len(samples)
         variance_ns = statistics.pvariance(samples) if len(samples) > 1 else 0.0
+        stdev_ns = statistics.pstdev(samples) if len(samples) > 1 else 0.0
 
         return {
             "mean_ns": mean_ns,
@@ -389,6 +390,24 @@ class LocalMiner:
             "max_ns": max(samples),
             "sample_count": len(samples),
             "samples_preview": samples[:12],
+            # Node-side expected field aliases for extract_entropy_profile()
+            # https://github.com/Scottcjn/Rustchain/issues/4820
+            "cache_timing": {
+                "data": {
+                    "L1": min(samples),
+                    "L2": max(samples),
+                }
+            },
+            "thermal_drift": {
+                "data": {
+                    "ratio": mean_ns / 1_000_000,
+                }
+            },
+            "instruction_jitter": {
+                "data": {
+                    "cv": stdev_ns / mean_ns if mean_ns > 0 else 0.0,
+                }
+            },
         }
 
     def _get_hw_info(self):
