@@ -1442,9 +1442,6 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
     @app.route("/api/bridge/lock", methods=["POST"])
     def create_bridge_lock():
         """Create bridge lock."""
-        auth_error = require_admin_key()
-        if auth_error:
-            return auth_error
         data, error = parse_json_object_body()
         if error:
             return error
