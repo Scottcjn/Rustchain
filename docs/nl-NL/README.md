@@ -101,7 +101,7 @@ Nee. RustChain gebruikt **Proof-of-Antiquity (PoA)**, een uniek mechanisme dat z
 
 ## Bijdragen
 
-We verwelkomen bijdragen! Zie [CONTRIBUTING.md](CONTRIBUTING.md) voor richtlijnen.
+We verwelkomen bijdragen! Zie [CONTRIBUTING.md](../../CONTRIBUTING.md) voor richtlijnen.
 
 ## Licentie
 
