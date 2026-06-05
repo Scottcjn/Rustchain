@@ -1,0 +1,113 @@
+name: Engineering Optimization Inquiry
+description: Hire Elyan Labs to optimize AI/LLM workloads on enterprise, legacy, or edge hardware
+title: "[Consulting] "
+labels: [consulting]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Elyan Labs — Engineering Optimization Inquiry
+
+        We make legacy, enterprise, and exotic hardware run modern AI. See
+        [CONSULTING.md](https://github.com/Scottcjn/Rustchain/blob/main/CONSULTING.md)
+        for proof points and how we engage.
+
+        **How this works:** the architecture/feasibility conversation is free.
+        Implementation, tuning, drivers, and integration are delivered under a
+        signed statement of work. We do not write a free proof-of-concept against
+        your hardware before a scope is signed.
+
+        Fill this out and we'll reply with a feasibility read.
+
+  - type: dropdown
+    id: engagement-type
+    attributes:
+      label: What do you need?
+      options:
+        - Legacy/enterprise hardware AI optimization (POWER, older Xeon, repurposed servers)
+        - Port modern software to a vintage/exotic architecture (PowerPC, POWER8, 68K, big-endian)
+        - Edge / air-gapped inference (constrained or offline hardware)
+        - Hardware attestation / anti-spoof / DePIN provenance
+        - Not sure yet — need a feasibility conversation
+    validations:
+      required: true
+
+  - type: input
+    id: org
+    attributes:
+      label: Organization
+      description: Company / institution (or "individual")
+      placeholder: Acme Corp
+    validations:
+      required: true
+
+  - type: textarea
+    id: hardware
+    attributes:
+      label: Target hardware
+      description: CPU/arch, socket count, RAM, and (if known) NUMA layout. Paste `numactl --hardware` if you have it.
+      placeholder: |
+        IBM POWER8 S824, 2 sockets / 16 cores, 256GB DDR3, 2 NUMA nodes
+        — or — repurposed rack of Xeon E5 v3, no GPUs
+    validations:
+      required: true
+
+  - type: textarea
+    id: workload
+    attributes:
+      label: Workload
+      description: Model(s) and what you're running them for.
+      placeholder: Llama-3-8B quantized for an internal document assistant; private/on-prem only.
+    validations:
+      required: true
+
+  - type: input
+    id: target-metric
+    attributes:
+      label: Target metric
+      description: The number that defines success.
+      placeholder: 20+ tok/s generation, fully on-prem, no GPU purchase
+    validations:
+      required: true
+
+  - type: dropdown
+    id: constraints
+    attributes:
+      label: Deployment constraints
+      multiple: true
+      options:
+        - 100% air-gapped / no outbound network
+        - On-prem only, no public cloud
+        - Hybrid cloud acceptable
+        - Compliance regime (HIPAA / GDPR / SOX / other)
+        - Power or thermal limited
+        - None of these
+    validations:
+      required: true
+
+  - type: dropdown
+    id: timeline
+    attributes:
+      label: Timeline
+      options:
+        - Exploring / no fixed date
+        - This quarter
+        - Urgent (weeks)
+    validations:
+      required: true
+
+  - type: textarea
+    id: anything-else
+    attributes:
+      label: Anything else
+      description: Budget range, prior attempts, links — optional but helpful.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: ack
+    attributes:
+      label: Acknowledgement
+      options:
+        - label: I understand the feasibility conversation is free and that implementation is delivered under a signed paid scope of work.
+          required: true
