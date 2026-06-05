@@ -368,6 +368,7 @@ curl -fsS "https://rustchain.org/wallet/history?miner_id=scott&limit=10" | jq .
     "status": "pending",
     "raw_status": "pending",
     "status_reason": null,
+    "confirm_overdue_seconds": 0,
     "confirmations": 0,
     "direction": "sent",
     "counterparty": "bobRTC",
@@ -386,6 +387,9 @@ curl -fsS "https://rustchain.org/wallet/history?miner_id=scott&limit=10" | jq .
 | `amount_i64` | integer | Amount in micro-RTC (6 decimals) |
 | `timestamp` | integer | Creation Unix timestamp |
 | `status` | string | `pending`, `confirmed`, or `failed` |
+| `raw_status` | string | Raw DB status (`pending`, `confirmed`, `voided`) |
+| `status_reason` | string\|null | Reason for failure/void |
+| `confirm_overdue_seconds` | integer | Seconds past `confirms_at` while still pending, otherwise `0` |
 | `direction` | string | `sent` or `received` |
 | `counterparty` | string | Other wallet |
 | `memo` | string\|null | Memo from `signed_transfer:` prefix |

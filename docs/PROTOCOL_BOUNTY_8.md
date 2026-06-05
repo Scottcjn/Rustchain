@@ -241,6 +241,8 @@ curl -sS "$BASE/wallet/ledger"
 curl -sS "$BASE/pending/list"
 ```
 
+Response includes aggregate `stale_pending_count` and `max_confirm_overdue_seconds`, and each pending item includes `confirm_overdue_seconds` so operators can distinguish not-yet-due from overdue transfers.
+
 ### POST `/pending/confirm`
 ```bash
 curl -sS -X POST "$BASE/pending/confirm" -H 'Content-Type: application/json' -d '{"id":123}'

@@ -192,6 +192,7 @@ curl -fsS "https://rustchain.org/wallet/history?miner_id=eafc6f14eab6d5c5362fe65
     "status": "pending",
     "raw_status": "pending",
     "status_reason": null,
+    "confirm_overdue_seconds": 0,
     "confirmations": 0,
     "direction": "sent",
     "counterparty": "bobRTC",
@@ -238,6 +239,7 @@ curl -fsS "https://rustchain.org/wallet/history?miner_id=eafc6f14eab6d5c5362fe65
 | `status` | string | `pending`, `confirmed`, or `failed` |
 | `raw_status` | string | Raw DB status (`pending`, `confirmed`, `voided`) |
 | `status_reason` | string\|null | Reason for failure/void |
+| `confirm_overdue_seconds` | integer | Seconds past `confirms_at` while still pending, otherwise `0` |
 | `confirmations` | integer | 1 if confirmed, 0 otherwise |
 | `direction` | string | `sent` or `received` (relative to queried wallet) |
 | `counterparty` | string | Other wallet in the transfer |

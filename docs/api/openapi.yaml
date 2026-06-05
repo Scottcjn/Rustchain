@@ -1620,6 +1620,9 @@ components:
           type: string
           nullable: true
           description: Reason for failure/void (if applicable)
+        confirm_overdue_seconds:
+          type: integer
+          description: Seconds past confirms_at while still pending; 0 for confirmed, failed, or not-yet-due transfers
         confirmations:
           type: integer
           description: Number of confirmations (1 if confirmed, 0 otherwise)
@@ -1637,7 +1640,7 @@ components:
         memo:
           type: string
           nullable: true
-          description: Extracted memo from signed_transfer: prefix
+          description: "Extracted memo from signed_transfer: prefix"
 
     SignedTransferRequest:
       type: object
