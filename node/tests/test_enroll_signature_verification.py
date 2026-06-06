@@ -204,7 +204,10 @@ class TestEnrollSignatureVerification(unittest.TestCase):
             "report": {"nonce": nonce, "commitment": commitment},
             "device": {"family": "PowerPC", "arch": "G4", "model": "test-box", "cores": 4},
             "signals": {"hostname": "test-host", "macs": []},
-            "fingerprint": {},
+            "fingerprint": {
+                "all_passed": True,
+                "checks": {"clock_drift": {"passed": True}},
+            },
             "signature": sig_hex,
             "public_key": pubkey_hex,
         }
@@ -242,13 +245,14 @@ class TestEnrollSignatureVerification(unittest.TestCase):
         self.assertEqual(body["miner_pk"], miner)
 
         with sqlite3.connect(db_path) as conn:
-            row = conn.execute(
-                "SELECT pubkey_hex FROM miner_header_keys WHERE miner_id = ?",
-                (miner_id,),
-            ).fetchone()
+            rows = dict(conn.execute(
+                "SELECT miner_id, pubkey_hex FROM miner_header_keys "
+                "WHERE miner_id IN (?, ?)",
+                (miner, miner_id),
+            ).fetchall())
 
-        self.assertIsNotNone(row)
-        self.assertEqual(row[0], pubkey_hex)
+        self.assertEqual(rows[miner], pubkey_hex)
+        self.assertEqual(rows[miner_id], pubkey_hex)
 
     @unittest.skipUnless(HAVE_NACL, "pynacl not installed")
     def test_auto_enroll_registers_attestation_pubkey(self):
@@ -260,13 +264,14 @@ class TestEnrollSignatureVerification(unittest.TestCase):
         _, pubkey_hex = self._attest_and_get_signing_key(mod, miner, miner_id)
 
         with sqlite3.connect(db_path) as conn:
-            row = conn.execute(
-                "SELECT pubkey_hex FROM miner_header_keys WHERE miner_id = ?",
-                (miner_id,),
-            ).fetchone()
+            rows = dict(conn.execute(
+                "SELECT miner_id, pubkey_hex FROM miner_header_keys "
+                "WHERE miner_id IN (?, ?)",
+                (miner, miner_id),
+            ).fetchall())
 
-        self.assertIsNotNone(row)
-        self.assertEqual(row[0], pubkey_hex)
+        self.assertEqual(rows[miner], pubkey_hex)
+        self.assertEqual(rows[miner_id], pubkey_hex)
 
     @unittest.skipUnless(HAVE_NACL, "pynacl not installed")
     def test_enrollment_with_wrong_key_rejected(self):
