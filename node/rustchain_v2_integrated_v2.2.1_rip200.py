@@ -1643,15 +1643,17 @@ def init_db():
         """)
         c.execute("""
             CREATE TABLE IF NOT EXISTS miner_header_keys (
-                miner_id TEXT PRIMARY KEY,
-                pubkey_hex TEXT NOT NULL
+                miner_id TEXT NOT NULL,
+                pubkey_hex TEXT NOT NULL,
+                PRIMARY KEY (miner_id, pubkey_hex)
             )
         """)
 
         c.execute("""
             CREATE TABLE IF NOT EXISTS miner_header_keys (
-                miner_id TEXT PRIMARY KEY,
-                pubkey_hex TEXT NOT NULL
+                miner_id TEXT NOT NULL,
+                pubkey_hex TEXT NOT NULL,
+                PRIMARY KEY (miner_id, pubkey_hex)
             )
         """)
 
@@ -1799,10 +1801,42 @@ def init_db():
         """)
         c.execute("""
             CREATE TABLE IF NOT EXISTS miner_header_keys(
-                miner_id TEXT PRIMARY KEY,
-                pubkey_hex TEXT NOT NULL
+                miner_id TEXT NOT NULL,
+                pubkey_hex TEXT NOT NULL,
+                PRIMARY KEY (miner_id, pubkey_hex)
             )
         """)
+        # Migrate a legacy single-column-PK miner_header_keys to the composite
+        # (miner_id, pubkey_hex) key so one wallet identity can hold a header key per
+        # device (multi-device-per-wallet) instead of last-writer-wins overwriting
+        # — which previously broke the non-last device's signed-header verification.
+        # Idempotent: only rebuilds a table still carrying the old PRIMARY KEY(miner_id).
+        try:
+            _mhk_cols = c.execute("PRAGMA table_info(miner_header_keys)").fetchall()  # fetchall-ok: pragma-result
+            _mhk_pk = [col[1] for col in _mhk_cols if col[5]]  # col[5] = pk position (>0 means part of PK)
+            if _mhk_pk == ["miner_id"]:
+                c.execute("ALTER TABLE miner_header_keys RENAME TO miner_header_keys_legacy_single")
+                c.execute("""
+                    CREATE TABLE miner_header_keys(
+                        miner_id TEXT NOT NULL,
+                        pubkey_hex TEXT NOT NULL,
+                        PRIMARY KEY (miner_id, pubkey_hex)
+                    )
+                """)
+                c.execute(
+                    "INSERT OR IGNORE INTO miner_header_keys (miner_id, pubkey_hex) "
+                    "SELECT miner_id, pubkey_hex FROM miner_header_keys_legacy_single"
+                )
+                c.execute("DROP TABLE miner_header_keys_legacy_single")
+                logging.info("[migrate] miner_header_keys upgraded to composite (miner_id, pubkey_hex) PK")
+        except Exception as _mhk_err:
+            # Fail loud rather than continue on a half-migrated key table: running
+            # header verification against a renamed/duplicate/missing table would be
+            # worse than not starting. SQLite DDL here is uncommitted until init_db's
+            # final commit, so propagating leaves the original table intact.
+            logging.error(f"[migrate] miner_header_keys composite migration FAILED: {_mhk_err!r}")
+            raise
+
         c.execute("""
             CREATE TABLE IF NOT EXISTS schema_version(
                 version INTEGER PRIMARY KEY,
@@ -4455,10 +4489,16 @@ def _submit_attestation_impl():
             )
             header_pubkey = _valid_ed25519_pubkey_hex(pubkey_hex) or _valid_ed25519_pubkey_hex(miner)
             if header_pubkey:
-                enroll_conn.execute(
-                    "INSERT OR REPLACE INTO miner_header_keys (miner_id, pubkey_hex) VALUES (?, ?)",
-                    (miner_id, header_pubkey)
-                )
+                # Lottery participation and header authorization use the
+                # attested wallet (`miner`). Keep the client-local miner_id as
+                # a compatibility alias, but always register the canonical
+                # chain identity too.
+                for header_miner_id in dict.fromkeys((miner, miner_id)):
+                    enroll_conn.execute(
+                        "INSERT OR REPLACE INTO miner_header_keys (miner_id, pubkey_hex) VALUES (?, ?)",
+                        (header_miner_id, header_pubkey)
+                    )
+                    _prune_header_keys(enroll_conn, header_miner_id)
             enroll_conn.commit()
 
         # Issue #19 temporal consistency only sets a review flag (no hard-fail).
@@ -4776,10 +4816,12 @@ def enroll_epoch():
         # Register a real Ed25519 pubkey for block-header verification when available.
         header_pubkey = _valid_ed25519_pubkey_hex(pubkey_hex) or _valid_ed25519_pubkey_hex(miner_pk)
         if header_pubkey:
-            c.execute(
-                "INSERT OR REPLACE INTO miner_header_keys (miner_id, pubkey_hex) VALUES (?, ?)",
-                (miner_id, header_pubkey)
-            )
+            for header_miner_id in dict.fromkeys((miner_pk, miner_id)):
+                c.execute(
+                    "INSERT OR REPLACE INTO miner_header_keys (miner_id, pubkey_hex) VALUES (?, ?)",
+                    (header_miner_id, header_pubkey)
+                )
+                _prune_header_keys(c, header_miner_id)
 
     app.logger.info(
         f"[RIP-309] epoch={epoch} miner={miner_pk[:20]}... nonce={rotation_eval['measurement_nonce'][:16]} "
@@ -4882,6 +4924,39 @@ def lottery_eligibility():
     result['slot'] = current
     return jsonify(result)
 
+def _header_keys_max_per_identity():
+    """Cap on header keys retained per identity — bounds storage and the per-header
+    verify-any cost, and ages out stale/rotated keys. Fail-safe on bad env."""
+    raw = os.environ.get("RC_MAX_HEADER_KEYS_PER_IDENTITY", "")
+    if raw in (None, ""):
+        return 8
+    try:
+        val = int(raw)
+    except (TypeError, ValueError):
+        return 8
+    return val if val >= 1 else 8
+
+
+def _prune_header_keys(conn, miner_id):
+    """Keep only the most-recently-registered keys for an identity (evict oldest by
+    rowid). Bounds verify-any cost and storage, and means a rotated key eventually
+    ages out.
+
+    Eviction is NOT an external attack vector: key registration is authenticated —
+    /miner/headerkey is admin-gated (RC_ADMIN_KEY) and the enroll path requires an
+    owner-valid signature — so a third party cannot register keys for an identity
+    they don't control. The only way to evict is to register >cap keys for an
+    identity you already control (self-inflicted). A wallet legitimately running
+    more than the cap of producing devices should raise RC_MAX_HEADER_KEYS_PER_IDENTITY.
+    NOTE: explicit revocation of a specific compromised key is a separate follow-up;
+    this only bounds accumulation."""
+    conn.execute(
+        "DELETE FROM miner_header_keys WHERE miner_id=? AND rowid NOT IN "
+        "(SELECT rowid FROM miner_header_keys WHERE miner_id=? ORDER BY rowid DESC LIMIT ?)",
+        (miner_id, miner_id, _header_keys_max_per_identity())
+    )
+
+
 @app.route('/miner/headerkey', methods=['POST'])
 def miner_set_header_key():
     """Admin-set or update the header-signing ed25519 public key for a miner.
@@ -4911,7 +4986,11 @@ def miner_set_header_key():
     if not miner_id or len(pubkey_bytes) != 32:
         return jsonify({"ok":False,"error":"invalid miner_id or pubkey_hex"}), 400
     with sqlite3.connect(DB_PATH) as db:
-        db.execute("INSERT INTO miner_header_keys(miner_id,pubkey_hex) VALUES(?,?) ON CONFLICT(miner_id) DO UPDATE SET pubkey_hex=excluded.pubkey_hex", (miner_id, pubkey_hex))
+        # Composite (miner_id, pubkey_hex) PK: registering a key ADDS it for the
+        # identity (multi-device-per-wallet) rather than overwriting the existing one.
+        # Re-registering the same pair is idempotent.
+        db.execute("INSERT INTO miner_header_keys(miner_id,pubkey_hex) VALUES(?,?) ON CONFLICT(miner_id, pubkey_hex) DO NOTHING", (miner_id, pubkey_hex))
+        _prune_header_keys(db, miner_id)
         db.commit()
     return jsonify({"ok":True,"miner_id":miner_id,"pubkey_hex":pubkey_hex})
 
@@ -4957,17 +5036,19 @@ def ingest_signed_header():
     if header_miner and header_miner != miner_id:
         return jsonify({"ok":False,"error":"miner_mismatch"}), 400
 
-    # Resolve public key
-    pubkey_hex = None
+    # Resolve candidate public key(s). A wallet identity may have several enrolled
+    # devices, each with its own header key (composite miner_header_keys PK), so we
+    # collect every registered key and accept the header if its signature matches ANY.
+    candidate_pubkeys = []
     if TESTNET_ALLOW_INLINE_PUBKEY and inline_pk:
         if not TESTNET_ALLOW_MOCK_SIG and len(inline_pk) != 64:
             return jsonify({"ok":False,"error":"bad inline pubkey"}), 400
-        pubkey_hex = inline_pk
+        candidate_pubkeys = [inline_pk]
     else:
         with sqlite3.connect(DB_PATH) as db:
-            row = db.execute("SELECT pubkey_hex FROM miner_header_keys WHERE miner_id=?", (miner_id,)).fetchone()
-            if row: pubkey_hex = row[0]
-    if not pubkey_hex:
+            rows = db.execute("SELECT pubkey_hex FROM miner_header_keys WHERE miner_id=?", (miner_id,)).fetchall()  # fetchall-ok: bounded-by-schema
+            candidate_pubkeys = [r[0] for r in rows if r and r[0]]
+    if not candidate_pubkeys:
         return jsonify({"ok":False,"error":"no pubkey registered for miner"}), 403
 
     # Resolve message bytes
@@ -4992,14 +5073,21 @@ def ingest_signed_header():
     else:
         if not HAVE_NACL:
             return jsonify({"ok":False,"error":"ed25519 unavailable on server (install pynacl)"}), 500
-        # real ed25519 verify
+        # real ed25519 verify — accept if the signature matches ANY registered key
+        # for this identity (multi-device-per-wallet).
         try:
             sig = hex_to_bytes(sig_hex)
-            pk  = hex_to_bytes(pubkey_hex)
-            VerifyKey(pk).verify(msg, sig)
-            accepted = True
-        except (BadSignatureError, Exception) as e:
-            logging.warning(f"Signature verification failed: {e}")
+        except Exception:
+            return jsonify({"ok":False,"error":"bad signature hex"}), 400
+        for _cand in candidate_pubkeys:
+            try:
+                VerifyKey(hex_to_bytes(_cand)).verify(msg, sig)
+                accepted = True
+                break
+            except Exception:
+                continue
+        if not accepted:
+            logging.warning(f"Signature verification failed for miner {miner_id}: no registered key matched ({len(candidate_pubkeys)} candidate(s))")
             return jsonify({"ok":False,"error":"bad signature"}), 400
 
     # Minimal header validation & chain update
