@@ -4940,8 +4940,16 @@ def _header_keys_max_per_identity():
 def _prune_header_keys(conn, miner_id):
     """Keep only the most-recently-registered keys for an identity (evict oldest by
     rowid). Bounds verify-any cost and storage, and means a rotated key eventually
-    ages out. NOTE: explicit revocation of a specific compromised key is a separate
-    follow-up; this only bounds accumulation."""
+    ages out.
+
+    Eviction is NOT an external attack vector: key registration is authenticated —
+    /miner/headerkey is admin-gated (RC_ADMIN_KEY) and the enroll path requires an
+    owner-valid signature — so a third party cannot register keys for an identity
+    they don't control. The only way to evict is to register >cap keys for an
+    identity you already control (self-inflicted). A wallet legitimately running
+    more than the cap of producing devices should raise RC_MAX_HEADER_KEYS_PER_IDENTITY.
+    NOTE: explicit revocation of a specific compromised key is a separate follow-up;
+    this only bounds accumulation."""
     conn.execute(
         "DELETE FROM miner_header_keys WHERE miner_id=? AND rowid NOT IN "
         "(SELECT rowid FROM miner_header_keys WHERE miner_id=? ORDER BY rowid DESC LIMIT ?)",
