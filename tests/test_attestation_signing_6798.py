@@ -122,6 +122,8 @@ class TestAttestationSigningMessage(unittest.TestCase):
     def test_pipe_delimiter_in_field_raises(self):
         """If any field contains a pipe character the builder must reject it."""
         att = self._build_sample_attestation()
+        # Put the pipe in report.nonce since the helper reads that first
+        att["report"]["nonce"] = "bad|nonce"
         att["nonce"] = "bad|nonce"
         with self.assertRaises(ValueError):
             build_pipe_sign_message(att)

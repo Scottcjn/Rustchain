@@ -558,10 +558,16 @@ class RustChainMiner:
                 if _SIGNING_HELPERS:
                     sign_msg = build_pipe_sign_message(attestation)
                 else:
+                    # Match node verifier precedence: report.nonce first, then top-level.
+                    # Windows attestation only sets nonce inside report.
+                    _report = attestation.get("report") or {}
+                    _nonce = _report.get("nonce") if isinstance(_report, dict) else None
+                    if not _nonce:
+                        _nonce = attestation.get("nonce")
                     sign_msg = "{}|{}|{}|{}".format(
                         attestation["miner_id"],
                         attestation["miner"],
-                        attestation["nonce"],
+                        _nonce,
                         attestation["report"]["commitment"],
                     ).encode("utf-8")
                 signature = sign_payload(sign_msg, self.keypair["private_key"])

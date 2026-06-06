@@ -27,6 +27,10 @@ def build_pipe_sign_message(attestation):
 
     Returns the UTF-8 bytes of  miner_id|miner|nonce|commitment.
 
+    The nonce is resolved with the same precedence the node verifier uses
+    (node/rustchain_v2_integrated_v2.2.1_rip200.py:4061): report.nonce first,
+    then the top-level nonce field.  The Windows miner only sets report.nonce.
+
     Raises ValueError if any field contains the pipe delimiter ``|`` (which
     would make the message ambiguous on the server side) or if any required
     field is missing.
@@ -34,8 +38,15 @@ def build_pipe_sign_message(attestation):
     try:
         miner_id = attestation["miner_id"]
         miner = attestation["miner"]
-        nonce = attestation["nonce"]
-        commitment = attestation["report"]["commitment"]
+        report = attestation["report"]
+        # Match node verifier precedence: report.nonce wins over top-level nonce.
+        # Windows miners set nonce only inside report; Linux sets both.
+        nonce = report.get("nonce") if isinstance(report, dict) else None
+        if not nonce:
+            nonce = attestation.get("nonce")
+        if not nonce:
+            raise ValueError("attestation missing required field: 'nonce'")
+        commitment = report["commitment"]
     except (KeyError, TypeError) as exc:
         raise ValueError(f"attestation missing required field: {exc}") from exc
 
