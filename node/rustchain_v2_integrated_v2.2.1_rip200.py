@@ -4494,6 +4494,11 @@ def _submit_attestation_impl():
                 # a compatibility alias, but always register the canonical
                 # chain identity too.
                 for header_miner_id in dict.fromkeys((miner, miner_id)):
+                    if not _header_key_authorized(enroll_conn, header_miner_id, header_pubkey):
+                        # Reject header-key takeover: this pubkey is not authorized
+                        # for header_miner_id (not pubkey-derived, and the identity
+                        # already has keys). See _header_key_authorized.
+                        continue
                     enroll_conn.execute(
                         "INSERT OR REPLACE INTO miner_header_keys (miner_id, pubkey_hex) VALUES (?, ?)",
                         (header_miner_id, header_pubkey)
@@ -4817,6 +4822,9 @@ def enroll_epoch():
         header_pubkey = _valid_ed25519_pubkey_hex(pubkey_hex) or _valid_ed25519_pubkey_hex(miner_pk)
         if header_pubkey:
             for header_miner_id in dict.fromkeys((miner_pk, miner_id)):
+                if not _header_key_authorized(c, header_miner_id, header_pubkey):
+                    # Reject header-key takeover (see _header_key_authorized).
+                    continue
                 c.execute(
                     "INSERT OR REPLACE INTO miner_header_keys (miner_id, pubkey_hex) VALUES (?, ?)",
                     (header_miner_id, header_pubkey)
@@ -4935,6 +4943,47 @@ def _header_keys_max_per_identity():
     except (TypeError, ValueError):
         return 8
     return val if val >= 1 else 8
+
+
+def _header_key_authorized(conn, identity, pubkey):
+    """Authorize registering ``pubkey`` as a block-header key for ``identity``.
+
+    SECURITY (header-key takeover): ``miner_header_keys`` is the trust anchor for
+    block-header verification — a header is accepted if signed by ANY registered
+    key for the identity. The enroll path's inputs are caller-controlled: an
+    attestation's Ed25519 signature only proves the holder of ``pubkey`` signed
+    ``miner_id|miner|nonce|commitment``; it does NOT prove ``pubkey`` is authorized
+    for the named identity (there is no ``address_from_pubkey(pubkey) == identity``
+    check upstream, the challenge nonce is not miner-bound, and unsigned
+    attestations are accepted). Without this guard a third party can attest as
+    another wallet with their own key and ADD their key to that wallet's valid-key
+    set -> block-header forgery for an identity they do not control.
+
+    Authorization rules:
+      * Self-authenticating identity — the RTC address derives from the pubkey
+        (``address_from_pubkey(pubkey) == identity``) or the identity *is* the raw
+        pubkey: always allowed (only the rightful holder can present a matching key,
+        and key rotation/multi-device for that holder still works).
+      * Named/legacy identity (not derivable from any key, e.g. ``power8-s824-sophia``):
+        allow only to BOOTSTRAP the first key, or to re-register an
+        already-registered (identity, pubkey) pair (idempotent). This lets a fresh
+        named producer register once while preventing an attacker from ADDING a key
+        to an already-established identity.
+    """
+    if not pubkey:
+        return False
+    try:
+        if identity == pubkey or address_from_pubkey(pubkey) == identity:
+            return True
+    except Exception:
+        # Malformed pubkey hex -> not self-authenticating; fall through.
+        pass
+    existing = conn.execute(
+        "SELECT pubkey_hex FROM miner_header_keys WHERE miner_id=?", (identity,)
+    ).fetchall()  # fetchall-ok: bounded by _prune_header_keys cap
+    if not existing:
+        return True  # bootstrap the first key for a named identity
+    return any(row[0] == pubkey for row in existing)  # idempotent re-register only
 
 
 def _prune_header_keys(conn, miner_id):
