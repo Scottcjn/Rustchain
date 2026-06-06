@@ -4455,10 +4455,15 @@ def _submit_attestation_impl():
             )
             header_pubkey = _valid_ed25519_pubkey_hex(pubkey_hex) or _valid_ed25519_pubkey_hex(miner)
             if header_pubkey:
-                enroll_conn.execute(
-                    "INSERT OR REPLACE INTO miner_header_keys (miner_id, pubkey_hex) VALUES (?, ?)",
-                    (miner_id, header_pubkey)
-                )
+                # Lottery participation and header authorization use the
+                # attested wallet (`miner`). Keep the client-local miner_id as
+                # a compatibility alias, but always register the canonical
+                # chain identity too.
+                for header_miner_id in dict.fromkeys((miner, miner_id)):
+                    enroll_conn.execute(
+                        "INSERT OR REPLACE INTO miner_header_keys (miner_id, pubkey_hex) VALUES (?, ?)",
+                        (header_miner_id, header_pubkey)
+                    )
             enroll_conn.commit()
 
         # Issue #19 temporal consistency only sets a review flag (no hard-fail).
@@ -4776,10 +4781,11 @@ def enroll_epoch():
         # Register a real Ed25519 pubkey for block-header verification when available.
         header_pubkey = _valid_ed25519_pubkey_hex(pubkey_hex) or _valid_ed25519_pubkey_hex(miner_pk)
         if header_pubkey:
-            c.execute(
-                "INSERT OR REPLACE INTO miner_header_keys (miner_id, pubkey_hex) VALUES (?, ?)",
-                (miner_id, header_pubkey)
-            )
+            for header_miner_id in dict.fromkeys((miner_pk, miner_id)):
+                c.execute(
+                    "INSERT OR REPLACE INTO miner_header_keys (miner_id, pubkey_hex) VALUES (?, ?)",
+                    (header_miner_id, header_pubkey)
+                )
 
     app.logger.info(
         f"[RIP-309] epoch={epoch} miner={miner_pk[:20]}... nonce={rotation_eval['measurement_nonce'][:16]} "
