@@ -34,8 +34,9 @@ def build_pipe_sign_message(attestation):
     try:
         miner_id = attestation["miner_id"]
         miner = attestation["miner"]
-        nonce = attestation["nonce"]
-        commitment = attestation["report"]["commitment"]
+        report = attestation["report"]
+        nonce = report.get("nonce") or attestation["nonce"]
+        commitment = report["commitment"]
     except (KeyError, TypeError) as exc:
         raise ValueError(f"attestation missing required field: {exc}") from exc
 

@@ -13,12 +13,18 @@ on PR #6839).
 """
 import json
 import hashlib
+import importlib.util
 import sys
 import os
 import unittest
 
 # Add miners/ to path so we can import signing_helpers
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "miners"))
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+MINERS_DIR = os.path.join(ROOT, "miners")
+WINDOWS_MINER_PATH = os.path.join(
+    MINERS_DIR, "windows", "rustchain_windows_miner.py"
+)
+sys.path.insert(0, MINERS_DIR)
 
 from signing_helpers import build_pipe_sign_message
 
@@ -32,7 +38,7 @@ class TestAttestationSigningMessage(unittest.TestCase):
         return "{}|{}|{}|{}".format(
             attestation["miner_id"],
             attestation["miner"],
-            attestation["nonce"],
+            attestation["report"].get("nonce") or attestation.get("nonce"),
             attestation["report"]["commitment"],
         )
 
@@ -119,10 +125,28 @@ class TestAttestationSigningMessage(unittest.TestCase):
         msg2 = build_pipe_sign_message(att2)
         self.assertNotEqual(msg1, msg2)
 
+    def test_report_nonce_takes_precedence_like_node_verifier(self):
+        """Use report.nonce when the legacy top-level nonce differs."""
+        att = self._build_sample_attestation()
+        att["nonce"] = "stale-top-level-nonce"
+        self.assertEqual(
+            build_pipe_sign_message(att),
+            self._node_verifier_reconstruction(att).encode("utf-8"),
+        )
+
+    def test_legacy_top_level_nonce_fallback(self):
+        """Clients without report.nonce keep using the top-level nonce."""
+        att = self._build_sample_attestation()
+        del att["report"]["nonce"]
+        self.assertEqual(
+            build_pipe_sign_message(att),
+            self._node_verifier_reconstruction(att).encode("utf-8"),
+        )
+
     def test_pipe_delimiter_in_field_raises(self):
         """If any field contains a pipe character the builder must reject it."""
         att = self._build_sample_attestation()
-        att["nonce"] = "bad|nonce"
+        att["report"]["nonce"] = "bad|nonce"
         with self.assertRaises(ValueError):
             build_pipe_sign_message(att)
 
@@ -130,6 +154,67 @@ class TestAttestationSigningMessage(unittest.TestCase):
         """Missing required fields must raise ValueError."""
         with self.assertRaises(ValueError):
             build_pipe_sign_message({"miner_id": "x", "miner": "y"})
+
+    def test_windows_miner_signs_report_nonce(self):
+        """Windows omits top-level nonce but must still submit Ed25519 fields."""
+        spec = importlib.util.spec_from_file_location(
+            "windows_miner_report_nonce_signing_test",
+            WINDOWS_MINER_PATH,
+        )
+        miner_mod = importlib.util.module_from_spec(spec)
+        self.assertIsNotNone(spec.loader)
+        spec.loader.exec_module(miner_mod)
+
+        captured = {}
+
+        class _Response:
+            def __init__(self, payload):
+                self.status_code = 200
+                self._payload = payload
+
+            def json(self):
+                return self._payload
+
+        def fake_sign_payload(message, private_key):
+            captured["message"] = message
+            captured["private_key"] = private_key
+            return "sig"
+
+        def fake_post(url, **kwargs):
+            if url.endswith("/attest/challenge"):
+                return _Response({"nonce": "test-nonce-abc123"})
+            if url.endswith("/attest/submit"):
+                captured["attestation"] = kwargs["json"]
+                return _Response({"ok": True})
+            raise AssertionError(url)
+
+        miner_mod.FINGERPRINT_AVAILABLE = False
+        miner_mod.CRYPTO_AVAILABLE = True
+        miner_mod._SIGNING_HELPERS = True
+        miner_mod.sign_payload = fake_sign_payload
+        miner_mod.get_or_create_keypair = lambda: {
+            "private_key": "priv",
+            "public_key": "pub",
+        }
+        miner_mod.requests.post = fake_post
+
+        miner = miner_mod.RustChainMiner("RTC1EXAMPLEWALLETADDR")
+        miner._collect_entropy = lambda: {
+            "variance_ns": 42.5,
+            "source": "timer_jitter",
+        }
+        miner._build_pow_proof = lambda: None
+
+        self.assertTrue(miner.attest())
+        attestation = captured["attestation"]
+        self.assertNotIn("nonce", attestation)
+        self.assertEqual(attestation["signature"], "sig")
+        self.assertEqual(attestation["signature_type"], "ed25519")
+        self.assertEqual(
+            captured["message"],
+            self._node_verifier_reconstruction(attestation).encode("utf-8"),
+        )
+        self.assertEqual(captured["private_key"], "priv")
 
 
 if __name__ == "__main__":
