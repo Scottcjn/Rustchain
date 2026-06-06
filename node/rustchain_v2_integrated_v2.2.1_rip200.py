@@ -8928,9 +8928,13 @@ def _pending_confirm_env_int(name, default):
     if raw in (None, ""):
         return default
     try:
-        return max(1, int(raw))
+        value = int(raw)
     except (TypeError, ValueError):
         return default
+    # A non-positive override (e.g. "0" or a negative) is a misconfiguration. Fall
+    # back to the default rather than silently clamping the batch size to 1, which
+    # would throttle the confirm scheduler to one transfer per call with no error.
+    return value if value >= 1 else default
 
 
 # Bounded /pending/confirm: a single call confirms at most this many transfers so
@@ -8963,7 +8967,12 @@ def _pending_overdue_stats(c, now):
             """,
             (now, now),
         ).fetchone()
-    except Exception:
+    except sqlite3.Error as e:
+        # Degrade gracefully so observability never 500s the endpoint, but LOG it:
+        # a locked DB or schema drift on pending_ledger must not masquerade as a
+        # healthy "0 overdue" — monitors that trust these fields would miss a real
+        # backlog. Narrowed from bare Exception so genuine bugs still surface.
+        print(f"[WARN] _pending_overdue_stats DB error (reporting 0 overdue): {e!r}", flush=True)
         return {"stale_pending_count": 0, "max_confirm_overdue_seconds": 0}
     return {
         "stale_pending_count": int(row[0] or 0),
