@@ -1830,7 +1830,12 @@ def init_db():
                 c.execute("DROP TABLE miner_header_keys_legacy_single")
                 logging.info("[migrate] miner_header_keys upgraded to composite (miner_id, pubkey_hex) PK")
         except Exception as _mhk_err:
-            logging.warning(f"[migrate] miner_header_keys composite migration skipped: {_mhk_err!r}")
+            # Fail loud rather than continue on a half-migrated key table: running
+            # header verification against a renamed/duplicate/missing table would be
+            # worse than not starting. SQLite DDL here is uncommitted until init_db's
+            # final commit, so propagating leaves the original table intact.
+            logging.error(f"[migrate] miner_header_keys composite migration FAILED: {_mhk_err!r}")
+            raise
 
         c.execute("""
             CREATE TABLE IF NOT EXISTS schema_version(
@@ -4493,6 +4498,7 @@ def _submit_attestation_impl():
                         "INSERT OR REPLACE INTO miner_header_keys (miner_id, pubkey_hex) VALUES (?, ?)",
                         (header_miner_id, header_pubkey)
                     )
+                    _prune_header_keys(enroll_conn, header_miner_id)
             enroll_conn.commit()
 
         # Issue #19 temporal consistency only sets a review flag (no hard-fail).
@@ -4815,6 +4821,7 @@ def enroll_epoch():
                     "INSERT OR REPLACE INTO miner_header_keys (miner_id, pubkey_hex) VALUES (?, ?)",
                     (header_miner_id, header_pubkey)
                 )
+                _prune_header_keys(c, header_miner_id)
 
     app.logger.info(
         f"[RIP-309] epoch={epoch} miner={miner_pk[:20]}... nonce={rotation_eval['measurement_nonce'][:16]} "
@@ -4917,6 +4924,31 @@ def lottery_eligibility():
     result['slot'] = current
     return jsonify(result)
 
+def _header_keys_max_per_identity():
+    """Cap on header keys retained per identity — bounds storage and the per-header
+    verify-any cost, and ages out stale/rotated keys. Fail-safe on bad env."""
+    raw = os.environ.get("RC_MAX_HEADER_KEYS_PER_IDENTITY", "")
+    if raw in (None, ""):
+        return 8
+    try:
+        val = int(raw)
+    except (TypeError, ValueError):
+        return 8
+    return val if val >= 1 else 8
+
+
+def _prune_header_keys(conn, miner_id):
+    """Keep only the most-recently-registered keys for an identity (evict oldest by
+    rowid). Bounds verify-any cost and storage, and means a rotated key eventually
+    ages out. NOTE: explicit revocation of a specific compromised key is a separate
+    follow-up; this only bounds accumulation."""
+    conn.execute(
+        "DELETE FROM miner_header_keys WHERE miner_id=? AND rowid NOT IN "
+        "(SELECT rowid FROM miner_header_keys WHERE miner_id=? ORDER BY rowid DESC LIMIT ?)",
+        (miner_id, miner_id, _header_keys_max_per_identity())
+    )
+
+
 @app.route('/miner/headerkey', methods=['POST'])
 def miner_set_header_key():
     """Admin-set or update the header-signing ed25519 public key for a miner.
@@ -4950,6 +4982,7 @@ def miner_set_header_key():
         # identity (multi-device-per-wallet) rather than overwriting the existing one.
         # Re-registering the same pair is idempotent.
         db.execute("INSERT INTO miner_header_keys(miner_id,pubkey_hex) VALUES(?,?) ON CONFLICT(miner_id, pubkey_hex) DO NOTHING", (miner_id, pubkey_hex))
+        _prune_header_keys(db, miner_id)
         db.commit()
     return jsonify({"ok":True,"miner_id":miner_id,"pubkey_hex":pubkey_hex})
 

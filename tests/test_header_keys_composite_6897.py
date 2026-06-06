@@ -78,6 +78,30 @@ def test_two_devices_one_wallet_keep_both_keys():
     assert keys == {"aa" * 32, "bb" * 32}
 
 
+def _prune(c, miner_id, k):
+    c.execute(
+        "DELETE FROM miner_header_keys WHERE miner_id=? AND rowid NOT IN "
+        "(SELECT rowid FROM miner_header_keys WHERE miner_id=? ORDER BY rowid DESC LIMIT ?)",
+        (miner_id, miner_id, k),
+    )
+
+
+def test_keys_per_identity_are_bounded_keeping_newest():
+    c = sqlite3.connect(":memory:")
+    _make_composite(c)
+    # register 10 distinct keys, bound = 4 → only the 4 most-recent survive
+    for i in range(10):
+        c.execute(
+            "INSERT INTO miner_header_keys(miner_id,pubkey_hex) VALUES('walletW',?) "
+            "ON CONFLICT(miner_id, pubkey_hex) DO NOTHING",
+            (f"{i:064x}",),
+        )
+        _prune(c, "walletW", 4)
+    c.commit()
+    survivors = {r[0] for r in c.execute("SELECT pubkey_hex FROM miner_header_keys WHERE miner_id='walletW'").fetchall()}
+    assert survivors == {f"{i:064x}" for i in (6, 7, 8, 9)}  # newest 4 kept, oldest evicted
+
+
 def test_verify_any_accepts_any_device_key_and_rejects_stranger():
     nacl_signing = pytest.importorskip("nacl.signing")
     SigningKey, VerifyKey = nacl_signing.SigningKey, nacl_signing.VerifyKey
