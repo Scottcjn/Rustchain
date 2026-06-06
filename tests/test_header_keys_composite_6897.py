@@ -25,20 +25,61 @@ def _make_composite(c):
 
 
 def _migrate(c):
-    """Mirror of the init_db() legacy->composite migration."""
+    """Mirror of the init_db() COLUMN-PRESERVING legacy->composite migration:
+    reconstructs every existing column (type / NOT NULL / DEFAULT) so a production
+    table carrying extra columns (e.g. `added_at`) keeps them."""
     cols = c.execute("PRAGMA table_info(miner_header_keys)").fetchall()
     pk = [col[1] for col in cols if col[5]]
-    if pk == ["miner_id"]:
-        c.execute("ALTER TABLE miner_header_keys RENAME TO miner_header_keys_legacy_single")
-        _make_composite(c)
-        c.execute(
-            "INSERT OR IGNORE INTO miner_header_keys (miner_id, pubkey_hex) "
-            "SELECT miner_id, pubkey_hex FROM miner_header_keys_legacy_single"
-        )
-        c.execute("DROP TABLE miner_header_keys_legacy_single")
-        c.commit()
-        return "migrated"
-    return "noop"
+    names = [col[1] for col in cols]
+    if pk != ["miner_id"] or "miner_id" not in names or "pubkey_hex" not in names:
+        return "noop"
+    defs, col_list = [], []
+    for _cid, name, ctype, notnull, dflt, _pk in cols:
+        d = '"%s" %s' % (name, ctype or "TEXT")
+        if notnull:
+            d += " NOT NULL"
+        if dflt is not None:
+            d += " DEFAULT (%s)" % dflt
+        defs.append(d)
+        col_list.append('"%s"' % name)
+    c.execute("ALTER TABLE miner_header_keys RENAME TO miner_header_keys_legacy_single")
+    c.execute("CREATE TABLE miner_header_keys (%s, PRIMARY KEY (miner_id, pubkey_hex))" % ", ".join(defs))
+    c.execute(
+        "INSERT OR IGNORE INTO miner_header_keys (%s) SELECT %s FROM miner_header_keys_legacy_single"
+        % (", ".join(col_list), ", ".join(col_list))
+    )
+    c.execute("DROP TABLE miner_header_keys_legacy_single")
+    c.commit()
+    return "migrated"
+
+
+def test_migration_preserves_extra_columns_like_production_added_at():
+    """Production `miner_header_keys` carries a 3rd `added_at` column (with an
+    expression default) absent from the code's CREATE. The migration must keep it
+    and its data — not silently drop it. Mirrors the exact prod DDL."""
+    c = sqlite3.connect(":memory:")
+    c.executescript(
+        "CREATE TABLE miner_header_keys (\n"
+        "  miner_id TEXT PRIMARY KEY,\n"
+        "  pubkey_hex TEXT NOT NULL,\n"
+        "  added_at  INTEGER NOT NULL DEFAULT (strftime('%s','now'))\n"
+        ")"
+    )
+    c.execute("INSERT INTO miner_header_keys(miner_id,pubkey_hex,added_at) VALUES('walletA','aaaa',1759701180)")
+    c.execute("INSERT INTO miner_header_keys(miner_id,pubkey_hex,added_at) VALUES('walletB','bbbb',1780774414)")
+    c.commit()
+    before = c.execute("SELECT miner_id,pubkey_hex,added_at FROM miner_header_keys ORDER BY miner_id").fetchall()
+
+    assert _migrate(c) == "migrated"
+    assert _pk_cols(c) == ["miner_id", "pubkey_hex"]
+    # the added_at column survived with its values...
+    assert "added_at" in [col[1] for col in c.execute("PRAGMA table_info(miner_header_keys)").fetchall()]
+    assert c.execute("SELECT miner_id,pubkey_hex,added_at FROM miner_header_keys ORDER BY miner_id").fetchall() == before
+    # ...and its default still fires for a new device key
+    c.execute("INSERT INTO miner_header_keys(miner_id,pubkey_hex) VALUES('walletA','cccc') ON CONFLICT(miner_id,pubkey_hex) DO NOTHING")
+    c.commit()
+    assert c.execute("SELECT added_at>0 FROM miner_header_keys WHERE miner_id='walletA' AND pubkey_hex='cccc'").fetchone()[0] == 1
+    assert _migrate(c) == "noop"  # idempotent
 
 
 def _pk_cols(c):
