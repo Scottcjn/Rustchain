@@ -152,12 +152,11 @@ node/rustchain_v2_integrated_v2.2.1_rip200.py:8469:        ).fetchall()
 node/rustchain_v2_integrated_v2.2.1_rip200.py:8614:            ).fetchall()
 node/rustchain_v2_integrated_v2.2.1_rip200.py:8661:            ).fetchall()
 node/rustchain_v2_integrated_v2.2.1_rip200.py:8686:            ).fetchall()
-node/rustchain_v2_integrated_v2.2.1_rip200.py:9086:        """, (now,)).fetchall()
-node/rustchain_v2_integrated_v2.2.1_rip200.py:9189:        """).fetchall())
-node/rustchain_v2_integrated_v2.2.1_rip200.py:9194:        """).fetchall())
-node/rustchain_v2_integrated_v2.2.1_rip200.py:9201:        """).fetchall())
-node/rustchain_v2_integrated_v2.2.1_rip200.py:9362:        ).fetchall()
-node/rustchain_v2_integrated_v2.2.1_rip200.py:9721:    return {row[1] for row in c.execute("PRAGMA table_info(balances)").fetchall()}
+node/rustchain_v2_integrated_v2.2.1_rip200.py:9259:        """).fetchall())
+node/rustchain_v2_integrated_v2.2.1_rip200.py:9264:        """).fetchall())
+node/rustchain_v2_integrated_v2.2.1_rip200.py:9271:        """).fetchall())
+node/rustchain_v2_integrated_v2.2.1_rip200.py:9432:        ).fetchall()
+node/rustchain_v2_integrated_v2.2.1_rip200.py:9791:    return {row[1] for row in c.execute("PRAGMA table_info(balances)").fetchall()}
 node/rustchain_x402.py:45:    existing = {row[1] for row in cursor.fetchall()}
 node/rustchain_x402.py:81:    columns = {row[1] for row in conn.execute("PRAGMA table_info(balances)").fetchall()}
 node/slashing_penalties.py:433:    return tuple(row[1] for row in conn.execute(f'PRAGMA table_info("{table_name}")').fetchall())

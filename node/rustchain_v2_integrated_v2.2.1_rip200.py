@@ -8922,6 +8922,55 @@ def wallet_transfer_v2():
         conn.close()
 
 
+def _pending_confirm_env_int(name, default):
+    """Parse an int env var without crashing import on a bad value."""
+    raw = os.environ.get(name, "")
+    if raw in (None, ""):
+        return default
+    try:
+        return max(1, int(raw))
+    except (TypeError, ValueError):
+        return default
+
+
+# Bounded /pending/confirm: a single call confirms at most this many transfers so
+# one run can't process an unbounded batch (the hourly scheduler keeps the queue
+# drained in small, predictable chunks). Configurable, fail-safe on bad env.
+PENDING_CONFIRM_DEFAULT_LIMIT = _pending_confirm_env_int("RC_PENDING_CONFIRM_DEFAULT_LIMIT", 100)
+PENDING_CONFIRM_MAX_LIMIT = _pending_confirm_env_int("RC_PENDING_CONFIRM_MAX_LIMIT", 500)
+
+
+def _pending_confirm_limit(raw_limit=None):
+    """Clamp a requested confirm-batch limit to [1, PENDING_CONFIRM_MAX_LIMIT]."""
+    if raw_limit in (None, ""):
+        raw_limit = PENDING_CONFIRM_DEFAULT_LIMIT
+    try:
+        limit = int(raw_limit)
+    except (TypeError, ValueError):
+        raise ValueError("limit must be an integer")
+    return max(1, min(limit, PENDING_CONFIRM_MAX_LIMIT))
+
+
+def _pending_overdue_stats(c, now):
+    """Read-only: how many pending transfers are past their confirm window, and
+    the oldest one's overdue seconds. Pure observability — never mutates."""
+    try:
+        row = c.execute(
+            """
+            SELECT COUNT(*), COALESCE(MAX(? - confirms_at), 0)
+            FROM pending_ledger
+            WHERE status = 'pending' AND confirms_at <= ?
+            """,
+            (now, now),
+        ).fetchone()
+    except Exception:
+        return {"stale_pending_count": 0, "max_confirm_overdue_seconds": 0}
+    return {
+        "stale_pending_count": int(row[0] or 0),
+        "max_confirm_overdue_seconds": max(0, int(row[1] or 0)),
+    }
+
+
 @app.route('/pending/list', methods=['GET'])
 def list_pending():
     """List all pending transfers"""
@@ -8952,7 +9001,8 @@ def list_pending():
                        confirms_at, voided_by, voided_reason, tx_hash
                 FROM pending_ledger WHERE status = ? ORDER BY id DESC
             """, (status_filter,), limit=limit, max_limit=500)
-    
+        overdue_stats = _pending_overdue_stats(db, int(time.time()))
+
     items = []
     for r in rows:
         items.append({
@@ -8969,7 +9019,7 @@ def list_pending():
             "tx_hash": r[10]
         })
     
-    return jsonify({"ok": True, "count": len(items), "pending": items})
+    return jsonify({"ok": True, "count": len(items), "pending": items, **overdue_stats})
 
 
 @app.route('/pending/void', methods=['POST'])
@@ -9065,25 +9115,39 @@ def confirm_pending():
     admin_key = request.headers.get("X-Admin-Key", "")
     if not hmac.compare_digest(admin_key, admin_key_env):
         return jsonify({"error": "Unauthorized"}), 401
-    
+
+    # Bound the batch: accept an optional ?limit=/JSON "limit" (default 100,
+    # max 500) so one call confirms at most `limit` transfers instead of an
+    # unbounded sweep. The hourly scheduler keeps the queue drained in chunks.
+    body = request.get_json(silent=True)
+    raw_limit = request.args.get("limit")
+    if isinstance(body, dict) and body.get("limit") not in (None, ""):
+        raw_limit = body.get("limit")
+    try:
+        limit = _pending_confirm_limit(raw_limit)
+    except ValueError:
+        return jsonify({"ok": False, "error": "limit must be an integer"}), 400
+
     now = int(time.time())
     confirmed_count = 0
     confirmed_ids = []
     errors = []
-    
+
     conn = sqlite3.connect(DB_PATH)
     try:
         c = conn.cursor()
         _ensure_transfer_ledger_table(c)
         balance_cols = _balance_columns(c)
-        
-        # Get all pending transfers ready for confirmation
+        before_stats = _pending_overdue_stats(c, now)
+
+        # Get a bounded batch of pending transfers ready for confirmation
         ready = c.execute("""
             SELECT id, from_miner, to_miner, amount_i64, reason, epoch, tx_hash
-            FROM pending_ledger 
+            FROM pending_ledger
             WHERE status = 'pending' AND confirms_at <= ?
             ORDER BY id ASC
-        """, (now,)).fetchall()
+            LIMIT ?
+        """, (now, limit)).fetchall()  # fetchall-ok: already-paginated
         
         for row in ready:
             pid, from_m, to_m, amount, reason, epoch, tx_hash = row
@@ -9152,22 +9216,28 @@ def confirm_pending():
                     pass
                 print(f"[ERROR] confirm_pending {pid}: {e!r}")
                 errors.append({"id": pid, "error": "internal_error"})
-        
+
+        after_stats = _pending_overdue_stats(c, now)
         conn.commit()
-        
+
         if confirmed_count > 0:
             send_sophiacheck_alert("info", f"Confirmed {confirmed_count} pending transfer(s)", {
                 "confirmed_ids": str(confirmed_ids[:10]),  # First 10
                 "errors": len(errors)
             })
-        
+
         return jsonify({
             "ok": True,
+            "limit": limit,
+            "selected_count": len(ready),
             "confirmed_count": confirmed_count,
             "confirmed_ids": confirmed_ids,
-            "errors": errors if errors else None
+            "errors": errors if errors else None,
+            "stale_pending_count_before": before_stats["stale_pending_count"],
+            "max_confirm_overdue_seconds_before": before_stats["max_confirm_overdue_seconds"],
+            **after_stats,
         })
-    
+
     finally:
         conn.close()
 
