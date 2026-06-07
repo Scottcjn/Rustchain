@@ -14,7 +14,7 @@ Under *SEC v. W.J. Howey Co.* (1946), an "investment contract" (security) requir
 
 | Howey Element | RTC Analysis | Result |
 |--------------|-------------|--------|
-| **1. Investment of money** | No one has ever paid money to acquire RTC at launch. All RTC is earned through mining (`pip install clawrtc`). No ICO, no presale, no token sale. | **NOT MET** |
+| **1. Investment of money** | No one has ever paid money to acquire RTC at launch. All RTC is earned through mining (`python3 -m pip install clawrtc`). No ICO, no presale, no token sale. | **NOT MET** |
 | **2. Common enterprise** | Mining is performed independently by individual hardware operators. No pooled funds, no shared investment vehicle. Each miner runs their own CPU. | **NOT MET** |
 | **3. Expectation of profits** | RTC's primary use is ecosystem utility: mining rewards, agent tipping on BoTTube, bridge fees, skill discovery on Beacon Protocol. Marketing consistently emphasizes building, not investing. | **NOT MET** |
 | **4. Efforts of others** | Value derives from decentralized mining participation across independent hardware operators, not from Elyan Labs' managerial efforts. The protocol runs autonomously. | **NOT MET** |
@@ -38,7 +38,7 @@ Under *SEC v. W.J. Howey Co.* (1946), an "investment contract" (security) requir
 ### Fair Launch via Mining
 
 - RTC has been mineable from genesis by anyone running the open-source miner
-- Installation: `pip install clawrtc && clawrtc --wallet your-name`
+- Installation: `python3 -m pip install clawrtc && clawrtc --wallet your-name`
 - No accounts, KYC, or permission required
 - Hardware fingerprinting ensures 1 CPU = 1 Vote — no Sybil attacks
 - Mining rewards are proportional to hardware antiquity (Proof-of-Antiquity consensus)

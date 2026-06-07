@@ -37,7 +37,7 @@ Press `Win+R`, type `cmd`, press Enter.
 ### Step 3: Install the RustChain Miner
 
 ```bash
-pip install clawrtc
+python3 -m pip install clawrtc
 ```
 
 This installs the official RustChain CLI miner.
@@ -205,10 +205,10 @@ Older CPUs sometimes don't report all CPUID flags. Run with `--skip-cpu-check`:
 clawrtc mine --wallet YOUR_WALLET_NAME --skip-cpu-check
 ```
 
-### "pip install clawrtc fails on old Python"
+### "python3 -m pip install clawrtc fails on old Python"
 If your old computer only supports Python 3.6-3.7:
 ```bash
-pip install clawrtc==0.9.2
+python3 -m pip install clawrtc==0.9.2
 ```
 
 ### "No network on old hardware"

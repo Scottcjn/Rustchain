@@ -388,7 +388,7 @@ Mọi đóng góp đều kiếm được token RTC. Xem [bounty đang mở](http
 | Major | 75-100 RTC | Sửa bảo mật, consensus |
 | Critical | 100-150 RTC | Lỗ hổng, nâng cấp protocol |
 
-**1 RTC khoảng $0,10 USD** · `pip install clawrtc` · [CONTRIBUTING.md](CONTRIBUTING.md)
+**1 RTC khoảng $0,10 USD** · `python3 -m pip install clawrtc` · [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ---
 
