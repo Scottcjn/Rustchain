@@ -16,7 +16,8 @@ def read_payload(path: str) -> Any:
     if path == "-":
         raw = sys.stdin.read()
     else:
-        raw = open(path, "r", encoding="utf-8").read()
+        with open(path, "r", encoding="utf-8") as f:
+            raw = f.read()
     return json.loads(raw)
 
 
