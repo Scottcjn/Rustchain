@@ -17,7 +17,6 @@ Endpoints:
 """
 
 import json
-import logging
 import sqlite3
 import time
 from decimal import Decimal, InvalidOperation
@@ -142,7 +141,7 @@ def _ensure_signed_float_preserves_nrtc(amount: Decimal, nrtc: int,
 # This MUST match the multiplier used in rustchain_v2_integrated_v2.2.1_rip200.py
 # (e.g. line 2370: amount_i64 = int(amount_decimal * Decimal(1000000))).
 ACCOUNT_UNIT = 1_000_000  # 1 RTC = 1,000,000 uRTC (6 decimals)
-LEGACY_SIGNATURE_CUTOFF_TS = 1782864000  # 2026-07-01T00:00:00Z
+UTXO_SIGNATURE_DOMAIN = "rustchain-utxo-transfer-v1"
 
 
 def _decimal_to_account_i64(amount: Decimal, field_name: str) -> int:
@@ -562,8 +561,11 @@ def utxo_transfer():
 
     # Reconstruct signed message.
     # FIX(#2202): Include fee in signed data to prevent MITM fee manipulation.
-    # Backward-compatible: try new format (with fee) first, fall back to legacy
-    # (without fee) with a deprecation warning. Remove fallback after 2026-07-01.
+    # UTXO transfers must be domain-separated from account-model
+    # /wallet/transfer/signed payloads. The account endpoint places accepted
+    # transfers into a delayed pending window, while this endpoint settles UTXO
+    # state immediately. Accepting the account-shaped message here lets a valid
+    # wallet signature be substituted onto the immediate-settlement path.
     #
     # FIX(#2867 M2 follow-up): the M2 fix parses amount as Decimal internally
     # for precision-safe int conversion, but Decimal isn't JSON-serializable.
@@ -572,9 +574,10 @@ def utxo_transfer():
     amount_for_sig = float(amount_rtc)
     fee_for_sig = float(fee_rtc)
     signature_verified = False
-    used_legacy_signature = False
+    legacy_wallet_signature_seen = False
     for nonce_for_sig in _nonce_signature_forms(data.get('nonce'), nonce_int):
         tx_data_v2 = {
+            'domain': UTXO_SIGNATURE_DOMAIN,
             'from': from_address,
             'to': to_address,
             'amount': amount_for_sig,
@@ -596,28 +599,16 @@ def utxo_transfer():
         }
         message_legacy = json.dumps(tx_data_legacy, sort_keys=True, separators=(',', ':')).encode()
         if _verify_sig_fn(public_key, message_legacy, signature):
-            signature_verified = True
-            used_legacy_signature = True
-            break
+            legacy_wallet_signature_seen = True
 
     if not signature_verified:
+        if legacy_wallet_signature_seen:
+            return jsonify({
+                'error': 'UTXO transfer signature must include UTXO domain',
+                'code': 'UTXO_SIGNATURE_DOMAIN_REQUIRED',
+                'domain': UTXO_SIGNATURE_DOMAIN,
+            }), 401
         return jsonify({'error': 'Invalid Ed25519 signature'}), 401
-    if used_legacy_signature:
-        if fee_nrtc != 0:
-            return jsonify({
-                'error': 'Legacy signature format cannot authorize nonzero fee',
-                'code': 'LEGACY_SIGNATURE_FEE_UNBOUND',
-            }), 401
-        if int(time.time()) >= LEGACY_SIGNATURE_CUTOFF_TS:
-            return jsonify({
-                'error': 'Legacy signature format expired. Upgrade client to sign fee_rtc.',
-                'code': 'LEGACY_SIGNATURE_EXPIRED',
-            }), 401
-        logging.warning(
-            "[UTXO/SIG] DEPRECATED: signature without fee accepted for %s... "
-            "Upgrade client to include fee in signed message.",
-            from_address[:20],
-        )
 
     # --- UTXO transaction ---------------------------------------------------
 

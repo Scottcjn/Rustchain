@@ -3,7 +3,6 @@ import sqlite3
 import sys
 import time
 from pathlib import Path
-from unittest.mock import patch
 
 from flask import Flask
 
@@ -11,17 +10,18 @@ from flask import Flask
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "node"))
 
-import utxo_endpoints
 from utxo_db import UtxoDB, UNIT
-from utxo_endpoints import register_utxo_blueprint
+from utxo_endpoints import UTXO_SIGNATURE_DOMAIN, register_utxo_blueprint
 
 
-def legacy_only_verify(pubkey_hex, message, sig_hex):
+def account_style_verify(pubkey_hex, message, sig_hex):
     return sig_hex == "legacy" and b'"fee":' not in message
 
 
-def v2_only_verify(pubkey_hex, message, sig_hex):
-    return sig_hex == "v2" and b'"fee":' in message
+def utxo_domain_verify(pubkey_hex, message, sig_hex):
+    if sig_hex != "v2" or b'"fee":' not in message:
+        return False
+    return f'"domain":"{UTXO_SIGNATURE_DOMAIN}"'.encode() in message
 
 
 def mock_addr_from_pk(pubkey_hex):
@@ -84,45 +84,32 @@ def transfer_payload(signature, fee_rtc=1.0):
     }
 
 
-def test_legacy_signature_is_accepted_before_cutoff(tmp_path):
-    client, utxo_db, _db_path = build_client(tmp_path, legacy_only_verify)
+def test_account_style_signature_is_rejected_on_utxo_endpoint(tmp_path):
+    client, utxo_db, _db_path = build_client(tmp_path, account_style_verify)
     seed_coinbase(utxo_db, "RTC_test_aabbccdd", 100 * UNIT)
-    with patch.object(utxo_endpoints.time, "time", return_value=1782863999):
-        response = client.post("/utxo/transfer", json=transfer_payload("legacy", fee_rtc=0.0))
-
-    assert response.status_code == 200
-    assert response.get_json()["ok"] is True
-
-
-def test_legacy_signature_cannot_authorize_nonzero_fee_before_cutoff(tmp_path):
-    client, utxo_db, _db_path = build_client(tmp_path, legacy_only_verify)
-    seed_coinbase(utxo_db, "RTC_test_aabbccdd", 100 * UNIT)
-    with patch.object(utxo_endpoints.time, "time", return_value=1782863999):
-        response = client.post("/utxo/transfer", json=transfer_payload("legacy", fee_rtc=1.0))
+    response = client.post("/utxo/transfer", json=transfer_payload("legacy", fee_rtc=0.0))
 
     assert response.status_code == 401
-    assert response.get_json()["code"] == "LEGACY_SIGNATURE_FEE_UNBOUND"
+    assert response.get_json()["code"] == "UTXO_SIGNATURE_DOMAIN_REQUIRED"
     assert utxo_db.get_balance("RTC_test_aabbccdd") == 100 * UNIT
     assert utxo_db.get_balance("bob") == 0
 
 
-def test_legacy_signature_is_rejected_after_cutoff(tmp_path):
-    client, utxo_db, _db_path = build_client(tmp_path, legacy_only_verify)
+def test_account_style_signature_with_fee_is_rejected_for_domain(tmp_path):
+    client, utxo_db, _db_path = build_client(tmp_path, account_style_verify)
     seed_coinbase(utxo_db, "RTC_test_aabbccdd", 100 * UNIT)
-    with patch.object(utxo_endpoints.time, "time", return_value=1782864000):
-        response = client.post("/utxo/transfer", json=transfer_payload("legacy", fee_rtc=0.0))
+    response = client.post("/utxo/transfer", json=transfer_payload("legacy", fee_rtc=1.0))
 
     assert response.status_code == 401
-    assert response.get_json()["code"] == "LEGACY_SIGNATURE_EXPIRED"
+    assert response.get_json()["code"] == "UTXO_SIGNATURE_DOMAIN_REQUIRED"
     assert utxo_db.get_balance("RTC_test_aabbccdd") == 100 * UNIT
     assert utxo_db.get_balance("bob") == 0
 
 
-def test_v2_signature_still_accepts_fee_after_cutoff(tmp_path):
-    client, utxo_db, _db_path = build_client(tmp_path, v2_only_verify)
+def test_utxo_domain_signature_still_accepts_fee(tmp_path):
+    client, utxo_db, _db_path = build_client(tmp_path, utxo_domain_verify)
     seed_coinbase(utxo_db, "RTC_test_aabbccdd", 100 * UNIT)
-    with patch.object(utxo_endpoints.time, "time", return_value=1782864000):
-        response = client.post("/utxo/transfer", json=transfer_payload("v2"))
+    response = client.post("/utxo/transfer", json=transfer_payload("v2"))
 
     assert response.status_code == 200
     assert response.get_json()["ok"] is True
