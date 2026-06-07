@@ -1,4 +1,11 @@
+from pathlib import Path
+
 from rustchainnode import cli
+
+
+def test_cli_defers_annotations_for_python39_compatibility():
+    source = Path(cli.__file__).read_text()
+    assert "from __future__ import annotations" in source
 
 
 def test_resolve_node_url_uses_persisted_testnet_default():
