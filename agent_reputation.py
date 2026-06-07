@@ -74,10 +74,9 @@ class ReputationEngine:
         if not os.path.exists(self.db_path):
             return []
         try:
-            conn = sqlite3.connect(self.db_path, timeout=5)
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(sql, params).fetchall()
-            conn.close()
+            with sqlite3.connect(self.db_path, timeout=5) as conn:
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute(sql, params).fetchall()
             return [dict(r) for r in rows]
         except Exception:
             return []
