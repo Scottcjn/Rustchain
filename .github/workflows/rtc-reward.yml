@@ -25,6 +25,11 @@ jobs:
       - name: Award RTC to contributor
         continue-on-error: true  # rewards are best-effort; never gate CI
         uses: Scottcjn/rustchain-bounties/actions/rtc-reward@main
+        env:
+          # The action reads GITHUB_TOKEN from env; without this it crashed on
+          # every merge ("Error: GITHUB_TOKEN not set") and paid no one, masked
+          # by continue-on-error. Pass the workflow token explicitly.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           node-url: https://50.28.86.131
           amount: 5
