@@ -6096,6 +6096,16 @@ def request_withdrawal():
         return jsonify({"error": "amount must be a finite positive number"}), 400
     if amount < 0:
         return jsonify({"error": "amount must be positive"}), 400
+    # Upper bound: no withdrawal can exceed total supply. Also keeps amount*ACCOUNT_UNIT
+    # well under 2**53 (so it's an exactly-representable double and round() can't
+    # overflow) — guards the precision check below against round(inf) / float error.
+    if amount > TOTAL_SUPPLY_RTC:
+        return jsonify({"error": "amount exceeds total supply"}), 400
+    # Amount must be expressible in whole micro-RTC (the ledger unit). Reject finer
+    # precision so the integer debit and the recorded withdrawal amount agree exactly
+    # (otherwise e.g. 1.00000049 would record more than it debits).
+    if abs(amount * ACCOUNT_UNIT - round(amount * ACCOUNT_UNIT)) > 1e-6:
+        return jsonify({"error": "amount precision exceeds micro-RTC (max 6 decimals)"}), 400
 
     if amount < MIN_WITHDRAWAL:
         return jsonify({"error": f"Minimum withdrawal is {MIN_WITHDRAWAL} RTC"}), 400
@@ -6121,14 +6131,20 @@ def request_withdrawal():
                     "used_at": nonce_row[0]
                 }, 400)
 
-            # Check balance
-            row = c.execute("SELECT balance_rtc FROM balances WHERE miner_pk = ?", (miner_pk,)).fetchone()
-            balance = row[0] if row else 0.0
-            total_needed = amount + WITHDRAWAL_FEE
+            # Check balance — schema-tolerant (amount_i64 micro-RTC canonical, legacy
+            # balance_rtc fallback) and compared in INTEGER micro-RTC to avoid float
+            # drift. The old direct `balance_rtc/miner_pk` read returned empty on the
+            # live miner_id schema, falsely rejecting every withdrawal (DoS).
+            balance_cols = _balance_columns(c)
+            amount_i64 = int(round(amount * ACCOUNT_UNIT))
+            fee_i64 = int(round(WITHDRAWAL_FEE * ACCOUNT_UNIT))
+            total_needed_i64 = amount_i64 + fee_i64
+            total_needed = total_needed_i64 / ACCOUNT_UNIT
+            balance_i64 = _balance_i64_for_wallet(c, miner_pk)
 
-            if balance < total_needed:
+            if balance_i64 < total_needed_i64:
                 withdrawal_failed.inc()
-                return rollback_json({"error": "Insufficient balance", "balance": balance}, 400)
+                return rollback_json({"error": "Insufficient balance", "balance": balance_i64 / ACCOUNT_UNIT}, 400)
 
             # Check daily limit
             today = datetime.now().strftime("%Y-%m-%d")
@@ -6180,30 +6196,18 @@ def request_withdrawal():
                 VALUES (?, ?, ?)
             """, (miner_pk, nonce, int(time.time())))
 
-            # Deduct balance only if the row still has enough funds inside this transaction.
-            debit = c.execute(
-                "UPDATE balances SET balance_rtc = balance_rtc - ? WHERE miner_pk = ? AND balance_rtc >= ?",
-                (total_needed, miner_pk, total_needed)
-            )
-            if debit.rowcount != 1:
+            # Atomic guarded debit — schema-tolerant, integer micro-RTC. Preserves
+            # the rowcount==1 anti-overdraw guard: only debits if funds remain inside
+            # this BEGIN IMMEDIATE transaction.
+            if _debit_wallet_atomic(c, miner_pk, total_needed_i64, balance_cols) != 1:
                 withdrawal_failed.inc()
-                latest = c.execute(
-                    "SELECT balance_rtc FROM balances WHERE miner_pk = ?",
-                    (miner_pk,)
-                ).fetchone()
-                latest_balance = latest[0] if latest else 0.0
+                latest_balance = _balance_i64_for_wallet(c, miner_pk) / ACCOUNT_UNIT
                 return rollback_json({"error": "Insufficient balance", "balance": latest_balance}, 400)
 
-            # RIP-301: Route fee to mining pool (founder_community) instead of burning
+            # RIP-301: Route fee to mining pool (founder_community) instead of burning.
+            # Schema-tolerant credit (ensures row + dual-writes balance_rtc when present).
             fee_urtc = int(WITHDRAWAL_FEE * UNIT)
-            fee_rtc = WITHDRAWAL_FEE
-            # Ensure founder_community row exists before crediting
-            c.execute("INSERT OR IGNORE INTO balances (miner_pk, balance_rtc) VALUES (?, 0)",
-                      ("founder_community",))
-            c.execute(
-                "UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk = ?",
-                (fee_rtc, "founder_community")
-            )
+            _apply_wallet_balance_delta(c, "founder_community", fee_i64, balance_cols)
             c.execute(
                 """INSERT INTO fee_events (source, source_id, miner_pk, fee_rtc, fee_urtc, destination, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?)""",
@@ -6275,11 +6279,10 @@ def api_fee_pool():
                 "fee_rtc": ev[3], "destination": ev[4], "timestamp": ev[5]
             })
 
-        # Community fund balance (where fees go)
-        fund_row = c.execute(
-            "SELECT COALESCE(balance_rtc, 0) FROM balances WHERE miner_pk = 'founder_community'"
-        ).fetchone()
-        fund_balance = fund_row[0] if fund_row else 0.0
+        # Community fund balance (where fees go) — schema-tolerant read so it
+        # reflects the credit (the fee now routes through _apply_wallet_balance_delta,
+        # which writes amount_i64 on the live schema, not just legacy balance_rtc).
+        fund_balance = _balance_i64_for_wallet(c, "founder_community") / ACCOUNT_UNIT
 
     return jsonify({
         "rip": 301,
@@ -6355,9 +6358,9 @@ def withdrawal_history(miner_pk):
                 "tx_hash": row[7]
             })
 
-        # Get balance
-        balance_row = c.execute("SELECT balance_rtc FROM balances WHERE miner_pk = ?", (miner_pk,)).fetchone()
-        balance = balance_row[0] if balance_row else 0.0
+        # Get balance — schema-tolerant (was a hardcoded balance_rtc/miner_pk read
+        # that returned empty on the live miner_id schema).
+        balance = _balance_i64_for_wallet(c, miner_pk) / ACCOUNT_UNIT
 
         return jsonify({
             "miner_pk": miner_pk,
@@ -10132,6 +10135,52 @@ def _apply_wallet_balance_delta(
         return
 
     raise RuntimeError("unsupported balances schema for wallet transfer")
+
+
+def _debit_wallet_atomic(c: sqlite3.Cursor, wallet_id: str, amount_i64: int, balance_cols: set) -> int:
+    """Atomically debit ``amount_i64`` micro-RTC iff the wallet holds at least that
+    much; schema-tolerant. Returns the UPDATE rowcount (1 = debited, 0 = insufficient).
+
+    Preserves the anti-overdraw guard (no negative balance) across the known
+    schemas, and does the authoritative comparison in INTEGER micro-RTC — never in
+    float — so rounding cannot permit a 1-uRTC overdraw or wrongly reject a valid
+    withdrawal. Must be called inside the caller's BEGIN IMMEDIATE transaction.
+    """
+    if {"miner_id", "amount_i64"}.issubset(balance_cols):
+        if "balance_rtc" in balance_cols:
+            cur = c.execute(
+                "UPDATE balances SET amount_i64 = amount_i64 - ?, "
+                "balance_rtc = (amount_i64 - ?) / 1000000.0 "
+                "WHERE miner_id = ? AND amount_i64 >= ?",
+                (amount_i64, amount_i64, wallet_id, amount_i64),
+            )
+        else:
+            cur = c.execute(
+                "UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ? AND amount_i64 >= ?",
+                (amount_i64, wallet_id, amount_i64),
+            )
+        return cur.rowcount
+
+    # Legacy float (balance_rtc) schemas: guard with the exact float comparison
+    # `balance_rtc >= delta_rtc`. This NEVER overdraws (balance - delta >= 0). A
+    # rounding guard (CAST(ROUND(balance_rtc*1e6)) >= amount_i64) would round a
+    # sub-micro shortfall UP and debit negative; rejecting a genuine sub-micro
+    # shortfall here is correct, not spurious. The canonical amount_i64 schema above
+    # is integer-exact and has no such dust.
+    delta_rtc = amount_i64 / ACCOUNT_UNIT
+    if {"miner_pk", "balance_rtc"}.issubset(balance_cols):
+        cur = c.execute(
+            "UPDATE balances SET balance_rtc = balance_rtc - ? WHERE miner_pk = ? AND balance_rtc >= ?",
+            (delta_rtc, wallet_id, delta_rtc),
+        )
+        return cur.rowcount
+    if {"miner_id", "balance_rtc"}.issubset(balance_cols):
+        cur = c.execute(
+            "UPDATE balances SET balance_rtc = balance_rtc - ? WHERE miner_id = ? AND balance_rtc >= ?",
+            (delta_rtc, wallet_id, delta_rtc),
+        )
+        return cur.rowcount
+    raise RuntimeError("unsupported balances schema for withdrawal debit")
 
 
 
