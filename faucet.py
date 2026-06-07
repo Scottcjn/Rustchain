@@ -29,19 +29,18 @@ RATE_LIMIT_HOURS = 24
 
 def init_db():
     """Initialize the SQLite database."""
-    conn = sqlite3.connect(DATABASE)
-    c = conn.cursor()
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS drip_requests (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            wallet TEXT NOT NULL,
-            ip_address TEXT NOT NULL,
-            amount REAL NOT NULL,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    conn.commit()
-    conn.close()
+    with sqlite3.connect(DATABASE) as conn:
+        c = conn.cursor()
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS drip_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                wallet TEXT NOT NULL,
+                ip_address TEXT NOT NULL,
+                amount REAL NOT NULL,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        conn.commit()
 
 
 def get_client_ip():
@@ -53,26 +52,25 @@ def get_client_ip():
     return remote
 def get_last_drip_time(identifier, is_wallet=False):
     """Get the last time this IP or wallet requested a drip."""
-    conn = sqlite3.connect(DATABASE)
-    c = conn.cursor()
-    
-    if is_wallet:
-        c.execute('''
-            SELECT timestamp FROM drip_requests
-            WHERE wallet = ?
-            ORDER BY timestamp DESC
-            LIMIT 1
-        ''', (identifier,))
-    else:
-        c.execute('''
-            SELECT timestamp FROM drip_requests
-            WHERE ip_address = ?
-            ORDER BY timestamp DESC
-            LIMIT 1
-        ''', (identifier,))
+    with sqlite3.connect(DATABASE) as conn:
+        c = conn.cursor()
         
-    result = c.fetchone()
-    conn.close()
+        if is_wallet:
+            c.execute('''
+                SELECT timestamp FROM drip_requests
+                WHERE wallet = ?
+                ORDER BY timestamp DESC
+                LIMIT 1
+            ''', (identifier,))
+        else:
+            c.execute('''
+                SELECT timestamp FROM drip_requests
+                WHERE ip_address = ?
+                ORDER BY timestamp DESC
+                LIMIT 1
+            ''', (identifier,))
+            
+        result = c.fetchone()
     return result[0] if result else None
 
 
@@ -114,14 +112,13 @@ def get_next_available(identifier, is_wallet=False):
 
 def record_drip(wallet, ip_address, amount):
     """Record a drip request to the database."""
-    conn = sqlite3.connect(DATABASE)
-    c = conn.cursor()
-    c.execute('''
-        INSERT INTO drip_requests (wallet, ip_address, amount)
-        VALUES (?, ?, ?)
-    ''', (wallet, ip_address, amount))
-    conn.commit()
-    conn.close()
+    with sqlite3.connect(DATABASE) as conn:
+        c = conn.cursor()
+        c.execute('''
+            INSERT INTO drip_requests (wallet, ip_address, amount)
+            VALUES (?, ?, ?)
+        ''', (wallet, ip_address, amount))
+        conn.commit()
 
 
 def try_record_drip(wallet, ip_address, amount):
