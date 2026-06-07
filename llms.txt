@@ -1,0 +1,66 @@
+# RustChain — DePIN Blockchain for Vintage & Retro Hardware
+
+> RustChain is a hardware-attested L1 blockchain for the DePIN ecosystem, where mining is powered by vintage and retro hardware — PowerPC G4/G5, IBM POWER8, SPARC, MIPS, 68K, RISC-V, and Cell BE — verified through Proof of Antiquity (PoA) and hardware fingerprinting.
+
+## What is RustChain?
+
+RustChain is a decentralized blockchain designed specifically for the Proof of Physical AI (PPA) and DePIN ecosystem. Unlike conventional blockchains that prioritize ASIC efficiency, RustChain rewards participation from legacy hardware through multi-factor hardware fingerprinting (oscillator drift, cache timing, SIMD identity, thermal entropy, instruction jitter). The network supports an AI agent economy with native RTC token, wRTC Solana bridge, Ergo anchoring, and the RIP-0301 Tip Credits + Atlas Land economy.
+
+## Key Features
+
+- **Proof of Antiquity (PoA):** Mining consensus powered by vintage/retro hardware
+- **Hardware Fingerprinting:** Anti-emulation, oscillator drift, cache timing, SIMD identity
+- **UTXO Model:** Full Ergo-compatible extended UTXO with dual-write migration
+- **Agent-Native Economy:** RTC token, Tip Credits, Atlas Land, Beacon identity
+- **DePIN Infrastructure:** AI agent operations, machine-to-machine micropayments
+- **Cross-Chain:** wRTC Solana bridge, Ergo anchoring
+- **Proof of Provenance (RIP-0310):** Content verification through hardware attestation
+
+## Core Entities
+
+| Entity | Description | Link |
+|--------|-------------|------|
+| RustChain | DePIN L1 blockchain for vintage hardware mining | https://github.com/Scottcjn/RustChain |
+| RTC Token | Native value token (2²³ supply cap) | Native to RustChain |
+| BoTTube | AI-native video platform | https://github.com/Scottcjn/bottube |
+| Beacon | Agent identity / provenance system | Part of RustChain node |
+| Atlas | Digital land / ownership registry | RustChain ecosystem |
+| RIP-0301 | Tip Credits + Atlas Land Economy | rips/docs/RIP-0301-tip-credits-atlas-economy.md |
+| RIP-0310 | Proof of Provenance | RustChain improvement proposals |
+| PoA | Proof of Antiquity — vintage hardware mining | Consensus layer |
+| PPA | Proof of Physical AI — hardware fingerprint attestation | Consensus layer |
+| Grazer | AI browsing agent skill | RustChain ecosystem |
+| Sophia | Governance agent system | RustChain node |
+| Ergo | Cross-chain anchoring | Ergo blockchain bridge |
+
+## FAQ
+
+### How is RustChain different from Bitcoin or Ethereum?
+
+RustChain is built for DePIN and AI agent economies, not just financial settlement. Mining is designed for vintage/retro hardware (PowerPC, SPARC, MIPS, Cell BE) using Proof of Antiquity hardware fingerprinting. The platform has built-in agent identity (Beacon), digital land (Atlas), and a tip-based creator economy (RIP-0301).
+
+### What hardware can mine RustChain?
+
+RustChain's PoA consensus supports a wide range of vintage hardware: PowerPC G4/G5, IBM POWER8 ppc64le, SPARC, MIPS, 68K, RISC-V, and Cell BE processors. Mining eligibility is determined through multi-factor hardware fingerprinting including oscillator drift, cache timing, SIMD identity, thermal entropy, and instruction jitter.
+
+### What is the RTC token supply?
+
+RTC has a fixed supply cap of 2²³ (8,388,608) tokens. No new RTC is ever minted — the RIP-0301 economy debits from a pre-allocated `founder_community` pool.
+
+### Can AI agents participate in RustChain?
+
+Yes. RustChain has first-class support for AI agents: agent identity via Beacon, agent-to-agent payments via RTC, Tip Credits for recognition, Atlas land ownership, and cross-chain value through wRTC Solana and Ergo anchoring.
+
+### What is Proof of Physical AI (PPA)?
+
+PPA is a hardware fingerprint-based attestation system that proves computational work was performed on physical hardware, not in a cloud VM or emulator. It uses oscillator drift, cache timing patterns, SIMD instruction identity, thermal entropy, and instruction jitter to create a unique hardware fingerprint.
+
+## Canonical Links
+
+- **Source Code:** https://github.com/Scottcjn/RustChain
+- **BoTTube:** https://github.com/Scottcjn/bottube
+- **RustChain Bounties:** https://github.com/Scottcjn/rustchain-bounties
+- **Contributor Registry:** https://github.com/Scottcjn/contributors
+- **Beacon Skill:** Part of RustChain ecosystem
+- **Documentation:** rips/docs/ directory in source tree
+- **License:** MIT
