@@ -1853,6 +1853,18 @@ def init_db():
             logging.error(f"[migrate] miner_header_keys composite migration FAILED: {_mhk_err!r}")
             raise
 
+        # RIP-PoA header-key bootstrap allowlist (T1.1 fix). Under strict mode the
+        # FIRST header key for a NAMED/legacy identity (not pubkey-derived) may only
+        # be bootstrapped from a pubkey pre-approved here via the admin-gated
+        # /miner/headerkey — closing the trust-on-first-use race where any
+        # self-signed attestation could grab a never-keyed identity's first key.
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS miner_header_bootstrap(
+                miner_id TEXT NOT NULL,
+                pubkey_hex TEXT NOT NULL,
+                PRIMARY KEY (miner_id, pubkey_hex)
+            )
+        """)
         c.execute("""
             CREATE TABLE IF NOT EXISTS schema_version(
                 version INTEGER PRIMARY KEY,
@@ -1863,6 +1875,13 @@ def init_db():
         # Insert default values
         c.execute("INSERT OR IGNORE INTO schema_version(version, applied_at) VALUES(17, ?)",
                   (int(time.time()),))
+        # NOTE: the bootstrap allowlist is intentionally NOT auto-populated from
+        # miner_header_keys. An audit found that table heavily polluted (hundreds of
+        # thousands of alias-strings mapping to a few hundred real keys), so a blanket
+        # grandfather would bless that pollution into the trust anchor. Operators seed
+        # the actual producers deliberately — admin POST /miner/headerkey, or the
+        # tools/seed_header_bootstrap.py helper — BEFORE enabling
+        # RC_HEADER_KEY_STRICT_BOOTSTRAP.
         c.execute("INSERT OR IGNORE INTO gov_threshold(id, threshold) VALUES(1, 3)")
         c.execute("INSERT OR IGNORE INTO checkpoints_meta(k, v) VALUES('chain_id', 'rustchain-mainnet-candidate')")
         # BCOS v2: Blockchain Certified Open Source attestations
@@ -4510,11 +4529,7 @@ def _submit_attestation_impl():
                 # a compatibility alias, but always register the canonical
                 # chain identity too.
                 for header_miner_id in dict.fromkeys((miner, miner_id)):
-                    enroll_conn.execute(
-                        "INSERT OR REPLACE INTO miner_header_keys (miner_id, pubkey_hex) VALUES (?, ?)",
-                        (header_miner_id, header_pubkey)
-                    )
-                    _prune_header_keys(enroll_conn, header_miner_id)
+                    _register_header_key(enroll_conn, header_miner_id, header_pubkey)
             enroll_conn.commit()
 
         # Issue #19 temporal consistency only sets a review flag (no hard-fail).
@@ -4833,11 +4848,7 @@ def enroll_epoch():
         header_pubkey = _valid_ed25519_pubkey_hex(pubkey_hex) or _valid_ed25519_pubkey_hex(miner_pk)
         if header_pubkey:
             for header_miner_id in dict.fromkeys((miner_pk, miner_id)):
-                c.execute(
-                    "INSERT OR REPLACE INTO miner_header_keys (miner_id, pubkey_hex) VALUES (?, ?)",
-                    (header_miner_id, header_pubkey)
-                )
-                _prune_header_keys(c, header_miner_id)
+                _register_header_key(c, header_miner_id, header_pubkey)
 
     app.logger.info(
         f"[RIP-309] epoch={epoch} miner={miner_pk[:20]}... nonce={rotation_eval['measurement_nonce'][:16]} "
@@ -4953,6 +4964,88 @@ def _header_keys_max_per_identity():
     return val if val >= 1 else 8
 
 
+def _header_key_strict_bootstrap():
+    """Strict header-key bootstrap (T1.1 fix). When on, a NAMED/legacy identity's
+    FIRST header key must be pre-approved in ``miner_header_bootstrap`` (seeded via
+    the admin-gated /miner/headerkey), closing the trust-on-first-use race where any
+    self-signed attestation could grab a never-keyed identity's first key.
+
+    Default OFF for one release so the fleet migrates without a flag-day; flip on
+    (RC_HEADER_KEY_STRICT_BOOTSTRAP=1) once current producers are seeded."""
+    return (os.environ.get("RC_HEADER_KEY_STRICT_BOOTSTRAP", "0").strip().lower()
+            in ("1", "true", "yes", "on"))
+
+
+def _in_bootstrap_allowlist(conn, identity, pubkey):
+    """True if (identity, pubkey) was pre-approved for first-key bootstrap."""
+    try:
+        return conn.execute(
+            "SELECT 1 FROM miner_header_bootstrap WHERE miner_id=? AND pubkey_hex=?",
+            (identity, pubkey),
+        ).fetchone() is not None
+    except Exception as exc:
+        # Fail closed, but surface infra errors (missing table / locked DB) so a
+        # blanket strict-mode denial is not mistaken for a clean auth decision.
+        logging.warning(f"[header-key] bootstrap allowlist lookup failed for {str(identity)[:24]!r}: {exc!r}")
+        return False
+
+
+def _header_key_authorized(conn, identity, pubkey):
+    """Authorize registering ``pubkey`` as a block-header key for ``identity``.
+
+    SECURITY (header-key takeover): ``miner_header_keys`` is the trust anchor for
+    block-header verification — a header is accepted if signed by ANY registered
+    key for the identity. The enroll path's inputs are caller-controlled: an
+    attestation's Ed25519 signature only proves the holder of ``pubkey`` signed
+    ``miner_id|miner|nonce|commitment``; it does NOT prove ``pubkey`` is authorized
+    for the named identity (there is no ``address_from_pubkey(pubkey) == identity``
+    check upstream, the challenge nonce is not miner-bound, and unsigned
+    attestations are accepted). Without this guard a third party can attest as
+    another wallet with their own key and ADD their key to that wallet's valid-key
+    set -> block-header forgery for an identity they do not control.
+
+    Authorization rules:
+      * Self-authenticating identity — the RTC address derives from the pubkey
+        (``address_from_pubkey(pubkey) == identity``) or the identity *is* the raw
+        pubkey: always allowed (only the rightful holder can present a matching key,
+        and key rotation/multi-device for that holder still works).
+      * Named/legacy identity (not derivable from any key, e.g. ``power8-s824-sophia``):
+        first-key BOOTSTRAP is gated by ``_header_key_strict_bootstrap()`` — under
+        strict mode the key must be pre-approved in ``miner_header_bootstrap``
+        (admin-seeded), closing the T1.1 trust-on-first-use takeover race; under the
+        staged-rollout default it keeps legacy first-write-wins. Re-registering an
+        already-registered (identity, pubkey) pair is always idempotent; an attacker
+        can never ADD a new key to an already-established identity.
+    """
+    if not pubkey:
+        return False
+    try:
+        if identity == pubkey or address_from_pubkey(pubkey) == identity:
+            return True
+    except Exception:
+        # Malformed pubkey hex -> not self-authenticating; fall through.
+        pass
+    existing = conn.execute(
+        "SELECT pubkey_hex FROM miner_header_keys WHERE miner_id=?", (identity,)
+    ).fetchall()  # fetchall-ok: bounded by _prune_header_keys cap
+    if not existing:
+        # Bootstrap the first key for a named identity. Open TOFU here is the
+        # residual T1.1 takeover race (a self-signed attestation grabbing a
+        # never-keyed identity's first key). Under strict mode the first key must
+        # be pre-approved via the admin-gated bootstrap allowlist; otherwise
+        # (staged-rollout default) keep legacy first-write-wins.
+        if not _header_key_strict_bootstrap():
+            return True
+        return _in_bootstrap_allowlist(conn, identity, pubkey)
+    # Existing keys present: allow an idempotent re-register, OR an admin
+    # pre-approved ADDITIONAL key (multi-device / rotation for a named identity,
+    # seeded via the admin-gated /miner/headerkey). An attacker cannot reach the
+    # allowlist, so allowing allowlisted adds does not reopen the takeover.
+    if any(row[0] == pubkey for row in existing):
+        return True
+    return _in_bootstrap_allowlist(conn, identity, pubkey)
+
+
 def _prune_header_keys(conn, miner_id):
     """Keep only the most-recently-registered keys for an identity (evict oldest by
     rowid). Bounds verify-any cost and storage, and means a rotated key eventually
@@ -4971,6 +5064,37 @@ def _prune_header_keys(conn, miner_id):
         "(SELECT rowid FROM miner_header_keys WHERE miner_id=? ORDER BY rowid DESC LIMIT ?)",
         (miner_id, miner_id, _header_keys_max_per_identity())
     )
+
+
+def _register_header_key(conn, identity, pubkey):
+    """Authorize + register a block-header key for ``identity``; return True if
+    registered. Single code path for both enroll sites so they cannot drift into
+    asymmetric per-alias state.
+
+    It deliberately does NOT seed the bootstrap allowlist: the allowlist is
+    admin-managed only (via the RC_ADMIN_KEY-gated /miner/headerkey or the
+    tools/seed_header_bootstrap.py helper). Auto-allowlisting every accepted
+    attestation would persist trust-on-first-use keys — including any claimed
+    during the strict-off rollout window — into strict mode, which is exactly the
+    takeover this guard exists to prevent. The deploy procedure is:
+    run default-off, admin-seed the real named producers via /miner/headerkey,
+    then enable RC_HEADER_KEY_STRICT_BOOTSTRAP. A rejected registration is
+    non-fatal (the miner still attests/mines) and is logged so ops can see
+    header-key setup was skipped."""
+    if not pubkey:
+        return False
+    if not _header_key_authorized(conn, identity, pubkey):
+        logging.info(
+            "[header-key] skipped unauthorized registration: identity=%r pubkey=%s... "
+            "(strict_bootstrap=%s)" % (str(identity)[:32], str(pubkey)[:12], _header_key_strict_bootstrap())
+        )
+        return False
+    conn.execute(
+        "INSERT OR REPLACE INTO miner_header_keys (miner_id, pubkey_hex) VALUES (?, ?)",
+        (identity, pubkey),
+    )
+    _prune_header_keys(conn, identity)
+    return True
 
 
 @app.route('/miner/headerkey', methods=['POST'])
@@ -5001,11 +5125,31 @@ def miner_set_header_key():
         pubkey_bytes = b""
     if not miner_id or len(pubkey_bytes) != 32:
         return jsonify({"ok":False,"error":"invalid miner_id or pubkey_hex"}), 400
+    # action=revoke retires a key: removes it from BOTH the trust anchor and the
+    # bootstrap allowlist (without this, an allowlisted key could re-bootstrap
+    # indefinitely after pruning — pruning is a cap, not a retirement mechanism).
+    action = body.get("action") or "register"
+    if isinstance(action, str):
+        action = action.strip().lower()
+    if action not in ("register", "revoke"):
+        # Reject unknown actions rather than defaulting to register — a typo'd
+        # "revoke" must NOT silently add/approve a key.
+        return jsonify({"ok": False, "error": "invalid action (expected 'register' or 'revoke')"}), 400
+    if action == "revoke":
+        with sqlite3.connect(DB_PATH) as db:
+            db.execute("DELETE FROM miner_header_keys WHERE miner_id=? AND pubkey_hex=?", (miner_id, pubkey_hex))
+            db.execute("DELETE FROM miner_header_bootstrap WHERE miner_id=? AND pubkey_hex=?", (miner_id, pubkey_hex))
+            db.commit()
+        return jsonify({"ok":True,"revoked":True,"miner_id":miner_id,"pubkey_hex":pubkey_hex})
+
     with sqlite3.connect(DB_PATH) as db:
         # Composite (miner_id, pubkey_hex) PK: registering a key ADDS it for the
         # identity (multi-device-per-wallet) rather than overwriting the existing one.
         # Re-registering the same pair is idempotent.
         db.execute("INSERT INTO miner_header_keys(miner_id,pubkey_hex) VALUES(?,?) ON CONFLICT(miner_id, pubkey_hex) DO NOTHING", (miner_id, pubkey_hex))
+        # Admin registration also pre-approves this key for strict-mode first-key
+        # bootstrap (T1.1), so the identity's own attestation then matches.
+        db.execute("INSERT OR IGNORE INTO miner_header_bootstrap(miner_id,pubkey_hex) VALUES(?,?)", (miner_id, pubkey_hex))
         _prune_header_keys(db, miner_id)
         db.commit()
     return jsonify({"ok":True,"miner_id":miner_id,"pubkey_hex":pubkey_hex})
