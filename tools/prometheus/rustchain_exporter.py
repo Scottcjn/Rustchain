@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """RustChain Prometheus exporter."""
 
+from __future__ import annotations
+
 import logging
 import os
 import time
