@@ -7,6 +7,8 @@ Includes Zephyr (RandomX) dual-mining integration.
 See: https://github.com/Scottcjn/rustchain-bounties/issues/461
 """
 
+from __future__ import annotations
+
 import os
 import sys
 import time
