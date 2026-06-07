@@ -182,6 +182,36 @@ class HeaderKeyAuthorizationTest(unittest.TestCase):
         self.assertIsNone(self.conn.execute(
             "SELECT 1 FROM miner_header_keys WHERE miner_id=?", (ident,)).fetchone())
 
+    def test_revoke_removes_from_allowlist(self):
+        """Admin revoke (delete from both tables) retires a key so it can no longer
+        re-bootstrap — pruning alone cannot retire an allowlisted key."""
+        ident = "power8-s824-sophia"
+        self._allow(ident, VICTIM_PK)
+        self._strict(True)
+        self.assertTrue(self._auth(ident, VICTIM_PK))      # allowlisted -> bootstrap ok
+        # what the admin /miner/headerkey action=revoke does:
+        self.conn.execute("DELETE FROM miner_header_keys WHERE miner_id=? AND pubkey_hex=?", (ident, VICTIM_PK))
+        self.conn.execute("DELETE FROM miner_header_bootstrap WHERE miner_id=? AND pubkey_hex=?", (ident, VICTIM_PK))
+        self.assertFalse(self._auth(ident, VICTIM_PK))     # revoked -> denied
+
+    def test_backfill_is_one_time_not_every_startup(self):
+        """Round-3 fix: the bootstrap backfill must NOT re-absorb keys on restart,
+        or rollout-window TOFU keys would be silently allowlisted into strict mode."""
+        dbp = self.mod.DB_PATH
+        self.mod.init_db()       # first startup: applies schema v18 + one-time backfill
+        c = sqlite3.connect(dbp)
+        try:
+            # a TOFU key registered during the strict-off rollout window (after upgrade)
+            c.execute("INSERT OR IGNORE INTO miner_header_keys (miner_id, pubkey_hex) VALUES (?,?)",
+                      ("tofu-rollout-id", VICTIM_PK))
+            c.commit()
+            self.mod.init_db()   # a SUBSEQUENT startup must not re-absorb it
+            row = c.execute("SELECT 1 FROM miner_header_bootstrap WHERE miner_id=? AND pubkey_hex=?",
+                            ("tofu-rollout-id", VICTIM_PK)).fetchone()
+            self.assertIsNone(row, "one-time backfill must not re-absorb rollout-window TOFU keys")
+        finally:
+            c.close()
+
     # --- misc --------------------------------------------------------------
     def test_empty_pubkey_rejected(self):
         self.assertFalse(self._auth(_addr(VICTIM_PK), ""))

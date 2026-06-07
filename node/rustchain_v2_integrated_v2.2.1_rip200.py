@@ -1849,11 +1849,6 @@ def init_db():
                 PRIMARY KEY (miner_id, pubkey_hex)
             )
         """)
-        # Grandfather already-trusted keys so enabling strict mode never locks out
-        # an identity whose keys later age out and need re-bootstrap.
-        c.execute("INSERT OR IGNORE INTO miner_header_bootstrap (miner_id, pubkey_hex) "
-                  "SELECT miner_id, pubkey_hex FROM miner_header_keys")
-
         c.execute("""
             CREATE TABLE IF NOT EXISTS schema_version(
                 version INTEGER PRIMARY KEY,
@@ -1864,6 +1859,16 @@ def init_db():
         # Insert default values
         c.execute("INSERT OR IGNORE INTO schema_version(version, applied_at) VALUES(17, ?)",
                   (int(time.time()),))
+        # ONE-TIME (schema v18) backfill: grandfather header keys that existed at
+        # upgrade into the bootstrap allowlist, so enabling strict mode does not
+        # lock out already-trusted producers. Guarded to run EXACTLY ONCE — an
+        # every-startup backfill would keep re-absorbing rollout-window TOFU keys
+        # from miner_header_keys into the allowlist, silently defeating strict mode.
+        if not c.execute("SELECT 1 FROM schema_version WHERE version=18").fetchone():
+            c.execute("INSERT OR IGNORE INTO miner_header_bootstrap (miner_id, pubkey_hex) "
+                      "SELECT miner_id, pubkey_hex FROM miner_header_keys")
+            c.execute("INSERT OR IGNORE INTO schema_version(version, applied_at) VALUES(18, ?)",
+                      (int(time.time()),))
         c.execute("INSERT OR IGNORE INTO gov_threshold(id, threshold) VALUES(1, 3)")
         c.execute("INSERT OR IGNORE INTO checkpoints_meta(k, v) VALUES('chain_id', 'rustchain-mainnet-candidate')")
         # BCOS v2: Blockchain Certified Open Source attestations
@@ -5107,6 +5112,19 @@ def miner_set_header_key():
         pubkey_bytes = b""
     if not miner_id or len(pubkey_bytes) != 32:
         return jsonify({"ok":False,"error":"invalid miner_id or pubkey_hex"}), 400
+    # action=revoke retires a key: removes it from BOTH the trust anchor and the
+    # bootstrap allowlist (without this, an allowlisted key could re-bootstrap
+    # indefinitely after pruning — pruning is a cap, not a retirement mechanism).
+    action = body.get("action") or "register"
+    if isinstance(action, str):
+        action = action.strip().lower()
+    if action == "revoke":
+        with sqlite3.connect(DB_PATH) as db:
+            db.execute("DELETE FROM miner_header_keys WHERE miner_id=? AND pubkey_hex=?", (miner_id, pubkey_hex))
+            db.execute("DELETE FROM miner_header_bootstrap WHERE miner_id=? AND pubkey_hex=?", (miner_id, pubkey_hex))
+            db.commit()
+        return jsonify({"ok":True,"revoked":True,"miner_id":miner_id,"pubkey_hex":pubkey_hex})
+
     with sqlite3.connect(DB_PATH) as db:
         # Composite (miner_id, pubkey_hex) PK: registering a key ADDS it for the
         # identity (multi-device-per-wallet) rather than overwriting the existing one.
