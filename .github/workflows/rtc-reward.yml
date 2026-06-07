@@ -31,7 +31,7 @@ jobs:
           # by continue-on-error. Pass the workflow token explicitly.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          node-url: https://50.28.86.131
+          node-url: https://rustchain.org
           amount: 5
           wallet-from: founder_community
           admin-key: ${{ secrets.RTC_ADMIN_KEY }}
