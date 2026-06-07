@@ -146,21 +146,23 @@ class HeaderKeyAuthorizationTest(unittest.TestCase):
         self.assertTrue(self._auth(VICTIM_PK, VICTIM_PK))
 
     # --- _register_header_key: grandfather + multi-device (iteration 2) -----
-    def test_register_header_key_seeds_allowlist_and_grandfathers(self):
-        """A key registered via _register_header_key is grandfathered: it can
-        re-bootstrap under strict even after its miner_header_keys row ages out."""
+    def test_register_header_key_does_not_autoseed_bootstrap(self):
+        """_register_header_key must NOT auto-allowlist. Persisting trust-on-first-use
+        keys into strict mode is the takeover this guard prevents; the allowlist is
+        admin-only (+ one-time migration backfill). It writes keys, not bootstrap."""
         self._strict(False)
         ident = "g5-powerbook-130"
         self.assertTrue(self.mod._register_header_key(self.conn, ident, VICTIM_PK))
         self.assertIsNotNone(self.conn.execute(
             "SELECT 1 FROM miner_header_keys WHERE miner_id=? AND pubkey_hex=?", (ident, VICTIM_PK)).fetchone())
-        self.assertIsNotNone(self.conn.execute(
+        self.assertIsNone(self.conn.execute(  # NOT auto-allowlisted
             "SELECT 1 FROM miner_header_bootstrap WHERE miner_id=? AND pubkey_hex=?", (ident, VICTIM_PK)).fetchone())
-        # key ages out (pruned to zero); strict on -> re-bootstrap must still work
+        # under strict, after the key prunes, re-bootstrap requires an ADMIN seed
         self.conn.execute("DELETE FROM miner_header_keys WHERE miner_id=?", (ident,))
         self._strict(True)
-        self.assertTrue(self._auth(ident, VICTIM_PK))      # grandfathered, no lockout
-        self.assertFalse(self._auth(ident, ATTACKER_PK))   # attacker still rejected
+        self.assertFalse(self._auth(ident, VICTIM_PK))     # not seeded -> denied (correct: TOFU untrusted)
+        self._allow(ident, VICTIM_PK)                      # admin seeds the real producer
+        self.assertTrue(self._auth(ident, VICTIM_PK))      # now allowed
 
     def test_allowlisted_multidevice_add_to_named_identity(self):
         """Admin-allowlisted additional key can be added to a named identity that

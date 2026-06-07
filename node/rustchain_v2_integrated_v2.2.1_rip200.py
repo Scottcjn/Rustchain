@@ -5051,12 +5051,18 @@ def _prune_header_keys(conn, miner_id):
 def _register_header_key(conn, identity, pubkey):
     """Authorize + register a block-header key for ``identity``; return True if
     registered. Single code path for both enroll sites so they cannot drift into
-    asymmetric per-alias state. On success the key is ALSO persisted into the
-    bootstrap allowlist, grandfathering it so a key that legitimately registered
-    once can re-bootstrap later even after it ages out of miner_header_keys —
-    without this, enabling strict mode could lock out an identity whose only key
-    was pruned. A rejected registration is non-fatal (the miner still
-    attests/mines) and is logged so ops can see header-key setup was skipped."""
+    asymmetric per-alias state.
+
+    It deliberately does NOT seed the bootstrap allowlist: the allowlist is
+    admin-managed only (via the RC_ADMIN_KEY-gated /miner/headerkey, plus the
+    one-time migration backfill of keys present at upgrade). Auto-allowlisting
+    every accepted attestation would persist trust-on-first-use keys — including
+    any claimed during the strict-off rollout window — into strict mode, which is
+    exactly the takeover this guard exists to prevent. The deploy procedure is:
+    run default-off, admin-seed the real named producers via /miner/headerkey,
+    then enable RC_HEADER_KEY_STRICT_BOOTSTRAP. A rejected registration is
+    non-fatal (the miner still attests/mines) and is logged so ops can see
+    header-key setup was skipped."""
     if not pubkey:
         return False
     if not _header_key_authorized(conn, identity, pubkey):
@@ -5067,10 +5073,6 @@ def _register_header_key(conn, identity, pubkey):
         return False
     conn.execute(
         "INSERT OR REPLACE INTO miner_header_keys (miner_id, pubkey_hex) VALUES (?, ?)",
-        (identity, pubkey),
-    )
-    conn.execute(
-        "INSERT OR IGNORE INTO miner_header_bootstrap (miner_id, pubkey_hex) VALUES (?, ?)",
         (identity, pubkey),
     )
     _prune_header_keys(conn, identity)
