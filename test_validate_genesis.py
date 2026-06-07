@@ -76,3 +76,22 @@ def test_validate_genesis_reports_invalid_fixture(tmp_path, capsys):
     assert "CPU string not recognized as retro PowerPC" in output
     assert "Timestamp is invalid or too modern" in output
     assert "Fingerprint hash does not match contents" in output
+
+
+def test_validate_genesis_returns_false_for_malformed_json(tmp_path, capsys):
+    genesis = tmp_path / "genesis.json"
+    genesis.write_text("{bad json", encoding="utf-8")
+
+    assert validate_genesis.validate_genesis(str(genesis)) is False
+
+    output = capsys.readouterr().out
+    assert "Genesis file is not valid JSON" in output
+
+
+def test_validate_genesis_returns_false_for_missing_file(tmp_path, capsys):
+    missing = tmp_path / "missing-genesis.json"
+
+    assert validate_genesis.validate_genesis(str(missing)) is False
+
+    output = capsys.readouterr().out
+    assert "Unable to read genesis file" in output

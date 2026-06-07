@@ -44,11 +44,24 @@ def _string_field(data, name):
     return value.strip()
 
 def validate_genesis(path):
-    with open(path, 'r') as f:
-        data = json.load(f)
-
     print("\nValidating genesis.json...")
     errors = []
+
+    try:
+        with open(path, 'r') as f:
+            data = json.load(f)
+    except OSError as exc:
+        errors.append(f"Unable to read genesis file: {exc}")
+        data = {}
+    except json.JSONDecodeError as exc:
+        errors.append(f"Genesis file is not valid JSON: {exc}")
+        data = {}
+
+    if errors:
+        print("❌ Validation Failed:")
+        for err in errors:
+            print(" -", err)
+        return False
 
     if not isinstance(data, dict):
         errors.append("Genesis file must contain a JSON object")
