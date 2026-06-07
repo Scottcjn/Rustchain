@@ -114,6 +114,14 @@ class TestEpochWitness:
         data = sample_witness.to_compact()
         assert len(data) < MAX_WITNESS_SIZE
 
+    def test_compact_caps_merkle_proof_count(self, sample_witness):
+        sample_witness.merkle_proof = ["d" * 64] * 256
+
+        data = sample_witness.to_compact()
+        restored = EpochWitness.from_compact(data)
+
+        assert len(restored.merkle_proof) == 15
+
     def test_to_dict(self, sample_witness):
         d = sample_witness.to_dict()
         assert d["epoch"] == 500
