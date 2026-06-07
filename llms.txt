@@ -1,0 +1,61 @@
+# RustChain
+
+> RustChain is a proof-of-work blockchain optimized for vintage CPU mining, enabling AI agents and humans to earn RTC tokens through decentralized consensus.
+
+- **Description**: A novel Layer-1 blockchain that incentivizes mining with legacy processors (8088, 6502, Z80, and more), creating a CPU-antiquity-based consensus layer where older silicon earns proportionally more reward.
+- **License**: MIT
+- **Website**: https://rustchain.org
+- **Documentation**: https://github.com/Scottcjn/Rustchain#readme
+- **Whitepaper**: https://github.com/Scottcjn/Rustchain/blob/main/RustChain_Whitepaper_Flameholder_v0.97-1.pdf
+- **API Reference**: https://github.com/Scottcjn/Rustchain/blob/main/API_WALKTHROUGH.md
+- **Install Guide**: https://github.com/Scottcjn/Rustchain/blob/main/INSTALL.md
+- **Docker Deployment**: https://github.com/Scottcjn/Rustchain/blob/main/DOCKER_DEPLOYMENT.md
+- **Repository**: https://github.com/Scottcjn/Rustchain
+- **Bounty Program**: https://github.com/Scottcjn/rustchain-bounties
+- **Token**: RTC (RustChain Token) — native chain token, no off-ramp to ETH/Solana
+- **Consensus**: Proof-of-Work with CPU vintage weighting (older CPUs earn higher multipliers)
+
+## Key Entities
+
+- **RustChain**: The blockchain network and protocol
+- **RTC Token**: Native cryptocurrency of RustChain (ticker: RTC)
+- **Vintage CPU Mining**: Mining optimization rewarding legacy processor architectures
+- **Beacon Network**: Decentralized attestation layer for RustChain
+- **BoTTube**: Video/content platform integrated with RustChain rewards
+- **clawrtc**: Rust-based RTC wallet and CLI tool
+- **Atlas Land**: Virtual land parcel economy on RustChain
+- **Tip Credits**: Micro-tipping mechanism for content and service rewards
+
+## FAQ
+
+### What is RustChain?
+RustChain is a proof-of-work blockchain where mining rewards are weighted by CPU vintage — older processors (8088, 6502, Z80, etc.) earn proportionally more RTC tokens per hash, creating economic value for legacy silicon.
+
+### How do I start mining RustChain?
+Install the node with `pip install` or Docker, then configure your miner with the provided `.env.miner.example`. See [INSTALL.md](https://github.com/Scottcjn/Rustchain/blob/main/INSTALL.md) and [DOCKER_DEPLOYMENT.md](https://github.com/Scottcjn/Rustchain/blob/main/DOCKER_DEPLOYMENT.md).
+
+### What is the RTC token?
+RTC is the native token of the RustChain blockchain. It is earned through mining, bounties, and ecosystem participation. RTC runs on its own chain (no ERC-20 or SPL wrapper).
+
+### How does vintage CPU weighting work?
+RustChain assigns a "vintage multiplier" to mining hashes based on the detected CPU architecture. Older CPUs (e.g., 8086, 6502, Z80) receive higher rewards per hash to incentivize retro-computing participation. See [CPU_ANTIQUITY_SYSTEM.md](https://github.com/Scottcjn/Rustchain/blob/main/CPU_ANTIQUITY_SYSTEM.md).
+
+### How do I earn RTC without mining?
+Participate in the [bounty program](https://github.com/Scottcjn/rustchain-bounties) — contribute code, write documentation, find bugs, create tutorials, or review pull requests to earn RTC rewards.
+
+### What is the RustChain API?
+RustChain exposes REST endpoints for balance queries, transaction submission, attestation, and governance. See [API_WALKTHROUGH.md](https://github.com/Scottcjn/Rustchain/blob/main/API_WALKTHROUGH.md).
+
+### Can I deploy RustChain with Docker?
+Yes. Docker images are provided for both the full node and the miner. See [DOCKER_DEPLOYMENT.md](https://github.com/Scottcjn/Rustchain/blob/main/DOCKER_DEPLOYMENT.md) and [README_DOCKER_MINER.md](https://github.com/Scottcjn/Rustchain/blob/main/README_DOCKER_MINER.md).
+
+## Docs
+
+- [Getting Started](https://github.com/Scottcjn/Rustchain/blob/main/START_HERE.md)
+- [Install Guide](https://github.com/Scottcjn/Rustchain/blob/main/INSTALL.md)
+- [API Walkthrough](https://github.com/Scottcjn/Rustchain/blob/main/API_WALKTHROUGH.md)
+- [CPU Vintage System](https://github.com/Scottcjn/Rustchain/blob/main/CPU_ANTIQUITY_SYSTEM.md)
+- [Docker Deployment](https://github.com/Scottcjn/Rustchain/blob/main/DOCKER_DEPLOYMENT.md)
+- [Contributing](https://github.com/Scottcjn/Rustchain/blob/main/CONTRIBUTING.md)
+- [Security](https://github.com/Scottcjn/Rustchain/blob/main/SECURITY.md)
+- [Bounty Program](https://github.com/Scottcjn/rustchain-bounties)
