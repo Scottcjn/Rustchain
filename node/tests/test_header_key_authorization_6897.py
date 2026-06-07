@@ -60,9 +60,31 @@ class HeaderKeyAuthorizationTest(unittest.TestCase):
             "CREATE TABLE miner_header_keys (miner_id TEXT, pubkey_hex TEXT, "
             "PRIMARY KEY (miner_id, pubkey_hex))"
         )
+        self.conn.execute(
+            "CREATE TABLE miner_header_bootstrap (miner_id TEXT, pubkey_hex TEXT, "
+            "PRIMARY KEY (miner_id, pubkey_hex))"
+        )
+        self._prev_strict = os.environ.get("RC_HEADER_KEY_STRICT_BOOTSTRAP")
+        os.environ.pop("RC_HEADER_KEY_STRICT_BOOTSTRAP", None)  # default = off
 
     def tearDown(self):
         self.conn.close()
+        if self._prev_strict is None:
+            os.environ.pop("RC_HEADER_KEY_STRICT_BOOTSTRAP", None)
+        else:
+            os.environ["RC_HEADER_KEY_STRICT_BOOTSTRAP"] = self._prev_strict
+
+    def _strict(self, on):
+        if on:
+            os.environ["RC_HEADER_KEY_STRICT_BOOTSTRAP"] = "1"
+        else:
+            os.environ.pop("RC_HEADER_KEY_STRICT_BOOTSTRAP", None)
+
+    def _allow(self, identity, pubkey):
+        self.conn.execute(
+            "INSERT OR IGNORE INTO miner_header_bootstrap (miner_id, pubkey_hex) VALUES (?, ?)",
+            (identity, pubkey),
+        )
 
     def _auth(self, identity, pubkey):
         return self.mod._header_key_authorized(self.conn, identity, pubkey)
@@ -98,6 +120,30 @@ class HeaderKeyAuthorizationTest(unittest.TestCase):
         # Attacker can NOT add a new key to the established identity:
         self.assertFalse(self._auth(ident, ATTACKER_PK))
         self.assertFalse(self._auth(ident, THIRD_PK))
+
+    # --- strict bootstrap (T1.1 TOFU fix) ----------------------------------
+    def test_strict_off_named_bootstrap_still_allowed(self):
+        """Default (flag off) preserves legacy first-write-wins for rollout."""
+        self._strict(False)
+        self.assertTrue(self._auth("power8-s824-sophia", VICTIM_PK))
+
+    def test_strict_on_named_bootstrap_rejected_without_allowlist(self):
+        """Strict mode closes the TOFU race: no allowlist entry -> reject."""
+        self._strict(True)
+        self.assertFalse(self._auth("power8-s824-sophia", ATTACKER_PK))
+
+    def test_strict_on_named_bootstrap_allowed_when_allowlisted(self):
+        self._strict(True)
+        self._allow("power8-s824-sophia", VICTIM_PK)
+        self.assertTrue(self._auth("power8-s824-sophia", VICTIM_PK))
+        # attacker key still rejected even with a (different) allowlist entry present
+        self.assertFalse(self._auth("power8-s824-sophia", ATTACKER_PK))
+
+    def test_strict_on_pubkey_derived_self_bootstrap_still_allowed(self):
+        """Self-authenticating identities never need the allowlist."""
+        self._strict(True)
+        self.assertTrue(self._auth(_addr(VICTIM_PK), VICTIM_PK))
+        self.assertTrue(self._auth(VICTIM_PK, VICTIM_PK))
 
     # --- misc --------------------------------------------------------------
     def test_empty_pubkey_rejected(self):

@@ -1837,6 +1837,23 @@ def init_db():
             logging.error(f"[migrate] miner_header_keys composite migration FAILED: {_mhk_err!r}")
             raise
 
+        # RIP-PoA header-key bootstrap allowlist (T1.1 fix). Under strict mode the
+        # FIRST header key for a NAMED/legacy identity (not pubkey-derived) may only
+        # be bootstrapped from a pubkey pre-approved here via the admin-gated
+        # /miner/headerkey — closing the trust-on-first-use race where any
+        # self-signed attestation could grab a never-keyed identity's first key.
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS miner_header_bootstrap(
+                miner_id TEXT NOT NULL,
+                pubkey_hex TEXT NOT NULL,
+                PRIMARY KEY (miner_id, pubkey_hex)
+            )
+        """)
+        # Grandfather already-trusted keys so enabling strict mode never locks out
+        # an identity whose keys later age out and need re-bootstrap.
+        c.execute("INSERT OR IGNORE INTO miner_header_bootstrap (miner_id, pubkey_hex) "
+                  "SELECT miner_id, pubkey_hex FROM miner_header_keys")
+
         c.execute("""
             CREATE TABLE IF NOT EXISTS schema_version(
                 version INTEGER PRIMARY KEY,
@@ -4945,6 +4962,29 @@ def _header_keys_max_per_identity():
     return val if val >= 1 else 8
 
 
+def _header_key_strict_bootstrap():
+    """Strict header-key bootstrap (T1.1 fix). When on, a NAMED/legacy identity's
+    FIRST header key must be pre-approved in ``miner_header_bootstrap`` (seeded via
+    the admin-gated /miner/headerkey), closing the trust-on-first-use race where any
+    self-signed attestation could grab a never-keyed identity's first key.
+
+    Default OFF for one release so the fleet migrates without a flag-day; flip on
+    (RC_HEADER_KEY_STRICT_BOOTSTRAP=1) once current producers are seeded."""
+    return (os.environ.get("RC_HEADER_KEY_STRICT_BOOTSTRAP", "0").strip().lower()
+            in ("1", "true", "yes", "on"))
+
+
+def _in_bootstrap_allowlist(conn, identity, pubkey):
+    """True if (identity, pubkey) was pre-approved for first-key bootstrap."""
+    try:
+        return conn.execute(
+            "SELECT 1 FROM miner_header_bootstrap WHERE miner_id=? AND pubkey_hex=?",
+            (identity, pubkey),
+        ).fetchone() is not None
+    except Exception:
+        return False
+
+
 def _header_key_authorized(conn, identity, pubkey):
     """Authorize registering ``pubkey`` as a block-header key for ``identity``.
 
@@ -4965,10 +5005,12 @@ def _header_key_authorized(conn, identity, pubkey):
         pubkey: always allowed (only the rightful holder can present a matching key,
         and key rotation/multi-device for that holder still works).
       * Named/legacy identity (not derivable from any key, e.g. ``power8-s824-sophia``):
-        allow only to BOOTSTRAP the first key, or to re-register an
-        already-registered (identity, pubkey) pair (idempotent). This lets a fresh
-        named producer register once while preventing an attacker from ADDING a key
-        to an already-established identity.
+        first-key BOOTSTRAP is gated by ``_header_key_strict_bootstrap()`` — under
+        strict mode the key must be pre-approved in ``miner_header_bootstrap``
+        (admin-seeded), closing the T1.1 trust-on-first-use takeover race; under the
+        staged-rollout default it keeps legacy first-write-wins. Re-registering an
+        already-registered (identity, pubkey) pair is always idempotent; an attacker
+        can never ADD a new key to an already-established identity.
     """
     if not pubkey:
         return False
@@ -4982,7 +5024,14 @@ def _header_key_authorized(conn, identity, pubkey):
         "SELECT pubkey_hex FROM miner_header_keys WHERE miner_id=?", (identity,)
     ).fetchall()  # fetchall-ok: bounded by _prune_header_keys cap
     if not existing:
-        return True  # bootstrap the first key for a named identity
+        # Bootstrap the first key for a named identity. Open TOFU here is the
+        # residual T1.1 takeover race (a self-signed attestation grabbing a
+        # never-keyed identity's first key). Under strict mode the first key must
+        # be pre-approved via the admin-gated bootstrap allowlist; otherwise
+        # (staged-rollout default) keep legacy first-write-wins.
+        if not _header_key_strict_bootstrap():
+            return True
+        return _in_bootstrap_allowlist(conn, identity, pubkey)
     return any(row[0] == pubkey for row in existing)  # idempotent re-register only
 
 
@@ -5039,6 +5088,9 @@ def miner_set_header_key():
         # identity (multi-device-per-wallet) rather than overwriting the existing one.
         # Re-registering the same pair is idempotent.
         db.execute("INSERT INTO miner_header_keys(miner_id,pubkey_hex) VALUES(?,?) ON CONFLICT(miner_id, pubkey_hex) DO NOTHING", (miner_id, pubkey_hex))
+        # Admin registration also pre-approves this key for strict-mode first-key
+        # bootstrap (T1.1), so the identity's own attestation then matches.
+        db.execute("INSERT OR IGNORE INTO miner_header_bootstrap(miner_id,pubkey_hex) VALUES(?,?)", (miner_id, pubkey_hex))
         _prune_header_keys(db, miner_id)
         db.commit()
     return jsonify({"ok":True,"miner_id":miner_id,"pubkey_hex":pubkey_hex})
