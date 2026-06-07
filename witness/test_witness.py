@@ -102,6 +102,14 @@ class TestEpochWitness:
         assert len(restored.miners) == 3
         assert restored.miners[0].miner_id == "miner-alpha"
 
+    def test_from_dict_does_not_mutate_input(self, sample_witness):
+        data = sample_witness.to_dict()
+
+        EpochWitness.from_dict(data)
+
+        assert "miners" in data
+        assert len(data["miners"]) == 3
+
     def test_compact_roundtrip(self, sample_witness):
         data = sample_witness.to_compact()
         restored = EpochWitness.from_compact(data)
