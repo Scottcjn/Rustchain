@@ -1859,24 +1859,13 @@ def init_db():
         # Insert default values
         c.execute("INSERT OR IGNORE INTO schema_version(version, applied_at) VALUES(17, ?)",
                   (int(time.time()),))
-        # ONE-TIME (schema v18) backfill: grandfather header keys that existed at
-        # upgrade into the bootstrap allowlist, so enabling strict mode does not
-        # lock out already-trusted producers. Guarded to run EXACTLY ONCE — an
-        # every-startup backfill would keep re-absorbing rollout-window TOFU keys
-        # from miner_header_keys into the allowlist, silently defeating strict mode.
-        if not c.execute("SELECT 1 FROM schema_version WHERE version=18").fetchone():
-            c.execute("INSERT OR IGNORE INTO miner_header_bootstrap (miner_id, pubkey_hex) "
-                      "SELECT miner_id, pubkey_hex FROM miner_header_keys")
-            # Same transaction as the v18 marker below -> atomic one-time guard.
-            _bf_n = c.execute("SELECT COUNT(*) FROM miner_header_bootstrap").fetchone()[0]
-            logging.warning(
-                "[migrate v18] grandfathered %d existing header key(s) into the bootstrap "
-                "allowlist. These were trusted under the pre-fix behavior; AUDIT and revoke "
-                "any suspect keys (POST /miner/headerkey action=revoke) BEFORE enabling "
-                "RC_HEADER_KEY_STRICT_BOOTSTRAP." % _bf_n
-            )
-            c.execute("INSERT OR IGNORE INTO schema_version(version, applied_at) VALUES(18, ?)",
-                      (int(time.time()),))
+        # NOTE: the bootstrap allowlist is intentionally NOT auto-populated from
+        # miner_header_keys. An audit found that table heavily polluted (hundreds of
+        # thousands of alias-strings mapping to a few hundred real keys), so a blanket
+        # grandfather would bless that pollution into the trust anchor. Operators seed
+        # the actual producers deliberately — admin POST /miner/headerkey, or the
+        # tools/seed_header_bootstrap.py helper — BEFORE enabling
+        # RC_HEADER_KEY_STRICT_BOOTSTRAP.
         c.execute("INSERT OR IGNORE INTO gov_threshold(id, threshold) VALUES(1, 3)")
         c.execute("INSERT OR IGNORE INTO checkpoints_meta(k, v) VALUES('chain_id', 'rustchain-mainnet-candidate')")
         # BCOS v2: Blockchain Certified Open Source attestations
@@ -5067,11 +5056,11 @@ def _register_header_key(conn, identity, pubkey):
     asymmetric per-alias state.
 
     It deliberately does NOT seed the bootstrap allowlist: the allowlist is
-    admin-managed only (via the RC_ADMIN_KEY-gated /miner/headerkey, plus the
-    one-time migration backfill of keys present at upgrade). Auto-allowlisting
-    every accepted attestation would persist trust-on-first-use keys — including
-    any claimed during the strict-off rollout window — into strict mode, which is
-    exactly the takeover this guard exists to prevent. The deploy procedure is:
+    admin-managed only (via the RC_ADMIN_KEY-gated /miner/headerkey or the
+    tools/seed_header_bootstrap.py helper). Auto-allowlisting every accepted
+    attestation would persist trust-on-first-use keys — including any claimed
+    during the strict-off rollout window — into strict mode, which is exactly the
+    takeover this guard exists to prevent. The deploy procedure is:
     run default-off, admin-seed the real named producers via /miner/headerkey,
     then enable RC_HEADER_KEY_STRICT_BOOTSTRAP. A rejected registration is
     non-fatal (the miner still attests/mines) and is logged so ops can see

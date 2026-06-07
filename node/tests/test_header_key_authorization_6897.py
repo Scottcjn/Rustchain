@@ -194,21 +194,23 @@ class HeaderKeyAuthorizationTest(unittest.TestCase):
         self.conn.execute("DELETE FROM miner_header_bootstrap WHERE miner_id=? AND pubkey_hex=?", (ident, VICTIM_PK))
         self.assertFalse(self._auth(ident, VICTIM_PK))     # revoked -> denied
 
-    def test_backfill_is_one_time_not_every_startup(self):
-        """Round-3 fix: the bootstrap backfill must NOT re-absorb keys on restart,
-        or rollout-window TOFU keys would be silently allowlisted into strict mode."""
+    def test_init_db_does_not_auto_grandfather(self):
+        """The allowlist is admin-only: init_db must NOT auto-copy existing header
+        keys into miner_header_bootstrap. The live keys table is polluted (hundreds
+        of thousands of alias-strings / a few hundred real keys), so blanket
+        grandfathering would bless that pollution into the trust anchor."""
         dbp = self.mod.DB_PATH
-        self.mod.init_db()       # first startup: applies schema v18 + one-time backfill
+        self.mod.init_db()
         c = sqlite3.connect(dbp)
         try:
-            # a TOFU key registered during the strict-off rollout window (after upgrade)
+            # an existing header key (legit or TOFU) present at startup
             c.execute("INSERT OR IGNORE INTO miner_header_keys (miner_id, pubkey_hex) VALUES (?,?)",
-                      ("tofu-rollout-id", VICTIM_PK))
+                      ("some-existing-id", VICTIM_PK))
             c.commit()
-            self.mod.init_db()   # a SUBSEQUENT startup must not re-absorb it
+            self.mod.init_db()   # subsequent startup must NOT auto-allowlist it
             row = c.execute("SELECT 1 FROM miner_header_bootstrap WHERE miner_id=? AND pubkey_hex=?",
-                            ("tofu-rollout-id", VICTIM_PK)).fetchone()
-            self.assertIsNone(row, "one-time backfill must not re-absorb rollout-window TOFU keys")
+                            ("some-existing-id", VICTIM_PK)).fetchone()
+            self.assertIsNone(row, "init_db must not auto-grandfather existing keys into the allowlist")
         finally:
             c.close()
 
