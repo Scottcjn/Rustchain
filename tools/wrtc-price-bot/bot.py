@@ -132,6 +132,9 @@ def main():
     
     # Jobs
     job_queue = application.job_queue
+    if job_queue is None:
+        raise RuntimeError("JobQueue unavailable; install python-telegram-bot[job-queue]")
+
     # Auto-post every hour
     job_queue.run_repeating(auto_post_job, interval=3600, first=10)
     # Check alerts every 5 minutes
