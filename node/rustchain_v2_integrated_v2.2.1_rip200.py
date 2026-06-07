@@ -5952,6 +5952,11 @@ def request_withdrawal():
         return jsonify({"error": "amount must be a finite positive number"}), 400
     if amount < 0:
         return jsonify({"error": "amount must be positive"}), 400
+    # Amount must be expressible in whole micro-RTC (the ledger unit). Reject finer
+    # precision so the integer debit and the recorded withdrawal amount agree exactly
+    # (otherwise e.g. 1.00000049 would record more than it debits).
+    if abs(amount * ACCOUNT_UNIT - round(amount * ACCOUNT_UNIT)) > 1e-6:
+        return jsonify({"error": "amount precision exceeds micro-RTC (max 6 decimals)"}), 400
 
     if amount < MIN_WITHDRAWAL:
         return jsonify({"error": f"Minimum withdrawal is {MIN_WITHDRAWAL} RTC"}), 400
@@ -10008,17 +10013,23 @@ def _debit_wallet_atomic(c: sqlite3.Cursor, wallet_id: str, amount_i64: int, bal
             )
         return cur.rowcount
 
+    # Legacy float (balance_rtc) schemas: guard in INTEGER micro-RTC (CAST(ROUND(...)))
+    # so the inner debit guard uses the SAME basis as the outer _balance_i64_for_wallet
+    # check — a float `balance_rtc >= delta_rtc` guard could disagree on round-trip
+    # boundaries and spuriously reject an affordable withdrawal.
     delta_rtc = amount_i64 / ACCOUNT_UNIT
     if {"miner_pk", "balance_rtc"}.issubset(balance_cols):
         cur = c.execute(
-            "UPDATE balances SET balance_rtc = balance_rtc - ? WHERE miner_pk = ? AND balance_rtc >= ?",
-            (delta_rtc, wallet_id, delta_rtc),
+            "UPDATE balances SET balance_rtc = balance_rtc - ? "
+            "WHERE miner_pk = ? AND CAST(ROUND(balance_rtc * 1000000) AS INTEGER) >= ?",
+            (delta_rtc, wallet_id, amount_i64),
         )
         return cur.rowcount
     if {"miner_id", "balance_rtc"}.issubset(balance_cols):
         cur = c.execute(
-            "UPDATE balances SET balance_rtc = balance_rtc - ? WHERE miner_id = ? AND balance_rtc >= ?",
-            (delta_rtc, wallet_id, delta_rtc),
+            "UPDATE balances SET balance_rtc = balance_rtc - ? "
+            "WHERE miner_id = ? AND CAST(ROUND(balance_rtc * 1000000) AS INTEGER) >= ?",
+            (delta_rtc, wallet_id, amount_i64),
         )
         return cur.rowcount
     raise RuntimeError("unsupported balances schema for withdrawal debit")

@@ -103,6 +103,18 @@ class WithdrawalBalanceSchemaTest(unittest.TestCase):
         self.assertAlmostEqual(row[1], row[0] / 1_000_000.0, places=6)  # both columns agree
         c.close()
 
+    def test_legacy_float_debit_consistent_with_i64_check(self):
+        """On a legacy balance_rtc schema, any balance the outer i64 check deems
+        affordable must also pass the inner debit guard — they now share the integer
+        micro-RTC basis, so no float round-trip mismatch can spuriously reject."""
+        c, cols = self._fresh(_schema_A)
+        c.execute("INSERT INTO balances (miner_pk, balance_rtc) VALUES (?, ?)", ("miner-x", 2.01))
+        need_i64 = int(round(2.01 * U))
+        self.assertGreaterEqual(self.mod._balance_i64_for_wallet(c, "miner-x"), need_i64)  # outer says affordable
+        self.assertEqual(self.mod._debit_wallet_atomic(c, "miner-x", need_i64, cols), 1)   # inner agrees
+        self.assertEqual(self.mod._balance_i64_for_wallet(c, "miner-x"), 0)
+        c.close()
+
     def test_fleet_named_wallets_work(self):
         """Vintage NAMED wallets are keyed by identity string, unaffected by the fix."""
         for fn in (_schema_A, _schema_B):
