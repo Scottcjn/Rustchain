@@ -42,8 +42,8 @@ class ClockVarianceSimulator:
 class CacheTimingSpoofing:
     """Cache timing manipulation for hardware fingerprinting"""
     
-    def __init__(self, cache_levels=[1, 2, 3]):
-        self.cache_levels = cache_levels
+    def __init__(self, cache_levels=None):
+        self.cache_levels = cache_levels if cache_levels is not None else [1, 2, 3]
         self.timing_profiles = self._generate_timing_profiles()
         
     def _generate_timing_profiles(self):
