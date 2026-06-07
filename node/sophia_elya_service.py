@@ -65,6 +65,17 @@ def _ensure_balance_micro_schema(conn):
         return
 
     by_name = {row[1]: row for row in columns}
+
+    # SAFETY GUARD: never rebuild the CONSENSUS balances ledger. The RustChain node
+    # keys `balances` by `miner_id` with the canonical micro-RTC amount in `amount_i64`
+    # (plus miner_pk / coinbase_address). This Sophia helper only manages its own
+    # 2-column (miner_pk, balance_rtc) micro-schema. If `DB_PATH` ever resolves to the
+    # shared consensus DB (it is a relative "./rustchain_v2.db"), the rebuild below
+    # would DROP miner_id / amount_i64 / coinbase_address and WIPE every balance.
+    # If we see the consensus money columns, leave the table completely untouched.
+    if "amount_i64" in by_name or "coinbase_address" in by_name:
+        return
+
     balance_column = by_name.get("balance_rtc")
     if balance_column and "INT" in (balance_column[2] or "").upper():
         return
