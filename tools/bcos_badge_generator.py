@@ -181,29 +181,26 @@ def init_db():
 
 def record_badge_generation(cert_id: str, repo_name: str, tier: str, metadata: Dict = None):
     """Record badge generation in database."""
-    conn = sqlite3.connect(DATABASE)
-    c = conn.cursor()
+    with sqlite3.connect(DATABASE) as conn:
+        c = conn.cursor()
 
-    c.execute('''
-        INSERT INTO badges (cert_id, repo_name, github_url, tier, trust_score, metadata)
-        VALUES (?, ?, ?, ?, ?, ?)
-    ''', (
-        cert_id,
-        repo_name,
-        f"https://github.com/{repo_name}",
-        tier,
-        metadata.get('trust_score', 0) if metadata else 0,
-        json.dumps(metadata or {})
-    ))
+        c.execute('''
+            INSERT INTO badges (cert_id, repo_name, github_url, tier, trust_score, metadata)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (
+            cert_id,
+            repo_name,
+            f"https://github.com/{repo_name}",
+            tier,
+            metadata.get('trust_score', 0) if metadata else 0,
+            json.dumps(metadata or {})
+        ))
 
-    # Record analytics
-    c.execute('''
-        INSERT INTO badge_analytics (event_type, cert_id, repo_name, tier, metadata)
-        VALUES (?, ?, ?, ?, ?)
-    ''', ('generate', cert_id, repo_name, tier, json.dumps(metadata or {})))
-
-    conn.commit()
-    conn.close()
+        # Record analytics
+        c.execute('''
+            INSERT INTO badge_analytics (event_type, cert_id, repo_name, tier, metadata)
+            VALUES (?, ?, ?, ?, ?)
+        ''', ('generate', cert_id, repo_name, tier, json.dumps(metadata or {})))
 
 
 def increment_download_count(cert_id: str):
