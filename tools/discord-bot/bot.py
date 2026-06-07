@@ -15,6 +15,8 @@ Environment variables:
     RUSTCHAIN_NODE_URL   - Node URL (default: https://rustchain.org)
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import os
