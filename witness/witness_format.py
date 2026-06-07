@@ -79,6 +79,7 @@ class EpochWitness:
 
     @classmethod
     def from_dict(cls, data: Dict) -> "EpochWitness":
+        data = dict(data)
         miners = [MinerEntry(**m) for m in data.pop("miners", [])]
         return cls(miners=miners, **data)
 
