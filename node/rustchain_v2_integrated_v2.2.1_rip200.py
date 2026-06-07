@@ -5952,6 +5952,11 @@ def request_withdrawal():
         return jsonify({"error": "amount must be a finite positive number"}), 400
     if amount < 0:
         return jsonify({"error": "amount must be positive"}), 400
+    # Upper bound: no withdrawal can exceed total supply. Also keeps amount*ACCOUNT_UNIT
+    # well under 2**53 (so it's an exactly-representable double and round() can't
+    # overflow) — guards the precision check below against round(inf) / float error.
+    if amount > TOTAL_SUPPLY_RTC:
+        return jsonify({"error": "amount exceeds total supply"}), 400
     # Amount must be expressible in whole micro-RTC (the ledger unit). Reject finer
     # precision so the integer debit and the recorded withdrawal amount agree exactly
     # (otherwise e.g. 1.00000049 would record more than it debits).
@@ -6130,11 +6135,10 @@ def api_fee_pool():
                 "fee_rtc": ev[3], "destination": ev[4], "timestamp": ev[5]
             })
 
-        # Community fund balance (where fees go)
-        fund_row = c.execute(
-            "SELECT COALESCE(balance_rtc, 0) FROM balances WHERE miner_pk = 'founder_community'"
-        ).fetchone()
-        fund_balance = fund_row[0] if fund_row else 0.0
+        # Community fund balance (where fees go) — schema-tolerant read so it
+        # reflects the credit (the fee now routes through _apply_wallet_balance_delta,
+        # which writes amount_i64 on the live schema, not just legacy balance_rtc).
+        fund_balance = _balance_i64_for_wallet(c, "founder_community") / ACCOUNT_UNIT
 
     return jsonify({
         "rip": 301,
@@ -6210,9 +6214,9 @@ def withdrawal_history(miner_pk):
                 "tx_hash": row[7]
             })
 
-        # Get balance
-        balance_row = c.execute("SELECT balance_rtc FROM balances WHERE miner_pk = ?", (miner_pk,)).fetchone()
-        balance = balance_row[0] if balance_row else 0.0
+        # Get balance — schema-tolerant (was a hardcoded balance_rtc/miner_pk read
+        # that returned empty on the live miner_id schema).
+        balance = _balance_i64_for_wallet(c, miner_pk) / ACCOUNT_UNIT
 
         return jsonify({
             "miner_pk": miner_pk,
@@ -10013,23 +10017,23 @@ def _debit_wallet_atomic(c: sqlite3.Cursor, wallet_id: str, amount_i64: int, bal
             )
         return cur.rowcount
 
-    # Legacy float (balance_rtc) schemas: guard in INTEGER micro-RTC (CAST(ROUND(...)))
-    # so the inner debit guard uses the SAME basis as the outer _balance_i64_for_wallet
-    # check — a float `balance_rtc >= delta_rtc` guard could disagree on round-trip
-    # boundaries and spuriously reject an affordable withdrawal.
+    # Legacy float (balance_rtc) schemas: guard with the exact float comparison
+    # `balance_rtc >= delta_rtc`. This NEVER overdraws (balance - delta >= 0). A
+    # rounding guard (CAST(ROUND(balance_rtc*1e6)) >= amount_i64) would round a
+    # sub-micro shortfall UP and debit negative; rejecting a genuine sub-micro
+    # shortfall here is correct, not spurious. The canonical amount_i64 schema above
+    # is integer-exact and has no such dust.
     delta_rtc = amount_i64 / ACCOUNT_UNIT
     if {"miner_pk", "balance_rtc"}.issubset(balance_cols):
         cur = c.execute(
-            "UPDATE balances SET balance_rtc = balance_rtc - ? "
-            "WHERE miner_pk = ? AND CAST(ROUND(balance_rtc * 1000000) AS INTEGER) >= ?",
-            (delta_rtc, wallet_id, amount_i64),
+            "UPDATE balances SET balance_rtc = balance_rtc - ? WHERE miner_pk = ? AND balance_rtc >= ?",
+            (delta_rtc, wallet_id, delta_rtc),
         )
         return cur.rowcount
     if {"miner_id", "balance_rtc"}.issubset(balance_cols):
         cur = c.execute(
-            "UPDATE balances SET balance_rtc = balance_rtc - ? "
-            "WHERE miner_id = ? AND CAST(ROUND(balance_rtc * 1000000) AS INTEGER) >= ?",
-            (delta_rtc, wallet_id, amount_i64),
+            "UPDATE balances SET balance_rtc = balance_rtc - ? WHERE miner_id = ? AND balance_rtc >= ?",
+            (delta_rtc, wallet_id, delta_rtc),
         )
         return cur.rowcount
     raise RuntimeError("unsupported balances schema for withdrawal debit")

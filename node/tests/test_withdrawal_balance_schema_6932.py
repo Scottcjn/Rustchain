@@ -115,6 +115,16 @@ class WithdrawalBalanceSchemaTest(unittest.TestCase):
         self.assertEqual(self.mod._balance_i64_for_wallet(c, "miner-x"), 0)
         c.close()
 
+    def test_legacy_no_dust_overdraw(self):
+        """A sub-micro shortfall on a legacy float schema must NOT be rounded up into
+        a negative debit (anti-overdraw — the iter2 CAST(ROUND) guard regression)."""
+        c, cols = self._fresh(_schema_A)
+        c.execute("INSERT INTO balances (miner_pk, balance_rtc) VALUES (?, ?)", ("miner-x", 2.0099996))
+        self.assertEqual(self.mod._debit_wallet_atomic(c, "miner-x", int(round(2.01 * U)), cols), 0)
+        bal = c.execute("SELECT balance_rtc FROM balances WHERE miner_pk='miner-x'").fetchone()[0]
+        self.assertGreaterEqual(bal, 0.0)  # never negative
+        c.close()
+
     def test_fleet_named_wallets_work(self):
         """Vintage NAMED wallets are keyed by identity string, unaffected by the fix."""
         for fn in (_schema_A, _schema_B):
