@@ -23,7 +23,7 @@ def _load_fn():
     start = src.index("def _ensure_balance_micro_schema(conn):")
     end = src.index("\ndef _ensure_epoch_state_settlement_schema")
     ns = {"RTC_MICRO_UNITS": 1_000_000}
-    exec(src[start:end], ns)
+    exec(src[start:end], ns)  # nosec B102 - loads one pure helper from source for an isolated unit test
     return ns["_ensure_balance_micro_schema"]
 
 
