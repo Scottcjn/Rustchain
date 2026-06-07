@@ -4511,16 +4511,7 @@ def _submit_attestation_impl():
                 # a compatibility alias, but always register the canonical
                 # chain identity too.
                 for header_miner_id in dict.fromkeys((miner, miner_id)):
-                    if not _header_key_authorized(enroll_conn, header_miner_id, header_pubkey):
-                        # Reject header-key takeover: this pubkey is not authorized
-                        # for header_miner_id (not pubkey-derived, and the identity
-                        # already has keys). See _header_key_authorized.
-                        continue
-                    enroll_conn.execute(
-                        "INSERT OR REPLACE INTO miner_header_keys (miner_id, pubkey_hex) VALUES (?, ?)",
-                        (header_miner_id, header_pubkey)
-                    )
-                    _prune_header_keys(enroll_conn, header_miner_id)
+                    _register_header_key(enroll_conn, header_miner_id, header_pubkey)
             enroll_conn.commit()
 
         # Issue #19 temporal consistency only sets a review flag (no hard-fail).
@@ -4839,14 +4830,7 @@ def enroll_epoch():
         header_pubkey = _valid_ed25519_pubkey_hex(pubkey_hex) or _valid_ed25519_pubkey_hex(miner_pk)
         if header_pubkey:
             for header_miner_id in dict.fromkeys((miner_pk, miner_id)):
-                if not _header_key_authorized(c, header_miner_id, header_pubkey):
-                    # Reject header-key takeover (see _header_key_authorized).
-                    continue
-                c.execute(
-                    "INSERT OR REPLACE INTO miner_header_keys (miner_id, pubkey_hex) VALUES (?, ?)",
-                    (header_miner_id, header_pubkey)
-                )
-                _prune_header_keys(c, header_miner_id)
+                _register_header_key(c, header_miner_id, header_pubkey)
 
     app.logger.info(
         f"[RIP-309] epoch={epoch} miner={miner_pk[:20]}... nonce={rotation_eval['measurement_nonce'][:16]} "
@@ -4981,7 +4965,10 @@ def _in_bootstrap_allowlist(conn, identity, pubkey):
             "SELECT 1 FROM miner_header_bootstrap WHERE miner_id=? AND pubkey_hex=?",
             (identity, pubkey),
         ).fetchone() is not None
-    except Exception:
+    except Exception as exc:
+        # Fail closed, but surface infra errors (missing table / locked DB) so a
+        # blanket strict-mode denial is not mistaken for a clean auth decision.
+        logging.warning(f"[header-key] bootstrap allowlist lookup failed for {str(identity)[:24]!r}: {exc!r}")
         return False
 
 
@@ -5032,7 +5019,13 @@ def _header_key_authorized(conn, identity, pubkey):
         if not _header_key_strict_bootstrap():
             return True
         return _in_bootstrap_allowlist(conn, identity, pubkey)
-    return any(row[0] == pubkey for row in existing)  # idempotent re-register only
+    # Existing keys present: allow an idempotent re-register, OR an admin
+    # pre-approved ADDITIONAL key (multi-device / rotation for a named identity,
+    # seeded via the admin-gated /miner/headerkey). An attacker cannot reach the
+    # allowlist, so allowing allowlisted adds does not reopen the takeover.
+    if any(row[0] == pubkey for row in existing):
+        return True
+    return _in_bootstrap_allowlist(conn, identity, pubkey)
 
 
 def _prune_header_keys(conn, miner_id):
@@ -5053,6 +5046,35 @@ def _prune_header_keys(conn, miner_id):
         "(SELECT rowid FROM miner_header_keys WHERE miner_id=? ORDER BY rowid DESC LIMIT ?)",
         (miner_id, miner_id, _header_keys_max_per_identity())
     )
+
+
+def _register_header_key(conn, identity, pubkey):
+    """Authorize + register a block-header key for ``identity``; return True if
+    registered. Single code path for both enroll sites so they cannot drift into
+    asymmetric per-alias state. On success the key is ALSO persisted into the
+    bootstrap allowlist, grandfathering it so a key that legitimately registered
+    once can re-bootstrap later even after it ages out of miner_header_keys —
+    without this, enabling strict mode could lock out an identity whose only key
+    was pruned. A rejected registration is non-fatal (the miner still
+    attests/mines) and is logged so ops can see header-key setup was skipped."""
+    if not pubkey:
+        return False
+    if not _header_key_authorized(conn, identity, pubkey):
+        logging.info(
+            "[header-key] skipped unauthorized registration: identity=%r pubkey=%s... "
+            "(strict_bootstrap=%s)" % (str(identity)[:32], str(pubkey)[:12], _header_key_strict_bootstrap())
+        )
+        return False
+    conn.execute(
+        "INSERT OR REPLACE INTO miner_header_keys (miner_id, pubkey_hex) VALUES (?, ?)",
+        (identity, pubkey),
+    )
+    conn.execute(
+        "INSERT OR IGNORE INTO miner_header_bootstrap (miner_id, pubkey_hex) VALUES (?, ?)",
+        (identity, pubkey),
+    )
+    _prune_header_keys(conn, identity)
+    return True
 
 
 @app.route('/miner/headerkey', methods=['POST'])

@@ -145,6 +145,41 @@ class HeaderKeyAuthorizationTest(unittest.TestCase):
         self.assertTrue(self._auth(_addr(VICTIM_PK), VICTIM_PK))
         self.assertTrue(self._auth(VICTIM_PK, VICTIM_PK))
 
+    # --- _register_header_key: grandfather + multi-device (iteration 2) -----
+    def test_register_header_key_seeds_allowlist_and_grandfathers(self):
+        """A key registered via _register_header_key is grandfathered: it can
+        re-bootstrap under strict even after its miner_header_keys row ages out."""
+        self._strict(False)
+        ident = "g5-powerbook-130"
+        self.assertTrue(self.mod._register_header_key(self.conn, ident, VICTIM_PK))
+        self.assertIsNotNone(self.conn.execute(
+            "SELECT 1 FROM miner_header_keys WHERE miner_id=? AND pubkey_hex=?", (ident, VICTIM_PK)).fetchone())
+        self.assertIsNotNone(self.conn.execute(
+            "SELECT 1 FROM miner_header_bootstrap WHERE miner_id=? AND pubkey_hex=?", (ident, VICTIM_PK)).fetchone())
+        # key ages out (pruned to zero); strict on -> re-bootstrap must still work
+        self.conn.execute("DELETE FROM miner_header_keys WHERE miner_id=?", (ident,))
+        self._strict(True)
+        self.assertTrue(self._auth(ident, VICTIM_PK))      # grandfathered, no lockout
+        self.assertFalse(self._auth(ident, ATTACKER_PK))   # attacker still rejected
+
+    def test_allowlisted_multidevice_add_to_named_identity(self):
+        """Admin-allowlisted additional key can be added to a named identity that
+        already has a key (multi-device/rotation); a non-allowlisted key cannot."""
+        ident = "power8-s824-sophia"
+        self.conn.execute(
+            "INSERT INTO miner_header_keys (miner_id, pubkey_hex) VALUES (?, ?)", (ident, VICTIM_PK))
+        self._allow(ident, THIRD_PK)                       # admin pre-approves a 2nd device key
+        self.assertTrue(self._auth(ident, THIRD_PK))       # allowlisted add allowed
+        self.assertTrue(self._auth(ident, VICTIM_PK))      # idempotent re-register
+        self.assertFalse(self._auth(ident, ATTACKER_PK))   # not allowlisted -> rejected
+
+    def test_register_header_key_rejects_unauthorized_under_strict(self):
+        self._strict(True)
+        ident = "newcomer-named"
+        self.assertFalse(self.mod._register_header_key(self.conn, ident, ATTACKER_PK))
+        self.assertIsNone(self.conn.execute(
+            "SELECT 1 FROM miner_header_keys WHERE miner_id=?", (ident,)).fetchone())
+
     # --- misc --------------------------------------------------------------
     def test_empty_pubkey_rejected(self):
         self.assertFalse(self._auth(_addr(VICTIM_PK), ""))
