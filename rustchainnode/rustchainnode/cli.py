@@ -13,6 +13,8 @@ Usage:
 Author: NOX Ventures (noxxxxybot-sketch)
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import os
