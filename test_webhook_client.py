@@ -27,6 +27,18 @@ def test_verify_signature_rejects_missing_or_mismatched_signature():
     assert webhook_client.verify_signature(payload, "bad-signature", "secret") is False
 
 
+def test_parse_json_object_rejects_malformed_or_non_object_payloads():
+    assert webhook_client.parse_json_object(b'{bad json') == (None, "invalid_json")
+    assert webhook_client.parse_json_object(b'[]') == (None, "json_object_required")
+
+
+def test_parse_json_object_accepts_object_payload():
+    assert webhook_client.parse_json_object(b'{"event":"new_block"}') == (
+        {"event": "new_block"},
+        None,
+    )
+
+
 def test_format_event_renders_new_block_details():
     output = webhook_client.format_event(
         "new_block",
