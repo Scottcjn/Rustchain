@@ -200,6 +200,24 @@ def _require_admin(fn):
     return wrapper
 
 
+def _sweep_expired_locks(conn, now: int):
+    """Transition expired bridge locks to STATE_FAILED."""
+    rows = conn.execute(
+        "SELECT lock_id FROM bridge_locks WHERE state IN (?, ?, ?, ?) AND expires_at <= ?",
+        (STATE_REQUESTED, STATE_PENDING, STATE_CONFIRMED, STATE_RELEASING, now)
+    ).fetchall()
+
+    for r in rows:
+        lock_id = r["lock_id"]
+        conn.execute(
+            "UPDATE bridge_locks SET state = ?, updated_at = ? WHERE lock_id = ?",
+            (STATE_FAILED, now, lock_id)
+        )
+        log_event(conn, lock_id, "failed", actor="system", details={
+            "reason": "lock expired before completion"
+        })
+
+
 def _json_object_body():
     """Return the parsed JSON body only when it is an object."""
     data = request.get_json(force=True, silent=True)
@@ -619,6 +637,12 @@ def get_ledger():
     where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
     params += [limit, offset]
 
+    now = int(time.time())
+    with _db_lock:
+        with get_db() as conn:
+            _sweep_expired_locks(conn, now)
+            conn.commit()
+
     with get_db() as conn:
         rows = conn.execute(
             f"""
@@ -670,6 +694,12 @@ def get_ledger():
 @bridge_bp.route("/status/<lock_id>", methods=["GET"])
 def lock_status(lock_id: str):
     """Get status of a specific lock."""
+    now = int(time.time())
+    with _db_lock:
+        with get_db() as conn:
+            _sweep_expired_locks(conn, now)
+            conn.commit()
+
     with get_db() as conn:
         row = conn.execute(
             "SELECT * FROM bridge_locks WHERE lock_id = ?", (lock_id,)
@@ -711,6 +741,12 @@ def lock_status(lock_id: str):
 @bridge_bp.route("/stats", methods=["GET"])
 def bridge_stats():
     """Bridge statistics overview."""
+    now = int(time.time())
+    with _db_lock:
+        with get_db() as conn:
+            _sweep_expired_locks(conn, now)
+            conn.commit()
+
     with get_db() as conn:
         stats = {}
         for state in [STATE_REQUESTED, STATE_PENDING, STATE_CONFIRMED, STATE_RELEASING,
@@ -757,4 +793,4 @@ if __name__ == "__main__":
     app = Flask(__name__)
     register_bridge_routes(app)
     print("Bridge dev server on http://0.0.0.0:8096")
-    app.run(host="0.0.0.0", port=8096, debug=_debug_enabled())
+    app.run(host="0.0.0.0", port=8096, debug=False)
