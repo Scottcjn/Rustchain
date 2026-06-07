@@ -49,6 +49,17 @@ def parse_content_length(raw_value: str | None) -> int:
     return content_length if content_length > 0 else 0
 
 
+def parse_json_object(payload: bytes) -> tuple[dict | None, str | None]:
+    """Decode a webhook payload that must be a JSON object."""
+    try:
+        data = json.loads(payload)
+    except json.JSONDecodeError:
+        return None, "invalid_json"
+    if not isinstance(data, dict):
+        return None, "json_object_required"
+    return data, None
+
+
 def verify_signature(payload: bytes, received_sig: str | None, secret: str) -> bool:
     """Verify HMAC-SHA256 signature from X-RustChain-Signature header."""
     if not received_sig:
@@ -123,11 +134,12 @@ class WebhookReceiver(BaseHTTPRequestHandler):
                 self.wfile.write(b'{"error": "invalid signature"}')
                 return
 
-        try:
-            data = json.loads(payload)
-        except json.JSONDecodeError:
+        data, error = parse_json_object(payload)
+        if error:
             self.send_response(400)
+            self.send_header("Content-Type", "application/json")
             self.end_headers()
+            self.wfile.write(json.dumps({"error": error}).encode())
             return
 
         event_type = data.get("event", "unknown")
