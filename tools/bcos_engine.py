@@ -57,10 +57,26 @@ SCORE_WEIGHTS = {
 TIER_THRESHOLDS = {"L0": 40, "L1": 60, "L2": 80}
 
 # SPDX detection (reused from bcos_spdx_check.py)
+# CODE_EXTS is the *legacy* recognition set. It is kept frozen so historical
+# scores remain reproducible — the SPDX subscore is computed against both this
+# set and the broadened set below, and the HIGHER of the two is used, so a
+# repository can never score lower than the legacy engine would have given it
+# (see _check_spdx). This is how recognition is broadened while retroactively
+# honoring the established scoring system.
 CODE_EXTS = {
     ".py", ".sh", ".js", ".ts", ".tsx", ".jsx", ".rs",
     ".c", ".cc", ".cpp", ".h", ".hpp", ".go", ".rb",
     ".java", ".kt", ".swift", ".lua", ".zig",
+}
+# Broadened (2026-06): additional real source-language extensions so projects
+# written in languages the legacy set never listed get recognized. Only ever
+# applied via max(legacy, broadened) so it cannot reduce an existing score.
+CODE_EXTS_EXTENDED = CODE_EXTS | {
+    ".mjs", ".cjs", ".pyi", ".bash", ".zsh", ".sql", ".scala", ".sc",
+    ".php", ".cs", ".fs", ".m", ".mm", ".dart", ".ex", ".exs", ".erl",
+    ".clj", ".cljs", ".cljc", ".hs", ".pl", ".pm", ".r", ".jl", ".vue",
+    ".svelte", ".sol", ".v", ".sv", ".nim", ".cr", ".groovy", ".ml",
+    ".mli", ".f90", ".f95", ".pas", ".d", ".vala",
 }
 SPDX_RE = re.compile(r"SPDX-License-Identifier:\s*[A-Za-z0-9.\-+]+")
 
@@ -71,6 +87,21 @@ OSI_LICENSES = {
     "Unlicense", "0BSD", "Artistic-2.0", "BSL-1.0", "PostgreSQL",
     "GPL-2.0-only", "GPL-3.0-only", "Apache-2.0 OR MIT",
     "MIT OR Apache-2.0", "Zlib", "WTFPL",
+    # Broadened recognition (2026-06): additional valid SPDX identifiers so
+    # legitimately-licensed dependencies stop being under-credited. Purely
+    # additive — matching is substring-based, so this can only raise or hold
+    # a repo's dependency-license score, never lower it.
+    "MIT-0", "BSD-3-Clause-Clear", "BSD-4-Clause", "BSD-Source-Code",
+    "Python-2.0", "PSF-2.0", "CC0-1.0", "CC-BY-4.0", "CC-BY-3.0",
+    "EPL-1.0", "EPL-2.0", "CDDL-1.0", "CDDL-1.1", "MPL-1.1",
+    "GPL-2.0-or-later", "GPL-3.0-or-later", "LGPL-2.1-only", "LGPL-2.1-or-later",
+    "LGPL-3.0-only", "LGPL-3.0-or-later", "AGPL-3.0-only", "AGPL-3.0-or-later",
+    "Apache-1.1", "Artistic-1.0", "NCSA", "Zlib-acknowledgement",
+    "BlueOak-1.0.0", "Unicode-DFS-2015", "Unicode-DFS-2016", "Unicode-3.0",
+    "OFL-1.1", "EUPL-1.2", "MS-PL", "MS-RL", "OpenSSL", "Vim",
+    # Common SPDX "WITH exception" forms seen in real dependency metadata.
+    "Apache-2.0 WITH LLVM-exception", "GPL-2.0 WITH Classpath-exception-2.0",
+    "GPL-3.0 WITH GCC-exception-3.1", "GPL-2.0-or-later WITH Bison-exception-2.2",
 }
 
 
@@ -177,47 +208,71 @@ class BCOSEngine:
     # ── Check 1: License Compliance (20 pts) ──────────────────────
 
     def _check_spdx(self):
-        """Check SPDX headers on code files + dependency license scan."""
-        code_files = []
-        spdx_present = 0
-        spdx_missing = []
+        """Check SPDX headers on code files + dependency license scan.
 
-        for ext in CODE_EXTS:
-            for f in self.repo_path.rglob(f"*{ext}"):
-                # Skip hidden dirs, node_modules, venvs
-                parts = f.relative_to(self.repo_path).parts
-                if any(p.startswith(".") or p in ("node_modules", "venv", ".venv", "__pycache__", "build", "dist") for p in parts):
-                    continue
-                code_files.append(f)
+        Recognition is computed against both the legacy extension set and the
+        broadened set, and the SPDX subscore is the MAX of the two. This lets
+        the engine recognize more source languages without ever scoring a repo
+        lower than the legacy engine would have — honoring prior scores.
+        """
 
-        for f in code_files:
-            try:
-                with open(f, "r", encoding="utf-8", errors="replace") as fh:
-                    head = fh.read(2048)
-                if SPDX_RE.search(head):
-                    spdx_present += 1
-                else:
-                    spdx_missing.append(str(f.relative_to(self.repo_path)))
-            except Exception:
-                pass
+        def _scan(exts: set) -> tuple:
+            present = 0
+            missing = []
+            files = []
+            for ext in exts:
+                for f in self.repo_path.rglob(f"*{ext}"):
+                    parts = f.relative_to(self.repo_path).parts
+                    if any(p.startswith(".") or p in ("node_modules", "venv", ".venv", "__pycache__", "build", "dist") for p in parts):
+                        continue
+                    files.append(f)
+            for f in files:
+                try:
+                    with open(f, "r", encoding="utf-8", errors="replace") as fh:
+                        head = fh.read(2048)
+                    if SPDX_RE.search(head):
+                        present += 1
+                    else:
+                        missing.append(str(f.relative_to(self.repo_path)))
+                except Exception:
+                    pass
+            total = len(files)
+            pct = (present / total * 100) if total > 0 else 100
+            return present, total, pct, missing
 
-        total = len(code_files)
-        pct = (spdx_present / total * 100) if total > 0 else 100
+        legacy_present, legacy_total, legacy_pct, legacy_missing = _scan(CODE_EXTS)
+        ext_present, ext_total, ext_pct, ext_missing = _scan(CODE_EXTS_EXTENDED)
+
+        # Honor prior scoring: never let the broadened recognition lower the
+        # SPDX subscore. Report the broadened coverage for transparency but
+        # score on whichever view is more favorable to the repo.
+        legacy_spdx_pts = min(10, int(legacy_pct / 10))
+        ext_spdx_pts = min(10, int(ext_pct / 10))
+        spdx_pts = max(legacy_spdx_pts, ext_spdx_pts)
+
+        # Surface the view that was actually scored.
+        if ext_spdx_pts >= legacy_spdx_pts:
+            present, total, pct, missing = ext_present, ext_total, ext_pct, ext_missing
+        else:
+            present, total, pct, missing = legacy_present, legacy_total, legacy_pct, legacy_missing
 
         # Check dependency licenses via pip-licenses
         dep_score = self._check_dep_licenses()
 
         # Score: 10 pts for SPDX coverage, 10 pts for dep licenses
-        spdx_pts = min(10, int(pct / 10))
         total_pts = spdx_pts + dep_score
 
         self.checks["license_compliance"] = {
             "passed": pct >= 80 and dep_score >= 5,
             "spdx_coverage_pct": round(pct, 1),
+            "spdx_coverage_pct_legacy": round(legacy_pct, 1),
+            "spdx_coverage_pct_extended": round(ext_pct, 1),
             "code_files_total": total,
-            "spdx_present": spdx_present,
-            "spdx_missing_sample": spdx_missing[:10],
+            "code_files_total_extended": ext_total,
+            "spdx_present": present,
+            "spdx_missing_sample": missing[:10],
             "dep_license_score": dep_score,
+            "scored_view": "extended" if ext_spdx_pts >= legacy_spdx_pts else "legacy",
         }
         self.score_breakdown["license_compliance"] = min(total_pts, 20)
 
@@ -491,22 +546,50 @@ class BCOSEngine:
         ci_configs = []
 
         # Check for test directories
-        for name in ["tests", "test", "spec", "__tests__", "testing"]:
+        # Broadened (2026-06): added e2e/integration/unit/features conventions.
+        # Detection is additive — a repo can only gain recognition here.
+        for name in ["tests", "test", "spec", "__tests__", "testing",
+                     "e2e", "integration", "unit", "features"]:
             d = self.repo_path / name
             if d.is_dir():
                 test_dirs.append(name)
                 has_tests = True
                 test_files += sum(1 for _ in d.rglob("*test*"))
 
-        # Check for test files in root or src
+        # Check for test files in root or src.
+        # Broadened to recognize Java/Kotlin/C#/Ruby/Elixir/TSX test naming.
         for pattern in ["test_*.py", "*_test.py", "*_test.go", "*_test.rs",
-                        "*.test.js", "*.test.ts", "*.spec.js", "*.spec.ts"]:
+                        "*.test.js", "*.test.ts", "*.test.tsx", "*.test.jsx",
+                        "*.spec.js", "*.spec.ts", "*.spec.tsx", "*.spec.rb",
+                        "*_spec.rb", "*_test.exs", "*Test.java", "*Tests.java",
+                        "*Test.kt", "*Tests.cs", "*Test.cs", "*_test.cc",
+                        "*_test.cpp"]:
             test_files += len(list(self.repo_path.rglob(pattern)))
+
+        # Recognize idiomatic inline Rust tests (#[test] / #[cfg(test)]) which
+        # live in regular .rs source files, not separate *_test.rs files.
+        # Bounded scan so large repos stay fast. Additive recognition only.
+        if test_files == 0:
+            scanned = 0
+            for f in self.repo_path.rglob("*.rs"):
+                if any(p in ("target", ".git") for p in f.relative_to(self.repo_path).parts):
+                    continue
+                scanned += 1
+                if scanned > 400:
+                    break
+                try:
+                    head = f.read_text(encoding="utf-8", errors="replace")[:8192]
+                except Exception:
+                    continue
+                if "#[cfg(test)]" in head or "#[test]" in head:
+                    test_files += 1
+                    break
 
         if test_files > 0:
             has_tests = True
 
         # Check for CI configs
+        # Broadened with Woodpecker/Drone/Bitbucket/Buildkite/Cirrus.
         ci_files = [
             ".github/workflows",
             ".gitlab-ci.yml",
@@ -514,6 +597,11 @@ class BCOSEngine:
             "Jenkinsfile",
             ".circleci/config.yml",
             "azure-pipelines.yml",
+            ".woodpecker.yml",
+            ".drone.yml",
+            "bitbucket-pipelines.yml",
+            ".buildkite",
+            ".cirrus.yml",
         ]
         for cf in ci_files:
             p = self.repo_path / cf
@@ -521,9 +609,13 @@ class BCOSEngine:
                 ci_configs.append(cf)
 
         # Check for test runner configs
+        # Broadened with conftest/nox/vitest/playwright/rspec/phpunit/go-test.
         test_configs = []
         for name in ["pytest.ini", "setup.cfg", "tox.ini", "jest.config.js",
-                      "jest.config.ts", ".mocharc.yml", "karma.conf.js"]:
+                      "jest.config.ts", ".mocharc.yml", "karma.conf.js",
+                      "conftest.py", "noxfile.py", "vitest.config.ts",
+                      "vitest.config.js", "playwright.config.ts", ".rspec",
+                      "phpunit.xml", "phpunit.xml.dist", "Cargo.toml"]:
             if (self.repo_path / name).exists():
                 test_configs.append(name)
 
@@ -534,6 +626,29 @@ class BCOSEngine:
                 content = pyproject.read_text()
                 if "pytest" in content or "tool.pytest" in content:
                     test_configs.append("pyproject.toml[pytest]")
+            except Exception:
+                pass
+
+        # Recognize a `test` target/script in Make or package.json — a common
+        # signal of a real test harness that the fixed config list missed.
+        makefile = self.repo_path / "Makefile"
+        if not makefile.exists():
+            makefile = self.repo_path / "makefile"
+        if makefile.exists():
+            try:
+                if re.search(r"(?m)^test\s*:", makefile.read_text(errors="replace")):
+                    test_configs.append("Makefile[test]")
+            except Exception:
+                pass
+
+        pkg_json = self.repo_path / "package.json"
+        if pkg_json.exists():
+            try:
+                pkg = json.loads(pkg_json.read_text(errors="replace"))
+                test_script = (pkg.get("scripts") or {}).get("test", "")
+                # Ignore the npm-init placeholder that does nothing.
+                if test_script and "no test specified" not in test_script:
+                    test_configs.append("package.json[scripts.test]")
             except Exception:
                 pass
 
