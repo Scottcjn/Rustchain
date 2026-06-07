@@ -6,6 +6,7 @@ Full-featured wallet and miner for Windows
 Includes Zephyr (RandomX) dual-mining integration.
 See: https://github.com/Scottcjn/rustchain-bounties/issues/461
 """
+from __future__ import annotations
 
 import os
 import sys
@@ -61,6 +62,17 @@ try:
     CRYPTO_AVAILABLE = True
 except ImportError:
     CRYPTO_AVAILABLE = False
+
+# Shared pipe-message builder (PR #6839 review)
+try:
+    from miners.signing_helpers import build_pipe_sign_message
+    _SIGNING_HELPERS = True
+except ImportError:
+    try:
+        from signing_helpers import build_pipe_sign_message
+        _SIGNING_HELPERS = True
+    except ImportError:
+        _SIGNING_HELPERS = False
 
 # Configuration
 RUSTCHAIN_API = "http://50.28.86.131:8088"
@@ -134,6 +146,7 @@ class RustChainMiner:
         self.mining = False
         self.shares_submitted = 0
         self.shares_accepted = 0
+        self._last_submitted_slot = None
         self.miner_id = f"windows_{hashlib.md5(wallet_address.encode()).hexdigest()[:8]}"
         self.node_url = RUSTCHAIN_API
         self.attestation_valid_until = 0
@@ -142,6 +155,7 @@ class RustChainMiner:
         self.hw_info = self._get_hw_info()
         self.last_entropy = {}
         self.last_attestation_error = ""
+        self.last_header_error = ""
         # Surfaced fingerprint status — non-empty string means the miner is
         # submitting NO fingerprint and will be enrolled at VM-tier weight
         # (1e-9), i.e. earning ~zero. Shown loudly every attest cycle.
@@ -296,9 +310,14 @@ class RustChainMiner:
                     continue
 
                 self._emit_ready_status(callback)
-                eligible = self.check_eligibility()
-                if eligible:
-                    header = self.generate_header()
+                eligibility = self.check_eligibility()
+                slot = eligibility.get("slot")
+                if (
+                    eligibility.get("eligible")
+                    and slot is not None
+                    and slot != self._last_submitted_slot
+                ):
+                    header = self.generate_header(slot)
                     success = self.submit_header(header)
                     self.shares_submitted += 1
                     if success:
@@ -536,20 +555,29 @@ class RustChainMiner:
         if self._pow_proof:
             attestation["pow_proof"] = self._pow_proof
 
-        # ── Ed25519 signature (GPT-5.4 audit finding #2) ──
-        # Sign canonical JSON of the full attestation BEFORE adding the
-        # signature/public_key/signature_type fields. Server reproduces the
-        # same canonical bytes by stripping those three fields and verifying.
-        # Legacy sha512 fallback for installs without PyNaCl — server flags
-        # it but still accepts (see PR #6426 server-side handling).
+        # ── Ed25519 signature ──
+        # Sign the pipe-delimited message that the node verifier reconstructs
+        # (miner_id|miner|nonce|commitment). Previous code signed the canonical
+        # JSON of the full attestation, but the server verifies the pipe-string,
+        # causing every signed attestation to fail with INVALID_SIGNATURE.
+        # See issue #6798.
         if CRYPTO_AVAILABLE and self.keypair:
-            payload_bytes = json.dumps(
-                attestation, sort_keys=True, separators=(",", ":")
-            ).encode()
-            signature = sign_payload(payload_bytes, self.keypair["private_key"])
-            attestation["signature"] = signature
-            attestation["public_key"] = self.public_key
-            attestation["signature_type"] = "ed25519"
+            try:
+                if _SIGNING_HELPERS:
+                    sign_msg = build_pipe_sign_message(attestation)
+                else:
+                    sign_msg = "{}|{}|{}|{}".format(
+                        attestation["miner_id"],
+                        attestation["miner"],
+                        attestation["nonce"],
+                        attestation["report"]["commitment"],
+                    ).encode("utf-8")
+                signature = sign_payload(sign_msg, self.keypair["private_key"])
+                attestation["signature"] = signature
+                attestation["public_key"] = self.public_key
+                attestation["signature_type"] = "ed25519"
+            except Exception:
+                pass  # Fall through unsigned; server accepts with warning
         else:
             # Legacy fallback — sha512 pseudo-signature. Server accepts but
             # logs a warning. Real wallet-hijack protection requires PyNaCl.
@@ -641,53 +669,75 @@ class RustChainMiner:
         return False
 
     def check_eligibility(self):
-        """Check if eligible to mine"""
+        """Return lottery eligibility for the attested wallet identity."""
         try:
             response = requests.get(
-                f"{RUSTCHAIN_API}/lottery/eligibility?miner_id={self.miner_id}"
+                f"{self.node_url}/lottery/eligibility",
+                params={"miner_id": self.wallet_address},
+                timeout=10,
             )
             if response.ok:
-                return response.json().get("eligible", False)
-        except Exception:
-            pass
-        return False
+                result = response.json()
+                if isinstance(result, dict):
+                    return result
+            return {
+                "eligible": False,
+                "reason": f"HTTP {getattr(response, 'status_code', 'unknown')}",
+            }
+        except Exception as e:
+            return {"eligible": False, "reason": str(e)}
 
-    def generate_header(self):
-        """
-        Generate mining header.
+    def generate_header(self, slot):
+        """Build the signed-header envelope accepted by the production node."""
+        if not CRYPTO_AVAILABLE or not self.keypair or not self.public_key:
+            raise RuntimeError("Ed25519 keypair required for header submission")
 
-        Extended for Zephyr dual-mining: the most recently built pow_proof
-        (from the last attest() cycle) is included when present. This binds
-        the PoW evidence to the specific header submission so the node can
-        correlate the attestation proof with the reward claim.
-        """
+        slot = int(slot)
         timestamp = int(time.time())
-        nonce     = os.urandom(4).hex()
-        header    = {
-            "miner_id":  self.miner_id,
-            "wallet":    self.wallet_address,
+        chain_identity = self.wallet_address
+        message = (
+            f"slot:{slot}:miner:{chain_identity}:ts:{timestamp}".encode("utf-8")
+        )
+        header = {
+            "slot": slot,
+            "miner": chain_identity,
             "timestamp": timestamp,
-            "nonce":     nonce
         }
-        header_str    = json.dumps(header, sort_keys=True)
-        header["hash"] = hashlib.sha256(header_str.encode()).hexdigest()
 
-        # Attach the cached PoW proof from the last attestation cycle.
-        # Using the cached value (rather than re-detecting on every header)
-        # avoids repeated process scans and RPC calls in the 10-second loop.
         if self._pow_proof:
             header["pow_proof"] = self._pow_proof
 
-        return header
+        return {
+            "miner_id": chain_identity,
+            "header": header,
+            "message": message.hex(),
+            "signature": sign_payload(message, self.keypair["private_key"]),
+            "pubkey": self.public_key,
+        }
 
-    def submit_header(self, header):
-        """Submit mining header"""
+    def submit_header(self, payload):
+        """Submit one signed header and remember accepted slots."""
+        slot = payload.get("header", {}).get("slot")
         try:
             response = requests.post(
-                f"{RUSTCHAIN_API}/headers/ingest_signed", json=header, timeout=5
+                f"{self.node_url}/headers/ingest_signed",
+                json=payload,
+                timeout=15,
             )
-            return response.status_code == 200
-        except Exception:
+            result = response.json()
+            success = (
+                response.status_code == 200
+                and isinstance(result, dict)
+                and bool(result.get("ok"))
+            )
+            if success:
+                self._last_submitted_slot = slot
+                self.last_header_error = ""
+            else:
+                self.last_header_error = self._response_diagnostic(response)
+            return success
+        except Exception as e:
+            self.last_header_error = f"header request failed: {e}"
             return False
 
 
