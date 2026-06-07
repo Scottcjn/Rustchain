@@ -37,7 +37,10 @@ NODE_URL = "https://50.28.86.131"
 
 def _load_config() -> dict:
     if CONFIG_FILE.exists():
-        return json.loads(CONFIG_FILE.read_text())
+        try:
+            return json.loads(CONFIG_FILE.read_text())
+        except (OSError, json.JSONDecodeError):
+            return {}
     return {}
 
 
