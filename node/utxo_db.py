@@ -1496,10 +1496,22 @@ def coin_select(utxos: List[dict], target_nrtc: int
             fallback_total += u['value_nrtc']
             if fallback_total >= target_nrtc:
                 break
-        if fallback_total < target_nrtc or len(fallback) > 20:
+
+        # If largest-first still exceeds 20 inputs (e.g. equal-value UTXOs),
+        # cap at 20 and check if the top 20 cover the target.
+        if len(fallback) > 20:
+            capped = sorted_desc[:20]
+            capped_total = sum(u['value_nrtc'] for u in capped)
+            if capped_total >= target_nrtc:
+                selected = capped
+                total = capped_total
+            else:
+                return [], 0  # cannot cover target with ≤20 inputs
+        elif fallback_total < target_nrtc:
             return [], 0
-        selected = fallback
-        total = fallback_total
+        else:
+            selected = fallback
+            total = fallback_total
 
     change = total - target_nrtc
     if change < DUST_THRESHOLD:
