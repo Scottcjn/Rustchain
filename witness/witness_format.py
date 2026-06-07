@@ -118,8 +118,9 @@ class EpochWitness:
             h_bytes = bytes.fromhex(h) if len(h) == 64 else h.encode()[:32].ljust(32, b"\x00")
             buf += h_bytes
         # Merkle proof count + entries
-        buf += struct.pack(">B", len(self.merkle_proof))
-        for proof in self.merkle_proof[:15]:  # Max 15 proof nodes
+        proofs = self.merkle_proof[:15]  # Max 15 proof nodes
+        buf += struct.pack(">B", len(proofs))
+        for proof in proofs:
             p_bytes = bytes.fromhex(proof) if len(proof) == 64 else proof.encode()[:32].ljust(32, b"\x00")
             buf += p_bytes
         # Miner count + entries
