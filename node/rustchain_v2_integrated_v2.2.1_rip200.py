@@ -1867,6 +1867,14 @@ def init_db():
         if not c.execute("SELECT 1 FROM schema_version WHERE version=18").fetchone():
             c.execute("INSERT OR IGNORE INTO miner_header_bootstrap (miner_id, pubkey_hex) "
                       "SELECT miner_id, pubkey_hex FROM miner_header_keys")
+            # Same transaction as the v18 marker below -> atomic one-time guard.
+            _bf_n = c.execute("SELECT COUNT(*) FROM miner_header_bootstrap").fetchone()[0]
+            logging.warning(
+                "[migrate v18] grandfathered %d existing header key(s) into the bootstrap "
+                "allowlist. These were trusted under the pre-fix behavior; AUDIT and revoke "
+                "any suspect keys (POST /miner/headerkey action=revoke) BEFORE enabling "
+                "RC_HEADER_KEY_STRICT_BOOTSTRAP." % _bf_n
+            )
             c.execute("INSERT OR IGNORE INTO schema_version(version, applied_at) VALUES(18, ?)",
                       (int(time.time()),))
         c.execute("INSERT OR IGNORE INTO gov_threshold(id, threshold) VALUES(1, 3)")
@@ -5118,6 +5126,10 @@ def miner_set_header_key():
     action = body.get("action") or "register"
     if isinstance(action, str):
         action = action.strip().lower()
+    if action not in ("register", "revoke"):
+        # Reject unknown actions rather than defaulting to register — a typo'd
+        # "revoke" must NOT silently add/approve a key.
+        return jsonify({"ok": False, "error": "invalid action (expected 'register' or 'revoke')"}), 400
     if action == "revoke":
         with sqlite3.connect(DB_PATH) as db:
             db.execute("DELETE FROM miner_header_keys WHERE miner_id=? AND pubkey_hex=?", (miner_id, pubkey_hex))
