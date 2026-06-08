@@ -67,19 +67,41 @@ export class RustChainClient {
     return this.request("GET", withQuery("/wallet/balance", params));
   }
 
-  async transfer({ from, to, amount, signature, fee = 0.01 }) {
+  async transfer(options = {}) {
+    if (!options || typeof options !== "object" || Array.isArray(options)) {
+      throw new RustChainValidationError("transfer options must be an object");
+    }
+
+    const from = options.from ?? options.from_address;
+    const to = options.to ?? options.to_address;
+    const amount = options.amount ?? options.amount_rtc;
+    const fee = options.fee ?? options.fee_rtc ?? 0;
+    const publicKey = options.publicKey ?? options.public_key;
+    const chainId = options.chainId ?? options.chain_id;
+    const nonce = validatePositiveInteger(options.nonce, "nonce");
+
     assertNonEmptyString(from, "from");
     assertNonEmptyString(to, "to");
+    assertNonEmptyString(options.signature, "signature");
+    if (isRtcAddress(from) || publicKey !== undefined) {
+      assertNonEmptyString(publicKey, "publicKey");
+    }
     validatePositiveNumber(amount, "amount");
     validateNonNegativeNumber(fee, "fee");
 
-    return this.request("POST", "/transfer", {
-      from,
-      to,
-      amount,
-      fee,
-      ...(signature ? { signature } : {})
-    });
+    const payload = {
+      from_address: from,
+      to_address: to,
+      amount_rtc: Number(amount),
+      fee_rtc: Number(fee),
+      nonce,
+      signature: options.signature,
+      ...(publicKey ? { public_key: publicKey } : {}),
+      ...(options.memo !== undefined ? { memo: String(options.memo) } : {}),
+      ...(chainId !== undefined ? { chain_id: String(chainId) } : {})
+    };
+
+    return this.request("POST", "/wallet/transfer/signed", payload);
   }
 
   async attestChallenge(payload = {}) {
@@ -182,6 +204,10 @@ function assertNonEmptyString(value, name) {
   if (typeof value !== "string" || value.trim() === "") {
     throw new RustChainValidationError(`${name} must be a non-empty string`);
   }
+}
+
+function isRtcAddress(value) {
+  return typeof value === "string" && /^RTC[0-9a-fA-F]{40}$/.test(value);
 }
 
 function validatePositiveInteger(value, name) {

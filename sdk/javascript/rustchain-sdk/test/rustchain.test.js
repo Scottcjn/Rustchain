@@ -60,22 +60,58 @@ test("validates balance miner id", async () => {
   await assert.rejects(() => client.balance(""), RustChainValidationError);
 });
 
-test("posts transfer payload", async () => {
+test("posts signed transfer payload", async () => {
+  const fromAddress = `RTC${"a".repeat(40)}`;
+  const toAddress = `RTC${"b".repeat(40)}`;
+
   const client = new RustChainClient({
     fetch: mockFetch((url, init) => {
-      assert.equal(url, "https://rustchain.org/transfer");
+      assert.equal(url, "https://rustchain.org/wallet/transfer/signed");
       assert.equal(init.method, "POST");
       assert.deepEqual(JSON.parse(init.body), {
-        from: "alice",
-        to: "bob",
-        amount: 1.25,
-        fee: 0.01
+        from_address: fromAddress,
+        to_address: toAddress,
+        amount_rtc: 1.25,
+        fee_rtc: 0,
+        nonce: 12345,
+        signature: "22".repeat(64),
+        public_key: "11".repeat(32),
+        memo: "sdk transfer",
+        chain_id: "rustchain-mainnet-v2"
       });
       return { status: 200, body: JSON.stringify({ success: true }) };
     })
   });
 
-  assert.deepEqual(await client.transfer({ from: "alice", to: "bob", amount: 1.25 }), { success: true });
+  assert.deepEqual(
+    await client.transfer({
+      from: fromAddress,
+      to: toAddress,
+      amount: 1.25,
+      nonce: 12345,
+      signature: "22".repeat(64),
+      publicKey: "11".repeat(32),
+      memo: "sdk transfer",
+      chainId: "rustchain-mainnet-v2"
+    }),
+    { success: true }
+  );
+});
+
+test("rejects signed transfer calls missing signature material", async () => {
+  const client = new RustChainClient({ fetch: mockFetch(() => ({ status: 200 })) });
+
+  await assert.rejects(
+    () =>
+      client.transfer({
+        from: `RTC${"a".repeat(40)}`,
+        to: `RTC${"b".repeat(40)}`,
+        amount: 1.25,
+        nonce: 12345,
+        signature: "22".repeat(64)
+      }),
+    RustChainValidationError
+  );
 });
 
 test("throws API errors with status and endpoint", async () => {
