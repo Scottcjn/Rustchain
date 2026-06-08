@@ -590,8 +590,8 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
             "http://169.254.169.254/",
             headers={"Metadata": "true"}
         )
-        resp = urllib.request.urlopen(req, timeout=1)
-        cloud_body = resp.read(512).decode("utf-8", errors="replace").lower()
+        with urllib.request.urlopen(req, timeout=1) as resp:
+            cloud_body = resp.read(512).decode("utf-8", errors="replace").lower()
         cloud_provider = "unknown_cloud"
         if "latest" in cloud_body or "meta-data" in cloud_body:
             cloud_provider = "aws_or_gcp"
@@ -609,8 +609,8 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
             headers={"X-aws-ec2-metadata-token-ttl-seconds": "5"},
             method="PUT"
         )
-        token_resp = urllib.request.urlopen(token_req, timeout=1)
-        if token_resp.status == 200:
+        with urllib.request.urlopen(token_req, timeout=1) as token_resp:
+            if token_resp.status == 200:
             vm_indicators.append("cloud_metadata:aws_imdsv2")
     except Exception:
         pass
