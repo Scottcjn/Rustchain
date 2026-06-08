@@ -293,7 +293,8 @@ def _windows_fingerprint_checks():
     try:
         import urllib.request
         req = urllib.request.Request("http://169.254.169.254/", headers={"Metadata": "true"})
-        urllib.request.urlopen(req, timeout=1)
+        with urllib.request.urlopen(req, timeout=1):
+            pass
         vm_indicators.append("cloud_metadata:detected")
     except Exception:
         pass
