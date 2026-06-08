@@ -43,7 +43,7 @@ def load_state() -> Dict[str, Any]:
     """Load previous state from file."""
     if os.path.exists(STATE_FILE):
         try:
-            with open(STATE_FILE, 'r') as f:
+            with open(STATE_FILE, 'r', encoding="utf-8") as f:
                 return json.load(f)  # type: ignore[no-any-return]
         except Exception:
             pass
@@ -52,7 +52,7 @@ def load_state() -> Dict[str, Any]:
 
 def save_state(state: Dict[str, Any]) -> None:
     """Save current state to file."""
-    with open(STATE_FILE, 'w') as f:
+    with open(STATE_FILE, 'w', encoding="utf-8") as f:
         json.dump(state, f, indent=2)
 
 
