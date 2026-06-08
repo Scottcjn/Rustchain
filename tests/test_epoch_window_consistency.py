@@ -68,7 +68,7 @@ def load_module_from_file(module_name, file_path):
 
 def extract_genesis_from_source(file_path):
     """Extract GENESIS_TIMESTAMP value from source via regex (no import)."""
-    with open(file_path, "r") as f:
+    with open(file_path, "r", encoding="utf-8") as f:
         source = f.read()
     # Match: GENESIS_TIMESTAMP = <int>  or  GENESIS_TIMESTAMP: int = <int>
     match = re.search(
@@ -82,7 +82,7 @@ def extract_genesis_from_source(file_path):
 
 def has_hardcoded_old_literal(file_path):
     """Check if source contains old genesis value in an arithmetic expression."""
-    with open(file_path, "r") as f:
+    with open(file_path, "r", encoding="utf-8") as f:
         source = f.read()
     for old_val in OLD_GENESIS_VALUES:
         # Match patterns like: 1728000000 +  or  + 1728000000

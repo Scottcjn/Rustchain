@@ -11,7 +11,7 @@ class TestP2PNonceSecurity(unittest.TestCase):
     def test_create_message_uses_secure_nonce(self):
         """create_message must use secrets.token_hex for nonce generation."""
         gossip_file = os.path.join(os.path.dirname(__file__), '..', 'node', 'rustchain_p2p_gossip.py')
-        with open(gossip_file, 'r') as f:
+        with open(gossip_file, 'r', encoding="utf-8") as f:
             content = f.read()
         
         # Check that secure_nonce is used in message creation
@@ -25,7 +25,7 @@ class TestP2PNonceSecurity(unittest.TestCase):
     def test_state_message_uses_secure_nonce(self):
         """State messages must also use secure nonces."""
         gossip_file = os.path.join(os.path.dirname(__file__), '..', 'node', 'rustchain_p2p_gossip.py')
-        with open(gossip_file, 'r') as f:
+        with open(gossip_file, 'r', encoding="utf-8") as f:
             content = f.read()
             
         # Check that state_nonce is used

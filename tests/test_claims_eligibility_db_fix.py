@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 class TestClaimsEligibilityDBCheck(unittest.TestCase):
     def setUp(self):
         self.module_path = os.path.join(os.path.dirname(__file__), '..', 'node', 'claims_eligibility.py')
-        with open(self.module_path, 'r') as f:
+        with open(self.module_path, 'r', encoding="utf-8") as f:
             self.source = f.read()
 
     def test_fix_queries_database(self):

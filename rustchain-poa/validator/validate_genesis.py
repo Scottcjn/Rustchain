@@ -2,7 +2,7 @@ import json
 from .score_calculator import calculate_score
 
 def validate_genesis(genesis_path):
-    with open(genesis_path) as f:
+    with open(genesis_path, encoding="utf-8") as f:
         data = json.load(f)
     score, sig, emu, markers = calculate_score()
     result = {

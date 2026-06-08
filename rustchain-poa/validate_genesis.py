@@ -33,7 +33,7 @@ def recompute_hash(device, timestamp, message):
     return base64.b64encode(sha1).decode('utf-8')
 
 def validate_genesis(path):
-    with open(path, 'r') as f:
+    with open(path, 'r', encoding="utf-8") as f:
         data = json.load(f)
 
     device = data.get("device", "").strip()
