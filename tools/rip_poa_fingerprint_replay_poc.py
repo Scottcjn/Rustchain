@@ -105,7 +105,8 @@ def replay_fingerprint(captured_path: str = "/tmp/captured_fingerprint.json") ->
     There is NO challenge-response binding — the server trusts the client's claim.
 
     Attack: Replace _run_fingerprint_checks() with:
-        self.fingerprint_data = json.load(open("/tmp/captured_fingerprint.json"))
+        with open("/tmp/captured_fingerprint.json") as f:
+            self.fingerprint_data = json.load(f)
         self.fingerprint_passed = True
     """
     with open(captured_path) as f:
