@@ -207,7 +207,7 @@ class HardwareFingerprint:
                     buf[i:i+64] = buf[i+64:i+128]
                 elapsed = time.perf_counter_ns() - start
                 vector_latencies.append(elapsed)
-        except:
+        except Exception:
             pass
         
         vector_mean = statistics.mean(vector_latencies) if vector_latencies else 0
@@ -408,10 +408,10 @@ class HardwareFingerprint:
                     result = subprocess.run(["sysctl", "-n", "machdep.cpu.brand_string"],
                                           capture_output=True, text=True, timeout=5)
                     oracle["cpu_model"] = result.stdout.strip()
-                except:
+                except Exception:
                     pass
                     
-        except:
+        except Exception:
             pass
         
         # Estimate release year from CPU model (heuristic)
@@ -476,10 +476,10 @@ class HardwareFingerprint:
                         product = f.read().lower()
                         if any(vm in product for vm in ["virtual", "vmware", "qemu", "kvm", "xen"]):
                             checks["vm_artifacts"].append(f"dmi_product:{product.strip()}")
-                except:
+                except Exception:
                     pass
                     
-        except:
+        except Exception:
             pass
         
         # Time dilation check: measure if time flows consistently
