@@ -491,7 +491,7 @@ def load_config(config_path: str) -> Dict:
 
     if os.path.exists(config_path):
         try:
-            with open(config_path, 'r') as f:
+            with open(config_path, 'r', encoding="utf-8") as f:
                 file_config = json.load(f)
                 config.update(file_config)
         except Exception as e:
@@ -510,7 +510,7 @@ def load_config(config_path: str) -> Dict:
 
 def save_config(config: Dict, config_path: str):
     """Save configuration to JSON file."""
-    with open(config_path, 'w') as f:
+    with open(config_path, 'w', encoding="utf-8") as f:
         json.dump(config, f, indent=2)
 
 

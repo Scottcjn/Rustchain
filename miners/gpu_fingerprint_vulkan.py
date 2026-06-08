@@ -257,7 +257,7 @@ def channel_system_gpu_probe() -> ChannelResult:
         drm_info = []
         for vendor_path in drm_cards:
             card = vendor_path.split("/")[4]
-            vendor = open(vendor_path).read().strip()
+            vendor = open(vendor_path, encoding="utf-8").read().strip()
             device_path = vendor_path.replace("vendor", "device")
             device = open(device_path).read().strip() if __import__("os").path.exists(device_path) else "unknown"
             drm_info.append({"card": card, "vendor": vendor, "device": device})
@@ -271,7 +271,7 @@ def channel_system_gpu_probe() -> ChannelResult:
         amd_hwmon = glob.glob("/sys/class/drm/card*/device/hwmon/hwmon*/temp1_input")
         for path in amd_hwmon:
             card = path.split("/")[4]
-            temp = int(open(path).read().strip()) // 1000
+            temp = int(open(path, encoding="utf-8").read().strip()) // 1000
             data[f"{card}_temp_c"] = temp
     except Exception:
         pass

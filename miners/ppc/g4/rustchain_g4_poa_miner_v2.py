@@ -144,7 +144,7 @@ def detect_ppc_hardware():
                     hw_info["cpu"] = "PowerPC G3"
 
             elif platform.system() == "Linux":
-                with open('/proc/cpuinfo', 'r') as f:
+                with open('/proc/cpuinfo', 'r', encoding="utf-8") as f:
                     cpuinfo = f.read().lower()
                     if '7450' in cpuinfo or '7447' in cpuinfo or '7455' in cpuinfo:
                         hw_info["arch"] = "G4"
@@ -164,7 +164,7 @@ def detect_ppc_hardware():
     # Get memory
     try:
         if platform.system() == "Linux":
-            with open('/proc/meminfo', 'r') as f:
+            with open('/proc/meminfo', 'r', encoding="utf-8") as f:
                 for line in f:
                     if 'MemTotal' in line:
                         kb = int(line.split()[1])

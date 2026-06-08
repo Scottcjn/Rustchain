@@ -129,7 +129,7 @@ def check_simd_identity() -> Tuple[bool, Dict]:
     arch = platform.machine().lower()
 
     try:
-        with open("/proc/cpuinfo", "r") as f:
+        with open("/proc/cpuinfo", "r", encoding="utf-8") as f:
             for line in f:
                 if "flags" in line.lower() or "features" in line.lower():
                     parts = line.split(":")
@@ -329,7 +329,7 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
 
     for path in vm_paths:
         try:
-            with open(path, "r") as f:
+            with open(path, "r", encoding="utf-8") as f:
                 content = f.read().strip().lower()
                 for vm in vm_strings:
                     if vm in content:
@@ -347,7 +347,7 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
 
     # --- CPU hypervisor flag check ---
     try:
-        with open("/proc/cpuinfo", "r") as f:
+        with open("/proc/cpuinfo", "r", encoding="utf-8") as f:
             if "hypervisor" in f.read().lower():
                 vm_indicators.append("cpuinfo:hypervisor")
     except:
@@ -356,7 +356,7 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
     # --- /sys/hypervisor check (Xen-based cloud VMs expose this) ---
     try:
         if os.path.exists("/sys/hypervisor/type"):
-            with open("/sys/hypervisor/type", "r") as f:
+            with open("/sys/hypervisor/type", "r", encoding="utf-8") as f:
                 hv_type = f.read().strip().lower()
                 if hv_type:
                     vm_indicators.append("sys_hypervisor:{}".format(hv_type))

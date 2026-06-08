@@ -589,7 +589,7 @@ def channel_8f_vm_detection(device: torch.device) -> ChannelResult:
     ]
     for path in dmi_paths:
         try:
-            with open(path, "r") as f:
+            with open(path, "r", encoding="utf-8") as f:
                 val = f.read().strip().lower()
                 for vs in vm_strings:
                     if vs in val:
@@ -600,7 +600,7 @@ def channel_8f_vm_detection(device: torch.device) -> ChannelResult:
     # --- Check 2: /sys/hypervisor ---
     try:
         if os.path.exists("/sys/hypervisor/type"):
-            with open("/sys/hypervisor/type", "r") as f:
+            with open("/sys/hypervisor/type", "r", encoding="utf-8") as f:
                 hv = f.read().strip().lower()
                 if hv and hv != "none":
                     indicators.append(f"hypervisor_type:{hv}")
@@ -609,7 +609,7 @@ def channel_8f_vm_detection(device: torch.device) -> ChannelResult:
 
     # --- Check 3: CPU hypervisor flag ---
     try:
-        with open("/proc/cpuinfo", "r") as f:
+        with open("/proc/cpuinfo", "r", encoding="utf-8") as f:
             if "hypervisor" in f.read().lower():
                 indicators.append("cpuinfo:hypervisor_flag")
     except (OSError, PermissionError):
@@ -741,7 +741,7 @@ def cross_validate_gpu(device: torch.device) -> ChannelResult:
             gpu_dirs = sorted(os.listdir(nvidia_proc))
             if dev_idx < len(gpu_dirs):
                 info_path = os.path.join(nvidia_proc, gpu_dirs[dev_idx], "information")
-                with open(info_path, "r") as f:
+                with open(info_path, "r", encoding="utf-8") as f:
                     for line in f:
                         if "Model:" in line:
                             kernel_name = line.split(":", 1)[1].strip().lower()

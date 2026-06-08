@@ -114,7 +114,7 @@ class LocalMiner:
     def _load_or_gen_wallet(self):
         """Load wallet from file or generate new one (persist on first run)"""
         if os.path.exists(WALLET_FILE):
-            with open(WALLET_FILE, 'r') as f:
+            with open(WALLET_FILE, 'r', encoding="utf-8") as f:
                 wallet = f.read().strip()
                 if wallet:
                     print(f"[WALLET] Loaded existing wallet from {WALLET_FILE}")
@@ -123,7 +123,7 @@ class LocalMiner:
         wallet = self._gen_wallet()
         # Save it
         os.makedirs(os.path.dirname(WALLET_FILE), exist_ok=True)
-        with open(WALLET_FILE, 'w') as f:
+        with open(WALLET_FILE, 'w', encoding="utf-8") as f:
             f.write(wallet)
         print(f"[WALLET] Generated and saved new wallet to {WALLET_FILE}")
         return wallet
@@ -241,7 +241,7 @@ class LocalMiner:
         cpu = _parse_lscpu_model(self._run_cmd(["lscpu"]))
         if not cpu:
             try:
-                with open("/proc/cpuinfo", "r") as f:
+                with open("/proc/cpuinfo", "r", encoding="utf-8") as f:
                     cpu = _parse_proc_cpu_model(f.read())
             except Exception:
                 cpu = ""
@@ -447,7 +447,7 @@ class LocalMiner:
 
         # Save wallet
         wallet_file = os.path.expanduser("~/rustchain/power8_wallet.txt")
-        with open(wallet_file, "w") as f:
+        with open(wallet_file, "w", encoding="utf-8") as f:
             f.write(self.wallet)
         print(f"[SAVE] Wallet saved to: {wallet_file}\n")
 

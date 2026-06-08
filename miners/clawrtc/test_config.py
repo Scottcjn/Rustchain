@@ -82,14 +82,14 @@ class TestLoadConfig:
         assert Path(tmp_config).exists()
 
     def test_loads_existing_config(self, tmp_config, sample_config):
-        with open(tmp_config, "w") as f:
+        with open(tmp_config, "w", encoding="utf-8") as f:
             json.dump(sample_config, f)
         cfg = load_config(tmp_config)
         assert cfg["wallet_address"] == "RTC1234567890abcdef"
 
     def test_merges_missing_keys(self, tmp_config):
         """Old configs missing new fields get defaults filled in."""
-        with open(tmp_config, "w") as f:
+        with open(tmp_config, "w", encoding="utf-8") as f:
             json.dump({"wallet_address": "RTCabc", "node_url": "https://example.com"}, f)
         cfg = load_config(tmp_config)
         assert "mining_threads" in cfg
@@ -97,20 +97,20 @@ class TestLoadConfig:
         assert cfg["wallet_address"] == "RTCabc"
 
     def test_rejects_invalid_json(self, tmp_config):
-        with open(tmp_config, "w") as f:
+        with open(tmp_config, "w", encoding="utf-8") as f:
             f.write("{bad json!!")
         with pytest.raises(ConfigError, match="Invalid JSON"):
             load_config(tmp_config)
 
     def test_rejects_non_object(self, tmp_config):
-        with open(tmp_config, "w") as f:
+        with open(tmp_config, "w", encoding="utf-8") as f:
             json.dump([1, 2, 3], f)
         with pytest.raises(ConfigError, match="JSON object"):
             load_config(tmp_config)
 
     def test_preserves_extra_keys(self, tmp_config):
         """User-added keys are kept (forward compat)."""
-        with open(tmp_config, "w") as f:
+        with open(tmp_config, "w", encoding="utf-8") as f:
             json.dump({"wallet_address": "RTCx", "custom_field": 42}, f)
         cfg = load_config(tmp_config)
         assert cfg["custom_field"] == 42
@@ -122,7 +122,7 @@ class TestSaveConfig:
     def test_saves_valid_config(self, tmp_config, sample_config):
         path = save_config(sample_config, tmp_config)
         assert Path(path).exists()
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             loaded = json.load(f)
         assert loaded["wallet_address"] == sample_config["wallet_address"]
 
