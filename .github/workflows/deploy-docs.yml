@@ -1,0 +1,52 @@
+name: Deploy Docusaurus docs
+
+# Builds the Docusaurus site in website/ (which renders the repo's docs/ folder)
+# and publishes it to the gh-pages branch. GitHub Pages then serves it at
+# https://scottcjn.github.io/Rustchain/
+
+on:
+  push:
+    branches:
+      - main
+      - docs/docusaurus-site
+    paths:
+      - 'website/**'
+      - 'docs/**'
+      - '.github/workflows/deploy-docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed to push the gh-pages branch
+
+concurrency:
+  group: deploy-docs
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - name: Install dependencies
+        working-directory: website
+        run: npm ci
+
+      - name: Build
+        working-directory: website
+        run: npm run build
+
+      - name: Deploy to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./website/build
+          # peaceiris writes .nojekyll automatically so Docusaurus _-files serve
