@@ -2068,6 +2068,17 @@ def derive_measurement_nonce(previous_epoch_block_hash: str) -> str:
 
 
 def select_active_fingerprint_checks(previous_epoch_block_hash: str, active_count: int = RIP309_ACTIVE_FINGERPRINT_CHECKS) -> tuple:
+    # T3.6: when the previous block hash is UNAVAILABLE (genesis/early epochs, or a
+    # read error → the all-zeros fallback), the rotation seed is fully predictable, so
+    # an attacker would know exactly which 4-of-6 subset is active and could prepare to
+    # pass only those, leaving the other two checks effectively optional. Fail CLOSED —
+    # activate ALL checks — matching the sibling paths that already do so when no prev
+    # hash is available: the reward path
+    # (rip_309_measurement_rotation.get_reward_active_fingerprint_checks) and
+    # finalize_epoch's inline selection both activate all six on an empty hash.
+    normalized = (previous_epoch_block_hash or "").strip().lower()
+    if not normalized or normalized == RIP309_NONCE_FALLBACK:
+        return tuple(RIP309_ROTATING_FINGERPRINT_CHECKS)
     nonce = derive_measurement_nonce(previous_epoch_block_hash)
     ranked = sorted(
         RIP309_ROTATING_FINGERPRINT_CHECKS,
@@ -10523,8 +10534,70 @@ def wallet_transfer_signed():
 BEACON_RATE_WINDOW = 60
 BEACON_RATE_LIMIT  = 60
 
+# T3.5: per-process, per-IP, DB-INDEPENDENT beacon submission backstop. The per-agent
+# DB count below (a) is keyed by agent_id, which an attacker rotates freely to evade,
+# and (b) is wrapped in `except Exception: pass`, so a DB error silently FAILS OPEN —
+# unbounded submissions. This in-memory limiter always runs (no DB dependency), is keyed
+# by client IP, and fails closed. Mirrors _check_governance_vote_rate_limit. NOTE: like
+# that sibling it is per-PROCESS — under a hypothetical multi-worker deployment each
+# worker enforces the cap independently; the node runs single-process today, and the
+# DB per-agent limit remains the cross-process layer. This is a flood backstop, not a
+# distributed ceiling. The default cap is generous (120/min) so shared NAT/proxy egress
+# IPs aren't throttled below the per-agent DB limit; tune via env if needed.
+BEACON_IP_RATE_LIMIT_MAX = int(os.environ.get("RC_BEACON_IP_RATE_LIMIT_MAX", "120"))
+BEACON_IP_RATE_LIMIT_WINDOW = int(os.environ.get("RC_BEACON_IP_RATE_LIMIT_WINDOW_SECONDS", "60"))
+_BEACON_IP_RATE_LIMIT_MAX_KEYS = int(os.environ.get("RC_BEACON_IP_RATE_LIMIT_MAX_KEYS", "8192"))
+_BEACON_IP_RATE_LIMIT_BUCKETS = {}
+_BEACON_IP_RATE_LIMIT_LOCK = Lock()
+
+
+def _check_beacon_rate_limit(client_ip: str, now_ts: Optional[int] = None):
+    """Per-IP, in-memory, fail-closed beacon submission backstop (bounds work before any
+    DB hit or signature verification; cannot be bypassed by a DB error or agent_id
+    rotation)."""
+    if BEACON_IP_RATE_LIMIT_MAX <= 0:
+        return True, 0
+    now_ts = int(time.time()) if now_ts is None else int(now_ts)
+    window = max(1, BEACON_IP_RATE_LIMIT_WINDOW)
+    cutoff = now_ts - window
+    key = client_ip or "unknown"
+    with _BEACON_IP_RATE_LIMIT_LOCK:
+        # Eviction (no background sweeper): when the table grows past the cap, first
+        # drop IP keys whose attempts have all aged out of the window; if a wide *active*
+        # flood keeps it over cap, drop the least-recently-active keys so the table size
+        # — and the per-call scan cost — is HARD-bounded by _MAX_KEYS.
+        if len(_BEACON_IP_RATE_LIMIT_BUCKETS) > _BEACON_IP_RATE_LIMIT_MAX_KEYS:
+            for _stale in [k for k, v in _BEACON_IP_RATE_LIMIT_BUCKETS.items()
+                           if not any(ts > cutoff for ts in v)]:
+                del _BEACON_IP_RATE_LIMIT_BUCKETS[_stale]
+            _overflow = len(_BEACON_IP_RATE_LIMIT_BUCKETS) - _BEACON_IP_RATE_LIMIT_MAX_KEYS
+            if _overflow > 0:
+                for _old in sorted(
+                    _BEACON_IP_RATE_LIMIT_BUCKETS,
+                    key=lambda k: max(_BEACON_IP_RATE_LIMIT_BUCKETS[k] or [0]),
+                )[:_overflow]:
+                    del _BEACON_IP_RATE_LIMIT_BUCKETS[_old]
+        attempts = [ts for ts in _BEACON_IP_RATE_LIMIT_BUCKETS.get(key, []) if ts > cutoff]
+        if len(attempts) >= BEACON_IP_RATE_LIMIT_MAX:
+            _BEACON_IP_RATE_LIMIT_BUCKETS[key] = attempts
+            return False, max(1, window - (now_ts - attempts[0]))
+        attempts.append(now_ts)
+        _BEACON_IP_RATE_LIMIT_BUCKETS[key] = attempts
+        return True, 0
+
+
 @app.route("/beacon/submit", methods=["POST"])
 def beacon_submit():
+    # T3.5: fail-closed per-IP ceiling FIRST — before JSON parse, DB lookup, or sig work.
+    _beacon_allowed, _beacon_retry = _check_beacon_rate_limit(get_client_ip())
+    if not _beacon_allowed:
+        resp = jsonify({
+            "ok": False, "error": "rate_limited", "code": "BEACON_IP_RATE_LIMIT",
+            "limit": BEACON_IP_RATE_LIMIT_MAX, "window_seconds": BEACON_IP_RATE_LIMIT_WINDOW,
+        })
+        resp.status_code = 429
+        resp.headers["Retry-After"] = str(_beacon_retry)
+        return resp
     data = request.get_json(silent=True)
     if not isinstance(data, dict) or not data:
         return jsonify({"ok": False, "error": "invalid_json"}), 400
