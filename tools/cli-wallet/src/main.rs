@@ -29,7 +29,7 @@ enum Commands {
         #[arg(short, long, default_value = "wallet.json")]
         wallet: String,
         /// RustChain node URL
-        #[arg(short, long, default_value = "http://localhost:8080")]
+        #[arg(short, long, default_value = "https://rustchain.org")]
         node: String,
     },
     /// Send RTC tokens
@@ -44,7 +44,7 @@ enum Commands {
         #[arg(short, long)]
         amount: u64,
         /// RustChain node URL
-        #[arg(short, long, default_value = "http://localhost:8080")]
+        #[arg(short, long, default_value = "https://rustchain.org")]
         node: String,
     },
     /// Receive tokens (display address)
@@ -78,8 +78,16 @@ struct Transaction {
 
 #[derive(Serialize, Deserialize, Debug)]
 struct BalanceResponse {
+    #[serde(default)]
     address: String,
+    #[serde(default)]
     balance: u64,
+    #[serde(default)]
+    amount_rtc: f64,
+    #[serde(default)]
+    amount_i64: i64,
+    #[serde(default)]
+    miner_id: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -157,22 +165,28 @@ fn validate_address(address: &str) -> bool {
 
 async fn get_balance(node_url: &str, address: &str) -> Result<u64> {
     let client = reqwest::Client::new();
-    let url = format!("{}/api/balance/{}", node_url, address);
-    
+    // Use the current query-based balance endpoint
+    let url = format!("{}/wallet/balance?miner_id={}", node_url, address);
+
     match client.get(&url).send().await {
         Ok(response) => {
             if response.status().is_success() {
                 let balance_response: BalanceResponse = response.json().await?;
-                Ok(balance_response.balance)
+                // Prefer amount_i64 (current API), fall back to legacy balance field
+                let balance = if balance_response.amount_i64 > 0 {
+                    balance_response.amount_i64 as u64
+                } else {
+                    balance_response.balance
+                };
+                Ok(balance)
             } else {
-                // If API doesn't exist, return mock balance
                 println!("Note: Using mock balance (node API not available)");
-                Ok(1000) // Mock balance
+                Ok(1000)
             }
         }
         Err(_) => {
             println!("Note: Using mock balance (node not reachable)");
-            Ok(1000) // Mock balance when node is not available
+            Ok(1000)
         }
     }
 }
@@ -319,6 +333,15 @@ mod tests {
         assert!(!wallet.public_key.is_empty());
     }
     
+    #[test]
+    fn test_balance_url_uses_query_params() {
+        let node = "https://rustchain.org";
+        let address = "RTC0123456789abcdef0123456789abcdef01234567";
+        let url = format!("{}/wallet/balance?miner_id={}", node, address);
+        assert!(url.contains("/wallet/balance?miner_id="));
+        assert!(!url.contains("/api/balance/"));
+    }
+
     #[tokio::test]
     async fn test_transaction_signing() {
         let wallet = Wallet::new().unwrap();

@@ -71,7 +71,7 @@ Checks if the given address is a valid RustChain address.
 
 ### Custom Node URL
 
-By default, the wallet connects to `http://localhost:8080`. You can specify a different node:
+By default, the wallet connects to `https://rustchain.org`. You can specify a different node:
 
 ```bash
 ./rustchain-wallet balance --node http://rustchain-node.example.com:8080
@@ -122,7 +122,7 @@ This allows testing wallet functionality without a running blockchain node.
 
 The wallet expects the following RustChain node API endpoints:
 
-- `GET /api/balance/{address}` - Get account balance
+- `GET /wallet/balance?miner_id={address}` - Get account balance (returns `amount_rtc`, `amount_i64`, `miner_id`)
 - `POST /api/transaction` - Submit transaction
 
 ## Error Handling
