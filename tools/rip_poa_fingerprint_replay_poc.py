@@ -159,8 +159,10 @@ def spoof_clock_drift(target_cv: float = 0.025, samples: int = 200) -> dict:
     }
 
     # Verify it passes the checks
-    assert cv > 0.0001, f"CV too low: {cv}"
-    assert drift_stdev > 0, f"Drift stdev is zero"
+    if cv <= 0.0001:
+        raise ValueError(f"CV too low: {cv}")
+    if drift_stdev <= 0:
+        raise ValueError(f"Drift stdev is zero")
 
     return result
 
