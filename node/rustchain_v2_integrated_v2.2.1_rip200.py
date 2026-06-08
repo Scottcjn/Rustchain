@@ -2848,6 +2848,32 @@ def _write_welcome_bonus(
     raise RuntimeError("unsupported welcome bonus balance/ledger schema")
 
 
+def _ledger_reward_row(c, ledger_cols, epoch, miner_id, amount_i64, reason):
+    """Append a single-sided reward credit to the canonical audit ledger.
+
+    T3.1: finalize_epoch (the auto block-path settlement) credited balances with NO
+    ledger row, while rewards_implementation_rip200.settle_epoch_rip200 and the
+    transfer/bonus paths DO — so block-path rewards were invisible to audit/
+    reconstruction and broke any ledger↔balance reconciliation.
+
+    Mirrors settle_epoch_rip200's row EXACTLY — the canonical
+    (ts, epoch, miner_id, delta_i64, reason) shape and the same `epoch_{n}_reward`
+    reason — so the two reward-settlement paths are indistinguishable in the ledger.
+    Only that shape is supported (matching settle_epoch_rip200, which has no fallback);
+    a non-canonical ledger is handled by the caller's one-time `ledger_writable`
+    pre-check, which logs and skips rather than aborting settlement. The guard checks
+    EVERY column the INSERT references, so a drifted table is skipped cleanly rather
+    than selected then failed. Returns True iff a row was written.
+    """
+    if not {"ts", "epoch", "miner_id", "delta_i64", "reason"}.issubset(ledger_cols):
+        return False
+    c.execute(
+        "INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason) VALUES (?, ?, ?, ?, ?)",
+        (int(time.time()), epoch, miner_id, amount_i64, reason),
+    )
+    return True
+
+
 def _check_welcome_bonus(miner: str):
     """Award welcome bonus on first-ever attestation. Funded from founder_community."""
     try:
@@ -3844,8 +3870,24 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
             utxo_reward_outputs = []
             skipped_utxo_dust_nrtc = 0
 
+            # T3.1: audit-ledger the block-path reward credits (settle_epoch_rip200 and
+            # the transfer/bonus paths already ledger; finalize_epoch did not, leaving
+            # block rewards invisible to reconstruction). The reward ledger row is a
+            # best-effort AUDIT side effect — it must NEVER abort reward settlement
+            # (liveness). Determine writability ONCE (a single log on a drifted schema,
+            # not one per miner); the per-row insert below is wrapped so a constraint/IO
+            # failure on the ledger table logs and continues rather than rolling back the
+            # already-valid balance credits.
+            ledger_cols = _table_columns(conn, "ledger")
+            ledger_writable = {"ts", "epoch", "miner_id", "delta_i64", "reason"}.issubset(ledger_cols)
+            if not ledger_writable:
+                logging.error(
+                    "[T3.1] ledger schema %s unrecognized — epoch %s reward audit rows "
+                    "omitted (rewards still credited)", sorted(ledger_cols), epoch,
+                )
+
             # Distribute rewards with precision
-            for pk, weight in miners:
+            for _led_i, (pk, weight) in enumerate(miners):
                 # Use Decimal arithmetic to avoid float precision loss
                 amount_decimal = Decimal(0) if Decimal(total_weight) == 0 else total_reward * Decimal(weight) / Decimal(total_weight)
                 amount_i64 = int(amount_decimal * Decimal(ACCOUNT_UNIT))
@@ -3855,10 +3897,44 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
                 if amount_i64 >= 2**63 or amount_nrtc >= 2**63:
                     raise ValueError(f"Reward overflow for miner {pk}: {amount_i64}")
 
-                c.execute(
+                upd = c.execute(
                     "UPDATE balances SET amount_i64 = amount_i64 + ?, balance_rtc = (amount_i64 + ?) / 1000000.0 WHERE miner_id = ?",
                     (amount_i64, amount_i64, pk)
                 )
+
+                # Ledger an audit row ONLY for an actual credit: amount_i64 > 0 AND the
+                # balance row existed (UPDATE mutated exactly one row — miner_id is the
+                # balances PK so rowcount is 0 or 1). Without the rowcount gate, a miner
+                # with no balance row (UPDATE hits 0 rows) would get a +X ledger row with
+                # no matching balance change — the exact ledger≠balance mismatch this fix
+                # exists to prevent. Integer truncation of tiny shares also yields
+                # amount_i64 == 0 (no mutation → no row). Best-effort: a ledger failure
+                # must not roll back the (valid) reward credit.
+                if amount_i64 > 0 and upd.rowcount == 1 and ledger_writable:
+                    # Best-effort audit row, isolated in a SAVEPOINT: on success it
+                    # commits together with the credit (reconciliation intact); on
+                    # failure ROLLBACK TO removes ONLY the failed insert and clears any
+                    # statement/transaction error state, so the outer transaction (this
+                    # and other miners' credits + the settled claim) stays usable and
+                    # commits. A bare try/except is NOT enough — a tx-poisoning error
+                    # (SQLITE_FULL/IOERR) would otherwise corrupt the rest of the loop.
+                    # Per-miner UNIQUE savepoint name so a (theoretical) leaked marker can
+                    # never nest/collide with the next iteration's savepoint.
+                    _sp = f"led_row_{_led_i}"
+                    c.execute(f"SAVEPOINT {_sp}")
+                    try:
+                        _ledger_reward_row(c, ledger_cols, epoch, pk, amount_i64, f"epoch_{epoch}_reward")
+                        c.execute(f"RELEASE {_sp}")
+                    except Exception as _led_err:
+                        try:
+                            c.execute(f"ROLLBACK TO {_sp}")
+                            c.execute(f"RELEASE {_sp}")
+                        except Exception:
+                            pass
+                        logging.error(
+                            "[T3.1] reward ledger row failed for %s epoch %s: %r "
+                            "(reward still credited)", pk, epoch, _led_err,
+                        )
 
                 if UTXO_DUAL_WRITE:
                     if amount_nrtc >= UTXO_DUST_THRESHOLD:
