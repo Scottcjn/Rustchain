@@ -40,12 +40,61 @@ import re
 import sqlite3
 from typing import Optional, Sequence, Union
 
-# Anything with a `LIMIT <num>` or `LIMIT ?` already encodes its own bound;
-# reject it so we don't double-bind and so reviewers see a single source of
-# truth for the bound. Matches at end-of-statement after optional whitespace.
-_LIMIT_PATTERN = re.compile(r"\bLIMIT\s+(\?|\d+)", re.IGNORECASE)
+# Reject only an outer LIMIT. Subqueries may legitimately use LIMIT 1 while
+# the outer result still needs fetch_page's bound.
+_SQL_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*|[()]")
 
 ParamsType = Union[Sequence, tuple]
+
+
+def _strip_sql_literals_and_comments(sql: str) -> str:
+    """Remove SQL string literals and comments before lightweight token scans."""
+    out = []
+    quote = None
+    index = 0
+    while index < len(sql):
+        char = sql[index]
+
+        if quote:
+            if char == quote:
+                if index + 1 < len(sql) and sql[index + 1] == quote:
+                    index += 2
+                    continue
+                quote = None
+            index += 1
+            continue
+
+        if char in {"'", '"'}:
+            quote = char
+            index += 1
+            continue
+        if char == "-" and index + 1 < len(sql) and sql[index + 1] == "-":
+            index += 2
+            while index < len(sql) and sql[index] not in "\r\n":
+                index += 1
+            continue
+        if char == "/" and index + 1 < len(sql) and sql[index + 1] == "*":
+            index += 2
+            while index + 1 < len(sql) and sql[index : index + 2] != "*/":
+                index += 1
+            index += 2
+            continue
+
+        out.append(char)
+        index += 1
+    return "".join(out)
+
+
+def _has_outer_limit(sql: str) -> bool:
+    depth = 0
+    for token in _SQL_TOKEN_RE.findall(_strip_sql_literals_and_comments(sql)):
+        if token == "(":
+            depth += 1
+        elif token == ")":
+            depth = max(0, depth - 1)
+        elif depth == 0 and token.upper() == "LIMIT":
+            return True
+    return False
 
 
 def fetch_page(
@@ -93,11 +142,11 @@ def fetch_page(
             f"(see issue #6627 — bounded-query helper guards against "
             f"unbounded materialization)"
         )
-    if _LIMIT_PATTERN.search(sql):
+    if _has_outer_limit(sql):
         raise ValueError(
-            "sql already contains a LIMIT clause; fetch_page is the single "
-            "source of truth for bounds — strip the existing LIMIT and pass "
-            "it via the limit kwarg instead"
+            "sql already contains a LIMIT clause at the outer query level; "
+            "fetch_page is the single source of truth for bounds — strip "
+            "the existing LIMIT and pass it via the limit kwarg instead"
         )
 
     bounded_sql = f"{sql.rstrip().rstrip(';')} LIMIT ? OFFSET ?"
@@ -131,10 +180,11 @@ def fetch_one_or_none(
         ValueError: If ``sql`` already contains a ``LIMIT`` clause, or if
             more than 1 row materializes.
     """
-    if _LIMIT_PATTERN.search(sql):
+    if _has_outer_limit(sql):
         raise ValueError(
-            "sql already contains a LIMIT clause; fetch_one_or_none "
-            "appends its own bound (LIMIT 2) — remove the existing LIMIT"
+            "sql already contains a LIMIT clause at the outer query level; "
+            "fetch_one_or_none appends its own bound (LIMIT 2) — remove the "
+            "existing LIMIT"
         )
     # Fetch up to 2 rows so we can detect "more than one matched".
     bounded_sql = f"{sql.rstrip().rstrip(';')} LIMIT 2"

@@ -1,3 +1,4 @@
+import re
 import sqlite3
 import sys
 import uuid
@@ -330,3 +331,51 @@ def test_admin_operator_ui_links_to_wallet_review_surface(client):
     assert "Wallet Review Queue" in html
     assert "needs_review" in html
     assert ">1<" in html
+
+
+def test_admin_operator_ui_header_auth_links_to_live_session(client):
+    test_client, db_path = client
+    with sqlite3.connect(db_path) as conn:
+        integrated_node.ensure_wallet_review_tables(conn)
+        conn.execute(
+            """
+            INSERT INTO wallet_review_holds(wallet, status, reason, coach_note, reviewer_note, created_at, reviewed_at)
+            VALUES (?, 'needs_review', ?, ?, '', 1000, 0)
+            """,
+            ("review-miner", "manual review", "coach note"),
+        )
+        conn.commit()
+
+    response = test_client.get("/admin/ui", headers={"X-Admin-Key": "0" * 32})
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    match = re.search(r'/admin/wallet-review-holds/ui\?session_id=([0-9a-f]+)', html)
+    assert match is not None
+    sid = match.group(1)
+
+    response = test_client.get(f"/admin/wallet-review-holds/ui?session_id={sid}")
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "RustChain Wallet Review Holds" in html
+    assert "review-miner" in html
+    assert f"session_id={sid}" in html
+
+
+def test_admin_operator_ui_reuses_existing_session_id(client):
+    test_client, _db_path = client
+
+    response = test_client.get("/admin/ui", headers={"X-Admin-Key": "0" * 32})
+    assert response.status_code == 200
+    match = re.search(
+        r'/admin/wallet-review-holds/ui\?session_id=([0-9a-f]+)',
+        response.get_data(as_text=True),
+    )
+    assert match is not None
+    sid = match.group(1)
+
+    response = test_client.get(f"/admin/ui?session_id={sid}")
+
+    assert response.status_code == 200
+    assert f"/admin/wallet-review-holds/ui?session_id={sid}" in response.get_data(as_text=True)

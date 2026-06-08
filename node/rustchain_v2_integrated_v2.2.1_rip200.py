@@ -5027,7 +5027,7 @@ def _header_key_authorized(conn, identity, pubkey):
         pass
     existing = conn.execute(
         "SELECT pubkey_hex FROM miner_header_keys WHERE miner_id=?", (identity,)
-    ).fetchall()  # fetchall-ok: bounded by _prune_header_keys cap
+    ).fetchall()  # fetchall-ok: bounded-by-schema (capped by _prune_header_keys)
     if not existing:
         # Bootstrap the first key for a named identity. Open TOFU here is the
         # residual T1.1 takeover race (a self-signed attestation grabbing a
@@ -5453,13 +5453,14 @@ _ADMIN_SESSION_TTL = 3600
 def _get_or_create_admin_session(req):
     now = time.time()
     # Clean expired
-    expired = [k for k, v in _ADMIN_SESSIONS.items() if now - v > 3600]
+    expired = [k for k, v in _ADMIN_SESSIONS.items() if now - v > _ADMIN_SESSION_TTL]
     for k in expired:
         _ADMIN_SESSIONS.pop(k, None)
     # Check existing session
     sid = req.values.get("session_id", "")
     if sid and sid in _ADMIN_SESSIONS:
         _ADMIN_SESSIONS[sid] = now  # refresh TTL
+        req._admin_session_id = sid  # type: ignore[attr-defined]
         return True
     # Check header auth
     if is_admin(req):
@@ -5485,7 +5486,12 @@ def _wallet_review_ui_authorized(req):
         or req.form.get("admin_key")
         or ""
     ).strip()
-    return bool(need and got and hmac.compare_digest(need, got))
+    if need and got and hmac.compare_digest(need, got):
+        sid = secrets.token_hex(16)
+        _ADMIN_SESSIONS[sid] = time.time()
+        req._admin_session_id = sid  # type: ignore[attr-defined]
+        return True
+    return False
 
 
 def get_wallet_review_counts():
@@ -5712,6 +5718,7 @@ def admin_operator_ui():
         return jsonify({"ok": False, "error": "forbidden"}), 403
 
     admin_key = str(request.values.get("admin_key") or "").strip()
+    sid = getattr(request, '_admin_session_id', '')
     counts = get_wallet_review_counts()
     return render_template_string(
         """
@@ -5764,6 +5771,7 @@ def admin_operator_ui():
 </html>
         """,
         admin_key=admin_key,
+        sid=sid,
         counts=counts,
     )
 
@@ -7161,8 +7169,7 @@ _NODE_HEALTH_CACHE_TTL = 60.0   # seconds before a cached status is considered s
 _MAX_INLINE_PROBES = 3          # max outbound health probes issued per request
 
 
-@app.route("/api/nodes")
-def api_nodes():
+def _build_node_registry_payload():
     """Return paginated registered attestation nodes with cached health status.
 
     RIP-200 Bounty #6527: Added pagination (limit, offset) and decoupled health
@@ -7200,12 +7207,12 @@ def api_nodes():
         raw_limit = request.args.get("limit")
         limit = int(raw_limit) if raw_limit not in (None, "") else 20
     except (ValueError, TypeError):
-        return jsonify({"ok": False, "error": "limit must be an integer"}), 400
+        return {"ok": False, "error": "limit must be an integer"}, 400
     try:
         raw_offset = request.args.get("offset")
         offset = int(raw_offset) if raw_offset not in (None, "") else 0
     except (ValueError, TypeError):
-        return jsonify({"ok": False, "error": "offset must be an integer"}), 400
+        return {"ok": False, "error": "offset must be an integer"}, 400
     limit = min(max(limit, 1), 50)
     offset = max(offset, 0)
 
@@ -7268,12 +7275,56 @@ def api_nodes():
             node["url"] = None
             node["url_redacted"] = True
 
-    return jsonify({
+    return {
         "nodes": nodes,
         "count": len(nodes),
         "total": total,
         "offset": offset,
         "limit": limit,
+    }, 200
+
+
+@app.route("/api/nodes")
+def api_nodes():
+    payload, status = _build_node_registry_payload()
+    return jsonify(payload), status
+
+
+@app.route("/api/peers")
+def api_peers():
+    """Compatibility alias for documented peer-list consumers."""
+    payload, status = _build_node_registry_payload()
+    if status != 200:
+        return jsonify(payload), status
+    return jsonify({
+        "ok": True,
+        "peers": payload["nodes"],
+        "count": payload["count"],
+        "total": payload["total"],
+        "offset": payload["offset"],
+        "limit": payload["limit"],
+    })
+
+
+@app.route("/api/network")
+def api_network():
+    """Public network summary route documented by the API and operator guides."""
+    payload, status = _build_node_registry_payload()
+    if status != 200:
+        return jsonify(payload), status
+
+    nodes = payload["nodes"]
+    active_nodes = sum(1 for node in nodes if node.get("is_active"))
+    online_nodes = sum(1 for node in nodes if node.get("online") is True)
+    return jsonify({
+        "ok": True,
+        "peers": active_nodes,
+        "online_peers": online_nodes,
+        "nodes": nodes,
+        "count": payload["count"],
+        "total": payload["total"],
+        "offset": payload["offset"],
+        "limit": payload["limit"],
     })
 
 
