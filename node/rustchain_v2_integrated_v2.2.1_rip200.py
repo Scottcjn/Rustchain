@@ -8776,6 +8776,181 @@ def api_wallet_balance():
     })
 
 
+_WALLET_TX_HASH_RE = re.compile(r"^[A-Za-z0-9]{1,128}$")
+
+
+def _wallet_tx_public_status(raw_status):
+    status = str(raw_status or "").strip().lower()
+    if status == "confirmed":
+        return "confirmed", 1
+    if status in ("pending", "confirming"):
+        return "pending", 0
+    return "failed", 0
+
+
+def _wallet_tx_from_pending_row(row):
+    (
+        pending_id,
+        ts,
+        epoch,
+        from_miner,
+        to_miner,
+        amount_i64,
+        reason,
+        raw_status,
+        created_at,
+        confirms_at,
+        tx_hash,
+        voided_reason,
+        confirmed_at,
+    ) = row
+    public_status, confirmations = _wallet_tx_public_status(raw_status)
+    created = int(created_at or ts or 0)
+    body = {
+        "ok": True,
+        "tx_hash": tx_hash,
+        "status": public_status,
+        "raw_status": raw_status,
+        "confirmations": confirmations,
+        "block_height": None,
+        "pending_id": pending_id,
+        "from_miner": from_miner,
+        "to_miner": to_miner,
+        "amount_i64": int(amount_i64),
+        "amount_rtc": abs(int(amount_i64)) / UNIT,
+        "epoch": int(epoch) if epoch is not None else None,
+        "timestamp": created,
+        "created_at": created,
+        "confirms_at": int(confirms_at) if confirms_at is not None else None,
+        "confirmed_at": int(confirmed_at) if confirmed_at is not None else None,
+        "reason": reason,
+    }
+    if voided_reason:
+        body["status_reason"] = voided_reason
+    return body
+
+
+def _parse_wallet_ledger_transfer(reason):
+    prefix, sep, rest = str(reason or "").partition(":")
+    if not sep or prefix not in ("transfer_in", "transfer_out"):
+        return None
+    counterparty, sep, tx_hash = rest.rpartition(":")
+    if not sep or not counterparty or not tx_hash:
+        return None
+    return prefix, counterparty, tx_hash
+
+
+def _wallet_tx_from_ledger_rows(tx_hash, rows):
+    parsed_rows = []
+    for ts, epoch, miner_id, delta_i64, reason in rows:
+        parsed = _parse_wallet_ledger_transfer(reason)
+        if not parsed or parsed[2] != tx_hash:
+            continue
+        direction, counterparty, _ = parsed
+        parsed_rows.append((direction, ts, epoch, miner_id, delta_i64, counterparty, reason))
+
+    if not parsed_rows:
+        return None
+
+    outgoing = next((row for row in parsed_rows if row[0] == "transfer_out"), None)
+    selected = outgoing or parsed_rows[0]
+    direction, ts, epoch, miner_id, delta_i64, counterparty, reason = selected
+    if direction == "transfer_out":
+        from_miner = miner_id
+        to_miner = counterparty
+    else:
+        from_miner = counterparty
+        to_miner = miner_id
+
+    return {
+        "ok": True,
+        "tx_hash": tx_hash,
+        "status": "confirmed",
+        "raw_status": "confirmed",
+        "confirmations": 1,
+        "block_height": None,
+        "from_miner": from_miner,
+        "to_miner": to_miner,
+        "amount_i64": abs(int(delta_i64)),
+        "amount_rtc": abs(int(delta_i64)) / UNIT,
+        "epoch": int(epoch) if epoch is not None else None,
+        "timestamp": int(ts or 0),
+        "created_at": int(ts or 0),
+        "confirms_at": None,
+        "confirmed_at": int(ts or 0),
+        "reason": reason,
+    }
+
+
+def _wallet_tx_pending_select(columns):
+    selected = [
+        "id",
+        "ts",
+        "epoch",
+        "from_miner",
+        "to_miner",
+        "amount_i64",
+        "reason" if "reason" in columns else "NULL AS reason",
+        "status" if "status" in columns else "'pending' AS status",
+        "created_at" if "created_at" in columns else "ts AS created_at",
+        "confirms_at" if "confirms_at" in columns else "NULL AS confirms_at",
+        "tx_hash",
+        "voided_reason" if "voided_reason" in columns else "NULL AS voided_reason",
+        "confirmed_at" if "confirmed_at" in columns else "NULL AS confirmed_at",
+    ]
+    return ", ".join(selected)
+
+
+@app.route('/wallet/tx/<tx_hash>', methods=['GET'])
+def api_wallet_tx(tx_hash):
+    """Public JSON transaction lookup for the Rust wallet client."""
+    tx_hash = (tx_hash or "").strip()
+    if not _WALLET_TX_HASH_RE.match(tx_hash):
+        return jsonify({"ok": False, "error": "invalid tx_hash"}), 400
+
+    try:
+        with sqlite3.connect(DB_PATH) as db:
+            if _table_exists(db, "pending_ledger"):
+                columns = _sqlite_table_columns(db, "pending_ledger")
+                if "tx_hash" not in columns:
+                    pending = None
+                else:
+                    pending = db.execute(
+                        f"""
+                        SELECT {_wallet_tx_pending_select(columns)}
+                        FROM pending_ledger
+                        WHERE tx_hash = ?
+                        """,
+                        (tx_hash,),
+                    ).fetchone()
+                if pending:
+                    return jsonify(_wallet_tx_from_pending_row(pending))
+
+            if _table_exists(db, "ledger"):
+                rows = db.execute(
+                    """
+                    SELECT ts, epoch, miner_id, delta_i64, reason
+                    FROM ledger
+                    WHERE reason LIKE ? OR reason LIKE ?
+                    ORDER BY ts DESC
+                    LIMIT 4
+                    """,
+                    (f"transfer_in:%:{tx_hash}", f"transfer_out:%:{tx_hash}"),
+                ).fetchall()
+                ledger_body = _wallet_tx_from_ledger_rows(tx_hash, rows)
+                if ledger_body:
+                    return jsonify(ledger_body)
+    except sqlite3.OperationalError:
+        return jsonify({"ok": False, "error": "transaction lookup unavailable"}), 503
+
+    return jsonify({
+        "ok": False,
+        "tx_hash": tx_hash,
+        "status": "not_found",
+        "error": "transaction not found",
+    }), 404
+
+
 # Conservative identifier grammar for /api/wallet/<id>: RTC address, wallet
 # name, or namespaced miner id (e.g. "github:user"). Bounds length so a
 # direct caller cannot use oversized ids for request/DB/response amplification.
