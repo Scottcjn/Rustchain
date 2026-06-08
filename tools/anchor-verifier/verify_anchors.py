@@ -99,15 +99,15 @@ class ErgoClient:
             import urllib.request
             url = f"{self.base_url}/blockchain/transaction/byId/{tx_id}"
             req = urllib.request.Request(url, headers={"Accept": "application/json"})
-            resp = urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT)
-            return self._json_object(resp.read())
+            with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
+                return self._json_object(resp.read())
         except Exception:
             # Try unconfirmed pool
             try:
                 url = f"{self.base_url}/transactions/unconfirmed/byTransactionId/{tx_id}"
                 req = urllib.request.Request(url, headers={"Accept": "application/json"})
-                resp = urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT)
-                return self._json_object(resp.read())
+                with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
+                    return self._json_object(resp.read())
             except Exception:
                 return None
 
@@ -117,8 +117,8 @@ class ErgoClient:
             import urllib.request
             url = f"{self.base_url}/blockchain/box/byId/{box_id}"
             req = urllib.request.Request(url, headers={"Accept": "application/json"})
-            resp = urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT)
-            return self._json_object(resp.read())
+            with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
+                return self._json_object(resp.read())
         except Exception:
             return None
 
