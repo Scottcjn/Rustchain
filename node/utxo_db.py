@@ -1464,8 +1464,6 @@ def coin_select(utxos: List[dict], target_nrtc: int
     Strategy:
     - Smallest-first accumulation (consolidates dust).
     - If input count > 20, restart with largest-first (fewer inputs).
-    - If the best available selection still needs >20 inputs, fail cleanly
-      instead of returning an oversized spend.
     - Dust change (< DUST_THRESHOLD) absorbed into fee.
 
     Returns (selected_utxos, change_nrtc).  Empty list if insufficient.
@@ -1489,17 +1487,24 @@ def coin_select(utxos: List[dict], target_nrtc: int
     # If too many small inputs, try largest-first
     if len(selected) > 20:
         sorted_desc = sorted(utxos, key=lambda u: u['value_nrtc'], reverse=True)
-        fallback: List[dict] = []
-        fallback_total = 0
+        selected = []
+        total = 0
         for u in sorted_desc:
-            fallback.append(u)
-            fallback_total += u['value_nrtc']
-            if fallback_total >= target_nrtc:
+            selected.append(u)
+            total += u['value_nrtc']
+            if total >= target_nrtc:
                 break
-        if fallback_total < target_nrtc or len(fallback) > 20:
+        if len(selected) > 20:
+            # Largest-first still exceeded 20 — cap at 20.
+            capped = sorted_desc[:20]
+            capped_total = sum(u['value_nrtc'] for u in capped)
+            if capped_total >= target_nrtc:
+                selected = capped
+                total = capped_total
+            else:
+                return [], 0
+        elif total < target_nrtc:
             return [], 0
-        selected = fallback
-        total = fallback_total
 
     change = total - target_nrtc
     if change < DUST_THRESHOLD:
