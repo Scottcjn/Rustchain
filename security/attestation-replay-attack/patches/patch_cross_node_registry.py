@@ -113,7 +113,8 @@ def broadcast_attestation_event(hardware_id: str, miner_id: str,
                 },
                 method="POST"
             )
-            urllib.request.urlopen(req, timeout=GOSSIP_TIMEOUT_SECONDS)
+            with urllib.request.urlopen(req, timeout=GOSSIP_TIMEOUT_SECONDS):
+                pass
         except Exception:
             pass  # Best-effort gossip
 

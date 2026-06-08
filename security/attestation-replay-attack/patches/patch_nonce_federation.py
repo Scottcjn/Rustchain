@@ -87,7 +87,8 @@ def broadcast_used_nonce(nonce_hash: str, node_id: str, peers: list):
                 headers={"Content-Type": "application/json"},
                 method="POST"
             )
-            urllib.request.urlopen(req, timeout=5)
+            with urllib.request.urlopen(req, timeout=5):
+                pass
         except Exception:
             pass
 
