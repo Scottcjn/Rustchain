@@ -82,7 +82,8 @@ class Machine:
 
     def sign(self, data: bytes) -> bytes:
         """Sign bytes with this machine's Ed25519 key."""
-        assert self._private_key is not None
+        if self._private_key is None:
+            raise RuntimeError("Private key not initialized")
         return self._private_key.sign(data)
 
     def passport_id(self) -> str:
