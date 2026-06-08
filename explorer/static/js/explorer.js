@@ -118,10 +118,12 @@ function normalizeMinersResponse(payload) {
     if (Array.isArray(payload)) {
         rows = payload;
     } else if (payload && typeof payload === 'object') {
-        if (Array.isArray(payload.miners)) {
+        if (Array.isArray(payload?.miners)) {
             rows = payload.miners;
-        } else if (Array.isArray(payload.data)) {
+        } else if (Array.isArray(payload?.data)) {
             rows = payload.data;
+        } else if (Array.isArray(payload?.items)) {
+            rows = payload.items;
         } else if (typeof payload === 'object' && payload !== null) {
             // Handle case where payload is a single miner object
             rows = [payload];
