@@ -590,7 +590,7 @@ class RustChainMiner:
             if response.ok:
                 data = response.json()
                 return data.get("eligible", False)
-        except:
+        except Exception:
             pass
         return False
 
@@ -613,7 +613,7 @@ class RustChainMiner:
         try:
             response = requests.post(f"{RUSTCHAIN_API}/headers/ingest_signed", json=header, timeout=5, verify=TLS_VERIFY)
             return response.status_code == 200
-        except:
+        except Exception:
             return False
 
 class RustChainGUI:
