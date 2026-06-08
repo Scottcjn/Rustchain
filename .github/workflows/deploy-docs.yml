@@ -20,7 +20,9 @@ permissions:
 
 concurrency:
   group: deploy-docs
-  cancel-in-progress: true
+  # Don't cancel a deploy mid-flight: a cancelled peaceiris push can leave
+  # gh-pages with a truncated tree. Let in-flight deploys finish.
+  cancel-in-progress: false
 
 jobs:
   build-and-deploy:

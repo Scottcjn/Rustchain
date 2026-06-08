@@ -31,12 +31,14 @@ const config = {
   // links that don't resolve to Docusaurus routes. Warnings give us a
   // punch-list to fix incrementally instead of a hard stop.
   onBrokenLinks: 'warn',
-  onBrokenMarkdownLinks: 'warn',
 
   // Parse .md as CommonMark (not MDX) so GitHub-style `<...>` and `{...}`
   // literals don't get compiled as JSX/JS. .mdx files still use MDX.
   markdown: {
     format: 'detect',
+    hooks: {
+      onBrokenMarkdownLinks: 'warn',
+    },
   },
 
   i18n: {
@@ -91,12 +93,14 @@ const config = {
             label: 'Project',
             position: 'left',
             items: [
-              {label: 'Tokenomics', to: 'pathname:///tokenomics.html'},
-              {label: 'Hardware', to: 'pathname:///hardware.html'},
-              {label: 'Mining', to: 'pathname:///mining.html'},
-              {label: 'Network Status', to: 'pathname:///network-status.html'},
-              {label: 'About', to: 'pathname:///about.html'},
-              {label: 'Guestbook', to: 'pathname:///guestbook.html'},
+              // Plain hrefs (full path incl. baseUrl) so they load the static
+              // files at /Rustchain/*.html. pathname:// drops baseUrl -> 404.
+              {label: 'Tokenomics', href: '/Rustchain/tokenomics.html'},
+              {label: 'Hardware', href: '/Rustchain/hardware.html'},
+              {label: 'Mining', href: '/Rustchain/mining.html'},
+              {label: 'Network Status', href: '/Rustchain/network-status.html'},
+              {label: 'About', href: '/Rustchain/about.html'},
+              {label: 'Guestbook', href: '/Rustchain/guestbook.html'},
             ],
           },
           {
@@ -121,10 +125,10 @@ const config = {
           {
             title: 'Project',
             items: [
-              {label: 'Tokenomics', to: 'pathname:///tokenomics.html'},
-              {label: 'Hardware', to: 'pathname:///hardware.html'},
-              {label: 'Mining', to: 'pathname:///mining.html'},
-              {label: 'Network Status', to: 'pathname:///network-status.html'},
+              {label: 'Tokenomics', href: '/Rustchain/tokenomics.html'},
+              {label: 'Hardware', href: '/Rustchain/hardware.html'},
+              {label: 'Mining', href: '/Rustchain/mining.html'},
+              {label: 'Network Status', href: '/Rustchain/network-status.html'},
             ],
           },
           {
