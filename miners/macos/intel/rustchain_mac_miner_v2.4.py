@@ -46,7 +46,7 @@ def get_mac_serial():
         for line in result.stdout.split('\n'):
             if 'Serial Number' in line:
                 return line.split(':')[1].strip()
-    except:
+    except Exception:
         pass
 
     try:
@@ -58,7 +58,7 @@ def get_mac_serial():
         for line in result.stdout.split('\n'):
             if 'IOPlatformSerialNumber' in line:
                 return line.split('"')[-2]
-    except:
+    except Exception:
         pass
 
     try:
@@ -70,7 +70,7 @@ def get_mac_serial():
         for line in result.stdout.split('\n'):
             if 'Hardware UUID' in line:
                 return line.split(':')[1].strip()[:16]
-    except:
+    except Exception:
         pass
 
     return None
@@ -100,7 +100,7 @@ def detect_hardware():
         macs = re.findall(r'ether\s+([0-9a-f:]{17})', result.stdout, re.IGNORECASE)
         hw_info["macs"] = macs if macs else ["00:00:00:00:00:00"]
         hw_info["mac"] = macs[0] if macs else "00:00:00:00:00:00"
-    except:
+    except Exception:
         pass
 
     # Get memory
@@ -108,7 +108,7 @@ def detect_hardware():
         result = subprocess.run(['sysctl', '-n', 'hw.memsize'],
                                capture_output=True, text=True, timeout=5)
         hw_info["memory_gb"] = int(result.stdout.strip()) // (1024**3)
-    except:
+    except Exception:
         pass
 
     # Apple Silicon Detection (M1/M2/M3)
@@ -128,7 +128,7 @@ def detect_hardware():
                 hw_info["arch"] = "M1"
             else:
                 hw_info["arch"] = "apple_silicon"
-        except:
+        except Exception:
             hw_info["arch"] = "apple_silicon"
             hw_info["cpu"] = "Apple Silicon"
 
@@ -144,7 +144,7 @@ def detect_hardware():
                 hw_info["arch"] = "Core2"
             else:
                 hw_info["arch"] = "modern"
-        except:
+        except Exception:
             hw_info["arch"] = "modern"
             hw_info["cpu"] = "Intel Mac"
 
@@ -168,7 +168,7 @@ def detect_hardware():
             else:
                 hw_info["arch"] = "G4"
                 hw_info["cpu"] = "PowerPC"
-        except:
+        except Exception:
             hw_info["arch"] = "G4"
             hw_info["cpu"] = "PowerPC G4"
 
@@ -180,7 +180,7 @@ def detect_hardware():
             if 'Model Name' in line or 'Model Identifier' in line:
                 hw_info["model"] = line.split(':')[1].strip()
                 break
-    except:
+    except Exception:
         pass
 
     return hw_info
