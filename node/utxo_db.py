@@ -1494,7 +1494,16 @@ def coin_select(utxos: List[dict], target_nrtc: int
             total += u['value_nrtc']
             if total >= target_nrtc:
                 break
-        if total < target_nrtc:
+        if len(selected) > 20:
+            # Largest-first still exceeded 20 — cap at 20.
+            capped = sorted_desc[:20]
+            capped_total = sum(u['value_nrtc'] for u in capped)
+            if capped_total >= target_nrtc:
+                selected = capped
+                total = capped_total
+            else:
+                return [], 0
+        elif total < target_nrtc:
             return [], 0
 
     change = total - target_nrtc
