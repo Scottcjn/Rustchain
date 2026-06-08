@@ -87,6 +87,19 @@ const config = {
             label: 'Docs',
           },
           {
+            type: 'dropdown',
+            label: 'Project',
+            position: 'left',
+            items: [
+              {label: 'Tokenomics', to: 'pathname:///tokenomics.html'},
+              {label: 'Hardware', to: 'pathname:///hardware.html'},
+              {label: 'Mining', to: 'pathname:///mining.html'},
+              {label: 'Network Status', to: 'pathname:///network-status.html'},
+              {label: 'About', to: 'pathname:///about.html'},
+              {label: 'Guestbook', to: 'pathname:///guestbook.html'},
+            ],
+          },
+          {
             href: 'https://github.com/Scottcjn/Rustchain',
             label: 'GitHub',
             position: 'right',
@@ -107,6 +120,15 @@ const config = {
           },
           {
             title: 'Project',
+            items: [
+              {label: 'Tokenomics', to: 'pathname:///tokenomics.html'},
+              {label: 'Hardware', to: 'pathname:///hardware.html'},
+              {label: 'Mining', to: 'pathname:///mining.html'},
+              {label: 'Network Status', to: 'pathname:///network-status.html'},
+            ],
+          },
+          {
+            title: 'More',
             items: [
               {
                 label: 'GitHub',
