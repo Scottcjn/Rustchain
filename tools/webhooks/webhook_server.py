@@ -332,11 +332,13 @@ class RustChainPoller:
 
     def __init__(self, node_url: str, store: SubscriberStore,
                  poll_interval: int = DEFAULT_POLL_INTERVAL,
-                 large_tx_threshold: float = DEFAULT_LARGE_TX_THRESHOLD):
+                 large_tx_threshold: float = DEFAULT_LARGE_TX_THRESHOLD,
+                 node_admin_key: Optional[str] = None):
         self.node_url = node_url.rstrip("/")
         self.store = store
         self.poll_interval = poll_interval
         self.large_tx_threshold = large_tx_threshold
+        self.node_admin_key = (node_admin_key or "").strip()
 
         # Previous-state snapshots
         self._prev_tip_slot: Optional[int] = None
@@ -345,9 +347,12 @@ class RustChainPoller:
         self._prev_balances: Dict[str, float] = {}
         self._running = False
 
-    def _get(self, path: str) -> Optional[dict]:
+    def _get(self, path: str, *, admin: bool = False) -> Optional[Any]:
         try:
-            resp = requests.get(f"{self.node_url}{path}", timeout=15)
+            headers = {}
+            if admin and self.node_admin_key:
+                headers["X-Admin-Key"] = self.node_admin_key
+            resp = requests.get(f"{self.node_url}{path}", headers=headers, timeout=15)
             resp.raise_for_status()
             return resp.json()
         except Exception as exc:
@@ -446,14 +451,34 @@ class RustChainPoller:
         self._prev_miners = current_miners
 
     def _check_large_tx(self):
-        balances_data = self._get("/api/balances")
-        if balances_data is None or not isinstance(balances_data, list):
+        balances_data = self._get("/wallet/balances/all", admin=True)
+        if isinstance(balances_data, list):
+            balances = balances_data
+        elif isinstance(balances_data, dict):
+            balances = balances_data.get("balances") or balances_data.get("data") or []
+        else:
+            return
+        if not isinstance(balances, list):
             return
 
         current_balances: Dict[str, float] = {}
-        for entry in balances_data:
+        for entry in balances:
+            if not isinstance(entry, dict):
+                continue
             miner_id = entry.get("miner_id") or entry.get("miner")
-            balance = entry.get("balance") or entry.get("amount", 0)
+            if entry.get("amount_rtc") is not None:
+                balance = entry.get("amount_rtc")
+            elif entry.get("balance") is not None:
+                balance = entry.get("balance")
+            elif entry.get("amount") is not None:
+                balance = entry.get("amount")
+            elif entry.get("amount_i64") is not None:
+                try:
+                    balance = int(entry["amount_i64"]) / 1_000_000
+                except (ValueError, TypeError):
+                    balance = 0
+            else:
+                balance = 0
             if miner_id is not None:
                 try:
                     current_balances[miner_id] = float(balance)
@@ -687,6 +712,8 @@ def main():
                         help="RTC threshold for large_tx events (default: %(default)s)")
     parser.add_argument("--db", default=DEFAULT_DB_PATH,
                         help="SQLite database path (default: %(default)s)")
+    parser.add_argument("--node-admin-key", default=os.getenv("RUSTCHAIN_NODE_ADMIN_KEY", ""),
+                        help="Optional X-Admin-Key for node admin read endpoints")
     args = parser.parse_args()
 
     store = SubscriberStore(db_path=args.db)
@@ -697,6 +724,7 @@ def main():
         store=store,
         poll_interval=args.poll_interval,
         large_tx_threshold=args.large_tx_threshold,
+        node_admin_key=args.node_admin_key,
     )
     poller_thread = threading.Thread(target=poller.run, daemon=True)
     poller_thread.start()
