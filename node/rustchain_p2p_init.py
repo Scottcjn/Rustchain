@@ -113,7 +113,7 @@ def init_p2p(app, db_path, node_id=None):
                     if local_ip in url:
                         node_id = nid
                         break
-            except:
+            except Exception:
                 pass
 
         if node_id is None:
@@ -134,7 +134,7 @@ def init_p2p(app, db_path, node_id=None):
         s.connect(("8.8.8.8", 80))
         my_ips.add(s.getsockname()[0])
         s.close()
-    except:
+    except Exception:
         pass
 
     local_ip = None
