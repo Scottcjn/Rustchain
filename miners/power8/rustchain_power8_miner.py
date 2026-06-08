@@ -158,7 +158,7 @@ class LocalMiner:
         try:
             return subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                 text=True, timeout=10).stdout.strip()
-        except:
+        except Exception:
             return ""
 
     def _get_mac_addresses(self):
