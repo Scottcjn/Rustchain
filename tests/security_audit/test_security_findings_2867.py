@@ -49,7 +49,7 @@ def test_mempool_add_manage_tx_undefined():
     """
     from utxo_db import UtxoDB
 
-    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__, encoding="utf-8")),
                            '..', '..', 'node', 'utxo_db.py')) as f:
         lines = f.readlines()
 

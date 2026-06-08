@@ -208,10 +208,10 @@ def update_history(entry: Dict[str, Any], history_file: str = JSON_HISTORY_FILE)
         history: List[Dict[str, Any]] = []
         path = Path(history_file)
         if path.exists():
-            with open(path, "r") as fh:
+            with open(path, "r", encoding="utf-8") as fh:
                 history = json.load(fh)
         history.append(entry)
-        with open(path, "w") as fh:
+        with open(path, "w", encoding="utf-8") as fh:
             json.dump(history[-500:], fh, indent=2)
     except Exception as exc:
         logger.warning("[⚠️] Failed to update history: %s", exc)
@@ -224,7 +224,7 @@ def update_history(entry: Dict[str, Any], history_file: str = JSON_HISTORY_FILE)
 def load_events(path: str = EVENT_LOG_FILE) -> List[Dict[str, Any]]:
     """Load newline-delimited JSON events from *path*."""
     try:
-        with open(path, "r") as fh:
+        with open(path, "r", encoding="utf-8") as fh:
             return [json.loads(line.strip()) for line in fh if line.strip()]
     except FileNotFoundError:
         logger.warning("[⚠️] Event log not found: %s", path)

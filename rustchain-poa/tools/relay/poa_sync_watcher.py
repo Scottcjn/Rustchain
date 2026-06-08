@@ -13,7 +13,7 @@ JSON_HISTORY = "flame_history.json"
 
 def load_event_stream(path):
     try:
-        with open(path, "r") as f:
+        with open(path, "r", encoding="utf-8") as f:
             lines = f.readlines()
         return [json.loads(line.strip()) for line in lines if line.strip()]
     except FileNotFoundError:
@@ -23,21 +23,21 @@ def load_event_stream(path):
         return []
 
 def append_csv(entry):
-    with open(CSV_LOG, "a") as f:
+    with open(CSV_LOG, "a", encoding="utf-8") as f:
         f.write(f"{entry['timestamp']},{entry['device']},{entry['score']},{entry.get('rom','')},{entry['fingerprint'][:10]}...\n")
 
 def update_history(entry):
     history = []
     path = Path(JSON_HISTORY)
     if path.exists():
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             try:
                 history = json.load(f)
             except:
                 history = []
 
     history.append(entry)
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(history[-500:], f, indent=2)  # Keep last 500
 
 def run_watcher():

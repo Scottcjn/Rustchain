@@ -410,7 +410,7 @@ def main():
         evidence = client.get_evidence_package()
         
         if args.output:
-            with open(args.output, 'w') as f:
+            with open(args.output, 'w', encoding="utf-8") as f:
                 json.dump(evidence, f, indent=2)
             print(f"Evidence package saved to: {args.output}")
         else:

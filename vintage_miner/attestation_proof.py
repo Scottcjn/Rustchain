@@ -537,13 +537,13 @@ class AttestationProofGenerator:
     
     def export_proof(self, proof: AttestationProof, filepath: str):
         """Export proof to JSON file"""
-        with open(filepath, 'w') as f:
+        with open(filepath, 'w', encoding="utf-8") as f:
             json.dump(proof.to_dict(), f, indent=2)
         print(f"Proof exported to: {filepath}")
     
     def import_proof(self, filepath: str) -> AttestationProof:
         """Import proof from JSON file"""
-        with open(filepath, 'r') as f:
+        with open(filepath, 'r', encoding="utf-8") as f:
             data = json.load(f)
         return AttestationProof.from_dict(data)
 

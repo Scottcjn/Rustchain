@@ -9,7 +9,7 @@ import os
 
 def load_wallet(wallet_path):
     try:
-        with open(wallet_path, 'r') as f:
+        with open(wallet_path, 'r', encoding="utf-8") as f:
             return json.load(f)
     except Exception as e:
         print(f"[!] Error loading wallet: {e}")
@@ -17,7 +17,7 @@ def load_wallet(wallet_path):
 
 def embed_poa_metadata(wallet_data, fingerprint_path):
     try:
-        with open(fingerprint_path, 'r') as f:
+        with open(fingerprint_path, 'r', encoding="utf-8") as f:
             fingerprint = f.read().strip()
     except Exception as e:
         print(f"[!] Error reading fingerprint file: {e}")
@@ -38,7 +38,7 @@ def embed_poa_metadata(wallet_data, fingerprint_path):
 
 def save_wallet(wallet_data, output_path):
     try:
-        with open(output_path, 'w') as f:
+        with open(output_path, 'w', encoding="utf-8") as f:
             json.dump(wallet_data, f, indent=2)
         print(f"[✓] Updated wallet saved to: {output_path}")
     except Exception as e:
