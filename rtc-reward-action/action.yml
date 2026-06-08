@@ -1,0 +1,34 @@
+name: 'RustChain RTC Reward'
+description: 'Automatically awards RTC tokens to contributors when a pull request is merged.'
+author: 'Hermes Agent'
+branding:
+  icon: 'coin'
+  color: 'blue'
+
+inputs:
+  node-url:
+    description: 'The URL of the RustChain node (e.g., https://rustchain.org)'
+    required: true
+    default: 'https://rustchain.org'
+  amount:
+    description: 'Amount of RTC to reward per merge'
+    required: true
+    default: '5'
+  wallet-from:
+    description: 'The wallet name to send rewards from (Project Fund)'
+    required: true
+  admin-key:
+    description: 'The admin key for the RustChain node'
+    required: true
+  dry-run:
+    description: 'If true, simulates the transfer without sending real tokens'
+    required: false
+    default: 'false'
+  wallet-field:
+    description: 'The field name to look for in the PR body (e.g., "Wallet")'
+    required: false
+    default: 'Wallet'
+
+runs:
+  using: 'node20'
+  main: 'src/index.js'
