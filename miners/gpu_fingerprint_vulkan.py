@@ -257,9 +257,11 @@ def channel_system_gpu_probe() -> ChannelResult:
         drm_info = []
         for vendor_path in drm_cards:
             card = vendor_path.split("/")[4]
-            vendor = open(vendor_path).read().strip()
+            with open(vendor_path) as f:
+            vendor = f.read().strip()
             device_path = vendor_path.replace("vendor", "device")
-            device = open(device_path).read().strip() if __import__("os").path.exists(device_path) else "unknown"
+            with open(device_path) as f:
+            device = f.read().strip() if __import__("os").path.exists(device_path) else "unknown"
             drm_info.append({"card": card, "vendor": vendor, "device": device})
         data["drm_cards"] = drm_info
     except Exception:
