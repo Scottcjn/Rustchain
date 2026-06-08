@@ -201,14 +201,14 @@ def get_linux_serial():
                 serial = f.read().strip()
                 if serial and serial not in ['', 'None', 'To Be Filled By O.E.M.', 'Default string']:
                     return serial
-        except:
+        except Exception:
             pass
 
     # Fallback to machine-id (stable across reboots)
     try:
         with open('/etc/machine-id', 'r') as f:
             return f.read().strip()[:16]  # First 16 chars
-    except:
+    except Exception:
         pass
 
     return None
@@ -327,7 +327,7 @@ class LocalMiner:
         try:
             return subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                 text=True, timeout=10).stdout.strip()
-        except:
+        except Exception:
             return ""
 
     def _get_mac_addresses(self):
