@@ -242,7 +242,7 @@ class AudienceTracker:
         state_file = self._state_file_path()
         if state_file.exists():
             try:
-                with open(state_file, "r") as f:
+                with open(state_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 
                 self.viewer_profiles = {
@@ -274,7 +274,7 @@ class AudienceTracker:
             },
             "video_comments": dict(self.video_comments),
         }
-        with open(state_file, "w") as f:
+        with open(state_file, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
     
     def add_comment(self, video_id: str, user_id: str, comment_text: str, 

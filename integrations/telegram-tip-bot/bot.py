@@ -118,28 +118,28 @@ def sign_transaction(priv_key_hex: str, tx_data: dict) -> str:
 def load_wallets() -> Dict:
     """Load wallets from disk."""
     if WALLETS_FILE.exists():
-        with open(WALLETS_FILE, 'r') as f:
+        with open(WALLETS_FILE, 'r', encoding="utf-8") as f:
             return json.load(f)
     return {}
 
 
 def save_wallets(wallets: Dict):
     """Save wallets to disk."""
-    with open(WALLETS_FILE, 'w') as f:
+    with open(WALLETS_FILE, 'w', encoding="utf-8") as f:
         json.dump(wallets, f, indent=2)
 
 
 def load_rate_limits() -> Dict:
     """Load rate limits from disk."""
     if RATE_LIMIT_FILE.exists():
-        with open(RATE_LIMIT_FILE, 'r') as f:
+        with open(RATE_LIMIT_FILE, 'r', encoding="utf-8") as f:
             return json.load(f)
     return {}
 
 
 def save_rate_limits(limits: Dict):
     """Save rate limits to disk."""
-    with open(RATE_LIMIT_FILE, 'w') as f:
+    with open(RATE_LIMIT_FILE, 'w', encoding="utf-8") as f:
         json.dump(limits, f)
 
 

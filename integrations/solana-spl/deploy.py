@@ -139,7 +139,7 @@ def load_keypair(keypair_path: str):
     if not path.exists():
         raise FileNotFoundError(f"Keypair not found: {path}")
     
-    with open(path, 'r') as f:
+    with open(path, 'r', encoding="utf-8") as f:
         keypair_data = json.load(f)
     
     return Keypair.from_bytes(keypair_data)
@@ -212,7 +212,7 @@ def deploy_testnet(args):
         # Generate report
         report = deployment.generate_deployment_report(token_config)
         report_file = args.output.replace(".json", "-report.md")
-        with open(report_file, 'w') as f:
+        with open(report_file, 'w', encoding="utf-8") as f:
             f.write(report)
         print(f"📊 Deployment report saved to: {report_file}")
         
@@ -273,7 +273,7 @@ def generate_report(args):
     # Output to stdout or file
     if args.output:
         report_file = args.output.replace(".json", "-report.md")
-        with open(report_file, 'w') as f:
+        with open(report_file, 'w', encoding="utf-8") as f:
             f.write(report)
         print(f"Report saved to: {report_file}")
     else:

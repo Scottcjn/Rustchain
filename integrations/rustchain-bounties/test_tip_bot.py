@@ -405,14 +405,14 @@ class TestTipState:
 
     def test_invalid_state_file_resets(self, tmp_path):
         path = str(tmp_path / "bad.json")
-        with open(path, "w") as f:
+        with open(path, "w", encoding="utf-8") as f:
             f.write("not valid json {{{")
         s = TipState(path)
         assert s.tip_log == []
 
     def test_non_object_state_file_resets(self, tmp_path):
         path = str(tmp_path / "bad_shape.json")
-        with open(path, "w") as f:
+        with open(path, "w", encoding="utf-8") as f:
             json.dump([], f)
 
         s = TipState(path)
@@ -422,7 +422,7 @@ class TestTipState:
 
     def test_invalid_state_collections_reset(self, tmp_path):
         path = str(tmp_path / "bad_collections.json")
-        with open(path, "w") as f:
+        with open(path, "w", encoding="utf-8") as f:
             json.dump({"version": 1, "processed_comment_ids": {}, "tip_log": None}, f)
 
         s = TipState(path)

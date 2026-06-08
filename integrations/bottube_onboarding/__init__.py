@@ -167,7 +167,7 @@ class FirstUploadChecklist:
         state_file = self._get_state_file()
         if state_file and state_file.exists():
             try:
-                with open(state_file, 'r') as f:
+                with open(state_file, 'r', encoding="utf-8") as f:
                     data = json.load(f)
                     self.items = [
                         ChecklistItem(**item) for item in data.get("items", [])
@@ -190,7 +190,7 @@ class FirstUploadChecklist:
         """Persist checklist state."""
         state_file = self._get_state_file()
         if state_file:
-            with open(state_file, 'w') as f:
+            with open(state_file, 'w', encoding="utf-8") as f:
                 json.dump({
                     "agent_id": self.agent_id,
                     "items": [item.to_dict() for item in self.items],
@@ -507,7 +507,7 @@ if __name__ == "__main__":
             print("\n" + state.get_welcome_message())
     
     elif args.validate:
-        with open(args.validate, 'r') as f:
+        with open(args.validate, 'r', encoding="utf-8") as f:
             metadata = json.load(f)
         
         checklist = FirstUploadChecklist()

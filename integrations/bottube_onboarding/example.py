@@ -129,7 +129,7 @@ def validate_metadata_file(filepath: str) -> int:
         return 1
     
     try:
-        with open(path, 'r') as f:
+        with open(path, 'r', encoding="utf-8") as f:
             metadata = json.load(f)
     except json.JSONDecodeError as exc:
         print(f"Error: Invalid JSON in {filepath}: {exc.msg}")
