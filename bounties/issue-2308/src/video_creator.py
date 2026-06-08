@@ -189,7 +189,7 @@ class BoTTubeVideoCreator:
         try:
             font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 48)
             font_medium = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 32)
-        except:
+        except Exception:
             font_large = ImageFont.load_default()
             font_medium = ImageFont.load_default()
         
@@ -255,7 +255,7 @@ class BoTTubeVideoCreator:
         try:
             font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 
                                      self.config.font_size)
-        except:
+        except Exception:
             font = ImageFont.load_default()
         
         # Word wrap text
@@ -316,7 +316,7 @@ class BoTTubeVideoCreator:
         try:
             font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 36)
             font_medium = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 28)
-        except:
+        except Exception:
             font_large = ImageFont.load_default()
             font_medium = ImageFont.load_default()
         
