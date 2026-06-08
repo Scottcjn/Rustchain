@@ -243,8 +243,8 @@ class N64Relay:
                 headers={"Content-Type": "application/json"},
                 method="POST"
             )
-            resp = urllib.request.urlopen(req, timeout=10)
-            return json.loads(resp.read())
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return json.loads(resp.read())
         except Exception as e:
             print(f"[relay] Attestation submit failed: {e}")
             return None
