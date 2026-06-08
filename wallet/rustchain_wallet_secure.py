@@ -514,7 +514,7 @@ class SecureFounderWallet:
         # Verify password by trying to load wallet
         try:
             wallet_path = KEYSTORE_DIR / f"{self.wallet_name.get()}.json"
-            with open(wallet_path, 'r') as f:
+            with open(wallet_path, 'r', encoding="utf-8") as f:
                 encrypted = json.load(f)
             RustChainWallet.from_encrypted(encrypted, password)
             self.show_seed_phrase_dialog(self.wallet.mnemonic)
@@ -633,7 +633,7 @@ class SecureFounderWallet:
 
             try:
                 wallet_path = KEYSTORE_DIR / f"{name}.json"
-                with open(wallet_path, 'r') as f:
+                with open(wallet_path, 'r', encoding="utf-8") as f:
                     encrypted = json.load(f)
 
                 wallet = RustChainWallet.from_encrypted(encrypted, password)
@@ -709,7 +709,7 @@ class SecureFounderWallet:
         # Verify password
         try:
             wallet_path = KEYSTORE_DIR / f"{self.wallet_name.get()}.json"
-            with open(wallet_path, 'r') as f:
+            with open(wallet_path, 'r', encoding="utf-8") as f:
                 encrypted = json.load(f)
             verified_wallet = RustChainWallet.from_encrypted(encrypted, password)
         except Exception:

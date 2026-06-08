@@ -129,7 +129,7 @@ def _load_coinbase_wallet():
     if not os.path.exists(COINBASE_FILE):
         return None
     try:
-        with open(COINBASE_FILE) as f:
+        with open(COINBASE_FILE, encoding="utf-8") as f:
             return json.load(f)
     except (json.JSONDecodeError, IOError):
         return None
@@ -138,7 +138,7 @@ def _load_coinbase_wallet():
 def _save_coinbase_wallet(data):
     """Save Coinbase wallet data to disk."""
     os.makedirs(INSTALL_DIR, exist_ok=True)
-    with open(COINBASE_FILE, "w") as f:
+    with open(COINBASE_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
     os.chmod(COINBASE_FILE, 0o600)
 
@@ -276,7 +276,7 @@ def coinbase_link(args):
     rtc_wallet_file = os.path.join(INSTALL_DIR, "wallets", "default.json")
     if os.path.exists(rtc_wallet_file):
         try:
-            with open(rtc_wallet_file) as f:
+            with open(rtc_wallet_file, encoding="utf-8") as f:
                 rtc = json.load(f)
             print(f"  {DIM}Linked to RTC wallet: {rtc['address']}{NC}")
         except Exception:

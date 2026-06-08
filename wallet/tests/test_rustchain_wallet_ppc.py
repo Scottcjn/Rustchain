@@ -49,7 +49,7 @@ class TestImportCompatibility(unittest.TestCase):
     """Verify module imports are compatible with Python 3."""
 
     def setUp(self):
-        with open(WALLET_PPC_PATH) as f:
+        with open(WALLET_PPC_PATH, encoding="utf-8") as f:
             self.source = f.read()
         self.top_level = _top_level_import_names(self.source)
         self.all_imports = _all_import_names(self.source)
@@ -97,7 +97,7 @@ class TestHashlibEncoding(unittest.TestCase):
 
     def test_source_encodes_before_sha256(self):
         """Source uses isinstance(miner_id, bytes) guard before sha256 (correct on Py2+Py3)."""
-        with open(WALLET_PPC_PATH) as f:
+        with open(WALLET_PPC_PATH, encoding="utf-8") as f:
             source = f.read()
         self.assertIn(
             "isinstance(miner_id, bytes)",
@@ -141,7 +141,7 @@ class TestSimpleJSONStringTypes(unittest.TestCase):
 
     def test_source_uses_str_types_not_bare_str(self):
         """SimpleJSON.dumps() must use _str_types, not bare isinstance(obj, str)."""
-        with open(WALLET_PPC_PATH) as f:
+        with open(WALLET_PPC_PATH, encoding="utf-8") as f:
             source = f.read()
         self.assertIn(
             "_str_types",
@@ -161,7 +161,7 @@ class TestResponseDecoding(unittest.TestCase):
 
     def test_source_decodes_response(self):
         """Source must call .decode() on response data (Python 3 returns bytes)."""
-        with open(WALLET_PPC_PATH) as f:
+        with open(WALLET_PPC_PATH, encoding="utf-8") as f:
             source = f.read()
         self.assertIn(
             "decode",

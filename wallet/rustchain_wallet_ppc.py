@@ -141,7 +141,7 @@ class RustChainWallet:
         """Load existing wallet or create new one"""
         if os.path.exists(WALLET_FILE):
             try:
-                f = open(WALLET_FILE, 'r')
+                f = open(WALLET_FILE, 'r', encoding="utf-8")
                 addr = f.read().strip()
                 f.close()
                 if addr:
@@ -159,7 +159,7 @@ class RustChainWallet:
 
         # Save it
         try:
-            f = open(WALLET_FILE, 'w')
+            f = open(WALLET_FILE, 'w', encoding="utf-8")
             f.write(wallet_addr)
             f.close()
         except:
@@ -330,7 +330,7 @@ def main():
         # Write provided address to wallet file
         addr = sys.argv[1]
         try:
-            f = open(WALLET_FILE, 'w')
+            f = open(WALLET_FILE, 'w', encoding="utf-8")
             f.write(addr)
             f.close()
         except:
