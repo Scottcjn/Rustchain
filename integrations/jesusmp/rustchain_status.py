@@ -12,7 +12,7 @@ BASE_URL = "https://rustchain.org"
 def fetch_miners():
     """Fetch live miner data from RustChain."""
     try:
-        req = urllib.request.urlopen(f"{BASE_URL}/api/miners", timeout=15)
+        with urllib.request.urlopen(f"{BASE_URL}/api/miners", timeout=15) as req:
         return json.loads(req.read())
     except Exception as e:
         return {"error": str(e)}
@@ -20,7 +20,7 @@ def fetch_miners():
 def fetch_tokenomics():
     """Fetch live tokenomics data from RustChain."""
     try:
-        req = urllib.request.urlopen(f"{BASE_URL}/api/tokenomics", timeout=15)
+        with urllib.request.urlopen(f"{BASE_URL}/api/tokenomics", timeout=15) as req:
         return json.loads(req.read())
     except Exception as e:
         return {"error": str(e)}
