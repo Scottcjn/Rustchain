@@ -15,6 +15,7 @@ Security Features:
 import hashlib
 import json
 import os
+import secrets
 import socket
 import ssl
 import struct
@@ -186,7 +187,7 @@ class Message:
         if not self.timestamp:
             self.timestamp = int(time.time())
         if not self.nonce:
-            self.nonce = int.from_bytes(hashlib.sha256(str(time.time()).encode()).digest()[:4], 'big')
+            self.nonce = secrets.randbelow(MAX_NONCE)
 
     def to_bytes(self) -> bytes:
         """Serialize message to bytes"""
