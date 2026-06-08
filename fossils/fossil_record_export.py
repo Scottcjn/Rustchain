@@ -286,7 +286,7 @@ def generate_sample_data(num_epochs: int = 150, num_miners: int = 100) -> List[D
 
 def export_to_json(data: List[Dict], output_path: str):
     """Export data to JSON file."""
-    with open(output_path, 'w') as f:
+    with open(output_path, 'w', encoding="utf-8") as f:
         json.dump(data, f, indent=2)
     log.info(f"Exported {len(data)} records to {output_path}")
 
@@ -298,7 +298,7 @@ def export_to_csv(data: List[Dict], output_path: str):
     
     headers = list(data[0].keys())
     
-    with open(output_path, 'w') as f:
+    with open(output_path, 'w', encoding="utf-8") as f:
         f.write(','.join(headers) + '\n')
         for row in data:
             values = []

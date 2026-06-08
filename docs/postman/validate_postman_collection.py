@@ -46,7 +46,7 @@ def print_info(text: str):
 def validate_json_file(filepath: str) -> bool:
     """Validate that a file is valid JSON."""
     try:
-        with open(filepath, 'r') as f:
+        with open(filepath, 'r', encoding="utf-8") as f:
             json.load(f)
         return True
     except json.JSONDecodeError as e:
@@ -287,7 +287,7 @@ def main():
         sys.exit(1)
     print_success("Collection file is valid JSON")
     
-    with open(collection_path, 'r') as f:
+    with open(collection_path, 'r', encoding="utf-8") as f:
         collection = json.load(f)
     
     errors = validate_collection_structure(collection)
@@ -305,7 +305,7 @@ def main():
         sys.exit(1)
     print_success("Environment file is valid JSON")
     
-    with open(environment_path, 'r') as f:
+    with open(environment_path, 'r', encoding="utf-8") as f:
         environment = json.load(f)
     
     errors = validate_environment_structure(environment)

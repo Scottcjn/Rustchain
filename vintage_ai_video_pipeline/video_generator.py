@@ -195,7 +195,7 @@ class VideoGenerator:
         base_name = os.path.splitext(output_path)[0]
         metadata_path = f"{base_name}.meta.json"
 
-        with open(metadata_path, "w") as f:
+        with open(metadata_path, "w", encoding="utf-8") as f:
             json.dump(video_metadata, f, indent=2)
 
         # Create a minimal placeholder file to represent the video

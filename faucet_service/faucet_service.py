@@ -138,7 +138,7 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
     config = _deep_copy(DEFAULT_CONFIG)
     
     if config_path and os.path.exists(config_path):
-        with open(config_path, 'r') as f:
+        with open(config_path, 'r', encoding="utf-8") as f:
             file_config = yaml.safe_load(f)
             if file_config:
                 _merge_config(config, file_config)

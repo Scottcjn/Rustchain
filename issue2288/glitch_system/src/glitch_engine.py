@@ -489,7 +489,7 @@ class GlitchEngine:
     def _log_glitch(self, event: GlitchEvent):
         """Log glitch event to file"""
         try:
-            with open(self.config.log_path, "a") as f:
+            with open(self.config.log_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(event.to_dict()) + "\n")
         except Exception:
             pass  # Silently ignore logging errors
@@ -497,7 +497,7 @@ class GlitchEngine:
     def _load_history(self, path: str):
         """Load glitch history from file"""
         try:
-            with open(path, "r") as f:
+            with open(path, "r", encoding="utf-8") as f:
                 for line in f:
                     if line.strip():
                         event = GlitchEvent.from_dict(json.loads(line))

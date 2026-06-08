@@ -436,13 +436,13 @@ def main():
 
     # Save report
     output_path = args.output or f"/home/scott/scripts/rtc_benchmark_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-    with open(output_path, "w") as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         f.write(report)
     print(f"\n  Report saved to: {output_path}")
 
     # Also save raw JSON data
     json_path = output_path.replace(".txt", ".json")
-    with open(json_path, "w") as f:
+    with open(json_path, "w", encoding="utf-8") as f:
         json.dump({"system": system_info, "phases": phases}, f, indent=2, default=str)
     print(f"  Raw data saved to: {json_path}")
 

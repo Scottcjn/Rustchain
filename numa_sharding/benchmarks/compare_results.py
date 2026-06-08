@@ -61,7 +61,7 @@ EXPECTED_BASELINES = {
 
 def parse_llama_bench_json(filepath: str) -> Dict:
     """Parse llama-bench JSON output file"""
-    with open(filepath, 'r') as f:
+    with open(filepath, 'r', encoding="utf-8") as f:
         data = json.load(f)
     
     # Handle both single result and array of results
@@ -318,14 +318,14 @@ def main():
         model_name=os.path.basename(baseline_file)
     )
     md_path = os.path.join(output_dir, f"validation_report_{timestamp}.md")
-    with open(md_path, 'w') as f:
+    with open(md_path, 'w', encoding="utf-8") as f:
         f.write(md_report)
     print(f"Markdown report: {md_path}")
     
     # JSON summary
     json_summary = generate_json_summary(baseline_metrics, numa_metrics, comparisons)
     json_path = os.path.join(output_dir, f"summary_{timestamp}.json")
-    with open(json_path, 'w') as f:
+    with open(json_path, 'w', encoding="utf-8") as f:
         json.dump(json_summary, f, indent=2)
     print(f"JSON summary: {json_path}")
     

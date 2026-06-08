@@ -397,7 +397,7 @@ class TestNginxProxyCompatibility(unittest.TestCase):
         nginx_conf_path = os.path.join(os.path.dirname(__file__), 'nginx.conf')
 
         if os.path.exists(nginx_conf_path):
-            with open(nginx_conf_path, 'r') as f:
+            with open(nginx_conf_path, 'r', encoding="utf-8") as f:
                 content = f.read()
 
             # Check for WebSocket proxy configuration
@@ -411,7 +411,7 @@ class TestNginxProxyCompatibility(unittest.TestCase):
         nginx_conf_path = os.path.join(os.path.dirname(__file__), 'nginx.conf')
 
         if os.path.exists(nginx_conf_path):
-            with open(nginx_conf_path, 'r') as f:
+            with open(nginx_conf_path, 'r', encoding="utf-8") as f:
                 content = f.read()
 
             # Check for explorer proxy configuration
@@ -624,7 +624,7 @@ class TestHTMLExplorer(unittest.TestCase):
         """Test realtime-explorer.html includes WebSocket client"""
         explorer_path = os.path.join(os.path.dirname(__file__), 'realtime-explorer.html')
 
-        with open(explorer_path, 'r') as f:
+        with open(explorer_path, 'r', encoding="utf-8") as f:
             content = f.read()
 
         # Check for Socket.IO library
@@ -641,7 +641,7 @@ class TestHTMLExplorer(unittest.TestCase):
         """Test realtime-explorer.html includes bonus features"""
         explorer_path = os.path.join(os.path.dirname(__file__), 'realtime-explorer.html')
 
-        with open(explorer_path, 'r') as f:
+        with open(explorer_path, 'r', encoding="utf-8") as f:
             content = f.read()
 
         # Check for sparkline chart
@@ -660,7 +660,7 @@ class TestHTMLExplorer(unittest.TestCase):
         """Test realtime-explorer.html includes auto-reconnect logic"""
         explorer_path = os.path.join(os.path.dirname(__file__), 'realtime-explorer.html')
 
-        with open(explorer_path, 'r') as f:
+        with open(explorer_path, 'r', encoding="utf-8") as f:
             content = f.read()
 
         # Check for reconnection configuration (case-insensitive)
@@ -683,7 +683,7 @@ class TestDocumentation(unittest.TestCase):
         report_path = os.path.join(os.path.dirname(__file__), 'BOUNTY_2295_IMPLEMENTATION.md')
 
         if os.path.exists(report_path):
-            with open(report_path, 'r') as f:
+            with open(report_path, 'r', encoding="utf-8") as f:
                 content = f.read()
 
             # Check for required sections
