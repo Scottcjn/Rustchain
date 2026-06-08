@@ -422,7 +422,7 @@ class SecureFounderWallet:
                     f.flush()
                     os.fsync(f.fileno())
                 os.replace(tmp_path, str(wallet_path))
-            except:
+            except Exception:
                 os.unlink(tmp_path)
                 raise
 
@@ -575,7 +575,7 @@ class SecureFounderWallet:
                         f.flush()
                         os.fsync(f.fileno())
                     os.replace(tmp_path, str(wallet_path))
-                except:
+                except Exception:
                     os.unlink(tmp_path)
                     raise
 
