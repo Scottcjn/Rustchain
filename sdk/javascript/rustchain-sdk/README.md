@@ -43,7 +43,7 @@ Options:
 - `epoch()` -> `GET /epoch`
 - `miners({ limit, offset, hardwareType })` -> `GET /api/miners`
 - `balance(minerId)` -> `GET /wallet/balance?miner_id=...`
-- `transfer({ from, to, amount, signature, fee })` -> `POST /transfer`
+- `transfer({ from, to, amount, nonce, publicKey, signature, fee, memo, chainId })` -> `POST /wallet/transfer/signed`
 - `attestChallenge(payload)` -> `POST /attest/challenge`
 - `submitAttestation(payload)` -> `POST /attest/submit`
 - `transferHistory(wallet, { limit })` -> `GET /wallet/history`
