@@ -54,11 +54,11 @@ def cleanup():
     """Clean up test database."""
     try:
         os.close(TEST_DB_FD)
-    except:
+    except Exception:
         pass
     try:
         Path(TEST_DB_PATH).unlink()
-    except:
+    except Exception:
         pass
 
 
