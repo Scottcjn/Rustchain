@@ -1017,11 +1017,23 @@ class GossipLayer:
 
     def _handle_inv_attestation(self, msg: GossipMessage) -> Dict:
         """Handle attestation inventory announcement"""
-        miner_id = msg.payload.get("miner_id")
-        remote_ts = msg.payload.get("ts_ok", 0)
+        payload = msg.payload
+        miner_id = payload.get("miner_id")
+        remote_ts = payload.get("ts_ok", 0)
+        source_node_id = payload.get("source_node_id")
 
         # Check if we need this attestation
         local = self.attestation_crdt.get(miner_id)
+        
+        # NEW: Only request if the announcement comes directly from 
+        # a known peer (not via multi-hop)
+        if source_node_id not in self.peers and source_node_id != msg.sender_id:
+            logger.warning(
+                f"Rejecting attestation announcement from non-direct peer "
+                f"{source_node_id}"
+            )
+            return {"status": "rejected", "reason": "non_direct_peer"}
+
         if local is None or remote_ts > self.attestation_crdt.data.get(miner_id, (0, {}))[0]:
             # Request full data
             return {"status": "need_data", "miner_id": miner_id}
@@ -1030,7 +1042,7 @@ class GossipLayer:
 
     def _handle_attestation(self, msg: GossipMessage) -> Dict:
         """Handle full attestation data.
-
+        
         SECURITY (#2256 Phase E): schema + timestamp sanity. Reject
         attestations with future ts_ok beyond clock-skew tolerance to
         prevent LWW-pinning of poisoned state. Reject malformed miner_id.
@@ -1055,6 +1067,18 @@ class GossipLayer:
                 f"rejecting future-dated ts_ok={ts_ok} (now={now})"
             )
             return {"status": "error", "reason": "future_timestamp"}
+        
+        # NEW: Verify attestation was generated for THIS node
+        expected_node_peer_id = self.node_id
+        attestation_node_peer_id = attestation.get("node_peer_id")
+        if attestation_node_peer_id != expected_node_peer_id:
+            logger.warning(
+                f"REJECTED replayed attestation for {miner_id[:16]}: "
+                f"attestation was for node {attestation_node_peer_id}, "
+                f"not {expected_node_peer_id}"
+            )
+            return {"status": "rejected", "reason": "attestation_node_mismatch"}
+
         if miner_id != msg.sender_id:
             logger.warning(
                 f"Attestation from {msg.sender_id}: rejecting write for "
@@ -1524,7 +1548,8 @@ class GossipLayer:
             "miner_id": miner_id,
             "ts_ok": ts_ok,
             "device_arch": device_arch,
-            "attestation_hash": hashlib.sha256(f"{miner_id}:{ts_ok}".encode()).hexdigest()[:16]
+            "attestation_hash": hashlib.sha256(f"{miner_id}:{ts_ok}".encode()).hexdigest()[:16],
+            "source_node_id": self.node_id,  # NEW: track origin
         })
         self.broadcast(msg)
 

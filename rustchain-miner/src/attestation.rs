@@ -19,6 +19,9 @@ pub struct AttestationReport {
     /// Challenge nonce from node
     pub nonce: String,
 
+    /// Node identity this attestation is bound to
+    pub node_peer_id: String,
+
     /// Entropy report
     pub report: EntropyReport,
 
@@ -209,7 +212,7 @@ pub async fn attest_with_key(
 ) -> crate::Result<bool> {
     tracing::info!("[ATTEST] Starting hardware attestation...");
 
-    // Step 1: Get challenge nonce from node
+    // Step 1: Get challenge nonce and node identity from node
     let response = transport.post_json("/attest/challenge", &serde_json::json!({})).await?;
 
     if !response.status().is_success() {
@@ -226,6 +229,11 @@ pub async fn attest_with_key(
         .and_then(|n| n.as_str())
         .unwrap_or("")
         .to_string();
+    let node_peer_id = challenge
+        .get("node_id")
+        .and_then(|n| n.as_str())
+        .unwrap_or("unknown")
+        .to_string();
 
     if nonce.is_empty() {
         return Err(crate::error::MinerError::Attestation(
@@ -238,9 +246,9 @@ pub async fn attest_with_key(
     // Step 2: Collect entropy
     let entropy = collect_entropy(48, 25000);
 
-    // Step 3: Build commitment
+    // Step 3: Build commitment with node binding
     let entropy_json = serde_json::to_string(&entropy)?;
-    let commitment_string = format!("{}{}{}", nonce, wallet, entropy_json);
+    let commitment_string = format!("{}:{}:{}:{}", nonce, wallet, node_peer_id, entropy_json);
     let commitment_hash = Sha256::digest(commitment_string.as_bytes());
     let commitment = hex::encode(commitment_hash);
 
@@ -269,6 +277,7 @@ pub async fn attest_with_key(
         miner: wallet.to_string(),
         miner_id: miner_id.to_string(),
         nonce: nonce.clone(),
+        node_peer_id: node_peer_id,
         report: EntropyReport {
             nonce,
             commitment,
@@ -317,7 +326,7 @@ pub async fn attest(
 ) -> crate::Result<bool> {
     tracing::info!("[ATTEST] Starting hardware attestation...");
 
-    // Step 1: Get challenge nonce from node
+    // Step 1: Get challenge nonce and node identity from node
     let response = transport.post_json("/attest/challenge", &serde_json::json!({})).await?;
 
     if !response.status().is_success() {
@@ -334,6 +343,11 @@ pub async fn attest(
         .and_then(|n| n.as_str())
         .unwrap_or("")
         .to_string();
+    let node_peer_id = challenge
+        .get("node_id")
+        .and_then(|n| n.as_str())
+        .unwrap_or("unknown")
+        .to_string();
 
     if nonce.is_empty() {
         return Err(crate::error::MinerError::Attestation(
@@ -346,9 +360,9 @@ pub async fn attest(
     // Step 2: Collect entropy
     let entropy = collect_entropy(48, 25000);
 
-    // Step 3: Build commitment
+    // Step 3: Build commitment with node binding
     let entropy_json = serde_json::to_string(&entropy)?;
-    let commitment_string = format!("{}{}{}", nonce, wallet, entropy_json);
+    let commitment_string = format!("{}:{}:{}:{}", nonce, wallet, node_peer_id, entropy_json);
     let commitment_hash = Sha256::digest(commitment_string.as_bytes());
     let commitment = hex::encode(commitment_hash);
 
@@ -371,6 +385,7 @@ pub async fn attest(
         miner: wallet.to_string(),
         miner_id: miner_id.to_string(),
         nonce: nonce.clone(),
+        node_peer_id: node_peer_id,
         report: EntropyReport {
             nonce,
             commitment,
