@@ -67,18 +67,21 @@ export class RustChainClient {
     return this.request("GET", withQuery("/wallet/balance", params));
   }
 
-  async transfer({ from, to, amount, signature, fee = 0.01 }) {
+  async transfer({ from, to, amount, signature, publicKey, nonce, memo, fee = 0 }) {
     assertNonEmptyString(from, "from");
     assertNonEmptyString(to, "to");
     validatePositiveNumber(amount, "amount");
     validateNonNegativeNumber(fee, "fee");
 
-    return this.request("POST", "/transfer", {
-      from,
-      to,
-      amount,
-      fee,
-      ...(signature ? { signature } : {})
+    return this.request("POST", "/wallet/transfer/signed", {
+      from_address: from,
+      to_address: to,
+      amount_rtc: amount,
+      fee_rtc: fee,
+      ...(signature ? { signature } : {}),
+      ...(publicKey ? { public_key: publicKey } : {}),
+      ...(nonce !== undefined ? { nonce } : {}),
+      ...(memo ? { memo } : {})
     });
   }
 
@@ -95,9 +98,13 @@ export class RustChainClient {
 
   async transferHistory(wallet, options = {}) {
     assertNonEmptyString(wallet, "wallet");
-    const params = new URLSearchParams({ wallet });
+    const params = new URLSearchParams({ miner_id: wallet });
     if (options.limit !== undefined) params.set("limit", String(validatePositiveInteger(options.limit, "limit")));
-    return this.request("GET", withQuery("/wallet/history", params));
+    const result = await this.request("GET", withQuery("/wallet/history", params));
+    // Normalize envelope: live API returns { transactions: [...] }, but legacy returns bare array
+    if (Array.isArray(result)) return result;
+    if (Array.isArray(result?.transactions)) return result.transactions;
+    return [];
   }
 
   async request(method, endpoint, body) {
