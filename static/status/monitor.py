@@ -66,7 +66,7 @@ def check_nodes():
                 history = json.load(f)
             if not isinstance(history, list):
                 history = []
-        except: pass
+        except Exception: pass
     
     history.append({"time": datetime.now().isoformat(), "nodes": results})
     # Keep last 1440 entries (24 hours at 1/min)
