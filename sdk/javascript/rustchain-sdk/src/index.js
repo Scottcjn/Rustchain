@@ -117,9 +117,14 @@ export class RustChainClient {
 
   async transferHistory(wallet, options = {}) {
     assertNonEmptyString(wallet, "wallet");
-    const params = new URLSearchParams({ wallet });
+    const params = new URLSearchParams({ miner_id: wallet });
     if (options.limit !== undefined) params.set("limit", String(validatePositiveInteger(options.limit, "limit")));
-    return this.request("GET", withQuery("/wallet/history", params));
+    const result = await this.request("GET", withQuery("/wallet/history", params));
+    if (Array.isArray(result)) return result;
+    if (Array.isArray(result?.transactions)) return result.transactions;
+    if (Array.isArray(result?.history)) return result.history;
+    if (Array.isArray(result?.items)) return result.items;
+    return [];
   }
 
   async request(method, endpoint, body) {

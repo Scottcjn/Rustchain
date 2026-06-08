@@ -46,7 +46,7 @@ Options:
 - `transfer({ from, to, amount, nonce, publicKey, signature, fee, memo, chainId })` -> `POST /wallet/transfer/signed`
 - `attestChallenge(payload)` -> `POST /attest/challenge`
 - `submitAttestation(payload)` -> `POST /attest/submit`
-- `transferHistory(wallet, { limit })` -> `GET /wallet/history`
+- `transferHistory(wallet, { limit })` -> `GET /wallet/history?miner_id=...`
 
 ## Example
 
