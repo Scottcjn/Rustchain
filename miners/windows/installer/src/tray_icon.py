@@ -70,7 +70,7 @@ def _load_icon_file():
     for p in candidates:
         if p and p.exists():
             try:
-                return Image.open(str(p))
+                return Image.open(str(p, encoding="utf-8"))
             except Exception:
                 continue
     return None

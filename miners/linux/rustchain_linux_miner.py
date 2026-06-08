@@ -197,7 +197,7 @@ def get_linux_serial():
     ]
     for path in serial_sources:
         try:
-            with open(path, 'r') as f:
+            with open(path, 'r', encoding="utf-8") as f:
                 serial = f.read().strip()
                 if serial and serial not in ['', 'None', 'To Be Filled By O.E.M.', 'Default string']:
                     return serial
@@ -206,7 +206,7 @@ def get_linux_serial():
 
     # Fallback to machine-id (stable across reboots)
     try:
-        with open('/etc/machine-id', 'r') as f:
+        with open('/etc/machine-id', 'r', encoding="utf-8") as f:
             return f.read().strip()[:16]  # First 16 chars
     except:
         pass
@@ -833,7 +833,7 @@ class LocalMiner:
             return 1
 
         # Save wallet
-        with open("/tmp/local_miner_wallet.txt", "w") as f:
+        with open("/tmp/local_miner_wallet.txt", "w", encoding="utf-8") as f:
             f.write(self.wallet)
         print(f"💾 Wallet saved to: /tmp/local_miner_wallet.txt\n")
 

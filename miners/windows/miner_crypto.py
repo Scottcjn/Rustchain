@@ -34,7 +34,7 @@ def _get_machine_entropy() -> bytes:
     # machine-id (Linux)
     for path in ["/etc/machine-id", "/var/lib/dbus/machine-id"]:
         try:
-            with open(path, "r") as f:
+            with open(path, "r", encoding="utf-8") as f:
                 parts.append(f.read().strip())
                 break
         except OSError:
@@ -82,7 +82,7 @@ def save_keystore(keypair: dict, path: str = KEYSTORE_FILE) -> None:
         "public_key": keypair["public_key"],
         "obscured_private": obscured.hex(),
     }
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
     os.chmod(path, 0o600)
     print(f"[CRYPTO] Keypair saved to {path}")
@@ -92,7 +92,7 @@ def load_keystore(path: str = KEYSTORE_FILE) -> dict:
     """Load keypair from disk."""
     if not os.path.exists(path):
         return {}
-    with open(path, "r") as f:
+    with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
     if data.get("version") != 1:
         return {}

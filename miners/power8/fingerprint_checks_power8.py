@@ -156,7 +156,7 @@ def check_simd_identity() -> Tuple[bool, Dict]:
     arch = platform.machine().lower()
 
     try:
-        with open("/proc/cpuinfo", "r") as f:
+        with open("/proc/cpuinfo", "r", encoding="utf-8") as f:
             for line in f:
                 if "flags" in line.lower() or "features" in line.lower():
                     parts = line.split(":")
@@ -327,7 +327,7 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
 
     for path in vm_paths:
         try:
-            with open(path, "r") as f:
+            with open(path, "r", encoding="utf-8") as f:
                 content = f.read().lower()
                 for vm in vm_strings:
                     if vm in content:
@@ -340,7 +340,7 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
             vm_indicators.append("ENV:{}".format(key))
 
     try:
-        with open("/proc/cpuinfo", "r") as f:
+        with open("/proc/cpuinfo", "r", encoding="utf-8") as f:
             if "hypervisor" in f.read().lower():
                 vm_indicators.append("cpuinfo:hypervisor")
     except:
@@ -356,7 +356,7 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
             vm_indicators.append("power:lpar_detected")
             # Read LPAR details for logging
             try:
-                with open("/proc/ppc64/lparcfg", "r") as f:
+                with open("/proc/ppc64/lparcfg", "r", encoding="utf-8") as f:
                     for line in f:
                         if line.startswith("partition_id="):
                             vm_indicators.append("power:lpar_partition_id=" + line.split("=")[1].strip())
@@ -423,7 +423,7 @@ def check_power8_hardware() -> Tuple[bool, Dict]:
 
     # Get CPU info
     try:
-        with open("/proc/cpuinfo", "r") as f:
+        with open("/proc/cpuinfo", "r", encoding="utf-8") as f:
             content = f.read()
             if "POWER8" in content:
                 data["is_power8"] = True

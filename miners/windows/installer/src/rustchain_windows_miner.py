@@ -62,7 +62,7 @@ class RustChainWallet:
     def load_wallet(self):
         """Load or create wallet"""
         if WALLET_FILE.exists():
-            with open(WALLET_FILE, 'r') as f:
+            with open(WALLET_FILE, 'r', encoding="utf-8") as f:
                 return json.load(f)
         else:
             return self.create_new_wallet()
@@ -87,7 +87,7 @@ class RustChainWallet:
         """Save wallet data"""
         if wallet_data:
             self.wallet_data = wallet_data
-        with open(WALLET_FILE, 'w') as f:
+        with open(WALLET_FILE, 'w', encoding="utf-8") as f:
             json.dump(self.wallet_data, f, indent=2)
 
 def _windows_fingerprint_checks():
