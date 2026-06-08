@@ -1510,6 +1510,68 @@ def _ensure_transfer_ledger_table(db):
     )
 
 
+def _migrate_miner_header_keys_composite(c):
+    """Idempotently upgrade a legacy single-column-PK ``miner_header_keys`` to the
+    composite ``(miner_id, pubkey_hex)`` PK so one wallet identity can hold a header
+    key per device (multi-device) instead of last-writer-wins overwriting (which broke
+    the non-last device's signed-header verification).
+
+    COLUMN-PRESERVING: production tables may carry extra columns (e.g. an ``added_at``
+    timestamp) absent from the canonical CREATE; the rebuild reconstructs every existing
+    column (type / NOT NULL / DEFAULT), so no column or row is dropped. Idempotent: only
+    rebuilds a table still carrying the old single-column ``PRIMARY KEY(miner_id)``.
+    Verified by a dry-run against a 247,619-row production snapshot.
+
+    T3.4 — ATOMIC: the RENAME→CREATE→INSERT→DROP rebuild is wrapped in a SAVEPOINT so it
+    is all-or-nothing regardless of the surrounding transaction state. Previously a crash
+    or error after the RENAME but before the DROP could leave the original table renamed
+    to ``*_legacy_single`` with a fresh EMPTY composite table in its place; on the next
+    start the migration check sees the composite PK already present and SKIPS, stranding
+    every key in ``*_legacy_single`` — a silent loss of the block-header trust anchor.
+    ``ROLLBACK TO`` restores the original table intact for a clean retry. (A SAVEPOINT,
+    not BEGIN IMMEDIATE: init_db has already run DML by this point, so a transaction may
+    be open; SAVEPOINT nests cleanly and still rolls back DDL in SQLite.)
+    """
+    _mhk_cols = c.execute("PRAGMA table_info(miner_header_keys)").fetchall()  # fetchall-ok: pragma-result
+    _mhk_pk = [col[1] for col in _mhk_cols if col[5]]  # col[5] = pk position (>0 means part of PK)
+    _mhk_names = [col[1] for col in _mhk_cols]
+    if not (_mhk_pk == ["miner_id"] and "miner_id" in _mhk_names and "pubkey_hex" in _mhk_names):
+        return  # already composite (or unexpected shape) — nothing to migrate
+
+    # Reconstruct each column's definition WITHOUT an inline PRIMARY KEY, then add a
+    # table-level composite PK. Defaults are always parenthesized — valid for literals
+    # AND expression defaults like (strftime('%s','now')), which PRAGMA returns without
+    # the surrounding parens.
+    _mhk_defs, _mhk_list = [], []
+    for _cid, _name, _ctype, _notnull, _dflt, _pk in _mhk_cols:
+        _d = '"%s" %s' % (_name, _ctype or "TEXT")
+        if _notnull:
+            _d += " NOT NULL"
+        if _dflt is not None:
+            _d += " DEFAULT (%s)" % _dflt
+        _mhk_defs.append(_d)
+        _mhk_list.append('"%s"' % _name)
+    _mhk_cols_sql = ", ".join(_mhk_defs)
+    _mhk_col_list = ", ".join(_mhk_list)
+
+    c.execute("SAVEPOINT mhk_composite_migrate")
+    try:
+        c.execute("ALTER TABLE miner_header_keys RENAME TO miner_header_keys_legacy_single")
+        c.execute("CREATE TABLE miner_header_keys (%s, PRIMARY KEY (miner_id, pubkey_hex))" % _mhk_cols_sql)
+        c.execute(
+            "INSERT OR IGNORE INTO miner_header_keys (%s) SELECT %s FROM miner_header_keys_legacy_single"
+            % (_mhk_col_list, _mhk_col_list)
+        )
+        c.execute("DROP TABLE miner_header_keys_legacy_single")
+    except Exception:
+        # Undo every step of the rebuild as a unit; the original table is restored.
+        c.execute("ROLLBACK TO mhk_composite_migrate")
+        c.execute("RELEASE mhk_composite_migrate")
+        raise
+    c.execute("RELEASE mhk_composite_migrate")
+    logging.info("[migrate] miner_header_keys upgraded to composite (miner_id, pubkey_hex) PK; preserved columns: %s" % _mhk_names)
+
+
 def init_db():
     """Initialize all database tables"""
     with closing(sqlite3.connect(DB_PATH)) as c:
@@ -1807,49 +1869,15 @@ def init_db():
             )
         """)
         # Migrate a legacy single-column-PK miner_header_keys to the composite
-        # (miner_id, pubkey_hex) key so one wallet identity can hold a header key per
-        # device (multi-device-per-wallet) instead of last-writer-wins overwriting
-        # — which previously broke the non-last device's signed-header verification.
-        # COLUMN-PRESERVING: production tables may carry extra columns (e.g. an
-        # `added_at` timestamp) absent from the CREATE above; the rebuild reconstructs
-        # every existing column (type / NOT NULL / DEFAULT) rather than a fixed 2-col
-        # shape, so no column or data is dropped. Idempotent: only rebuilds a table
-        # still carrying the old single-column PRIMARY KEY(miner_id). Verified by a
-        # dry-run against a 247,619-row snapshot of the production DB.
+        # (miner_id, pubkey_hex) key (extracted to _migrate_miner_header_keys_composite
+        # for atomicity + testability — see T3.4).
         try:
-            _mhk_cols = c.execute("PRAGMA table_info(miner_header_keys)").fetchall()  # fetchall-ok: pragma-result
-            _mhk_pk = [col[1] for col in _mhk_cols if col[5]]  # col[5] = pk position (>0 means part of PK)
-            _mhk_names = [col[1] for col in _mhk_cols]
-            if (_mhk_pk == ["miner_id"]
-                    and "miner_id" in _mhk_names and "pubkey_hex" in _mhk_names):
-                # Reconstruct each column's definition WITHOUT an inline PRIMARY KEY,
-                # then add a table-level composite PK. Defaults are always parenthesized
-                # — valid for literals AND expression defaults like (strftime('%s','now')),
-                # which PRAGMA returns without the surrounding parens.
-                _mhk_defs, _mhk_list = [], []
-                for _cid, _name, _ctype, _notnull, _dflt, _pk in _mhk_cols:
-                    _d = '"%s" %s' % (_name, _ctype or "TEXT")
-                    if _notnull:
-                        _d += " NOT NULL"
-                    if _dflt is not None:
-                        _d += " DEFAULT (%s)" % _dflt
-                    _mhk_defs.append(_d)
-                    _mhk_list.append('"%s"' % _name)
-                _mhk_cols_sql = ", ".join(_mhk_defs)
-                _mhk_col_list = ", ".join(_mhk_list)
-                c.execute("ALTER TABLE miner_header_keys RENAME TO miner_header_keys_legacy_single")
-                c.execute("CREATE TABLE miner_header_keys (%s, PRIMARY KEY (miner_id, pubkey_hex))" % _mhk_cols_sql)
-                c.execute(
-                    "INSERT OR IGNORE INTO miner_header_keys (%s) SELECT %s FROM miner_header_keys_legacy_single"
-                    % (_mhk_col_list, _mhk_col_list)
-                )
-                c.execute("DROP TABLE miner_header_keys_legacy_single")
-                logging.info("[migrate] miner_header_keys upgraded to composite (miner_id, pubkey_hex) PK; preserved columns: %s" % _mhk_names)
+            _migrate_miner_header_keys_composite(c)
         except Exception as _mhk_err:
             # Fail loud rather than continue on a half-migrated key table: running
             # header verification against a renamed/duplicate/missing table would be
-            # worse than not starting. SQLite DDL here is uncommitted until init_db's
-            # final commit, so propagating leaves the original table intact.
+            # worse than not starting. The migration is SAVEPOINT-wrapped, so the
+            # original table is already restored intact before this propagates.
             logging.error(f"[migrate] miner_header_keys composite migration FAILED: {_mhk_err!r}")
             raise
 
