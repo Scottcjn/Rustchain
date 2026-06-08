@@ -113,10 +113,21 @@ function formatRelativeTime(ts) {
 }
 
 function normalizeMinersResponse(payload) {
-    const rows = Array.isArray(payload) ? payload :
-        (Array.isArray(payload?.miners) ? payload.miners :
-        (Array.isArray(payload?.data) ? payload.data : []));
-    return rows.filter(row => row && typeof row === 'object');
+    if (!payload) return [];
+    let rows = [];
+    if (Array.isArray(payload)) {
+        rows = payload;
+    } else if (payload && typeof payload === 'object') {
+        if (Array.isArray(payload.miners)) {
+            rows = payload.miners;
+        } else if (Array.isArray(payload.data)) {
+            rows = payload.data;
+        } else if (typeof payload === 'object' && payload !== null) {
+            // Handle case where payload is a single miner object
+            rows = [payload];
+        }
+    }
+    return (rows || []).filter(row => row && typeof row === 'object');
 }
 
 function normalizeBlocksResponse(payload) {
@@ -482,7 +493,7 @@ function renderMinersTable() {
         return;
     }
     
-    if (state.error.miners && state.miners.length === 0) {
+    if (state.error.miners && (!state.miners || state.miners.length === 0)) {
         container.innerHTML = `
             <tr><td colspan="7">
                 <div class="error-message">
@@ -494,36 +505,41 @@ function renderMinersTable() {
         return;
     }
     
-    if (!state.miners || state.miners.length === 0) {
+    if (!Array.isArray(state.miners) || state.miners.length === 0) {
         container.innerHTML = '<tr><td colspan="7" class="empty-state"><div class="empty-icon">📭</div>No miners found</td></tr>';
         return;
     }
     
-    const sortedMiners = [...state.miners].sort((a, b) => 
-        (b.score || b.multiplier || b.antiquity_multiplier || 0) -
-        (a.score || a.multiplier || a.antiquity_multiplier || 0)
-    ).slice(0, 20);
-    
-    container.innerHTML = sortedMiners.map(miner => {
-        const minerId = miner.miner_id || miner.miner || 'unknown';
-        const arch = miner.device_arch || miner.device_family || miner.hardware_type || 'Unknown';
-        const multiplier = miner.multiplier || miner.antiquity_multiplier || 1.0;
-        const balance = miner.balance || miner.balance_rtc || miner.amount_rtc || 0;
-        const lastSeen = miner.last_seen || miner.last_attest || miner.last_attestation;
-        const tier = getArchitectureTier(arch);
-        const badgeClass = getArchitectureBadge(arch);
-        return `
-            <tr>
-                <td class="mono" title="${escapeHtml(minerId)}">${shortenAddress(minerId)}</td>
-                <td><span class="badge ${badgeClass}">${escapeHtml(arch)}</span></td>
-                <td><span class="badge badge-${tier}">${tier.toUpperCase()}</span></td>
-                <td class="text-accent">${formatNumber(multiplier, 2)}x</td>
-                <td class="text-success">${formatNumber(balance, 6)} RTC</td>
-                <td class="mono">${formatRelativeTime(lastSeen)}</td>
-                <td><span class="badge badge-active">● ACTIVE</span></td>
-            </tr>
-        `;
-    }).join('');
+    try {
+        const sortedMiners = [...state.miners].sort((a, b) => 
+            (b.score || b.multiplier || b.antiquity_multiplier || 0) -
+            (a.score || a.multiplier || a.antiquity_multiplier || 0)
+        ).slice(0, 20);
+        
+        container.innerHTML = sortedMiners.map(miner => {
+            const minerId = miner.miner_id || miner.miner || 'unknown';
+            const arch = miner.device_arch || miner.device_family || miner.hardware_type || 'Unknown';
+            const multiplier = miner.multiplier || miner.antiquity_multiplier || 1.0;
+            const balance = miner.balance || miner.balance_rtc || miner.amount_rtc || 0;
+            const lastSeen = miner.last_seen || miner.last_attest || miner.last_attestation;
+            const tier = getArchitectureTier(arch);
+            const badgeClass = getArchitectureBadge(arch);
+            return `
+                <tr>
+                    <td class="mono" title="${escapeHtml(minerId)}">${shortenAddress(minerId)}</td>
+                    <td><span class="badge ${badgeClass}">${escapeHtml(arch)}</span></td>
+                    <td><span class="badge badge-${tier}">${tier.toUpperCase()}</span></td>
+                    <td class="text-accent">${formatNumber(multiplier, 2)}x</td>
+                    <td class="text-success">${formatNumber(balance, 6)} RTC</td>
+                    <td class="mono">${formatRelativeTime(lastSeen)}</td>
+                    <td><span class="badge badge-active">● ACTIVE</span></td>
+                </tr>
+            `;
+        }).join('');
+    } catch (e) {
+        console.error('Render error:', e);
+        container.innerHTML = `<tr><td colspan="7" class="error-message">UI Render Error: ${escapeHtml(e.message)}</td></tr>`;
+    }
 }
 
 function renderBlocksTable() {
