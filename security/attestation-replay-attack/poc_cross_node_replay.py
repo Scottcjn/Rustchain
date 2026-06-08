@@ -76,7 +76,7 @@ def get_challenge(node_url: str, dry_run: bool = True) -> Optional[dict]:
             headers={"Content-Type": "application/json"},
             method="POST"
         )
-        resp = urllib.request.urlopen(req, timeout=10)
+        with urllib.request.urlopen(req, timeout=10) as resp:
         result = json.loads(resp.read())
         result["node"] = node_url
         return result
@@ -108,7 +108,7 @@ def submit_attestation(node_url: str, nonce: str, dry_run: bool = True) -> Tuple
             headers={"Content-Type": "application/json"},
             method="POST"
         )
-        resp = urllib.request.urlopen(req, timeout=10)
+        with urllib.request.urlopen(req, timeout=10) as resp:
         result = json.loads(resp.read())
         return result.get("ok", False), result
     except Exception as e:
