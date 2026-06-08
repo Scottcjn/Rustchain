@@ -250,7 +250,7 @@ class BlockchainIntegration:
         """Store badge metadata (placeholder for IPFS upload)"""
         # In production, this would upload to IPFS and return the hash
         # For now, we'll store it locally
-        with open(f"badges/{badge_id}.json", 'w') as f:
+        with open(f"badges/{badge_id}.json", 'w', encoding="utf-8") as f:
             json.dump(metadata, f, indent=2)
     
     def sync_with_blockchain(self) -> Dict:

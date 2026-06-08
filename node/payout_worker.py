@@ -407,7 +407,7 @@ class PayoutWorker:
                 )
 
                 try:
-                    with open(archive_file, 'a') as f:
+                    with open(archive_file, 'a', encoding="utf-8") as f:
                         for row in rows:
                             json.dump({
                                 'withdrawal_id': row[0],

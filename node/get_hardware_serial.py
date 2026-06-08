@@ -50,7 +50,7 @@ def get_linux_serial():
     for path in paths:
         if os.path.exists(path):
             try:
-                with open(path, 'r') as f:
+                with open(path, 'r', encoding="utf-8") as f:
                     serial = f.read().strip()
                     if serial and serial not in ['', 'None', 'To Be Filled']:
                         return serial

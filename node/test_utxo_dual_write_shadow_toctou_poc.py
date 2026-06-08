@@ -152,7 +152,7 @@ class TestDualWriteShadowTocTou(unittest.TestCase):
         if divergence < 0:
             print(f"[C1] ✅ RACE CONFIRMED: Shadow went negative by {abs(divergence)}")
 
-        with open(os.path.join(os.path.dirname(__file__),
+        with open(os.path.join(os.path.dirname(__file__, encoding="utf-8"),
                                'utxo_endpoints.py'), 'r') as f:
             src = f.read()
         dw_start = src.find('# --- dual-write to account model')

@@ -62,7 +62,7 @@ def check_nodes():
     history = []
     if os.path.exists(DATA_FILE):
         try:
-            with open(DATA_FILE, 'r') as f:
+            with open(DATA_FILE, 'r', encoding="utf-8") as f:
                 history = json.load(f)
             if not isinstance(history, list):
                 history = []
@@ -72,7 +72,7 @@ def check_nodes():
     # Keep last 1440 entries (24 hours at 1/min)
     history = history[-1440:]
     
-    with open(DATA_FILE, 'w') as f:
+    with open(DATA_FILE, 'w', encoding="utf-8") as f:
         json.dump(history, f, indent=2)
     
     return results

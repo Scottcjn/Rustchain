@@ -155,7 +155,7 @@ class TestConcurrentMempoolStress(unittest.TestCase):
         Called BEFORE BEGIN IMMEDIATE in mempool_add() — creates a stale
         count window.
         """
-        with open(os.path.join(os.path.dirname(__file__), 'utxo_db.py'), 'r') as f:
+        with open(os.path.join(os.path.dirname(__file__, encoding="utf-8"), 'utxo_db.py'), 'r') as f:
             src = f.read()
         idx = src.find('def mempool_clear_expired')
         self.assertGreaterEqual(idx, 0, "mempool_clear_expired not found")
