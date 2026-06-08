@@ -281,7 +281,7 @@ class TestConfigFileOperations:
         }
         
         config_file = tmp_path / "test-config.json"
-        with open(config_file, 'w') as f:
+        with open(config_file, 'w', encoding="utf-8") as f:
             json.dump(config_data, f)
         
         return config_file
@@ -304,7 +304,7 @@ class TestConfigFileOperations:
         assert config_file.exists()
         
         # Verify content
-        with open(config_file, 'r') as f:
+        with open(config_file, 'r', encoding="utf-8") as f:
             loaded = json.load(f)
         
         assert loaded["test"] == "value"

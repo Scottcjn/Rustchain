@@ -156,7 +156,7 @@ def main():
         print_report(verification, args.verbose)
         
         # Save report
-        with open(args.output, 'w') as f:
+        with open(args.output, 'w', encoding="utf-8") as f:
             json.dump(verification, f, indent=2)
         
         print(f"📄 Report saved to: {args.output}")

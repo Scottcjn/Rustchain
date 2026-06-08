@@ -40,7 +40,7 @@ class TipState:
     def _load(self) -> dict[str, Any]:
         if os.path.exists(self.state_file):
             try:
-                with open(self.state_file) as f:
+                with open(self.state_file, encoding="utf-8") as f:
                     data = json.load(f)
                 if not isinstance(data, dict):
                     raise ValueError("state root must be an object")
@@ -69,7 +69,7 @@ class TipState:
             raise ValueError("tip_log must be a list")
 
     def save(self) -> None:
-        with open(self.state_file, "w") as f:
+        with open(self.state_file, "w", encoding="utf-8") as f:
             json.dump(self._data, f, indent=2)
 
     def is_processed(self, idempotency_key: str) -> bool:
