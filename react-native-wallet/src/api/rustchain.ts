@@ -234,6 +234,91 @@ export class RustChainClient {
     };
   }
 
+  private normalizeTransferHistoryResponse(raw: any, address: string): TransferHistoryItem[] {
+    const records = Array.isArray(raw)
+      ? raw
+      : Array.isArray(raw?.transactions)
+        ? raw.transactions
+        : null;
+
+    if (!records) {
+      throw new RustChainApiError('Unexpected wallet history response');
+    }
+
+    return records.map((record: any, index: number) =>
+      this.normalizeTransferHistoryItem(record, address, index)
+    );
+  }
+
+  private normalizeTransferHistoryItem(raw: any, address: string, index: number): TransferHistoryItem {
+    const type = typeof raw?.type === 'string' ? raw.type : '';
+    const rawStatus = typeof raw?.status === 'string'
+      ? raw.status
+      : type === 'reward' || type === 'ledger' || type === 'transfer_in' || type === 'transfer_out'
+        ? 'confirmed'
+        : 'pending';
+    const status: TransferHistoryItem['status'] =
+      rawStatus === 'confirmed' ? 'confirmed' : rawStatus === 'pending' ? 'pending' : 'failed';
+    const amount_rtc = typeof raw?.amount_rtc === 'number'
+      ? raw.amount_rtc
+      : typeof raw?.amount === 'number'
+        ? raw.amount
+        : Number.isSafeInteger(raw?.amount_i64)
+          ? raw.amount_i64 / MICRO_RTC_PER_RTC
+          : 0;
+    const amount_i64 = Number.isSafeInteger(raw?.amount_i64)
+      ? raw.amount_i64
+      : Math.round(amount_rtc * MICRO_RTC_PER_RTC);
+    const timestamp = Number.isSafeInteger(raw?.timestamp)
+      ? raw.timestamp
+      : Number.isSafeInteger(raw?.created_at)
+        ? raw.created_at
+        : 0;
+    const direction: TransferHistoryItem['direction'] =
+      raw?.direction === 'sent' || raw?.direction === 'received'
+        ? raw.direction
+        : type === 'transfer_out' || raw?.from_addr === address || raw?.from === address
+          ? 'sent'
+          : 'received';
+    const from_addr = String(raw?.from_addr ?? raw?.from ?? (direction === 'sent' ? address : ''));
+    const to_addr = String(raw?.to_addr ?? raw?.to ?? (direction === 'received' ? address : ''));
+    const counterparty = String(raw?.counterparty ?? (direction === 'sent' ? to_addr : from_addr));
+    const tx_hash = String(raw?.tx_hash ?? raw?.tx_id ?? `history_${timestamp}_${index}`);
+    const tx_id = String(raw?.tx_id ?? tx_hash);
+    const confirmed_at = Number.isSafeInteger(raw?.confirmed_at)
+      ? raw.confirmed_at
+      : status === 'confirmed'
+        ? timestamp
+        : null;
+
+    return {
+      id: Number.isSafeInteger(raw?.id) ? raw.id : index,
+      tx_id,
+      tx_hash,
+      from_addr,
+      to_addr,
+      amount: amount_rtc,
+      amount_i64,
+      amount_rtc,
+      timestamp,
+      created_at: Number.isSafeInteger(raw?.created_at) ? raw.created_at : timestamp,
+      confirmed_at,
+      confirms_at: Number.isSafeInteger(raw?.confirms_at) ? raw.confirms_at : confirmed_at,
+      status,
+      raw_status: rawStatus,
+      status_reason: typeof raw?.status_reason === 'string' ? raw.status_reason : null,
+      confirmations: Number.isSafeInteger(raw?.confirmations)
+        ? raw.confirmations
+        : status === 'confirmed'
+          ? 1
+          : 0,
+      direction,
+      counterparty,
+      reason: typeof raw?.reason === 'string' ? raw.reason : undefined,
+      memo: typeof raw?.memo === 'string' || raw?.memo === null ? raw.memo : null,
+    };
+  }
+
   /**
    * Create client with custom URL
    */
@@ -315,10 +400,11 @@ export class RustChainClient {
       throw new RustChainApiError('Invalid wallet address format');
     }
     const safeLimit = Math.max(1, Math.min(Math.trunc(limit || 50), 200));
-    return this.request<TransferHistoryItem[]>(
+    const result = await this.request<any>(
       'GET',
       `/wallet/history?address=${encodeURIComponent(address)}&limit=${safeLimit}`
     );
+    return this.normalizeTransferHistoryResponse(result, address);
   }
 
   /**
