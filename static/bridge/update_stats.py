@@ -73,7 +73,7 @@ def get_bridge_stats():
             if resp.status_code == 200:
                 results["recent_transactions"] = safe_list(safe_dict(resp.json()).get("locks"))
                 break
-        except: continue
+        except Exception: continue
 
     # 3. Save to data file
     with open(DATA_FILE, 'w') as f:
