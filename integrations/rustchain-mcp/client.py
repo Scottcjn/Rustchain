@@ -13,6 +13,7 @@ from typing import Any, Optional
 
 import aiohttp
 
+if __name__ == "__main__":
 try:
     from .schemas import (
         APIError,

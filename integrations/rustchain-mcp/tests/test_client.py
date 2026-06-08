@@ -13,6 +13,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+if __name__ == "__main__":
 try:
     from rustchain_mcp.client import RustChainClient
     from rustchain_mcp.schemas import (
