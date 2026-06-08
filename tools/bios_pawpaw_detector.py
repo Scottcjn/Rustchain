@@ -56,7 +56,7 @@ def award_pawpaw_badge():
 
 if __name__ == "__main__":
     result = award_pawpaw_badge()
-    with open("relic_rewards.json", "w") as f:
+    with open("relic_rewards.json", "w", encoding="utf-8") as f:
         json.dump(result, f, indent=4)
     if result["badges"]:
         print("Paw Paw badge awarded.")

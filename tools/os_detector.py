@@ -75,6 +75,6 @@ def detect_legacy_os_badges():
 
 if __name__ == "__main__":
     output = detect_legacy_os_badges()
-    with open("relic_rewards.json", "w") as f:
+    with open("relic_rewards.json", "w", encoding="utf-8") as f:
         json.dump(output, f, indent=4)
     print(f"Legacy OS badges awarded: {[b['title'] for b in output['badges']]}")

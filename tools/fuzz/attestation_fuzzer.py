@@ -352,7 +352,7 @@ class AttestationFuzzHarness:
             "hash": phash,
         }
         try:
-            with open(filepath, "w") as fh:
+            with open(filepath, "w", encoding="utf-8") as fh:
                 json.dump(entry, fh, indent=2, default=str)
         except OSError:
             pass
@@ -361,7 +361,7 @@ class AttestationFuzzHarness:
         payloads = []
         for fp in self.crash_path.glob("*.json"):
             try:
-                with open(fp) as fh:
+                with open(fp, encoding="utf-8") as fh:
                     payloads.append(json.load(fh)["payload"])
             except Exception:
                 pass

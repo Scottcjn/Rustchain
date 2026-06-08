@@ -348,7 +348,7 @@ class RustChainPrometheusExporter:
 
 def load_config_file(path: str) -> Dict[str, Any]:
     try:
-        with open(path, 'r') as fh:
+        with open(path, 'r', encoding="utf-8") as fh:
             return json.load(fh)
     except FileNotFoundError:
         logger.warning("Config file %s not found, using defaults", path)

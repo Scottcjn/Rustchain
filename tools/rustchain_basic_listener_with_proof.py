@@ -13,7 +13,7 @@ def check_for_proof():
     if not os.path.exists(WATCH_FILE):
         return False
 
-    with open(WATCH_FILE, "r") as f:
+    with open(WATCH_FILE, "r", encoding="utf-8") as f:
         lines = f.readlines()
         for line in lines:
             if KEY_PHRASE in line:
@@ -31,7 +31,7 @@ def write_proof_json():
         "source_file": WATCH_FILE
     }
 
-    with open(PROOF_OUTPUT, "w") as f:
+    with open(PROOF_OUTPUT, "w", encoding="utf-8") as f:
         json.dump(proof, f, indent=4)
     print(f"📜 Proof of listen written to {PROOF_OUTPUT}")
 

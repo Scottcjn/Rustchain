@@ -76,10 +76,10 @@ class SubmissionValidator:
             return result
 
         try:
-            img = Image.open(file_path)
+            img = Image.open(file_path, encoding="utf-8")
             img.verify()  # Checks image header integrity (fast, no pixel decode)
             # Re-open to get dimensions (verify() invalidates the file handle)
-            img = Image.open(file_path)
+            img = Image.open(file_path, encoding="utf-8")
             width, height = img.size
             result["checks"]["width"] = width
             result["checks"]["height"] = height
@@ -149,7 +149,7 @@ class SubmissionValidator:
             return result
         
         try:
-            with open(log_path, 'r') as f:
+            with open(log_path, 'r', encoding="utf-8") as f:
                 content = f.read()
             
             # Try to parse as JSON
@@ -214,7 +214,7 @@ class SubmissionValidator:
             return result
         
         try:
-            with open(writeup_path, 'r') as f:
+            with open(writeup_path, 'r', encoding="utf-8") as f:
                 content = f.read()
             
             # Check for required sections
@@ -486,7 +486,7 @@ def main():
     
     # Save to file if requested
     if args.output:
-        with open(args.output, 'w') as f:
+        with open(args.output, 'w', encoding="utf-8") as f:
             json.dump(results, f, indent=2)
         print(f"\n💾 Results saved to: {args.output}")
     

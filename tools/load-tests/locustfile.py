@@ -122,6 +122,6 @@ def _on_quit(environment, **_kwargs):
         "requests_per_sec": round(stats.total.current_rps, 2),
     }
     os.makedirs("results", exist_ok=True)
-    with open("results/locust_summary.json", "w") as f:
+    with open("results/locust_summary.json", "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
     print("\n=== Locust summary written to results/locust_summary.json ===")
