@@ -100,12 +100,21 @@ def test_score_handles_empty_or_failed_api_payload(monkeypatch, capsys):
 def test_api_uses_configured_node_timeout_and_ssl_context(monkeypatch):
     calls = []
     contexts = []
+    responses = []
 
     class DummyContext:
         check_hostname = True
         verify_mode = None
 
     class DummyResponse:
+        closed = False
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            self.closed = True
+
         def read(self):
             return b'{"miners": []}'
 
@@ -116,7 +125,9 @@ def test_api_uses_configured_node_timeout_and_ssl_context(monkeypatch):
 
     def fake_urlopen(*args, **kwargs):
         calls.append((args, kwargs))
-        return DummyResponse()
+        response = DummyResponse()
+        responses.append(response)
+        return response
 
     monkeypatch.setattr(miner_score, "NODE", "https://node.example")
     monkeypatch.setattr(miner_score.ssl, "create_default_context", fake_context)
@@ -126,6 +137,7 @@ def test_api_uses_configured_node_timeout_and_ssl_context(monkeypatch):
     assert calls == [(("https://node.example/api/miners",), {"timeout": 10, "context": contexts[0]})]
     assert contexts[0].check_hostname is False
     assert contexts[0].verify_mode == miner_score.ssl.CERT_NONE
+    assert responses[0].closed is True
 
 
 def test_api_returns_empty_dict_on_request_error(monkeypatch):
