@@ -9,3 +9,11 @@
   height: 200px;
   width: 200px;
 }
+
+.featureIcon {
+  display: inline-block;
+  font-size: 5rem;
+  line-height: 1;
+  height: 120px;
+  padding-top: 1.5rem;
+}

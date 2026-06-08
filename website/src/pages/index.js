@@ -32,8 +32,8 @@ export default function Home() {
   const {siteConfig} = useDocusaurusContext();
   return (
     <Layout
-      title={`Hello from ${siteConfig.title}`}
-      description="Description will go into a meta tag in <head />">
+      title="RustChain — Proof-of-Antiquity Blockchain"
+      description="RustChain is a Proof-of-Antiquity blockchain where vintage hardware outmines modern machines. 1 CPU = 1 vote, enforced by hardware fingerprinting across 15+ CPU architectures.">
       <HomepageHeader />
       <main>
         <HomepageFeatures />

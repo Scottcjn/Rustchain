@@ -4,42 +4,47 @@ import styles from './styles.module.css';
 
 const FeatureList = [
   {
-    title: 'Easy to Use',
-    Svg: require('@site/static/img/undraw_docusaurus_mountain.svg').default,
+    title: 'Proof-of-Antiquity',
+    icon: '🕰️',
     description: (
       <>
-        Docusaurus was designed from the ground up to be easily installed and
-        used to get your website up and running quickly.
+        Old machines outmine new ones. A PowerPC G4 earns <strong>2.5×</strong> a
+        modern x86 — antiquity is the moat. The hardware everyone else threw away
+        is the hardware that wins here.
       </>
     ),
   },
   {
-    title: 'Focus on What Matters',
-    Svg: require('@site/static/img/undraw_docusaurus_tree.svg').default,
+    title: '1 CPU = 1 Vote',
+    icon: '⚖️',
     description: (
       <>
-        Docusaurus lets you focus on your docs, and we&apos;ll do the chores. Go
-        ahead and move your docs into the <code>docs</code> directory.
+        Every real CPU is one honest vote, proven by hardware fingerprinting —
+        clock-skew, cache-timing, and SIMD identity that VMs and emulators
+        can&apos;t fake. Fake machines earn a billionth of real ones.
       </>
     ),
   },
   {
-    title: 'Powered by React',
-    Svg: require('@site/static/img/undraw_docusaurus_react.svg').default,
+    title: 'Vintage Hardware Wins',
+    icon: '🖥️',
     description: (
       <>
-        Extend or customize your website layout by reusing React. Docusaurus can
-        be extended while reusing the same header and footer.
+        PowerPC, SPARC, MIPS, 68k, POWER8 and more — <strong>15+ CPU
+        architectures</strong> across G4/G5 Macs, Amigas, and datacenter iron,
+        all attesting to one Proof-of-Antiquity chain.
       </>
     ),
   },
 ];
 
-function Feature({Svg, title, description}) {
+function Feature({icon, title, description}) {
   return (
     <div className={clsx('col col--4')}>
       <div className="text--center">
-        <Svg className={styles.featureSvg} role="img" />
+        <span className={styles.featureIcon} role="img" aria-label={title}>
+          {icon}
+        </span>
       </div>
       <div className="text--center padding-horiz--md">
         <Heading as="h3">{title}</Heading>
