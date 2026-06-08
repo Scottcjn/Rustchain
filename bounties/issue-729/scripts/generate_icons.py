@@ -26,10 +26,10 @@ def create_icon(size: int, output_path: str):
         # Try to use system emoji font
         font_size = int(size * 0.6)
         font = ImageFont.truetype("/System/Library/Fonts/Apple Color Emoji.ttc", font_size)
-    except:
+    except Exception:
         try:
             font = ImageFont.truetype("/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf", font_size)
-        except:
+        except Exception:
             # Fallback: draw text
             font = ImageFont.load_default()
     
