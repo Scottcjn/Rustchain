@@ -215,7 +215,7 @@ def refresh_data():
 def _save_history():
     """Save historical data to disk."""
     try:
-        with open(HISTORY_FILE, "w") as f:
+        with open(HISTORY_FILE, "w", encoding="utf-8") as f:
             json.dump(_fork_store["history"], f, indent=2)
     except Exception as e:
         print(f"  ⚠  Could not save history: {e}")
@@ -225,7 +225,7 @@ def _load_history():
     """Load historical data from disk."""
     if os.path.exists(HISTORY_FILE):
         try:
-            with open(HISTORY_FILE) as f:
+            with open(HISTORY_FILE, encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
             pass

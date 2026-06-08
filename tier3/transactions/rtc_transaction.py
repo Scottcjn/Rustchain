@@ -355,7 +355,7 @@ class RTCTransactionFlow:
             "exported_at": datetime.utcnow().isoformat() + "Z"
         }
         
-        with open(output_path, 'w') as f:
+        with open(output_path, 'w', encoding="utf-8") as f:
             json.dump(artifacts, f, indent=2)
         
         logger.info(f"Exported artifacts to {output_path}")

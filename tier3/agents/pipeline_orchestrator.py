@@ -263,13 +263,13 @@ class PipelineOrchestrator:
         # Validation receipt
         validation_receipt = self.validator.get_validation_receipt(validation_result)
         validation_path = self.artifact_dir / f"validation_{execution_id}_{timestamp}.json"
-        with open(validation_path, 'w') as f:
+        with open(validation_path, 'w', encoding="utf-8") as f:
             json.dump(validation_receipt, f, indent=2)
         artifacts["validation_receipt"] = str(validation_path)
         
         # Settlement proof
         settlement_path = self.artifact_dir / f"settlement_{execution_id}_{timestamp}.json"
-        with open(settlement_path, 'w') as f:
+        with open(settlement_path, 'w', encoding="utf-8") as f:
             json.dump(settlement_proof, f, indent=2)
         artifacts["settlement_proof"] = str(settlement_path)
         
@@ -277,7 +277,7 @@ class PipelineOrchestrator:
         if reward_distribution:
             reward_receipt = self.reward.get_distribution_receipt(reward_distribution)
             reward_path = self.artifact_dir / f"reward_{execution_id}_{timestamp}.json"
-            with open(reward_path, 'w') as f:
+            with open(reward_path, 'w', encoding="utf-8") as f:
                 json.dump(reward_receipt, f, indent=2)
             artifacts["reward_receipt"] = str(reward_path)
         
@@ -292,7 +292,7 @@ class PipelineOrchestrator:
             "artifacts_generated": list(artifacts.keys())
         }
         summary_path = self.artifact_dir / f"summary_{execution_id}_{timestamp}.json"
-        with open(summary_path, 'w') as f:
+        with open(summary_path, 'w', encoding="utf-8") as f:
             json.dump(summary, f, indent=2)
         artifacts["execution_summary"] = str(summary_path)
         
@@ -365,7 +365,7 @@ class PipelineOrchestrator:
             "artifact_directory": str(self.artifact_dir)
         }
         
-        with open(output_path, 'w') as f:
+        with open(output_path, 'w', encoding="utf-8") as f:
             json.dump(report, f, indent=2)
         
         logger.info(f"Exported full report to {output_path}")
