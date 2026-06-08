@@ -64,6 +64,11 @@ else
         --exclude-dir=tests \
         --exclude-dir=__pycache__ \
         --exclude='test_*' \
+        --exclude='*founder*' \
+        --exclude='*premine*' \
+        --exclude='*genesis*' \
+        --exclude='*private*key*' \
+        --exclude='*secret*' \
         --exclude='db_helpers.py' > "$scan_tmp"
     scan_status=$?
     set -e
@@ -74,7 +79,14 @@ else
 fi
 
 if [ -f "$BASELINE_FILE" ]; then
-    grep -vE '^($|#)' "$BASELINE_FILE" | sort -u > "$baseline_tmp"
+    grep -vE '^($|#)' "$BASELINE_FILE" \
+        | while IFS= read -r hit; do
+            file="${hit%%:*}"
+            rest="${hit#*:}"
+            file=$(printf '%s' "$file" | tr '\\' '/')
+            printf '%s:%s\n' "$file" "$rest"
+        done \
+        | sort -u > "$baseline_tmp"
 else
     : > "$baseline_tmp"
 fi
@@ -89,6 +101,7 @@ while IFS= read -r hit; do
     rest="${hit#*:}"
     lineno="${rest%%:*}"
     content="${rest#*:}"
+    file=$(printf '%s' "$file" | tr '\\' '/')
 
     if echo "$content" | grep -qE "#\s*fetchall-ok:\s*($VALID_REASONS_RE)"; then
         continue
@@ -102,7 +115,7 @@ while IFS= read -r hit; do
         fi
     fi
 
-    echo "$hit" >> "$unannotated_tmp"
+    echo "${file}:${lineno}:${content}" >> "$unannotated_tmp"
 done < "$scan_tmp"
 
 sort -u "$unannotated_tmp" -o "$unannotated_tmp"

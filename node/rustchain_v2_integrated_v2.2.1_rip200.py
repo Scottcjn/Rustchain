@@ -5025,9 +5025,13 @@ def _header_key_authorized(conn, identity, pubkey):
     except Exception:
         # Malformed pubkey hex -> not self-authenticating; fall through.
         pass
-    existing = conn.execute(
-        "SELECT pubkey_hex FROM miner_header_keys WHERE miner_id=?", (identity,)
-    ).fetchall()  # fetchall-ok: bounded by _prune_header_keys cap
+    existing = fetch_page(
+        conn,
+        "SELECT pubkey_hex FROM miner_header_keys WHERE miner_id=?",
+        (identity,),
+        limit=_header_keys_max_per_identity(),
+        max_limit=_header_keys_max_per_identity(),
+    )
     if not existing:
         # Bootstrap the first key for a named identity. Open TOFU here is the
         # residual T1.1 takeover race (a self-signed attestation grabbing a
