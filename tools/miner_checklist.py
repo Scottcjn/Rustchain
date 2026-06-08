@@ -25,7 +25,8 @@ def preflight():
         ctx = ssl.create_default_context()
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
-        urllib.request.urlopen("https://rustchain.org/health", timeout=5, context=ctx)
+        with urllib.request.urlopen("https://rustchain.org/health", timeout=5, context=ctx):
+            pass
         ok &= check("Node reachable", True)
     except Exception:
         ok &= check("Node reachable", False)
