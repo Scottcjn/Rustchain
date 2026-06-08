@@ -78,6 +78,39 @@ test("posts transfer payload", async () => {
   assert.deepEqual(await client.transfer({ from: "alice", to: "bob", amount: 1.25 }), { success: true });
 });
 
+test("fetches transfer history with the live miner_id query", async () => {
+  const client = new RustChainClient({
+    fetch: mockFetch((url, init) => {
+      assert.equal(url, "https://rustchain.org/wallet/history?miner_id=alice&limit=5");
+      assert.equal(init.method, "GET");
+      return {
+        status: 200,
+        body: JSON.stringify({
+          ok: true,
+          miner_id: "alice",
+          total: 1,
+          transactions: [{ tx_hash: "abc123", amount: 5, type: "transfer_in" }]
+        })
+      };
+    })
+  });
+
+  assert.deepEqual(await client.transferHistory("alice", { limit: 5 }), [
+    { tx_hash: "abc123", amount: 5, type: "transfer_in" }
+  ]);
+});
+
+test("normalizes legacy array transfer history responses", async () => {
+  const client = new RustChainClient({
+    fetch: mockFetch(() => ({
+      status: 200,
+      body: JSON.stringify([{ tx_hash: "legacy", amount: 1 }])
+    }))
+  });
+
+  assert.deepEqual(await client.transferHistory("alice"), [{ tx_hash: "legacy", amount: 1 }]);
+});
+
 test("throws API errors with status and endpoint", async () => {
   const client = new RustChainClient({
     fetch: mockFetch(() => ({ status: 500, body: JSON.stringify({ error: "boom" }) }))
