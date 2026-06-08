@@ -230,8 +230,8 @@ def submit_attestation(fp: CRTFingerprint, node_url: str, wallet: str) -> dict:
             headers={"Content-Type": "application/json"},
             method="POST"
         )
-        resp = urllib.request.urlopen(req, timeout=10)
-        return json.loads(resp.read())
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read())
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
