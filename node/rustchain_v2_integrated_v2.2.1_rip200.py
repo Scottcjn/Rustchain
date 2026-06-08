@@ -2572,8 +2572,30 @@ def derive_verified_device(device: dict, fingerprint: dict, fingerprint_passed: 
     if _claims_powerpc(device):
         # If CPU brand contains PowerPC/IBM/POWER identifiers, trust the claim
         ppc_brands = {"powerpc", "power8", "power9", "ibm power", "altivec", "970", "7450", "g3", "g4", "g5"}
-        brand_matches = _has_any_token(cpu_brand, ppc_brands)
-        
+        brand_has_ppc = _has_any_token(cpu_brand, ppc_brands)
+
+        # T3.2: a PowerPC brand token ALONE is forgeable — a spoofer stuffs "g4" into
+        # cpu_brand on an x86 box to grab the 2.5x antiquity tier (observed live:
+        # clockspoof/bypass miners recorded device_arch=g4). Veto this brand fast-path
+        # on POSITIVE x86 contradiction, mirroring the machine_field path above (2554):
+        #   - x86/ARM brand tokens present, OR
+        #   - the SIMD fingerprint reports SSE/AVX / x86 features.
+        # We reject ONLY on contradiction, never on the mere ABSENCE of PowerPC
+        # evidence, so genuine PowerPC silicon (AltiVec, no SSE/AVX, no x86/ARM brand
+        # tokens) is unaffected — the live G4/G5 fleet all carry no x86 evidence.
+        # Contradicting claims fall through to the strict-validation path below, which
+        # downgrades them to x86_64/default.
+        brand_foreign_contaminated = _has_any_token(cpu_brand, X86_CPU_BRANDS | ARM_CPU_BRANDS)
+        simd_shows_x86 = bool(
+            simd_data.get("has_sse")
+            or simd_data.get("has_avx")
+            or simd_data.get("x86_features")
+        )
+        brand_matches = brand_has_ppc and not brand_foreign_contaminated and not simd_shows_x86
+        if brand_has_ppc and not brand_matches:
+            print(f"[PPC_DETECT] brand_match VETOED (x86/arm contradiction): brand={cpu_brand[:40]} "
+                  f"foreign_brand={brand_foreign_contaminated} simd_x86={simd_shows_x86} -> strict validation")
+
         if brand_matches:
             # CPU brand confirms PowerPC — determine specific arch
             ppc_arch = arch.upper() if arch.lower() in ("g3", "g4", "g5", "power8", "power9") else "default"
@@ -9976,14 +9998,30 @@ def _reserve_governance_nonce(c: sqlite3.Cursor, wallet: str, nonce: str, used_a
 
 
 def _get_active_miner_antiquity_multiplier(c: sqlite3.Cursor, wallet: str):
-    row = c.execute(
-        """
-        SELECT ts_ok, device_family, device_arch
-        FROM miner_attest_recent
-        WHERE miner = ?
-        """,
-        (wallet,),
-    ).fetchone()
+    # fingerprint_passed gates the antiquity BONUS (see below). Read it tolerantly:
+    # the live nodes run a divergent lineage and an older one may predate the column —
+    # an unknown-column error must NOT crash every governance call. If the column is
+    # absent we fall back to the pre-cap behavior (the derive_verified_device arch
+    # downgrade still protects those nodes).
+    fp_col_present = True
+    try:
+        row = c.execute(
+            "SELECT ts_ok, device_family, device_arch, fingerprint_passed "
+            "FROM miner_attest_recent WHERE miner = ?",
+            (wallet,),
+        ).fetchone()
+    except sqlite3.OperationalError as e:
+        # Only the specific "column absent" case falls back. A transient lock / I/O
+        # error must NOT be misread as a missing column (which would silently disable
+        # the bonus cap); re-raise anything else.
+        if "fingerprint_passed" not in str(e) and "no such column" not in str(e).lower():
+            raise
+        fp_col_present = False
+        row = c.execute(
+            "SELECT ts_ok, device_family, device_arch "
+            "FROM miner_attest_recent WHERE miner = ?",
+            (wallet,),
+        ).fetchone()
     if not row or not row[0]:
         return False, 0.0, "miner_not_attested"
 
@@ -9993,11 +10031,26 @@ def _get_active_miner_antiquity_multiplier(c: sqlite3.Cursor, wallet: str):
 
     family = row[1] or "unknown"
     arch = row[2] or "unknown"
-    multiplier = HARDWARE_WEIGHTS.get(family, {}).get(
+    multiplier = float(HARDWARE_WEIGHTS.get(family, {}).get(
         arch,
         HARDWARE_WEIGHTS.get(family, {}).get("default", 1.0),
-    )
-    return True, float(multiplier), "ok"
+    ))
+
+    # T3.2 defense-in-depth: the antiquity BONUS (multiplier > 1.0) is the forgeable
+    # part — only grant it to miners whose hardware fingerprint passed. The stored value
+    # is an INTEGER 1 on live nodes, but coerce explicitly so a stray text "0"/"false"/
+    # NULL can never read truthy and grant a forged bonus. A miner that failed (or never
+    # ran) the 6-check fingerprint keeps base voting weight (capped at 1.0) so liveness
+    # is preserved, but cannot wield a forged vintage tier in governance. The live
+    # G4/G5/POWER8 fleet all attest fingerprint_passed=1, so this never touches honest
+    # vintage hardware; it only neutralizes spoofers the stored device_arch downgrade
+    # may not have caught.
+    if fp_col_present and multiplier > 1.0:
+        fp_raw = row[3] if len(row) > 3 else None
+        fingerprint_passed = str(fp_raw).strip().lower() in ("1", "true", "yes")
+        if not fingerprint_passed:
+            return True, 1.0, "antiquity_bonus_requires_fingerprint"
+    return True, multiplier, "ok"
 
 
 def _refresh_proposal_status(c: sqlite3.Cursor, proposal_row: sqlite3.Row):
