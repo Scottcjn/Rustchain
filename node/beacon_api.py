@@ -1276,6 +1276,19 @@ def chat():
 
         if not agent_id or not message:
             return jsonify({'error': 'Missing agent_id or message'}), 400
+
+        # ── Admin auth: prevent unauthorized beacon chat usage ───────────────
+        expected_key = os.environ.get('RC_ADMIN_KEY', '').strip()
+        if not expected_key:
+            return jsonify({'error': 'admin_key_not_configured'}), 503
+        provided_key = (
+            request.headers.get('X-Admin-Key', '')
+            or request.headers.get('X-API-Key', '')
+        ).strip()
+        if not hmac.compare_digest(provided_key, expected_key):
+            return jsonify({'error': 'invalid_admin_key'}), 403
+        # ── Auth passed ──────────────────────────────────────────────────────
+
         safe_agent_id = html.escape(str(agent_id), quote=True)
         safe_message = html.escape(str(message), quote=True)
 
