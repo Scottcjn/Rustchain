@@ -21,7 +21,7 @@ setup(
         ],
     },
     description="Official RustChain Python SDK — async blockchain client with BIP39 wallet support",
-    long_description=open("README.md", encoding="utf-8").read() if __import__("os").path.exists("README.md") else "",
+    long_description=Path("README.md").read_text(encoding="utf-8") if __import__("os").path.exists("README.md") else "",
     long_description_content_type="text/markdown",
     author="kuanglaodi2-sudo",
     author_email="",
