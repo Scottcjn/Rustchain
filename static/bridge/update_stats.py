@@ -76,7 +76,7 @@ def get_bridge_stats():
         except: continue
 
     # 3. Save to data file
-    with open(DATA_FILE, 'w') as f:
+    with open(DATA_FILE, 'w', encoding="utf-8") as f:
         json.dump(results, f, indent=2)
     
     return results

@@ -267,7 +267,7 @@ class PeerRegistry:
             self._by_node_id = {}
             self._loaded = True
             return
-        with open(self.path) as f:
+        with open(self.path, encoding="utf-8") as f:
             data = json.load(f)
         peers = data.get("peers", [])
         entries: Dict[str, PeerEntry] = {}

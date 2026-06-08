@@ -574,7 +574,7 @@ class RustChainMigration:
 
         # Save migration log
         log_path = os.path.join(self.backup_dir, f"migration_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
-        with open(log_path, 'w') as f:
+        with open(log_path, 'w', encoding="utf-8") as f:
             json.dump(result, f, indent=2)
         self.log(f"Migration log saved: {log_path}")
 
@@ -601,7 +601,7 @@ def main():
     # Load wallet addresses if provided
     wallet_addresses = None
     if args.wallets_file and os.path.exists(args.wallets_file):
-        with open(args.wallets_file) as f:
+        with open(args.wallets_file, encoding="utf-8") as f:
             wallet_addresses = json.load(f)
         print(f"Loaded {len(wallet_addresses)} wallet addresses")
 

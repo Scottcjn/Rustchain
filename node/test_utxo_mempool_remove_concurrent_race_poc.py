@@ -142,7 +142,7 @@ class TestMempoolRemoveRace(unittest.TestCase):
         )
         # Report the finding even if timing didn't trigger it
         has_immediate = False
-        with open(os.path.join(os.path.dirname(__file__), 'utxo_db.py'), 'r') as f:
+        with open(os.path.join(os.path.dirname(__file__, encoding="utf-8"), 'utxo_db.py'), 'r') as f:
             src = f.read()
             # Find mempool_remove and check for BEGIN
             remove_start = src.find('def mempool_remove')

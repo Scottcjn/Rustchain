@@ -97,7 +97,7 @@ def detect_cpu_info() -> Dict:
 
     if system == "Linux":
         try:
-            with open("/proc/cpuinfo", "r") as f:
+            with open("/proc/cpuinfo", "r", encoding="utf-8") as f:
                 for line in f:
                     if "model name" in line.lower():
                         info["model"] = line.split(":")[1].strip()
@@ -233,7 +233,7 @@ def detect_hardware() -> HardwareProfile:
     # Get RAM
     try:
         if platform.system() == "Linux":
-            with open("/proc/meminfo", "r") as f:
+            with open("/proc/meminfo", "r", encoding="utf-8") as f:
                 for line in f:
                     if "MemTotal" in line:
                         ram_kb = int(line.split()[1])
@@ -303,7 +303,7 @@ def load_genesis() -> Dict:
             "Please run: rustchain-setup --download-genesis"
         )
 
-    with open(genesis_path, "r") as f:
+    with open(genesis_path, "r", encoding="utf-8") as f:
         genesis = json.load(f)
 
     # Verify genesis authenticity
@@ -420,7 +420,7 @@ def register_validator(hardware: HardwareProfile, genesis: Dict) -> ValidatorCon
     # Save config
     config_path = RUSTCHAIN_DIR / VALIDATOR_CONFIG
     RUSTCHAIN_DIR.mkdir(parents=True, exist_ok=True)
-    with open(config_path, "w") as f:
+    with open(config_path, "w", encoding="utf-8") as f:
         json.dump(asdict(config), f, indent=2)
 
     print(f"Validator registered: {validator_id[:16]}...")
@@ -529,7 +529,7 @@ def cmd_start(args):
         print("ERROR: Validator not registered. Run with --register first.")
         return
 
-    with open(config_path, "r") as f:
+    with open(config_path, "r", encoding="utf-8") as f:
         config = json.load(f)
 
     print("\nStarting RustChain Validator Node...")

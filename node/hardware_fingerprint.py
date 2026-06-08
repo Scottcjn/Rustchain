@@ -386,7 +386,7 @@ class HardwareFingerprint:
         # Try to get detailed CPU info
         try:
             if platform.system() == "Linux":
-                with open("/proc/cpuinfo", "r") as f:
+                with open("/proc/cpuinfo", "r", encoding="utf-8") as f:
                     cpuinfo = f.read()
                     
                 # Extract key fields
@@ -464,7 +464,7 @@ class HardwareFingerprint:
         # Check for hypervisor via cpuid (x86) or other indicators
         try:
             if platform.system() == "Linux":
-                with open("/proc/cpuinfo", "r") as f:
+                with open("/proc/cpuinfo", "r", encoding="utf-8") as f:
                     cpuinfo = f.read().lower()
                     if "hypervisor" in cpuinfo:
                         checks["hypervisor_detected"] = True
@@ -472,7 +472,7 @@ class HardwareFingerprint:
                         
                 # Check for VM-specific devices
                 try:
-                    with open("/sys/class/dmi/id/product_name", "r") as f:
+                    with open("/sys/class/dmi/id/product_name", "r", encoding="utf-8") as f:
                         product = f.read().lower()
                         if any(vm in product for vm in ["virtual", "vmware", "qemu", "kvm", "xen"]):
                             checks["vm_artifacts"].append(f"dmi_product:{product.strip()}")

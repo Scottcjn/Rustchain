@@ -28,7 +28,7 @@ from datetime import datetime
 def patch_file(filepath: str, dry_run: bool = False) -> bool:
     """Apply all patches to the server file."""
 
-    with open(filepath, 'r') as f:
+    with open(filepath, 'r', encoding="utf-8") as f:
         content = f.read()
         lines = content.split('\n')
 
@@ -166,7 +166,7 @@ except Exception as _e:
     print(f"\nBackup saved: {backup_path}")
 
     # Write patched file
-    with open(filepath, 'w') as f:
+    with open(filepath, 'w', encoding="utf-8") as f:
         f.write(content)
 
     print(f"Applied {patches_applied} patches to {filepath}")

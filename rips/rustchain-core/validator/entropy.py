@@ -175,7 +175,7 @@ class HardwareEntropyCollector:
         # Get CPU info
         try:
             if platform.system() == "Linux":
-                with open("/proc/cpuinfo", "r") as f:
+                with open("/proc/cpuinfo", "r", encoding="utf-8") as f:
                     cpuinfo = f.read()
                 data["cpuinfo"] = cpuinfo[:2000]  # First 2KB
             else:
@@ -271,7 +271,7 @@ class HardwareEntropyCollector:
         try:
             if platform.system() == "Linux":
                 # Memory info
-                with open("/proc/meminfo", "r") as f:
+                with open("/proc/meminfo", "r", encoding="utf-8") as f:
                     data["meminfo"] = f.read()[:1000]
 
                 # Try DMI decode for memory details (requires root)
@@ -329,7 +329,7 @@ class HardwareEntropyCollector:
                         try:
                             temp_file = zone / "temp"
                             if temp_file.exists():
-                                with open(temp_file, "r") as f:
+                                with open(temp_file, "r", encoding="utf-8") as f:
                                     temp = int(f.read().strip()) / 1000.0
                                     data[zone.name] = temp
                         except:
@@ -342,7 +342,7 @@ class HardwareEntropyCollector:
                         fpath = cpufreq_path / freq_file
                         if fpath.exists():
                             try:
-                                with open(fpath, "r") as f:
+                                with open(fpath, "r", encoding="utf-8") as f:
                                     data[freq_file] = int(f.read().strip())
                             except:
                                 pass
@@ -396,7 +396,7 @@ class HardwareEntropyCollector:
                         fpath = dmi_path / field
                         if fpath.exists():
                             try:
-                                with open(fpath, "r") as f:
+                                with open(fpath, "r", encoding="utf-8") as f:
                                     data[field] = f.read().strip()
                             except:
                                 pass
@@ -522,7 +522,7 @@ class SoftwareEntropyCollector:
 
             if platform.system() == "Linux":
                 # Boot time
-                with open("/proc/stat", "r") as f:
+                with open("/proc/stat", "r", encoding="utf-8") as f:
                     for line in f:
                         if line.startswith("btime"):
                             data["boot_time"] = int(line.split()[1])
@@ -530,7 +530,7 @@ class SoftwareEntropyCollector:
 
                 # Kernel command line
                 try:
-                    with open("/proc/cmdline", "r") as f:
+                    with open("/proc/cmdline", "r", encoding="utf-8") as f:
                         data["cmdline"] = f.read().strip()[:500]
                 except:
                     pass
@@ -566,7 +566,7 @@ class SoftwareEntropyCollector:
                         addr_file = iface / "address"
                         if addr_file.exists():
                             try:
-                                with open(addr_file, "r") as f:
+                                with open(addr_file, "r", encoding="utf-8") as f:
                                     data[iface.name] = f.read().strip()
                             except:
                                 pass
@@ -701,7 +701,7 @@ class EntropyProfileBuilder:
 
         # Get uptime
         try:
-            with open("/proc/uptime", "r") as f:
+            with open("/proc/uptime", "r", encoding="utf-8") as f:
                 uptime = int(float(f.read().split()[0]))
         except:
             uptime = 0

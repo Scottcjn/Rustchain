@@ -8367,7 +8367,7 @@ def _backup_age_hours():
     metric = "/var/lib/node_exporter/textfile_collector/rustchain_backup.prom"
     try:
         if os.path.isfile(metric):
-            with open(metric,"r") as f:
+            with open(metric,"r", encoding="utf-8") as f:
                 for line in f:
                     if line.strip().startswith("rustchain_backup_timestamp_seconds"):
                         ts = int(line.strip().split()[-1])

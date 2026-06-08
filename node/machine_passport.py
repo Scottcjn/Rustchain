@@ -952,7 +952,7 @@ def main():
         data = ledger.export_passport_full(args.machine_id)
         if data:
             output = args.output or f"{args.machine_id}_passport.json"
-            with open(output, 'w') as f:
+            with open(output, 'w', encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
             print(f"✓ Passport exported to {output}")
         else:

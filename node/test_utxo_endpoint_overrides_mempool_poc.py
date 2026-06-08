@@ -117,7 +117,7 @@ class TestEndpointMempoolOverride(unittest.TestCase):
             print("[C2] There must be a cross-check: apply_transaction must check mempool_inputs")
 
         # Code inspection: does apply_transaction check mempool?
-        with open(os.path.join(os.path.dirname(__file__), 'utxo_db.py'), 'r') as f:
+        with open(os.path.join(os.path.dirname(__file__, encoding="utf-8"), 'utxo_db.py'), 'r') as f:
             src = f.read()
         apply_start = src.find('def apply_transaction')
         if apply_start >= 0:
