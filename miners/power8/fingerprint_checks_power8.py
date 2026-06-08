@@ -163,7 +163,7 @@ def check_simd_identity() -> Tuple[bool, Dict]:
                     if len(parts) > 1:
                         flags = parts[1].strip().split()
                         break
-    except:
+    except Exception:
         pass
 
     # POWER8-specific: check for VSX/AltiVec
@@ -175,7 +175,7 @@ def check_simd_identity() -> Tuple[bool, Dict]:
             )
             if result.stdout:
                 flags = ["vsx", "altivec", "dfp", "power8"]
-        except:
+        except Exception:
             # For POWER8, these are always present
             flags = ["vsx", "altivec", "dfp", "power8"]
 
@@ -332,7 +332,7 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
                 for vm in vm_strings:
                     if vm in content:
                         vm_indicators.append("{}:{}".format(path, vm))
-        except:
+        except Exception:
             pass
 
     for key in ["KUBERNETES", "DOCKER", "VIRTUAL", "container"]:
@@ -343,7 +343,7 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
         with open("/proc/cpuinfo", "r") as f:
             if "hypervisor" in f.read().lower():
                 vm_indicators.append("cpuinfo:hypervisor")
-    except:
+    except Exception:
         pass
 
     # === IBM POWER LPAR Detection ===
@@ -362,7 +362,7 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
                             vm_indicators.append("power:lpar_partition_id=" + line.split("=")[1].strip())
                         elif line.startswith("NumLpars="):
                             vm_indicators.append("power:num_lpars=" + line.split("=")[1].strip())
-            except:
+            except Exception:
                 pass
 
         # Check for partition name (another LPAR indicator)
@@ -372,7 +372,7 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
                     partition_name = f.read().decode().strip().rstrip('\x00')
                     if partition_name:
                         vm_indicators.append("power:partition_name=" + partition_name)
-            except:
+            except Exception:
                 pass
 
         # PowerNV (bare metal) detection - this is the ALLOWED mode
@@ -388,7 +388,7 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
                 if "OPAL" in result.stdout or "powernv" in result.stdout.lower():
                     # This is bare metal PowerNV - NOT a VM indicator
                     pass  # Don't add to vm_indicators
-            except:
+            except Exception:
                 pass
 
     data = {
@@ -432,14 +432,14 @@ def check_power8_hardware() -> Tuple[bool, Dict]:
                 if line.startswith("cpu"):
                     data["cpu_model"] = line.split(":")[-1].strip()
                     break
-    except:
+    except Exception:
         pass
 
     # Check SMT threads (POWER8 has SMT8 = 128 threads for 16 cores)
     try:
         result = subprocess.run(["nproc"], capture_output=True, text=True, timeout=5)
         data["smt_threads"] = int(result.stdout.strip())
-    except:
+    except Exception:
         pass
 
     # POWER8 S824 should have 128 threads (16 cores x 8 SMT)
