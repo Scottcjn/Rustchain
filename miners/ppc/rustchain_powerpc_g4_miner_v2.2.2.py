@@ -216,7 +216,7 @@ class G4Miner:
                 balance = result.get('balance_rtc', 0)
                 print(f"\n💰 Balance: {balance} RTC")
                 return balance
-        except:
+        except Exception:
             pass
         return 0
 
