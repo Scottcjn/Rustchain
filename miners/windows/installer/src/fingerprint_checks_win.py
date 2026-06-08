@@ -109,7 +109,7 @@ def check_simd_identity() -> Tuple[bool, Dict]:
             stderr=subprocess.DEVNULL,
             creationflags=subprocess.CREATE_NO_WINDOW
         ).decode().strip()
-    except:
+    except Exception:
         cpu_info = platform.processor()
 
     has_sse = "sse" in cpu_info.lower() or "intel" in cpu_info.lower() or "amd" in cpu_info.lower()
@@ -313,7 +313,7 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
         for cs in cloud_strings:
             if cs in output:
                 vm_indicators.append(f"WMI_BIOS:{cs}")
-    except:
+    except Exception:
         pass
 
     # --- Cloud metadata endpoint check ---
@@ -323,15 +323,15 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
             "http://169.254.169.254/",
             headers={"Metadata": "true"}
         )
-        resp = urllib.request.urlopen(req, timeout=1)
-        cloud_body = resp.read(512).decode("utf-8", errors="replace").lower()
+        with urllib.request.urlopen(req, timeout=1) as resp:
+            cloud_body = resp.read(512).decode("utf-8", errors="replace").lower()
         cloud_provider = "unknown_cloud"
         if "latest" in cloud_body or "meta-data" in cloud_body:
             cloud_provider = "aws_or_gcp"
         if "azure" in cloud_body or "microsoft" in cloud_body:
             cloud_provider = "azure"
         vm_indicators.append(f"cloud_metadata:{cloud_provider}")
-    except:
+    except Exception:
         pass
 
     # --- AWS IMDSv2 check (token-based, Nitro instances) ---
@@ -342,10 +342,10 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
             headers={"X-aws-ec2-metadata-token-ttl-seconds": "5"},
             method="PUT"
         )
-        token_resp = urllib.request.urlopen(token_req, timeout=1)
-        if token_resp.status == 200:
+        with urllib.request.urlopen(token_req, timeout=1) as token_resp:
+            if token_resp.status == 200:
             vm_indicators.append("cloud_metadata:aws_imdsv2")
-    except:
+    except Exception:
         pass
 
     # --- Environment variable checks ---
