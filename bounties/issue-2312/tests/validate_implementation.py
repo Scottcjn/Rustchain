@@ -89,7 +89,7 @@ def validate_api_implementation(results):
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     api_file = os.path.join(base_dir, "src/relic_market_api.py")
     
-    with open(api_file, 'r') as f:
+    with open(api_file, 'r', encoding="utf-8") as f:
         content = f.read()
     
     # Check required endpoints
@@ -141,7 +141,7 @@ def validate_sdk_implementation(results):
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     sdk_file = os.path.join(base_dir, "src/relic_market_sdk.py")
     
-    with open(sdk_file, 'r') as f:
+    with open(sdk_file, 'r', encoding="utf-8") as f:
         content = f.read()
     
     required_methods = [
@@ -174,7 +174,7 @@ def validate_ui_implementation(results):
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     ui_file = os.path.join(base_dir, "src/marketplace.html")
     
-    with open(ui_file, 'r') as f:
+    with open(ui_file, 'r', encoding="utf-8") as f:
         content = f.read()
     
     # Check UI components
@@ -208,7 +208,7 @@ def validate_tests(results):
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     test_file = os.path.join(base_dir, "tests/test_relic_market.py")
     
-    with open(test_file, 'r') as f:
+    with open(test_file, 'r', encoding="utf-8") as f:
         content = f.read()
     
     # Check test classes
@@ -242,7 +242,7 @@ def validate_documentation(results):
     
     # Check README
     readme_file = os.path.join(base_dir, "README.md")
-    with open(readme_file, 'r') as f:
+    with open(readme_file, 'r', encoding="utf-8") as f:
         readme = f.read()
     
     readme_checks = [
@@ -261,7 +261,7 @@ def validate_documentation(results):
     
     # Check API Reference
     api_ref = os.path.join(base_dir, "docs/API_REFERENCE.md")
-    with open(api_ref, 'r') as f:
+    with open(api_ref, 'r', encoding="utf-8") as f:
         api_content = f.read()
     
     results.add("GET /relic/available" in api_content, "API Reference: Endpoint docs")
@@ -278,7 +278,7 @@ def validate_examples(results):
     
     # Agent booking example
     booking_file = os.path.join(base_dir, "examples/agent_booking.py")
-    with open(booking_file, 'r') as f:
+    with open(booking_file, 'r', encoding="utf-8") as f:
         booking = f.read()
     
     results.add("RelicMarketClient" in booking, "Example: SDK client usage")
@@ -288,7 +288,7 @@ def validate_examples(results):
     
     # MCP example
     mcp_file = os.path.join(base_dir, "examples/mcp_integration.py")
-    with open(mcp_file, 'r') as f:
+    with open(mcp_file, 'r', encoding="utf-8") as f:
         mcp = f.read()
     
     results.add("MCPClient" in mcp, "Example: MCP client")
@@ -306,7 +306,7 @@ def validate_proof(results):
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     proof_file = os.path.join(base_dir, "evidence/proof.json")
     
-    with open(proof_file, 'r') as f:
+    with open(proof_file, 'r', encoding="utf-8") as f:
         proof = json.load(f)
     
     # Check required fields
@@ -387,7 +387,7 @@ def validate_requirements(results):
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     req_file = os.path.join(base_dir, "src/requirements.txt")
     
-    with open(req_file, 'r') as f:
+    with open(req_file, 'r', encoding="utf-8") as f:
         content = f.read()
     
     required_deps = [

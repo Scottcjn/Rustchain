@@ -99,7 +99,7 @@ def create_hash_sidecar(db_path: str, custom_hash: str = None) -> str:
     else:
         hash_value = compute_sha256(db_path)
 
-    with open(hash_path, "w") as f:
+    with open(hash_path, "w", encoding="utf-8") as f:
         f.write(f"{hash_value}  {os.path.basename(db_path)}")
 
     return hash_path

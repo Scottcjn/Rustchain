@@ -57,7 +57,7 @@ def main():
     code, out, err = run_command(
         f"python3 -m pytest tests/ -v --tb=short"
     )
-    with open(test_output_path, 'w') as f:
+    with open(test_output_path, 'w', encoding="utf-8") as f:
         f.write(out)
         f.write(err)
     if code != 0:
@@ -69,11 +69,11 @@ def main():
     print("4. Generating summary...")
     
     # Load verification result
-    with open(verification_path) as f:
+    with open(verification_path, encoding="utf-8") as f:
         verification = json.load(f)
         
     # Load replay log
-    with open(replay_log_path) as f:
+    with open(replay_log_path, encoding="utf-8") as f:
         replay_log = json.load(f)
     
     summary = {
@@ -113,7 +113,7 @@ def main():
     }
     
     summary_path = evidence_dir / "summary.json"
-    with open(summary_path, 'w') as f:
+    with open(summary_path, 'w', encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
     print(f"   Created: {summary_path}")
     

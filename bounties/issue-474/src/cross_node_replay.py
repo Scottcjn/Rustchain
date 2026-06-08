@@ -295,7 +295,7 @@ def create_miners_from_replay_log(replay_log: ReplayLog) -> List[MinerState]:
 
 def load_replay_log(path: Path) -> ReplayLog:
     """Load replay log from JSON file."""
-    with open(path, 'r') as f:
+    with open(path, 'r', encoding="utf-8") as f:
         data = json.load(f)
         
     return ReplayLog(
@@ -315,13 +315,13 @@ def load_replay_log(path: Path) -> ReplayLog:
 
 def save_replay_log(replay_log: ReplayLog, path: Path):
     """Save replay log to JSON file."""
-    with open(path, 'w') as f:
+    with open(path, 'w', encoding="utf-8") as f:
         json.dump(asdict(replay_log), f, indent=2)
 
 
 def save_replay_result(result: ReplayResult, path: Path):
     """Save replay result to JSON file."""
-    with open(path, 'w') as f:
+    with open(path, 'w', encoding="utf-8") as f:
         json.dump(asdict(result), f, indent=2)
 
 
@@ -483,7 +483,7 @@ def main():
         }
         
         if args.output:
-            with open(args.output, 'w') as f:
+            with open(args.output, 'w', encoding="utf-8") as f:
                 json.dump(result, f, indent=2)
                 
         if args.ci and not is_deterministic:

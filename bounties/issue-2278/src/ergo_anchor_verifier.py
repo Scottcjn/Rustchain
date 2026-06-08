@@ -743,7 +743,7 @@ class AnchorProofVerifier:
         report = "\n".join(report_lines)
         
         if output_path:
-            with open(output_path, 'w') as f:
+            with open(output_path, 'w', encoding="utf-8") as f:
                 f.write(report)
             logger.info(f"Audit report saved to {output_path}")
         
@@ -1020,7 +1020,7 @@ def main():
     try:
         if args.command == 'verify':
             # Verify proof from file
-            with open(args.proof, 'r') as f:
+            with open(args.proof, 'r', encoding="utf-8") as f:
                 proof = AnchorProof.from_json(f.read())
             
             result = verifier.verify_proof(proof, full_verification=args.full)
@@ -1056,7 +1056,7 @@ def main():
                 proof_json = proof.to_json()
                 
                 if args.output:
-                    with open(args.output, 'w') as f:
+                    with open(args.output, 'w', encoding="utf-8") as f:
                         f.write(proof_json)
                     print(f"Proof saved to {args.output}")
                 else:
@@ -1069,7 +1069,7 @@ def main():
             # Batch verify
             results = []
             for proof_path in args.proofs:
-                with open(proof_path, 'r') as f:
+                with open(proof_path, 'r', encoding="utf-8") as f:
                     proof = AnchorProof.from_json(f.read())
                 result = verifier.verify_proof(proof)
                 results.append(result)
@@ -1087,7 +1087,7 @@ def main():
             # Generate audit report
             results = []
             for proof_path in args.proofs:
-                with open(proof_path, 'r') as f:
+                with open(proof_path, 'r', encoding="utf-8") as f:
                     proof = AnchorProof.from_json(f.read())
                 result = verifier.verify_proof(proof)
                 results.append(result)

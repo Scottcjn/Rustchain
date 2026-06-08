@@ -301,7 +301,7 @@ def verify_reproducibility(result_file: Path, challenge_runner_path: Path) -> Tu
     log.info("Verifying reproducibility...")
     
     # Load original result
-    with open(result_file) as f:
+    with open(result_file, encoding="utf-8") as f:
         original = json.load(f)
     
     original_digest = original.get("final_state", {}).get("evidence_digest", "")
@@ -404,7 +404,7 @@ def main(argv: List[str]) -> int:
         log.info(f"Verifying: {result_file.name}")
         log.info("=" * 60)
         
-        with open(result_file) as f:
+        with open(result_file, encoding="utf-8") as f:
             data = json.load(f)
         
         verifier = EvidenceVerifier(data)
@@ -439,7 +439,7 @@ def main(argv: List[str]) -> int:
     }
     
     if args.output:
-        with open(args.output, 'w') as f:
+        with open(args.output, 'w', encoding="utf-8") as f:
             json.dump(report, f, indent=2)
         log.info(f"Verification report saved to: {args.output}")
     

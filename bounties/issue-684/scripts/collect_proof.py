@@ -107,7 +107,7 @@ class ProofCollector:
         
         for file in files:
             try:
-                with open(file) as f:
+                with open(file, encoding="utf-8") as f:
                     data = json.load(f)
                 self.results.append(data)
                 log.info(f"Loaded result: {file.name}")
@@ -198,7 +198,7 @@ class ProofCollector:
         
         output_path.parent.mkdir(parents=True, exist_ok=True)
         
-        with open(output_path, 'w') as f:
+        with open(output_path, 'w', encoding="utf-8") as f:
             json.dump(bundle, f, indent=2)
         
         log.info(f"Proof bundle saved to: {output_path}")
