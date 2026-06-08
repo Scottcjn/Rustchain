@@ -81,7 +81,7 @@ def test_db():
     if _TEST_DB_FILE.exists():
         try:
             _TEST_DB_FILE.unlink()
-        except:
+        except Exception:
             pass
 
 
