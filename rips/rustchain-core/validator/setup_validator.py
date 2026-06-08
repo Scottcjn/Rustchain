@@ -105,7 +105,7 @@ def detect_cpu_info() -> Dict:
                         info["vendor"] = line.split(":")[1].strip()
                     elif "cpu family" in line.lower():
                         info["family"] = line.split(":")[1].strip()
-        except:
+        except Exception:
             pass
 
     elif system == "Darwin":  # macOS
@@ -128,7 +128,7 @@ def detect_cpu_info() -> Dict:
                         info["model"] = line.split(":")[1].strip()
                     if "Processor Name" in line:
                         info["family"] = line.split(":")[1].strip()
-        except:
+        except Exception:
             pass
 
     elif system == "Windows":
@@ -140,7 +140,7 @@ def detect_cpu_info() -> Dict:
             lines = [l.strip() for l in result.stdout.split("\n") if l.strip()]
             if len(lines) > 1:
                 info["model"] = lines[1]
-        except:
+        except Exception:
             pass
 
     return info
@@ -247,7 +247,7 @@ def detect_hardware() -> HardwareProfile:
             ram_mb = int(result.stdout.strip()) // (1024 * 1024)
         else:
             ram_mb = 4096  # Default
-    except:
+    except Exception:
         ram_mb = 4096
 
     # Get cores
