@@ -701,7 +701,7 @@ def run_tests():
                 if hasattr(instance, 'teardown_method'):
                     try:
                         instance.teardown_method()
-                    except:
+                    except Exception:
                         pass
     
     # Summary
