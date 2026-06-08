@@ -1496,7 +1496,7 @@ def coin_select(utxos: List[dict], target_nrtc: int
             fallback_total += u['value_nrtc']
             if fallback_total >= target_nrtc:
                 break
-        if fallback_total < target_nrtc or len(fallback) > 20:
+        if fallback_total < target_nrtc:
             return [], 0
         selected = fallback
         total = fallback_total
