@@ -79,7 +79,7 @@ class MinerSetup:
         # Try to detect memory
         try:
             if self.system == "Linux":
-                with open("/proc/meminfo", "r") as f:
+                with open("/proc/meminfo", "r", encoding="utf-8") as f:
                     for line in f:
                         if line.startswith("MemTotal:"):
                             hardware_info["memory_mb"] = int(line.split()[1]) // 1024
@@ -184,7 +184,7 @@ class RustChainMiner:
         
     def load_config(self, config_file):
         try:
-            with open(config_file, 'r') as f:
+            with open(config_file, 'r', encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
             return {
@@ -262,7 +262,7 @@ if __name__ == "__main__":
     miner.start_mining()
 '''
         
-        with open(miner_file, 'w') as f:
+        with open(miner_file, 'w', encoding="utf-8") as f:
             f.write(miner_content)
             
         # Make executable on Unix-like systems
@@ -292,7 +292,7 @@ if __name__ == "__main__":
             "version": "1.0.0"
         }
         
-        with open(self.config_file, 'w') as f:
+        with open(self.config_file, 'w', encoding="utf-8") as f:
             json.dump(config, f, indent=2)
             
         self.log(f"Configuration saved to: {self.config_file}")
@@ -307,7 +307,7 @@ if __name__ == "__main__":
         
         if self.system == "Windows":
             script_path = self.setup_dir / "start_miner.bat"
-            with open(script_path, 'w') as f:
+            with open(script_path, 'w', encoding="utf-8") as f:
                 f.write(f'''@echo off
 cd /d "{self.setup_dir}"
 echo Starting RustChain Miner...
@@ -316,7 +316,7 @@ pause
 ''')
         else:
             script_path = self.setup_dir / "start_miner.sh"
-            with open(script_path, 'w') as f:
+            with open(script_path, 'w', encoding="utf-8") as f:
                 f.write(f'''#!/bin/bash
 cd "{self.setup_dir}"
 echo "Starting RustChain Miner..."
@@ -363,7 +363,7 @@ WantedBy=multi-user.target
 '''
         
         service_path = "/tmp/rustchain-miner.service"
-        with open(service_path, 'w') as f:
+        with open(service_path, 'w', encoding="utf-8") as f:
             f.write(service_content)
             
         print(f"Service file created at {service_path}")

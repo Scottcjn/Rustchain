@@ -120,7 +120,7 @@ def load_projects_from_json():
     """Load projects from data/projects.json if it exists"""
     json_file = os.path.join('data', 'projects.json')
     if os.path.exists(json_file):
-        with open(json_file, 'r') as f:
+        with open(json_file, 'r', encoding="utf-8") as f:
             projects_data = json.load(f)
         
         deduped_projects = {}
@@ -553,7 +553,7 @@ def build_static():
                                         category_filter=None)
     
     # Write to dist/index.html
-    with open('dist/index.html', 'w') as f:
+    with open('dist/index.html', 'w', encoding="utf-8") as f:
         f.write(html_content)
     
     # Generate projects JSON for static consumption
@@ -572,7 +572,7 @@ def build_static():
             'created_at': project[9]
         })
     
-    with open('dist/projects.json', 'w') as f:
+    with open('dist/projects.json', 'w', encoding="utf-8") as f:
         json.dump({'projects': projects_data}, f, indent=2)
     
     return jsonify({

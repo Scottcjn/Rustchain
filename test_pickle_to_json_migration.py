@@ -90,7 +90,7 @@ def _load_proof_of_iron_module():
 class TestPickleRemoval(unittest.TestCase):
     def test_no_pickle_in_source(self):
         """proof_of_iron.py must not import pickle or call pickle.loads/dumps."""
-        with open(PROOF_OF_IRON_PATH, 'r') as f:
+        with open(PROOF_OF_IRON_PATH, 'r', encoding="utf-8") as f:
             content = f.read()
         self.assertNotIn('import pickle', content,
                          "pickle must not be imported in proof_of_iron.py")
@@ -101,7 +101,7 @@ class TestPickleRemoval(unittest.TestCase):
 
     def test_save_uses_json(self):
         """_save_features must serialize with json.dumps."""
-        with open(PROOF_OF_IRON_PATH, 'r') as f:
+        with open(PROOF_OF_IRON_PATH, 'r', encoding="utf-8") as f:
             content = f.read()
         self.assertIn('json.dumps', content,
                       "json.dumps must be used in _save_features")

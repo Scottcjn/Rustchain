@@ -194,7 +194,7 @@ def validate_ui_component():
     )
     
     if exists:
-        with open(ui_file, 'r') as f:
+        with open(ui_file, 'r', encoding="utf-8") as f:
             content = f.read()
         
         has_emoji = 'emoji' in content

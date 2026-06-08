@@ -165,7 +165,7 @@ class ValidationRunner:
         for filepath in python_files:
             full_path = self.project_root / filepath
             try:
-                with open(full_path, 'r') as f:
+                with open(full_path, 'r', encoding="utf-8") as f:
                     compile(f.read(), str(full_path), 'exec')
                 if self.verbose:
                     self.log(f"  {filepath}: Valid syntax", 'success')
@@ -421,7 +421,7 @@ class ValidationRunner:
         
         report_path = self.project_root / 'BOUNTY_1524_VALIDATION_RESULT.json'
         
-        with open(report_path, 'w') as f:
+        with open(report_path, 'w', encoding="utf-8") as f:
             json.dump(self.results, f, indent=2)
         
         self.log(f"Report saved to: {report_path}", 'success')
