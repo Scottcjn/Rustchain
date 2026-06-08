@@ -92,7 +92,7 @@ node/rom_clustering_server.py:317:        for row in cur.fetchall():
 node/rom_clustering_server.py:345:        for row in cur.fetchall():
 node/rom_clustering_server.py:85:    duplicate_keys = [(row[0], row[1]) for row in cur.fetchall()]
 node/rom_clustering_server.py:95:        rows = cur.fetchall()
-node/rustchain_bft_consensus.py:234:                ).fetchall()
+node/rustchain_bft_consensus.py:235:                ).fetchall()
 node/rustchain_block_producer.py:1068:                    ).fetchall()
 node/rustchain_block_producer.py:1088:                    ).fetchall()
 node/rustchain_block_producer.py:314:            for row in cursor.fetchall():
