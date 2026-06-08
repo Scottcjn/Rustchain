@@ -113,21 +113,11 @@ function formatRelativeTime(ts) {
 }
 
 function normalizeMinersResponse(payload) {
-    if (!payload) return [];
-    let rows = [];
-    if (Array.isArray(payload)) {
-        rows = payload;
-    } else if (payload && typeof payload === 'object') {
-        if (Array.isArray(payload.miners)) {
-            rows = payload.miners;
-        } else if (Array.isArray(payload.data)) {
-            rows = payload.data;
-        } else if (typeof payload === 'object' && payload !== null) {
-            // Handle case where payload is a single miner object
-            rows = [payload];
-        }
-    }
-    return (rows || []).filter(row => row && typeof row === 'object');
+    // Tolerate legacy array, paginated {miners:[...]}, or {data:[...]} shapes.
+    const rows = Array.isArray(payload) ? payload :
+        (Array.isArray(payload?.miners) ? payload.miners :
+        (Array.isArray(payload?.data) ? payload.data : []));
+    return rows.filter(row => row && typeof row === 'object');
 }
 
 function normalizeBlocksResponse(payload) {
