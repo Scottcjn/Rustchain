@@ -7071,6 +7071,48 @@ def get_stats():
     })
 
 
+def _network_name_from_chain_id(chain_id):
+    chain = str(chain_id or "").lower()
+    if "testnet" in chain:
+        return "testnet"
+    if "devnet" in chain:
+        return "devnet"
+    return "mainnet"
+
+
+def _network_peer_count():
+    node = globals().get("p2p_node")
+    peers = getattr(node, "peers", None)
+    if isinstance(peers, dict):
+        return len(peers)
+    if isinstance(peers, (list, set, tuple)):
+        return len(peers)
+
+    manager = globals().get("peer_manager")
+    get_active_peers = getattr(manager, "get_active_peers", None)
+    if callable(get_active_peers):
+        try:
+            return len(get_active_peers())
+        except Exception:
+            return 0
+    return 0
+
+
+@app.route('/network/info', methods=['GET'])
+def api_network_info():
+    """Rust wallet network metadata endpoint."""
+    block_height = max(0, int(current_slot()))
+
+    return jsonify({
+        "chain_id": CHAIN_ID,
+        "network": _network_name_from_chain_id(CHAIN_ID),
+        "block_height": block_height,
+        "peer_count": _network_peer_count(),
+        "min_fee": 1000,
+        "version": "2.2.1-security-hardened",
+    })
+
+
 # ---------- RIP-0200b: Deflationary Bounty Decay ----------
 # Half-life model: bounty multiplier = 0.5^(total_paid / HALF_LIFE)
 # As more RTC is paid from community fund, bounties shrink automatically.
