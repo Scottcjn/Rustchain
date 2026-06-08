@@ -33,7 +33,7 @@ def update_history(entry):
         with open(path) as f:
             try:
                 history = json.load(f)
-            except:
+            except Exception:
                 history = []
 
     history.append(entry)
