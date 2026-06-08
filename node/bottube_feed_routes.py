@@ -59,9 +59,12 @@ def _parse_feed_limit(default: int = 20, maximum: int = 100) -> int:
     if raw_limit in (None, ""):
         return default
     try:
-        return max(1, min(int(raw_limit), maximum))
+        limit = int(raw_limit)
     except (ValueError, TypeError):
         abort(400, description="Invalid limit parameter")
+    if limit < 1:
+        abort(400, description="limit must be at least 1")
+    return min(limit, maximum)
 
 
 def _get_db_connection():
