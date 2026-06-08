@@ -370,7 +370,7 @@ class TestExport(unittest.TestCase):
 
     def test_export_csv_content(self):
         filepath = export_csv(self.envelopes, self.health, self.tmpdir)
-        with open(filepath) as f:
+        with open(filepath, encoding="utf-8") as f:
             content = f.read()
         self.assertIn("Transport Health Summary", content)
         self.assertIn("agent_id", content)
@@ -387,7 +387,7 @@ class TestExport(unittest.TestCase):
         filepath = export_json(
             self.envelopes, self.health, self.agents, self.tmpdir
         )
-        with open(filepath) as f:
+        with open(filepath, encoding="utf-8") as f:
             data = json.load(f)
         self.assertIn("exported_at", data)
         self.assertIn("transport_health", data)
@@ -400,7 +400,7 @@ class TestExport(unittest.TestCase):
         filepath = export_json(
             self.envelopes, self.health, self.agents, self.tmpdir
         )
-        with open(filepath) as f:
+        with open(filepath, encoding="utf-8") as f:
             data = json.load(f)
         self.assertIn("discord", data["transport_health"])
         discord_h = data["transport_health"]["discord"]

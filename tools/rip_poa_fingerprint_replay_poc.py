@@ -90,7 +90,7 @@ def capture_fingerprint(output_path: str = "/tmp/captured_fingerprint.json") -> 
         "all_passed": True,
     }
 
-    with open(output_path, "w") as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         json.dump(real_fingerprint, f, indent=2)
 
     return real_fingerprint
@@ -108,7 +108,7 @@ def replay_fingerprint(captured_path: str = "/tmp/captured_fingerprint.json") ->
         self.fingerprint_data = json.load(open("/tmp/captured_fingerprint.json"))
         self.fingerprint_passed = True
     """
-    with open(captured_path) as f:
+    with open(captured_path, encoding="utf-8") as f:
         replayed = json.load(f)
 
     # Attacker can optionally add small jitter to avoid exact-match detection

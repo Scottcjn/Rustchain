@@ -48,7 +48,7 @@ def validate_genesis(path):
     errors = []
 
     try:
-        with open(path, 'r') as f:
+        with open(path, 'r', encoding="utf-8") as f:
             data = json.load(f)
     except OSError as exc:
         errors.append(f"Unable to read genesis file: {exc}")

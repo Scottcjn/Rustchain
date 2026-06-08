@@ -89,7 +89,7 @@ def validate_fixture(data: dict) -> None:
 
 
 def load_fixture(path: str) -> dict:
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         data = json.load(f)
     validate_fixture(data)
     return data

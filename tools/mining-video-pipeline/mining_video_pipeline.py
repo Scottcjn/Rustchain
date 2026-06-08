@@ -405,7 +405,7 @@ def generate_videos(miners: list[MinerData], count: int = 10) -> list[str]:
 
 async def upload_to_bottube(video_path: str, title: str, description: str, tags: str, category: str = "science-tech"):
     """Upload a video to BoTTube using Playwright."""
-    with open(BOTTUBE_AUTH_FILE) as f:
+    with open(BOTTUBE_AUTH_FILE, encoding="utf-8") as f:
         storage_state = json.load(f)
 
     from playwright.async_api import async_playwright

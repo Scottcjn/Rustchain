@@ -29,7 +29,7 @@ def generate_validator_entry():
         "rarity_bonus": 1.02
     }
 
-    with open("proof_of_antiquity.json", "w") as f:
+    with open("proof_of_antiquity.json", "w", encoding="utf-8") as f:
         json.dump(validator_data, f, indent=4)
     
     print("Validator proof_of_antiquity.json created.")
@@ -52,7 +52,7 @@ def generate_validator_entry():
             "soulbound": True
         }
 
-        with open("relic_rewards.json", "w") as b:
+        with open("relic_rewards.json", "w", encoding="utf-8") as b:
             json.dump({"badges": [badge]}, b, indent=4)
         print("NFT badge unlocked and written to relic_rewards.json.")
     else:

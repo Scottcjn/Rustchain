@@ -257,11 +257,11 @@ class FuzzCorpusManager:
             },
             "crashes": crash_data,
         }
-        with open(output_file, "w") as fh:
+        with open(output_file, "w", encoding="utf-8") as fh:
             json.dump(data, fh, indent=2)
 
     def import_corpus(self, input_file: str) -> int:
-        with open(input_file) as fh:
+        with open(input_file, encoding="utf-8") as fh:
             data = json.load(fh)
         if not isinstance(data, dict):
             return 0
