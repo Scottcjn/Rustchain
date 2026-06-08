@@ -2,20 +2,25 @@
 from __future__ import annotations
 
 import subprocess
+import shutil
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "check_fetchall.sh"
+SCRIPT_ARG = "scripts/check_fetchall.sh"
 TMP_VIOLATION = ROOT / "node" / "_tmp_fetchall_guard_violation.py"
 TMP_BASELINE = ROOT / "scripts" / "baselines" / "_tmp_fetchall_stale_baseline.txt"
+TMP_BASELINE_ARG = "scripts/baselines/_tmp_fetchall_stale_baseline.txt"
+BASH = shutil.which("bash") or "bash"
 
 
 def run_guard() -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["bash", str(SCRIPT)],
+        [BASH, SCRIPT_ARG],
         cwd=ROOT,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         check=False,
@@ -71,9 +76,10 @@ def test_fetchall_guard_allows_annotated_call():
 
 def test_fetchall_guard_fails_closed_when_required_tools_are_missing():
     result = subprocess.run(
-        ["/bin/bash", str(SCRIPT)],
+        [BASH, SCRIPT_ARG],
         cwd=ROOT,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         check=False,
@@ -87,22 +93,24 @@ def test_fetchall_guard_fails_closed_when_required_tools_are_missing():
 def test_fetchall_guard_detects_stale_baseline_entries():
     try:
         current = subprocess.run(
-            ["bash", str(SCRIPT), "--print-baseline"],
+            [BASH, SCRIPT_ARG, "--print-baseline"],
             cwd=ROOT,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             check=True,
         ).stdout
         TMP_BASELINE.write_text(current + "node/phantom.py:1:cursor.fetchall()\n")
         result = subprocess.run(
-            ["bash", str(SCRIPT)],
+            [BASH, SCRIPT_ARG],
             cwd=ROOT,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             check=False,
-            env={"PATH": "/usr/bin:/bin", "FETCHALL_BASELINE": str(TMP_BASELINE)},
+            env={"PATH": "/usr/bin:/bin", "FETCHALL_BASELINE": TMP_BASELINE_ARG},
         )
         assert result.returncode == 1
         assert "stale entries" in result.stdout

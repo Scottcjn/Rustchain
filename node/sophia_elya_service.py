@@ -13,6 +13,11 @@ import time
 from decimal import Decimal, ROUND_HALF_UP
 from flask import Flask, request, jsonify
 
+try:
+    from db_helpers import fetch_page
+except ImportError:  # pragma: no cover - package import path
+    from node.db_helpers import fetch_page
+
 app = Flask(__name__)
 
 # WebSocket Feed Integration (Issue #2295)
@@ -354,16 +359,16 @@ def get_epoch_history():
     min_epoch = max(0, current_epoch - 50)
 
     with sqlite3.connect(DB_PATH) as c:
-        rows = c.execute("""
+        rows = fetch_page(c, """
             SELECT e.epoch, e.accepted_blocks, e.finalized,
                    COALESCE(COUNT(en.miner_pk), 0) as enrolled_miners,
                    COALESCE(SUM(en.weight), 0) as total_weight
             FROM epoch_state e
             LEFT JOIN epoch_enroll en ON en.epoch = e.epoch
-            WHERE e.epoch >= ?
+            WHERE e.epoch >= ? AND e.epoch <= ?
             GROUP BY e.epoch
             ORDER BY e.epoch DESC
-        """, (min_epoch,)).fetchall()
+        """, (min_epoch, current_epoch), limit=51, max_limit=51)
 
     return jsonify({
         "epochs": [
