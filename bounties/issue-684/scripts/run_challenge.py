@@ -88,7 +88,7 @@ class AgentConfig:
     @classmethod
     def from_fixture(cls, fixture_path: Path) -> "AgentConfig":
         """Load agent config from fixture file."""
-        with open(fixture_path) as f:
+        with open(fixture_path, encoding="utf-8") as f:
             data = json.load(f)
         return cls(**data)
     
@@ -349,9 +349,9 @@ class ChallengeRunner:
             )
             
             # Save fixtures
-            with open(alpha_fixture, 'w') as f:
+            with open(alpha_fixture, 'w', encoding="utf-8") as f:
                 json.dump(alpha.to_dict(), f, indent=2)
-            with open(beta_fixture, 'w') as f:
+            with open(beta_fixture, 'w', encoding="utf-8") as f:
                 json.dump(beta.to_dict(), f, indent=2)
         
         self.agents = {"alpha": alpha, "beta": beta}
@@ -735,7 +735,7 @@ def main(argv: List[str]) -> int:
             
             # Save result
             output_file = output_dir / f"result_{scenario}_{runner.run_id}.json"
-            with open(output_file, 'w') as f:
+            with open(output_file, 'w', encoding="utf-8") as f:
                 json.dump(result.to_dict(), f, indent=2)
             log.info(f"Saved result to {output_file}")
     else:
@@ -745,7 +745,7 @@ def main(argv: List[str]) -> int:
         
         # Save result
         output_file = output_dir / f"result_{args.scenario}_{runner.run_id}.json"
-        with open(output_file, 'w') as f:
+        with open(output_file, 'w', encoding="utf-8") as f:
             json.dump(result.to_dict(), f, indent=2)
         log.info(f"Saved result to {output_file}")
     

@@ -46,7 +46,7 @@ def save_evidence(result: TestResult):
     """Save test result to evidence directory."""
     EVIDENCE_DIR.mkdir(exist_ok=True)
     output_file = EVIDENCE_DIR / f"test_{result.test_name.replace(' ', '_')}.json"
-    with open(output_file, 'w') as f:
+    with open(output_file, 'w', encoding="utf-8") as f:
         json.dump(result.to_dict(), f, indent=2)
     print(f"  Evidence saved: {output_file}")
 
@@ -60,7 +60,7 @@ def test_manifest_validity() -> TestResult:
             result.fail("manifest.json not found")
             return result
         
-        with open(manifest_path) as f:
+        with open(manifest_path, encoding="utf-8") as f:
             manifest = json.load(f)
         
         # Required fields
@@ -138,7 +138,7 @@ def test_popup_html() -> TestResult:
     
     try:
         popup_path = Path(__file__).parent.parent / "extension" / "popup" / "popup.html"
-        with open(popup_path) as f:
+        with open(popup_path, encoding="utf-8") as f:
             content = f.read()
         
         # Check for entry point buttons
@@ -172,7 +172,7 @@ def test_background_service_worker() -> TestResult:
     
     try:
         sw_path = Path(__file__).parent.parent / "extension" / "background" / "service-worker.js"
-        with open(sw_path) as f:
+        with open(sw_path, encoding="utf-8") as f:
             content = f.read()
         
         # Check for required message handlers
@@ -207,7 +207,7 @@ def test_content_script() -> TestResult:
     
     try:
         cs_path = Path(__file__).parent.parent / "extension" / "content" / "youtube-integration.js"
-        with open(cs_path) as f:
+        with open(cs_path, encoding="utf-8") as f:
             content = f.read()
         
         # Check for YouTube-specific integration
@@ -242,7 +242,7 @@ def test_options_page() -> TestResult:
     
     try:
         options_path = Path(__file__).parent.parent / "extension" / "options" / "options.html"
-        with open(options_path) as f:
+        with open(options_path, encoding="utf-8") as f:
             content = f.read()
         
         # Check for API key input
@@ -276,7 +276,7 @@ def test_api_endpoints_defined() -> TestResult:
     
     try:
         sw_path = Path(__file__).parent.parent / "extension" / "background" / "service-worker.js"
-        with open(sw_path) as f:
+        with open(sw_path, encoding="utf-8") as f:
             content = f.read()
         
         # Check for API endpoint definitions

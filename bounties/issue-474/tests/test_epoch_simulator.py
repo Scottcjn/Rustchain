@@ -342,7 +342,7 @@ class TestScenarioLoading(unittest.TestCase):
         scenario_path = Path(__file__).parent.parent / "fixtures" / "scenario_basic.json"
         
         if scenario_path.exists():
-            with open(scenario_path) as f:
+            with open(scenario_path, encoding="utf-8") as f:
                 scenario = json.load(f)
                 
             self.assertIn("miners", scenario)

@@ -227,7 +227,7 @@ class SiliconObituaryGenerator:
         
         # Save report
         report_path = os.path.join(self.config.output_dir, "obituary_report.json")
-        with open(report_path, 'w') as f:
+        with open(report_path, 'w', encoding="utf-8") as f:
             json.dump(report, f, indent=2)
         
         logger.info(f"Report saved to: {report_path}")

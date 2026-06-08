@@ -103,7 +103,7 @@ def load_expected_hash(backup_path: str) -> Optional[str]:
         return None
 
     try:
-        with open(hash_file, "r") as f:
+        with open(hash_file, "r", encoding="utf-8") as f:
             content = f.read().strip()
             # Handle both formats: "hash  filename" and just "hash"
             parts = content.split()
@@ -550,7 +550,7 @@ Examples:
     if not args.quiet and results:
         output = format_output(results, args.format)
         if args.output:
-            with open(args.output, "w") as f:
+            with open(args.output, "w", encoding="utf-8") as f:
                 f.write(output)
         else:
             print(output)

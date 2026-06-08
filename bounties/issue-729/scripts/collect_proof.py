@@ -51,7 +51,7 @@ def collect_manifest_info() -> Dict[str, Any]:
     if not manifest_path.exists():
         return {"error": "manifest.json not found"}
     
-    with open(manifest_path) as f:
+    with open(manifest_path, encoding="utf-8") as f:
         manifest = json.load(f)
     
     return {
@@ -73,7 +73,7 @@ def collect_test_results() -> List[Dict[str, Any]]:
     
     for evidence_file in evidence_dir.glob("test_*.json"):
         try:
-            with open(evidence_file) as f:
+            with open(evidence_file, encoding="utf-8") as f:
                 result = json.load(f)
             results.append(result)
         except Exception as e:
@@ -154,7 +154,7 @@ def main():
     
     # Write output
     output_path = Path(args.output)
-    with open(output_path, 'w') as f:
+    with open(output_path, 'w', encoding="utf-8") as f:
         json.dump(proof, f, indent=2)
     
     print(f"\nProof bundle collected: {output_path}")

@@ -432,7 +432,7 @@ class BoTTubeVideoCreator:
         }
         
         placeholder_path = path.replace(".mp4", ".json")
-        with open(placeholder_path, 'w') as f:
+        with open(placeholder_path, 'w', encoding="utf-8") as f:
             import json
             json.dump(placeholder_data, f, indent=2)
         

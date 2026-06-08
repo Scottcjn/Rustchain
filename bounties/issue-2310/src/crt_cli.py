@@ -276,7 +276,7 @@ def cmd_capture(args) -> int:
     print(f"  Actual FPS: {stats.get('actual_fps', 0):.2f}")
     
     if args.output:
-        with open(args.output, 'w') as f:
+        with open(args.output, 'w', encoding="utf-8") as f:
             json.dump(data, f, indent=2)
         print(f"  Saved to: {args.output}")
     
@@ -289,7 +289,7 @@ def cmd_analyze(args) -> int:
     
     # Load capture data
     print(f"Loading capture data from {args.input}...")
-    with open(args.input, 'r') as f:
+    with open(args.input, 'r', encoding="utf-8") as f:
         captured_data = json.load(f)
     
     print(f"  Frames: {captured_data.get('num_frames', 0)}")
@@ -321,7 +321,7 @@ def cmd_analyze(args) -> int:
     print(f"  Tube age: {report['interpretation']['tube_age_estimate']}")
     
     if args.output:
-        with open(args.output, 'w') as f:
+        with open(args.output, 'w', encoding="utf-8") as f:
             json.dump(fingerprint.to_dict(), f, indent=2)
         print(f"\nSaved to: {args.output}")
     
@@ -355,7 +355,7 @@ def cmd_attest(args) -> int:
                 print(f"\n  Submission hash: {submission.get('submission_hash', 'N/A')[:32]}...")
         
         if args.output:
-            with open(args.output, 'w') as f:
+            with open(args.output, 'w', encoding="utf-8") as f:
                 json.dump(result, f, indent=2)
             print(f"\nSaved to: {args.output}")
         
@@ -364,7 +364,7 @@ def cmd_attest(args) -> int:
     # Load fingerprint from file
     if args.fingerprint:
         print(f"Loading fingerprint from {args.fingerprint}...")
-        with open(args.fingerprint, 'r') as f:
+        with open(args.fingerprint, 'r', encoding="utf-8") as f:
             fingerprint = json.load(f)
         
         attestation = submitter.create_attestation(
@@ -393,7 +393,7 @@ def cmd_validate(args) -> int:
     
     print(f"Validating attestation from {args.attestation}...")
     
-    with open(args.attestation, 'r') as f:
+    with open(args.attestation, 'r', encoding="utf-8") as f:
         data = json.load(f)
     
     # Handle both raw attestation and result wrapper

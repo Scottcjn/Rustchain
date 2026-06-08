@@ -442,7 +442,7 @@ class EpochDeterminismSimulator:
 
 def load_scenario(scenario_path: Path) -> Dict[str, Any]:
     """Load simulation scenario from JSON file."""
-    with open(scenario_path, 'r') as f:
+    with open(scenario_path, 'r', encoding="utf-8") as f:
         return json.load(f)
         
 def create_miners_from_scenario(scenario: Dict[str, Any]) -> List[MinerState]:
@@ -587,7 +587,7 @@ def main():
                 for e in result.epoch_states.values()
             }
         }
-        with open(args.output, 'w') as f:
+        with open(args.output, 'w', encoding="utf-8") as f:
             json.dump(output_data, f, indent=2)
         if args.verbose:
             print(f"Results written to {args.output}")

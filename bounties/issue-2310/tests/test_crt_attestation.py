@@ -784,7 +784,7 @@ class TestCLI:
                 for i in range(60)
             ]
         }
-        with open(capture_file, 'w') as f:
+        with open(capture_file, 'w', encoding="utf-8") as f:
             json.dump(capture_data, f)
         
         sys.argv = [

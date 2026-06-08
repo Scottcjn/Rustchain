@@ -693,7 +693,7 @@ def main():
         
         # Save results
         if args.output:
-            with open(args.output, 'w') as f:
+            with open(args.output, 'w', encoding="utf-8") as f:
                 json.dump(asdict(campaign), f, indent=2)
             print(f"\nResults saved to {args.output}")
         
@@ -726,7 +726,7 @@ def main():
         print(f"Reason: {result.block_reason or 'Nonce accepted'}")
         
         if args.output:
-            with open(args.output, 'w') as f:
+            with open(args.output, 'w', encoding="utf-8") as f:
                 json.dump(asdict(result), f, indent=2)
         
         return 0 if result.blocked else 1
