@@ -77,14 +77,30 @@ def _rtc_address_from_public_key(public_key_hex):
     return "RTC" + hashlib.sha256(bytes.fromhex(public_key_hex)).hexdigest()[:40]
 
 
+def _attestation_sign_message(attest_miner_id, wallet, nonce, commitment):
+    """Canonical attestation sign-message the node verifies (pipe-delimited):
+    ``miner_id|miner|nonce|commitment``. Must match server verification exactly."""
+    return "{}|{}|{}|{}".format(attest_miner_id, wallet, nonce, commitment)
+
+
+# DER tag bytes for the Ed25519 algorithm OID (1.3.101.112).
+_ED25519_OID_DER = b"\x06\x03\x2b\x65\x70"
+
+
 def _extract_pkcs8_ed25519_seed(der):
-    """Extract the 32-byte Ed25519 seed from a simple PKCS#8 DER blob."""
+    """Extract the 32-byte Ed25519 seed from a PKCS#8 DER blob.
+
+    Requires the Ed25519 OID to be present before taking the final ``04 20``
+    seed, so a stray ``04 20`` in arbitrary data can't be mistaken for a key
+    (which would silently load the wrong key)."""
+    if len(der) == 32:
+        return der
+    if _ED25519_OID_DER not in der:
+        raise ValueError("not an Ed25519 PKCS#8 key (algorithm OID missing)")
     marker = b"\x04\x20"
     idx = der.rfind(marker)
     if idx != -1 and idx + 34 <= len(der):
         return der[idx + 2:idx + 34]
-    if len(der) == 32:
-        return der
     raise ValueError("unsupported Ed25519 private key format")
 
 
@@ -457,7 +473,7 @@ def add_binding_entropy_aliases(fingerprint_data):
 # ── Miner Class ─────────────────────────────────────────────────────
 
 class MacMiner:
-    def __init__(self, miner_id=None, wallet=None, wallet_file=None, node_url=None, proxy_url=None):
+    def __init__(self, miner_id=None, wallet=None, node_url=None, proxy_url=None, wallet_file=None):
         self.hw_info = detect_hardware()
         self.fingerprint_data = {}
         self.fingerprint_passed = False
@@ -671,11 +687,8 @@ class MacMiner:
         }
 
         if self.signing_key:
-            sign_message = "{}|{}|{}|{}".format(
-                attest_miner_id,
-                self.wallet,
-                nonce,
-                commitment,
+            sign_message = _attestation_sign_message(
+                attest_miner_id, self.wallet, nonce, commitment
             )
             attestation["public_key"] = self.signing_pubkey_hex
             attestation["signature"] = self.signing_key.sign(sign_message.encode()).signature.hex()
