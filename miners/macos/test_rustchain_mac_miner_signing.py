@@ -135,5 +135,33 @@ class MacMinerSigningTests(unittest.TestCase):
         self.assertEqual(miner._attestation_miner_id(), "m4-local-hardware-id")
 
 
+@unittest.skipIf(SigningKey is None, "PyNaCl unavailable")
+class AttestationSignMessageTests(unittest.TestCase):
+    def test_sign_message_matches_node_pipe_format(self):
+        module = load_miner_module()
+        msg = module._attestation_sign_message("miner-1", "RTCabc", "nonce-xyz", "commit-hash")
+        self.assertEqual(msg, "miner-1|RTCabc|nonce-xyz|commit-hash")
+
+    def test_signature_over_sign_message_verifies(self):
+        module = load_miner_module()
+        sk = SigningKey.generate()
+        msg = module._attestation_sign_message("RTCwallet", "RTCwallet", "n1", "c1")
+        sk.verify_key.verify(msg.encode(), sk.sign(msg.encode()).signature)
+
+
+class ExtractPkcs8Tests(unittest.TestCase):
+    def test_rejects_blob_without_ed25519_oid(self):
+        module = load_miner_module()
+        blob = b"\x30\x10" + b"\x04\x20" + (b"\x11" * 32)
+        with self.assertRaises(ValueError):
+            module._extract_pkcs8_ed25519_seed(blob)
+
+    def test_accepts_valid_ed25519_pkcs8(self):
+        module = load_miner_module()
+        seed = b"\x22" * 32
+        der = bytes.fromhex("302e020100300506032b657004220420") + seed
+        self.assertEqual(module._extract_pkcs8_ed25519_seed(der), seed)
+
+
 if __name__ == "__main__":
     unittest.main()
