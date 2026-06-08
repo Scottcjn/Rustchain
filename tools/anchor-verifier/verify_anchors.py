@@ -161,42 +161,38 @@ def read_anchors(db_path: str, limit: Optional[int] = None) -> List[AnchorRecord
     if not os.path.exists(db_path):
         return []
 
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    query = "SELECT * FROM ergo_anchors ORDER BY rustchain_height DESC"
-    params = ()
-    if limit is not None:
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        query = "SELECT * FROM ergo_anchors ORDER BY rustchain_height DESC"
+        params = ()
+        if limit is not None:
+            try:
+                parsed_limit = int(limit)
+            except (TypeError, ValueError):
+                return []
+            if parsed_limit <= 0:
+                return []
+            query += " LIMIT ?"
+            params = (parsed_limit,)
+
         try:
-            parsed_limit = int(limit)
-        except (TypeError, ValueError):
-            conn.close()
+            rows = conn.execute(query, params).fetchall()
+        except sqlite3.OperationalError:
             return []
-        if parsed_limit <= 0:
-            conn.close()
-            return []
-        query += " LIMIT ?"
-        params = (parsed_limit,)
 
-    try:
-        rows = conn.execute(query, params).fetchall()
-    except sqlite3.OperationalError:
-        conn.close()
-        return []
-
-    anchors = []
-    for row in rows:
-        anchors.append(AnchorRecord(
-            id=row["id"],
-            rustchain_height=row["rustchain_height"],
-            rustchain_hash=row["rustchain_hash"],
-            commitment_hash=row["commitment_hash"],
-            ergo_tx_id=row["ergo_tx_id"],
-            ergo_height=row["ergo_height"],
-            confirmations=row["confirmations"],
-            status=row["status"],
-            created_at=row["created_at"]
-        ))
-    conn.close()
+        anchors = []
+        for row in rows:
+            anchors.append(AnchorRecord(
+                id=row["id"],
+                rustchain_height=row["rustchain_height"],
+                rustchain_hash=row["rustchain_hash"],
+                commitment_hash=row["commitment_hash"],
+                ergo_tx_id=row["ergo_tx_id"],
+                ergo_height=row["ergo_height"],
+                confirmations=row["confirmations"],
+                status=row["status"],
+                created_at=row["created_at"]
+            ))
     return anchors
 
 
@@ -205,24 +201,22 @@ def read_attestations_for_epoch(db_path: str, height: int) -> List[dict]:
     if not os.path.exists(db_path):
         return []
 
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
 
-    # Try miner_attest_recent table first
-    for table in ("miner_attest_recent", "attestations", "miner_attestations"):
-        try:
-            rows = conn.execute(
-                f"SELECT * FROM {table} WHERE epoch = ? OR height = ? "
-                f"ORDER BY miner_id",
-                (height, height)
-            ).fetchall()
-            if rows:
-                conn.close()
-                return [dict(r) for r in rows]
-        except sqlite3.OperationalError:
-            continue
+        # Try miner_attest_recent table first
+        for table in ("miner_attest_recent", "attestations", "miner_attestations"):
+            try:
+                rows = conn.execute(
+                    f"SELECT * FROM {table} WHERE epoch = ? OR height = ? "
+                    f"ORDER BY miner_id",
+                    (height, height)
+                ).fetchall()
+                if rows:
+                    return [dict(r) for r in rows]
+            except sqlite3.OperationalError:
+                continue
 
-    conn.close()
     return []
 
 
