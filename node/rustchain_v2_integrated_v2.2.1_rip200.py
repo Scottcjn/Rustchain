@@ -4061,7 +4061,7 @@ def _check_hardware_binding(miner_id: str, device: dict, signals: dict = None, s
                     VALUES (?, ?, ?, ?, ?, 1)""",
                     (hardware_id, miner_id, device.get('device_arch'), device.get('device_model'), now))
                 conn.commit()
-            except:
+            except Exception:
                 pass  # Race condition - another thread created it
             return True, 'Hardware bound', miner_id
         
@@ -4389,7 +4389,7 @@ def _submit_attestation_impl():
         import json as _json
         try:
             print(f"[FINGERPRINT-DEBUG] g5-selena payload: {_json.dumps(fingerprint, default=str)[:2000]}")
-        except: pass
+        except Exception: pass
     print(f"[FINGERPRINT] Miner: {miner}")
     print(f"[FINGERPRINT]   Passed: {fingerprint_passed}")
     print(f"[FINGERPRINT]   Reason: {fingerprint_reason}")
@@ -6010,7 +6010,7 @@ def request_withdrawal():
             try:
                 try:
                     sig_bytes = base64.b64decode(signature)
-                except:
+                except Exception:
                     sig_bytes = bytes.fromhex(signature)
 
                 pubkey_bytes = bytes.fromhex(pubkey_hex)
