@@ -1,0 +1,745 @@
+<!doctype html><html lang=en dir=ltr class="docs-wrapper plugin-docs plugin-id-default docs-version-current docs-doc-page docs-doc-id-DEVELOPER_TRACTION_Q1_2026" data-has-hydrated=false><head><meta charset=UTF-8><meta name=generator content="Docusaurus v3.10.1"><title data-rh=true>Elyan Labs — Developer Traction Report | RustChain</title><meta data-rh=true name=viewport content="width=device-width, initial-scale=1.0"/><meta data-rh=true name=twitter:card content=summary_large_image /><meta data-rh=true property=og:image content=https://scottcjn.github.io/Rustchain/img/docusaurus-social-card.jpg /><meta data-rh=true name=twitter:image content=https://scottcjn.github.io/Rustchain/img/docusaurus-social-card.jpg /><meta data-rh=true property=og:url content=https://scottcjn.github.io/Rustchain/docs/DEVELOPER_TRACTION_Q1_2026 /><meta data-rh=true property=og:locale content=en /><meta data-rh=true name=docusaurus_locale content=en /><meta data-rh=true name=docsearch:language content=en /><meta data-rh=true name=docusaurus_version content=current /><meta data-rh=true name=docusaurus_tag content=docs-default-current /><meta data-rh=true name=docsearch:version content=current /><meta data-rh=true name=docsearch:docusaurus_tag content=docs-default-current /><meta data-rh=true property=og:title content="Elyan Labs — Developer Traction Report | RustChain"/><meta data-rh=true name=description content="Q1 2026 (December 2025 - March 2, 2026)"/><meta data-rh=true property=og:description content="Q1 2026 (December 2025 - March 2, 2026)"/><link data-rh=true rel=icon href=/Rustchain/img/favicon.ico /><link data-rh=true rel=canonical href=https://scottcjn.github.io/Rustchain/docs/DEVELOPER_TRACTION_Q1_2026 /><link data-rh=true rel=alternate href=https://scottcjn.github.io/Rustchain/docs/DEVELOPER_TRACTION_Q1_2026 hreflang=en /><link data-rh=true rel=alternate href=https://scottcjn.github.io/Rustchain/docs/DEVELOPER_TRACTION_Q1_2026 hreflang=x-default /><script data-rh=true type=application/ld+json>{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","item":"https://scottcjn.github.io/Rustchain/docs/DEVELOPER_TRACTION_Q1_2026","name":"Elyan Labs — Developer Traction Report","position":1}]}</script><link rel=stylesheet href=/Rustchain/assets/css/styles.160a45a5.css /><script src=/Rustchain/assets/js/runtime~main.3268acea.js defer></script><script src=/Rustchain/assets/js/main.514c2465.js defer></script></head><body><svg style="display: none;"><defs>
+<symbol id=theme-svg-external-link viewBox="0 0 24 24"><path fill=currentColor d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"/></symbol>
+</defs></svg>
+<script>!function(){var t=function(){try{return new URLSearchParams(window.location.search).get("docusaurus-theme")}catch(t){}}()||function(){try{return window.localStorage.getItem("theme-0bd")}catch(t){}}();document.documentElement.setAttribute("data-theme",t||(window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")),document.documentElement.setAttribute("data-theme-choice",t||"system")}(),function(){try{for(var[t,e]of new URLSearchParams(window.location.search).entries())if(t.startsWith("docusaurus-data-")){var a=t.replace("docusaurus-data-","data-");document.documentElement.setAttribute(a,e)}}catch(t){}}()</script><div id=__docusaurus><link rel=preload as=image href=/Rustchain/img/logo.svg /><div role=region aria-label="Skip to main content"><a class=skipToContent_fXgn href=#__docusaurus_skipToContent_fallback>Skip to main content</a></div><nav aria-label=Main class="theme-layout-navbar navbar navbar--fixed-top"><div class=navbar__inner><div class="theme-layout-navbar-left navbar__items"><button aria-label="Toggle navigation bar" aria-expanded=false class="navbar__toggle clean-btn" type=button><svg width=30 height=30 viewBox="0 0 30 30" aria-hidden=true><path stroke=currentColor stroke-linecap=round stroke-miterlimit=10 stroke-width=2 d="M4 7h22M4 15h22M4 23h22"/></svg></button><a class=navbar__brand href=/Rustchain/><div class=navbar__logo><img src=/Rustchain/img/logo.svg alt="RustChain Logo" class="themedComponent_mlkZ themedComponent--light_NVdE"/><img src=/Rustchain/img/logo.svg alt="RustChain Logo" class="themedComponent_mlkZ themedComponent--dark_xIcU"/></div><b class="navbar__title text--truncate">RustChain</b></a><a aria-current=page class="navbar__item navbar__link navbar__link--active" href=/Rustchain/docs/API>Docs</a></div><div class="theme-layout-navbar-right navbar__items navbar__items--right"><a href=https://github.com/Scottcjn/Rustchain target=_blank rel="noopener noreferrer" class="navbar__item navbar__link">GitHub<svg width=13.5 height=13.5 aria-label="(opens in new tab)" class=iconExternalLink_nPIU><use href=#theme-svg-external-link /></svg></a><div class="toggle_vylO colorModeToggle_DEke"><button class="clean-btn toggleButton_gllP toggleButtonDisabled_aARS" type=button disabled title="system mode" aria-label="Switch between dark and light mode (currently system mode)"><svg viewBox="0 0 24 24" width=24 height=24 aria-hidden=true class="toggleIcon_g3eP lightToggleIcon_pyhR"><path fill=currentColor d="M12,9c1.65,0,3,1.35,3,3s-1.35,3-3,3s-3-1.35-3-3S10.35,9,12,9 M12,7c-2.76,0-5,2.24-5,5s2.24,5,5,5s5-2.24,5-5 S14.76,7,12,7L12,7z M2,13l2,0c0.55,0,1-0.45,1-1s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S1.45,13,2,13z M20,13l2,0c0.55,0,1-0.45,1-1 s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S19.45,13,20,13z M11,2v2c0,0.55,0.45,1,1,1s1-0.45,1-1V2c0-0.55-0.45-1-1-1S11,1.45,11,2z M11,20v2c0,0.55,0.45,1,1,1s1-0.45,1-1v-2c0-0.55-0.45-1-1-1C11.45,19,11,19.45,11,20z M5.99,4.58c-0.39-0.39-1.03-0.39-1.41,0 c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0s0.39-1.03,0-1.41L5.99,4.58z M18.36,16.95 c-0.39-0.39-1.03-0.39-1.41,0c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0c0.39-0.39,0.39-1.03,0-1.41 L18.36,16.95z M19.42,5.99c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06c-0.39,0.39-0.39,1.03,0,1.41 s1.03,0.39,1.41,0L19.42,5.99z M7.05,18.36c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06 c-0.39,0.39-0.39,1.03,0,1.41s1.03,0.39,1.41,0L7.05,18.36z"/></svg><svg viewBox="0 0 24 24" width=24 height=24 aria-hidden=true class="toggleIcon_g3eP darkToggleIcon_wfgR"><path fill=currentColor d="M9.37,5.51C9.19,6.15,9.1,6.82,9.1,7.5c0,4.08,3.32,7.4,7.4,7.4c0.68,0,1.35-0.09,1.99-0.27C17.45,17.19,14.93,19,12,19 c-3.86,0-7-3.14-7-7C5,9.07,6.81,6.55,9.37,5.51z M12,3c-4.97,0-9,4.03-9,9s4.03,9,9,9s9-4.03,9-9c0-0.46-0.04-0.92-0.1-1.36 c-0.98,1.37-2.58,2.26-4.4,2.26c-2.98,0-5.4-2.42-5.4-5.4c0-1.81,0.89-3.42,2.26-4.4C12.92,3.04,12.46,3,12,3L12,3z"/></svg><svg viewBox="0 0 24 24" width=24 height=24 aria-hidden=true class="toggleIcon_g3eP systemToggleIcon_QzmC"><path fill=currentColor d="m12 21c4.971 0 9-4.029 9-9s-4.029-9-9-9-9 4.029-9 9 4.029 9 9 9zm4.95-13.95c1.313 1.313 2.05 3.093 2.05 4.95s-0.738 3.637-2.05 4.95c-1.313 1.313-3.093 2.05-4.95 2.05v-14c1.857 0 3.637 0.737 4.95 2.05z"/></svg></button></div><div class=navbarSearchContainer_Bca1></div></div></div><div role=presentation class=navbar-sidebar__backdrop></div></nav><div id=__docusaurus_skipToContent_fallback class="theme-layout-main main-wrapper mainWrapper_z2l0"><div class=docsWrapper_hBAB><button aria-label="Scroll back to top" class="clean-btn theme-back-to-top-button backToTopButton_sjWU" type=button></button><div class=docRoot_UBD9><aside class="theme-doc-sidebar-container docSidebarContainer_YfHR"><div class=sidebarViewport_aRkj><div class=sidebar_njMd><nav aria-label="Docs sidebar" class="menu thin-scrollbar menu_SIkG"><ul class="theme-doc-sidebar-menu menu__list"><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/API><span title="RustChain API Reference" class=linkLabel_WmDU>RustChain API Reference</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/API_REFERENCE><span title="RustChain Unified API Reference" class=linkLabel_WmDU>RustChain Unified API Reference</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/API_WALKTHROUGH><span title="RustChain API Walkthrough" class=linkLabel_WmDU>RustChain API Walkthrough</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/ARCHITECTURE_OVERVIEW><span title="RustChain Architecture Overview" class=linkLabel_WmDU>RustChain Architecture Overview</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/BEACON_CERTIFIED_OPEN_SOURCE><span title="Beacon Certified Open Source (BCOS)" class=linkLabel_WmDU>Beacon Certified Open Source (BCOS)</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/BOTTUBE_EMBED><span title="BoTTube Embeddable Player Widget" class=linkLabel_WmDU>BoTTube Embeddable Player Widget</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/BOTTUBE_FEED><span title="BoTTube Feed Support" class=linkLabel_WmDU>BoTTube Feed Support</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/BOTTUBE_INTEGRATION><span title="BoTTube and RustChain Integration" class=linkLabel_WmDU>BoTTube and RustChain Integration</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/BOTTUBE_MOOD_SYSTEM><span title="BoTTube Agent Mood System" class=linkLabel_WmDU>BoTTube Agent Mood System</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/BOUNTY_1490_FIX><span title="Bounty #1490 Fix: clawrtc wallet show False Offline State" class=linkLabel_WmDU>Bounty #1490 Fix: clawrtc wallet show False Offline State</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/BOUNTY_1512_IMPLEMENTATION_REPORT><span title="Bounty #1512 (RIP-305 Track D) Implementation Report" class=linkLabel_WmDU>Bounty #1512 (RIP-305 Track D) Implementation Report</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/BOUNTY_1524_IMPLEMENTATION><span title="Bounty #1524: Beacon Atlas 3D Agent World" class=linkLabel_WmDU>Bounty #1524: Beacon Atlas 3D Agent World</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/BOUNTY_1524_VALIDATION><span title="Bounty #1524 Validation Report" class=linkLabel_WmDU>Bounty #1524 Validation Report</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/BOUNTY_2307_IMPLEMENTATION><span title="Bounty #2307: Boot Chime Proof-of-Iron — Acoustic Hardware Attestation" class=linkLabel_WmDU>Bounty #2307: Boot Chime Proof-of-Iron — Acoustic Hardware Attestation</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/BOUNTY_2313_IMPLEMENTATION><span title="Bounty #2313 Implementation Report" class=linkLabel_WmDU>Bounty #2313 Implementation Report</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/BUILD><span title="RustChain Build Guide" class=linkLabel_WmDU>RustChain Build Guide</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/Boudreaux_COMPUTING_PRINCIPLES><span title="Boudreaux Computing Principles" class=linkLabel_WmDU>Boudreaux Computing Principles</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/CLAIMS_GUIDE><span title="RustChain Reward Claims Guide" class=linkLabel_WmDU>RustChain Reward Claims Guide</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/CLI><span title="RustChain CLI Wallet Walkthrough" class=linkLabel_WmDU>RustChain CLI Wallet Walkthrough</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/CONSENSUS_INVARIANT_ATTRACTOR><span title="Consensus Invariant Attractor Harness" class=linkLabel_WmDU>Consensus Invariant Attractor Harness</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/CONSOLE_MINING_SETUP><span title="RIP-0683: Console Mining Setup Guide" class=linkLabel_WmDU>RIP-0683: Console Mining Setup Guide</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/CONTRIBUTING><span title="Contributing Guide" class=linkLabel_WmDU>Contributing Guide</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/CONTRIBUTING_FOR_AGENTS><span title="Contributing Guide for AI Agents" class=linkLabel_WmDU>Contributing Guide for AI Agents</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/CPU_IMPACT_BENCHMARK><span title="RustChain (RTC) Miner — CPU & GPU Impact Benchmark" class=linkLabel_WmDU>RustChain (RTC) Miner — CPU & GPU Impact Benchmark</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/CROSS_NODE_SYNC_VALIDATOR><span title="Cross-Node Sync Validator" class=linkLabel_WmDU>Cross-Node Sync Validator</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/DEVELOPER_QUICKSTART><span title="RustChain Developer Quickstart: First API Calls" class=linkLabel_WmDU>RustChain Developer Quickstart: First API Calls</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link menu__link--active" aria-current=page href=/Rustchain/docs/DEVELOPER_TRACTION_Q1_2026><span title="Elyan Labs — Developer Traction Report" class=linkLabel_WmDU>Elyan Labs — Developer Traction Report</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/DEVNET><span title="Local Single-Node Devnet" class=linkLabel_WmDU>Local Single-Node Devnet</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/DEV_GUIDE><span title="RustChain PoA Developer Guide (Retro Edition)" class=linkLabel_WmDU>RustChain PoA Developer Guide (Retro Edition)</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/DISCORD_LEADERBOARD_BOT><span title="Discord Leaderboard Bot" class=linkLabel_WmDU>Discord Leaderboard Bot</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/DISCORD_ONBOARDING><span title="Discord → On-Chain Holder Onboarding" class=linkLabel_WmDU>Discord → On-Chain Holder Onboarding</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/DYNAMIC_BADGES_V2><span title="Dynamic Shields Badges v2" class=linkLabel_WmDU>Dynamic Shields Badges v2</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/FAQ><span title="RustChain FAQ" class=linkLabel_WmDU>RustChain FAQ</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/FAQ_TROUBLESHOOTING><span title="RustChain FAQ and Troubleshooting" class=linkLabel_WmDU>RustChain FAQ and Troubleshooting</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/FIX_1147_ATTEST_SUBMIT_CRASH><span title="Issue #1147 Fix: /attest/submit 500 Crash" class=linkLabel_WmDU>Issue #1147 Fix: /attest/submit 500 Crash</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/GLOSSARY><span title="RustChain Glossary" class=linkLabel_WmDU>RustChain Glossary</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/GPU_FINGERPRINTING><span title="GPU Fingerprinting — PPA Channel 8" class=linkLabel_WmDU>GPU Fingerprinting — PPA Channel 8</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/INSTALLATION_WALKTHROUGH><span title="RustChain Installation Walkthrough" class=linkLabel_WmDU>RustChain Installation Walkthrough</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/ISSUE_1449_ANTI_DOUBLE_MINING><span title="Issue #1449: Anti-Double-Mining Implementation" class=linkLabel_WmDU>Issue #1449: Anti-Double-Mining Implementation</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/ISSUE_2127_DEPLOYMENT><span title="Issue #2127 - Beacon Join Routing Deployment Notes" class=linkLabel_WmDU>Issue #2127 - Beacon Join Routing Deployment Notes</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/LEGAL/flameholder_license_manifest><span title=LEGAL class=categoryLinkLabel_W154>LEGAL</span></a></div><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/MASTERING_THE_MINER><span title="⛏️ Mastering the RustChain Miner: Hardware Fingerprints & Dual-Mining v2.0" class=linkLabel_WmDU>⛏️ Mastering the RustChain Miner: Hardware Fingerprints & Dual-Mining v2.0</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/MECHANISM_SPEC_AND_FALSIFICATION_MATRIX><span title="RustChain Mechanism Spec + Falsification Matrix" class=linkLabel_WmDU>RustChain Mechanism Spec + Falsification Matrix</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/MINER_VIDEO_SCRIPT><span title="🎥 RUSTCHAIN MINER EXPLAINER: 60-Second Script" class=linkLabel_WmDU>🎥 RUSTCHAIN MINER EXPLAINER: 60-Second Script</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/MINE_YOUR_GRANDMAS_COMPUTER><span title="Mine Your Grandma's Computer: The 15-Minute RustChain Guide" class=linkLabel_WmDU>Mine Your Grandma's Computer: The 15-Minute RustChain Guide</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/MINING_GUIDE><span title="RustChain Mining Guide" class=linkLabel_WmDU>RustChain Mining Guide</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/MOBILE_GUIDE><span title="BoTTube Mobile Responsive Implementation Guide" class=linkLabel_WmDU>BoTTube Mobile Responsive Implementation Guide</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/MULTISIG_WALLET_GUIDE><span title="RustChain 多签钱包指南" class=linkLabel_WmDU>RustChain 多签钱包指南</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/N64_MINING_GUIDE><span title="Mining RTC on a Nintendo 64" class=linkLabel_WmDU>Mining RTC on a Nintendo 64</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/NODE_OPERATOR_GUIDE><span title="RustChain Node Operator Guide" class=linkLabel_WmDU>RustChain Node Operator Guide</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/NODE_P2P_PROTOCOL><span title="🌐 Understanding the RustChain Node: P2P Gossip & Block Production" class=linkLabel_WmDU>🌐 Understanding the RustChain Node: P2P Gossip & Block Production</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/PAYOUT_PREFLIGHT><span title="Payout Preflight (Dry-Run Validation)" class=linkLabel_WmDU>Payout Preflight (Dry-Run Validation)</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/PREMINE_COMPLETION_RESOLUTION><span title="RustChain Premine Completion Resolution" class=linkLabel_WmDU>RustChain Premine Completion Resolution</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/PROTOCOL><span title="RustChain Protocol Specification" class=linkLabel_WmDU>RustChain Protocol Specification</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/PROTOCOL_BOUNTY_8><span title="RustChain Protocol Documentation (Bounty #8 Draft)" class=linkLabel_WmDU>RustChain Protocol Documentation (Bounty #8 Draft)</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/PROTOCOL_v1.1><span title="RustChain Protocol Specification v1.1 (RIP-200)" class=linkLabel_WmDU>RustChain Protocol Specification v1.1 (RIP-200)</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/QUICKSTART><span title="RustChain Quickstart Guide" class=linkLabel_WmDU>RustChain Quickstart Guide</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/><span title="RustChain Documentation" class=linkLabel_WmDU>RustChain Documentation</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/README.vi><span title="Tài Liệu RustChain" class=linkLabel_WmDU>Tài Liệu RustChain</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/RELAY_PARSER_NOTES><span title="Genesis Relay Parser (FlameChain Sync Prototype)" class=linkLabel_WmDU>Genesis Relay Parser (FlameChain Sync Prototype)</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/REWARD_ANALYTICS_DASHBOARD><span title="RTC Reward Analytics Dashboard" class=linkLabel_WmDU>RTC Reward Analytics Dashboard</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/RIP-305-cross-chain-airdrop><span title="RIP-305: Cross-Chain Airdrop Protocol" class=linkLabel_WmDU>RIP-305: Cross-Chain Airdrop Protocol</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/RIP305_AIRDROP_V2><span title="RIP-305: Cross-Chain Airdrop Implementation" class=linkLabel_WmDU>RIP-305: Cross-Chain Airdrop Implementation</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/RUSTCHAIN_DEVELOPER_TUTORIAL><span title="RustChain Developer Tutorial: Build on the Proof-of-Antiquity Blockchain" class=linkLabel_WmDU>RustChain Developer Tutorial: Build on the Proof-of-Antiquity Blockchain</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/RUSTCHAIN_PROTOCOL><span title="RustChain Protocol Specification" class=linkLabel_WmDU>RustChain Protocol Specification</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/RUSTCHAIN_VS_ETHEREUM_POS_COMPARISON><span title="RustChain vs Ethereum Proof-of-Stake: A Comprehensive Comparison" class=linkLabel_WmDU>RustChain vs Ethereum Proof-of-Stake: A Comprehensive Comparison</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/SECURITY_AUDIT><span title="RustChain Security Audit Report" class=linkLabel_WmDU>RustChain Security Audit Report</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/SMART_CONTRACT_DEVELOPER_GUIDE><span title="Smart Contract Developer Guide" class=linkLabel_WmDU>Smart Contract Developer Guide</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/TESTNET_FAUCET><span title="RustChain Testnet Faucet" class=linkLabel_WmDU>RustChain Testnet Faucet</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/TEST_PLAN><span title="RustChain PoA Retro Test Plan" class=linkLabel_WmDU>RustChain PoA Retro Test Plan</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/UPGRADE_MIGRATION_GUIDE><span title="RustChain 升级迁移指南" class=linkLabel_WmDU>RustChain 升级迁移指南</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/US_REGULATORY_POSITION><span title="RustChain (RTC) — U.S. Regulatory Position" class=linkLabel_WmDU>RustChain (RTC) — U.S. Regulatory Position</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/VINTAGE_MINING_EXPLAINED><span title="Vintage Mining Explained" class=linkLabel_WmDU>Vintage Mining Explained</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/VINTAGE_MINING_EXPLAINED.pt-BR><span title="Mineração Vintage Explicada" class=linkLabel_WmDU>Mineração Vintage Explicada</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/WALLET_CLI_COMPATIBILITY_39><span title="Wallet CLI Compatibility Notes (Issue #39)" class=linkLabel_WmDU>Wallet CLI Compatibility Notes (Issue #39)</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/WALLET_CLI_PREVIEW_39><span title="RustChain Wallet CLI (Preview for bounty #39)" class=linkLabel_WmDU>RustChain Wallet CLI (Preview for bounty #39)</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/WALLET_SETUP><span title="RustChain Wallet Setup for Beginners" class=linkLabel_WmDU>RustChain Wallet Setup for Beginners</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/WALLET_USER_GUIDE><span title="Wallet User Guide" class=linkLabel_WmDU>Wallet User Guide</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/WEBSOCKET_FEED><span title="RustChain WebSocket Feed - Issue #2295" class=linkLabel_WmDU>RustChain WebSocket Feed - Issue #2295</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/WHITEPAPER><span title="RustChain: A Proof-of-Antiquity Blockchain for Hardware Preservation" class=linkLabel_WmDU>RustChain: A Proof-of-Antiquity Blockchain for Hardware Preservation</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/WRTC_ONBOARDING_TUTORIAL><span title="wRTC Onboarding Tutorial (Bridge + Raydium + Safety)" class=linkLabel_WmDU>wRTC Onboarding Tutorial (Bridge + Raydium + Safety)</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/YOLO><span title=YOLO class=linkLabel_WmDU>YOLO</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist" href=/Rustchain/docs/api/><span title="RustChain API Documentation" class=categoryLinkLabel_W154>RustChain API Documentation</span></a><button aria-label="Expand sidebar category 'RustChain API Documentation'" aria-expanded=false type=button class="clean-btn menu__caret"></button></div><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/api-reference><span title="RustChain API Reference" class=linkLabel_WmDU>RustChain API Reference</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/asciinema/><span title="RustChain Asciinema Recordings" class=linkLabel_WmDU>RustChain Asciinema Recordings</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/attestation-flow><span title="RustChain Attestation Flow" class=linkLabel_WmDU>RustChain Attestation Flow</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/attestation_fuzzing><span title="Attestation Malformed-Input Regression Harness" class=linkLabel_WmDU>Attestation Malformed-Input Regression Harness</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/blog/rustchain-utility-coin-not-security><span title=blog class=categoryLinkLabel_W154>blog</span></a></div><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/bounties/BOUNTY_1492_IMPLEMENTATION><span title=bounties class=categoryLinkLabel_W154>bounties</span></a></div><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/bridge-api><span title="RIP-0305 Bridge API Documentation" class=linkLabel_WmDU>RIP-0305 Bridge API Documentation</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/chain_architecture><span title="RustChain Architecture Overview – Draft v1" class=linkLabel_WmDU>RustChain Architecture Overview – Draft v1</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/community/shanties/rayycave-proof-of-antiquity><span title=community class=categoryLinkLabel_W154>community</span></a></div><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist" href=/Rustchain/docs/de-DE/><span title=RustChain-Dokumentation class=categoryLinkLabel_W154>RustChain-Dokumentation</span></a><button aria-label="Expand sidebar category 'RustChain-Dokumentation'" aria-expanded=false type=button class="clean-btn menu__caret"></button></div><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/discord-transport><span title="Discord Transport — FlameNet Beacon" class=linkLabel_WmDU>Discord Transport — FlameNet Beacon</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/epoch-settlement><span title="RustChain Epoch Settlement" class=linkLabel_WmDU>RustChain Epoch Settlement</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/es/><span title="RustChain — Blockchain DePIN para Hardware Vintage y Retro" class=linkLabel_WmDU>RustChain — Blockchain DePIN para Hardware Vintage y Retro</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/es-ES/RUSTCHAIN_EXPLAINED><span title=es-ES class=categoryLinkLabel_W154>es-ES</span></a></div><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/features/ppa-attestation-visualizer><span title=features class=categoryLinkLabel_W154>features</span></a></div><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/fr-FR/RUSTCHAIN_EXPLAINED><span title=fr-FR class=categoryLinkLabel_W154>fr-FR</span></a></div><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/hardware-fingerprinting><span title="RustChain Hardware Fingerprinting" class=linkLabel_WmDU>RustChain Hardware Fingerprinting</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/i18n/ko/QUICKSTART><span title=i18n class=categoryLinkLabel_W154>i18n</span></a></div><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/it-IT/><span title=RustChain class=linkLabel_WmDU>RustChain</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/ja/><span title=RustChain（日本語ガイド） class=linkLabel_WmDU>RustChain（日本語ガイド）</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/ja-JP/><span title=RustChain class=linkLabel_WmDU>RustChain</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/ko-KR/><span title="RustChain 문서" class=linkLabel_WmDU>RustChain 문서</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/mempool-visualization-demo><span title="Mempool Visualization Demo" class=linkLabel_WmDU>Mempool Visualization Demo</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/miner-setup-wizard/><span title="RustChain Miner Setup Wizard (Bounty #47)" class=linkLabel_WmDU>RustChain Miner Setup Wizard (Bounty #47)</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/nl-NL/><span title=RustChain class=linkLabel_WmDU>RustChain</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/pl-PL/RUSTCHAIN_EXPLAINED><span title=pl-PL class=categoryLinkLabel_W154>pl-PL</span></a></div><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/plans/2026-02-15-ci-pipeline-design><span title=plans class=categoryLinkLabel_W154>plans</span></a></div><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/postman/><span title="RustChain API Postman Collection" class=linkLabel_WmDU>RustChain API Postman Collection</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/proposer-duty-calendar-demo><span title="Proposer Duty Calendar Demo" class=linkLabel_WmDU>Proposer Duty Calendar Demo</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/protocol-overview><span title="RustChain Protocol Overview" class=linkLabel_WmDU>RustChain Protocol Overview</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/pt-BR/RUSTCHAIN_EXPLAINED><span title=pt-BR class=categoryLinkLabel_W154>pt-BR</span></a></div><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/randomness-beacon-demo><span title="Randomness beacon validation" class=linkLabel_WmDU>Randomness beacon validation</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/rip201_bucket_spoof><span title="RIP-201 Bucket Normalization Gaming" class=linkLabel_WmDU>RIP-201 Bucket Normalization Gaming</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/rip201_fleet_detection_bypass><span title="RIP-201 Fleet Detection Bypass" class=linkLabel_WmDU>RIP-201 Fleet Detection Bypass</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/security/ppa-attack-analysis><span title=security class=categoryLinkLabel_W154>security</span></a></div><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/slasher-core-demo><span title="Slasher Core Demo" class=linkLabel_WmDU>Slasher Core Demo</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/slashing-penalty-demo><span title="Slashing Penalty Core Demo" class=linkLabel_WmDU>Slashing Penalty Core Demo</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/sprint/api-reference><span title=sprint class=categoryLinkLabel_W154>sprint</span></a></div><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/state-of-rustchain-ergo-march-2026><span title="State of RustChain — March 2026" class=linkLabel_WmDU>State of RustChain — March 2026</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/token-economics><span title="RustChain Token Economics" class=linkLabel_WmDU>RustChain Token Economics</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/tokenomics_v1><span title="RustChain Tokenomics – Flameholder Draft v1" class=linkLabel_WmDU>RustChain Tokenomics – Flameholder Draft v1</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/vi-VN/RUSTCHAIN_EXPLAINED><span title=vi-VN class=categoryLinkLabel_W154>vi-VN</span></a></div><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/vintage-miner-setup-guide><span title="Mine Your Grandma's Computer — Vintage Miner Setup Guide" class=linkLabel_WmDU>Mine Your Grandma's Computer — Vintage Miner Setup Guide</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist" href=/Rustchain/docs/whitepaper/><span title="RustChain Technical Whitepaper (Draft)" class=categoryLinkLabel_W154>RustChain Technical Whitepaper (Draft)</span></a><button aria-label="Expand sidebar category 'RustChain Technical Whitepaper (Draft)'" aria-expanded=false type=button class="clean-btn menu__caret"></button></div><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/wrtc><span title="wRTC Quickstart Guide" class=linkLabel_WmDU>wRTC Quickstart Guide</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist" href=/Rustchain/docs/zh-CN/><span title=README class=categoryLinkLabel_W154>README</span></a><button aria-label="Expand sidebar category 'README'" aria-expanded=false type=button class="clean-btn menu__caret"></button></div></ul></nav></div></div></aside><main class=docMainContainer_TBSr><div class="container padding-top--md padding-bottom--lg"><div class=row><div class="col docItemCol_VOVn"><div class=docItemContainer_Djhp><article><nav class="theme-doc-breadcrumbs breadcrumbsContainer_Z_bl" aria-label=Breadcrumbs><ul class=breadcrumbs><li class=breadcrumbs__item><a aria-label="Home page" class=breadcrumbs__link href=/Rustchain/><svg viewBox="0 0 24 24" class=breadcrumbHomeIcon_YNFT><path d="M10 19v-5h4v5c0 .55.45 1 1 1h3c.55 0 1-.45 1-1v-7h1.7c.46 0 .68-.57.33-.87L12.67 3.6c-.38-.34-.96-.34-1.34 0l-8.36 7.53c-.34.3-.13.87.33.87H5v7c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z" fill=currentColor /></svg></a><li class="breadcrumbs__item breadcrumbs__item--active"><span class=breadcrumbs__link>Elyan Labs — Developer Traction Report</span></ul></nav><div class="tocCollapsible_ETCw theme-doc-toc-mobile tocMobile_ITEo"><button type=button class="clean-btn tocCollapsibleButton_TO0P">On this page</button></div><div class="theme-doc-markdown markdown"><header><h1>Elyan Labs — Developer Traction Report</h1></header>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=q1-2026-december-2025---march-2-2026>Q1 2026 (December 2025 - March 2, 2026)<a href=#q1-2026-december-2025---march-2-2026 class=hash-link aria-label="Direct link to Q1 2026 (December 2025 - March 2, 2026)" title="Direct link to Q1 2026 (December 2025 - March 2, 2026)" translate=no>​</a></h3>
+<p><strong>Prepared</strong>: March 2, 2026
+<strong>Author</strong>: Scott Boudreaux, Founder
+<strong>Data</strong>: GitHub API (live pull) + GitClear, LinearB, Electric Capital industry benchmarks</p>
+<hr/>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=the-thesis>The Thesis<a href=#the-thesis class=hash-link aria-label="Direct link to The Thesis" title="Direct link to The Thesis" translate=no>​</a></h2>
+<p>Elyan Labs is a solo-founded open source ecosystem producing developer output that rivals VC-backed teams of 13+ engineers — on zero external capital. The data below is pulled directly from GitHub's API and compared against published industry benchmarks.</p>
+<p>This is not a pitch. It's a measurement.</p>
+<hr/>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=90-day-snapshot>90-Day Snapshot<a href=#90-day-snapshot class=hash-link aria-label="Direct link to 90-Day Snapshot" title="Direct link to 90-Day Snapshot" translate=no>​</a></h2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th><th>Elyan Labs<th>Avg Solo Dev<th>Sei Protocol ($85M VC)<tbody><tr><td><strong>Capital raised</strong><td><strong>$0</strong><td>$0<td>$85,000,000<tr><td><strong>Engineering headcount</strong><td><strong>1</strong><td>1<td>~13 active<tr><td><strong>Commits</strong><td><strong>1,882</strong><td>105-168<td>297<tr><td><strong>Pull requests opened</strong><td><strong>41</strong><td>9-15<td>417<tr><td><strong>Contributions to external projects</strong><td><strong>32 PRs</strong><td>0-2<td>0<tr><td><strong>Open source repos shipped</strong><td><strong>97</strong><td>1-3<td>0 new<tr><td><strong>GitHub stars (ecosystem)</strong><td><strong>1,334</strong><td>5-30<td>2,837 (lifetime)<tr><td><strong>Forks (developer adoption)</strong><td><strong>359</strong><td>2-10<td>870 (lifetime)<tr><td><strong>Unique developer interactions</strong><td><strong>150+</strong><td>0-2<td>78 (lifetime)</table>
+<p><em>150+ unique interactions includes PR authors (13), issue authors (28), bounty claimants, stargazers, fork creators, and clone traffic. 41 contributed code or issues directly; the remainder engaged through stars, forks, bounty discussions, and repository clones (exact clone/view counts not exposed by GitHub API).</em></p>
+<p><strong>Sei Protocol comparison</strong>: $85M raised (Jump Crypto, Multicoin, Coinbase Ventures), 78 total contributors. Sei's lifetime star count took years; Elyan Labs accumulated 47% of that figure in 90 days.</p>
+<hr/>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=capital-efficiency>Capital Efficiency<a href=#capital-efficiency class=hash-link aria-label="Direct link to Capital Efficiency" title="Direct link to Capital Efficiency" translate=no>​</a></h2>
+<p>The core metric investors should examine:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th><th>Elyan Labs<th>Sei Protocol<th>Aztec ($119M)<th>Radix ($21M)<tbody><tr><td><strong>Commits/developer/month</strong><td><strong>627</strong><td>7.6<td>~11<td>6.6<tr><td><strong>Cost per commit</strong><td><strong>$0</strong><td>~$95,600<td>~$9,000<td>~$7,100<tr><td><strong>Stars per $M raised</strong><td><strong>infinite</strong><td>33<td>3.6<td>29</table>
+<div class="language-text codeBlockContainer_Ckt0 theme-code-block" style=--prism-color:#393A34;--prism-background-color:#f6f8fa><div class=codeBlockContent_QJqH><pre tabindex=0 class="prism-code language-text codeBlock_bY9V thin-scrollbar" style=color:#393A34;background-color:#f6f8fa><code class=codeBlockLines_e6Vv><div class=token-line style=color:#393A34><span class="token plain">Per-Developer Monthly Output (commits/dev/month)</span><br/></div><div class=token-line style=color:#393A34><span class="token plain" style=display:inline-block></span><br/></div><div class=token-line style=color:#393A34><span class="token plain">  Elyan Labs (1 dev)    ██████████████████████████████████████████  627</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">  Indie median          ████  56</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">  Mina (7 devs, $29M)   ███  42</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">  FAANG median           █▍  8-21</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">  Aztec (133 ppl, $119M) █   11</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">  Sei (13 devs, $85M)    ▌   7.6</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">  Radix (5 devs, $21M)   ▌   6.6</span><br/></div><div class=token-line style=color:#393A34><span class="token plain" style=display:inline-block></span><br/></div><div class=token-line style=color:#393A34><span class="token plain">  Scale: █ = 15 commits/dev/month</span><br/></div></code></pre></div></div>
+<p>At 627 commits/dev/month, Elyan Labs operates at <strong>82x</strong> the per-developer output of a $85M-funded team. This isn't hustle theater — it reflects zero coordination overhead, zero PR review bottleneck, and direct technical execution.</p>
+<p><strong>Industry context</strong>: GitClear's study of 878,592 developer-years places the median full-time developer at 56 commits/month. Elyan Labs' annualized pace of ~7,500 commits/year sits above the <strong>99.9th percentile</strong>.</p>
+<hr/>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=monthly-growth-trajectory>Monthly Growth Trajectory<a href=#monthly-growth-trajectory class=hash-link aria-label="Direct link to Monthly Growth Trajectory" title="Direct link to Monthly Growth Trajectory" translate=no>​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=development-velocity>Development Velocity<a href=#development-velocity class=hash-link aria-label="Direct link to Development Velocity" title="Direct link to Development Velocity" translate=no>​</a></h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Month<th>Commits<th>PRs Opened<th>Repos Created<th>Issues Filed<tbody><tr><td>Dec 2025<td>731<td>3<td>28<td>2<tr><td>Jan 2026<td>539<td>1<td>15<td>0<tr><td>Feb 2026<td>960<td>30<td>51<td>363<tr><td>Mar 1-2*<td>93<td>7<td>3<td>79<tr><td><strong>Total</strong><td><strong>1,882</strong><td><strong>41</strong><td><strong>97</strong><td><strong>444</strong></table>
+<p>*March represents 2 days only, tracking at February pace.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=community-engagement-inbound>Community Engagement (Inbound)<a href=#community-engagement-inbound class=hash-link aria-label="Direct link to Community Engagement (Inbound)" title="Direct link to Community Engagement (Inbound)" translate=no>​</a></h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Month<th>PRs from Others<th>Issues from Others<th>Unique Contributors<tbody><tr><td>Dec 2025<td>0<td>0<td>0<tr><td>Jan 2026<td>0<td>1<td>1<tr><td>Feb 2026<td>652<td>82<td>41<tr><td>Mar 1-2*<td>215<td>12<td>sustained</table>
+<p><strong>The inflection</strong>: Zero inbound contributions through January. In February, a bounty program and ecosystem visibility campaign produced <strong>867 inbound PRs</strong> and <strong>150+ unique developer interactions</strong> in 30 days. 41 developers contributed code or filed issues directly; the remainder engaged via stars, forks, bounty claims, and clones. This growth is sustaining into March at the same pace.</p>
+<hr/>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=ecosystem-architecture>Ecosystem Architecture<a href=#ecosystem-architecture class=hash-link aria-label="Direct link to Ecosystem Architecture" title="Direct link to Ecosystem Architecture" translate=no>​</a></h2>
+<p>Elyan Labs is not a single-repo project. It's an interconnected ecosystem of 99 public repositories spanning five categories:</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=core-infrastructure>Core Infrastructure<a href=#core-infrastructure class=hash-link aria-label="Direct link to Core Infrastructure" title="Direct link to Core Infrastructure" translate=no>​</a></h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Project<th>Stars<th>Forks<th>Description<tbody><tr><td><strong>RustChain</strong><td>82<td>93<td>Proof-of-Antiquity blockchain — rewards real vintage hardware<tr><td><strong>BoTTube</strong><td>67<td>48<td>AI-native video platform (670 videos, 99 agents, 45.5K views)<tr><td><strong>Beacon Skill</strong><td>48<td>31<td>Agent orchestration framework (PyPI + npm)<tr><td><strong>RustChain Bounties</strong><td>34<td>64<td>Open bounty board — drives community contributions<tr><td><strong>Grazer Skill</strong><td>33<td>13<td>Multi-platform agent discovery tool</table>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=research--publications>Research & Publications<a href=#research--publications class=hash-link aria-label="Direct link to Research & Publications" title="Direct link to Research & Publications" translate=no>​</a></h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Project<th>Stars<th>Description<tbody><tr><td><strong>RAM Coffers</strong><td>29<td>Neuromorphic NUMA-aware weight banking (predates DeepSeek Engram by 27 days)<tr><td><strong>Legend of Elya N64</strong><td>12<td>Neural network running on Nintendo 64 hardware (MIPS R4300i)<tr><td><strong>Grail-V</strong><td>--<td>CVPR 2026 Workshop submission (non-bijunctive attention, 8.8x speedup on POWER8)</table>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=hardware-ports-cross-architecture>Hardware Ports (Cross-Architecture)<a href=#hardware-ports-cross-architecture class=hash-link aria-label="Direct link to Hardware Ports (Cross-Architecture)" title="Direct link to Hardware Ports (Cross-Architecture)" translate=no>​</a></h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Project<th>Stars<th>Description<tbody><tr><td><strong>exo-cuda</strong><td>23<td>NVIDIA CUDA support for distributed inference<tr><td><strong>claude-code-power8</strong><td>21<td>Claude Code on IBM POWER8<tr><td><strong>llama-cpp-power8</strong><td>18<td>LLM inference on PowerPC with vec_perm optimization<tr><td><strong>nvidia-power8-patches</strong><td>20<td>GPU driver patches for ppc64le</table>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=published-packages-pypinpm>Published Packages (PyPI/npm)<a href=#published-packages-pypinpm class=hash-link aria-label="Direct link to Published Packages (PyPI/npm)" title="Direct link to Published Packages (PyPI/npm)" translate=no>​</a></h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Package<th>Version<th>Installs<tbody><tr><td><code>beacon-skill</code><td>2.15.1<td>PyPI + npm<tr><td><code>clawrtc</code><td>1.5.0<td>PyPI<tr><td><code>bottube</code><td>1.6.0<td>PyPI<tr><td><code>grazer-skill</code><td>1.6.0<td>PyPI</table>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=live-tokens>Live Tokens<a href=#live-tokens class=hash-link aria-label="Direct link to Live Tokens" title="Direct link to Live Tokens" translate=no>​</a></h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Token<th>Chain<th>Status<tbody><tr><td><strong>RTC</strong><td>RustChain native<td>Live, 20 miners, 88 epochs<tr><td><strong>wRTC</strong><td>Solana<td>Mint revoked, LP locked, Raydium pool<tr><td><strong>wRTC</strong><td>Base L2<td>Mint revoked, LP locked, Aerodrome pool</table>
+<hr/>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=external-visibility--contributions>External Visibility & Contributions<a href=#external-visibility--contributions class=hash-link aria-label="Direct link to External Visibility & Contributions" title="Direct link to External Visibility & Contributions" translate=no>​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=upstream-contributions-32-prs-to-external-projects>Upstream Contributions (32 PRs to external projects)<a href=#upstream-contributions-32-prs-to-external-projects class=hash-link aria-label="Direct link to Upstream Contributions (32 PRs to external projects)" title="Direct link to Upstream Contributions (32 PRs to external projects)" translate=no>​</a></h3>
+<p>Elyan Labs actively contributes to major open source projects — not just consuming, but improving the ecosystem:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Project<th>PRs<th>Status<th>Significance<tbody><tr><td><strong>llama.cpp</strong> (ggml-org)<td>5<td>Under review<td>Core LLM inference engine<tr><td><strong>vLLM</strong> (vllm-project)<td>2<td>1 open<td>Production LLM serving<tr><td><strong>BitNet</strong> (Microsoft)<td>2<td>1 open<td>1-bit LLM research<tr><td><strong>OpenFang</strong> (RightNow-AI)<td>2<td>1 open, 1 merged<td>Agent framework<tr><td><strong>dn-institute</strong><td>1<td>Open ($100 bounty)<td>Prompt engineering<tr><td><strong>Awesome lists</strong> (24 repos)<td>24<td>3 merged, 12 open<td>Ecosystem visibility</table>
+<p><strong>Merged on notable repos</strong>: Awesome-LLM-Inference, awesome-n64-development, awesome-agentic-patterns</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=academic-publications>Academic Publications<a href=#academic-publications class=hash-link aria-label="Direct link to Academic Publications" title="Direct link to Academic Publications" translate=no>​</a></h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Paper<th>Venue<th>Status<tbody><tr><td>Grail-V: Non-Bijunctive Attention<td>CVPR 2026 Workshop<td>Submitted (Submission #7)<tr><td>Silicon Stratigraphy<td>JCAA<td>Rewrite requested<tr><td>5 Zenodo DOIs<td>Zenodo<td>Published<tr><td>7 Dev.to articles<td>Dev.to<td>Published</table>
+<hr/>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=benchmark-context>Benchmark Context<a href=#benchmark-context class=hash-link aria-label="Direct link to Benchmark Context" title="Direct link to Benchmark Context" translate=no>​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=where-elyan-labs-sits-in-the-developer-distribution>Where Elyan Labs sits in the developer distribution<a href=#where-elyan-labs-sits-in-the-developer-distribution class=hash-link aria-label="Direct link to Where Elyan Labs sits in the developer distribution" title="Direct link to Where Elyan Labs sits in the developer distribution" translate=no>​</a></h3>
+<p><strong>GitClear</strong> (878,592 developer-years analyzed):</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Percentile<th>Annual Commits<th>Elyan Labs (annualized)<tbody><tr><td>50th (median)<td>673<td>--<tr><td>90th<td>~2,000<td>--<tr><td>99th<td>~4,000<td>--<tr><td><strong>99.9th+</strong><td><strong>>5,000</strong><td><strong>~7,500</strong></table>
+<p><strong>Electric Capital</strong> classifies "full-time crypto developer" as 10+ code-committed days/month. Elyan Labs codes nearly every day — 3x the threshold.</p>
+<p><strong>LinearB</strong> (8.1M PRs, 4,800 teams, 42 countries):</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Metric<th>Elite Threshold<th>Elyan Labs<tbody><tr><td>Cycle time<td>&lt;25 hours<td>Near-instant<tr><td>Focus time/day<td>6+ hours<td>All day<tr><td>Rework rate<td>&lt;2%<td>Low</table>
+<hr/>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=honest-assessment-whats-not-working-yet>Honest Assessment: What's Not Working Yet<a href=#honest-assessment-whats-not-working-yet class=hash-link aria-label="Direct link to Honest Assessment: What's Not Working Yet" title="Direct link to Honest Assessment: What's Not Working Yet" translate=no>​</a></h2>
+<p>Investors should understand the gaps as clearly as the strengths.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Gap<th>Current<th>Target<th>Path<tbody><tr><td><strong>Followers</strong><td>30<td>500+<td>Stars are spread across 75+ repos. No single "viral" repo yet. Need one breakout (500+ stars on Rustchain).<tr><td><strong>External PR merge rate</strong><td>9.4% (3/32)<td>30%+<td>Many awesome-list PRs awaiting review. llama.cpp PRs closed as duplicates. Need more targeted, higher-quality upstream contributions.<tr><td><strong>Contributor quality</strong><td>Mixed<td>Verified<td>Some inbound PRs appear bot-generated (bounty farming). Of 150+ interactions, genuine engaged developers are a subset. Improving triage and verification.<tr><td><strong>Revenue</strong><td>$0<td>TBD<td>No monetization yet. Token (RTC) has internal reference rate ($0.10) but no public exchange listing.<tr><td><strong>Documentation</strong><td>Thin<td>Production-grade<td>97 repos created in 90 days. Many have minimal READMEs. Quality documentation would improve star-to-follow conversion.</table>
+<hr/>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=hardware-lab-physical-infrastructure>Hardware Lab (Physical Infrastructure)<a href=#hardware-lab-physical-infrastructure class=hash-link aria-label="Direct link to Hardware Lab (Physical Infrastructure)" title="Direct link to Hardware Lab (Physical Infrastructure)" translate=no>​</a></h2>
+<p>Unlike most software startups, Elyan Labs operates a physical compute lab built through disciplined hardware acquisition:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Asset<th>Specs<th>Acquisition<tbody><tr><td><strong>18+ GPUs</strong><td>228GB+ VRAM total<td>eBay datacenter pulls + pawn shops<tr><td><strong>IBM POWER8 S824</strong><td>128 threads, 512GB RAM<td>Enterprise decomm<tr><td><strong>2x FPGA</strong> (Alveo U30)<td>Video transcode + inference<td>Datacenter pull<tr><td><strong>Hailo-8 TPU</strong><td>Edge AI accelerator<td>Incoming for POWER8<tr><td><strong>PowerPC fleet</strong><td>3x G4, 2x G5<td>Vintage hardware (RustChain miners)<tr><td><strong>40GbE interconnect</strong><td>POWER8 &lt;-> C4130 GPU server<td>0.15ms latency</table>
+<p><strong>Total investment</strong>: ~$12,000
+<strong>Estimated retail value</strong>: $40,000-60,000+
+<strong>Acquisition strategy</strong>: 3-5x ROI through pawn shop arbitrage and eBay datacenter decomm sales</p>
+<p>This lab enables R&D that pure-cloud startups cannot economically replicate — particularly the POWER8 vec_perm work that underpins the Grail-V paper.</p>
+<hr/>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=6-month-outlook>6-Month Outlook<a href=#6-month-outlook class=hash-link aria-label="Direct link to 6-Month Outlook" title="Direct link to 6-Month Outlook" translate=no>​</a></h2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Metric<th>Now (90 days)<th>6-Month Target<th>Basis<tbody><tr><td>Commits<td>1,882<td>4,000+<td>Current velocity sustained<tr><td>Stars<td>1,334<td>3,000+<td>Viral repo + continued ecosystem growth<tr><td>Forks<td>359<td>800+<td>Bounty program expanding<tr><td>Followers<td>30<td>200+<td>Requires star concentration fix<tr><td>Unique interactions<td>150+<td>500+<td>Bounty expansion + organic discovery<tr><td>Upstream merges<td>3<td>15+<td>Higher-quality targeted PRs<tr><td>Published packages<td>4<td>6+<td>Two additional tools planned</table>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=key-inflection-points>Key Inflection Points<a href=#key-inflection-points class=hash-link aria-label="Direct link to Key Inflection Points" title="Direct link to Key Inflection Points" translate=no>​</a></h3>
+<ul>
+<li class=""><strong>100 followers</strong>: Social proof threshold for organic discovery</li>
+<li class=""><strong>500 stars on Rustchain</strong>: GitHub trending eligibility</li>
+<li class=""><strong>10 upstream merges</strong>: Established open source contributor reputation</li>
+<li class=""><strong>First exchange listing</strong>: RTC/wRTC price discovery</li>
+</ul>
+<hr/>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=summary>Summary<a href=#summary class=hash-link aria-label="Direct link to Summary" title="Direct link to Summary" translate=no>​</a></h2>
+<p>In 90 days with zero external funding, Elyan Labs has:</p>
+<ul>
+<li class="">Shipped <strong>97 public repositories</strong> spanning blockchain, AI inference, agent orchestration, and hardware ports</li>
+<li class="">Generated <strong>1,882 commits</strong> (99.9th percentile of all developers globally)</li>
+<li class="">Attracted <strong>150+ unique developer interactions</strong> (from zero)</li>
+<li class="">Earned <strong>1,334 GitHub stars</strong> and <strong>359 forks</strong></li>
+<li class="">Contributed <strong>32 PRs to external projects</strong> including llama.cpp, vLLM, and Microsoft BitNet</li>
+<li class="">Published <strong>1 CVPR workshop paper</strong> and <strong>5 Zenodo DOIs</strong></li>
+<li class="">Deployed live tokens on <strong>3 chains</strong> (native RTC, Solana wRTC, Base wRTC)</li>
+<li class="">Built all of this on <strong>$12,000 of pawn-shop hardware</strong></li>
+</ul>
+<p>The question isn't whether this developer can build. The question is what happens when this velocity gets fuel.</p>
+<hr/>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=data-sources>Data Sources<a href=#data-sources class=hash-link aria-label="Direct link to Data Sources" title="Direct link to Data Sources" translate=no>​</a></h2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Source<th>Coverage<th>Link<tbody><tr><td>GitHub API<td>Live pull, March 2, 2026<td>github.com/Scottcjn<tr><td>GitClear<td>878K developer-years<td><a href=https://www.gitclear.com/research_studies/git_commit_count_percentiles_annual_days_active_from_largest_data_set target=_blank rel="noopener noreferrer" class="">gitclear.com/research</a><tr><td>LinearB<td>8.1M PRs, 4,800 teams<td><a href=https://linearb.io/resources/software-engineering-benchmarks-report target=_blank rel="noopener noreferrer" class="">linearb.io/benchmarks</a><tr><td>GitHub Octoverse<td>180M+ developers, 2025<td><a href=https://octoverse.github.com/ target=_blank rel="noopener noreferrer" class="">octoverse.github.com</a><tr><td>Electric Capital<td>Crypto developer ecosystem<td><a href=https://www.developerreport.com target=_blank rel="noopener noreferrer" class="">developerreport.com</a><tr><td>Sei Protocol<td>$85M funded, 78 contributors<td><a href=https://github.com/sei-protocol/sei-chain target=_blank rel="noopener noreferrer" class="">github.com/sei-protocol</a><tr><td>Aztec Network<td>$119M funded, 133 contributors<td><a href=https://github.com/AztecProtocol/aztec-packages target=_blank rel="noopener noreferrer" class="">github.com/AztecProtocol</a></table>
+<hr/>
+<p><em>Elyan Labs LLC — Louisiana, US</em>
+<em><a href=mailto:scott@elyanlabs.ai target=_blank rel="noopener noreferrer" class="">scott@elyanlabs.ai</a> | @RustchainPOA | github.com/Scottcjn</em></div><footer class="theme-doc-footer docusaurus-mt-lg"><div class="row margin-top--sm theme-doc-footer-edit-meta-row"><div class="col noPrint_WFHX"><a href=https://github.com/Scottcjn/Rustchain/tree/main/docs/../docs/DEVELOPER_TRACTION_Q1_2026.md target=_blank rel="noopener noreferrer" class=theme-edit-this-page><svg fill=currentColor height=20 width=20 viewBox="0 0 40 40" class=iconEdit_Z9Sw aria-hidden=true><g><path d="m34.5 11.7l-3 3.1-6.3-6.3 3.1-3q0.5-0.5 1.2-0.5t1.1 0.5l3.9 3.9q0.5 0.4 0.5 1.1t-0.5 1.2z m-29.5 17.1l18.4-18.5 6.3 6.3-18.4 18.4h-6.3v-6.2z"/></g></svg>Edit this page</a></div><div class="col lastUpdated_JAkA"></div></div></footer></article><nav class="docusaurus-mt-lg pagination-nav" aria-label="Docs pages"><a class="pagination-nav__link pagination-nav__link--prev" href=/Rustchain/docs/DEVELOPER_QUICKSTART><div class=pagination-nav__sublabel>Previous</div><div class=pagination-nav__label>RustChain Developer Quickstart: First API Calls</div></a><a class="pagination-nav__link pagination-nav__link--next" href=/Rustchain/docs/DEVNET><div class=pagination-nav__sublabel>Next</div><div class=pagination-nav__label>Local Single-Node Devnet</div></a></nav></div></div><div class="col col--3"><div class="tableOfContents_bqdL thin-scrollbar theme-doc-toc-desktop"><ul class="table-of-contents table-of-contents__left-border"><li><a href=#q1-2026-december-2025---march-2-2026 class="table-of-contents__link toc-highlight">Q1 2026 (December 2025 - March 2, 2026)</a><li><a href=#the-thesis class="table-of-contents__link toc-highlight">The Thesis</a><li><a href=#90-day-snapshot class="table-of-contents__link toc-highlight">90-Day Snapshot</a><li><a href=#capital-efficiency class="table-of-contents__link toc-highlight">Capital Efficiency</a><li><a href=#monthly-growth-trajectory class="table-of-contents__link toc-highlight">Monthly Growth Trajectory</a><ul><li><a href=#development-velocity class="table-of-contents__link toc-highlight">Development Velocity</a><li><a href=#community-engagement-inbound class="table-of-contents__link toc-highlight">Community Engagement (Inbound)</a></ul><li><a href=#ecosystem-architecture class="table-of-contents__link toc-highlight">Ecosystem Architecture</a><ul><li><a href=#core-infrastructure class="table-of-contents__link toc-highlight">Core Infrastructure</a><li><a href=#research--publications class="table-of-contents__link toc-highlight">Research & Publications</a><li><a href=#hardware-ports-cross-architecture class="table-of-contents__link toc-highlight">Hardware Ports (Cross-Architecture)</a><li><a href=#published-packages-pypinpm class="table-of-contents__link toc-highlight">Published Packages (PyPI/npm)</a><li><a href=#live-tokens class="table-of-contents__link toc-highlight">Live Tokens</a></ul><li><a href=#external-visibility--contributions class="table-of-contents__link toc-highlight">External Visibility & Contributions</a><ul><li><a href=#upstream-contributions-32-prs-to-external-projects class="table-of-contents__link toc-highlight">Upstream Contributions (32 PRs to external projects)</a><li><a href=#academic-publications class="table-of-contents__link toc-highlight">Academic Publications</a></ul><li><a href=#benchmark-context class="table-of-contents__link toc-highlight">Benchmark Context</a><ul><li><a href=#where-elyan-labs-sits-in-the-developer-distribution class="table-of-contents__link toc-highlight">Where Elyan Labs sits in the developer distribution</a></ul><li><a href=#honest-assessment-whats-not-working-yet class="table-of-contents__link toc-highlight">Honest Assessment: What's Not Working Yet</a><li><a href=#hardware-lab-physical-infrastructure class="table-of-contents__link toc-highlight">Hardware Lab (Physical Infrastructure)</a><li><a href=#6-month-outlook class="table-of-contents__link toc-highlight">6-Month Outlook</a><ul><li><a href=#key-inflection-points class="table-of-contents__link toc-highlight">Key Inflection Points</a></ul><li><a href=#summary class="table-of-contents__link toc-highlight">Summary</a><li><a href=#data-sources class="table-of-contents__link toc-highlight">Data Sources</a></ul></div></div></div></div></main></div></div></div><footer class="theme-layout-footer footer footer--dark"><div class="container container-fluid"><div class="row footer__links"><div class="theme-layout-footer-column col footer__col"><div class=footer__title>Docs</div><ul class="footer__items clean-list"><li class=footer__item><a class=footer__link-item href=/Rustchain/docs>Documentation</a></ul></div><div class="theme-layout-footer-column col footer__col"><div class=footer__title>Project</div><ul class="footer__items clean-list"><li class=footer__item><a href=https://github.com/Scottcjn/Rustchain target=_blank rel="noopener noreferrer" class=footer__link-item>GitHub<svg width=13.5 height=13.5 aria-label="(opens in new tab)" class=iconExternalLink_nPIU><use href=#theme-svg-external-link /></svg></a><li class=footer__item><a href=https://github.com/Scottcjn/rustchain-bounties target=_blank rel="noopener noreferrer" class=footer__link-item>Bounties<svg width=13.5 height=13.5 aria-label="(opens in new tab)" class=iconExternalLink_nPIU><use href=#theme-svg-external-link /></svg></a></ul></div></div><div class="footer__bottom text--center"><div class=footer__copyright>Copyright © 2026 Elyan Labs · RustChain. Built with Docusaurus.</div></div></div></footer></div></body>

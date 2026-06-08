@@ -1,0 +1,78 @@
+{
+  "system": {
+    "cpu_model": "AMD Ryzen 7 8845HS w/ Radeon 780M Graphics",
+    "cores": 8,
+    "threads": 16,
+    "ram_gb": 29.902851104736328,
+    "os": "Linux 6.17.0-6-generic",
+    "gpu_name": "NVIDIA GeForce RTX 4070 Laptop GPU"
+  },
+  "phases": [
+    {
+      "name": "1. Baseline (idle)",
+      "duration": 30,
+      "cpu_mean": 15.797500000000001,
+      "cpu_max": 26.475,
+      "cpu_min": 8.41875,
+      "cpu_samples": 30,
+      "num_cores": 16,
+      "gpu_util_mean": 0.0,
+      "gpu_power_mean": 1.7023333333333333,
+      "gpu_temp_mean": 39.266666666666666
+    },
+    {
+      "name": "2. GPU Stress Only",
+      "duration": 30,
+      "cpu_mean": 17.66875,
+      "cpu_max": 25.7125,
+      "cpu_min": 13.05,
+      "cpu_samples": 30,
+      "num_cores": 16,
+      "gpu_util_mean": 99.3,
+      "gpu_power_mean": 79.91366666666666,
+      "gpu_temp_mean": 61.333333333333336,
+      "gpu_name": "NVIDIA GeForce RTX 4070 Laptop GPU",
+      "matrix_size": 4096,
+      "free_vram_mb": 4264.1875,
+      "gpu_iterations": 2358,
+      "gpu_elapsed": 33.18987822532654,
+      "gpu_ops_per_sec": 71.04575629930022,
+      "gpu_tflops": 9.764454394402573
+    },
+    {
+      "name": "3. GPU Stress + RTC Miner",
+      "duration": 30,
+      "cpu_mean": 20.366875,
+      "cpu_max": 35.875,
+      "cpu_min": 10.74375,
+      "cpu_samples": 30,
+      "num_cores": 16,
+      "gpu_util_mean": 99.33333333333333,
+      "gpu_power_mean": 79.99199999999999,
+      "gpu_temp_mean": 74.4,
+      "miner_cpu_mean": 0.0,
+      "miner_cpu_max": 0.0,
+      "gpu_name": "NVIDIA GeForce RTX 4070 Laptop GPU",
+      "matrix_size": 4096,
+      "free_vram_mb": 3976.1875,
+      "gpu_iterations": 2362,
+      "gpu_elapsed": 33.745707988739014,
+      "gpu_ops_per_sec": 69.99408638242832,
+      "gpu_tflops": 9.619913981629715
+    },
+    {
+      "name": "4. RTC Miner Only",
+      "duration": 30,
+      "cpu_mean": 16.215,
+      "cpu_max": 27.15,
+      "cpu_min": 7.325,
+      "cpu_samples": 30,
+      "num_cores": 16,
+      "gpu_util_mean": 0.0,
+      "gpu_power_mean": 8.601666666666667,
+      "gpu_temp_mean": 62.03333333333333,
+      "miner_cpu_mean": 0.0,
+      "miner_cpu_max": 0.0
+    }
+  ]
+}

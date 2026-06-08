@@ -1,0 +1,509 @@
+<!doctype html><html lang=en dir=ltr class="docs-wrapper plugin-docs plugin-id-default docs-version-current docs-doc-page docs-doc-id-wrtc" data-has-hydrated=false><head><meta charset=UTF-8><meta name=generator content="Docusaurus v3.10.1"><title data-rh=true>wRTC Quickstart Guide | RustChain</title><meta data-rh=true name=viewport content="width=device-width, initial-scale=1.0"/><meta data-rh=true name=twitter:card content=summary_large_image /><meta data-rh=true property=og:image content=https://scottcjn.github.io/Rustchain/img/docusaurus-social-card.jpg /><meta data-rh=true name=twitter:image content=https://scottcjn.github.io/Rustchain/img/docusaurus-social-card.jpg /><meta data-rh=true property=og:url content=https://scottcjn.github.io/Rustchain/docs/wrtc /><meta data-rh=true property=og:locale content=en /><meta data-rh=true name=docusaurus_locale content=en /><meta data-rh=true name=docsearch:language content=en /><meta data-rh=true name=docusaurus_version content=current /><meta data-rh=true name=docusaurus_tag content=docs-default-current /><meta data-rh=true name=docsearch:version content=current /><meta data-rh=true name=docsearch:docusaurus_tag content=docs-default-current /><meta data-rh=true property=og:title content="wRTC Quickstart Guide | RustChain"/><meta data-rh=true name=description content="Get started with wRTC (Wrapped RustChain Token) on Solana in minutes."/><meta data-rh=true property=og:description content="Get started with wRTC (Wrapped RustChain Token) on Solana in minutes."/><link data-rh=true rel=icon href=/Rustchain/img/favicon.ico /><link data-rh=true rel=canonical href=https://scottcjn.github.io/Rustchain/docs/wrtc /><link data-rh=true rel=alternate href=https://scottcjn.github.io/Rustchain/docs/wrtc hreflang=en /><link data-rh=true rel=alternate href=https://scottcjn.github.io/Rustchain/docs/wrtc hreflang=x-default /><script data-rh=true type=application/ld+json>{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","item":"https://scottcjn.github.io/Rustchain/docs/wrtc","name":"wRTC Quickstart Guide","position":1}]}</script><link rel=stylesheet href=/Rustchain/assets/css/styles.160a45a5.css /><script src=/Rustchain/assets/js/runtime~main.3268acea.js defer></script><script src=/Rustchain/assets/js/main.514c2465.js defer></script></head><body><svg style="display: none;"><defs>
+<symbol id=theme-svg-external-link viewBox="0 0 24 24"><path fill=currentColor d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"/></symbol>
+</defs></svg>
+<script>!function(){var t=function(){try{return new URLSearchParams(window.location.search).get("docusaurus-theme")}catch(t){}}()||function(){try{return window.localStorage.getItem("theme-0bd")}catch(t){}}();document.documentElement.setAttribute("data-theme",t||(window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")),document.documentElement.setAttribute("data-theme-choice",t||"system")}(),function(){try{for(var[t,e]of new URLSearchParams(window.location.search).entries())if(t.startsWith("docusaurus-data-")){var a=t.replace("docusaurus-data-","data-");document.documentElement.setAttribute(a,e)}}catch(t){}}()</script><div id=__docusaurus><link rel=preload as=image href=/Rustchain/img/logo.svg /><div role=region aria-label="Skip to main content"><a class=skipToContent_fXgn href=#__docusaurus_skipToContent_fallback>Skip to main content</a></div><nav aria-label=Main class="theme-layout-navbar navbar navbar--fixed-top"><div class=navbar__inner><div class="theme-layout-navbar-left navbar__items"><button aria-label="Toggle navigation bar" aria-expanded=false class="navbar__toggle clean-btn" type=button><svg width=30 height=30 viewBox="0 0 30 30" aria-hidden=true><path stroke=currentColor stroke-linecap=round stroke-miterlimit=10 stroke-width=2 d="M4 7h22M4 15h22M4 23h22"/></svg></button><a class=navbar__brand href=/Rustchain/><div class=navbar__logo><img src=/Rustchain/img/logo.svg alt="RustChain Logo" class="themedComponent_mlkZ themedComponent--light_NVdE"/><img src=/Rustchain/img/logo.svg alt="RustChain Logo" class="themedComponent_mlkZ themedComponent--dark_xIcU"/></div><b class="navbar__title text--truncate">RustChain</b></a><a aria-current=page class="navbar__item navbar__link navbar__link--active" href=/Rustchain/docs/API>Docs</a></div><div class="theme-layout-navbar-right navbar__items navbar__items--right"><a href=https://github.com/Scottcjn/Rustchain target=_blank rel="noopener noreferrer" class="navbar__item navbar__link">GitHub<svg width=13.5 height=13.5 aria-label="(opens in new tab)" class=iconExternalLink_nPIU><use href=#theme-svg-external-link /></svg></a><div class="toggle_vylO colorModeToggle_DEke"><button class="clean-btn toggleButton_gllP toggleButtonDisabled_aARS" type=button disabled title="system mode" aria-label="Switch between dark and light mode (currently system mode)"><svg viewBox="0 0 24 24" width=24 height=24 aria-hidden=true class="toggleIcon_g3eP lightToggleIcon_pyhR"><path fill=currentColor d="M12,9c1.65,0,3,1.35,3,3s-1.35,3-3,3s-3-1.35-3-3S10.35,9,12,9 M12,7c-2.76,0-5,2.24-5,5s2.24,5,5,5s5-2.24,5-5 S14.76,7,12,7L12,7z M2,13l2,0c0.55,0,1-0.45,1-1s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S1.45,13,2,13z M20,13l2,0c0.55,0,1-0.45,1-1 s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S19.45,13,20,13z M11,2v2c0,0.55,0.45,1,1,1s1-0.45,1-1V2c0-0.55-0.45-1-1-1S11,1.45,11,2z M11,20v2c0,0.55,0.45,1,1,1s1-0.45,1-1v-2c0-0.55-0.45-1-1-1C11.45,19,11,19.45,11,20z M5.99,4.58c-0.39-0.39-1.03-0.39-1.41,0 c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0s0.39-1.03,0-1.41L5.99,4.58z M18.36,16.95 c-0.39-0.39-1.03-0.39-1.41,0c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0c0.39-0.39,0.39-1.03,0-1.41 L18.36,16.95z M19.42,5.99c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06c-0.39,0.39-0.39,1.03,0,1.41 s1.03,0.39,1.41,0L19.42,5.99z M7.05,18.36c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06 c-0.39,0.39-0.39,1.03,0,1.41s1.03,0.39,1.41,0L7.05,18.36z"/></svg><svg viewBox="0 0 24 24" width=24 height=24 aria-hidden=true class="toggleIcon_g3eP darkToggleIcon_wfgR"><path fill=currentColor d="M9.37,5.51C9.19,6.15,9.1,6.82,9.1,7.5c0,4.08,3.32,7.4,7.4,7.4c0.68,0,1.35-0.09,1.99-0.27C17.45,17.19,14.93,19,12,19 c-3.86,0-7-3.14-7-7C5,9.07,6.81,6.55,9.37,5.51z M12,3c-4.97,0-9,4.03-9,9s4.03,9,9,9s9-4.03,9-9c0-0.46-0.04-0.92-0.1-1.36 c-0.98,1.37-2.58,2.26-4.4,2.26c-2.98,0-5.4-2.42-5.4-5.4c0-1.81,0.89-3.42,2.26-4.4C12.92,3.04,12.46,3,12,3L12,3z"/></svg><svg viewBox="0 0 24 24" width=24 height=24 aria-hidden=true class="toggleIcon_g3eP systemToggleIcon_QzmC"><path fill=currentColor d="m12 21c4.971 0 9-4.029 9-9s-4.029-9-9-9-9 4.029-9 9 4.029 9 9 9zm4.95-13.95c1.313 1.313 2.05 3.093 2.05 4.95s-0.738 3.637-2.05 4.95c-1.313 1.313-3.093 2.05-4.95 2.05v-14c1.857 0 3.637 0.737 4.95 2.05z"/></svg></button></div><div class=navbarSearchContainer_Bca1></div></div></div><div role=presentation class=navbar-sidebar__backdrop></div></nav><div id=__docusaurus_skipToContent_fallback class="theme-layout-main main-wrapper mainWrapper_z2l0"><div class=docsWrapper_hBAB><button aria-label="Scroll back to top" class="clean-btn theme-back-to-top-button backToTopButton_sjWU" type=button></button><div class=docRoot_UBD9><aside class="theme-doc-sidebar-container docSidebarContainer_YfHR"><div class=sidebarViewport_aRkj><div class=sidebar_njMd><nav aria-label="Docs sidebar" class="menu thin-scrollbar menu_SIkG"><ul class="theme-doc-sidebar-menu menu__list"><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/API><span title="RustChain API Reference" class=linkLabel_WmDU>RustChain API Reference</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/API_REFERENCE><span title="RustChain Unified API Reference" class=linkLabel_WmDU>RustChain Unified API Reference</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/API_WALKTHROUGH><span title="RustChain API Walkthrough" class=linkLabel_WmDU>RustChain API Walkthrough</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/ARCHITECTURE_OVERVIEW><span title="RustChain Architecture Overview" class=linkLabel_WmDU>RustChain Architecture Overview</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/BEACON_CERTIFIED_OPEN_SOURCE><span title="Beacon Certified Open Source (BCOS)" class=linkLabel_WmDU>Beacon Certified Open Source (BCOS)</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/BOTTUBE_EMBED><span title="BoTTube Embeddable Player Widget" class=linkLabel_WmDU>BoTTube Embeddable Player Widget</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/BOTTUBE_FEED><span title="BoTTube Feed Support" class=linkLabel_WmDU>BoTTube Feed Support</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/BOTTUBE_INTEGRATION><span title="BoTTube and RustChain Integration" class=linkLabel_WmDU>BoTTube and RustChain Integration</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/BOTTUBE_MOOD_SYSTEM><span title="BoTTube Agent Mood System" class=linkLabel_WmDU>BoTTube Agent Mood System</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/BOUNTY_1490_FIX><span title="Bounty #1490 Fix: clawrtc wallet show False Offline State" class=linkLabel_WmDU>Bounty #1490 Fix: clawrtc wallet show False Offline State</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/BOUNTY_1512_IMPLEMENTATION_REPORT><span title="Bounty #1512 (RIP-305 Track D) Implementation Report" class=linkLabel_WmDU>Bounty #1512 (RIP-305 Track D) Implementation Report</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/BOUNTY_1524_IMPLEMENTATION><span title="Bounty #1524: Beacon Atlas 3D Agent World" class=linkLabel_WmDU>Bounty #1524: Beacon Atlas 3D Agent World</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/BOUNTY_1524_VALIDATION><span title="Bounty #1524 Validation Report" class=linkLabel_WmDU>Bounty #1524 Validation Report</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/BOUNTY_2307_IMPLEMENTATION><span title="Bounty #2307: Boot Chime Proof-of-Iron — Acoustic Hardware Attestation" class=linkLabel_WmDU>Bounty #2307: Boot Chime Proof-of-Iron — Acoustic Hardware Attestation</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/BOUNTY_2313_IMPLEMENTATION><span title="Bounty #2313 Implementation Report" class=linkLabel_WmDU>Bounty #2313 Implementation Report</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/BUILD><span title="RustChain Build Guide" class=linkLabel_WmDU>RustChain Build Guide</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/Boudreaux_COMPUTING_PRINCIPLES><span title="Boudreaux Computing Principles" class=linkLabel_WmDU>Boudreaux Computing Principles</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/CLAIMS_GUIDE><span title="RustChain Reward Claims Guide" class=linkLabel_WmDU>RustChain Reward Claims Guide</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/CLI><span title="RustChain CLI Wallet Walkthrough" class=linkLabel_WmDU>RustChain CLI Wallet Walkthrough</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/CONSENSUS_INVARIANT_ATTRACTOR><span title="Consensus Invariant Attractor Harness" class=linkLabel_WmDU>Consensus Invariant Attractor Harness</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/CONSOLE_MINING_SETUP><span title="RIP-0683: Console Mining Setup Guide" class=linkLabel_WmDU>RIP-0683: Console Mining Setup Guide</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/CONTRIBUTING><span title="Contributing Guide" class=linkLabel_WmDU>Contributing Guide</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/CONTRIBUTING_FOR_AGENTS><span title="Contributing Guide for AI Agents" class=linkLabel_WmDU>Contributing Guide for AI Agents</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/CPU_IMPACT_BENCHMARK><span title="RustChain (RTC) Miner — CPU & GPU Impact Benchmark" class=linkLabel_WmDU>RustChain (RTC) Miner — CPU & GPU Impact Benchmark</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/CROSS_NODE_SYNC_VALIDATOR><span title="Cross-Node Sync Validator" class=linkLabel_WmDU>Cross-Node Sync Validator</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/DEVELOPER_QUICKSTART><span title="RustChain Developer Quickstart: First API Calls" class=linkLabel_WmDU>RustChain Developer Quickstart: First API Calls</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/DEVELOPER_TRACTION_Q1_2026><span title="Elyan Labs — Developer Traction Report" class=linkLabel_WmDU>Elyan Labs — Developer Traction Report</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/DEVNET><span title="Local Single-Node Devnet" class=linkLabel_WmDU>Local Single-Node Devnet</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/DEV_GUIDE><span title="RustChain PoA Developer Guide (Retro Edition)" class=linkLabel_WmDU>RustChain PoA Developer Guide (Retro Edition)</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/DISCORD_LEADERBOARD_BOT><span title="Discord Leaderboard Bot" class=linkLabel_WmDU>Discord Leaderboard Bot</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/DISCORD_ONBOARDING><span title="Discord → On-Chain Holder Onboarding" class=linkLabel_WmDU>Discord → On-Chain Holder Onboarding</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/DYNAMIC_BADGES_V2><span title="Dynamic Shields Badges v2" class=linkLabel_WmDU>Dynamic Shields Badges v2</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/FAQ><span title="RustChain FAQ" class=linkLabel_WmDU>RustChain FAQ</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/FAQ_TROUBLESHOOTING><span title="RustChain FAQ and Troubleshooting" class=linkLabel_WmDU>RustChain FAQ and Troubleshooting</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/FIX_1147_ATTEST_SUBMIT_CRASH><span title="Issue #1147 Fix: /attest/submit 500 Crash" class=linkLabel_WmDU>Issue #1147 Fix: /attest/submit 500 Crash</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/GLOSSARY><span title="RustChain Glossary" class=linkLabel_WmDU>RustChain Glossary</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/GPU_FINGERPRINTING><span title="GPU Fingerprinting — PPA Channel 8" class=linkLabel_WmDU>GPU Fingerprinting — PPA Channel 8</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/INSTALLATION_WALKTHROUGH><span title="RustChain Installation Walkthrough" class=linkLabel_WmDU>RustChain Installation Walkthrough</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/ISSUE_1449_ANTI_DOUBLE_MINING><span title="Issue #1449: Anti-Double-Mining Implementation" class=linkLabel_WmDU>Issue #1449: Anti-Double-Mining Implementation</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/ISSUE_2127_DEPLOYMENT><span title="Issue #2127 - Beacon Join Routing Deployment Notes" class=linkLabel_WmDU>Issue #2127 - Beacon Join Routing Deployment Notes</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/LEGAL/flameholder_license_manifest><span title=LEGAL class=categoryLinkLabel_W154>LEGAL</span></a></div><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/MASTERING_THE_MINER><span title="⛏️ Mastering the RustChain Miner: Hardware Fingerprints & Dual-Mining v2.0" class=linkLabel_WmDU>⛏️ Mastering the RustChain Miner: Hardware Fingerprints & Dual-Mining v2.0</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/MECHANISM_SPEC_AND_FALSIFICATION_MATRIX><span title="RustChain Mechanism Spec + Falsification Matrix" class=linkLabel_WmDU>RustChain Mechanism Spec + Falsification Matrix</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/MINER_VIDEO_SCRIPT><span title="🎥 RUSTCHAIN MINER EXPLAINER: 60-Second Script" class=linkLabel_WmDU>🎥 RUSTCHAIN MINER EXPLAINER: 60-Second Script</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/MINE_YOUR_GRANDMAS_COMPUTER><span title="Mine Your Grandma's Computer: The 15-Minute RustChain Guide" class=linkLabel_WmDU>Mine Your Grandma's Computer: The 15-Minute RustChain Guide</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/MINING_GUIDE><span title="RustChain Mining Guide" class=linkLabel_WmDU>RustChain Mining Guide</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/MOBILE_GUIDE><span title="BoTTube Mobile Responsive Implementation Guide" class=linkLabel_WmDU>BoTTube Mobile Responsive Implementation Guide</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/MULTISIG_WALLET_GUIDE><span title="RustChain 多签钱包指南" class=linkLabel_WmDU>RustChain 多签钱包指南</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/N64_MINING_GUIDE><span title="Mining RTC on a Nintendo 64" class=linkLabel_WmDU>Mining RTC on a Nintendo 64</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/NODE_OPERATOR_GUIDE><span title="RustChain Node Operator Guide" class=linkLabel_WmDU>RustChain Node Operator Guide</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/NODE_P2P_PROTOCOL><span title="🌐 Understanding the RustChain Node: P2P Gossip & Block Production" class=linkLabel_WmDU>🌐 Understanding the RustChain Node: P2P Gossip & Block Production</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/PAYOUT_PREFLIGHT><span title="Payout Preflight (Dry-Run Validation)" class=linkLabel_WmDU>Payout Preflight (Dry-Run Validation)</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/PREMINE_COMPLETION_RESOLUTION><span title="RustChain Premine Completion Resolution" class=linkLabel_WmDU>RustChain Premine Completion Resolution</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/PROTOCOL><span title="RustChain Protocol Specification" class=linkLabel_WmDU>RustChain Protocol Specification</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/PROTOCOL_BOUNTY_8><span title="RustChain Protocol Documentation (Bounty #8 Draft)" class=linkLabel_WmDU>RustChain Protocol Documentation (Bounty #8 Draft)</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/PROTOCOL_v1.1><span title="RustChain Protocol Specification v1.1 (RIP-200)" class=linkLabel_WmDU>RustChain Protocol Specification v1.1 (RIP-200)</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/QUICKSTART><span title="RustChain Quickstart Guide" class=linkLabel_WmDU>RustChain Quickstart Guide</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/><span title="RustChain Documentation" class=linkLabel_WmDU>RustChain Documentation</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/README.vi><span title="Tài Liệu RustChain" class=linkLabel_WmDU>Tài Liệu RustChain</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/RELAY_PARSER_NOTES><span title="Genesis Relay Parser (FlameChain Sync Prototype)" class=linkLabel_WmDU>Genesis Relay Parser (FlameChain Sync Prototype)</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/REWARD_ANALYTICS_DASHBOARD><span title="RTC Reward Analytics Dashboard" class=linkLabel_WmDU>RTC Reward Analytics Dashboard</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/RIP-305-cross-chain-airdrop><span title="RIP-305: Cross-Chain Airdrop Protocol" class=linkLabel_WmDU>RIP-305: Cross-Chain Airdrop Protocol</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/RIP305_AIRDROP_V2><span title="RIP-305: Cross-Chain Airdrop Implementation" class=linkLabel_WmDU>RIP-305: Cross-Chain Airdrop Implementation</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/RUSTCHAIN_DEVELOPER_TUTORIAL><span title="RustChain Developer Tutorial: Build on the Proof-of-Antiquity Blockchain" class=linkLabel_WmDU>RustChain Developer Tutorial: Build on the Proof-of-Antiquity Blockchain</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/RUSTCHAIN_PROTOCOL><span title="RustChain Protocol Specification" class=linkLabel_WmDU>RustChain Protocol Specification</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/RUSTCHAIN_VS_ETHEREUM_POS_COMPARISON><span title="RustChain vs Ethereum Proof-of-Stake: A Comprehensive Comparison" class=linkLabel_WmDU>RustChain vs Ethereum Proof-of-Stake: A Comprehensive Comparison</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/SECURITY_AUDIT><span title="RustChain Security Audit Report" class=linkLabel_WmDU>RustChain Security Audit Report</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/SMART_CONTRACT_DEVELOPER_GUIDE><span title="Smart Contract Developer Guide" class=linkLabel_WmDU>Smart Contract Developer Guide</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/TESTNET_FAUCET><span title="RustChain Testnet Faucet" class=linkLabel_WmDU>RustChain Testnet Faucet</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/TEST_PLAN><span title="RustChain PoA Retro Test Plan" class=linkLabel_WmDU>RustChain PoA Retro Test Plan</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/UPGRADE_MIGRATION_GUIDE><span title="RustChain 升级迁移指南" class=linkLabel_WmDU>RustChain 升级迁移指南</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/US_REGULATORY_POSITION><span title="RustChain (RTC) — U.S. Regulatory Position" class=linkLabel_WmDU>RustChain (RTC) — U.S. Regulatory Position</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/VINTAGE_MINING_EXPLAINED><span title="Vintage Mining Explained" class=linkLabel_WmDU>Vintage Mining Explained</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/VINTAGE_MINING_EXPLAINED.pt-BR><span title="Mineração Vintage Explicada" class=linkLabel_WmDU>Mineração Vintage Explicada</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/WALLET_CLI_COMPATIBILITY_39><span title="Wallet CLI Compatibility Notes (Issue #39)" class=linkLabel_WmDU>Wallet CLI Compatibility Notes (Issue #39)</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/WALLET_CLI_PREVIEW_39><span title="RustChain Wallet CLI (Preview for bounty #39)" class=linkLabel_WmDU>RustChain Wallet CLI (Preview for bounty #39)</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/WALLET_SETUP><span title="RustChain Wallet Setup for Beginners" class=linkLabel_WmDU>RustChain Wallet Setup for Beginners</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/WALLET_USER_GUIDE><span title="Wallet User Guide" class=linkLabel_WmDU>Wallet User Guide</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/WEBSOCKET_FEED><span title="RustChain WebSocket Feed - Issue #2295" class=linkLabel_WmDU>RustChain WebSocket Feed - Issue #2295</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/WHITEPAPER><span title="RustChain: A Proof-of-Antiquity Blockchain for Hardware Preservation" class=linkLabel_WmDU>RustChain: A Proof-of-Antiquity Blockchain for Hardware Preservation</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/WRTC_ONBOARDING_TUTORIAL><span title="wRTC Onboarding Tutorial (Bridge + Raydium + Safety)" class=linkLabel_WmDU>wRTC Onboarding Tutorial (Bridge + Raydium + Safety)</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/YOLO><span title=YOLO class=linkLabel_WmDU>YOLO</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist" href=/Rustchain/docs/api/><span title="RustChain API Documentation" class=categoryLinkLabel_W154>RustChain API Documentation</span></a><button aria-label="Expand sidebar category 'RustChain API Documentation'" aria-expanded=false type=button class="clean-btn menu__caret"></button></div><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/api-reference><span title="RustChain API Reference" class=linkLabel_WmDU>RustChain API Reference</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/asciinema/><span title="RustChain Asciinema Recordings" class=linkLabel_WmDU>RustChain Asciinema Recordings</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/attestation-flow><span title="RustChain Attestation Flow" class=linkLabel_WmDU>RustChain Attestation Flow</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/attestation_fuzzing><span title="Attestation Malformed-Input Regression Harness" class=linkLabel_WmDU>Attestation Malformed-Input Regression Harness</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/blog/rustchain-utility-coin-not-security><span title=blog class=categoryLinkLabel_W154>blog</span></a></div><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/bounties/BOUNTY_1492_IMPLEMENTATION><span title=bounties class=categoryLinkLabel_W154>bounties</span></a></div><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/bridge-api><span title="RIP-0305 Bridge API Documentation" class=linkLabel_WmDU>RIP-0305 Bridge API Documentation</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/chain_architecture><span title="RustChain Architecture Overview – Draft v1" class=linkLabel_WmDU>RustChain Architecture Overview – Draft v1</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/community/shanties/rayycave-proof-of-antiquity><span title=community class=categoryLinkLabel_W154>community</span></a></div><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist" href=/Rustchain/docs/de-DE/><span title=RustChain-Dokumentation class=categoryLinkLabel_W154>RustChain-Dokumentation</span></a><button aria-label="Expand sidebar category 'RustChain-Dokumentation'" aria-expanded=false type=button class="clean-btn menu__caret"></button></div><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/discord-transport><span title="Discord Transport — FlameNet Beacon" class=linkLabel_WmDU>Discord Transport — FlameNet Beacon</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/epoch-settlement><span title="RustChain Epoch Settlement" class=linkLabel_WmDU>RustChain Epoch Settlement</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/es/><span title="RustChain — Blockchain DePIN para Hardware Vintage y Retro" class=linkLabel_WmDU>RustChain — Blockchain DePIN para Hardware Vintage y Retro</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/es-ES/RUSTCHAIN_EXPLAINED><span title=es-ES class=categoryLinkLabel_W154>es-ES</span></a></div><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/features/ppa-attestation-visualizer><span title=features class=categoryLinkLabel_W154>features</span></a></div><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/fr-FR/RUSTCHAIN_EXPLAINED><span title=fr-FR class=categoryLinkLabel_W154>fr-FR</span></a></div><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/hardware-fingerprinting><span title="RustChain Hardware Fingerprinting" class=linkLabel_WmDU>RustChain Hardware Fingerprinting</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/i18n/ko/QUICKSTART><span title=i18n class=categoryLinkLabel_W154>i18n</span></a></div><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/it-IT/><span title=RustChain class=linkLabel_WmDU>RustChain</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/ja/><span title=RustChain（日本語ガイド） class=linkLabel_WmDU>RustChain（日本語ガイド）</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/ja-JP/><span title=RustChain class=linkLabel_WmDU>RustChain</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/ko-KR/><span title="RustChain 문서" class=linkLabel_WmDU>RustChain 문서</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/mempool-visualization-demo><span title="Mempool Visualization Demo" class=linkLabel_WmDU>Mempool Visualization Demo</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/miner-setup-wizard/><span title="RustChain Miner Setup Wizard (Bounty #47)" class=linkLabel_WmDU>RustChain Miner Setup Wizard (Bounty #47)</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/nl-NL/><span title=RustChain class=linkLabel_WmDU>RustChain</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/pl-PL/RUSTCHAIN_EXPLAINED><span title=pl-PL class=categoryLinkLabel_W154>pl-PL</span></a></div><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/plans/2026-02-15-ci-pipeline-design><span title=plans class=categoryLinkLabel_W154>plans</span></a></div><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/postman/><span title="RustChain API Postman Collection" class=linkLabel_WmDU>RustChain API Postman Collection</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/proposer-duty-calendar-demo><span title="Proposer Duty Calendar Demo" class=linkLabel_WmDU>Proposer Duty Calendar Demo</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/protocol-overview><span title="RustChain Protocol Overview" class=linkLabel_WmDU>RustChain Protocol Overview</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/pt-BR/RUSTCHAIN_EXPLAINED><span title=pt-BR class=categoryLinkLabel_W154>pt-BR</span></a></div><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/randomness-beacon-demo><span title="Randomness beacon validation" class=linkLabel_WmDU>Randomness beacon validation</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/rip201_bucket_spoof><span title="RIP-201 Bucket Normalization Gaming" class=linkLabel_WmDU>RIP-201 Bucket Normalization Gaming</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/rip201_fleet_detection_bypass><span title="RIP-201 Fleet Detection Bypass" class=linkLabel_WmDU>RIP-201 Fleet Detection Bypass</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/security/ppa-attack-analysis><span title=security class=categoryLinkLabel_W154>security</span></a></div><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/slasher-core-demo><span title="Slasher Core Demo" class=linkLabel_WmDU>Slasher Core Demo</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/slashing-penalty-demo><span title="Slashing Penalty Core Demo" class=linkLabel_WmDU>Slashing Penalty Core Demo</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/sprint/api-reference><span title=sprint class=categoryLinkLabel_W154>sprint</span></a></div><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/state-of-rustchain-ergo-march-2026><span title="State of RustChain — March 2026" class=linkLabel_WmDU>State of RustChain — March 2026</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/token-economics><span title="RustChain Token Economics" class=linkLabel_WmDU>RustChain Token Economics</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/tokenomics_v1><span title="RustChain Tokenomics – Flameholder Draft v1" class=linkLabel_WmDU>RustChain Tokenomics – Flameholder Draft v1</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/vi-VN/RUSTCHAIN_EXPLAINED><span title=vi-VN class=categoryLinkLabel_W154>vi-VN</span></a></div><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/vintage-miner-setup-guide><span title="Mine Your Grandma's Computer — Vintage Miner Setup Guide" class=linkLabel_WmDU>Mine Your Grandma's Computer — Vintage Miner Setup Guide</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist" href=/Rustchain/docs/whitepaper/><span title="RustChain Technical Whitepaper (Draft)" class=categoryLinkLabel_W154>RustChain Technical Whitepaper (Draft)</span></a><button aria-label="Expand sidebar category 'RustChain Technical Whitepaper (Draft)'" aria-expanded=false type=button class="clean-btn menu__caret"></button></div><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link menu__link--active" aria-current=page href=/Rustchain/docs/wrtc><span title="wRTC Quickstart Guide" class=linkLabel_WmDU>wRTC Quickstart Guide</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist" href=/Rustchain/docs/zh-CN/><span title=README class=categoryLinkLabel_W154>README</span></a><button aria-label="Expand sidebar category 'README'" aria-expanded=false type=button class="clean-btn menu__caret"></button></div></ul></nav></div></div></aside><main class=docMainContainer_TBSr><div class="container padding-top--md padding-bottom--lg"><div class=row><div class="col docItemCol_VOVn"><div class=docItemContainer_Djhp><article><nav class="theme-doc-breadcrumbs breadcrumbsContainer_Z_bl" aria-label=Breadcrumbs><ul class=breadcrumbs><li class=breadcrumbs__item><a aria-label="Home page" class=breadcrumbs__link href=/Rustchain/><svg viewBox="0 0 24 24" class=breadcrumbHomeIcon_YNFT><path d="M10 19v-5h4v5c0 .55.45 1 1 1h3c.55 0 1-.45 1-1v-7h1.7c.46 0 .68-.57.33-.87L12.67 3.6c-.38-.34-.96-.34-1.34 0l-8.36 7.53c-.34.3-.13.87.33.87H5v7c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z" fill=currentColor /></svg></a><li class="breadcrumbs__item breadcrumbs__item--active"><span class=breadcrumbs__link>wRTC Quickstart Guide</span></ul></nav><div class="tocCollapsible_ETCw theme-doc-toc-mobile tocMobile_ITEo"><button type=button class="clean-btn tocCollapsibleButton_TO0P">On this page</button></div><div class="theme-doc-markdown markdown"><header><h1>wRTC Quickstart Guide</h1></header>
+<blockquote>
+<p><strong>Get started with wRTC (Wrapped RustChain Token) on Solana in minutes.</strong></p>
+<p>This guide covers everything from buying wRTC on Raydium to bridging between RTC and wRTC safely.</p>
+</blockquote>
+<hr/>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=-table-of-contents>📋 Table of Contents<a href=#-table-of-contents class=hash-link aria-label="Direct link to 📋 Table of Contents" title="Direct link to 📋 Table of Contents" translate=no>​</a></h2>
+<ul>
+<li class=""><a href=#-anti-scam-checklist class="">Anti-Scam Checklist</a></li>
+<li class=""><a href=#-what-is-wrtc class="">What is wRTC?</a></li>
+<li class=""><a href=#-buying-wrtc-on-raydium class="">Buying wRTC on Raydium</a></li>
+<li class=""><a href=#-bridging-rtc-to-wrtc class="">Bridging RTC to wRTC</a></li>
+<li class=""><a href=#-withdrawing-wrtc-to-rtc class="">Withdrawing wRTC to RTC</a></li>
+<li class=""><a href=#-quick-reference class="">Quick Reference</a></li>
+<li class=""><a href=#-troubleshooting class="">Troubleshooting</a></li>
+</ul>
+<hr/>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=️-anti-scam-checklist>🛡️ Anti-Scam Checklist<a href=#️-anti-scam-checklist class=hash-link aria-label="Direct link to 🛡️ Anti-Scam Checklist" title="Direct link to 🛡️ Anti-Scam Checklist" translate=no>​</a></h2>
+<p><strong>Before every transaction, verify ALL of the following:</strong></p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Check<th>Canonical Value<th>Verification<tbody><tr><td><strong>Token Mint</strong><td><code>12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X</code><td>Must match exactly - 44 characters, base58<tr><td><strong>Decimals</strong><td><code>6</code><td>wRTC uses 6 decimal places<tr><td><strong>Official Bridge</strong><td><code>https://bottube.ai/bridge/wrtc</code><td>Bookmark this URL<tr><td><strong>Official Swap</strong><td><code>https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X</code><td>Verify mint in URL<tr><td><strong>DexScreener</strong><td><code>https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb</code><td>Verify liquidity pool</table>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=️-red-flags---stop-if-you-see-these>⚠️ Red Flags - STOP if you see these:<a href=#️-red-flags---stop-if-you-see-these class=hash-link aria-label="Direct link to ⚠️ Red Flags - STOP if you see these:" title="Direct link to ⚠️ Red Flags - STOP if you see these:" translate=no>​</a></h3>
+<ul class="contains-task-list containsTaskList_mC6p">
+<li class=task-list-item><input type=checkbox disabled/> Token mint address doesn't match exactly</li>
+<li class=task-list-item><input type=checkbox disabled/> Website URL is slightly different (typosquatting)</li>
+<li class=task-list-item><input type=checkbox disabled/> Someone DM'd you a "better" bridge link</li>
+<li class=task-list-item><input type=checkbox disabled/> Token shows different decimal places (e.g., 9 or 18)</li>
+<li class=task-list-item><input type=checkbox disabled/> Price seems too good to be true (likely honeypot)</li>
+</ul>
+<hr/>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=-what-is-wrtc>🪙 What is wRTC?<a href=#-what-is-wrtc class=hash-link aria-label="Direct link to 🪙 What is wRTC?" title="Direct link to 🪙 What is wRTC?" translate=no>​</a></h2>
+<p><strong>wRTC</strong> is the Solana-native representation of RustChain Token (RTC).</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Feature<th>RTC (Native)<th>wRTC (Solana)<tbody><tr><td><strong>Network</strong><td>RustChain<td>Solana<tr><td><strong>Use Case</strong><td>Mining rewards<td>Trading, DeFi<tr><td><strong>Wallet</strong><td>RustChain wallet<td>Phantom, Solflare, etc.<tr><td><strong>Exchange</strong><td>Bridge only<td>Raydium, Jupiter<tr><td><strong>Speed</strong><td>~10 min epochs<td>~400ms finality</table>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=why-use-wrtc>Why Use wRTC?<a href=#why-use-wrtc class=hash-link aria-label="Direct link to Why Use wRTC?" title="Direct link to Why Use wRTC?" translate=no>​</a></h3>
+<ol>
+<li class=""><strong>Trade on DEXs</strong> - Swap wRTC for SOL or other tokens on Raydium</li>
+<li class=""><strong>Liquidity</strong> - Provide liquidity to earn fees</li>
+<li class=""><strong>Speed</strong> - Near-instant transfers on Solana</li>
+<li class=""><strong>Ecosystem</strong> - Use with any Solana DeFi protocol</li>
+</ol>
+<hr/>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=-buying-wrtc-on-raydium>💱 Buying wRTC on Raydium<a href=#-buying-wrtc-on-raydium class=hash-link aria-label="Direct link to 💱 Buying wRTC on Raydium" title="Direct link to 💱 Buying wRTC on Raydium" translate=no>​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=prerequisites>Prerequisites<a href=#prerequisites class=hash-link aria-label="Direct link to Prerequisites" title="Direct link to Prerequisites" translate=no>​</a></h3>
+<ul class="contains-task-list containsTaskList_mC6p">
+<li class=task-list-item><input type=checkbox disabled/> Solana wallet (Phantom, Solflare, or Backpack recommended)</li>
+<li class=task-list-item><input type=checkbox disabled/> SOL for transaction fees (~0.001 SOL per swap)</li>
+<li class=task-list-item><input type=checkbox disabled/> SOL or USDC to swap for wRTC</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=step-by-step-guide>Step-by-Step Guide<a href=#step-by-step-guide class=hash-link aria-label="Direct link to Step-by-Step Guide" title="Direct link to Step-by-Step Guide" translate=no>​</a></h3>
+<h4 class="anchor anchorTargetStickyNavbar_Vzrq" id=step-1-open-raydium>Step 1: Open Raydium<a href=#step-1-open-raydium class=hash-link aria-label="Direct link to Step 1: Open Raydium" title="Direct link to Step 1: Open Raydium" translate=no>​</a></h4>
+<p>Navigate to the official Raydium swap URL:</p>
+<div class="language-text codeBlockContainer_Ckt0 theme-code-block" style=--prism-color:#393A34;--prism-background-color:#f6f8fa><div class=codeBlockContent_QJqH><pre tabindex=0 class="prism-code language-text codeBlock_bY9V thin-scrollbar" style=color:#393A34;background-color:#f6f8fa><code class=codeBlockLines_e6Vv><div class=token-line style=color:#393A34><span class="token plain">https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X</span><br/></div></code></pre></div></div>
+<h4 class="anchor anchorTargetStickyNavbar_Vzrq" id=step-2-verify-the-token>Step 2: Verify the Token<a href=#step-2-verify-the-token class=hash-link aria-label="Direct link to Step 2: Verify the Token" title="Direct link to Step 2: Verify the Token" translate=no>​</a></h4>
+<p><strong>CRITICAL: Check ALL of these before proceeding:</strong></p>
+<ol>
+<li class="">Look at the URL - confirm outputMint is <code>12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X</code></li>
+<li class="">In the Raydium UI, click the output token dropdown</li>
+<li class="">Verify the mint address displayed matches exactly</li>
+</ol>
+<div class="language-text codeBlockContainer_Ckt0 theme-code-block" style=--prism-color:#393A34;--prism-background-color:#f6f8fa><div class=codeBlockContent_QJqH><pre tabindex=0 class="prism-code language-text codeBlock_bY9V thin-scrollbar" style=color:#393A34;background-color:#f6f8fa><code class=codeBlockLines_e6Vv><div class=token-line style=color:#393A34><span class="token plain">✅ Correct: 12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">❌ Wrong:   12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4Y (different last char)</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">❌ Wrong:   Any other address</span><br/></div></code></pre></div></div>
+<h4 class="anchor anchorTargetStickyNavbar_Vzrq" id=step-3-connect-wallet>Step 3: Connect Wallet<a href=#step-3-connect-wallet class=hash-link aria-label="Direct link to Step 3: Connect Wallet" title="Direct link to Step 3: Connect Wallet" translate=no>​</a></h4>
+<ol>
+<li class="">Click <strong>"Connect Wallet"</strong> in the top right</li>
+<li class="">Select your wallet (Phantom, Solflare, etc.)</li>
+<li class="">Approve the connection in your wallet popup</li>
+</ol>
+<h4 class="anchor anchorTargetStickyNavbar_Vzrq" id=step-4-enter-swap-amount>Step 4: Enter Swap Amount<a href=#step-4-enter-swap-amount class=hash-link aria-label="Direct link to Step 4: Enter Swap Amount" title="Direct link to Step 4: Enter Swap Amount" translate=no>​</a></h4>
+<ol>
+<li class=""><strong>Input</strong>: Select SOL (or USDC)</li>
+<li class=""><strong>Output</strong>: wRTC (should auto-populate)</li>
+<li class="">Enter the amount of SOL you want to swap</li>
+<li class="">Review the estimated wRTC you'll receive</li>
+</ol>
+<h4 class="anchor anchorTargetStickyNavbar_Vzrq" id=step-5-adjust-slippage-optional>Step 5: Adjust Slippage (Optional)<a href=#step-5-adjust-slippage-optional class=hash-link aria-label="Direct link to Step 5: Adjust Slippage (Optional)" title="Direct link to Step 5: Adjust Slippage (Optional)" translate=no>​</a></h4>
+<ul>
+<li class="">Default: 0.5% (recommended for stable pairs)</li>
+<li class="">Volatile markets: 1-2%</li>
+<li class=""><strong>Never exceed 5%</strong> - high slippage increases MEV risk</li>
+</ul>
+<p>To adjust: Click the gear icon → Set slippage tolerance</p>
+<h4 class="anchor anchorTargetStickyNavbar_Vzrq" id=step-6-execute-swap>Step 6: Execute Swap<a href=#step-6-execute-swap class=hash-link aria-label="Direct link to Step 6: Execute Swap" title="Direct link to Step 6: Execute Swap" translate=no>​</a></h4>
+<ol>
+<li class="">Click <strong>"Swap"</strong></li>
+<li class="">Review the transaction details in the confirmation modal</li>
+<li class="">Click <strong>"Confirm Swap"</strong></li>
+<li class="">Approve the transaction in your wallet</li>
+<li class="">Wait for confirmation (~2-5 seconds)</li>
+</ol>
+<h4 class="anchor anchorTargetStickyNavbar_Vzrq" id=step-7-verify-receipt>Step 7: Verify Receipt<a href=#step-7-verify-receipt class=hash-link aria-label="Direct link to Step 7: Verify Receipt" title="Direct link to Step 7: Verify Receipt" translate=no>​</a></h4>
+<ol>
+<li class="">Check your wallet balance for wRTC</li>
+<li class="">View transaction on <a href=https://solscan.io target=_blank rel="noopener noreferrer" class="">Solscan</a> or <a href=https://solana.fm target=_blank rel="noopener noreferrer" class="">SolanaFM</a></li>
+<li class="">The token should appear automatically in most wallets</li>
+</ol>
+<p><strong>If wRTC doesn't appear:</strong></p>
+<ul>
+<li class="">Phantom: Click "Manage token list" → Search wRTC → Enable</li>
+<li class="">Solflare: Click "+" → Paste mint address → Add</li>
+</ul>
+<hr/>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=-bridging-rtc-to-wrtc>🌉 Bridging RTC to wRTC<a href=#-bridging-rtc-to-wrtc class=hash-link aria-label="Direct link to 🌉 Bridging RTC to wRTC" title="Direct link to 🌉 Bridging RTC to wRTC" translate=no>​</a></h2>
+<p>Bridge your native RTC (earned from mining) to wRTC on Solana.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=prerequisites-1>Prerequisites<a href=#prerequisites-1 class=hash-link aria-label="Direct link to Prerequisites" title="Direct link to Prerequisites" translate=no>​</a></h3>
+<ul class="contains-task-list containsTaskList_mC6p">
+<li class=task-list-item><input type=checkbox disabled/> RustChain wallet with RTC balance</li>
+<li class=task-list-item><input type=checkbox disabled/> Solana wallet address (destination)</li>
+<li class=task-list-item><input type=checkbox disabled/> Both wallets ready and accessible</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=step-by-step-guide-1>Step-by-Step Guide<a href=#step-by-step-guide-1 class=hash-link aria-label="Direct link to Step-by-Step Guide" title="Direct link to Step-by-Step Guide" translate=no>​</a></h3>
+<h4 class="anchor anchorTargetStickyNavbar_Vzrq" id=step-1-navigate-to-bottube-bridge>Step 1: Navigate to BoTTube Bridge<a href=#step-1-navigate-to-bottube-bridge class=hash-link aria-label="Direct link to Step 1: Navigate to BoTTube Bridge" title="Direct link to Step 1: Navigate to BoTTube Bridge" translate=no>​</a></h4>
+<p>Open the official bridge URL:</p>
+<div class="language-text codeBlockContainer_Ckt0 theme-code-block" style=--prism-color:#393A34;--prism-background-color:#f6f8fa><div class=codeBlockContent_QJqH><pre tabindex=0 class="prism-code language-text codeBlock_bY9V thin-scrollbar" style=color:#393A34;background-color:#f6f8fa><code class=codeBlockLines_e6Vv><div class=token-line style=color:#393A34><span class="token plain">https://bottube.ai/bridge/wrtc</span><br/></div></code></pre></div></div>
+<p><strong>Always verify the URL:</strong></p>
+<ul>
+<li class="">✅ <code>https://bottube.ai/bridge/wrtc</code></li>
+<li class="">❌ Any variation (bottube.com, bottube-bridge.xyz, etc.)</li>
+</ul>
+<h4 class="anchor anchorTargetStickyNavbar_Vzrq" id=step-2-select-bridge-direction>Step 2: Select Bridge Direction<a href=#step-2-select-bridge-direction class=hash-link aria-label="Direct link to Step 2: Select Bridge Direction" title="Direct link to Step 2: Select Bridge Direction" translate=no>​</a></h4>
+<p>Choose <strong>"RTC → wRTC"</strong> (RustChain to Solana)</p>
+<h4 class="anchor anchorTargetStickyNavbar_Vzrq" id=step-3-connect-rustchain-wallet>Step 3: Connect RustChain Wallet<a href=#step-3-connect-rustchain-wallet class=hash-link aria-label="Direct link to Step 3: Connect RustChain Wallet" title="Direct link to Step 3: Connect RustChain Wallet" translate=no>​</a></h4>
+<ol>
+<li class="">Click <strong>"Connect RustChain Wallet"</strong></li>
+<li class="">Enter your wallet address or connect via available method</li>
+<li class="">Verify your RTC balance displays correctly</li>
+</ol>
+<h4 class="anchor anchorTargetStickyNavbar_Vzrq" id=step-4-enter-wrtc-destination>Step 4: Enter wRTC Destination<a href=#step-4-enter-wrtc-destination class=hash-link aria-label="Direct link to Step 4: Enter wRTC Destination" title="Direct link to Step 4: Enter wRTC Destination" translate=no>​</a></h4>
+<ol>
+<li class="">Enter your Solana wallet address (where wRTC will be sent)</li>
+<li class=""><strong>Double-check this address</strong> - transactions are irreversible</li>
+<li class="">Verify the address starts with a letter/number (base58 format)</li>
+</ol>
+<div class="language-text codeBlockContainer_Ckt0 theme-code-block" style=--prism-color:#393A34;--prism-background-color:#f6f8fa><div class=codeBlockContent_QJqH><pre tabindex=0 class="prism-code language-text codeBlock_bY9V thin-scrollbar" style=color:#393A34;background-color:#f6f8fa><code class=codeBlockLines_e6Vv><div class=token-line style=color:#393A34><span class="token plain">✅ Valid:   7nx8QmzxD1wKX7QJ1FVqT5hX9YvJxKqZb8yPoR3dL8mN</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">❌ Invalid: 0x... (Ethereum format)</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">❌ Invalid: Any non-base58 characters</span><br/></div></code></pre></div></div>
+<h4 class="anchor anchorTargetStickyNavbar_Vzrq" id=step-5-enter-amount>Step 5: Enter Amount<a href=#step-5-enter-amount class=hash-link aria-label="Direct link to Step 5: Enter Amount" title="Direct link to Step 5: Enter Amount" translate=no>​</a></h4>
+<ol>
+<li class="">Enter the amount of RTC to bridge</li>
+<li class="">Review the bridge fee (usually 0.1-0.5%)</li>
+<li class="">Ensure you have enough RTC after fees</li>
+</ol>
+<h4 class="anchor anchorTargetStickyNavbar_Vzrq" id=step-6-review-and-confirm>Step 6: Review and Confirm<a href=#step-6-review-and-confirm class=hash-link aria-label="Direct link to Step 6: Review and Confirm" title="Direct link to Step 6: Review and Confirm" translate=no>​</a></h4>
+<p><strong>Final Checklist:</strong></p>
+<ul class="contains-task-list containsTaskList_mC6p">
+<li class=task-list-item><input type=checkbox disabled/> Source RTC wallet has sufficient balance</li>
+<li class=task-list-item><input type=checkbox disabled/> Destination Solana address is correct</li>
+<li class=task-list-item><input type=checkbox disabled/> Amount + fees are acceptable</li>
+<li class=task-list-item><input type=checkbox disabled/> You understand this may take 5-30 minutes</li>
+</ul>
+<p>Click <strong>"Bridge"</strong> or <strong>"Confirm"</strong></p>
+<h4 class="anchor anchorTargetStickyNavbar_Vzrq" id=step-7-wait-for-confirmation>Step 7: Wait for Confirmation<a href=#step-7-wait-for-confirmation class=hash-link aria-label="Direct link to Step 7: Wait for Confirmation" title="Direct link to Step 7: Wait for Confirmation" translate=no>​</a></h4>
+<p>Bridging involves two transactions:</p>
+<ol>
+<li class=""><strong>Lock on RustChain</strong> (~1-5 minutes)</li>
+<li class=""><strong>Mint on Solana</strong> (~1-5 minutes)</li>
+</ol>
+<p>Monitor the bridge UI for status updates. You'll see:</p>
+<ul>
+<li class="">"Pending" → "Confirming" → "Completed"</li>
+</ul>
+<h4 class="anchor anchorTargetStickyNavbar_Vzrq" id=step-8-verify-wrtc-receipt>Step 8: Verify wRTC Receipt<a href=#step-8-verify-wrtc-receipt class=hash-link aria-label="Direct link to Step 8: Verify wRTC Receipt" title="Direct link to Step 8: Verify wRTC Receipt" translate=no>​</a></h4>
+<ol>
+<li class="">Check your Solana wallet for wRTC balance</li>
+<li class="">View transaction on <a href=https://solscan.io target=_blank rel="noopener noreferrer" class="">Solscan</a></li>
+<li class="">The wRTC should appear automatically</li>
+</ol>
+<hr/>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=-withdrawing-wrtc-to-rtc>🔄 Withdrawing wRTC to RTC<a href=#-withdrawing-wrtc-to-rtc class=hash-link aria-label="Direct link to 🔄 Withdrawing wRTC to RTC" title="Direct link to 🔄 Withdrawing wRTC to RTC" translate=no>​</a></h2>
+<p>Bridge your wRTC back to native RTC on RustChain.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=prerequisites-2>Prerequisites<a href=#prerequisites-2 class=hash-link aria-label="Direct link to Prerequisites" title="Direct link to Prerequisites" translate=no>​</a></h3>
+<ul class="contains-task-list containsTaskList_mC6p">
+<li class=task-list-item><input type=checkbox disabled/> Solana wallet with wRTC balance</li>
+<li class=task-list-item><input type=checkbox disabled/> RustChain wallet address (destination)</li>
+<li class=task-list-item><input type=checkbox disabled/> SOL for Solana transaction fees (~0.0001 SOL)</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=step-by-step-guide-2>Step-by-Step Guide<a href=#step-by-step-guide-2 class=hash-link aria-label="Direct link to Step-by-Step Guide" title="Direct link to Step-by-Step Guide" translate=no>​</a></h3>
+<h4 class="anchor anchorTargetStickyNavbar_Vzrq" id=step-1-navigate-to-bottube-bridge-1>Step 1: Navigate to BoTTube Bridge<a href=#step-1-navigate-to-bottube-bridge-1 class=hash-link aria-label="Direct link to Step 1: Navigate to BoTTube Bridge" title="Direct link to Step 1: Navigate to BoTTube Bridge" translate=no>​</a></h4>
+<p>Open: <code>https://bottube.ai/bridge/wrtc</code></p>
+<h4 class="anchor anchorTargetStickyNavbar_Vzrq" id=step-2-select-bridge-direction-1>Step 2: Select Bridge Direction<a href=#step-2-select-bridge-direction-1 class=hash-link aria-label="Direct link to Step 2: Select Bridge Direction" title="Direct link to Step 2: Select Bridge Direction" translate=no>​</a></h4>
+<p>Choose <strong>"wRTC → RTC"</strong> (Solana to RustChain)</p>
+<h4 class="anchor anchorTargetStickyNavbar_Vzrq" id=step-3-connect-solana-wallet>Step 3: Connect Solana Wallet<a href=#step-3-connect-solana-wallet class=hash-link aria-label="Direct link to Step 3: Connect Solana Wallet" title="Direct link to Step 3: Connect Solana Wallet" translate=no>​</a></h4>
+<ol>
+<li class="">Click <strong>"Connect Solana Wallet"</strong></li>
+<li class="">Select your wallet provider (Phantom, Solflare, etc.)</li>
+<li class="">Approve the connection</li>
+<li class="">Verify your wRTC balance displays</li>
+</ol>
+<h4 class="anchor anchorTargetStickyNavbar_Vzrq" id=step-4-enter-rtc-destination>Step 4: Enter RTC Destination<a href=#step-4-enter-rtc-destination class=hash-link aria-label="Direct link to Step 4: Enter RTC Destination" title="Direct link to Step 4: Enter RTC Destination" translate=no>​</a></h4>
+<ol>
+<li class="">Enter your RustChain wallet address</li>
+<li class=""><strong>Double-check this address</strong></li>
+<li class="">Ensure it's a valid RustChain address format</li>
+</ol>
+<h4 class="anchor anchorTargetStickyNavbar_Vzrq" id=step-5-enter-amount-1>Step 5: Enter Amount<a href=#step-5-enter-amount-1 class=hash-link aria-label="Direct link to Step 5: Enter Amount" title="Direct link to Step 5: Enter Amount" translate=no>​</a></h4>
+<ol>
+<li class="">Enter the amount of wRTC to bridge</li>
+<li class="">Review the bridge fee</li>
+<li class="">Click <strong>"Max"</strong> to bridge entire balance (minus fees)</li>
+</ol>
+<h4 class="anchor anchorTargetStickyNavbar_Vzrq" id=step-6-review-and-confirm-1>Step 6: Review and Confirm<a href=#step-6-review-and-confirm-1 class=hash-link aria-label="Direct link to Step 6: Review and Confirm" title="Direct link to Step 6: Review and Confirm" translate=no>​</a></h4>
+<p><strong>Final Checklist:</strong></p>
+<ul class="contains-task-list containsTaskList_mC6p">
+<li class=task-list-item><input type=checkbox disabled/> Source wRTC balance is sufficient</li>
+<li class=task-list-item><input type=checkbox disabled/> Destination RustChain address is correct</li>
+<li class=task-list-item><input type=checkbox disabled/> Amount + fees are acceptable</li>
+<li class=task-list-item><input type=checkbox disabled/> You have SOL for transaction fees</li>
+</ul>
+<p>Click <strong>"Bridge"</strong></p>
+<h4 class="anchor anchorTargetStickyNavbar_Vzrq" id=step-7-approve-solana-transaction>Step 7: Approve Solana Transaction<a href=#step-7-approve-solana-transaction class=hash-link aria-label="Direct link to Step 7: Approve Solana Transaction" title="Direct link to Step 7: Approve Solana Transaction" translate=no>​</a></h4>
+<ol>
+<li class="">Your wallet will prompt for transaction approval</li>
+<li class="">Review the transaction details</li>
+<li class="">Click <strong>"Approve"</strong> or <strong>"Sign"</strong></li>
+</ol>
+<h4 class="anchor anchorTargetStickyNavbar_Vzrq" id=step-8-wait-for-confirmation>Step 8: Wait for Confirmation<a href=#step-8-wait-for-confirmation class=hash-link aria-label="Direct link to Step 8: Wait for Confirmation" title="Direct link to Step 8: Wait for Confirmation" translate=no>​</a></h4>
+<p>Bridging process:</p>
+<ol>
+<li class=""><strong>Burn on Solana</strong> (~5-15 seconds)</li>
+<li class=""><strong>Release on RustChain</strong> (~5-30 minutes)</li>
+</ol>
+<p>Monitor the bridge UI for updates.</p>
+<h4 class="anchor anchorTargetStickyNavbar_Vzrq" id=step-9-verify-rtc-receipt>Step 9: Verify RTC Receipt<a href=#step-9-verify-rtc-receipt class=hash-link aria-label="Direct link to Step 9: Verify RTC Receipt" title="Direct link to Step 9: Verify RTC Receipt" translate=no>​</a></h4>
+<ol>
+<li class="">Check your RustChain wallet balance</li>
+</ol>
+<div class="language-bash codeBlockContainer_Ckt0 theme-code-block" style=--prism-color:#393A34;--prism-background-color:#f6f8fa><div class=codeBlockContent_QJqH><pre tabindex=0 class="prism-code language-bash codeBlock_bY9V thin-scrollbar" style=color:#393A34;background-color:#f6f8fa><code class=codeBlockLines_e6Vv><div class=token-line style=color:#393A34><span class="token plain">curl -sk "https://rustchain.org/wallet/balance?miner_id=my-miner-id"</span><br/></div></code></pre></div></div>
+<ol start=2>
+<li class="">Verify on <a href=https://rustchain.org/explorer target=_blank rel="noopener noreferrer" class="">RustChain Explorer</a></li>
+</ol>
+<hr/>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=-quick-reference>📊 Quick Reference<a href=#-quick-reference class=hash-link aria-label="Direct link to 📊 Quick Reference" title="Direct link to 📊 Quick Reference" translate=no>​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=token-details>Token Details<a href=#token-details class=hash-link aria-label="Direct link to Token Details" title="Direct link to Token Details" translate=no>​</a></h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Property<th>Value<tbody><tr><td><strong>Token Name</strong><td>Wrapped RustChain Token<tr><td><strong>Symbol</strong><td>wRTC<tr><td><strong>Mint Address</strong><td><code>12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X</code><tr><td><strong>Decimals</strong><td>6<tr><td><strong>Network</strong><td>Solana<tr><td><strong>Standard</strong><td>SPL Token</table>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=official-links>Official Links<a href=#official-links class=hash-link aria-label="Direct link to Official Links" title="Direct link to Official Links" translate=no>​</a></h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Resource<th>URL<tbody><tr><td><strong>Raydium Swap (SOL→wRTC)</strong><td><a href="https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X" target=_blank rel="noopener noreferrer" class="">https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X</a><tr><td><strong>BoTTube Bridge</strong><td><a href=https://bottube.ai/bridge/wrtc target=_blank rel="noopener noreferrer" class="">https://bottube.ai/bridge/wrtc</a><tr><td><strong>DexScreener</strong><td><a href=https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb target=_blank rel="noopener noreferrer" class="">https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb</a><tr><td><strong>RustChain Explorer</strong><td><a href=https://rustchain.org/explorer target=_blank rel="noopener noreferrer" class="">https://rustchain.org/explorer</a></table>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=bridge-fees>Bridge Fees<a href=#bridge-fees class=hash-link aria-label="Direct link to Bridge Fees" title="Direct link to Bridge Fees" translate=no>​</a></h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Direction<th>Typical Fee<th>Time<tbody><tr><td>RTC → wRTC<td>0.1-0.5%<td>5-30 min<tr><td>wRTC → RTC<td>0.1-0.5%<td>5-30 min</table>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=transaction-costs>Transaction Costs<a href=#transaction-costs class=hash-link aria-label="Direct link to Transaction Costs" title="Direct link to Transaction Costs" translate=no>​</a></h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Operation<th>Network Fee<tbody><tr><td>Raydium Swap<td>~0.001 SOL<tr><td>Bridge (wRTC→RTC)<td>~0.0001 SOL<tr><td>Transfer wRTC<td>~0.000005 SOL</table>
+<hr/>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=-troubleshooting>🔧 Troubleshooting<a href=#-troubleshooting class=hash-link aria-label="Direct link to 🔧 Troubleshooting" title="Direct link to 🔧 Troubleshooting" translate=no>​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=common-issues>Common Issues<a href=#common-issues class=hash-link aria-label="Direct link to Common Issues" title="Direct link to Common Issues" translate=no>​</a></h3>
+<h4 class="anchor anchorTargetStickyNavbar_Vzrq" id=issue-insufficient-sol-for-transaction-fees>Issue: "Insufficient SOL for transaction fees"<a href=#issue-insufficient-sol-for-transaction-fees class=hash-link aria-label='Direct link to Issue: "Insufficient SOL for transaction fees"' title='Direct link to Issue: "Insufficient SOL for transaction fees"' translate=no>​</a></h4>
+<p><strong>Solution:</strong></p>
+<ul>
+<li class="">Ensure your Solana wallet has at least 0.001 SOL</li>
+<li class="">Buy SOL on any exchange and transfer to your wallet</li>
+<li class="">Even small amounts (0.01 SOL) are sufficient for many transactions</li>
+</ul>
+<h4 class="anchor anchorTargetStickyNavbar_Vzrq" id=issue-token-mint-not-found-or-wrong-token-showing>Issue: "Token mint not found" or wrong token showing<a href=#issue-token-mint-not-found-or-wrong-token-showing class=hash-link aria-label='Direct link to Issue: "Token mint not found" or wrong token showing' title='Direct link to Issue: "Token mint not found" or wrong token showing' translate=no>​</a></h4>
+<p><strong>Solution:</strong></p>
+<ol>
+<li class="">Verify you're using the correct mint: <code>12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X</code></li>
+<li class="">Clear your wallet's token cache (settings → clear cache)</li>
+<li class="">Manually add the token using the mint address</li>
+</ol>
+<h4 class="anchor anchorTargetStickyNavbar_Vzrq" id=issue-bridge-transaction-stuck-on-pending>Issue: Bridge transaction stuck on "Pending"<a href=#issue-bridge-transaction-stuck-on-pending class=hash-link aria-label='Direct link to Issue: Bridge transaction stuck on "Pending"' title='Direct link to Issue: Bridge transaction stuck on "Pending"' translate=no>​</a></h4>
+<p><strong>Solution:</strong></p>
+<ol>
+<li class="">Wait up to 1 hour (network congestion)</li>
+<li class="">Check <a href=https://solscan.io target=_blank rel="noopener noreferrer" class="">Solscan</a> for your Solana transaction status</li>
+<li class="">Check RustChain explorer for the corresponding transaction</li>
+<li class="">Contact support with transaction hash if >1 hour</li>
+</ol>
+<h4 class="anchor anchorTargetStickyNavbar_Vzrq" id=issue-slippage-tolerance-exceeded-on-raydium>Issue: "Slippage tolerance exceeded" on Raydium<a href=#issue-slippage-tolerance-exceeded-on-raydium class=hash-link aria-label='Direct link to Issue: "Slippage tolerance exceeded" on Raydium' title='Direct link to Issue: "Slippage tolerance exceeded" on Raydium' translate=no>​</a></h4>
+<p><strong>Solution:</strong></p>
+<ol>
+<li class="">Increase slippage tolerance (gear icon) to 1-2%</li>
+<li class="">Try swapping a smaller amount</li>
+<li class="">Wait a few minutes and retry (price may be volatile)</li>
+<li class="">Check DexScreener for current pool liquidity</li>
+</ol>
+<h4 class="anchor anchorTargetStickyNavbar_Vzrq" id=issue-bridge-shows-failed-or-rejected>Issue: Bridge shows "Failed" or "Rejected"<a href=#issue-bridge-shows-failed-or-rejected class=hash-link aria-label='Direct link to Issue: Bridge shows "Failed" or "Rejected"' title='Direct link to Issue: Bridge shows "Failed" or "Rejected"' translate=no>​</a></h4>
+<p><strong>Solution:</strong></p>
+<ol>
+<li class="">Verify you have enough balance for the amount + fees</li>
+<li class="">Check that both wallet addresses are correct</li>
+<li class="">Ensure you're on the correct network (Mainnet Beta for Solana)</li>
+<li class="">Clear browser cache and try again</li>
+<li class="">Try a smaller amount first</li>
+</ol>
+<h4 class="anchor anchorTargetStickyNavbar_Vzrq" id=issue-wrtc-not-appearing-in-wallet-after-purchase>Issue: wRTC not appearing in wallet after purchase<a href=#issue-wrtc-not-appearing-in-wallet-after-purchase class=hash-link aria-label="Direct link to Issue: wRTC not appearing in wallet after purchase" title="Direct link to Issue: wRTC not appearing in wallet after purchase" translate=no>​</a></h4>
+<p><strong>Solution:</strong></p>
+<ul>
+<li class=""><strong>Phantom</strong>: Settings → Preferences → Manage token list → Search "wRTC"</li>
+<li class=""><strong>Solflare</strong>: Portfolio → Click "+" → Paste mint address → Add</li>
+<li class=""><strong>Backpack</strong>: Tokens → Search or paste mint</li>
+</ul>
+<h4 class="anchor anchorTargetStickyNavbar_Vzrq" id=issue-invalid-address-format-when-bridging>Issue: "Invalid address format" when bridging<a href=#issue-invalid-address-format-when-bridging class=hash-link aria-label='Direct link to Issue: "Invalid address format" when bridging' title='Direct link to Issue: "Invalid address format" when bridging' translate=no>​</a></h4>
+<p><strong>Solution:</strong></p>
+<ul>
+<li class="">RustChain addresses: Alphanumeric, case-sensitive</li>
+<li class="">Solana addresses: 32-44 characters, base58 encoded</li>
+<li class="">Never use Ethereum (0x...) addresses for Solana transactions</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=emergency-contacts>Emergency Contacts<a href=#emergency-contacts class=hash-link aria-label="Direct link to Emergency Contacts" title="Direct link to Emergency Contacts" translate=no>​</a></h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Issue<th>Contact<tbody><tr><td>Bridge problems<td>BoTTube support on <a href=https://bottube.ai target=_blank rel="noopener noreferrer" class="">bottube.ai</a><tr><td>RustChain issues<td>GitHub Issues: <a href=https://github.com/Scottcjn/Rustchain target=_blank rel="noopener noreferrer" class="">Scottcjn/Rustchain</a><tr><td>Scam reports<td>Report to official RustChain Discord/Telegram mods</table>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=safety-reminders>Safety Reminders<a href=#safety-reminders class=hash-link aria-label="Direct link to Safety Reminders" title="Direct link to Safety Reminders" translate=no>​</a></h3>
+<ol>
+<li class=""><strong>Never share your seed phrase or private keys</strong></li>
+<li class=""><strong>Never approve transactions you don't understand</strong></li>
+<li class=""><strong>Always verify mint addresses character-by-character</strong></li>
+<li class=""><strong>Bookmark official URLs</strong> - never click links from DMs</li>
+<li class=""><strong>Start with small amounts</strong> when testing new processes</li>
+<li class=""><strong>Keep software updated</strong> - wallet apps, browsers</li>
+</ol>
+<hr/>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=-additional-resources>📚 Additional Resources<a href=#-additional-resources class=hash-link aria-label="Direct link to 📚 Additional Resources" title="Direct link to 📚 Additional Resources" translate=no>​</a></h2>
+<ul>
+<li class=""><a class="" href=/Rustchain/docs/WHITEPAPER>RustChain Whitepaper</a></li>
+<li class=""><a class="" href=/Rustchain/docs/PROTOCOL>Protocol Specification</a></li>
+<li class=""><a class="" href=/Rustchain/docs/API>API Reference</a></li>
+<li class=""><a class="" href=/Rustchain/docs/WALLET_USER_GUIDE>Wallet User Guide</a></li>
+<li class=""><a class="" href=/Rustchain/docs/WRTC_ONBOARDING_TUTORIAL>Original Onboarding Tutorial</a></li>
+</ul>
+<hr/>
+<div align=center>
+<p><strong>Questions?</strong> Open an issue on <a href=https://github.com/Scottcjn/Rustchain target=_blank rel="noopener noreferrer" class="">GitHub</a> or reach out in official community channels.</p>
+<p><em>Always verify, never rush. Your security is worth the extra 30 seconds.</em></p>
+</div></div><footer class="theme-doc-footer docusaurus-mt-lg"><div class="row margin-top--sm theme-doc-footer-edit-meta-row"><div class="col noPrint_WFHX"><a href=https://github.com/Scottcjn/Rustchain/tree/main/docs/../docs/wrtc.md target=_blank rel="noopener noreferrer" class=theme-edit-this-page><svg fill=currentColor height=20 width=20 viewBox="0 0 40 40" class=iconEdit_Z9Sw aria-hidden=true><g><path d="m34.5 11.7l-3 3.1-6.3-6.3 3.1-3q0.5-0.5 1.2-0.5t1.1 0.5l3.9 3.9q0.5 0.4 0.5 1.1t-0.5 1.2z m-29.5 17.1l18.4-18.5 6.3 6.3-18.4 18.4h-6.3v-6.2z"/></g></svg>Edit this page</a></div><div class="col lastUpdated_JAkA"></div></div></footer></article><nav class="docusaurus-mt-lg pagination-nav" aria-label="Docs pages"><a class="pagination-nav__link pagination-nav__link--prev" href=/Rustchain/docs/whitepaper/tokenomics><div class=pagination-nav__sublabel>Previous</div><div class=pagination-nav__label>Tokenomics</div></a><a class="pagination-nav__link pagination-nav__link--next" href=/Rustchain/docs/zh-CN/><div class=pagination-nav__sublabel>Next</div><div class=pagination-nav__label>README</div></a></nav></div></div><div class="col col--3"><div class="tableOfContents_bqdL thin-scrollbar theme-doc-toc-desktop"><ul class="table-of-contents table-of-contents__left-border"><li><a href=#-table-of-contents class="table-of-contents__link toc-highlight">📋 Table of Contents</a><li><a href=#️-anti-scam-checklist class="table-of-contents__link toc-highlight">🛡️ Anti-Scam Checklist</a><ul><li><a href=#️-red-flags---stop-if-you-see-these class="table-of-contents__link toc-highlight">⚠️ Red Flags - STOP if you see these:</a></ul><li><a href=#-what-is-wrtc class="table-of-contents__link toc-highlight">🪙 What is wRTC?</a><ul><li><a href=#why-use-wrtc class="table-of-contents__link toc-highlight">Why Use wRTC?</a></ul><li><a href=#-buying-wrtc-on-raydium class="table-of-contents__link toc-highlight">💱 Buying wRTC on Raydium</a><ul><li><a href=#prerequisites class="table-of-contents__link toc-highlight">Prerequisites</a><li><a href=#step-by-step-guide class="table-of-contents__link toc-highlight">Step-by-Step Guide</a></ul><li><a href=#-bridging-rtc-to-wrtc class="table-of-contents__link toc-highlight">🌉 Bridging RTC to wRTC</a><ul><li><a href=#prerequisites-1 class="table-of-contents__link toc-highlight">Prerequisites</a><li><a href=#step-by-step-guide-1 class="table-of-contents__link toc-highlight">Step-by-Step Guide</a></ul><li><a href=#-withdrawing-wrtc-to-rtc class="table-of-contents__link toc-highlight">🔄 Withdrawing wRTC to RTC</a><ul><li><a href=#prerequisites-2 class="table-of-contents__link toc-highlight">Prerequisites</a><li><a href=#step-by-step-guide-2 class="table-of-contents__link toc-highlight">Step-by-Step Guide</a></ul><li><a href=#-quick-reference class="table-of-contents__link toc-highlight">📊 Quick Reference</a><ul><li><a href=#token-details class="table-of-contents__link toc-highlight">Token Details</a><li><a href=#official-links class="table-of-contents__link toc-highlight">Official Links</a><li><a href=#bridge-fees class="table-of-contents__link toc-highlight">Bridge Fees</a><li><a href=#transaction-costs class="table-of-contents__link toc-highlight">Transaction Costs</a></ul><li><a href=#-troubleshooting class="table-of-contents__link toc-highlight">🔧 Troubleshooting</a><ul><li><a href=#common-issues class="table-of-contents__link toc-highlight">Common Issues</a><li><a href=#emergency-contacts class="table-of-contents__link toc-highlight">Emergency Contacts</a><li><a href=#safety-reminders class="table-of-contents__link toc-highlight">Safety Reminders</a></ul><li><a href=#-additional-resources class="table-of-contents__link toc-highlight">📚 Additional Resources</a></ul></div></div></div></div></main></div></div></div><footer class="theme-layout-footer footer footer--dark"><div class="container container-fluid"><div class="row footer__links"><div class="theme-layout-footer-column col footer__col"><div class=footer__title>Docs</div><ul class="footer__items clean-list"><li class=footer__item><a class=footer__link-item href=/Rustchain/docs>Documentation</a></ul></div><div class="theme-layout-footer-column col footer__col"><div class=footer__title>Project</div><ul class="footer__items clean-list"><li class=footer__item><a href=https://github.com/Scottcjn/Rustchain target=_blank rel="noopener noreferrer" class=footer__link-item>GitHub<svg width=13.5 height=13.5 aria-label="(opens in new tab)" class=iconExternalLink_nPIU><use href=#theme-svg-external-link /></svg></a><li class=footer__item><a href=https://github.com/Scottcjn/rustchain-bounties target=_blank rel="noopener noreferrer" class=footer__link-item>Bounties<svg width=13.5 height=13.5 aria-label="(opens in new tab)" class=iconExternalLink_nPIU><use href=#theme-svg-external-link /></svg></a></ul></div></div><div class="footer__bottom text--center"><div class=footer__copyright>Copyright © 2026 Elyan Labs · RustChain. Built with Docusaurus.</div></div></div></footer></div></body>

@@ -1,0 +1,696 @@
+<!doctype html><html lang=en dir=ltr class="docs-wrapper plugin-docs plugin-id-default docs-version-current docs-doc-page docs-doc-id-token-economics" data-has-hydrated=false><head><meta charset=UTF-8><meta name=generator content="Docusaurus v3.10.1"><title data-rh=true>RustChain Token Economics | RustChain</title><meta data-rh=true name=viewport content="width=device-width, initial-scale=1.0"/><meta data-rh=true name=twitter:card content=summary_large_image /><meta data-rh=true property=og:image content=https://scottcjn.github.io/Rustchain/img/docusaurus-social-card.jpg /><meta data-rh=true name=twitter:image content=https://scottcjn.github.io/Rustchain/img/docusaurus-social-card.jpg /><meta data-rh=true property=og:url content=https://scottcjn.github.io/Rustchain/docs/token-economics /><meta data-rh=true property=og:locale content=en /><meta data-rh=true name=docusaurus_locale content=en /><meta data-rh=true name=docsearch:language content=en /><meta data-rh=true name=docusaurus_version content=current /><meta data-rh=true name=docusaurus_tag content=docs-default-current /><meta data-rh=true name=docsearch:version content=current /><meta data-rh=true name=docsearch:docusaurus_tag content=docs-default-current /><meta data-rh=true property=og:title content="RustChain Token Economics | RustChain"/><meta data-rh=true name=description content=Overview /><meta data-rh=true property=og:description content=Overview /><link data-rh=true rel=icon href=/Rustchain/img/favicon.ico /><link data-rh=true rel=canonical href=https://scottcjn.github.io/Rustchain/docs/token-economics /><link data-rh=true rel=alternate href=https://scottcjn.github.io/Rustchain/docs/token-economics hreflang=en /><link data-rh=true rel=alternate href=https://scottcjn.github.io/Rustchain/docs/token-economics hreflang=x-default /><script data-rh=true type=application/ld+json>{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","item":"https://scottcjn.github.io/Rustchain/docs/token-economics","name":"RustChain Token Economics","position":1}]}</script><link rel=stylesheet href=/Rustchain/assets/css/styles.160a45a5.css /><script src=/Rustchain/assets/js/runtime~main.3268acea.js defer></script><script src=/Rustchain/assets/js/main.514c2465.js defer></script></head><body><svg style="display: none;"><defs>
+<symbol id=theme-svg-external-link viewBox="0 0 24 24"><path fill=currentColor d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"/></symbol>
+</defs></svg>
+<script>!function(){var t=function(){try{return new URLSearchParams(window.location.search).get("docusaurus-theme")}catch(t){}}()||function(){try{return window.localStorage.getItem("theme-0bd")}catch(t){}}();document.documentElement.setAttribute("data-theme",t||(window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")),document.documentElement.setAttribute("data-theme-choice",t||"system")}(),function(){try{for(var[t,e]of new URLSearchParams(window.location.search).entries())if(t.startsWith("docusaurus-data-")){var a=t.replace("docusaurus-data-","data-");document.documentElement.setAttribute(a,e)}}catch(t){}}()</script><div id=__docusaurus><link rel=preload as=image href=/Rustchain/img/logo.svg /><div role=region aria-label="Skip to main content"><a class=skipToContent_fXgn href=#__docusaurus_skipToContent_fallback>Skip to main content</a></div><nav aria-label=Main class="theme-layout-navbar navbar navbar--fixed-top"><div class=navbar__inner><div class="theme-layout-navbar-left navbar__items"><button aria-label="Toggle navigation bar" aria-expanded=false class="navbar__toggle clean-btn" type=button><svg width=30 height=30 viewBox="0 0 30 30" aria-hidden=true><path stroke=currentColor stroke-linecap=round stroke-miterlimit=10 stroke-width=2 d="M4 7h22M4 15h22M4 23h22"/></svg></button><a class=navbar__brand href=/Rustchain/><div class=navbar__logo><img src=/Rustchain/img/logo.svg alt="RustChain Logo" class="themedComponent_mlkZ themedComponent--light_NVdE"/><img src=/Rustchain/img/logo.svg alt="RustChain Logo" class="themedComponent_mlkZ themedComponent--dark_xIcU"/></div><b class="navbar__title text--truncate">RustChain</b></a><a aria-current=page class="navbar__item navbar__link navbar__link--active" href=/Rustchain/docs/API>Docs</a></div><div class="theme-layout-navbar-right navbar__items navbar__items--right"><a href=https://github.com/Scottcjn/Rustchain target=_blank rel="noopener noreferrer" class="navbar__item navbar__link">GitHub<svg width=13.5 height=13.5 aria-label="(opens in new tab)" class=iconExternalLink_nPIU><use href=#theme-svg-external-link /></svg></a><div class="toggle_vylO colorModeToggle_DEke"><button class="clean-btn toggleButton_gllP toggleButtonDisabled_aARS" type=button disabled title="system mode" aria-label="Switch between dark and light mode (currently system mode)"><svg viewBox="0 0 24 24" width=24 height=24 aria-hidden=true class="toggleIcon_g3eP lightToggleIcon_pyhR"><path fill=currentColor d="M12,9c1.65,0,3,1.35,3,3s-1.35,3-3,3s-3-1.35-3-3S10.35,9,12,9 M12,7c-2.76,0-5,2.24-5,5s2.24,5,5,5s5-2.24,5-5 S14.76,7,12,7L12,7z M2,13l2,0c0.55,0,1-0.45,1-1s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S1.45,13,2,13z M20,13l2,0c0.55,0,1-0.45,1-1 s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S19.45,13,20,13z M11,2v2c0,0.55,0.45,1,1,1s1-0.45,1-1V2c0-0.55-0.45-1-1-1S11,1.45,11,2z M11,20v2c0,0.55,0.45,1,1,1s1-0.45,1-1v-2c0-0.55-0.45-1-1-1C11.45,19,11,19.45,11,20z M5.99,4.58c-0.39-0.39-1.03-0.39-1.41,0 c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0s0.39-1.03,0-1.41L5.99,4.58z M18.36,16.95 c-0.39-0.39-1.03-0.39-1.41,0c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0c0.39-0.39,0.39-1.03,0-1.41 L18.36,16.95z M19.42,5.99c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06c-0.39,0.39-0.39,1.03,0,1.41 s1.03,0.39,1.41,0L19.42,5.99z M7.05,18.36c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06 c-0.39,0.39-0.39,1.03,0,1.41s1.03,0.39,1.41,0L7.05,18.36z"/></svg><svg viewBox="0 0 24 24" width=24 height=24 aria-hidden=true class="toggleIcon_g3eP darkToggleIcon_wfgR"><path fill=currentColor d="M9.37,5.51C9.19,6.15,9.1,6.82,9.1,7.5c0,4.08,3.32,7.4,7.4,7.4c0.68,0,1.35-0.09,1.99-0.27C17.45,17.19,14.93,19,12,19 c-3.86,0-7-3.14-7-7C5,9.07,6.81,6.55,9.37,5.51z M12,3c-4.97,0-9,4.03-9,9s4.03,9,9,9s9-4.03,9-9c0-0.46-0.04-0.92-0.1-1.36 c-0.98,1.37-2.58,2.26-4.4,2.26c-2.98,0-5.4-2.42-5.4-5.4c0-1.81,0.89-3.42,2.26-4.4C12.92,3.04,12.46,3,12,3L12,3z"/></svg><svg viewBox="0 0 24 24" width=24 height=24 aria-hidden=true class="toggleIcon_g3eP systemToggleIcon_QzmC"><path fill=currentColor d="m12 21c4.971 0 9-4.029 9-9s-4.029-9-9-9-9 4.029-9 9 4.029 9 9 9zm4.95-13.95c1.313 1.313 2.05 3.093 2.05 4.95s-0.738 3.637-2.05 4.95c-1.313 1.313-3.093 2.05-4.95 2.05v-14c1.857 0 3.637 0.737 4.95 2.05z"/></svg></button></div><div class=navbarSearchContainer_Bca1></div></div></div><div role=presentation class=navbar-sidebar__backdrop></div></nav><div id=__docusaurus_skipToContent_fallback class="theme-layout-main main-wrapper mainWrapper_z2l0"><div class=docsWrapper_hBAB><button aria-label="Scroll back to top" class="clean-btn theme-back-to-top-button backToTopButton_sjWU" type=button></button><div class=docRoot_UBD9><aside class="theme-doc-sidebar-container docSidebarContainer_YfHR"><div class=sidebarViewport_aRkj><div class=sidebar_njMd><nav aria-label="Docs sidebar" class="menu thin-scrollbar menu_SIkG"><ul class="theme-doc-sidebar-menu menu__list"><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/API><span title="RustChain API Reference" class=linkLabel_WmDU>RustChain API Reference</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/API_REFERENCE><span title="RustChain Unified API Reference" class=linkLabel_WmDU>RustChain Unified API Reference</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/API_WALKTHROUGH><span title="RustChain API Walkthrough" class=linkLabel_WmDU>RustChain API Walkthrough</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/ARCHITECTURE_OVERVIEW><span title="RustChain Architecture Overview" class=linkLabel_WmDU>RustChain Architecture Overview</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/BEACON_CERTIFIED_OPEN_SOURCE><span title="Beacon Certified Open Source (BCOS)" class=linkLabel_WmDU>Beacon Certified Open Source (BCOS)</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/BOTTUBE_EMBED><span title="BoTTube Embeddable Player Widget" class=linkLabel_WmDU>BoTTube Embeddable Player Widget</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/BOTTUBE_FEED><span title="BoTTube Feed Support" class=linkLabel_WmDU>BoTTube Feed Support</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/BOTTUBE_INTEGRATION><span title="BoTTube and RustChain Integration" class=linkLabel_WmDU>BoTTube and RustChain Integration</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/BOTTUBE_MOOD_SYSTEM><span title="BoTTube Agent Mood System" class=linkLabel_WmDU>BoTTube Agent Mood System</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/BOUNTY_1490_FIX><span title="Bounty #1490 Fix: clawrtc wallet show False Offline State" class=linkLabel_WmDU>Bounty #1490 Fix: clawrtc wallet show False Offline State</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/BOUNTY_1512_IMPLEMENTATION_REPORT><span title="Bounty #1512 (RIP-305 Track D) Implementation Report" class=linkLabel_WmDU>Bounty #1512 (RIP-305 Track D) Implementation Report</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/BOUNTY_1524_IMPLEMENTATION><span title="Bounty #1524: Beacon Atlas 3D Agent World" class=linkLabel_WmDU>Bounty #1524: Beacon Atlas 3D Agent World</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/BOUNTY_1524_VALIDATION><span title="Bounty #1524 Validation Report" class=linkLabel_WmDU>Bounty #1524 Validation Report</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/BOUNTY_2307_IMPLEMENTATION><span title="Bounty #2307: Boot Chime Proof-of-Iron — Acoustic Hardware Attestation" class=linkLabel_WmDU>Bounty #2307: Boot Chime Proof-of-Iron — Acoustic Hardware Attestation</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/BOUNTY_2313_IMPLEMENTATION><span title="Bounty #2313 Implementation Report" class=linkLabel_WmDU>Bounty #2313 Implementation Report</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/BUILD><span title="RustChain Build Guide" class=linkLabel_WmDU>RustChain Build Guide</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/Boudreaux_COMPUTING_PRINCIPLES><span title="Boudreaux Computing Principles" class=linkLabel_WmDU>Boudreaux Computing Principles</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/CLAIMS_GUIDE><span title="RustChain Reward Claims Guide" class=linkLabel_WmDU>RustChain Reward Claims Guide</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/CLI><span title="RustChain CLI Wallet Walkthrough" class=linkLabel_WmDU>RustChain CLI Wallet Walkthrough</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/CONSENSUS_INVARIANT_ATTRACTOR><span title="Consensus Invariant Attractor Harness" class=linkLabel_WmDU>Consensus Invariant Attractor Harness</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/CONSOLE_MINING_SETUP><span title="RIP-0683: Console Mining Setup Guide" class=linkLabel_WmDU>RIP-0683: Console Mining Setup Guide</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/CONTRIBUTING><span title="Contributing Guide" class=linkLabel_WmDU>Contributing Guide</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/CONTRIBUTING_FOR_AGENTS><span title="Contributing Guide for AI Agents" class=linkLabel_WmDU>Contributing Guide for AI Agents</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/CPU_IMPACT_BENCHMARK><span title="RustChain (RTC) Miner — CPU & GPU Impact Benchmark" class=linkLabel_WmDU>RustChain (RTC) Miner — CPU & GPU Impact Benchmark</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/CROSS_NODE_SYNC_VALIDATOR><span title="Cross-Node Sync Validator" class=linkLabel_WmDU>Cross-Node Sync Validator</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/DEVELOPER_QUICKSTART><span title="RustChain Developer Quickstart: First API Calls" class=linkLabel_WmDU>RustChain Developer Quickstart: First API Calls</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/DEVELOPER_TRACTION_Q1_2026><span title="Elyan Labs — Developer Traction Report" class=linkLabel_WmDU>Elyan Labs — Developer Traction Report</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/DEVNET><span title="Local Single-Node Devnet" class=linkLabel_WmDU>Local Single-Node Devnet</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/DEV_GUIDE><span title="RustChain PoA Developer Guide (Retro Edition)" class=linkLabel_WmDU>RustChain PoA Developer Guide (Retro Edition)</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/DISCORD_LEADERBOARD_BOT><span title="Discord Leaderboard Bot" class=linkLabel_WmDU>Discord Leaderboard Bot</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/DISCORD_ONBOARDING><span title="Discord → On-Chain Holder Onboarding" class=linkLabel_WmDU>Discord → On-Chain Holder Onboarding</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/DYNAMIC_BADGES_V2><span title="Dynamic Shields Badges v2" class=linkLabel_WmDU>Dynamic Shields Badges v2</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/FAQ><span title="RustChain FAQ" class=linkLabel_WmDU>RustChain FAQ</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/FAQ_TROUBLESHOOTING><span title="RustChain FAQ and Troubleshooting" class=linkLabel_WmDU>RustChain FAQ and Troubleshooting</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/FIX_1147_ATTEST_SUBMIT_CRASH><span title="Issue #1147 Fix: /attest/submit 500 Crash" class=linkLabel_WmDU>Issue #1147 Fix: /attest/submit 500 Crash</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/GLOSSARY><span title="RustChain Glossary" class=linkLabel_WmDU>RustChain Glossary</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/GPU_FINGERPRINTING><span title="GPU Fingerprinting — PPA Channel 8" class=linkLabel_WmDU>GPU Fingerprinting — PPA Channel 8</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/INSTALLATION_WALKTHROUGH><span title="RustChain Installation Walkthrough" class=linkLabel_WmDU>RustChain Installation Walkthrough</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/ISSUE_1449_ANTI_DOUBLE_MINING><span title="Issue #1449: Anti-Double-Mining Implementation" class=linkLabel_WmDU>Issue #1449: Anti-Double-Mining Implementation</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/ISSUE_2127_DEPLOYMENT><span title="Issue #2127 - Beacon Join Routing Deployment Notes" class=linkLabel_WmDU>Issue #2127 - Beacon Join Routing Deployment Notes</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/LEGAL/flameholder_license_manifest><span title=LEGAL class=categoryLinkLabel_W154>LEGAL</span></a></div><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/MASTERING_THE_MINER><span title="⛏️ Mastering the RustChain Miner: Hardware Fingerprints & Dual-Mining v2.0" class=linkLabel_WmDU>⛏️ Mastering the RustChain Miner: Hardware Fingerprints & Dual-Mining v2.0</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/MECHANISM_SPEC_AND_FALSIFICATION_MATRIX><span title="RustChain Mechanism Spec + Falsification Matrix" class=linkLabel_WmDU>RustChain Mechanism Spec + Falsification Matrix</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/MINER_VIDEO_SCRIPT><span title="🎥 RUSTCHAIN MINER EXPLAINER: 60-Second Script" class=linkLabel_WmDU>🎥 RUSTCHAIN MINER EXPLAINER: 60-Second Script</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/MINE_YOUR_GRANDMAS_COMPUTER><span title="Mine Your Grandma's Computer: The 15-Minute RustChain Guide" class=linkLabel_WmDU>Mine Your Grandma's Computer: The 15-Minute RustChain Guide</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/MINING_GUIDE><span title="RustChain Mining Guide" class=linkLabel_WmDU>RustChain Mining Guide</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/MOBILE_GUIDE><span title="BoTTube Mobile Responsive Implementation Guide" class=linkLabel_WmDU>BoTTube Mobile Responsive Implementation Guide</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/MULTISIG_WALLET_GUIDE><span title="RustChain 多签钱包指南" class=linkLabel_WmDU>RustChain 多签钱包指南</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/N64_MINING_GUIDE><span title="Mining RTC on a Nintendo 64" class=linkLabel_WmDU>Mining RTC on a Nintendo 64</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/NODE_OPERATOR_GUIDE><span title="RustChain Node Operator Guide" class=linkLabel_WmDU>RustChain Node Operator Guide</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/NODE_P2P_PROTOCOL><span title="🌐 Understanding the RustChain Node: P2P Gossip & Block Production" class=linkLabel_WmDU>🌐 Understanding the RustChain Node: P2P Gossip & Block Production</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/PAYOUT_PREFLIGHT><span title="Payout Preflight (Dry-Run Validation)" class=linkLabel_WmDU>Payout Preflight (Dry-Run Validation)</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/PREMINE_COMPLETION_RESOLUTION><span title="RustChain Premine Completion Resolution" class=linkLabel_WmDU>RustChain Premine Completion Resolution</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/PROTOCOL><span title="RustChain Protocol Specification" class=linkLabel_WmDU>RustChain Protocol Specification</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/PROTOCOL_BOUNTY_8><span title="RustChain Protocol Documentation (Bounty #8 Draft)" class=linkLabel_WmDU>RustChain Protocol Documentation (Bounty #8 Draft)</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/PROTOCOL_v1.1><span title="RustChain Protocol Specification v1.1 (RIP-200)" class=linkLabel_WmDU>RustChain Protocol Specification v1.1 (RIP-200)</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/QUICKSTART><span title="RustChain Quickstart Guide" class=linkLabel_WmDU>RustChain Quickstart Guide</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/><span title="RustChain Documentation" class=linkLabel_WmDU>RustChain Documentation</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/README.vi><span title="Tài Liệu RustChain" class=linkLabel_WmDU>Tài Liệu RustChain</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/RELAY_PARSER_NOTES><span title="Genesis Relay Parser (FlameChain Sync Prototype)" class=linkLabel_WmDU>Genesis Relay Parser (FlameChain Sync Prototype)</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/REWARD_ANALYTICS_DASHBOARD><span title="RTC Reward Analytics Dashboard" class=linkLabel_WmDU>RTC Reward Analytics Dashboard</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/RIP-305-cross-chain-airdrop><span title="RIP-305: Cross-Chain Airdrop Protocol" class=linkLabel_WmDU>RIP-305: Cross-Chain Airdrop Protocol</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/RIP305_AIRDROP_V2><span title="RIP-305: Cross-Chain Airdrop Implementation" class=linkLabel_WmDU>RIP-305: Cross-Chain Airdrop Implementation</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/RUSTCHAIN_DEVELOPER_TUTORIAL><span title="RustChain Developer Tutorial: Build on the Proof-of-Antiquity Blockchain" class=linkLabel_WmDU>RustChain Developer Tutorial: Build on the Proof-of-Antiquity Blockchain</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/RUSTCHAIN_PROTOCOL><span title="RustChain Protocol Specification" class=linkLabel_WmDU>RustChain Protocol Specification</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/RUSTCHAIN_VS_ETHEREUM_POS_COMPARISON><span title="RustChain vs Ethereum Proof-of-Stake: A Comprehensive Comparison" class=linkLabel_WmDU>RustChain vs Ethereum Proof-of-Stake: A Comprehensive Comparison</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/SECURITY_AUDIT><span title="RustChain Security Audit Report" class=linkLabel_WmDU>RustChain Security Audit Report</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/SMART_CONTRACT_DEVELOPER_GUIDE><span title="Smart Contract Developer Guide" class=linkLabel_WmDU>Smart Contract Developer Guide</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/TESTNET_FAUCET><span title="RustChain Testnet Faucet" class=linkLabel_WmDU>RustChain Testnet Faucet</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/TEST_PLAN><span title="RustChain PoA Retro Test Plan" class=linkLabel_WmDU>RustChain PoA Retro Test Plan</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/UPGRADE_MIGRATION_GUIDE><span title="RustChain 升级迁移指南" class=linkLabel_WmDU>RustChain 升级迁移指南</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/US_REGULATORY_POSITION><span title="RustChain (RTC) — U.S. Regulatory Position" class=linkLabel_WmDU>RustChain (RTC) — U.S. Regulatory Position</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/VINTAGE_MINING_EXPLAINED><span title="Vintage Mining Explained" class=linkLabel_WmDU>Vintage Mining Explained</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/VINTAGE_MINING_EXPLAINED.pt-BR><span title="Mineração Vintage Explicada" class=linkLabel_WmDU>Mineração Vintage Explicada</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/WALLET_CLI_COMPATIBILITY_39><span title="Wallet CLI Compatibility Notes (Issue #39)" class=linkLabel_WmDU>Wallet CLI Compatibility Notes (Issue #39)</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/WALLET_CLI_PREVIEW_39><span title="RustChain Wallet CLI (Preview for bounty #39)" class=linkLabel_WmDU>RustChain Wallet CLI (Preview for bounty #39)</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/WALLET_SETUP><span title="RustChain Wallet Setup for Beginners" class=linkLabel_WmDU>RustChain Wallet Setup for Beginners</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/WALLET_USER_GUIDE><span title="Wallet User Guide" class=linkLabel_WmDU>Wallet User Guide</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/WEBSOCKET_FEED><span title="RustChain WebSocket Feed - Issue #2295" class=linkLabel_WmDU>RustChain WebSocket Feed - Issue #2295</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/WHITEPAPER><span title="RustChain: A Proof-of-Antiquity Blockchain for Hardware Preservation" class=linkLabel_WmDU>RustChain: A Proof-of-Antiquity Blockchain for Hardware Preservation</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/WRTC_ONBOARDING_TUTORIAL><span title="wRTC Onboarding Tutorial (Bridge + Raydium + Safety)" class=linkLabel_WmDU>wRTC Onboarding Tutorial (Bridge + Raydium + Safety)</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/YOLO><span title=YOLO class=linkLabel_WmDU>YOLO</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist" href=/Rustchain/docs/api/><span title="RustChain API Documentation" class=categoryLinkLabel_W154>RustChain API Documentation</span></a><button aria-label="Expand sidebar category 'RustChain API Documentation'" aria-expanded=false type=button class="clean-btn menu__caret"></button></div><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/api-reference><span title="RustChain API Reference" class=linkLabel_WmDU>RustChain API Reference</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/asciinema/><span title="RustChain Asciinema Recordings" class=linkLabel_WmDU>RustChain Asciinema Recordings</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/attestation-flow><span title="RustChain Attestation Flow" class=linkLabel_WmDU>RustChain Attestation Flow</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/attestation_fuzzing><span title="Attestation Malformed-Input Regression Harness" class=linkLabel_WmDU>Attestation Malformed-Input Regression Harness</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/blog/rustchain-utility-coin-not-security><span title=blog class=categoryLinkLabel_W154>blog</span></a></div><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/bounties/BOUNTY_1492_IMPLEMENTATION><span title=bounties class=categoryLinkLabel_W154>bounties</span></a></div><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/bridge-api><span title="RIP-0305 Bridge API Documentation" class=linkLabel_WmDU>RIP-0305 Bridge API Documentation</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/chain_architecture><span title="RustChain Architecture Overview – Draft v1" class=linkLabel_WmDU>RustChain Architecture Overview – Draft v1</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/community/shanties/rayycave-proof-of-antiquity><span title=community class=categoryLinkLabel_W154>community</span></a></div><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist" href=/Rustchain/docs/de-DE/><span title=RustChain-Dokumentation class=categoryLinkLabel_W154>RustChain-Dokumentation</span></a><button aria-label="Expand sidebar category 'RustChain-Dokumentation'" aria-expanded=false type=button class="clean-btn menu__caret"></button></div><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/discord-transport><span title="Discord Transport — FlameNet Beacon" class=linkLabel_WmDU>Discord Transport — FlameNet Beacon</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/epoch-settlement><span title="RustChain Epoch Settlement" class=linkLabel_WmDU>RustChain Epoch Settlement</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/es/><span title="RustChain — Blockchain DePIN para Hardware Vintage y Retro" class=linkLabel_WmDU>RustChain — Blockchain DePIN para Hardware Vintage y Retro</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/es-ES/RUSTCHAIN_EXPLAINED><span title=es-ES class=categoryLinkLabel_W154>es-ES</span></a></div><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/features/ppa-attestation-visualizer><span title=features class=categoryLinkLabel_W154>features</span></a></div><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/fr-FR/RUSTCHAIN_EXPLAINED><span title=fr-FR class=categoryLinkLabel_W154>fr-FR</span></a></div><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/hardware-fingerprinting><span title="RustChain Hardware Fingerprinting" class=linkLabel_WmDU>RustChain Hardware Fingerprinting</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/i18n/ko/QUICKSTART><span title=i18n class=categoryLinkLabel_W154>i18n</span></a></div><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/it-IT/><span title=RustChain class=linkLabel_WmDU>RustChain</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/ja/><span title=RustChain（日本語ガイド） class=linkLabel_WmDU>RustChain（日本語ガイド）</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/ja-JP/><span title=RustChain class=linkLabel_WmDU>RustChain</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/ko-KR/><span title="RustChain 문서" class=linkLabel_WmDU>RustChain 문서</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/mempool-visualization-demo><span title="Mempool Visualization Demo" class=linkLabel_WmDU>Mempool Visualization Demo</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/miner-setup-wizard/><span title="RustChain Miner Setup Wizard (Bounty #47)" class=linkLabel_WmDU>RustChain Miner Setup Wizard (Bounty #47)</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/nl-NL/><span title=RustChain class=linkLabel_WmDU>RustChain</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/pl-PL/RUSTCHAIN_EXPLAINED><span title=pl-PL class=categoryLinkLabel_W154>pl-PL</span></a></div><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/plans/2026-02-15-ci-pipeline-design><span title=plans class=categoryLinkLabel_W154>plans</span></a></div><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/postman/><span title="RustChain API Postman Collection" class=linkLabel_WmDU>RustChain API Postman Collection</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/proposer-duty-calendar-demo><span title="Proposer Duty Calendar Demo" class=linkLabel_WmDU>Proposer Duty Calendar Demo</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/protocol-overview><span title="RustChain Protocol Overview" class=linkLabel_WmDU>RustChain Protocol Overview</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/pt-BR/RUSTCHAIN_EXPLAINED><span title=pt-BR class=categoryLinkLabel_W154>pt-BR</span></a></div><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/randomness-beacon-demo><span title="Randomness beacon validation" class=linkLabel_WmDU>Randomness beacon validation</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/rip201_bucket_spoof><span title="RIP-201 Bucket Normalization Gaming" class=linkLabel_WmDU>RIP-201 Bucket Normalization Gaming</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/rip201_fleet_detection_bypass><span title="RIP-201 Fleet Detection Bypass" class=linkLabel_WmDU>RIP-201 Fleet Detection Bypass</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/security/ppa-attack-analysis><span title=security class=categoryLinkLabel_W154>security</span></a></div><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/slasher-core-demo><span title="Slasher Core Demo" class=linkLabel_WmDU>Slasher Core Demo</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/slashing-penalty-demo><span title="Slashing Penalty Core Demo" class=linkLabel_WmDU>Slashing Penalty Core Demo</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/sprint/api-reference><span title=sprint class=categoryLinkLabel_W154>sprint</span></a></div><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/state-of-rustchain-ergo-march-2026><span title="State of RustChain — March 2026" class=linkLabel_WmDU>State of RustChain — March 2026</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link menu__link--active" aria-current=page href=/Rustchain/docs/token-economics><span title="RustChain Token Economics" class=linkLabel_WmDU>RustChain Token Economics</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/tokenomics_v1><span title="RustChain Tokenomics – Flameholder Draft v1" class=linkLabel_WmDU>RustChain Tokenomics – Flameholder Draft v1</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/Rustchain/docs/vi-VN/RUSTCHAIN_EXPLAINED><span title=vi-VN class=categoryLinkLabel_W154>vi-VN</span></a></div><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/vintage-miner-setup-guide><span title="Mine Your Grandma's Computer — Vintage Miner Setup Guide" class=linkLabel_WmDU>Mine Your Grandma's Computer — Vintage Miner Setup Guide</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist" href=/Rustchain/docs/whitepaper/><span title="RustChain Technical Whitepaper (Draft)" class=categoryLinkLabel_W154>RustChain Technical Whitepaper (Draft)</span></a><button aria-label="Expand sidebar category 'RustChain Technical Whitepaper (Draft)'" aria-expanded=false type=button class="clean-btn menu__caret"></button></div><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/Rustchain/docs/wrtc><span title="wRTC Quickstart Guide" class=linkLabel_WmDU>wRTC Quickstart Guide</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist" href=/Rustchain/docs/zh-CN/><span title=README class=categoryLinkLabel_W154>README</span></a><button aria-label="Expand sidebar category 'README'" aria-expanded=false type=button class="clean-btn menu__caret"></button></div></ul></nav></div></div></aside><main class=docMainContainer_TBSr><div class="container padding-top--md padding-bottom--lg"><div class=row><div class="col docItemCol_VOVn"><div class=docItemContainer_Djhp><article><nav class="theme-doc-breadcrumbs breadcrumbsContainer_Z_bl" aria-label=Breadcrumbs><ul class=breadcrumbs><li class=breadcrumbs__item><a aria-label="Home page" class=breadcrumbs__link href=/Rustchain/><svg viewBox="0 0 24 24" class=breadcrumbHomeIcon_YNFT><path d="M10 19v-5h4v5c0 .55.45 1 1 1h3c.55 0 1-.45 1-1v-7h1.7c.46 0 .68-.57.33-.87L12.67 3.6c-.38-.34-.96-.34-1.34 0l-8.36 7.53c-.34.3-.13.87.33.87H5v7c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z" fill=currentColor /></svg></a><li class="breadcrumbs__item breadcrumbs__item--active"><span class=breadcrumbs__link>RustChain Token Economics</span></ul></nav><div class="tocCollapsible_ETCw theme-doc-toc-mobile tocMobile_ITEo"><button type=button class="clean-btn tocCollapsibleButton_TO0P">On this page</button></div><div class="theme-doc-markdown markdown"><header><h1>RustChain Token Economics</h1></header>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=overview>Overview<a href=#overview class=hash-link aria-label="Direct link to Overview" title="Direct link to Overview" translate=no>​</a></h2>
+<p>RustChain Token (RTC) is the native cryptocurrency of the RustChain network. Unlike traditional cryptocurrencies that reward computational power, RTC rewards <strong>hardware antiquity</strong> — the older your hardware, the more you earn.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=token-supply>Token Supply<a href=#token-supply class=hash-link aria-label="Direct link to Token Supply" title="Direct link to Token Supply" translate=no>​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=fixed-supply-model>Fixed Supply Model<a href=#fixed-supply-model class=hash-link aria-label="Direct link to Fixed Supply Model" title="Direct link to Fixed Supply Model" translate=no>​</a></h3>
+<div class="language-text codeBlockContainer_Ckt0 theme-code-block" style=--prism-color:#393A34;--prism-background-color:#f6f8fa><div class=codeBlockContent_QJqH><pre tabindex=0 class="prism-code language-text codeBlock_bY9V thin-scrollbar" style=color:#393A34;background-color:#f6f8fa><code class=codeBlockLines_e6Vv><div class=token-line style=color:#393A34><span class="token plain">┌─────────────────────────────────────────────────────────────┐</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">│                    RTC Total Supply                         │</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">│                      8,388,608 RTC                          │</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">├─────────────────────────────────────────────────────────────┤</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">│  Premine (4 founders)   │  Mining Rewards                  │</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">│       503,316 RTC         │    7,885,292 RTC                 │</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">│         6%            │       94%                     │</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">└─────────────────────────────────────────────────────────────┘</span><br/></div></code></pre></div></div>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=supply-breakdown>Supply Breakdown<a href=#supply-breakdown class=hash-link aria-label="Direct link to Supply Breakdown" title="Direct link to Supply Breakdown" translate=no>​</a></h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Allocation<th>Amount<th>Percentage<th>Purpose<tbody><tr><td><strong>Block Mining</strong><td>7,885,292 RTC<td>94%<td>Epoch rewards for miners<tr><td><strong>Founders</strong><td>125,829 RTC<td>1.5%<td><code>founder_founders</code> core team<tr><td><strong>Dev Fund</strong><td>125,829 RTC<td>1.5%<td><code>founder_dev_fund</code> development<tr><td><strong>Team / Bounty</strong><td>125,829 RTC<td>1.5%<td><code>founder_team_bounty</code> contributions<tr><td><strong>Community</strong><td>125,829 RTC<td>1.5%<td><code>founder_community</code> airdrops, grants<tr><td><strong>Total</strong><td>8,388,608 RTC<td>100%<td>Fixed (2^23), no inflation</table>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=distribution-milestones-march-2026>Distribution Milestones (March 2026)<a href=#distribution-milestones-march-2026 class=hash-link aria-label="Direct link to Distribution Milestones (March 2026)" title="Direct link to Distribution Milestones (March 2026)" translate=no>​</a></h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Metric<th>Value<tbody><tr><td><strong>Total Wallets</strong><td><strong>500</strong><tr><td><strong>Non-Founder Wallets</strong><td>496<tr><td><strong>RTC to Contributors</strong><td>~90,568 RTC<tr><td><strong>Bounty Payments</strong><td>~27,000 RTC to 260+ contributors<tr><td><strong>Largest Single-Day Payout</strong><td>1,995 RTC (B1tor, March 26, 2026)<tr><td><strong>Mining Rewards Distributed</strong><td>~63,000 RTC (epoch settlements)<tr><td><strong>On-Chain Transactions</strong><td>2,511<tr><td><strong>Top Contributor Earnings</strong><td>3,258 RTC</table>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=emission-schedule>Emission Schedule<a href=#emission-schedule class=hash-link aria-label="Direct link to Emission Schedule" title="Direct link to Emission Schedule" translate=no>​</a></h3>
+<div class="language-mermaid codeBlockContainer_Ckt0 theme-code-block" style=--prism-color:#393A34;--prism-background-color:#f6f8fa><div class=codeBlockContent_QJqH><pre tabindex=0 class="prism-code language-mermaid codeBlock_bY9V thin-scrollbar" style=color:#393A34;background-color:#f6f8fa><code class=codeBlockLines_e6Vv><div class=token-line style=color:#393A34><span class="token plain">graph LR</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    subgraph "Year 1"</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">        Y1[547.5 RTC/year&lt;br>1.5 RTC × 365 epochs]</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    end</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    </span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    subgraph "Year 5"</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">        Y5[~500 RTC/year&lt;br>Slight reduction]</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    end</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    </span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    subgraph "Year 20+"</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">        Y20[Mining continues&lt;br>until 8M cap]</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    end</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    </span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    Y1 --> Y5 --> Y20</span><br/></div></code></pre></div></div>
+<p><strong>At current rate (1.5 RTC/epoch):</strong></p>
+<ul>
+<li class="">Daily emission: ~1.5 RTC</li>
+<li class="">Annual emission: ~547.5 RTC</li>
+<li class="">Years to full emission: ~14,500 years</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=antiquity-multipliers>Antiquity Multipliers<a href=#antiquity-multipliers class=hash-link aria-label="Direct link to Antiquity Multipliers" title="Direct link to Antiquity Multipliers" translate=no>​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=base-multipliers-by-hardware>Base Multipliers by Hardware<a href=#base-multipliers-by-hardware class=hash-link aria-label="Direct link to Base Multipliers by Hardware" title="Direct link to Base Multipliers by Hardware" translate=no>​</a></h3>
+<p>The core innovation of RustChain: older hardware earns more.</p>
+<div class="language-mermaid codeBlockContainer_Ckt0 theme-code-block" style=--prism-color:#393A34;--prism-background-color:#f6f8fa><div class=codeBlockContent_QJqH><pre tabindex=0 class="prism-code language-mermaid codeBlock_bY9V thin-scrollbar" style=color:#393A34;background-color:#f6f8fa><code class=codeBlockLines_e6Vv><div class=token-line style=color:#393A34><span class="token plain">graph TD</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    subgraph "Vintage Tier (1.8x - 2.5x)"</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">        G4[PowerPC G4&lt;br>2.5×]</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">        G5[PowerPC G5&lt;br>2.0×]</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">        G3[PowerPC G3&lt;br>1.8×]</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    end</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    </span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    subgraph "Retro Tier (1.3x - 1.5x)"</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">        P8[IBM POWER8&lt;br>1.5×]</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">        P4[Pentium 4&lt;br>1.5×]</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">        C2[Core 2 Duo&lt;br>1.3×]</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    end</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    </span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    subgraph "Modern Tier (1.0x - 1.2x)"</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">        M1[Apple Silicon&lt;br>1.2×]</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">        RZ[Modern x86&lt;br>1.0×]</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    end</span><br/></div></code></pre></div></div>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=complete-multiplier-table>Complete Multiplier Table<a href=#complete-multiplier-table class=hash-link aria-label="Direct link to Complete Multiplier Table" title="Direct link to Complete Multiplier Table" translate=no>​</a></h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Hardware<th>Era<th>Base Multiplier<th>Example Earnings/Epoch<tbody><tr><td><strong>PowerPC G4</strong><td>1999-2005<td>2.5×<td>0.30 RTC<tr><td><strong>PowerPC G5</strong><td>2003-2006<td>2.0×<td>0.24 RTC<tr><td><strong>PowerPC G3</strong><td>1997-2003<td>1.8×<td>0.21 RTC<tr><td><strong>IBM POWER8</strong><td>2014<td>1.5×<td>0.18 RTC<tr><td><strong>Pentium 4</strong><td>2000-2008<td>1.5×<td>0.18 RTC<tr><td><strong>Pentium III</strong><td>1999-2003<td>1.4×<td>0.17 RTC<tr><td><strong>Core 2 Duo</strong><td>2006-2011<td>1.3×<td>0.16 RTC<tr><td><strong>Apple M1/M2/M3</strong><td>2020+<td>1.2×<td>0.14 RTC<tr><td><strong>Modern x86_64</strong><td>Current<td>1.0×<td>0.12 RTC<tr><td><strong>ARM (Raspberry Pi)</strong><td>Current<td>0.0001×<td>~0 RTC<tr><td><strong>VM/Emulator</strong><td>N/A<td>0.0000000025×<td>~0 RTC</table>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=multiplier-rationale>Multiplier Rationale<a href=#multiplier-rationale class=hash-link aria-label="Direct link to Multiplier Rationale" title="Direct link to Multiplier Rationale" translate=no>​</a></h3>
+<p>Why reward old hardware?</p>
+<ol>
+<li class=""><strong>Digital Preservation</strong>: Incentivize keeping vintage hardware operational</li>
+<li class=""><strong>Sybil Resistance</strong>: Vintage hardware is rare and expensive</li>
+<li class=""><strong>Environmental</strong>: Reuse existing hardware instead of e-waste</li>
+<li class=""><strong>Fairness</strong>: Modern hardware already has advantages everywhere else</li>
+</ol>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=time-decay-formula>Time Decay Formula<a href=#time-decay-formula class=hash-link aria-label="Direct link to Time Decay Formula" title="Direct link to Time Decay Formula" translate=no>​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=vintage-hardware-decay>Vintage Hardware Decay<a href=#vintage-hardware-decay class=hash-link aria-label="Direct link to Vintage Hardware Decay" title="Direct link to Vintage Hardware Decay" translate=no>​</a></h3>
+<p>To prevent permanent advantage, vintage hardware multipliers decay over time:</p>
+<div class="language-text codeBlockContainer_Ckt0 theme-code-block" style=--prism-color:#393A34;--prism-background-color:#f6f8fa><div class=codeBlockContent_QJqH><pre tabindex=0 class="prism-code language-text codeBlock_bY9V thin-scrollbar" style=color:#393A34;background-color:#f6f8fa><code class=codeBlockLines_e6Vv><div class=token-line style=color:#393A34><span class="token plain">decay_factor = 1.0 - (0.15 × (years_since_launch - 5) / 5)</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">final_multiplier = 1.0 + (vintage_bonus × decay_factor)</span><br/></div></code></pre></div></div>
+<p><strong>Constraints:</strong></p>
+<ul>
+<li class="">Decay starts after 5 years from network launch</li>
+<li class="">Minimum decay factor: 0.0 (multiplier floors at 1.0×)</li>
+<li class="">Rate: 15% per year beyond year 5</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=decay-example-powerpc-g4>Decay Example: PowerPC G4<a href=#decay-example-powerpc-g4 class=hash-link aria-label="Direct link to Decay Example: PowerPC G4" title="Direct link to Decay Example: PowerPC G4" translate=no>​</a></h3>
+<div class="language-text codeBlockContainer_Ckt0 theme-code-block" style=--prism-color:#393A34;--prism-background-color:#f6f8fa><div class=codeBlockContent_QJqH><pre tabindex=0 class="prism-code language-text codeBlock_bY9V thin-scrollbar" style=color:#393A34;background-color:#f6f8fa><code class=codeBlockLines_e6Vv><div class=token-line style=color:#393A34><span class="token plain">Base multiplier: 2.5×</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">Vintage bonus: 1.5 (2.5 - 1.0)</span><br/></div><div class=token-line style=color:#393A34><span class="token plain" style=display:inline-block></span><br/></div><div class=token-line style=color:#393A34><span class="token plain">Year 1:  decay = 1.0                    → 2.5×</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">Year 5:  decay = 1.0                    → 2.5×</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">Year 10: decay = 1.0 - (0.15 × 5/5)     → 2.275× (1.0 + 1.5 × 0.85)</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">Year 15: decay = 1.0 - (0.15 × 10/5)    → 2.05×  (1.0 + 1.5 × 0.70)</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">Year 20: decay = 1.0 - (0.15 × 15/5)    → 1.825× (1.0 + 1.5 × 0.55)</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">Year 30: decay = 0.0 (floor)            → 1.0×</span><br/></div></code></pre></div></div>
+<div class="language-mermaid codeBlockContainer_Ckt0 theme-code-block" style=--prism-color:#393A34;--prism-background-color:#f6f8fa><div class=codeBlockContent_QJqH><pre tabindex=0 class="prism-code language-mermaid codeBlock_bY9V thin-scrollbar" style=color:#393A34;background-color:#f6f8fa><code class=codeBlockLines_e6Vv><div class=token-line style=color:#393A34><span class="token plain">graph LR</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    Y1[Year 1&lt;br>2.5×] --> Y5[Year 5&lt;br>2.5×]</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    Y5 --> Y10[Year 10&lt;br>2.275×]</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    Y10 --> Y15[Year 15&lt;br>2.05×]</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    Y15 --> Y20[Year 20&lt;br>1.825×]</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    Y20 --> Y30[Year 30&lt;br>1.0×]</span><br/></div></code></pre></div></div>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=loyalty-bonus>Loyalty Bonus<a href=#loyalty-bonus class=hash-link aria-label="Direct link to Loyalty Bonus" title="Direct link to Loyalty Bonus" translate=no>​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=modern-hardware-incentive>Modern Hardware Incentive<a href=#modern-hardware-incentive class=hash-link aria-label="Direct link to Modern Hardware Incentive" title="Direct link to Modern Hardware Incentive" translate=no>​</a></h3>
+<p>Modern hardware (≤5 years old) can earn loyalty bonuses for continuous uptime:</p>
+<div class="language-text codeBlockContainer_Ckt0 theme-code-block" style=--prism-color:#393A34;--prism-background-color:#f6f8fa><div class=codeBlockContent_QJqH><pre tabindex=0 class="prism-code language-text codeBlock_bY9V thin-scrollbar" style=color:#393A34;background-color:#f6f8fa><code class=codeBlockLines_e6Vv><div class=token-line style=color:#393A34><span class="token plain">loyalty_bonus = min(0.5, uptime_years × 0.15)</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">final_multiplier = base_multiplier + loyalty_bonus</span><br/></div></code></pre></div></div>
+<p><strong>Constraints:</strong></p>
+<ul>
+<li class="">Rate: +15% per year of continuous mining</li>
+<li class="">Maximum bonus: +50% (capped at 3.33 years)</li>
+<li class="">Resets if miner goes offline for >7 days</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=loyalty-example-modern-x86>Loyalty Example: Modern x86<a href=#loyalty-example-modern-x86 class=hash-link aria-label="Direct link to Loyalty Example: Modern x86" title="Direct link to Loyalty Example: Modern x86" translate=no>​</a></h3>
+<div class="language-text codeBlockContainer_Ckt0 theme-code-block" style=--prism-color:#393A34;--prism-background-color:#f6f8fa><div class=codeBlockContent_QJqH><pre tabindex=0 class="prism-code language-text codeBlock_bY9V thin-scrollbar" style=color:#393A34;background-color:#f6f8fa><code class=codeBlockLines_e6Vv><div class=token-line style=color:#393A34><span class="token plain">Base multiplier: 1.0×</span><br/></div><div class=token-line style=color:#393A34><span class="token plain" style=display:inline-block></span><br/></div><div class=token-line style=color:#393A34><span class="token plain">Year 0: 1.0×</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">Year 1: 1.0 + 0.15 = 1.15×</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">Year 2: 1.0 + 0.30 = 1.30×</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">Year 3: 1.0 + 0.45 = 1.45×</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">Year 4: 1.0 + 0.50 = 1.50× (capped)</span><br/></div></code></pre></div></div>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=reward-distribution>Reward Distribution<a href=#reward-distribution class=hash-link aria-label="Direct link to Reward Distribution" title="Direct link to Reward Distribution" translate=no>​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=epoch-pot-distribution>Epoch Pot Distribution<a href=#epoch-pot-distribution class=hash-link aria-label="Direct link to Epoch Pot Distribution" title="Direct link to Epoch Pot Distribution" translate=no>​</a></h3>
+<p>Each epoch (24 hours), 1.5 RTC is distributed:</p>
+<div class="language-mermaid codeBlockContainer_Ckt0 theme-code-block" style=--prism-color:#393A34;--prism-background-color:#f6f8fa><div class=codeBlockContent_QJqH><pre tabindex=0 class="prism-code language-mermaid codeBlock_bY9V thin-scrollbar" style=color:#393A34;background-color:#f6f8fa><code class=codeBlockLines_e6Vv><div class=token-line style=color:#393A34><span class="token plain">graph TD</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    A[Epoch Pot: 1.5 RTC] --> B[Calculate Total Weight]</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    B --> C[Sum of all multipliers]</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    C --> D[Distribute Proportionally]</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    D --> E[Miner A: weight/total × 1.5]</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    D --> F[Miner B: weight/total × 1.5]</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    D --> G[Miner N: weight/total × 1.5]</span><br/></div></code></pre></div></div>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=distribution-formula>Distribution Formula<a href=#distribution-formula class=hash-link aria-label="Direct link to Distribution Formula" title="Direct link to Distribution Formula" translate=no>​</a></h3>
+<div class="language-text codeBlockContainer_Ckt0 theme-code-block" style=--prism-color:#393A34;--prism-background-color:#f6f8fa><div class=codeBlockContent_QJqH><pre tabindex=0 class="prism-code language-text codeBlock_bY9V thin-scrollbar" style=color:#393A34;background-color:#f6f8fa><code class=codeBlockLines_e6Vv><div class=token-line style=color:#393A34><span class="token plain">miner_reward = epoch_pot × (miner_multiplier / total_weight)</span><br/></div></code></pre></div></div>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=example-distribution>Example Distribution<a href=#example-distribution class=hash-link aria-label="Direct link to Example Distribution" title="Direct link to Example Distribution" translate=no>​</a></h3>
+<p><strong>Scenario</strong>: 5 miners in epoch</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Miner<th>Hardware<th>Multiplier<th>Weight %<th>Reward<tbody><tr><td>A<td>G4<td>2.5×<td>32.5%<td>0.487 RTC<tr><td>B<td>G5<td>2.0×<td>26.0%<td>0.390 RTC<tr><td>C<td>x86<td>1.0×<td>13.0%<td>0.195 RTC<tr><td>D<td>x86<td>1.0×<td>13.0%<td>0.195 RTC<tr><td>E<td>M1<td>1.2×<td>15.5%<td>0.234 RTC<tr><td><strong>Total</strong><td><td><strong>7.7</strong><td><strong>100%</strong><td><strong>1.501 RTC</strong></table>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=wrtc-bridge-solana>wRTC Bridge (Solana)<a href=#wrtc-bridge-solana class=hash-link aria-label="Direct link to wRTC Bridge (Solana)" title="Direct link to wRTC Bridge (Solana)" translate=no>​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=wrapped-rtc>Wrapped RTC<a href=#wrapped-rtc class=hash-link aria-label="Direct link to Wrapped RTC" title="Direct link to Wrapped RTC" translate=no>​</a></h3>
+<p>RTC can be bridged to Solana as <strong>wRTC</strong> for DeFi access:</p>
+<div class="language-mermaid codeBlockContainer_Ckt0 theme-code-block" style=--prism-color:#393A34;--prism-background-color:#f6f8fa><div class=codeBlockContent_QJqH><pre tabindex=0 class="prism-code language-mermaid codeBlock_bY9V thin-scrollbar" style=color:#393A34;background-color:#f6f8fa><code class=codeBlockLines_e6Vv><div class=token-line style=color:#393A34><span class="token plain">graph LR</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    subgraph RustChain</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">        RTC[RTC Token]</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    end</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    </span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    subgraph Bridge</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">        B[BoTTube Bridge]</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    end</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    </span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    subgraph Solana</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">        wRTC[wRTC Token]</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">        RAY[Raydium DEX]</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">        DS[DexScreener]</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    end</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    </span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    RTC -->|Lock| B</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    B -->|Mint| wRTC</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    wRTC --> RAY</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    wRTC --> DS</span><br/></div></code></pre></div></div>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=wrtc-details>wRTC Details<a href=#wrtc-details class=hash-link aria-label="Direct link to wRTC Details" title="Direct link to wRTC Details" translate=no>​</a></h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Property<th>Value<tbody><tr><td><strong>Token Mint</strong><td><code>12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X</code><tr><td><strong>DEX</strong><td><a href="https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X" target=_blank rel="noopener noreferrer" class="">Raydium</a><tr><td><strong>Chart</strong><td><a href=https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb target=_blank rel="noopener noreferrer" class="">DexScreener</a><tr><td><strong>Bridge</strong><td><a href=https://bottube.ai/bridge target=_blank rel="noopener noreferrer" class="">BoTTube Bridge</a><tr><td><strong>Ratio</strong><td>1:1 (1 RTC = 1 wRTC)</table>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=bridge-process>Bridge Process<a href=#bridge-process class=hash-link aria-label="Direct link to Bridge Process" title="Direct link to Bridge Process" translate=no>​</a></h3>
+<p><strong>RTC → wRTC (Lock & Mint)</strong>:</p>
+<ol>
+<li class="">Send RTC to bridge address on RustChain</li>
+<li class="">Bridge verifies transaction</li>
+<li class="">wRTC minted on Solana to your wallet</li>
+</ol>
+<p><strong>wRTC → RTC (Burn & Release)</strong>:</p>
+<ol>
+<li class="">Send wRTC to bridge contract on Solana</li>
+<li class="">wRTC burned</li>
+<li class="">RTC released on RustChain</li>
+</ol>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=wrtc-on-base-ethereum-l2>wRTC on Base (Ethereum L2)<a href=#wrtc-on-base-ethereum-l2 class=hash-link aria-label="Direct link to wRTC on Base (Ethereum L2)" title="Direct link to wRTC on Base (Ethereum L2)" translate=no>​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=base-integration>Base Integration<a href=#base-integration class=hash-link aria-label="Direct link to Base Integration" title="Direct link to Base Integration" translate=no>​</a></h3>
+<p>wRTC is also available on Base L2:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Property<th>Value<tbody><tr><td><strong>Contract</strong><td><code>0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6</code><tr><td><strong>DEX</strong><td><a href="https://aerodrome.finance/swap?from=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913&to=0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6" target=_blank rel="noopener noreferrer" class="">Aerodrome</a><tr><td><strong>Bridge</strong><td><a href=https://bottube.ai/bridge/base target=_blank rel="noopener noreferrer" class="">bottube.ai/bridge/base</a></table>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=value-proposition>Value Proposition<a href=#value-proposition class=hash-link aria-label="Direct link to Value Proposition" title="Direct link to Value Proposition" translate=no>​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=current-valuation>Current Valuation<a href=#current-valuation class=hash-link aria-label="Direct link to Current Valuation" title="Direct link to Current Valuation" translate=no>​</a></h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Metric<th>Value<tbody><tr><td><strong>Reference Price</strong><td>$0.10 USD per RTC<tr><td><strong>Fully Diluted Value</strong><td>$800,000 USD<tr><td><strong>Circulating Supply</strong><td>~90,568 RTC (contributor payouts + mining)<tr><td><strong>Market Cap</strong><td>~$9,057 USD<tr><td><strong>Wallet Holders</strong><td><strong>500</strong> (milestone reached March 26, 2026)<tr><td><strong>Bounties Paid</strong><td>~27,000 RTC to 260+ contributors<tr><td><strong>Ledger Entries</strong><td>2,511 on-chain transactions</table>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=earning-potential>Earning Potential<a href=#earning-potential class=hash-link aria-label="Direct link to Earning Potential" title="Direct link to Earning Potential" translate=no>​</a></h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Hardware<th>Multiplier<th>Daily Earnings<th>Monthly<th>Yearly<tbody><tr><td>G4 (solo)<td>2.5×<td>1.5 RTC<td>45 RTC<td>547 RTC<tr><td>G4 (10 miners)<td>2.5×<td>0.375 RTC<td>11.25 RTC<td>137 RTC<tr><td>x86 (10 miners)<td>1.0×<td>0.15 RTC<td>4.5 RTC<td>55 RTC</table>
+<p><em>Earnings depend on total network weight</em></p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=bounty-system>Bounty System<a href=#bounty-system class=hash-link aria-label="Direct link to Bounty System" title="Direct link to Bounty System" translate=no>​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=contribution-rewards>Contribution Rewards<a href=#contribution-rewards class=hash-link aria-label="Direct link to Contribution Rewards" title="Direct link to Contribution Rewards" translate=no>​</a></h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Tier<th>Current Rate<th>After 35K Paid<th>After 50K Paid<th>Examples<tbody><tr><td><strong>Micro</strong><td>1-10 RTC<td>1-8 RTC<td>1-5 RTC<td>Typo fix, small docs, first PR<tr><td><strong>Standard</strong><td>20-50 RTC<td>15-40 RTC<td>10-25 RTC<td>Feature, refactor, tests<tr><td><strong>Major</strong><td>75-150 RTC<td>55-115 RTC<td>40-75 RTC<td>Security fix, SDK, integration<tr><td><strong>Critical</strong><td>200-400 RTC<td>150-300 RTC<td>100-200 RTC<td>Red team, consensus, vulnerability</table>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=bounty-payout-scaling-rip-306>Bounty Payout Scaling (RIP-306)<a href=#bounty-payout-scaling-rip-306 class=hash-link aria-label="Direct link to Bounty Payout Scaling (RIP-306)" title="Direct link to Bounty Payout Scaling (RIP-306)" translate=no>​</a></h3>
+<p>As the ecosystem matures and RTC distribution widens, bounty payouts scale down to protect token value for existing holders:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Milestone<th>Rate Adjustment<th>Rationale<tbody><tr><td><strong>0-27K RTC paid</strong> (current)<td>Full rates<td>Bootstrap phase — attract contributors<tr><td><strong>35K RTC paid</strong><td>-25% across all tiers<td>Early maturity — 500+ wallets, ecosystem proven<tr><td><strong>50K RTC paid</strong><td>-50% across all tiers<td>Growth phase — only high-impact gets premium<tr><td><strong>100K RTC paid</strong><td>-75% — elite bounties only<td>Mature phase — RTC value should reflect scarcity</table>
+<p><strong>Why scale down?</strong></p>
+<ol>
+<li class=""><strong>500 wallet holders</strong> already exist — distribution goal met</li>
+<li class=""><strong>50K of 8.3M supply</strong> (0.6%) allocated to bounties is approaching meaningful dilution</li>
+<li class="">If RTC reference price increases, current bounty amounts become disproportionately expensive</li>
+<li class="">Early contributors who earned at full rates benefit from increasing scarcity</li>
+<li class="">The network is proven — we no longer need to overpay to attract contributors</li>
+</ol>
+<p><strong>What doesn't change:</strong></p>
+<ul>
+<li class="">Mining epoch rewards (1.5 RTC/epoch) — unchanged, consensus-driven</li>
+<li class="">Antiquity multipliers — unchanged, hardware-based</li>
+<li class="">Airdrop pool — separate allocation</li>
+<li class="">The commitment to paying contributors — rates adjust, payments continue</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=active-bounty-pools>Active Bounty Pools<a href=#active-bounty-pools class=hash-link aria-label="Direct link to Active Bounty Pools" title="Direct link to Active Bounty Pools" translate=no>​</a></h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Pool<th>Total<th>Status<tbody><tr><td>Star Repo<td>200 RTC<td>Open<tr><td>Run Miner 7 Days<td>500 RTC<td>Open<tr><td>Referral Program<td>300 RTC<td>Open<tr><td>Bug Reports<td>150 RTC<td>Open</table>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=economic-security>Economic Security<a href=#economic-security class=hash-link aria-label="Direct link to Economic Security" title="Direct link to Economic Security" translate=no>​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=sybil-attack-cost>Sybil Attack Cost<a href=#sybil-attack-cost class=hash-link aria-label="Direct link to Sybil Attack Cost" title="Direct link to Sybil Attack Cost" translate=no>​</a></h3>
+<p>Running multiple miners is economically unfeasible:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Attack Vector<th>Cost<th>Reward<th>ROI<tbody><tr><td>Buy 10 G4 Macs<td>~$2,000<td>~$137/year<td>14.6 years<tr><td>Rent VMs<td>~$100/month<td>~$0.00001/year<td>Never<tr><td>Emulate G4<td>$0<td>~$0.00001/year<td>Never</table>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=why-vintage-hardware>Why Vintage Hardware?<a href=#why-vintage-hardware class=hash-link aria-label="Direct link to Why Vintage Hardware?" title="Direct link to Why Vintage Hardware?" translate=no>​</a></h3>
+<ol>
+<li class=""><strong>Scarcity</strong>: Limited supply of working vintage hardware</li>
+<li class=""><strong>Cost</strong>: Expensive to acquire and maintain</li>
+<li class=""><strong>Authenticity</strong>: Can't be faked (fingerprinting)</li>
+<li class=""><strong>Decay</strong>: Multipliers decrease over time</li>
+</ol>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=500-wallet-milestone-march-26-2026>500 Wallet Milestone (March 26, 2026)<a href=#500-wallet-milestone-march-26-2026 class=hash-link aria-label="Direct link to 500 Wallet Milestone (March 26, 2026)" title="Direct link to 500 Wallet Milestone (March 26, 2026)" translate=no>​</a></h2>
+<p>On March 26, 2026, RustChain reached <strong>500 unique wallet holders</strong> — a critical mass for a network that launched just four months earlier with zero marketing budget.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=how-we-got-here>How We Got Here<a href=#how-we-got-here class=hash-link aria-label="Direct link to How We Got Here" title="Direct link to How We Got Here" translate=no>​</a></h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Phase<th>Wallets<th>Strategy<tbody><tr><td><strong>Launch</strong> (Dec 2025)<td>8<td>Founder hardware only (G4s, G5, POWER8)<tr><td><strong>First External</strong> (Jan 2026)<td>15<td>Ryan's Factorio VM (first non-lab node)<tr><td><strong>Bounty System</strong> (Feb 2026)<td>50<td>1 RTC first-PR bounties attract contributors<tr><td><strong>Growth Sprint</strong> (Mar 2026)<td>500<td>260+ contributors, awesome list PRs, Moltbook presence</table>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=what-500-wallets-means>What 500 Wallets Means<a href=#what-500-wallets-means class=hash-link aria-label="Direct link to What 500 Wallets Means" title="Direct link to What 500 Wallets Means" translate=no>​</a></h3>
+<ol>
+<li class=""><strong>Sybil-resistant distribution</strong> — 500 real wallets across diverse hardware</li>
+<li class=""><strong>Community-driven growth</strong> — no airdrops to bots, every wallet earned RTC</li>
+<li class=""><strong>Bounty system works</strong> — paying contributors builds both code AND distribution</li>
+<li class=""><strong>Ready for DEX</strong> — sufficient holder count for healthy trading when wRTC bridge launches</li>
+</ol>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=wallet-distribution>Wallet Distribution<a href=#wallet-distribution class=hash-link aria-label="Direct link to Wallet Distribution" title="Direct link to Wallet Distribution" translate=no>​</a></h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Balance Range<th>Wallets<th>% of Holders<tbody><tr><td>> 1,000 RTC<td>~15<td>3%<tr><td>100-1,000 RTC<td>~40<td>8%<tr><td>10-100 RTC<td>~100<td>20%<tr><td>1-10 RTC<td>~200<td>40%<tr><td>&lt; 1 RTC<td>~145<td>29%</table>
+<p>This is a healthy distribution — most holders earned small amounts through first-PR bounties and mining, with larger balances going to consistent contributors. No whale concentration outside founder allocations.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=future-considerations>Future Considerations<a href=#future-considerations class=hash-link aria-label="Direct link to Future Considerations" title="Direct link to Future Considerations" translate=no>​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=potential-adjustments>Potential Adjustments<a href=#potential-adjustments class=hash-link aria-label="Direct link to Potential Adjustments" title="Direct link to Potential Adjustments" translate=no>​</a></h3>
+<ul>
+<li class=""><strong>Epoch Pot</strong>: May increase with network growth</li>
+<li class=""><strong>New Hardware Tiers</strong>: As hardware ages, new tiers added</li>
+<li class=""><strong>Decay Rates</strong>: Community governance may adjust</li>
+<li class=""><strong>Bridge Fees</strong>: May introduce small fees for sustainability</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=governance>Governance<a href=#governance class=hash-link aria-label="Direct link to Governance" title="Direct link to Governance" translate=no>​</a></h3>
+<p>Currently centralized (core team). Future plans:</p>
+<ul>
+<li class="">Token-weighted voting</li>
+<li class="">Proposal system</li>
+<li class="">Community treasury</li>
+</ul>
+<hr/>
+<p><strong>Next</strong>: See <a class="" href=/Rustchain/docs/api-reference>api-reference.md</a> for all public endpoints.</div><footer class="theme-doc-footer docusaurus-mt-lg"><div class="row margin-top--sm theme-doc-footer-edit-meta-row"><div class="col noPrint_WFHX"><a href=https://github.com/Scottcjn/Rustchain/tree/main/docs/../docs/token-economics.md target=_blank rel="noopener noreferrer" class=theme-edit-this-page><svg fill=currentColor height=20 width=20 viewBox="0 0 40 40" class=iconEdit_Z9Sw aria-hidden=true><g><path d="m34.5 11.7l-3 3.1-6.3-6.3 3.1-3q0.5-0.5 1.2-0.5t1.1 0.5l3.9 3.9q0.5 0.4 0.5 1.1t-0.5 1.2z m-29.5 17.1l18.4-18.5 6.3 6.3-18.4 18.4h-6.3v-6.2z"/></g></svg>Edit this page</a></div><div class="col lastUpdated_JAkA"></div></div></footer></article><nav class="docusaurus-mt-lg pagination-nav" aria-label="Docs pages"><a class="pagination-nav__link pagination-nav__link--prev" href=/Rustchain/docs/state-of-rustchain-ergo-march-2026><div class=pagination-nav__sublabel>Previous</div><div class=pagination-nav__label>State of RustChain — March 2026</div></a><a class="pagination-nav__link pagination-nav__link--next" href=/Rustchain/docs/tokenomics_v1><div class=pagination-nav__sublabel>Next</div><div class=pagination-nav__label>RustChain Tokenomics – Flameholder Draft v1</div></a></nav></div></div><div class="col col--3"><div class="tableOfContents_bqdL thin-scrollbar theme-doc-toc-desktop"><ul class="table-of-contents table-of-contents__left-border"><li><a href=#overview class="table-of-contents__link toc-highlight">Overview</a><li><a href=#token-supply class="table-of-contents__link toc-highlight">Token Supply</a><ul><li><a href=#fixed-supply-model class="table-of-contents__link toc-highlight">Fixed Supply Model</a><li><a href=#supply-breakdown class="table-of-contents__link toc-highlight">Supply Breakdown</a><li><a href=#distribution-milestones-march-2026 class="table-of-contents__link toc-highlight">Distribution Milestones (March 2026)</a><li><a href=#emission-schedule class="table-of-contents__link toc-highlight">Emission Schedule</a></ul><li><a href=#antiquity-multipliers class="table-of-contents__link toc-highlight">Antiquity Multipliers</a><ul><li><a href=#base-multipliers-by-hardware class="table-of-contents__link toc-highlight">Base Multipliers by Hardware</a><li><a href=#complete-multiplier-table class="table-of-contents__link toc-highlight">Complete Multiplier Table</a><li><a href=#multiplier-rationale class="table-of-contents__link toc-highlight">Multiplier Rationale</a></ul><li><a href=#time-decay-formula class="table-of-contents__link toc-highlight">Time Decay Formula</a><ul><li><a href=#vintage-hardware-decay class="table-of-contents__link toc-highlight">Vintage Hardware Decay</a><li><a href=#decay-example-powerpc-g4 class="table-of-contents__link toc-highlight">Decay Example: PowerPC G4</a></ul><li><a href=#loyalty-bonus class="table-of-contents__link toc-highlight">Loyalty Bonus</a><ul><li><a href=#modern-hardware-incentive class="table-of-contents__link toc-highlight">Modern Hardware Incentive</a><li><a href=#loyalty-example-modern-x86 class="table-of-contents__link toc-highlight">Loyalty Example: Modern x86</a></ul><li><a href=#reward-distribution class="table-of-contents__link toc-highlight">Reward Distribution</a><ul><li><a href=#epoch-pot-distribution class="table-of-contents__link toc-highlight">Epoch Pot Distribution</a><li><a href=#distribution-formula class="table-of-contents__link toc-highlight">Distribution Formula</a><li><a href=#example-distribution class="table-of-contents__link toc-highlight">Example Distribution</a></ul><li><a href=#wrtc-bridge-solana class="table-of-contents__link toc-highlight">wRTC Bridge (Solana)</a><ul><li><a href=#wrapped-rtc class="table-of-contents__link toc-highlight">Wrapped RTC</a><li><a href=#wrtc-details class="table-of-contents__link toc-highlight">wRTC Details</a><li><a href=#bridge-process class="table-of-contents__link toc-highlight">Bridge Process</a></ul><li><a href=#wrtc-on-base-ethereum-l2 class="table-of-contents__link toc-highlight">wRTC on Base (Ethereum L2)</a><ul><li><a href=#base-integration class="table-of-contents__link toc-highlight">Base Integration</a></ul><li><a href=#value-proposition class="table-of-contents__link toc-highlight">Value Proposition</a><ul><li><a href=#current-valuation class="table-of-contents__link toc-highlight">Current Valuation</a><li><a href=#earning-potential class="table-of-contents__link toc-highlight">Earning Potential</a></ul><li><a href=#bounty-system class="table-of-contents__link toc-highlight">Bounty System</a><ul><li><a href=#contribution-rewards class="table-of-contents__link toc-highlight">Contribution Rewards</a><li><a href=#bounty-payout-scaling-rip-306 class="table-of-contents__link toc-highlight">Bounty Payout Scaling (RIP-306)</a><li><a href=#active-bounty-pools class="table-of-contents__link toc-highlight">Active Bounty Pools</a></ul><li><a href=#economic-security class="table-of-contents__link toc-highlight">Economic Security</a><ul><li><a href=#sybil-attack-cost class="table-of-contents__link toc-highlight">Sybil Attack Cost</a><li><a href=#why-vintage-hardware class="table-of-contents__link toc-highlight">Why Vintage Hardware?</a></ul><li><a href=#500-wallet-milestone-march-26-2026 class="table-of-contents__link toc-highlight">500 Wallet Milestone (March 26, 2026)</a><ul><li><a href=#how-we-got-here class="table-of-contents__link toc-highlight">How We Got Here</a><li><a href=#what-500-wallets-means class="table-of-contents__link toc-highlight">What 500 Wallets Means</a><li><a href=#wallet-distribution class="table-of-contents__link toc-highlight">Wallet Distribution</a></ul><li><a href=#future-considerations class="table-of-contents__link toc-highlight">Future Considerations</a><ul><li><a href=#potential-adjustments class="table-of-contents__link toc-highlight">Potential Adjustments</a><li><a href=#governance class="table-of-contents__link toc-highlight">Governance</a></ul></ul></div></div></div></div></main></div></div></div><footer class="theme-layout-footer footer footer--dark"><div class="container container-fluid"><div class="row footer__links"><div class="theme-layout-footer-column col footer__col"><div class=footer__title>Docs</div><ul class="footer__items clean-list"><li class=footer__item><a class=footer__link-item href=/Rustchain/docs>Documentation</a></ul></div><div class="theme-layout-footer-column col footer__col"><div class=footer__title>Project</div><ul class="footer__items clean-list"><li class=footer__item><a href=https://github.com/Scottcjn/Rustchain target=_blank rel="noopener noreferrer" class=footer__link-item>GitHub<svg width=13.5 height=13.5 aria-label="(opens in new tab)" class=iconExternalLink_nPIU><use href=#theme-svg-external-link /></svg></a><li class=footer__item><a href=https://github.com/Scottcjn/rustchain-bounties target=_blank rel="noopener noreferrer" class=footer__link-item>Bounties<svg width=13.5 height=13.5 aria-label="(opens in new tab)" class=iconExternalLink_nPIU><use href=#theme-svg-external-link /></svg></a></ul></div></div><div class="footer__bottom text--center"><div class=footer__copyright>Copyright © 2026 Elyan Labs · RustChain. Built with Docusaurus.</div></div></div></footer></div></body>
