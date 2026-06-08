@@ -14,7 +14,8 @@ def api(p):
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
     try:
-        return json.loads(urllib.request.urlopen(f"{NODE}{p}", timeout=10, context=ctx).read())
+        with urllib.request.urlopen(f"{NODE}{p}", timeout=10, context=ctx) as resp:
+            return json.loads(resp.read())
     except Exception:
         return {}
 
