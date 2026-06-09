@@ -14,6 +14,22 @@ def test_hall_of_fame_index_uses_compat_leaderboard_endpoint():
     assert "const API_STATS       = '/api/hall_of_fame/stats';" in html
 
 
+def test_hall_of_fame_index_load_error_uses_text_content():
+    html = (ROOT / "web" / "hall-of-fame" / "index.html").read_text(
+        encoding="utf-8"
+    )
+
+    assert "function setLeaderboardMessage(message, className)" in html
+    assert "cell.textContent = message;" in html
+    assert "tbody.replaceChildren(row);" in html
+    assert (
+        "setLeaderboardMessage('Failed to load: ' + "
+        "String(e && e.message ? e.message : e), 'err');"
+    ) in html
+
+    assert "Failed to load: ${esc(e.message)}" not in html
+
+
 def test_hall_of_fame_machine_uses_compat_machine_endpoint_and_shape():
     html = (ROOT / "web" / "hall-of-fame" / "machine.html").read_text(
         encoding="utf-8"
