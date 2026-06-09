@@ -402,7 +402,7 @@ def cmd_agent(args):
     dry_run = getattr(args, 'dry_run', False)
     
     if args.action == "list":
-        data = fetch_api("/api/agents")
+        data = fetch_api("/beacon/api/agents")
         
         if use_json:
             print(json.dumps(data, indent=2))
@@ -427,7 +427,7 @@ def cmd_agent(args):
             print("Error: Please provide an agent ID", file=sys.stderr)
             sys.exit(1)
         
-        data = fetch_api(f"/api/agent/{args.agent_id}")
+        data = fetch_api(f"/beacon/api/reputation/{args.agent_id}")
         
         if use_json:
             print(json.dumps(data, indent=2))
@@ -503,7 +503,7 @@ def cmd_bounty(args):
     dry_run = getattr(args, 'dry_run', False)
     
     if args.action == "list":
-        data = fetch_api("/api/bounties")
+        data = fetch_api("/beacon/api/bounties")
         
         if use_json:
             print(json.dumps(data, indent=2))
@@ -532,7 +532,10 @@ def cmd_bounty(args):
             print("Error: Please provide a bounty ID", file=sys.stderr)
             sys.exit(1)
         
-        data = fetch_api(f"/api/bounty/{args.bounty_id}")
+        bounties = fetch_api("/beacon/api/bounties")
+        data = next((b for b in bounties if str(b.get('id')) == str(args.bounty_id)), None)
+        if data is None:
+            raise RustChainAPIError(f"Bounty {args.bounty_id} not found")
         
         if use_json:
             print(json.dumps(data, indent=2))
