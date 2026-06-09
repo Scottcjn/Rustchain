@@ -123,11 +123,26 @@ function fmt(n, decimals = 0) {
   });
 }
 
+function safeNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
 function timeAgo(iso) {
   const diff = (Date.now() - new Date(iso).getTime()) / 1000;
   if (diff < 60) return `${Math.floor(diff)}s ago`;
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   return `${Math.floor(diff / 3600)}h ago`;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, char => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  }[char]));
 }
 
 function updateStats(data) {
@@ -162,14 +177,20 @@ function updateHealth(data) {
 
 function updateTxTable(id, txs) {
   const tbody = document.getElementById(id);
-  tbody.innerHTML = txs.map(tx => `
+  tbody.innerHTML = txs.map(tx => {
+    const amount = safeNumber(tx.amount);
+    const type = tx.type === "wrap" ? "wrap" : "unwrap";
+    const wallet = escapeHtml(tx.wallet);
+    const txId = escapeHtml(String(tx.tx ?? "").slice(0, 8));
+    return `
     <tr>
       <td>${timeAgo(tx.time)}</td>
-      <td class="amount">${fmt(tx.amount)} ${tx.type === "wrap" ? "RTC" : "wRTC"}</td>
-      <td class="mono">${tx.wallet}</td>
-      <td class="mono">${tx.tx.slice(0, 8)}…</td>
+      <td class="amount">${fmt(amount)} ${type === "wrap" ? "RTC" : "wRTC"}</td>
+      <td class="mono">${wallet}</td>
+      <td class="mono">${txId}…</td>
     </tr>
-  `).join("");
+  `;
+  }).join("");
 }
 
 function updateChart(history) {

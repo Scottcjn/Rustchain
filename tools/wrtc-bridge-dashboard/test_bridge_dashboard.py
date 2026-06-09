@@ -7,6 +7,8 @@ Run: python -m pytest tools/wrtc-bridge-dashboard/test_bridge_dashboard.py -v
 
 import os
 import re
+import subprocess
+import textwrap
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -111,6 +113,53 @@ class TestJSStructure(unittest.TestCase):
     def test_price_change_color(self):
         self.assertIn("#22c55e", self.js)  # green for positive
         self.assertIn("#ef4444", self.js)  # red for negative
+
+    def test_transaction_table_escapes_wallet_and_tx_fields(self):
+        script = """
+            const fs = require("fs");
+            const vm = require("vm");
+            const source = fs.readFileSync("bridge_dashboard.js", "utf8");
+            const elements = {};
+            const context = {
+              document: {
+                getElementById(id) {
+                  if (!elements[id]) {
+                    elements[id] = { innerHTML: "", textContent: "", style: {}, setAttribute() {} };
+                  }
+                  return elements[id];
+                }
+              },
+              fetch: async () => ({ ok: false, json: async () => ({}) }),
+              console,
+              Date,
+              Math,
+              setInterval: () => 1
+            };
+            vm.createContext(context);
+            vm.runInContext(source, context);
+            vm.runInContext(`updateTxTable("wrap-table", [{
+              time: new Date().toISOString(),
+              amount: "7",
+              wallet: "<img src=x onerror=alert(1)>",
+              tx: "<script>alert(2)</script>",
+              type: "wrap"
+            }])`, context);
+            const html = elements["wrap-table"].innerHTML;
+            if (html.includes("<img") || html.includes("<script>")) {
+              throw new Error(html);
+            }
+            if (!html.includes("&lt;img src=x onerror=alert(1)&gt;")) {
+              throw new Error(html);
+            }
+            if (!html.includes("&lt;script")) {
+              throw new Error(html);
+            }
+        """
+        subprocess.run(
+            ["node", "-e", textwrap.dedent(script)],
+            cwd=HERE,
+            check=True,
+        )
 
 
 class TestStaticDeploy(unittest.TestCase):
