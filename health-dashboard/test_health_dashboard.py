@@ -548,6 +548,30 @@ class TestFlaskAPI(unittest.TestCase):
         self.assertIn(b'<feed', response.data)
         self.assertIn(b'Node Down: Node 1', response.data)
 
+    def test_rss_feed_escapes_incident_fields(self):
+        """Test RSS/Atom incident fields are escaped before XML output"""
+        conn = sqlite3.connect(self.test_db.name)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO incidents (node_id, incident_type, timestamp, details)
+            VALUES (?, ?, ?, ?)
+        ''', (
+            'node1"><script>alert(1)</script>',
+            'node_down',
+            '2026-06-09T00:00:00Z',
+            '<script>alert("feed")</script>'
+        ))
+        conn.commit()
+        conn.close()
+
+        response = self.client.get('/feed/incidents.xml')
+        self.assertEqual(response.status_code, 200)
+
+        body = response.data.decode()
+        self.assertIn('&lt;script&gt;alert(&quot;feed&quot;)&lt;/script&gt;', body)
+        self.assertNotIn('<content type="html"><script>alert("feed")</script></content>', body)
+        self.assertNotIn('<title>Node Down: node1"><script>alert(1)</script></title>', body)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
