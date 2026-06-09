@@ -25,6 +25,7 @@ API Endpoints:
 from __future__ import annotations
 
 import argparse
+import html
 import hmac
 import hashlib
 import json
@@ -305,6 +306,8 @@ def generate_badge_svg(
     display_name = repo_name
     if len(display_name) > 25:
         display_name = display_name[:22] + '...'
+    safe_repo_name = html.escape(repo_name, quote=True)
+    safe_display_name = html.escape(display_name, quote=False)
 
     # QR code section (optional)
     qr_section = ''
@@ -332,7 +335,7 @@ def generate_badge_svg(
     score_fill = int(trust_score / 100 * score_bar_width)
     score_color = '#4c1' if trust_score >= 80 else '#f59e0b' if trust_score >= 60 else '#ef4444'
 
-    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" role="img" aria-label="BCOS {tier} Certified: {repo_name}">
+    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" role="img" aria-label="BCOS {tier} Certified: {safe_repo_name}">
   <defs>
     <linearGradient id="bcos_grad_{tier}" x1="0%" y1="0%" x2="100%" y2="0%">
       <stop offset="0%" style="stop-color:{config['color_start']};stop-opacity:1" />
@@ -358,7 +361,7 @@ def generate_badge_svg(
   <rect x="79" y="9" width="{score_fill}" height="4" rx="1" fill="{score_color}"/>
 
   <!-- Repo name -->
-  <text x="125" y="16" font-family="{BADGE_CONFIG['font_family']}" font-size="9" fill="white" opacity="0.9">{display_name}</text>
+  <text x="125" y="16" font-family="{BADGE_CONFIG['font_family']}" font-size="9" fill="white" opacity="0.9">{safe_display_name}</text>
 
   {qr_section}
 </svg>'''
@@ -1085,27 +1088,34 @@ MAIN_TEMPLATE = '''
                 .then(data => {
                     const resultDiv = document.getElementById('verifyResult');
                     resultDiv.classList.remove('hidden');
+                    resultDiv.textContent = '';
+
+                    const alertBox = document.createElement('div');
 
                     if (data.valid) {
-                        resultDiv.innerHTML = `
-                            <div class="alert alert-success">
-                                <strong>✅ Valid Certificate</strong><br>
-                                <strong>Repo:</strong> ${data.data.repo_name}<br>
-                                <strong>Tier:</strong> ${data.data.tier}<br>
-                                <strong>Trust Score:</strong> ${data.data.trust_score}/100<br>
-                                ${data.data.reviewer ? '<strong>Reviewer:</strong> ' + data.data.reviewer : ''}
-                            </div>
-                        `;
+                        alertBox.className = 'alert alert-success';
+                        addResultLine(alertBox, '✅ Valid Certificate');
+                        addResultLine(alertBox, 'Repo: ' + data.data.repo_name);
+                        addResultLine(alertBox, 'Tier: ' + data.data.tier);
+                        addResultLine(alertBox, 'Trust Score: ' + data.data.trust_score + '/100');
+                        if (data.data.reviewer) {
+                            addResultLine(alertBox, 'Reviewer: ' + data.data.reviewer);
+                        }
                     } else {
-                        resultDiv.innerHTML = `
-                            <div class="alert alert-error">
-                                <strong>❌ Invalid Certificate</strong><br>
-                                This certificate ID was not found in our database.
-                            </div>
-                        `;
+                        alertBox.className = 'alert alert-error';
+                        addResultLine(alertBox, '❌ Invalid Certificate');
+                        addResultLine(alertBox, 'This certificate ID was not found in our database.');
                     }
+
+                    resultDiv.appendChild(alertBox);
                 });
         });
+
+        function addResultLine(container, text) {
+            const line = document.createElement('div');
+            line.textContent = text;
+            container.appendChild(line);
+        }
 
         // Load stats on page load
         loadStats();

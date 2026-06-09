@@ -87,6 +87,18 @@ class TestBadgeSVGGeneration(unittest.TestCase):
         self.assertIn('L1', svg)
         self.assertIn('test/repo', svg)
 
+    def test_generate_badge_svg_escapes_repo_name(self):
+        """Dynamic repo names must be escaped for SVG text and attributes."""
+        svg = generate_badge_svg(
+            repo_name='test/<script>alert(1)</script>"',
+            tier='L1',
+            trust_score=75,
+        )
+
+        self.assertIn('&lt;script&gt;alert(1)&lt;/script&gt;', svg)
+        self.assertIn('&quot;', svg)
+        self.assertNotIn('<script>', svg)
+
     def test_generate_badge_svg_all_tiers(self):
         """Test SVG generation for all tiers."""
         for tier in ['L0', 'L1', 'L2']:
