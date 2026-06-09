@@ -100,7 +100,7 @@ class TestDatabaseOperations(unittest.TestCase):
         server.DB_PATH = self.original_db_path
         try:
             os.unlink(self.test_db.name)
-        except:
+        except OSError:
             pass
     
     def test_init_database(self):
@@ -290,7 +290,7 @@ class TestIncidentDetection(unittest.TestCase):
         server.DB_PATH = self.original_db_path
         try:
             os.unlink(self.test_db.name)
-        except:
+        except OSError:
             pass
     
     def test_detect_node_down_incident(self):
@@ -453,7 +453,7 @@ class TestFlaskAPI(unittest.TestCase):
         server.DB_PATH = self.original_db_path
         try:
             os.unlink(self.test_db.name)
-        except:
+        except OSError:
             pass
     
     def test_dashboard_route(self):
