@@ -46,6 +46,15 @@ def test_parse_content_length_rejects_malformed_or_non_positive_values():
     assert module.parse_content_length("-12") == 0
 
 
+def test_parse_json_object_payload_rejects_non_object_json():
+    module = load_module()
+
+    assert module.parse_json_object_payload(b'{"event":"new_block"}') == {"event": "new_block"}
+    assert module.parse_json_object_payload(b'[{"event":"new_block"}]') is None
+    assert module.parse_json_object_payload(b'"new_block"') is None
+    assert module.parse_json_object_payload(b'not-json') is None
+
+
 def test_format_event_renders_new_block_fields():
     module = load_module()
 
