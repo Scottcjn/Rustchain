@@ -10,6 +10,9 @@ sys.path.insert(0, str(ROOT / "node"))
 
 import hall_of_rust  # noqa: E402
 
+ADMIN_KEY = "hall-admin-secret"
+ADMIN_HEADERS = {"X-Admin-Key": ADMIN_KEY}
+
 
 def _client_for(db_path):
     app = Flask(__name__)
@@ -18,12 +21,41 @@ def _client_for(db_path):
     return app.test_client()
 
 
-def test_hall_stats_hides_sqlite_error_details(tmp_path):
+def _insert_hall_machine(db_path, fingerprint="fingerprint-1"):
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO hall_of_rust
+            (fingerprint_hash, miner_id, device_arch, device_model, manufacture_year,
+             first_attestation, total_attestations, rust_score, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (fingerprint, "miner-1", "G4", "PowerMac3,6", 2003, 1, 1, 150, 1),
+        )
+        conn.commit()
+
+
+def _hall_machine_row(db_path, fingerprint="fingerprint-1"):
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            """
+            SELECT nickname, eulogy, is_deceased, deceased_at
+            FROM hall_of_rust
+            WHERE fingerprint_hash = ?
+            """,
+            (fingerprint,),
+        ).fetchone()
+    return dict(row)
+
+
+def test_hall_stats_hides_sqlite_error_details(tmp_path, monkeypatch):
     db_path = tmp_path / "missing_schema.db"
     sqlite3.connect(db_path).close()
     client = _client_for(db_path)
+    monkeypatch.setenv("RC_ADMIN_KEY", ADMIN_KEY)
 
-    response = client.get("/hall/stats")
+    response = client.get("/hall/stats", headers=ADMIN_HEADERS)
 
     assert response.status_code == 500
     assert response.get_json() == {"error": "internal_error"}
@@ -32,12 +64,13 @@ def test_hall_stats_hides_sqlite_error_details(tmp_path):
     assert "hall_of_rust" not in body
 
 
-def test_hall_stats_still_returns_valid_empty_stats(tmp_path):
+def test_hall_stats_still_returns_valid_empty_stats(tmp_path, monkeypatch):
     db_path = tmp_path / "hall.db"
     hall_of_rust.init_hall_tables(str(db_path))
     client = _client_for(db_path)
+    monkeypatch.setenv("RC_ADMIN_KEY", ADMIN_KEY)
 
-    response = client.get("/hall/stats")
+    response = client.get("/hall/stats", headers=ADMIN_HEADERS)
 
     assert response.status_code == 200
     body = response.get_json()
@@ -57,24 +90,31 @@ def test_induct_rejects_non_object_json(tmp_path):
     assert response.get_json() == {"error": "JSON object required"}
 
 
-def test_eulogy_rejects_non_object_json(tmp_path):
+def test_eulogy_rejects_non_object_json(tmp_path, monkeypatch):
     db_path = tmp_path / "hall.db"
     hall_of_rust.init_hall_tables(str(db_path))
     client = _client_for(db_path)
+    monkeypatch.setenv("RC_ADMIN_KEY", ADMIN_KEY)
 
-    response = client.post("/hall/eulogy/fingerprint-1", json=["nickname"])
+    response = client.post(
+        "/hall/eulogy/fingerprint-1",
+        headers=ADMIN_HEADERS,
+        json=["nickname"],
+    )
 
     assert response.status_code == 400
     assert response.get_json() == {"error": "JSON object required"}
 
 
-def test_eulogy_rejects_structured_nickname(tmp_path):
+def test_eulogy_rejects_structured_nickname(tmp_path, monkeypatch):
     db_path = tmp_path / "hall.db"
     hall_of_rust.init_hall_tables(str(db_path))
     client = _client_for(db_path)
+    monkeypatch.setenv("RC_ADMIN_KEY", ADMIN_KEY)
 
     response = client.post(
         "/hall/eulogy/fingerprint-1",
+        headers=ADMIN_HEADERS,
         json={"nickname": {"name": "Old Reliable"}},
     )
 
@@ -82,18 +122,81 @@ def test_eulogy_rejects_structured_nickname(tmp_path):
     assert response.get_json() == {"error": "nickname must be a string"}
 
 
-def test_eulogy_rejects_structured_eulogy(tmp_path):
+def test_eulogy_rejects_structured_eulogy(tmp_path, monkeypatch):
     db_path = tmp_path / "hall.db"
     hall_of_rust.init_hall_tables(str(db_path))
     client = _client_for(db_path)
+    monkeypatch.setenv("RC_ADMIN_KEY", ADMIN_KEY)
 
     response = client.post(
         "/hall/eulogy/fingerprint-1",
+        headers=ADMIN_HEADERS,
         json={"eulogy": ["served", "well"]},
     )
 
     assert response.status_code == 400
     assert response.get_json() == {"error": "eulogy must be a string"}
+
+
+def test_eulogy_requires_admin_before_memorial_update(tmp_path, monkeypatch):
+    db_path = tmp_path / "hall.db"
+    hall_of_rust.init_hall_tables(str(db_path))
+    _insert_hall_machine(str(db_path))
+    client = _client_for(db_path)
+
+    monkeypatch.setenv("RC_ADMIN_KEY", ADMIN_KEY)
+    response = client.post(
+        "/hall/eulogy/fingerprint-1",
+        json={"nickname": "Defaced", "eulogy": "Attacker text", "is_deceased": True},
+    )
+
+    assert response.status_code == 401
+    assert "admin key required" in response.get_json()["error"]
+    assert _hall_machine_row(str(db_path)) == {
+        "nickname": None,
+        "eulogy": None,
+        "is_deceased": 0,
+        "deceased_at": None,
+    }
+
+
+def test_eulogy_fails_closed_when_admin_key_unconfigured(tmp_path, monkeypatch):
+    db_path = tmp_path / "hall.db"
+    hall_of_rust.init_hall_tables(str(db_path))
+    _insert_hall_machine(str(db_path))
+    client = _client_for(db_path)
+
+    monkeypatch.delenv("RC_ADMIN_KEY", raising=False)
+    response = client.post(
+        "/hall/eulogy/fingerprint-1",
+        headers=ADMIN_HEADERS,
+        json={"nickname": "Defaced"},
+    )
+
+    assert response.status_code == 503
+    assert response.get_json() == {"error": "RC_ADMIN_KEY not configured"}
+    assert _hall_machine_row(str(db_path))["nickname"] is None
+
+
+def test_eulogy_accepts_valid_admin_key(tmp_path, monkeypatch):
+    db_path = tmp_path / "hall.db"
+    hall_of_rust.init_hall_tables(str(db_path))
+    _insert_hall_machine(str(db_path))
+    client = _client_for(db_path)
+
+    monkeypatch.setenv("RC_ADMIN_KEY", ADMIN_KEY)
+    response = client.post(
+        "/hall/eulogy/fingerprint-1",
+        headers=ADMIN_HEADERS,
+        json={"nickname": "Old Reliable", "eulogy": "Served with honor"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json() == {"ok": True, "message": "Memorial updated"}
+    row = _hall_machine_row(str(db_path))
+    assert row["nickname"] == "Old Reliable"
+    assert row["eulogy"] == "Served with honor"
+    assert row["is_deceased"] == 0
 
 
 def test_calculate_rust_score_uses_current_year_for_age_weight():
@@ -126,9 +229,10 @@ def test_machine_of_the_day_uses_current_year_for_age(tmp_path, monkeypatch):
         )
         conn.commit()
     monkeypatch.setattr(hall_of_rust, "_current_utc_year", lambda: 2026)
+    monkeypatch.setenv("RC_ADMIN_KEY", ADMIN_KEY)
     client = _client_for(db_path)
 
-    response = client.get("/hall/machine_of_the_day")
+    response = client.get("/hall/machine_of_the_day", headers=ADMIN_HEADERS)
 
     assert response.status_code == 200
     assert response.get_json()["age_years"] == 23

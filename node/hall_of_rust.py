@@ -344,6 +344,10 @@ def rust_leaderboard():
 @hall_bp.route('/hall/eulogy/<fingerprint>', methods=['POST'])
 def set_eulogy(fingerprint):
     """Set a eulogy/nickname for a machine. For when it finally dies."""
+    err = _require_admin()
+    if err:
+        return err
+
     data, error_response = _json_object_or_empty()
     if error_response:
         return error_response
