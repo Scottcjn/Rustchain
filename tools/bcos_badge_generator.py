@@ -25,6 +25,7 @@ API Endpoints:
 from __future__ import annotations
 
 import argparse
+import html
 import hmac
 import hashlib
 import json
@@ -301,14 +302,17 @@ def generate_badge_svg(
     Returns:
         SVG content as string
     """
-    config = BADGE_CONFIG['tiers'].get(tier, BADGE_CONFIG['tiers']['L1'])
+    tier_key = tier if tier in BADGE_CONFIG['tiers'] else 'L1'
+    config = BADGE_CONFIG['tiers'][tier_key]
     width = BADGE_CONFIG['width']
     height = BADGE_CONFIG['height']
 
     # Truncate repo name if too long
-    display_name = repo_name
+    display_name = str(repo_name)
     if len(display_name) > 25:
         display_name = display_name[:22] + '...'
+    safe_repo_label = html.escape(str(repo_name), quote=True)
+    safe_display_name = html.escape(display_name, quote=False)
 
     # QR code section (optional)
     qr_section = ''
@@ -336,9 +340,9 @@ def generate_badge_svg(
     score_fill = int(trust_score / 100 * score_bar_width)
     score_color = '#4c1' if trust_score >= 80 else '#f59e0b' if trust_score >= 60 else '#ef4444'
 
-    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" role="img" aria-label="BCOS {tier} Certified: {repo_name}">
+    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" role="img" aria-label="BCOS {tier_key} Certified: {safe_repo_label}">
   <defs>
-    <linearGradient id="bcos_grad_{tier}" x1="0%" y1="0%" x2="100%" y2="0%">
+    <linearGradient id="bcos_grad_{tier_key}" x1="0%" y1="0%" x2="100%" y2="0%">
       <stop offset="0%" style="stop-color:{config['color_start']};stop-opacity:1" />
       <stop offset="100%" style="stop-color:{config['color_end']};stop-opacity:1" />
     </linearGradient>
@@ -348,21 +352,21 @@ def generate_badge_svg(
   </defs>
 
   <!-- Background -->
-  <rect width="{width}" height="{height}" fill="url(#bcos_grad_{tier})" rx="3"/>
+  <rect width="{width}" height="{height}" fill="url(#bcos_grad_{tier_key})" rx="3"/>
 
   <!-- BCOS label -->
   <text x="8" y="16" font-family="{BADGE_CONFIG['font_family']}" font-size="{BADGE_CONFIG['font_size']}" font-weight="bold" fill="white">BCOS</text>
 
   <!-- Tier badge -->
   <rect x="48" y="4" width="24" height="14" rx="2" fill="white" fill-opacity="0.25"/>
-  <text x="60" y="15" font-family="{BADGE_CONFIG['font_family']}" font-size="9" font-weight="bold" fill="white">{tier}</text>
+  <text x="60" y="15" font-family="{BADGE_CONFIG['font_family']}" font-size="9" font-weight="bold" fill="white">{tier_key}</text>
 
   <!-- Trust score indicator -->
   <rect x="78" y="8" width="{score_bar_width}" height="6" rx="2" fill="white" fill-opacity="0.2"/>
   <rect x="79" y="9" width="{score_fill}" height="4" rx="1" fill="{score_color}"/>
 
   <!-- Repo name -->
-  <text x="125" y="16" font-family="{BADGE_CONFIG['font_family']}" font-size="9" fill="white" opacity="0.9">{display_name}</text>
+  <text x="125" y="16" font-family="{BADGE_CONFIG['font_family']}" font-size="9" fill="white" opacity="0.9">{safe_display_name}</text>
 
   {qr_section}
 </svg>'''
@@ -1032,6 +1036,50 @@ MAIN_TEMPLATE = '''
                 });
         }
 
+        function clearElement(element) {
+            while (element.firstChild) {
+                element.removeChild(element.firstChild);
+            }
+        }
+
+        function appendField(container, label, value) {
+            const strong = document.createElement('strong');
+            strong.textContent = label;
+            container.appendChild(strong);
+            container.appendChild(document.createTextNode(' ' + String(value ?? '')));
+            container.appendChild(document.createElement('br'));
+        }
+
+        function renderVerificationResult(data) {
+            const resultDiv = document.getElementById('verifyResult');
+            resultDiv.classList.remove('hidden');
+            clearElement(resultDiv);
+
+            const alertDiv = document.createElement('div');
+            alertDiv.className = data.valid ? 'alert alert-success' : 'alert alert-error';
+
+            const title = document.createElement('strong');
+            title.textContent = data.valid ? 'Valid Certificate' : 'Invalid Certificate';
+            alertDiv.appendChild(title);
+            alertDiv.appendChild(document.createElement('br'));
+
+            if (data.valid) {
+                const badge = data.data || {};
+                appendField(alertDiv, 'Repo:', badge.repo_name);
+                appendField(alertDiv, 'Tier:', badge.tier);
+                appendField(alertDiv, 'Trust Score:', String(badge.trust_score ?? '') + '/100');
+                if (badge.reviewer) {
+                    appendField(alertDiv, 'Reviewer:', badge.reviewer);
+                }
+            } else {
+                alertDiv.appendChild(
+                    document.createTextNode('This certificate ID was not found in our database.')
+                );
+            }
+
+            resultDiv.appendChild(alertDiv);
+        }
+
         document.getElementById('badgeForm').addEventListener('submit', function(e) {
             e.preventDefault();
 
@@ -1086,29 +1134,7 @@ MAIN_TEMPLATE = '''
             const certId = document.getElementById('verifyCertId').value;
             fetch('/api/badge/verify/' + certId)
                 .then(r => r.json())
-                .then(data => {
-                    const resultDiv = document.getElementById('verifyResult');
-                    resultDiv.classList.remove('hidden');
-
-                    if (data.valid) {
-                        resultDiv.innerHTML = `
-                            <div class="alert alert-success">
-                                <strong>✅ Valid Certificate</strong><br>
-                                <strong>Repo:</strong> ${data.data.repo_name}<br>
-                                <strong>Tier:</strong> ${data.data.tier}<br>
-                                <strong>Trust Score:</strong> ${data.data.trust_score}/100<br>
-                                ${data.data.reviewer ? '<strong>Reviewer:</strong> ' + data.data.reviewer : ''}
-                            </div>
-                        `;
-                    } else {
-                        resultDiv.innerHTML = `
-                            <div class="alert alert-error">
-                                <strong>❌ Invalid Certificate</strong><br>
-                                This certificate ID was not found in our database.
-                            </div>
-                        `;
-                    }
-                });
+                .then(renderVerificationResult);
         });
 
         // Load stats on page load

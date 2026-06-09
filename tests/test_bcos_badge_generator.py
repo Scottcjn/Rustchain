@@ -147,6 +147,19 @@ class TestBadgeSVGGeneration(unittest.TestCase):
         svg_low = generate_badge_svg(repo_name='test/repo', tier='L1', trust_score=30)
         self.assertIn('#ef4444', svg_low)
 
+    def test_generate_badge_svg_escapes_dynamic_text(self):
+        """Dynamic SVG text must not create executable markup."""
+        svg = generate_badge_svg(
+            repo_name='owner/<script>alert(1)</script>"',
+            tier='L1',
+            trust_score=75,
+        )
+
+        self.assertNotIn('<script>', svg)
+        self.assertNotIn('alert(1)</script>', svg)
+        self.assertIn('&lt;script&gt;alert(1)&lt;/script&gt;', svg)
+        self.assertIn('&quot;', svg)
+
     def test_generate_static_badge_svg(self):
         """Test static badge generation."""
         for tier in ['L0', 'L1', 'L2']:
@@ -374,6 +387,17 @@ class TestFlaskIntegration(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b'BCOS', response.data)
         self.assertIn(b'Badge Generator', response.data)
+
+    def test_index_page_verification_result_uses_text_nodes(self):
+        """Verification UI should not template API fields into innerHTML."""
+        response = self.client.get('/')
+        page = response.get_data(as_text=True)
+
+        self.assertIn('renderVerificationResult', page)
+        self.assertIn('textContent = data.valid', page)
+        self.assertIn('appendField(alertDiv,', page)
+        self.assertNotIn('${data.data.repo_name}', page)
+        self.assertNotIn('data.data.reviewer ? \'<strong>Reviewer:</strong>', page)
 
     def test_health_endpoint(self):
         """Test health check endpoint."""
