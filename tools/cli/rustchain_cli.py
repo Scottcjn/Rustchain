@@ -42,6 +42,8 @@ from urllib.error import URLError, HTTPError
 DEFAULT_NODE = "https://rustchain.org"
 TIMEOUT = 10
 __version__ = "0.2.0"
+BEACON_AGENTS_ENDPOINT = "/beacon/api/agents"
+BEACON_BOUNTIES_ENDPOINT = "/beacon/api/bounties"
 
 
 class RustChainAPIError(Exception):
@@ -133,6 +135,43 @@ def normalize_miners_response(data):
     if isinstance(data, dict) and isinstance(data.get("miners"), list):
         return data["miners"]
     return []
+
+def _require_list(data, endpoint):
+    if isinstance(data, list):
+        return data
+    raise RustChainAPIError(f"{endpoint} returned {type(data).__name__}, expected list")
+
+def _find_item(items, key, value):
+    wanted = str(value)
+    for item in items:
+        if str(item.get(key, "")) == wanted:
+            return dict(item)
+    return None
+
+def _normalize_agent(agent, reputation=None):
+    item = dict(agent)
+    reputation = reputation or {}
+    item.setdefault("type", "relay" if item.get("relay") else "agent")
+    item.setdefault("owner_wallet", item.get("provider_name") or item.get("provider") or "N/A")
+    item.setdefault("reputation_score", reputation.get("score", item.get("score", 0)))
+    item.setdefault("total_earnings_rtc", reputation.get("total_rtc_earned", item.get("total_rtc_earned", 0)))
+    item.setdefault("tasks_completed", reputation.get("bounties_completed", item.get("bounties_completed", 0)))
+    item.setdefault("x402_enabled", False)
+    return item
+
+def _normalize_bounty(bounty):
+    item = dict(bounty)
+    item.setdefault("status", item.get("state", "open"))
+    item.setdefault("category", item.get("category") or item.get("difficulty") or item.get("github_repo") or "general")
+    item.setdefault("description", item.get("title", ""))
+    item.setdefault("deadline", "No deadline")
+    return item
+
+def _fetch_agents():
+    return _require_list(fetch_api(BEACON_AGENTS_ENDPOINT), BEACON_AGENTS_ENDPOINT)
+
+def _fetch_bounties():
+    return [_normalize_bounty(item) for item in _require_list(fetch_api(BEACON_BOUNTIES_ENDPOINT), BEACON_BOUNTIES_ENDPOINT)]
 
 def cmd_miners(args):
     """List active miners."""
@@ -402,7 +441,7 @@ def cmd_agent(args):
     dry_run = getattr(args, 'dry_run', False)
     
     if args.action == "list":
-        data = fetch_api("/api/agents")
+        data = [_normalize_agent(agent) for agent in _fetch_agents()]
         
         if use_json:
             print(json.dumps(data, indent=2))
@@ -427,7 +466,14 @@ def cmd_agent(args):
             print("Error: Please provide an agent ID", file=sys.stderr)
             sys.exit(1)
         
-        data = fetch_api(f"/api/agent/{args.agent_id}")
+        agent = _find_item(_fetch_agents(), "agent_id", args.agent_id)
+        if not agent:
+            raise RustChainAPIError(f"Agent not found: {args.agent_id}")
+        try:
+            reputation = fetch_api(f"/beacon/api/reputation/{args.agent_id}")
+        except RustChainAPIError:
+            reputation = None
+        data = _normalize_agent(agent, reputation)
         
         if use_json:
             print(json.dumps(data, indent=2))
@@ -503,7 +549,7 @@ def cmd_bounty(args):
     dry_run = getattr(args, 'dry_run', False)
     
     if args.action == "list":
-        data = fetch_api("/api/bounties")
+        data = _fetch_bounties()
         
         if use_json:
             print(json.dumps(data, indent=2))
@@ -532,7 +578,9 @@ def cmd_bounty(args):
             print("Error: Please provide a bounty ID", file=sys.stderr)
             sys.exit(1)
         
-        data = fetch_api(f"/api/bounty/{args.bounty_id}")
+        data = _find_item(_fetch_bounties(), "id", args.bounty_id)
+        if not data:
+            raise RustChainAPIError(f"Bounty not found: {args.bounty_id}")
         
         if use_json:
             print(json.dumps(data, indent=2))

@@ -230,10 +230,9 @@ echo "✓ All Agent Economy CLI commands working (write commands in --dry-run mo
 ### Agent Economy Endpoints (New)
 - `/api/wallets` - List all wallets
 - `/api/wallet/<address>` - Get wallet details
-- `/api/agents` - List registered AI agents
-- `/api/agent/<agent_id>` - Get agent information
-- `/api/bounties` - List available bounties
-- `/api/bounty/<id>` - Get bounty details
+- `/beacon/api/agents` - List registered Beacon/AI agents
+- `/beacon/api/reputation/<agent_id>` - Get agent reputation details
+- `/beacon/api/bounties` - List available bounties
 - `/api/wallet/<address>/x402-history` - Payment history
 
 ## Requirements
