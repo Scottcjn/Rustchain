@@ -74,3 +74,15 @@ def test_miner_check_accepts_paginated_miners_response():
 
     assert "var miners=Array.isArray(data)?data:(data&&Array.isArray(data.miners)?data.miners:[]);" in html
     assert "for(var i=0;i<miners.length;i++)" in html
+
+
+def test_attestation_step_escapes_imported_wallet_in_commands():
+    html = WIZARD_HTML.read_text(encoding="utf-8")
+
+    assert 'var minerCmd="~/.rustchain/venv/bin/python ~/.rustchain/rustchain_miner.py --wallet "+wName;' in html
+    assert 'var balanceCmd="curl -sk https://rustchain.org/wallet/balance?miner_id="+wName;' in html
+    assert "'<div class=\"cb\">'+esc(minerCmd)+'<span class=\"cpy\" onclick=\"copyCode(this)\">Copy</span></div>'" in html
+    assert "'+esc(balanceCmd)+'</code>" in html
+
+    assert "'<div class=\"cb\">'+minerCmd+'<span class=\"cpy\" onclick=\"copyCode(this)\">Copy</span></div>'" not in html
+    assert "balance?miner_id='+wName+'</code>" not in html
