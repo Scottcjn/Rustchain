@@ -160,7 +160,7 @@ RustChain Miner Installer v1.1.0
 
 Installation Complete!
 Start: /home/you/.rustchain/start.sh
-Wallet: miner-dimension-4321
+Wallet: miner-oldbox-4321
 ```
 
 Take a photo of this terminal. You will want it for the claim later.
