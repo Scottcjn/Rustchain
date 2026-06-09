@@ -528,7 +528,13 @@ function renderMinersTable() {
         }).join('');
     } catch (e) {
         console.error('Render error:', e);
-        container.innerHTML = `<tr><td colspan="7" class="error-message">UI Render Error: ${escapeHtml(e.message)}</td></tr>`;
+        const row = document.createElement('tr');
+        const cell = document.createElement('td');
+        cell.colSpan = 7;
+        cell.className = 'error-message';
+        cell.textContent = 'UI Render Error: ' + String(e && e.message ? e.message : e);
+        row.appendChild(cell);
+        container.replaceChildren(row);
     }
 }
 

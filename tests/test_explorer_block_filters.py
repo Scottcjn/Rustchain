@@ -195,3 +195,13 @@ const script = {json.dumps(js)};
     assert data["filteredHeights"] == [101]
     assert "#101" not in data["recentHtml"]
     assert "#101" in data["fullHtml"]
+
+
+def test_miners_table_render_error_uses_text_content():
+    js = EXPLORER_JS.read_text(encoding="utf-8")
+
+    assert "cell.textContent = 'UI Render Error: ' + String(e && e.message ? e.message : e);" in js
+    assert "container.replaceChildren(row);" in js
+
+    assert "UI Render Error: ${escapeHtml(e.message)}" not in js
+    assert 'container.innerHTML = `<tr><td colspan="7" class="error-message">UI Render Error:' not in js
