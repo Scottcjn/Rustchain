@@ -13,6 +13,7 @@ import threading
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
+from xml.sax.saxutils import escape as xml_escape
 
 import requests
 from flask import Flask, render_template, jsonify, Response
@@ -161,6 +162,11 @@ def poller_loop():
         time.sleep(POLL_INTERVAL)
 
 
+def xml_text(value):
+    """Escape dynamic text before embedding it in RSS XML text nodes."""
+    return xml_escape(str(value), {'"': "&quot;", "'": "&apos;"})
+
+
 # ── Routes ────────────────────────────────────────────────────────
 
 @app.route("/")
@@ -218,9 +224,9 @@ def rss_feed():
     items = []
     for inc in incidents[:20]:
         items.append(f"""    <item>
-      <title>{inc['node']} — {inc['event']}</title>
-      <description>{inc.get('detail', inc['event'])}</description>
-      <pubDate>{inc['time']}</pubDate>
+      <title>{xml_text(inc['node'])} — {xml_text(inc['event'])}</title>
+      <description>{xml_text(inc.get('detail', inc['event']))}</description>
+      <pubDate>{xml_text(inc['time'])}</pubDate>
     </item>""")
     xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
