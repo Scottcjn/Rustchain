@@ -88,9 +88,87 @@ def test_proxy_hides_internal_connection_errors(tmp_path, monkeypatch):
 
     monkeypatch.setattr(keeper.requests, "get", fail_request)
 
-    response = keeper.app.test_client().get("/api/proxy/blocks/latest")
+    response = keeper.app.test_client().get("/api/proxy/headers/tip")
 
     assert response.status_code == 502
     body = response.get_json()
     assert body == {"error": "Node connection failed"}
     assert internal_error not in response.get_data(as_text=True)
+
+
+def test_proxy_rejects_unlisted_internal_paths_before_upstream(tmp_path, monkeypatch):
+    keeper = load_keeper_explorer(tmp_path, monkeypatch)
+
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("blocked proxy path reached upstream")
+
+    monkeypatch.setattr(keeper.requests, "get", fail_if_called)
+
+    response = keeper.app.test_client().get("/api/proxy/admin/wallet-review-holds")
+
+    assert response.status_code == 403
+    assert response.get_json() == {"error": "Proxy path not allowed"}
+
+
+def test_proxy_rejects_dot_segments_before_upstream(tmp_path, monkeypatch):
+    keeper = load_keeper_explorer(tmp_path, monkeypatch)
+
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("blocked proxy path reached upstream")
+
+    monkeypatch.setattr(keeper.requests, "get", fail_if_called)
+
+    response = keeper.app.test_client().get("/api/proxy/headers/../admin")
+
+    assert response.status_code == 403
+    assert response.get_json() == {"error": "Proxy path not allowed"}
+
+
+def test_proxy_allows_safe_readonly_paths_and_strips_internal_headers(tmp_path, monkeypatch):
+    keeper = load_keeper_explorer(tmp_path, monkeypatch)
+    calls = []
+
+    class FakeResponse:
+        status_code = 200
+        content = b'{"ok": true}'
+        headers = {
+            "Content-Type": "application/json",
+            "Server": "Werkzeug/internal",
+            "X-Internal-Node": "10.0.0.5",
+        }
+
+    def fake_get(url, params, timeout):
+        calls.append((url, params.to_dict(), timeout))
+        return FakeResponse()
+
+    monkeypatch.setattr(keeper.requests, "get", fake_get)
+
+    response = keeper.app.test_client().get("/api/proxy/headers/tip?limit=1")
+
+    assert response.status_code == 200
+    assert response.get_json() == {"ok": True}
+    assert calls == [("http://localhost:8000/headers/tip", {"limit": "1"}, 5)]
+    assert response.headers["Content-Type"] == "application/json"
+    assert "Server" not in response.headers
+    assert "X-Internal-Node" not in response.headers
+
+
+def test_proxy_encodes_allowed_path_segments(tmp_path, monkeypatch):
+    keeper = load_keeper_explorer(tmp_path, monkeypatch)
+    calls = []
+
+    class FakeResponse:
+        status_code = 200
+        content = b'{"balance": 0}'
+        headers = {"Content-Type": "application/json"}
+
+    def fake_get(url, params, timeout):
+        calls.append(url)
+        return FakeResponse()
+
+    monkeypatch.setattr(keeper.requests, "get", fake_get)
+
+    response = keeper.app.test_client().get("/api/proxy/balance/rtc wallet")
+
+    assert response.status_code == 200
+    assert calls == ["http://localhost:8000/balance/rtc%20wallet"]

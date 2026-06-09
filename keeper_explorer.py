@@ -25,12 +25,29 @@ import requests
 from flask import Flask, request, jsonify, render_template_string, send_from_directory
 from flask_cors import CORS
 from datetime import datetime
+from urllib.parse import quote
 
 # Configuration
 NODE_API = os.environ.get("RUSTCHAIN_NODE_API", "http://localhost:8000")
 FAUCET_DB = "faucet_service/faucet.db"
 PORT = 8095
 WALLET_ADDRESS_RE = re.compile(r"^[A-Za-z0-9._:-]{3,128}$")
+ALLOWED_PROXY_PATHS = {
+    "api/stats",
+    "epoch",
+    "headers/tip",
+}
+ALLOWED_PROXY_PREFIXES = (
+    "balance/",
+    "headers/by_hash/",
+    "headers/since/",
+)
+PROXY_RESPONSE_HEADERS = {
+    "content-type",
+    "cache-control",
+    "etag",
+    "last-modified",
+}
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
@@ -41,6 +58,30 @@ def debug_enabled() -> bool:
     return os.environ.get("KEEPER_EXPLORER_DEBUG", "").strip().lower() in {
         "1", "true", "yes", "on"
     }
+
+
+def _normalize_proxy_path(path):
+    """Return a URL-safe allowlisted node path, or None when blocked."""
+    parts = path.split("/")
+    if any(part in ("", ".", "..") for part in parts):
+        return None
+
+    normalized = "/".join(parts)
+    if (
+        normalized not in ALLOWED_PROXY_PATHS
+        and not any(normalized.startswith(prefix) for prefix in ALLOWED_PROXY_PREFIXES)
+    ):
+        return None
+
+    return "/".join(quote(part, safe="") for part in parts)
+
+
+def _proxy_response_headers(headers):
+    return [
+        (name, value)
+        for name, value in headers.items()
+        if name.lower() in PROXY_RESPONSE_HEADERS
+    ]
 
 # --- Faucet Logic (Integrated) ---
 
@@ -106,14 +147,21 @@ def home():
 @app.route('/api/proxy/<path:path>')
 def proxy_api(path):
     """Proxy requests to the RustChain node."""
+    safe_path = _normalize_proxy_path(path)
+    if not safe_path:
+        return jsonify({"error": "Proxy path not allowed"}), 403
+
     try:
-        url = f"{NODE_API}/{path}"
-        # Keep query parameters
-        if request.query_string:
-            url += f"?{request.query_string.decode('utf-8')}"
-            
-        resp = requests.get(url, timeout=5)
-        return (resp.content, resp.status_code, resp.headers.items())
+        url = f"{NODE_API.rstrip('/')}/{safe_path}"
+        resp = requests.get(url, params=request.args, timeout=5)
+        if resp.status_code >= 500:
+            logger.warning(
+                "Keeper explorer upstream error: status=%s path=%s",
+                resp.status_code,
+                safe_path,
+            )
+            return jsonify({"error": "Node connection failed"}), 502
+        return (resp.content, resp.status_code, _proxy_response_headers(resp.headers))
     except Exception:
         logger.exception("Keeper explorer proxy request failed")
         return jsonify({"error": "Node connection failed"}), 502
