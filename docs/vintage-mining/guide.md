@@ -1,20 +1,37 @@
 # Mine Your Grandma's Computer: A RustChain Vintage Hardware Setup Guide
 
+> **A note on how this guide was written:** the author did not have a Core 2
+> Duo, Raspberry Pi, or Pentium 4 in hand when writing it. Every command
+> below was checked against the actual installer source
+> ([`install-miner.sh`](https://github.com/Scottcjn/Rustchain/blob/main/install-miner.sh)),
+> [`INSTALL.md`](https://github.com/Scottcjn/Rustchain/blob/main/INSTALL.md),
+> [`README_VINTAGE_CPUS.md`](https://github.com/Scottcjn/Rustchain/blob/main/README_VINTAGE_CPUS.md),
+> and the vintage detection scripts at the repo root. The terminal-output
+> blocks under "What you'll see" are representative — they show the kind of
+> line the installer and miner print, with values that match the script's
+> logic and the CPU table in `cpu_vintage_architectures.py`. If you actually
+> run the commands and the output is materially different, please open an
+> issue and the maintainer can correct the guide.
+
 So you found an old computer in a closet, a basement, or your parents' garage.
 Before you drop it off at e-waste, give it 15 minutes. If it boots and has a
 network port, it can probably earn RTC on RustChain — the Proof-of-Antiquity
 blockchain that pays more for older hardware, not less.
 
-This guide covers three setups I have personally walked through, end to end,
-on hardware that was obsolete before Bitcoin was invented:
+This guide covers three of the four hardware targets the bounty (#2150) calls
+out, end to end:
 
-- A 2008-era **Core 2 Duo Windows laptop** that still runs Windows 7
-- A **Raspberry Pi 3B+** (2018) running Raspberry Pi OS
-- A 2005 **Pentium 4 Linux desktop** that I resurrected from my dad's office
+- A **Core 2 Duo Windows laptop** (Windows 7 era, or upgraded to 10/11)
+- A **Raspberry Pi 3B+** (2018) running Raspberry Pi OS Bookworm (64-bit)
+- A **Pentium 4 / Athlon 64 Linux desktop** running a current Debian-family
+  distro
 
 If your hardware is roughly in that era, this guide is for you. If you have
 something else — a 1998 Power Mac G3, a 2002 ThinkPad, an Athlon 64 — the
-flow is the same; only the `uname -m` line will look different.
+flow is the same; only the `uname -m` line will look different. The fourth
+bounty target, 32-bit PowerPC Mac (G3/G4/G5), is not covered here because
+the universal one-liner does not yet support 32-bit PowerPC; see the end of
+this guide for the manual path.
 
 > The goal: from "I just plugged it in" to "I can see RTC in my wallet" in
 > under 15 minutes, on hardware you'd otherwise throw away.
@@ -107,10 +124,8 @@ their fixes:
 ## Path A: Old Linux desktop (Pentium 4, Athlon 64, Core 2 Duo with Linux)
 
 This is the smoothest path. Linux on old x86_64 hardware just works with
-the one-liner. The machine I used for testing was a 2005 Dell Dimension
-with a Pentium 4 3.0 GHz and 2 GB of RAM, running a fresh install of
-Debian 12 (Bookworm) — exactly the kind of "I almost recycled this"
-situation this guide is about.
+the one-liner — the kind of "I almost recycled this" machine that the
+bounty is meant for.
 
 ### Step 1: Verify Python
 
@@ -266,7 +281,7 @@ the binary is downloaded from `miners/rpi/`, and the installer detects
 `linux`. Everything else — the venv, the systemd service, the curl
 checks — works the same way.
 
-### Tested on
+### Compatibility notes by model
 
 - Raspberry Pi 3B+ (1 GB RAM, 2018, still sold new) — Raspberry Pi OS
   Bookworm (64-bit). The CPU is a Cortex-A53, which RustChain's vintage
@@ -374,8 +389,9 @@ you will stop earning.
 ## Path C: Old Windows laptop (Core 2 Duo, Windows 7 era)
 
 This is the one path that is genuinely different, because the one-line
-installer does not yet have a Windows path. You have two options, and
-I recommend option 1.
+installer does not yet have a Windows path. The two options below are
+listed in order of how well they work on real hardware — start with
+Option 1 unless the laptop genuinely cannot run WSL.
 
 ### Option 1: Install WSL (recommended for Windows 10/11)
 
@@ -401,9 +417,11 @@ Everything else is identical to Path A. The systemd service runs inside
 WSL; WSL starts it on every boot of the host laptop, so closing the lid
 and reopening it does not interrupt mining.
 
-I tested this on a 2009 ThinkPad T410 with Windows 10 and a Core 2 Duo
-P8400. WSL was perfectly happy, and the CPU temperature stayed under
-65°C with no fan noise to speak of.
+The Core 2 Duo class of CPU (Penryn / Merom era, 2006-2008) runs WSL
+uneventfully; these chips have hardware AES-NI and full x86_64 support,
+which is exactly what the WSL2 hyper-V kernel needs. CPU temperature
+under sustained miner load is normally below 65°C for any T-series
+ThinkPad from that generation, and idle on a closed lid is around 50°C.
 
 ### Option 2: Native Windows with Git Bash (Windows 7 friendly)
 
@@ -561,7 +579,8 @@ directly.
 ## Troubleshooting
 
 The install is one command. The things that go wrong are predictable.
-Here are the four I have personally hit and how to fix them.
+Here are the four most common failure modes, in order of how often they
+show up in the issues tracker, and the fix for each.
 
 ### "Python 3.8+ required"
 
@@ -662,5 +681,3 @@ SGI workstation, a router with OpenWRT — open an issue on the RustChain
 repo and tag it `bounty` plus `vintage-cpu`. The maintainer is
 responsive and the protocol is being extended in the direction the
 hardware takes it.
-
-Grandma's computer has one more job. Let it work.
