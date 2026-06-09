@@ -115,6 +115,8 @@ function demoData() {
 
 // ── UI Updates ──────────────────────────────────────────────────
 
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+
 function fmt(n, decimals = 0) {
   if (n === null || n === undefined) return "—";
   return n.toLocaleString("en-US", { 
@@ -166,8 +168,8 @@ function updateTxTable(id, txs) {
     <tr>
       <td>${timeAgo(tx.time)}</td>
       <td class="amount">${fmt(tx.amount)} ${tx.type === "wrap" ? "RTC" : "wRTC"}</td>
-      <td class="mono">${tx.wallet}</td>
-      <td class="mono">${tx.tx.slice(0, 8)}…</td>
+      <td class="mono">${esc(tx.wallet)}</td>
+      <td class="mono">${esc(tx.tx.slice(0, 8))}…</td>
     </tr>
   `).join("");
 }
