@@ -286,9 +286,18 @@ DASHBOARD_HTML = """
                     resultDiv.style.display = 'block';
                 })
                 .catch(err => {
-                    err = escapeHtml(err.message || err);
-                    document.getElementById('search-result').innerHTML = `<h3>❌ Error</h3><p>${err}</p>`;
-                    document.getElementById('search-result').style.display = 'block';
+                    const resultDiv = document.getElementById('search-result');
+                    const errMsg = (err && err.message) ? err.message : String(err);
+                    // Use textContent (not innerHTML) to avoid the parser sink.
+                    // This is the safe invariant: the error message is plain text,
+                    // so we render it as a text node, never as parsed HTML.
+                    resultDiv.replaceChildren();
+                    const heading = document.createElement('h3');
+                    heading.textContent = '❌ Error';
+                    const para = document.createElement('p');
+                    para.textContent = errMsg;
+                    resultDiv.append(heading, para);
+                    resultDiv.style.display = 'block';
                 });
         }
 

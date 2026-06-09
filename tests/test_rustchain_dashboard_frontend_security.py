@@ -62,13 +62,45 @@ def test_dashboard_escapes_search_result_and_error_text():
     assert "${escapeHtml(data.weight)}" in source
     assert "${escapeHtml(data.tier)}" in source
     assert "${escapeHtml(wallet)}" in source
-    assert "err = escapeHtml(err.message || err);" in source
+    # The search-result error catch path now uses textContent (the safe invariant),
+    # not innerHTML with an escapeHtml wrapper. The new code path must NOT contain
+    # the old innerHTML sink pattern.
+    assert "err = escapeHtml(err.message || err);" not in source
+    assert "search-result').innerHTML = `<h3>❌ Error</h3><p>${err}</p>`" not in source
+    # The new textContent path is required.
+    assert "para.textContent = errMsg;" in source
+    assert "heading.textContent = '❌ Error';" in source
 
     assert "${data.wallet}" not in source
     assert "${data.balance}" not in source
     assert "${data.weight}" not in source
     assert "${data.tier}" not in source
     assert '<span class="mono">${wallet}</span>' not in source
+
+
+def test_dashboard_search_error_renders_with_textcontent():
+    """Regression: the wallet search error catch path must use textContent (not innerHTML).
+
+    The prior implementation passed an escapeHtml(err.message) string into a
+    template-literal innerHTML assignment. The fix builds the heading and
+    paragraph as DOM elements and writes the error text with textContent so
+    it can never reach the parser sink.
+    """
+    source = _source()
+
+    # The old innerHTML sink pattern is forbidden.
+    assert "err = escapeHtml(err.message || err);" not in source
+    assert ".innerHTML = `<h3>❌ Error</h3><p>${err}</p>`" not in source
+
+    # The new textContent path is required.
+    assert "resultDiv.replaceChildren();" in source
+    assert "document.createElement('h3');" in source
+    assert "document.createElement('p');" in source
+    assert "heading.textContent = '❌ Error';" in source
+    assert "para.textContent = errMsg;" in source
+    assert "resultDiv.append(heading, para);" in source
+    # The errMsg extraction logic is the new safe path.
+    assert "const errMsg = (err && err.message) ? err.message : String(err);" in source
 
 
 def test_stats_api_does_not_echo_internal_exception_details(monkeypatch):
