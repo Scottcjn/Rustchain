@@ -417,7 +417,7 @@ function renderStatusBar() {
             <span>${statusText}</span>
         </div>
         <div class="status-info mono">
-            ${state.health ? `v${state.health.version || '2.2.1'}` : ''}
+            ${state.health ? `v${escapeHtml(state.health.version || '2.2.1')}` : ''}
             ${state.health && state.health.uptime ? `| Uptime: ${formatUptime(state.health.uptime)}` : ''}
             ${state.lastUpdate ? `| Updated: ${formatRelativeTime(state.lastUpdate)}` : ''}
         </div>
