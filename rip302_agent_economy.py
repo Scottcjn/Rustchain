@@ -432,6 +432,28 @@ def register_agent_economy(app: Flask, db_path: str):
             conn.close()
 
     # -----------------------------------------------------------------------
+    # GET /agent/jobs — List jobs
+    @app.route("/agent/jobs", methods=["GET"])
+    def agent_list_jobs():
+        status = request.args.get("status", "").strip().lower()
+        limit = request.args.get("limit", 50, type=int)
+        offset = request.args.get("offset", 0, type=int)
+        with sqlite3.connect(db_path) as conn:
+            c = conn.cursor()
+            if status and status in ("open", "claimed", "completed", "disputed", "cancelled"):
+                rows = c.execute(
+                    "SELECT * FROM agent_jobs WHERE status = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                    (status, limit, offset)
+                ).fetchall()
+            else:
+                rows = c.execute(
+                    "SELECT * FROM agent_jobs ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                    (limit, offset)
+                ).fetchall()
+            columns = [d[0] for d in c.description]
+            jobs = [dict(zip(columns, r)) for r in rows]
+        return jsonify({"ok": True, "jobs": jobs})
+
     # POST /agent/jobs/<job_id>/claim — Claim a job
     # -----------------------------------------------------------------------
     @app.route("/agent/jobs/<job_id>/claim", methods=["POST"])

@@ -463,6 +463,27 @@ def _internal_error_response(context):
     logger.exception("Explorer Hall of Rust endpoint failed: %s", context)
     return jsonify({'error': 'internal_error'}), 500
 
+@hall_bp.route('/api/hall_of_fame', methods=['GET'])
+def api_hall_of_fame():
+    try:
+        from flask import current_app
+        db_path = current_app.config.get('DB_PATH', '/root/rustchain/rustchain_v2.db')
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute("""
+            SELECT fingerprint_hash, machine_name, machine_model, rust_score,
+                   attestation_count, first_attestation, last_attestation,
+                   uptime_hours, thermal_events, capacitor_plague
+            FROM hall_of_rust ORDER BY rust_score DESC LIMIT 100
+        """)
+        rows = c.fetchall()
+        conn.close()
+        leaderboard = [dict(r) for r in rows]
+        return jsonify({"ok": True, "leaderboard": leaderboard, "total_machines": len(leaderboard)})
+    except Exception:
+        return _internal_error_response("api_hall_of_fame")
+
 @hall_bp.route('/api/hall_of_fame/machine', methods=['GET'])
 def api_hall_of_fame_machine():
     """Machine profile endpoint for Hall of Fame detail page."""
