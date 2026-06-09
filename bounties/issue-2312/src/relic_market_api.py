@@ -81,6 +81,13 @@ class VintageMachine:
     def to_dict(self) -> Dict:
         return asdict(self)
 
+    def to_safe_dict(self) -> Dict:
+        """Return machine info without internal/private fields"""
+        d = asdict(self)
+        for key in ("attestation_history",):
+            d.pop(key, None)
+        return d
+
 
 @dataclass
 class Reservation:
@@ -96,12 +103,21 @@ class Reservation:
     escrow_tx_hash: str
     ssh_credentials: Optional[Dict] = None
     api_key: Optional[str] = None
+    owner_token: str = ""
     created_at: float = field(default_factory=time.time)
     access_granted_at: Optional[float] = None
     completed_at: Optional[float] = None
     
     def to_dict(self) -> Dict:
         return asdict(self)
+
+    def to_safe_dict(self) -> Dict:
+        """Return reservation without sensitive credentials"""
+        d = asdict(self)
+        d.pop("ssh_credentials", None)
+        d.pop("api_key", None)
+        d.pop("owner_token", None)
+        return d
 
 
 @dataclass
@@ -533,9 +549,10 @@ class ReservationManager:
             # Lock escrow
             escrow_tx = self.escrow.lock_funds(reservation_id, agent_id, total_cost)
             
-            # Generate access credentials
+            # Generate access credentials and owner token
             ssh_password = secrets.token_urlsafe(16)
             api_key = secrets.token_urlsafe(32)
+            owner_token = secrets.token_urlsafe(24)
             
             reservation = Reservation(
                 reservation_id=reservation_id,
@@ -553,7 +570,8 @@ class ReservationManager:
                     "port": machine.ssh_port,
                     "host": f"{machine_id}.relic.rustchain.org"
                 },
-                api_key=api_key
+                api_key=api_key,
+                owner_token=owner_token
             )
             
             self.reservations[reservation_id] = reservation
@@ -562,13 +580,25 @@ class ReservationManager:
             logger.info(f"Reservation created: {reservation_id} for {machine_id}")
             return reservation, None
     
-    def start_session(self, reservation_id: str) -> Optional[str]:
+    def _verify_owner(self, reservation_id: str, owner_token: str) -> Optional[str]:
+        with self._lock:
+            reservation = self.reservations.get(reservation_id)
+            if not reservation:
+                return "Reservation not found"
+            if reservation.owner_token != owner_token:
+                return "Unauthorized: invalid owner token"
+        return None
+    
+    def start_session(self, reservation_id: str, owner_token: str = "") -> Optional[str]:
         """Mark reservation as active"""
         with self._lock:
             if reservation_id not in self.reservations:
                 return "Reservation not found"
             
             reservation = self.reservations[reservation_id]
+            if reservation.owner_token and reservation.owner_token != owner_token:
+                return "Unauthorized: invalid owner token"
+            
             if reservation.status != ReservationStatus.CONFIRMED.value:
                 return f"Invalid status: {reservation.status}"
             
@@ -582,7 +612,8 @@ class ReservationManager:
         self,
         reservation_id: str,
         compute_hash: str,
-        hardware_attestation: Dict
+        hardware_attestation: Dict,
+        owner_token: str = ""
     ) -> Tuple[Optional[ProvenanceReceipt], Optional[str]]:
         """Complete session and generate provenance receipt"""
         with self._lock:
@@ -590,6 +621,8 @@ class ReservationManager:
                 return None, "Reservation not found"
             
             reservation = self.reservations[reservation_id]
+            if reservation.owner_token and reservation.owner_token != owner_token:
+                return None, "Unauthorized: invalid owner token"
             if reservation.status != ReservationStatus.ACTIVE.value:
                 return None, f"Invalid status: {reservation.status}"
             
@@ -779,13 +812,20 @@ class MCPIntegration:
             )
             if error:
                 return {"error": error}
-            return {"reservation": reservation.to_dict()}
+            return {
+                "reservation": reservation.to_safe_dict(),
+                "access": {
+                    "ssh": reservation.ssh_credentials,
+                    "api_key": reservation.api_key
+                },
+                "owner_token": reservation.owner_token
+            }
         
         elif tool_name == "get_reservation":
             reservation = self.reservation_manager.get_reservation(arguments["reservation_id"])
             if not reservation:
                 return {"error": "Reservation not found"}
-            return {"reservation": reservation.to_dict()}
+            return {"reservation": reservation.to_safe_dict()}
         
         elif tool_name == "get_receipt":
             receipt = self.reservation_manager.get_receipt(arguments["session_id"])
@@ -866,28 +906,32 @@ class BeaconIntegration:
         }
     
     def _handle_cancel(self, payload: Dict) -> Dict:
-        """Handle cancellation request"""
+        """Handle cancellation request (requires owner_token)"""
         reservation_id = payload.get("reservation_id")
         if not reservation_id:
             return {"error": "Missing reservation_id"}
+        owner_token = payload.get("owner_token", "")
         
-        reservation = self.reservation_manager.get_reservation(reservation_id)
-        if not reservation:
-            return {"status": "error", "message": "Reservation not found"}
+        error = self.reservation_manager._verify_owner(reservation_id, owner_token)
+        if error:
+            return {"status": "error", "message": error}
         
         # Refund escrow
         self.reservation_manager.escrow.refund(reservation_id)
-        reservation.status = ReservationStatus.CANCELLED.value
+        reservation = self.reservation_manager.get_reservation(reservation_id)
+        if reservation:
+            reservation.status = ReservationStatus.CANCELLED.value
         
         return {"status": "cancelled", "refund_status": "processed"}
     
     def _handle_start(self, payload: Dict) -> Dict:
-        """Handle session start request"""
+        """Handle session start request (requires owner_token)"""
         reservation_id = payload.get("reservation_id")
         if not reservation_id:
             return {"error": "Missing reservation_id"}
+        owner_token = payload.get("owner_token", "")
         
-        error = self.reservation_manager.start_session(reservation_id)
+        error = self.reservation_manager.start_session(reservation_id, owner_token)
         if error:
             return {"status": "error", "message": error}
         
@@ -900,7 +944,7 @@ class BeaconIntegration:
         }
     
     def _handle_complete(self, payload: Dict) -> Dict:
-        """Handle session completion"""
+        """Handle session completion (requires owner_token)"""
         required = ["reservation_id", "compute_hash", "hardware_attestation"]
         if not all(k in payload for k in required):
             return {"error": "Missing required fields", "required": required}
@@ -908,7 +952,8 @@ class BeaconIntegration:
         receipt, error = self.reservation_manager.complete_session(
             reservation_id=payload["reservation_id"],
             compute_hash=payload["compute_hash"],
-            hardware_attestation=payload["hardware_attestation"]
+            hardware_attestation=payload["hardware_attestation"],
+            owner_token=payload.get("owner_token", "")
         )
         
         if error:
@@ -930,7 +975,7 @@ class BeaconIntegration:
         if not reservation:
             return {"status": "error", "message": "Reservation not found"}
         
-        return {"reservation": reservation.to_dict()}
+        return {"reservation": reservation.to_safe_dict()}
     
     def _handle_receipt_request(self, payload: Dict) -> Dict:
         """Handle receipt query"""
@@ -1079,25 +1124,35 @@ def reserve_machine():
     
     return jsonify({
         "ok": True,
-        "reservation": reservation.to_dict(),
-        "message": "Reservation confirmed. Access credentials provided."
+        "reservation": reservation.to_safe_dict(),
+        "access": {
+            "ssh": reservation.ssh_credentials,
+            "api_key": reservation.api_key
+        },
+        "owner_token": reservation.owner_token,
+        "message": "Reservation confirmed. Save owner_token for session management."
     }), 201
 
 
 @app.route('/relic/reservation/<reservation_id>', methods=['GET'])
 def get_reservation(reservation_id: str):
-    """Get reservation details"""
+    """Get reservation details (safe, no credentials)"""
     reservation = reservation_manager.get_reservation(reservation_id)
     if not reservation:
         return jsonify({"error": "Reservation not found"}), 404
     
-    return jsonify({"reservation": reservation.to_dict()})
+    return jsonify({"reservation": reservation.to_safe_dict()})
 
 
 @app.route('/relic/reservation/<reservation_id>/start', methods=['POST'])
 def start_reservation_session(reservation_id: str):
-    """Start a reservation session"""
-    error = reservation_manager.start_session(reservation_id)
+    """Start a reservation session (requires owner_token)"""
+    data, error = _json_object_body()
+    if error:
+        return error
+    owner_token = data.get("owner_token", "")
+    
+    error = reservation_manager.start_session(reservation_id, owner_token)
     if error:
         return jsonify({"error": error}), 400
     
@@ -1115,7 +1170,7 @@ def start_reservation_session(reservation_id: str):
 
 @app.route('/relic/reservation/<reservation_id>/complete', methods=['POST'])
 def complete_reservation_session(reservation_id: str):
-    """Complete session and get provenance receipt"""
+    """Complete session and get provenance receipt (requires owner_token)"""
     data, error = _json_object_body()
     if error:
         return error
@@ -1127,7 +1182,8 @@ def complete_reservation_session(reservation_id: str):
     receipt, error = reservation_manager.complete_session(
         reservation_id=reservation_id,
         compute_hash=data["compute_hash"],
-        hardware_attestation=data["hardware_attestation"]
+        hardware_attestation=data["hardware_attestation"],
+        owner_token=data.get("owner_token", "")
     )
     
     if error:
@@ -1192,7 +1248,7 @@ def get_agent_reservations(agent_id: str):
     reservations = reservation_manager.get_agent_reservations(agent_id)
     return jsonify({
         "agent_id": agent_id,
-        "reservations": [r.to_dict() for r in reservations],
+        "reservations": [r.to_safe_dict() for r in reservations],
         "count": len(reservations)
     })
 
