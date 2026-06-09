@@ -182,71 +182,74 @@ async function getClaimHistory(minerId) {
 function renderEligibilityResult(eligibility) {
   const isEligible = eligibility.eligible;
   
-  eligibilityResult.innerHTML = `
-    <div class="eligibility-status">
-      <div class="status-indicator ${isEligible ? 'eligible' : 'not-eligible'}"></div>
-      <span style="font-weight: 600; font-size: 1.125rem;">
-        ${isEligible ? 'Eligible to Claim' : 'Not Eligible'}
-      </span>
-    </div>
+  eligibilityResult.innerHTML = ''; // Clear current content
+  
+  const statusDiv = document.createElement('div');
+  statusDiv.className = 'eligibility-status';
+  
+  const indicator = document.createElement('div');
+  indicator.className = `status-indicator ${isEligible ? 'eligible' : 'not-eligible'}`;
+  
+  const statusText = document.createElement('span');
+  statusText.style.fontWeight = '600';
+  statusText.style.fontSize = '1.125rem';
+  statusText.textContent = isEligible ? 'Eligible to Claim' : 'Not Eligible';
+  
+  statusDiv.appendChild(indicator);
+  statusDiv.appendChild(statusText);
+  eligibilityResult.appendChild(statusDiv);
+  
+  if (isEligible) {
+    const createRow = (label, value, isMono = false) => {
+      const row = document.createElement('div');
+      row.className = 'summary-row';
+      const labelSpan = document.createElement('span');
+      labelSpan.className = 'summary-label';
+      labelSpan.textContent = label;
+      const valueSpan = document.createElement('span');
+      valueSpan.className = 'summary-value';
+      if (isMono) valueSpan.style.fontFamily = 'var(--font-mono)';
+      valueSpan.textContent = String(value ?? 'N/A');
+      row.appendChild(labelSpan);
+      row.appendChild(valueSpan);
+      return row;
+    };
     
-    ${isEligible ? `
-      <div class="summary-row">
-        <span class="summary-label">Miner ID</span>
-        <span class="summary-value" style="font-family: var(--font-mono);">${escapeHtml(eligibility.miner_id)}</span>
-      </div>
-      <div class="summary-row">
-        <span class="summary-label">Device Architecture</span>
-        <span class="summary-value">${escapeHtml(eligibility.attestation?.device_arch || 'N/A')}</span>
-      </div>
-      <div class="summary-row">
-        <span class="summary-label">Antiquity Multiplier</span>
-        <span class="summary-value">${safeNumber(eligibility.attestation?.antiquity_multiplier, 1).toFixed(2)}x</span>
-      </div>
-      <div class="summary-row">
-        <span class="summary-label">Wallet Address</span>
-        <span class="summary-value" style="font-family: var(--font-mono);">${escapeHtml(eligibility.wallet_address || 'Not registered')}</span>
-      </div>
-    ` : `
-      <div style="color: var(--error); margin-top: 1rem;">
-        Reason: ${escapeHtml(eligibility.reason || 'Unknown')}
-      </div>
-    `}
+    eligibilityResult.appendChild(createRow('Miner ID', eligibility.miner_id, true));
+    eligibilityResult.appendChild(createRow('Device Architecture', eligibility.attestation?.device_arch));
+    eligibilityResult.appendChild(createRow('Antiquity Multiplier', (safeNumber(eligibility.attestation?.antiquity_multiplier, 1)).toFixed(2) + 'x'));
+    eligibilityResult.appendChild(createRow('Wallet Address', eligibility.wallet_address || 'Not registered', true));
     
-    ${isEligible ? `
-      <div class="checks-grid">
-        <div class="check-item">
-          <span class="check-icon pass">✓</span>
-          <span>Attestation Valid</span>
-        </div>
-        <div class="check-item">
-          <span class="check-icon pass">✓</span>
-          <span>Epoch Participation</span>
-        </div>
-        <div class="check-item">
-          <span class="check-icon pass">✓</span>
-          <span>Fingerprint Passed</span>
-        </div>
-        <div class="check-item">
-          <span class="check-icon ${eligibility.wallet_address ? 'pass' : 'fail'}">
-            ${eligibility.wallet_address ? '✓' : '✗'}
-          </span>
-          <span>Wallet Registered</span>
-        </div>
-      </div>
-    ` : `
-      <div class="checks-grid">
-        ${Object.entries(eligibility.checks || {}).map(([check, passed]) => `
-          <div class="check-item">
-            <span class="check-icon ${passed ? 'pass' : 'fail'}">
-              ${passed ? '✓' : '✗'}
-            </span>
-            <span>${escapeHtml(formatCheckName(check))}</span>
-          </div>
-        `).join('')}
-      </div>
-    `}
-  `;
+    const checksGrid = document.createElement('div');
+    checksGrid.className = 'checks-grid';
+    
+    const checks = [
+      { label: 'Attestation Valid', passed: true },
+      { label: 'Epoch Participation', passed: true },
+      { label: 'Fingerprint Passed', passed: true },
+      { label: 'Wallet Registered', passed: !!eligibility.wallet_address }
+    ];
+    
+    checks.forEach(check => {
+      const item = document.createElement('div');
+      item.className = 'check-item';
+      const icon = document.createElement('span');
+      icon.className = `check-icon ${check.passed ? 'pass' : 'fail'}`;
+      icon.textContent = check.passed ? '✓' : '✗';
+      const label = document.createElement('span');
+      label.textContent = check.label;
+      item.appendChild(icon);
+      item.appendChild(label);
+      checksGrid.appendChild(item);
+    });
+    eligibilityResult.appendChild(checksGrid);
+  } else {
+    const reasonDiv = document.createElement('div');
+    reasonDiv.style.color = 'var(--error)';
+    reasonDiv.style.marginTop = '1rem';
+    reasonDiv.textContent = `Reason: ${eligibility.reason || 'Unknown'}`;
+    eligibilityResult.appendChild(reasonDiv);
+  }
 }
 
 function renderEpochSelect(epochData) {
