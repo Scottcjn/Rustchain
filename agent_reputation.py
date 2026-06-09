@@ -75,9 +75,11 @@ class ReputationEngine:
             return []
         try:
             conn = sqlite3.connect(self.db_path, timeout=5)
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(sql, params).fetchall()
-            conn.close()
+            try:
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute(sql, params).fetchall()
+            finally:
+                conn.close()
             return [dict(r) for r in rows]
         except Exception:
             return []
