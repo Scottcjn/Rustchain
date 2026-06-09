@@ -33,15 +33,23 @@ done
 
 scan_tmp="$(mktemp)"
 baseline_tmp="$(mktemp)"
+baseline_norm_tmp="$(mktemp)"
 unannotated_tmp="$(mktemp)"
+unannotated_norm_tmp="$(mktemp)"
 new_tmp="$(mktemp)"
 stale_tmp="$(mktemp)"
-trap 'rm -f "$scan_tmp" "$baseline_tmp" "$unannotated_tmp" "$new_tmp" "$stale_tmp"' EXIT
+trap 'rm -f "$scan_tmp" "$baseline_tmp" "$baseline_norm_tmp" "$unannotated_tmp" "$unannotated_norm_tmp" "$new_tmp" "$stale_tmp"' EXIT
 
 : > "$scan_tmp"
 : > "$unannotated_tmp"
 
 FETCHALL_PATTERN='\.fetchall[[:space:]]*\('
+
+normalize_hits() {
+    # Git Bash/Windows may emit node\path while the baseline stores node/path.
+    # Strip line numbers so harmless line drift does not create new+stale pairs.
+    sed 's#\\#/#g' "$1" | sed -E 's#^([^:]+):[0-9]+:#\1:#' | sort -u > "$2"
+}
 
 if command -v rg >/dev/null 2>&1; then
     set +e
@@ -78,6 +86,7 @@ if [ -f "$BASELINE_FILE" ]; then
 else
     : > "$baseline_tmp"
 fi
+normalize_hits "$baseline_tmp" "$baseline_norm_tmp"
 
 while IFS= read -r hit; do
     [ -z "$hit" ] && continue
@@ -106,14 +115,15 @@ while IFS= read -r hit; do
 done < "$scan_tmp"
 
 sort -u "$unannotated_tmp" -o "$unannotated_tmp"
+normalize_hits "$unannotated_tmp" "$unannotated_norm_tmp"
 
 if [ "${1:-}" = "--print-baseline" ]; then
     cat "$unannotated_tmp"
     exit 0
 fi
 
-comm -23 "$unannotated_tmp" "$baseline_tmp" > "$new_tmp"
-comm -13 "$unannotated_tmp" "$baseline_tmp" > "$stale_tmp"
+comm -23 "$unannotated_norm_tmp" "$baseline_norm_tmp" > "$new_tmp"
+comm -13 "$unannotated_norm_tmp" "$baseline_norm_tmp" > "$stale_tmp"
 
 if [ -s "$new_tmp" ]; then
     count=$(wc -l < "$new_tmp" | tr -d ' ')
