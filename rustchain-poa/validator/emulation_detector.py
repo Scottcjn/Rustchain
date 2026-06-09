@@ -9,6 +9,6 @@ def detect_emulation():
             if output and output != 'none':
                 emu_flags.append(f"Detected virtualization: {output}")
                 score += 50
-    except:
+    except (subprocess.CalledProcessError, FileNotFoundError):
         pass
     return {'flags': emu_flags, 'score': score, 'likely_emulated': score > 30}

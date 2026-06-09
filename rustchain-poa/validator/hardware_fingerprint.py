@@ -55,7 +55,7 @@ def detect_unique_hardware_signature():
                 try:
                     out = subprocess.check_output(['dmidecode', '-s', tag]).decode().strip()
                     unique_markers[tag] = out
-                except:
+                except (subprocess.CalledProcessError, OSError):
                     # dmidecode requires root on some systems, or the field may not exist
                     # We continue collecting other markers rather than failing completely
                     continue
