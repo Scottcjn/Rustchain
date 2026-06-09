@@ -1115,6 +1115,50 @@ class TestUtxoDB(unittest.TestCase):
         self.assertEqual([tx['tx_id'] for tx in candidates], ['spend_oracle' * 5])
         self.assertTrue(self.db.mempool_check_double_spend(alice_box['box_id']))
 
+    def test_mempool_block_candidates_drop_input_claim_mismatch(self):
+        """Candidate selection must reject rows that do not own input claims."""
+        self._apply_coinbase('alice', 100 * UNIT, block_height=1)
+        box = self.db.get_unspent_for_address('alice')[0]
+        good_tx = {
+            'tx_id': 'good' * 16,
+            'inputs': [{'box_id': box['box_id']}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT - 1000}],
+            'fee_nrtc': 1000,
+            'timestamp': int(time.time()),
+        }
+        self.assertTrue(self.db.mempool_add(good_tx))
+
+        stale_tx = {
+            'tx_id': 'stale_claim' * 6 + 'abcd',
+            'inputs': [{'box_id': box['box_id']}],
+            'outputs': [{'address': 'mallory',
+                         'value_nrtc': 100 * UNIT - 9999}],
+            'fee_nrtc': 9999,
+            'timestamp': int(time.time()),
+        }
+        conn = self.db._conn()
+        try:
+            now = int(time.time())
+            conn.execute(
+                """INSERT INTO utxo_mempool
+                   (tx_id, tx_data_json, fee_nrtc, submitted_at, expires_at)
+                   VALUES (?,?,?,?,?)""",
+                (
+                    stale_tx['tx_id'],
+                    json.dumps(stale_tx),
+                    stale_tx['fee_nrtc'],
+                    now,
+                    now + 3600,
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        candidates = self.db.mempool_get_block_candidates(max_count=10)
+        self.assertEqual([tx['tx_id'] for tx in candidates], [good_tx['tx_id']])
+        self.assertTrue(self.db.mempool_check_double_spend(box['box_id']))
+
     def test_mempool_nonexistent_input_rejected(self):
         tx = {
             'tx_id': 'cccc' * 16,

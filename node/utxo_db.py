@@ -1381,8 +1381,26 @@ class UtxoDB:
                 else:
                     input_set = set(input_ids)
                     data_input_set = set(data_inputs)
+                    input_placeholders = ",".join("?" for _ in input_ids)
+                    claim_rows = conn.execute(
+                        f"""SELECT box_id, tx_id FROM utxo_mempool_inputs
+                            WHERE box_id IN ({input_placeholders})""",
+                        input_ids,
+                    # fetchall-ok: bounded-by-schema
+                    ).fetchall()
+                    claims_by_box = {
+                        claim['box_id']: claim['tx_id'] for claim in claim_rows
+                    }
+                    if any(
+                        claims_by_box.get(box_id) != tx_id
+                        for box_id in input_set
+                    ):
+                        stale_tx_ids.append(tx_id)
+                        continue
+
                     if (
-                        input_set & selected_data_inputs
+                        input_set & selected_spend_inputs
+                        or input_set & selected_data_inputs
                         or data_input_set & selected_spend_inputs
                     ):
                         continue
@@ -1417,6 +1435,7 @@ class UtxoDB:
                 expired = conn.execute(
                     "SELECT tx_id FROM utxo_mempool WHERE expires_at <= ?",
                     (now,),
+                # fetchall-ok: bounded-by-schema
                 ).fetchall()
             except sqlite3.OperationalError as exc:
                 if "no such table" in str(exc).lower():
