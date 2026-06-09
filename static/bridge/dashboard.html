@@ -820,105 +820,237 @@
     </div>
 
     <script>
-        // 鈹€鈹€鈹€ Configuration 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
         const CONFIG = {
             WRTC_MINT: '12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X',
             RAYDIUM_POOL: '8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb',
+            RUSTCHAIN_API: 'https://rustchain.org',
             BRIDGE_API: 'https://rustchain.org/api/bridge',
-            REFRESH_INTERVAL: 30000, // 30 seconds
-            FEE_RATE: 0.001, // 0.1%
+            BRIDGE_ESCROW_MINER: 'bridge-escrow',
+            REFRESH_INTERVAL: 30000,
+            FEE_RATE: 0.001,
         };
 
-        // 鈹€鈹€鈹€ State 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
         let priceChart = null;
         let priceHistory = [];
         let currentTab = 'all';
         let allTransactions = [];
+        let latestStats = null;
 
-        // 鈹€鈹€鈹€ Mock Data (for demo when APIs unavailable) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
         const MOCK_DATA = {
             price: {
-                price_usd: 0.085,
-                price_sol: 0.000612,
-                change_24h: 5.42,
-                liquidity: 45000,
-                volume_24h: 12500,
+                price_usd: 0,
+                price_sol: 0,
+                change_24h: 0,
+                liquidity: 0,
+                volume_24h: 0,
             },
-            stats: {
-                total_locked_rtc: 15750.50,
-                circulating_wrtc: 15700.25,
-                wrap_volume: 25000.00,
-                unwrap_volume: 9250.00,
-                total_fees: 34.25,
-                wrap_fees: 25.00,
-                unwrap_fees: 9.25,
-            },
-            transactions: [
-                { lock_id: 'lock_a1b2c3d4e5f6', type: 'wrap', sender: 'alice_wallet', amount: 100.0, target_chain: 'solana', state: 'complete', timestamp: Date.now() - 300000 },
-                { lock_id: 'lock_b2c3d4e5f6g7', type: 'wrap', sender: 'bob_miner', amount: 250.5, target_chain: 'solana', state: 'complete', timestamp: Date.now() - 600000 },
-                { lock_id: 'lock_c3d4e5f6g7h8', type: 'unwrap', sender: 'charlie_sol', amount: 50.0, target_chain: 'solana', state: 'pending', timestamp: Date.now() - 900000 },
-                { lock_id: 'lock_d4e5f6g7h8i9', type: 'wrap', sender: 'diana_trader', amount: 500.0, target_chain: 'base', state: 'confirmed', timestamp: Date.now() - 1200000 },
-                { lock_id: 'lock_e5f6g7h8i9j0', type: 'unwrap', sender: 'eve_holder', amount: 75.25, target_chain: 'solana', state: 'complete', timestamp: Date.now() - 1500000 },
-                { lock_id: 'lock_f6g7h8i9j0k1', type: 'wrap', sender: 'frank_dev', amount: 1000.0, target_chain: 'solana', state: 'requested', timestamp: Date.now() - 1800000 },
-                { lock_id: 'lock_g7h8i9j0k1l2', type: 'wrap', sender: 'grace_Validator', amount: 350.0, target_chain: 'solana', state: 'complete', timestamp: Date.now() - 2100000 },
-                { lock_id: 'lock_h8i9j0k1l2m3', type: 'unwrap', sender: 'henry_node', amount: 200.0, target_chain: 'solana', state: 'complete', timestamp: Date.now() - 2400000 },
-            ],
-            health: {
-                rustchain: { status: 'online', detail: 'Block Height: 1,234,567' },
-                solana: { status: 'online', detail: 'Slot: 285,000,000' },
-                bridge: { status: 'online', detail: 'API v1.2.0' },
-                raydium: { status: 'online', detail: 'Pool Active' },
-            }
         };
 
-        // 鈹€鈹€鈹€ API Functions 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+        async function fetchJSON(url) {
+            const resp = await fetch(url);
+            if (!resp.ok) {
+                throw new Error(`HTTP ${resp.status}`);
+            }
+            const contentType = resp.headers?.get?.('content-type') || '';
+            if (contentType && !contentType.toLowerCase().includes('json')) {
+                throw new Error(`Unexpected content type: ${contentType}`);
+            }
+            const data = await resp.json();
+            return safeObject(data);
+        }
+
+        function emptyBridgeStats(source = 'unavailable') {
+            return {
+                source,
+                total_locked_rtc: 0,
+                circulating_wrtc: 0,
+                wrap_volume: 0,
+                unwrap_volume: 0,
+                total_fees: 0,
+                wrap_fees: 0,
+                unwrap_fees: 0,
+            };
+        }
+
+        function normalizeBridgeStats(data, source = 'bridge_api') {
+            const payload = safeObject(data);
+            const allTime = safeObject(payload.all_time);
+            const byChain = safeObject(payload.by_chain);
+            const solana = safeObject(byChain.solana);
+
+            const totalLocked = firstFiniteNumber([
+                payload.total_locked_rtc,
+                payload.total_rtc_locked,
+                allTime.total_locked_rtc,
+                allTime.total_rtc_locked,
+            ]);
+            const circulating = firstFiniteNumber([
+                payload.circulating_wrtc,
+                payload.wrtc_circulating,
+                payload.total_wrapped_wrtc,
+                solana.total_wrapped_wrtc,
+                totalLocked,
+            ]);
+            const wrapVolume = firstFiniteNumber([
+                payload.wrap_volume,
+                payload.total_wrap_volume,
+                allTime.wrap_volume,
+                allTime.total_rtc_locked,
+                totalLocked,
+            ]);
+            const unwrapVolume = firstFiniteNumber([
+                payload.unwrap_volume,
+                payload.total_unwrap_volume,
+                allTime.unwrap_volume,
+            ]);
+            const totalFees = firstFiniteNumber([
+                payload.total_fees,
+                payload.fee_revenue,
+                (wrapVolume + unwrapVolume) * CONFIG.FEE_RATE,
+            ]);
+
+            return {
+                source,
+                total_locked_rtc: totalLocked,
+                circulating_wrtc: circulating,
+                wrap_volume: wrapVolume,
+                unwrap_volume: unwrapVolume,
+                total_fees: totalFees,
+                wrap_fees: firstFiniteNumber([payload.wrap_fees, wrapVolume * CONFIG.FEE_RATE]),
+                unwrap_fees: firstFiniteNumber([payload.unwrap_fees, unwrapVolume * CONFIG.FEE_RATE]),
+            };
+        }
+
+        function normalizeWalletBalanceStats(data) {
+            const balance = safeObject(data);
+            const amount = firstFiniteNumber([
+                balance.amount_rtc,
+                balance.balance_rtc,
+                balance.balance,
+                safeNumber(balance.amount_i64) / 1000000,
+            ]);
+            return {
+                ...emptyBridgeStats('wallet_balance'),
+                total_locked_rtc: amount,
+                wrap_volume: amount,
+            };
+        }
+
+        function normalizeBridgeLedger(data) {
+            const payload = safeObject(data);
+            const rows = safeArray(payload.locks || payload.transactions || payload.transfers || data);
+            return rows.filter(isPlainObject).map(tx => ({
+                lock_id: tx.lock_id || tx.tx_hash || tx.id || '',
+                type: tx.type || tx.direction || (tx.target_chain ? 'wrap' : 'unwrap'),
+                sender_wallet: tx.sender_wallet || tx.sender || tx.source_address || tx.from_miner || tx.miner_id || '',
+                amount_rtc: firstFiniteNumber([tx.amount_rtc, safeNumber(tx.amount_i64) / 1000000, tx.amount]),
+                target_chain: tx.target_chain || tx.dest_chain || tx.chain || 'solana',
+                state: normalizeBridgeState(tx.state || tx.status),
+                created_at: tx.created_at || tx.timestamp || tx.time,
+            }));
+        }
+
+        function normalizeWalletHistory(data) {
+            const payload = safeObject(data);
+            return safeArray(payload.transactions).filter(isPlainObject).map(tx => {
+                const from = String(tx.from_miner || tx.from || tx.miner_id || '');
+                const to = String(tx.to_miner || tx.to || tx.counterparty || '');
+                const type = from === CONFIG.BRIDGE_ESCROW_MINER ? 'unwrap' : 'wrap';
+                return {
+                    lock_id: tx.tx_hash || tx.lock_id || tx.id || '',
+                    type,
+                    sender_wallet: from || to || CONFIG.BRIDGE_ESCROW_MINER,
+                    amount_rtc: firstFiniteNumber([tx.amount_rtc, safeNumber(tx.amount_i64) / 1000000]),
+                    target_chain: 'solana',
+                    state: normalizeBridgeState(tx.status || tx.state || (tx.confirmed_at ? 'complete' : 'pending')),
+                    created_at: tx.created_at || tx.confirmed_at || tx.ts || tx.timestamp,
+                };
+            });
+        }
+
         async function fetchPrice() {
             try {
-                const resp = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${CONFIG.WRTC_MINT}`);
-                const data = await resp.json();
-                if (data.pairs && data.pairs.length > 0) {
+                const data = await fetchJSON(`https://api.dexscreener.com/latest/dex/tokens/${CONFIG.WRTC_MINT}`);
+                if (safeArray(data.pairs).length > 0) {
                     const pair = data.pairs.find(p => p.dexId === 'raydium') || data.pairs[0];
                     return {
-                        price_usd: parseFloat(pair.priceUsd) || 0,
-                        price_sol: parseFloat(pair.priceNative) || 0,
-                        change_24h: parseFloat(pair.priceChange?.h24) || 0,
-                        liquidity: parseFloat(pair.liquidity?.usd) || 0,
-                        volume_24h: parseFloat(pair.volume?.h24) || 0,
+                        price_usd: safeNumber(pair.priceUsd),
+                        price_sol: safeNumber(pair.priceNative),
+                        change_24h: safeNumber(pair.priceChange?.h24),
+                        liquidity: safeNumber(pair.liquidity?.usd),
+                        volume_24h: safeNumber(pair.volume?.h24),
                     };
                 }
             } catch (e) {
-                console.log('DexScreener API unavailable, using mock data');
+                console.log('DexScreener API unavailable, using zero price data');
             }
             return MOCK_DATA.price;
         }
 
         async function fetchBridgeStats() {
             try {
-                const resp = await fetch(`${CONFIG.BRIDGE_API}/stats`);
-                return await resp.json();
+                return normalizeBridgeStats(await fetchJSON(`${CONFIG.BRIDGE_API}/stats`));
             } catch (e) {
-                console.log('Bridge API unavailable, using mock data');
-                return MOCK_DATA.stats;
+                console.log('Bridge stats API unavailable, using public wallet balance');
+            }
+
+            try {
+                return normalizeWalletBalanceStats(
+                    await fetchJSON(`${CONFIG.RUSTCHAIN_API}/wallet/balance?miner_id=${encodeURIComponent(CONFIG.BRIDGE_ESCROW_MINER)}`)
+                );
+            } catch (e) {
+                console.log('Bridge wallet balance unavailable, using empty stats');
+                return emptyBridgeStats();
             }
         }
 
         async function fetchBridgeLedger() {
             try {
-                const resp = await fetch(`${CONFIG.BRIDGE_API}/ledger?limit=50`);
-                return await resp.json();
+                return { locks: normalizeBridgeLedger(await fetchJSON(`${CONFIG.BRIDGE_API}/ledger?limit=50`)) };
             } catch (e) {
-                console.log('Bridge ledger unavailable, using mock data');
-                return { locks: MOCK_DATA.transactions };
+                console.log('Bridge ledger unavailable, using public wallet history');
+            }
+
+            try {
+                return {
+                    locks: normalizeWalletHistory(
+                        await fetchJSON(`${CONFIG.RUSTCHAIN_API}/wallet/history?miner_id=${encodeURIComponent(CONFIG.BRIDGE_ESCROW_MINER)}&limit=50`)
+                    )
+                };
+            } catch (e) {
+                console.log('Bridge wallet history unavailable, using empty ledger');
+                return { locks: [] };
             }
         }
 
-        async function fetchwRTCSupply() {
-            // In production, this would query Solana RPC for token supply
-            return MOCK_DATA.stats.circulating_wrtc;
+        async function fetchBridgeHealth(stats) {
+            let rustchain = { status: 'warning', detail: 'Public node check unavailable' };
+            try {
+                const epoch = await fetchJSON(`${CONFIG.RUSTCHAIN_API}/epoch`);
+                rustchain = {
+                    status: 'online',
+                    detail: `Epoch ${epoch.epoch ?? '?'} / Slot ${epoch.slot ?? '?'}`,
+                };
+            } catch (e) {
+                console.log('RustChain epoch health unavailable');
+            }
+
+            const bridgeOnline = stats.source === 'bridge_api';
+            const bridgeFallback = stats.source === 'wallet_balance';
+            return {
+                rustchain,
+                solana: { status: 'warning', detail: 'Supply RPC not configured in static dashboard' },
+                bridge: bridgeOnline
+                    ? { status: 'online', detail: 'Bridge stats API responsive' }
+                    : bridgeFallback
+                        ? { status: 'warning', detail: 'Bridge API unavailable; using wallet balance/history' }
+                        : { status: 'offline', detail: 'Bridge API and public fallback unavailable' },
+                raydium: { status: 'online', detail: 'Price endpoint attempted' },
+            };
         }
 
-        // 鈹€鈹€鈹€ UI Update Functions 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
         function updateStats(stats) {
+            latestStats = stats;
             document.getElementById('lockedRtc').textContent = formatNumber(stats.total_locked_rtc) + ' RTC';
             document.getElementById('circulatingWrtc').textContent = formatNumber(stats.circulating_wrtc) + ' wRTC';
             document.getElementById('wrapVolume').textContent = formatNumber(stats.wrap_volume) + ' RTC';
@@ -926,30 +1058,27 @@
         }
 
         function updatePriceInfo(price) {
-            const priceUsd = price.price_usd;
-            const change = price.change_24h;
+            const priceUsd = safeNumber(price.price_usd);
+            const change = safeNumber(price.change_24h);
 
             document.getElementById('currentPrice').textContent = formatCurrency(priceUsd);
-            document.getElementById('priceSol').textContent = price.price_sol.toFixed(8);
+            document.getElementById('priceSol').textContent = safeNumber(price.price_sol).toFixed(8);
             document.getElementById('change24h').innerHTML = formatChange(change);
             document.getElementById('liquidity').textContent = formatCurrency(price.liquidity);
             document.getElementById('volume24h').textContent = formatCurrency(price.volume_24h);
 
-            // Calculate market cap
-            const marketCap = priceUsd * MOCK_DATA.stats.circulating_wrtc;
+            const circulating = latestStats ? latestStats.circulating_wrtc : 0;
+            const marketCap = priceUsd * circulating;
             document.getElementById('marketCap').textContent = formatCurrency(marketCap);
 
-            // Update price change display
             const changeEl = document.getElementById('priceChangeLarge');
             changeEl.innerHTML = `<span class="stat-change ${change >= 0 ? 'positive' : 'negative'}">${change >= 0 ? '+' : '-'} ${Math.abs(change).toFixed(2)}%</span>`;
 
-            // Add to price history for chart
             priceHistory.push({
                 time: new Date(),
-                price: priceUsd
+                price: priceUsd,
             });
 
-            // Keep only last 100 points
             if (priceHistory.length > 100) {
                 priceHistory.shift();
             }
@@ -992,9 +1121,7 @@
                         scales: {
                             x: {
                                 type: 'time',
-                                time: {
-                                    displayFormats: { hour: 'HH:mm' }
-                                },
+                                time: { displayFormats: { hour: 'HH:mm' } },
                                 grid: { color: 'rgba(255,255,255,0.05)' },
                                 ticks: { color: '#666' }
                             },
@@ -1024,7 +1151,7 @@
             document.getElementById('totalFees').textContent = formatNumber(stats.total_fees) + ' RTC';
             document.getElementById('wrapFees').textContent = formatNumber(stats.wrap_fees) + ' RTC';
             document.getElementById('unwrapFees').textContent = formatNumber(stats.unwrap_fees) + ' RTC';
-            document.getElementById('avgFee').textContent = '0.10%';
+            document.getElementById('avgFee').textContent = (CONFIG.FEE_RATE * 100).toFixed(2) + '%';
         }
 
         function updateHealth(health) {
@@ -1035,21 +1162,34 @@
         }
 
         function updateHealthStatus(statusId, detailId, data) {
+            const safeData = safeObject(data);
+            const status = safeClassToken(safeData.status, ['online', 'warning', 'offline'], 'warning');
             const statusEl = document.getElementById(statusId);
             const detailEl = document.getElementById(detailId);
 
-            statusEl.className = 'health-status ' + data.status;
-            statusEl.textContent = data.status === 'online' ? 'OK' : data.status === 'warning' ? '!' : 'DOWN';
-            detailEl.textContent = data.detail;
+            statusEl.className = 'health-status ' + status;
+            statusEl.textContent = status === 'online' ? 'OK' : status === 'warning' ? '!' : 'DOWN';
+            detailEl.textContent = String(safeData.detail || 'Unavailable');
         }
 
         function updateTransactions(transactions) {
-            allTransactions = transactions.map(tx => ({
+            allTransactions = safeArray(transactions).filter(isPlainObject).map(tx => ({
                 ...tx,
-                type: tx.target_chain ? 'wrap' : 'unwrap' // Simplified: all bridge locks are wraps for now
+                type: safeClassToken(tx.type, ['wrap', 'unwrap', 'deposit', 'withdraw'], 'wrap')
+                    .replace('deposit', 'wrap')
+                    .replace('withdraw', 'unwrap'),
             }));
 
             renderTransactions();
+        }
+
+        function normalizeBridgeState(value) {
+            const state = safeClassToken(
+                value,
+                ['complete', 'completed', 'confirmed', 'pending', 'requested'],
+                'pending'
+            );
+            return state === 'completed' ? 'complete' : state;
         }
 
         function renderTransactions() {
@@ -1086,7 +1226,6 @@
             renderTransactions();
         }
 
-        // 鈹€鈹€鈹€ Utility Functions 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
         function escapeHtml(value) {
             return String(value ?? '').replace(/[&<>"']/g, char => ({
                 '&': '&amp;',
@@ -1102,24 +1241,55 @@
             return allowed.includes(token) ? token : fallback;
         }
 
+        function safeNumber(value, fallback = 0) {
+            const number = Number(value);
+            return Number.isFinite(number) ? number : fallback;
+        }
+
+        function firstFiniteNumber(values, fallback = 0) {
+            for (const value of values) {
+                const number = Number(value);
+                if (Number.isFinite(number)) return number;
+            }
+            return fallback;
+        }
+
+        function safeArray(value) {
+            return Array.isArray(value) ? value : [];
+        }
+
+        function isPlainObject(value) {
+            return value && typeof value === 'object' && !Array.isArray(value);
+        }
+
+        function safeObject(value) {
+            return isPlainObject(value) ? value : {};
+        }
+
         function formatNumber(num) {
-            return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(num || 0);
+            return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(safeNumber(num));
         }
 
         function formatCurrency(num) {
-            if (num >= 1000000) return '$' + (num / 1000000).toFixed(2) + 'M';
-            if (num >= 1000) return '$' + (num / 1000).toFixed(1) + 'K';
-            return '$' + (num || 0).toFixed(4);
+            const value = safeNumber(num);
+            if (value >= 1000000) return '$' + (value / 1000000).toFixed(2) + 'M';
+            if (value >= 1000) return '$' + (value / 1000).toFixed(1) + 'K';
+            return '$' + value.toFixed(4);
         }
 
         function formatChange(change) {
-            const cls = change >= 0 ? 'positive' : 'negative';
-            const sign = change >= 0 ? '+' : '-';
-            return `<span class="stat-change ${cls}">${sign} ${Math.abs(change).toFixed(2)}%</span>`;
+            const value = safeNumber(change);
+            const cls = value >= 0 ? 'positive' : 'negative';
+            const sign = value >= 0 ? '+' : '-';
+            return `<span class="stat-change ${cls}">${sign} ${Math.abs(value).toFixed(2)}%</span>`;
         }
 
         function formatTime(timestamp) {
-            const date = new Date(timestamp * 1000 || timestamp);
+            const raw = Number(timestamp);
+            if (!Number.isFinite(raw) || raw <= 0) return 'Unavailable';
+            const millis = raw < 1000000000000 ? raw * 1000 : raw;
+            const date = new Date(millis);
+            if (Number.isNaN(date.getTime())) return 'Unavailable';
             const now = new Date();
             const diff = Math.floor((now - date) / 1000);
 
@@ -1134,20 +1304,20 @@
             document.getElementById('lastUpdate').textContent = 'Last sync: ' + now.toLocaleTimeString();
         }
 
-        // 鈹€鈹€鈹€ Main Refresh Function 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
         async function refreshAll() {
             try {
                 const [price, stats, ledger] = await Promise.all([
                     fetchPrice(),
                     fetchBridgeStats(),
-                    fetchBridgeLedger()
+                    fetchBridgeLedger(),
                 ]);
+                const health = await fetchBridgeHealth(stats);
 
-                updateStats(MOCK_DATA.stats);
+                updateStats(stats);
                 updatePriceInfo(price);
-                updateFees(MOCK_DATA.stats);
-                updateHealth(MOCK_DATA.health);
-                updateTransactions(ledger.locks || MOCK_DATA.transactions);
+                updateFees(stats);
+                updateHealth(health);
+                updateTransactions(ledger.locks);
 
                 updateLastRefresh();
             } catch (e) {
@@ -1155,7 +1325,6 @@
             }
         }
 
-        // 鈹€鈹€鈹€ Initialize 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
         document.addEventListener('DOMContentLoaded', () => {
             refreshAll();
             setInterval(refreshAll, CONFIG.REFRESH_INTERVAL);

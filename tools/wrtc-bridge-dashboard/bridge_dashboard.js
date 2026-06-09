@@ -17,8 +17,34 @@ async function fetchJSON(url, opts) {
   try {
     const r = await fetch(url, { ...opts, mode: "cors" });
     if (!r.ok) return null;
+    const contentType = r.headers?.get?.("content-type") || "";
+    if (contentType && !contentType.toLowerCase().includes("json")) return null;
     return r.json();
   } catch { return null; }
+}
+
+function safeArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function safeNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function normalizeWalletHistory(history) {
+  return safeArray(history?.transactions).map(tx => {
+    const from = String(tx?.from_miner || tx?.from || tx?.miner_id || "");
+    const to = String(tx?.to_miner || tx?.to || tx?.counterparty || "");
+    const type = from === "bridge-escrow" ? "unwrap" : "wrap";
+    return {
+      time: tx?.created_at || tx?.confirmed_at || tx?.ts || tx?.timestamp || new Date().toISOString(),
+      amount: safeNumber(tx?.amount_rtc, safeNumber(tx?.amount_i64) / 1_000_000),
+      wallet: from || to || "bridge-escrow",
+      tx: String(tx?.tx_hash || tx?.lock_id || tx?.id || ""),
+      type
+    };
+  });
 }
 
 async function fetchRTCLocked() {
@@ -65,11 +91,9 @@ async function fetchWRTCPrice() {
 
 async function fetchBridgeTransactions() {
   /** Recent wrap/unwrap transactions */
-  const data = await fetchJSON(`${RUSTCHAIN_API}/api/bridge/transactions?limit=10`);
-  if (data && Array.isArray(data)) return data;
-  // Fallback: try wallet history for bridge escrow
   const history = await fetchJSON(`${RUSTCHAIN_API}/wallet/history?miner_id=bridge-escrow&limit=20`);
-  if (history && Array.isArray(history)) return history;
+  const transactions = normalizeWalletHistory(history);
+  if (transactions.length) return transactions;
   return null;
 }
 
