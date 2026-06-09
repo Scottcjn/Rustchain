@@ -173,6 +173,22 @@ class TestAPI:
         assert b"<rss" in resp.data
         assert b"Node 1" in resp.data
 
+    def test_rss_feed_escapes_incident_fields(self, client):
+        incidents.append({
+            "node": 'Node <1>',
+            "event": 'down </title><item><title>POISON</title></item>',
+            "detail": 'detail & "quotes" </description><item><title>POISON</title></item>',
+            "time": "2026-03-24T12:00:00Z",
+        })
+
+        resp = client.get("/feed.xml")
+
+        assert resp.status_code == 200
+        assert b"</title><item><title>POISON</title></item>" not in resp.data
+        assert b"</description><item><title>POISON</title></item>" not in resp.data
+        assert b"Node &lt;1&gt;" in resp.data
+        assert b"detail &amp; &quot;quotes&quot;" in resp.data
+
     def test_index_page(self, client):
         resp = client.get("/")
         assert resp.status_code == 200
