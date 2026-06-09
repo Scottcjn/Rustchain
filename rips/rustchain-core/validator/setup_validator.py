@@ -112,7 +112,7 @@ def detect_cpu_info() -> Dict:
         try:
             result = subprocess.run(
                 ["sysctl", "-n", "machdep.cpu.brand_string"],
-                capture_output=True, text=True
+                capture_output=True, text=True, timeout=30
             )
             if result.returncode == 0:
                 info["model"] = result.stdout.strip()
@@ -121,7 +121,7 @@ def detect_cpu_info() -> Dict:
             if platform.machine() in ["Power Macintosh", "ppc", "ppc64"]:
                 result = subprocess.run(
                     ["system_profiler", "SPHardwareDataType"],
-                    capture_output=True, text=True
+                    capture_output=True, text=True, timeout=30
                 )
                 for line in result.stdout.split("\n"):
                     if "Model Identifier" in line:
@@ -135,7 +135,7 @@ def detect_cpu_info() -> Dict:
         try:
             result = subprocess.run(
                 ["wmic", "cpu", "get", "name"],
-                capture_output=True, text=True
+                capture_output=True, text=True, timeout=30
             )
             lines = [l.strip() for l in result.stdout.split("\n") if l.strip()]
             if len(lines) > 1:
@@ -242,7 +242,7 @@ def detect_hardware() -> HardwareProfile:
         elif platform.system() == "Darwin":
             result = subprocess.run(
                 ["sysctl", "-n", "hw.memsize"],
-                capture_output=True, text=True
+                capture_output=True, text=True, timeout=30
             )
             ram_mb = int(result.stdout.strip()) // (1024 * 1024)
         else:
