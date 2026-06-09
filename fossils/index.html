@@ -473,6 +473,17 @@
             tooltip = d3.select('#tooltip');
         }
 
+        function escapeHtml(value) {
+            const div = document.createElement('div');
+            div.textContent = value == null ? '' : String(value);
+            return div.innerHTML;
+        }
+
+        function safeNumber(value, fallback = 0) {
+            const number = Number(value);
+            return Number.isFinite(number) ? number : fallback;
+        }
+
         async function loadData() {
             showLoading(true);
             
@@ -826,26 +837,28 @@
 
         function showTooltip(event, d) {
             const archConfig = ARCHITECTURES[d.arch] || { label: d.arch };
+            const avgRtc = safeNumber(d.avgRtc).toFixed(2);
+            const avgFingerprint = (safeNumber(d.avgFingerprint) * 100).toFixed(1);
             
             let html = `
-                <div class="tooltip-title">Epoch ${d.epoch} — ${archConfig.label}</div>
+                <div class="tooltip-title">Epoch ${escapeHtml(d.epoch)} — ${escapeHtml(archConfig.label)}</div>
                 <div class="tooltip-row">
                     <span class="tooltip-label">Active Miners:</span>
-                    <span class="tooltip-value">${d.count}</span>
+                    <span class="tooltip-value">${escapeHtml(safeNumber(d.count))}</span>
                 </div>
                 <div class="tooltip-row">
                     <span class="tooltip-label">Avg RTC Earned:</span>
-                    <span class="tooltip-value">${d.avgRtc?.toFixed(2) || '0'} RTC</span>
+                    <span class="tooltip-value">${escapeHtml(avgRtc)} RTC</span>
                 </div>
                 <div class="tooltip-row">
                     <span class="tooltip-label">Avg Fingerprint:</span>
-                    <span class="tooltip-value">${(d.avgFingerprint * 100).toFixed(1)}%</span>
+                    <span class="tooltip-value">${escapeHtml(avgFingerprint)}%</span>
                 </div>
             `;
 
             // Show sample miners on click
             if (d.miners && d.miners.length > 0) {
-                const sampleMiners = d.miners.slice(0, 5);
+                const sampleMiners = d.miners.slice(0, 5).map(escapeHtml);
                 html += `
                     <div class="tooltip-row" style="margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.1);">
                         <span class="tooltip-label" style="display: block; margin-bottom: 5px;">Sample Miners:</span>
@@ -913,9 +926,10 @@
 
         function showError(message) {
             const container = d3.select('#visualization');
+            const safeMessage = escapeHtml(message);
             container.html(`
                 <div class="error-message">
-                    <strong>Error loading data:</strong> ${message}
+                    <strong>Error loading data:</strong> ${safeMessage}
                     <br><br>
                     <button onclick="location.reload()">Retry</button>
                     <button class="secondary" onclick="document.dispatchEvent(new CustomEvent('loadSampleData'))">
