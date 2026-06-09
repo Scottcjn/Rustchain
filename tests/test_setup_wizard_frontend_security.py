@@ -74,3 +74,49 @@ def test_miner_check_accepts_paginated_miners_response():
 
     assert "var miners=Array.isArray(data)?data:(data&&Array.isArray(data.miners)?data.miners:[]);" in html
     assert "for(var i=0;i<miners.length;i++)" in html
+
+
+def test_step7_miner_command_escapes_wallet_name():
+    """Regression: setup wizard Step 7 miner start command must escape wName before innerHTML injection.
+
+    A crafted imported wallet name (e.g. ``<img src=x onerror=alert(1)><wallet>``) used to flow
+    unescaped into the Step 7 ``<div class="cb">`` command block via raw string concatenation.
+    The fix wraps the value with the existing ``esc()`` helper before template interpolation.
+    """
+    html = WIZARD_HTML.read_text(encoding="utf-8")
+
+    # Sanity: the esc() helper exists and handles <, >, &.
+    assert "function esc(s)" in html
+    assert ".replace(/&/g,\"&amp;\")" in html
+    assert ".replace(/</g,\"&lt;\")" in html
+    assert ".replace(/>/g,\"&gt;\")" in html
+
+    # The renderAttest function MUST escape minerCmd before injection.
+    assert "'+esc(minerCmd)+'" in html
+    assert "'+minerCmd+'<span" not in html
+
+    # The renderAttest function MUST escape minersCmd before injection.
+    assert "'+esc(minersCmd)+'" in html
+    assert "'+minersCmd+'<span" not in html
+
+    # The Step 7 balance reminder <code> block must use the new balanceCmd string
+    # and escape it before injection.
+    assert "var balanceCmd=" in html
+    assert "'+esc(balanceCmd)+'" in html
+    assert "miner_id='+wName+'" not in html
+
+
+def test_step7_escape_helper_preserves_copy_button_semantics():
+    """The fix must keep the copy button working.
+
+    ``copyCode(btn)`` walks ``btn.previousSibling`` to find a text node. With escaping,
+    the innerHTML still contains the command text node followed by the ``<span class="cpy">``
+    element, so copyCode() behavior is preserved.
+    """
+    html = WIZARD_HTML.read_text(encoding="utf-8")
+
+    # The two cb blocks for Step 7 still embed the copy button next to the escaped text.
+    assert "esc(minerCmd)+'<span class=\"cpy\"" in html
+    assert "esc(minersCmd)+'<span class=\"cpy\"" in html
+    # The previousSibling walk in copyCode is unchanged.
+    assert "btn.previousSibling" in html
