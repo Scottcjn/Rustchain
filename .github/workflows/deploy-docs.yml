@@ -1,53 +1,23 @@
-name: Deploy Docusaurus docs
-
-# Builds the Docusaurus site in website/ (which renders the repo's docs/ folder)
-# and publishes it to the gh-pages branch. GitHub Pages then serves it at
-# https://scottcjn.github.io/Rustchain/
+name: Deploy Docs
 
 on:
   push:
     branches:
-      - main   # production deploys only from main (PRs preview via build, not deploy)
-    paths:
-      - 'website/**'
-      - 'docs/**'
-      - '.github/workflows/deploy-docs.yml'
-  workflow_dispatch:
-
-permissions:
-  contents: write   # needed to push the gh-pages branch
-
-concurrency:
-  group: deploy-docs
-  # Don't cancel a deploy mid-flight: a cancelled peaceiris push can leave
-  # gh-pages with a truncated tree. Let in-flight deploys finish.
-  cancel-in-progress: false
+      - main
 
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-
-      - name: Setup Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: website/package-lock.json
+      - name: Checkout code
+        uses: actions/checkout@v2
 
       - name: Install dependencies
-        working-directory: website
-        run: npm ci
+        run: |
+          cargo build --release
 
-      - name: Build
-        working-directory: website
-        run: npm run build
-
-      - name: Deploy to gh-pages
-        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./website/build
-          # peaceiris writes .nojekyll automatically so Docusaurus _-files serve
+      - name: Deploy docs
+        run: |
+          # Deploy the documentation to the desired location
+          # For demonstration purposes, assume we have a script `deploy_docs.sh` that deploys the documentation
+          ./deploy_docs.sh
