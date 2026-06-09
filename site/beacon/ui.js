@@ -743,6 +743,10 @@ async function fetchBounties() {
   return allBounties;
 }
 
+const ESC_HTML = value => String(value ?? '').replace(/[&<>"']/g, ch => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+}[ch]));
+
 function renderBountyList(bounties) {
   const open = bounties.filter(b => b.state === 'open');
   const claimed = bounties.filter(b => b.state === 'claimed');
@@ -762,15 +766,15 @@ function renderBountyList(bounties) {
 
   // Open bounties
   for (const b of open.slice(0, 20)) {
-    const safeUrl = (b.url || '').replace(/'/g, '%27');
+    const safeUrl = (b.url || '').replace(/"/g, '&quot;');
     html += `<div class="bounty-card">`;
     html += `<div style="display:flex;justify-content:space-between;align-items:center">`;
-    html += `<span style="color:var(--green);font-weight:600;font-size:13px">${b.title}</span>`;
-    html += `<span style="color:#ffd700;font-size:12px;font-weight:600;white-space:nowrap;margin-left:8px">${b.reward}</span>`;
+    html += `<span style="color:var(--green);font-weight:600;font-size:13px">${ESC_HTML(b.title)}</span>`;
+    html += `<span style="color:#ffd700;font-size:12px;font-weight:600;white-space:nowrap;margin-left:8px">${ESC_HTML(b.reward)}</span>`;
     html += `</div>`;
     html += `<div style="display:flex;gap:8px;font-size:11px;margin-top:4px;align-items:center">`;
-    html += `<span style="color:${DIFF_COLORS[b.difficulty] || DIFF_COLORS.ANY}">[${b.difficulty}]</span>`;
-    html += `<span style="color:var(--text-dim)">${b.repo} ${b.ghNum || b.id}</span>`;
+    html += `<span style="color:${DIFF_COLORS[b.difficulty] || DIFF_COLORS.ANY}">[${ESC_HTML(b.difficulty)}]</span>`;
+    html += `<span style="color:var(--text-dim)">${ESC_HTML(b.repo)} ${ESC_HTML(b.ghNum || b.id)}</span>`;
     if (safeUrl) {
       html += `<a href="${safeUrl}" target="_blank" class="bounty-link" style="font-size:10px;padding:1px 6px">[GitHub]</a>`;
     }
@@ -788,10 +792,10 @@ function renderBountyList(bounties) {
       const agent = AGENTS.find(a => a.id === b.claimant);
       html += `<div class="bounty-card" style="border-left-color:var(--amber)">`;
       html += `<div style="display:flex;justify-content:space-between">`;
-      html += `<span style="color:var(--amber);font-size:13px">${b.title}</span>`;
-      html += `<span style="color:#ffd700;font-size:12px">${b.reward}</span>`;
+      html += `<span style="color:var(--amber);font-size:13px">${ESC_HTML(b.title)}</span>`;
+      html += `<span style="color:#ffd700;font-size:12px">${ESC_HTML(b.reward)}</span>`;
       html += `</div>`;
-      html += `<div style="font-size:11px;color:var(--amber);margin-top:3px">Claimed by: ${agent ? agent.name : b.claimant}</div>`;
+      html += `<div style="font-size:11px;color:var(--amber);margin-top:3px">Claimed by: ${ESC_HTML(agent ? agent.name : b.claimant)}</div>`;
       html += `</div>`;
     }
   }
@@ -804,10 +808,10 @@ function renderBountyList(bounties) {
       const repGain = 10 + (b.reward_rtc || 0) * 0.1;
       html += `<div class="bounty-card" style="border-left-color:#8888ff;opacity:0.7">`;
       html += `<div style="display:flex;justify-content:space-between">`;
-      html += `<span style="color:#8888ff;font-size:13px">${b.title}</span>`;
-      html += `<span style="color:#ffd700;font-size:12px">${b.reward}</span>`;
+      html += `<span style="color:#8888ff;font-size:13px">${ESC_HTML(b.title)}</span>`;
+      html += `<span style="color:#ffd700;font-size:12px">${ESC_HTML(b.reward)}</span>`;
       html += `</div>`;
-      html += `<div style="font-size:11px;color:#8888ff;margin-top:3px">Completed by: ${agent ? agent.name : b.completed_by} (+${repGain.toFixed(0)} rep)</div>`;
+      html += `<div style="font-size:11px;color:#8888ff;margin-top:3px">Completed by: ${ESC_HTML(agent ? agent.name : b.completed_by)} (+${repGain.toFixed(0)} rep)</div>`;
       html += `</div>`;
     }
   }
@@ -840,8 +844,8 @@ async function showBounties() {
       const name = agent ? agent.name : r.agent_id;
       const medal = i === 0 ? '1st' : i === 1 ? '2nd' : i === 2 ? '3rd' : `${i+1}th`;
       const color = i === 0 ? '#ffd700' : i === 1 ? '#c0c0c0' : i === 2 ? '#cd7f32' : 'var(--text-dim)';
-      html += `<div style="display:flex;justify-content:space-between;font-size:12px;margin:2px 0;cursor:pointer" data-leaderboard-agent="${r.agent_id}">`;
-      html += `<span><span style="color:${color};width:28px;display:inline-block">${medal}</span> ${name}</span>`;
+      html += `<div style="display:flex;justify-content:space-between;font-size:12px;margin:2px 0;cursor:pointer" data-leaderboard-agent="${ESC_HTML(r.agent_id)}">`;
+      html += `<span><span style="color:${color};width:28px;display:inline-block">${medal}</span> ${ESC_HTML(name)}</span>`;
       html += `<span style="color:${color}">${r.score} rep</span>`;
       html += `</div>`;
     }
