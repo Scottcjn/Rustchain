@@ -10,6 +10,17 @@ EXPLORER_HTML = REPO_ROOT / "explorer" / "index.html"
 EXPLORER_JS = REPO_ROOT / "explorer" / "static" / "js" / "explorer.js"
 
 
+def run_node_probe(tmp_path: Path, source: str) -> subprocess.CompletedProcess[str]:
+    probe = tmp_path / "probe.js"
+    probe.write_text(source, encoding="utf-8")
+    return subprocess.run(
+        ["node", str(probe)],
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+
 def test_block_filter_controls_are_available_in_blocks_view():
     html = EXPLORER_HTML.read_text(encoding="utf-8")
 
@@ -34,7 +45,7 @@ def test_block_filter_controls_are_available_in_blocks_view():
         assert heading in html
 
 
-def test_block_filter_logic_handles_requested_filter_fields():
+def test_block_filter_logic_handles_requested_filter_fields(tmp_path):
     js = EXPLORER_JS.read_text(encoding="utf-8")
     probe = f"""
 const vm = require('vm');
@@ -97,19 +108,14 @@ const result = vm.runInContext(`
 `, context);
 console.log(result);
 """
-    result = subprocess.run(
-        ["node", "-e", probe],
-        text=True,
-        capture_output=True,
-        check=True,
-    )
+    result = run_node_probe(tmp_path, probe)
     data = json.loads(result.stdout)
 
     assert data["filteredHeights"] == [3]
     assert data["envelopeHeights"] == [9]
 
 
-def test_all_blocks_filter_uses_untruncated_fetched_blocks():
+def test_all_blocks_filter_uses_untruncated_fetched_blocks(tmp_path):
     js = EXPLORER_JS.read_text(encoding="utf-8")
     probe = f"""
 const vm = require('vm');
@@ -182,12 +188,7 @@ const script = {json.dumps(js)};
   process.exit(1);
 }});
 """
-    result = subprocess.run(
-        ["node", "-e", probe],
-        text=True,
-        capture_output=True,
-        check=True,
-    )
+    result = run_node_probe(tmp_path, probe)
     data = json.loads(result.stdout)
 
     assert data["storedBlockCount"] == 3

@@ -418,7 +418,7 @@ function renderStatusBar() {
             <span>${statusText}</span>
         </div>
         <div class="status-info mono">
-            ${state.health ? `v${state.health.version || '2.2.1'}` : ''}
+            ${state.health ? `v${escapeHtml(state.health.version || '2.2.1')}` : ''}
             ${state.health && state.health.uptime ? `| Uptime: ${formatUptime(state.health.uptime)}` : ''}
             ${state.lastUpdate ? `| Updated: ${formatRelativeTime(state.lastUpdate)}` : ''}
         </div>
@@ -446,7 +446,11 @@ function renderEpochStats() {
     }
     
     const epoch = state.epoch || { epoch: 0, pot: 0, slot: 0, blocks_per_epoch: 144 };
-    const progress = ((epoch.slot || 0) / (epoch.blocks_per_epoch || 144)) * 100;
+    const slot = Number.isFinite(Number(epoch.slot)) ? Number(epoch.slot) : 0;
+    const blocksPerEpoch = Number.isFinite(Number(epoch.blocks_per_epoch)) && Number(epoch.blocks_per_epoch) > 0
+        ? Number(epoch.blocks_per_epoch)
+        : 144;
+    const progress = Math.max(0, Math.min(100, (slot / blocksPerEpoch) * 100));
     
     container.innerHTML = `
         <div class="card">
@@ -466,7 +470,7 @@ function renderEpochStats() {
         </div>
         <div class="card">
             <div class="card-title">Progress</div>
-            <div class="card-value">${formatNumber(epoch.slot || 0, 0)}/${epoch.blocks_per_epoch || 144}</div>
+            <div class="card-value">${formatNumber(slot, 0)}/${formatNumber(blocksPerEpoch, 0)}</div>
             <div class="progress-bar">
                 <div class="progress-fill" style="width: ${progress}%"></div>
             </div>
@@ -516,7 +520,7 @@ function renderMinersTable() {
             const badgeClass = getArchitectureBadge(arch);
             return `
                 <tr>
-                    <td class="mono" title="${escapeHtml(minerId)}">${shortenAddress(minerId)}</td>
+                    <td class="mono" title="${escapeHtml(minerId)}">${escapeHtml(shortenAddress(minerId))}</td>
                     <td><span class="badge ${badgeClass}">${escapeHtml(arch)}</span></td>
                     <td><span class="badge badge-${tier}">${tier.toUpperCase()}</span></td>
                     <td class="text-accent">${formatNumber(multiplier, 2)}x</td>
@@ -776,12 +780,14 @@ function renderSearchResults() {
                 </thead>
                 <tbody>
                     ${matchingMiners.map(miner => {
-                        const tier = getArchitectureTier(miner.device_arch);
-                        const badgeClass = getArchitectureBadge(miner.device_arch);
+                        const minerId = miner.miner_id || miner.miner || 'unknown';
+                        const arch = miner.device_arch || miner.device_family || miner.hardware_type || 'Unknown';
+                        const tier = getArchitectureTier(arch);
+                        const badgeClass = getArchitectureBadge(arch);
                         return `
                             <tr>
-                                <td class="mono" title="${escapeHtml(miner.miner_id)}">${shortenAddress(miner.miner_id || 'unknown')}</td>
-                                <td><span class="badge ${badgeClass}">${escapeHtml(miner.device_arch || 'Unknown')}</span></td>
+                                <td class="mono" title="${escapeHtml(minerId)}">${escapeHtml(shortenAddress(minerId))}</td>
+                                <td><span class="badge ${badgeClass}">${escapeHtml(arch)}</span></td>
                                 <td><span class="badge badge-${tier}">${tier.toUpperCase()}</span></td>
                                 <td class="text-accent">${formatNumber(miner.multiplier || 1.0, 2)}x</td>
                                 <td class="text-success">${formatNumber(miner.balance || 0, 6)} RTC</td>
