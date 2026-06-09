@@ -45,6 +45,7 @@ import sqlite3
 import os
 import json
 import random
+import hmac
 import logging
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional, Tuple
@@ -55,6 +56,30 @@ from collections import deque
 from flask import Blueprint, jsonify, request
 
 logger = logging.getLogger(__name__)
+
+# Environment variable for mood signal write protection
+MOOD_SIGNAL_API_KEY_ENV = "BOTUBE_MOOD_SIGNAL_KEY"
+
+
+def _verify_mood_signal_auth() -> Optional[Tuple]:
+    """
+    Verify that the request carries a valid mood signal API key.
+    Fails closed when the env var is not set.
+    Returns None on success, or a (response, status_code) tuple on failure.
+    """
+    expected = os.environ.get(MOOD_SIGNAL_API_KEY_ENV, "")
+    if not expected:
+        return jsonify({"error": "Mood signal API key not configured"}), 503
+
+    header = request.headers.get("Authorization", "")
+    if not header.startswith("Bearer "):
+        return jsonify({"error": "Missing or invalid Authorization header"}), 401
+
+    provided = header[len("Bearer "):]
+    if not hmac.compare_digest(expected, provided):
+        return jsonify({"error": "Invalid API key"}), 401
+
+    return None
 
 
 # ─── Mood States ────────────────────────────────────────────────────────────── #
@@ -987,7 +1012,8 @@ def record_mood_signal(agent_name: str):
     """
     POST /api/v1/agents/{name}/mood/signal
     
-    Record a mood-affecting signal for an agent.
+    Requires Authorization: Bearer <key> header.
+    Key is set via the BOTUBE_MOOD_SIGNAL_KEY environment variable.
     
     Request Body:
         signal_type - Type of signal (video_views, comment_sentiment, etc.)
@@ -995,6 +1021,10 @@ def record_mood_signal(agent_name: str):
         weight - Optional signal weight (default: 1.0)
     """
     try:
+        auth_error = _verify_mood_signal_auth()
+        if auth_error:
+            return auth_error
+
         engine = get_mood_engine()
         data, error = _get_json_object()
         if error:
