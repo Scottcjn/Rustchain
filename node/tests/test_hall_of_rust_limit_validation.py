@@ -3,6 +3,9 @@ from flask import Flask
 from node.hall_of_rust import hall_bp, init_hall_tables
 
 
+ADMIN_HEADERS = {"X-Admin-Key": "test-admin-key"}
+
+
 def _app_with_hall_db(tmp_path):
     db_path = tmp_path / "hall.db"
     init_hall_tables(str(db_path))
@@ -16,7 +19,9 @@ def _app_with_hall_db(tmp_path):
 def test_leaderboard_rejects_non_integer_limit(tmp_path):
     app = _app_with_hall_db(tmp_path)
 
-    response = app.test_client().get("/api/hall_of_fame/leaderboard?limit=abc")
+    response = app.test_client().get(
+        "/api/hall_of_fame/leaderboard?limit=abc", headers=ADMIN_HEADERS
+    )
 
     assert response.status_code == 400
     assert response.get_data(as_text=True) == "limit must be an integer"
@@ -25,7 +30,9 @@ def test_leaderboard_rejects_non_integer_limit(tmp_path):
 def test_legacy_leaderboard_rejects_non_integer_limit(tmp_path):
     app = _app_with_hall_db(tmp_path)
 
-    response = app.test_client().get("/hall/leaderboard?limit=abc")
+    response = app.test_client().get(
+        "/hall/leaderboard?limit=abc", headers=ADMIN_HEADERS
+    )
 
     assert response.status_code == 400
     assert response.get_data(as_text=True) == "limit must be an integer"
@@ -34,7 +41,9 @@ def test_legacy_leaderboard_rejects_non_integer_limit(tmp_path):
 def test_leaderboard_rejects_negative_limit(tmp_path):
     app = _app_with_hall_db(tmp_path)
 
-    response = app.test_client().get("/api/hall_of_fame/leaderboard?limit=-1")
+    response = app.test_client().get(
+        "/api/hall_of_fame/leaderboard?limit=-1", headers=ADMIN_HEADERS
+    )
 
     assert response.status_code == 400
     assert response.get_data(as_text=True) == "limit must be non-negative"
@@ -43,7 +52,9 @@ def test_leaderboard_rejects_negative_limit(tmp_path):
 def test_legacy_leaderboard_rejects_negative_limit(tmp_path):
     app = _app_with_hall_db(tmp_path)
 
-    response = app.test_client().get("/hall/leaderboard?limit=-1")
+    response = app.test_client().get(
+        "/hall/leaderboard?limit=-1", headers=ADMIN_HEADERS
+    )
 
     assert response.status_code == 400
     assert response.get_data(as_text=True) == "limit must be non-negative"
@@ -52,7 +63,9 @@ def test_legacy_leaderboard_rejects_negative_limit(tmp_path):
 def test_leaderboard_uses_default_for_empty_limit(tmp_path):
     app = _app_with_hall_db(tmp_path)
 
-    response = app.test_client().get("/api/hall_of_fame/leaderboard?limit=")
+    response = app.test_client().get(
+        "/api/hall_of_fame/leaderboard?limit=", headers=ADMIN_HEADERS
+    )
 
     assert response.status_code == 200
     assert response.get_json()["leaderboard"] == []
@@ -62,7 +75,9 @@ def test_leaderboard_uses_default_for_empty_limit(tmp_path):
 def test_legacy_leaderboard_uses_default_for_empty_limit(tmp_path):
     app = _app_with_hall_db(tmp_path)
 
-    response = app.test_client().get("/hall/leaderboard?limit=")
+    response = app.test_client().get(
+        "/hall/leaderboard?limit=", headers=ADMIN_HEADERS
+    )
 
     assert response.status_code == 200
     assert response.get_json()["leaderboard"] == []

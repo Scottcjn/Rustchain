@@ -344,6 +344,13 @@ def rust_leaderboard():
 @hall_bp.route('/hall/eulogy/<fingerprint>', methods=['POST'])
 def set_eulogy(fingerprint):
     """Set a eulogy/nickname for a machine. For when it finally dies."""
+    # SECURITY: Require admin key — unauthenticated POSTs would let any caller
+    # deface the public Hall of Rust memorial registry (nickname, eulogy,
+    # is_deceased/deceased_at) for any known fingerprint.
+    err = _require_admin()
+    if err:
+        return err
+
     data, error_response = _json_object_or_empty()
     if error_response:
         return error_response
@@ -354,7 +361,7 @@ def set_eulogy(fingerprint):
     eulogy, error_response = _optional_text_field(data, 'eulogy', 500)
     if error_response:
         return error_response
-    
+
     try:
         from flask import current_app
         db_path = current_app.config.get('DB_PATH', '/root/rustchain/rustchain_v2.db')

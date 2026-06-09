@@ -11,6 +11,9 @@ sys.path.insert(0, str(ROOT / "node"))
 import hall_of_rust  # noqa: E402
 
 
+ADMIN_HEADERS = {"X-Admin-Key": "test-admin-key"}
+
+
 def _client_for(db_path):
     app = Flask(__name__)
     app.config["DB_PATH"] = str(db_path)
@@ -23,7 +26,7 @@ def test_hall_stats_hides_sqlite_error_details(tmp_path):
     sqlite3.connect(db_path).close()
     client = _client_for(db_path)
 
-    response = client.get("/hall/stats")
+    response = client.get("/hall/stats", headers=ADMIN_HEADERS)
 
     assert response.status_code == 500
     assert response.get_json() == {"error": "internal_error"}
@@ -37,7 +40,7 @@ def test_hall_stats_still_returns_valid_empty_stats(tmp_path):
     hall_of_rust.init_hall_tables(str(db_path))
     client = _client_for(db_path)
 
-    response = client.get("/hall/stats")
+    response = client.get("/hall/stats", headers=ADMIN_HEADERS)
 
     assert response.status_code == 200
     body = response.get_json()
@@ -62,7 +65,11 @@ def test_eulogy_rejects_non_object_json(tmp_path):
     hall_of_rust.init_hall_tables(str(db_path))
     client = _client_for(db_path)
 
-    response = client.post("/hall/eulogy/fingerprint-1", json=["nickname"])
+    response = client.post(
+        "/hall/eulogy/fingerprint-1",
+        json=["nickname"],
+        headers={"X-Admin-Key": "test-admin-key"},
+    )
 
     assert response.status_code == 400
     assert response.get_json() == {"error": "JSON object required"}
@@ -76,6 +83,7 @@ def test_eulogy_rejects_structured_nickname(tmp_path):
     response = client.post(
         "/hall/eulogy/fingerprint-1",
         json={"nickname": {"name": "Old Reliable"}},
+        headers={"X-Admin-Key": "test-admin-key"},
     )
 
     assert response.status_code == 400
@@ -90,10 +98,26 @@ def test_eulogy_rejects_structured_eulogy(tmp_path):
     response = client.post(
         "/hall/eulogy/fingerprint-1",
         json={"eulogy": ["served", "well"]},
+        headers={"X-Admin-Key": "test-admin-key"},
     )
 
     assert response.status_code == 400
     assert response.get_json() == {"error": "eulogy must be a string"}
+
+
+def test_eulogy_rejects_unauthenticated_post(tmp_path):
+    """Issue #7244: anonymous POSTs must NOT mutate memorial state."""
+    db_path = tmp_path / "hall.db"
+    hall_of_rust.init_hall_tables(str(db_path))
+    client = _client_for(db_path)
+
+    response = client.post(
+        "/hall/eulogy/fingerprint-1",
+        json={"nickname": "DEFACED"},
+    )
+
+    assert response.status_code == 401
+    assert response.get_json() == {"error": "Unauthorized — admin key required"}
 
 
 def test_calculate_rust_score_uses_current_year_for_age_weight():
@@ -128,7 +152,7 @@ def test_machine_of_the_day_uses_current_year_for_age(tmp_path, monkeypatch):
     monkeypatch.setattr(hall_of_rust, "_current_utc_year", lambda: 2026)
     client = _client_for(db_path)
 
-    response = client.get("/hall/machine_of_the_day")
+    response = client.get("/hall/machine_of_the_day", headers=ADMIN_HEADERS)
 
     assert response.status_code == 200
     assert response.get_json()["age_years"] == 23
