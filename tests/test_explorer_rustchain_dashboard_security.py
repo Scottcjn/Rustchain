@@ -80,9 +80,13 @@ def test_explorer_dashboard_sanitizes_wallet_search_and_errors():
     assert "fetch(`/api/wallet/${wallet}`)" not in source
     assert "const tierToken = safeToken(data.tier" in source
     assert "badge-${tierToken}" in source
-    assert "err = escapeHtml(err.message || err);" in source
-    assert "document.getElementById('search-result').innerHTML = `<h3>❌ Error</h3><p>${err}</p>`;" in source
+    assert "function showSearchError(message)" in source
+    assert "heading.textContent = '\\\\u274c Error';" in source
+    assert "messageText.textContent = String(message ?? 'Unknown error');" in source
+    assert "showSearchError(err && err.message ? err.message : err);" in source
     assert "${escapeHtml(wallet)}" in source
+    assert "err = escapeHtml(err.message || err);" not in source
+    assert "document.getElementById('search-result').innerHTML = `<h3>" not in source
     assert '<span class="mono">${wallet}</span>' not in source
 
 
