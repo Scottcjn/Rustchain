@@ -224,32 +224,27 @@ async fn send_transaction(
     let signature = wallet.sign_transaction(&transaction)?;
     let mut signed_transaction = transaction;
     signed_transaction.signature = signature;
-    
+
     let client = reqwest::Client::new();
-    let url = format!("{}/api/transaction", node_url);
+    let url = format!("{}/api/transaction", node_url.trim_end_matches('/'));
     
-    match client.post(&url).json(&signed_transaction).send().await {
-        Ok(response) => {
-            if response.status().is_success() {
-                let tx_response: TransactionResponse = response.json().await?;
-                if tx_response.success {
-                    Ok(tx_response.transaction_id.unwrap_or_else(|| "unknown".to_string()))
-                } else {
-                    Err(anyhow!("Transaction failed: {}", tx_response.message))
-                }
-            } else {
-                // Mock successful transaction when API is not available
-                println!("Note: Mock transaction (node API not available)");
-                let tx_id = hex::encode(&signed_transaction.signature[0..8]);
-                Ok(tx_id)
-            }
-        }
-        Err(_) => {
-            // Mock successful transaction when node is not reachable
-            println!("Note: Mock transaction (node not reachable)");
-            let tx_id = hex::encode(&signed_transaction.signature[0..8]);
-            Ok(tx_id)
-        }
+    let response = client
+        .post(&url)
+        .json(&signed_transaction)
+        .send()
+        .await
+        .map_err(|err| anyhow!("Transaction submission failed: {}", err))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        return Err(anyhow!("Transaction endpoint returned HTTP {}", status));
+    }
+
+    let tx_response: TransactionResponse = response.json().await?;
+    if tx_response.success {
+        Ok(tx_response.transaction_id.unwrap_or_else(|| "unknown".to_string()))
+    } else {
+        Err(anyhow!("Transaction failed: {}", tx_response.message))
     }
 }
 

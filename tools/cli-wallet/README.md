@@ -113,10 +113,11 @@ RustChain addresses use the canonical 43-character format: `RTC` followed by
 
 When the RustChain node is not available, the wallet operates in development mode with:
 - Mock balance of 1000 RTC
-- Simulated successful transactions
+- Transaction submission fails closed instead of reporting a mock success
 - Local address validation
 
-This allows testing wallet functionality without a running blockchain node.
+This allows testing wallet generation, address validation, and balance display
+without a running blockchain node, while preventing false "sent" confirmations.
 
 ## API Endpoints
 
