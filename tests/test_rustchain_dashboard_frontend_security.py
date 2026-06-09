@@ -62,13 +62,16 @@ def test_dashboard_escapes_search_result_and_error_text():
     assert "${escapeHtml(data.weight)}" in source
     assert "${escapeHtml(data.tier)}" in source
     assert "${escapeHtml(wallet)}" in source
-    assert "err = escapeHtml(err.message || err);" in source
+    assert "function renderSearchError(err)" in source
+    assert "message.textContent = err.message || err;" in source
+    assert "renderSearchError(err);" in source
 
     assert "${data.wallet}" not in source
     assert "${data.balance}" not in source
     assert "${data.weight}" not in source
     assert "${data.tier}" not in source
     assert '<span class="mono">${wallet}</span>' not in source
+    assert "search-result').innerHTML = `<h3>❌ Error</h3><p>${err}</p>`" not in source
 
 
 def test_stats_api_does_not_echo_internal_exception_details(monkeypatch):
