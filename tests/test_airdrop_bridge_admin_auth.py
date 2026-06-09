@@ -7,6 +7,9 @@ from flask import Flask
 
 from node.airdrop_v2 import AirdropV2, init_airdrop_routes
 
+ADMIN_KEY = "expected-admin"
+ADMIN_HEADERS = {"X-Admin-Key": ADMIN_KEY}
+
 
 def _make_client(tmp_path):
     db_path = tmp_path / "airdrop.db"
@@ -20,6 +23,7 @@ def _make_client(tmp_path):
 def _create_pending_lock(client):
     response = client.post(
         "/api/bridge/lock",
+        headers=ADMIN_HEADERS,
         json={
             "from_address": "solana-source",
             "to_address": "base-destination",
@@ -41,9 +45,9 @@ def _lock_status(db_path, lock_id):
 
 
 def test_bridge_confirm_requires_admin_key(tmp_path, monkeypatch):
+    monkeypatch.setenv("RC_ADMIN_KEY", ADMIN_KEY)
     client, db_path = _make_client(tmp_path)
     lock_id = _create_pending_lock(client)
-    monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
 
     response = client.post(
         f"/api/bridge/lock/{lock_id}/confirm",
@@ -56,13 +60,13 @@ def test_bridge_confirm_requires_admin_key(tmp_path, monkeypatch):
 
 
 def test_bridge_release_requires_admin_key(tmp_path, monkeypatch):
+    monkeypatch.setenv("RC_ADMIN_KEY", ADMIN_KEY)
     client, db_path = _make_client(tmp_path)
     lock_id = _create_pending_lock(client)
-    monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
 
     authorized = client.post(
         f"/api/bridge/lock/{lock_id}/confirm",
-        headers={"X-Admin-Key": "expected-admin"},
+        headers=ADMIN_HEADERS,
         json={"source_tx": "real-source-tx"},
     )
     assert authorized.status_code == 200
@@ -78,18 +82,18 @@ def test_bridge_release_requires_admin_key(tmp_path, monkeypatch):
 
 
 def test_bridge_confirm_and_release_accept_valid_admin_key(tmp_path, monkeypatch):
+    monkeypatch.setenv("RC_ADMIN_KEY", ADMIN_KEY)
     client, db_path = _make_client(tmp_path)
     lock_id = _create_pending_lock(client)
-    monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
 
     confirmed = client.post(
         f"/api/bridge/lock/{lock_id}/confirm",
-        headers={"X-Admin-Key": "expected-admin"},
+        headers=ADMIN_HEADERS,
         json={"source_tx": "real-source-tx"},
     )
     released = client.post(
         f"/api/bridge/lock/{lock_id}/release",
-        headers={"X-Admin-Key": "expected-admin"},
+        headers=ADMIN_HEADERS,
         json={"dest_tx": "real-dest-tx"},
     )
 
@@ -107,19 +111,41 @@ def test_bridge_confirm_and_release_accept_valid_admin_key(tmp_path, monkeypatch
     [
         ("/api/airdrop/eligibility", {}),
         ("/api/airdrop/claim", {}),
-        ("/api/bridge/lock", {}),
-        ("/api/bridge/lock/test-lock/confirm", {"X-Admin-Key": "expected-admin"}),
-        ("/api/bridge/lock/test-lock/release", {"X-Admin-Key": "expected-admin"}),
+        ("/api/bridge/lock", ADMIN_HEADERS),
+        ("/api/bridge/lock/test-lock/confirm", ADMIN_HEADERS),
+        ("/api/bridge/lock/test-lock/release", ADMIN_HEADERS),
     ],
 )
 def test_airdrop_write_routes_reject_non_object_json(tmp_path, monkeypatch, path, headers):
     client, _db_path = _make_client(tmp_path)
-    monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
+    monkeypatch.setenv("RC_ADMIN_KEY", ADMIN_KEY)
 
     response = client.post(path, headers=headers, json=[{"unexpected": "array"}])
 
     assert response.status_code == 400
     assert response.get_json() == {"ok": False, "error": "JSON object required"}
+
+
+def test_bridge_lock_requires_admin_key_before_mutation(tmp_path, monkeypatch):
+    monkeypatch.setenv("RC_ADMIN_KEY", ADMIN_KEY)
+    client, db_path = _make_client(tmp_path)
+
+    response = client.post(
+        "/api/bridge/lock",
+        json={
+            "from_address": "solana-source",
+            "to_address": "base-destination",
+            "from_chain": "solana",
+            "to_chain": "base",
+            "amount_wrtc": 1,
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.get_json()["error"] == "unauthorized"
+    with sqlite3.connect(db_path) as conn:
+        lock_count = conn.execute("SELECT COUNT(*) FROM bridge_locks").fetchone()[0]
+    assert lock_count == 0
 
 
 def test_airdrop_eligibility_rejects_structured_text_field(tmp_path):

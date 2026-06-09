@@ -585,6 +585,7 @@ class TestAirdropBridgeRoutes(unittest.TestCase):
     def _create_lock(self):
         response = self.client.post(
             "/api/bridge/lock",
+            headers=ADMIN_HEADERS,
             json={
                 "from_address": "RTC1234567890123456789012345678901234567890",
                 "to_address": "0x1234567890123456789012345678901234567890",
