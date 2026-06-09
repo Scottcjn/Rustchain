@@ -401,13 +401,15 @@ class RateLimiter:
     def _record_sqlite(self, ip_address: str, wallet: str, amount: float) -> None:
         """Record request in SQLite."""
         conn = sqlite3.connect(self.config['database']['path'])
-        c = conn.cursor()
-        c.execute('''
-            INSERT INTO drip_requests (wallet, ip_address, amount, timestamp)
-            VALUES (?, ?, ?, ?)
-        ''', (wallet, ip_address, amount, datetime.now().isoformat()))
-        conn.commit()
-        conn.close()
+        try:
+            c = conn.cursor()
+            c.execute('''
+                INSERT INTO drip_requests (wallet, ip_address, amount, timestamp)
+                VALUES (?, ?, ?, ?)
+            ''', (wallet, ip_address, amount, datetime.now().isoformat()))
+            conn.commit()
+        finally:
+            conn.close()
 
     def _record_sqlite_if_allowed(
         self,
