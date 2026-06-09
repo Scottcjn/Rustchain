@@ -822,6 +822,7 @@
     <script>
         // 鈹€鈹€鈹€ Configuration 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
         const CONFIG = {
+            RUSTCHAIN_API: 'https://rustchain.org',
             WRTC_MINT: '12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X',
             RAYDIUM_POOL: '8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb',
             BRIDGE_API: 'https://rustchain.org/api/bridge',
@@ -872,10 +873,18 @@
         };
 
         // 鈹€鈹€鈹€ API Functions 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+        async function fetchJson(url) {
+            const resp = await fetch(url);
+            const contentType = resp.headers.get('content-type') || '';
+            if (!resp.ok || !contentType.includes('application/json')) {
+                throw new Error(`Unexpected response from ${url}: ${resp.status}`);
+            }
+            return resp.json();
+        }
+
         async function fetchPrice() {
             try {
-                const resp = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${CONFIG.WRTC_MINT}`);
-                const data = await resp.json();
+                const data = await fetchJson(`https://api.dexscreener.com/latest/dex/tokens/${CONFIG.WRTC_MINT}`);
                 if (data.pairs && data.pairs.length > 0) {
                     const pair = data.pairs.find(p => p.dexId === 'raydium') || data.pairs[0];
                     return {
@@ -894,21 +903,57 @@
 
         async function fetchBridgeStats() {
             try {
-                const resp = await fetch(`${CONFIG.BRIDGE_API}/stats`);
-                return await resp.json();
+                return await fetchJson(`${CONFIG.BRIDGE_API}/stats`);
             } catch (e) {
-                console.log('Bridge API unavailable, using mock data');
-                return MOCK_DATA.stats;
+                console.log('Bridge stats unavailable, using public wallet balance fallback');
+                try {
+                    const balance = await fetchJson(`${CONFIG.RUSTCHAIN_API}/wallet/balance?miner_id=bridge-escrow`);
+                    const locked = Number(balance.amount_rtc || 0);
+                    return {
+                        total_locked_rtc: locked,
+                        circulating_wrtc: 0,
+                        wrap_volume: 0,
+                        unwrap_volume: 0,
+                        total_fees: 0,
+                        wrap_fees: 0,
+                        unwrap_fees: 0,
+                    };
+                } catch (fallbackError) {
+                    return {
+                        total_locked_rtc: 0,
+                        circulating_wrtc: 0,
+                        wrap_volume: 0,
+                        unwrap_volume: 0,
+                        total_fees: 0,
+                        wrap_fees: 0,
+                        unwrap_fees: 0,
+                    };
+                }
             }
         }
 
         async function fetchBridgeLedger() {
             try {
-                const resp = await fetch(`${CONFIG.BRIDGE_API}/ledger?limit=50`);
-                return await resp.json();
+                return await fetchJson(`${CONFIG.BRIDGE_API}/ledger?limit=50`);
             } catch (e) {
-                console.log('Bridge ledger unavailable, using mock data');
-                return { locks: MOCK_DATA.transactions };
+                console.log('Bridge ledger unavailable, using public wallet history fallback');
+                try {
+                    const history = await fetchJson(`${CONFIG.RUSTCHAIN_API}/wallet/history?miner_id=bridge-escrow&limit=50`);
+                    const txs = Array.isArray(history.transactions) ? history.transactions : [];
+                    return {
+                        locks: txs.map(tx => ({
+                            lock_id: tx.tx_hash || tx.reason || 'wallet-history',
+                            type: tx.type || 'wallet',
+                            sender: tx.from || tx.to || tx.miner_id || 'unknown',
+                            amount: Number(tx.amount || 0),
+                            target_chain: 'rustchain',
+                            state: tx.status || 'confirmed',
+                            timestamp: Number(tx.timestamp || Date.now()),
+                        })),
+                    };
+                } catch (fallbackError) {
+                    return { locks: [] };
+                }
             }
         }
 
@@ -1143,11 +1188,11 @@
                     fetchBridgeLedger()
                 ]);
 
-                updateStats(MOCK_DATA.stats);
+                updateStats(stats);
                 updatePriceInfo(price);
-                updateFees(MOCK_DATA.stats);
+                updateFees(stats);
                 updateHealth(MOCK_DATA.health);
-                updateTransactions(ledger.locks || MOCK_DATA.transactions);
+                updateTransactions(ledger.locks || []);
 
                 updateLastRefresh();
             } catch (e) {
