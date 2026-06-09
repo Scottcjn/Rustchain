@@ -51,12 +51,6 @@ function hideError(elementId) {
   element.style.display = 'none';
 }
 
-function escapeHtml(value) {
-  const div = document.createElement('div');
-  div.textContent = String(value ?? '');
-  return div.innerHTML;
-}
-
 function safeCssClass(value) {
   return String(value || 'unknown').toLowerCase().replace(/[^a-z0-9_-]/g, '-') || 'unknown';
 }
@@ -79,6 +73,89 @@ function formatCheckName(value) {
 
 function formatRtc(urtc) {
   return (safeNumber(urtc) / 100_000_000).toFixed(6);
+}
+
+function createElement(tagName, options = {}, children = []) {
+  const element = document.createElement(tagName);
+
+  if (options.className) {
+    element.className = options.className;
+  }
+  if (options.text !== undefined) {
+    element.textContent = String(options.text);
+  }
+  if (options.colSpan !== undefined) {
+    element.colSpan = options.colSpan;
+  }
+  if (options.styles) {
+    Object.assign(element.style, options.styles);
+  }
+  if (options.dataset) {
+    Object.entries(options.dataset).forEach(([key, value]) => {
+      element.dataset[key] = String(value);
+    });
+  }
+
+  children.forEach(child => element.append(child));
+  return element;
+}
+
+function createOption(label, value = '', dataset = {}) {
+  const option = new Option(label, String(value));
+  Object.entries(dataset).forEach(([key, datasetValue]) => {
+    option.dataset[key] = String(datasetValue);
+  });
+  return option;
+}
+
+function createSummaryRow(label, value, options = {}) {
+  return createElement('div', { className: 'summary-row' }, [
+    createElement('span', { className: 'summary-label', text: label }),
+    createElement('span', {
+      className: 'summary-value',
+      text: value,
+      styles: options.valueStyles || {}
+    })
+  ]);
+}
+
+function createCheckItem(label, passed) {
+  return createElement('div', { className: 'check-item' }, [
+    createElement('span', {
+      className: `check-icon ${passed ? 'pass' : 'fail'}`,
+      text: passed ? String.fromCharCode(10003) : String.fromCharCode(10007)
+    }),
+    createElement('span', { text: label })
+  ]);
+}
+
+function createTableCell(value, options = {}) {
+  return createElement('td', {
+    className: options.className,
+    text: value,
+    styles: options.styles || {},
+    colSpan: options.colSpan
+  });
+}
+
+function renderSubmitSuccess(result) {
+  const submitSuccess = document.getElementById('submitSuccess');
+  const claimId = createElement('code', {
+    text: result.claim_id,
+    styles: { fontFamily: 'var(--font-mono)' }
+  });
+
+  submitSuccess.replaceChildren(
+    createElement('strong', { text: 'Claim submitted successfully!' }),
+    document.createElement('br'),
+    'Claim ID: ',
+    claimId,
+    document.createElement('br'),
+    `Reward: ${formatRtc(result.reward_urtc)} RTC`,
+    document.createElement('br'),
+    `Estimated settlement: ${new Date(safeNumber(result.estimated_settlement) * 1000).toLocaleString()}`
+  );
+  submitSuccess.style.display = 'block';
 }
 
 function formatTimestamp(ts) {
@@ -181,143 +258,139 @@ async function getClaimHistory(minerId) {
 // UI Update Functions
 function renderEligibilityResult(eligibility) {
   const isEligible = eligibility.eligible;
-  
-  eligibilityResult.innerHTML = `
-    <div class="eligibility-status">
-      <div class="status-indicator ${isEligible ? 'eligible' : 'not-eligible'}"></div>
-      <span style="font-weight: 600; font-size: 1.125rem;">
-        ${isEligible ? 'Eligible to Claim' : 'Not Eligible'}
-      </span>
-    </div>
-    
-    ${isEligible ? `
-      <div class="summary-row">
-        <span class="summary-label">Miner ID</span>
-        <span class="summary-value" style="font-family: var(--font-mono);">${escapeHtml(eligibility.miner_id)}</span>
-      </div>
-      <div class="summary-row">
-        <span class="summary-label">Device Architecture</span>
-        <span class="summary-value">${escapeHtml(eligibility.attestation?.device_arch || 'N/A')}</span>
-      </div>
-      <div class="summary-row">
-        <span class="summary-label">Antiquity Multiplier</span>
-        <span class="summary-value">${safeNumber(eligibility.attestation?.antiquity_multiplier, 1).toFixed(2)}x</span>
-      </div>
-      <div class="summary-row">
-        <span class="summary-label">Wallet Address</span>
-        <span class="summary-value" style="font-family: var(--font-mono);">${escapeHtml(eligibility.wallet_address || 'Not registered')}</span>
-      </div>
-    ` : `
-      <div style="color: var(--error); margin-top: 1rem;">
-        Reason: ${escapeHtml(eligibility.reason || 'Unknown')}
-      </div>
-    `}
-    
-    ${isEligible ? `
-      <div class="checks-grid">
-        <div class="check-item">
-          <span class="check-icon pass">✓</span>
-          <span>Attestation Valid</span>
-        </div>
-        <div class="check-item">
-          <span class="check-icon pass">✓</span>
-          <span>Epoch Participation</span>
-        </div>
-        <div class="check-item">
-          <span class="check-icon pass">✓</span>
-          <span>Fingerprint Passed</span>
-        </div>
-        <div class="check-item">
-          <span class="check-icon ${eligibility.wallet_address ? 'pass' : 'fail'}">
-            ${eligibility.wallet_address ? '✓' : '✗'}
-          </span>
-          <span>Wallet Registered</span>
-        </div>
-      </div>
-    ` : `
-      <div class="checks-grid">
-        ${Object.entries(eligibility.checks || {}).map(([check, passed]) => `
-          <div class="check-item">
-            <span class="check-icon ${passed ? 'pass' : 'fail'}">
-              ${passed ? '✓' : '✗'}
-            </span>
-            <span>${escapeHtml(formatCheckName(check))}</span>
-          </div>
-        `).join('')}
-      </div>
-    `}
-  `;
+
+  const status = createElement('div', { className: 'eligibility-status' }, [
+    createElement('div', {
+      className: `status-indicator ${isEligible ? 'eligible' : 'not-eligible'}`
+    }),
+    createElement('span', {
+      text: isEligible ? 'Eligible to Claim' : 'Not Eligible',
+      styles: {
+        fontWeight: '600',
+        fontSize: '1.125rem'
+      }
+    })
+  ]);
+
+  const detailNodes = [];
+  if (isEligible) {
+    detailNodes.push(
+      createSummaryRow('Miner ID', eligibility.miner_id, {
+        valueStyles: { fontFamily: 'var(--font-mono)' }
+      }),
+      createSummaryRow('Device Architecture', eligibility.attestation?.device_arch || 'N/A'),
+      createSummaryRow(
+        'Antiquity Multiplier',
+        `${safeNumber(eligibility.attestation?.antiquity_multiplier, 1).toFixed(2)}x`
+      ),
+      createSummaryRow('Wallet Address', eligibility.wallet_address || 'Not registered', {
+        valueStyles: { fontFamily: 'var(--font-mono)' }
+      })
+    );
+  } else {
+    detailNodes.push(createElement('div', {
+      text: 'Reason: ' + (eligibility.reason || 'Unknown'),
+      styles: {
+        color: 'var(--error)',
+        marginTop: '1rem'
+      }
+    }));
+  }
+
+  const checks = createElement('div', { className: 'checks-grid' });
+  if (isEligible) {
+    checks.replaceChildren(
+      createCheckItem('Attestation Valid', true),
+      createCheckItem('Epoch Participation', true),
+      createCheckItem('Fingerprint Passed', true),
+      createCheckItem('Wallet Registered', Boolean(eligibility.wallet_address))
+    );
+  } else {
+    checks.replaceChildren(
+      ...Object.entries(eligibility.checks || {}).map(([check, passed]) =>
+        createCheckItem(formatCheckName(check), Boolean(passed))
+      )
+    );
+  }
+
+  eligibilityResult.replaceChildren(status, ...detailNodes, checks);
 }
 
 function renderEpochSelect(epochData) {
   const unclaimedEpochs = epochData.epochs.filter(e => !e.claimed && e.settled);
-  
+
   if (unclaimedEpochs.length === 0) {
-    epochSelect.innerHTML = '<option value="">No unclaimed epochs available</option>';
+    epochSelect.replaceChildren(createOption('No unclaimed epochs available'));
     return;
   }
-  
-  epochSelect.innerHTML = `
-    <option value="">-- Select an epoch --</option>
-    ${unclaimedEpochs.map(epoch => `
-      <option value="${safeInteger(epoch.epoch)}" data-reward="${safeInteger(epoch.reward_urtc)}">
-        Epoch ${safeInteger(epoch.epoch)} - ${formatRtc(epoch.reward_urtc)} RTC
-      </option>
-    `).join('')}
-  `;
-  
+
+  epochSelect.replaceChildren(
+    createOption('-- Select an epoch --'),
+    ...unclaimedEpochs.map(epoch => {
+      const epochNumber = safeInteger(epoch.epoch);
+      const rewardUrtc = safeInteger(epoch.reward_urtc);
+      return createOption(
+        `Epoch ${epochNumber} - ${formatRtc(epoch.reward_urtc)} RTC`,
+        epochNumber,
+        { reward: rewardUrtc }
+      );
+    })
+  );
+
   eligibleEpochs = unclaimedEpochs;
 }
 
 function renderClaimSummary(minerId, epoch, rewardUrtc, walletAddress) {
-  claimSummary.innerHTML = `
-    <div class="summary-row">
-      <span class="summary-label">Miner ID</span>
-      <span class="summary-value" style="font-family: var(--font-mono);">${escapeHtml(minerId)}</span>
-    </div>
-    <div class="summary-row">
-      <span class="summary-label">Epoch</span>
-      <span class="summary-value">${safeInteger(epoch)}</span>
-    </div>
-    <div class="summary-row">
-      <span class="summary-label">Wallet Address</span>
-      <span class="summary-value" style="font-family: var(--font-mono);">${escapeHtml(walletAddress)}</span>
-    </div>
-    <div class="summary-row">
-      <span class="summary-label">Reward Amount</span>
-      <span class="summary-value" style="color: var(--accent-primary);">${formatRtc(rewardUrtc)} RTC</span>
-    </div>
-    <div class="summary-row">
-      <span class="summary-label">Estimated Settlement</span>
-      <span class="summary-value">~30 minutes</span>
-    </div>
-  `;
+  claimSummary.replaceChildren(
+    createSummaryRow('Miner ID', minerId, {
+      valueStyles: { fontFamily: 'var(--font-mono)' }
+    }),
+    createSummaryRow('Epoch', safeInteger(epoch)),
+    createSummaryRow('Wallet Address', walletAddress, {
+      valueStyles: { fontFamily: 'var(--font-mono)' }
+    }),
+    createSummaryRow('Reward Amount', `${formatRtc(rewardUrtc)} RTC`, {
+      valueStyles: { color: 'var(--accent-primary)' }
+    }),
+    createSummaryRow('Estimated Settlement', '~30 minutes')
+  );
 }
 
 function renderClaimHistory(history) {
   const tbody = document.getElementById('claimsHistoryBody');
-  
+
   if (!history.claims || history.claims.length === 0) {
-    tbody.innerHTML = `
-      <tr>
-        <td colspan="6" class="empty-state">No claims yet. Check your eligibility to get started.</td>
-      </tr>
-    `;
+    tbody.replaceChildren(createElement('tr', {}, [
+      createTableCell('No claims yet. Check your eligibility to get started.', {
+        className: 'empty-state',
+        colSpan: 6
+      })
+    ]));
     return;
   }
-  
-  tbody.innerHTML = history.claims.map(claim => `
-    <tr>
-      <td style="font-family: var(--font-mono); font-size: 0.875rem;">${escapeHtml(claim.claim_id)}</td>
-      <td>${safeInteger(claim.epoch)}</td>
-      <td>
-        <span class="status-badge ${safeCssClass(claim.status)}">${escapeHtml(claim.status)}</span>
-      </td>
-      <td style="font-family: var(--font-mono);">${formatRtc(claim.reward_urtc)}</td>
-      <td>${formatTimestamp(claim.submitted_at)}</td>
-      <td>${formatTimestamp(claim.settled_at)}</td>
-    </tr>
-  `).join('');
+
+  tbody.replaceChildren(...history.claims.map(claim => {
+    const statusBadge = createElement('span', {
+      className: `status-badge ${safeCssClass(claim.status)}`,
+      text: claim.status
+    });
+
+    return createElement('tr', {}, [
+      createTableCell(claim.claim_id, {
+        styles: {
+          fontFamily: 'var(--font-mono)',
+          fontSize: '0.875rem'
+        }
+      }),
+      createTableCell(safeInteger(claim.epoch)),
+      createElement('td', {}, [statusBadge]),
+      createTableCell(formatRtc(claim.reward_urtc), {
+        styles: { fontFamily: 'var(--font-mono)' }
+      }),
+      createTableCell(formatTimestamp(claim.submitted_at)),
+      createTableCell(formatTimestamp(claim.settled_at))
+    ]);
+  }));
 }
 
 function updateStats() {
@@ -495,14 +568,7 @@ async function handleSubmitClaim() {
     const result = await submitClaim(claimPayload);
     
     if (result.success) {
-      // Show success message
-      document.getElementById('submitSuccess').innerHTML = `
-        <strong>Claim submitted successfully!</strong><br>
-        Claim ID: <code style="font-family: var(--font-mono);">${escapeHtml(result.claim_id)}</code><br>
-        Reward: ${formatRtc(result.reward_urtc)} RTC<br>
-        Estimated settlement: ${new Date(safeNumber(result.estimated_settlement) * 1000).toLocaleString()}
-      `;
-      document.getElementById('submitSuccess').style.display = 'block';
+      renderSubmitSuccess(result);
       
       // Reset form
       setTimeout(() => {
@@ -526,7 +592,7 @@ function handleCancel() {
 function resetForm() {
   minerIdInput.value = '';
   walletAddressInput.value = '';
-  epochSelect.innerHTML = '<option value="">-- Select an epoch --</option>';
+  epochSelect.replaceChildren(createOption('-- Select an epoch --'));
   confirmCheckbox.checked = false;
   submitClaimBtn.disabled = true;
   
