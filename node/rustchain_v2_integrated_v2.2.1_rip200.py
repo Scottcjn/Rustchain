@@ -9573,9 +9573,17 @@ try:
 
     # P2P Endpoints
     @app.route('/p2p/stats', methods=['GET'])
+    @app.route('/api/network', methods=['GET'])
     def p2p_stats():
         """Get P2P network status"""
-        return jsonify(peer_manager.get_network_stats())
+        stats = peer_manager.get_network_stats()
+        return jsonify({"ok": True, **stats})
+
+    @app.route('/api/peers', methods=['GET'])
+    def api_peers():
+        """Public peer list for wallet and explorer clients."""
+        peers = peer_manager.get_active_peers()
+        return jsonify({"ok": True, "peers": peers, "count": len(peers)})
 
     @app.route('/p2p/ping', methods=['POST'])
     @require_peer_auth
