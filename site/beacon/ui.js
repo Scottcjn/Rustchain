@@ -64,6 +64,23 @@ function getReputation(agentId) {
   return reputationCache[agentId] || { score: 0, bounties_completed: 0, contracts_completed: 0, contracts_breached: 0 };
 }
 
+function escapeHtml(value) {
+  const div = document.createElement('div');
+  div.textContent = String(value ?? '');
+  return div.innerHTML;
+}
+
+function safeGithubUrl(value) {
+  try {
+    const url = new URL(String(value || ''));
+    if (url.protocol !== 'https:') return '';
+    if (url.hostname !== 'github.com' && !url.hostname.endsWith('.github.com')) return '';
+    return url.href;
+  } catch {
+    return '';
+  }
+}
+
 export function initUI() {
   panel = document.querySelector('.info-panel');
   panelContent = document.querySelector('.panel-content');
@@ -762,15 +779,20 @@ function renderBountyList(bounties) {
 
   // Open bounties
   for (const b of open.slice(0, 20)) {
-    const safeUrl = (b.url || '').replace(/'/g, '%27');
+    const safeUrl = safeGithubUrl(b.url);
+    const title = escapeHtml(b.title);
+    const reward = escapeHtml(b.reward);
+    const difficulty = escapeHtml(b.difficulty);
+    const repo = escapeHtml(b.repo);
+    const ghRef = escapeHtml(b.ghNum || b.id);
     html += `<div class="bounty-card">`;
     html += `<div style="display:flex;justify-content:space-between;align-items:center">`;
-    html += `<span style="color:var(--green);font-weight:600;font-size:13px">${b.title}</span>`;
-    html += `<span style="color:#ffd700;font-size:12px;font-weight:600;white-space:nowrap;margin-left:8px">${b.reward}</span>`;
+    html += `<span style="color:var(--green);font-weight:600;font-size:13px">${title}</span>`;
+    html += `<span style="color:#ffd700;font-size:12px;font-weight:600;white-space:nowrap;margin-left:8px">${reward}</span>`;
     html += `</div>`;
     html += `<div style="display:flex;gap:8px;font-size:11px;margin-top:4px;align-items:center">`;
-    html += `<span style="color:${DIFF_COLORS[b.difficulty] || DIFF_COLORS.ANY}">[${b.difficulty}]</span>`;
-    html += `<span style="color:var(--text-dim)">${b.repo} ${b.ghNum || b.id}</span>`;
+    html += `<span style="color:${DIFF_COLORS[b.difficulty] || DIFF_COLORS.ANY}">[${difficulty}]</span>`;
+    html += `<span style="color:var(--text-dim)">${repo} ${ghRef}</span>`;
     if (safeUrl) {
       html += `<a href="${safeUrl}" target="_blank" class="bounty-link" style="font-size:10px;padding:1px 6px">[GitHub]</a>`;
     }
@@ -786,12 +808,15 @@ function renderBountyList(bounties) {
     html += `<div class="t-section">-- CLAIMED (${claimed.length}) --</div>`;
     for (const b of claimed) {
       const agent = AGENTS.find(a => a.id === b.claimant);
+      const title = escapeHtml(b.title);
+      const reward = escapeHtml(b.reward);
+      const claimant = escapeHtml(agent ? agent.name : b.claimant);
       html += `<div class="bounty-card" style="border-left-color:var(--amber)">`;
       html += `<div style="display:flex;justify-content:space-between">`;
-      html += `<span style="color:var(--amber);font-size:13px">${b.title}</span>`;
-      html += `<span style="color:#ffd700;font-size:12px">${b.reward}</span>`;
+      html += `<span style="color:var(--amber);font-size:13px">${title}</span>`;
+      html += `<span style="color:#ffd700;font-size:12px">${reward}</span>`;
       html += `</div>`;
-      html += `<div style="font-size:11px;color:var(--amber);margin-top:3px">Claimed by: ${agent ? agent.name : b.claimant}</div>`;
+      html += `<div style="font-size:11px;color:var(--amber);margin-top:3px">Claimed by: ${claimant}</div>`;
       html += `</div>`;
     }
   }
@@ -802,12 +827,15 @@ function renderBountyList(bounties) {
     for (const b of completed) {
       const agent = AGENTS.find(a => a.id === b.completed_by);
       const repGain = 10 + (b.reward_rtc || 0) * 0.1;
+      const title = escapeHtml(b.title);
+      const reward = escapeHtml(b.reward);
+      const completedBy = escapeHtml(agent ? agent.name : b.completed_by);
       html += `<div class="bounty-card" style="border-left-color:#8888ff;opacity:0.7">`;
       html += `<div style="display:flex;justify-content:space-between">`;
-      html += `<span style="color:#8888ff;font-size:13px">${b.title}</span>`;
-      html += `<span style="color:#ffd700;font-size:12px">${b.reward}</span>`;
+      html += `<span style="color:#8888ff;font-size:13px">${title}</span>`;
+      html += `<span style="color:#ffd700;font-size:12px">${reward}</span>`;
       html += `</div>`;
-      html += `<div style="font-size:11px;color:#8888ff;margin-top:3px">Completed by: ${agent ? agent.name : b.completed_by} (+${repGain.toFixed(0)} rep)</div>`;
+      html += `<div style="font-size:11px;color:#8888ff;margin-top:3px">Completed by: ${completedBy} (+${repGain.toFixed(0)} rep)</div>`;
       html += `</div>`;
     }
   }
@@ -840,8 +868,10 @@ async function showBounties() {
       const name = agent ? agent.name : r.agent_id;
       const medal = i === 0 ? '1st' : i === 1 ? '2nd' : i === 2 ? '3rd' : `${i+1}th`;
       const color = i === 0 ? '#ffd700' : i === 1 ? '#c0c0c0' : i === 2 ? '#cd7f32' : 'var(--text-dim)';
-      html += `<div style="display:flex;justify-content:space-between;font-size:12px;margin:2px 0;cursor:pointer" data-leaderboard-agent="${r.agent_id}">`;
-      html += `<span><span style="color:${color};width:28px;display:inline-block">${medal}</span> ${name}</span>`;
+      const agentId = escapeHtml(r.agent_id);
+      const displayName = escapeHtml(name);
+      html += `<div style="display:flex;justify-content:space-between;font-size:12px;margin:2px 0;cursor:pointer" data-leaderboard-agent="${agentId}">`;
+      html += `<span><span style="color:${color};width:28px;display:inline-block">${medal}</span> ${displayName}</span>`;
       html += `<span style="color:${color}">${r.score} rep</span>`;
       html += `</div>`;
     }
