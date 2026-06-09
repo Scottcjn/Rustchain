@@ -533,6 +533,22 @@
             return `${hash.slice(0, chars)}...${hash.slice(-chars)}`;
         }
 
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, ch => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;',
+            }[ch]));
+        }
+
+        function safeExplorerUrl(txHash) {
+            const hash = String(txHash ?? '');
+            if (!hash) return '#';
+            return `https://explorer.solana.com/tx/${encodeURIComponent(hash)}${hash.startsWith('0x') ? '' : '?cluster=mainnet'}`;
+        }
+
         function getSolanaExplorerUrl(txHash) {
             return `https://explorer.solana.com/tx/${txHash}${txHash.startsWith('0x') ? '' : '?cluster=mainnet'}`;
         }
@@ -638,24 +654,24 @@
             wrapTable.innerHTML = wrapTxs.length > 0 ? wrapTxs.map(tx => `
                 <tr>
                     <td>${formatRelativeTime(tx.created_at)}</td>
-                    <td style="font-family:monospace;color:var(--accent-cyan);">${truncateAddress(tx.lock_id, 8)}</td>
+                    <td style="font-family:monospace;color:var(--accent-cyan);">${escapeHtml(truncateAddress(tx.lock_id, 8))}</td>
                     <td>${formatNumber(tx.amount_rtc)}</td>
-                    <td>${truncateAddress(tx.sender_wallet)}</td>
-                    <td>${truncateAddress(tx.target_wallet, 4)}</td>
-                    <td><span class="tx-status ${tx.state === 'complete' ? 'confirmed' : 'pending'}">● ${tx.state}</span></td>
-                    <td><a href="${getSolanaExplorerUrl(tx.release_tx || tx.tx_hash)}" class="tx-hash" target="_blank">${truncateTxHash(tx.release_tx || tx.tx_hash)}</a></td>
+                    <td>${escapeHtml(truncateAddress(tx.sender_wallet))}</td>
+                    <td>${escapeHtml(truncateAddress(tx.target_wallet, 4))}</td>
+                    <td><span class="tx-status ${tx.state === 'complete' ? 'confirmed' : 'pending'}">● ${escapeHtml(tx.state)}</span></td>
+                    <td><a href="${safeExplorerUrl(tx.release_tx || tx.tx_hash)}" class="tx-hash" target="_blank">${escapeHtml(truncateTxHash(tx.release_tx || tx.tx_hash))}</a></td>
                 </tr>
             `).join('') : '<tr><td colspan="7" style="text-align:center;padding:40px;">No wrap transactions yet</td></tr>';
 
             unwrapTable.innerHTML = unwrapTxs.length > 0 ? unwrapTxs.map(tx => `
                 <tr>
                     <td>${formatRelativeTime(tx.updated_at || tx.created_at)}</td>
-                    <td style="font-family:monospace;color:var(--accent-purple);">${truncateAddress(tx.lock_id, 8)}</td>
+                    <td style="font-family:monospace;color:var(--accent-purple);">${escapeHtml(truncateAddress(tx.lock_id, 8))}</td>
                     <td>${formatNumber(tx.amount_rtc)}</td>
-                    <td>${truncateAddress(tx.sender_wallet)}</td>
-                    <td>${truncateAddress(tx.target_wallet, 4)}</td>
-                    <td><span class="tx-status ${tx.state === 'complete' ? 'confirmed' : 'pending'}">● ${tx.state}</span></td>
-                    <td><a href="${getSolanaExplorerUrl(tx.release_tx || tx.tx_hash)}" class="tx-hash" target="_blank">${truncateTxHash(tx.release_tx || tx.tx_hash)}</a></td>
+                    <td>${escapeHtml(truncateAddress(tx.sender_wallet))}</td>
+                    <td>${escapeHtml(truncateAddress(tx.target_wallet, 4))}</td>
+                    <td><span class="tx-status ${tx.state === 'complete' ? 'confirmed' : 'pending'}">● ${escapeHtml(tx.state)}</span></td>
+                    <td><a href="${safeExplorerUrl(tx.release_tx || tx.tx_hash)}" class="tx-hash" target="_blank">${escapeHtml(truncateTxHash(tx.release_tx || tx.tx_hash))}</a></td>
                 </tr>
             `).join('') : '<tr><td colspan="7" style="text-align:center;padding:40px;">No unwrap transactions yet</td></tr>';
         }
