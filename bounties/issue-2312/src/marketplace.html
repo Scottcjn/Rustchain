@@ -690,6 +690,8 @@
     <script>
         // State
         let allMachines = [];
+        function esc(v) { return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
+        function attr(v) { return String(v ?? '').replace(/['"]/g, c => ({'"':'&quot;',"'":'&#39;'})[c]); }
         let selectedMachine = null;
         const API_BASE = 'http://localhost:5000';
         
@@ -731,39 +733,39 @@
                         <div class="availability-badge ${m.is_available ? 'available' : 'unavailable'}">
                             ${m.is_available ? '✓ Available' : '✗ Unavailable'}
                         </div>
-                        <h3 class="machine-name">${m.name}</h3>
-                        <span class="machine-architecture">${m.architecture}</span>
+                        <h3 class="machine-name">${esc(m.name)}</h3>
+                        <span class="machine-architecture">${esc(m.architecture)}</span>
                         
                         <div class="machine-specs">
                             <div class="spec">
                                 <div class="spec-label">CPU</div>
-                                <div class="spec-value">${m.cpu_model}</div>
+                                <div class="spec-value">${esc(m.cpu_model)}</div>
                             </div>
                             <div class="spec">
                                 <div class="spec-label">Speed</div>
-                                <div class="spec-value">${m.cpu_speed_ghz} GHz</div>
+                                <div class="spec-value">${esc(String(m.cpu_speed_ghz))} GHz</div>
                             </div>
                             <div class="spec">
                                 <div class="spec-label">RAM</div>
-                                <div class="spec-value">${m.ram_gb} GB</div>
+                                <div class="spec-value">${esc(String(m.ram_gb))} GB</div>
                             </div>
                             <div class="spec">
                                 <div class="spec-label">Storage</div>
-                                <div class="spec-value">${m.storage_gb} GB</div>
+                                <div class="spec-value">${esc(String(m.storage_gb))} GB</div>
                             </div>
                         </div>
                         
                         <div class="machine-rate">
-                            ${m.hourly_rate_rtc} <span class="rate-period">RTC/hour</span>
+                            ${esc(String(m.hourly_rate_rtc))} <span class="rate-period">RTC/hour</span>
                         </div>
                         
                         <div class="machine-actions">
                             <button class="btn btn-primary" 
-                                    onclick="openBookingModal('${m.machine_id}')"
+                                    onclick="openBookingModal('${attr(m.machine_id)}')"
                                     ${!m.is_available ? 'disabled' : ''}>
                                 Book Now
                             </button>
-                            <button class="btn btn-secondary" onclick="viewMachineDetails('${m.machine_id}')">
+                            <button class="btn btn-secondary" onclick="viewMachineDetails('${attr(m.machine_id)}')">
                                 Details
                             </button>
                         </div>
@@ -875,10 +877,10 @@
                 tbody.innerHTML = data.leaderboard.map((entry, index) => `
                     <tr>
                         <td class="rank rank-${index + 1}">#${index + 1}</td>
-                        <td>${entry.name}</td>
-                        <td>${entry.architecture}</td>
-                        <td>${entry.hourly_rate_rtc}</td>
-                        <td>${entry.total_reservations}</td>
+                        <td>${esc(entry.name)}</td>
+                        <td>${esc(entry.architecture)}</td>
+                        <td>${esc(String(entry.hourly_rate_rtc))}</td>
+                        <td>${esc(String(entry.total_reservations))}</td>
                     </tr>
                 `).join('');
             } catch (error) {
@@ -909,22 +911,22 @@
                     <div class="receipt-card">
                         <div class="receipt-header">
                             <div>
-                                <strong>Reservation: ${r.reservation_id}</strong><br>
-                                <small>Machine: ${r.machine_id}</small>
+                                <strong>Reservation: ${esc(r.reservation_id)}</strong><br>
+                                <small>Machine: ${esc(r.machine_id)}</small>
                             </div>
                             <div style="text-align: right;">
-                                <span class="availability-badge ${r.status === 'active' ? 'available' : ''}">${r.status}</span><br>
+                                <span class="availability-badge ${r.status === 'active' ? 'available' : ''}">${esc(r.status)}</span><br>
                                 <small>${new Date(r.start_time * 1000).toLocaleString()}</small>
                             </div>
                         </div>
-                        <p>Duration: ${r.duration_hours} hours | Cost: ${r.total_cost_rtc} RTC</p>
+                        <p>Duration: ${esc(String(r.duration_hours))} hours | Cost: ${esc(String(r.total_cost_rtc))} RTC</p>
                         ${r.status === 'confirmed' ? `
-                            <button class="btn btn-primary" onclick="startSession('${r.reservation_id}')" style="margin-top: 10px;">
+                            <button class="btn btn-primary" onclick="startSession('${attr(r.reservation_id)}')" style="margin-top: 10px;">
                                 Start Session
                             </button>
                         ` : ''}
                         ${r.status === 'completed' ? `
-                            <button class="btn btn-secondary" onclick="viewReceipt('${r.reservation_id}')" style="margin-top: 10px;">
+                            <button class="btn btn-secondary" onclick="viewReceipt('${attr(r.reservation_id)}')" style="margin-top: 10px;">
                                 View Receipt
                             </button>
                         ` : ''}
@@ -972,19 +974,19 @@
                     <div class="receipt-card">
                         <div class="receipt-header">
                             <div>
-                                <strong>Receipt ID: ${receipt.receipt_id}</strong><br>
-                                <small>Session: ${receipt.session_id}</small>
+                                <strong>Receipt ID: ${esc(receipt.receipt_id)}</strong><br>
+                                <small>Session: ${esc(receipt.session_id)}</small>
                             </div>
                             <div class="${data.signature_valid ? 'signature-valid' : 'signature-invalid'}">
                                 ${data.signature_valid ? '✓ Signature Valid' : '✗ Invalid Signature'}
                             </div>
                         </div>
-                        <p><strong>Machine Passport:</strong> ${receipt.machine_passport_id}</p>
-                        <p><strong>Duration:</strong> ${receipt.duration_seconds} seconds</p>
+                        <p><strong>Machine Passport:</strong> ${esc(receipt.machine_passport_id)}</p>
+                        <p><strong>Duration:</strong> ${esc(String(receipt.duration_seconds))} seconds</p>
                         <p><strong>Compute Hash:</strong></p>
-                        <p class="receipt-hash">${receipt.compute_hash}</p>
+                        <p class="receipt-hash">${esc(receipt.compute_hash)}</p>
                         <p><strong>Signature:</strong></p>
-                        <p class="receipt-hash">${receipt.signature}</p>
+                        <p class="receipt-hash">${esc(receipt.signature)}</p>
                         <p><strong>Signed At:</strong> ${new Date(receipt.signed_at * 1000).toLocaleString()}</p>
                     </div>
                 `;
