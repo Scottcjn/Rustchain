@@ -115,7 +115,8 @@ function formatRelativeTime(ts) {
 function normalizeMinersResponse(payload) {
     const rows = Array.isArray(payload) ? payload :
         (Array.isArray(payload?.miners) ? payload.miners :
-        (Array.isArray(payload?.data) ? payload.data : []));
+        (Array.isArray(payload?.data) ? payload.data :
+        (Array.isArray(payload?.items) ? payload.items : [])));
     return rows.filter(row => row && typeof row === 'object');
 }
 

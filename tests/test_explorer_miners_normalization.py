@@ -9,6 +9,7 @@ def test_explorer_normalizes_paginated_miners_response():
     assert JS.count('function normalizeMinersResponse(') == 1
     assert "Array.isArray(payload?.miners)" in JS
     assert "Array.isArray(payload?.data)" in JS
+    assert "Array.isArray(payload?.items)" in JS
     assert "return rows.filter(row => row && typeof row === 'object');" in JS
     assert "state.miners = normalizeMinersResponse(await fetchAPI('/api/miners'));" in JS
 
