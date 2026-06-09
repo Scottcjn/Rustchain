@@ -150,6 +150,38 @@ class RustChainExportTests(unittest.TestCase):
             exporter.write_csv(path, [], ["col1", "col2"])
             self.assertEqual(path.read_text(encoding="utf-8").strip(), "col1,col2")
 
+    def test_csv_export_neutralizes_spreadsheet_formulas(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "miners.csv"
+            exporter.write_csv(
+                path,
+                [
+                    {
+                        "miner_id": "=HYPERLINK(\"http://attacker.test\",\"open\")",
+                        "device_arch": "\t@SUM(1,1)",
+                        "hardware_type": "PowerPC G4",
+                        "balance": 1.25,
+                    }
+                ],
+            )
+
+            with path.open(newline="", encoding="utf-8") as handle:
+                row = next(csv.DictReader(handle))
+
+            self.assertEqual(row["miner_id"], "'=HYPERLINK(\"http://attacker.test\",\"open\")")
+            self.assertEqual(row["device_arch"], "'\t@SUM(1,1)")
+            self.assertEqual(row["hardware_type"], "PowerPC G4")
+            self.assertEqual(row["balance"], "1.25")
+
+    def test_json_export_preserves_raw_formula_like_values(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "miners.json"
+            rows = [{"miner_id": "=raw", "device_arch": "@raw"}]
+
+            exporter.write_json(path, rows)
+
+            self.assertEqual(json.loads(path.read_text(encoding="utf-8")), rows)
+
     def test_balance_amount_normalizes_micro_columns_by_source(self):
         self.assertEqual(exporter.balance_amount_rtc({"amount_i64": 1}), 0.000001)
         self.assertEqual(exporter.balance_amount_rtc({"amount_i64": 500_000}), 0.5)

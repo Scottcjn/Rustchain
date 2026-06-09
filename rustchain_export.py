@@ -297,6 +297,19 @@ DEFAULT_HEADERS = {
 }
 
 
+def csv_safe_cell(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    probe = value.lstrip(" \t\r\n\v\f\0")
+    if probe and probe[0] in ("=", "+", "-", "@"):
+        return "'" + value
+    return value
+
+
+def csv_safe_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {key: csv_safe_cell(value) for key, value in row.items()}
+
+
 def write_csv(path: Path, rows: list[dict[str, Any]], default_headers: list[str] | None = None) -> None:
     if rows:
         fieldnames = sorted({key for row in rows for key in row.keys()})
@@ -306,7 +319,7 @@ def write_csv(path: Path, rows: list[dict[str, Any]], default_headers: list[str]
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         if fieldnames:
             writer.writeheader()
-        writer.writerows(rows)
+        writer.writerows(csv_safe_row(row) for row in rows)
 
 
 def write_json(path: Path, rows: list[dict[str, Any]]) -> None:
