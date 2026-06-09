@@ -11,6 +11,7 @@ import json
 import time
 import threading
 import os
+from html import escape
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -215,24 +216,26 @@ def api_uptime():
 @app.route("/feed.xml")
 def rss_feed():
     """RSS/Atom feed for incidents (Bonus)."""
-    items = []
+    safe_items = []
     for inc in incidents[:20]:
-        items.append(f"""    <item>
-      <title>{inc['node']} — {inc['event']}</title>
-      <description>{inc.get('detail', inc['event'])}</description>
-      <pubDate>{inc['time']}</pubDate>
+        title = escape(f"{inc.get('node', '')} - {inc.get('event', '')}", quote=False)
+        description = escape(str(inc.get('detail', inc.get('event', ''))), quote=False)
+        pub_date = escape(str(inc.get('time', '')), quote=False)
+        safe_items.append(f"""    <item>
+      <title>{title}</title>
+      <description>{description}</description>
+      <pubDate>{pub_date}</pubDate>
     </item>""")
-    xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+    safe_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
     <title>RustChain Node Status</title>
     <link>https://rustchain.org/status</link>
     <description>RustChain attestation node status feed</description>
-{"".join(items)}
+{"".join(safe_items)}
   </channel>
 </rss>"""
-    return Response(xml, mimetype="application/rss+xml")
-
+    return Response(safe_xml, mimetype="application/rss+xml")
 
 # ── Main ──────────────────────────────────────────────────────────
 

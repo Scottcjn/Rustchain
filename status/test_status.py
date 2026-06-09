@@ -173,6 +173,25 @@ class TestAPI:
         assert b"<rss" in resp.data
         assert b"Node 1" in resp.data
 
+    def test_rss_feed_escapes_incident_fields(self, client):
+        incidents.append({
+            "node": "Node </title><item><title>Injected",
+            "event": "down & recovered",
+            "time": "2026-03-24T12:00:00Z</pubDate><guid>evil",
+            "detail": "Timeout <script>alert(1)</script> & retry",
+        })
+
+        resp = client.get("/feed.xml")
+        body = resp.data.decode("utf-8")
+
+        assert resp.status_code == 200
+        assert "</title><item><title>Injected" not in body
+        assert "<script>alert(1)</script>" not in body
+        assert "</pubDate><guid>evil" not in body
+        assert "Node &lt;/title&gt;&lt;item&gt;&lt;title&gt;Injected" in body
+        assert "down &amp; recovered" in body
+        assert "Timeout &lt;script&gt;alert(1)&lt;/script&gt; &amp; retry" in body
+
     def test_index_page(self, client):
         resp = client.get("/")
         assert resp.status_code == 200
