@@ -4389,7 +4389,8 @@ def _submit_attestation_impl():
         import json as _json
         try:
             print(f"[FINGERPRINT-DEBUG] g5-selena payload: {_json.dumps(fingerprint, default=str)[:2000]}")
-        except: pass
+        except (TypeError, ValueError) as exc:
+            print(f"[FINGERPRINT-DEBUG] g5-selena payload serialization failed: {exc}")
     print(f"[FINGERPRINT] Miner: {miner}")
     print(f"[FINGERPRINT]   Passed: {fingerprint_passed}")
     print(f"[FINGERPRINT]   Reason: {fingerprint_reason}")
