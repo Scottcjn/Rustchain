@@ -1576,6 +1576,36 @@ HTML_TEMPLATE = """
         const submitBtn = document.getElementById('submitBtn');
         const walletInput = document.getElementById('wallet');
 
+        function appendLine(parent, text, tag = 'div') {
+            const line = document.createElement(tag);
+            line.textContent = text;
+            parent.appendChild(line);
+            return line;
+        }
+
+        function appendNextAvailable(parent, nextAvailable) {
+            if (!nextAvailable) return;
+            appendLine(parent, 'Next available: ' + new Date(nextAvailable).toLocaleString(), 'small');
+        }
+
+        function renderFaucetResult(data, wallet) {
+            result.replaceChildren();
+            if (data.ok) {
+                appendLine(result, '✅ Success!', 'strong');
+                appendLine(result, `Sent ${data.amount} RTC to ${wallet.substring(0, 10)}...${wallet.substring(wallet.length - 8)}`);
+                appendNextAvailable(result, data.next_available);
+                return;
+            }
+
+            appendLine(result, '❌ ' + (data.error || 'Request failed'), 'strong');
+            appendNextAvailable(result, data.next_available);
+        }
+
+        function renderFaucetError(err) {
+            result.replaceChildren();
+            appendLine(result, '❌ Error: ' + (err.message || err), 'strong');
+        }
+
         // Load stats
         async function loadStats() {
             try {
@@ -1595,7 +1625,7 @@ HTML_TEMPLATE = """
             submitBtn.disabled = true;
             submitBtn.textContent = 'Processing...';
             result.className = 'result';
-            result.innerHTML = '';
+            result.replaceChildren();
 
             const wallet = walletInput.value.trim();
 
@@ -1609,24 +1639,15 @@ HTML_TEMPLATE = """
                 const data = await response.json();
 
                 result.className = 'result show ' + (data.ok ? 'success' : 'error');
-                
+                renderFaucetResult(data, wallet);
+
                 if (data.ok) {
-                    result.innerHTML = `
-                        <strong>✅ Success!</strong><br>
-                        Sent ${data.amount} RTC to ${wallet.substring(0, 10)}...${wallet.substring(wallet.length - 8)}<br>
-                        ${data.next_available ? `<small>Next available: ${new Date(data.next_available).toLocaleString()}</small>` : ''}
-                    `;
                     walletInput.value = '';
                     loadStats();
-                } else {
-                    result.innerHTML = `
-                        <strong>❌ ${data.error}</strong><br>
-                        ${data.next_available ? `<small>Next available: ${new Date(data.next_available).toLocaleString()}</small>` : ''}
-                    `;
                 }
             } catch (err) {
                 result.className = 'result show error';
-                result.innerHTML = `<strong>❌ Error:</strong> ${err.message}`;
+                renderFaucetError(err);
             }
 
             submitBtn.disabled = false;
