@@ -476,7 +476,7 @@ class HealthChecker:
         try:
             response = requests.get(f"{peer_url}/api/stats", timeout=5)
             return response.ok
-        except:
+        except Exception:
             return False
 
     def start_health_checks(self):
