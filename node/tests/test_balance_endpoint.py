@@ -129,14 +129,14 @@ class TestWalletBalanceEndpoint(unittest.TestCase):
         resp = self.client.get("/wallet/balance")
         self.assertEqual(resp.status_code, 400)
         data = resp.get_json()
-        self.assertEqual(data["error"], "miner_id required")
+        self.assertEqual(data["error"], "miner_id or address required")
 
     def test_get_balance_empty_miner_id(self):
         """Test request with an empty 'miner_id' parameter."""
         resp = self.client.get("/wallet/balance?miner_id=")
         self.assertEqual(resp.status_code, 400)
         data = resp.get_json()
-        self.assertEqual(data["error"], "miner_id required")
+        self.assertEqual(data["error"], "miner_id or address required")
     
     # --- Error Cases: Database Issues ---
 
@@ -233,6 +233,94 @@ class TestWalletBalanceEndpoint(unittest.TestCase):
         if '.' in rtc_str:
             actual_precision = len(rtc_str.split('.')[-1])
             self.assertLessEqual(actual_precision, RTC_DECIMAL_PRECISION)
+
+    # --- Regression: Issue #7117 (silent miner_id normalization) ---
+
+    def test_get_balance_rejects_sql_like_wildcard(self):
+        """?miner_id=* must be rejected with 400, not echoed as a real wallet.
+
+        `*` is a SQL LIKE wildcard; accepting it as a valid identifier
+        would silently return a 0-balance for any future LIKE-shaped
+        query on this path.
+        """
+        resp = self.client.get("/wallet/balance?miner_id=*")
+        self.assertEqual(resp.status_code, 400)
+        data = resp.get_json()
+        self.assertIn("invalid miner_id", data["error"])
+
+    def test_get_balance_rejects_leading_whitespace(self):
+        """Leading space in miner_id must be rejected with 400 (no .strip())."""
+        resp = self.client.get("/wallet/balance?miner_id=%20alice")
+        self.assertEqual(resp.status_code, 400)
+        data = resp.get_json()
+        self.assertIn("invalid miner_id", data["error"])
+
+    def test_get_balance_rejects_leading_tab(self):
+        """Leading tab in miner_id must be rejected with 400 (no .strip())."""
+        resp = self.client.get("/wallet/balance?miner_id=%09alice")
+        self.assertEqual(resp.status_code, 400)
+        data = resp.get_json()
+        self.assertIn("invalid miner_id", data["error"])
+
+    def test_get_balance_rejects_trailing_newline(self):
+        """Trailing newline in miner_id must be rejected with 400 (no .strip())."""
+        resp = self.client.get("/wallet/balance?miner_id=alice%0a")
+        self.assertEqual(resp.status_code, 400)
+        data = resp.get_json()
+        self.assertIn("invalid miner_id", data["error"])
+
+    def test_get_balance_rejects_nul_byte(self):
+        """NUL byte in miner_id must be rejected with 400 (never echoed)."""
+        resp = self.client.get("/wallet/balance?miner_id=pqmfei%00attacker")
+        self.assertEqual(resp.status_code, 400)
+        data = resp.get_json()
+        self.assertIn("invalid miner_id", data["error"])
+
+    def test_get_balance_rejects_oversize_miner_id(self):
+        """miner_id longer than 80 chars must be rejected with 400."""
+        long_id = "a" * 81
+        resp = self.client.get(f"/wallet/balance?miner_id={long_id}")
+        self.assertEqual(resp.status_code, 400)
+        data = resp.get_json()
+        self.assertIn("invalid miner_id", data["error"])
+
+    def test_get_balance_accepts_namespaced_miner_id(self):
+        """Namespaced ids like 'github:user' must pass the grammar."""
+        conn = sqlite3.connect(TEST_DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?) ON CONFLICT(miner_id) DO UPDATE SET amount_i64 = excluded.amount_i64;",
+            ("github:alice", 42_000_000)
+        )
+        conn.commit()
+        conn.close()
+
+        resp = self.client.get("/wallet/balance?miner_id=github%3Aalice")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertEqual(data["miner_id"], "github:alice")
+        self.assertEqual(data["amount_i64"], 42_000_000)
+
+    def test_get_balance_echoes_input_verbatim(self):
+        """The response miner_id must equal the input miner_id, byte-for-byte.
+
+        Pre-fix behaviour: `?miner_id=%20alice` returned miner_id="alice"
+        (silently stripped). Post-fix: the server rejects the input
+        with 400, and if the input is valid it is echoed verbatim.
+        """
+        conn = sqlite3.connect(TEST_DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?) ON CONFLICT(miner_id) DO UPDATE SET amount_i64 = excluded.amount_i64;",
+            ("alice", 1_000_000)
+        )
+        conn.commit()
+        conn.close()
+
+        resp = self.client.get("/wallet/balance?miner_id=alice")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertEqual(data["miner_id"], "alice")  # echoed exactly
 
 
 if __name__ == "__main__":

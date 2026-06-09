@@ -8933,20 +8933,53 @@ def api_rewards_epoch(epoch: int):
         ]
     })
 
+# Conservative identifier grammar for /wallet/balance?miner_id=...: mirrors
+# the /api/wallet/<id> route below so both surfaces reject whitespace,
+# control characters, the SQL LIKE wildcard '*', and oversize inputs.
+# Echoes the input verbatim (no silent .strip()) so a caller asking
+# ` still_worthy` cannot get back a 200 with miner_id="still_worthy".
+# Uses \Z (not $) to anchor at the absolute end of the string; in Python
+# re.match with $ still matches a string ending in a newline, which
+# would let "alice\n" through.
+_BALANCE_QUERY_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,80}\Z")
+
+
 @app.route('/wallet/balance', methods=['GET'])
 def api_wallet_balance():
-    """Get balance for a specific miner"""
-    miner_id = request.args.get("miner_id", "").strip()
-    address = request.args.get("address", "").strip()
+    """Get balance for a specific miner.
 
-    if miner_id and address and miner_id != address:
+    `miner_id` is validated against the conservative identifier grammar
+    shared with /api/wallet/<id>: only [A-Za-z0-9._:-] of length 1-80 is
+    accepted. Whitespace, control characters, the SQL LIKE wildcard '*',
+    and oversize inputs are rejected with HTTP 400 instead of being
+    silently normalized (Issue #7117). The response echoes the miner_id
+    as it was sent, with no silent stripping.
+    """
+    raw_miner_id = request.args.get("miner_id", "")
+    raw_address = request.args.get("address", "")
+
+    # Validate miner_id up front; we do not .strip() because that would
+    # silently change the contract (the caller cannot tell the difference
+    # between " matched a real wallet" and " was rejected for leading
+    # whitespace"). The grammar is intentionally narrow.
+    if raw_miner_id and not _BALANCE_QUERY_ID_RE.match(raw_miner_id):
+        return jsonify({
+            "ok": False,
+            "error": "invalid miner_id (must match [A-Za-z0-9._:-]{1,80}; no whitespace, control chars, or '*')",
+        }), 400
+    if raw_address and not _BALANCE_QUERY_ID_RE.match(raw_address):
+        return jsonify({
+            "ok": False,
+            "error": "invalid address (must match [A-Za-z0-9._:-]{1,80}; no whitespace, control chars, or '*')",
+        }), 400
+
+    if raw_miner_id and raw_address and raw_miner_id != raw_address:
         return jsonify({
             "ok": False,
             "error": "miner_id and address must match when both are provided",
         }), 400
 
-    if not miner_id:
-        miner_id = address
+    miner_id = raw_miner_id or raw_address
 
     if not miner_id:
         return jsonify({"ok": False, "error": "miner_id or address required"}), 400
@@ -8972,7 +9005,9 @@ def api_wallet_balance():
 # Conservative identifier grammar for /api/wallet/<id>: RTC address, wallet
 # name, or namespaced miner id (e.g. "github:user"). Bounds length so a
 # direct caller cannot use oversized ids for request/DB/response amplification.
-_API_WALLET_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,80}$")
+# Uses \Z (not $) to anchor at the absolute end of the string; re.match with $
+# would still let a trailing newline through (Python 3 quirk).
+_API_WALLET_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,80}\Z")
 
 
 # NOTE: any future *static* route under /api/wallet/ (e.g. /api/wallet/list)
