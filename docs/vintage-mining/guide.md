@@ -535,7 +535,7 @@ combined table:
 | CPU age | Difficulty reduction | Example |
 |---------|----------------------|---------|
 | 0-10 years | 1x (no reduction) | Raspberry Pi 4 |
-| 11-15 years | 10x easier | Pentium 4 (2008-2013) |
+| 11-15 years | 10x easier | Pentium 4 era |
 | 16-20 years | 100x easier | Pentium III |
 | 21-25 years | 1000x easier | 486 |
 | 26+ years | 10000x easier | 386, 68000 |
