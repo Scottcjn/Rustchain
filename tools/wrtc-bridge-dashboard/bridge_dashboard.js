@@ -130,6 +130,16 @@ function timeAgo(iso) {
   return `${Math.floor(diff / 3600)}h ago`;
 }
 
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>'"]/g, ch => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "'": "&#39;",
+    '"': "&quot;",
+  }[ch]));
+}
+
 function updateStats(data) {
   document.getElementById("rtc-locked").textContent = data.locked !== null ? `${fmt(data.locked)} RTC` : "—";
   document.getElementById("wrtc-supply").textContent = data.supply !== null ? `${fmt(data.supply)} wRTC` : "—";
@@ -162,14 +172,18 @@ function updateHealth(data) {
 
 function updateTxTable(id, txs) {
   const tbody = document.getElementById(id);
-  tbody.innerHTML = txs.map(tx => `
+  tbody.innerHTML = txs.map(tx => {
+    const txType = String(tx.type ?? "");
+    const txId = String(tx.tx ?? "");
+    return `
     <tr>
-      <td>${timeAgo(tx.time)}</td>
-      <td class="amount">${fmt(tx.amount)} ${tx.type === "wrap" ? "RTC" : "wRTC"}</td>
-      <td class="mono">${tx.wallet}</td>
-      <td class="mono">${tx.tx.slice(0, 8)}…</td>
+      <td>${escapeHtml(timeAgo(tx.time))}</td>
+      <td class="amount">${escapeHtml(fmt(tx.amount))} ${txType === "wrap" ? "RTC" : "wRTC"}</td>
+      <td class="mono">${escapeHtml(tx.wallet)}</td>
+      <td class="mono">${escapeHtml(txId.slice(0, 8))}…</td>
     </tr>
-  `).join("");
+  `;
+  }).join("");
 }
 
 function updateChart(history) {
