@@ -85,7 +85,7 @@ class MinerSetup:
                             hardware_info["memory_mb"] = int(line.split()[1]) // 1024
                             break
             elif self.system == "Darwin":  # macOS
-                result = subprocess.run(["sysctl", "hw.memsize"], capture_output=True, text=True)
+                result = subprocess.run(["sysctl", "hw.memsize"], capture_output=True, text=True, timeout=30)
                 if result.returncode == 0:
                     hardware_info["memory_mb"] = int(result.stdout.split(":")[1].strip()) // (1024 * 1024)
         except Exception:
@@ -94,11 +94,11 @@ class MinerSetup:
         # Basic GPU detection
         try:
             if self.system == "Linux":
-                result = subprocess.run(["lspci"], capture_output=True, text=True)
+                result = subprocess.run(["lspci"], capture_output=True, text=True, timeout=30)
                 if "VGA" in result.stdout or "3D" in result.stdout:
                     hardware_info["gpu_available"] = True
             elif self.system == "Windows":
-                result = subprocess.run(["wmic", "path", "win32_VideoController", "get", "name"], capture_output=True, text=True)
+                result = subprocess.run(["wmic", "path", "win32_VideoController", "get", "name"], capture_output=True, text=True, timeout=30)
                 if result.returncode == 0 and len(result.stdout.strip().split('\n')) > 2:
                     hardware_info["gpu_available"] = True
         except Exception:
