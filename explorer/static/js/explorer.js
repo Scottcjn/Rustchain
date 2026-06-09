@@ -514,7 +514,7 @@ function renderMinersTable() {
         const badgeClass = getArchitectureBadge(arch);
         return `
             <tr>
-                <td class="mono" title="${escapeHtml(minerId)}">${shortenAddress(minerId)}</td>
+                <td class="mono" title="${escapeHtml(minerId)}">${escapeHtml(shortenAddress(minerId))}</td>
                 <td><span class="badge ${badgeClass}">${escapeHtml(arch)}</span></td>
                 <td><span class="badge badge-${tier}">${tier.toUpperCase()}</span></td>
                 <td class="text-accent">${formatNumber(multiplier, 2)}x</td>
@@ -774,7 +774,7 @@ function renderSearchResults() {
                         const badgeClass = getArchitectureBadge(miner.device_arch);
                         return `
                             <tr>
-                                <td class="mono" title="${escapeHtml(miner.miner_id)}">${shortenAddress(miner.miner_id || 'unknown')}</td>
+                                <td class="mono" title="${escapeHtml(miner.miner_id)}">${escapeHtml(shortenAddress(miner.miner_id || 'unknown'))}</td>
                                 <td><span class="badge ${badgeClass}">${escapeHtml(miner.device_arch || 'Unknown')}</span></td>
                                 <td><span class="badge badge-${tier}">${tier.toUpperCase()}</span></td>
                                 <td class="text-accent">${formatNumber(miner.multiplier || 1.0, 2)}x</td>
