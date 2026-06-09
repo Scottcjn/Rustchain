@@ -1576,6 +1576,37 @@ HTML_TEMPLATE = """
         const submitBtn = document.getElementById('submitBtn');
         const walletInput = document.getElementById('wallet');
 
+        function clearResult() {
+            result.textContent = '';
+        }
+
+        function appendLine(node) {
+            result.appendChild(node);
+            result.appendChild(document.createElement('br'));
+        }
+
+        function renderNextAvailable(nextAvailable) {
+            if (!nextAvailable) return;
+            const small = document.createElement('small');
+            small.textContent = 'Next available: ' + new Date(nextAvailable).toLocaleString();
+            result.appendChild(small);
+        }
+
+        function renderResult(kind, title, message, nextAvailable) {
+            result.className = 'result show ' + kind;
+            clearResult();
+
+            const titleNode = document.createElement('strong');
+            titleNode.textContent = title;
+            appendLine(titleNode);
+
+            if (message) {
+                appendLine(document.createTextNode(message));
+            }
+
+            renderNextAvailable(nextAvailable);
+        }
+
         // Load stats
         async function loadStats() {
             try {
@@ -1595,7 +1626,7 @@ HTML_TEMPLATE = """
             submitBtn.disabled = true;
             submitBtn.textContent = 'Processing...';
             result.className = 'result';
-            result.innerHTML = '';
+            clearResult();
 
             const wallet = walletInput.value.trim();
 
@@ -1608,25 +1639,21 @@ HTML_TEMPLATE = """
 
                 const data = await response.json();
 
-                result.className = 'result show ' + (data.ok ? 'success' : 'error');
-                
                 if (data.ok) {
-                    result.innerHTML = `
-                        <strong>✅ Success!</strong><br>
-                        Sent ${data.amount} RTC to ${wallet.substring(0, 10)}...${wallet.substring(wallet.length - 8)}<br>
-                        ${data.next_available ? `<small>Next available: ${new Date(data.next_available).toLocaleString()}</small>` : ''}
-                    `;
+                    const walletPreview = wallet.substring(0, 10) + '...' + wallet.substring(wallet.length - 8);
+                    renderResult(
+                        'success',
+                        '✅ Success!',
+                        'Sent ' + data.amount + ' RTC to ' + walletPreview,
+                        data.next_available
+                    );
                     walletInput.value = '';
                     loadStats();
                 } else {
-                    result.innerHTML = `
-                        <strong>❌ ${data.error}</strong><br>
-                        ${data.next_available ? `<small>Next available: ${new Date(data.next_available).toLocaleString()}</small>` : ''}
-                    `;
+                    renderResult('error', '❌ ' + (data.error || 'Request failed'), '', data.next_available);
                 }
             } catch (err) {
-                result.className = 'result show error';
-                result.innerHTML = `<strong>❌ Error:</strong> ${err.message}`;
+                renderResult('error', '❌ Error:', String(err && err.message ? err.message : err));
             }
 
             submitBtn.disabled = false;
