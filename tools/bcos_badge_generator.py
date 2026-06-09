@@ -1017,6 +1017,16 @@ MAIN_TEMPLATE = '''
             document.getElementById('result').classList.add('hidden');
         }
 
+        function esc(v) { return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
+
+        function safeSvg(svgString) {
+            const doc = new DOMParser().parseFromString(svgString, 'image/svg+xml');
+            const svgEl = doc.documentElement;
+            if (svgEl.tagName !== 'svg') return document.createTextNode('');
+            svgEl.querySelectorAll('script').forEach(s => s.remove());
+            return svgEl;
+        }
+
         function loadStats() {
             fetch('/api/badge/stats')
                 .then(r => r.json())
@@ -1058,7 +1068,9 @@ MAIN_TEMPLATE = '''
                 btnLoading.classList.add('hidden');
 
                 if (data.success) {
-                    document.getElementById('badgePreview').innerHTML = data.svg;
+                    const preview = document.getElementById('badgePreview');
+                    preview.innerHTML = '';
+                    preview.appendChild(safeSvg(data.svg));
                     document.getElementById('markdownCode').textContent = data.markdown;
                     document.getElementById('htmlCode').textContent = data.html;
                     document.getElementById('svgCode').textContent = data.svg;
@@ -1090,10 +1102,10 @@ MAIN_TEMPLATE = '''
                         resultDiv.innerHTML = `
                             <div class="alert alert-success">
                                 <strong>✅ Valid Certificate</strong><br>
-                                <strong>Repo:</strong> ${data.data.repo_name}<br>
-                                <strong>Tier:</strong> ${data.data.tier}<br>
-                                <strong>Trust Score:</strong> ${data.data.trust_score}/100<br>
-                                ${data.data.reviewer ? '<strong>Reviewer:</strong> ' + data.data.reviewer : ''}
+                                <strong>Repo:</strong> ${esc(data.data.repo_name)}<br>
+                                <strong>Tier:</strong> ${esc(data.data.tier)}<br>
+                                <strong>Trust Score:</strong> ${esc(String(data.data.trust_score))}/100<br>
+                                ${data.data.reviewer ? '<strong>Reviewer:</strong> ' + esc(data.data.reviewer) : ''}
                             </div>
                         `;
                     } else {
