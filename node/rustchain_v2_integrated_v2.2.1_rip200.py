@@ -8978,6 +8978,81 @@ def api_wallet_history():
         "total": total,
     })
 
+
+@app.route('/wallet/tx/<tx_hash>', methods=['GET'])
+def api_wallet_tx(tx_hash: str):
+    """Lookup a wallet transaction by hash for Rust wallet clients."""
+    tx_hash = (tx_hash or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_.-]{8,128}", tx_hash):
+        return jsonify({"ok": False, "error": "invalid_tx_hash"}), 400
+
+    with sqlite3.connect(DB_PATH) as db:
+        try:
+            row = db.execute(
+                """
+                SELECT id, from_miner, to_miner, amount_i64, reason, status,
+                       tx_hash, COALESCE(created_at, ts) as created, confirms_at
+                FROM pending_ledger
+                WHERE tx_hash = ?
+                LIMIT 1
+                """,
+                (tx_hash,),
+            ).fetchone()
+            if row:
+                pid, from_m, to_m, amount, reason, status, _hash, created, confirms_at = row
+                return jsonify({
+                    "ok": True,
+                    "tx_hash": tx_hash,
+                    "status": status,
+                    "confirmations": 0 if status == "pending" else 1,
+                    "block_height": None,
+                    "pending_id": pid,
+                    "from": from_m,
+                    "to": to_m,
+                    "amount": abs(int(amount)) / UNIT,
+                    "reason": reason,
+                    "timestamp": int(created or 0),
+                    "confirms_at": int(confirms_at or 0) if confirms_at else None,
+                    "source": "pending_ledger",
+                })
+        except Exception:
+            pass
+
+        try:
+            row = db.execute(
+                """
+                SELECT ts, epoch, miner_id, delta_i64, reason
+                FROM ledger
+                WHERE reason LIKE ? OR reason LIKE ?
+                ORDER BY ts DESC
+                LIMIT 1
+                """,
+                (f"transfer_in:%:{tx_hash}", f"transfer_out:%:{tx_hash}"),
+            ).fetchone()
+            if row:
+                ts, epoch, miner_id, delta_i64, reason = row
+                parts = str(reason or "").split(":")
+                direction = "received" if int(delta_i64) >= 0 else "sent"
+                counterparty = parts[1] if len(parts) > 1 else None
+                return jsonify({
+                    "ok": True,
+                    "tx_hash": tx_hash,
+                    "status": "confirmed",
+                    "confirmations": 1,
+                    "block_height": int(epoch) if epoch is not None else None,
+                    "miner_id": miner_id,
+                    "counterparty": counterparty,
+                    "amount": abs(int(delta_i64)) / UNIT,
+                    "direction": direction,
+                    "reason": reason,
+                    "timestamp": int(ts or 0),
+                    "source": "ledger",
+                })
+        except Exception:
+            pass
+
+    return jsonify({"ok": False, "error": "transaction_not_found", "tx_hash": tx_hash}), 404
+
 # =============================================================================
 # 2-PHASE COMMIT PENDING LEDGER SYSTEM
 # Added 2026-02-03 - Security fix for transfer logging
