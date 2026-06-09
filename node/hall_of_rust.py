@@ -577,6 +577,7 @@ def api_hall_of_fame_leaderboard():
             """,
             params + [limit],
         )
+        # fetchall-ok: already-paginated
         rows = c.fetchall()
         conn.close()
 
@@ -647,6 +648,7 @@ def api_hall_of_fame_machine():
                 WHERE miner = ? AND ts_ok >= ?
                 GROUP BY day
                 ORDER BY day ASC
+                LIMIT 31
                 """,
                 (miner_pk, start_ts),
             )
@@ -657,6 +659,7 @@ def api_hall_of_fame_machine():
                     'rust_score': machine.get('rust_score'),
                     'samples': int(r['attestations'] or 0),
                 }
+                # fetchall-ok: already-paginated
                 for r in c.fetchall()
             ]
         elif _table_exists(c, 'rust_score_history'):
@@ -669,6 +672,7 @@ def api_hall_of_fame_machine():
                 WHERE fingerprint_hash = ? AND calculated_at >= ?
                 GROUP BY day
                 ORDER BY day ASC
+                LIMIT 31
                 """,
                 (machine_id, start_ts),
             )
@@ -679,6 +683,7 @@ def api_hall_of_fame_machine():
                     'samples': int(r['samples'] or 0),
                     'attestations': int(r['samples'] or 0),
                 }
+                # fetchall-ok: already-paginated
                 for r in c.fetchall()
             ]
 
@@ -825,9 +830,11 @@ def fleet_breakdown():
             WHERE device_arch NOT IN ('unknown', 'default')
             GROUP BY device_arch 
             ORDER BY count DESC
+            LIMIT 100
         """)
         
         breakdown = []
+        # fetchall-ok: already-paginated
         for row in c.fetchall():
             breakdown.append({
                 'architecture': row[0],
@@ -871,6 +878,7 @@ def hall_timeline():
         """)
         
         timeline = []
+        # fetchall-ok: already-paginated
         for row in c.fetchall():
             timeline.append({
                 'date': row[0],

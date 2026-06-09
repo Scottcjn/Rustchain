@@ -55,11 +55,6 @@ node/gpu_render_protocol.py:152:        cols = {row[1] for row in conn.execute("
 node/gpu_render_protocol.py:272:            rows = conn.execute(query, params).fetchall()
 node/gpu_render_protocol.py:427:            ).fetchall()
 node/hall_of_rust.py:326:        rows = c.fetchall()
-node/hall_of_rust.py:576:        rows = c.fetchall()
-node/hall_of_rust.py:656:                for r in c.fetchall()
-node/hall_of_rust.py:678:                for r in c.fetchall()
-node/hall_of_rust.py:827:        for row in c.fetchall():
-node/hall_of_rust.py:870:        for row in c.fetchall():
 node/hardware_binding_v2.py:193:        for row in c.fetchall():
 node/hardware_fingerprint_replay.py:266:        recent_submissions = c.fetchall()
 node/hardware_fingerprint_replay.py:347:        collisions = c.fetchall()
