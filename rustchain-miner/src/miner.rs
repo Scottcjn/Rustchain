@@ -126,6 +126,44 @@ fn enrollment_payload(
     })
 }
 
+fn balance_query_params(miner_id: &str) -> [(&'static str, &str); 1] {
+    [("miner_id", miner_id)]
+}
+
+fn wallet_balance_rtc(result: &serde_json::Value) -> Option<f64> {
+    const SUBUNITS_PER_RTC: f64 = 1_000_000.0;
+
+    fn finite_number(value: f64) -> Option<f64> {
+        if value.is_finite() {
+            Some(value)
+        } else {
+            None
+        }
+    }
+
+    fn as_finite_f64(value: Option<&serde_json::Value>) -> Option<f64> {
+        match value? {
+            serde_json::Value::Number(number) => number.as_f64().and_then(finite_number),
+            serde_json::Value::String(text) => text.parse::<f64>().ok().and_then(finite_number),
+            _ => None,
+        }
+    }
+
+    for field in ["amount_rtc", "balance_rtc", "rtc_balance", "balance"] {
+        if let Some(balance) = as_finite_f64(result.get(field)) {
+            return Some(balance);
+        }
+    }
+
+    for field in ["amount_i64", "balance_i64", "balance_urtc"] {
+        if let Some(subunits) = as_finite_f64(result.get(field)) {
+            return Some(subunits / SUBUNITS_PER_RTC);
+        }
+    }
+
+    None
+}
+
 impl Miner {
     /// Create a new miner with the given configuration
     pub async fn new(config: Config) -> Result<Self> {
@@ -352,17 +390,15 @@ impl Miner {
 
     /// Check balance
     pub async fn check_balance(&self) -> Result<f64> {
-        let response = self.transport.get(&format!("/balance/{}", self.wallet)).await?;
+        let params = balance_query_params(&self.miner_id);
+        let response = self.transport.get_with_params("/wallet/balance", &params).await?;
 
         if !response.status().is_success() {
             return Ok(0.0);
         }
 
         let result: serde_json::Value = response.json().await?;
-        Ok(result
-            .get("balance_rtc")
-            .and_then(|b| b.as_f64())
-            .unwrap_or(0.0))
+        Ok(wallet_balance_rtc(&result).unwrap_or(0.0))
     }
 
     /// Run the main mining loop
@@ -498,6 +534,10 @@ impl Miner {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::mpsc;
+    use std::thread;
 
     fn hardware_fixture() -> HardwareInfo {
         HardwareInfo {
@@ -554,5 +594,79 @@ mod tests {
             .verifying_key()
             .verify_strict(wallet_bound_message.as_bytes(), &signature)
             .is_err());
+    }
+
+    #[test]
+    fn wallet_balance_rtc_accepts_live_balance_fields() {
+        assert_eq!(
+            wallet_balance_rtc(&serde_json::json!({"amount_rtc": 2.5})),
+            Some(2.5)
+        );
+        assert_eq!(
+            wallet_balance_rtc(&serde_json::json!({"amount_i64": 3_750_000})),
+            Some(3.75)
+        );
+        assert_eq!(
+            wallet_balance_rtc(&serde_json::json!({"balance_urtc": "1250000"})),
+            Some(1.25)
+        );
+        assert_eq!(
+            wallet_balance_rtc(&serde_json::json!({"amount_rtc": true, "balance": ["bad"]})),
+            None
+        );
+    }
+
+    #[test]
+    fn balance_query_uses_current_wallet_endpoint() {
+        assert_eq!(balance_query_params("miner one"), [("miner_id", "miner one")]);
+    }
+
+    #[tokio::test]
+    async fn check_balance_requests_current_wallet_endpoint() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let node_url = format!("http://{}", listener.local_addr().unwrap());
+        let (request_tx, request_rx) = mpsc::channel();
+
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buffer = [0; 2048];
+            let len = stream.read(&mut buffer).unwrap();
+            let request = String::from_utf8_lossy(&buffer[..len]).to_string();
+            request_tx.send(request).unwrap();
+
+            let body = r#"{"amount_i64":2500000,"miner_id":"miner%20one"}"#;
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            stream.write_all(response.as_bytes()).unwrap();
+        });
+
+        let signing_key = ed25519_dalek::SigningKey::generate(&mut rand::rngs::OsRng);
+        let miner = Miner {
+            config: Config {
+                node_url: node_url.clone(),
+                ..Config::default()
+            },
+            transport: NodeTransport::new(node_url, None, Duration::from_secs(5)).unwrap(),
+            wallet: "wallet-one".to_string(),
+            miner_id: "miner one".to_string(),
+            hw_info: hardware_fixture(),
+            public_key_hex: hex::encode(signing_key.verifying_key().as_bytes()),
+            signing_key,
+            attestation_valid_until: AtomicU64::new(0),
+            enrolled: AtomicBool::new(false),
+            stats: Arc::new(MiningStats::new()),
+            shutdown: Arc::new(AtomicBool::new(false)),
+        };
+
+        assert_eq!(miner.check_balance().await.unwrap(), 2.5);
+
+        let request = request_rx.recv().unwrap();
+        assert!(request.starts_with("GET /wallet/balance?miner_id=miner+one HTTP/1.1"));
+        assert!(!request.contains("/balance/wallet-one"));
+
+        server.join().unwrap();
     }
 }
