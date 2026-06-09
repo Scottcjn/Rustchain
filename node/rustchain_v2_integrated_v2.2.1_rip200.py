@@ -8743,8 +8743,13 @@ def api_rewards_epoch(epoch: int):
 @app.route('/wallet/balance', methods=['GET'])
 def api_wallet_balance():
     """Get balance for a specific miner"""
-    miner_id = request.args.get("miner_id", "").strip()
-    address = request.args.get("address", "").strip()
+    raw_miner_id = request.args.get("miner_id", "")
+    raw_address = request.args.get("address", "")
+    if raw_miner_id != raw_miner_id.strip() or raw_address != raw_address.strip():
+        return jsonify({"ok": False, "error": "miner_id and address must not contain surrounding whitespace"}), 400
+
+    miner_id = raw_miner_id
+    address = raw_address
 
     if miner_id and address and miner_id != address:
         return jsonify({
@@ -8757,6 +8762,9 @@ def api_wallet_balance():
 
     if not miner_id:
         return jsonify({"ok": False, "error": "miner_id or address required"}), 400
+
+    if not _API_WALLET_ID_RE.fullmatch(miner_id):
+        return jsonify({"ok": False, "error": "invalid_miner_id"}), 400
 
     with sqlite3.connect(DB_PATH) as db:
         try:
