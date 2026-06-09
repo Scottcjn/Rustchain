@@ -426,6 +426,16 @@
             }
             return ARCH_COLORS.default;
         }
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, ch => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;',
+            }[ch]));
+        }
         
         function getArchType(miner) {
             const arch = miner.device_arch?.toLowerCase() || '';
@@ -448,14 +458,15 @@
             container.innerHTML = minersData.map(miner => {
                 const reward = ((miner.antiquity_multiplier || 1) / totalWeight * pot).toFixed(6);
                 const color = getArchColor(miner);
+                const minerName = miner.miner?.substring(0, 20) || 'Unknown';
                 const archShort = miner.device_arch?.substring(0, 20) || 'Unknown';
                 
                 return `
                     <div class="miner-item">
                         <div class="miner-dot" style="background: ${color};"></div>
                         <div class="miner-info">
-                            <div class="miner-name">${miner.miner?.substring(0, 20) || 'Unknown'}</div>
-                            <div class="miner-arch">${archShort}</div>
+                            <div class="miner-name">${escapeHtml(minerName)}</div>
+                            <div class="miner-arch">${escapeHtml(archShort)}</div>
                         </div>
                         <div class="miner-reward">${reward} RTC</div>
                     </div>
