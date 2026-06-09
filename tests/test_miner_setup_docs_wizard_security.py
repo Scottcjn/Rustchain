@@ -9,16 +9,22 @@ WIZARD_HTML = (
 )
 
 
-def test_remote_node_responses_are_escaped_before_inner_html_rendering():
+def test_remote_node_results_are_rendered_with_text_nodes():
     html = WIZARD_HTML.read_text(encoding="utf-8")
 
     assert "<pre>${r.text}</pre>" not in html
     assert "<pre>${JSON.stringify(hit,null,2)}</pre>" not in html
     assert "<pre>${String(e)}</pre>" not in html
+    assert "<pre>${h(r.text)}</pre>" not in html
+    assert "<pre>${h(JSON.stringify(hit,null,2))}</pre>" not in html
+    assert "<pre>${h(String(e))}</pre>" not in html
 
-    assert "<pre>${h(r.text)}</pre>" in html
-    assert "<pre>${h(JSON.stringify(hit,null,2))}</pre>" in html
-    assert "<pre>${h(String(e))}</pre>" in html
+    assert "function preText(text)" in html
+    assert "el.textContent = text;" in html
+    assert "out.replaceChildren(pill('Reachable','ok'), ' ', preText(r.text));" in html
+    assert "preText(JSON.stringify(hit,null,2))" in html
+    assert "preText(String(e))" in html
+    assert "document.getElementById('minerOut').replaceChildren(" in html
 
 
 def test_generated_command_blocks_escape_display_and_copy_attribute():

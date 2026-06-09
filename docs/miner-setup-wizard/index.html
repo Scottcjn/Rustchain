@@ -112,6 +112,33 @@ function commandBlock(cmd){
   return `<pre>${h(cmd)}</pre><div class="copy" data-copy="${h(cmd)}" onclick="copyText(this.dataset.copy)">Copy command</div>`;
 }
 
+function pill(text, status){
+  const el = document.createElement('span');
+  el.className = `pill ${status}`;
+  el.textContent = text;
+  return el;
+}
+
+function preText(text){
+  const el = document.createElement('pre');
+  el.textContent = text;
+  return el;
+}
+
+function mutedText(text){
+  const el = document.createElement('span');
+  el.className = 'muted';
+  el.textContent = text;
+  return el;
+}
+
+function paragraphText(text, className){
+  const el = document.createElement('p');
+  if(className) el.className = className;
+  el.textContent = text;
+  return el;
+}
+
 function walletAddressFromPub(hex){
   // Browser SHA-256 over public key bytes -> RTC + first 40 hex
   return crypto.subtle.digest('SHA-256', Uint8Array.from(hex.match(/.{2}/g).map(b=>parseInt(b,16))).buffer)
@@ -217,9 +244,17 @@ function renderPanel(){
         const url = document.getElementById('testNodeUrl').value.trim();
         state.nodeUrl = url;
         const r = await testNode(url);
-        document.getElementById('testOut').innerHTML = r.ok
-          ? `<span class='pill ok'>Reachable</span> <pre>${h(r.text)}</pre>`
-          : `<span class='pill bad'>Failed</span> <pre>${h(r.text)}</pre><p class='muted'>If this is a CORS error, test with terminal: curl -sk ${h(url.replace(/\/$/,''))}/health</p>`;
+        const out = document.getElementById('testOut');
+        if(r.ok){
+          out.replaceChildren(pill('Reachable','ok'), ' ', preText(r.text));
+        }else{
+          out.replaceChildren(
+            pill('Failed','bad'),
+            ' ',
+            preText(r.text),
+            paragraphText(`If this is a CORS error, test with terminal: curl -sk ${url.replace(/\/$/,'')}/health`, 'muted')
+          );
+        }
       }
     },0);
     return;
@@ -243,11 +278,21 @@ function renderPanel(){
           const data = await r.json();
           const arr = Array.isArray(data)?data:(data.miners||[]);
           const hit = arr.find(x=>JSON.stringify(x).toLowerCase().includes(q));
-          document.getElementById('minerOut').innerHTML = hit
-            ? `<span class='pill ok'>Found</span><pre>${h(JSON.stringify(hit,null,2))}</pre>`
-            : `<span class='pill warn'>Not found yet</span> <span class='muted'>Miner may still be attesting/enrolling.</span>`;
+          const out = document.getElementById('minerOut');
+          if(hit){
+            out.replaceChildren(pill('Found','ok'), preText(JSON.stringify(hit,null,2)));
+          }else{
+            out.replaceChildren(
+              pill('Not found yet','warn'),
+              ' ',
+              mutedText('Miner may still be attesting/enrolling.')
+            );
+          }
         }catch(e){
-          document.getElementById('minerOut').innerHTML = `<span class='pill bad'>Check failed</span><pre>${h(String(e))}</pre>`;
+          document.getElementById('minerOut').replaceChildren(
+            pill('Check failed','bad'),
+            preText(String(e))
+          );
         }
       }
     },0);
