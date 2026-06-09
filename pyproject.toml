@@ -1,32 +1,38 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "rustchain"
-version = "2.2.1"
-description = "RustChain — Proof of Antiquity blockchain with hardware fingerprinting + RTC token"
+name = "rustchain-wallet-cli"
+version = "1.0.0"
+description = "Command-line wallet for RustChain — BIP39, Ed25519, AES-256-GCM keystore"
 readme = "README.md"
-requires-python = ">=3.9"
-license = {text = "MIT"}
-authors = [
-    {name = "Scott Boudreaux / Elyan Labs", email = "scottbphone12@gmail.com"},
+license = {text = "Apache-2.0"}
+requires-python = ">=3.8"
+keywords = ["rustchain", "wallet", "cli", "blockchain", "ed25519", "bip39"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Security :: Cryptography",
 ]
+
 dependencies = [
-    "flask>=2.0",
-    "requests>=2.28",
-    "cryptography>=41",
-    "pynacl>=1.5",
-    "psutil>=5.9",
+    "click>=8.0",
 ]
+
+[project.optional-dependencies]
+fast-crypto = [
+    "PyNaCl>=1.5",
+    "cryptography>=41.0",
+]
+
+[project.scripts]
+rustchain-wallet = "rustchain_wallet_cli.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/Scottcjn/Rustchain"
-Repository = "https://github.com/Scottcjn/Rustchain"
-Issues = "https://github.com/Scottcjn/Rustchain/issues"
-
-[tool.setuptools]
-packages = ["node"]
-
-[tool.setuptools.package-data]
-"node" = ["*.sql", "*.json"]
+Homepage = "https://github.com/Scottcjn/RustChain"
+Repository = "https://github.com/jasontodd0877-cloud/rustchain-dialup"
+Issues = "https://github.com/Scottcjn/rustchain-bounties/issues/39"
