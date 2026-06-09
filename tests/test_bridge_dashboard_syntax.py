@@ -27,7 +27,7 @@ for (const [index, match] of scripts.entries()) {
         ["node", "-e", script, str(BRIDGE_DASHBOARD)],
         check=True,
         cwd=ROOT,
-    )
+, check=True)
 
 
 def test_bridge_dashboard_has_no_mojibake_arrow_literals():

@@ -103,7 +103,7 @@ console.log(result);
         text=True,
         capture_output=True,
         check=True,
-    )
+, check=True)
     data = json.loads(result.stdout)
 
     assert data["blocks"] == [{"hash": {"id": "h"}, "height": "nan"}]

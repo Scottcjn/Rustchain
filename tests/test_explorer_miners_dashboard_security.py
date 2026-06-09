@@ -108,7 +108,7 @@ async function run(payload) {{
         text=True,
         capture_output=True,
         check=True,
-    )
+, check=True)
     data = json.loads(result.stdout)
 
     assert data["objectPayload"]["total"] == 0

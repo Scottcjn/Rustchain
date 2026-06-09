@@ -86,6 +86,6 @@ console.log(JSON.stringify(rows));
         text=True,
         capture_output=True,
         check=True,
-    )
+, check=True)
 
     assert json.loads(result.stdout) == [{"id": "ok"}, {"id": "<bad>"}]

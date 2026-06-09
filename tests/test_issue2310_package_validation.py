@@ -26,7 +26,7 @@ def test_issue2310_package_imports_from_parent_path():
         text=True,
         capture_output=True,
         check=False,
-    )
+, check=True)
 
     assert result.returncode == 0, result.stderr
     stdout = result.stdout.strip().splitlines()
@@ -45,7 +45,7 @@ def test_issue2310_validator_runs_with_cp1252_stdout():
         text=True,
         capture_output=True,
         check=False,
-    )
+, check=True)
 
     assert result.returncode == 0, result.stderr
     assert "Final Results" in result.stdout

@@ -20,7 +20,7 @@ def test_welcome_template_cli_does_not_crash():
         text=True,
         encoding="utf-8",
         check=False,
-    )
+, check=True)
 
     assert result.returncode == 0, result.stderr
     assert "demo_agent" in result.stdout

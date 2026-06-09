@@ -15,7 +15,7 @@ def test_poa_cli_runs_without_external_pythonpath(tmp_path: Path) -> None:
         text=True,
         capture_output=True,
         check=False,
-    )
+, check=True)
 
     assert result.returncode == 0, result.stderr
     output = result.stdout[result.stdout.find("{") :]

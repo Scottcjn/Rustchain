@@ -131,7 +131,7 @@ console.log(JSON.stringify({{ html: elements['jobs-grid'].innerHTML }}));
         text=True,
         capture_output=True,
         check=True,
-    )
+, check=True)
     html = json.loads(result.stdout)["html"]
 
     assert "&lt;img src=x onerror=alert(1)&gt;" in html
@@ -213,7 +213,7 @@ console.log(JSON.stringify({{ html: elements['jobs-grid'].innerHTML }}));
         text=True,
         capture_output=True,
         check=True,
-    )
+, check=True)
     html = json.loads(result.stdout)["html"]
 
     assert "Translate docs" in html

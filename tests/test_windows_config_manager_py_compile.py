@@ -20,6 +20,6 @@ def test_windows_config_manager_compiles_with_syntax_warnings_as_errors():
         capture_output=True,
         text=True,
         check=False,
-    )
+, check=True)
 
     assert result.returncode == 0, result.stderr

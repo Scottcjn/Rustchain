@@ -102,7 +102,7 @@ console.log(result);
         text=True,
         capture_output=True,
         check=True,
-    )
+, check=True)
     data = json.loads(result.stdout)
 
     assert data["filteredHeights"] == [3]
@@ -187,7 +187,7 @@ const script = {json.dumps(js)};
         text=True,
         capture_output=True,
         check=True,
-    )
+, check=True)
     data = json.loads(result.stdout)
 
     assert data["storedBlockCount"] == 3

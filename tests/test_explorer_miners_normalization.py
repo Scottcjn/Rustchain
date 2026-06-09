@@ -63,7 +63,7 @@ console.log(JSON.stringify(result));
         text=True,
         capture_output=True,
         check=True,
-    )
+, check=True)
     data = json.loads(result.stdout)
 
     assert data["miners"] == [{"miner_id": {"id": "m"}, "device_arch": ["G4"], "balance": "NaN"}]
@@ -135,7 +135,7 @@ console.log(JSON.stringify({{
         text=True,
         capture_output=True,
         check=True,
-    )
+, check=True)
     data = json.loads(result.stdout)
 
     assert "<img" not in data["blocksHtml"]

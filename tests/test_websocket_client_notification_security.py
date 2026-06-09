@@ -97,7 +97,7 @@ console.log(JSON.stringify({{
         text=True,
         capture_output=True,
         check=True,
-    )
+, check=True)
     data = json.loads(result.stdout)
 
     assert data["className"] == "ws-notification ws-notification-block"

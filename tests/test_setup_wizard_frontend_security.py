@@ -43,7 +43,7 @@ def test_embedded_javascript_parses():
             input=script,
             text=True,
             check=True,
-        )
+, check=True)
 
 
 def test_python_check_failure_escapes_pasted_output():

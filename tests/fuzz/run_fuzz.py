@@ -138,7 +138,7 @@ def run_hypothesis(min_cases: int) -> int:
     ]
     print("\n[INFO] Running Hypothesis harness …")
     print("       Command:", " ".join(cmd))
-    result = subprocess.run(cmd, capture_output=False)
+    result = subprocess.run(cmd, capture_output=False, check=True)
     return result.returncode
 
 

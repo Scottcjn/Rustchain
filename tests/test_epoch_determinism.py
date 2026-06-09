@@ -349,5 +349,5 @@ if __name__ == "__main__":
     result = subprocess.run(
         [sys.executable, "-m", "pytest", __file__, "-v", "--tb=short"],
         cwd=str(PROJECT_ROOT),
-    )
+, check=True)
     sys.exit(result.returncode)

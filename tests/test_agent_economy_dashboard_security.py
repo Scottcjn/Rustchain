@@ -116,7 +116,7 @@ console.log(JSON.stringify({{ html: elements.jobsGrid.innerHTML }}));
         encoding="utf-8",
         capture_output=True,
         check=True,
-    )
+, check=True)
     html = json.loads(result.stdout)["html"]
 
     assert "&lt;img src=x onerror=alert(1)&gt;" in html
@@ -201,7 +201,7 @@ console.log(JSON.stringify({{ html: elements.jobsGrid.innerHTML }}));
         encoding="utf-8",
         capture_output=True,
         check=True,
-    )
+, check=True)
     html = json.loads(result.stdout)["html"]
 
     assert "Missing status and id" in html

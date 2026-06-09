@@ -12,7 +12,7 @@ def test_linux_miner_help_documents_dry_run():
         check=True,
         capture_output=True,
         text=True,
-    )
+, check=True)
 
     help_text = " ".join(result.stdout.split())
 

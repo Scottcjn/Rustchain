@@ -15,7 +15,7 @@ def test_mac_miner_v24_version_does_not_require_optional_helpers():
         capture_output=True,
         text=True,
         timeout=10,
-    )
+, check=True)
 
     assert result.returncode == 0
     assert "RustChain Mac Miner v2.4.0" in result.stdout

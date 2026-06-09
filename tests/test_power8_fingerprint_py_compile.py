@@ -20,6 +20,6 @@ def test_power8_fingerprint_checks_compile_with_syntax_warnings_as_errors():
         capture_output=True,
         text=True,
         check=False,
-    )
+, check=True)
 
     assert result.returncode == 0, result.stderr

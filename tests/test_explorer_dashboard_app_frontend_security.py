@@ -127,7 +127,7 @@ context.load().then(() => {{
         encoding="utf-8",
         capture_output=True,
         check=True,
-    )
+, check=True)
     rendered = json.loads(result.stdout)
 
     assert rendered["minersText"] == "1"

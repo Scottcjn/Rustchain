@@ -19,7 +19,7 @@ def run_guard() -> subprocess.CompletedProcess[str]:
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         check=False,
-    )
+, check=True)
 
 
 def test_fetchall_guard_passes_current_baseline():
@@ -78,7 +78,7 @@ def test_fetchall_guard_fails_closed_when_required_tools_are_missing():
         stderr=subprocess.STDOUT,
         check=False,
         env={"PATH": "/nonexistent"},
-    )
+, check=True)
 
     assert result.returncode == 2
     assert "required command" in result.stdout
@@ -93,7 +93,7 @@ def test_fetchall_guard_detects_stale_baseline_entries():
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             check=True,
-        ).stdout
+, check=True).stdout
         TMP_BASELINE.write_text(current + "node/phantom.py:1:cursor.fetchall()\n")
         result = subprocess.run(
             ["bash", str(SCRIPT)],
@@ -103,7 +103,7 @@ def test_fetchall_guard_detects_stale_baseline_entries():
             stderr=subprocess.STDOUT,
             check=False,
             env={"PATH": "/usr/bin:/bin", "FETCHALL_BASELINE": str(TMP_BASELINE)},
-        )
+, check=True)
         assert result.returncode == 1
         assert "stale entries" in result.stdout
         assert "node/phantom.py" in result.stdout

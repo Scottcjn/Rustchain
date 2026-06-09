@@ -17,7 +17,7 @@ def test_proof_of_antiquity_demo_runs():
         capture_output=True,
         text=True,
         timeout=10,
-    )
+, check=True)
 
     assert result.returncode == 0
     assert "RUSTCHAIN PROOF OF ANTIQUITY" in result.stdout
