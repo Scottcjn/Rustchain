@@ -99,7 +99,7 @@ def test_cli_help():
     """Test CLI help output."""
     import subprocess
     result = subprocess.run([sys.executable, 'ppa_visualizer.py', '--help'], 
-                          capture_output=True, text=True)
+                          capture_output=True, text=True, check=True)
     assert result.returncode == 0
     assert "PPA Attestation Visualizer" in result.stdout
     print("✅ CLI help test passed")

@@ -56,7 +56,7 @@ def test_cli_help():
         [sys.executable, 'ppa_compliance_check.py', '--help'],
         capture_output=True,
         text=True
-    )
+, check=True)
     assert result.returncode == 0
     assert "RIP-0308 Appendix A" in result.stdout
     assert "--json" in result.stdout
@@ -71,7 +71,7 @@ def test_cli_json_output():
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True
-    )
+, check=True)
     import json
     output = json.loads(result.stdout)
     
@@ -89,7 +89,7 @@ def test_cli_quiet_output():
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True
-    )
+, check=True)
     assert result.stdout.strip() in ["PPA-COMPLIANT", "PPA-PARTIAL", "NON-COMPLIANT"]
     print("✅ Quiet mode works")
 

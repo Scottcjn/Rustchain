@@ -24,7 +24,7 @@ def run_command(cmd: list, description: str) -> bool:
     print(f"{'='*70}")
     print(f"Command: {' '.join(cmd)}\n")
     
-    result = subprocess.run(cmd, capture_output=False)
+    result = subprocess.run(cmd, capture_output=False, check=True)
     
     if result.returncode == 0:
         print(f"\n✓ {description} - PASSED")

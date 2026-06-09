@@ -295,4 +295,4 @@ if __name__ == "__main__":
     ]
     
     print(f"Running: {' '.join(cmd)}")
-    subprocess.run(cmd)
+    subprocess.run(cmd, check=True)

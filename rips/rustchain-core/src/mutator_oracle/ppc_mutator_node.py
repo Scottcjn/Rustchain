@@ -171,7 +171,7 @@ class PPCMutatorRing:
             return b'', ''
 
         # Simulate AltiVec entropy collection
-        # In production: subprocess.run(['ssh', node.ip_address, '/usr/local/bin/altivec_entropy'])
+        # In production: subprocess.run(['ssh', node.ip_address, '/usr/local/bin/altivec_entropy'], check=True)
 
         # Generate simulated AltiVec-style entropy
         timestamp = int(time.time() * 1000)

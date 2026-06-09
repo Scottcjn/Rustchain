@@ -36,7 +36,7 @@ def _import_with_env(env_vars: dict) -> subprocess.CompletedProcess:
         [sys.executable, "-c", code],
         capture_output=True, text=True, cwd=os.path.dirname(__file__),
         env=env, timeout=15
-    )
+, check=True)
 
 
 class TestP2PSecretEnforcement(unittest.TestCase):

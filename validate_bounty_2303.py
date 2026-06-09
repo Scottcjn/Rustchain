@@ -177,7 +177,7 @@ def run_tests():
         [sys.executable, "-m", "pytest", "bridge/test_dashboard_api.py", "-v", "--tb=short"],
         capture_output=True,
         text=True
-    )
+, check=True)
     
     passed = result.returncode == 0
     print_check("All dashboard tests pass", passed)

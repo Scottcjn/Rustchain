@@ -329,7 +329,7 @@ class TestExitCodes(unittest.TestCase):
         result = subprocess.run(
             [sys.executable, self.script_path, db_path, "--no-hash"],
             capture_output=True,
-        )
+, check=True)
         self.assertEqual(result.returncode, EXIT_SUCCESS)
 
     def test_exit_file_not_found(self):
@@ -337,7 +337,7 @@ class TestExitCodes(unittest.TestCase):
         result = subprocess.run(
             [sys.executable, self.script_path, "/nonexistent.db", "--no-hash"],
             capture_output=True,
-        )
+, check=True)
         self.assertEqual(result.returncode, EXIT_FILE_NOT_FOUND)
 
     def test_exit_hash_mismatch(self):
@@ -354,7 +354,7 @@ class TestExitCodes(unittest.TestCase):
                 "0" * 64,
             ],
             capture_output=True,
-        )
+, check=True)
         self.assertEqual(result.returncode, EXIT_HASH_MISMATCH)
 
 

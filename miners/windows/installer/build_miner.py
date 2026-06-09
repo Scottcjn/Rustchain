@@ -88,7 +88,7 @@ def build():
     print("-" * 60)
 
     # Run PyInstaller
-    result = subprocess.run(cmd, cwd=str(PROJECT_DIR))
+    result = subprocess.run(cmd, cwd=str(PROJECT_DIR), check=True)
 
     if result.returncode == 0:
         exe_path = DIST_DIR / "RustChainMiner.exe"

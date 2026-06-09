@@ -353,7 +353,7 @@ def generate_video(miner: MinerData, epoch: dict, output_path: str, duration: fl
         "-movflags", "+faststart",
         output_path,
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
     if result.returncode != 0:
         print(f"ffmpeg error: {result.stderr[-500:]}")
         raise RuntimeError("ffmpeg encoding failed")
