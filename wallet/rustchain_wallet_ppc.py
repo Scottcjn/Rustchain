@@ -81,7 +81,7 @@ except ImportError:
                                         value = float(value)
                                     else:
                                         value = int(value)
-                                except:
+                                except (ValueError, TypeError):
                                     pass
                             result[key] = value
                     return result
@@ -146,7 +146,7 @@ class RustChainWallet:
                 f.close()
                 if addr:
                     return addr
-            except:
+            except (IOError, OSError):
                 pass
 
         # Generate deterministic wallet from hostname
@@ -162,7 +162,7 @@ class RustChainWallet:
             f = open(WALLET_FILE, 'w')
             f.write(wallet_addr)
             f.close()
-        except:
+        except (IOError, OSError):
             pass
 
         return wallet_addr
@@ -269,7 +269,7 @@ class RustChainWallet:
 
         try:
             amount = float(amount_str)
-        except:
+        except ValueError:
             tkMessageBox.showerror("Error", "Invalid amount")
             return
 
@@ -333,7 +333,7 @@ def main():
             f = open(WALLET_FILE, 'w')
             f.write(addr)
             f.close()
-        except:
+        except (IOError, OSError):
             pass
 
     app = RustChainWallet(root)
