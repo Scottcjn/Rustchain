@@ -137,17 +137,41 @@ function ts(v){ if(!v) return '—'; try { return new Date(v*1000).toISOString()
 function fallbackArt(){
   return '    _____________\n   / ___________ \\\n  | |  MACHINE  | |\n  | |___________| |\n  |  ___________  |\n  | |           | |\n  |_|___________|_|';
 }
-function esc(s){ return String(s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function safeInt(v){ const n=Number.parseInt(v,10); return Number.isFinite(n)?n:0; }
 function safeScore(v){
   const n=Number(v);
-  return Number.isFinite(n)?String(n):esc(v||'—');
+  return Number.isFinite(n)?String(n):String(v||'—');
+}
+function el(tag, opts={}, children=[]){
+  const node=document.createElement(tag);
+  if(opts.className){ node.className=opts.className; }
+  if(opts.text!==undefined){ node.textContent=String(opts.text); }
+  if(opts.colSpan!==undefined){ node.colSpan=opts.colSpan; }
+  children.forEach(child=>node.append(child));
+  return node;
+}
+function renderStatus(message){
+  document.getElementById('status').replaceChildren(el('span',{className:'err',text:message}));
+}
+function renderTimeline(rows, fallbackScore){
+  const timeline=document.getElementById('timeline');
+  if(!rows.length){
+    timeline.replaceChildren(el('tr',{},[
+      el('td',{colSpan:3,text:'No recent attestation activity'})
+    ]));
+    return;
+  }
+  timeline.replaceChildren(...rows.map(x=>el('tr',{},[
+    el('td',{text:x.date||'—'}),
+    el('td',{text:safeInt(x.attestations??x.samples??0)}),
+    el('td',{text:safeScore(x.rust_score??fallbackScore??'—')})
+  ])));
 }
 (async()=>{
   const id=q('id')||q('machine');
-  if(!id){ document.getElementById('status').innerHTML='<span class="err">Missing machine id. Use ?id=&lt;fingerprint_hash&gt;.</span>'; return; }
+  if(!id){ renderStatus('Missing machine id. Use ?id=<fingerprint_hash>.'); return; }
   const res=await fetch('/api/hall_of_fame/machine?id='+encodeURIComponent(id));
-  if(!res.ok){ document.getElementById('status').innerHTML='<span class="err">Not found or unavailable.</span>'; return; }
+  if(!res.ok){ renderStatus('Not found or unavailable.'); return; }
   const data=await res.json();
   const m=data.machine||data||{};
   document.getElementById('status').style.display='none';
@@ -172,7 +196,7 @@ function safeScore(v){
 
   const t=data.attestation_timeline_30d||[];
   document.getElementById('timelineCard').style.display='block';
-  document.getElementById('timeline').innerHTML=t.length?t.map(x=>`<tr><td>${esc(x.date||'—')}</td><td>${safeInt(x.attestations??x.samples??0)}</td><td>${safeScore(x.rust_score??m.rust_score??'—')}</td></tr>`).join(''):'<tr><td colspan="3">No recent attestation activity</td></tr>';
+  renderTimeline(t, m.rust_score);
 
   const r=data.reward_participation||{};
   document.getElementById('rewardCard').style.display='block';
