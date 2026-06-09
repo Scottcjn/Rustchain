@@ -107,6 +107,70 @@
       return escapeHtml(value ?? fallback);
     }
 
+    function textEl(tag, className, text) {
+      const el = document.createElement(tag);
+      if (className) el.className = className;
+      el.textContent = String(text);
+      return el;
+    }
+
+    function nodeTitle(base) {
+      return textEl('div', 'font-mono text-xs break-all mb-2', base);
+    }
+
+    function renderNodeCard(card, base, status, detail) {
+      const statusRow = document.createElement('div');
+      statusRow.className = 'flex items-center gap-2 mb-1';
+
+      const dot = document.createElement('span');
+      dot.className = `inline-block w-2.5 h-2.5 rounded-full ${status === 'UP' ? 'bg-emerald-400' : 'bg-red-500'}`;
+
+      const label = textEl(
+        'span',
+        `text-sm font-semibold ${status === 'UP' ? 'text-emerald-300' : 'text-red-300'}`,
+        status
+      );
+
+      statusRow.append(dot, label);
+      card.replaceChildren(nodeTitle(base), statusRow, textEl('div', 'text-xs text-slate-400', detail));
+    }
+
+    function renderIncidentRow(incident) {
+      const row = document.createElement('div');
+      row.className = 'rounded border border-slate-800 bg-slate-950 p-2';
+      row.appendChild(textEl('div', 'text-xs text-slate-400', new Date(incident.t).toLocaleString()));
+
+      const headline = document.createElement('div');
+      const type = textEl(
+        'span',
+        `font-semibold ${incident.type === 'OUTAGE' ? 'text-red-300' : 'text-emerald-300'}`,
+        incident.type
+      );
+      const node = textEl('span', 'font-mono text-xs', incident.node);
+      headline.append(type, ' - ', node);
+
+      row.append(headline, textEl('div', 'text-sm text-slate-300', incident.message));
+      return row;
+    }
+
+    function renderArchRow(arch, count, pct) {
+      const row = document.createElement('div');
+
+      const top = document.createElement('div');
+      top.className = 'flex justify-between mb-1';
+      top.append(textEl('span', '', arch), textEl('span', '', `${count} (${pct}%)`));
+
+      const bar = document.createElement('div');
+      bar.className = 'h-2 w-full bg-slate-800 rounded';
+      const fill = document.createElement('div');
+      fill.className = 'h-2 bg-cyan-400 rounded';
+      fill.style.width = `${pct}%`;
+      bar.appendChild(fill);
+
+      row.append(top, bar);
+      return row;
+    }
+
     function normalizeMinerRows(payload) {
       const rows = Array.isArray(payload)
         ? payload
@@ -185,16 +249,10 @@
       const log = document.getElementById('incidentLog');
       const incidents = safeJson(INCIDENT_KEY, []);
       if (!incidents.length) {
-        log.innerHTML = '<div class="text-slate-400 text-sm">No incidents recorded yet.</div>';
+        log.replaceChildren(textEl('div', 'text-slate-400 text-sm', 'No incidents recorded yet.'));
         return;
       }
-      log.innerHTML = incidents.slice(0, 30).map(i => `
-        <div class="rounded border border-slate-800 bg-slate-950 p-2">
-          <div class="text-xs text-slate-400">${new Date(i.t).toLocaleString()}</div>
-          <div><span class="font-semibold ${i.type === 'OUTAGE' ? 'text-red-300' : 'text-emerald-300'}">${safeText(i.type)}</span> · <span class="font-mono text-xs">${safeText(i.node)}</span></div>
-          <div class="text-sm text-slate-300">${safeText(i.message)}</div>
-        </div>
-      `).join('');
+      log.replaceChildren(...incidents.slice(0, 30).map(renderIncidentRow));
     }
 
     function escapeXml(s) {
@@ -254,31 +312,17 @@
       await Promise.all(NODE_ENDPOINTS.map(async (base) => {
         const card = document.createElement('div');
         card.className = 'rounded-lg border border-slate-800 bg-slate-950 p-3';
-        card.innerHTML = `<div class="font-mono text-xs break-all mb-2">${safeText(base)}</div><div class="text-sm">Checking...</div>`;
+        card.replaceChildren(nodeTitle(base), textEl('div', 'text-sm', 'Checking...'));
         grid.appendChild(card);
 
         try {
           const health = await fetchJson(`${base}/health`);
           const ok = !!health.ok;
           recordNodeStatus(base, ok);
-          card.innerHTML = `
-            <div class="font-mono text-xs break-all mb-2">${safeText(base)}</div>
-            <div class="flex items-center gap-2 mb-1">
-              <span class="inline-block w-2.5 h-2.5 rounded-full ${ok ? 'bg-emerald-400' : 'bg-red-500'}"></span>
-              <span class="text-sm font-semibold ${ok ? 'text-emerald-300' : 'text-red-300'}">${ok ? 'UP' : 'DOWN'}</span>
-            </div>
-            <div class="text-xs text-slate-400">version: ${safeText(health.version)}</div>
-          `;
+          renderNodeCard(card, base, ok ? 'UP' : 'DOWN', `version: ${health.version ?? '-'}`);
         } catch (e) {
           recordNodeStatus(base, false);
-          card.innerHTML = `
-            <div class="font-mono text-xs break-all mb-2">${safeText(base)}</div>
-            <div class="flex items-center gap-2 mb-1">
-              <span class="inline-block w-2.5 h-2.5 rounded-full bg-red-500"></span>
-              <span class="text-sm font-semibold text-red-300">DOWN</span>
-            </div>
-            <div class="text-xs text-slate-400">${safeText(e.message || e)}</div>
-          `;
+          renderNodeCard(card, base, 'DOWN', e.message || e);
         }
       }));
     }
@@ -315,16 +359,13 @@
           .sort((a, b) => b[1] - a[1])
           .forEach(([arch, n]) => {
             const pct = Math.round((n / total) * 100);
-            const row = document.createElement('div');
-            row.innerHTML = `
-              <div class="flex justify-between mb-1"><span>${safeText(arch)}</span><span>${safeText(n)} (${pct}%)</span></div>
-              <div class="h-2 w-full bg-slate-800 rounded"><div class="h-2 bg-cyan-400 rounded" style="width:${pct}%"></div></div>
-            `;
-            archList.appendChild(row);
+            archList.appendChild(renderArchRow(arch, n, pct));
           });
       } catch {
         document.getElementById('minerCount').textContent = 'N/A';
-        document.getElementById('archList').innerHTML = '<div class="text-slate-400 text-sm">Unable to fetch miners.</div>';
+        document.getElementById('archList').replaceChildren(
+          textEl('div', 'text-slate-400 text-sm', 'Unable to fetch miners.')
+        );
       }
     }
 
