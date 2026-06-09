@@ -37,6 +37,10 @@ class RelicMarketClient:
             return response.json(), None
         except requests.exceptions.RequestException as e:
             return None, str(e)
+
+    def _reservation_token_headers(self, reservation_token: Optional[str]) -> Dict[str, str]:
+        """Build owner-token headers for reservation-protected operations."""
+        return {"X-Reservation-Token": reservation_token} if reservation_token else {}
     
     # Health & Info
     def health_check(self) -> Dict:
@@ -76,14 +80,26 @@ class RelicMarketClient:
             return None, error
         return data.get('reservation'), None
     
-    def get_reservation(self, reservation_id: str) -> Optional[Dict]:
+    def get_reservation(self, reservation_id: str, reservation_token: Optional[str] = None) -> Optional[Dict]:
         """Get reservation details"""
-        data, _ = self._request('GET', f'/relic/reservation/{reservation_id}')
+        data, _ = self._request(
+            'GET',
+            f'/relic/reservation/{reservation_id}',
+            headers=self._reservation_token_headers(reservation_token)
+        )
         return data.get('reservation') if data else None
     
-    def start_session(self, reservation_id: str) -> Tuple[Optional[Dict], Optional[str]]:
+    def start_session(
+        self,
+        reservation_id: str,
+        reservation_token: Optional[str] = None
+    ) -> Tuple[Optional[Dict], Optional[str]]:
         """Start a reservation session"""
-        data, error = self._request('POST', f'/relic/reservation/{reservation_id}/start')
+        data, error = self._request(
+            'POST',
+            f'/relic/reservation/{reservation_id}/start',
+            headers=self._reservation_token_headers(reservation_token)
+        )
         if error:
             return None, error
         return data, None
@@ -92,7 +108,8 @@ class RelicMarketClient:
         self,
         reservation_id: str,
         compute_hash: str,
-        hardware_attestation: Dict
+        hardware_attestation: Dict,
+        reservation_token: Optional[str] = None
     ) -> Tuple[Optional[Dict], Optional[str]]:
         """Complete session and get provenance receipt"""
         payload = {
@@ -102,7 +119,8 @@ class RelicMarketClient:
         data, error = self._request(
             'POST', 
             f'/relic/reservation/{reservation_id}/complete',
-            json=payload
+            json=payload,
+            headers=self._reservation_token_headers(reservation_token)
         )
         if error:
             return None, error
@@ -198,7 +216,10 @@ class RelicComputeSession:
         if not self.reservation:
             return False, None, "No reservation"
         
-        result, error = self.client.start_session(self.reservation['reservation_id'])
+        result, error = self.client.start_session(
+            self.reservation['reservation_id'],
+            self.reservation.get('reservation_token')
+        )
         if error:
             return False, None, error
         
@@ -227,7 +248,8 @@ class RelicComputeSession:
         receipt, error = self.client.complete_session(
             reservation_id=self.reservation['reservation_id'],
             compute_hash=compute_hash,
-            hardware_attestation=hardware_attestation
+            hardware_attestation=hardware_attestation,
+            reservation_token=self.reservation.get('reservation_token')
         )
         
         if error:

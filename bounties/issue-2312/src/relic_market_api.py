@@ -12,6 +12,7 @@ import os
 import json
 import time
 import hashlib
+import hmac
 import secrets
 import base64
 from datetime import datetime
@@ -96,12 +97,19 @@ class Reservation:
     escrow_tx_hash: str
     ssh_credentials: Optional[Dict] = None
     api_key: Optional[str] = None
+    reservation_token: Optional[str] = None
     created_at: float = field(default_factory=time.time)
     access_granted_at: Optional[float] = None
     completed_at: Optional[float] = None
     
-    def to_dict(self) -> Dict:
-        return asdict(self)
+    def to_dict(self, include_secrets: bool = False, include_token: bool = False) -> Dict:
+        data = asdict(self)
+        if not include_secrets:
+            data.pop("ssh_credentials", None)
+            data.pop("api_key", None)
+        if not include_token:
+            data.pop("reservation_token", None)
+        return data
 
 
 @dataclass
@@ -536,6 +544,7 @@ class ReservationManager:
             # Generate access credentials
             ssh_password = secrets.token_urlsafe(16)
             api_key = secrets.token_urlsafe(32)
+            reservation_token = secrets.token_urlsafe(32)
             
             reservation = Reservation(
                 reservation_id=reservation_id,
@@ -553,7 +562,8 @@ class ReservationManager:
                     "port": machine.ssh_port,
                     "host": f"{machine_id}.relic.rustchain.org"
                 },
-                api_key=api_key
+                api_key=api_key,
+                reservation_token=reservation_token
             )
             
             self.reservations[reservation_id] = reservation
@@ -561,6 +571,17 @@ class ReservationManager:
             
             logger.info(f"Reservation created: {reservation_id} for {machine_id}")
             return reservation, None
+
+    def verify_reservation_token(self, reservation_id: str, reservation_token: Optional[str]) -> bool:
+        """Return true when the supplied owner token matches the reservation."""
+        if not isinstance(reservation_token, str) or not reservation_token:
+            return False
+
+        with self._lock:
+            reservation = self.reservations.get(reservation_id)
+            if not reservation or not reservation.reservation_token:
+                return False
+            return hmac.compare_digest(reservation.reservation_token, reservation_token)
     
     def start_session(self, reservation_id: str) -> Optional[str]:
         """Mark reservation as active"""
@@ -720,11 +741,12 @@ class MCPIntegration:
                 }
             },
             "get_reservation": {
-                "description": "Get reservation details",
+                "description": "Get reservation details. Include reservation_token for owner-only credentials.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "reservation_id": {"type": "string", "description": "Reservation ID"}
+                        "reservation_id": {"type": "string", "description": "Reservation ID"},
+                        "reservation_token": {"type": "string", "description": "Owner reservation token"}
                     },
                     "required": ["reservation_id"]
                 }
@@ -744,9 +766,10 @@ class MCPIntegration:
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "reservation_id": {"type": "string", "description": "Reservation ID"}
+                        "reservation_id": {"type": "string", "description": "Reservation ID"},
+                        "reservation_token": {"type": "string", "description": "Owner reservation token"}
                     },
-                    "required": ["reservation_id"]
+                    "required": ["reservation_id", "reservation_token"]
                 }
             },
             "complete_session": {
@@ -755,10 +778,11 @@ class MCPIntegration:
                     "type": "object",
                     "properties": {
                         "reservation_id": {"type": "string", "description": "Reservation ID"},
+                        "reservation_token": {"type": "string", "description": "Owner reservation token"},
                         "compute_hash": {"type": "string", "description": "SHA256 hash of compute output"},
                         "hardware_attestation": {"type": "object", "description": "Hardware attestation proof"}
                     },
-                    "required": ["reservation_id", "compute_hash", "hardware_attestation"]
+                    "required": ["reservation_id", "reservation_token", "compute_hash", "hardware_attestation"]
                 }
             }
         }
@@ -779,12 +803,19 @@ class MCPIntegration:
             )
             if error:
                 return {"error": error}
-            return {"reservation": reservation.to_dict()}
+            return {"reservation": reservation.to_dict(include_secrets=True, include_token=True)}
         
         elif tool_name == "get_reservation":
             reservation = self.reservation_manager.get_reservation(arguments["reservation_id"])
             if not reservation:
                 return {"error": "Reservation not found"}
+            reservation_token = arguments.get("reservation_token")
+            if reservation_token:
+                if not self.reservation_manager.verify_reservation_token(
+                    arguments["reservation_id"], reservation_token
+                ):
+                    return {"error": "Unauthorized - reservation token required"}
+                return {"reservation": reservation.to_dict(include_secrets=True)}
             return {"reservation": reservation.to_dict()}
         
         elif tool_name == "get_receipt":
@@ -794,12 +825,20 @@ class MCPIntegration:
             return {"receipt": receipt.to_dict()}
         
         elif tool_name == "start_session":
+            if not self.reservation_manager.verify_reservation_token(
+                arguments["reservation_id"], arguments.get("reservation_token")
+            ):
+                return {"error": "Unauthorized - reservation token required"}
             error = self.reservation_manager.start_session(arguments["reservation_id"])
             if error:
                 return {"error": error}
             return {"status": "session_started"}
         
         elif tool_name == "complete_session":
+            if not self.reservation_manager.verify_reservation_token(
+                arguments["reservation_id"], arguments.get("reservation_token")
+            ):
+                return {"error": "Unauthorized - reservation token required"}
             receipt, error = self.reservation_manager.complete_session(
                 reservation_id=arguments["reservation_id"],
                 compute_hash=arguments["compute_hash"],
@@ -859,11 +898,18 @@ class BeaconIntegration:
         return {
             "status": "confirmed",
             "reservation_id": reservation.reservation_id,
+            "reservation_token": reservation.reservation_token,
             "machine_id": reservation.machine_id,
             "duration_hours": reservation.duration_hours,
             "total_cost_rtc": reservation.total_cost_rtc,
             "escrow_tx": reservation.escrow_tx_hash[:16] + "..."
         }
+
+    def _authorize_reservation(self, payload: Dict, reservation_id: str) -> Optional[Dict]:
+        token = payload.get("reservation_token")
+        if not self.reservation_manager.verify_reservation_token(reservation_id, token):
+            return {"status": "error", "message": "Unauthorized - reservation token required"}
+        return None
     
     def _handle_cancel(self, payload: Dict) -> Dict:
         """Handle cancellation request"""
@@ -874,6 +920,9 @@ class BeaconIntegration:
         reservation = self.reservation_manager.get_reservation(reservation_id)
         if not reservation:
             return {"status": "error", "message": "Reservation not found"}
+        error = self._authorize_reservation(payload, reservation_id)
+        if error:
+            return error
         
         # Refund escrow
         self.reservation_manager.escrow.refund(reservation_id)
@@ -886,6 +935,9 @@ class BeaconIntegration:
         reservation_id = payload.get("reservation_id")
         if not reservation_id:
             return {"error": "Missing reservation_id"}
+        error = self._authorize_reservation(payload, reservation_id)
+        if error:
+            return error
         
         error = self.reservation_manager.start_session(reservation_id)
         if error:
@@ -904,6 +956,9 @@ class BeaconIntegration:
         required = ["reservation_id", "compute_hash", "hardware_attestation"]
         if not all(k in payload for k in required):
             return {"error": "Missing required fields", "required": required}
+        error = self._authorize_reservation(payload, payload["reservation_id"])
+        if error:
+            return error
         
         receipt, error = self.reservation_manager.complete_session(
             reservation_id=payload["reservation_id"],
@@ -929,8 +984,11 @@ class BeaconIntegration:
         reservation = self.reservation_manager.get_reservation(reservation_id)
         if not reservation:
             return {"status": "error", "message": "Reservation not found"}
+        error = self._authorize_reservation(payload, reservation_id)
+        if error:
+            return error
         
-        return {"reservation": reservation.to_dict()}
+        return {"reservation": reservation.to_dict(include_secrets=True)}
     
     def _handle_receipt_request(self, payload: Dict) -> Dict:
         """Handle receipt query"""
@@ -1002,6 +1060,22 @@ def _positive_number_field(data: Dict, field_name: str):
     if not isinstance(value, (int, float)) or isinstance(value, bool) or value <= 0:
         return None, (jsonify({"error": f"{field_name} must be a positive number"}), 400)
     return value, None
+
+
+def _reservation_token_from_request(data: Optional[Dict] = None) -> Optional[str]:
+    token = request.headers.get("X-Reservation-Token")
+    if token:
+        return token
+    if data and isinstance(data.get("reservation_token"), str):
+        return data["reservation_token"]
+    return None
+
+
+def _require_reservation_owner(reservation_id: str, data: Optional[Dict] = None):
+    token = _reservation_token_from_request(data)
+    if not reservation_manager.verify_reservation_token(reservation_id, token):
+        return jsonify({"error": "Unauthorized - reservation token required"}), 401
+    return None
 
 
 # ============== API Endpoints ==============
@@ -1079,7 +1153,7 @@ def reserve_machine():
     
     return jsonify({
         "ok": True,
-        "reservation": reservation.to_dict(),
+        "reservation": reservation.to_dict(include_secrets=True, include_token=True),
         "message": "Reservation confirmed. Access credentials provided."
     }), 201
 
@@ -1090,13 +1164,24 @@ def get_reservation(reservation_id: str):
     reservation = reservation_manager.get_reservation(reservation_id)
     if not reservation:
         return jsonify({"error": "Reservation not found"}), 404
-    
+
+    token = _reservation_token_from_request()
+    if token:
+        unauthorized = _require_reservation_owner(reservation_id)
+        if unauthorized:
+            return unauthorized
+        return jsonify({"reservation": reservation.to_dict(include_secrets=True)})
+
     return jsonify({"reservation": reservation.to_dict()})
 
 
 @app.route('/relic/reservation/<reservation_id>/start', methods=['POST'])
 def start_reservation_session(reservation_id: str):
     """Start a reservation session"""
+    unauthorized = _require_reservation_owner(reservation_id)
+    if unauthorized:
+        return unauthorized
+
     error = reservation_manager.start_session(reservation_id)
     if error:
         return jsonify({"error": error}), 400
@@ -1119,6 +1204,9 @@ def complete_reservation_session(reservation_id: str):
     data, error = _json_object_body()
     if error:
         return error
+    unauthorized = _require_reservation_owner(reservation_id, data)
+    if unauthorized:
+        return unauthorized
     
     required = ["compute_hash", "hardware_attestation"]
     if not all(k in data for k in required):

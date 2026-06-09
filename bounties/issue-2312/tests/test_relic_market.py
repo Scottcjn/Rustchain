@@ -18,7 +18,8 @@ from relic_market_api import (
     VintageMachine,
     MachineRegistry, EscrowManager, ReceiptSigner,
     ReservationManager, MCPIntegration, BeaconIntegration,
-    AccessDuration, ReservationStatus, app
+    AccessDuration, ReservationStatus, app,
+    reservation_manager, escrow
 )
 
 
@@ -242,6 +243,12 @@ class TestReservationManager(unittest.TestCase):
         self.assertEqual(reservation.agent_id, "agent-test")
         self.assertEqual(reservation.duration_hours, 1)
         self.assertEqual(reservation.status, ReservationStatus.CONFIRMED.value)
+        self.assertIsNotNone(reservation.reservation_token)
+        self.assertNotIn("ssh_credentials", reservation.to_dict())
+        self.assertNotIn("api_key", reservation.to_dict())
+        self.assertNotIn("reservation_token", reservation.to_dict())
+        self.assertIn("ssh_credentials", reservation.to_dict(include_secrets=True))
+        self.assertIn("reservation_token", reservation.to_dict(include_token=True))
     
     def test_create_reservation_machine_not_found(self):
         reservation, error = self.manager.create_reservation(
@@ -287,6 +294,27 @@ class TestReservationManager(unittest.TestCase):
         
         self.assertIsNotNone(error)
         self.assertIn("Insufficient payment", error)
+
+    def test_verify_reservation_token(self):
+        reservation, _ = self.manager.create_reservation(
+            machine_id="vm-001",
+            agent_id="agent-token",
+            duration_hours=1,
+            payment_rtc=50.0
+        )
+
+        self.assertTrue(
+            self.manager.verify_reservation_token(
+                reservation.reservation_id,
+                reservation.reservation_token
+            )
+        )
+        self.assertFalse(
+            self.manager.verify_reservation_token(
+                reservation.reservation_id,
+                "wrong-token"
+            )
+        )
     
     def test_start_session(self):
         reservation, _ = self.manager.create_reservation(
@@ -375,8 +403,8 @@ class TestMCPIntegration(unittest.TestCase):
         registry = MachineRegistry()
         escrow = EscrowManager()
         signer = ReceiptSigner()
-        manager = ReservationManager(registry, escrow, signer)
-        self.mcp = MCPIntegration(manager)
+        self.manager = ReservationManager(registry, escrow, signer)
+        self.mcp = MCPIntegration(self.manager)
     
     def test_get_manifest(self):
         manifest = self.mcp.get_mcp_manifest()
@@ -401,6 +429,93 @@ class TestMCPIntegration(unittest.TestCase):
         
         self.assertNotIn('error', result)
         self.assertIn('reservation', result)
+        self.assertIn('reservation_token', result['reservation'])
+        self.assertIn('ssh_credentials', result['reservation'])
+        self.assertIn('api_key', result['reservation'])
+
+    def test_get_reservation_tool_redacts_without_token(self):
+        reserve_result = self.mcp.handle_tool_call("reserve_machine", {
+            "machine_id": "vm-001",
+            "agent_id": "mcp-owner",
+            "duration_hours": 1,
+            "payment_rtc": 50.0
+        })
+        reservation = reserve_result['reservation']
+
+        public_result = self.mcp.handle_tool_call("get_reservation", {
+            "reservation_id": reservation['reservation_id']
+        })
+        public_reservation = public_result['reservation']
+
+        self.assertNotIn('ssh_credentials', public_reservation)
+        self.assertNotIn('api_key', public_reservation)
+        self.assertNotIn('reservation_token', public_reservation)
+
+        owner_result = self.mcp.handle_tool_call("get_reservation", {
+            "reservation_id": reservation['reservation_id'],
+            "reservation_token": reservation['reservation_token']
+        })
+
+        self.assertIn('ssh_credentials', owner_result['reservation'])
+        self.assertIn('api_key', owner_result['reservation'])
+        self.assertNotIn('reservation_token', owner_result['reservation'])
+
+    def test_start_session_tool_requires_reservation_token(self):
+        reserve_result = self.mcp.handle_tool_call("reserve_machine", {
+            "machine_id": "vm-002",
+            "agent_id": "mcp-start",
+            "duration_hours": 1,
+            "payment_rtc": 15.0
+        })
+        reservation = reserve_result['reservation']
+
+        unauthorized = self.mcp.handle_tool_call("start_session", {
+            "reservation_id": reservation['reservation_id']
+        })
+
+        self.assertEqual(unauthorized['error'], "Unauthorized - reservation token required")
+        stored = self.manager.get_reservation(reservation['reservation_id'])
+        self.assertEqual(stored.status, ReservationStatus.CONFIRMED.value)
+
+        authorized = self.mcp.handle_tool_call("start_session", {
+            "reservation_id": reservation['reservation_id'],
+            "reservation_token": reservation['reservation_token']
+        })
+
+        self.assertEqual(authorized['status'], "session_started")
+
+    def test_complete_session_tool_requires_reservation_token(self):
+        reserve_result = self.mcp.handle_tool_call("reserve_machine", {
+            "machine_id": "vm-003",
+            "agent_id": "mcp-complete",
+            "duration_hours": 1,
+            "payment_rtc": 8.0
+        })
+        reservation = reserve_result['reservation']
+        self.mcp.handle_tool_call("start_session", {
+            "reservation_id": reservation['reservation_id'],
+            "reservation_token": reservation['reservation_token']
+        })
+
+        unauthorized = self.mcp.handle_tool_call("complete_session", {
+            "reservation_id": reservation['reservation_id'],
+            "reservation_token": "wrong-token",
+            "compute_hash": "abc123",
+            "hardware_attestation": {"verified": True}
+        })
+
+        self.assertEqual(unauthorized['error'], "Unauthorized - reservation token required")
+        stored = self.manager.get_reservation(reservation['reservation_id'])
+        self.assertEqual(stored.status, ReservationStatus.ACTIVE.value)
+
+        authorized = self.mcp.handle_tool_call("complete_session", {
+            "reservation_id": reservation['reservation_id'],
+            "reservation_token": reservation['reservation_token'],
+            "compute_hash": "abc123",
+            "hardware_attestation": {"verified": True}
+        })
+
+        self.assertIn('receipt', authorized)
     
     def test_unknown_tool(self):
         result = self.mcp.handle_tool_call("unknown_tool", {})
@@ -414,8 +529,8 @@ class TestBeaconIntegration(unittest.TestCase):
         registry = MachineRegistry()
         escrow = EscrowManager()
         signer = ReceiptSigner()
-        manager = ReservationManager(registry, escrow, signer)
-        self.beacon = BeaconIntegration(manager)
+        self.manager = ReservationManager(registry, escrow, signer)
+        self.beacon = BeaconIntegration(self.manager)
     
     def test_reserve_message(self):
         result = self.beacon.handle_message("RESERVE", {
@@ -427,6 +542,7 @@ class TestBeaconIntegration(unittest.TestCase):
         
         self.assertEqual(result['status'], 'confirmed')
         self.assertIn('reservation_id', result)
+        self.assertIn('reservation_token', result)
     
     def test_cancel_message(self):
         # First reserve
@@ -439,7 +555,8 @@ class TestBeaconIntegration(unittest.TestCase):
         
         # Then cancel
         result = self.beacon.handle_message("CANCEL", {
-            "reservation_id": reserve_result['reservation_id']
+            "reservation_id": reserve_result['reservation_id'],
+            "reservation_token": reserve_result['reservation_token']
         })
         
         self.assertEqual(result['status'], 'cancelled')
@@ -453,10 +570,62 @@ class TestBeaconIntegration(unittest.TestCase):
         })
         
         result = self.beacon.handle_message("STATUS", {
-            "reservation_id": reserve_result['reservation_id']
+            "reservation_id": reserve_result['reservation_id'],
+            "reservation_token": reserve_result['reservation_token']
         })
         
         self.assertIn('reservation', result)
+
+    def test_beacon_start_and_complete_require_reservation_token(self):
+        reserve_result = self.beacon.handle_message("RESERVE", {
+            "machine_id": "vm-001",
+            "agent_id": "beacon-owner",
+            "duration_hours": 1,
+            "payment_rtc": 50.0
+        })
+
+        unauthorized_start = self.beacon.handle_message("START", {
+            "reservation_id": reserve_result['reservation_id']
+        })
+
+        self.assertEqual(
+            unauthorized_start['message'],
+            "Unauthorized - reservation token required"
+        )
+        stored = self.manager.get_reservation(reserve_result['reservation_id'])
+        self.assertEqual(stored.status, ReservationStatus.CONFIRMED.value)
+
+        start_result = self.beacon.handle_message("START", {
+            "reservation_id": reserve_result['reservation_id'],
+            "reservation_token": reserve_result['reservation_token']
+        })
+
+        self.assertEqual(start_result['status'], 'active')
+        self.assertIn('ssh', start_result)
+        self.assertIn('api_key', start_result)
+
+        unauthorized_complete = self.beacon.handle_message("COMPLETE", {
+            "reservation_id": reserve_result['reservation_id'],
+            "reservation_token": "wrong-token",
+            "compute_hash": "abc123",
+            "hardware_attestation": {"verified": True}
+        })
+
+        self.assertEqual(
+            unauthorized_complete['message'],
+            "Unauthorized - reservation token required"
+        )
+        stored = self.manager.get_reservation(reserve_result['reservation_id'])
+        self.assertEqual(stored.status, ReservationStatus.ACTIVE.value)
+
+        complete_result = self.beacon.handle_message("COMPLETE", {
+            "reservation_id": reserve_result['reservation_id'],
+            "reservation_token": reserve_result['reservation_token'],
+            "compute_hash": "abc123",
+            "hardware_attestation": {"verified": True}
+        })
+
+        self.assertEqual(complete_result['status'], 'completed')
     
     def test_unknown_message_type(self):
         result = self.beacon.handle_message("UNKNOWN", {})
@@ -516,6 +685,9 @@ class TestAPIEndpoints(unittest.TestCase):
         data = json.loads(response.data)
         self.assertTrue(data['ok'])
         self.assertIn('reservation', data)
+        self.assertIn('reservation_token', data['reservation'])
+        self.assertIn('ssh_credentials', data['reservation'])
+        self.assertIn('api_key', data['reservation'])
     
     def test_reserve_machine_missing_fields(self):
         payload = {"machine_id": "vm-001"}
@@ -586,6 +758,130 @@ class TestAPIEndpoints(unittest.TestCase):
         
         data = json.loads(response.data)
         self.assertEqual(data['reservation']['reservation_id'], reservation_id)
+        self.assertNotIn('ssh_credentials', data['reservation'])
+        self.assertNotIn('api_key', data['reservation'])
+        self.assertNotIn('reservation_token', data['reservation'])
+
+        reservation_token = json.loads(create_response.data)['reservation']['reservation_token']
+        owner_response = self.client.get(
+            f'/relic/reservation/{reservation_id}',
+            headers={'X-Reservation-Token': reservation_token}
+        )
+        self.assertEqual(owner_response.status_code, 200)
+        owner_data = json.loads(owner_response.data)
+        self.assertIn('ssh_credentials', owner_data['reservation'])
+        self.assertIn('api_key', owner_data['reservation'])
+        self.assertNotIn('reservation_token', owner_data['reservation'])
+
+    def test_get_reservation_rejects_invalid_owner_token(self):
+        create_response = self.client.post('/relic/reserve', json={
+            "machine_id": "vm-003",
+            "agent_id": "invalid-owner-token",
+            "duration_hours": 1,
+            "payment_rtc": 8.0
+        })
+        reservation_id = json.loads(create_response.data)['reservation']['reservation_id']
+
+        response = self.client.get(
+            f'/relic/reservation/{reservation_id}',
+            headers={'X-Reservation-Token': 'wrong-token'}
+        )
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(
+            response.get_json()['error'],
+            "Unauthorized - reservation token required"
+        )
+
+    def test_start_reservation_requires_owner_token(self):
+        create_response = self.client.post('/relic/reserve', json={
+            "machine_id": "vm-001",
+            "agent_id": "api-start-auth",
+            "duration_hours": 1,
+            "payment_rtc": 50.0
+        })
+        reservation = json.loads(create_response.data)['reservation']
+
+        response = self.client.post(f"/relic/reservation/{reservation['reservation_id']}/start")
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(
+            response.get_json()['error'],
+            "Unauthorized - reservation token required"
+        )
+        stored = reservation_manager.get_reservation(reservation['reservation_id'])
+        self.assertEqual(stored.status, ReservationStatus.CONFIRMED.value)
+
+        authorized = self.client.post(
+            f"/relic/reservation/{reservation['reservation_id']}/start",
+            headers={'X-Reservation-Token': reservation['reservation_token']}
+        )
+
+        self.assertEqual(authorized.status_code, 200)
+        data = json.loads(authorized.data)
+        self.assertIn('ssh', data['access'])
+        self.assertIn('api_key', data['access'])
+
+    def test_complete_reservation_requires_owner_token(self):
+        create_response = self.client.post('/relic/reserve', json={
+            "machine_id": "vm-002",
+            "agent_id": "api-complete-auth",
+            "duration_hours": 1,
+            "payment_rtc": 15.0
+        })
+        reservation = json.loads(create_response.data)['reservation']
+        self.client.post(
+            f"/relic/reservation/{reservation['reservation_id']}/start",
+            headers={'X-Reservation-Token': reservation['reservation_token']}
+        )
+
+        response = self.client.post(
+            f"/relic/reservation/{reservation['reservation_id']}/complete",
+            json={
+                "reservation_token": "wrong-token",
+                "compute_hash": "abc123",
+                "hardware_attestation": {"verified": True}
+            }
+        )
+
+        self.assertEqual(response.status_code, 401)
+        stored = reservation_manager.get_reservation(reservation['reservation_id'])
+        self.assertEqual(stored.status, ReservationStatus.ACTIVE.value)
+        escrow_state = escrow.get_escrow(reservation['reservation_id'])
+        self.assertEqual(escrow_state['status'], 'locked')
+
+        authorized = self.client.post(
+            f"/relic/reservation/{reservation['reservation_id']}/complete",
+            json={
+                "reservation_token": reservation['reservation_token'],
+                "compute_hash": "abc123",
+                "hardware_attestation": {"verified": True}
+            }
+        )
+
+        self.assertEqual(authorized.status_code, 200)
+        self.assertIn('receipt', json.loads(authorized.data))
+        escrow_state = escrow.get_escrow(reservation['reservation_id'])
+        self.assertEqual(escrow_state['status'], 'released')
+
+    def test_agent_reservations_redact_owner_secrets(self):
+        create_response = self.client.post('/relic/reserve', json={
+            "machine_id": "vm-004",
+            "agent_id": "agent-list-redacted",
+            "duration_hours": 1,
+            "payment_rtc": 12.0
+        })
+        reservation_id = json.loads(create_response.data)['reservation']['reservation_id']
+
+        response = self.client.get('/relic/agent/agent-list-redacted/reservations')
+
+        self.assertEqual(response.status_code, 200)
+        reservations = response.get_json()['reservations']
+        matching = [r for r in reservations if r['reservation_id'] == reservation_id]
+        self.assertEqual(len(matching), 1)
+        self.assertNotIn('ssh_credentials', matching[0])
+        self.assertNotIn('api_key', matching[0])
+        self.assertNotIn('reservation_token', matching[0])
     
     def test_leaderboard(self):
         response = self.client.get('/relic/leaderboard?limit=5')
