@@ -46,6 +46,7 @@ import os
 import json
 import random
 import logging
+import hmac
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass, field
@@ -956,6 +957,52 @@ def _mood_service_unavailable(operation: str):
     return jsonify({"error": "Mood service unavailable"}), 500
 
 
+def _configured_mood_signal_key() -> str:
+    return (
+        os.environ.get("BOTTUBE_MOOD_SIGNAL_KEY")
+        or os.environ.get("BOTTUBE_API_KEY")
+        or ""
+    ).strip()
+
+
+def _provided_mood_signal_key() -> str:
+    header_key = (
+        request.headers.get("X-BotTube-Mood-Key")
+        or request.headers.get("X-API-Key")
+        or ""
+    ).strip()
+    if header_key:
+        return header_key
+
+    auth_header = (request.headers.get("Authorization") or "").strip()
+    if auth_header.lower().startswith("bearer "):
+        return auth_header.split(" ", 1)[1].strip()
+
+    return ""
+
+
+def _constant_time_key_match(provided_key: str, required_key: str) -> bool:
+    try:
+        return hmac.compare_digest(
+            provided_key.encode("utf-8"),
+            required_key.encode("utf-8"),
+        )
+    except UnicodeError:
+        return False
+
+
+def _require_mood_signal_auth():
+    required_key = _configured_mood_signal_key()
+    if not required_key:
+        return jsonify({"error": "BOTTUBE_MOOD_SIGNAL_KEY not configured"}), 503
+
+    provided_key = _provided_mood_signal_key()
+    if not provided_key or not _constant_time_key_match(provided_key, required_key):
+        return jsonify({"error": "Unauthorized mood signal"}), 401
+
+    return None
+
+
 @mood_bp.route("/<agent_name>/mood", methods=["GET"])
 def get_agent_mood_endpoint(agent_name: str):
     """
@@ -996,6 +1043,10 @@ def record_mood_signal(agent_name: str):
     """
     try:
         engine = get_mood_engine()
+        auth_error = _require_mood_signal_auth()
+        if auth_error:
+            return auth_error
+
         data, error = _get_json_object()
         if error:
             return error

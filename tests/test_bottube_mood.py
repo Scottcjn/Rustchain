@@ -34,6 +34,9 @@ from bottube_mood_engine import (
     mood_bp,
 )
 
+MOOD_SIGNAL_KEY = "test-mood-signal-key"
+MOOD_SIGNAL_HEADERS = {"X-BotTube-Mood-Key": MOOD_SIGNAL_KEY}
+
 
 class TestMoodState(unittest.TestCase):
     """Test MoodState enum and metadata."""
@@ -562,6 +565,15 @@ class TestMoodBlueprintJsonValidation(unittest.TestCase):
     def setUp(self):
         self.temp_db = tempfile.NamedTemporaryFile(delete=False, suffix='.db')
         self.temp_db.close()
+        self.env_patch = patch.dict(
+            os.environ,
+            {
+                "BOTTUBE_MOOD_SIGNAL_KEY": MOOD_SIGNAL_KEY,
+                "BOTTUBE_API_KEY": "",
+            },
+            clear=False,
+        )
+        self.env_patch.start()
         app = Flask(__name__)
         app.config["TESTING"] = True
         app.config["DB_PATH"] = self.temp_db.name
@@ -569,6 +581,7 @@ class TestMoodBlueprintJsonValidation(unittest.TestCase):
         self.client = app.test_client()
 
     def tearDown(self):
+        self.env_patch.stop()
         try:
             os.unlink(self.temp_db.name)
         except Exception:
@@ -583,7 +596,12 @@ class TestMoodBlueprintJsonValidation(unittest.TestCase):
 
         for endpoint in endpoints:
             with self.subTest(endpoint=endpoint):
-                response = self.client.post(endpoint, json=["not", "an", "object"])
+                headers = MOOD_SIGNAL_HEADERS if endpoint.endswith("/mood/signal") else {}
+                response = self.client.post(
+                    endpoint,
+                    json=["not", "an", "object"],
+                    headers=headers,
+                )
 
                 self.assertEqual(response.status_code, 400)
                 self.assertEqual(
@@ -600,10 +618,12 @@ class TestMoodBlueprintJsonValidation(unittest.TestCase):
 
         for endpoint in endpoints:
             with self.subTest(endpoint=endpoint):
+                headers = MOOD_SIGNAL_HEADERS if endpoint.endswith("/mood/signal") else {}
                 response = self.client.post(
                     endpoint,
                     data="{",
                     content_type="application/json",
+                    headers=headers,
                 )
 
                 self.assertEqual(response.status_code, 400)
@@ -620,7 +640,8 @@ class TestMoodBlueprintJsonValidation(unittest.TestCase):
 
         for endpoint in endpoints:
             with self.subTest(endpoint=endpoint):
-                response = self.client.post(endpoint)
+                headers = MOOD_SIGNAL_HEADERS if endpoint.endswith("/mood/signal") else {}
+                response = self.client.post(endpoint, headers=headers)
 
                 self.assertEqual(response.status_code, 400)
                 self.assertEqual(
@@ -657,7 +678,10 @@ class TestMoodBlueprintJsonValidation(unittest.TestCase):
             (
                 "post",
                 "/api/v1/agents/test-agent/mood/signal",
-                {"json": {"signal_type": "video_views", "value": {"views": 1}}},
+                {
+                    "json": {"signal_type": "video_views", "value": {"views": 1}},
+                    "headers": MOOD_SIGNAL_HEADERS,
+                },
             ),
             (
                 "post",
@@ -685,6 +709,84 @@ class TestMoodBlueprintJsonValidation(unittest.TestCase):
                     self.assertNotIn("agent_mood_history", serialized_body)
                     self.assertNotIn("/srv/rustchain/private", serialized_body)
                     self.assertNotIn("super-secret", serialized_body)
+
+
+class TestMoodSignalAuth(unittest.TestCase):
+    """Test authorization on mood API state-changing signal writes."""
+
+    def setUp(self):
+        self.temp_db = tempfile.NamedTemporaryFile(delete=False, suffix='.db')
+        self.temp_db.close()
+        app = Flask(__name__)
+        app.config["TESTING"] = True
+        app.config["DB_PATH"] = self.temp_db.name
+        app.register_blueprint(mood_bp)
+        self.client = app.test_client()
+
+    def tearDown(self):
+        try:
+            os.unlink(self.temp_db.name)
+        except Exception:
+            pass
+
+    def _post_signal(self, headers=None):
+        return self.client.post(
+            "/api/v1/agents/target-agent/mood/signal",
+            json={"signal_type": "comment_sentiment", "value": {"sentiment": -1}},
+            headers=headers or {},
+        )
+
+    def _signals_processed(self):
+        response = self.client.get("/api/v1/agents/target-agent/mood/statistics")
+        return response.get_json()["signals_processed"]
+
+    def test_signal_write_fails_closed_without_configured_key(self):
+        with patch.dict(os.environ, {}, clear=True):
+            response = self._post_signal(MOOD_SIGNAL_HEADERS)
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(
+            response.get_json(),
+            {"error": "BOTTUBE_MOOD_SIGNAL_KEY not configured"},
+        )
+        self.assertEqual(self._signals_processed(), 0)
+
+    def test_signal_write_rejects_unauthenticated_requests_before_mutation(self):
+        with patch.dict(os.environ, {"BOTTUBE_MOOD_SIGNAL_KEY": MOOD_SIGNAL_KEY}, clear=False):
+            for headers in ({}, {"X-BotTube-Mood-Key": "wrong"}, {"X-API-Key": "wrong"}):
+                with self.subTest(headers=headers):
+                    response = self._post_signal(headers)
+
+                    self.assertEqual(response.status_code, 401)
+                    self.assertEqual(response.get_json(), {"error": "Unauthorized mood signal"})
+                    self.assertEqual(self._signals_processed(), 0)
+
+    def test_signal_write_accepts_configured_mood_key_headers(self):
+        accepted_headers = [
+            {"X-BotTube-Mood-Key": MOOD_SIGNAL_KEY},
+            {"X-API-Key": MOOD_SIGNAL_KEY},
+            {"Authorization": f"Bearer {MOOD_SIGNAL_KEY}"},
+        ]
+
+        with patch.dict(os.environ, {"BOTTUBE_MOOD_SIGNAL_KEY": MOOD_SIGNAL_KEY}, clear=False):
+            for headers in accepted_headers:
+                with self.subTest(headers=headers):
+                    response = self._post_signal(headers)
+
+                    self.assertEqual(response.status_code, 200)
+
+        self.assertEqual(self._signals_processed(), len(accepted_headers))
+
+    def test_signal_write_accepts_legacy_bottube_api_key(self):
+        with patch.dict(
+            os.environ,
+            {"BOTTUBE_API_KEY": MOOD_SIGNAL_KEY, "BOTTUBE_MOOD_SIGNAL_KEY": ""},
+            clear=False,
+        ):
+            response = self._post_signal({"X-API-Key": MOOD_SIGNAL_KEY})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self._signals_processed(), 1)
 
 
 def run_demo():
