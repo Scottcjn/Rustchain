@@ -10,7 +10,7 @@ import json
 import time
 import requests
 from http.server import HTTPServer, SimpleHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, quote, unquote
 from datetime import datetime
 
 # Configuration
@@ -18,6 +18,39 @@ EXPLORER_PORT = int(os.environ.get('EXPLORER_PORT', 8080))
 API_BASE = os.environ.get('RUSTCHAIN_API_BASE', 'https://rustchain.org').rstrip('/')
 API_TIMEOUT = float(os.environ.get('API_TIMEOUT', '8'))
 STATIC_DIR = os.path.join(os.path.dirname(__file__), 'static')
+ALLOWED_PROXY_ENDPOINTS = {
+    ('health',),
+    ('epoch',),
+    ('api', 'miners'),
+    ('blocks',),
+    ('api', 'transactions'),
+    ('hall', 'leaderboard'),
+}
+
+
+def normalize_proxy_endpoint(endpoint):
+    """Return allowed endpoint segments or None for paths the Explorer never uses."""
+    if not endpoint:
+        return None
+
+    segments = []
+    for raw_segment in endpoint.split('/'):
+        if not raw_segment:
+            return None
+        segment = unquote(raw_segment)
+        if segment in {'.', '..'} or '/' in segment or '\\' in segment:
+            return None
+        segments.append(segment)
+
+    segments = tuple(segments)
+    if segments not in ALLOWED_PROXY_ENDPOINTS:
+        return None
+    return segments
+
+
+def build_proxy_url(api_base, segments):
+    encoded_path = '/'.join(quote(segment, safe='') for segment in segments)
+    return f"{api_base.rstrip('/')}/{encoded_path}"
 
 class ExplorerHandler(SimpleHTTPRequestHandler):
     """Custom HTTP handler with API proxy and caching"""
@@ -33,7 +66,7 @@ class ExplorerHandler(SimpleHTTPRequestHandler):
         
         # API proxy endpoints
         if path.startswith('/api/proxy/'):
-            self.handle_proxy(path.replace('/api/proxy/', ''), parsed)
+            self.handle_proxy(path[len('/api/proxy/'):], parsed)
             return
         
         # Health check for explorer itself
@@ -65,7 +98,13 @@ class ExplorerHandler(SimpleHTTPRequestHandler):
     
     def handle_proxy(self, endpoint, parsed):
         """Proxy requests to RustChain API with caching"""
-        cache_key = f"{endpoint}:{parsed.query}"
+        segments = normalize_proxy_endpoint(endpoint)
+        if segments is None:
+            self.send_error_json(404, 'Not Found')
+            return
+
+        endpoint_path = '/'.join(segments)
+        cache_key = f"{endpoint_path}:{parsed.query}"
         
         # Check cache
         cached = self._cache.get(cache_key)
@@ -75,11 +114,10 @@ class ExplorerHandler(SimpleHTTPRequestHandler):
         
         # Fetch from API
         try:
-            url = f"{API_BASE}/{endpoint}"
-            if parsed.query:
-                url += f"?{parsed.query}"
+            url = build_proxy_url(API_BASE, segments)
+            params = parse_qs(parsed.query, keep_blank_values=True) if parsed.query else None
             
-            response = requests.get(url, timeout=API_TIMEOUT)
+            response = requests.get(url, params=params, timeout=API_TIMEOUT)
             response.raise_for_status()
             data = response.json()
             
@@ -92,8 +130,8 @@ class ExplorerHandler(SimpleHTTPRequestHandler):
             self.send_json(data, headers={'X-Cache': 'MISS'})
         except requests.exceptions.Timeout:
             self.send_error_json(504, 'Gateway Timeout')
-        except requests.exceptions.RequestException as e:
-            self.send_error_json(502, f'Bad Gateway: {str(e)}')
+        except requests.exceptions.RequestException:
+            self.send_error_json(502, 'Bad Gateway')
         except json.JSONDecodeError:
             self.send_error_json(502, 'Invalid JSON from upstream')
     
