@@ -8984,16 +8984,56 @@ def api_wallet_balance():
     if not miner_id:
         return jsonify({"ok": False, "error": "miner_id or address required"}), 400
 
-    with sqlite3.connect(DB_PATH) as db:
-        try:
-            # Newer schema
-            row = db.execute("SELECT amount_i64 FROM balances WHERE miner_id=?", (miner_id,)).fetchone()
-            amt = int(row[0]) if row else 0
-        except sqlite3.OperationalError:
-            # Legacy schema: balances(miner_pk, balance_rtc)
-            row = db.execute("SELECT balance_rtc FROM balances WHERE miner_pk=?", (miner_id,)).fetchone()
-            bal_rtc = float(row[0]) if row else 0.0
-            amt = int(round(bal_rtc * UNIT))
+    try:
+        with sqlite3.connect(DB_PATH) as db:
+            try:
+                # Newer schema. The exact SQL string (with spaces around
+                # `=`) must match the route contract in
+                # test_balance_endpoint.py (assert_called_once_with).
+                row = db.execute(
+                    "SELECT amount_i64 FROM balances WHERE miner_id = ?",
+                    (miner_id,),
+                ).fetchone()
+                amt = int(row[0]) if row else 0
+            except sqlite3.OperationalError as exc:
+                # Legacy schema: balances(miner_pk, balance_rtc). Only fall
+                # through to the legacy query if the error is a schema-shape
+                # error (column / table missing); any other OperationalError
+                # (database locked, I/O error, etc.) is a real failure and
+                # must propagate to the outer handler that returns the
+                # route's JSON 503 contract (test_balance_endpoint.py).
+                msg = str(exc).lower()
+                if (
+                    "no such column" in msg
+                    or "no such table" in msg
+                    or "has no column" in msg
+                ):
+                    row = db.execute(
+                        "SELECT balance_rtc FROM balances WHERE miner_pk = ?",
+                        (miner_id,),
+                    ).fetchone()
+                    bal_rtc = float(row[0]) if row else 0.0
+                    amt = int(round(bal_rtc * UNIT))
+                else:
+                    # Re-raise so the outer handler returns the JSON 503.
+                    raise
+    except sqlite3.OperationalError:
+        # Database is locked or otherwise temporarily unavailable. The route
+        # contract (test_balance_endpoint.py) requires a JSON 503 with the
+        # service-unavailable message — not Flask's default HTML 500. See
+        # Issue #7117 + PR #7152 review by @MolhamHamwi.
+        return jsonify({
+            "ok": False,
+            "error": "Service unavailable due to database issues",
+        }), 503
+    except sqlite3.Error:
+        # Any other sqlite error (disk I/O, malformed schema, etc.) — JSON
+        # 500 with the unexpected-database message, again per the route
+        # contract (test_balance_endpoint.py).
+        return jsonify({
+            "ok": False,
+            "error": "An unexpected database error occurred",
+        }), 500
 
     return jsonify({
         "miner_id": miner_id,
