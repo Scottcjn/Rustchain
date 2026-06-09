@@ -732,31 +732,57 @@
         img.alt = `BCOS Badge for ${certId}`;
 
         img.onload = () => {
-          previewArea.innerHTML = '';
+          previewArea.textContent = '';
           previewArea.appendChild(img);
           resolve();
         };
 
         img.onerror = () => {
           // For demo purposes, show a placeholder if endpoint is unavailable
-          previewArea.innerHTML = `
-            <div style="text-align: left;">
-              <p style="color: var(--term-orange); margin-bottom: 10px;">
-                ⚠ Preview endpoint unavailable (expected in static mode)
-              </p>
-              <p style="color: var(--term-dim);">
-                Badge URL: <span style="color: var(--term-blue);">${url}</span>
-              </p>
-              <p style="color: var(--term-dim); margin-top: 10px;">
-                In production, this will fetch the badge from the BCOS API.
-              </p>
-            </div>
-          `;
+          renderPreviewFallback(url);
           resolve(); // Don't reject, just show placeholder
         };
 
         img.src = url;
       });
+    }
+
+    function renderPreviewFallback(url) {
+      previewArea.textContent = '';
+
+      const wrapper = document.createElement('div');
+      wrapper.style.textAlign = 'left';
+
+      const warning = document.createElement('p');
+      warning.style.color = 'var(--term-orange)';
+      warning.style.marginBottom = '10px';
+      warning.textContent = '⚠ Preview endpoint unavailable (expected in static mode)';
+      wrapper.appendChild(warning);
+
+      const urlLine = document.createElement('p');
+      urlLine.style.color = 'var(--term-dim)';
+      urlLine.appendChild(document.createTextNode('Badge URL: '));
+      const urlText = document.createElement('span');
+      urlText.style.color = 'var(--term-blue)';
+      urlText.textContent = url;
+      urlLine.appendChild(urlText);
+      wrapper.appendChild(urlLine);
+
+      const note = document.createElement('p');
+      note.style.color = 'var(--term-dim)';
+      note.style.marginTop = '10px';
+      note.textContent = 'In production, this will fetch the badge from the BCOS API.';
+      wrapper.appendChild(note);
+
+      previewArea.appendChild(wrapper);
+    }
+
+    function renderPreviewPlaceholder() {
+      previewArea.textContent = '';
+      const placeholder = document.createElement('span');
+      placeholder.className = 'preview-placeholder';
+      placeholder.textContent = 'Enter a Certificate ID and click "Generate Preview" to see your badge';
+      previewArea.appendChild(placeholder);
     }
 
     function generateEmbedCodes(certId) {
@@ -808,7 +834,7 @@
       currentStyle = 'flat';
       styleBtns.forEach(b => b.classList.remove('active'));
       styleBtns[0].classList.add('active');
-      previewArea.innerHTML = '<span class="preview-placeholder">Enter a Certificate ID and click "Generate Preview" to see your badge</span>';
+      renderPreviewPlaceholder();
       outputSection.classList.add('hidden');
       statusMessage.classList.add('hidden');
       inputType.value = 'cert_id';
