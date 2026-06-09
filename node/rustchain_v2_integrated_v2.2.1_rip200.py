@@ -8478,6 +8478,34 @@ def api_health():
         "tip_age_slots": tip_age
     }), (200 if ok else 503)
 
+@app.route('/network/info', methods=['GET'])
+def api_network_info():
+    """Rust wallet-compatible network metadata endpoint."""
+    block_height = 0
+    try:
+        with sqlite3.connect(DB_PATH, timeout=3) as conn:
+            row = conn.execute("SELECT COALESCE(MAX(height), 0) FROM blocks").fetchone()
+            block_height = int(row[0] or 0) if row else 0
+    except Exception:
+        block_height = 0
+
+    peer_count = 0
+    manager = globals().get("peer_manager")
+    if manager is not None:
+        try:
+            peer_count = len(manager.get_active_peers())
+        except Exception:
+            peer_count = 0
+
+    return jsonify({
+        "chain_id": CHAIN_ID,
+        "network": os.environ.get("RC_NETWORK", "mainnet"),
+        "block_height": block_height,
+        "peer_count": peer_count,
+        "min_fee": WITHDRAWAL_FEE,
+        "version": APP_VERSION,
+    })
+
 @app.route('/ready', methods=['GET'])
 def api_ready():
     # "ready" means DB reachable and migrations applied (schema_version exists).
