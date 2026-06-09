@@ -1199,6 +1199,7 @@ class GossipLayer:
                 cursor = conn.execute(
                     "SELECT miner FROM miner_attest_recent"
                 )
+                # fetchall-ok: bounded-by-schema
                 attested_miners = {row[0] for row in cursor.fetchall()}
         except Exception as e:
             logger.error(f"Epoch {epoch}: Failed to query attested miners: {e}")
