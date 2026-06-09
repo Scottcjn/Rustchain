@@ -204,6 +204,19 @@ DASHBOARD_HTML = """
             return allowed.includes(token) ? token : fallback;
         }
 
+        function renderSearchError(err) {
+            const resultDiv = document.getElementById('search-result');
+            resultDiv.replaceChildren();
+
+            const heading = document.createElement('h3');
+            heading.textContent = '❌ Error';
+            const message = document.createElement('p');
+            message.textContent = err.message || err;
+
+            resultDiv.append(heading, message);
+            resultDiv.style.display = 'block';
+        }
+
         function updateDashboard() {
             fetch('/api/stats')
                 .then(r => r.json())
@@ -286,9 +299,7 @@ DASHBOARD_HTML = """
                     resultDiv.style.display = 'block';
                 })
                 .catch(err => {
-                    err = escapeHtml(err.message || err);
-                    document.getElementById('search-result').innerHTML = `<h3>❌ Error</h3><p>${err}</p>`;
-                    document.getElementById('search-result').style.display = 'block';
+                    renderSearchError(err);
                 });
         }
 
