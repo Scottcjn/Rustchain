@@ -138,7 +138,7 @@ def check_simd_identity() -> Tuple[bool, Dict]:
                     if len(parts) > 1:
                         flags = parts[1].strip().split()
                         break
-    except:
+    except Exception:
         pass
 
     # macOS: sysctl
@@ -151,7 +151,7 @@ def check_simd_identity() -> Tuple[bool, Dict]:
             for line in result.stdout.split("\n"):
                 if "feature" in line.lower() or "altivec" in line.lower():
                     flags.append(line.split(":")[-1].strip())
-        except:
+        except Exception:
             pass
 
     # Windows: detect SIMD via WMI/registry and arch inference
@@ -178,11 +178,11 @@ def check_simd_identity() -> Tuple[bool, Dict]:
                         flags.extend(["avx", "avx2", "sse4_1", "sse4_2"])
                     elif "intel" in proc or "core" in proc:
                         flags.extend(["avx", "sse4_1", "sse4_2"])
-                except:
+                except Exception:
                     pass
             elif "arm" in arch or "aarch64" in arch:
                 flags.append("neon")
-        except:
+        except Exception:
             pass
         # Fallback: if arch is x86_64, we know SSE2 exists
         if not flags and ("amd64" in arch or "x86_64" in arch or "x86" in arch):
@@ -337,7 +337,7 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
                         "amazon", "google", "microsoft corporation"]:
                 if vm in wmi_info:
                     vm_indicators.append("wmi_computersystem:{}".format(vm))
-        except:
+        except Exception:
             pass
 
         # Check BIOS via WMI
@@ -352,7 +352,7 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
                         "innotek", "xen", "amazon", "google"]:
                 if vm in bios_info:
                     vm_indicators.append("wmi_bios:{}".format(vm))
-        except:
+        except Exception:
             pass
 
     # --- DMI paths to check (Linux) ---
@@ -403,7 +403,7 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
                 for vm in vm_strings:
                     if vm in content:
                         vm_indicators.append("{}:{}".format(path, vm))
-        except:
+        except Exception:
             pass
 
     # --- Environment variable checks ---
@@ -419,7 +419,7 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
         with open("/proc/cpuinfo", "r") as f:
             if "hypervisor" in f.read().lower():
                 vm_indicators.append("cpuinfo:hypervisor")
-    except:
+    except Exception:
         pass
 
     # --- /sys/hypervisor check (Xen-based cloud VMs expose this) ---
@@ -429,7 +429,7 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
                 hv_type = f.read().strip().lower()
                 if hv_type:
                     vm_indicators.append("sys_hypervisor:{}".format(hv_type))
-    except:
+    except Exception:
         pass
 
     # --- Cloud metadata endpoint check ---
@@ -448,7 +448,7 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
         if "azure" in cloud_body or "microsoft" in cloud_body:
             cloud_provider = "azure"
         vm_indicators.append("cloud_metadata:{}".format(cloud_provider))
-    except:
+    except Exception:
         pass
 
     # --- AWS IMDSv2 check (token-based, t3/t4 Nitro instances) ---
@@ -462,7 +462,7 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
         token_resp = urllib.request.urlopen(token_req, timeout=1)
         if token_resp.status == 200:
             vm_indicators.append("cloud_metadata:aws_imdsv2")
-    except:
+    except Exception:
         pass
 
     # --- systemd-detect-virt (Linux only) ---
@@ -474,7 +474,7 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
             virt_type = result.stdout.strip().lower()
             if virt_type and virt_type != "none":
                 vm_indicators.append("systemd_detect_virt:{}".format(virt_type))
-        except:
+        except Exception:
             pass
 
     data = {
