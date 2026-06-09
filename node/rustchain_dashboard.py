@@ -204,6 +204,20 @@ DASHBOARD_HTML = """
             return allowed.includes(token) ? token : fallback;
         }
 
+        function showSearchError(message) {
+            const resultDiv = document.getElementById('search-result');
+            resultDiv.textContent = '';
+
+            const heading = document.createElement('h3');
+            heading.textContent = '\\u274c Error';
+
+            const messageText = document.createElement('p');
+            messageText.textContent = String(message ?? 'Unknown error');
+
+            resultDiv.append(heading, messageText);
+            resultDiv.style.display = 'block';
+        }
+
         function updateDashboard() {
             fetch('/api/stats')
                 .then(r => r.json())
@@ -286,9 +300,7 @@ DASHBOARD_HTML = """
                     resultDiv.style.display = 'block';
                 })
                 .catch(err => {
-                    err = escapeHtml(err.message || err);
-                    document.getElementById('search-result').innerHTML = `<h3>❌ Error</h3><p>${err}</p>`;
-                    document.getElementById('search-result').style.display = 'block';
+                    showSearchError(err && err.message ? err.message : err);
                 });
         }
 

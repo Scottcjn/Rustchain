@@ -62,13 +62,18 @@ def test_dashboard_escapes_search_result_and_error_text():
     assert "${escapeHtml(data.weight)}" in source
     assert "${escapeHtml(data.tier)}" in source
     assert "${escapeHtml(wallet)}" in source
-    assert "err = escapeHtml(err.message || err);" in source
+    assert "function showSearchError(message)" in source
+    assert "heading.textContent = '\\\\u274c Error';" in source
+    assert "messageText.textContent = String(message ?? 'Unknown error');" in source
+    assert "showSearchError(err && err.message ? err.message : err);" in source
 
     assert "${data.wallet}" not in source
     assert "${data.balance}" not in source
     assert "${data.weight}" not in source
     assert "${data.tier}" not in source
     assert '<span class="mono">${wallet}</span>' not in source
+    assert "err = escapeHtml(err.message || err);" not in source
+    assert "document.getElementById('search-result').innerHTML = `<h3>" not in source
 
 
 def test_stats_api_does_not_echo_internal_exception_details(monkeypatch):
