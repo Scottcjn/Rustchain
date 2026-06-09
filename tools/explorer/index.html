@@ -448,6 +448,23 @@
       `).join("");
     }
 
+    function renderErrorCard(message) {
+      const topCards = document.getElementById("topCards");
+      const card = document.createElement("div");
+      card.className = "card";
+
+      const label = document.createElement("div");
+      label.className = "label";
+      label.textContent = "Error";
+
+      const value = document.createElement("div");
+      value.className = "value";
+      value.textContent = String(message || "-");
+
+      card.append(label, value);
+      topCards.replaceChildren(card);
+    }
+
     function renderMinerTable() {
       const rows = applyFiltersAndSort();
       const tbody = document.getElementById("minerRows");
@@ -644,7 +661,7 @@
         document.getElementById("updatedAt").textContent = `Last update: ${new Date().toLocaleTimeString()}`;
         document.getElementById("agentUpdatedAt").textContent = `Agent update: ${new Date().toLocaleTimeString()}`;
       } catch (err) {
-        document.getElementById("topCards").innerHTML = `<div class="card"><div class="label">Error</div><div class="value">${safeText(err.message || err)}</div></div>`;
+        renderErrorCard(err && err.message ? err.message : err);
         document.getElementById("minerRows").innerHTML = "";
       }
     }
