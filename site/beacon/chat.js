@@ -32,7 +32,7 @@ export function getChatHTML(agentId, agentName) {
   html += '<div id="chat-messages" class="chat-messages">';
 
   if (history.length === 0) {
-    html += `<div class="chat-hint">Type below to hail ${agentName}...</div>`;
+    html += `<div class="chat-hint">Type below to hail ${escapeHtml(agentName)}...</div>`;
   } else {
     for (const msg of history) {
       if (msg.role === 'user') {
@@ -51,6 +51,32 @@ export function getChatHTML(agentId, agentName) {
   html += '</div>';
 
   return html;
+}
+
+function createChatMessage(role, prefix, content) {
+  const el = document.createElement('div');
+  el.className = `chat-msg chat-${role}`;
+
+  if (prefix) {
+    const prefixEl = document.createElement('span');
+    prefixEl.className = 'chat-prefix';
+    prefixEl.textContent = prefix;
+    el.append(prefixEl, ' ');
+  }
+
+  el.append(document.createTextNode(content));
+  return el;
+}
+
+function createTypingIndicator() {
+  const el = document.createElement('div');
+  el.className = 'chat-typing';
+  el.id = 'chat-typing';
+
+  const dots = document.createElement('span');
+  dots.className = 'typing-dots';
+  el.append(dots, ' processing...');
+  return el;
 }
 
 export function bindChatEvents() {
@@ -99,10 +125,10 @@ async function sendMessage() {
   if (hint) hint.remove();
 
   // Render user message
-  msgBox.innerHTML += `<div class="chat-msg chat-user"><span class="chat-prefix">you&gt;</span> ${escapeHtml(text)}</div>`;
+  msgBox.appendChild(createChatMessage('user', 'you>', text));
 
   // Show typing indicator
-  msgBox.innerHTML += '<div class="chat-typing" id="chat-typing"><span class="typing-dots"></span> processing...</div>';
+  msgBox.appendChild(createTypingIndicator());
   msgBox.scrollTop = msgBox.scrollHeight;
 
   try {
@@ -125,14 +151,14 @@ async function sendMessage() {
     if (data.response) {
       history.push({ role: 'assistant', content: data.response });
       const agentName = data.agent || 'agent';
-      msgBox.innerHTML += `<div class="chat-msg chat-agent"><span class="chat-prefix">${escapeHtml(agentName.toLowerCase())}&gt;</span> ${escapeHtml(data.response)}</div>`;
+      msgBox.appendChild(createChatMessage('agent', `${agentName.toLowerCase()}>`, data.response));
     } else if (data.error) {
-      msgBox.innerHTML += `<div class="chat-msg chat-error">[ERROR] ${escapeHtml(data.error)}</div>`;
+      msgBox.appendChild(createChatMessage('error', '', `[ERROR] ${data.error}`));
     }
   } catch (err) {
     const typing = document.getElementById('chat-typing');
     if (typing) typing.remove();
-    msgBox.innerHTML += '<div class="chat-msg chat-error">[ERROR] Comms channel unreachable.</div>';
+    msgBox.appendChild(createChatMessage('error', '', '[ERROR] Comms channel unreachable.'));
   }
 
   msgBox.scrollTop = msgBox.scrollHeight;
