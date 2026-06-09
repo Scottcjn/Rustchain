@@ -1077,7 +1077,13 @@ class GossipLayer:
                 f"attestation was for node {attestation_node_peer_id}, "
                 f"not {expected_node_peer_id}"
             )
-            return {"status": "rejected", "reason": "attestation_node_mismatch"}
+            return {
+                "status": "rejected",
+                "reason": "attestation_node_mismatch",
+                "miner_id": miner_id,
+                "expected_node": expected_node_peer_id,
+                "received_node": attestation_node_peer_id,
+            }
 
         if miner_id != msg.sender_id:
             logger.warning(

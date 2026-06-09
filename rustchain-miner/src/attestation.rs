@@ -199,6 +199,12 @@ pub fn collect_entropy(cycles: usize, inner_loop: usize) -> EntropyData {
     }
 }
 
+/// Generates a canonical commitment string for the attestation report.
+/// Format: {nonce}:{wallet}:{node_peer_id}:{entropy_json}
+fn build_commitment_string(nonce: &str, wallet: &str, node_peer_id: &str, entropy_json: &str) -> String {
+    format!("{}:{}:{}:{}", nonce, wallet, node_peer_id, entropy_json)
+}
+
 /// Perform hardware attestation with the node using a pre-generated signing key.
 /// This allows the same keypair to be reused for enrollment signature verification.
 pub async fn attest_with_key(
@@ -248,7 +254,7 @@ pub async fn attest_with_key(
 
     // Step 3: Build commitment with node binding
     let entropy_json = serde_json::to_string(&entropy)?;
-    let commitment_string = format!("{}:{}:{}:{}", nonce, wallet, node_peer_id, entropy_json);
+    let commitment_string = build_commitment_string(&nonce, wallet, &node_peer_id, &entropy_json);
     let commitment_hash = Sha256::digest(commitment_string.as_bytes());
     let commitment = hex::encode(commitment_hash);
 
@@ -362,7 +368,7 @@ pub async fn attest(
 
     // Step 3: Build commitment with node binding
     let entropy_json = serde_json::to_string(&entropy)?;
-    let commitment_string = format!("{}:{}:{}:{}", nonce, wallet, node_peer_id, entropy_json);
+    let commitment_string = build_commitment_string(&nonce, wallet, &node_peer_id, &entropy_json);
     let commitment_hash = Sha256::digest(commitment_string.as_bytes());
     let commitment = hex::encode(commitment_hash);
 

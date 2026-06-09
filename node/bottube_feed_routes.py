@@ -128,7 +128,7 @@ def _fetch_videos(
             params.append(limit)
 
             cursor_obj.execute(query, params)
-            rows = cursor_obj.fetchall()
+            rows = cursor_obj.fetchall()  # fetchall-ok: already-paginated (LIMIT ?)
             conn.close()
 
             videos = []
