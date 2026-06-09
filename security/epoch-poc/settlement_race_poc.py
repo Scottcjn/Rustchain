@@ -240,7 +240,7 @@ def poc_race_condition():
     finally:
         try:
             os.unlink(db_file)
-        except:
+        except OSError:
             pass
 
 

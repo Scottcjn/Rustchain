@@ -70,11 +70,11 @@ def cleanup_test_db():
     """Remove test database file."""
     try:
         os.close(TEST_DB_FD)
-    except:
+    except OSError:
         pass
     try:
         Path(TEST_DB_PATH).unlink()
-    except:
+    except OSError:
         pass
 
 def get_valid_fingerprint() -> Dict[str, Any]:

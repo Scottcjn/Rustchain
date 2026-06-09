@@ -95,7 +95,7 @@ class BootChimeCapture:
                 device_info = sd.query_devices()
                 if isinstance(device_info, list) and len(device_info) > 0:
                     device_info = device_info[0]
-            except:
+            except Exception:
                 pass
             
             return CapturedAudio(

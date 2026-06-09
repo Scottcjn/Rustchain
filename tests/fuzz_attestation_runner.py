@@ -471,7 +471,7 @@ def send_payload(payload: Any, target_url: str, is_raw: bool = False) -> Tuple[O
         elapsed = (time.monotonic() - start) * 1000
         try:
             return e.code, e.read().decode("utf-8", errors="replace")[:2000], elapsed
-        except:
+        except Exception:
             return e.code, str(e), elapsed
     except urllib.error.URLError as e:
         elapsed = (time.monotonic() - start) * 1000
