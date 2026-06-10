@@ -94,6 +94,62 @@ function h(value){
     .replace(/'/g,'&#39;');
 }
 
+function statusPill(label, type){
+  const status = document.createElement('span');
+  status.className = `pill ${type}`;
+  status.textContent = label;
+  return status;
+}
+
+function preText(text){
+  const pre = document.createElement('pre');
+  pre.textContent = String(text ?? '');
+  return pre;
+}
+
+function mutedText(text, tag = 'span'){
+  const node = document.createElement(tag);
+  node.className = 'muted';
+  node.textContent = String(text ?? '');
+  return node;
+}
+
+function renderHealthResult(el, result, url){
+  if(result.ok){
+    el.replaceChildren(
+      statusPill('Reachable', 'ok'),
+      document.createTextNode(' '),
+      preText(result.text)
+    );
+    return;
+  }
+
+  el.replaceChildren(
+    statusPill('Failed', 'bad'),
+    document.createTextNode(' '),
+    preText(result.text),
+    mutedText(`If this is a CORS error, test with terminal: curl -sk ${url.replace(/\/$/,'')}/health`, 'p')
+  );
+}
+
+function renderMinerResult(el, hit, error = null){
+  if(error !== null){
+    el.replaceChildren(statusPill('Check failed', 'bad'), preText(String(error)));
+    return;
+  }
+
+  if(hit){
+    el.replaceChildren(statusPill('Found', 'ok'), preText(JSON.stringify(hit,null,2)));
+    return;
+  }
+
+  el.replaceChildren(
+    statusPill('Not found yet', 'warn'),
+    document.createTextNode(' '),
+    mutedText('Miner may still be attesting/enrolling.')
+  );
+}
+
 function detectPlatform(){
   const ua=navigator.userAgent.toLowerCase();
   state.platform = ua.includes('mac')?'macOS':ua.includes('win')?'Windows':ua.includes('linux')?'Linux':'Unknown';
@@ -217,9 +273,7 @@ function renderPanel(){
         const url = document.getElementById('testNodeUrl').value.trim();
         state.nodeUrl = url;
         const r = await testNode(url);
-        document.getElementById('testOut').innerHTML = r.ok
-          ? `<span class='pill ok'>Reachable</span> <pre>${h(r.text)}</pre>`
-          : `<span class='pill bad'>Failed</span> <pre>${h(r.text)}</pre><p class='muted'>If this is a CORS error, test with terminal: curl -sk ${h(url.replace(/\/$/,''))}/health</p>`;
+        renderHealthResult(document.getElementById('testOut'), r, url);
       }
     },0);
     return;
@@ -243,11 +297,9 @@ function renderPanel(){
           const data = await r.json();
           const arr = Array.isArray(data)?data:(data.miners||[]);
           const hit = arr.find(x=>JSON.stringify(x).toLowerCase().includes(q));
-          document.getElementById('minerOut').innerHTML = hit
-            ? `<span class='pill ok'>Found</span><pre>${h(JSON.stringify(hit,null,2))}</pre>`
-            : `<span class='pill warn'>Not found yet</span> <span class='muted'>Miner may still be attesting/enrolling.</span>`;
+          renderMinerResult(document.getElementById('minerOut'), hit);
         }catch(e){
-          document.getElementById('minerOut').innerHTML = `<span class='pill bad'>Check failed</span><pre>${h(String(e))}</pre>`;
+          renderMinerResult(document.getElementById('minerOut'), null, e);
         }
       }
     },0);
