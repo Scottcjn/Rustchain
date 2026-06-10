@@ -10,7 +10,7 @@ import json
 import time
 import requests
 from http.server import HTTPServer, SimpleHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import parse_qsl, quote, unquote, urlparse
 from datetime import datetime
 
 # Configuration
@@ -18,6 +18,44 @@ EXPLORER_PORT = int(os.environ.get('EXPLORER_PORT', 8080))
 API_BASE = os.environ.get('RUSTCHAIN_API_BASE', 'https://rustchain.org').rstrip('/')
 API_TIMEOUT = float(os.environ.get('API_TIMEOUT', '8'))
 STATIC_DIR = os.path.join(os.path.dirname(__file__), 'static')
+
+ALLOWED_PROXY_ENDPOINTS = {
+    ('health',),
+    ('epoch',),
+    ('api', 'miners'),
+    ('blocks',),
+    ('api', 'transactions'),
+    ('hall', 'leaderboard'),
+}
+
+
+def normalize_proxy_endpoint(endpoint):
+    """Return a safe upstream path for Explorer read-only proxy endpoints."""
+    if not endpoint:
+        return None
+
+    decoded = unquote(endpoint)
+    if decoded != endpoint:
+        return None
+    if decoded.startswith('/') or decoded.endswith('/'):
+        return None
+    if '//' in decoded or '\\' in decoded:
+        return None
+
+    segments = tuple(decoded.split('/'))
+    if any(segment in {'', '.', '..'} for segment in segments):
+        return None
+    if segments not in ALLOWED_PROXY_ENDPOINTS:
+        return None
+
+    return '/'.join(quote(segment, safe='') for segment in segments)
+
+
+def proxy_query_params(query):
+    """Parse query parameters for requests without concatenating raw URLs."""
+    if not query:
+        return None
+    return parse_qsl(query, keep_blank_values=True)
 
 class ExplorerHandler(SimpleHTTPRequestHandler):
     """Custom HTTP handler with API proxy and caching"""
@@ -65,7 +103,13 @@ class ExplorerHandler(SimpleHTTPRequestHandler):
     
     def handle_proxy(self, endpoint, parsed):
         """Proxy requests to RustChain API with caching"""
-        cache_key = f"{endpoint}:{parsed.query}"
+        safe_endpoint = normalize_proxy_endpoint(endpoint)
+        if safe_endpoint is None:
+            self.send_error_json(404, 'Proxy endpoint not allowed')
+            return
+
+        query_params = proxy_query_params(parsed.query)
+        cache_key = f"{safe_endpoint}:{parsed.query}"
         
         # Check cache
         cached = self._cache.get(cache_key)
@@ -75,11 +119,9 @@ class ExplorerHandler(SimpleHTTPRequestHandler):
         
         # Fetch from API
         try:
-            url = f"{API_BASE}/{endpoint}"
-            if parsed.query:
-                url += f"?{parsed.query}"
+            url = f"{API_BASE}/{safe_endpoint}"
             
-            response = requests.get(url, timeout=API_TIMEOUT)
+            response = requests.get(url, params=query_params, timeout=API_TIMEOUT)
             response.raise_for_status()
             data = response.json()
             
@@ -92,8 +134,8 @@ class ExplorerHandler(SimpleHTTPRequestHandler):
             self.send_json(data, headers={'X-Cache': 'MISS'})
         except requests.exceptions.Timeout:
             self.send_error_json(504, 'Gateway Timeout')
-        except requests.exceptions.RequestException as e:
-            self.send_error_json(502, f'Bad Gateway: {str(e)}')
+        except requests.exceptions.RequestException:
+            self.send_error_json(502, 'Bad Gateway')
         except json.JSONDecodeError:
             self.send_error_json(502, 'Invalid JSON from upstream')
     
