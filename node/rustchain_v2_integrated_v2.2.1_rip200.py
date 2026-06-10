@@ -5027,7 +5027,7 @@ def _header_key_authorized(conn, identity, pubkey):
         pass
     existing = conn.execute(
         "SELECT pubkey_hex FROM miner_header_keys WHERE miner_id=?", (identity,)
-    ).fetchall()  # fetchall-ok: bounded by _prune_header_keys cap
+    ).fetchall()  # fetchall-ok: bounded-by-schema (capped by _prune_header_keys)
     if not existing:
         # Bootstrap the first key for a named identity. Open TOFU here is the
         # residual T1.1 takeover race (a self-signed attestation grabbing a

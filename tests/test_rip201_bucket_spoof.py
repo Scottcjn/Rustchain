@@ -267,7 +267,11 @@ def test_attestation_downgrades_spoofed_g4_claim_to_non_vintage_weight(attest_cl
         ).fetchone()
 
     assert recent == ("x86_64", "default", 0)
-    assert enrollment == (85, 0.000000001)
+    # RIP-PoA strict enforcement: a FAILED fingerprint (here a spoofed-G4 claim
+    # rejected via cpu_brand_mismatch) now earns weight 0.0 — no rewards at all,
+    # not the old 1e-9 "spam tier". (Weight was changed 0.00001 -> 0.0 for
+    # failed fingerprints; VM-detection's 1e-9 tier is a separate path.)
+    assert enrollment == (85, 0)
     assert fleet_mod.classify_miner_bucket(recent[1]) != "vintage_powerpc"
 
 

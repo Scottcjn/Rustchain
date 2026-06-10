@@ -78,6 +78,104 @@ describe('RustChainClient', () => {
     });
   });
 
+  describe('getTransferHistory', () => {
+    const legacyTransaction = {
+      id: 7,
+      tx_id: 'tx_legacy',
+      tx_hash: 'tx_legacy',
+      from_addr: TEST_ADDRESS,
+      to_addr: RECIPIENT_ADDRESS,
+      amount: 1.25,
+      amount_i64: 1_250_000,
+      amount_rtc: 1.25,
+      timestamp: 1700000000,
+      created_at: 1700000000,
+      confirmed_at: 1700000000,
+      confirms_at: 1700000000,
+      status: 'confirmed' as const,
+      raw_status: 'confirmed',
+      status_reason: null,
+      confirmations: 1,
+      direction: 'sent' as const,
+      counterparty: RECIPIENT_ADDRESS,
+      reason: 'signed_transfer:test',
+      memo: 'test',
+    };
+
+    it('should preserve legacy array wallet history responses', async () => {
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => [legacyTransaction],
+      });
+
+      const history = await client.getTransferHistory(TEST_ADDRESS, 10);
+
+      expect(history).toEqual([legacyTransaction]);
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining(`/wallet/history?address=${encodeURIComponent(TEST_ADDRESS)}&limit=10`),
+        expect.any(Object)
+      );
+    });
+
+    it('should normalize the live envelope wallet history response', async () => {
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          miner_id: TEST_ADDRESS,
+          total: 1,
+          transactions: [
+            {
+              amount: 5.0,
+              epoch: null,
+              from: 'founder_community',
+              status: 'pending',
+              timestamp: 1780930000,
+              tx_hash: '09db0d0ace4ab297a54f4e2e392e69e7',
+              type: 'transfer_in',
+            },
+          ],
+        }),
+      });
+
+      const history = await client.getTransferHistory(TEST_ADDRESS, 5);
+
+      expect(history).toHaveLength(1);
+      expect(history[0]).toMatchObject({
+        id: 0,
+        tx_id: '09db0d0ace4ab297a54f4e2e392e69e7',
+        tx_hash: '09db0d0ace4ab297a54f4e2e392e69e7',
+        from_addr: 'founder_community',
+        to_addr: TEST_ADDRESS,
+        amount: 5,
+        amount_i64: 5_000_000,
+        amount_rtc: 5,
+        timestamp: 1780930000,
+        created_at: 1780930000,
+        confirmed_at: null,
+        confirms_at: null,
+        status: 'pending',
+        raw_status: 'pending',
+        status_reason: null,
+        confirmations: 0,
+        direction: 'received',
+        counterparty: 'founder_community',
+        memo: null,
+      });
+    });
+
+    it('should reject unexpected wallet history payloads', async () => {
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ ok: true, transactions: {} }),
+      });
+
+      await expect(client.getTransferHistory(TEST_ADDRESS)).rejects.toThrow(
+        'Unexpected wallet history response'
+      );
+    });
+  });
+
   describe('network info', () => {
     it('should fetch and cache the chain id', async () => {
       const info = {

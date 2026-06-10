@@ -160,6 +160,22 @@ class TestGetWalletBalance:
             assert error is None
             assert balance == 42.5
 
+    def test_balance_fetch_uses_current_query_endpoint(self):
+        """Balance lookup should use the current miner_id query endpoint."""
+        from coinbase_wallet import NODE_URL, _get_wallet_balance_from_node
+
+        with patch(
+            'coinbase_wallet._fetch_with_retry',
+            return_value=({"amount_rtc": 0.0}, None),
+        ) as fetch:
+            balance, error = _get_wallet_balance_from_node("github:pqmfei")
+
+        assert error is None
+        assert balance == 0.0
+        fetch.assert_called_once_with(
+            f"{NODE_URL}/wallet/balance?miner_id=github%3Apqmfei"
+        )
+
     def test_balance_with_alternative_field(self):
         """Test balance extraction from alternative field names."""
         from coinbase_wallet import _get_wallet_balance_from_node

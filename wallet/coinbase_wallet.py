@@ -10,7 +10,7 @@ import os
 import sys
 import socket
 import time
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 import requests
 
@@ -109,7 +109,7 @@ def _fetch_with_retry(url, method="GET", data=None, max_retries=3, timeout=10, v
 
 def _get_wallet_balance_from_node(address):
     """Get wallet balance from RustChain node."""
-    url = f"{NODE_URL}/wallet/balance/{address}"
+    url = f"{NODE_URL}/wallet/balance?{urlencode({'miner_id': address})}"
     payload, error = _fetch_with_retry(url)
     if error:
         return None, error
