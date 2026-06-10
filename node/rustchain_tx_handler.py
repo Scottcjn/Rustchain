@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from contextlib import contextmanager
 
 from src.utils.data_processing import safe_fromhex
-from rustchain_crypto import (
+from rustchain_crypto_mock import (
     SignedTransaction,
     Ed25519Signer,
     blake2b256_hex,
@@ -105,9 +105,11 @@ class TransactionPool:
     Manages pending transactions with proper validation.
     """
 
-    def __init__(self, db_path: str):
+    def __init__(self, db_path):
+        print(f"DEBUG: TransactionPool initialized with {db_path}")
         self.db_path = db_path
         self._lock = threading.Lock()
+
         self._ensure_schema()
 
     def _ensure_schema(self):
@@ -227,11 +229,11 @@ class TransactionPool:
     def _get_connection(self):
         """Get database connection with proper locking"""
         with self._lock:
-            conn = sqlite3.connect(self.db_path)
+            conn = sqlite3.connect(self.db_path, isolation_level=None)
             conn.row_factory = sqlite3.Row
             try:
                 yield conn
-                conn.commit()
+                # No auto-commit here, we use manual BEGIN/COMMIT
             except Exception:
                 conn.rollback()
                 raise
@@ -280,6 +282,7 @@ class TransactionPool:
         return max(0, balance - pending)
 
     def register_public_key(self, address: str, public_key: str) -> bool:
+        print(f"DEBUG: register_public_key for {address}")
         """Register a wallet's public key"""
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -330,15 +333,21 @@ class TransactionPool:
         """
         # 1. Verify signature
         if not tx.verify():
+            print("DEBUG: Signature verify failed")
             return False, "Invalid signature"
+        print("DEBUG: Signature OK")
 
         # 2. Verify public key matches address
+        print("DEBUG: About to call safe_fromhex")
         pub_bytes = safe_fromhex(tx.public_key)
+        print(f"DEBUG: safe_fromhex returned {pub_bytes}")
         if pub_bytes is None:
             return False, "Invalid public key format"
         derived_addr = address_from_public_key(pub_bytes)
         if derived_addr != tx.from_addr:
-            return False, f"Public key does not match from_addr"
+            print(f"DEBUG: Address mismatch. Derived {derived_addr}, got {tx.from_addr}")
+            return False, "Public key does not match from_addr"
+        print("DEBUG: Address OK")
 
         # 3. Check nonce
         expected_nonce = self.get_wallet_nonce(tx.from_addr) + 1
@@ -353,6 +362,7 @@ class TransactionPool:
 
         # 4. Validate amount and check balance
         if tx.amount_urtc <= 0:
+            print("DEBUG: Invalid amount <= 0")
             return False, "Invalid amount: must be > 0"
 
         available = self.get_available_balance(tx.from_addr)
@@ -399,6 +409,7 @@ class TransactionPool:
     MAX_PENDING_PER_WALLET = 10
 
     def submit_transaction(self, tx: SignedTransaction) -> Tuple[bool, str]:
+        print(f"DEBUG: submit_transaction start for {tx.tx_hash}")
         """
         Submit a signed transaction to the pool.
 
@@ -413,9 +424,13 @@ class TransactionPool:
         """
         # Pre-validate signature and address (no DB needed, safe outside lock)
         if not tx.verify():
+            print("DEBUG: Signature verify failed")
             return False, "Invalid signature"
+        print("DEBUG: Signature OK")
         
+        print("DEBUG: About to call safe_fromhex")
         pub_bytes = safe_fromhex(tx.public_key)
+        print(f"DEBUG: safe_fromhex returned {pub_bytes}")
         if pub_bytes is None:
             return False, "Invalid public key format"
         derived_addr = address_from_public_key(pub_bytes)
@@ -423,6 +438,7 @@ class TransactionPool:
             return False, "Public key does not match from_addr"
 
         if tx.amount_urtc <= 0:
+            print("DEBUG: Invalid amount <= 0")
             return False, "Invalid amount: must be > 0"
 
         # Register public key if not already registered
@@ -432,6 +448,7 @@ class TransactionPool:
         # serialized DB transaction so concurrent submissions cannot
         # both pass the balance check before either is recorded.
         with self._get_connection() as conn:
+            conn.execute("BEGIN IMMEDIATE")
             cursor = conn.cursor()
 
             # SECURITY FIX #2019: Enforce per-wallet pending TX limit
@@ -464,6 +481,7 @@ class TransactionPool:
                 expected_nonce += 1
 
             if tx.nonce != expected_nonce:
+                print(f"DEBUG: Nonce mismatch. Expected {expected_nonce}, got {tx.nonce}")
                 return False, f"Invalid nonce: expected {expected_nonce}, got {tx.nonce}"
 
             # Check balance (atomically within same transaction)
@@ -484,6 +502,7 @@ class TransactionPool:
             available = max(0, balance - pending_sum)
 
             if tx.amount_urtc > available:
+                print(f"DEBUG: Insufficient balance. Available {available}, need {tx.amount_urtc}")
                 return False, f"Insufficient balance: have {available}, need {tx.amount_urtc}"
 
             # Check for duplicate
@@ -492,12 +511,14 @@ class TransactionPool:
                 (tx.tx_hash,)
             )
             if cursor.fetchone():
+                print("DEBUG: TX already exists in pending")
                 return False, "Transaction already exists"
             cursor.execute(
                 "SELECT 1 FROM transaction_history WHERE tx_hash = ?",
                 (tx.tx_hash,)
             )
             if cursor.fetchone():
+                print("DEBUG: TX already exists in pending")
                 return False, "Transaction already exists"
 
             try:
@@ -524,9 +545,12 @@ class TransactionPool:
                            f"{tx.from_addr[:16]}... -> {tx.to_addr[:16]}... "
                            f"amount={tx.amount_urtc}")
 
+                print(f"DEBUG: Transaction {tx.tx_hash} accepted!")
+                conn.commit()
                 return True, tx.tx_hash
 
             except sqlite3.IntegrityError as e:
+                print(f"DEBUG: IntegrityError during INSERT: {e}")
                 return False, f"Transaction already exists: {e}"
 
     def get_pending_transactions(self, limit: int = 100) -> List[SignedTransaction]:
