@@ -146,11 +146,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/EpochResponse'
               example:
-                epoch: 75
-                slot: 10800
+                epoch: 189
+                slot: 27281
                 blocks_per_epoch: 144
                 epoch_pot: 1.5
-                enrolled_miners: 10
+                enrolled_miners: 21
+                total_supply_rtc: 8388608
 
   /api/miners:
     get:
@@ -283,9 +284,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/FeePoolResponse'
               example:
-                description: Fee Pool Statistics
+                description: Fee Pool Statistics (fees recycled to mining pool)
                 destination: founder_community
-                destination_balance_rtc: 83246.13
+                destination_balance_rtc: 0.0
+                fees_by_source: {}
+                recent_events: []
                 rip: 301
                 total_fee_events: 0
                 total_fees_collected_rtc: 0
@@ -364,9 +367,9 @@ paths:
                 $ref: '#/components/schemas/BalanceResponse'
               example:
                 ok: true
-                miner_id: scott
-                amount_rtc: 42.5
-                amount_i64: 42500000
+                miner_id: genesis
+                amount_rtc: 0.0
+                amount_i64: 0
         '404':
           description: Wallet not found
           content:
@@ -1637,7 +1640,7 @@ components:
         memo:
           type: string
           nullable: true
-          description: Extracted memo from signed_transfer: prefix
+          description: 'Extracted memo from signed_transfer: prefix'
 
     SignedTransferRequest:
       type: object
