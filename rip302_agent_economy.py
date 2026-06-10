@@ -174,14 +174,14 @@ def _get_balance_i64(c: sqlite3.Cursor, wallet_id: str) -> int:
 
 
 def _adjust_balance(c: sqlite3.Cursor, wallet_id: str, delta_i64: int):
-    """Adjust wallet balance by delta (positive = credit, negative = debit)."""
-    current = _get_balance_i64(c, wallet_id)
-    new_balance = current + delta_i64
+    """Adjust wallet balance by delta (positive = credit, negative = debit).
+    Uses atomic SQLite update to prevent race conditions.
+    """
     c.execute("""
         INSERT INTO balances (miner_id, amount_i64)
         VALUES (?, ?)
-        ON CONFLICT(miner_id) DO UPDATE SET amount_i64 = ?
-    """, (wallet_id, new_balance, new_balance))
+        ON CONFLICT(miner_id) DO UPDATE SET amount_i64 = amount_i64 + ?
+    """, (wallet_id, delta_i64, delta_i64))
 
 
 def _log_job_action(c: sqlite3.Cursor, job_id: str, action: str,
@@ -299,7 +299,9 @@ def register_agent_economy(app: Flask, db_path: str):
     init_agent_economy_tables(db_path)
 
     def _expire_refundable_job(c: sqlite3.Cursor, job: dict, now: int) -> bool:
-        """Expire an open/claimed job past TTL and refund escrow once."""
+        """Expire an open/claimed job past TTL and refund escrow once.
+        Note: Caller must have already started a transaction (e.g. BEGIN IMMEDIATE).
+        """
         if job["status"] not in (STATUS_OPEN, STATUS_CLAIMED):
             return False
         if int(job["expires_at"]) >= now:
@@ -362,10 +364,11 @@ def register_agent_economy(app: Flask, db_path: str):
 
         now = int(time.time())
         job_id = _generate_job_id(poster, title)
-
+        
         conn = sqlite3.connect(db_path)
         try:
             c = conn.cursor()
+            c.execute("BEGIN IMMEDIATE")
 
             # Check poster balance
             poster_balance = _get_balance_i64(c, poster)
@@ -440,13 +443,14 @@ def register_agent_economy(app: Flask, db_path: str):
         if error:
             return error
         worker = str(data.get("worker_wallet", "")).strip()
-
+        
         if not worker:
             return jsonify({"error": "worker_wallet required"}), 400
-
+        
         conn = sqlite3.connect(db_path)
         try:
             c = conn.cursor()
+            c.execute("BEGIN IMMEDIATE")
 
             job = c.execute("SELECT * FROM agent_jobs WHERE job_id = ?",
                            (job_id,)).fetchone()
