@@ -623,6 +623,7 @@
     // ── State ──────────────────────────────────────────────
     let currentCertId = '';
     let currentStyle = 'flat';
+    const PREVIEW_PLACEHOLDER = 'Enter a Certificate ID and click "Generate Preview" to see your badge';
 
     // ── DOM Elements ──────────────────────────────────────────────
     const badgeForm = document.getElementById('badgeForm');
@@ -723,6 +724,40 @@
       }
     }
 
+    function renderPreviewPlaceholder() {
+      const placeholder = document.createElement('span');
+      placeholder.className = 'preview-placeholder';
+      placeholder.textContent = PREVIEW_PLACEHOLDER;
+      previewArea.replaceChildren(placeholder);
+    }
+
+    function renderPreviewFallback(url) {
+      const wrapper = document.createElement('div');
+      wrapper.style.textAlign = 'left';
+
+      const warning = document.createElement('p');
+      warning.style.color = 'var(--term-orange)';
+      warning.style.marginBottom = '10px';
+      warning.textContent = '⚠ Preview endpoint unavailable (expected in static mode)';
+
+      const urlLine = document.createElement('p');
+      urlLine.style.color = 'var(--term-dim)';
+      urlLine.appendChild(document.createTextNode('Badge URL: '));
+
+      const urlText = document.createElement('span');
+      urlText.style.color = 'var(--term-blue)';
+      urlText.textContent = url;
+      urlLine.appendChild(urlText);
+
+      const note = document.createElement('p');
+      note.style.color = 'var(--term-dim)';
+      note.style.marginTop = '10px';
+      note.textContent = 'In production, this will fetch the badge from the BCOS API.';
+
+      wrapper.append(warning, urlLine, note);
+      previewArea.replaceChildren(wrapper);
+    }
+
     async function updatePreview(certId) {
       const style = currentStyle;
       const url = `${BADGE_ENDPOINT}/${certId}.svg?style=${style}`;
@@ -732,26 +767,13 @@
         img.alt = `BCOS Badge for ${certId}`;
 
         img.onload = () => {
-          previewArea.innerHTML = '';
-          previewArea.appendChild(img);
+          previewArea.replaceChildren(img);
           resolve();
         };
 
         img.onerror = () => {
           // For demo purposes, show a placeholder if endpoint is unavailable
-          previewArea.innerHTML = `
-            <div style="text-align: left;">
-              <p style="color: var(--term-orange); margin-bottom: 10px;">
-                ⚠ Preview endpoint unavailable (expected in static mode)
-              </p>
-              <p style="color: var(--term-dim);">
-                Badge URL: <span style="color: var(--term-blue);">${url}</span>
-              </p>
-              <p style="color: var(--term-dim); margin-top: 10px;">
-                In production, this will fetch the badge from the BCOS API.
-              </p>
-            </div>
-          `;
+          renderPreviewFallback(url);
           resolve(); // Don't reject, just show placeholder
         };
 
@@ -808,7 +830,7 @@
       currentStyle = 'flat';
       styleBtns.forEach(b => b.classList.remove('active'));
       styleBtns[0].classList.add('active');
-      previewArea.innerHTML = '<span class="preview-placeholder">Enter a Certificate ID and click "Generate Preview" to see your badge</span>';
+      renderPreviewPlaceholder();
       outputSection.classList.add('hidden');
       statusMessage.classList.add('hidden');
       inputType.value = 'cert_id';
