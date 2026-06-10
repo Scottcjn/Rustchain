@@ -99,8 +99,6 @@ node/rustchain_block_producer.py:314:            for row in cursor.fetchall():
 node/rustchain_block_producer.py:485:            for row in cursor.fetchall():
 node/rustchain_block_producer.py:516:                for row in cursor.fetchall()
 node/rustchain_block_producer.py:884:    return {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
-node/rustchain_dashboard.py:504:            """, (epoch_data['epoch'],)).fetchall()
-node/rustchain_dashboard.py:557:            """).fetchall()
 node/rustchain_ergo_anchor.py:472:                    for row in cursor.fetchall():
 node/rustchain_ergo_anchor.py:561:            anchors = [dict(row) for row in cursor.fetchall()]
 node/rustchain_migration.py:123:                tables = [row[0] for row in cursor.fetchall()]
