@@ -175,8 +175,24 @@ ARCHS.forEach(a => {
   const div = document.createElement('label');
   div.className = 'filter-arch';
   div.id = `fa-${a.key}`;
-  div.innerHTML = `<input type="checkbox" checked data-arch="${a.key}"><div class="legend-swatch" style="background:${a.color}"></div>${a.label}`;
-  div.querySelector('input').addEventListener('change', e => {
+  
+  const checkbox = document.createElement('input');
+  checkbox.type = 'checkbox';
+  checkbox.checked = true;
+  checkbox.dataset.arch = a.key;
+  
+  const swatch = document.createElement('div');
+  swatch.className = 'legend-swatch';
+  swatch.style.backgroundColor = a.color;
+  
+  const label = document.createElement('span');
+  label.textContent = a.label;
+  
+  div.appendChild(checkbox);
+  div.appendChild(swatch);
+  div.appendChild(label);
+  
+  checkbox.addEventListener('change', e => {
     e.target.checked ? activeArchs.add(e.target.dataset.arch) : activeArchs.delete(e.target.dataset.arch);
     updateFilterUI();
     render(currentMode);
@@ -197,7 +213,22 @@ ARCHS.forEach(a => {
   const div = document.createElement('div');
   div.className = 'legend-item';
   div.id = `li-${a.key}`;
-  div.innerHTML = `<div class="legend-swatch" style="background:${a.color}"></div>${a.label}<span class="legend-count">(${total.toLocaleString()})</span>`;
+  
+  const swatch = document.createElement('div');
+  swatch.className = 'legend-swatch';
+  swatch.style.backgroundColor = a.color;
+  
+  const label = document.createElement('span');
+  label.textContent = a.label;
+  
+  const count = document.createElement('span');
+  count.className = 'legend-count';
+  count.textContent = `(${total.toLocaleString()})`;
+  
+  div.appendChild(swatch);
+  div.appendChild(label);
+  div.appendChild(count);
+  
   div.addEventListener('click', () => {
     const cb = filterPanel.querySelector(`input[data-arch="${a.key}"]`);
     if (cb) cb.click();
@@ -207,7 +238,17 @@ ARCHS.forEach(a => {
 
 // Stats
 const totalAtt = rawData.reduce((s,r) => s + archKeys.reduce((ss,k) => ss+(r[k]||0),0), 0);
-document.getElementById('stats').innerHTML = `<span>${rawData.length}</span> epochs &middot; <span>${totalAtt.toLocaleString()}</span> attestations &middot; <span>${archKeys.length}</span> architecture families &middot; click legend to filter`;
+const statsEl = document.getElementById('stats');
+statsEl.innerHTML = '';
+const s1 = document.createElement('span'); s1.textContent = rawData.length;
+statsEl.appendChild(s1);
+statsEl.appendChild(document.createTextNode(' epochs &middot; '));
+const s2 = document.createElement('span'); s2.textContent = totalAtt.toLocaleString();
+statsEl.appendChild(s2);
+statsEl.appendChild(document.createTextNode(' attestations &middot; '));
+const s3 = document.createElement('span'); s3.textContent = archKeys.length;
+statsEl.appendChild(s3);
+statsEl.appendChild(document.createTextNode(' architecture families &middot; click legend to filter'));
 
 const modeDescs = {
   stacked: 'Stacked Area &mdash; each band = active miners per arch, oldest at bottom',
@@ -279,13 +320,71 @@ function render(mode) {
       tip.style.display = 'block';
       tip.style.left = Math.min(event.pageX+14, window.innerWidth-330) + 'px';
       tip.style.top  = Math.max(event.pageY-80, 10) + 'px';
-      tip.innerHTML = `<div class="tip-arch" style="color:${archColor[d.key]}">${archLabel[d.key]}</div>
-        <div class="tip-row"><span class="tip-label">Epoch</span><span class="tip-value">${clamped}</span></div>
-        <div class="tip-row"><span class="tip-label">Active miners</span><span class="tip-value">${count}</span></div>
-        <div class="tip-row"><span class="tip-label">Share</span><span class="tip-value">${pct}%</span></div>
-        <div class="tip-row"><span class="tip-label">Total this epoch</span><span class="tip-value">${total}</span></div>
-        <div class="tip-row"><span class="tip-label">RTC mined</span><span class="tip-value">${row.totalRTC.toFixed(2)}</span></div>
-        <div class="tip-row"><span class="tip-label">Era</span><span class="tip-value">${clamped<50?'Genesis':clamped<100?'Expansion':clamped<200?'Consolidation':'Modern'}</span></div>${minerHtml}`;
+      tip.innerHTML = ''; // Clear content
+      
+      const archEl = document.createElement('div');
+      archEl.className = 'tip-arch';
+      archEl.style.color = archColor[d.key];
+      archEl.textContent = archLabel[d.key];
+      tip.appendChild(archEl);
+      
+      const createTipRow = (label, value) => {
+        const row = document.createElement('div');
+        row.className = 'tip-row';
+        const lb = document.createElement('span');
+        lb.className = 'tip-label';
+        lb.textContent = label;
+        const vl = document.createElement('span');
+        vl.className = 'tip-value';
+        vl.textContent = value;
+        row.appendChild(lb);
+        row.appendChild(vl);
+        return row;
+      };
+      
+      tip.appendChild(createTipRow('Epoch', clamped));
+      tip.appendChild(createTipRow('Active miners', count));
+      tip.appendChild(createTipRow('Share', pct + '%'));
+      tip.appendChild(createTipRow('Total this epoch', total));
+      tip.appendChild(createTipRow('RTC mined', row.totalRTC.toFixed(2)));
+      tip.appendChild(createTipRow('Era', clamped<50?'Genesis':clamped<100?'Expansion':clamped<200?'Consolidation':'Modern'));
+      
+      if (miners && miners.length > 0) {
+        const divider = document.createElement('div');
+        divider.className = 'tip-divider';
+        tip.appendChild(divider);
+        
+        const m = miners[Math.floor(Math.random() * Math.min(3, miners.length))];
+        const minerDiv = document.createElement('div');
+        minerDiv.className = 'tip-miner';
+        
+        const mId = document.createElement('div');
+        mId.className = 'tip-miner-id';
+        mId.textContent = `\u2B22 ${m.id}`;
+        
+        const mDev = document.createElement('div');
+        mDev.className = 'tip-miner-device';
+        mDev.textContent = m.device;
+        
+        const mFp = document.createElement('div');
+        mFp.className = 'tip-fp';
+        mFp.appendChild(document.createTextNode('FP: '));
+        const fpq = document.createElement('strong');
+        fpq.style.color = '#c8b88a';
+        fpq.textContent = m.fpq;
+        mFp.appendChild(fpq);
+        mFp.appendChild(document.createTextNode('  RTC: '));
+        const rtcVal = document.createElement('strong');
+        rtcVal.style.color = '#c8b88a';
+        rtcVal.textContent = m.rtc;
+        mFp.appendChild(rtcVal);
+        
+        minerDiv.appendChild(mId);
+        minerDiv.appendChild(mDev);
+        minerDiv.appendChild(mFp);
+        tip.appendChild(minerDiv);
+      }
+
       d3.select(this).attr('opacity', 1);
       const ei = document.getElementById('epoch-info');
       ei.style.display = 'block';
