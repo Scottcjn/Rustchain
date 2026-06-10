@@ -1137,35 +1137,21 @@ def generate_badge():
             'error': 'JSON object body required',
         }), 400
 
-    raw_repo_name = data.get('repo_name', '')
-    if not isinstance(raw_repo_name, str):
-        return jsonify({'success': False, 'error': 'Repository name must be a string'})
-    repo_name = raw_repo_name.strip()
-
-    raw_tier = data.get('tier', 'L1')
-    if not isinstance(raw_tier, str):
-        return jsonify({'success': False, 'error': 'Tier must be a string'})
-    tier = raw_tier.upper()
-    raw_trust_score = data.get('trust_score', 75)
-    data = request.get_json(silent=True)
-    if not data or not isinstance(data, dict):
-        return jsonify({'success': False, 'error': 'JSON body must be an object'}), 400
-    
     repo_name = data.get('repo_name')
     if not isinstance(repo_name, str):
-        return jsonify({'success': False, 'error': 'repo_name must be a string'}), 400
+        return jsonify({'success': False, 'error': 'Repository name must be a string'})
     if not repo_name or '/' not in repo_name:
         return jsonify({'success': False, 'error': 'Invalid repository format. Use: owner/repo'})
     
     tier = data.get('tier')
     if not isinstance(tier, str):
-        return jsonify({'success': False, 'error': 'tier must be a string'}), 400
+        return jsonify({'success': False, 'error': 'Tier must be a string'})
     if tier not in ['L0', 'L1', 'L2']:
         return jsonify({'success': False, 'error': 'Invalid tier. Must be L0, L1, or L2'})
     
-    raw_trust_score = data.get('trust_score')
-    if not isinstance(raw_trust_score, (int, float)):
-        return jsonify({'success': False, 'error': 'trust_score must be a number'}), 400
+    raw_trust_score = data.get('trust_score', 75)
+    if not isinstance(raw_trust_score, (int, float)) or isinstance(raw_trust_score, bool):
+        return jsonify({'success': False, 'error': 'Trust score must be a number'})
     
     try:
         trust_score = int(raw_trust_score)
@@ -1178,7 +1164,7 @@ def generate_badge():
     cert_id = data.get('cert_id', '')
     include_qr = data.get('include_qr', False)
     if not isinstance(include_qr, bool):
-        return jsonify({'success': False, 'error': 'include_qr must be a boolean'}), 400
+        return jsonify({'success': False, 'error': 'include_qr must be a boolean'})
 
     # Generate cert_id if not provided
     if not cert_id:
