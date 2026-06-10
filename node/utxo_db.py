@@ -1353,7 +1353,7 @@ class UtxoDB:
                            LIMIT ?
                         """,
                         (now, scan_limit),
-                    ).fetchall()
+                    ).fetchall()  # fetchall-ok: already-paginated
                 else:
                     rows = conn.execute(
                         """SELECT tx_id, tx_data_json, fee_nrtc
@@ -1367,7 +1367,7 @@ class UtxoDB:
                            LIMIT ?
                         """,
                         (now, last_fee, last_fee, last_tx_id, scan_limit),
-                    ).fetchall()
+                    ).fetchall()  # fetchall-ok: already-paginated
 
                 if not rows:
                     break
@@ -1444,7 +1444,7 @@ class UtxoDB:
                 expired = conn.execute(
                     "SELECT tx_id FROM utxo_mempool WHERE expires_at <= ?",
                     (now,),
-                ).fetchall()
+                ).fetchall()  # fetchall-ok: bounded-by-schema
             except sqlite3.OperationalError as exc:
                 if "no such table" in str(exc).lower():
                     return 0
