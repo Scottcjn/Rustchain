@@ -1,49 +1,34 @@
 from pathlib import Path
 
 
-def test_claims_page_escapes_api_and_user_fields_before_inner_html():
+def test_claims_page_uses_dom_text_apis_instead_of_html_templates():
     claims_js = Path(__file__).resolve().parents[1] / "web" / "claims" / "claims.js"
     script = claims_js.read_text(encoding="utf-8")
 
-    assert "function escapeHtml(value)" in script
-    assert "function safeCssClass(value)" in script
-    assert "function safeNumber(value, fallback = 0)" in script
-    assert "function safeInteger(value, fallback = 0)" in script
-
-    safe_patterns = [
-        "${escapeHtml(eligibility.miner_id)}",
-        "${escapeHtml(eligibility.attestation?.device_arch || 'N/A')}",
-        "${escapeHtml(eligibility.wallet_address || 'Not registered')}",
-        "Reason: ${escapeHtml(eligibility.reason || 'Unknown')}",
-        "${escapeHtml(formatCheckName(check))}",
-        'value="${safeInteger(epoch.epoch)}"',
-        'data-reward="${safeInteger(epoch.reward_urtc)}"',
-        "${escapeHtml(minerId)}",
-        "${escapeHtml(walletAddress)}",
-        "${escapeHtml(claim.claim_id)}",
-        'class="status-badge ${safeCssClass(claim.status)}"',
-        "${escapeHtml(claim.status)}",
-        "${escapeHtml(result.claim_id)}",
+    forbidden_sinks = [
+        "innerHTML",
+        "insertAdjacentHTML",
+        "outerHTML",
+        "function escapeHtml",
     ]
 
-    for pattern in safe_patterns:
+    for sink in forbidden_sinks:
+        assert sink not in script
+
+    required_dom_patterns = [
+        "function createNode(tagName, options = {})",
+        "node.textContent = String(options.text ?? '')",
+        "parent.appendChild(document.createTextNode(String(value ?? '')))",
+        "eligibilityResult.replaceChildren();",
+        "epochSelect.replaceChildren(new Option(label, ''));",
+        "claimSummary.replaceChildren();",
+        "tbody.replaceChildren();",
+        "submitSuccess.replaceChildren();",
+        "new Option(`Epoch ${epochNumber} - ${formatRtc(rewardUrtc)} RTC`, String(epochNumber))",
+        "option.dataset.reward = String(rewardUrtc)",
+        "appendNode(submitSuccess, 'code', { text: result.claim_id })",
+        "className: `status-badge ${safeCssClass(claim.status)}`",
+    ]
+
+    for pattern in required_dom_patterns:
         assert pattern in script
-
-    unsafe_patterns = [
-        "${eligibility.miner_id}",
-        "${eligibility.attestation?.device_arch || 'N/A'}",
-        "${eligibility.wallet_address || 'Not registered'}",
-        "Reason: ${eligibility.reason || 'Unknown'}",
-        "${check.replace(/_/g, ' ').replace(/\\b\\w/g, l => l.toUpperCase())}",
-        'value="${epoch.epoch}"',
-        'data-reward="${epoch.reward_urtc}"',
-        "${minerId}</span>",
-        "${walletAddress}</span>",
-        "${claim.claim_id}",
-        'class="status-badge ${claim.status}"',
-        "${claim.status}</span>",
-        "${result.claim_id}</code>",
-    ]
-
-    for pattern in unsafe_patterns:
-        assert pattern not in script
