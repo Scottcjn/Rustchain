@@ -32,7 +32,7 @@ export function getChatHTML(agentId, agentName) {
   html += '<div id="chat-messages" class="chat-messages">';
 
   if (history.length === 0) {
-    html += `<div class="chat-hint">Type below to hail ${agentName}...</div>`;
+    html += `<div class="chat-hint">Type below to hail ${escapeHtml(agentName)}...</div>`;
   } else {
     for (const msg of history) {
       if (msg.role === 'user') {
@@ -99,10 +99,10 @@ async function sendMessage() {
   if (hint) hint.remove();
 
   // Render user message
-  msgBox.innerHTML += `<div class="chat-msg chat-user"><span class="chat-prefix">you&gt;</span> ${escapeHtml(text)}</div>`;
+  appendChatMessage(msgBox, 'chat-user', 'you>', text);
 
   // Show typing indicator
-  msgBox.innerHTML += '<div class="chat-typing" id="chat-typing"><span class="typing-dots"></span> processing...</div>';
+  appendTypingIndicator(msgBox);
   msgBox.scrollTop = msgBox.scrollHeight;
 
   try {
@@ -125,20 +125,52 @@ async function sendMessage() {
     if (data.response) {
       history.push({ role: 'assistant', content: data.response });
       const agentName = data.agent || 'agent';
-      msgBox.innerHTML += `<div class="chat-msg chat-agent"><span class="chat-prefix">${escapeHtml(agentName.toLowerCase())}&gt;</span> ${escapeHtml(data.response)}</div>`;
+      appendChatMessage(msgBox, 'chat-agent', `${agentName.toLowerCase()}>`, data.response);
     } else if (data.error) {
-      msgBox.innerHTML += `<div class="chat-msg chat-error">[ERROR] ${escapeHtml(data.error)}</div>`;
+      appendErrorMessage(msgBox, data.error);
     }
   } catch (err) {
     const typing = document.getElementById('chat-typing');
     if (typing) typing.remove();
-    msgBox.innerHTML += '<div class="chat-msg chat-error">[ERROR] Comms channel unreachable.</div>';
+    appendErrorMessage(msgBox, 'Comms channel unreachable.');
   }
 
   msgBox.scrollTop = msgBox.scrollHeight;
   input.disabled = false;
   input.focus();
   sending = false;
+}
+
+function appendChatMessage(msgBox, className, prefix, message) {
+  const msg = document.createElement('div');
+  msg.className = `chat-msg ${className}`;
+
+  if (prefix) {
+    const prefixSpan = document.createElement('span');
+    prefixSpan.className = 'chat-prefix';
+    prefixSpan.textContent = prefix;
+    msg.appendChild(prefixSpan);
+    msg.appendChild(document.createTextNode(' '));
+  }
+
+  msg.appendChild(document.createTextNode(String(message ?? '')));
+  msgBox.appendChild(msg);
+}
+
+function appendErrorMessage(msgBox, message) {
+  appendChatMessage(msgBox, 'chat-error', null, `[ERROR] ${String(message ?? '')}`);
+}
+
+function appendTypingIndicator(msgBox) {
+  const typing = document.createElement('div');
+  typing.className = 'chat-typing';
+  typing.id = 'chat-typing';
+
+  const dots = document.createElement('span');
+  dots.className = 'typing-dots';
+  typing.appendChild(dots);
+  typing.appendChild(document.createTextNode(' processing...'));
+  msgBox.appendChild(typing);
 }
 
 function escapeHtml(str) {
