@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "rustchain-wallet"
+version = "1.0.0"
+description = "Command-line wallet for managing RTC tokens on RustChain"
+requires-python = ">=3.9"
+dependencies = ["cryptography>=41"]
+license = {text = "MIT"}
+
+[project.scripts]
+rustchain-wallet = "rustchain_wallet_cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
