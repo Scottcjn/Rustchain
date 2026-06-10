@@ -143,11 +143,42 @@ function safeScore(v){
   const n=Number(v);
   return Number.isFinite(n)?String(n):esc(v||'—');
 }
+function setStatusMessage(message,className){
+  const status=document.getElementById('status');
+  const span=document.createElement('span');
+  if(className){ span.className=className; }
+  span.textContent=String(message||'');
+  status.replaceChildren(span);
+}
+function appendTextCell(row,value,colSpan){
+  const cell=document.createElement('td');
+  if(colSpan){ cell.colSpan=colSpan; }
+  cell.textContent=String(value??'');
+  row.appendChild(cell);
+  return cell;
+}
+function renderTimeline(timeline,machine){
+  const body=document.getElementById('timeline');
+  if(!timeline.length){
+    const row=document.createElement('tr');
+    appendTextCell(row,'No recent attestation activity',3);
+    body.replaceChildren(row);
+    return;
+  }
+  const rows=timeline.map(x=>{
+    const row=document.createElement('tr');
+    appendTextCell(row,x.date||'—');
+    appendTextCell(row,safeInt(x.attestations??x.samples??0));
+    appendTextCell(row,safeScore(x.rust_score??machine.rust_score??'—'));
+    return row;
+  });
+  body.replaceChildren(...rows);
+}
 (async()=>{
   const id=q('id')||q('machine');
-  if(!id){ document.getElementById('status').innerHTML='<span class="err">Missing machine id. Use ?id=&lt;fingerprint_hash&gt;.</span>'; return; }
+  if(!id){ setStatusMessage('Missing machine id. Use ?id=<fingerprint_hash>.','err'); return; }
   const res=await fetch('/api/hall_of_fame/machine?id='+encodeURIComponent(id));
-  if(!res.ok){ document.getElementById('status').innerHTML='<span class="err">Not found or unavailable.</span>'; return; }
+  if(!res.ok){ setStatusMessage('Not found or unavailable.','err'); return; }
   const data=await res.json();
   const m=data.machine||data||{};
   document.getElementById('status').style.display='none';
@@ -172,7 +203,7 @@ function safeScore(v){
 
   const t=data.attestation_timeline_30d||[];
   document.getElementById('timelineCard').style.display='block';
-  document.getElementById('timeline').innerHTML=t.length?t.map(x=>`<tr><td>${esc(x.date||'—')}</td><td>${safeInt(x.attestations??x.samples??0)}</td><td>${safeScore(x.rust_score??m.rust_score??'—')}</td></tr>`).join(''):'<tr><td colspan="3">No recent attestation activity</td></tr>';
+  renderTimeline(t,m);
 
   const r=data.reward_participation||{};
   document.getElementById('rewardCard').style.display='block';
