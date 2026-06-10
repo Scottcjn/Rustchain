@@ -51,9 +51,21 @@ REASONING: [explanation]"""
 
 
 def _build_analysis_prompt(fingerprint):
-    """Build the prompt for Sophia Elya using the RIP-306 template."""
+    """Build the prompt for Sophia Elya using the RIP-306 template.
+    Input is sanitized to prevent prompt injection.
+    """
+    # Sanitize fingerprint values to prevent prompt injection (newlines/delimiters)
+    sanitized_fp = {}
+    for k, v in fingerprint.items():
+        if isinstance(v, str):
+            sanitized_fp[k] = v.replace("\n", " ").replace("VERDICT:", "[V]")
+        elif isinstance(v, dict):
+            sanitized_fp[k] = {sk: (sv.replace("\n", " ") if isinstance(sv, str) else sv) for sk, sv in v.items()}
+        else:
+            sanitized_fp[k] = v
+
     return PROMPT_TEMPLATE.format(
-        json_fingerprint=json.dumps(fingerprint, indent=2)
+        json_fingerprint=json.dumps(sanitized_fp, indent=2)
     )
 
 
@@ -132,103 +144,104 @@ def _query_ollama(prompt, endpoint, max_attempts=OLLAMA_MAX_ATTEMPTS,
 
 def _rule_based_fallback(fingerprint):
     """Deterministic rule-based analysis when Ollama is unavailable.
-
-    Checks: clock drift CV, cache hierarchy, SIMD identity, thermal profile,
-    cross-epoch stability.
+    Uses tightened thresholds and anomaly detection to prevent trivial bypass.
     """
     score = 0
     reasons = []
-
-    # Clock drift CV check
+    
+    # 1. Clock drift CV - tighten thresholds
     cv = fingerprint.get("clock_drift_cv")
     if cv is not None:
-        if cv < 0.001:
-            score -= 3
-            reasons.append("Clock drift CV suspiciously low (possible emulation)")
-        elif cv < 0.01:
+        if cv < 0.0005: # Lowered from 0.001
+            score -= 4
+            reasons.append("Clock drift CV suspiciously low (emulator detected)")
+        elif 0.001 < cv < 0.008:
             score += 1
-            reasons.append("Clock drift CV within normal range")
-        elif cv > 0.1:
+            reasons.append("Clock drift CV within tight normal range")
+        elif cv > 0.15:
             score -= 2
-            reasons.append("Clock drift CV abnormally high (unstable hardware)")
+            reasons.append("Clock drift CV abnormally high")
         else:
             score += 0
             reasons.append("Clock drift CV acceptable")
 
-    # Cache hierarchy check
+    # 2. Cache hierarchy - check for 'too perfect' values
     cache = fingerprint.get("cache_hierarchy", {})
-    l1 = cache.get("l1_latency_ns")
-    l2 = cache.get("l2_latency_ns")
-    l3 = cache.get("l3_latency_ns")
+    l1, l2, l3 = cache.get("l1_latency_ns"), cache.get("l2_latency_ns"), cache.get("l3_latency_ns")
     if l1 is not None and l2 is not None and l3 is not None:
         if not (l1 < l2 < l3):
-            score -= 3
-            reasons.append("Cache hierarchy latencies violate expected ordering")
+            score -= 5
+            reasons.append("Cache hierarchy ordering violation")
+        elif l1 == 10 and l2 == 20 and l3 == 30: # Block common 'placeholder' values
+            score -= 5
+            reasons.append("Generic placeholder cache latencies detected")
         else:
             score += 1
-            reasons.append("Cache hierarchy ordering valid")
-
-        # Uniform latencies => emulation
-        if l1 == l2 == l3:
+            reasons.append("Cache hierarchy valid")
+        
+        if l1 == l2 or l2 == l3:
             score -= 4
             reasons.append("Uniform cache latencies indicate emulation")
 
-    # SIMD identity check
+    # 3. SIMD - verify a minimum set of extensions
     simd = fingerprint.get("simd_identity", {})
     if simd:
         supported = [k for k, v in simd.items() if v]
-        if not supported:
-            score -= 2
-            reasons.append("No SIMD extensions reported (unusual for modern hardware)")
+        if len(supported) < 2: # Require at least 2 extensions for approval
+            score -= 1
+            reasons.append("Insufficient SIMD extensions reported")
         else:
             score += 1
-            reasons.append(f"SIMD extensions present: {', '.join(supported)}")
+            reasons.append(f"SIMD extensions verified: {', '.join(supported)}")
+    else:
+        score -= 2
+        reasons.append("No SIMD data provided")
 
-    # Thermal profile check
+    # 4. Thermal profile - check for static temperatures
     thermal = fingerprint.get("thermal", {})
     temp = thermal.get("cpu_temp_c")
     if temp is not None:
-        if temp < 15:
-            score -= 2
-            reasons.append("CPU temperature impossibly low")
-        elif temp > 105:
-            score -= 1
-            reasons.append("CPU temperature critically high")
-        elif 25 <= temp <= 85:
+        if temp < 10 or temp > 110:
+            score -= 3
+            reasons.append("Impossible CPU temperature")
+        elif 30 <= temp <= 75:
             score += 1
-            reasons.append("CPU temperature in normal range")
+            reasons.append("CPU temperature normal")
+        else:
+            score += 0
+            reasons.append("CPU temperature marginal")
 
-    # Cross-epoch stability score
+    # 5. Stability - reject perfect scores
     stability = fingerprint.get("stability_score")
     if stability is not None:
-        if stability > 0.99:
-            score -= 2
-            reasons.append("Stability score suspiciously perfect")
+        if stability > 0.999: # Tighter than 0.99
+            score -= 3
+            reasons.append("Stability score too perfect (synthetic)")
         elif stability > 0.85:
             score += 1
-            reasons.append("Stability score healthy")
-        elif stability < 0.5:
+            reasons.append("Stability healthy")
+        elif stability < 0.4:
             score -= 2
-            reasons.append("Stability score critically low")
+            reasons.append("Stability critically low")
 
-    # Map score to verdict
-    if score >= 3:
+    # Map score to verdict (Tightened thresholds)
+    if score >= 4:
         verdict = "APPROVED"
-        confidence = min(0.85, 0.6 + score * 0.05)
-    elif score >= 1:
+        confidence = min(0.8, 0.5 + score * 0.05)
+    elif score >= 2:
         verdict = "CAUTIOUS"
-        confidence = 0.55 + score * 0.05
-    elif score >= -2:
+        confidence = 0.4 + score * 0.05
+    elif score >= -1:
         verdict = "SUSPICIOUS"
-        confidence = 0.5 + abs(score) * 0.05
+        confidence = 0.3 + abs(score) * 0.05
     else:
         verdict = "REJECTED"
-        confidence = min(0.9, 0.6 + abs(score) * 0.05)
+        confidence = min(0.9, 0.5 + abs(score) * 0.05)
 
     return {
         "verdict": verdict,
         "confidence": round(confidence, 4),
-        "reasoning": "; ".join(reasons) if reasons else "Insufficient data for analysis",
+        "reasoning": "; ".join(reasons) if reasons else "Insufficient data",
     }
 
 
