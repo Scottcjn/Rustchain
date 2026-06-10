@@ -351,6 +351,14 @@
     <script>
         const API_BASE = 'https://rustchain.org';
 
+        function escapeHtml(str) {
+            if (typeof str !== 'string') return str;
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+
         // Load miner ID from URL parameter
         window.addEventListener('DOMContentLoaded', () => {
             const urlParams = new URLSearchParams(window.location.search);

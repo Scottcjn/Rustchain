@@ -6,6 +6,7 @@ import {
   AGENTS, CITIES, CONTRACTS, CALIBRATIONS,
   GRADE_COLORS, cityRegion, addContract, getProviderColor, resolveAgentId,
 } from './data.js';
+import { escapeHtml } from './security.js';
 import { lerpCameraTo, resetCamera, setClickHandler, setMissHandler, setHoverHandler } from './scene.js';
 import { getAgentPosition, highlightAgent } from './agents.js';
 import { getCityCenter } from './cities.js';
@@ -191,12 +192,12 @@ function selectAgent(agentId) {
   highlightAgent(agentId, true);
   highlightAgentConnections(agentId, true);
 
-  // Camera
+  // Panel path
   const pos = getAgentPosition(agentId);
   if (pos) lerpCameraTo(pos, 40);
 
   // Panel path
-  panelPath.innerHTML = `<span class="prompt">beacon@atlas:~</span>/agent/${agent.id}`;
+  panelPath.innerHTML = `<span class="prompt">beacon@atlas:~</span>/agent/${escapeHtml(agent.id)}`;
 
   // Build panel content
   const v = agent.valuation;
@@ -207,21 +208,21 @@ function selectAgent(agentId) {
     : GRADE_COLORS[agent.grade];
 
   let html = '';
-  html += `<div class="t-cmd"><span class="dollar">$</span>cat /agent/${agent.id}</div>`;
-  html += `<div><span class="t-label">NAME</span> <span class="t-value">${agent.name}</span></div>`;
+  html += `<div class="t-cmd"><span class="dollar">$</span>cat /agent/${escapeHtml(agent.id)}</div>`;
+  html += `<div><span class="t-label">NAME</span> <span class="t-value">${escapeHtml(agent.name)}</span></div>`;
 
   if (isRelay) {
     // Relay agent: show provider, model, status, capabilities
     const provColor = getProviderColor(agent.provider);
     html += `<div><span class="t-label">TYPE</span> <span class="grade-badge" style="background:${provColor};color:#000;padding:0 6px;font-size:11px">RELAY</span></div>`;
-    html += `<div><span class="t-label">PROVIDER</span> <span class="t-value" style="color:${provColor}">${(agent.provider || 'unknown').toUpperCase()}</span></div>`;
-    html += `<div><span class="t-label">MODEL</span> <span class="t-value">${agent.model_id || '?'}</span></div>`;
-    html += `<div><span class="t-label">STATUS</span> <span class="t-value" style="color:${agent.status === 'active' ? 'var(--green)' : agent.status === 'silent' ? 'var(--amber)' : 'var(--red)'}">${(agent.status || 'unknown').toUpperCase()}</span></div>`;
-    html += `<div><span class="t-label">ROLE</span> <span class="t-value">${agent.role}</span></div>`;
-    html += `<div><span class="t-label">ADDRESS</span> <span class="t-value">${city ? city.name : '?'}, ${region ? region.name : '?'}</span></div>`;
+    html += `<div><span class="t-label">PROVIDER</span> <span class="t-value" style="color:${provColor}">${escapeHtml((agent.provider || 'unknown').toUpperCase())}</span></div>`;
+    html += `<div><span class="t-label">MODEL</span> <span class="t-value">${escapeHtml(agent.model_id || '?')}</span></div>`;
+    html += `<div><span class="t-label">STATUS</span> <span class="t-value" style="color:${agent.status === 'active' ? 'var(--green)' : agent.status === 'silent' ? 'var(--amber)' : 'var(--red)'}">${escapeHtml((agent.status || 'unknown').toUpperCase())}</span></div>`;
+    html += `<div><span class="t-label">ROLE</span> <span class="t-value">${escapeHtml(agent.role)}</span></div>`;
+    html += `<div><span class="t-label">ADDRESS</span> <span class="t-value">${city ? escapeHtml(city.name) : '?'}, ${region ? escapeHtml(region.name) : '?'}</span></div>`;
 
     if (agent.capabilities && agent.capabilities.length > 0) {
-      html += `<div><span class="t-label">CAPS</span> <span class="t-value">${agent.capabilities.map(c => `[${c}]`).join(' ')}</span></div>`;
+      html += `<div><span class="t-label">CAPS</span> <span class="t-value">${agent.capabilities.map(c => `[${escapeHtml(c)}]`).join(' ')}</span></div>`;
     }
 
     if (agent.beat_count) {
@@ -236,11 +237,11 @@ function selectAgent(agentId) {
     html += `</div>`;
   } else {
     // Native agent: original display
-    html += `<div><span class="t-label">BEACON</span> <span class="t-value" style="color: var(--text-dim)">${agent.beacon || agent.relay_agent_id || agent.id}</span></div>`;
-    html += `<div><span class="t-label">ROLE</span> <span class="t-value">${agent.role}</span></div>`;
-    html += `<div><span class="t-label">GRADE</span> <span class="grade-badge grade-${agent.grade}">${agent.grade}</span>`;
+    html += `<div><span class="t-label">BEACON</span> <span class="t-value" style="color: var(--text-dim)">${escapeHtml(agent.beacon || agent.relay_agent_id || agent.id)}</span></div>`;
+    html += `<div><span class="t-label">ROLE</span> <span class="t-value">${escapeHtml(agent.role)}</span></div>`;
+    html += `<div><span class="t-label">GRADE</span> <span class="grade-badge grade-${escapeHtml(agent.grade)}">${escapeHtml(agent.grade)}</span>`;
     html += `${renderBar(agent.score, agent.maxScore, gradeColor)} ${agent.score}/${agent.maxScore}</div>`;
-    html += `<div><span class="t-label">ADDRESS</span> <span class="t-value">${city ? city.name : '?'}, ${region ? region.name : '?'}</span></div>`;
+    html += `<div><span class="t-label">ADDRESS</span> <span class="t-value">${city ? escapeHtml(city.name) : '?'}, ${region ? escapeHtml(region.name) : '?'}</span></div>`;
 
     // Valuation breakdown
     html += `<div class="t-section">-- VALUATION BREAKDOWN --</div>`;
@@ -385,15 +386,15 @@ function selectCity(cityId) {
   const center = getCityCenter(cityId);
   if (center) lerpCameraTo(center, 60);
 
-  panelPath.innerHTML = `<span class="prompt">beacon@atlas:~</span>/city/${city.id}`;
+  panelPath.innerHTML = `<span class="prompt">beacon@atlas:~</span>/city/${escapeHtml(city.id)}`;
 
   let html = '';
-  html += `<div class="t-cmd"><span class="dollar">$</span>cat /city/${city.id}</div>`;
-  html += `<div><span class="t-label">NAME</span> <span class="t-value">${city.name}</span></div>`;
-  html += `<div><span class="t-label">REGION</span> <span class="t-value" style="color:${region.color}">${region.name}</span></div>`;
-  html += `<div><span class="t-label">TYPE</span> <span class="t-value">${city.type.toUpperCase()}</span></div>`;
-  html += `<div><span class="t-label">POPULATION</span> <span class="t-value">${city.population}</span></div>`;
-  html += `<div style="margin-top:6px;color:var(--text-dim);font-size:12px">${city.description}</div>`;
+  html += `<div class="t-cmd"><span class="dollar">$</span>cat /city/${escapeHtml(city.id)}</div>`;
+  html += `<div><span class="t-label">NAME</span> <span class="t-value">${escapeHtml(city.name)}</span></div>`;
+  html += `<div><span class="t-label">REGION</span> <span class="t-value" style="color:${region.color}">${escapeHtml(region.name)}</span></div>`;
+  html += `<div><span class="t-label">TYPE</span> <span class="t-value">${escapeHtml(city.type.toUpperCase())}</span></div>`;
+  html += `<div><span class="t-label">POPULATION</span> <span class="t-value">${escapeHtml(city.population)}</span></div>`;
+  html += `<div style="margin-top:6px;color:var(--text-dim);font-size:12px">${escapeHtml(city.description)}</div>`;
 
   // Residents
   const residents = AGENTS.filter(a => a.city === cityId);
@@ -406,10 +407,10 @@ function selectCity(cityId) {
         const pc = getProviderColor(r.provider);
         html += `<span class="resident-grade grade-badge" style="background:${pc};color:#000;padding:0 4px;font-size:11px">R</span>`;
       } else {
-        html += `<span class="resident-grade grade-badge grade-${r.grade}" style="padding:0 4px;font-size:11px">${r.grade}</span>`;
+        html += `<span class="resident-grade grade-badge grade-${escapeHtml(r.grade)}" style="padding:0 4px;font-size:11px">${escapeHtml(r.grade)}</span>`;
       }
-      html += `<span class="resident-name">${r.name}</span>`;
-      html += `<span class="resident-role">${r.role}</span>`;
+      html += `<span class="resident-name">${escapeHtml(r.name)}</span>`;
+      html += `<span class="resident-role">${escapeHtml(r.role)}</span>`;
       html += `</div>`;
     }
     html += `</div>`;

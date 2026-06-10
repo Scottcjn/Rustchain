@@ -225,6 +225,13 @@
 const NODE_URL = 'https://50.28.86.131';
 const HISTORY_POINTS = 50;
 
+function escapeHtml(str) {
+  if (typeof str !== 'string') return str;
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
 let state = {
   epoch: 0, slot: 0, height: 0, health: false,
   forks: [],
@@ -519,17 +526,17 @@ function renderForkTable() {
   
   tbody.innerHTML = forks.map(f => `
     <tr style="border-bottom:1px solid #1a1a1a;">
-      <td style="padding:6px 8px;color:#FFD700;">${f.slot}</td>
-      <td style="padding:6px 8px;color:#ccc;">${f.id}</td>
-      <td style="padding:6px 8px;color:#666;">${f.parentSlot}</td>
-      <td style="padding:6px 8px;text-align:right;color:#FF6B35;">${f.weight}</td>
-      <td style="padding:6px 8px;text-align:right;">${f.validators}</td>
+      <td style="padding:6px 8px;color:#FFD700;">${escapeHtml(f.slot)}</td>
+      <td style="padding:6px 8px;color:#ccc;">${escapeHtml(f.id)}</td>
+      <td style="padding:6px 8px;color:#666;">${escapeHtml(f.parentSlot)}</td>
+      <td style="padding:6px 8px;text-align:right;color:#FF6B35;">${escapeHtml(f.weight)}</td>
+      <td style="padding:6px 8px;text-align:right;">${escapeHtml(f.validators)}</td>
       <td style="padding:6px 8px;text-align:center;">
         <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.65rem;
           background:${f.status === 'canonical' ? '#2a4a2a' : (f.status === 'active' ? '#4a2a1a' : '#2a2a2a')};
           color:${f.status === 'canonical' ? '#00ff88' : (f.status === 'active' ? '#FF6B35' : '#666')};
           border:1px solid ${f.status === 'canonical' ? '#004400' : (f.status === 'active' ? '#4a2a1a' : '#333')};">
-          ${f.status === 'canonical' ? '✓ Canonical' : (f.status === 'active' ? '⟳ Active' : '✗ Abandoned')}
+          ${escapeHtml(f.status === 'canonical' ? '✓ Canonical' : (f.status === 'active' ? '⟳ Active' : '✗ Abandoned'))}
         </span>
       </td>
     </tr>

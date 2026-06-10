@@ -460,6 +460,14 @@
         let previousStats = null;
         let refreshTimer = null;
 
+        function escapeHtml(str) {
+          if (typeof str !== 'string') return str;
+          const div = document.createElement('div');
+          div.textContent = str;
+          return div.innerHTML;
+        }
+
+
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
             loadStats();
@@ -580,17 +588,17 @@
 
         function updateStat(elementId, value, unit, previousValue) {
             const element = document.getElementById(elementId);
-            element.innerHTML = formatNumber(value) + (unit ? `<span class="stat-unit">${unit}</span>` : '');
-
+            element.innerHTML = escapeHtml(formatNumber(value)) + (unit ? `<span class="stat-unit">${escapeHtml(unit)}</span>` : '');
+            
             // Show change indicator
             const changeElement = document.getElementById(elementId.replace('Value', 'Change'));
             if (previousValue !== undefined && previousValue !== null) {
                 const diff = value - previousValue;
                 if (diff > 0) {
-                    changeElement.innerHTML = `<span>▲</span> +${formatNumber(diff)}`;
+                    changeElement.innerHTML = `<span>▲</span> +${escapeHtml(formatNumber(diff))}`;
                     changeElement.className = 'stat-change positive';
                 } else if (diff < 0) {
-                    changeElement.innerHTML = `<span>▼</span> ${formatNumber(diff)}`;
+                    changeElement.innerHTML = `<span>▼</span> ${escapeHtml(formatNumber(diff))}`;
                     changeElement.className = 'stat-change negative';
                 } else {
                     changeElement.innerHTML = '<span>▬</span> No change';

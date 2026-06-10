@@ -10465,24 +10465,29 @@ def wallet_transfer_signed():
         # Check sender balance (using from_address as wallet ID)
         sender_balance = _balance_i64_for_wallet(c, from_address)
 
-        # Calculate pending debits (uncommitted outgoing transfers)
-        pending_debits = c.execute("""
-            SELECT COALESCE(SUM(amount_i64), 0) FROM pending_ledger
-            WHERE from_miner = ? AND status = 'pending'
-        """, (from_address,)).fetchone()[0]
-
-        available_balance = sender_balance - pending_debits
-
-        if available_balance < amount_i64:
-            # Undo nonce reservation.
+        # SECURITY: Use BEGIN IMMEDIATE to prevent Race Condition (Double Spend)
+        # This locks the database for writing, ensuring the balance check is atomic.
+        c.execute("BEGIN IMMEDIATE")
+        try:
+            pending_debits = c.execute("""
+                SELECT COALESCE(SUM(amount_i64), 0) FROM pending_ledger
+                WHERE from_miner = ? AND status = 'pending'
+            """, (from_address,)).fetchone()[0]
+            
+            available_balance = sender_balance - pending_debits
+            
+            if available_balance < amount_i64:
+                conn.rollback()
+                return jsonify({
+                    "error": "Insufficient available balance",
+                    "balance_rtc": sender_balance / 1000000,
+                    "pending_debits_rtc": pending_debits / 1000000,
+                    "available_rtc": available_balance / 1000000,
+                    "requested_rtc": amount_rtc
+                }), 400
+        except Exception as e:
             conn.rollback()
-            return jsonify({
-                "error": "Insufficient available balance",
-                "balance_rtc": sender_balance / 1000000,
-                "pending_debits_rtc": pending_debits / 1000000,
-                "available_rtc": available_balance / 1000000,
-                "requested_rtc": amount_rtc
-            }), 400
+            return jsonify({"error": "Database error during balance check", "details": str(e)}), 500
 
         # Insert into pending_ledger (NOT direct balance update!)
         reason = f"signed_transfer:{memo[:80]}"

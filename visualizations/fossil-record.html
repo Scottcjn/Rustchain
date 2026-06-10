@@ -164,6 +164,13 @@ const ARCHS = [
   { name: '68K',    color: '#8B4513' },
 ];
 
+function escapeHtml(str) {
+  if (typeof str !== 'string') return str;
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
 const TOTAL_EPOCHS = 100;
 const NOW_TS = Date.now();
 const EPOCH_MS = 6 * 60 * 1000; // ~6 min per epoch
@@ -387,17 +394,17 @@ canvas.addEventListener('mousemove', e => {
 
   let html = `<div class="tip-epoch">Epoch #${ep.index + 1} · ${timeStr}</div>`;
   if (arch) {
-    html += `<div class="tip-arch" style="color:${arch.color}">${arch.name}</div>`;
+    html += `<div class="tip-arch" style="color:${arch.color}">${escapeHtml(arch.name)}</div>`;
     html += `<div>Attestations: <b>${ep.counts[hoverArch]}</b></div>`;
   }
-
+  
   let total = 0;
   ARCHS.forEach((a, ai) => { if (visibleArchs.has(a.name)) total += ep.counts[ai]; });
   html += `<div style="margin-top:4px;color:#888;font-size:0.6rem">`;
   ARCHS.forEach((a, ai) => {
     if (!visibleArchs.has(a.name)) return;
     const pct = Math.round(ep.counts[ai] / total * 100);
-    html += `<span style="color:${a.color}">${a.name}</span>: ${ep.counts[ai]} (${pct}%)&nbsp; `;
+    html += `<span style="color:${a.color}">${escapeHtml(a.name)}</span>: ${ep.counts[ai]} (${pct}%)&nbsp; `;
   });
   html += `</div>`;
   html += `<div style="margin-top:4px;color:#666;font-size:0.6rem">Total: ${total}</div>`;
