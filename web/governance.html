@@ -59,14 +59,39 @@
 <script>
 const out = document.getElementById('out');
 function show(v){ out.textContent = JSON.stringify(v, null, 2); }
-function escapeHtml(value){
-  const div = document.createElement('div');
-  div.textContent = String(value ?? '');
-  return div.innerHTML;
-}
 function safeNumber(value, fallback=0){
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
+}
+function text(value){
+  return document.createTextNode(String(value ?? ''));
+}
+function br(){
+  return document.createElement('br');
+}
+function renderProposalCard(p){
+  const div = document.createElement('div');
+  div.className = 'card';
+
+  const title = document.createElement('b');
+  title.textContent = `#${safeNumber(p.id)} ${p.title ?? ''}`;
+
+  const meta = document.createElement('span');
+  meta.className = 'muted';
+  meta.textContent = `${p.proposer_wallet ?? ''} • ${p.status ?? ''}`;
+
+  div.append(
+    title,
+    br(),
+    meta,
+    br(),
+    text(p.description),
+    br(),
+    text(`yes=${safeNumber(p.yes_weight).toFixed(4)} `),
+    text(`no=${safeNumber(p.no_weight).toFixed(4)} `),
+    text(`abstain=${safeNumber(p.abstain_weight).toFixed(4)}`)
+  );
+  return div;
 }
 
 async function api(path, method='GET', body=null){
@@ -110,21 +135,13 @@ async function submitVote(){
 async function loadProposals(){
   const data = await api('/api/governance/proposals');
   const list = document.getElementById('list');
-  list.innerHTML = '';
+  list.replaceChildren();
   for (const p of (data.proposals || [])) {
     p.proposer_wallet = p.proposed_by ?? p.proposer_wallet;
     p.yes_weight = p.votes_for ?? p.yes_weight;
     p.no_weight = p.votes_against ?? p.no_weight;
     p.abstain_weight = p.votes_abstain ?? p.abstain_weight;
-    const div = document.createElement('div');
-    div.className = 'card';
-    div.innerHTML = `<b>#${safeNumber(p.id)} ${escapeHtml(p.title)}</b><br>
-      <span class="muted">${escapeHtml(p.proposer_wallet)} • ${escapeHtml(p.status)}</span><br>
-      ${escapeHtml(p.description)}<br>
-      yes=${safeNumber(p.yes_weight).toFixed(4)}
-      no=${safeNumber(p.no_weight).toFixed(4)}
-      abstain=${safeNumber(p.abstain_weight).toFixed(4)}`;
-    list.appendChild(div);
+    list.appendChild(renderProposalCard(p));
   }
 }
 loadProposals();
