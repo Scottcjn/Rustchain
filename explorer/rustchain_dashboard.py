@@ -289,6 +289,21 @@ DASHBOARD_HTML = """
                 });
         }
 
+        function showSearchError(message) {
+            const resultDiv = document.getElementById('search-result');
+            resultDiv.replaceChildren();
+
+            const title = document.createElement('h3');
+            title.textContent = '❌ Error';
+            resultDiv.appendChild(title);
+
+            const detail = document.createElement('p');
+            detail.textContent = String(message ?? '');
+            resultDiv.appendChild(detail);
+
+            resultDiv.style.display = 'block';
+        }
+
         function searchWallet() {
             const wallet = document.getElementById('wallet-search').value.trim();
             if (!wallet) return;
@@ -318,9 +333,7 @@ DASHBOARD_HTML = """
                     resultDiv.style.display = 'block';
                 })
                 .catch(err => {
-                    err = escapeHtml(err.message || err);
-                    document.getElementById('search-result').innerHTML = `<h3>❌ Error</h3><p>${err}</p>`;
-                    document.getElementById('search-result').style.display = 'block';
+                    showSearchError(err && err.message ? err.message : err);
                 });
         }
 
