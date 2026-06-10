@@ -1576,6 +1576,43 @@ HTML_TEMPLATE = """
         const submitBtn = document.getElementById('submitBtn');
         const walletInput = document.getElementById('wallet');
 
+        function resetResult() {
+            result.className = 'result';
+            result.replaceChildren();
+        }
+
+        function appendResultLine(node) {
+            result.appendChild(document.createElement('br'));
+            result.appendChild(node);
+        }
+
+        function appendResultText(text) {
+            appendResultLine(document.createTextNode(String(text ?? '')));
+        }
+
+        function appendNextAvailable(nextAvailable) {
+            if (!nextAvailable) return;
+            const small = document.createElement('small');
+            small.textContent = `Next available: ${new Date(nextAvailable).toLocaleString()}`;
+            appendResultLine(small);
+        }
+
+        function setResultMessage(type, title, lines = [], nextAvailable = null) {
+            result.className = `result show ${type}`;
+            result.replaceChildren();
+
+            const strong = document.createElement('strong');
+            strong.textContent = String(title ?? '');
+            result.appendChild(strong);
+
+            lines.forEach(appendResultText);
+            appendNextAvailable(nextAvailable);
+        }
+
+        function shortenWallet(wallet) {
+            return `${wallet.substring(0, 10)}...${wallet.substring(wallet.length - 8)}`;
+        }
+
         // Load stats
         async function loadStats() {
             try {
@@ -1594,8 +1631,7 @@ HTML_TEMPLATE = """
             e.preventDefault();
             submitBtn.disabled = true;
             submitBtn.textContent = 'Processing...';
-            result.className = 'result';
-            result.innerHTML = '';
+            resetResult();
 
             const wallet = walletInput.value.trim();
 
@@ -1607,26 +1643,21 @@ HTML_TEMPLATE = """
                 });
 
                 const data = await response.json();
-
-                result.className = 'result show ' + (data.ok ? 'success' : 'error');
                 
                 if (data.ok) {
-                    result.innerHTML = `
-                        <strong>✅ Success!</strong><br>
-                        Sent ${data.amount} RTC to ${wallet.substring(0, 10)}...${wallet.substring(wallet.length - 8)}<br>
-                        ${data.next_available ? `<small>Next available: ${new Date(data.next_available).toLocaleString()}</small>` : ''}
-                    `;
+                    setResultMessage(
+                        'success',
+                        '✅ Success!',
+                        [`Sent ${data.amount} RTC to ${shortenWallet(wallet)}`],
+                        data.next_available
+                    );
                     walletInput.value = '';
                     loadStats();
                 } else {
-                    result.innerHTML = `
-                        <strong>❌ ${data.error}</strong><br>
-                        ${data.next_available ? `<small>Next available: ${new Date(data.next_available).toLocaleString()}</small>` : ''}
-                    `;
+                    setResultMessage('error', `❌ ${data.error}`, [], data.next_available);
                 }
             } catch (err) {
-                result.className = 'result show error';
-                result.innerHTML = `<strong>❌ Error:</strong> ${err.message}`;
+                setResultMessage('error', '❌ Error:', [err.message]);
             }
 
             submitBtn.disabled = false;
