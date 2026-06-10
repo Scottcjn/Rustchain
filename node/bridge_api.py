@@ -624,7 +624,7 @@ def void_bridge_transfer(
             WHERE tx_hash = ?
         """, (voided_by, reason, now, tx_hash))
         
-        # Release associated lock
+        # Release associated lock - only for bridge-specific locks
         cursor.execute("""
             UPDATE lock_ledger
             SET status = 'released',
@@ -632,6 +632,7 @@ def void_bridge_transfer(
                 released_by = ?
             WHERE bridge_transfer_id = ?
               AND status = 'locked'
+              AND lock_type IN ('bridge_deposit', 'bridge_withdraw')
         """, (now, voided_by, transfer["id"]))
         
         db_conn.commit()
