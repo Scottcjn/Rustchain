@@ -163,20 +163,21 @@ function renderAttest(el){
   var wName=S.walletName||"YOUR_WALLET_NAME";
   var minerCmd="~/.rustchain/venv/bin/python ~/.rustchain/rustchain_miner.py --wallet "+wName;
   var minersCmd="curl -sk https://rustchain.org/api/miners";
+  var balanceCmd="curl -sk \"https://rustchain.org/wallet/balance?miner_id="+wName+"\"";
   el.innerHTML=
     '<div class="card"><h2>&#127776; Step 7 &mdash; First Attestation</h2><p>Start your miner and verify it appears on the RustChain network.</p></div>'+
     '<div class="card"><h3>&#9654; Start the miner</h3><div class="cl">Run in terminal (or use the service created by the installer)</div>'+
-    '<div class="cb">'+minerCmd+'<span class="cpy" onclick="copyCode(this)">Copy</span></div>'+
+    '<div class="cb">'+esc(minerCmd)+'<span class="cpy" onclick="copyCode(this)">Copy</span></div>'+
     '<div class="ib">On Linux: the installer auto-creates a systemd service. Run <code>systemctl --user status rustchain-miner</code> to check status, or <code>journalctl --user -u rustchain-miner -f</code> to view logs.</div>'+
     '<div class="ib">On macOS: the installer creates a launchd plist. Run <code>launchctl list | grep rustchain</code> to check status.</div>'+
     '</div>'+
     '<div class="card"><h3>&#128202; Verify your miner appears on the network</h3><div class="cl">After starting the miner, check if it appears in the active miners list</div>'+
-    '<div class="cb">'+minersCmd+'<span class="cpy" onclick="copyCode(this)">Copy</span></div>'+
+    '<div class="cb">'+esc(minersCmd)+'<span class="cpy" onclick="copyCode(this)">Copy</span></div>'+
     '<div class="ir" style="margin-top:12px"><input type="text" id="minerCheckInput" placeholder="Paste miner output or leave blank to skip" style="min-width:300px" /><button class="bp" onclick="checkMiner()">Check</button></div>'+
     '<div id="minerResult" style="margin-top:10px"></div></div>'+
     '<div class="card"><h3>&#128640; Congratulations!</h3><div class="hero"><div class="ic">&#127881;</div><h2>You are now a RustChain Miner!</h2><p>Your hardware is contributing to the Proof-of-Antiquity network.<br/>Earn RTC tokens as your vintage hardware proves its age and authenticity.<br/><br/>Keep your miner running to accumulate attestations and rewards.</p></div>'+
     '<div class="sm"><div class="rw"><span class="lb">Wallet</span><span class="vl">'+esc(wName)+'</span></div><div class="rw"><span class="lb">Network</span><span class="vl">RustChain (https://rustchain.org)</span></div><div class="rw"><span class="lb">Bounty</span><span class="vl">50 RTC</span></div></div>'+
-    '<div class="ib"><strong>Next steps:</strong> Bookmark this wizard, monitor your balance with <code>curl -sk https://rustchain.org/wallet/balance?miner_id='+wName+'</code>, and join the Discord for help.</div></div>'+
+    '<div class="ib"><strong>Next steps:</strong> Bookmark this wizard, monitor your balance with <code>'+esc(balanceCmd)+'</code>, and join the Discord for help.</div></div>'+
     '<div class="br"><button class="bs" onclick="go(5)">&larr; Back</button><button class="bp" onclick="go(6)">I\'m Mining! &#10003;</button></div>';
 }
 function checkMiner(){
