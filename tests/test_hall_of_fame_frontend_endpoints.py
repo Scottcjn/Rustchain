@@ -21,3 +21,16 @@ def test_hall_of_fame_machine_uses_compat_machine_endpoint_and_shape():
 
     assert "fetch('/api/hall_of_fame/machine?id='+encodeURIComponent(id))" in html
     assert "const m=data.machine||data||{};" in html
+
+
+def test_hall_of_fame_load_error_uses_text_content():
+    html = (ROOT / "web" / "hall-of-fame" / "index.html").read_text(
+        encoding="utf-8"
+    )
+
+    assert "function setLeaderboardMessage(tbody, message, options = {})" in html
+    assert "cell.textContent = String(message ?? '');" in html
+    assert "cell.appendChild(document.createTextNode(` ${String(message ?? '')}`));" in html
+    assert "tbody.replaceChildren(row);" in html
+    assert "setLeaderboardMessage(tbody, `Failed to load: ${message}`, { error: true });" in html
+    assert "Failed to load: ${esc(e.message)}" not in html

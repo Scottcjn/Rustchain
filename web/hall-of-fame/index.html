@@ -271,11 +271,33 @@ function filterTable(){
   rows.forEach(r=>{ r.style.display = r.dataset.search.includes(q) ? '' : 'none'; });
 }
 
+function setLeaderboardMessage(tbody, message, options = {}){
+  const row = document.createElement('tr');
+  row.className = 'loading-row';
+
+  const cell = document.createElement('td');
+  cell.colSpan = 9;
+  if(options.error) cell.className = 'err';
+
+  if(options.blinking){
+    const marker = document.createElement('span');
+    marker.className = 'blinking';
+    marker.textContent = '█';
+    cell.appendChild(marker);
+    cell.appendChild(document.createTextNode(` ${String(message ?? '')}`));
+  } else {
+    cell.textContent = String(message ?? '');
+  }
+
+  row.appendChild(cell);
+  tbody.replaceChildren(row);
+}
+
 async function loadLeaderboard(){
   const limit = document.getElementById('filterLimit').value;
   const deceased = document.getElementById('filterDeceased').value;
   const tbody = document.getElementById('leaderTbody');
-  tbody.innerHTML = '<tr class="loading-row"><td colspan="9"><span class="blinking">█</span> Loading…</td></tr>';
+  setLeaderboardMessage(tbody, 'Loading...', { blinking: true });
 
   try {
     let url = API_LEADERBOARD + '?limit=' + limit;
@@ -287,14 +309,15 @@ async function loadLeaderboard(){
     const data = await res.json();
     const machines = data.leaderboard || [];
     if(!machines.length){
-      tbody.innerHTML = '<tr class="loading-row"><td colspan="9" class="err">No machines found.</td></tr>';
+      setLeaderboardMessage(tbody, 'No machines found.', { error: true });
       return;
     }
     allRows = machines.map((m, idx) => buildRow(m, idx+1));
     tbody.innerHTML = allRows.join('');
     filterTable();
   } catch(e){
-    tbody.innerHTML = `<tr class="loading-row"><td colspan="9" class="err">Failed to load: ${esc(e.message)}</td></tr>`;
+    const message = e && e.message ? e.message : '';
+    setLeaderboardMessage(tbody, `Failed to load: ${message}`, { error: true });
   }
 }
 
