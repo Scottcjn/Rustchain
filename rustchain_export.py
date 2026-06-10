@@ -296,6 +296,23 @@ DEFAULT_HEADERS = {
     "ledger": ["ts", "epoch", "miner_id", "delta_i64", "reason"],
 }
 
+CSV_FORMULA_PREFIXES = ("=", "+", "-", "@")
+CSV_IGNORABLE_PREFIX_CHARS = "".join(chr(codepoint) for codepoint in range(0x21))
+
+
+def neutralize_csv_cell(value: Any) -> Any:
+    """Prefix spreadsheet formula-like text cells for CSV consumers."""
+    if not isinstance(value, str):
+        return value
+    first_significant = value.lstrip(CSV_IGNORABLE_PREFIX_CHARS)
+    if first_significant.startswith(CSV_FORMULA_PREFIXES):
+        return f"'{value}"
+    return value
+
+
+def neutralize_csv_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {key: neutralize_csv_cell(value) for key, value in row.items()}
+
 
 def write_csv(path: Path, rows: list[dict[str, Any]], default_headers: list[str] | None = None) -> None:
     if rows:
@@ -306,7 +323,7 @@ def write_csv(path: Path, rows: list[dict[str, Any]], default_headers: list[str]
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         if fieldnames:
             writer.writeheader()
-        writer.writerows(rows)
+        writer.writerows(neutralize_csv_row(row) for row in rows)
 
 
 def write_json(path: Path, rows: list[dict[str, Any]]) -> None:

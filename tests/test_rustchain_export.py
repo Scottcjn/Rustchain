@@ -150,6 +150,51 @@ class RustChainExportTests(unittest.TestCase):
             exporter.write_csv(path, [], ["col1", "col2"])
             self.assertEqual(path.read_text(encoding="utf-8").strip(), "col1,col2")
 
+    def test_write_csv_neutralizes_spreadsheet_formula_cells(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "miners.csv"
+            exporter.write_csv(
+                path,
+                [
+                    {
+                        "miner_id": "=cmd|' /C calc'!A0",
+                        "device_arch": "+SUM(1,1)",
+                        "hardware_type": "\t@IMPORTXML('https://example.test')",
+                        "reason": "  -10",
+                        "safe_note": "PowerPC G4",
+                        "entropy_score": 0.5,
+                    }
+                ],
+            )
+
+            with path.open(newline="", encoding="utf-8") as handle:
+                row = next(csv.DictReader(handle))
+
+            self.assertEqual(row["miner_id"], "'=cmd|' /C calc'!A0")
+            self.assertEqual(row["device_arch"], "'+SUM(1,1)")
+            self.assertEqual(row["hardware_type"], "'\t@IMPORTXML('https://example.test')")
+            self.assertEqual(row["reason"], "'  -10")
+            self.assertEqual(row["safe_note"], "PowerPC G4")
+            self.assertEqual(row["entropy_score"], "0.5")
+
+    def test_json_and_jsonl_exports_preserve_formula_like_values(self):
+        rows = [{"miner_id": "=alice", "device_arch": "\t@bad"}]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            json_path = tmp_path / "miners.json"
+            jsonl_path = tmp_path / "miners.jsonl"
+
+            exporter.write_json(json_path, rows)
+            exporter.write_jsonl(jsonl_path, rows)
+
+            self.assertEqual(json.loads(json_path.read_text(encoding="utf-8")), rows)
+            jsonl_rows = [
+                json.loads(line)
+                for line in jsonl_path.read_text(encoding="utf-8").splitlines()
+            ]
+            self.assertEqual(jsonl_rows, rows)
+
     def test_balance_amount_normalizes_micro_columns_by_source(self):
         self.assertEqual(exporter.balance_amount_rtc({"amount_i64": 1}), 0.000001)
         self.assertEqual(exporter.balance_amount_rtc({"amount_i64": 500_000}), 0.5)
