@@ -390,6 +390,30 @@
     step: 1
   };
 
+  function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, ch => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;'
+    }[ch]));
+  }
+
+  function safeNumber(value, fallback = 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+
+  function shortWallet(value, head = 6, tail = 4) {
+    const text = String(value ?? '');
+    if (!text) return '';
+    if (tail <= 0) {
+      return text.length > head ? `${text.slice(0, head)}...` : text;
+    }
+    return text.length > head + tail ? `${text.slice(0, head)}...${text.slice(-tail)}` : text;
+  }
+
   // ==========================================
   // GITHUB OAUTH FLOW (mock for frontend demo)
   // In production: redirect to /api/auth/github
@@ -420,8 +444,8 @@
     state.github = mockUser;
 
     statusBox.className = 'status-box success';
-    statusBox.innerHTML = `✅ Connected as <strong>${mockUser.login}</strong><br>
-      Stars: ${mockUser.stars} repos · PRs: ${mockUser.prs} merged · Account age: ${mockUser.age_days} days`;
+    statusBox.innerHTML = `✅ Connected as <strong>${escapeHtml(mockUser.login)}</strong><br>
+      Stars: ${escapeHtml(safeNumber(mockUser.stars))} repos · PRs: ${escapeHtml(safeNumber(mockUser.prs))} merged · Account age: ${escapeHtml(safeNumber(mockUser.age_days))} days`;
     btn.textContent = '✅ GitHub Connected';
 
     // Unlock step 2
@@ -483,7 +507,7 @@
 
       state.wallet = { type: 'eth', address, balance: balanceETH, age_days: 30 /* server-verified */ };
       statusBox.className = 'status-box success';
-      statusBox.innerHTML = `✅ Base wallet connected<br>${address.slice(0,6)}...${address.slice(-4)} · ${balanceETH.toFixed(4)} ETH`;
+      statusBox.innerHTML = `✅ Base wallet connected<br>${escapeHtml(shortWallet(address))} · ${escapeHtml(balanceETH.toFixed(4))} ETH`;
 
       unlockStep(3);
     } catch (err) {
@@ -532,7 +556,7 @@
 
       state.wallet = { type: 'sol', address: pubkey, balance: balanceSOL, age_days: 30 };
       statusBox.className = 'status-box success';
-      statusBox.innerHTML = `✅ Solana wallet connected<br>${pubkey.slice(0,8)}...${pubkey.slice(-6)} · ${balanceSOL.toFixed(4)} SOL`;
+      statusBox.innerHTML = `✅ Solana wallet connected<br>${escapeHtml(shortWallet(pubkey, 8, 6))} · ${escapeHtml(balanceSOL.toFixed(4))} SOL`;
 
       unlockStep(3);
     } catch (err) {
@@ -586,13 +610,16 @@
 
     // Render
     document.getElementById('tier-label').textContent = `Tier: ${tier}`;
+    const stars = safeNumber(gh.stars);
+    const prs = safeNumber(gh.prs);
+    const githubAge = safeNumber(gh.age_days);
     document.getElementById('check-rows').innerHTML = `
-      <div class="check-row"><span class="check-icon">${gh.stars >= 10 ? '✅' : '⬜'}</span> ${gh.stars || 0} Scottcjn repos starred</div>
-      <div class="check-row"><span class="check-icon">${gh.prs >= 1 ? '✅' : '⬜'}</span> ${gh.prs || 0} merged PRs</div>
-      <div class="check-row"><span class="check-icon">✅</span> GitHub account age: ${gh.age_days} days</div>
+      <div class="check-row"><span class="check-icon">${stars >= 10 ? '✅' : '⬜'}</span> ${escapeHtml(stars)} Scottcjn repos starred</div>
+      <div class="check-row"><span class="check-icon">${prs >= 1 ? '✅' : '⬜'}</span> ${escapeHtml(prs)} merged PRs</div>
+      <div class="check-row"><span class="check-icon">✅</span> GitHub account age: ${escapeHtml(githubAge)} days</div>
     `;
     document.getElementById('sybil-rows').innerHTML = sybilChecks.map(c =>
-      `<div class="check-row"><span class="check-icon">${c.pass ? '✅' : '❌'}</span> ${c.label}</div>`
+      `<div class="check-row"><span class="check-icon">${c.pass ? '✅' : '❌'}</span> ${escapeHtml(c.label)}</div>`
     ).join('');
 
     document.getElementById('allocation-display').textContent = `${total} wRTC`;
@@ -634,8 +661,8 @@
 
     out.className = 'status-box success';
     out.innerHTML = `✅ RTC Wallet generated<br>
-      <strong>Name:</strong> ${nameInput}<br>
-      <strong>Address:</strong> <code style="font-size:11px;">${addr}</code><br>
+      <strong>Name:</strong> ${escapeHtml(nameInput)}<br>
+      <strong>Address:</strong> <code style="font-size:11px;">${escapeHtml(addr)}</code><br>
       <span style="color: var(--muted); font-size: 11px;">⚠️ Save this address — it will receive bridged RTC tokens</span>`;
   }
 
@@ -666,11 +693,11 @@
     // For now, show the payload for review
     statusBox.className = 'status-box success';
     statusBox.innerHTML = `✅ Claim submitted successfully!<br><br>
-      <strong>Claim ID:</strong> ${generateClaimId()}<br>
-      <strong>GitHub:</strong> ${payload.github}<br>
-      <strong>Wallet:</strong> ${payload.wallet_address?.slice(0,10)}...<br>
-      <strong>Allocation:</strong> ${payload.allocation} wRTC<br>
-      <strong>Tier:</strong> ${payload.tier}<br><br>
+      <strong>Claim ID:</strong> ${escapeHtml(generateClaimId())}<br>
+      <strong>GitHub:</strong> ${escapeHtml(payload.github)}<br>
+      <strong>Wallet:</strong> ${escapeHtml(shortWallet(payload.wallet_address, 10, 0))}<br>
+      <strong>Allocation:</strong> ${escapeHtml(safeNumber(payload.allocation))} wRTC<br>
+      <strong>Tier:</strong> ${escapeHtml(payload.tier)}<br><br>
       <span style="color: var(--muted); font-size: 12px;">📬 Tokens will be distributed within 24 hours after manual review. Check your wallet.</span>`;
   }
 
