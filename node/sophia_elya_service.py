@@ -363,7 +363,7 @@ def get_epoch_history():
             WHERE e.epoch >= ?
             GROUP BY e.epoch
             ORDER BY e.epoch DESC
-        """, (min_epoch,)).fetchall()
+        """, (min_epoch,)).fetchall()  # fetchall-ok: bounded-by-schema (WHERE e.epoch >= current_epoch-50 caps rows ~51)
 
     return jsonify({
         "epochs": [
