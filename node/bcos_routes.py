@@ -23,6 +23,8 @@ import hmac
 import os
 import sqlite3
 import time
+from typing import Any
+from src.utils.data_processing import safe_fromhex
 from hashlib import blake2b
 
 from flask import Blueprint, Response, jsonify, request, send_file
@@ -152,8 +154,12 @@ def _verify_ed25519(commitment: str, signature_hex: str, pubkey_hex: str) -> boo
     if not HAVE_NACL:
         return False
     try:
-        vk = VerifyKey(bytes.fromhex(pubkey_hex))
-        vk.verify(commitment.encode(), bytes.fromhex(signature_hex))
+        pubkey_bytes = safe_fromhex(pubkey_hex)
+        sig_bytes = safe_fromhex(signature_hex)
+        if pubkey_bytes is None or sig_bytes is None:
+            return False
+        vk = VerifyKey(pubkey_bytes)
+        vk.verify(commitment.encode(), sig_bytes)
         return True
     except (BadSignatureError, Exception):
         return False
@@ -368,9 +374,13 @@ def bcos_attest():
         })
     except sqlite3.IntegrityError:
         return jsonify({"error": f"Certificate {cert_id} already exists"}), 409
+    except sqlite3.Error:
+        import logging
+        logging.exception("bcos_handler database failure")
+        return jsonify({"error": "database_error"}), 500
     except Exception:
         import logging
-        logging.exception("bcos_handler failed")
+        logging.exception("bcos_handler unexpected failure")
         return jsonify({"error": "internal_error"}), 500
 
 
@@ -429,9 +439,13 @@ def bcos_verify(cert_id):
             "badge_url": _bcos_public_url(f"/bcos/badge/{cert_id}.svg"),
             "pdf_url": _bcos_public_url(f"/bcos/cert/{cert_id}.pdf"),
         })
+    except sqlite3.Error:
+        import logging
+        logging.exception("bcos_handler database failure")
+        return jsonify({"error": "database_error"}), 500
     except Exception:
         import logging
-        logging.exception("bcos_handler failed")
+        logging.exception("bcos_handler unexpected failure")
         return jsonify({"error": "internal_error"}), 500
 
 
@@ -477,9 +491,13 @@ def bcos_certificate_pdf(cert_id):
             as_attachment=True,
             download_name=f"{cert_id}.pdf",
         )
+    except sqlite3.Error:
+        import logging
+        logging.exception("bcos_handler database failure")
+        return jsonify({"error": "database_error"}), 500
     except Exception:
         import logging
-        logging.exception("bcos_handler failed")
+        logging.exception("bcos_handler unexpected failure")
         return jsonify({"error": "internal_error"}), 500
 
 
@@ -568,9 +586,13 @@ def bcos_directory():
             "offset": offset,
             "certificates": certs,
         })
+    except sqlite3.Error:
+        import logging
+        logging.exception("bcos_handler database failure")
+        return jsonify({"error": "database_error"}), 500
     except Exception:
         import logging
-        logging.exception("bcos_handler failed")
+        logging.exception("bcos_handler unexpected failure")
         return jsonify({"error": "internal_error"}), 500
 
 
