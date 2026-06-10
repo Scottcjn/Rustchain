@@ -11,6 +11,8 @@ import os
 import time
 import hashlib
 import sqlite3
+from typing import Any # Add this for consistency if needed
+from src.utils.data_processing import safe_fromhex
 from datetime import datetime
 from flask import Blueprint, jsonify, request, g
 
@@ -226,8 +228,12 @@ def _verify_agent_signature(pubkey_hex, signature_hex, message):
     if Ed25519PublicKey is None:
         return False
     try:
-        pubkey = Ed25519PublicKey.from_public_bytes(bytes.fromhex(_clean_pubkey_hex(pubkey_hex)))
-        pubkey.verify(bytes.fromhex(str(signature_hex or '').strip()), message)
+        pubkey_bytes = safe_fromhex(_clean_pubkey_hex(pubkey_hex))
+        sig_bytes = safe_fromhex(str(signature_hex or '').strip())
+        if pubkey_bytes is None or sig_bytes is None:
+            return False
+        pubkey = Ed25519PublicKey.from_public_bytes(pubkey_bytes)
+        pubkey.verify(sig_bytes, message)
         return True
     except Exception:
         return False

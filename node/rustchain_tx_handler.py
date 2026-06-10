@@ -22,6 +22,7 @@ from typing import Dict, Optional, Tuple, List
 from dataclasses import dataclass
 from contextlib import contextmanager
 
+from src.utils.data_processing import safe_fromhex
 from rustchain_crypto import (
     SignedTransaction,
     Ed25519Signer,
@@ -284,7 +285,11 @@ class TransactionPool:
             cursor = conn.cursor()
 
             # Verify address derives from public key
-            derived_addr = address_from_public_key(bytes.fromhex(public_key))
+            pub_bytes = safe_fromhex(public_key)
+            if pub_bytes is None:
+                logger.warning(f"Invalid public key hex: {public_key}")
+                return False
+            derived_addr = address_from_public_key(pub_bytes)
             if derived_addr != address:
                 logger.warning(f"Address mismatch: {address} != {derived_addr}")
                 return False
@@ -328,7 +333,10 @@ class TransactionPool:
             return False, "Invalid signature"
 
         # 2. Verify public key matches address
-        derived_addr = address_from_public_key(bytes.fromhex(tx.public_key))
+        pub_bytes = safe_fromhex(tx.public_key)
+        if pub_bytes is None:
+            return False, "Invalid public key format"
+        derived_addr = address_from_public_key(pub_bytes)
         if derived_addr != tx.from_addr:
             return False, f"Public key does not match from_addr"
 
@@ -406,8 +414,11 @@ class TransactionPool:
         # Pre-validate signature and address (no DB needed, safe outside lock)
         if not tx.verify():
             return False, "Invalid signature"
-
-        derived_addr = address_from_public_key(bytes.fromhex(tx.public_key))
+        
+        pub_bytes = safe_fromhex(tx.public_key)
+        if pub_bytes is None:
+            return False, "Invalid public key format"
+        derived_addr = address_from_public_key(pub_bytes)
         if derived_addr != tx.from_addr:
             return False, "Public key does not match from_addr"
 

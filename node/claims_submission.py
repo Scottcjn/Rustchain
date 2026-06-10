@@ -27,7 +27,8 @@ import time
 import json
 import hashlib
 import hmac
-from typing import Dict, Optional, Any, Tuple
+from typing import Dict, Optional, Tuple, List, Any
+from src.utils.data_processing import safe_fromhex
 from datetime import datetime
 
 try:
@@ -199,8 +200,11 @@ def validate_claim_signature(
     
     try:
         # Decode hex strings
-        signature_bytes = bytes.fromhex(signature)
-        public_key_bytes = bytes.fromhex(public_key)
+        signature_bytes = safe_fromhex(signature)
+        public_key_bytes = safe_fromhex(public_key)
+        
+        if signature_bytes is None or public_key_bytes is None:
+            return False, "Invalid hex format for key or signature"
         
         # Verify signature
         verify_key = VerifyKey(public_key_bytes)

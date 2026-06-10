@@ -28,6 +28,7 @@ import logging
 import sqlite3
 import time
 from typing import Any, Optional
+from src.utils.data_processing import safe_fromhex
 from flask import Blueprint, request, jsonify
 
 log = logging.getLogger("rip0002_governance")
@@ -78,9 +79,13 @@ def _verify_miner_signature(miner_id: str, action: str, data: dict) -> bool:
     try:
         from nacl.signing import VerifyKey
         from nacl.exceptions import BadSignatureError
-        verify_key = VerifyKey(bytes.fromhex(miner_id))
+        miner_key_bytes = safe_fromhex(miner_id)
+        sig_bytes = safe_fromhex(signature_hex)
+        if miner_key_bytes is None or sig_bytes is None:
+            return False
+        verify_key = VerifyKey(miner_key_bytes)
         message = f"{action}:{miner_id}:{ts}".encode()
-        verify_key.verify(message, bytes.fromhex(signature_hex))
+        verify_key.verify(message, sig_bytes)
         return True
     except (BadSignatureError, Exception) as e:
         log.debug("Signature verification failed for %s: %s", miner_id, e)

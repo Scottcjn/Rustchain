@@ -23,6 +23,8 @@ import hmac
 import os
 import sqlite3
 import time
+from typing import Any
+from src.utils.data_processing import safe_fromhex
 from hashlib import blake2b
 
 from flask import Blueprint, Response, jsonify, request, send_file
@@ -152,8 +154,12 @@ def _verify_ed25519(commitment: str, signature_hex: str, pubkey_hex: str) -> boo
     if not HAVE_NACL:
         return False
     try:
-        vk = VerifyKey(bytes.fromhex(pubkey_hex))
-        vk.verify(commitment.encode(), bytes.fromhex(signature_hex))
+        pubkey_bytes = safe_fromhex(pubkey_hex)
+        sig_bytes = safe_fromhex(signature_hex)
+        if pubkey_bytes is None or sig_bytes is None:
+            return False
+        vk = VerifyKey(pubkey_bytes)
+        vk.verify(commitment.encode(), sig_bytes)
         return True
     except (BadSignatureError, Exception):
         return False
