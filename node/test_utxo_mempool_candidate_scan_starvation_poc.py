@@ -102,6 +102,32 @@ class TestMempoolCandidateScanStarvation(unittest.TestCase):
             "below the bounded candidate scan window",
         )
 
+    def test_pagination_does_not_skip_transactions_with_equal_fees(self):
+        """The continuation cursor must be deterministic across fee ties."""
+        oracle_box = self._mint("oracle", 1)
+        conflict_boxes = [
+            self._mint(f"conflict-{index}", index + 2)
+            for index in range(7)
+        ]
+        independent_box = self._mint("independent", 9)
+
+        self._add_transfer("a-spend-oracle", oracle_box, fee=10_000)
+        for index, box in enumerate(conflict_boxes):
+            self._add_transfer(
+                f"b-conflict-{index}",
+                box,
+                fee=10_000,
+                data_inputs=[oracle_box["box_id"]],
+            )
+        self._add_transfer("z-independent", independent_box, fee=10_000)
+
+        candidates = self.db.mempool_get_block_candidates(max_count=2)
+
+        self.assertEqual(
+            [tx["tx_id"] for tx in candidates],
+            ["a-spend-oracle", "z-independent"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

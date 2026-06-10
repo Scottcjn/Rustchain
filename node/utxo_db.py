@@ -1336,63 +1336,90 @@ class UtxoDB:
                 MAX_POOL_SIZE,
                 max_count * MAX_MEMPOOL_CANDIDATE_SCAN_FACTOR,
             )
-            rows = conn.execute(
-                """SELECT tx_id, tx_data_json FROM utxo_mempool
-                   WHERE expires_at > ?
-                   ORDER BY fee_nrtc DESC
-                   LIMIT ?
-                """,
-                (now, scan_limit),
-            ).fetchall()
             candidates = []
             stale_tx_ids = []
             selected_spend_inputs = set()
             selected_data_inputs = set()
+            last_fee = None
+            last_tx_id = None
 
-            for row in rows:
-                tx_id = row['tx_id']
-                try:
-                    tx = json.loads(row['tx_data_json'])
-                    input_ids = [inp['box_id'] for inp in tx.get('inputs', [])]
-                    data_inputs = self._normalize_data_inputs(
-                        tx.get('data_inputs', [])
-                    )
-                except Exception:
-                    stale_tx_ids.append(tx_id)
-                    continue
-
-                if not input_ids or data_inputs is None:
-                    stale_tx_ids.append(tx_id)
-                    continue
-
-                for box_ids in (input_ids, data_inputs):
-                    if not box_ids:
-                        continue
-                    placeholders = ",".join("?" for _ in box_ids)
-                    unspent_count = conn.execute(
-                        f"""SELECT COUNT(*) AS n FROM utxo_boxes
-                            WHERE box_id IN ({placeholders})
-                              AND spent_at IS NULL""",
-                        box_ids,
-                    ).fetchone()['n']
-                    if unspent_count != len(set(box_ids)):
-                        stale_tx_ids.append(tx_id)
-                        break
+            while len(candidates) < max_count:
+                if last_fee is None:
+                    rows = conn.execute(
+                        """SELECT tx_id, tx_data_json, fee_nrtc
+                           FROM utxo_mempool
+                           WHERE expires_at > ?
+                           ORDER BY fee_nrtc DESC, tx_id ASC
+                           LIMIT ?
+                        """,
+                        (now, scan_limit),
+                    ).fetchall()
                 else:
-                    input_set = set(input_ids)
-                    data_input_set = set(data_inputs)
-                    if (
-                        input_set & selected_data_inputs
-                        or data_input_set & selected_spend_inputs
-                    ):
+                    rows = conn.execute(
+                        """SELECT tx_id, tx_data_json, fee_nrtc
+                           FROM utxo_mempool
+                           WHERE expires_at > ?
+                             AND (
+                                 fee_nrtc < ?
+                                 OR (fee_nrtc = ? AND tx_id > ?)
+                             )
+                           ORDER BY fee_nrtc DESC, tx_id ASC
+                           LIMIT ?
+                        """,
+                        (now, last_fee, last_fee, last_tx_id, scan_limit),
+                    ).fetchall()
+
+                if not rows:
+                    break
+
+                for row in rows:
+                    tx_id = row['tx_id']
+                    try:
+                        tx = json.loads(row['tx_data_json'])
+                        input_ids = [inp['box_id'] for inp in tx.get('inputs', [])]
+                        data_inputs = self._normalize_data_inputs(
+                            tx.get('data_inputs', [])
+                        )
+                    except Exception:
+                        stale_tx_ids.append(tx_id)
                         continue
 
-                    candidates.append(tx)
-                    selected_spend_inputs.update(input_set)
-                    selected_data_inputs.update(data_input_set)
-                    if len(candidates) >= max_count:
-                        break
+                    if not input_ids or data_inputs is None:
+                        stale_tx_ids.append(tx_id)
+                        continue
 
+                    for box_ids in (input_ids, data_inputs):
+                        if not box_ids:
+                            continue
+                        placeholders = ",".join("?" for _ in box_ids)
+                        unspent_count = conn.execute(
+                            f"""SELECT COUNT(*) AS n FROM utxo_boxes
+                                WHERE box_id IN ({placeholders})
+                                  AND spent_at IS NULL""",
+                            box_ids,
+                        ).fetchone()['n']
+                        if unspent_count != len(set(box_ids)):
+                            stale_tx_ids.append(tx_id)
+                            break
+                    else:
+                        input_set = set(input_ids)
+                        data_input_set = set(data_inputs)
+                        if (
+                            input_set & selected_data_inputs
+                            or data_input_set & selected_spend_inputs
+                        ):
+                            continue
+
+                        candidates.append(tx)
+                        selected_spend_inputs.update(input_set)
+                        selected_data_inputs.update(data_input_set)
+                        if len(candidates) >= max_count:
+                            break
+
+                last_fee = rows[-1]['fee_nrtc']
+                last_tx_id = rows[-1]['tx_id']
+                if len(rows) < scan_limit:
+                    break
 
             for tx_id in stale_tx_ids:
                 conn.execute(
