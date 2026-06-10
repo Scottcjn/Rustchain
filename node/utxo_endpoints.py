@@ -550,6 +550,21 @@ def utxo_transfer():
             'expected': expected_addr,
             'got': from_address,
         }), 400
+    
+    # Verify signatures are provided as a list
+    signatures = data.get('signatures')
+    if not isinstance(signatures, list) or not signatures:
+        return jsonify({
+            'error': 'signatures must be a non-empty list of hex strings',
+            'code': 'INVALID_SIGNATURE_FORMAT'
+        }), 400
+    for sig in signatures:
+        if not isinstance(sig, str) or len(sig) != 128: # Ed25519 sigs are 64 bytes
+            return jsonify({
+                'error': 'Each signature must be a 128-character hex string',
+                'code': 'INVALID_SIGNATURE_ELEMENT'
+            }), 400
+
 
     try:
         nonce, nonce_int = _parse_transfer_nonce(nonce)
@@ -559,68 +574,18 @@ def utxo_transfer():
             'code': 'INVALID_NONCE',
         }), 400
 
-    # Reconstruct signed message.
-    # FIX(#2202): Include fee in signed data to prevent MITM fee manipulation.
-    # UTXO transfers must be domain-separated from account-model
-    # /wallet/transfer/signed payloads. The account endpoint places accepted
-    # transfers into a delayed pending window, while this endpoint settles UTXO
-    # state immediately. Accepting the account-shaped message here lets a valid
-    # wallet signature be substituted onto the immediate-settlement path.
-    #
-    # FIX(#2867 M2 follow-up): the M2 fix parses amount as Decimal internally
-    # for precision-safe int conversion, but Decimal isn't JSON-serializable.
-    # Clients sign with float-shaped amount, so cast back to float here to
-    # keep the signed-payload bytes byte-identical to what the wallet computed.
-    amount_for_sig = float(amount_rtc)
-    fee_for_sig = float(fee_rtc)
-    signature_verified = False
-    legacy_wallet_signature_seen = False
-    for nonce_for_sig in _nonce_signature_forms(data.get('nonce'), nonce_int):
-        tx_data_v2 = {
-            'domain': UTXO_SIGNATURE_DOMAIN,
-            'from': from_address,
-            'to': to_address,
-            'amount': amount_for_sig,
-            'fee': fee_for_sig,
-            'memo': memo,
-            'nonce': nonce_for_sig,
-        }
-        message_v2 = json.dumps(tx_data_v2, sort_keys=True, separators=(',', ':')).encode()
-        if _verify_sig_fn(public_key, message_v2, signature):
-            signature_verified = True
-            break
-
-        tx_data_legacy = {
-            'from': from_address,
-            'to': to_address,
-            'amount': amount_for_sig,
-            'memo': memo,
-            'nonce': nonce_for_sig,
-        }
-        message_legacy = json.dumps(tx_data_legacy, sort_keys=True, separators=(',', ':')).encode()
-        if _verify_sig_fn(public_key, message_legacy, signature):
-            legacy_wallet_signature_seen = True
-
-    if not signature_verified:
-        if legacy_wallet_signature_seen:
-            return jsonify({
-                'error': 'UTXO transfer signature must include UTXO domain',
-                'code': 'UTXO_SIGNATURE_DOMAIN_REQUIRED',
-                'domain': UTXO_SIGNATURE_DOMAIN,
-            }), 401
-        return jsonify({'error': 'Invalid Ed25519 signature'}), 401
-
-    # --- UTXO transaction ---------------------------------------------------
-
-    # FIX(#2867 M2): Decimal arithmetic preserves precision through quantization.
-    # int(Decimal) truncates toward zero (no float-binary noise like 0.29 →
-    # 28999999.999... → 28999999 lost-rtc bug).
+    # We must verify a unique signature for EACH selected UTXO box.
+    # This prevents "input substitution" where a user could potentially 
+    # reuse a signature for a different set of boxes with the same total value.
+    
+    # First, perform coin selection to know which boxes are being spent.
+    if _utxo_db is None:
+        return jsonify({'error': 'UTXO database not initialized'}), 500
+        
     target_nrtc = amount_nrtc + fee_nrtc
-
-    # Select UTXOs
     utxos = _utxo_db.get_unspent_for_address(from_address)
     selected, change_nrtc = coin_select(utxos, target_nrtc)
-
+    
     if not selected:
         utxo_balance = _utxo_db.get_balance(from_address)
         return jsonify({
@@ -630,6 +595,41 @@ def utxo_transfer():
             'requested_nrtc': target_nrtc,
             'requested_rtc': target_nrtc / UNIT,
         }), 400
+
+    # Verify that the number of signatures matches the number of selected inputs.
+    if len(signatures) != len(selected):
+        return jsonify({
+            'error': f'Number of signatures ({len(signatures)}) must match number of selected inputs ({len(selected)})',
+            'code': 'SIGNATURE_COUNT_MISMATCH'
+        }), 400
+
+    # Verify each signature. 
+    # Each signature must cover the transaction data PLUS the specific box_id it spends.
+    for idx, box in enumerate(selected):
+        sig = signatures[idx]
+        
+        # The signature domain and message must include the box_id to bind the sig to the input.
+        for nonce_for_sig in _nonce_signature_forms(data.get('nonce'), nonce_int):
+            tx_data_v2 = {
+                'domain': UTXO_SIGNATURE_DOMAIN,
+                'from': from_address,
+                'to': to_address,
+                'amount': float(amount_rtc),
+                'fee': float(fee_rtc),
+                'memo': memo,
+                'nonce': nonce_for_sig,
+                'box_id': box['box_id'],  # CRITICAL: Bind signature to the specific box
+            }
+            message_v2 = json.dumps(tx_data_v2, sort_keys=True, separators=(',', ':')).encode()
+            if _verify_sig_fn(public_key, message_v2, sig):
+                break
+        else:
+            return jsonify({
+                'error': f'Invalid signature for input box {box["box_id"][:16]}',
+                'code': 'INVALID_INPUT_SIGNATURE',
+                'index': idx
+            }), 401
+
 
     # Build outputs
     outputs = [{'address': to_address, 'value_nrtc': amount_nrtc}]
@@ -653,8 +653,8 @@ def utxo_transfer():
     block_height = _current_slot_fn()
     tx = {
         'tx_type': 'transfer',
-        'inputs': [{'box_id': u['box_id'], 'spending_proof': signature}
-                   for u in selected],
+        'inputs': [{'box_id': u['box_id'], 'spending_proof': sig}
+                   for u, sig in zip(selected, signatures)],
         'outputs': outputs,
         'fee_nrtc': effective_fee_nrtc,
         'timestamp': int(time.time()),
