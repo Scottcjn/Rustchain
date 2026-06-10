@@ -1474,6 +1474,12 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
                 400,
             )
 
+        # ── Admin auth: gate bridge lock creation ─────────────────────────────
+        auth_error = require_admin_key()
+        if auth_error:
+            return auth_error
+        # ── Auth passed ──────────────────────────────────────────────────────
+
         amount_uwrtc = int(round(amount_wrtc * 1_000_000))
 
         success, message, lock = airdrop.create_bridge_lock(

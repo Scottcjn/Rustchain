@@ -60,6 +60,9 @@ def make_miner(module):
     }
     miner.fingerprint_data = {"all_passed": True, "checks": {}}
     miner.fingerprint_passed = True
+    # #6546 wallet-key signing; __new__ bypasses __init__ so set the attrs.
+    miner.signing_key = None
+    miner.signing_pubkey_hex = None
     miner.attestation_valid_until = 0
     miner.last_entropy = {}
     miner.shares_submitted = 0

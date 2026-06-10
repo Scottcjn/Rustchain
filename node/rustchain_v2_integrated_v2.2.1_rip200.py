@@ -5027,7 +5027,7 @@ def _header_key_authorized(conn, identity, pubkey):
         pass
     existing = conn.execute(
         "SELECT pubkey_hex FROM miner_header_keys WHERE miner_id=?", (identity,)
-    ).fetchall()  # fetchall-ok: bounded by _prune_header_keys cap
+    ).fetchall()  # fetchall-ok: bounded-by-schema (capped by _prune_header_keys)
     if not existing:
         # Bootstrap the first key for a named identity. Open TOFU here is the
         # residual T1.1 takeover race (a self-signed attestation grabbing a
@@ -5453,13 +5453,14 @@ _ADMIN_SESSION_TTL = 3600
 def _get_or_create_admin_session(req):
     now = time.time()
     # Clean expired
-    expired = [k for k, v in _ADMIN_SESSIONS.items() if now - v > 3600]
+    expired = [k for k, v in _ADMIN_SESSIONS.items() if now - v > _ADMIN_SESSION_TTL]
     for k in expired:
         _ADMIN_SESSIONS.pop(k, None)
     # Check existing session
     sid = req.values.get("session_id", "")
     if sid and sid in _ADMIN_SESSIONS:
         _ADMIN_SESSIONS[sid] = now  # refresh TTL
+        req._admin_session_id = sid  # type: ignore[attr-defined]
         return True
     # Check header auth
     if is_admin(req):
@@ -5485,7 +5486,12 @@ def _wallet_review_ui_authorized(req):
         or req.form.get("admin_key")
         or ""
     ).strip()
-    return bool(need and got and hmac.compare_digest(need, got))
+    if need and got and hmac.compare_digest(need, got):
+        sid = secrets.token_hex(16)
+        _ADMIN_SESSIONS[sid] = time.time()
+        req._admin_session_id = sid  # type: ignore[attr-defined]
+        return True
+    return False
 
 
 def get_wallet_review_counts():
@@ -5712,6 +5718,7 @@ def admin_operator_ui():
         return jsonify({"ok": False, "error": "forbidden"}), 403
 
     admin_key = str(request.values.get("admin_key") or "").strip()
+    sid = getattr(request, '_admin_session_id', '')
     counts = get_wallet_review_counts()
     return render_template_string(
         """
@@ -5764,6 +5771,7 @@ def admin_operator_ui():
 </html>
         """,
         admin_key=admin_key,
+        sid=sid,
         counts=counts,
     )
 

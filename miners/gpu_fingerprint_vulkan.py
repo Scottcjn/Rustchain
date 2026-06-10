@@ -53,6 +53,11 @@ class ChannelResult:
     notes: str = ""
 
 
+def _read_text(path: str) -> str:
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read().strip()
+
+
 def _get_vulkan_devices():
     """Enumerate Vulkan physical devices."""
     app_info = vk.VkApplicationInfo(
@@ -257,9 +262,9 @@ def channel_system_gpu_probe() -> ChannelResult:
         drm_info = []
         for vendor_path in drm_cards:
             card = vendor_path.split("/")[4]
-            vendor = open(vendor_path).read().strip()
+            vendor = _read_text(vendor_path)
             device_path = vendor_path.replace("vendor", "device")
-            device = open(device_path).read().strip() if __import__("os").path.exists(device_path) else "unknown"
+            device = _read_text(device_path) if __import__("os").path.exists(device_path) else "unknown"
             drm_info.append({"card": card, "vendor": vendor, "device": device})
         data["drm_cards"] = drm_info
     except Exception:
@@ -271,7 +276,7 @@ def channel_system_gpu_probe() -> ChannelResult:
         amd_hwmon = glob.glob("/sys/class/drm/card*/device/hwmon/hwmon*/temp1_input")
         for path in amd_hwmon:
             card = path.split("/")[4]
-            temp = int(open(path).read().strip()) // 1000
+            temp = int(_read_text(path)) // 1000
             data[f"{card}_temp_c"] = temp
     except Exception:
         pass
