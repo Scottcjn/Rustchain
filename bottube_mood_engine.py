@@ -46,6 +46,7 @@ import os
 import json
 import random
 import logging
+import hmac
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass, field
@@ -916,6 +917,7 @@ class MoodEngine:
 
 
 mood_bp = Blueprint("bottube_mood", __name__, url_prefix="/api/v1/agents")
+MOOD_SIGNAL_API_KEY_ENV = "BOTTUBE_MOOD_SIGNAL_API_KEY"
 
 
 def get_mood_engine() -> MoodEngine:
@@ -923,6 +925,37 @@ def get_mood_engine() -> MoodEngine:
     from flask import current_app
     db_path = current_app.config.get("DB_PATH", "rustchain.db")
     return MoodEngine(db_path=db_path)
+
+
+def _configured_mood_signal_api_key() -> str:
+    from flask import current_app
+    configured = current_app.config.get(MOOD_SIGNAL_API_KEY_ENV, os.environ.get(MOOD_SIGNAL_API_KEY_ENV, ""))
+    if not isinstance(configured, str):
+        return ""
+    return configured.strip()
+
+
+def _provided_mood_signal_api_key() -> str:
+    authorization = request.headers.get("Authorization", "")
+    if authorization.lower().startswith("bearer "):
+        return authorization[7:].strip()
+    return (
+        request.headers.get("X-Mood-Signal-Key")
+        or request.headers.get("X-API-Key")
+        or ""
+    ).strip()
+
+
+def _require_mood_signal_api_key():
+    expected = _configured_mood_signal_api_key()
+    if not expected:
+        return jsonify({"error": f"{MOOD_SIGNAL_API_KEY_ENV} not configured"}), 503
+
+    provided = _provided_mood_signal_api_key()
+    if not provided or not hmac.compare_digest(provided, expected):
+        return jsonify({"error": "Unauthorized"}), 401
+
+    return None
 
 
 def _get_json_object(allow_empty: bool = False):
@@ -994,6 +1027,10 @@ def record_mood_signal(agent_name: str):
         value - Signal value data
         weight - Optional signal weight (default: 1.0)
     """
+    auth_error = _require_mood_signal_api_key()
+    if auth_error:
+        return auth_error
+
     try:
         engine = get_mood_engine()
         data, error = _get_json_object()

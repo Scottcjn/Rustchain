@@ -565,8 +565,10 @@ class TestMoodBlueprintJsonValidation(unittest.TestCase):
         app = Flask(__name__)
         app.config["TESTING"] = True
         app.config["DB_PATH"] = self.temp_db.name
+        app.config["BOTTUBE_MOOD_SIGNAL_API_KEY"] = "test-mood-signal-key"
         app.register_blueprint(mood_bp)
         self.client = app.test_client()
+        self.mood_signal_headers = {"X-Mood-Signal-Key": "test-mood-signal-key"}
 
     def tearDown(self):
         try:
@@ -583,7 +585,10 @@ class TestMoodBlueprintJsonValidation(unittest.TestCase):
 
         for endpoint in endpoints:
             with self.subTest(endpoint=endpoint):
-                response = self.client.post(endpoint, json=["not", "an", "object"])
+                kwargs = {"json": ["not", "an", "object"]}
+                if endpoint.endswith("/mood/signal"):
+                    kwargs["headers"] = self.mood_signal_headers
+                response = self.client.post(endpoint, **kwargs)
 
                 self.assertEqual(response.status_code, 400)
                 self.assertEqual(
@@ -600,10 +605,15 @@ class TestMoodBlueprintJsonValidation(unittest.TestCase):
 
         for endpoint in endpoints:
             with self.subTest(endpoint=endpoint):
+                kwargs = {
+                    "data": "{",
+                    "content_type": "application/json",
+                }
+                if endpoint.endswith("/mood/signal"):
+                    kwargs["headers"] = self.mood_signal_headers
                 response = self.client.post(
                     endpoint,
-                    data="{",
-                    content_type="application/json",
+                    **kwargs,
                 )
 
                 self.assertEqual(response.status_code, 400)
@@ -620,7 +630,10 @@ class TestMoodBlueprintJsonValidation(unittest.TestCase):
 
         for endpoint in endpoints:
             with self.subTest(endpoint=endpoint):
-                response = self.client.post(endpoint)
+                kwargs = {}
+                if endpoint.endswith("/mood/signal"):
+                    kwargs["headers"] = self.mood_signal_headers
+                response = self.client.post(endpoint, **kwargs)
 
                 self.assertEqual(response.status_code, 400)
                 self.assertEqual(
@@ -657,7 +670,10 @@ class TestMoodBlueprintJsonValidation(unittest.TestCase):
             (
                 "post",
                 "/api/v1/agents/test-agent/mood/signal",
-                {"json": {"signal_type": "video_views", "value": {"views": 1}}},
+                {
+                    "headers": self.mood_signal_headers,
+                    "json": {"signal_type": "video_views", "value": {"views": 1}},
+                },
             ),
             (
                 "post",
