@@ -13,6 +13,7 @@ import sqlite3
 import time
 from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta
+from html import escape as html_escape
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -83,6 +84,11 @@ TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '')
 # In-memory state
 current_status: Dict[str, dict] = {}
 incident_log: List[dict] = []
+
+
+def xml_escape(value) -> str:
+    """Escape dynamic values before rendering them in XML/HTML contexts."""
+    return html_escape(str(value if value is not None else ''), quote=True)
 
 
 @dataclass
@@ -216,8 +222,11 @@ def cleanup_old_data():
 
 def check_node_health(node_config: dict) -> NodeStatus:
     """Check health of a single node"""
-    start_time = time.time()
+    start_time = time.perf_counter()
     timestamp = datetime.now()
+
+    def elapsed_ms() -> float:
+        return max((time.perf_counter() - start_time) * 1000, 0.001)
     
     try:
         # Use pinned cert for HTTPS, no verification needed for plain HTTP
@@ -232,7 +241,7 @@ def check_node_health(node_config: dict) -> NodeStatus:
             timeout=10,
             verify=verify
         )
-        response_time_ms = (time.time() - start_time) * 1000
+        response_time_ms = elapsed_ms()
         
         if response.status_code == 200:
             data = response.json()
@@ -272,7 +281,7 @@ def check_node_health(node_config: dict) -> NodeStatus:
             endpoint=node_config['endpoint'],
             location=node_config['location'],
             status='down',
-            response_time_ms=(time.time() - start_time) * 1000,
+            response_time_ms=elapsed_ms(),
             version='unknown',
             uptime_s=0,
             active_miners=0,
@@ -287,7 +296,7 @@ def check_node_health(node_config: dict) -> NodeStatus:
             endpoint=node_config['endpoint'],
             location=node_config['location'],
             status='down',
-            response_time_ms=(time.time() - start_time) * 1000,
+            response_time_ms=elapsed_ms(),
             version='unknown',
             uptime_s=0,
             active_miners=0,
@@ -302,7 +311,7 @@ def check_node_health(node_config: dict) -> NodeStatus:
             endpoint=node_config['endpoint'],
             location=node_config['location'],
             status='down',
-            response_time_ms=(time.time() - start_time) * 1000,
+            response_time_ms=elapsed_ms(),
             version='unknown',
             uptime_s=0,
             active_miners=0,
@@ -528,14 +537,15 @@ def rss_feed():
     feed_items = []
     for row in rows:
         node_name = next((n['name'] for n in NODES if n['id'] == row['node_id']), row['node_id'])
+        incident_title = f"{str(row['incident_type']).replace('_', ' ').title()}: {node_name}"
         feed_items.append(f'''
     <entry>
-        <title>{row['incident_type'].replace('_', ' ').title()}: {node_name}</title>
+        <title>{xml_escape(incident_title)}</title>
         <link href="https://rustchain.org/status"/>
-        <id>tag:rustchain.org,2026:incident-{row['id']}</id>
-        <published>{row['timestamp']}</published>
-        <updated>{row['timestamp']}</updated>
-        <content type="html">{row['details']}</content>
+        <id>tag:rustchain.org,2026:incident-{xml_escape(row['id'])}</id>
+        <published>{xml_escape(row['timestamp'])}</published>
+        <updated>{xml_escape(row['timestamp'])}</updated>
+        <content type="html">{xml_escape(row['details'])}</content>
     </entry>''')
     
     feed_xml = f'''<?xml version="1.0" encoding="UTF-8"?>
@@ -891,12 +901,40 @@ HTML_TEMPLATE = '''
             const date = new Date(isoString);
             return date.toLocaleString();
         }
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, ch => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            }[ch]));
+        }
+
+        function escapeAttr(value) {
+            return escapeHtml(value);
+        }
+
+        function safeStatus(value) {
+            return value === 'up' || value === 'down' || value === 'degraded' ? value : 'down';
+        }
+
+        function safeNumber(value, fallback = 0) {
+            const parsed = Number(value);
+            return Number.isFinite(parsed) ? parsed : fallback;
+        }
+
+        function safeFixed(value, digits = 0) {
+            return safeNumber(value).toFixed(digits);
+        }
         
         // Format duration
         function formatDuration(seconds) {
-            if (seconds < 60) return `${seconds}s`;
-            if (seconds < 3600) return `${Math.round(seconds/60)}m`;
-            return `${Math.round(seconds/3600)}h`;
+            const safeSeconds = safeNumber(seconds);
+            if (safeSeconds < 60) return `${safeSeconds}s`;
+            if (safeSeconds < 3600) return `${Math.round(safeSeconds/60)}m`;
+            return `${Math.round(safeSeconds/3600)}h`;
         }
         
         // Render node cards
@@ -905,36 +943,36 @@ HTML_TEMPLATE = '''
             grid.innerHTML = nodes.map(node => `
                 <div class="node-card">
                     <div class="node-header">
-                        <span class="node-name">${node.name}</span>
-                        <span class="status-badge ${node.status}">${node.status}</span>
+                        <span class="node-name">${escapeHtml(node.name)}</span>
+                        <span class="status-badge ${safeStatus(node.status)}">${escapeHtml(safeStatus(node.status))}</span>
                     </div>
                     <div class="node-metrics">
                         <div class="metric">
                             <div class="metric-label">Response Time</div>
-                            <div class="metric-value">${node.status === 'up' ? node.response_time_ms.toFixed(0) + ' ms' : 'N/A'}</div>
+                            <div class="metric-value">${safeStatus(node.status) === 'up' ? escapeHtml(safeFixed(node.response_time_ms, 0)) + ' ms' : 'N/A'}</div>
                         </div>
                         <div class="metric">
                             <div class="metric-label">Version</div>
-                            <div class="metric-value">${node.version}</div>
+                            <div class="metric-value">${escapeHtml(node.version || 'unknown')}</div>
                         </div>
                         <div class="metric">
                             <div class="metric-label">Uptime</div>
-                            <div class="metric-value">${formatDuration(node.uptime_s)}</div>
+                            <div class="metric-value">${escapeHtml(formatDuration(node.uptime_s))}</div>
                         </div>
                         <div class="metric">
                             <div class="metric-label">Active Miners</div>
-                            <div class="metric-value">${node.active_miners}</div>
+                            <div class="metric-value">${escapeHtml(safeNumber(node.active_miners))}</div>
                         </div>
                         <div class="metric">
                             <div class="metric-label">Current Epoch</div>
-                            <div class="metric-value">#${node.current_epoch}</div>
+                            <div class="metric-value">#${escapeHtml(safeNumber(node.current_epoch))}</div>
                         </div>
                         <div class="metric">
                             <div class="metric-label">Location</div>
-                            <div class="metric-value">${node.location}</div>
+                            <div class="metric-value">${escapeHtml(node.location)}</div>
                         </div>
                     </div>
-                    ${node.error ? `<div class="error-text">Error: ${node.error}</div>` : ''}
+                    ${node.error ? `<div class="error-text">Error: ${escapeHtml(node.error)}</div>` : ''}
                 </div>
             `).join('');
         }
@@ -971,13 +1009,17 @@ HTML_TEMPLATE = '''
                 const node = NODES.find(n => n.id === incident.node_id);
                 const nodeName = node ? node.name : incident.node_id;
                 const isRecovery = incident.incident_type === 'node_recovery';
+                const safeIncidentType = escapeHtml(String(incident.incident_type || 'incident').replace(/_/g, ' ').toUpperCase());
+                const safeNodeName = escapeHtml(nodeName);
+                const safeDetails = escapeHtml(incident.details);
+                const safeTimestamp = escapeHtml(formatTime(incident.timestamp));
                 
                 return `
                     <div class="incident-item ${isRecovery ? 'recovery' : ''}">
-                        <div class="incident-time">${formatTime(incident.timestamp)}</div>
+                        <div class="incident-time">${safeTimestamp}</div>
                         <div class="incident-details">
-                            <strong>${isRecovery ? '✅' : '🚨'} ${incident.incident_type.replace('_', ' ').toUpperCase()}</strong><br>
-                            ${nodeName}: ${incident.details}
+                            <strong>${isRecovery ? '✅' : '🚨'} ${safeIncidentType}</strong><br>
+                            ${safeNodeName}: ${safeDetails}
                         </div>
                     </div>
                 `;
@@ -1108,28 +1150,35 @@ HTML_TEMPLATE = '''
         }
         
         // Initialize map (simple SVG-based map)
-        function initMap() {
+        function initMap(nodes = []) {
             const mapDiv = document.getElementById('map');
+            const nodeStatuses = new Map((Array.isArray(nodes) ? nodes : []).map(node => [
+                String(node.node_id),
+                safeStatus(node.status)
+            ]));
             
             // Simple node location visualization
-            const locations = NODES.map(node => `
+            const locations = NODES.map(node => {
+                const status = nodeStatuses.get(String(node.id)) || 'unknown';
+                const safeMarkerTitle = `${escapeAttr(node.name)}: ${escapeAttr(status)}`;
+                return `
                 <div style="
                     position: absolute;
                     left: ${(node.lng + 180) / 360 * 100}%;
                     top: ${(90 - node.lat) / 180 * 100}%;
                     width: 12px;
                     height: 12px;
-                    background: ${current_status[node.id]?.status === 'up' ? '#22c55e' : '#ef4444'};
+                    background: ${status === 'up' ? '#22c55e' : '#ef4444'};
                     border: 2px solid white;
                     border-radius: 50%;
                     cursor: pointer;
                     transition: transform 0.2s;
                 " 
-                title="${node.name}: ${current_status[node.id]?.status || 'unknown'}"
+                title="${safeMarkerTitle}"
                 onmouseover="this.style.transform='scale(1.5)'"
                 onmouseout="this.style.transform='scale(1)'"
                 ></div>
-            `).join('');
+            `}).join('');
             
             mapDiv.innerHTML = `
                 <div style="
@@ -1187,7 +1236,7 @@ HTML_TEMPLATE = '''
                 document.getElementById('last-updated').textContent = formatTime(data.last_updated);
                 
                 // Update map
-                initMap();
+                initMap(data.nodes);
                 
             } catch (error) {
                 console.error('Error fetching status:', error);
