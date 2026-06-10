@@ -116,11 +116,30 @@ function demoData() {
 // ── UI Updates ──────────────────────────────────────────────────
 
 function fmt(n, decimals = 0) {
-  if (n === null || n === undefined) return "—";
-  return n.toLocaleString("en-US", { 
+  const value = Number(n);
+  if (!Number.isFinite(value)) return "—";
+  return value.toLocaleString("en-US", {
     minimumFractionDigits: decimals, 
     maximumFractionDigits: decimals 
   });
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function safeBridgeType(value) {
+  return value === "wrap" ? "wrap" : "unwrap";
+}
+
+function shortTx(value) {
+  const text = String(value ?? "");
+  return text ? `${text.slice(0, 8)}…` : "—";
 }
 
 function timeAgo(iso) {
@@ -162,14 +181,17 @@ function updateHealth(data) {
 
 function updateTxTable(id, txs) {
   const tbody = document.getElementById(id);
-  tbody.innerHTML = txs.map(tx => `
+  tbody.innerHTML = txs.map(tx => {
+    const bridgeType = safeBridgeType(tx.type);
+    return `
     <tr>
-      <td>${timeAgo(tx.time)}</td>
-      <td class="amount">${fmt(tx.amount)} ${tx.type === "wrap" ? "RTC" : "wRTC"}</td>
-      <td class="mono">${tx.wallet}</td>
-      <td class="mono">${tx.tx.slice(0, 8)}…</td>
+      <td>${escapeHtml(timeAgo(tx.time))}</td>
+      <td class="amount">${escapeHtml(fmt(tx.amount))} ${bridgeType === "wrap" ? "RTC" : "wRTC"}</td>
+      <td class="mono">${escapeHtml(tx.wallet)}</td>
+      <td class="mono">${escapeHtml(shortTx(tx.tx))}</td>
     </tr>
-  `).join("");
+  `;
+  }).join("");
 }
 
 function updateChart(history) {

@@ -7,7 +7,10 @@ Run: python -m pytest tools/wrtc-bridge-dashboard/test_bridge_dashboard.py -v
 
 import os
 import re
+import subprocess
+import tempfile
 import unittest
+from pathlib import Path
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -111,6 +114,65 @@ class TestJSStructure(unittest.TestCase):
     def test_price_change_color(self):
         self.assertIn("#22c55e", self.js)  # green for positive
         self.assertIn("#ef4444", self.js)  # red for negative
+
+    def test_transaction_fields_are_escaped_before_inner_html(self):
+        self.assertIn("function escapeHtml(value)", self.js)
+        self.assertIn("function safeBridgeType(value)", self.js)
+        self.assertIn("function shortTx(value)", self.js)
+        self.assertIn("${escapeHtml(tx.wallet)}", self.js)
+        self.assertIn("${escapeHtml(shortTx(tx.tx))}", self.js)
+        self.assertIn("${escapeHtml(fmt(tx.amount))}", self.js)
+        self.assertNotIn("${tx.wallet}", self.js)
+        self.assertNotIn("${tx.tx.slice(0, 8)}", self.js)
+
+    def test_update_tx_table_escapes_malicious_transaction_rows(self):
+        js_path = Path(HERE) / "bridge_dashboard.js"
+        probe = f"""
+const fs = require("fs");
+const vm = require("vm");
+let script = fs.readFileSync({str(js_path)!r}, "utf8");
+script = script.replace(/\\nrefresh\\(\\);\\nsetInterval\\(refresh, REFRESH_MS\\);\\s*$/, "");
+const elements = {{
+  "wrap-table": {{ innerHTML: "" }}
+}};
+const context = {{
+  document: {{ getElementById: id => elements[id] || (elements[id] = {{ innerHTML: "", textContent: "", style: {{}}, setAttribute() {{}} }}) }},
+  Date,
+  Math,
+  console,
+  fetch() {{ throw new Error("network disabled in test"); }},
+  setInterval() {{}}
+}};
+vm.createContext(context);
+vm.runInContext(script, context);
+vm.runInContext(`
+  updateTxTable("wrap-table", [{{
+    time: new Date().toISOString(),
+    amount: "<img src=x>",
+    wallet: "<img src=x onerror=alert(1)>",
+    tx: "<script>alert(2)</script>",
+    type: "<b>bad</b>"
+  }}]);
+`, context);
+console.log(elements["wrap-table"].innerHTML);
+"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            probe_path = Path(tmpdir) / "probe.js"
+            probe_path.write_text(probe, encoding="utf-8")
+            result = subprocess.run(
+                ["node", str(probe_path)],
+                text=True,
+                encoding="utf-8",
+                capture_output=True,
+                check=True,
+            )
+
+        html = result.stdout
+        self.assertIn("&lt;img src=x onerror=alert(1)&gt;", html)
+        self.assertIn("&lt;script&gt;", html)
+        self.assertIn("wRTC", html)
+        self.assertNotIn("<img src=x onerror=alert(1)>", html)
+        self.assertNotIn("<script>alert(2)</script>", html)
 
 
 class TestStaticDeploy(unittest.TestCase):
