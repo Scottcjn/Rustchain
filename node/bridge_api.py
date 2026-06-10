@@ -632,6 +632,7 @@ def void_bridge_transfer(
                 released_by = ?
             WHERE bridge_transfer_id = ?
               AND status = 'locked'
+              AND lock_type = 'bridge_transfer'
         """, (now, voided_by, transfer["id"]))
         
         db_conn.commit()

@@ -177,11 +177,21 @@ def _adjust_balance(c: sqlite3.Cursor, wallet_id: str, delta_i64: int):
     """Adjust wallet balance by delta (positive = credit, negative = debit).
     Uses atomic SQLite update to prevent race conditions.
     """
-    c.execute("""
-        INSERT INTO balances (miner_id, amount_i64)
-        VALUES (?, ?)
-        ON CONFLICT(miner_id) DO UPDATE SET amount_i64 = amount_i64 + ?
-    """, (wallet_id, delta_i64, delta_i64))
+    # Simple retry loop for 'database is locked' errors during high concurrency
+    for attempt in range(5):
+        try:
+            c.execute("""
+                INSERT INTO balances (miner_id, amount_i64)
+                VALUES (?, ?)
+                ON CONFLICT(miner_id) DO UPDATE SET amount_i64 = amount_i64 + ?
+            """, (wallet_id, delta_i64, delta_i64))
+            return
+        except sqlite3.OperationalError as e:
+            if "locked" in str(e).lower() and attempt < 4:
+                time.sleep(0.01 * (attempt + 1))
+                continue
+            raise
+
 
 
 def _log_job_action(c: sqlite3.Cursor, job_id: str, action: str,
