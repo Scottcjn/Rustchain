@@ -1028,18 +1028,11 @@ class UtxoDB:
         """
         self.mempool_clear_expired()
         conn = self._conn()
-        # FIX(#2867 C1): mempool_add() always opens its own connection and
-        # begins its own BEGIN IMMEDIATE transaction below. The 7 ROLLBACK
-        # paths reference manage_tx, which was previously undefined — every
-        # ROLLBACK raised NameError, swallowed by the bare-except at the
-        # bottom, causing ALL mempool admissions to silently fail in error
-        # paths and leak the transaction-in-progress lock.
         manage_tx = True
         try:
             conn.execute("BEGIN IMMEDIATE")
 
-            # Check pool size under the write lock; otherwise concurrent
-            # admissions can all observe the same free slot and overfill.
+            # Check pool size under the write lock
             row = conn.execute(
                 "SELECT COUNT(*) AS n FROM utxo_mempool"
             ).fetchone()
@@ -1049,8 +1042,6 @@ class UtxoDB:
                 return False
 
             tx_id = tx.get('tx_id', '')
-            # FIX(#2179): Reject empty/whitespace-only tx_id to prevent
-            # INSERT OR IGNORE collisions that create orphan input claims.
             tx_id_len = _utf8_len(tx_id) if isinstance(tx_id, str) else None
             if (
                 not isinstance(tx_id, str)
@@ -1058,6 +1049,15 @@ class UtxoDB:
                 or tx_id_len is None
                 or tx_id_len > MAX_MEMPOOL_TX_ID_BYTES
             ):
+                if manage_tx:
+                    conn.execute("ROLLBACK")
+                return False
+
+            # HIGH FIX: Prevent tx_id collision with already confirmed transactions
+            conf_row = conn.execute(
+                "SELECT 1 FROM utxo_transactions WHERE tx_id = ?", (tx_id,)
+            ).fetchone()
+            if conf_row:
                 if manage_tx:
                     conn.execute("ROLLBACK")
                 return False
@@ -1077,13 +1077,10 @@ class UtxoDB:
             now = int(time.time())
             timestamp = tx.get('timestamp', now)
             if not _is_nonnegative_int64(timestamp):
+                if manage_tx:
+                    conn.execute("ROLLBACK")
                 return False
 
-            # Public mempool admission must never accept minting transactions.
-            # Coinbase/mining rewards are internally constructed during block
-            # production and guarded by apply_transaction(_allow_minting=True).
-            # Admitting user-supplied mining_reward txs here lets invalid mint
-            # candidates occupy mempool slots and reach block candidate selection.
             if tx_type in MINTING_TX_TYPES:
                 if manage_tx:
                     conn.execute("ROLLBACK")
@@ -1120,7 +1117,6 @@ class UtxoDB:
                         conn.execute("ROLLBACK")
                     return False
 
-                # Check box exists and is unspent
                 box = conn.execute(
                     """SELECT spent_at FROM utxo_boxes
                        WHERE box_id = ? AND spent_at IS NULL""",
@@ -1136,30 +1132,26 @@ class UtxoDB:
                     conn.execute("ROLLBACK")
                 return False
 
-            # -- conservation-of-value check ---------------------------------
-            # Prevent mempool admission of transactions that would fail
-            # apply_transaction(), locking UTXOs until expiry (DoS vector).
             fee = tx.get('fee_nrtc', 0)
             if not _is_nonnegative_int64(fee):
                 if manage_tx:
-                        conn.execute("ROLLBACK")
+                    conn.execute("ROLLBACK")
                 return False
 
-            # MEDIUM FIX: Reject empty outputs to prevent DoS
+            # MEDIUM FIX: Reject empty or invalid outputs to prevent DoS.
             outputs = tx.get('outputs', [])
             outputs = self._normalize_outputs(outputs)
             if outputs is None:
                 if manage_tx:
-                        conn.execute("ROLLBACK")
+                    conn.execute("ROLLBACK")
                 return False
             if not outputs and tx_type not in MINTING_TX_TYPES:
                 if manage_tx:
-                        conn.execute("ROLLBACK")
+                    conn.execute("ROLLBACK")
                 return False
-            # FIX(#9273): Reject transactions with too many outputs (UTXO bloat).
             if len(outputs) > MAX_OUTPUTS:
                 if manage_tx:
-                        conn.execute("ROLLBACK")
+                    conn.execute("ROLLBACK")
                 return False
 
             input_total = 0
@@ -1174,21 +1166,27 @@ class UtxoDB:
             output_total = sum(o['value_nrtc'] for o in outputs)
             if inputs and (output_total + fee) != input_total:
                 if manage_tx:
-                        conn.execute("ROLLBACK")
+                    conn.execute("ROLLBACK")
                 return False
 
             # Insert into mempool
-            # FIX(#2179): Use INSERT OR ABORT instead of INSERT OR IGNORE.
-            # With IGNORE, a duplicate tx_id silently skips the insert but
-            # execution continues to claim inputs — creating orphan entries
-            # that lock UTXOs with no corresponding mempool transaction.
             tx_data_json = json.dumps(tx)
             if len(tx_data_json) > MAX_TX_DATA_JSON_BYTES:
                 if manage_tx:
                     conn.execute("ROLLBACK")
                 return False
+            
+            # MEDIUM FIX: Check for duplicate tx_id explicitly to avoid orphan inputs.
+            existing_tx = conn.execute(
+                "SELECT 1 FROM utxo_mempool WHERE tx_id = ?", (tx_id,)
+            ).fetchone()
+            if existing_tx:
+                if manage_tx:
+                    conn.execute("ROLLBACK")
+                return False
+
             cursor = conn.execute(
-                """INSERT OR ABORT INTO utxo_mempool
+                """INSERT INTO utxo_mempool
                    (tx_id, tx_data_json, fee_nrtc, submitted_at, expires_at)
                    VALUES (?,?,?,?,?)""",
                 (
@@ -1212,7 +1210,7 @@ class UtxoDB:
         except Exception:
             try:
                 if manage_tx:
-                        conn.execute("ROLLBACK")
+                    conn.execute("ROLLBACK")
             except Exception:
                 pass
             return False
