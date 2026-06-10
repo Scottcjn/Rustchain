@@ -462,6 +462,23 @@
         let margin = { top: 40, right: 120, bottom: 60, left: 80 };
         let width, height;
 
+        const HTML_ESCAPE_MAP = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;'
+        };
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, char => HTML_ESCAPE_MAP[char]);
+        }
+
+        function safeNumber(value, fallback = 0) {
+            const number = Number(value);
+            return Number.isFinite(number) ? number : fallback;
+        }
+
         // Initialize visualization
         async function init() {
             setupTooltip();
@@ -825,27 +842,33 @@
         }
 
         function showTooltip(event, d) {
-            const archConfig = ARCHITECTURES[d.arch] || { label: d.arch };
+            const archConfig = { ...(ARCHITECTURES[d.arch] || { label: d.arch }) };
+            const epoch = safeNumber(d.epoch);
+            const count = safeNumber(d.count);
+            const avgRtc = safeNumber(d.avgRtc);
+            const avgFingerprint = safeNumber(d.avgFingerprint);
+            d = { ...d, epoch: escapeHtml(epoch) };
+            archConfig.label = escapeHtml(archConfig.label);
             
             let html = `
                 <div class="tooltip-title">Epoch ${d.epoch} — ${archConfig.label}</div>
                 <div class="tooltip-row">
                     <span class="tooltip-label">Active Miners:</span>
-                    <span class="tooltip-value">${d.count}</span>
+                    <span class="tooltip-value">${escapeHtml(count)}</span>
                 </div>
                 <div class="tooltip-row">
                     <span class="tooltip-label">Avg RTC Earned:</span>
-                    <span class="tooltip-value">${d.avgRtc?.toFixed(2) || '0'} RTC</span>
+                    <span class="tooltip-value">${escapeHtml(avgRtc.toFixed(2))} RTC</span>
                 </div>
                 <div class="tooltip-row">
                     <span class="tooltip-label">Avg Fingerprint:</span>
-                    <span class="tooltip-value">${(d.avgFingerprint * 100).toFixed(1)}%</span>
+                    <span class="tooltip-value">${escapeHtml((avgFingerprint * 100).toFixed(1))}%</span>
                 </div>
             `;
 
             // Show sample miners on click
             if (d.miners && d.miners.length > 0) {
-                const sampleMiners = d.miners.slice(0, 5);
+                const sampleMiners = d.miners.slice(0, 5).map(escapeHtml);
                 html += `
                     <div class="tooltip-row" style="margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.1);">
                         <span class="tooltip-label" style="display: block; margin-bottom: 5px;">Sample Miners:</span>
@@ -915,7 +938,7 @@
             const container = d3.select('#visualization');
             container.html(`
                 <div class="error-message">
-                    <strong>Error loading data:</strong> ${message}
+                    <strong>Error loading data:</strong> ${escapeHtml(message)}
                     <br><br>
                     <button onclick="location.reload()">Retry</button>
                     <button class="secondary" onclick="document.dispatchEvent(new CustomEvent('loadSampleData'))">
