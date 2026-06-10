@@ -418,9 +418,9 @@ function renderStatusBar() {
             <span>${statusText}</span>
         </div>
         <div class="status-info mono">
-            ${state.health ? `v${state.health.version || '2.2.1'}` : ''}
-            ${state.health && state.health.uptime ? `| Uptime: ${formatUptime(state.health.uptime)}` : ''}
-            ${state.lastUpdate ? `| Updated: ${formatRelativeTime(state.lastUpdate)}` : ''}
+            ${state.health ? `v${escapeHtml(state.health.version || '2.2.1')}` : ''}
+            ${state.health && state.health.uptime ? `| Uptime: ${escapeHtml(formatUptime(state.health.uptime))}` : ''}
+            ${state.lastUpdate ? `| Updated: ${escapeHtml(formatRelativeTime(state.lastUpdate))}` : ''}
         </div>
     `;
 }
@@ -451,22 +451,22 @@ function renderEpochStats() {
     container.innerHTML = `
         <div class="card">
             <div class="card-title">Current Epoch</div>
-            <div class="card-value text-accent">#${formatNumber(epoch.epoch, 0)}</div>
+            <div class="card-value text-accent">#${escapeHtml(formatNumber(epoch.epoch, 0))}</div>
             <div class="card-label">Epoch Number</div>
         </div>
         <div class="card">
             <div class="card-title">Epoch Pot</div>
-            <div class="card-value text-success">${formatNumber(epoch.pot)} RTC</div>
+            <div class="card-value text-success">${escapeHtml(formatNumber(epoch.pot))} RTC</div>
             <div class="card-label">Reward Pool</div>
         </div>
         <div class="card">
             <div class="card-title">Active Miners</div>
-            <div class="card-value text-info">${state.miners.length}</div>
+            <div class="card-value text-info">${escapeHtml(state.miners.length)}</div>
             <div class="card-label">Enrolled</div>
         </div>
         <div class="card">
             <div class="card-title">Progress</div>
-            <div class="card-value">${formatNumber(epoch.slot || 0, 0)}/${epoch.blocks_per_epoch || 144}</div>
+            <div class="card-value">${escapeHtml(formatNumber(epoch.slot || 0, 0))}/${escapeHtml(epoch.blocks_per_epoch || 144)}</div>
             <div class="progress-bar">
                 <div class="progress-fill" style="width: ${progress}%"></div>
             </div>
