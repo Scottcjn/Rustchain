@@ -432,7 +432,7 @@ This is how a healthy token economy works. Rewards aren't anchored to a nominal 
 | Transfer | 0.0001 RTC |
 | Withdrawal to Ergo | 0.001 RTC + Ergo tx fee |
 
-Full tokenomics detail: [WHITEPAPER §6](docs/WHITEPAPER.md).
+Full tokenomics detail: [WHITEPAPER §6](docs/WHITEPAPER.md). Scenario analysis: [What If: RTC Fundamentals — Coverage Analysis](docs/WHAT_IF_RTC_FUNDAMENTALS.md) (*analysis, not a promise*).
 
 ## Security
 
