@@ -193,6 +193,22 @@ class TestAPI:
         resp = client.get("/")
         assert resp.status_code == 200
 
+    def test_index_page_escapes_dynamic_status_fields(self, client):
+        resp = client.get("/")
+        html = resp.data.decode("utf-8")
+
+        assert "function escapeHtml(value)" in html
+        assert "${escapeHtml(node.name)}" in html
+        assert "${escapeHtml(node.location || '—')}" in html
+        assert "${escapeHtml(node.response_ms || 0)}ms" in html
+        assert "${escapeHtml(node.version || '—')}" in html
+        assert "${escapeHtml(i.node)}" in html
+        assert "${escapeHtml(i.event)}" in html
+        assert "escapeHtml(i.detail)" in html
+        assert "${node.name}" not in html
+        assert "${node.version||'—'}" not in html
+        assert "${i.detail?' · '+i.detail:''}" not in html
+
 
 class TestHistoryTrimming:
     """Test that history is properly trimmed to 24 hours."""
