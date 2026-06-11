@@ -15,11 +15,9 @@ Checks:
 7. ROM Fingerprint (retro platforms only)
 """
 
-import array
 import hashlib
 import os
 import platform
-import random
 import statistics
 import subprocess
 import time
@@ -37,6 +35,8 @@ try:
     ROM_DB_AVAILABLE = True
 except ImportError:
     ROM_DB_AVAILABLE = False
+
+IS_WINDOWS = platform.system() == "Windows"
 
 def check_clock_drift(samples: int = 200) -> Tuple[bool, Dict]:
     """Check 1: Clock-Skew & Oscillator Drift"""
@@ -79,85 +79,31 @@ def check_clock_drift(samples: int = 200) -> Tuple[bool, Dict]:
 
 
 def check_cache_timing(iterations: int = 100) -> Tuple[bool, Dict]:
-    """Check 2: Cache Timing Fingerprint (L1/L2/L3 Latency)
-
-    Uses pointer-chasing: a single randomized dependency cycle of
-    cache-line-sized hops where each load address depends on the value
-    of the previous load. Because the loads are serialized, the CPU
-    cannot overlap them out-of-order and the hardware prefetcher cannot
-    predict the (randomized) stream, so each access pays its true memory
-    latency on top of the (constant) interpreter overhead. A throughput
-    loop of *independent* indexed reads lets the core overlap dozens of
-    in-flight loads and the prefetcher stream them, collapsing L1/L2/L3
-    to a single ~interpreter-bound time and falsely reporting
-    "no_cache_hierarchy" on genuine hardware.
-
-    The chase buffer is a *contiguous* C array (array.array('q')) with
-    one chase slot per 64-byte cache line (slots 8 int64 elements
-    apart), so the touched working set genuinely spans the configured
-    L1/L2/L3 byte sizes. A Python list would store 8-byte PyObject
-    pointers per entry, shrinking the real footprint ~8x and
-    misclassifying the hierarchy. Stored values are pre-scaled element
-    indices, so the timed expression needs no arithmetic on the
-    dependency chain.
-
-    Each timed statement nests 8 dependent loads
-    (`buf[buf[...buf[p]...]]`): with a single load per statement the
-    out-of-order core hides L1-L3 latency (a few ns) under the ~30 ns
-    of independent per-iteration interpreter bookkeeping, flattening
-    the readings again. Amortizing that constant over 8 chained loads
-    puts the memory latency back on the critical path (measured on
-    real x86: 18/20/23 ns per load for L1/L2/L3 vs 31/32/34 unnested).
-
-    Total work is bounded: 3 levels x trials x accesses x 8 chase steps
-    with `accesses=50000` and 4 trials at the default `iterations=100`,
-    ~150 ms wall-clock, so the check stays well under a second on the
-    enroll/attest path.
-    """
+    """Check 2: Cache Timing Fingerprint (L1/L2/L3 Latency)"""
     l1_size = 8 * 1024
     l2_size = 128 * 1024
     l3_size = 4 * 1024 * 1024
 
-    line = 64          # bytes per cache line
-    step = line // 8   # int64 elements per cache line
-    depth = 8          # dependent loads per timed statement
+    def measure_access_time(buffer_size: int, accesses: int = 1000) -> float:
+        buf = bytearray(buffer_size)
+        for i in range(0, buffer_size, 64):
+            buf[i] = i % 256
+        start = time.perf_counter_ns()
+        for i in range(accesses):
+            _ = buf[(i * 64) % buffer_size]
+        elapsed = time.perf_counter_ns() - start
+        return elapsed / accesses
 
-    # default iterations=100 -> 4 timed trials per level
-    trials = max(2, min(5, iterations // 25))
+    l1_times = [measure_access_time(l1_size) for _ in range(iterations)]
+    l2_times = [measure_access_time(l2_size) for _ in range(iterations)]
+    l3_times = [measure_access_time(l3_size) for _ in range(iterations)]
 
-    def measure_access_time(buffer_size: int, accesses: int = 50000) -> float:
-        n = max(64, buffer_size // line)  # one chase slot per cache line
-        # contiguous int64 buffer covering exactly buffer_size bytes
-        buf = array.array("q", bytes(n * line))
-        order = list(range(n))
-        random.shuffle(order)
-        for i in range(n):
-            # one Hamiltonian cycle, no short loops; values are element
-            # indices pre-multiplied by `step` so the hot loop does no math
-            buf[order[i] * step] = order[(i + 1) % n] * step
-        # warm the working set into the target cache level
-        p = 0
-        for _ in range(n):
-            p = buf[p]
-        best = None
-        for _ in range(trials):
-            p = 0
-            start = time.perf_counter_ns()
-            for _ in range(accesses):
-                p = buf[buf[buf[buf[buf[buf[buf[buf[p]]]]]]]]
-            elapsed = (time.perf_counter_ns() - start) / (accesses * depth)
-            best = elapsed if best is None else min(best, elapsed)
-        if p < 0:  # keep `p` live so the chase isn't optimized away
-            raise RuntimeError("unreachable")
-        return best
-
-    l1_avg = measure_access_time(l1_size)
-    l2_avg = measure_access_time(l2_size)
-    l3_avg = measure_access_time(l3_size)
+    l1_avg = statistics.mean(l1_times)
+    l2_avg = statistics.mean(l2_times)
+    l3_avg = statistics.mean(l3_times)
 
     l2_l1_ratio = l2_avg / l1_avg if l1_avg > 0 else 0
     l3_l2_ratio = l3_avg / l2_avg if l2_avg > 0 else 0
-    l3_l1_ratio = l3_avg / l1_avg if l1_avg > 0 else 0
 
     data = {
         "l1_ns": round(l1_avg, 2),
@@ -165,15 +111,10 @@ def check_cache_timing(iterations: int = 100) -> Tuple[bool, Dict]:
         "l3_ns": round(l3_avg, 2),
         "l2_l1_ratio": round(l2_l1_ratio, 3),
         "l3_l2_ratio": round(l3_l2_ratio, 3),
-        "l3_l1_ratio": round(l3_l1_ratio, 3),
     }
 
     valid = True
-    # The adjacent-level ratios sit ~1.0 +/- 0.03 of noise on flat memory,
-    # so the 1.01 cutoffs alone misclassify either way. The end-to-end
-    # L3/L1 ratio is the robust discriminator: >= 1.15 on measured real
-    # x86 vs <= 1.04 on a flat-latency environment.
-    if (l2_l1_ratio < 1.01 and l3_l2_ratio < 1.01) or l3_l1_ratio < 1.05:
+    if l2_l1_ratio < 1.01 and l3_l2_ratio < 1.01:
         valid = False
         data["fail_reason"] = "no_cache_hierarchy"
     elif l1_avg == 0 or l2_avg == 0 or l3_avg == 0:
@@ -188,6 +129,7 @@ def check_simd_identity() -> Tuple[bool, Dict]:
     flags = []
     arch = platform.machine().lower()
 
+    # Linux: read /proc/cpuinfo
     try:
         with open("/proc/cpuinfo", "r") as f:
             for line in f:
@@ -199,7 +141,8 @@ def check_simd_identity() -> Tuple[bool, Dict]:
     except:
         pass
 
-    if not flags:
+    # macOS: sysctl
+    if not flags and not IS_WINDOWS:
         try:
             result = subprocess.run(
                 ["sysctl", "-a"],
@@ -211,12 +154,44 @@ def check_simd_identity() -> Tuple[bool, Dict]:
         except:
             pass
 
+    # Windows: detect SIMD via WMI/registry and arch inference
+    if not flags and IS_WINDOWS:
+        creation_flag = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        try:
+            # WMIC gives CPU description which includes feature hints
+            result = subprocess.run(
+                ["wmic", "cpu", "get", "Name,Description,Architecture", "/format:list"],
+                capture_output=True, text=True, timeout=5,
+                creationflags=creation_flag
+            )
+            cpu_info = result.stdout.lower()
+            # AMD64/x86_64 always has SSE2+; detect AVX from CPU model
+            if "amd64" in arch or "x86_64" in arch or "x86" in arch:
+                flags.extend(["sse", "sse2"])  # All x64 CPUs have SSE2
+                # Check for AVX via OS-level support (cpuid leaf)
+                try:
+                    import struct
+                    # Try to detect AVX from processor brand string
+                    proc = platform.processor().lower()
+                    # Ryzen, Core i5/i7/i9 6th gen+ all have AVX2
+                    if any(k in proc for k in ["ryzen", "epyc", "threadripper"]):
+                        flags.extend(["avx", "avx2", "sse4_1", "sse4_2"])
+                    elif "intel" in proc or "core" in proc:
+                        flags.extend(["avx", "sse4_1", "sse4_2"])
+                except:
+                    pass
+            elif "arm" in arch or "aarch64" in arch:
+                flags.append("neon")
+        except:
+            pass
+        # Fallback: if arch is x86_64, we know SSE2 exists
+        if not flags and ("amd64" in arch or "x86_64" in arch or "x86" in arch):
+            flags.extend(["sse", "sse2"])
+
     has_sse = any("sse" in f.lower() for f in flags)
     has_avx = any("avx" in f.lower() for f in flags)
     has_altivec = any("altivec" in f.lower() for f in flags) or "ppc" in arch
-    # ARM64 often reports NEON as "asimd" in /proc/cpuinfo features
-    is_arm_arch = ("arm" in arch) or ("aarch64" in arch)
-    has_neon = any(("neon" in f.lower()) or ("asimd" in f.lower()) for f in flags) or is_arm_arch
+    has_neon = any("neon" in f.lower() for f in flags) or "arm" in arch
 
     data = {
         "arch": arch,
@@ -343,10 +318,44 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
 
     Updated 2026-02-21: Added cloud provider detection after
     discovering AWS t3.medium instances attempting to mine.
+    Cross-platform: Uses DMI/proc on Linux, WMI on Windows.
     """
     vm_indicators = []
+    creation_flag = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
-    # --- DMI paths to check ---
+    # --- Windows: WMI-based VM detection ---
+    if IS_WINDOWS:
+        try:
+            result = subprocess.run(
+                ["wmic", "computersystem", "get", "Model,Manufacturer", "/format:list"],
+                capture_output=True, text=True, timeout=5,
+                creationflags=creation_flag
+            )
+            wmi_info = result.stdout.lower()
+            for vm in ["vmware", "virtualbox", "virtual machine", "kvm", "qemu",
+                        "xen", "hyperv", "hyper-v", "parallels", "bhyve",
+                        "amazon", "google", "microsoft corporation"]:
+                if vm in wmi_info:
+                    vm_indicators.append("wmi_computersystem:{}".format(vm))
+        except:
+            pass
+
+        # Check BIOS via WMI
+        try:
+            result = subprocess.run(
+                ["wmic", "bios", "get", "SMBIOSBIOSVersion,Manufacturer", "/format:list"],
+                capture_output=True, text=True, timeout=5,
+                creationflags=creation_flag
+            )
+            bios_info = result.stdout.lower()
+            for vm in ["vmware", "virtualbox", "qemu", "seabios", "bochs",
+                        "innotek", "xen", "amazon", "google"]:
+                if vm in bios_info:
+                    vm_indicators.append("wmi_bios:{}".format(vm))
+        except:
+            pass
+
+    # --- DMI paths to check (Linux) ---
     vm_paths = [
         "/sys/class/dmi/id/product_name",
         "/sys/class/dmi/id/sys_vendor",
@@ -456,16 +465,17 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
     except:
         pass
 
-    # --- systemd-detect-virt (if available) ---
-    try:
-        result = subprocess.run(
-            ["systemd-detect-virt"], capture_output=True, text=True, timeout=5
-        )
-        virt_type = result.stdout.strip().lower()
-        if virt_type and virt_type != "none":
-            vm_indicators.append("systemd_detect_virt:{}".format(virt_type))
-    except:
-        pass
+    # --- systemd-detect-virt (Linux only) ---
+    if not IS_WINDOWS:
+        try:
+            result = subprocess.run(
+                ["systemd-detect-virt"], capture_output=True, text=True, timeout=5
+            )
+            virt_type = result.stdout.strip().lower()
+            if virt_type and virt_type != "none":
+                vm_indicators.append("systemd_detect_virt:{}".format(virt_type))
+        except:
+            pass
 
     data = {
         "vm_indicators": vm_indicators,

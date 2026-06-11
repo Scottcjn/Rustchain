@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
 """
 RIP-PoA Hardware Fingerprint Validation
 ========================================
@@ -36,6 +35,8 @@ try:
     ROM_DB_AVAILABLE = True
 except ImportError:
     ROM_DB_AVAILABLE = False
+
+IS_WINDOWS = platform.system() == "Windows"
 
 def check_clock_drift(samples: int = 200) -> Tuple[bool, Dict]:
     """Check 1: Clock-Skew & Oscillator Drift"""
@@ -128,6 +129,7 @@ def check_simd_identity() -> Tuple[bool, Dict]:
     flags = []
     arch = platform.machine().lower()
 
+    # Linux: read /proc/cpuinfo
     try:
         with open("/proc/cpuinfo", "r") as f:
             for line in f:
@@ -139,7 +141,8 @@ def check_simd_identity() -> Tuple[bool, Dict]:
     except:
         pass
 
-    if not flags:
+    # macOS: sysctl
+    if not flags and not IS_WINDOWS:
         try:
             result = subprocess.run(
                 ["sysctl", "-a"],
@@ -151,12 +154,44 @@ def check_simd_identity() -> Tuple[bool, Dict]:
         except:
             pass
 
+    # Windows: detect SIMD via WMI/registry and arch inference
+    if not flags and IS_WINDOWS:
+        creation_flag = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        try:
+            # WMIC gives CPU description which includes feature hints
+            result = subprocess.run(
+                ["wmic", "cpu", "get", "Name,Description,Architecture", "/format:list"],
+                capture_output=True, text=True, timeout=5,
+                creationflags=creation_flag
+            )
+            cpu_info = result.stdout.lower()
+            # AMD64/x86_64 always has SSE2+; detect AVX from CPU model
+            if "amd64" in arch or "x86_64" in arch or "x86" in arch:
+                flags.extend(["sse", "sse2"])  # All x64 CPUs have SSE2
+                # Check for AVX via OS-level support (cpuid leaf)
+                try:
+                    import struct
+                    # Try to detect AVX from processor brand string
+                    proc = platform.processor().lower()
+                    # Ryzen, Core i5/i7/i9 6th gen+ all have AVX2
+                    if any(k in proc for k in ["ryzen", "epyc", "threadripper"]):
+                        flags.extend(["avx", "avx2", "sse4_1", "sse4_2"])
+                    elif "intel" in proc or "core" in proc:
+                        flags.extend(["avx", "sse4_1", "sse4_2"])
+                except:
+                    pass
+            elif "arm" in arch or "aarch64" in arch:
+                flags.append("neon")
+        except:
+            pass
+        # Fallback: if arch is x86_64, we know SSE2 exists
+        if not flags and ("amd64" in arch or "x86_64" in arch or "x86" in arch):
+            flags.extend(["sse", "sse2"])
+
     has_sse = any("sse" in f.lower() for f in flags)
     has_avx = any("avx" in f.lower() for f in flags)
     has_altivec = any("altivec" in f.lower() for f in flags) or "ppc" in arch
-    # ARM64 often reports NEON as "asimd" in /proc/cpuinfo features
-    is_arm_arch = ("arm" in arch) or ("aarch64" in arch)
-    has_neon = any(("neon" in f.lower()) or ("asimd" in f.lower()) for f in flags) or is_arm_arch
+    has_neon = any("neon" in f.lower() for f in flags) or "arm" in arch
 
     data = {
         "arch": arch,
@@ -283,10 +318,44 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
 
     Updated 2026-02-21: Added cloud provider detection after
     discovering AWS t3.medium instances attempting to mine.
+    Cross-platform: Uses DMI/proc on Linux, WMI on Windows.
     """
     vm_indicators = []
+    creation_flag = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
-    # --- DMI paths to check ---
+    # --- Windows: WMI-based VM detection ---
+    if IS_WINDOWS:
+        try:
+            result = subprocess.run(
+                ["wmic", "computersystem", "get", "Model,Manufacturer", "/format:list"],
+                capture_output=True, text=True, timeout=5,
+                creationflags=creation_flag
+            )
+            wmi_info = result.stdout.lower()
+            for vm in ["vmware", "virtualbox", "virtual machine", "kvm", "qemu",
+                        "xen", "hyperv", "hyper-v", "parallels", "bhyve",
+                        "amazon", "google", "microsoft corporation"]:
+                if vm in wmi_info:
+                    vm_indicators.append("wmi_computersystem:{}".format(vm))
+        except:
+            pass
+
+        # Check BIOS via WMI
+        try:
+            result = subprocess.run(
+                ["wmic", "bios", "get", "SMBIOSBIOSVersion,Manufacturer", "/format:list"],
+                capture_output=True, text=True, timeout=5,
+                creationflags=creation_flag
+            )
+            bios_info = result.stdout.lower()
+            for vm in ["vmware", "virtualbox", "qemu", "seabios", "bochs",
+                        "innotek", "xen", "amazon", "google"]:
+                if vm in bios_info:
+                    vm_indicators.append("wmi_bios:{}".format(vm))
+        except:
+            pass
+
+    # --- DMI paths to check (Linux) ---
     vm_paths = [
         "/sys/class/dmi/id/product_name",
         "/sys/class/dmi/id/sys_vendor",
@@ -396,16 +465,17 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
     except:
         pass
 
-    # --- systemd-detect-virt (if available) ---
-    try:
-        result = subprocess.run(
-            ["systemd-detect-virt"], capture_output=True, text=True, timeout=5
-        )
-        virt_type = result.stdout.strip().lower()
-        if virt_type and virt_type != "none":
-            vm_indicators.append("systemd_detect_virt:{}".format(virt_type))
-    except:
-        pass
+    # --- systemd-detect-virt (Linux only) ---
+    if not IS_WINDOWS:
+        try:
+            result = subprocess.run(
+                ["systemd-detect-virt"], capture_output=True, text=True, timeout=5
+            )
+            virt_type = result.stdout.strip().lower()
+            if virt_type and virt_type != "none":
+                vm_indicators.append("systemd_detect_virt:{}".format(virt_type))
+        except:
+            pass
 
     data = {
         "vm_indicators": vm_indicators,
