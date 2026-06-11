@@ -116,7 +116,16 @@ def settle_epoch_rip200(db_path, epoch: int, enable_anti_double_mining: bool = T
         epoch: Epoch number to settle
         enable_anti_double_mining: Enable Issue #1449 anti-double-mining (default: True)
 
+    Environment:
+        RC_REQUIRE_ADM=1 (T3.3, default off): make ADM MANDATORY for this path. When set,
+        if ADM is unavailable (module absent or disabled for the call) or its execution
+        raises, the epoch is NOT settled via the standard non-grouping path — it fails
+        closed and is left unsettled for retry. Default (unset) preserves the historical
+        standard-rewards fallback. Scope is this function only; finalize_epoch is not
+        gated.
+
     Returns:
+        Success:
         {
             "ok": True,
             "epoch": epoch number,
@@ -125,6 +134,9 @@ def settle_epoch_rip200(db_path, epoch: int, enable_anti_double_mining: bool = T
             "already_settled": bool,
             "anti_double_mining_telemetry": {...}  # Only if enabled
         }
+        Errors (ok=False, "error" code): "epoch_not_reached", "no_eligible_miners",
+        and — only under RC_REQUIRE_ADM=1 — "adm_required_unavailable" (ADM not usable
+        for this call) / "adm_required_failed" (ADM raised; no standard fall-through).
     """
     # Reject future epochs — defense in depth (caller should also check).
     current_epoch = slot_to_epoch(current_slot())
@@ -155,6 +167,25 @@ def settle_epoch_rip200(db_path, epoch: int, enable_anti_double_mining: bool = T
         # Calculate current slot for age calculation
         current = current_slot()
 
+        # T3.3: opt-in fail-closed anti-double-mining. RC_REQUIRE_ADM makes ADM
+        # MANDATORY for this (admin/operator) settlement path — if ADM is unavailable or
+        # fails, do NOT silently settle with the standard non-grouping path (which drops
+        # the one-machine-one-reward guard). Default (flag off) preserves the
+        # standard-rewards fallback the fleet relies on.
+        # SCOPE: settle_epoch_rip200 ONLY. finalize_epoch (the auto block-ingest path)
+        # intentionally does not group by hardware and is deliberately NOT gated here —
+        # adding ADM grouping there would break the live fleet (each fingerprinted miner
+        # is paid per epoch; ADM is an admin-path defense-in-depth measure, not the
+        # external-Sybil control).
+        require_adm = os.environ.get("RC_REQUIRE_ADM", "0") == "1"
+        if require_adm and not (enable_anti_double_mining and ANTI_DOUBLE_MINING_AVAILABLE):
+            db.rollback()
+            return {
+                "ok": False, "error": "adm_required_unavailable", "epoch": epoch,
+                "hint": "RC_REQUIRE_ADM=1 but anti-double-mining is disabled for this "
+                        "call or its module is unavailable",
+            }
+
         # Issue #1449: Use anti-double-mining rewards if enabled and available
         if enable_anti_double_mining and ANTI_DOUBLE_MINING_AVAILABLE:
             try:
@@ -174,13 +205,19 @@ def settle_epoch_rip200(db_path, epoch: int, enable_anti_double_mining: bool = T
                 db.commit()
                 return result
             except Exception as e:
-                print(f"[WARN] Anti-double-mining failed, falling back to standard: {e}")
-                # Rollback partial ADM writes before falling through to standard rewards.
-                # Without this, ADM may have already written rewards on the shared `db`
-                # connection. The standard path then adds MORE rewards on top, resulting
-                # in double-credited miners on the single commit below.
+                print(f"[WARN] Anti-double-mining failed: {e}")
+                # Rollback partial ADM writes before any fallback/return. Without this,
+                # ADM may have already written rewards on the shared `db` connection; the
+                # standard path would then add MORE on top → double-credit on commit.
                 db.rollback()
-                # Re-acquire the write lock after rollback (rollback releases it).
+                if require_adm:
+                    # T3.3: fail CLOSED — never fall through to the non-grouping standard
+                    # path when ADM is mandatory. The epoch stays unsettled for retry.
+                    return {
+                        "ok": False, "error": "adm_required_failed",
+                        "epoch": epoch, "detail": str(e),
+                    }
+                # Default: re-acquire the write lock (rollback released it) + fall through.
                 db.execute("BEGIN IMMEDIATE")
 
         # Standard RIP-200 rewards (no anti-double-mining)

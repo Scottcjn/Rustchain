@@ -260,6 +260,38 @@ class TestAttestSubmitChallengeBinding(unittest.TestCase):
                         0,
                     )
 
+    def test_bound_challenge_endpoint_matching_miner_succeeds(self):
+        """T2.1: a challenge requested WITH a miner_id binds to it; a submit from the
+        same miner succeeds and the response advertises the binding."""
+        mod, db_path = self._load_module("rustchain_attest_bound_ok", "bound_ok.db")
+        miner = "RTC_REPLAY_POC_MINER"
+        with mod.app.test_request_context("/attest/challenge", method="POST", json={"miner_id": miner}):
+            challenge = mod.get_challenge().get_json()
+        self.assertEqual(challenge.get("bound_miner"), miner)
+        with closing(sqlite3.connect(db_path)) as conn:
+            self.assertEqual(
+                conn.execute("SELECT bound_miner FROM nonces WHERE nonce=?", (challenge["nonce"],)).fetchone()[0],
+                miner)
+        status, body = self._submit(mod, self._attestation_payload(challenge["nonce"]))
+        self.assertEqual(status, 200)
+        self.assertTrue(body["ok"])
+
+    def test_bound_challenge_endpoint_other_miner_rejected_and_preserved(self):
+        """A submit claiming a DIFFERENT identity than the bound challenge is rejected
+        403 NONCE_IDENTITY_MISMATCH and the nonce is NOT consumed (no DoS)."""
+        mod, db_path = self._load_module("rustchain_attest_bound_mismatch", "bound_mismatch.db")
+        with mod.app.test_request_context("/attest/challenge", method="POST", json={"miner_id": "RTC_RIGHTFUL_OWNER"}):
+            challenge = mod.get_challenge().get_json()
+        payload = self._attestation_payload(challenge["nonce"])  # default miner = RTC_REPLAY_POC_MINER (≠ owner)
+        status, body = self._submit(mod, payload)
+        self.assertEqual(status, 403)
+        self.assertEqual(body["code"], "NONCE_IDENTITY_MISMATCH")
+        with closing(sqlite3.connect(db_path)) as conn:
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) FROM nonces WHERE nonce=?", (challenge["nonce"],)).fetchone()[0], 1)
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) FROM used_nonces WHERE nonce=?", (challenge["nonce"],)).fetchone()[0], 0)
+
     def test_non_string_signature_does_not_consume_nonce(self):
         mod, db_path = self._load_module("rustchain_attest_signature_type", "signature_type.db")
 

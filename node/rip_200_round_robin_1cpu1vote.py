@@ -45,6 +45,18 @@ def derive_measurement_nonce(previous_epoch_block_hash: str) -> str:
 
 
 def select_active_fingerprint_checks(previous_epoch_block_hash: str, active_count: int = ACTIVE_FINGERPRINT_CHECK_COUNT) -> Tuple[str, ...]:
+    # T3.6: fail CLOSED — activate ALL checks — when the previous block hash is
+    # unavailable (empty, or the all-zeros fallback used by derive_measurement_nonce).
+    # A predictable rotation seed would otherwise let an attacker know exactly which
+    # 4-of-6 subset is active and pass only those. Mirrors the integrated node's
+    # select_active_fingerprint_checks and the reward path's
+    # get_reward_active_fingerprint_checks (which already fail closed on no prev hash).
+    # This selector is a legacy/duplicate — the live reward path uses
+    # get_reward_active_fingerprint_checks — hardened for consistency so an alternate
+    # import can't reintroduce the predictable subset.
+    normalized = (previous_epoch_block_hash or "").strip().lower()
+    if not normalized or normalized == ("0" * 64):
+        return tuple(ROTATING_FINGERPRINT_CHECKS)
     nonce = derive_measurement_nonce(previous_epoch_block_hash)
     ranked = sorted(
         ROTATING_FINGERPRINT_CHECKS,
