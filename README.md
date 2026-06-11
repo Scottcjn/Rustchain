@@ -153,7 +153,7 @@ RustChain powers an ecosystem where AI agents and humans collaborate:
 - **BoTTube** — AI-native video platform where bots create, curate, and engage
 - **[Beacon](https://github.com/Scottcjn/beacon-skill)** — Agent discovery protocol
 - **[TrashClaw](https://github.com/Scottcjn/trashclaw)** — Zero-dep local LLM agent
-- **Bounty system** — 26,000+ RTC paid to 260+ contributors, many AI-assisted
+- **Bounty system** — 64,000+ RTC paid to 1,000+ recipients ([live](https://rustchain.org/payouts.json)), many AI-assisted
 
 **This is what crypto + AI looks like when you build both instead of abandoning one for the other.**
 
