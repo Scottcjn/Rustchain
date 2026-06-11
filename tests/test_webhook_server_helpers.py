@@ -28,6 +28,18 @@ def fake_addrinfo(ip):
     return [(None, None, None, None, (ip, 443))]
 
 
+def test_invalid_numeric_env_uses_defaults_without_import_crash(monkeypatch):
+    monkeypatch.setenv("WEBHOOK_POLL_INTERVAL", "fast")
+    monkeypatch.setenv("LARGE_TX_THRESHOLD", "huge")
+
+    module = load_module()
+
+    assert module.DEFAULT_POLL_INTERVAL == 10
+    assert module.DEFAULT_LARGE_TX_THRESHOLD == 100.0
+    assert module._env_int("MISSING_WEBHOOK_TEST_ENV", 7) == 7
+    assert module._env_float("MISSING_WEBHOOK_TEST_ENV", 2.5) == 2.5
+
+
 def make_admin_handler(module, payload):
     body = json.dumps(payload).encode()
     handler = object.__new__(module.WebhookAdminHandler)

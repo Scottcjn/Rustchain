@@ -48,9 +48,33 @@ log = logging.getLogger("webhook-dispatcher")
 # ---------------------------------------------------------------------------
 # Constants & defaults
 # ---------------------------------------------------------------------------
+
+
+def _env_int(name: str, default: int) -> int:
+    """Read an integer environment variable without import-time crashes."""
+    raw = os.getenv(name)
+    if raw in (None, ""):
+        return default
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    """Read a float environment variable without import-time crashes."""
+    raw = os.getenv(name)
+    if raw in (None, ""):
+        return default
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return default
+
+
 DEFAULT_NODE_URL = os.getenv("RUSTCHAIN_NODE", "http://localhost:5000")
-DEFAULT_POLL_INTERVAL = int(os.getenv("WEBHOOK_POLL_INTERVAL", "10"))
-DEFAULT_LARGE_TX_THRESHOLD = float(os.getenv("LARGE_TX_THRESHOLD", "100.0"))
+DEFAULT_POLL_INTERVAL = _env_int("WEBHOOK_POLL_INTERVAL", 10)
+DEFAULT_LARGE_TX_THRESHOLD = _env_float("LARGE_TX_THRESHOLD", 100.0)
 DEFAULT_DB_PATH = os.getenv("WEBHOOK_DB", "webhooks.db")
 MAX_ADMIN_BODY_BYTES = 1024 * 1024
 MAX_RETRIES = 5
