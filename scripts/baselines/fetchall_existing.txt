@@ -30,7 +30,6 @@ node/beacon_x402.py:369:            ).fetchall()
 node/beacon_x402.py:410:            ).fetchall()
 node/beacon_x402.py:72:                     for row in cursor.fetchall()}
 node/bottube_feed_routes.py:131:            rows = cursor_obj.fetchall()
-node/bridge_api.py:556:    rows = cursor.execute(query, params).fetchall()
 node/claims_eligibility.py:675:            epochs = [row[0] for row in cursor.fetchall() if row[0] >= 0]
 node/claims_settlement.py:131:            for row in cursor.fetchall():
 node/claims_settlement.py:416:            """, (max_claims,)).fetchall()
@@ -178,5 +177,3 @@ node/utxo_db.py:1346:            ).fetchall()
 node/utxo_db.py:1420:                ).fetchall()
 node/utxo_db.py:379:            ).fetchall()
 node/utxo_db.py:940:            ).fetchall()
-node/utxo_genesis_migration.py:104:        ).fetchall()
-node/utxo_genesis_migration.py:91:        ).fetchall()

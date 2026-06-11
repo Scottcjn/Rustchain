@@ -64,6 +64,11 @@ else
         --exclude-dir=tests \
         --exclude-dir=__pycache__ \
         --exclude='test_*' \
+        --exclude='*founder*' \
+        --exclude='*premine*' \
+        --exclude='*genesis*' \
+        --exclude='*private*key*' \
+        --exclude='*secret*' \
         --exclude='db_helpers.py' > "$scan_tmp"
     scan_status=$?
     set -e

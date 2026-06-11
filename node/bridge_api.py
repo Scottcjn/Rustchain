@@ -53,13 +53,45 @@ except ImportError:
 # Configuration
 # =============================================================================
 
-BRIDGE_DEFAULT_CONFIRMATIONS = int(os.environ.get("RC_BRIDGE_DEFAULT_CONFIRMATIONS", "12"))
-BRIDGE_MAX_CONFIRMATIONS = int(os.environ.get("RC_BRIDGE_MAX_CONFIRMATIONS", "1000"))
-BRIDGE_LOCK_EXPIRY_SECONDS = int(os.environ.get("RC_BRIDGE_LOCK_EXPIRY_SECONDS", "604800"))  # 7 days
-BRIDGE_MIN_AMOUNT_RTC = float(os.environ.get("RC_BRIDGE_MIN_AMOUNT_RTC", "1.0"))
+logger = logging.getLogger(__name__)
+
+
+def _env_positive_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        logger.warning("Invalid %s=%r; using default %s", name, raw, default)
+        return default
+    if value <= 0:
+        logger.warning("Invalid %s=%r; using default %s", name, raw, default)
+        return default
+    return value
+
+
+def _env_positive_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        logger.warning("Invalid %s=%r; using default %s", name, raw, default)
+        return default
+    if value <= 0:
+        logger.warning("Invalid %s=%r; using default %s", name, raw, default)
+        return default
+    return value
+
+
+BRIDGE_DEFAULT_CONFIRMATIONS = _env_positive_int("RC_BRIDGE_DEFAULT_CONFIRMATIONS", 12)
+BRIDGE_MAX_CONFIRMATIONS = _env_positive_int("RC_BRIDGE_MAX_CONFIRMATIONS", 1000)
+BRIDGE_LOCK_EXPIRY_SECONDS = _env_positive_int("RC_BRIDGE_LOCK_EXPIRY_SECONDS", 604800)  # 7 days
+BRIDGE_MIN_AMOUNT_RTC = _env_positive_float("RC_BRIDGE_MIN_AMOUNT_RTC", 1.0)
 BRIDGE_UNIT = 1000000  # Micro-units per RTC
 DB_TIMEOUT = 5.0  # seconds: timeout for SQLite connection locks
-logger = logging.getLogger(__name__)
 
 
 # =============================================================================
@@ -553,6 +585,7 @@ def list_bridge_transfers(
     query += " ORDER BY id DESC LIMIT ?"
     params.append(min(limit, 500))
     
+    # fetchall-ok: already-paginated
     rows = cursor.execute(query, params).fetchall()
     
     return [
