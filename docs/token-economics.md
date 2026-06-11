@@ -37,7 +37,7 @@ RustChain Token (RTC) is the native cryptocurrency of the RustChain network. Unl
 | **Total Wallets** | **500** |
 | **Non-Founder Wallets** | 496 |
 | **RTC to Contributors** | ~90,568 RTC |
-| **Bounty Payments** | ~27,000 RTC to 260+ contributors |
+| **Bounty Payments** | ~27,000 RTC to 1,000+ recipients |
 | **Largest Single-Day Payout** | 1,995 RTC (B1tor, March 26, 2026) |
 | **Mining Rewards Distributed** | ~63,000 RTC (epoch settlements) |
 | **On-Chain Transactions** | 2,511 |
@@ -293,7 +293,7 @@ wRTC is also available on Base L2:
 | **Circulating Supply** | ~90,568 RTC (contributor payouts + mining) |
 | **Market Cap** | ~$9,057 USD |
 | **Wallet Holders** | **500** (milestone reached March 26, 2026) |
-| **Bounties Paid** | ~27,000 RTC to 260+ contributors |
+| **Bounties Paid** | ~27,000 RTC to 1,000+ recipients |
 | **Ledger Entries** | 2,511 on-chain transactions |
 
 ### Earning Potential
@@ -382,7 +382,7 @@ On March 26, 2026, RustChain reached **500 unique wallet holders** — a critica
 | **Launch** (Dec 2025) | 8 | Founder hardware only (G4s, G5, POWER8) |
 | **First External** (Jan 2026) | 15 | Ryan's Factorio VM (first non-lab node) |
 | **Bounty System** (Feb 2026) | 50 | 1 RTC first-PR bounties attract contributors |
-| **Growth Sprint** (Mar 2026) | 500 | 260+ contributors, awesome list PRs, Moltbook presence |
+| **Growth Sprint** (Mar 2026) | 500 | 1,000+ recipients, awesome list PRs, Moltbook presence |
 
 ### What 500 Wallets Means
 
