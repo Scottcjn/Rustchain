@@ -11,6 +11,8 @@ import secrets
 import struct
 from typing import List, Optional, Dict, Any, Tuple
 
+from .exceptions import WalletError
+
 # BIP39 word list (first 512 words from standard BIP39 wordlist - sufficient for demo)
 _BIP39_WORDLIST: List[str] = [
     "abandon", "ability", "able", "about", "above", "absent", "absorb", "abstract",
@@ -244,21 +246,26 @@ class RustChainWallet:
         self._derivation_path = derivation_path or "m/44'/9000'/0'/0/0"
 
     @staticmethod
+    def _get_ed25519_private_key(private_key: bytes):
+        """Load an Ed25519 private key or fail before creating invalid wallet data."""
+        try:
+            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        except ImportError as e:
+            raise WalletError(
+                "Ed25519 wallet operations require the 'cryptography' package. "
+                "Install the RustChain SDK dependencies before creating or signing "
+                "with a wallet."
+            ) from e
+        return Ed25519PrivateKey.from_private_bytes(private_key[:32])
+
+    @staticmethod
     def _derive_public_key(private_key: bytes) -> bytes:
         """Derive public key from private key using Ed25519."""
-        try:
-            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-            from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
-            import base64
+        priv = RustChainWallet._get_ed25519_private_key(private_key)
+        from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
-            # Use cryptography library if available
-            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-            priv = Ed25519PrivateKey.from_private_bytes(private_key[:32])
-            pub = priv.public_key()
-            return pub.public_bytes(Encoding.Raw, PublicFormat.Raw)
-        except ImportError:
-            # Fallback: simple hash-based "public key" derivation
-            return _sha256d(b"pubkey" + private_key)[:32]
+        pub = priv.public_key()
+        return pub.public_bytes(Encoding.Raw, PublicFormat.Raw)
 
     @classmethod
     def create(cls, strength: int = 128) -> "RustChainWallet":
@@ -306,11 +313,7 @@ class RustChainWallet:
     @classmethod
     def _generate_address(cls, private_key: bytes) -> str:
         """Generate a wallet address from private key."""
-        # Derive public key
-        if hasattr(cls, "_derive_public_key"):
-            pubkey = cls._derive_public_key(private_key)
-        else:
-            pubkey = _sha256d(b"pubkey" + private_key)[:32]
+        pubkey = cls._derive_public_key(private_key)
 
         # Hash public key to get address
         addr_hash = _sha256d(b"address" + pubkey)
@@ -359,14 +362,8 @@ class RustChainWallet:
         Returns:
             The Ed25519 signature (64 bytes).
         """
-        try:
-            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-
-            priv = Ed25519PrivateKey.from_private_bytes(self._private_key[:32])
-            return priv.sign(message)
-        except ImportError:
-            # Fallback: HMAC-based signature (not real Ed25519)
-            return _hmac_sha512(self._private_key, message)[:64]
+        priv = self._get_ed25519_private_key(self._private_key)
+        return priv.sign(message)
 
     def sign_transfer(
         self,

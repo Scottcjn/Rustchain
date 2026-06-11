@@ -7,12 +7,12 @@ setup(
     install_requires=[
         "httpx>=0.25.0",
         "click>=8.0.0",
+        "cryptography>=41.0.0",
     ],
     extras_require={
         "dev": [
             "pytest>=7.0.0",
             "pytest-asyncio>=0.21.0",
-            "cryptography>=41.0.0",
         ],
     },
     entry_points={

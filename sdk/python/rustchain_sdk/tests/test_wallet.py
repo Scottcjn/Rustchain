@@ -2,9 +2,11 @@
 Tests for RustChainWallet.
 """
 
+import builtins
 import json
 
 import pytest
+from rustchain_sdk.exceptions import WalletError
 from rustchain_sdk.wallet import RustChainWallet
 
 
@@ -96,6 +98,37 @@ class TestRustChainWalletSign:
         sig1 = wallet.sign(b"message one")
         sig2 = wallet.sign(b"message two")
         assert sig1 != sig2
+
+    def test_public_key_derivation_fails_without_cryptography(self, monkeypatch):
+        """Missing cryptography must not create a non-Ed25519 public key."""
+        real_import = builtins.__import__
+
+        def reject_cryptography(name, *args, **kwargs):
+            if name.startswith("cryptography"):
+                raise ImportError("cryptography unavailable")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", reject_cryptography)
+        with pytest.raises(WalletError, match="require the 'cryptography' package"):
+            RustChainWallet._derive_public_key(b"\x01" * 32)
+
+    def test_sign_fails_without_cryptography(self, monkeypatch):
+        """Missing cryptography must not produce an HMAC pretending to be Ed25519."""
+        wallet = RustChainWallet(
+            address="RTC" + "00" * 20,
+            private_key=b"\x01" * 32,
+            public_key=b"\x02" * 32,
+        )
+        real_import = builtins.__import__
+
+        def reject_cryptography(name, *args, **kwargs):
+            if name.startswith("cryptography"):
+                raise ImportError("cryptography unavailable")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", reject_cryptography)
+        with pytest.raises(WalletError, match="require the 'cryptography' package"):
+            wallet.sign(b"message")
 
 
 class TestRustChainWalletTransfer:
