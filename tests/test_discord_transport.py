@@ -38,6 +38,16 @@ sys.modules["flame_beacon"] = flame_beacon
 _spec.loader.exec_module(flame_beacon)
 
 
+def _load_flame_beacon_with_env(env):
+    module_name = "flame_beacon_env_defaults_under_test"
+    sys.modules.pop(module_name, None)
+    spec = importlib.util.spec_from_file_location(module_name, _FLAME_BEACON_PATH)
+    module = importlib.util.module_from_spec(spec)
+    with patch.dict(os.environ, env, clear=False):
+        spec.loader.exec_module(module)
+    return module
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -70,6 +80,43 @@ def _mock_response(status_code: int, body=None, headers=None):
         resp.text = str(body)
         resp.json.side_effect = ValueError("not json")
     return resp
+
+
+# ---------------------------------------------------------------------------
+# Configuration defaults
+# ---------------------------------------------------------------------------
+
+class TestConfigDefaults(unittest.TestCase):
+
+    def test_malformed_numeric_env_falls_back_without_import_crash(self):
+        module = _load_flame_beacon_with_env({
+            "FLAME_MAX_RETRIES": "oops",
+            "FLAME_RETRY_BASE_DELAY": "nan",
+            "FLAME_RETRY_MAX_DELAY": "-1",
+            "FLAME_LISTENER_POLL": "",
+            "FLAME_WATCHER_INTERVAL": "0",
+        })
+
+        self.assertEqual(module.MAX_RETRIES, 5)
+        self.assertEqual(module.RETRY_BASE_DELAY, 1.0)
+        self.assertEqual(module.RETRY_MAX_DELAY, 60.0)
+        self.assertEqual(module.LISTENER_POLL_INTERVAL, 15.0)
+        self.assertEqual(module.WATCHER_INTERVAL, 6.0)
+
+    def test_valid_numeric_env_overrides_are_preserved(self):
+        module = _load_flame_beacon_with_env({
+            "FLAME_MAX_RETRIES": "7",
+            "FLAME_RETRY_BASE_DELAY": "0.25",
+            "FLAME_RETRY_MAX_DELAY": "9.5",
+            "FLAME_LISTENER_POLL": "2.5",
+            "FLAME_WATCHER_INTERVAL": "3.25",
+        })
+
+        self.assertEqual(module.MAX_RETRIES, 7)
+        self.assertEqual(module.RETRY_BASE_DELAY, 0.25)
+        self.assertEqual(module.RETRY_MAX_DELAY, 9.5)
+        self.assertEqual(module.LISTENER_POLL_INTERVAL, 2.5)
+        self.assertEqual(module.WATCHER_INTERVAL, 3.25)
 
 
 # ---------------------------------------------------------------------------

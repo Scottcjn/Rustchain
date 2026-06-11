@@ -4,6 +4,8 @@ import io
 import sys
 from pathlib import Path
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 POA_API_PATH = REPO_ROOT / "rustchain-poa" / "api" / "poa_api.py"
@@ -41,6 +43,23 @@ def test_validate_rejects_non_json_upload(monkeypatch):
     assert response.status_code == 400
     assert response.get_json() == {"error": "Only JSON files accepted"}
     assert called is False
+
+
+@pytest.mark.parametrize("env_value", ["oops", "", "0", "-1"])
+def test_malformed_upload_limit_env_falls_back(monkeypatch, env_value):
+    monkeypatch.setenv("POA_VALIDATE_MAX_UPLOAD_BYTES", env_value)
+
+    module = load_poa_api(monkeypatch)
+
+    assert module.MAX_UPLOAD_BYTES == 10 * 1024 * 1024
+
+
+def test_valid_upload_limit_env_is_preserved(monkeypatch):
+    monkeypatch.setenv("POA_VALIDATE_MAX_UPLOAD_BYTES", "2048")
+
+    module = load_poa_api(monkeypatch)
+
+    assert module.MAX_UPLOAD_BYTES == 2048
 
 
 def test_validate_rejects_oversized_upload_before_validation(monkeypatch):
