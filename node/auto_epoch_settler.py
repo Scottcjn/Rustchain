@@ -15,13 +15,29 @@ import requests
 # Configure logging (daemon-friendly — writes to stderr + syslog in systemd)
 logger = logging.getLogger("rustchain.epoch_settler")
 
+
+def _env_positive_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        logger.warning("Invalid %s=%r; using default %s", name, raw, default)
+        return default
+    if value <= 0:
+        logger.warning("Invalid %s=%r; using default %s", name, raw, default)
+        return default
+    return value
+
+
 # Configuration — environment variables with defaults
 NODE_URL = os.environ.get("RUSTCHAIN_NODE_URL", "http://localhost:8088")
 DB_PATH = os.environ.get("RUSTCHAIN_DB_PATH", "/root/rustchain/rustchain_v2.db")
 # Module-level env config — wrap integer casts so bad env values
 # (empty string, non-numeric text) don't crash the daemon at import.
-CHECK_INTERVAL = int(os.environ.get("RUSTCHAIN_SETTLE_INTERVAL", "300") or 300)
-SLOTS_PER_EPOCH = int(os.environ.get("RUSTCHAIN_SLOTS_PER_EPOCH", "144") or 144)
+CHECK_INTERVAL = _env_positive_int("RUSTCHAIN_SETTLE_INTERVAL", 300)
+SLOTS_PER_EPOCH = _env_positive_int("RUSTCHAIN_SLOTS_PER_EPOCH", 144)
 
 
 def get_current_slot():
