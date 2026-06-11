@@ -21,10 +21,10 @@ POWER10 is classified **physical / exotic-server** — i.e. it would earn
 vintage-exotic RTC weight it did not earn.
 
 **Fix direction:** introspection and passive timing are necessary but not
-sufficient. Catching consistent full-system emulation requires the **active**
-checks (SIMD/AltiVec timing-bias, instruction-path jitter, thermal drift) that
-TCG cannot reproduce faithfully. Concrete server-side hardening is listed at the
-end.
+sufficient. Catching consistent full-system emulation requires an **active**
+probe TCG cannot reproduce faithfully. **We built and measured one (`ilp_ratio`,
+below) and it catches the fake POWER10 with no overlap.** Concrete server-side
+hardening is listed at the end.
 
 ---
 
@@ -82,16 +82,55 @@ passive timing can be farmed by qemu-system guests claiming POWER/SPARC/MIPS.
 
 ---
 
+## The active probe that catches it (`ilp_ratio`) — measured
+
+We built a harness of four candidate active signals (branch-prediction bias,
+divide/multiply ratio, instruction-level-parallelism ratio, memory-gather
+jitter), ran each on real metal AND inside TCG, and let the data choose. The
+winner is **`ilp_ratio`**:
+
+> Best-of-N wall time of a **latency-bound dependent** op chain (each op needs
+> the previous result) divided by an **independent** set of the same op count.
+> Real superscalar silicon executes the independent set in parallel → ratio
+> **> 1.1**. TCG serializes translated guest instructions → no ILP → ratio
+> **collapses toward 1.0**. It measures the *execution engine*, so it is
+> architecture-independent and **cannot be removed by scrubbing self-ID**.
+
+| host | ilp_ratio | truth |
+|------|-----------|-------|
+| HP Victus (x86 bare metal) | 1.130 | physical |
+| Celeron N3150 (x86 bare metal) | 1.119 | physical |
+| **IBM POWER8 S824 (real silicon)** | **1.198** | physical |
+| qemu-system amd64 TCG | 0.996 | emulated |
+| **qemu-system ppc64le TCG (fake POWER10)** | **1.041** | emulated |
+
+**Clean separation, no overlap:** physical ≥ 1.119, emulated ≤ 1.041
+(threshold 1.08). The fake POWER10 that defeated *every passive signal* is
+caught at 1.041 against real POWER8's 1.198. The other three candidates were
+confounded — `gather_jitter` by machine load (idle server vs busy laptop),
+`branch_bias` by microarchitecture (POWER8's strong predictor collapses it too).
+
+**Honest limit:** n=5 (3 physical, 2 emulated) is a strong *seed*, not a
+production threshold. Before gating real rewards on it, widen the physical side
+with vintage points (G3/G4/G5) and stress the emulated side with adversarial TCG
+(`-smp 1`, host-pinned) to set a cutoff with margin. Reproducer +
+provenance: HWFP-Bench `score.py --active-evidence`,
+`dataset/active_probe_evidence.json`.
+
+---
+
 ## Future fixes (server-side, concrete)
 
 Ordered by leverage. None require trusting the client's self-report.
 
 1. **Promote an ACTIVE probe into the reward gate, not just the passive set.**
-   The production 6-check already specifies SIMD identity, instruction-path
-   jitter, and thermal drift. These are the ones TCG cannot fake: TCG lowers
-   vector ops (AltiVec/SSE/NEON) to scalar host code, **flattening the
-   per-instruction-group timing bias** that real vector units exhibit. Require
-   at least one active-probe pass for any miner claiming an exotic multiplier.
+   **Demonstrated above:** `ilp_ratio` cleanly separates real silicon (≥1.12)
+   from full-system TCG (≤1.04), catching the fake POWER10 that passive checks
+   miss. Require at least one active-probe pass for any miner claiming an exotic
+   multiplier. `ilp_ratio` is portable (stdlib, runs on the vintage fleet) and
+   complements the production 6-check's heavier active probes (SIMD/AltiVec
+   timing-bias — TCG lowers vector ops to scalar, flattening per-group bias —
+   plus instruction-path jitter and thermal drift).
 
 2. **Treat `scsi:vm`/`dmi:*`/`cpuinfo:hypervisor` as necessary-not-sufficient.**
    Their *absence* must not imply physical. Today an attacker removes them
