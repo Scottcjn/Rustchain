@@ -607,7 +607,7 @@ def attest_ensure_tables(conn):
     try:
         conn.execute("ALTER TABLE nonces ADD COLUMN bound_miner TEXT")
     except sqlite3.OperationalError:
-        cols = [r[1] for r in conn.execute("PRAGMA table_info(nonces)").fetchall()]
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(nonces)").fetchall()]  # fetchall-ok: pragma-result
         if "bound_miner" not in cols:
             raise
     conn.execute(
