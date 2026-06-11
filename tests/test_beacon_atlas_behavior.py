@@ -617,6 +617,87 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         self.assertEqual(rep['bounties_completed'], 1)
         self.assertEqual(rep['score'], 10)  # 10 points per bounty
 
+    def test_bounty_completion_requires_claimed_state(self):
+        """Open bounties cannot skip directly to completed reputation credit."""
+        with sqlite3.connect(self.test_db_path) as conn:
+            conn.execute("""
+                INSERT INTO beacon_bounties
+                (id, title, reward_rtc, difficulty, state, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                'gh_open_complete_test',
+                'Open completion test (50 RTC)',
+                50.0,
+                'MEDIUM',
+                'open',
+                int(time.time()),
+            ))
+            conn.commit()
+
+        complete_response = self.client.post(
+            '/api/bounties/gh_open_complete_test/complete',
+            data=json.dumps({'agent_id': 'bcn_completer'}),
+            content_type='application/json',
+            headers={'X-Admin-Key': os.environ['RC_ADMIN_KEY']},
+        )
+        self.assertEqual(complete_response.status_code, 409)
+
+        with sqlite3.connect(self.test_db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            bounty = conn.execute(
+                "SELECT state, completed_by FROM beacon_bounties WHERE id = ?",
+                ('gh_open_complete_test',),
+            ).fetchone()
+            reputation = conn.execute(
+                "SELECT * FROM beacon_reputation WHERE agent_id = ?",
+                ('bcn_completer',),
+            ).fetchone()
+
+        self.assertEqual(bounty['state'], 'open')
+        self.assertIsNone(bounty['completed_by'])
+        self.assertIsNone(reputation)
+
+    def test_bounty_completion_must_match_recorded_claimant(self):
+        """Completion cannot credit an agent different from the recorded claimant."""
+        with sqlite3.connect(self.test_db_path) as conn:
+            conn.execute("""
+                INSERT INTO beacon_bounties
+                (id, title, reward_rtc, difficulty, state, claimant_agent, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                'gh_claimant_complete_test',
+                'Claimant completion test (75 RTC)',
+                75.0,
+                'HARD',
+                'claimed',
+                'bcn_alice_test',
+                int(time.time()),
+            ))
+            conn.commit()
+
+        complete_response = self.client.post(
+            '/api/bounties/gh_claimant_complete_test/complete',
+            data=json.dumps({'agent_id': 'bcn_bob_test'}),
+            content_type='application/json',
+            headers={'X-Admin-Key': os.environ['RC_ADMIN_KEY']},
+        )
+        self.assertEqual(complete_response.status_code, 409)
+
+        with sqlite3.connect(self.test_db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            bounty = conn.execute(
+                "SELECT state, completed_by FROM beacon_bounties WHERE id = ?",
+                ('gh_claimant_complete_test',),
+            ).fetchone()
+            bob_reputation = conn.execute(
+                "SELECT * FROM beacon_reputation WHERE agent_id = ?",
+                ('bcn_bob_test',),
+            ).fetchone()
+
+        self.assertEqual(bounty['state'], 'claimed')
+        self.assertIsNone(bounty['completed_by'])
+        self.assertIsNone(bob_reputation)
+
     def test_bounty_sync_requires_admin_before_network_fetch(self):
         """Unauthenticated sync cannot trigger GitHub fetches or DB writes."""
         with patch.dict(os.environ, {'RC_ADMIN_KEY': 'test-admin'}, clear=False):
