@@ -596,6 +596,20 @@ def _normalize_attestation_report(report):
 def attest_ensure_tables(conn):
     """Create the attestation nonce tables expected by replay protection."""
     conn.execute("CREATE TABLE IF NOT EXISTS nonces (nonce TEXT PRIMARY KEY, expires_at INTEGER)")
+    # T2.1: a challenge may be BOUND to the identity that requested it. Additive column
+    # so existing DBs upgrade in place; NULL bound_miner == legacy unbound nonce
+    # (any miner may consume it), preserving backward compatibility for miners that
+    # don't send miner_id to /attest/challenge. The ALTER is attempted idempotently and
+    # is race/lock tolerant: on ANY OperationalError (duplicate-column from a concurrent
+    # writer that won the race, or a transient "database is locked"), re-check the actual
+    # schema — if the column is present we proceed, otherwise the error was real and we
+    # re-raise. The PRAGMA only runs on the (rare) exception path.
+    try:
+        conn.execute("ALTER TABLE nonces ADD COLUMN bound_miner TEXT")
+    except sqlite3.OperationalError:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(nonces)").fetchall()]  # fetchall-ok: pragma-result
+        if "bound_miner" not in cols:
+            raise
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS used_nonces (
@@ -627,18 +641,33 @@ def attest_cleanup_expired(conn, now_ts: Optional[int] = None):
     conn.commit()
 
 
-def attest_validate_challenge(conn, nonce: str, now_ts: Optional[int] = None):
-    """Validate and consume a one-time challenge nonce from the active node store."""
+def attest_validate_challenge(conn, nonce: str, now_ts: Optional[int] = None,
+                              required_miner: Optional[str] = None):
+    """Validate and consume a one-time challenge nonce from the active node store.
+
+    T2.1: if the challenge was issued BOUND to an identity (``bound_miner`` set), a
+    submission claiming a different ``required_miner`` is rejected *without consuming*
+    the nonce — so an attacker submitting the wrong identity cannot burn a rightful
+    miner's live challenge (DoS), and a harvested/MITM'd nonce can't be replayed under
+    another identity. An unbound (NULL) nonce stays consumable by any miner (legacy).
+    """
     now_ts = int(time.time()) if now_ts is None else int(now_ts)
     attest_cleanup_expired(conn, now_ts=now_ts)
     row = conn.execute(
-        "SELECT expires_at FROM nonces WHERE nonce = ? AND expires_at >= ?",
+        "SELECT expires_at, bound_miner FROM nonces WHERE nonce = ? AND expires_at >= ?",
         (nonce, now_ts),
     ).fetchone()
     if not row:
         return False, "challenge_invalid", None
 
     expires_at = int(row[0])
+    bound_miner = (row[1] or "").strip()
+    if bound_miner and bound_miner != (required_miner or "").strip():
+        # A BOUND nonce is consumable ONLY by its bound identity — a mismatch OR a
+        # missing/empty required_miner is rejected (a caller cannot dodge the binding
+        # by omitting its identity). Do NOT delete: leave the nonce for its owner.
+        return False, "nonce_identity_mismatch", None
+
     deleted = conn.execute(
         "DELETE FROM nonces WHERE nonce = ? AND expires_at = ?",
         (nonce, expires_at),
@@ -670,7 +699,9 @@ def attest_validate_and_store_nonce(
     if replay_row:
         return False, "nonce_replay", None
 
-    ok, err, challenge_expires_at = attest_validate_challenge(conn, nonce, now_ts=now_ts)
+    ok, err, challenge_expires_at = attest_validate_challenge(
+        conn, nonce, now_ts=now_ts, required_miner=(miner or None)
+    )
     if not ok:
         return False, err, None
 
@@ -4041,13 +4072,30 @@ def get_challenge():
     nonce = secrets.token_hex(32)
     expires = int(time.time()) + 300  # 5 minutes
 
+    # T2.1: optionally BIND the challenge to the requesting identity. A miner that
+    # sends its miner_id gets a nonce only IT can consume at /attest/submit; legacy
+    # miners that send no identity get an unbound nonce (backward compatible).
+    body = request.get_json(silent=True)
+    requested_miner = None
+    if isinstance(body, dict):
+        # Extract identity in the SAME order the submit path resolves `miner`
+        # (_submit_attestation_impl: data.get('miner') or data.get('miner_id')) so a
+        # client where miner != miner_id binds to exactly the identity that will be
+        # enforced at consume time — otherwise binding would lock out the rightful owner.
+        requested_miner = _attest_valid_miner(body.get('miner')) or _attest_valid_miner(body.get('miner_id'))
+
     with closing(sqlite3.connect(DB_PATH)) as c:
-        c.execute("INSERT INTO nonces (nonce, expires_at) VALUES (?, ?)", (nonce, expires))
+        attest_ensure_tables(c)  # guarantees the bound_miner column exists
+        c.execute(
+            "INSERT INTO nonces (nonce, expires_at, bound_miner) VALUES (?, ?, ?)",
+            (nonce, expires, requested_miner),
+        )
         c.commit()
 
     return jsonify({
         "nonce": nonce,
         "expires_at": expires,
+        "bound_miner": requested_miner,
         "server_time": int(time.time())
     })
 
@@ -4266,17 +4314,25 @@ def _submit_attestation_impl():
                 "Attestation nonce has already been used",
                 "NONCE_REPLAY",
             ),
+            "nonce_identity_mismatch": (
+                "nonce_identity_mismatch",
+                "Attestation challenge was issued to a different identity; request a "
+                "challenge with this miner_id",
+                "NONCE_IDENTITY_MISMATCH",
+            ),
         }
         error_name, message, code = nonce_messages.get(
             nonce_err,
             ("invalid_nonce", "Attestation nonce is invalid", "INVALID_NONCE"),
         )
+        # 403 for an identity mismatch (authorization), 409 for stale/replayed nonce.
+        http_status = 403 if nonce_err == "nonce_identity_mismatch" else 409
         return jsonify({
             "ok": False,
             "error": error_name,
             "message": message,
             "code": code
-        }), 409
+        }), http_status
     signals = _normalize_attestation_signals(data.get('signals'))
     fingerprint = _attest_mapping(data.get('fingerprint'))  # NEW: Extract fingerprint
 
