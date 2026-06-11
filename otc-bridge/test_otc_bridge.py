@@ -8,6 +8,7 @@ import sqlite3
 import tempfile
 import time
 import unittest
+from decimal import Decimal
 from unittest.mock import patch, MagicMock
 
 from cryptography.hazmat.primitives import serialization
@@ -28,12 +29,15 @@ class OTCBridgeTestCase(unittest.TestCase):
         _fd, TEST_DB = tempfile.mkstemp(suffix=".db")
         os.close(_fd)
         otc_bridge.DB_PATH = TEST_DB
+        self._previous_admin_key = otc_bridge.RC_ADMIN_KEY
+        otc_bridge.RC_ADMIN_KEY = "test-admin-key"
         self.app = app.test_client()
         self.app.testing = True
         init_db()
 
     def tearDown(self):
         self.app = None
+        otc_bridge.RC_ADMIN_KEY = self._previous_admin_key
         if os.path.exists(TEST_DB):
             try:
                 os.remove(TEST_DB)
@@ -78,6 +82,63 @@ class OTCBridgeTestCase(unittest.TestCase):
             "timestamp": timestamp,
         }
         return payload
+
+    def signer_for_wallet(self):
+        private_key = Ed25519PrivateKey.generate()
+        public_key_hex = private_key.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw,
+        ).hex()
+        return private_key, public_key_hex, otc_bridge.rtc_address_from_public_key(public_key_hex)
+
+    def signed_confirm_payload(self, private_key, public_key_hex, wallet, order_id, quote_tx, secret):
+        timestamp = int(time.time())
+        auth_fields = otc_bridge.confirm_order_auth_fields(quote_tx, secret)
+        message = otc_bridge.wallet_auth_message(
+            "confirm_order",
+            order_id,
+            wallet,
+            timestamp,
+            auth_fields,
+        )
+        return {
+            "wallet": wallet,
+            "quote_tx": quote_tx,
+            "secret": secret,
+            "wallet_auth": {
+                "public_key": public_key_hex,
+                "signature": private_key.sign(message).hex(),
+                "timestamp": timestamp,
+            },
+        }
+
+    def insert_matched_sell_order(self, seller_wallet, buyer_wallet, secret, order_id="otc_confirm_auth"):
+        htlc_hash = hashlib.sha256(bytes.fromhex(secret)).hexdigest()
+        now = int(time.time())
+        with sqlite3.connect(TEST_DB) as conn:
+            conn.execute("""
+                INSERT INTO orders (
+                    order_id, side, pair, maker_wallet, amount_micro_rtc,
+                    price_per_rtc_nano_quote, total_quote_nano, status,
+                    escrow_job_id, htlc_hash, htlc_secret, taker_wallet,
+                    created_at, matched_at, expires_at, ip_hash
+                ) VALUES (?, 'sell', 'RTC/USDC', ?, ?, ?, ?, 'matched',
+                    'job_confirm_auth', ?, ?, ?, ?, ?, ?, 'test-ip')
+            """, (
+                order_id,
+                seller_wallet,
+                100 * otc_bridge.RTC_UNIT,
+                int(Decimal("0.10") * otc_bridge.QUOTE_PRICE_SCALE),
+                int(Decimal("10.0") * otc_bridge.QUOTE_PRICE_SCALE),
+                htlc_hash,
+                secret,
+                buyer_wallet,
+                now,
+                now,
+                now + otc_bridge.ORDER_TTL_DEFAULT,
+            ))
+            conn.commit()
+        return order_id
 
     def create_legacy_money_schema(self):
         """Create the pre-migration schema with REAL NOT NULL money columns."""
@@ -524,39 +585,53 @@ class OTCBridgeTestCase(unittest.TestCase):
 
     def test_confirm_matched_order(self):
         htlc_secret = "11" * 32
-        htlc_hash = hashlib.sha256(bytes.fromhex(htlc_secret)).hexdigest()
-
-        # Create and match an order
-        r1 = self.app.post("/api/orders", json={
-            "side": "buy", "pair": "RTC/USDC",
-            "wallet": "buyer1", "amount_rtc": 100, "price_per_rtc": 0.10,
-        })
-        order_id = r1.get_json()["order_id"]
-
-        with patch("otc_bridge.rtc_get_balance", return_value=500.0), \
-             patch("otc_bridge.rtc_create_escrow_job", return_value={"ok": True, "job_id": "job_conf1"}), \
-             patch("otc_bridge.generate_htlc_secret", return_value=(htlc_secret, htlc_hash)):
-            self.app.post(f"/api/orders/{order_id}/match", json={
-                "wallet": "seller1",
-            })
+        private_key, public_key_hex, seller_wallet = self.signer_for_wallet()
+        buyer_wallet = "RTC" + ("12" * 20)
+        order_id = self.insert_matched_sell_order(seller_wallet, buyer_wallet, htlc_secret)
 
         # Confirm settlement
         with patch("requests.post") as mock_post:
-            mock_post.return_value = MagicMock(ok=True, text='{"ok":true}')
-            with sqlite3.connect(TEST_DB) as conn:
-                secret = conn.execute(
-                    "SELECT htlc_secret FROM orders WHERE order_id = ?",
-                    (order_id,),
-                ).fetchone()[0]
-            r3 = self.app.post(f"/api/orders/{order_id}/confirm", json={
-                "wallet": "seller1",
-                "quote_tx": "0xabc123def456",
-                "secret": secret,
-            })
+            response = MagicMock(ok=True, text='{"ok":true}')
+            response.json.return_value = {
+                "phase": "pending",
+                "pending_id": "pending-confirm",
+                "tx_hash": "tx-confirm",
+            }
+            mock_post.return_value = response
+            r3 = self.app.post(
+                f"/api/orders/{order_id}/confirm",
+                json=self.signed_confirm_payload(
+                    private_key,
+                    public_key_hex,
+                    seller_wallet,
+                    order_id,
+                    "0xabc123def456",
+                    htlc_secret,
+                ),
+            )
             data = r3.get_json()
             self.assertTrue(data["ok"])
             self.assertEqual(data["status"], "completed")
             self.assertEqual(data["htlc_secret"], htlc_secret)
+
+    def test_confirm_matched_order_requires_seller_wallet_auth(self):
+        htlc_secret = "22" * 32
+        _private_key, _public_key_hex, seller_wallet = self.signer_for_wallet()
+        buyer_wallet = "RTC" + ("34" * 20)
+        order_id = self.insert_matched_sell_order(
+            seller_wallet, buyer_wallet, htlc_secret, "otc_confirm_no_auth"
+        )
+
+        with patch("requests.post") as mock_post:
+            r = self.app.post(f"/api/orders/{order_id}/confirm", json={
+                "wallet": seller_wallet,
+                "quote_tx": "0xabc123def456",
+                "secret": htlc_secret,
+            })
+
+        self.assertEqual(r.status_code, 401)
+        self.assertEqual(r.get_json()["error"], "wallet_auth_required")
+        mock_post.assert_not_called()
 
     def test_cannot_confirm_unmatched(self):
         r1 = self.app.post("/api/orders", json={

@@ -491,6 +491,13 @@ def create_order_auth_fields(
     }
 
 
+def confirm_order_auth_fields(quote_tx, secret):
+    return {
+        "quote_tx": quote_tx,
+        "secret_sha256": hashlib.sha256(str(secret).encode("utf-8")).hexdigest(),
+    }
+
+
 def require_wallet_auth(data, action, order_id, wallet, bound_fields=None):
     if Ed25519PublicKey is None:
         return "wallet_auth_unavailable"
@@ -1142,6 +1149,16 @@ def confirm_order(order_id):
             return jsonify({"error": "HTLC secret (preimage) required to confirm settlement"}), 400
         if not order["htlc_hash"]:
             return jsonify({"error": "HTLC hash unavailable for matched order"}), 409
+
+        auth_error = require_wallet_auth(
+            data,
+            "confirm_order",
+            order_id,
+            wallet,
+            confirm_order_auth_fields(quote_tx, secret),
+        )
+        if auth_error:
+            return jsonify({"error": auth_error}), 401
 
         # Validate the provided secret matches the stored hash
         try:
