@@ -636,15 +636,22 @@ The Bridge API manages cross-chain transfers between RustChain and external chai
 
 ### POST /api/bridge/initiate
 
-Initiate a cross-chain bridge transfer (deposit or withdraw).
+Initiate a cross-chain bridge transfer (deposit or withdraw). RustChain-origin
+deposits are operator-assisted/admin-authenticated because they lock native RTC
+balances before external mint/release handling. This route is not a public
+self-service native RTC to wRTC/Solana payout endpoint, and public
+`https://rustchain.org` routing may intentionally leave bridge management APIs
+unavailable while an operator node returns `401 unauthorized` without a valid
+admin key.
 
 **Method:** `POST`
 **Path:** `/api/bridge/initiate`
-**Auth:** None (user-initiated)
+**Auth:** `X-Admin-Key` for RustChain-origin deposits
 
 **cURL:**
 ```bash
 curl -fsS -X POST https://rustchain.org/api/bridge/initiate \
+  -H "X-Admin-Key: $RC_ADMIN_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "direction": "deposit",
@@ -686,7 +693,17 @@ curl -fsS -X POST https://rustchain.org/api/bridge/initiate \
 }
 ```
 
-**Error Responses (400):**
+**Error Responses (401/503/400):**
+```json
+{
+  "error": "unauthorized"
+}
+```
+```json
+{
+  "error": "RC_ADMIN_KEY not configured"
+}
+```
 ```json
 {
   "error": "Insufficient available balance",
@@ -1250,6 +1267,7 @@ curl -fsS https://rustchain.org/beacon/api/premium/contracts/export | jq .
 ### Python — Quick Start
 
 ```python
+import os
 import requests
 
 BASE_URL = "https://rustchain.org"
@@ -1334,10 +1352,11 @@ print(resp.json())
 ### Python — Bridge Deposit
 
 ```python
-def initiate_bridge_deposit(miner_id, dest_address, amount_rtc):
-    """Initiate a bridge deposit from RustChain to Solana."""
+def initiate_bridge_deposit(miner_id, dest_address, amount_rtc, admin_key):
+    """Operator-assisted bridge deposit from RustChain to Solana."""
     resp = requests.post(
         f"{BASE_URL}/api/bridge/initiate",
+        headers={"X-Admin-Key": admin_key},
         json={
             "direction": "deposit",
             "source_chain": "rustchain",
@@ -1359,7 +1378,8 @@ def initiate_bridge_deposit(miner_id, dest_address, amount_rtc):
 result = initiate_bridge_deposit(
     miner_id="RTC_miner123",
     dest_address="4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXqXq",
-    amount_rtc=100.0
+    amount_rtc=100.0,
+    admin_key=os.environ["RC_ADMIN_KEY"],
 )
 ```
 
