@@ -1456,20 +1456,21 @@ class UtxoDB:
 # Coin selection
 # ---------------------------------------------------------------------------
 
-def coin_select(utxos: List[dict], target_nrtc: int
-                ) -> Tuple[List[dict], int]:
+def coin_select_with_fee(utxos: List[dict], target_nrtc: int
+                         ) -> Tuple[List[dict], int, int]:
     """
-    Select UTXOs to cover *target_nrtc*.
+    Select UTXOs to cover *target_nrtc* and report implicit dust fee.
 
     Strategy:
     - Smallest-first accumulation (consolidates dust).
     - If input count > 20, restart with largest-first (fewer inputs).
-    - Dust change (< DUST_THRESHOLD) absorbed into fee.
+    - Dust change (< DUST_THRESHOLD) is reported as absorbed fee.
 
-    Returns (selected_utxos, change_nrtc).  Empty list if insufficient.
+    Returns (selected_utxos, change_nrtc, absorbed_fee_nrtc).
+    Empty list if insufficient.
     """
     if not utxos or target_nrtc <= 0:
-        return [], 0
+        return [], 0, 0
 
     # Attempt 1: smallest-first
     sorted_asc = sorted(utxos, key=lambda u: u['value_nrtc'])
@@ -1482,7 +1483,7 @@ def coin_select(utxos: List[dict], target_nrtc: int
             break
 
     if total < target_nrtc:
-        return [], 0  # insufficient funds
+        return [], 0, 0  # insufficient funds
 
     # If too many small inputs, try largest-first
     if len(selected) > 20:
@@ -1502,12 +1503,27 @@ def coin_select(utxos: List[dict], target_nrtc: int
                 selected = capped
                 total = capped_total
             else:
-                return [], 0
+                return [], 0, 0
         elif total < target_nrtc:
-            return [], 0
+            return [], 0, 0
 
     change = total - target_nrtc
+    absorbed_fee = 0
     if change < DUST_THRESHOLD:
+        absorbed_fee = change
         change = 0  # absorb dust into fee
 
+    return selected, change, absorbed_fee
+
+
+def coin_select(utxos: List[dict], target_nrtc: int
+                ) -> Tuple[List[dict], int]:
+    """
+    Select UTXOs to cover *target_nrtc*.
+
+    Returns (selected_utxos, change_nrtc). Empty list if insufficient.
+    Sub-dust change is absorbed into fee; use coin_select_with_fee() when
+    callers need to distinguish an exact match from absorbed dust fee.
+    """
+    selected, change, _absorbed_fee = coin_select_with_fee(utxos, target_nrtc)
     return selected, change

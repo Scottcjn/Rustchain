@@ -26,7 +26,7 @@ from flask import Blueprint, request, jsonify
 from utxo_db import (
     DUST_THRESHOLD,
     UtxoDB,
-    coin_select,
+    coin_select_with_fee,
     UNIT,
 )
 
@@ -619,7 +619,9 @@ def utxo_transfer():
 
     # Select UTXOs
     utxos = _utxo_db.get_unspent_for_address(from_address)
-    selected, change_nrtc = coin_select(utxos, target_nrtc)
+    selected, change_nrtc, absorbed_fee_nrtc = coin_select_with_fee(
+        utxos, target_nrtc
+    )
 
     if not selected:
         utxo_balance = _utxo_db.get_balance(from_address)
@@ -635,10 +637,6 @@ def utxo_transfer():
     outputs = [{'address': to_address, 'value_nrtc': amount_nrtc}]
     if change_nrtc > 0:
         outputs.append({'address': from_address, 'value_nrtc': change_nrtc})
-    selected_total_nrtc = sum(u['value_nrtc'] for u in selected)
-    absorbed_fee_nrtc = selected_total_nrtc - amount_nrtc - fee_nrtc - change_nrtc
-    if absorbed_fee_nrtc < 0:
-        return jsonify({'error': 'UTXO coin selection underfunded transaction'}), 500
     effective_fee_nrtc = fee_nrtc + absorbed_fee_nrtc
 
     if _dual_write:

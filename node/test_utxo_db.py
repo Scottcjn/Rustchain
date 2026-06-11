@@ -15,7 +15,7 @@ import unittest
 
 import utxo_db as utxo_db_module
 from utxo_db import (
-    UtxoDB, coin_select, compute_box_id, address_to_proposition,
+    UtxoDB, coin_select, coin_select_with_fee, compute_box_id, address_to_proposition,
     proposition_to_address, UNIT, DUST_THRESHOLD, MAX_COINBASE_OUTPUT_NRTC,
     MAX_OUTPUTS, MAX_DATA_INPUTS, MAX_SQLITE_INT64, MAX_UTXO_ADDRESS_BYTES,
     MAX_UTXO_METADATA_BYTES, MAX_MEMPOOL_TX_ID_BYTES,
@@ -1988,6 +1988,30 @@ class TestCoinSelect(unittest.TestCase):
         selected, change = coin_select(utxos, 100 * UNIT)
         # 500 < DUST_THRESHOLD (1000), absorbed into fee
         self.assertEqual(change, 0)
+
+    def test_coin_select_with_fee_distinguishes_exact_match(self):
+        utxos = [self._box(100 * UNIT)]
+        selected, change, absorbed_fee = coin_select_with_fee(utxos, 100 * UNIT)
+
+        self.assertEqual(len(selected), 1)
+        self.assertEqual(change, 0)
+        self.assertEqual(absorbed_fee, 0)
+
+    def test_coin_select_with_fee_reports_sub_dust_absorbed_fee(self):
+        utxos = [self._box(100 * UNIT + 500)]
+        selected, change, absorbed_fee = coin_select_with_fee(utxos, 100 * UNIT)
+
+        self.assertEqual(len(selected), 1)
+        self.assertEqual(change, 0)
+        self.assertEqual(absorbed_fee, 500)
+
+    def test_coin_select_with_fee_keeps_non_dust_change_visible(self):
+        utxos = [self._box(100 * UNIT + DUST_THRESHOLD)]
+        selected, change, absorbed_fee = coin_select_with_fee(utxos, 100 * UNIT)
+
+        self.assertEqual(len(selected), 1)
+        self.assertEqual(change, DUST_THRESHOLD)
+        self.assertEqual(absorbed_fee, 0)
 
     def test_empty_utxos(self):
         selected, change = coin_select([], 100 * UNIT)
