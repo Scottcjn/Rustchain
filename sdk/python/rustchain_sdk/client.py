@@ -71,6 +71,24 @@ class RustChainClient:
             )
         return self._client
 
+    @staticmethod
+    def _parse_json_response(response: httpx.Response, method: str, path: str) -> Any:
+        """Parse a successful response or raise an APIError with useful context."""
+        if not response.content or not response.content.strip():
+            raise APIError(
+                f"Invalid JSON response from {method} {path}: empty response body",
+                status_code=response.status_code,
+            )
+        try:
+            return response.json()
+        except ValueError as e:
+            content_type = response.headers.get("content-type", "unknown")
+            raise APIError(
+                f"Invalid JSON response from {method} {path} "
+                f"(content-type: {content_type}): {e}",
+                status_code=response.status_code,
+            ) from e
+
     async def _post(
         self,
         path: str,
@@ -100,7 +118,7 @@ class RustChainClient:
                 json=json_data,
             )
             response.raise_for_status()
-            return response.json()
+            return self._parse_json_response(response, "POST", path)
         except httpx.ConnectError as e:
             raise RCConnectionError(f"Failed to connect to {self._base_url}: {e}")
         except httpx.HTTPStatusError as e:
@@ -113,6 +131,8 @@ class RustChainClient:
                 f"API error {e.response.status_code}: {message}",
                 status_code=e.response.status_code,
             )
+        except APIError:
+            raise
         except Exception as e:
             raise RustChainError(f"Unexpected error: {e}")
 
@@ -145,7 +165,7 @@ class RustChainClient:
                     status_code=response.status_code,
                 )
             response.raise_for_status()
-            return response.json()
+            return self._parse_json_response(response, "GET", path)
         except httpx.ConnectError as e:
             raise RCConnectionError(f"Failed to connect to {self._base_url}: {e}")
         except httpx.HTTPStatusError as e:
@@ -158,6 +178,8 @@ class RustChainClient:
                 f"API error {e.response.status_code}: {message}",
                 status_code=e.response.status_code,
             )
+        except APIError:
+            raise
         except Exception as e:
             raise RustChainError(f"Unexpected error: {e}")
 

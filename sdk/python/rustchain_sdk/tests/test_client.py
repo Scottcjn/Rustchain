@@ -93,6 +93,40 @@ class TestRustChainClientHealth:
             with pytest.raises(APIError, match="Expected JSON object response"):
                 await client.health()
 
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_health_rejects_empty_success_response(self):
+        """A successful response with an empty body raises a clear APIError."""
+        respx.get(f"{DEFAULT_NODE_URL}/health").mock(
+            return_value=httpx.Response(200, content=b"")
+        )
+        async with RustChainClient() as client:
+            with pytest.raises(
+                APIError,
+                match=r"Invalid JSON response from GET /health: empty response body",
+            ) as exc_info:
+                await client.health()
+        assert exc_info.value.status_code == 200
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_health_rejects_non_json_success_response(self):
+        """A successful non-JSON response raises a clear APIError."""
+        respx.get(f"{DEFAULT_NODE_URL}/health").mock(
+            return_value=httpx.Response(
+                200,
+                text="node is healthy",
+                headers={"content-type": "text/plain"},
+            )
+        )
+        async with RustChainClient() as client:
+            with pytest.raises(
+                APIError,
+                match=r"Invalid JSON response from GET /health",
+            ) as exc_info:
+                await client.health()
+        assert exc_info.value.status_code == 200
+
 
 class TestRustChainClientEpoch:
     """Test epoch endpoint."""
@@ -282,6 +316,26 @@ class TestRustChainClientTransfer:
                     "RTCfrom", "RTCto", 100, 0, "bad", 0, public_key="pubhex"
                 )
             assert exc_info.value.status_code == 400
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_transfer_signed_rejects_empty_success_response(self):
+        """POST helpers reject an empty 200 response with endpoint context."""
+        respx.post(f"{DEFAULT_NODE_URL}/wallet/transfer/signed").mock(
+            return_value=httpx.Response(200, content=b"")
+        )
+        async with RustChainClient() as client:
+            with pytest.raises(
+                APIError,
+                match=(
+                    r"Invalid JSON response from POST /wallet/transfer/signed: "
+                    r"empty response body"
+                ),
+            ) as exc_info:
+                await client.transfer_signed(
+                    "RTCfrom", "RTCto", 100, 0, "sig", 0, public_key="pubhex"
+                )
+        assert exc_info.value.status_code == 200
 
 
 class TestRustChainClientExplorer:
