@@ -49,9 +49,13 @@ python3 --version
 
 Then run the RustChain installer command above.
 
-On Windows, use the Windows miner installer instead of the Bash one-liner. See
-`miners/windows/installer/README.md` and run `miners/windows/rustchain_miner_setup.bat`
-from the Windows miner bundle.
+On Windows, choose one of these installer paths instead of the Bash one-liner:
+
+- **Quick bootstrap (recommended for most users):** run
+  `miners/windows/rustchain_miner_setup.bat` from the Windows miner bundle. This
+  self-bootstrapping script downloads Python if needed and installs the miner directly.
+- **Build a custom installer (for developers):** follow
+  `miners/windows/installer/README.md` to build a `.exe` installer with Inno Setup 6.
 
 **What this does:**
 
