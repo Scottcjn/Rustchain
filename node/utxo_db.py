@@ -1165,7 +1165,7 @@ class UtxoDB:
             input_total = 0
             for inp in inputs:
                 row = conn.execute(
-                    "SELECT value_nrtc FROM utxo_boxes WHERE box_id = ?",
+                    "SELECT value_nrtc FROM utxo_boxes WHERE box_id = ? AND spent_at IS NULL",
                     (inp['box_id'],),
                 ).fetchone()
                 if row:

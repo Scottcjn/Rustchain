@@ -50,6 +50,19 @@ def _add_mempool_tx(db, tx_id, box_ids, fee=100):
         conn.close()
 
 
+class _RecordingConnection:
+    def __init__(self, inner):
+        self._inner = inner
+        self.statements = []
+
+    def execute(self, sql, *args, **kwargs):
+        self.statements.append(" ".join(str(sql).split()))
+        return self._inner.execute(sql, *args, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+
 # --------- BUG-1: mempool_remove atomicity ---------
 
 class TestMempoolRemoveAtomicityBug1:
@@ -68,6 +81,41 @@ class TestMempoolRemoveAtomicityBug1:
 
     def test_mempool_remove_nonexistent_is_safe(self, db):
         db.mempool_remove("nonexistent_tx")
+
+
+# --------- mempool conservation-value boundary ---------
+
+class TestMempoolConservationValueBoundary:
+    def test_conservation_sum_uses_unspent_filter(self, db, monkeypatch):
+        _add_box(db, "box_live", 10000)
+
+        original_conn = db._conn
+        recorders = []
+
+        def recording_conn():
+            recorder = _RecordingConnection(original_conn())
+            recorders.append(recorder)
+            return recorder
+
+        monkeypatch.setattr(db, "_conn", recording_conn)
+
+        ok = db.mempool_add({
+            "tx_id": "tx_conservation_filter",
+            "tx_type": "transfer",
+            "inputs": [{"box_id": "box_live", "spending_proof": "p"}],
+            "outputs": [{"address": "addr_out", "value_nrtc": 9900}],
+            "fee_nrtc": 100,
+        })
+
+        assert ok
+        value_queries = [
+            statement
+            for recorder in recorders
+            for statement in recorder.statements
+            if "SELECT value_nrtc FROM utxo_boxes" in statement
+        ]
+        assert value_queries
+        assert all("spent_at IS NULL" in statement for statement in value_queries)
 
 
 # --------- BUG-4: stale data_input eviction ---------
