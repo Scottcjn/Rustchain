@@ -120,6 +120,24 @@ logger = logging.getLogger("rustchain-mcp")
 RUSTCHAIN_API_BASE = os.getenv("RUSTCHAIN_API_BASE", "https://50.28.86.131")
 RUSTCHAIN_NODE_URL = os.getenv("RUSTCHAIN_NODE_URL", "https://50.28.86.131:5000")
 
+# Security: Fields that must be scrubbed from all tool-argument logs
+_SENSITIVE_KEYS = (
+    "private_key", "secret", "password", "token", "api_key",
+    "mnemonic", "seed", "auth_key",
+)
+
+
+def _scrub_sensitive(data: dict[str, Any]) -> dict[str, Any]:
+    """Remove or mask sensitive fields from tool arguments before logging."""
+    scrubbed: dict[str, Any] = {}
+    for key, value in data.items():
+        lower_key = key.lower()
+        if any(s in lower_key for s in _SENSITIVE_KEYS):
+            scrubbed[key] = "***REDACTED***"
+        else:
+            scrubbed[key] = value
+    return scrubbed
+
 
 class RustChainMCP:
     """RustChain MCP Server implementation."""
@@ -259,12 +277,16 @@ class RustChainMCP:
                 ),
             ]
 
-        # Handle tool calls
+        # Handle tool calls with security-aware logging
         @self.app.call_tool()
         async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             handler = getattr(self, f"_tool_{name}", None)
             if not handler:
                 raise ValueError(f"Unknown tool: {name}")
+
+            # Security: Log only scrubbed arguments to prevent credential leakage
+            safe_args = _scrub_sensitive(arguments)
+            logger.info(f"Tool call: {name} with args: {json.dumps(safe_args)}")
 
             try:
                 result = await handler(arguments)
