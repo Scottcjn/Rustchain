@@ -202,6 +202,16 @@ app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 1 * 1024 * 1024  # 1 MB — reject oversized request bodies before they reach route handlers
 
 
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw in (None, ""):
+        return default
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return default
+
+
 @app.before_request
 def _enforce_content_length():
     """Raise 413 before any route handler runs, so broad except-Exception wrappers cannot swallow it."""
@@ -229,8 +239,8 @@ HOF_DIR = os.path.join(REPO_ROOT, "web", "hall-of-fame")
 DASHBOARD_DIR = os.path.join(REPO_ROOT, "tools", "miner_dashboard")
 EXPLORER_DIR = os.path.join(REPO_ROOT, "tools", "explorer")
 
-ADMIN_RATE_LIMIT_MAX = int(os.environ.get("RC_ADMIN_RATE_LIMIT_MAX", "12"))
-ADMIN_RATE_LIMIT_WINDOW = int(os.environ.get("RC_ADMIN_RATE_LIMIT_WINDOW_SECONDS", "60"))
+ADMIN_RATE_LIMIT_MAX = _env_int("RC_ADMIN_RATE_LIMIT_MAX", 12)
+ADMIN_RATE_LIMIT_WINDOW = _env_int("RC_ADMIN_RATE_LIMIT_WINDOW_SECONDS", 60)
 _ADMIN_RATE_LIMIT_BUCKETS = {}
 _ADMIN_RATE_LIMIT_LOCK = Lock()
 _ADMIN_RATE_LIMIT_PREFIXES = (
@@ -3540,8 +3550,8 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
 # -- IP Rate Limiting for Attestations (SQLite-backed, gunicorn-safe) --
 ATTEST_IP_LIMIT = 15      # Max unique miners per IP per hour
 ATTEST_IP_WINDOW = 3600  # 1 hour window
-ATTEST_CHALLENGE_IP_LIMIT = int(os.environ.get("ATTEST_CHALLENGE_IP_LIMIT", "10"))
-ATTEST_CHALLENGE_IP_WINDOW = int(os.environ.get("ATTEST_CHALLENGE_IP_WINDOW", "60"))
+ATTEST_CHALLENGE_IP_LIMIT = _env_int("ATTEST_CHALLENGE_IP_LIMIT", 10)
+ATTEST_CHALLENGE_IP_WINDOW = _env_int("ATTEST_CHALLENGE_IP_WINDOW", 60)
 API_MINERS_RATE_LIMIT = 100
 API_MINERS_RATE_WINDOW = 60
 
@@ -10757,9 +10767,9 @@ BEACON_RATE_LIMIT  = 60
 # DB per-agent limit remains the cross-process layer. This is a flood backstop, not a
 # distributed ceiling. The default cap is generous (120/min) so shared NAT/proxy egress
 # IPs aren't throttled below the per-agent DB limit; tune via env if needed.
-BEACON_IP_RATE_LIMIT_MAX = int(os.environ.get("RC_BEACON_IP_RATE_LIMIT_MAX", "120"))
-BEACON_IP_RATE_LIMIT_WINDOW = int(os.environ.get("RC_BEACON_IP_RATE_LIMIT_WINDOW_SECONDS", "60"))
-_BEACON_IP_RATE_LIMIT_MAX_KEYS = int(os.environ.get("RC_BEACON_IP_RATE_LIMIT_MAX_KEYS", "8192"))
+BEACON_IP_RATE_LIMIT_MAX = _env_int("RC_BEACON_IP_RATE_LIMIT_MAX", 120)
+BEACON_IP_RATE_LIMIT_WINDOW = _env_int("RC_BEACON_IP_RATE_LIMIT_WINDOW_SECONDS", 60)
+_BEACON_IP_RATE_LIMIT_MAX_KEYS = _env_int("RC_BEACON_IP_RATE_LIMIT_MAX_KEYS", 8192)
 _BEACON_IP_RATE_LIMIT_BUCKETS = {}
 _BEACON_IP_RATE_LIMIT_LOCK = Lock()
 
@@ -10870,12 +10880,8 @@ def beacon_envelopes_list():
     return jsonify({"ok": True, "count": len(envelopes), "envelopes": envelopes})
 
 
-GOVERNANCE_VOTE_RATE_LIMIT_MAX = int(
-    os.environ.get("RC_GOVERNANCE_VOTE_RATE_LIMIT_MAX", "20")
-)
-GOVERNANCE_VOTE_RATE_LIMIT_WINDOW = int(
-    os.environ.get("RC_GOVERNANCE_VOTE_RATE_LIMIT_WINDOW_SECONDS", "60")
-)
+GOVERNANCE_VOTE_RATE_LIMIT_MAX = _env_int("RC_GOVERNANCE_VOTE_RATE_LIMIT_MAX", 20)
+GOVERNANCE_VOTE_RATE_LIMIT_WINDOW = _env_int("RC_GOVERNANCE_VOTE_RATE_LIMIT_WINDOW_SECONDS", 60)
 _GOVERNANCE_VOTE_RATE_LIMIT_BUCKETS = {}
 _GOVERNANCE_VOTE_RATE_LIMIT_LOCK = Lock()
 
