@@ -14,16 +14,22 @@ from datetime import datetime
 from flask import Flask, render_template, jsonify, request
 from flask_socketio import SocketIO, emit, join_room, leave_room
 
+try:
+    from explorer.socketio_cors import parse_socketio_cors_origins
+except ModuleNotFoundError:
+    from socketio_cors import parse_socketio_cors_origins
+
 # Configuration
 EXPLORER_PORT = int(os.environ.get('EXPLORER_PORT', 8080))
 API_BASE = os.environ.get('RUSTCHAIN_API_BASE', 'https://rustchain.org').rstrip('/')
 API_TIMEOUT = float(os.environ.get('API_TIMEOUT', '8'))
 POLL_INTERVAL = float(os.environ.get('POLL_INTERVAL', '5'))  # seconds
+SOCKETIO_CORS_ORIGINS = parse_socketio_cors_origins(local_port=EXPLORER_PORT)
 
 # Flask app with SocketIO
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'rustchain-explorer-secret')
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+socketio = SocketIO(app, cors_allowed_origins=SOCKETIO_CORS_ORIGINS, async_mode='threading')
 
 # State tracking
 class ExplorerState:

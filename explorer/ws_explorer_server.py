@@ -17,15 +17,21 @@ import requests
 from flask import Flask, render_template, jsonify
 from flask_socketio import SocketIO, emit
 
+try:
+    from explorer.socketio_cors import parse_socketio_cors_origins
+except ModuleNotFoundError:
+    from socketio_cors import parse_socketio_cors_origins
+
 # ── Configuration ─────────────────────────────────────────────────
 API_BASE = os.environ.get("RUSTCHAIN_API_BASE", "https://rustchain.org").rstrip("/")
 API_TIMEOUT = float(os.environ.get("API_TIMEOUT", "8"))
 POLL_INTERVAL = float(os.environ.get("WS_POLL_INTERVAL", "10"))
 PORT = int(os.environ.get("WS_EXPLORER_PORT", "8060"))
+SOCKETIO_CORS_ORIGINS = parse_socketio_cors_origins(local_port=PORT)
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "rustchain-ws-explorer")
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+socketio = SocketIO(app, cors_allowed_origins=SOCKETIO_CORS_ORIGINS, async_mode="threading")
 
 # ── State ─────────────────────────────────────────────────────────
 state = {
