@@ -26,6 +26,7 @@ import os
 import re
 import sys
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from typing import Optional
 
 import requests
@@ -59,6 +60,8 @@ _TIP_PATTERN = re.compile(
     r"(?:\s|$)",                 # followed by whitespace or end
     re.IGNORECASE | re.MULTILINE,
 )
+
+MAX_RTC_DECIMAL_PLACES = 8
 
 
 @dataclass
@@ -110,32 +113,33 @@ def parse_tip_command(comment_body: str, expected_token: str) -> ParseResult:
             error=f"Unknown token `{token}`. Only `{expected_token}` tips are supported.",
         )
 
-    # Validate amount
+    # Validate amount using Decimal before converting for existing storage /
+    # comment behavior. Float rounding can hide over-precision inputs.
     try:
-        amount = float(amount_str)
-    except ValueError:
+        amount_decimal = Decimal(amount_str)
+    except (InvalidOperation, ValueError):
         return ParseResult(
             command=None,
             error=f"Invalid amount `{amount_str}`. Must be a positive number.",
         )
 
-    if amount <= 0:
+    if amount_decimal <= 0:
         return ParseResult(
             command=None,
-            error=f"Amount must be greater than 0. Got `{amount}`.",
+            error=f"Amount must be greater than 0. Got `{amount_decimal}`.",
         )
 
-    # Reject obviously invalid amounts (too many decimal places for RTC)
-    if amount != round(amount, 8):
+    decimal_places = max(0, -amount_decimal.as_tuple().exponent)
+    if decimal_places > MAX_RTC_DECIMAL_PLACES:
         return ParseResult(
             command=None,
-            error=f"Amount `{amount}` has too many decimal places. Max 8.",
+            error=f"Amount `{amount_str}` has too many decimal places. Max {MAX_RTC_DECIMAL_PLACES}.",
         )
 
     return ParseResult(
         command=TipCommand(
             recipient=recipient,
-            amount=amount,
+            amount=float(amount_decimal),
             token=token.upper(),
             raw=match.group(0).strip(),
         ),

@@ -106,6 +106,11 @@ class TestParseTipCommand:
         assert result.error is None
         assert result.command.amount == 12.5
 
+    def test_valid_max_decimal_places_amount(self):
+        result = parse_tip_command("/tip @bob 0.12345678 RTC", "RTC")
+        assert result.error is None
+        assert result.command.amount == 0.12345678
+
     def test_valid_inline_in_comment(self):
         body = "Great work! /tip @contributor 100 RTC for fixing that bug."
         result = parse_tip_command(body, "RTC")
@@ -183,6 +188,20 @@ class TestParseTipCommand:
         result = parse_tip_command(f"/tip @{long_name} 10 RTC", "RTC")
         assert result.command is None
         assert result.error is not None
+
+    @pytest.mark.parametrize(
+        "amount",
+        (
+            "0.10000000000000001",
+            "1.000000000",
+            "1.0000000000000001",
+        ),
+    )
+    def test_amount_with_more_than_max_decimal_places_rejected_before_float_rounding(self, amount):
+        result = parse_tip_command(f"/tip @alice {amount} RTC", "RTC")
+
+        assert result.command is None
+        assert result.error == f"Amount `{amount}` has too many decimal places. Max 8."
 
 
 # ---------------------------------------------------------------------------
