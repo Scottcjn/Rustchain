@@ -764,6 +764,56 @@ class TestLockLedger:
         assert len(locks) == 3
         
         conn.close()
+
+    def test_get_locks_by_miner_negative_limit_stays_bounded(self, setup_test_db, funded_miner):
+        """Helper callers cannot turn a negative SQLite LIMIT into an unbounded scan."""
+        lock_ledger = setup_test_db["lock_ledger"]
+        conn = sqlite3.connect(setup_test_db["db_path"])
+        now = int(time.time())
+
+        for i in range(3):
+            lock_ledger.create_lock(
+                conn,
+                miner_id=funded_miner,
+                amount_i64=10 * 1000000,
+                lock_type="bridge_deposit",
+                unlock_at=now + 3600 + i,
+            )
+
+        locks = lock_ledger.get_locks_by_miner(conn, funded_miner, limit=-1)
+
+        assert len(locks) == 1
+
+        conn.close()
+
+    def test_get_pending_unlocks_negative_limit_stays_bounded(self, setup_test_db, funded_miner):
+        """Expired-lock helper callers cannot bypass the worker batch limit with -1."""
+        lock_ledger = setup_test_db["lock_ledger"]
+        conn = sqlite3.connect(setup_test_db["db_path"])
+        now = int(time.time())
+
+        for i in range(3):
+            conn.execute(
+                """INSERT INTO lock_ledger
+                   (miner_id, amount_i64, lock_type, locked_at, unlock_at, status, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    funded_miner,
+                    5 * 1000000,
+                    "bridge_deposit",
+                    now - 3600,
+                    now - 60 - i,
+                    "locked",
+                    now - 3600,
+                ),
+            )
+        conn.commit()
+
+        locks = lock_ledger.get_pending_unlocks(conn, limit=-1)
+
+        assert len(locks) == 1
+
+        conn.close()
     
     def test_get_miner_locked_balance(self, setup_test_db, funded_miner):
         """Test getting miner's total locked balance."""

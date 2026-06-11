@@ -475,7 +475,7 @@ def get_locks_by_miner(
         params.append(status_filter)
 
     query += " ORDER BY id DESC LIMIT ?"
-    params.append(min(limit, 500))
+    params.append(_bounded_query_limit(limit))
 
     rows = cursor.execute(query, params).fetchall()
 
@@ -533,7 +533,7 @@ def get_pending_unlocks(
         params.append(before_timestamp)
 
     query += " ORDER BY unlock_at ASC LIMIT ?"
-    params.append(min(limit, 500))
+    params.append(_bounded_query_limit(limit))
 
     rows = cursor.execute(query, params).fetchall()
 
@@ -615,6 +615,14 @@ def get_miner_locked_balance(
         "breakdown": breakdown,
         "next_unlock": next_unlock
     }
+
+
+def _bounded_query_limit(limit: Any, default: int = 100, maximum: int = 500) -> int:
+    try:
+        value = int(limit)
+    except (TypeError, ValueError):
+        value = default
+    return max(1, min(value, maximum))
 
 
 def auto_release_expired_locks(
