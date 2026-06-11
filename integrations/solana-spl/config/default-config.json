@@ -10,11 +10,11 @@
   },
   "multisig": {
     "signers": [
-      "TODO_Signer1_Pubkey",
-      "TODO_Signer2_Pubkey",
-      "TODO_Signer3_Pubkey",
-      "TODO_Signer4_Pubkey",
-      "TODO_Signer5_Pubkey"
+      "PLACEHOLDER_Signer1_Pubkey_Please_Replace",
+      "PLACEHOLDER_Signer2_Pubkey_Please_Replace",
+      "PLACEHOLDER_Signer3_Pubkey_Please_Replace",
+      "PLACEHOLDER_Signer4_Pubkey_Please_Replace",
+      "PLACEHOLDER_Signer5_Pubkey_Please_Replace"
     ],
     "threshold": 3,
     "description": "RustChain wRTC Multi-Sig Governance"
