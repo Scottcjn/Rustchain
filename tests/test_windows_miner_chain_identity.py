@@ -36,8 +36,11 @@ def make_miner(module):
     miner.keypair = {"private_key": "private"}
     miner.public_key = "ab" * 32
     miner._pow_proof = None
+    miner._last_attempted_slot = None
     miner._last_submitted_slot = None
     miner.last_header_error = ""
+    miner.shares_submitted = 0
+    miner.shares_accepted = 0
     return miner
 
 
@@ -124,3 +127,47 @@ def test_submit_uses_configured_node_and_deduplicates_accepted_slot(monkeypatch)
         "json": payload,
         "timeout": 15,
     }
+
+
+def test_failed_header_attempt_is_not_retried_for_same_slot(monkeypatch):
+    module = load_miner_module()
+    miner = make_miner(module)
+    miner.mining = True
+    events = []
+    attempts = []
+    sleeps = []
+
+    monkeypatch.setattr(miner, "_ensure_ready", lambda _callback: True)
+    monkeypatch.setattr(miner, "_emit_ready_status", lambda _callback: None)
+    monkeypatch.setattr(
+        miner,
+        "check_eligibility",
+        lambda: {"eligible": True, "slot": 42},
+    )
+    monkeypatch.setattr(miner, "generate_header", lambda slot: {"header": {"slot": slot}})
+
+    def reject(_payload):
+        attempts.append(42)
+        miner.last_header_error = "HTTP 403 error=no pubkey registered for miner"
+        return False
+
+    def stop_after_two_loops(_seconds):
+        sleeps.append(_seconds)
+        if len(sleeps) == 2:
+            miner.mining = False
+
+    monkeypatch.setattr(miner, "submit_header", reject)
+    monkeypatch.setattr(module.time, "sleep", stop_after_two_loops)
+
+    miner._mine_loop(events.append)
+
+    assert attempts == [42]
+    assert sleeps == [10, 10]
+    assert events == [{
+        "type": "share",
+        "submitted": 1,
+        "accepted": 0,
+        "success": False,
+        "slot": 42,
+        "error": "HTTP 403 error=no pubkey registered for miner",
+    }]

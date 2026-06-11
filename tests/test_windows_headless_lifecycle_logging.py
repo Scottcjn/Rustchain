@@ -106,3 +106,19 @@ def test_response_diagnostic_includes_safe_json_fields():
         "HTTP 409 code=DUPLICATE_HARDWARE error=hardware_already_bound "
         "message=This hardware is already registered"
     )
+
+
+def test_headless_share_failure_includes_slot_and_diagnostic():
+    module = _load_windows_miner()
+
+    assert module._format_headless_event({
+        "type": "share",
+        "submitted": 1,
+        "accepted": 0,
+        "success": False,
+        "slot": 42,
+        "error": "HTTP 403 error=no pubkey registered for miner",
+    }) == (
+        "[share] submitted=1 accepted=0 slot=42 FAIL "
+        "error=HTTP 403 error=no pubkey registered for miner"
+    )

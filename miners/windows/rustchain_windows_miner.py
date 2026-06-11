@@ -147,6 +147,7 @@ class RustChainMiner:
         self.mining = False
         self.shares_submitted = 0
         self.shares_accepted = 0
+        self._last_attempted_slot = None
         self._last_submitted_slot = None
         self.miner_id = f"windows_{hashlib.md5(wallet_address.encode()).hexdigest()[:8]}"
         self.node_url = RUSTCHAIN_API
@@ -316,8 +317,9 @@ class RustChainMiner:
                 if (
                     eligibility.get("eligible")
                     and slot is not None
-                    and slot != self._last_submitted_slot
+                    and slot != self._last_attempted_slot
                 ):
+                    self._last_attempted_slot = slot
                     header = self.generate_header(slot)
                     success = self.submit_header(header)
                     self.shares_submitted += 1
@@ -328,7 +330,9 @@ class RustChainMiner:
                             "type":      "share",
                             "submitted": self.shares_submitted,
                             "accepted":  self.shares_accepted,
-                            "success":   success
+                            "success":   success,
+                            "slot":      slot,
+                            "error":     self.last_header_error,
                         })
                 time.sleep(10)
             except Exception as e:
@@ -834,10 +838,13 @@ def _format_headless_event(evt):
     t = evt.get("type")
     if t == "share":
         ok = "OK" if evt.get("success") else "FAIL"
-        return (
+        message = (
             f"[share] submitted={evt.get('submitted')} "
-            f"accepted={evt.get('accepted')} {ok}"
+            f"accepted={evt.get('accepted')} slot={evt.get('slot')} {ok}"
         )
+        if not evt.get("success") and evt.get("error"):
+            message += f" error={evt.get('error')}"
+        return message
     if t == "attest":
         return (
             f"[attest] {evt.get('message')} "
