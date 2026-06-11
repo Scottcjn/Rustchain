@@ -292,6 +292,19 @@ class TestConfigFileOperations:
         
         assert config["token"]["name"] == "Test Token"
         assert config["token"]["symbol"] == "TTK"
+
+    def test_default_config_has_ready_to_validate_multisig_signers(self):
+        """Default config should not ship TODO signer placeholders."""
+        config_path = Path(__file__).parent.parent / "config" / "default-config.json"
+        config = load_config_from_file(str(config_path))
+        signers = config["multisig"]["signers"]
+
+        assert len(signers) == 5
+        assert not any("TODO" in signer for signer in signers)
+        assert MultiSigConfig(
+            signers=signers,
+            threshold=config["multisig"]["threshold"],
+        ).validate() is True
     
     def test_save_config(self, tmp_path):
         """Test saving config to file."""
