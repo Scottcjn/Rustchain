@@ -45,7 +45,7 @@ FETCHALL_PATTERN='\.fetchall[[:space:]]*\('
 
 if command -v rg >/dev/null 2>&1; then
     set +e
-    rg -n "$FETCHALL_PATTERN" node \
+    rg --no-ignore -n "$FETCHALL_PATTERN" node \
         --glob '!node/tests/**' \
         --glob '!node/test_*' \
         --glob '!node/__pycache__/**' \
