@@ -599,21 +599,26 @@ def void_bridge_transfer(
 ) -> Tuple[bool, Dict[str, Any]]:
     """Void a bridge transfer and release associated lock."""
     cursor = db_conn.cursor()
-    
-    # Find the transfer
-    transfer = get_bridge_transfer_by_hash(db_conn, tx_hash)
-    if not transfer:
-        return False, {"error": "Bridge transfer not found"}
-    
-    if transfer["status"] not in ("pending", "locked", "confirming"):
-        return False, {
-            "error": f"Cannot void transfer with status '{transfer['status']}'",
-            "hint": "Only pending/locked/confirming transfers can be voided"
-        }
-    
     now = int(time.time())
     
     try:
+        cursor.execute("BEGIN IMMEDIATE")
+
+        # Find the transfer while holding the write lock. The guarded UPDATE
+        # below is still authoritative so a stale pre-transaction snapshot
+        # cannot overwrite a completed/failed/voided transfer.
+        transfer = get_bridge_transfer_by_hash(db_conn, tx_hash)
+        if not transfer:
+            db_conn.rollback()
+            return False, {"error": "Bridge transfer not found"}
+
+        if transfer["status"] not in ("pending", "locked", "confirming"):
+            db_conn.rollback()
+            return False, {
+                "error": f"Cannot void transfer with status '{transfer['status']}'",
+                "hint": "Only pending/locked/confirming transfers can be voided"
+            }
+
         # Update bridge transfer
         cursor.execute("""
             UPDATE bridge_transfers
@@ -622,7 +627,21 @@ def void_bridge_transfer(
                 voided_reason = ?,
                 updated_at = ?
             WHERE tx_hash = ?
+              AND status IN ('pending', 'locked', 'confirming')
         """, (voided_by, reason, now, tx_hash))
+
+        if cursor.rowcount != 1:
+            current = cursor.execute(
+                "SELECT status FROM bridge_transfers WHERE tx_hash = ?",
+                (tx_hash,),
+            ).fetchone()
+            db_conn.rollback()
+            if not current:
+                return False, {"error": "Bridge transfer not found"}
+            return False, {
+                "error": f"Cannot void transfer with status '{current[0]}'",
+                "hint": "Only pending/locked/confirming transfers can be voided",
+            }
         
         # Release associated lock
         cursor.execute("""
