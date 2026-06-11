@@ -6,6 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import payout_worker
 from payout_worker import PayoutWorker
 
 
@@ -192,3 +193,53 @@ def test_reconcile_broadcast_withdrawals_preserves_unknown_tx_hash(tmp_path):
     assert status == "processing"
     assert tx_hash == "0xunknown"
     assert error_msg == "manual reconciliation required"
+
+
+def test_process_withdrawal_claims_pending_row_once_before_debit(tmp_path, monkeypatch):
+    db_path = tmp_path / "payout.db"
+    with sqlite3.connect(db_path) as conn:
+        _create_schema(conn)
+        conn.execute("INSERT INTO accounts VALUES ('miner-1', 100.0)")
+        conn.execute("""
+            INSERT INTO withdrawals (
+                withdrawal_id, miner_pk, amount, fee, destination, status, created_at
+            ) VALUES ('wd-1', 'miner-1', 10.0, 1.0, 'dest', 'pending', 1)
+        """)
+
+    broadcasts = []
+
+    class CountingWorker(PayoutWorker):
+        def execute_withdrawal(self, withdrawal):
+            broadcasts.append(withdrawal["withdrawal_id"])
+            return f"tx-{len(broadcasts)}"
+
+    monkeypatch.setattr(payout_worker, "MOCK_MODE", True)
+    withdrawal = {
+        "withdrawal_id": "wd-1",
+        "miner_pk": "miner-1",
+        "amount": 10.0,
+        "fee": 1.0,
+        "destination": "dest",
+        "created_at": 1,
+    }
+
+    first = CountingWorker()
+    first.db_path = str(db_path)
+    second = CountingWorker()
+    second.db_path = str(db_path)
+
+    assert first.process_withdrawal(withdrawal) is True
+    assert second.process_withdrawal(withdrawal) is False
+
+    with sqlite3.connect(db_path) as conn:
+        balance = conn.execute(
+            "SELECT balance FROM accounts WHERE public_key = 'miner-1'"
+        ).fetchone()[0]
+        status, tx_hash = conn.execute(
+            "SELECT status, tx_hash FROM withdrawals WHERE withdrawal_id = 'wd-1'"
+        ).fetchone()
+
+    assert broadcasts == ["wd-1"]
+    assert balance == 89.0
+    assert status == "completed"
+    assert tx_hash == "tx-1"
