@@ -358,7 +358,6 @@ def update_claim_status(
         True if update successful
     """
     current_ts = int(time.time())
-    
     try:
         with sqlite3.connect(db_path) as conn:
             cursor = conn.cursor()
@@ -374,7 +373,8 @@ def update_claim_status(
                 current_ts if status in ['approved', 'rejected'] else None,
                 claim_id
             ))
-            
+            if cursor.rowcount == 0:
+                return False
             # Add details if provided
             if details:
                 if status == 'settled':
@@ -411,7 +411,7 @@ def update_claim_status(
             ))
             
             conn.commit()
-            return cursor.rowcount > 0
+            return True
     except sqlite3.Error as e:
         print(f"[CLAIMS] Error updating status: {e}")
         return False
