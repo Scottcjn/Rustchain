@@ -133,15 +133,15 @@ def test_state_aggregates_by_status_and_direction(client, db_path):
     assert s["by_direction"]["withdraw"] == {"count": 1, "total_rtc": 100.0}
 
 
-def test_state_last_event_at_reflects_max_created_at(client, db_path):
+def test_state_last_event_at_reflects_max_state_change_at(client, db_path):
     base = int(time.time())
     _seed(db_path, [
-        {"created_at": base - 100, "status": "pending"},
-        {"created_at": base, "status": "completed"},
-        {"created_at": base - 50, "status": "locked"},
+        {"created_at": base, "updated_at": base, "status": "pending"},
+        {"created_at": base - 100, "updated_at": base + 60, "status": "completed"},
+        {"created_at": base - 50, "updated_at": base - 25, "status": "locked"},
     ])
     s = client.get("/bridge/state").get_json()["state"]
-    assert s["last_event_at"] == base
+    assert s["last_event_at"] == base + 60
 
 
 # ---------- /bridge/events ---------------------------------------------------

@@ -108,9 +108,10 @@ def _aggregate_bridge_state(conn: sqlite3.Connection) -> Dict[str, Any]:
     completed_in = by_status.get("completed", {}).get("total_rtc", 0.0)
     voided_in = by_status.get("voided", {}).get("total_rtc", 0.0)
 
-    # last_event_at: most recent created_at across all transfers
+    # last_event_at: most recent transfer creation or state-change timestamp.
     last_event = cursor.execute(
-        "SELECT COALESCE(MAX(created_at), 0) FROM bridge_transfers"
+        "SELECT COALESCE(MAX(COALESCE(updated_at, completed_at, created_at, 0)), 0) "
+        "FROM bridge_transfers"
     ).fetchone()  # fetchall-ok: pragma-result (single MAX)
     last_event_at = int(last_event[0]) if last_event else 0
 
