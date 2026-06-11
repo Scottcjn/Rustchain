@@ -22,9 +22,12 @@ vintage-exotic RTC weight it did not earn.
 
 **Fix direction:** introspection and passive timing are necessary but not
 sufficient. Catching consistent full-system emulation requires an **active**
-probe TCG cannot reproduce faithfully. **We built and measured one (`ilp_ratio`,
-below) and it catches the fake POWER10 with no overlap.** Concrete server-side
-hardening is listed at the end.
+probe TCG cannot reproduce faithfully. We built a candidate (`ilp_ratio`) that
+*initially looked* like it worked — **but adversarial testing REFUTED it** (it
+measures the host's ILP, which passes through TCG; see "Active probe — refuted"
+below). **The frontier remains OPEN.** The honest interim posture is fail-safe
+weighting (exotic claims that TCG can fake get the *modern* multiplier, never
+the exotic one). Concrete server-side hardening is listed at the end.
 
 ---
 
@@ -82,52 +85,51 @@ passive timing can be farmed by qemu-system guests claiming POWER/SPARC/MIPS.
 
 ---
 
-## The active probe that catches it (`ilp_ratio`) — measured
+## Active probe (`ilp_ratio`) — built, then REFUTED by adversarial testing
 
 We built a harness of four candidate active signals (branch-prediction bias,
 divide/multiply ratio, instruction-level-parallelism ratio, memory-gather
-jitter), ran each on real metal AND inside TCG, and let the data choose. The
-winner is **`ilp_ratio`**:
+jitter) and `ilp_ratio` — best-of-N time of a latency-bound dependent op chain
+÷ an independent set of the same op count — *initially looked* like a clean
+separator:
 
-> Best-of-N wall time of a **latency-bound dependent** op chain (each op needs
-> the previous result) divided by an **independent** set of the same op count.
-> Real superscalar silicon executes the independent set in parallel → ratio
-> **> 1.1**. TCG serializes translated guest instructions → no ILP → ratio
-> **collapses toward 1.0**. It measures the *execution engine*, so it is
-> architecture-independent and **cannot be removed by scrubbing self-ID**.
+| host | ilp_ratio (initial — MISLEADING) | truth |
+|------|------|------|
+| Victus / Celeron / POWER8 | 1.130 / 1.119 / 1.198 | physical |
+| qemu-system amd64 / ppc64le TCG | 0.996 / 1.041 | emulated |
 
-| host | ilp_ratio | truth |
-|------|-----------|-------|
-| HP Victus (x86 bare metal) | 1.130 | physical |
-| Celeron N3150 (x86 bare metal) | 1.119 | physical |
-| **IBM POWER8 S824 (real silicon)** | **1.198** | physical |
-| qemu-system amd64 TCG | 0.996 | emulated |
-| **qemu-system ppc64le TCG (fake POWER10)** | **1.041** | emulated |
+**This was an artifact, and we caught it.** The two low TCG numbers were
+measured while *other guests/captures ran in parallel* — steal-time compressed
+the ratio. We re-tested on a **quiet host** under four adversarial TCG configs
+plus the original config three more times:
 
-**Clean separation, no overlap:** physical ≥ 1.119, emulated ≤ 1.041
-(threshold 1.08). The fake POWER10 that defeated *every passive signal* is
-caught at 1.041 against real POWER8's 1.198. The other three candidates were
-confounded — `gather_jitter` by machine load (idle server vs busy laptop),
-`branch_bias` by microarchitecture (POWER8's strong predictor collapses it too).
+| measurement (quiet host) | ilp_ratio |
+|------|------|
+| TCG `-smp 1` / `-smp 4 thread-multi` / `-cpu max` / `tb-size=1024` | 1.19 / 1.15 / 1.15 / 1.16 |
+| TCG `-smp 2` (the config that gave 0.996), 3 runs | **1.63 / 1.15 / 1.14** |
+| bare metal, same session | 1.08 – 1.19 |
 
-**Scope boundary (measured — do not misapply):** `ilp_ratio` detects
-**emulation** (software CPU / TCG), **not virtualization** (hardware-assisted /
-KVM). KVM runs guest instructions natively on the real host CPU, so it shows
-real-ish ILP — the two production KVM nodes measured 1.098 (quiet host) and
-1.049 (loaded host); the quiet one would pass `ilp_ratio` as physical. **KVM is
-caught by introspection instead** (both nodes trip all three flags). So the two
-layers are complementary and *both* are needed: introspection catches
-self-advertising VMs (incl. KVM); `ilp_ratio` catches the *consistent* emulation
-(TCG fake-exotic) that defeats introspection. Host load/steal-time is a confound
-on `ilp_ratio`'s physical side, so it is most reliable on **dedicated** hardware
-— which is exactly the exotic-miner case (a real G4/POWER8 is a dedicated box).
+**TCG ilp_ratio (1.14–1.63) overlaps and exceeds bare metal (1.08–1.19). No
+separation.** Root cause: **TCG executes the guest on the real host CPU**, whose
+out-of-order engine supplies the ILP regardless of what the guest claims to be —
+the *same passthrough* that makes TCG inherit the host cache hierarchy
+(falsified-folklore #3 above). `ilp_ratio` measures the **host's** ILP, not the
+guest's, so it cannot tell emulation from real silicon. The same logic warns
+that **any generic host-CPU property** (cache tone, branch prediction, ILP)
+passes through TCG and is therefore a dead end for this purpose.
 
-**Honest limit:** n=5 (3 physical, 2 emulated) is a strong *seed*, not a
-production threshold. Before gating real rewards on it, widen the physical side
-with vintage points (G3/G4/G5) and stress the emulated side with adversarial TCG
-(`-smp 1`, host-pinned) to set a cutoff with margin. Reproducer +
-provenance: HWFP-Bench `score.py --active-evidence`,
-`dataset/active_probe_evidence.json`.
+This is the *measure-before-publish* discipline working: a striking n=5 result
+collapsed the moment a different probe (quiet host, adversarial configs) was
+applied — caught **before** the public dataset flip or any reward gating.
+Reproducer + full retraction: HWFP-Bench `score.py --active-evidence`,
+`dataset/active_probe_evidence.json`, `tcg-lab/run_adversarial.sh`.
+
+### What a real active probe must do (still open)
+Measure **architecture-specific** behavior the host cannot provide by
+translation — e.g. genuine AltiVec/VMX vector-unit timing on POWER vs TCG's
+scalar-lowered emulation of those instructions. That needs arch-native code (not
+portable stdlib) and is **untested here**. Until such a probe exists and is
+validated, gate exotic multipliers fail-safe (see fixes #1 and #5).
 
 ---
 
@@ -135,14 +137,16 @@ provenance: HWFP-Bench `score.py --active-evidence`,
 
 Ordered by leverage. None require trusting the client's self-report.
 
-1. **Promote an ACTIVE probe into the reward gate, not just the passive set.**
-   **Demonstrated above:** `ilp_ratio` cleanly separates real silicon (≥1.12)
-   from full-system TCG (≤1.04), catching the fake POWER10 that passive checks
-   miss. Require at least one active-probe pass for any miner claiming an exotic
-   multiplier. `ilp_ratio` is portable (stdlib, runs on the vintage fleet) and
-   complements the production 6-check's heavier active probes (SIMD/AltiVec
-   timing-bias — TCG lowers vector ops to scalar, flattening per-group bias —
-   plus instruction-path jitter and thermal drift).
+1. **Require an ARCH-SPECIFIC active probe to grant an exotic multiplier.**
+   A *generic* active probe is not enough — `ilp_ratio` was refuted above
+   precisely because ILP (like cache and branch prediction) passes through TCG
+   from the real host. The probe must measure something the host *cannot*
+   provide by translation: the production 6-check's SIMD/AltiVec timing-bias is
+   the right shape (TCG lowers AltiVec/VMX to scalar host code, so real POWER
+   vector timing differs from emulated), as are instruction-path jitter and
+   thermal drift. These need arch-native code and remain to be validated against
+   the TCG negatives in HWFP-Bench. Until one passes that bar, do not treat any
+   active probe as sufficient on its own.
 
 2. **Treat `scsi:vm`/`dmi:*`/`cpuinfo:hypervisor` as necessary-not-sufficient.**
    Their *absence* must not imply physical. Today an attacker removes them
