@@ -55,6 +55,19 @@ def test_numeric_coercion_helpers_use_defaults_for_bad_values():
     assert module._to_int("bad", default=2) == 2
 
 
+def test_invalid_numeric_env_uses_defaults_without_import_crash(monkeypatch):
+    monkeypatch.setenv("EXPORTER_PORT", "not-a-port")
+    monkeypatch.setenv("SCRAPE_INTERVAL", "")
+    monkeypatch.setenv("REQUEST_TIMEOUT", "NaN")
+
+    module = load_module()
+
+    assert module.EXPORTER_PORT == 9100
+    assert module.SCRAPE_INTERVAL == 60
+    assert module.REQUEST_TIMEOUT == 15
+    assert module._env_int("MISSING_RUSTCHAIN_TEST_ENV", 42) == 42
+
+
 def test_fetch_json_returns_payload_and_handles_errors():
     module = load_module()
     response = Mock()
