@@ -168,6 +168,20 @@ class BridgeLock:
         ).isoformat()
         return result
 
+    def to_public_dict(self) -> Dict[str, Any]:
+        return {
+            "lock_id": self.lock_id,
+            "from_chain": self.from_chain,
+            "to_chain": self.to_chain,
+            "amount_uwrtc": self.amount_uwrtc,
+            "amount_wrtc": self.amount_uwrtc / 1_000_000,
+            "timestamp": self.timestamp,
+            "timestamp_iso": datetime.fromtimestamp(
+                self.timestamp, tz=timezone.utc
+            ).isoformat(),
+            "status": self.status,
+        }
+
 
 # ============================================================================
 # Database Schema
@@ -1281,6 +1295,17 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
             return jsonify({"ok": False, "error": "unauthorized"}), 401
         return None
 
+    def has_admin_key():
+        required = os.environ.get("RC_ADMIN_KEY", "").strip()
+        if not required:
+            return False
+        provided = (
+            request.headers.get("X-Admin-Key")
+            or request.headers.get("X-API-Key")
+            or ""
+        ).strip()
+        return bool(provided) and hmac.compare_digest(provided, required)
+
     def parse_json_object_body(require_body: bool = True):
         data = request.get_json(silent=True)
         if data is None:
@@ -1544,7 +1569,9 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
         """Get bridge lock status."""
         lock = airdrop.get_lock(lock_id)
         if lock:
-            return jsonify({"ok": True, "lock": lock.to_dict()})
+            if has_admin_key():
+                return jsonify({"ok": True, "lock": lock.to_dict()})
+            return jsonify({"ok": True, "lock": lock.to_public_dict()})
         return jsonify({"ok": False, "error": "lock_not_found"}), 404
 
 

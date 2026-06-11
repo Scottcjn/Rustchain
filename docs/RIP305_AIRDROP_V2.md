@@ -50,7 +50,7 @@ node/
    - `/api/bridge/lock` - Create bridge lock
    - `/api/bridge/lock/<id>/confirm` - Confirm lock
    - `/api/bridge/lock/<id>/release` - Release lock
-   - `/api/bridge/lock/<id>` - Get lock status
+   - `/api/bridge/lock/<id>` - Get lock status; unauthenticated responses are public-safe and omit bridge addresses / transaction ids, while valid admin-key requests return the full operator view
 
 ## Eligibility Tiers
 
@@ -174,6 +174,14 @@ curl -X POST https://rustchain.org/api/bridge/lock \
     "amount_wrtc": 100
   }'
 ```
+
+#### Get Bridge Lock Status
+
+`GET /api/bridge/lock/<id>` returns public-safe status fields by default:
+`lock_id`, `from_chain`, `to_chain`, `amount_uwrtc`, `amount_wrtc`,
+`timestamp`, `timestamp_iso`, and `status`. Include a valid admin key to see
+operator-only fields such as `from_address`, `to_address`, `source_tx`, and
+`dest_tx`.
 
 #### Get Statistics
 
