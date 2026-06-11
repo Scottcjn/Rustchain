@@ -171,3 +171,58 @@ def test_failed_header_attempt_is_not_retried_for_same_slot(monkeypatch):
         "slot": 42,
         "error": "HTTP 403 error=no pubkey registered for miner",
     }]
+
+
+def test_header_generation_failure_does_not_consume_slot(monkeypatch):
+    module = load_miner_module()
+    miner = make_miner(module)
+    miner.mining = True
+    generation_attempts = []
+    submission_attempts = []
+    events = []
+    sleeps = []
+
+    monkeypatch.setattr(miner, "_ensure_ready", lambda _callback: True)
+    monkeypatch.setattr(miner, "_emit_ready_status", lambda _callback: None)
+    monkeypatch.setattr(
+        miner,
+        "check_eligibility",
+        lambda: {"eligible": True, "slot": 42},
+    )
+
+    def generate(slot):
+        generation_attempts.append(slot)
+        if len(generation_attempts) == 1:
+            raise RuntimeError("temporary key load failure")
+        return {"header": {"slot": slot}}
+
+    def accept(_payload):
+        submission_attempts.append(42)
+        miner.last_header_error = "stale error"
+        return True
+
+    def stop_after_two_loops(_seconds):
+        sleeps.append(_seconds)
+        if len(sleeps) == 2:
+            miner.mining = False
+
+    monkeypatch.setattr(miner, "generate_header", generate)
+    monkeypatch.setattr(miner, "submit_header", accept)
+    monkeypatch.setattr(module.time, "sleep", stop_after_two_loops)
+
+    miner._mine_loop(events.append)
+
+    assert generation_attempts == [42, 42]
+    assert submission_attempts == [42]
+    assert sleeps == [30, 10]
+    assert events == [
+        {"type": "error", "message": "temporary key load failure"},
+        {
+            "type": "share",
+            "submitted": 1,
+            "accepted": 1,
+            "success": True,
+            "slot": 42,
+            "error": "",
+        },
+    ]

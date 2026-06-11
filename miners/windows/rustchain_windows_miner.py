@@ -319,8 +319,9 @@ class RustChainMiner:
                     and slot is not None
                     and slot != self._last_attempted_slot
                 ):
-                    self._last_attempted_slot = slot
                     header = self.generate_header(slot)
+                    self.last_header_error = ""
+                    self._last_attempted_slot = slot
                     success = self.submit_header(header)
                     self.shares_submitted += 1
                     if success:
@@ -332,7 +333,7 @@ class RustChainMiner:
                             "accepted":  self.shares_accepted,
                             "success":   success,
                             "slot":      slot,
-                            "error":     self.last_header_error,
+                            "error":     self.last_header_error if not success else "",
                         })
                 time.sleep(10)
             except Exception as e:
