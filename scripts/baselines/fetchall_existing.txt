@@ -46,10 +46,7 @@ node/coalition.py:960:                    ).fetchall()
 node/coalition.py:966:                    ).fetchall()
 node/ergo_miner_anchor.py:38:        miners = [dict(row) for row in cur.fetchall()]
 node/ergo_raw_tx.py:77:        miners = [dict(row) for row in cur.fetchall()]
-node/governance.py:280:            ).fetchall()
-node/governance.py:511:                    ).fetchall()
-node/governance.py:516:                    ).fetchall()
-node/governance.py:546:                ).fetchall()
+node/governance.py:282:            ).fetchall()
 node/gpu_render_endpoints.py:64:            cols = {row[1] for row in db.execute("PRAGMA table_info(render_escrow)").fetchall()}
 node/gpu_render_protocol.py:152:        cols = {row[1] for row in conn.execute("PRAGMA table_info(render_escrow)").fetchall()}
 node/gpu_render_protocol.py:272:            rows = conn.execute(query, params).fetchall()

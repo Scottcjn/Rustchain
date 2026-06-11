@@ -98,6 +98,8 @@ MAX_PROPOSALS_PER_MINER = 10            # Anti-spam: max active proposals
 MAX_TITLE_LEN = 200
 MAX_DESCRIPTION_LEN = 10000
 PROPOSAL_FEE_RTC = 10  # Anti-spam: fee charged to propose a governance change
+VOTES_DEFAULT_LIMIT = 200
+VOTES_MAX_LIMIT = 500
 
 PROPOSAL_TYPES = ("parameter_change", "feature_activation", "emergency")
 VOTE_CHOICES = ("for", "against", "abstain")
@@ -508,12 +510,12 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
                         "SELECT * FROM governance_proposals WHERE status = ? "
                         "ORDER BY created_at DESC LIMIT ? OFFSET ?",
                         (status_filter, limit, offset)
-                    ).fetchall()
+                    ).fetchall()  # fetchall-ok: already-paginated
                 else:
                     rows = conn.execute(
                         "SELECT * FROM governance_proposals ORDER BY created_at DESC LIMIT ? OFFSET ?",
                         (limit, offset)
-                    ).fetchall()
+                    ).fetchall()  # fetchall-ok: already-paginated
                 proposals = [dict(r) for r in rows]
 
         except Exception as e:
@@ -530,6 +532,15 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
         if err:
             return err
         _settle_expired_proposals(db_path)
+        votes_limit, error_response = _parse_non_negative_int_arg(
+            "votes_limit", VOTES_DEFAULT_LIMIT, max_value=VOTES_MAX_LIMIT
+        )
+        if error_response:
+            return error_response
+        votes_offset, error_response = _parse_non_negative_int_arg("votes_offset", 0)
+        if error_response:
+            return error_response
+
         try:
             with sqlite3.connect(db_path) as conn:
                 conn.row_factory = sqlite3.Row
@@ -539,11 +550,15 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
                 if not proposal:
                     return jsonify({"error": "proposal not found"}), 404
 
+                votes_total = conn.execute(
+                    "SELECT COUNT(*) FROM governance_votes WHERE proposal_id = ?",
+                    (proposal_id,)
+                ).fetchone()[0]
                 votes = conn.execute(
                     "SELECT miner_id, vote, weight, voted_at FROM governance_votes "
-                    "WHERE proposal_id = ? ORDER BY voted_at DESC",
-                    (proposal_id,)
-                ).fetchall()
+                    "WHERE proposal_id = ? ORDER BY voted_at DESC LIMIT ? OFFSET ?",
+                    (proposal_id, votes_limit, votes_offset)
+                ).fetchall()  # fetchall-ok: already-paginated
 
         except Exception as e:
             log.error("Get proposal error: %s", e)
@@ -552,6 +567,9 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
         now = int(time.time())
         p = dict(proposal)
         p["votes"] = [dict(v) for v in votes]
+        p["votes_total"] = votes_total
+        p["votes_limit"] = votes_limit
+        p["votes_offset"] = votes_offset
         p["time_remaining_seconds"] = max(0, p["expires_at"] - now)
         return jsonify(p), 200
 

@@ -76,3 +76,80 @@ def test_create_proposal_stores_string_parameter_value(tmp_path, monkeypatch):
             (response.get_json()["proposal_id"],),
         ).fetchone()
     assert row[0] == "0.40"
+
+
+def _seed_proposal_with_votes(db_path, vote_count=7):
+    now = int(time.time())
+    with sqlite3.connect(db_path) as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO governance_proposals (
+                title, description, proposal_type, proposed_by,
+                created_at, expires_at, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "Vote detail pagination",
+                "Exercise the admin proposal detail votes slice.",
+                "feature_activation",
+                "miner-1",
+                now,
+                now + governance.VOTING_WINDOW_SECONDS,
+                governance.STATUS_ACTIVE,
+            ),
+        )
+        proposal_id = cursor.lastrowid
+        for idx in range(vote_count):
+            conn.execute(
+                """
+                INSERT INTO governance_votes (
+                    proposal_id, miner_id, vote, weight, voted_at
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    proposal_id,
+                    f"voter-{idx}",
+                    "for" if idx % 2 == 0 else "against",
+                    1.0,
+                    now + idx,
+                ),
+            )
+        conn.commit()
+    return proposal_id
+
+
+def test_get_proposal_detail_paginates_votes(tmp_path, monkeypatch):
+    client, db_path = _client(tmp_path, monkeypatch)
+    monkeypatch.setenv("RC_ADMIN_KEY", "test-admin")
+    proposal_id = _seed_proposal_with_votes(db_path, vote_count=7)
+
+    response = client.get(
+        f"/api/governance/proposal/{proposal_id}?votes_limit=3&votes_offset=2",
+        headers={"X-Admin-Key": "test-admin"},
+    )
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert len(data["votes"]) == 3
+    assert data["votes_total"] == 7
+    assert data["votes_limit"] == 3
+    assert data["votes_offset"] == 2
+    assert [vote["miner_id"] for vote in data["votes"]] == [
+        "voter-4",
+        "voter-3",
+        "voter-2",
+    ]
+
+
+def test_get_proposal_detail_rejects_invalid_votes_offset(tmp_path, monkeypatch):
+    client, db_path = _client(tmp_path, monkeypatch)
+    monkeypatch.setenv("RC_ADMIN_KEY", "test-admin")
+    proposal_id = _seed_proposal_with_votes(db_path, vote_count=1)
+
+    response = client.get(
+        f"/api/governance/proposal/{proposal_id}?votes_offset=abc",
+        headers={"X-Admin-Key": "test-admin"},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "votes_offset must be an integer"
