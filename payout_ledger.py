@@ -36,6 +36,12 @@ PAYOUT_LEDGER_COLUMNS = [
     ("updated_at", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
+TERMINAL_STATUSES = {"confirmed", "voided"}
+
+
+class LedgerStateError(ValueError):
+    """Raised when a payout ledger status transition would rewrite terminal state."""
+
 
 def _get_columns():
     return [name for name, _definition in PAYOUT_LEDGER_COLUMNS]
@@ -194,6 +200,16 @@ def ledger_update_status(record_id, new_status, tx_hash="", notes=""):
         raise ValueError(f"Invalid status: {new_status}. Must be one of {valid}")
     now = int(time.time())
     with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        current = conn.execute(
+            "SELECT status FROM payout_ledger WHERE id=?",
+            (record_id,),
+        ).fetchone()
+        if current and current[0] in TERMINAL_STATUSES and current[0] != new_status:
+            conn.execute("ROLLBACK")
+            raise LedgerStateError(
+                f"cannot change terminal payout status from {current[0]} to {new_status}"
+            )
         conn.execute(
             "UPDATE payout_ledger SET status=?, tx_hash=?, notes=?, updated_at=? WHERE id=?",
             (new_status, tx_hash or "", notes or "", now, record_id),
@@ -321,6 +337,8 @@ def register_ledger_routes(app):
                 tx_hash=data.get("tx_hash", ""),
                 notes=data.get("notes", ""),
             )
+        except LedgerStateError as e:
+            return jsonify({"error": str(e)}), 409
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
         return jsonify({"id": record_id, "status": new_status})

@@ -176,3 +176,25 @@ def test_admin_key_allows_create_read_summary_and_status_update(tmp_path, monkey
     assert page.status_code == 200
     assert update.status_code == 200
     assert payout_ledger.ledger_get(record_id)["status"] == "confirmed"
+
+
+def test_ledger_status_update_rejects_terminal_overwrite(tmp_path, monkeypatch):
+    client, _db_path = _make_client(tmp_path, monkeypatch)
+    headers = {"X-Admin-Key": ADMIN_KEY}
+    payout_ledger.init_payout_ledger_tables()
+    record_id = payout_ledger.ledger_create("bug-1", "alice", 25)
+    payout_ledger.ledger_update_status(record_id, "confirmed", tx_hash="tx-1")
+
+    response = client.patch(
+        f"/api/ledger/{record_id}/status",
+        headers=headers,
+        json={"status": "voided", "notes": "late correction"},
+    )
+
+    record = payout_ledger.ledger_get(record_id)
+    assert response.status_code == 409
+    assert response.get_json() == {
+        "error": "cannot change terminal payout status from confirmed to voided"
+    }
+    assert record["status"] == "confirmed"
+    assert record["tx_hash"] == "tx-1"
