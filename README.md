@@ -153,7 +153,7 @@ RustChain powers an ecosystem where AI agents and humans collaborate:
 - **BoTTube** — AI-native video platform where bots create, curate, and engage
 - **[Beacon](https://github.com/Scottcjn/beacon-skill)** — Agent discovery protocol
 - **[TrashClaw](https://github.com/Scottcjn/trashclaw)** — Zero-dep local LLM agent
-- **Bounty system** — 25,875+ RTC paid to 260+ contributors, many AI-assisted
+- **Bounty system** — 26,000+ RTC paid to 260+ contributors, many AI-assisted
 
 **This is what crypto + AI looks like when you build both instead of abandoning one for the other.**
 
@@ -189,7 +189,7 @@ This isn't a roadmap. This is deployed and running:
 | **Discovery** | [Beacon protocol](https://github.com/Scottcjn/beacon-skill) — agents find and negotiate with other agents, with a RustChain transport for Ed25519-signed RTC micropayments | Live |
 | **Execution** | [TrashClaw](https://github.com/Scottcjn/trashclaw) — zero-dep local LLM agent that runs on anything | Live |
 | **Social** | BoTTube — AI-native platform where agents create, trade, and engage | Live, 1,000+ videos |
-| **Bounties** | Agent-assisted contributions — AI helps humans earn RTC for real code | Live, 25,875+ RTC paid |
+| **Bounties** | Agent-assisted contributions — AI helps humans earn RTC for real code | Live, 26,000+ RTC paid |
 | **Certification** | [BCOS](https://rustchain.org/bcos/) — blockchain-certified open source verification | Live, 44 certs issued |
 | **Provenance** | [Proof of Provenance (RIP-0310)](rips/docs/RIP-0310-proof-of-provenance.md) — binds agent identity + verified hardware to published content | Spec published ([DOI](https://doi.org/10.5281/zenodo.20502069)) |
 
@@ -267,7 +267,7 @@ Payments run over the [Beacon](https://github.com/Scottcjn/beacon-skill) RustCha
 | 20+ miners attesting | `curl -fsS https://rustchain.org/api/miners` |
 | 44 BCOS certificates issued | [Certified repos](https://rustchain.org/bcos/) |
 | 6 hardware fingerprint checks per machine | [Fingerprint docs](docs/attestation_fuzzing.md) |
-| 25,875+ RTC paid to 260+ contributors | [Public ledger](https://github.com/Scottcjn/rustchain-bounties/issues/104) |
+| 26,000+ RTC paid to 260+ contributors | [Public ledger](https://github.com/Scottcjn/rustchain-bounties/issues/104) |
 | Code merged upstream into OpenSSL (master + 5 release branches) | [#30437](https://github.com/openssl/openssl/pull/30437), [#30452](https://github.com/openssl/openssl/pull/30452) |
 | Open PRs on CPython, curl, wolfSSL, Ghidra | [Portfolio](https://github.com/Scottcjn/Scottcjn/blob/main/external-pr-portfolio.md) |
 
@@ -483,6 +483,7 @@ Every contribution earns RTC tokens. Browse [open bounties](https://github.com/S
 | **PSE Hardware Entropy** | Preprint | [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18623922-blue)](https://doi.org/10.5281/zenodo.18623922) |
 | **RAM Coffers** | Preprint | [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18321905-blue)](https://doi.org/10.5281/zenodo.18321905) |
 | **RPI: Resonant Permutation Inference** | Preprint | [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.19271983-blue)](https://doi.org/10.5281/zenodo.19271983) |
+| **Incentive Moves Engagement, Not Authorship** (agent-economy self-audit) | Working paper v1.0 | [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.20559770-blue)](https://doi.org/10.5281/zenodo.20559770) |
 
 ---
 
