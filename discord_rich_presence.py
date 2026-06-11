@@ -81,10 +81,35 @@ def get_miners_list() -> List[Dict[str, Any]]:
             timeout=10
         )
         response.raise_for_status()
-        return response.json()  # type: ignore[no-any-return]
+        return normalize_miners_payload(response.json())
     except Exception as e:
         print(f"Error getting miners list: {e}")
         return []
+
+
+def normalize_miners_payload(payload: Any) -> List[Dict[str, Any]]:
+    """Return miner rows from legacy arrays or current paginated envelopes."""
+    if isinstance(payload, list):
+        rows = payload
+    elif isinstance(payload, dict):
+        rows = []
+        for key in ("miners", "data", "items"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                rows = value
+                break
+    else:
+        rows = []
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def miner_identifier(row: Dict[str, Any]) -> str:
+    """Resolve common miner id aliases returned by RustChain clients."""
+    for key in ("miner", "miner_id", "id", "name", "wallet"):
+        value = row.get(key)
+        if value:
+            return str(value)
+    return ""
 
 
 def get_epoch_info() -> Optional[Dict[str, Any]]:
@@ -262,7 +287,7 @@ def main() -> None:
             miners_list = get_miners_list()
             miner_data: Optional[Dict[str, Any]] = None
             for m in miners_list:
-                if m.get('miner') == miner_id:
+                if miner_identifier(m) == miner_id:
                     miner_data = m
                     break
 
