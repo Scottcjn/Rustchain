@@ -37,7 +37,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 UNIT = 100_000_000          # 1 RTC = 100,000,000 nanoRTC (8 decimals)
 DUST_THRESHOLD = 1_000      # nanoRTC below which change is absorbed into fee
-MAX_COINBASE_OUTPUT_NRTC = 150 * UNIT  # Max minting output per block (150 RTC)
+MAX_COINBASE_OUTPUT_NRTC = 150 * UNIT  # Max minting output per block (150 RTC) — enforced per-tx here; epoch-wide cap in rip200.py
 MAX_POOL_SIZE = 10_000
 
 # Anti-UTXO-bloat: maximum outputs per transaction

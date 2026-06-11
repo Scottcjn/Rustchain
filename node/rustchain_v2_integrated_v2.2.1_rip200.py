@@ -44,7 +44,7 @@ except Exception as e:
 # UTXO Layer (Phase 1 — dual-write alongside account model)
 UTXO_DUAL_WRITE = os.environ.get("UTXO_DUAL_WRITE", "0") == "1"
 try:
-    from utxo_db import UtxoDB
+    from utxo_db import UtxoDB, MAX_COINBASE_OUTPUT_NRTC
     HAVE_UTXO = True
 except ImportError:
     HAVE_UTXO = False
@@ -3401,6 +3401,22 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
 
         # PRECISION: Use Decimal for exact financial calculations
         total_reward = Decimal(str(per_block_rtc)) * Decimal(EPOCH_SLOTS)
+
+        # EPOCH-WIDE COINBASE CAP (Bounty #13788)
+        # MAX_COINBASE_OUTPUT_NRTC documents a 150 RTC per-block cap, but
+        # enforcement was per-transaction in utxo_db.py.  With UTXO dual
+        # write enabled, finalize_epoch creates one mining_reward tx per
+        # miner inside a loop, so the per-tx cap never catches the total.
+        # Enforce the cap at epoch level before any UTXO rewards are written.
+        if UTXO_DUAL_WRITE and HAVE_UTXO:
+            total_reward_nrtc = int(total_reward * Decimal(100_000_000))
+            if total_reward_nrtc > MAX_COINBASE_OUTPUT_NRTC:
+                print(
+                    f"[SECURITY] Epoch {epoch} total reward {total_reward_nrtc / 100_000_000:.1f} RTC "
+                    f"exceeds MAX_COINBASE_OUTPUT_NRTC "
+                    f"({MAX_COINBASE_OUTPUT_NRTC / 100_000_000:.1f} RTC) — capping"
+                )
+                total_reward = Decimal(str(MAX_COINBASE_OUTPUT_NRTC / 100_000_000))
 
         # Filter out miners with 0 weight (VM/emulator detected)
         valid_miners = [(pk, w) for pk, w in miners if w > 0]
