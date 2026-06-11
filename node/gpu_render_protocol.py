@@ -645,6 +645,10 @@ def register_routes(app):
         if metadata is not None and not isinstance(metadata, dict):
             return jsonify({"error": "metadata must be an object"}), 400
 
+        err, status = _admin_key_required()
+        if err is not None:
+            return jsonify(err), status
+
         result = protocol.create_escrow(
             job_type=job_type,
             from_wallet=from_wallet,
@@ -671,6 +675,9 @@ def register_routes(app):
         escrow_secret, error_response = _string_field(data, "escrow_secret")
         if error_response is not None:
             return error_response
+        err, status = _admin_key_required()
+        if err is not None:
+            return jsonify(err), status
         result = protocol.release_escrow(
             job_id,
             actor_wallet=actor_wallet,
@@ -693,6 +700,9 @@ def register_routes(app):
         escrow_secret, error_response = _string_field(data, "escrow_secret")
         if error_response is not None:
             return error_response
+        err, status = _admin_key_required()
+        if err is not None:
+            return jsonify(err), status
         result = protocol.refund_escrow(
             job_id,
             actor_wallet=actor_wallet,

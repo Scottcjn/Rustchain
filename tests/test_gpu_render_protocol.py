@@ -1,5 +1,6 @@
 """Tests for GPU Render Protocol (Bounty #30)."""
 import os
+import sqlite3
 import sys
 import tempfile
 import unittest
@@ -303,6 +304,122 @@ def test_gpu_protocol_pricing_check_rejects_boolean_price(tmp_path, monkeypatch)
 
     assert response.status_code == 400
     assert response.get_json() == {"error": "price must be a finite number"}
+
+
+def _gpu_route_db_count(tmp_path, table):
+    with sqlite3.connect(str(tmp_path / "gpu_routes.db")) as conn:
+        return conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+
+
+def _gpu_route_escrow_status(tmp_path, job_id):
+    with sqlite3.connect(str(tmp_path / "gpu_routes.db")) as conn:
+        return conn.execute(
+            "SELECT status FROM render_escrow WHERE job_id=?",
+            (job_id,),
+        ).fetchone()[0]
+
+
+def _create_route_escrow(client):
+    return client.post(
+        "/render/escrow",
+        headers={"X-Admin-Key": "test-admin-key"},
+        json={
+            "job_type": "render",
+            "from_wallet": "payer",
+            "to_wallet": "provider",
+            "amount_rtc": 1,
+        },
+    )
+
+
+def test_gpu_protocol_legacy_escrow_requires_admin_before_locking(tmp_path, monkeypatch):
+    monkeypatch.setenv("RC_ADMIN_KEY", "test-admin-key")
+    client = _route_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/render/escrow",
+        json={
+            "job_type": "render",
+            "from_wallet": "payer",
+            "to_wallet": "provider",
+            "amount_rtc": 1,
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.get_json() == {"error": "Unauthorized \u2014 admin key required"}
+    assert _gpu_route_db_count(tmp_path, "render_escrow") == 0
+
+
+def test_gpu_protocol_legacy_escrow_fails_closed_without_admin_key(tmp_path, monkeypatch):
+    monkeypatch.delenv("RC_ADMIN_KEY", raising=False)
+    client = _route_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/render/escrow",
+        headers={"X-Admin-Key": "test-admin-key"},
+        json={
+            "job_type": "render",
+            "from_wallet": "payer",
+            "to_wallet": "provider",
+            "amount_rtc": 1,
+        },
+    )
+
+    assert response.status_code == 503
+    assert response.get_json() == {"error": "RC_ADMIN_KEY not configured \u2014 endpoint disabled"}
+    assert _gpu_route_db_count(tmp_path, "render_escrow") == 0
+
+
+@pytest.mark.parametrize(
+    ("path", "actor_wallet"),
+    [
+        ("/render/release", "payer"),
+        ("/render/refund", "provider"),
+    ],
+)
+def test_gpu_protocol_legacy_escrow_transitions_require_admin_key(
+    tmp_path, monkeypatch, path, actor_wallet
+):
+    monkeypatch.setenv("RC_ADMIN_KEY", "test-admin-key")
+    client = _route_client(tmp_path, monkeypatch)
+    created = _create_route_escrow(client)
+    body = created.get_json()
+
+    response = client.post(
+        path,
+        json={
+            "job_id": body["job_id"],
+            "actor_wallet": actor_wallet,
+            "escrow_secret": body["escrow_secret"],
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.get_json() == {"error": "Unauthorized \u2014 admin key required"}
+    assert _gpu_route_escrow_status(tmp_path, body["job_id"]) == "locked"
+
+
+def test_gpu_protocol_legacy_escrow_admin_flow_still_releases(tmp_path, monkeypatch):
+    monkeypatch.setenv("RC_ADMIN_KEY", "test-admin-key")
+    client = _route_client(tmp_path, monkeypatch)
+    created = _create_route_escrow(client)
+    body = created.get_json()
+
+    response = client.post(
+        "/render/release",
+        headers={"X-Admin-Key": "test-admin-key"},
+        json={
+            "job_id": body["job_id"],
+            "actor_wallet": "payer",
+            "escrow_secret": body["escrow_secret"],
+        },
+    )
+
+    assert created.status_code == 201
+    assert response.status_code == 200
+    assert response.get_json()["status"] == "released"
+    assert _gpu_route_escrow_status(tmp_path, body["job_id"]) == "released"
 
 
 def test_gpu_protocol_pricing_check_normalizes_job_type(tmp_path, monkeypatch):
