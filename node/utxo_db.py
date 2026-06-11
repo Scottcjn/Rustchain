@@ -640,8 +640,6 @@ class UtxoDB:
             return False
         data_inputs = tx.get('data_inputs', [])
 
-        own = conn is None
-
         # FIX(#2207): Defense-in-depth guard against mining_reward type confusion.
         # The endpoint layer hardcodes tx_type='transfer', but if any code path
         # passes user-controlled tx_type, an attacker could mint unlimited coins.
