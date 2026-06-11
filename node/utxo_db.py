@@ -1077,6 +1077,8 @@ class UtxoDB:
             now = int(time.time())
             timestamp = tx.get('timestamp', now)
             if not _is_nonnegative_int64(timestamp):
+                if manage_tx:
+                    conn.execute("ROLLBACK")
                 return False
 
             # Public mempool admission must never accept minting transactions.
@@ -1278,7 +1280,7 @@ class UtxoDB:
                 f"SELECT DISTINCT tx_id FROM utxo_mempool_inputs "
                 f"WHERE box_id IN ({placeholders})",
                 spent_box_ids,
-            ).fetchall()
+            ).fetchall()  # fetchall-ok: bounded-by-schema
             for row in rows:
                 stale_tx_ids.add(row["tx_id"])
 
@@ -1343,7 +1345,7 @@ class UtxoDB:
                    LIMIT ?
                 """,
                 (now, scan_limit),
-            ).fetchall()
+            ).fetchall()  # fetchall-ok: already-paginated
             candidates = []
             stale_tx_ids = []
             selected_spend_inputs = set()
@@ -1417,7 +1419,7 @@ class UtxoDB:
                 expired = conn.execute(
                     "SELECT tx_id FROM utxo_mempool WHERE expires_at <= ?",
                     (now,),
-                ).fetchall()
+                ).fetchall()  # fetchall-ok: bounded-by-schema
             except sqlite3.OperationalError as exc:
                 if "no such table" in str(exc).lower():
                     return 0
