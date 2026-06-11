@@ -185,6 +185,11 @@ def test_ledger_status_update_rejects_terminal_overwrite(tmp_path, monkeypatch):
     record_id = payout_ledger.ledger_create("bug-1", "alice", 25)
     payout_ledger.ledger_update_status(record_id, "confirmed", tx_hash="tx-1")
 
+    same_status = client.patch(
+        f"/api/ledger/{record_id}/status",
+        headers=headers,
+        json={"status": "confirmed"},
+    )
     response = client.patch(
         f"/api/ledger/{record_id}/status",
         headers=headers,
@@ -192,6 +197,7 @@ def test_ledger_status_update_rejects_terminal_overwrite(tmp_path, monkeypatch):
     )
 
     record = payout_ledger.ledger_get(record_id)
+    assert same_status.status_code == 200
     assert response.status_code == 409
     assert response.get_json() == {
         "error": "cannot change terminal payout status from confirmed to voided"

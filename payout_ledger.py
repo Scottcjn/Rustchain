@@ -205,11 +205,15 @@ def ledger_update_status(record_id, new_status, tx_hash="", notes=""):
             "SELECT status FROM payout_ledger WHERE id=?",
             (record_id,),
         ).fetchone()
-        if current and current[0] in TERMINAL_STATUSES and current[0] != new_status:
-            conn.execute("ROLLBACK")
-            raise LedgerStateError(
-                f"cannot change terminal payout status from {current[0]} to {new_status}"
-            )
+        if current and current[0] in TERMINAL_STATUSES:
+            if current[0] != new_status:
+                conn.execute("ROLLBACK")
+                raise LedgerStateError(
+                    f"cannot change terminal payout status from {current[0]} to {new_status}"
+                )
+            conn.execute("COMMIT")
+            logger.info("Ledger %s already terminal %s; status update skipped", record_id, new_status)
+            return
         conn.execute(
             "UPDATE payout_ledger SET status=?, tx_hash=?, notes=?, updated_at=? WHERE id=?",
             (new_status, tx_hash or "", notes or "", now, record_id),
