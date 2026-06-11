@@ -118,6 +118,24 @@ class TestWithdrawalAtomicDebit(unittest.TestCase):
             "nonce": nonce,
         }
 
+    def test_successful_withdrawal_request_does_not_crash_updating_balance_gauge(self):
+        self.mod.verify_sr25519_signature = lambda *_args, **_kwargs: True
+
+        with self.mod.app.test_client() as client:
+            resp = client.post("/withdraw/request", json=self._payload("nonce-1"))
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json()["status"], "pending")
+
+        with sqlite3.connect(self.db_path) as conn:
+            balance = conn.execute(
+                "SELECT balance_rtc FROM balances WHERE miner_pk = 'miner-test'"
+            ).fetchone()[0]
+            withdrawal_count = conn.execute("SELECT COUNT(*) FROM withdrawals").fetchone()[0]
+
+        self.assertAlmostEqual(balance, 0.0, places=6)
+        self.assertEqual(withdrawal_count, 1)
+
     def test_concurrent_withdrawals_cannot_overdraw_balance(self):
         def slow_valid_signature(*_args, **_kwargs):
             time.sleep(0.05)
