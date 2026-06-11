@@ -428,6 +428,20 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
 
         try:
             with sqlite3.connect(db_path) as conn:
+                # Keep the active-proposal limit, fee debit, and proposal insert
+                # in one write transaction. Failed preflight checks must not
+                # commit a proposal-fee debit without creating a proposal.
+                conn.execute("BEGIN IMMEDIATE")
+
+                # Anti-spam: max active proposals per miner. Check this before
+                # debiting the proposal fee so a rejected request is not charged.
+                active_count = conn.execute(
+                    "SELECT COUNT(*) FROM governance_proposals WHERE proposed_by = ? AND status = ?",
+                    (miner_id, STATUS_ACTIVE)
+                ).fetchone()[0]
+                if active_count >= MAX_PROPOSALS_PER_MINER:
+                    return jsonify({"error": f"Max {MAX_PROPOSALS_PER_MINER} active proposals per miner"}), 429
+
                 # Fee check: ensure miner has sufficient balance
                 table_check = conn.execute(
                     "SELECT name FROM sqlite_master WHERE type='table' AND name='balances'"
@@ -439,14 +453,6 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
                             "error": f"Insufficient balance: proposal fee is {PROPOSAL_FEE_RTC} RTC"
                         }), 402
                     _deduct_proposal_fee(conn, miner_id, PROPOSAL_FEE_RTC)
-
-                # Anti-spam: max active proposals per miner
-                active_count = conn.execute(
-                    "SELECT COUNT(*) FROM governance_proposals WHERE proposed_by = ? AND status = ?",
-                    (miner_id, STATUS_ACTIVE)
-                ).fetchone()[0]
-                if active_count >= MAX_PROPOSALS_PER_MINER:
-                    return jsonify({"error": f"Max {MAX_PROPOSALS_PER_MINER} active proposals per miner"}), 429
 
                 # Build proposal data for Sophia evaluation
                 proposal_data = {
@@ -508,12 +514,12 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
                         "SELECT * FROM governance_proposals WHERE status = ? "
                         "ORDER BY created_at DESC LIMIT ? OFFSET ?",
                         (status_filter, limit, offset)
-                    ).fetchall()
+                    ).fetchall()  # fetchall-ok: already-paginated
                 else:
                     rows = conn.execute(
                         "SELECT * FROM governance_proposals ORDER BY created_at DESC LIMIT ? OFFSET ?",
                         (limit, offset)
-                    ).fetchall()
+                    ).fetchall()  # fetchall-ok: already-paginated
                 proposals = [dict(r) for r in rows]
 
         except Exception as e:

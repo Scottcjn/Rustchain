@@ -76,3 +76,67 @@ def test_create_proposal_stores_string_parameter_value(tmp_path, monkeypatch):
             (response.get_json()["proposal_id"],),
         ).fetchone()
     assert row[0] == "0.40"
+
+
+def _fund_miner(db_path, balance_rtc=50):
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS balances (miner_id TEXT PRIMARY KEY, amount_i64 INTEGER DEFAULT 0)"
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO balances (miner_id, amount_i64) VALUES (?, ?)",
+            ("miner-1", int(balance_rtc * 1_000_000)),
+        )
+        conn.commit()
+
+
+def _miner_balance_i64(db_path):
+    with sqlite3.connect(db_path) as conn:
+        return conn.execute(
+            "SELECT amount_i64 FROM balances WHERE miner_id = ?",
+            ("miner-1",),
+        ).fetchone()[0]
+
+
+def test_successful_create_proposal_charges_proposal_fee(tmp_path, monkeypatch):
+    client, db_path = _client(tmp_path, monkeypatch)
+    _fund_miner(db_path)
+
+    response = client.post("/api/governance/propose", json=_proposal_payload())
+
+    assert response.status_code == 201
+    assert _miner_balance_i64(db_path) == 40_000_000
+
+
+def test_max_active_proposal_rejection_does_not_charge_fee(tmp_path, monkeypatch):
+    client, db_path = _client(tmp_path, monkeypatch)
+    _fund_miner(db_path)
+    now = int(time.time())
+    with sqlite3.connect(db_path) as conn:
+        for idx in range(governance.MAX_PROPOSALS_PER_MINER):
+            conn.execute(
+                """
+                INSERT INTO governance_proposals (
+                    title, description, proposal_type, proposed_by,
+                    created_at, expires_at, status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    f"Existing proposal {idx}",
+                    "already active",
+                    "feature_activation",
+                    "miner-1",
+                    now - idx,
+                    now + governance.VOTING_WINDOW_SECONDS,
+                    governance.STATUS_ACTIVE,
+                ),
+            )
+        conn.commit()
+
+    response = client.post("/api/governance/propose", json=_proposal_payload())
+
+    assert response.status_code == 429
+    assert response.get_json()["error"] == (
+        f"Max {governance.MAX_PROPOSALS_PER_MINER} active proposals per miner"
+    )
+    assert _miner_balance_i64(db_path) == 50_000_000
