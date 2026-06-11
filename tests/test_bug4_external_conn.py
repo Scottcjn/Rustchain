@@ -157,6 +157,46 @@ class TestExternalConnEvictionBug4:
             conn.close()
         assert mp is None, "stale tx with regular input should be evicted"
 
+    def test_fresh_external_conn_keeps_transaction_control(self, db):
+        """A caller-provided fresh connection must remain caller-owned.
+
+        apply_transaction(conn=...) should not silently BEGIN+COMMIT a
+        connection it did not create, otherwise the caller cannot roll back a
+        larger wrapper operation around the UTXO spend.
+        """
+        box_a = _mint(db, "alice", 10000)
+
+        outer = sqlite3.connect(db.db_path)
+        outer.row_factory = sqlite3.Row
+        assert not outer.in_transaction
+
+        ok = db.apply_transaction({
+            "tx_type": "transfer",
+            "inputs": [{"box_id": box_a, "spending_proof": "p2"}],
+            "outputs": [{"address": "carol", "value_nrtc": 9900}],
+            "fee_nrtc": 100,
+            "data_inputs": [],
+        }, block_height=2, conn=outer)
+
+        assert ok
+        assert outer.in_transaction
+        outer.execute("ROLLBACK")
+        outer.close()
+
+        conn = db._conn()
+        try:
+            alice_box = conn.execute(
+                "SELECT spent_at FROM utxo_boxes WHERE box_id=?", (box_a,)
+            ).fetchone()
+            carol_box = conn.execute(
+                "SELECT box_id FROM utxo_boxes WHERE owner_address=?",
+                ("carol",),
+            ).fetchone()
+        finally:
+            conn.close()
+        assert alice_box["spent_at"] is None
+        assert carol_box is None
+
     def test_own_conn_eviction_still_works(self, db):
         """Regression guard: own-connection (manage_tx=True) path still
         evicts stale txs after the fix."""

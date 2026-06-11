@@ -660,7 +660,7 @@ class UtxoDB:
         if own:
             conn = self._conn()
 
-        manage_tx = own or not conn.in_transaction
+        manage_tx = own  # caller-provided connections own transaction boundaries
 
         try:
             if manage_tx:
