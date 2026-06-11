@@ -10,22 +10,44 @@ from pathlib import Path
 import pytest
 
 
-@pytest.fixture()
-def miner_alerts_module(monkeypatch):
+MODULE_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "tools"
+    / "miner_alerts"
+    / "miner_alerts.py"
+)
+
+
+def load_miner_alerts_module(monkeypatch):
     fake_dotenv = types.SimpleNamespace(load_dotenv=lambda: None)
     monkeypatch.setitem(sys.modules, "dotenv", fake_dotenv)
 
-    module_path = (
-        Path(__file__).resolve().parents[1]
-        / "tools"
-        / "miner_alerts"
-        / "miner_alerts.py"
-    )
-    spec = importlib.util.spec_from_file_location("miner_alerts", module_path)
+    spec = importlib.util.spec_from_file_location("miner_alerts", MODULE_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(module)
     return module
+
+
+@pytest.fixture()
+def miner_alerts_module(monkeypatch):
+    return load_miner_alerts_module(monkeypatch)
+
+
+def test_invalid_numeric_env_uses_defaults_without_import_crash(monkeypatch):
+    monkeypatch.setenv("POLL_INTERVAL", "soon")
+    monkeypatch.setenv("OFFLINE_THRESHOLD", "")
+    monkeypatch.setenv("LARGE_TRANSFER_THRESHOLD", "large")
+    monkeypatch.setenv("SMTP_PORT", "smtp")
+
+    module = load_miner_alerts_module(monkeypatch)
+
+    assert module.POLL_INTERVAL == 120
+    assert module.OFFLINE_THRESHOLD == 600
+    assert module.LARGE_TRANSFER_THRESHOLD == 10.0
+    assert module.SMTP_PORT == 587
+    assert module._env_int("MISSING_MINER_ALERTS_TEST_ENV", 9) == 9
+    assert module._env_float("MISSING_MINER_ALERTS_TEST_ENV", 1.5) == 1.5
 
 
 def test_alert_db_subscription_lifecycle_and_filters(

@@ -37,19 +37,42 @@ load_dotenv()
 
 # ─── Configuration ────────────────────────────────────────────────────────────
 
+
+def _env_int(name: str, default: int) -> int:
+    """Read an integer environment variable without import-time crashes."""
+    raw = os.getenv(name)
+    if raw in (None, ""):
+        return default
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    """Read a float environment variable without import-time crashes."""
+    raw = os.getenv(name)
+    if raw in (None, ""):
+        return default
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return default
+
+
 RUSTCHAIN_API = os.getenv("RUSTCHAIN_API", "https://rustchain.org")
 VERIFY_SSL = os.getenv("RUSTCHAIN_VERIFY_SSL", "false").lower() == "true"
 
 # Polling intervals (seconds)
-POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "120"))  # 2 minutes default
-OFFLINE_THRESHOLD = int(os.getenv("OFFLINE_THRESHOLD", "600"))  # 10 min no attestation
+POLL_INTERVAL = _env_int("POLL_INTERVAL", 120)  # 2 minutes default
+OFFLINE_THRESHOLD = _env_int("OFFLINE_THRESHOLD", 600)  # 10 min no attestation
 
 # Large transfer threshold (RTC)
-LARGE_TRANSFER_THRESHOLD = float(os.getenv("LARGE_TRANSFER_THRESHOLD", "10.0"))
+LARGE_TRANSFER_THRESHOLD = _env_float("LARGE_TRANSFER_THRESHOLD", 10.0)
 
 # SMTP configuration
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_PORT = _env_int("SMTP_PORT", 587)
 SMTP_USER = os.getenv("SMTP_USER", "")
 SMTP_PASS = os.getenv("SMTP_PASS", "")
 SMTP_FROM = os.getenv("SMTP_FROM", "")
