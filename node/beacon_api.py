@@ -1121,14 +1121,14 @@ def claim_bounty(bounty_id):
             return field_error, status
 
         db = get_db()
-        db.execute(
+        now = int(time.time())
+        cursor = db.execute(
             "UPDATE beacon_bounties SET state = 'claimed', claimant_agent = ?, updated_at = ? WHERE id = ?",
-            (agent_id, int(time.time()), bounty_id)
+            (agent_id, now, bounty_id)
         )
-
-        db = get_db()
-        if db.total_changes == 0:
+        if cursor.rowcount == 0:
             return jsonify({'error': 'Bounty not found'}), 404
+        db.commit()
 
         return jsonify({'ok': True, 'bounty_id': bounty_id, 'claimant': agent_id})
 

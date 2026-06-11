@@ -348,6 +348,42 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('JSON object body required', response.get_data(as_text=True))
 
+    def test_bounty_claim_persists_state_and_claimant(self):
+        """Claiming a bounty must persist the claimed state after the request closes."""
+        created_at = int(time.time())
+        with sqlite3.connect(self.test_db_path) as conn:
+            conn.execute("""
+                INSERT INTO beacon_bounties
+                (id, title, reward_rtc, difficulty, state, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                'gh_claim_commit_test',
+                'Claim commit test (25 RTC)',
+                25.0,
+                'EASY',
+                'open',
+                created_at,
+            ))
+            conn.commit()
+
+        claim_response = self.client.post(
+            '/api/bounties/gh_claim_commit_test/claim',
+            data=json.dumps({'agent_id': 'bcn_claimer'}),
+            content_type='application/json',
+            headers={'X-Admin-Key': os.environ['RC_ADMIN_KEY']},
+        )
+        self.assertEqual(claim_response.status_code, 200)
+
+        with sqlite3.connect(self.test_db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT state, claimant_agent FROM beacon_bounties WHERE id = ?",
+                ('gh_claim_commit_test',),
+            ).fetchone()
+
+        self.assertEqual(row['state'], 'claimed')
+        self.assertEqual(row['claimant_agent'], 'bcn_claimer')
+
     def test_bounty_complete_rejects_non_string_agent_id(self):
         """Admin bounty completion route rejects non-string agent IDs."""
         response = self.client.post(
