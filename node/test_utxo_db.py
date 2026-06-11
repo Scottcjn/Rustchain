@@ -19,6 +19,7 @@ from utxo_db import (
     proposition_to_address, UNIT, DUST_THRESHOLD, MAX_COINBASE_OUTPUT_NRTC,
     MAX_OUTPUTS, MAX_DATA_INPUTS, MAX_SQLITE_INT64, MAX_UTXO_ADDRESS_BYTES,
     MAX_UTXO_METADATA_BYTES, MAX_MEMPOOL_TX_ID_BYTES,
+    MAX_BOX_ID_OUTPUT_INDEX, _validate_box_id_output_capacity,
 )
 
 
@@ -62,6 +63,30 @@ class TestUtxoDB(unittest.TestCase):
         return refs
 
     # -- box operations ------------------------------------------------------
+
+    def test_compute_box_id_accepts_declared_output_index_boundary(self):
+        prop = address_to_proposition('alice')
+        tx_id = 'ab' * 32
+
+        first = compute_box_id(UNIT, prop, 1, tx_id, 0)
+        boundary = compute_box_id(UNIT, prop, 1, tx_id, MAX_BOX_ID_OUTPUT_INDEX)
+
+        self.assertEqual(len(first), 64)
+        self.assertEqual(len(boundary), 64)
+        self.assertNotEqual(first, boundary)
+
+    def test_compute_box_id_rejects_output_index_past_encoding_capacity(self):
+        prop = address_to_proposition('alice')
+        tx_id = 'ab' * 32
+
+        with self.assertRaisesRegex(ValueError, 'output_index.*65535'):
+            compute_box_id(UNIT, prop, 1, tx_id, MAX_BOX_ID_OUTPUT_INDEX + 1)
+
+    def test_max_outputs_must_fit_box_id_output_index_encoding(self):
+        _validate_box_id_output_capacity(MAX_BOX_ID_OUTPUT_INDEX + 1)
+
+        with self.assertRaisesRegex(RuntimeError, 'MAX_OUTPUTS.*output_index'):
+            _validate_box_id_output_capacity(MAX_BOX_ID_OUTPUT_INDEX + 2)
 
     def test_coinbase_creates_box(self):
         ok = self._apply_coinbase('alice', 150 * UNIT)

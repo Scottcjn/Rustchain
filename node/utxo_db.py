@@ -44,6 +44,8 @@ MAX_POOL_SIZE = 10_000
 # Without this, a single tx creates unlimited outputs, bloating the UTXO set.
 MAX_INPUTS = 100
 MAX_OUTPUTS = 100
+BOX_ID_OUTPUT_INDEX_BYTES = 2
+MAX_BOX_ID_OUTPUT_INDEX = (1 << (8 * BOX_ID_OUTPUT_INDEX_BYTES)) - 1
 MAX_DATA_INPUTS = 100
 MAX_UTXO_ADDRESS_BYTES = 256
 MAX_UTXO_METADATA_BYTES = 8_192
@@ -71,6 +73,20 @@ def _is_positive_int64(value: Any) -> bool:
     return type(value) is int and 0 < value <= MAX_SQLITE_INT64
 
 
+def _validate_box_id_output_capacity(max_outputs: int = MAX_OUTPUTS) -> None:
+    """Fail fast if tx output count can outgrow box-id output_index encoding."""
+    if type(max_outputs) is not int or max_outputs <= 0:
+        raise RuntimeError("MAX_OUTPUTS must be a positive int")
+    if max_outputs - 1 > MAX_BOX_ID_OUTPUT_INDEX:
+        raise RuntimeError(
+            "MAX_OUTPUTS exceeds compute_box_id output_index encoding capacity "
+            f"({MAX_BOX_ID_OUTPUT_INDEX})"
+        )
+
+
+_validate_box_id_output_capacity()
+
+
 def _utf8_len(value: str) -> Optional[int]:
     """Return UTF-8 byte length, or None for unencodable text."""
     try:
@@ -90,13 +106,22 @@ def compute_box_id(value_nrtc: int, proposition: str, creation_height: int,
     Uses big-endian (network byte order) for integer encodings to match
     the endianness of hex-encoded strings (proposition, transaction_id),
     ensuring cross-platform deterministic hashing.
+
+    The output_index encoding is intentionally kept at 2 bytes for
+    historical box-id compatibility; MAX_OUTPUTS must stay within that
+    explicit capacity unless the chain performs a versioned ID migration.
     """
+    if type(output_index) is not int or not 0 <= output_index <= MAX_BOX_ID_OUTPUT_INDEX:
+        raise ValueError(
+            "output_index must fit compute_box_id's 2-byte encoding "
+            f"(0..{MAX_BOX_ID_OUTPUT_INDEX})"
+        )
     h = hashlib.sha256()
     h.update(value_nrtc.to_bytes(8, 'big'))
     h.update(bytes.fromhex(proposition))
     h.update(creation_height.to_bytes(8, 'big'))
     h.update(bytes.fromhex(transaction_id) if transaction_id else b'\x00' * 32)
-    h.update(output_index.to_bytes(2, 'big'))
+    h.update(output_index.to_bytes(BOX_ID_OUTPUT_INDEX_BYTES, 'big'))
     return h.hexdigest()
 
 
