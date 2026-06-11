@@ -288,7 +288,7 @@ wRTC is also available on Base L2:
 
 | Metric | Value |
 |--------|-------|
-| **Reference Price** | $0.10 USD per RTC |
+| **Reference Price** | $0.15 USD per RTC |
 | **Fully Diluted Value** | $800,000 USD |
 | **Circulating Supply** | ~90,568 RTC (contributor payouts + mining) |
 | **Market Cap** | ~$9,057 USD |

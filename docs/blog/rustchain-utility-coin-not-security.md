@@ -67,7 +67,7 @@ No pooled funds. No shared treasury managed by a promoter. Each participant's re
 - **Agents** spend RTC on compute jobs, video generation, and inter-agent services through the Agent Economy (RIP-302)
 - **RTC gas fees** (RIP-303) are burned for Beacon network operations
 
-The reference rate of $0.10/RTC is a unit of account for bounty pricing, not a promised return. There is no marketing of RTC as an investment opportunity.
+The reference rate of $0.15/RTC is a unit of account for bounty pricing, not a promised return. There is no marketing of RTC as an investment opportunity.
 
 ### 4. Derived from the Efforts of Others
 

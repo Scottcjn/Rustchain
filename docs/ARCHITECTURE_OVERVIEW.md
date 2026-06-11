@@ -33,7 +33,7 @@ RustChain is a **Proof-of-Antiquity** blockchain that rewards real vintage hardw
 - **Epoch Duration:** ~24 hours
 - **Native Token:** RTC
 - **Anchor Chain:** Ergo (for cross-chain bridge)
-- **Reference Rate:** 1 RTC = $0.10 USD
+- **Reference Rate:** 1 RTC = $0.15 USD
 
 ### Live Network
 - **Node Health:** `curl -sk https://50.28.86.131/health`
@@ -317,7 +317,7 @@ graph LR
 | **Symbol** | RTC |
 | **Total Supply** | 8.3M |
 | **Distribution** | Mining rewards (100%) |
-| **Reference Rate** | 1 RTC = $0.10 USD |
+| **Reference Rate** | 1 RTC = $0.15 USD |
 
 ### Distribution Model
 - **100% to miners** — no pre-mine, no team allocation, no VC
