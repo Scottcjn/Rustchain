@@ -640,7 +640,17 @@ class UtxoDB:
             return False
         data_inputs = tx.get('data_inputs', [])
 
-        own = conn is None
+        # FIX(#13790): single source of truth for `own`. The previous code
+        # assigned `own = conn is None` twice (lines 623 and 643 in the
+        # pre-fix tree), with the second assignment shadowing the first.
+        # Both expressions were equivalent today (no code between the
+        # assignments could change `conn`), but the redundancy created a
+        # fragile implicit assumption. If a future refactor moved the
+        # `if own: conn = self._conn()` block up between the two
+        # assignments, the second `own` would silently re-evaluate to
+        # `False` after `self._conn()` ran, leaking the file descriptor
+        # in the `finally` block. Removing the second assignment makes
+        # the invariant explicit and unambiguous.
 
         # FIX(#2207): Defense-in-depth guard against mining_reward type confusion.
         # The endpoint layer hardcodes tx_type='transfer', but if any code path
