@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: MIT
+name: PR-Review Bounty Gate (#73)
+
+# On-arrival adjudication of code-review bounty claims: verifies the claimant
+# was the FIRST substantive reviewer of the referenced Rustchain PR (the rule
+# the hourly triage can't enforce cross-repo), within the per-contributor cap.
+on:
+  issues:
+    types: [opened, edited]
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: "Issue number to (re)adjudicate"
+        required: true
+
+permissions:
+  issues: write
+  contents: read
+
+concurrency:
+  group: pr-review-gate-${{ github.event.issue.number || github.event.inputs.issue }}
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Adjudicate claim
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number || github.event.inputs.issue }}
+          TARGET_REPO: Scottcjn/Rustchain
+          CAP: "15"
+          RATE_RTC: "3"
+        run: python3 scripts/pr_review_gate.py
