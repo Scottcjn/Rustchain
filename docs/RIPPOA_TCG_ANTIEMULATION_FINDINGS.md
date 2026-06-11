@@ -110,6 +110,18 @@ caught at 1.041 against real POWER8's 1.198. The other three candidates were
 confounded — `gather_jitter` by machine load (idle server vs busy laptop),
 `branch_bias` by microarchitecture (POWER8's strong predictor collapses it too).
 
+**Scope boundary (measured — do not misapply):** `ilp_ratio` detects
+**emulation** (software CPU / TCG), **not virtualization** (hardware-assisted /
+KVM). KVM runs guest instructions natively on the real host CPU, so it shows
+real-ish ILP — the two production KVM nodes measured 1.098 (quiet host) and
+1.049 (loaded host); the quiet one would pass `ilp_ratio` as physical. **KVM is
+caught by introspection instead** (both nodes trip all three flags). So the two
+layers are complementary and *both* are needed: introspection catches
+self-advertising VMs (incl. KVM); `ilp_ratio` catches the *consistent* emulation
+(TCG fake-exotic) that defeats introspection. Host load/steal-time is a confound
+on `ilp_ratio`'s physical side, so it is most reliable on **dedicated** hardware
+— which is exactly the exotic-miner case (a real G4/POWER8 is a dedicated box).
+
 **Honest limit:** n=5 (3 physical, 2 emulated) is a strong *seed*, not a
 production threshold. Before gating real rewards on it, widen the physical side
 with vintage points (G3/G4/G5) and stress the emulated side with adversarial TCG
