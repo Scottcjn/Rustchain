@@ -122,9 +122,9 @@ node/rustchain_tx_handler.py:133:            columns = [col[1] for col in cursor
 node/rustchain_tx_handler.py:187:        tables = {row[0] for row in cursor.fetchall()}
 node/rustchain_tx_handler.py:210:        columns = [col[1] for col in cursor.fetchall()]
 node/rustchain_tx_handler.py:368:            return {row["nonce"] for row in cursor.fetchall()}
-node/rustchain_tx_handler.py:451:            pending_nonces = {row["nonce"] for row in cursor.fetchall()}
-node/rustchain_tx_handler.py:545:                for row in cursor.fetchall()
-node/rustchain_tx_handler.py:910:                transactions = [dict(row) for row in cursor.fetchall()]
+node/rustchain_tx_handler.py:454:            pending_nonces = {row["nonce"] for row in cursor.fetchall()}
+node/rustchain_tx_handler.py:548:                for row in cursor.fetchall()
+node/rustchain_tx_handler.py:913:                transactions = [dict(row) for row in cursor.fetchall()]
 node/rustchain_v2_integrated_v2.2.1_rip200.py:10059:    return {row[1] for row in c.execute("PRAGMA table_info(balances)").fetchall()}
 node/rustchain_v2_integrated_v2.2.1_rip200.py:1316:    columns = conn.execute("PRAGMA table_info(epoch_enroll)").fetchall()
 node/rustchain_v2_integrated_v2.2.1_rip200.py:1323:    rows = conn.execute("SELECT epoch, miner_pk, weight FROM epoch_enroll").fetchall()

@@ -422,6 +422,9 @@ class TransactionPool:
         # both pass the balance check before either is recorded.
         with self._get_connection() as conn:
             cursor = conn.cursor()
+            # Serialize nonce, pending-count, and balance reads across
+            # independent pool instances/processes before any pending insert.
+            cursor.execute("BEGIN IMMEDIATE")
 
             # SECURITY FIX #2019: Enforce per-wallet pending TX limit
             cursor.execute(
