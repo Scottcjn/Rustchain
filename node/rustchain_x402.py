@@ -82,17 +82,17 @@ def _find_balance_row(conn, miner_id):
 
     if "miner_id" in columns:
         row = conn.execute(
-            "SELECT * FROM balances WHERE miner_id = ?", (miner_id,)
+            "SELECT miner_id FROM balances WHERE miner_id = ?", (miner_id,)
         ).fetchone()
         if row:
-            return row, "miner_id"
+            return row[0], "miner_id"
 
     if "miner_pk" in columns:
         row = conn.execute(
-            "SELECT * FROM balances WHERE miner_pk = ?", (miner_id,)
+            "SELECT miner_pk FROM balances WHERE miner_pk = ?", (miner_id,)
         ).fetchone()
         if row:
-            return row, "miner_pk"
+            return row[0], "miner_pk"
 
     return None, None
 
