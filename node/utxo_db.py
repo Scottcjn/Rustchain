@@ -162,6 +162,9 @@ CREATE TABLE IF NOT EXISTS utxo_boxes (
 CREATE INDEX IF NOT EXISTS idx_utxo_owner
     ON utxo_boxes(owner_address) WHERE spent_at IS NULL;
 
+CREATE INDEX IF NOT EXISTS idx_utxo_owner_value_box
+    ON utxo_boxes(owner_address, value_nrtc, box_id) WHERE spent_at IS NULL;
+
 CREATE INDEX IF NOT EXISTS idx_utxo_unspent
     ON utxo_boxes(spent_at) WHERE spent_at IS NULL;
 
@@ -367,17 +370,52 @@ class UtxoDB:
         finally:
             conn.close()
 
-    def get_unspent_for_address(self, address: str) -> List[dict]:
-        """Get all unspent boxes for an address, ordered by value ASC."""
+    def get_unspent_for_address(self, address: str, limit: Optional[int] = None,
+                                after_value_nrtc: Optional[int] = None,
+                                after_box_id: Optional[str] = None) -> List[dict]:
+        """Get unspent boxes for an address using bounded keyset pagination."""
+        if limit is not None and (
+            not isinstance(limit, int) or isinstance(limit, bool) or limit < 1
+        ):
+            raise ValueError("limit must be a positive integer")
+        if (after_value_nrtc is None) != (after_box_id is None):
+            raise ValueError("both cursor fields must be provided together")
+        if after_value_nrtc is not None and (
+            not isinstance(after_value_nrtc, int) or isinstance(after_value_nrtc, bool)
+            or after_value_nrtc < 0 or not isinstance(after_box_id, str)
+            or not after_box_id
+        ):
+            raise ValueError("invalid cursor")
+
+        query = """SELECT * FROM utxo_boxes
+                   WHERE owner_address = ? AND spent_at IS NULL"""
+        params = [address]
+        if after_value_nrtc is not None:
+            query += """ AND (value_nrtc > ? OR
+                         (value_nrtc = ? AND box_id > ?))"""
+            params.extend([after_value_nrtc, after_value_nrtc, after_box_id])
+        query += " ORDER BY value_nrtc ASC, box_id ASC"
+        if limit is not None:
+            query += " LIMIT ?"
+            params.append(limit)
+
         conn = self._conn()
         try:
-            rows = conn.execute(
-                """SELECT * FROM utxo_boxes
-                   WHERE owner_address = ? AND spent_at IS NULL
-                   ORDER BY value_nrtc ASC""",
-                (address,),
-            ).fetchall()
+            rows = conn.execute(query, params).fetchall()
             return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+    def count_unspent_for_address(self, address: str) -> int:
+        """Count unspent boxes for an address without materializing them."""
+        conn = self._conn()
+        try:
+            row = conn.execute(
+                """SELECT COUNT(*) AS n FROM utxo_boxes
+                   WHERE owner_address = ? AND spent_at IS NULL""",
+                (address,),
+            ).fetchone()
+            return row['n']
         finally:
             conn.close()
 

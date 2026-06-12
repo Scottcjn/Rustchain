@@ -111,6 +111,19 @@ class TestUtxoEndpoints(unittest.TestCase):
         self.assertEqual(data['balance_rtc'], 100.0)
         self.assertEqual(data['utxo_count'], 1)
 
+    def test_balance_count_does_not_materialize_boxes(self):
+        self._seed_coinbase('alice', 100 * UNIT)
+        original = self.utxo_db.get_unspent_for_address
+        self.utxo_db.get_unspent_for_address = lambda *_args, **_kwargs: self.fail(
+            'balance endpoint must not materialize address boxes'
+        )
+        try:
+            r = self.client.get('/utxo/balance/alice')
+        finally:
+            self.utxo_db.get_unspent_for_address = original
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json()['utxo_count'], 1)
+
     def test_boxes_endpoint(self):
         self._seed_coinbase('bob', 50 * UNIT, height=1)
         self._seed_coinbase('bob', 30 * UNIT, height=2)
@@ -120,6 +133,62 @@ class TestUtxoEndpoints(unittest.TestCase):
         self.assertEqual(len(data['boxes']), 2)
         values = sorted(b['value_nrtc'] for b in data['boxes'])
         self.assertEqual(values, [30 * UNIT, 50 * UNIT])
+
+    def test_boxes_endpoint_is_paginated(self):
+        self._seed_coinbase('bob', 10 * UNIT, height=1)
+        self._seed_coinbase('bob', 20 * UNIT, height=2)
+        self._seed_coinbase('bob', 30 * UNIT, height=3)
+
+        first = self.client.get('/utxo/boxes/bob?limit=2').get_json()
+        self.assertEqual(first['count'], 2)
+        self.assertTrue(first['has_more'])
+        self.assertEqual([box['value_nrtc'] for box in first['boxes']],
+                         [10 * UNIT, 20 * UNIT])
+
+        cursor = first['next_cursor']
+        second = self.client.get(
+            '/utxo/boxes/bob?limit=2&after_value_nrtc={}&after_box_id={}'.format(
+                cursor['after_value_nrtc'], cursor['after_box_id']))
+        second = second.get_json()
+        self.assertEqual(second['count'], 1)
+        self.assertFalse(second['has_more'])
+        self.assertIsNone(second['next_cursor'])
+        self.assertEqual(second['boxes'][0]['value_nrtc'], 30 * UNIT)
+
+    def test_boxes_cursor_handles_equal_values(self):
+        self._seed_coinbase('bob', 10 * UNIT, height=1)
+        self._seed_coinbase('bob', 10 * UNIT, height=2)
+        self._seed_coinbase('bob', 10 * UNIT, height=3)
+
+        first = self.client.get('/utxo/boxes/bob?limit=2').get_json()
+        cursor = first['next_cursor']
+        second = self.client.get(
+            '/utxo/boxes/bob?limit=2&after_value_nrtc={}&after_box_id={}'.format(
+                cursor['after_value_nrtc'], cursor['after_box_id'])).get_json()
+        ids = [box['box_id'] for box in first['boxes'] + second['boxes']]
+        self.assertEqual(len(ids), 3)
+        self.assertEqual(len(set(ids)), 3)
+
+    def test_boxes_endpoint_rejects_invalid_pagination(self):
+        self.assertEqual(self.client.get('/utxo/boxes/bob?limit=0').status_code, 400)
+        self.assertEqual(self.client.get('/utxo/boxes/bob?limit=501').status_code, 400)
+        self.assertEqual(self.client.get('/utxo/boxes/bob?after_value_nrtc=1').status_code, 400)
+        self.assertEqual(self.client.get('/utxo/boxes/bob?after_box_id=x').status_code, 400)
+        self.assertEqual(self.client.get('/utxo/boxes/bob?limit=nope').status_code, 400)
+
+    def test_boxes_endpoint_rejects_out_of_range_cursor(self):
+        # after_value_nrtc past SQLite's signed 64-bit range must be a clean 400,
+        # not an OverflowError 500 at parameter binding.
+        over = (1 << 63)
+        self.assertEqual(
+            self.client.get(f'/utxo/boxes/bob?after_value_nrtc={over}&after_box_id=x').status_code,
+            400,
+        )
+        # The boundary value itself is in range and forms a valid (empty-result) cursor.
+        self.assertEqual(
+            self.client.get(f'/utxo/boxes/bob?after_value_nrtc={over - 1}&after_box_id=x').status_code,
+            200,
+        )
 
     def test_box_not_found(self):
         r = self.client.get('/utxo/box/deadbeef' * 8)
