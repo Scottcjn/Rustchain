@@ -314,8 +314,11 @@ def utxo_balance(address):
 @utxo_bp.route('/boxes/<address>')
 def utxo_boxes(address):
     """Get a bounded page of unspent boxes for an address."""
-    limit = request.args.get('limit', _BOXES_DEFAULT_LIMIT, type=int)
-    offset = request.args.get('offset', 0, type=int)
+    try:
+        limit = int(request.args.get('limit', _BOXES_DEFAULT_LIMIT))
+        offset = int(request.args.get('offset', 0))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'limit and offset must be integers'}), 400
     if limit is None or limit < 1 or limit > _BOXES_MAX_LIMIT:
         return jsonify({
             'error': f'limit must be between 1 and {_BOXES_MAX_LIMIT}',
