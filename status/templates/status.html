@@ -74,6 +74,14 @@ function formatUptime(sec) {
   const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60);
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
 async function refresh() {
   try {
     const [statusRes, incRes, uptimeRes] = await Promise.all([
@@ -102,18 +110,18 @@ async function refresh() {
       card.className = 'node-card';
       card.innerHTML = `
         <div class="node-header">
-          <span class="node-name">${node.name}</span>
+          <span class="node-name">${escapeHtml(node.name)}</span>
           <span class="status-badge ${node.up?'up':'down'}">${node.up?'Operational':'Down'}</span>
         </div>
         <div class="node-stats">
-          <div><span class="stat-label">Location</span><br><span class="stat-value">${node.location||'—'}</span></div>
-          <div><span class="stat-label">Response</span><br><span class="stat-value">${node.response_ms||0}ms</span></div>
-          <div><span class="stat-label">Miners</span><br><span class="stat-value">${node.active_miners||'—'}</span></div>
-          <div><span class="stat-label">Epoch</span><br><span class="stat-value">${node.current_epoch||'—'}</span></div>
-          <div><span class="stat-label">Version</span><br><span class="stat-value">${node.version||'—'}</span></div>
-          <div><span class="stat-label">Uptime</span><br><span class="stat-value">${formatUptime(node.uptime)}</span></div>
+          <div><span class="stat-label">Location</span><br><span class="stat-value">${escapeHtml(node.location || '—')}</span></div>
+          <div><span class="stat-label">Response</span><br><span class="stat-value">${escapeHtml(node.response_ms || 0)}ms</span></div>
+          <div><span class="stat-label">Miners</span><br><span class="stat-value">${escapeHtml(node.active_miners || '—')}</span></div>
+          <div><span class="stat-label">Epoch</span><br><span class="stat-value">${escapeHtml(node.current_epoch || '—')}</span></div>
+          <div><span class="stat-label">Version</span><br><span class="stat-value">${escapeHtml(node.version || '—')}</span></div>
+          <div><span class="stat-label">Uptime</span><br><span class="stat-value">${escapeHtml(formatUptime(node.uptime))}</span></div>
         </div>
-        <div class="uptime-pct">${u.uptime_pct!==undefined?u.uptime_pct+'% uptime (24h)':'—'}</div>
+        <div class="uptime-pct">${u.uptime_pct!==undefined?escapeHtml(u.uptime_pct+'% uptime (24h)'):'—'}</div>
         <div class="uptime-bar" id="bar-${nodeId}"></div>
       `;
       container.appendChild(card);
@@ -141,9 +149,9 @@ async function refresh() {
     } else {
       incEl.innerHTML=incidents.slice(0,20).map(i=>`
         <div class="incident">
-          <span><span class="event-${i.event}">${i.event==='down'?'🔴':'🟢'} ${i.node} — ${i.event}</span>
-          ${i.detail?' · '+i.detail:''}</span>
-          <span class="time">${formatTime(i.time)}</span>
+          <span><span class="event-${i.event === 'down' ? 'down' : i.event === 'recovered' ? 'recovered' : 'unknown'}">${i.event==='down'?'🔴':'🟢'} ${escapeHtml(i.node)} — ${escapeHtml(i.event)}</span>
+          ${i.detail?' · '+escapeHtml(i.detail):''}</span>
+          <span class="time">${escapeHtml(formatTime(i.time))}</span>
         </div>
       `).join('');
     }
