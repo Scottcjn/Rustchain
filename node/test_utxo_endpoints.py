@@ -111,15 +111,53 @@ class TestUtxoEndpoints(unittest.TestCase):
         self.assertEqual(data['balance_rtc'], 100.0)
         self.assertEqual(data['utxo_count'], 1)
 
+    def test_balance_count_does_not_materialize_boxes(self):
+        self._seed_coinbase('alice', 100 * UNIT)
+        original = self.utxo_db.get_unspent_for_address
+        self.utxo_db.get_unspent_for_address = lambda *_args, **_kwargs: self.fail(
+            'balance endpoint must not materialize address boxes'
+        )
+        try:
+            r = self.client.get('/utxo/balance/alice')
+        finally:
+            self.utxo_db.get_unspent_for_address = original
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json()['utxo_count'], 1)
+
     def test_boxes_endpoint(self):
         self._seed_coinbase('bob', 50 * UNIT, height=1)
         self._seed_coinbase('bob', 30 * UNIT, height=2)
         r = self.client.get('/utxo/boxes/bob')
         data = r.get_json()
         self.assertEqual(data['count'], 2)
+        self.assertEqual(data['total_count'], 2)
         self.assertEqual(len(data['boxes']), 2)
         values = sorted(b['value_nrtc'] for b in data['boxes'])
         self.assertEqual(values, [30 * UNIT, 50 * UNIT])
+
+    def test_boxes_endpoint_is_paginated(self):
+        self._seed_coinbase('bob', 10 * UNIT, height=1)
+        self._seed_coinbase('bob', 20 * UNIT, height=2)
+        self._seed_coinbase('bob', 30 * UNIT, height=3)
+
+        first = self.client.get('/utxo/boxes/bob?limit=2').get_json()
+        self.assertEqual(first['count'], 2)
+        self.assertEqual(first['total_count'], 3)
+        self.assertEqual(first['next_offset'], 2)
+        self.assertEqual([box['value_nrtc'] for box in first['boxes']],
+                         [10 * UNIT, 20 * UNIT])
+
+        second = self.client.get('/utxo/boxes/bob?limit=2&offset=2').get_json()
+        self.assertEqual(second['count'], 1)
+        self.assertEqual(second['total_count'], 3)
+        self.assertIsNone(second['next_offset'])
+        self.assertEqual(second['boxes'][0]['value_nrtc'], 30 * UNIT)
+
+    def test_boxes_endpoint_rejects_invalid_pagination(self):
+        self.assertEqual(self.client.get('/utxo/boxes/bob?limit=0').status_code, 400)
+        self.assertEqual(self.client.get('/utxo/boxes/bob?limit=501').status_code, 400)
+        self.assertEqual(self.client.get('/utxo/boxes/bob?offset=-1').status_code, 400)
+        self.assertEqual(self.client.get('/utxo/boxes/bob?limit=nope').status_code, 400)
 
     def test_box_not_found(self):
         r = self.client.get('/utxo/box/deadbeef' * 8)
