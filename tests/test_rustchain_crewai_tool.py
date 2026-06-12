@@ -18,7 +18,7 @@ from unittest import mock
 
 import pytest
 
-from rustchain_crewai_tool import CREWAI_AVAILABLE, RustChainCrewAITool
+from integrations.rustchain_crewai.rustchain_crewai_tool import CREWAI_AVAILABLE, RustChainCrewAITool
 
 
 # ---------------------------------------------------------------------------
@@ -179,7 +179,7 @@ def test_list_bounties_clamps_limit(tool: RustChainCrewAITool) -> None:
         captured["params"] = params
         return _FakeResp(200, [])
 
-    with mock.patch("rustchain_crewai_tool.requests.get", side_effect=fake_get):
+    with mock.patch("integrations.rustchain_crewai.rustchain_crewai_tool.requests.get", side_effect=fake_get):
         tool.list_bounties(999)
     # 999 should be clamped to <= 50, so the GitHub per_page param is at most 50.
     assert captured["params"]["per_page"] == 50
@@ -206,7 +206,7 @@ def test_list_bounties_returns_normalized_list(tool: RustChainCrewAITool) -> Non
     def fake_get(url: str, params: Optional[dict] = None, **kw: Any) -> _FakeResp:
         return _FakeResp(200, issues)
 
-    with mock.patch("rustchain_crewai_tool.requests.get", side_effect=fake_get):
+    with mock.patch("integrations.rustchain_crewai.rustchain_crewai_tool.requests.get", side_effect=fake_get):
         result = tool.list_bounties(5)
 
     assert result["ok"] is True
@@ -219,7 +219,7 @@ def test_list_bounties_handles_github_error(tool: RustChainCrewAITool) -> None:
     def fake_get(url: str, params: Optional[dict] = None, **kw: Any) -> _FakeResp:
         return _FakeResp(403, {"message": "rate limit"})
 
-    with mock.patch("rustchain_crewai_tool.requests.get", side_effect=fake_get):
+    with mock.patch("integrations.rustchain_crewai.rustchain_crewai_tool.requests.get", side_effect=fake_get):
         result = tool.list_bounties(5)
     assert result["ok"] is False
     assert result["bounties"] == []
@@ -232,7 +232,7 @@ def test_list_bounties_handles_network_error(tool: RustChainCrewAITool) -> None:
     def fake_get(url: str, params: Optional[dict] = None, **kw: Any) -> None:
         raise requests.ConnectionError("boom")
 
-    with mock.patch("rustchain_crewai_tool.requests.get", side_effect=fake_get):
+    with mock.patch("integrations.rustchain_crewai.rustchain_crewai_tool.requests.get", side_effect=fake_get):
         result = tool.list_bounties(5)
     assert result["ok"] is False
     assert "github network error" in result["error"]
@@ -261,7 +261,7 @@ def test_dispatch_routes_to_list_bounties(tool: RustChainCrewAITool) -> None:
     def fake_get(url: str, params: Optional[dict] = None, **kw: Any) -> _FakeResp:
         return _FakeResp(200, [])
 
-    with mock.patch("rustchain_crewai_tool.requests.get", side_effect=fake_get):
+    with mock.patch("integrations.rustchain_crewai.rustchain_crewai_tool.requests.get", side_effect=fake_get):
         result = tool._run(action="list_bounties", limit=3)
     assert result["ok"] is True
 
@@ -271,7 +271,7 @@ def test_dispatch_routes_to_list_bounties(tool: RustChainCrewAITool) -> None:
 # ---------------------------------------------------------------------------
 
 def test_module_exports() -> None:
-    from rustchain_crewai_tool import RustChainCrewAITool as T
+    from integrations.rustchain_crewai.rustchain_crewai_tool import RustChainCrewAITool as T
     assert hasattr(T, "check_balance")
     assert hasattr(T, "list_bounties")
     assert hasattr(T, "get_node_health")
