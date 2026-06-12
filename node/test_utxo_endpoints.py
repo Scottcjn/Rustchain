@@ -142,21 +142,39 @@ class TestUtxoEndpoints(unittest.TestCase):
 
         first = self.client.get('/utxo/boxes/bob?limit=2').get_json()
         self.assertEqual(first['count'], 2)
-        self.assertEqual(first['total_count'], 3)
-        self.assertEqual(first['next_offset'], 2)
+        self.assertTrue(first['has_more'])
         self.assertEqual([box['value_nrtc'] for box in first['boxes']],
                          [10 * UNIT, 20 * UNIT])
 
-        second = self.client.get('/utxo/boxes/bob?limit=2&offset=2').get_json()
+        cursor = first['next_cursor']
+        second = self.client.get(
+            '/utxo/boxes/bob?limit=2&after_value_nrtc={}&after_box_id={}'.format(
+                cursor['after_value_nrtc'], cursor['after_box_id']))
+        second = second.get_json()
         self.assertEqual(second['count'], 1)
-        self.assertEqual(second['total_count'], 3)
-        self.assertIsNone(second['next_offset'])
+        self.assertFalse(second['has_more'])
+        self.assertIsNone(second['next_cursor'])
         self.assertEqual(second['boxes'][0]['value_nrtc'], 30 * UNIT)
+
+    def test_boxes_cursor_handles_equal_values(self):
+        self._seed_coinbase('bob', 10 * UNIT, height=1)
+        self._seed_coinbase('bob', 10 * UNIT, height=2)
+        self._seed_coinbase('bob', 10 * UNIT, height=3)
+
+        first = self.client.get('/utxo/boxes/bob?limit=2').get_json()
+        cursor = first['next_cursor']
+        second = self.client.get(
+            '/utxo/boxes/bob?limit=2&after_value_nrtc={}&after_box_id={}'.format(
+                cursor['after_value_nrtc'], cursor['after_box_id'])).get_json()
+        ids = [box['box_id'] for box in first['boxes'] + second['boxes']]
+        self.assertEqual(len(ids), 3)
+        self.assertEqual(len(set(ids)), 3)
 
     def test_boxes_endpoint_rejects_invalid_pagination(self):
         self.assertEqual(self.client.get('/utxo/boxes/bob?limit=0').status_code, 400)
         self.assertEqual(self.client.get('/utxo/boxes/bob?limit=501').status_code, 400)
-        self.assertEqual(self.client.get('/utxo/boxes/bob?offset=-1').status_code, 400)
+        self.assertEqual(self.client.get('/utxo/boxes/bob?after_value_nrtc=1').status_code, 400)
+        self.assertEqual(self.client.get('/utxo/boxes/bob?after_box_id=x').status_code, 400)
         self.assertEqual(self.client.get('/utxo/boxes/bob?limit=nope').status_code, 400)
 
     def test_box_not_found(self):
