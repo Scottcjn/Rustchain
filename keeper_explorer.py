@@ -17,7 +17,6 @@ import json
 import logging
 import os
 import re
-import secrets
 import sqlite3
 import sys
 import time
@@ -137,18 +136,24 @@ def faucet_drip():
     if not WALLET_ADDRESS_RE.fullmatch(address):
         return jsonify({"success": False, "error": "Invalid wallet address"}), 400
         
-    # In a real scenario, this would call the node's transfer API
-    # For the bounty/demo, we log the success
     amount = 0.5 # 0.5 test RTC
     allowed, timestamp = record_faucet_claim(address, ip, amount)
     if not allowed:
         return jsonify({"success": False, "error": "Rate limit exceeded (1 drip per 24h)"}), 429
-    tx_hash = hashlib.sha256(f"{address}:{ip}:{timestamp}:{secrets.token_hex(16)}".encode()).hexdigest()
+    receipt_id = hashlib.sha256(f"keeper-faucet:{address}:{ip}:{timestamp}".encode()).hexdigest()
     
     return jsonify({
-        "success": True, 
-        "message": f"Drip successful! {amount} RTC sent to {address}",
-        "tx_hash": tx_hash
+        "success": True,
+        "status": "claim_recorded",
+        "settlement_status": "recorded_only",
+        "amount": amount,
+        "address": address,
+        "message": (
+            f"Faucet claim recorded for {address}; no on-chain transfer "
+            "was submitted by this explorer"
+        ),
+        "receipt_id": receipt_id,
+        "tx_hash": None,
     })
 
 # --- Fossil-punk UI Template ---
@@ -367,7 +372,7 @@ RETRO_HTML = r"""
 
             <div class="faucet-box">
                 <h3 class="glow">> KEEPER_FAUCET (TESTNET)</h3>
-                <p>Enter your RustChain wallet address to receive 0.5 test RTC.</p>
+                <p>Enter your RustChain wallet address to request a 0.5 test RTC faucet claim.</p>
                 <input type="text" id="wallet-addr" placeholder="0x... or MinerID">
                 <button onclick="requestDrip()">DISPENSE</button>
                 <p id="faucet-msg"></p>
