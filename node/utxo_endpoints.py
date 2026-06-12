@@ -35,6 +35,13 @@ from utxo_db import (
 # which is far above any realistic balance and well within int64.
 _MAX_RTC_AMOUNT = Decimal(2) ** 53
 
+# Bound public address queries so fragmented wallets cannot force unbounded responses.
+_BOXES_DEFAULT_LIMIT = 100
+_BOXES_MAX_LIMIT = 500
+# Cursor values are bound to SQLite's signed 64-bit integer range; values past it
+# would raise OverflowError at parameter binding (a 500) instead of a clean 400.
+_INT64_MAX = (1 << 63) - 1
+
 
 def _parse_rtc_amount(raw) -> Decimal:
     """
@@ -296,24 +303,59 @@ def register_utxo_blueprint(app, utxo_db: UtxoDB, db_path: str,
 
 @utxo_bp.route('/balance/<address>')
 def utxo_balance(address):
-    """Get UTXO-derived balance for an address."""
+    """Get UTXO-derived balance and count for an address."""
     balance_nrtc = _utxo_db.get_balance(address)
-    boxes = _utxo_db.get_unspent_for_address(address)
+    utxo_count = _utxo_db.count_unspent_for_address(address)
     return jsonify({
         'address': address,
         'balance_nrtc': balance_nrtc,
         'balance_rtc': balance_nrtc / UNIT,
-        'utxo_count': len(boxes),
+        'utxo_count': utxo_count,
     })
 
 
 @utxo_bp.route('/boxes/<address>')
 def utxo_boxes(address):
-    """Get all unspent boxes for an address."""
-    boxes = _utxo_db.get_unspent_for_address(address)
+    """Get a bounded keyset-paginated page of unspent boxes."""
+    try:
+        limit = int(request.args.get('limit', _BOXES_DEFAULT_LIMIT))
+        after_value = request.args.get('after_value_nrtc')
+        after_value = int(after_value) if after_value is not None else None
+    except (TypeError, ValueError):
+        return jsonify({'error': 'limit and after_value_nrtc must be integers'}), 400
+    after_box_id = request.args.get('after_box_id')
+    if limit < 1 or limit > _BOXES_MAX_LIMIT:
+        return jsonify({
+            'error': f'limit must be between 1 and {_BOXES_MAX_LIMIT}',
+        }), 400
+    if (after_value is None) != (after_box_id is None) or (
+        after_value is not None and (
+            after_value < 0 or after_value > _INT64_MAX or not after_box_id
+        )
+    ):
+        return jsonify({
+            'error': 'after_value_nrtc and after_box_id must form a valid cursor',
+        }), 400
+
+    rows = _utxo_db.get_unspent_for_address(
+        address, limit=limit + 1, after_value_nrtc=after_value,
+        after_box_id=after_box_id,
+    )
+    has_more = len(rows) > limit
+    boxes = rows[:limit]
+    next_cursor = None
+    if has_more:
+        last = boxes[-1]
+        next_cursor = {
+            'after_value_nrtc': last['value_nrtc'],
+            'after_box_id': last['box_id'],
+        }
     return jsonify({
         'address': address,
         'count': len(boxes),
+        'limit': limit,
+        'has_more': has_more,
+        'next_cursor': next_cursor,
         'boxes': [
             {
                 'box_id': b['box_id'],
