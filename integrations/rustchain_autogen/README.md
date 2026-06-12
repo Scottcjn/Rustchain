@@ -34,8 +34,8 @@ pip install autogen-core
 Public node reads use `https://rustchain.org`. Open bounties are read from the
 public [`Scottcjn/rustchain-bounties`](https://github.com/Scottcjn/rustchain-bounties)
 issue board because the node does not expose a bounty-list endpoint.
-Node health uses `/health`, current epoch uses `/epoch`, and balances use
-`/wallet/balance?miner_id=...`.
+Node health uses `/health` with the public Explorer `/api/stats` as a fallback,
+current epoch uses `/epoch`, and balances use `/wallet/balance?miner_id=...`.
 
 All network failures return structured `{ok: false, error: ...}` dictionaries
 instead of raising into an agent loop.
