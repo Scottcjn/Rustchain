@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Focused tests for the dependency-light RustChain AutoGen integration."""
 
 import json
@@ -42,6 +43,24 @@ class RustChainAutoGenToolsTest(unittest.TestCase):
         result = self.tools.list_bounties(999)
         self.assertEqual(result["count"], 1)
         self.assertIn("per_page=50", mocked.call_args.args[0].full_url)
+
+    def test_list_bounties_rejects_invalid_limit_without_http(self):
+        result = self.tools.list_bounties("many")
+        self.assertFalse(result["ok"])
+        self.assertIn("limit must be an integer", result["error"])
+
+    @patch("integrations.rustchain_autogen.rustchain_autogen_tool.urlopen")
+    def test_health_falls_back_to_live_explorer_stats(self, mocked):
+        mocked.side_effect = [
+            FakeResponse({"ok": False, "error": "unhealthy"}),
+            FakeResponse({"epoch": 191, "chain_id": "rustchain-mainnet-v2"}),
+        ]
+        result = self.tools.get_node_health()
+        self.assertTrue(result["ok"])
+        self.assertEqual(
+            mocked.call_args.args[0].full_url,
+            "https://explorer.rustchain.org/api/stats",
+        )
 
     @patch("integrations.rustchain_autogen.rustchain_autogen_tool.urlopen")
     def test_epoch_is_extracted_from_stats(self, mocked):
