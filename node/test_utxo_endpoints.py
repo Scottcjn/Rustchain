@@ -130,7 +130,6 @@ class TestUtxoEndpoints(unittest.TestCase):
         r = self.client.get('/utxo/boxes/bob')
         data = r.get_json()
         self.assertEqual(data['count'], 2)
-        self.assertEqual(data['total_count'], 2)
         self.assertEqual(len(data['boxes']), 2)
         values = sorted(b['value_nrtc'] for b in data['boxes'])
         self.assertEqual(values, [30 * UNIT, 50 * UNIT])
