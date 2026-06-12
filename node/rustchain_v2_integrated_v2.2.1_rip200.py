@@ -4184,7 +4184,31 @@ def get_challenge():
     # T2.1: optionally BIND the challenge to the requesting identity. A miner that
     # sends its miner_id gets a nonce only IT can consume at /attest/submit; legacy
     # miners that send no identity get an unbound nonce (backward compatible).
-    body = request.get_json(silent=True)
+    # FIX #7168 v5: reject non-dict / explicit-null bodies as INVALID_JSON_OBJECT.
+    # `request.get_json(silent=True)` returns None for BOTH "no body" and "JSON null",
+    # so we inspect the raw body to distinguish the two cases. The DoS surface that
+    # remained on main was: posting `null` / `*` / `42` / `[...]` would all silently
+    # consume a nonce row without ever binding a miner. We now reject those.
+    raw_body = request.get_data(cache=False, as_text=True)
+    body = None
+    raw_nonempty = bool(raw_body and raw_body.strip())
+    if raw_nonempty:
+        try:
+            body = json.loads(raw_body)
+        except (ValueError, TypeError):
+            body = raw_body  # not JSON; mark as not-a-dict
+    # A non-empty body that parsed to None is an explicit JSON `null` —
+    # distinct from "no body at all". Reject it as INVALID_JSON_OBJECT.
+    # A non-empty body that parsed to a non-dict (scalar, list) is also
+    # rejected. The empty / missing body case stays backward compatible
+    # (200 with an unbound nonce), matching the existing fuzz helper.
+    if raw_nonempty and not isinstance(body, dict):
+        return jsonify({
+            "ok": False,
+            "error": "invalid_json_object",
+            "code": "INVALID_JSON_OBJECT",
+            "message": "Body must be a JSON object (dict). null, scalars, arrays, and malformed bodies are rejected to prevent nonce-table pollution (Issue #7168).",
+        }), 400
     requested_miner = None
     if isinstance(body, dict):
         # Extract identity in the SAME order the submit path resolves `miner`
