@@ -194,12 +194,17 @@ def ledger_update_status(record_id, new_status, tx_hash="", notes=""):
         raise ValueError(f"Invalid status: {new_status}. Must be one of {valid}")
     now = int(time.time())
     with sqlite3.connect(DB_PATH) as conn:
-        conn.execute(
+        cursor = conn.execute(
             "UPDATE payout_ledger SET status=?, tx_hash=?, notes=?, updated_at=? WHERE id=?",
             (new_status, tx_hash or "", notes or "", now, record_id),
         )
+        updated = cursor.rowcount > 0
         conn.commit()
+    if not updated:
+        logger.info("Ledger %s status update skipped: record not found", record_id)
+        return False
     logger.info("Ledger %s → %s", record_id, new_status)
+    return True
 
 
 def ledger_summary():
@@ -316,13 +321,15 @@ def register_ledger_routes(app):
         if not new_status:
             return jsonify({"error": "missing status"}), 400
         try:
-            ledger_update_status(
+            updated = ledger_update_status(
                 record_id, new_status,
                 tx_hash=data.get("tx_hash", ""),
                 notes=data.get("notes", ""),
             )
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
+        if not updated:
+            return jsonify({"error": "not found"}), 404
         return jsonify({"id": record_id, "status": new_status})
 
     @app.route("/api/ledger/summary", methods=["GET"])

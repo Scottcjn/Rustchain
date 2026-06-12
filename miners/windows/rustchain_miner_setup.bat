@@ -9,7 +9,7 @@ set "MINER_SCRIPT=%SCRIPT_DIR%rustchain_windows_miner.py"
 set "MINER_SHA256=a4c07a32f9e475efb60bb5bef548a91c8eecc15b978ba57eca4fb4c6603642fd"
 set "CRYPTO_URL=https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/windows/miner_crypto.py"
 set "CRYPTO_SCRIPT=%SCRIPT_DIR%miner_crypto.py"
-set "CRYPTO_SHA256=a987e2f0caaf75723c568de67ec848daec5e323cc5673cc17964da04eee07242"
+set "CRYPTO_SHA256=ffe2e4c78fdc3f53c129a2ef820cc84549a5720655140e69a3e0baf1f7f385fa"
 
 echo.
 echo === RustChain Windows Miner Bootstrap ===
@@ -67,8 +67,12 @@ if not exist "%CRYPTO_SCRIPT%" (
     echo WARNING: miner_crypto.py was not downloaded — miner will run in
     echo          legacy unsigned mode. Re-run setup with network access
     echo          to enable Ed25519 signing.
+    goto :crypto_ready
 )
+call :verify_crypto
+if errorlevel 1 exit /b 1
 
+:crypto_ready
 echo.
 echo Miner is ready. Run:
 echo    python "%MINER_SCRIPT%"
@@ -92,4 +96,20 @@ if /I not "!ACTUAL_MINER_SHA256!"=="%MINER_SHA256%" (
     exit /b 1
 )
 echo Miner script checksum verified.
+exit /b 0
+
+:verify_crypto
+if not exist "%CRYPTO_SCRIPT%" (
+    exit /b 0
+)
+set "ACTUAL_CRYPTO_SHA256="
+for /f "usebackq delims=" %%H in (`powershell -NoProfile -Command "(Get-FileHash -Algorithm SHA256 -Path '%CRYPTO_SCRIPT%').Hash.ToLowerInvariant()"`) do set "ACTUAL_CRYPTO_SHA256=%%H"
+if /I not "!ACTUAL_CRYPTO_SHA256!"=="%CRYPTO_SHA256%" (
+    echo ERROR: Crypto module SHA-256 mismatch.
+    echo Expected: %CRYPTO_SHA256%
+    echo Actual:   !ACTUAL_CRYPTO_SHA256!
+    del /f /q "%CRYPTO_SCRIPT%" >nul 2>&1
+    exit /b 1
+)
+echo Crypto module checksum verified.
 exit /b 0

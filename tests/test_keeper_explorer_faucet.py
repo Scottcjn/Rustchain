@@ -66,8 +66,16 @@ def test_faucet_drip_records_valid_address(tmp_path, monkeypatch):
     assert response.status_code == 200
     body = response.get_json()
     assert body["success"] is True
-    assert body["message"] == "Drip successful! 0.5 RTC sent to rtc-test-wallet"
-    assert len(body["tx_hash"]) == 64
+    assert body["status"] == "claim_recorded"
+    assert body["settlement_status"] == "recorded_only"
+    assert body["amount"] == 0.5
+    assert body["address"] == "rtc-test-wallet"
+    assert body["message"] == (
+        "Faucet claim recorded for rtc-test-wallet; no on-chain transfer "
+        "was submitted by this explorer"
+    )
+    assert len(body["receipt_id"]) == 64
+    assert body["tx_hash"] is None
 
     with sqlite3.connect(tmp_path / "faucet_service" / "faucet.db") as conn:
         row = conn.execute(
