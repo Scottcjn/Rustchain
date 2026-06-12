@@ -5419,10 +5419,12 @@ def ingest_signed_header():
         msg_hex = bytes_to_hex(msg)
 
     # Mock acceptance (TESTNET ONLY)
+    verified_pubkey = None
     accepted = False
     if TESTNET_ALLOW_MOCK_SIG and len(sig_hex) == 128:
         METRICS_SNAPSHOT["rustchain_ingest_mock_accepted_total"] = METRICS_SNAPSHOT.get("rustchain_ingest_mock_accepted_total",0)+1
         accepted = True
+        verified_pubkey = candidate_pubkeys[0] if candidate_pubkeys else None
     else:
         if not HAVE_NACL:
             return jsonify({"ok":False,"error":"ed25519 unavailable on server (install pynacl)"}), 500
@@ -5436,6 +5438,7 @@ def ingest_signed_header():
             try:
                 VerifyKey(hex_to_bytes(_cand)).verify(msg, sig)
                 accepted = True
+                verified_pubkey = _cand
                 break
             except Exception:
                 continue
@@ -5494,7 +5497,7 @@ def ingest_signed_header():
     # Update tip + metrics
     with sqlite3.connect(DB_PATH) as db:
         db.execute("INSERT OR REPLACE INTO headers(slot, miner_id, message_hex, signature_hex, pubkey_hex, ts) VALUES(?,?,?,?,?,strftime('%s','now'))",
-                   (slot, miner_id, msg_hex, sig_hex, pubkey_hex))
+                   (slot, miner_id, msg_hex, sig_hex, verified_pubkey))
         db.commit()
 
 
