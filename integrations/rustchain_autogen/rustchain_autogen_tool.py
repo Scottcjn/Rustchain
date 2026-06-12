@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Dependency-light RustChain tools for Microsoft AutoGen."""
 
 from __future__ import annotations
@@ -55,7 +56,10 @@ class RustChainAutoGenTools:
 
     def list_bounties(self, limit: int = 10) -> dict[str, Any]:
         """List recent open RustChain bounty-board issues."""
-        limit = max(1, min(int(limit), 50))
+        try:
+            limit = max(1, min(int(limit), 50))
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "limit must be an integer from 1 to 50"}
         result = self._get_json(
             f"https://api.github.com/repos/{self.bounty_repo}/issues",
             {"state": "open", "per_page": limit, "labels": "bounty"},
@@ -79,10 +83,17 @@ class RustChainAutoGenTools:
         health = self._get_json(f"{self.base_url}/health")
         if not (isinstance(health, dict) and health.get("ok") is False):
             return {"ok": True, "source": "/health", "health": health}
-        stats = self._get_json(f"{self.base_url}/api/stats")
+        stats = self._get_json("https://explorer.rustchain.org/api/stats")
         if isinstance(stats, dict) and stats.get("ok") is False:
-            return {"ok": False, "error": "health and stats endpoints failed"}
-        return {"ok": True, "source": "/api/stats", "health": stats}
+            return {
+                "ok": False,
+                "error": "health and explorer stats endpoints failed",
+            }
+        return {
+            "ok": True,
+            "source": "https://explorer.rustchain.org/api/stats",
+            "health": stats,
+        }
 
     def get_current_epoch(self) -> dict[str, Any]:
         """Return the current epoch from the public node epoch endpoint."""
