@@ -367,17 +367,44 @@ class UtxoDB:
         finally:
             conn.close()
 
-    def get_unspent_for_address(self, address: str) -> List[dict]:
-        """Get all unspent boxes for an address, ordered by value ASC."""
+    def get_unspent_for_address(self, address: str, limit: Optional[int] = None,
+                                offset: int = 0) -> List[dict]:
+        """Get unspent boxes for an address, optionally as a bounded page."""
+        if limit is not None and (
+            not isinstance(limit, int) or isinstance(limit, bool) or limit < 1
+        ):
+            raise ValueError("limit must be a positive integer")
+        if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
+            raise ValueError("offset must be a non-negative integer")
+
+        query = """SELECT * FROM utxo_boxes
+                   WHERE owner_address = ? AND spent_at IS NULL
+                   ORDER BY value_nrtc ASC, box_id ASC"""
+        params = [address]
+        if limit is not None:
+            query += " LIMIT ? OFFSET ?"
+            params.extend([limit, offset])
+        elif offset:
+            query += " LIMIT -1 OFFSET ?"
+            params.append(offset)
+
         conn = self._conn()
         try:
-            rows = conn.execute(
-                """SELECT * FROM utxo_boxes
-                   WHERE owner_address = ? AND spent_at IS NULL
-                   ORDER BY value_nrtc ASC""",
-                (address,),
-            ).fetchall()
+            rows = conn.execute(query, params).fetchall()
             return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+    def count_unspent_for_address(self, address: str) -> int:
+        """Count unspent boxes for an address without materializing them."""
+        conn = self._conn()
+        try:
+            row = conn.execute(
+                """SELECT COUNT(*) AS n FROM utxo_boxes
+                   WHERE owner_address = ? AND spent_at IS NULL""",
+                (address,),
+            ).fetchone()
+            return row['n']
         finally:
             conn.close()
 
