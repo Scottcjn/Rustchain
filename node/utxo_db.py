@@ -367,16 +367,120 @@ class UtxoDB:
         finally:
             conn.close()
 
-    def get_unspent_for_address(self, address: str) -> List[dict]:
-        """Get all unspent boxes for an address, ordered by value ASC."""
+    # FIX(#13975): bound the per-address public read path. Previously
+    # `get_unspent_for_address` did an unbounded `SELECT * ... fetchall()`
+    # over every unspent box owned by the supplied address. Combined with the
+    # minimum-output dust threshold (DUST_THRESHOLD = 1_000 nanoRTC) and the
+    # zero-fee public transfer endpoint, an attacker could fragment a target
+    # address into arbitrarily many tiny boxes and then repeatedly hit
+    # `/utxo/balance/<addr>` or `/utxo/boxes/<addr>` to cause linear growth
+    # in row materialization, CPU, and response size on every unauthenticated
+    # request.
+    #
+    # The public read path now exposes three bounded operations:
+    #   * `get_unspent_count_for_address(address)` — scalar `COUNT(*)`
+    #     for the cheap `/utxo/balance` summary, so the balance route no
+    #     longer materializes full rows just to compute `utxo_count`.
+    #   * `get_unspent_for_address_paged(address, *, limit, offset)` —
+    #     cursor/page-bounded listing for `/utxo/boxes` with a hard cap
+    #     (`MAX_BOXES_PER_PAGE`) and a `has_more` flag so callers can
+    #     walk a large result set without ever materializing the whole set
+    #     in a single response.
+    #   * `get_unspent_for_address(address)` is retained for internal
+    #     callers (coin selection in `apply_transaction`) that genuinely
+    #     need the full ordered set, with a defensive cap so a runaway
+    #     caller still cannot OOM the process silently.
+    #
+    # See issue #13975 for the original report and PoC; tests in
+    # `node/test_utxo_endpoints.py` and `node/tests/test_utxo_bounded_reads.py`.
+
+    MAX_BOXES_PER_PAGE = 200  # hard upper bound on a single /utxo/boxes page
+    MAX_BOXES_INTERNAL = 50_000  # defensive cap for full internal reads
+
+    def get_unspent_count_for_address(self, address: str) -> int:
+        """Return the count of unspent boxes owned by `address`.
+
+        Cheap scalar read for the public `/utxo/balance/<addr>` summary.
+        Does not materialize any box rows, so it is safe for fragmented
+        addresses with millions of unspent boxes.
+        """
+        conn = self._conn()
+        try:
+            row = conn.execute(
+                """SELECT COUNT(*) AS n
+                   FROM utxo_boxes
+                   WHERE owner_address = ? AND spent_at IS NULL""",
+                (address,),
+            ).fetchone()
+            return int(row['n'] or 0)
+        finally:
+            conn.close()
+
+    def get_unspent_for_address_paged(
+        self,
+        address: str,
+        *,
+        limit: int,
+        offset: int = 0,
+    ) -> Tuple[List[dict], bool]:
+        """Return one page of unspent boxes for `address`.
+
+        Returns `(boxes, has_more)` where:
+          * `boxes` is at most `limit` rows ordered by value ASC, then
+            box_id ASC for a stable page boundary;
+          * `has_more` is True iff more rows exist past the returned page.
+
+        The endpoint layer must clamp `limit` to `MAX_BOXES_PER_PAGE` and
+        reject negative `offset`/`limit` before calling this helper.
+        """
+        if limit < 0 or offset < 0:
+            raise ValueError("limit and offset must be non-negative")
+        capped_limit = min(int(limit), self.MAX_BOXES_PER_PAGE)
         conn = self._conn()
         try:
             rows = conn.execute(
                 """SELECT * FROM utxo_boxes
                    WHERE owner_address = ? AND spent_at IS NULL
-                   ORDER BY value_nrtc ASC""",
-                (address,),
+                   ORDER BY value_nrtc ASC, box_id ASC
+                   LIMIT ? OFFSET ?""",
+                (address, capped_limit + 1, int(offset)),
             ).fetchall()
+            page = [dict(r) for r in rows[:capped_limit]]
+            has_more = len(rows) > capped_limit
+            return page, has_more
+        finally:
+            conn.close()
+
+    def get_unspent_for_address(self, address: str) -> List[dict]:
+        """Get all unspent boxes for an address, ordered by value ASC.
+
+        Intended for internal callers (e.g. coin selection in
+        `apply_transaction`) that genuinely need the full ordered set.
+        Public HTTP callers must use `get_unspent_for_address_paged`
+        or `get_unspent_count_for_address` instead.
+
+        A defensive `MAX_BOXES_INTERNAL` cap is applied to prevent silent
+        OOM on a fragmented address; callers needing more must page.
+        """
+        conn = self._conn()
+        try:
+            rows = conn.execute(
+                """SELECT * FROM utxo_boxes
+                   WHERE owner_address = ? AND spent_at IS NULL
+                   ORDER BY value_nrtc ASC
+                   LIMIT ?""",
+                (address, self.MAX_BOXES_INTERNAL + 1),
+            ).fetchall()
+            if len(rows) > self.MAX_BOXES_INTERNAL:
+                # Refuse silently materializing the unbounded set; the
+                # coin-selection path should never hit this in practice
+                # for any real wallet, and surfacing the limit forces
+                # the caller to handle fragmentation explicitly.
+                raise ValueError(
+                    f"address {address!r} has more than "
+                    f"{self.MAX_BOXES_INTERNAL} unspent boxes; "
+                    f"caller must use paged reads"
+                )
             return [dict(r) for r in rows]
         finally:
             conn.close()

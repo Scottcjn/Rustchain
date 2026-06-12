@@ -20,8 +20,9 @@ import json
 import sqlite3
 import time
 from decimal import Decimal, InvalidOperation
+from typing import Optional, Tuple
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, Flask, request, jsonify
 
 from utxo_db import (
     DUST_THRESHOLD,
@@ -169,6 +170,13 @@ def _nrtc_to_account_i64(amount_nrtc: int, field_name: str) -> int:
 
 utxo_bp = Blueprint('utxo', __name__, url_prefix='/utxo')
 
+# FIX(#13975): bound the per-page size on the public boxes endpoint so a
+# fragmented address cannot force an unbounded response. Requests asking
+# for more are silently clamped to this cap (the response carries
+# `has_more=True` and `truncated=True` so callers know to keep paging).
+_UTXO_BOXES_DEFAULT_PAGE = 50
+_UTXO_BOXES_MAX_PAGE = 200  # must match UtxoDB.MAX_BOXES_PER_PAGE
+
 # These get set by register_utxo_blueprint() from the main server
 _utxo_db: UtxoDB = None
 _db_path: str = None
@@ -176,6 +184,32 @@ _verify_sig_fn = None      # verify_rtc_signature(pubkey_hex, message, sig_hex) 
 _addr_from_pk_fn = None    # address_from_pubkey(pubkey_hex) -> str
 _current_slot_fn = None    # current_slot() -> int
 _dual_write: bool = False
+
+
+def _parse_paging_args():
+    """Parse and clamp `?limit=` / `?offset=` query args for /utxo/boxes.
+
+    Returns `(limit, offset, error_response)`:
+      * `limit` is already clamped to `_UTXO_BOXES_MAX_PAGE` and
+        `offset` is non-negative on success, both are None.
+      * On a 400-class error, `error_response` is `(response, status)`
+        and the caller should return it immediately; `limit`/`offset`
+        are None.
+    """
+    raw_limit = request.args.get('limit', str(_UTXO_BOXES_DEFAULT_PAGE))
+    raw_offset = request.args.get('offset', '0')
+    try:
+        limit = int(raw_limit)
+        offset = int(raw_offset)
+    except (TypeError, ValueError):
+        return None, None, (jsonify({'error': 'limit and offset must be integers'}), 400)
+    if limit < 1:
+        return None, None, (jsonify({'error': 'limit must be >= 1'}), 400)
+    if offset < 0:
+        return None, None, (jsonify({'error': 'offset must be >= 0'}), 400)
+    if limit > _UTXO_BOXES_MAX_PAGE:
+        limit = _UTXO_BOXES_MAX_PAGE
+    return limit, offset, None
 
 
 def _ensure_transfer_nonce_table(conn: sqlite3.Connection) -> None:
@@ -296,24 +330,51 @@ def register_utxo_blueprint(app, utxo_db: UtxoDB, db_path: str,
 
 @utxo_bp.route('/balance/<address>')
 def utxo_balance(address):
-    """Get UTXO-derived balance for an address."""
+    """Get UTXO-derived balance for an address.
+
+    FIX(#13975): this used to call `get_unspent_for_address(address)`
+    just to compute `utxo_count`, which materialized every full box row
+    for the address. We now use a scalar `COUNT(*)` so the response time
+    is independent of the box count.
+    """
     balance_nrtc = _utxo_db.get_balance(address)
-    boxes = _utxo_db.get_unspent_for_address(address)
+    utxo_count = _utxo_db.get_unspent_count_for_address(address)
     return jsonify({
         'address': address,
         'balance_nrtc': balance_nrtc,
         'balance_rtc': balance_nrtc / UNIT,
-        'utxo_count': len(boxes),
+        'utxo_count': utxo_count,
     })
 
 
 @utxo_bp.route('/boxes/<address>')
 def utxo_boxes(address):
-    """Get all unspent boxes for an address."""
-    boxes = _utxo_db.get_unspent_for_address(address)
+    """Get one page of unspent boxes for an address.
+
+    FIX(#13975): now requires `?limit=` (default 50, max
+    `_UTXO_BOXES_MAX_PAGE` = 200) and accepts `?offset=`. The response
+    always carries `count` (boxes in this page) and `has_more` (True
+    iff more rows exist past this page). The legacy unbounded mode has
+    been removed; clients that previously called without a `limit` will
+    now get at most 50 boxes per request and must follow `has_more` /
+    `next_offset`.
+    """
+    limit, offset, error_response = _parse_paging_args()
+    if error_response is not None:
+        return error_response
+    assert limit is not None and offset is not None  # narrowed by error check
+
+    page, has_more = _utxo_db.get_unspent_for_address_paged(
+        address, limit=limit, offset=offset
+    )
     return jsonify({
         'address': address,
-        'count': len(boxes),
+        'count': len(page),
+        'limit': limit,
+        'offset': offset,
+        'has_more': has_more,
+        'next_offset': (offset + limit) if has_more else None,
+        'truncated': has_more,
         'boxes': [
             {
                 'box_id': b['box_id'],
@@ -324,7 +385,7 @@ def utxo_boxes(address):
                 'output_index': b['output_index'],
                 'registers': json.loads(b.get('registers_json', '{}')),
             }
-            for b in boxes
+            for b in page
         ],
     })
 
