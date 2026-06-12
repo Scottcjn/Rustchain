@@ -85,16 +85,16 @@ class RustChainAutoGenTools:
         return {"ok": True, "source": "/api/stats", "health": stats}
 
     def get_current_epoch(self) -> dict[str, Any]:
-        """Return the current epoch from the public node statistics."""
-        stats = self._get_json(f"{self.base_url}/api/stats")
-        if isinstance(stats, dict) and stats.get("ok") is False:
-            return stats
-        if not isinstance(stats, dict):
-            return {"ok": False, "error": "stats response was not an object"}
-        epoch = stats.get("epoch", stats.get("current_epoch"))
+        """Return the current epoch from the public node epoch endpoint."""
+        epoch_data = self._get_json(f"{self.base_url}/epoch")
+        if isinstance(epoch_data, dict) and epoch_data.get("ok") is False:
+            return epoch_data
+        if not isinstance(epoch_data, dict):
+            return {"ok": False, "error": "epoch response was not an object"}
+        epoch = epoch_data.get("epoch", epoch_data.get("current_epoch"))
         if epoch is None:
-            return {"ok": False, "error": "stats response did not include an epoch"}
-        return {"ok": True, "epoch": epoch, "stats": stats}
+            return {"ok": False, "error": "epoch response did not include an epoch"}
+        return {"ok": True, "epoch": epoch, "epoch_data": epoch_data}
 
     def as_autogen_tools(self) -> list[Any]:
         """Create AutoGen FunctionTool objects for the four public actions."""
