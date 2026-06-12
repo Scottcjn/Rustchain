@@ -313,29 +313,44 @@ def utxo_balance(address):
 
 @utxo_bp.route('/boxes/<address>')
 def utxo_boxes(address):
-    """Get a bounded page of unspent boxes for an address."""
+    """Get a bounded keyset-paginated page of unspent boxes."""
     try:
         limit = int(request.args.get('limit', _BOXES_DEFAULT_LIMIT))
-        offset = int(request.args.get('offset', 0))
+        after_value = request.args.get('after_value_nrtc')
+        after_value = int(after_value) if after_value is not None else None
     except (TypeError, ValueError):
-        return jsonify({'error': 'limit and offset must be integers'}), 400
-    if limit is None or limit < 1 or limit > _BOXES_MAX_LIMIT:
+        return jsonify({'error': 'limit and after_value_nrtc must be integers'}), 400
+    after_box_id = request.args.get('after_box_id')
+    if limit < 1 or limit > _BOXES_MAX_LIMIT:
         return jsonify({
             'error': f'limit must be between 1 and {_BOXES_MAX_LIMIT}',
         }), 400
-    if offset is None or offset < 0:
-        return jsonify({'error': 'offset must be a non-negative integer'}), 400
+    if (after_value is None) != (after_box_id is None) or (
+        after_value is not None and (after_value < 0 or not after_box_id)
+    ):
+        return jsonify({
+            'error': 'after_value_nrtc and after_box_id must form a valid cursor',
+        }), 400
 
-    boxes = _utxo_db.get_unspent_for_address(address, limit=limit, offset=offset)
-    total_count = _utxo_db.count_unspent_for_address(address)
-    next_offset = offset + len(boxes) if offset + len(boxes) < total_count else None
+    rows = _utxo_db.get_unspent_for_address(
+        address, limit=limit + 1, after_value_nrtc=after_value,
+        after_box_id=after_box_id,
+    )
+    has_more = len(rows) > limit
+    boxes = rows[:limit]
+    next_cursor = None
+    if has_more:
+        last = boxes[-1]
+        next_cursor = {
+            'after_value_nrtc': last['value_nrtc'],
+            'after_box_id': last['box_id'],
+        }
     return jsonify({
         'address': address,
         'count': len(boxes),
-        'total_count': total_count,
         'limit': limit,
-        'offset': offset,
-        'next_offset': next_offset,
+        'has_more': has_more,
+        'next_cursor': next_cursor,
         'boxes': [
             {
                 'box_id': b['box_id'],
