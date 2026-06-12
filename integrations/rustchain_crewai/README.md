@@ -35,10 +35,19 @@ balance = tool.check_balance("jdjioe5-cpu")
 print(balance)
 # -> {"ok": True, "wallet_id": "jdjioe5-cpu", "balance_rtc": 100.0, ...}
 
-# Or dispatch by name (mirrors the LangChain RustChainTool shape)
-epoch = tool.run({"action": "get_current_epoch"})
+# Or dispatch by name (mirrors the LangChain RustChainTool shape).
+# Both of these forms are supported and return the same payload:
+epoch = tool.run(action="get_current_epoch")
 print(epoch)
 # -> {"ok": True, "epoch": 191, "chain_id": "rustchain-mainnet-v2", ...}
+
+# A single-dict payload is also accepted (back-compat with v0.1.0):
+epoch = tool.run({"action": "get_current_epoch"})
+
+# `check_balance` works the same way:
+balance = tool.run(action="check_balance", wallet_id="jdjioe5-cpu")
+# or equivalently:
+balance = tool.run({"action": "check_balance", "wallet_id": "jdjioe5-cpu"})
 ```
 
 ## Use inside a CrewAI agent

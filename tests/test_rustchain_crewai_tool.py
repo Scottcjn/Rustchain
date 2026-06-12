@@ -281,3 +281,122 @@ def test_module_exports() -> None:
 def test_crewai_optional_flag_is_bool() -> None:
     # Either True (crewai installed) or False (graceful stub). Never raise.
     assert isinstance(CREWAI_AVAILABLE, bool)
+
+
+# ---------------------------------------------------------------------------
+# Dispatch shape: README + review-claim coverage
+# ---------------------------------------------------------------------------
+
+def test_dispatch_accepts_kwarg_action(tool: RustChainCrewAITool) -> None:
+    """``tool.run(action="get_current_epoch")`` must work end-to-end.
+
+    This is the form the README documents and the one the reviewer
+    (``justtup`` on PR #7394) recommended. The v0.1.0 PR shipped a
+    single-dict form, but ``_run(action: str)`` was the implementation,
+    so ``tool.run(action=...)`` should also succeed.
+    """
+    with mock.patch.object(
+        tool,
+        "_get_json",
+        return_value={
+            "ok": True,
+            "status": 200,
+            "data": {"chain_id": "rustchain-mainnet-v2", "epoch": 191, "block_time": 600},
+        },
+    ):
+        result = tool.run(action="get_current_epoch")
+    assert result["ok"] is True
+    assert result["epoch"] == 191
+
+
+def test_dispatch_accepts_dict_payload(tool: RustChainCrewAITool) -> None:
+    """The single-dict payload form must also work (back-compat)."""
+    with mock.patch.object(
+        tool,
+        "_get_json",
+        return_value={
+            "ok": True,
+            "status": 200,
+            "data": {"chain_id": "rustchain-mainnet-v2", "epoch": 191, "block_time": 600},
+        },
+    ):
+        result = tool.run({"action": "get_current_epoch"})
+    assert result["ok"] is True
+    assert result["epoch"] == 191
+
+
+def test_dispatch_dict_payload_with_wallet_id(tool: RustChainCrewAITool) -> None:
+    """Dict form must forward ``wallet_id`` to ``check_balance``."""
+    with mock.patch.object(
+        tool, "_get_json", return_value={"ok": True, "status": 200, "data": _ok(12.5)}
+    ):
+        result = tool.run({"action": "check_balance", "wallet_id": "jdjioe5-cpu"})
+    assert result["ok"] is True
+    assert result["wallet_id"] == "jdjioe5-cpu"
+    assert result["balance_rtc"] == 12.5
+
+
+def test_dispatch_dict_payload_with_string_limit(tool: RustChainCrewAITool) -> None:
+    """Dict form must coerce a string ``limit`` to int."""
+    captured: Dict[str, Any] = {}
+
+    def fake_get(url: str, params: Optional[dict] = None, **kw: Any) -> _FakeResp:
+        captured["params"] = params
+        return _FakeResp(200, [])
+
+    with mock.patch(
+        "integrations.rustchain_crewai.rustchain_crewai_tool.requests.get",
+        side_effect=fake_get,
+    ):
+        result = tool.run({"action": "list_bounties", "limit": "5"})
+    assert result["ok"] is True
+    assert captured["params"]["per_page"] == 5
+
+
+def test_dispatch_dict_payload_rejects_bad_limit(tool: RustChainCrewAITool) -> None:
+    result = tool._run({"action": "list_bounties", "limit": "not-a-number"})
+    assert result["ok"] is False
+    assert "limit must be int" in result["error"]
+
+
+def test_dispatch_rejects_missing_action(tool: RustChainCrewAITool) -> None:
+    result = tool.run()
+    assert result["ok"] is False
+    assert "action is required" in result["error"]
+
+
+# ---------------------------------------------------------------------------
+# Real BaseTool construction (only runs when crewai is installed)
+# ---------------------------------------------------------------------------
+
+def test_real_basetool_construction_routes_through_pydantic() -> None:
+    """Constructing the tool with real ``crewai.tools.BaseTool`` must work.
+
+    This exercises the pydantic-BaseModel path and was the second
+    reviewer concern on PR #7394: the v0.1.0 explicit ``__init__``
+    assigned ``self.base_url`` *before* ``super().__init__()``, which
+    raises ``AttributeError: ... has no attribute
+    '__pydantic_fields_set__'`` on pydantic v2.
+    """
+    pytest.importorskip("crewai")
+    from integrations.rustchain_crewai.rustchain_crewai_tool import (
+        RustChainCrewAITool as RealTool,
+    )
+
+    tool = RealTool(base_url="https://example.test", timeout=4, bounties_repo="o/r")
+    assert tool.base_url == "https://example.test"
+    assert tool.timeout == 4.0
+    assert tool.bounties_repo == "o/r"
+
+
+def test_real_basetool_default_construction() -> None:
+    """Default construction with real ``BaseTool`` must also work."""
+    pytest.importorskip("crewai")
+    from integrations.rustchain_crewai.rustchain_crewai_tool import (
+        RustChainCrewAITool as RealTool,
+    )
+
+    tool = RealTool()
+    assert tool.base_url == "https://explorer.rustchain.org"
+    assert tool.timeout == 10
+    assert tool.bounties_repo == "Scottcjn/rustchain-bounties"
