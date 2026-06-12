@@ -32,7 +32,7 @@ export function getChatHTML(agentId, agentName) {
   html += '<div id="chat-messages" class="chat-messages">';
 
   if (history.length === 0) {
-    html += `<div class="chat-hint">Type below to hail ${agentName}...</div>`;
+    html += `<div class="chat-hint">Type below to hail ${escapeHtml(agentName)}...</div>`;
   } else {
     for (const msg of history) {
       if (msg.role === 'user') {
