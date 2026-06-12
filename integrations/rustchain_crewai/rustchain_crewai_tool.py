@@ -49,6 +49,14 @@ except ImportError:  # pragma: no cover - crewai not installed in CI
 
     # Provide a tiny stub so the file is still importable for type-checkers
     # and for the unit tests under tests/test_rustchain_crewai_tool.py.
+    #
+    # The stub is a regular class (NOT a pydantic BaseModel) on purpose: the
+    # production code path that exercises real ``crewai.tools.BaseTool`` is
+    # covered by the optional real-import tests, and the stub keeps the
+    # off-CI import contract narrow. ``name``/``description`` are class
+    # attributes; the stub's ``__init__`` accepts arbitrary kwargs (mirroring
+    # the pydantic BaseModel field-init pattern) and stashes them as
+    # instance attributes, which is what the unit tests rely on.
     class BaseTool:  # type: ignore[no-redef]
         """Stub BaseTool used when crewai is not installed.
 
@@ -62,8 +70,6 @@ except ImportError:  # pragma: no cover - crewai not installed in CI
         description: str = ""
 
         def __init__(self, *args: Any, **kwargs: Any) -> None:
-            # Stash arbitrary config so test fixtures and direct construction
-            # both work. Real ``BaseTool`` uses pydantic to validate these.
             for k, v in kwargs.items():
                 setattr(self, k, v)
 
@@ -81,6 +87,10 @@ except ImportError:  # pragma: no cover - crewai not installed in CI
             self.kwargs = kwargs
 
     def Field(*args: Any, **kwargs: Any) -> Any:  # type: ignore[no-redef]
+        # When pydantic is unavailable, ``Field`` still has to be a
+        # callable that returns an object whose ``default`` is readable
+        # (the production class uses ``Field(default=...)`` only). The
+        # simplest compatible shape is a wrapper holding ``kwargs``.
         return _Field(*args, **kwargs)
 
 
@@ -108,7 +118,7 @@ class RustChainCrewAITool(BaseTool):
         from rustchain_crewai_tool import RustChainCrewAITool
 
         tool = RustChainCrewAITool()
-        result = tool.run({"action": "check_balance", "wallet_id": "my-wallet"})
+        result = tool.run(action="get_current_epoch")
     """
 
     # ---- BaseTool interface -------------------------------------------------
@@ -122,13 +132,25 @@ class RustChainCrewAITool(BaseTool):
     )
 
     # ---- Configuration ------------------------------------------------------
-    # Defaults are repeated at class level (for type checkers + IDE hints) and
-    # again in ``__init__`` (so the stub BaseTool / no-pydantic path also
-    # works). Real crewai ``BaseTool`` will pick up the class-level defaults
-    # through its pydantic-based field machinery.
-    base_url: str = DEFAULT_BASE_URL
-    timeout: float = DEFAULT_TIMEOUT_S
-    bounties_repo: str = "Scottcjn/rustchain-bounties"
+    # Configuration fields are declared as pydantic ``Field``s. Real
+    # ``crewai.tools.BaseTool`` extends ``pydantic.BaseModel``, so non-field
+    # attributes set in ``__init__`` before ``super().__init__()`` raise an
+    # ``AttributeError`` (pydantic tries to write to
+    # ``__pydantic_fields_set__`` before the BaseModel machinery is
+    # initialised). Declaring the fields lets pydantic validate and initialise
+    # them in one pass and keeps the values accessible on the instance.
+    base_url: str = Field(
+        default=DEFAULT_BASE_URL,
+        description="Base URL for the RustChain HTTP API.",
+    )
+    timeout: float = Field(
+        default=DEFAULT_TIMEOUT_S,
+        description="Per-request timeout in seconds.",
+    )
+    bounties_repo: str = Field(
+        default="Scottcjn/rustchain-bounties",
+        description="GitHub repo (owner/name) used as the bounty board source.",
+    )
 
     def __init__(  # type: ignore[no-untyped-def]
         self,
@@ -137,14 +159,16 @@ class RustChainCrewAITool(BaseTool):
         bounties_repo: str = "Scottcjn/rustchain-bounties",
         **kwargs: Any,
     ) -> None:
-        # The stub BaseTool above already accepts **kwargs and stashes them
-        # via ``setattr``; we mirror that here so this explicit __init__
-        # also works whether or not pydantic/crewai are installed.
-        self.base_url = base_url
-        self.timeout = float(timeout)
-        self.bounties_repo = bounties_repo
-        for k, v in kwargs.items():
-            setattr(self, k, v)
+        # Route the configuration through ``super().__init__`` so pydantic
+        # can validate and set up ``__pydantic_fields_set__`` correctly. We
+        # coerce ``timeout`` to ``float`` here so the public constructor
+        # stays forgiving (it accepts ``int`` and ``float``).
+        super().__init__(
+            base_url=base_url,
+            timeout=float(timeout),
+            bounties_repo=bounties_repo,
+            **kwargs,
+        )
 
     # ---- Internal helpers ---------------------------------------------------
     def _headers(self) -> Dict[str, str]:
@@ -353,12 +377,48 @@ class RustChainCrewAITool(BaseTool):
     # ---- BaseTool dispatch --------------------------------------------------
     def _run(
         self,
-        action: str,
+        action: Optional[str] = None,
         wallet_id: Optional[str] = None,
         limit: int = 10,
         **kwargs: Any,
     ) -> Dict[str, Any]:
-        """Dispatch a single tool call to one of the four actions."""
+        """Dispatch a single tool call to one of the four actions.
+
+        ``action`` is accepted as either a string (the documented
+        ``tool.run(action="...")`` shape) or, for back-compat with the
+        v0.1.0 README example, a single ``dict`` payload that contains
+        the ``action`` key plus any of ``wallet_id`` / ``limit``.
+        """
+        if isinstance(action, dict):
+            payload = dict(action)
+            action = payload.pop("action", None)
+            if wallet_id is None and "wallet_id" in payload:
+                wallet_id = payload.pop("wallet_id")
+            if "limit" in payload:
+                # Coerce defensively: callers may pass the README's
+                # ``{"limit": "5"}`` shape, where the value is a string.
+                raw_limit = payload.pop("limit")
+                try:
+                    limit = int(raw_limit)
+                except (TypeError, ValueError):
+                    return {
+                        "ok": False,
+                        "error": f"limit must be int, got {raw_limit!r}",
+                    }
+            # Any unknown keys are reported so the caller learns about
+            # typos instead of silently swallowing them.
+            if payload:
+                kwargs.update(payload)
+
+        if not isinstance(action, str) or not action:
+            return {
+                "ok": False,
+                "error": (
+                    "action is required and must be one of: "
+                    "check_balance, list_bounties, get_node_health, get_current_epoch"
+                ),
+            }
+
         if action == "check_balance":
             return self.check_balance(wallet_id or "")
         if action == "list_bounties":
@@ -369,9 +429,20 @@ class RustChainCrewAITool(BaseTool):
             return self.get_current_epoch()
         return {"ok": False, "error": f"unknown action: {action!r}"}
 
-    # CrewAI's BaseTool in some versions also accepts `run` directly; provide
-    # an alias so users can call either ``run`` or ``_run`` explicitly.
+    # CrewAI's BaseTool in some versions also accepts ``run`` directly; provide
+    # an alias so users can call either ``run`` or ``_run`` explicitly. We
+    # normalise the single-dict payload shape here too, so the README example
+    # ``tool.run({"action": "get_current_epoch"})`` works regardless of which
+    # method CrewAI dispatches into.
     def run(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:  # type: ignore[override]
+        if len(args) == 1 and isinstance(args[0], dict) and "action" not in kwargs:
+            payload = dict(args[0])
+            if "action" in payload:
+                action = payload.pop("action")
+                kwargs.setdefault("action", action)
+                for k, v in payload.items():
+                    kwargs.setdefault(k, v)
+                return self._run(**kwargs)
         return self._run(*args, **kwargs)
 
 
