@@ -35,6 +35,10 @@ from utxo_db import (
 # which is far above any realistic balance and well within int64.
 _MAX_RTC_AMOUNT = Decimal(2) ** 53
 
+# Bound public address queries so fragmented wallets cannot force unbounded responses.
+_BOXES_DEFAULT_LIMIT = 100
+_BOXES_MAX_LIMIT = 500
+
 
 def _parse_rtc_amount(raw) -> Decimal:
     """
@@ -296,24 +300,39 @@ def register_utxo_blueprint(app, utxo_db: UtxoDB, db_path: str,
 
 @utxo_bp.route('/balance/<address>')
 def utxo_balance(address):
-    """Get UTXO-derived balance for an address."""
+    """Get UTXO-derived balance and count for an address."""
     balance_nrtc = _utxo_db.get_balance(address)
-    boxes = _utxo_db.get_unspent_for_address(address)
+    utxo_count = _utxo_db.count_unspent_for_address(address)
     return jsonify({
         'address': address,
         'balance_nrtc': balance_nrtc,
         'balance_rtc': balance_nrtc / UNIT,
-        'utxo_count': len(boxes),
+        'utxo_count': utxo_count,
     })
 
 
 @utxo_bp.route('/boxes/<address>')
 def utxo_boxes(address):
-    """Get all unspent boxes for an address."""
-    boxes = _utxo_db.get_unspent_for_address(address)
+    """Get a bounded page of unspent boxes for an address."""
+    limit = request.args.get('limit', _BOXES_DEFAULT_LIMIT, type=int)
+    offset = request.args.get('offset', 0, type=int)
+    if limit is None or limit < 1 or limit > _BOXES_MAX_LIMIT:
+        return jsonify({
+            'error': f'limit must be between 1 and {_BOXES_MAX_LIMIT}',
+        }), 400
+    if offset is None or offset < 0:
+        return jsonify({'error': 'offset must be a non-negative integer'}), 400
+
+    boxes = _utxo_db.get_unspent_for_address(address, limit=limit, offset=offset)
+    total_count = _utxo_db.count_unspent_for_address(address)
+    next_offset = offset + len(boxes) if offset + len(boxes) < total_count else None
     return jsonify({
         'address': address,
         'count': len(boxes),
+        'total_count': total_count,
+        'limit': limit,
+        'offset': offset,
+        'next_offset': next_offset,
         'boxes': [
             {
                 'box_id': b['box_id'],
