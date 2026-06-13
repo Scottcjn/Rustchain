@@ -18,24 +18,24 @@ logger = logging.getLogger("rustchain.epoch_settler")
 
 def _env_positive_int(name: str, default: int) -> int:
     raw = os.environ.get(name)
-    if raw is None or raw == "":
+    if raw is None:
         return default
+    if str(raw).strip() == "":
+        raise ValueError(f"{name} must be a positive integer")
     try:
         value = int(raw)
     except (TypeError, ValueError):
-        logger.warning("Invalid %s=%r; using default %s", name, raw, default)
-        return default
+        raise ValueError(f"{name} must be a positive integer") from None
     if value <= 0:
-        logger.warning("Invalid %s=%r; using default %s", name, raw, default)
-        return default
+        raise ValueError(f"{name} must be a positive integer")
     return value
 
 
 # Configuration — environment variables with defaults
 NODE_URL = os.environ.get("RUSTCHAIN_NODE_URL", "http://localhost:8088")
 DB_PATH = os.environ.get("RUSTCHAIN_DB_PATH", "/root/rustchain/rustchain_v2.db")
-# Module-level env config — wrap integer casts so bad env values
-# (empty string, non-numeric text) don't crash the daemon at import.
+# Missing env values use documented defaults; explicit malformed settlement
+# config fails closed instead of silently changing epoch timing.
 CHECK_INTERVAL = _env_positive_int("RUSTCHAIN_SETTLE_INTERVAL", 300)
 SLOTS_PER_EPOCH = _env_positive_int("RUSTCHAIN_SLOTS_PER_EPOCH", 144)
 
