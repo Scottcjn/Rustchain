@@ -25,31 +25,31 @@ logger = logging.getLogger("flame_beacon")
 
 def _env_positive_int(name: str, default: int) -> int:
     raw = os.environ.get(name)
-    if raw is None or str(raw).strip() == "":
+    if raw is None:
         return default
+    if str(raw).strip() == "":
+        raise ValueError(f"{name} must be a positive integer")
     try:
         value = int(raw)
-    except (TypeError, ValueError):
-        logger.warning("Invalid %s=%r; using default %s", name, raw, default)
-        return default
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be a positive integer") from exc
     if value <= 0:
-        logger.warning("Non-positive %s=%r; using default %s", name, raw, default)
-        return default
+        raise ValueError(f"{name} must be a positive integer")
     return value
 
 
 def _env_positive_float(name: str, default: float) -> float:
     raw = os.environ.get(name)
-    if raw is None or str(raw).strip() == "":
+    if raw is None:
         return default
+    if str(raw).strip() == "":
+        raise ValueError(f"{name} must be a positive finite number")
     try:
         value = float(raw)
-    except (TypeError, ValueError):
-        logger.warning("Invalid %s=%r; using default %s", name, raw, default)
-        return default
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be a positive finite number") from exc
     if not math.isfinite(value) or value <= 0:
-        logger.warning("Non-positive %s=%r; using default %s", name, raw, default)
-        return default
+        raise ValueError(f"{name} must be a positive finite number")
     return value
 
 # ---------------------------------------------------------------------------

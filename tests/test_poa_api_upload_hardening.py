@@ -45,13 +45,20 @@ def test_validate_rejects_non_json_upload(monkeypatch):
     assert called is False
 
 
-@pytest.mark.parametrize("env_value", ["oops", "", "0", "-1"])
-def test_malformed_upload_limit_env_falls_back(monkeypatch, env_value):
-    monkeypatch.setenv("POA_VALIDATE_MAX_UPLOAD_BYTES", env_value)
+def test_missing_upload_limit_env_uses_default(monkeypatch):
+    monkeypatch.delenv("POA_VALIDATE_MAX_UPLOAD_BYTES", raising=False)
 
     module = load_poa_api(monkeypatch)
 
     assert module.MAX_UPLOAD_BYTES == 10 * 1024 * 1024
+
+
+@pytest.mark.parametrize("env_value", ["oops", "", "0", "-1"])
+def test_malformed_upload_limit_env_fails_closed(monkeypatch, env_value):
+    monkeypatch.setenv("POA_VALIDATE_MAX_UPLOAD_BYTES", env_value)
+
+    with pytest.raises(ValueError, match="POA_VALIDATE_MAX_UPLOAD_BYTES"):
+        load_poa_api(monkeypatch)
 
 
 def test_valid_upload_limit_env_is_preserved(monkeypatch):

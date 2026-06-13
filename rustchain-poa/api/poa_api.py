@@ -18,14 +18,16 @@ app = Flask(__name__)
 
 def _env_positive_int(name, default):
     raw = os.environ.get(name)
-    if raw is None or str(raw).strip() == "":
+    if raw is None:
         return default
+    if str(raw).strip() == "":
+        raise ValueError(f"{name} must be a positive integer")
     try:
         value = int(raw)
-    except (TypeError, ValueError):
-        return default
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be a positive integer") from exc
     if value <= 0:
-        return default
+        raise ValueError(f"{name} must be a positive integer")
     return value
 
 
