@@ -81,5 +81,30 @@ class TestCoinSelectEdgeCases(unittest.TestCase):
         result, change = coin_select(utxos, 350)
         self.assertEqual(len(result), 4)
 
+    def test_equal_value_utxos_capped_at_twenty(self):
+        """Regression for #6830: 25 equal-value UTXOs, target 21.
+        Both strategies return 21 inputs (>20); cap-aware fallback
+        returns empty since 20x1 < 21."""
+        utxos = [{"value_nrtc": 1} for _ in range(25)]
+        result, change = coin_select(utxos, 21)
+        self.assertEqual(len(result), 0)
+        self.assertEqual(change, 0)
+
+    def test_result_never_exceeds_twenty_inputs(self):
+        """coin_select must never return more than 20 inputs
+        regardless of UTXO distribution."""
+        import random
+        random.seed(42)
+        for _ in range(200):
+            n = random.randint(25, 50)
+            utxos = [{"value_nrtc": random.randint(1, 5)} for _ in range(n)]
+            target = random.randint(1, n * 3)
+            result, _ = coin_select(utxos, target)
+            self.assertLessEqual(
+                len(result), 20,
+                f"{len(result)} inputs for {n} UTXOs, target {target}",
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

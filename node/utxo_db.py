@@ -1496,6 +1496,15 @@ def coin_select(utxos: List[dict], target_nrtc: int
                 break
         if total < target_nrtc:
             return [], 0
+        # Equal-value edge case: largest-first produces the same
+        # selection as smallest-first, so the fallback alone does
+        # not reduce input count.  Cap at the 20 largest and verify
+        # they still cover the target.
+        if len(selected) > 20:
+            selected = sorted_desc[:20]
+            total = sum(u['value_nrtc'] for u in selected)
+            if total < target_nrtc:
+                return [], 0
 
     change = total - target_nrtc
     if change < DUST_THRESHOLD:
