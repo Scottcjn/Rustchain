@@ -305,6 +305,20 @@ launchctl list | grep rustchain
 tail -f ~/.rustchain/miner.log
 ```
 
+### Troubleshooting
+
+If setup does not behave as expected, start with these quick checks:
+
+| Symptom | Check | Next step |
+|---|---|---|
+| Installer fails before mining starts | Run the installer with `--dry-run` and confirm Python is available on `PATH` | Re-run with `bash -x` if you need command-level output |
+| Node commands time out | `curl -fsS https://rustchain.org/health` | Wait and retry, or compare with the explorer before changing local config |
+| Miner service is not running | Linux: `systemctl --user status rustchain-miner`; macOS: `launchctl list \| grep rustchain` | Inspect `journalctl --user -u rustchain-miner -f` or `~/.rustchain/miner.log` |
+| Balance looks empty after install | `curl -fsS "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"` | Make sure the wallet name matches the one passed to `--wallet` |
+| HTTPS or certificate errors appear | Use the documented `https://rustchain.org` endpoints with normal TLS verification | Do not disable TLS verification in production scripts |
+
+For a guided walkthrough, continue with the [Beginner Quickstart](docs/QUICKSTART.md). For local builds and devnet testing, use the [Build Guide](docs/BUILD.md), [Local Devnet](docs/DEVNET.md), and [CLI Wallet Walkthrough](docs/CLI.md).
+
 **New to RustChain?** Read the [step-by-step Beginner Quickstart](docs/QUICKSTART.md) — covers everything from install to your first RTC, with every command explained.
 
 ---
