@@ -153,6 +153,24 @@ def test_ledger_status_update_rejects_non_object_json_before_mutation(tmp_path, 
     assert record["tx_hash"] == ""
 
 
+def test_ledger_status_update_reports_missing_record(tmp_path, monkeypatch):
+    client, db_path = _make_client(tmp_path, monkeypatch)
+    payout_ledger.init_payout_ledger_tables()
+
+    response = client.patch(
+        "/api/ledger/missing-record/status",
+        headers={"X-Admin-Key": ADMIN_KEY},
+        json={"status": "confirmed", "tx_hash": "tx-missing"},
+    )
+
+    assert response.status_code == 404
+    assert response.get_json() == {"error": "not found"}
+    assert payout_ledger.ledger_get("missing-record") is None
+    with sqlite3.connect(db_path) as conn:
+        count = conn.execute("SELECT COUNT(*) FROM payout_ledger").fetchone()[0]
+    assert count == 0
+
+
 def test_admin_key_allows_create_read_summary_and_status_update(tmp_path, monkeypatch):
     client, _db_path = _make_client(tmp_path, monkeypatch)
     headers = {"X-Admin-Key": ADMIN_KEY}
