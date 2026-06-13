@@ -36,7 +36,15 @@ baseline_tmp="$(mktemp)"
 unannotated_tmp="$(mktemp)"
 new_tmp="$(mktemp)"
 stale_tmp="$(mktemp)"
-trap 'rm -f "$scan_tmp" "$baseline_tmp" "$unannotated_tmp" "$new_tmp" "$stale_tmp"' EXIT
+baseline_keys_tmp="$(mktemp)"
+scan_keys_tmp="$(mktemp)"
+trap 'rm -f "$scan_tmp" "$baseline_tmp" "$unannotated_tmp" "$new_tmp" "$stale_tmp" "$baseline_keys_tmp" "$scan_keys_tmp"' EXIT
+
+normalize_fetchall_hit() {
+    sed -E \
+        -e 's/^([^:]+):[0-9]+:/\1:/' \
+        -e 's/[[:space:]]*# fetchall-ok:.*$//'
+}
 
 : > "$scan_tmp"
 : > "$unannotated_tmp"
@@ -45,7 +53,7 @@ FETCHALL_PATTERN='\.fetchall[[:space:]]*\('
 
 if command -v rg >/dev/null 2>&1; then
     set +e
-    rg -n "$FETCHALL_PATTERN" node \
+    rg --no-ignore -n "$FETCHALL_PATTERN" node \
         --glob '!node/tests/**' \
         --glob '!node/test_*' \
         --glob '!node/__pycache__/**' \
@@ -78,6 +86,17 @@ if [ -f "$BASELINE_FILE" ]; then
 else
     : > "$baseline_tmp"
 fi
+
+normalize_fetchall_hit < "$baseline_tmp" | sort -u > "$baseline_keys_tmp"
+
+while IFS= read -r hit; do
+    [ -z "$hit" ] && continue
+    if echo "$hit" | grep -q '\`\`\.fetchall()'; then
+        continue
+    fi
+    printf '%s\n' "$hit" | normalize_fetchall_hit >> "$scan_keys_tmp"
+done < "$scan_tmp"
+sort -u "$scan_keys_tmp" -o "$scan_keys_tmp"
 
 while IFS= read -r hit; do
     [ -z "$hit" ] && continue
@@ -112,8 +131,27 @@ if [ "${1:-}" = "--print-baseline" ]; then
     exit 0
 fi
 
-comm -23 "$unannotated_tmp" "$baseline_tmp" > "$new_tmp"
-comm -13 "$unannotated_tmp" "$baseline_tmp" > "$stale_tmp"
+: > "$new_tmp"
+while IFS= read -r hit; do
+    [ -z "$hit" ] && continue
+    hit_key="$(printf '%s\n' "$hit" | normalize_fetchall_hit)"
+    if ! grep -Fxq "$hit_key" "$baseline_keys_tmp"; then
+        echo "$hit" >> "$new_tmp"
+    fi
+done < "$unannotated_tmp"
+
+: > "$stale_tmp"
+while IFS= read -r hit; do
+    [ -z "$hit" ] && continue
+    file="${hit%%:*}"
+    if [ -f "$file" ] && ! grep -Fq "$file:" "$scan_tmp"; then
+        continue
+    fi
+    hit_key="$(printf '%s\n' "$hit" | normalize_fetchall_hit)"
+    if ! grep -Fxq "$hit_key" "$scan_keys_tmp"; then
+        echo "$hit" >> "$stale_tmp"
+    fi
+done < "$baseline_tmp"
 
 if [ -s "$new_tmp" ]; then
     count=$(wc -l < "$new_tmp" | tr -d ' ')
