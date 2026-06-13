@@ -94,8 +94,14 @@ class RustChainClient:
                     context=self._ctx,
                     timeout=self.timeout
                 ) as response:
-                    response_data = response.read().decode("utf-8")
-                    return json.loads(response_data) if response_data else {}
+                    raw = response.read()
+                    response_data = raw.decode("utf-8").strip() if raw else ""
+                    # Empty / whitespace-only 200 OK body: treat as "no payload"
+                    # rather than raising JSONDecodeError. This fixes Issue #7351
+                    # where any whitespace-only or empty 200 OK crashed the client.
+                    if not response_data:
+                        return {}
+                    return json.loads(response_data)
 
             except HTTPError as e:
                 error_body = e.read().decode("utf-8") if e.fp else ""
