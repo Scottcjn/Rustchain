@@ -79,7 +79,7 @@ RustChainトークン（RTC）は、BoTTube Bridgeを通じてSolana上で**wRTC
 3. フォーク、修正、PR — RTCで報酬を獲得
 4. 詳細は[CONTRIBUTING.md](CONTRIBUTING.md)を参照
 
-**1 RTC = $0.10 USD** | `python3 -m pip install clawrtc`でマイニング開始
+**1 RTC = $0.15 USD** | `curl -fsSL https://rustchain.org/install.sh | bash`でマイニング開始
 
 ---
 

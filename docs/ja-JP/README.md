@@ -58,7 +58,7 @@ curl -fsS "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET"
 | メジャー | 75-100 RTC | セキュリティ修正、コンセンサス |
 | クリティカル | 100-150 RTC | 脆弱性、プロトコル |
 
-**1 RTC ≈ $0.10 USD**
+**1 RTC ≈ $0.15 USD**
 
 ---
 

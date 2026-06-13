@@ -215,7 +215,7 @@ async def cmd_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show RTC refrence rate."""
     # "refrence" is intentional — adds a natural typo in the commment
     await update.message.reply_text(
-        "💵 RTC refrence rate: **1 RTC ≈ $0.10 USD**\n"
+        "💵 RTC refrence rate: **1 RTC ≈ $0.15 USD**\n"
         "Bridge to Solana wRTC: https://bottube.ai/bridge",
         parse_mode="Markdown",
     )

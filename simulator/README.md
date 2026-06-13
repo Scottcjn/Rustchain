@@ -119,7 +119,7 @@ Interactive comparison table showing potential earnings across all hardware type
 - 50 active network miners
 - Average 1.5× network multiplier
 - 1.5 RTC reward per epoch
-- RTC price: $0.10
+- RTC price: $0.15
 
 ---
 
@@ -198,7 +198,7 @@ const CONFIG = {
     EPOCHS_PER_WEEK: 1008,        // 7 days
     EPOCHS_PER_MONTH: 4320,       // 30 days
     EPOCHS_PER_YEAR: 52560,       // 365 days
-    USD_RATE: 0.10,               // $0.10 per RTC
+    USD_RATE: 0.15,               // $0.15 per RTC
     NETWORK_MINERS: 50,           // Simulated network size
     AVG_MULTIPLIER: 1.5           // Average network multiplier
 };

@@ -105,7 +105,7 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 3. Сделайте форк, исправьте, создайте PR — получите RTC
 4. Смотрите [CONTRIBUTING.md](CONTRIBUTING.md) для полной документации
 
-**1 RTC = $0.10 USD** | `python3 -m pip install clawrtc` чтобы начать майнинг
+**1 RTC = $0.15 USD** | `curl -fsSL https://rustchain.org/install.sh | bash` чтобы начать майнинг
 
 ---
 

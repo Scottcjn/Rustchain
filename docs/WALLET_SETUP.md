@@ -2,7 +2,7 @@
 
 This guide is for someone who has never used crypto before.
 
-RustChain uses **RTC** as its native token. A common reference rate in the project docs is **1 RTC = $0.10 USD**. The network has already reached **500 wallet holders**, and code bounties commonly pay **1 to 400 RTC** depending on difficulty.
+RustChain uses **RTC** as its native token. A common reference rate in the project docs is **1 RTC = $0.15 USD**. The network has already reached **500 wallet holders**, and code bounties commonly pay **1 to 400 RTC** depending on difficulty.
 
 ## First: understand what "wallet" means on RustChain
 

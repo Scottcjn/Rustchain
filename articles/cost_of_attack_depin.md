@@ -148,7 +148,7 @@ The difference is that RustChain's attestation is adversarial by design. Helium 
 If you are building on or contributing to RustChain, the economics are straightforward:
 
 - **Real hardware miners** earn proportional rewards based on architecture rarity and attestation consistency.
-- **Code contributors** earn bounties denominated in RTC at a reference rate of $0.10 USD, reviewed by humans and paid for merged work.
+- **Code contributors** earn bounties denominated in RTC at a reference rate of $0.15 USD, reviewed by humans and paid for merged work.
 - **VM farmers and emulator operators** earn effectively nothing.
 - **Spam PR submitters** get caught by the same pattern recognition that catches hardware spoofing -- we have seen every variant and we document them all.
 

@@ -165,4 +165,4 @@ Key points:
 ---
 
 *The Antiquity Mining Championship is organized by Elyan Labs.
-RTC reference rate: 1 RTC = $0.10 USD.*
+RTC reference rate: 1 RTC = $0.15 USD.*

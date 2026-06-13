@@ -197,7 +197,7 @@ Toda contribuição ganhe tokens RTC. Navegue pelos [bounties abertos](https://g
 | Major | 75-100 RTC | Correção de segurança, consenso |
 | Crítico | 100-150 RTC | Vulnerabilidade, protocolo |
 
-**1 RTC ≈ $0.10 USD**
+**1 RTC ≈ $0.15 USD**
 
 ---
 

@@ -77,7 +77,7 @@ Cada contribución gana tokens RTC. Corrección de errores, características, do
 3. Fork, corrige, PR — cobra en RTC
 4. Consulta [CONTRIBUTING.md](CONTRIBUTING.md) para detalles completos
 
-**1 RTC = $0.10 USD** | `python3 -m pip install clawrtc` para comenzar a minar
+**1 RTC = $0.15 USD** | `curl -fsSL https://rustchain.org/install.sh | bash` para comenzar a minar
 
 ---
 

@@ -209,7 +209,7 @@ The attestation server doesn't trust self-reported data. It performs:
 
 ### RTC Value
 
-- **Reference Rate**: 1 RTC ≈ $0.10 USD
+- **Reference Rate**: 1 RTC ≈ $0.15 USD
 - **Bridge**: RTC ↔ wRTC (Solana SPL token)
 - **Trading**: Available on Raydium DEX
 

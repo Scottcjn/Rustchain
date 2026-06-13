@@ -54,7 +54,7 @@ New to RustChain? Get 10 RTC for your **first merged PR** — even for small imp
 | Major | 75-100 RTC | SDK, CLI tools, CI pipeline, Windows installer |
 | Critical | 100-150 RTC | Security audits, protocol work, bridges |
 
-**Reference rate: 1 RTC = $0.10 USD**
+**Reference rate: 1 RTC = $0.15 USD**
 
 ## What Gets Merged
 
