@@ -19,6 +19,7 @@ import time
 import hmac
 import hashlib
 import logging
+import math
 import os
 import re
 from typing import Optional, Tuple, Dict, Any
@@ -58,31 +59,31 @@ logger = logging.getLogger(__name__)
 
 def _env_positive_int(name: str, default: int) -> int:
     raw = os.environ.get(name)
-    if raw is None or raw == "":
+    if raw is None:
         return default
+    if str(raw).strip() == "":
+        raise ValueError(f"{name} must be a positive integer")
     try:
         value = int(raw)
     except (TypeError, ValueError):
-        logger.warning("Invalid %s=%r; using default %s", name, raw, default)
-        return default
+        raise ValueError(f"{name} must be a positive integer") from None
     if value <= 0:
-        logger.warning("Invalid %s=%r; using default %s", name, raw, default)
-        return default
+        raise ValueError(f"{name} must be a positive integer")
     return value
 
 
 def _env_positive_float(name: str, default: float) -> float:
     raw = os.environ.get(name)
-    if raw is None or raw == "":
+    if raw is None:
         return default
+    if str(raw).strip() == "":
+        raise ValueError(f"{name} must be a positive number")
     try:
         value = float(raw)
     except (TypeError, ValueError):
-        logger.warning("Invalid %s=%r; using default %s", name, raw, default)
-        return default
-    if value <= 0:
-        logger.warning("Invalid %s=%r; using default %s", name, raw, default)
-        return default
+        raise ValueError(f"{name} must be a positive number") from None
+    if not math.isfinite(value) or value <= 0:
+        raise ValueError(f"{name} must be a positive number")
     return value
 
 
