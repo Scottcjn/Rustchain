@@ -89,6 +89,40 @@ def test_screenshot_validation_preserves_small_file_warning(tmp_path):
     assert "Screenshot file is unusually small" in validator.warnings
 
 
+def test_image_validation_closes_pillow_handles(monkeypatch, tmp_path):
+    validator = SubmissionValidator()
+    photo_path = tmp_path / "photo.png"
+    photo_path.write_bytes(b"x" * 10000)
+    closed_handles = []
+
+    class FakeImage:
+        size = (640, 480)
+        format = "PNG"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            closed_handles.append(True)
+
+        def verify(self):
+            return None
+
+    class FakePillow:
+        @staticmethod
+        def open(_path):
+            return FakeImage()
+
+    monkeypatch.setattr(validate_vintage_submission, "HAVE_PILLOW", True)
+    monkeypatch.setattr(validate_vintage_submission, "Image", FakePillow)
+
+    result = validator.validate_photo(str(photo_path))
+
+    assert result["status"] == "PASS"
+    assert result["checks"]["format"] == "PNG"
+    assert closed_handles == [True, True]
+
+
 def test_validate_submission_extracts_arch_and_bounty_from_valid_log(tmp_path):
     validator = SubmissionValidator()
     log_path = tmp_path / "attestation.json"
