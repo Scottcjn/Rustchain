@@ -14,13 +14,17 @@ import requests
 class MCPClient:
     """Simple MCP client for Relic Market"""
     
-    def __init__(self, server_url: str = "http://localhost:5000"):
+    def __init__(self, server_url: str = "http://localhost:5000", timeout: int = 15):
         self.server_url = server_url.rstrip('/')
+        self.timeout = timeout
         self.session = requests.Session()
     
     def get_manifest(self):
         """Get MCP server manifest"""
-        response = self.session.get(f"{self.server_url}/mcp/manifest")
+        response = self.session.get(
+            f"{self.server_url}/mcp/manifest",
+            timeout=self.timeout,
+        )
         return response.json()
     
     def call_tool(self, tool_name: str, arguments: dict):
@@ -31,7 +35,8 @@ class MCPClient:
         }
         response = self.session.post(
             f"{self.server_url}/mcp/tool",
-            json=payload
+            json=payload,
+            timeout=self.timeout,
         )
         return response.json()
 
