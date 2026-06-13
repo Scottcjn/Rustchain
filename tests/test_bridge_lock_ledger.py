@@ -764,6 +764,62 @@ class TestLockLedger:
         assert len(locks) == 3
         
         conn.close()
+
+    def test_lock_query_limit_bounds_preserve_zero(self, setup_test_db):
+        """Direct helper limits should cap scans while preserving zero as no rows."""
+        lock_ledger = setup_test_db["lock_ledger"]
+
+        assert lock_ledger._bounded_lock_query_limit(-1) == 1
+        assert lock_ledger._bounded_lock_query_limit(0) == 0
+        assert lock_ledger._bounded_lock_query_limit(999) == lock_ledger.MAX_LOCK_QUERY_LIMIT
+
+    def test_get_locks_by_miner_bounds_direct_limit(self, setup_test_db, funded_miner):
+        """Core miner lock helper must not pass negative limits through to SQLite."""
+        lock_ledger = setup_test_db["lock_ledger"]
+        conn = sqlite3.connect(setup_test_db["db_path"])
+        now = int(time.time())
+
+        for i in range(3):
+            lock_ledger.create_lock(
+                conn,
+                miner_id=funded_miner,
+                amount_i64=10 * 1000000,
+                lock_type="bridge_deposit",
+                unlock_at=now + 3600 + i
+            )
+
+        assert len(lock_ledger.get_locks_by_miner(conn, funded_miner, limit=-1)) == 1
+        assert lock_ledger.get_locks_by_miner(conn, funded_miner, limit=0) == []
+
+        conn.close()
+
+    def test_get_pending_unlocks_bounds_direct_limit(self, setup_test_db, funded_miner):
+        """Core pending-unlock helper must bound negative limits and keep zero no-op."""
+        lock_ledger = setup_test_db["lock_ledger"]
+        conn = sqlite3.connect(setup_test_db["db_path"])
+        now = int(time.time())
+
+        for i in range(3):
+            conn.execute(
+                """INSERT INTO lock_ledger
+                   (miner_id, amount_i64, lock_type, locked_at, unlock_at, status, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    funded_miner,
+                    10 * 1000000,
+                    "bridge_deposit",
+                    now - 3600,
+                    now - 60 - i,
+                    "locked",
+                    now - 3600,
+                ),
+            )
+        conn.commit()
+
+        assert len(lock_ledger.get_pending_unlocks(conn, limit=-1)) == 1
+        assert lock_ledger.get_pending_unlocks(conn, limit=0) == []
+
+        conn.close()
     
     def test_get_miner_locked_balance(self, setup_test_db, funded_miner):
         """Test getting miner's total locked balance."""

@@ -52,6 +52,15 @@ except ImportError:
 
 LOCK_UNIT = UNIT  # Micro-units per RTC
 logger = logging.getLogger(__name__)
+MAX_LOCK_QUERY_LIMIT = 500
+
+
+def _bounded_lock_query_limit(limit: int) -> int:
+    """Bound direct helper limits without turning explicit zero into one row."""
+    value = int(limit)
+    if value < 0:
+        return 1
+    return min(value, MAX_LOCK_QUERY_LIMIT)
 
 
 # =============================================================================
@@ -475,9 +484,9 @@ def get_locks_by_miner(
         params.append(status_filter)
 
     query += " ORDER BY id DESC LIMIT ?"
-    params.append(max(1, min(limit, 500)))
+    params.append(_bounded_lock_query_limit(limit))
 
-    rows = cursor.execute(query, params).fetchall()
+    rows = cursor.execute(query, params).fetchall()  # fetchall-ok: already-paginated
 
     return [
         LockEntry(
@@ -533,9 +542,9 @@ def get_pending_unlocks(
         params.append(before_timestamp)
 
     query += " ORDER BY unlock_at ASC LIMIT ?"
-    params.append(max(1, min(limit, 500)))
+    params.append(_bounded_lock_query_limit(limit))
 
-    rows = cursor.execute(query, params).fetchall()
+    rows = cursor.execute(query, params).fetchall()  # fetchall-ok: already-paginated
 
     return [
         LockEntry(
@@ -584,7 +593,7 @@ def get_miner_locked_balance(
         FROM lock_ledger
         WHERE miner_id = ? AND status = 'locked'
         GROUP BY lock_type
-    """, (miner_id,)).fetchall()
+    """, (miner_id,)).fetchall()  # fetchall-ok: bounded-by-schema
 
     breakdown = {
         r[0]: {"amount_rtc": r[1] / LOCK_UNIT, "count": r[2]}
