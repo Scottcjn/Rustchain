@@ -78,6 +78,7 @@ class RawTxBuilder:
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
         cur.execute("SELECT miner, device_arch, ts_ok FROM miner_attest_recent ORDER BY ts_ok DESC LIMIT ?", (limit,))
+        # fetchall-ok: already-paginated
         miners = [dict(row) for row in cur.fetchall()]
         conn.close()
         return miners
