@@ -29,6 +29,12 @@ function escapeHtml(value) {
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
 }
+
+function safeNumber(value, fallback = 0, min = 0, max = Number.MAX_SAFE_INTEGER) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.min(max, Math.max(min, number));
+}
 // -- Reputation cache (loaded from backend) --
 let reputationCache = {};
 let reputationTs = 0;
@@ -213,6 +219,12 @@ function selectAgent(agentId) {
   const gradeColor = isRelay
     ? getProviderColor(agent.provider)
     : GRADE_COLORS[agent.grade];
+  const beatCount = safeNumber(agent.beat_count);
+  const score = safeNumber(agent.score);
+  const maxScore = safeNumber(agent.maxScore, 1, 1);
+  const videos = safeNumber(agent.videos);
+  const totalViews = safeNumber(agent.totalViews);
+  const antiquityMultiplier = safeNumber(agent.antiquity_multiplier, 1);
 
   let html = '';
   html += `<div class="t-cmd"><span class="dollar">$</span>cat /agent/${escapeHtml(agent.id)}</div>`;
@@ -232,8 +244,8 @@ function selectAgent(agentId) {
       html += `<div><span class="t-label">CAPS</span> <span class="t-value">${agent.capabilities.map(c => `[${escapeHtml(c)}]`).join(' ')}</span></div>`;
     }
 
-    if (agent.beat_count) {
-      html += `<div><span class="t-label">HEARTBEATS</span> <span class="t-value">${agent.beat_count}</span></div>`;
+    if (beatCount > 0) {
+      html += `<div><span class="t-label">HEARTBEATS</span> <span class="t-value">${beatCount}</span></div>`;
     }
 
     // Relay agents get a simpler valuation section (pending scoring)
@@ -247,7 +259,7 @@ function selectAgent(agentId) {
     html += `<div><span class="t-label">BEACON</span> <span class="t-value" style="color: var(--text-dim)">${escapeHtml(agent.beacon || agent.relay_agent_id || agent.id)}</span></div>`;
     html += `<div><span class="t-label">ROLE</span> <span class="t-value">${escapeHtml(agent.role)}</span></div>`;
     html += `<div><span class="t-label">GRADE</span> <span class="grade-badge grade-${escapeHtml(agent.grade)}">${escapeHtml(agent.grade)}</span>`;
-    html += `${renderBar(agent.score, agent.maxScore, gradeColor)} ${agent.score}/${agent.maxScore}</div>`;
+    html += `${renderBar(score, maxScore, gradeColor)} ${score}/${maxScore}</div>`;
     html += `<div><span class="t-label">ADDRESS</span> <span class="t-value">${escapeHtml(city ? city.name : '?')}, ${escapeHtml(region ? region.name : '?')}</span></div>`;
 
     // Valuation breakdown
@@ -325,16 +337,16 @@ function selectAgent(agentId) {
     html += `<div class="t-section">-- LINKS --</div>`;
     html += `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0">`;
     html += `<a href="https://bottube.ai/agent/${encodeURIComponent(agent.bottube)}" target="_blank" class="bounty-link">[BoTTube Profile]</a>`;
-    if (agent.videos > 0) {
-      html += `<span style="color:var(--text-dim);font-size:11px;line-height:28px">${agent.videos} videos | ${(agent.totalViews||0).toLocaleString()} views</span>`;
+    if (videos > 0) {
+      html += `<span style="color:var(--text-dim);font-size:11px;line-height:28px">${videos} videos | ${totalViews.toLocaleString()} views</span>`;
     }
     html += `</div>`;
   }
   if (agent.miner) {
     html += agent.bottube ? '' : `<div class="t-section">-- LINKS --</div>`;
     html += `<div style="margin:4px 0"><span style="color:#88ff88">[Miner: ${escapeHtml(agent.device_arch || 'unknown')}]</span>`;
-    if (agent.antiquity_multiplier && agent.antiquity_multiplier > 1) {
-      html += ` <span style="color:#ffd700">${agent.antiquity_multiplier}x antiquity</span>`;
+    if (antiquityMultiplier > 1) {
+      html += ` <span style="color:#ffd700">${antiquityMultiplier}x antiquity</span>`;
     }
     html += `</div>`;
   }
@@ -450,7 +462,9 @@ function closePanel() {
 
 // --- Helpers ---
 function renderBar(value, max, color) {
-  const pct = Math.round((value / max) * 100);
+  const safeMax = safeNumber(max, 1, 1);
+  const safeValue = safeNumber(value, 0, 0, safeMax);
+  const pct = Math.min(100, Math.max(0, Math.round((safeValue / safeMax) * 100)));
   return `<span style="display:inline-block;width:80px;height:8px;background:rgba(0,20,0,0.5);border:1px solid var(--border);vertical-align:middle;margin:0 6px"><span style="display:block;height:100%;width:${pct}%;background:${color}"></span></span>`;
 }
 
