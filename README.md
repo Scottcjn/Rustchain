@@ -441,5 +441,76 @@ Named after a 486 laptop with oxidized serial ports that still boots to DOS and 
 Please read the [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines and the [Bounty Board](https://github.com/Scottcjn/rustchain-bounties) for active tasks and rewards.
 
 
+
+---
+
+### Troubleshooting
+
+<details>
+<summary><b>Miner not connecting to node</b></summary>
+
+Run the miner with --dry-run first to verify connectivity without submitting work:
+
+`ash
+./clawrtc-miner --dry-run
+`
+
+Check node health:
+`ash
+curl -fsS https://rustchain.org/health
+`
+</details>
+
+<details>
+<summary><b>Balance check returns 0 or error</b></summary>
+
+Verify your miner name is correct:
+`ash
+curl -fsS "https://rustchain.org/wallet/balance?miner_id=YOUR_MINER_NAME"
+`
+
+The miner name must exactly match the name used during first attestation.
+</details>
+
+<details>
+<summary><b>Miner service won't start (systemd / launchd)</b></summary>
+
+Linux (systemd):
+`ash
+sudo systemctl status clawrtc-miner
+sudo journalctl -u clawrtc-miner --no-pager -n 50
+`
+
+macOS (launchd):
+`ash
+launchctl list | grep clawrtc
+`
+</details>
+
+<details>
+<summary><b>Transfer stuck in "pending" state</b></summary>
+
+Check the pending ledger:
+`ash
+curl -fsS "https://rustchain.org/pending/list?miner_id=YOUR_MINER_NAME"
+`
+
+Transitions require epoch settlement - check current epoch:
+`ash
+curl -fsS https://rustchain.org/epoch
+`
+</details>
+
+<details>
+<summary><b>Common installation issues</b></summary>
+
+- **Rust toolchain not found**: Install via curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+- **Build fails on Windows**: Use WSL2 or MSYS2 with proper C toolchain
+- **Permission denied on miner binary**: Run chmod +x ./clawrtc-miner
+
+For more details, see the [Beginner Quickstart](docs/QUICKSTART.md).
+</details>
+
+For deeper debugging, see the [CLI Wallet Walkthrough](docs/CLI.md) and [Local Devnet Guide](docs/DEVNET.md).
 ---
 *Documentation improved for readability.*
