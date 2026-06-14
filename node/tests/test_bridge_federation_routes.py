@@ -72,6 +72,7 @@ def _seed(db_path, rows):
                 "created_at": row.get("created_at", now - i),
                 "updated_at": row.get("updated_at", now - i),
                 "tx_hash": row.get("tx_hash", f"hash_{i}"),
+                "completed_at": row.get("completed_at"),
             }
             cur.execute(
                 """
@@ -81,13 +82,13 @@ def _seed(db_path, rows):
                     amount_i64, amount_rtc,
                     bridge_type, bridge_fee_i64,
                     external_tx_hash, external_confirmations, required_confirmations,
-                    status, lock_epoch, created_at, updated_at, tx_hash
+                    status, lock_epoch, created_at, updated_at, completed_at, tx_hash
                 ) VALUES (:direction, :source_chain, :dest_chain,
                           :source_address, :dest_address,
                           :amount_i64, :amount_rtc,
                           :bridge_type, :bridge_fee_i64,
                           :external_tx_hash, :external_confirmations, :required_confirmations,
-                          :status, :lock_epoch, :created_at, :updated_at, :tx_hash)
+                          :status, :lock_epoch, :created_at, :updated_at, :completed_at, :tx_hash)
                 """,
                 r,
             )
@@ -142,6 +143,40 @@ def test_state_last_event_at_reflects_max_created_at(client, db_path):
     ])
     s = client.get("/bridge/state").get_json()["state"]
     assert s["last_event_at"] == base
+
+
+def test_state_last_event_at_uses_updated_when_newer_than_created(client, db_path):
+    """updated_at newer than created_at should win over created_at."""
+    base = int(time.time())
+    _seed(db_path, [
+        {"created_at": base - 200, "updated_at": base - 10, "status": "confirming"},
+    ])
+    s = client.get("/bridge/state").get_json()["state"]
+    assert s["last_event_at"] == base - 10
+
+
+def test_state_last_event_at_uses_completed_when_newer_than_updated(client, db_path):
+    """completed_at newer than updated_at should not be masked."""
+    base = int(time.time())
+    _seed(db_path, [
+        {"created_at": base - 300, "updated_at": base - 100,
+         "completed_at": base - 5, "status": "completed"},
+    ])
+    s = client.get("/bridge/state").get_json()["state"]
+    assert s["last_event_at"] == base - 5
+
+
+def test_state_last_event_at_picks_row_with_latest_state_change(client, db_path):
+    """Multiple rows: the row whose max timestamp is newest wins."""
+    base = int(time.time())
+    _seed(db_path, [
+        {"created_at": base - 500, "updated_at": base - 400, "status": "completed"},
+        {"created_at": base - 50, "updated_at": base - 20, "status": "locked"},
+        {"created_at": base - 300, "updated_at": base - 250,
+         "completed_at": base - 1, "status": "completed"},
+    ])
+    s = client.get("/bridge/state").get_json()["state"]
+    assert s["last_event_at"] == base - 1
 
 
 # ---------- /bridge/events ---------------------------------------------------
