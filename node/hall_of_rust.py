@@ -344,6 +344,13 @@ def rust_leaderboard():
 @hall_bp.route('/hall/eulogy/<fingerprint>', methods=['POST'])
 def set_eulogy(fingerprint):
     """Set a eulogy/nickname for a machine. For when it finally dies."""
+    # SECURITY: Require admin key — mutates the public memorial registry
+    # (nickname/eulogy/is_deceased). Previously unauthenticated, allowing
+    # anyone to deface memorial records. Consistent with sibling Hall
+    # mutation endpoints (induct, stats) which are all admin-gated.
+    err = _require_admin()
+    if err:
+        return err
     data, error_response = _json_object_or_empty()
     if error_response:
         return error_response
