@@ -19,6 +19,14 @@ Most bridge management endpoints require an admin key:
 X-Admin-Key: <your-admin-key>
 ```
 
+`POST /api/bridge/initiate` is not a public self-service native RTC to
+wRTC/Solana bridge endpoint. RustChain-origin deposits lock RustChain balances
+and are operator-assisted/admin-authenticated: the node must have `RC_ADMIN_KEY`
+configured and the caller must provide a matching `X-Admin-Key` header. Public
+web routing may intentionally leave the bridge management API unavailable; an
+operator node that exposes the route returns `401 unauthorized` when the admin
+key is missing or wrong.
+
 ### API Callbacks
 Bridge service callbacks use API key authentication:
 ```
@@ -29,9 +37,17 @@ X-API-Key: <bridge-api-key>
 
 ### 1. Initiate Bridge Transfer
 
-Create a new bridge transfer (deposit or withdraw).
+Create a new bridge transfer (deposit or withdraw). RustChain-origin deposits
+are operator-assisted and require admin authentication; do not treat this as a
+user-callable public payout, minting, or wallet-credit endpoint.
 
 **Endpoint:** `POST /api/bridge/initiate`
+
+**Headers (operator/admin only):**
+```
+X-Admin-Key: <admin-key>
+Content-Type: application/json
+```
 
 **Request:**
 ```json
@@ -76,6 +92,16 @@ Create a new bridge transfer (deposit or withdraw).
 
 **Error Responses:**
 ```json
+// 401 Unauthorized - missing or invalid admin key for RustChain deposits
+{
+    "error": "unauthorized"
+}
+
+// 503 Service Unavailable - operator bridge is not configured on this node
+{
+    "error": "RC_ADMIN_KEY not configured"
+}
+
 // 400 Bad Request - Insufficient balance
 {
     "error": "Insufficient available balance",

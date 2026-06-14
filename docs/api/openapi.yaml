@@ -862,8 +862,11 @@ paths:
       summary: Initiate bridge transfer
       description: |
         Create a new bridge transfer (deposit or withdraw) between
-        RustChain and external chains (Solana, Ergo, Base).
-        Requires admin authentication.
+        RustChain and external chains (Solana, Ergo, Base). RustChain-origin
+        deposits are operator-assisted/admin-authenticated and are not a public
+        self-service native RTC to wRTC/Solana payout endpoint. Public web
+        routing may leave this bridge management route unavailable; exposed
+        operator nodes return 401 without a valid X-Admin-Key.
       operationId: initiateBridge
       security:
         - AdminKeyAuth: []
@@ -914,6 +917,22 @@ paths:
                   summary: Invalid address
                   value:
                     error: "Invalid solana address: length must be 32-44 characters"
+        '401':
+          description: Missing or invalid admin key for RustChain-origin deposits
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: unauthorized
+        '503':
+          description: Bridge admin key is not configured on this node
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: RC_ADMIN_KEY not configured
 
   /api/bridge/status/{tx_hash}:
     get:
@@ -1637,7 +1656,7 @@ components:
         memo:
           type: string
           nullable: true
-          description: Extracted memo from signed_transfer: prefix
+          description: "Extracted memo from signed_transfer: prefix"
 
     SignedTransferRequest:
       type: object
