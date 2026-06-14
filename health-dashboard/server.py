@@ -899,14 +899,21 @@ HTML_TEMPLATE = '''
             return `${Math.round(seconds/3600)}h`;
         }
         
+        // Escape untrusted strings before interpolating into innerHTML (XSS guard)
+        function escapeHtml(value) {
+            return String(value == null ? '' : value).replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            })[c]);
+        }
+
         // Render node cards
         function renderNodes(nodes) {
             const grid = document.getElementById('nodes-grid');
             grid.innerHTML = nodes.map(node => `
                 <div class="node-card">
                     <div class="node-header">
-                        <span class="node-name">${node.name}</span>
-                        <span class="status-badge ${node.status}">${node.status}</span>
+                        <span class="node-name">${escapeHtml(node.name)}</span>
+                        <span class="status-badge ${escapeHtml(node.status)}">${escapeHtml(node.status)}</span>
                     </div>
                     <div class="node-metrics">
                         <div class="metric">
@@ -915,7 +922,7 @@ HTML_TEMPLATE = '''
                         </div>
                         <div class="metric">
                             <div class="metric-label">Version</div>
-                            <div class="metric-value">${node.version}</div>
+                            <div class="metric-value">${escapeHtml(node.version)}</div>
                         </div>
                         <div class="metric">
                             <div class="metric-label">Uptime</div>
@@ -923,18 +930,18 @@ HTML_TEMPLATE = '''
                         </div>
                         <div class="metric">
                             <div class="metric-label">Active Miners</div>
-                            <div class="metric-value">${node.active_miners}</div>
+                            <div class="metric-value">${escapeHtml(node.active_miners)}</div>
                         </div>
                         <div class="metric">
                             <div class="metric-label">Current Epoch</div>
-                            <div class="metric-value">#${node.current_epoch}</div>
+                            <div class="metric-value">#${escapeHtml(node.current_epoch)}</div>
                         </div>
                         <div class="metric">
                             <div class="metric-label">Location</div>
-                            <div class="metric-value">${node.location}</div>
+                            <div class="metric-value">${escapeHtml(node.location)}</div>
                         </div>
                     </div>
-                    ${node.error ? `<div class="error-text">Error: ${node.error}</div>` : ''}
+                    ${node.error ? `<div class="error-text">Error: ${escapeHtml(node.error)}</div>` : ''}
                 </div>
             `).join('');
         }
