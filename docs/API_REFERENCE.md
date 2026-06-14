@@ -468,7 +468,7 @@ curl -fsS https://rustchain.org/wallet/swap-info | jq .
 **Response (200 OK):**
 ```json
 {
-  "rtc_price_usd": 0.10,
+  "rtc_price_usd": 0.15,
   "wrtc_solana_mint": "12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X",
   "wrtc_base_contract": "0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6",
   "raydium_pool": "8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb",
