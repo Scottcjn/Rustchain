@@ -395,15 +395,15 @@ graph LR
 
 ## 相关文档
 
-- [协议规范](docs/PROTOCOL.md) — 详细的 RIP-200 协议规范
-- [快速入门](docs/QUICKSTART.md) — 5 分钟上手挖矿
-- [API 参考](docs/API_REFERENCE.md) — 完整的 REST API 文档
-- [矿工安装指南](docs/INSTALLATION_WALKTHROUGH.md) — 详细安装指南
-- [控制台挖矿设置](docs/CONSOLE_MINING_SETUP.md) — 通过控制台挖矿
-- [硬件指纹识别](docs/hardware-fingerprinting.md) — 指纹检查深度解析
-- [桥接 API](docs/bridge-api.md) — 跨链桥接端点
-- [钱包设置](docs/WALLET_SETUP.md) — 配置钱包
-- [贡献指南](docs/CONTRIBUTING.md) — 如何向 RustChain 贡献
+- [协议规范](../PROTOCOL.md) — 详细的 RIP-200 协议规范
+- [快速入门](../QUICKSTART.md) — 5 分钟上手挖矿
+- [API 参考](../API_REFERENCE.md) — 完整的 REST API 文档
+- [矿工安装指南](../INSTALLATION_WALKTHROUGH.md) — 详细安装指南
+- [控制台挖矿设置](../CONSOLE_MINING_SETUP.md) — 通过控制台挖矿
+- [硬件指纹识别](../hardware-fingerprinting.md) — 指纹检查深度解析
+- [桥接 API](../bridge-api.md) — 跨链桥接端点
+- [钱包设置](../WALLET_SETUP.md) — 配置钱包
+- [贡献指南](../CONTRIBUTING.md) — 如何向 RustChain 贡献
 
 ---
 

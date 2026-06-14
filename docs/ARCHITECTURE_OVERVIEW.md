@@ -395,15 +395,15 @@ Vintage mining is the core innovation of RustChain. By rewarding old hardware mo
 
 ## Related Documentation
 
-- [Protocol Specification](docs/PROTOCOL.md) — Detailed RIP-200 protocol spec
-- [Quick Start](docs/QUICKSTART.md) — Get mining in 5 minutes
-- [API Reference](docs/API_REFERENCE.md) — Complete REST API docs
-- [Miner Setup Guide](docs/INSTALLATION_WALKTHROUGH.md) — Detailed installation guide
-- [Console Mining Setup](docs/CONSOLE_MINING_SETUP.md) — Mining via console
-- [Hardware Fingerprinting](docs/hardware-fingerprinting.md) — Deep dive into fingerprint checks
-- [Bridge API](docs/bridge-api.md) — Cross-chain bridge endpoints
-- [Wallet Setup](docs/WALLET_SETUP.md) — Configure your wallet
-- [Contributing](docs/CONTRIBUTING.md) — How to contribute to RustChain
+- [Protocol Specification](PROTOCOL.md) — Detailed RIP-200 protocol spec
+- [Quick Start](QUICKSTART.md) — Get mining in 5 minutes
+- [API Reference](API_REFERENCE.md) — Complete REST API docs
+- [Miner Setup Guide](INSTALLATION_WALKTHROUGH.md) — Detailed installation guide
+- [Console Mining Setup](CONSOLE_MINING_SETUP.md) — Mining via console
+- [Hardware Fingerprinting](hardware-fingerprinting.md) — Deep dive into fingerprint checks
+- [Bridge API](bridge-api.md) — Cross-chain bridge endpoints
+- [Wallet Setup](WALLET_SETUP.md) — Configure your wallet
+- [Contributing](CONTRIBUTING.md) — How to contribute to RustChain
 
 ---
 

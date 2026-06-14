@@ -665,16 +665,16 @@ Before expecting rewards, verify:
 
 ## Related Documentation
 
-- [Quick Start](docs/QUICKSTART.md) — Get mining in 5 minutes
-- [Installation Walkthrough](docs/INSTALLATION_WALKTHROUGH.md) — Detailed installation guide
-- [Console Mining Setup](docs/CONSOLE_MINING_SETUP.md) — Mining via console
-- [Mastering the Miner](docs/MASTERING_THE_MINER.md) — Advanced mining techniques
-- [DevNet](docs/DEVNET.md) — Development network setup
-- [Architecture Overview](docs/ARCHITECTURE_OVERVIEW.md) — System architecture
-- [API Reference](docs/API_REFERENCE.md) — Complete REST API docs
-- [CLI Reference](docs/CLI.md) — Command-line interface
-- [Build Guide](docs/BUILD.md) — Build from source
-- [Payout Preflight](docs/PAYOUT_PREFLIGHT.md) — Before expecting rewards
+- [Quick Start](QUICKSTART.md) — Get mining in 5 minutes
+- [Installation Walkthrough](INSTALLATION_WALKTHROUGH.md) — Detailed installation guide
+- [Console Mining Setup](CONSOLE_MINING_SETUP.md) — Mining via console
+- [Mastering the Miner](MASTERING_THE_MINER.md) — Advanced mining techniques
+- [DevNet](DEVNET.md) — Development network setup
+- [Architecture Overview](ARCHITECTURE_OVERVIEW.md) — System architecture
+- [API Reference](API_REFERENCE.md) — Complete REST API docs
+- [CLI Reference](CLI.md) — Command-line interface
+- [Build Guide](BUILD.md) — Build from source
+- [Payout Preflight](PAYOUT_PREFLIGHT.md) — Before expecting rewards
 
 ---
 
