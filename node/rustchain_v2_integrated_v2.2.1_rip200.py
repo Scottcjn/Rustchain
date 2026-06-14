@@ -92,92 +92,6 @@ def enforce_mock_signature_runtime_guard():
             "TESTNET_ALLOW_MOCK_SIG must not be enabled outside test/dev runtimes"
         )
 
-
-def _ensure_miner_header_key_tables(conn: sqlite3.Connection):
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS miner_header_keys (
-            miner_id TEXT PRIMARY KEY,
-            pubkey_hex TEXT NOT NULL
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS miner_header_key_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            miner_id TEXT NOT NULL,
-            pubkey_hex TEXT NOT NULL,
-            previous_pubkey_hex TEXT,
-            rotated_at INTEGER NOT NULL,
-            rotated_by TEXT NOT NULL,
-            reason TEXT NOT NULL DEFAULT ''
-        )
-    """)
-    conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_miner_header_key_history_miner
-        ON miner_header_key_history(miner_id, rotated_at DESC, id DESC)
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS miner_header_key_audit (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            miner_id TEXT NOT NULL,
-            action TEXT NOT NULL,
-            pubkey_hex TEXT NOT NULL,
-            previous_pubkey_hex TEXT,
-            created_at INTEGER NOT NULL,
-            actor TEXT NOT NULL,
-            reason TEXT NOT NULL DEFAULT ''
-        )
-    """)
-    conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_miner_header_key_audit_miner
-        ON miner_header_key_audit(miner_id, created_at DESC, id DESC)
-    """)
-
-
-def _record_miner_header_key(
-    conn: sqlite3.Connection,
-    miner_id: str,
-    pubkey_hex: str,
-    *,
-    actor: str,
-    reason: str = "",
-    rotated_at=None,
-):
-    _ensure_miner_header_key_tables(conn)
-    rotated_at = int(time.time()) if rotated_at is None else int(rotated_at)
-    row = conn.execute(
-        "SELECT pubkey_hex FROM miner_header_keys WHERE miner_id=?",
-        (miner_id,),
-    ).fetchone()
-    previous_pubkey_hex = row[0] if row else None
-    if previous_pubkey_hex == pubkey_hex:
-        action = "unchanged"
-    else:
-        action = "registered" if previous_pubkey_hex is None else "rotated"
-        conn.execute(
-            """INSERT INTO miner_header_keys(miner_id,pubkey_hex)
-               VALUES(?,?)
-               ON CONFLICT(miner_id) DO UPDATE SET pubkey_hex=excluded.pubkey_hex""",
-            (miner_id, pubkey_hex),
-        )
-        conn.execute(
-            """INSERT INTO miner_header_key_history
-               (miner_id, pubkey_hex, previous_pubkey_hex, rotated_at, rotated_by, reason)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (miner_id, pubkey_hex, previous_pubkey_hex, rotated_at, actor, reason),
-        )
-    conn.execute(
-        """INSERT INTO miner_header_key_audit
-           (miner_id, action, pubkey_hex, previous_pubkey_hex, created_at, actor, reason)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (miner_id, action, pubkey_hex, previous_pubkey_hex, rotated_at, actor, reason),
-    )
-    return {
-        "action": action,
-        "previous_pubkey_hex": previous_pubkey_hex,
-        "pubkey_hex": pubkey_hex,
-        "rotated_at": rotated_at,
-    }
-
 try:
     from nacl.signing import VerifyKey
     from nacl.exceptions import BadSignatureError
@@ -682,6 +596,20 @@ def _normalize_attestation_report(report):
 def attest_ensure_tables(conn):
     """Create the attestation nonce tables expected by replay protection."""
     conn.execute("CREATE TABLE IF NOT EXISTS nonces (nonce TEXT PRIMARY KEY, expires_at INTEGER)")
+    # T2.1: a challenge may be BOUND to the identity that requested it. Additive column
+    # so existing DBs upgrade in place; NULL bound_miner == legacy unbound nonce
+    # (any miner may consume it), preserving backward compatibility for miners that
+    # don't send miner_id to /attest/challenge. The ALTER is attempted idempotently and
+    # is race/lock tolerant: on ANY OperationalError (duplicate-column from a concurrent
+    # writer that won the race, or a transient "database is locked"), re-check the actual
+    # schema — if the column is present we proceed, otherwise the error was real and we
+    # re-raise. The PRAGMA only runs on the (rare) exception path.
+    try:
+        conn.execute("ALTER TABLE nonces ADD COLUMN bound_miner TEXT")
+    except sqlite3.OperationalError:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(nonces)").fetchall()]  # fetchall-ok: pragma-result
+        if "bound_miner" not in cols:
+            raise
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS used_nonces (
@@ -713,18 +641,33 @@ def attest_cleanup_expired(conn, now_ts: Optional[int] = None):
     conn.commit()
 
 
-def attest_validate_challenge(conn, nonce: str, now_ts: Optional[int] = None):
-    """Validate and consume a one-time challenge nonce from the active node store."""
+def attest_validate_challenge(conn, nonce: str, now_ts: Optional[int] = None,
+                              required_miner: Optional[str] = None):
+    """Validate and consume a one-time challenge nonce from the active node store.
+
+    T2.1: if the challenge was issued BOUND to an identity (``bound_miner`` set), a
+    submission claiming a different ``required_miner`` is rejected *without consuming*
+    the nonce — so an attacker submitting the wrong identity cannot burn a rightful
+    miner's live challenge (DoS), and a harvested/MITM'd nonce can't be replayed under
+    another identity. An unbound (NULL) nonce stays consumable by any miner (legacy).
+    """
     now_ts = int(time.time()) if now_ts is None else int(now_ts)
     attest_cleanup_expired(conn, now_ts=now_ts)
     row = conn.execute(
-        "SELECT expires_at FROM nonces WHERE nonce = ? AND expires_at >= ?",
+        "SELECT expires_at, bound_miner FROM nonces WHERE nonce = ? AND expires_at >= ?",
         (nonce, now_ts),
     ).fetchone()
     if not row:
         return False, "challenge_invalid", None
 
     expires_at = int(row[0])
+    bound_miner = (row[1] or "").strip()
+    if bound_miner and bound_miner != (required_miner or "").strip():
+        # A BOUND nonce is consumable ONLY by its bound identity — a mismatch OR a
+        # missing/empty required_miner is rejected (a caller cannot dodge the binding
+        # by omitting its identity). Do NOT delete: leave the nonce for its owner.
+        return False, "nonce_identity_mismatch", None
+
     deleted = conn.execute(
         "DELETE FROM nonces WHERE nonce = ? AND expires_at = ?",
         (nonce, expires_at),
@@ -756,7 +699,9 @@ def attest_validate_and_store_nonce(
     if replay_row:
         return False, "nonce_replay", None
 
-    ok, err, challenge_expires_at = attest_validate_challenge(conn, nonce, now_ts=now_ts)
+    ok, err, challenge_expires_at = attest_validate_challenge(
+        conn, nonce, now_ts=now_ts, required_miner=(miner or None)
+    )
     if not ok:
         return False, err, None
 
@@ -1596,6 +1541,68 @@ def _ensure_transfer_ledger_table(db):
     )
 
 
+def _migrate_miner_header_keys_composite(c):
+    """Idempotently upgrade a legacy single-column-PK ``miner_header_keys`` to the
+    composite ``(miner_id, pubkey_hex)`` PK so one wallet identity can hold a header
+    key per device (multi-device) instead of last-writer-wins overwriting (which broke
+    the non-last device's signed-header verification).
+
+    COLUMN-PRESERVING: production tables may carry extra columns (e.g. an ``added_at``
+    timestamp) absent from the canonical CREATE; the rebuild reconstructs every existing
+    column (type / NOT NULL / DEFAULT), so no column or row is dropped. Idempotent: only
+    rebuilds a table still carrying the old single-column ``PRIMARY KEY(miner_id)``.
+    Verified by a dry-run against a 247,619-row production snapshot.
+
+    T3.4 — ATOMIC: the RENAME→CREATE→INSERT→DROP rebuild is wrapped in a SAVEPOINT so it
+    is all-or-nothing regardless of the surrounding transaction state. Previously a crash
+    or error after the RENAME but before the DROP could leave the original table renamed
+    to ``*_legacy_single`` with a fresh EMPTY composite table in its place; on the next
+    start the migration check sees the composite PK already present and SKIPS, stranding
+    every key in ``*_legacy_single`` — a silent loss of the block-header trust anchor.
+    ``ROLLBACK TO`` restores the original table intact for a clean retry. (A SAVEPOINT,
+    not BEGIN IMMEDIATE: init_db has already run DML by this point, so a transaction may
+    be open; SAVEPOINT nests cleanly and still rolls back DDL in SQLite.)
+    """
+    _mhk_cols = c.execute("PRAGMA table_info(miner_header_keys)").fetchall()  # fetchall-ok: pragma-result
+    _mhk_pk = [col[1] for col in _mhk_cols if col[5]]  # col[5] = pk position (>0 means part of PK)
+    _mhk_names = [col[1] for col in _mhk_cols]
+    if not (_mhk_pk == ["miner_id"] and "miner_id" in _mhk_names and "pubkey_hex" in _mhk_names):
+        return  # already composite (or unexpected shape) — nothing to migrate
+
+    # Reconstruct each column's definition WITHOUT an inline PRIMARY KEY, then add a
+    # table-level composite PK. Defaults are always parenthesized — valid for literals
+    # AND expression defaults like (strftime('%s','now')), which PRAGMA returns without
+    # the surrounding parens.
+    _mhk_defs, _mhk_list = [], []
+    for _cid, _name, _ctype, _notnull, _dflt, _pk in _mhk_cols:
+        _d = '"%s" %s' % (_name, _ctype or "TEXT")
+        if _notnull:
+            _d += " NOT NULL"
+        if _dflt is not None:
+            _d += " DEFAULT (%s)" % _dflt
+        _mhk_defs.append(_d)
+        _mhk_list.append('"%s"' % _name)
+    _mhk_cols_sql = ", ".join(_mhk_defs)
+    _mhk_col_list = ", ".join(_mhk_list)
+
+    c.execute("SAVEPOINT mhk_composite_migrate")
+    try:
+        c.execute("ALTER TABLE miner_header_keys RENAME TO miner_header_keys_legacy_single")
+        c.execute("CREATE TABLE miner_header_keys (%s, PRIMARY KEY (miner_id, pubkey_hex))" % _mhk_cols_sql)
+        c.execute(
+            "INSERT OR IGNORE INTO miner_header_keys (%s) SELECT %s FROM miner_header_keys_legacy_single"
+            % (_mhk_col_list, _mhk_col_list)
+        )
+        c.execute("DROP TABLE miner_header_keys_legacy_single")
+    except Exception:
+        # Undo every step of the rebuild as a unit; the original table is restored.
+        c.execute("ROLLBACK TO mhk_composite_migrate")
+        c.execute("RELEASE mhk_composite_migrate")
+        raise
+    c.execute("RELEASE mhk_composite_migrate")
+    logging.info("[migrate] miner_header_keys upgraded to composite (miner_id, pubkey_hex) PK; preserved columns: %s" % _mhk_names)
+
+
 def init_db():
     """Initialize all database tables"""
     with closing(sqlite3.connect(DB_PATH)) as c:
@@ -1727,7 +1734,21 @@ def init_db():
                 last_withdrawal INTEGER
             )
         """)
-        _ensure_miner_header_key_tables(c)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS miner_header_keys (
+                miner_id TEXT NOT NULL,
+                pubkey_hex TEXT NOT NULL,
+                PRIMARY KEY (miner_id, pubkey_hex)
+            )
+        """)
+
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS miner_header_keys (
+                miner_id TEXT NOT NULL,
+                pubkey_hex TEXT NOT NULL,
+                PRIMARY KEY (miner_id, pubkey_hex)
+            )
+        """)
 
         # Withdrawal nonce tracking (replay protection)
         c.execute("""
@@ -1871,7 +1892,38 @@ def init_db():
                 header_json TEXT NOT NULL
             )
         """)
-        _ensure_miner_header_key_tables(c)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS miner_header_keys(
+                miner_id TEXT NOT NULL,
+                pubkey_hex TEXT NOT NULL,
+                PRIMARY KEY (miner_id, pubkey_hex)
+            )
+        """)
+        # Migrate a legacy single-column-PK miner_header_keys to the composite
+        # (miner_id, pubkey_hex) key (extracted to _migrate_miner_header_keys_composite
+        # for atomicity + testability — see T3.4).
+        try:
+            _migrate_miner_header_keys_composite(c)
+        except Exception as _mhk_err:
+            # Fail loud rather than continue on a half-migrated key table: running
+            # header verification against a renamed/duplicate/missing table would be
+            # worse than not starting. The migration is SAVEPOINT-wrapped, so the
+            # original table is already restored intact before this propagates.
+            logging.error(f"[migrate] miner_header_keys composite migration FAILED: {_mhk_err!r}")
+            raise
+
+        # RIP-PoA header-key bootstrap allowlist (T1.1 fix). Under strict mode the
+        # FIRST header key for a NAMED/legacy identity (not pubkey-derived) may only
+        # be bootstrapped from a pubkey pre-approved here via the admin-gated
+        # /miner/headerkey — closing the trust-on-first-use race where any
+        # self-signed attestation could grab a never-keyed identity's first key.
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS miner_header_bootstrap(
+                miner_id TEXT NOT NULL,
+                pubkey_hex TEXT NOT NULL,
+                PRIMARY KEY (miner_id, pubkey_hex)
+            )
+        """)
         c.execute("""
             CREATE TABLE IF NOT EXISTS schema_version(
                 version INTEGER PRIMARY KEY,
@@ -1882,6 +1934,13 @@ def init_db():
         # Insert default values
         c.execute("INSERT OR IGNORE INTO schema_version(version, applied_at) VALUES(17, ?)",
                   (int(time.time()),))
+        # NOTE: the bootstrap allowlist is intentionally NOT auto-populated from
+        # miner_header_keys. An audit found that table heavily polluted (hundreds of
+        # thousands of alias-strings mapping to a few hundred real keys), so a blanket
+        # grandfather would bless that pollution into the trust anchor. Operators seed
+        # the actual producers deliberately — admin POST /miner/headerkey, or the
+        # tools/seed_header_bootstrap.py helper — BEFORE enabling
+        # RC_HEADER_KEY_STRICT_BOOTSTRAP.
         c.execute("INSERT OR IGNORE INTO gov_threshold(id, threshold) VALUES(1, 3)")
         c.execute("INSERT OR IGNORE INTO checkpoints_meta(k, v) VALUES('chain_id', 'rustchain-mainnet-candidate')")
         # BCOS v2: Blockchain Certified Open Source attestations
@@ -2068,6 +2127,17 @@ def derive_measurement_nonce(previous_epoch_block_hash: str) -> str:
 
 
 def select_active_fingerprint_checks(previous_epoch_block_hash: str, active_count: int = RIP309_ACTIVE_FINGERPRINT_CHECKS) -> tuple:
+    # T3.6: when the previous block hash is UNAVAILABLE (genesis/early epochs, or a
+    # read error → the all-zeros fallback), the rotation seed is fully predictable, so
+    # an attacker would know exactly which 4-of-6 subset is active and could prepare to
+    # pass only those, leaving the other two checks effectively optional. Fail CLOSED —
+    # activate ALL checks — matching the sibling paths that already do so when no prev
+    # hash is available: the reward path
+    # (rip_309_measurement_rotation.get_reward_active_fingerprint_checks) and
+    # finalize_epoch's inline selection both activate all six on an empty hash.
+    normalized = (previous_epoch_block_hash or "").strip().lower()
+    if not normalized or normalized == RIP309_NONCE_FALLBACK:
+        return tuple(RIP309_ROTATING_FINGERPRINT_CHECKS)
     nonce = derive_measurement_nonce(previous_epoch_block_hash)
     ranked = sorted(
         RIP309_ROTATING_FINGERPRINT_CHECKS,
@@ -2572,8 +2642,30 @@ def derive_verified_device(device: dict, fingerprint: dict, fingerprint_passed: 
     if _claims_powerpc(device):
         # If CPU brand contains PowerPC/IBM/POWER identifiers, trust the claim
         ppc_brands = {"powerpc", "power8", "power9", "ibm power", "altivec", "970", "7450", "g3", "g4", "g5"}
-        brand_matches = _has_any_token(cpu_brand, ppc_brands)
-        
+        brand_has_ppc = _has_any_token(cpu_brand, ppc_brands)
+
+        # T3.2: a PowerPC brand token ALONE is forgeable — a spoofer stuffs "g4" into
+        # cpu_brand on an x86 box to grab the 2.5x antiquity tier (observed live:
+        # clockspoof/bypass miners recorded device_arch=g4). Veto this brand fast-path
+        # on POSITIVE x86 contradiction, mirroring the machine_field path above (2554):
+        #   - x86/ARM brand tokens present, OR
+        #   - the SIMD fingerprint reports SSE/AVX / x86 features.
+        # We reject ONLY on contradiction, never on the mere ABSENCE of PowerPC
+        # evidence, so genuine PowerPC silicon (AltiVec, no SSE/AVX, no x86/ARM brand
+        # tokens) is unaffected — the live G4/G5 fleet all carry no x86 evidence.
+        # Contradicting claims fall through to the strict-validation path below, which
+        # downgrades them to x86_64/default.
+        brand_foreign_contaminated = _has_any_token(cpu_brand, X86_CPU_BRANDS | ARM_CPU_BRANDS)
+        simd_shows_x86 = bool(
+            simd_data.get("has_sse")
+            or simd_data.get("has_avx")
+            or simd_data.get("x86_features")
+        )
+        brand_matches = brand_has_ppc and not brand_foreign_contaminated and not simd_shows_x86
+        if brand_has_ppc and not brand_matches:
+            print(f"[PPC_DETECT] brand_match VETOED (x86/arm contradiction): brand={cpu_brand[:40]} "
+                  f"foreign_brand={brand_foreign_contaminated} simd_x86={simd_shows_x86} -> strict validation")
+
         if brand_matches:
             # CPU brand confirms PowerPC — determine specific arch
             ppc_arch = arch.upper() if arch.lower() in ("g3", "g4", "g5", "power8", "power9") else "default"
@@ -2846,6 +2938,32 @@ def _write_welcome_bonus(
         return
 
     raise RuntimeError("unsupported welcome bonus balance/ledger schema")
+
+
+def _ledger_reward_row(c, ledger_cols, epoch, miner_id, amount_i64, reason):
+    """Append a single-sided reward credit to the canonical audit ledger.
+
+    T3.1: finalize_epoch (the auto block-path settlement) credited balances with NO
+    ledger row, while rewards_implementation_rip200.settle_epoch_rip200 and the
+    transfer/bonus paths DO — so block-path rewards were invisible to audit/
+    reconstruction and broke any ledger↔balance reconciliation.
+
+    Mirrors settle_epoch_rip200's row EXACTLY — the canonical
+    (ts, epoch, miner_id, delta_i64, reason) shape and the same `epoch_{n}_reward`
+    reason — so the two reward-settlement paths are indistinguishable in the ledger.
+    Only that shape is supported (matching settle_epoch_rip200, which has no fallback);
+    a non-canonical ledger is handled by the caller's one-time `ledger_writable`
+    pre-check, which logs and skips rather than aborting settlement. The guard checks
+    EVERY column the INSERT references, so a drifted table is skipped cleanly rather
+    than selected then failed. Returns True iff a row was written.
+    """
+    if not {"ts", "epoch", "miner_id", "delta_i64", "reason"}.issubset(ledger_cols):
+        return False
+    c.execute(
+        "INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason) VALUES (?, ?, ?, ?, ?)",
+        (int(time.time()), epoch, miner_id, amount_i64, reason),
+    )
+    return True
 
 
 def _check_welcome_bonus(miner: str):
@@ -3844,8 +3962,24 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
             utxo_reward_outputs = []
             skipped_utxo_dust_nrtc = 0
 
+            # T3.1: audit-ledger the block-path reward credits (settle_epoch_rip200 and
+            # the transfer/bonus paths already ledger; finalize_epoch did not, leaving
+            # block rewards invisible to reconstruction). The reward ledger row is a
+            # best-effort AUDIT side effect — it must NEVER abort reward settlement
+            # (liveness). Determine writability ONCE (a single log on a drifted schema,
+            # not one per miner); the per-row insert below is wrapped so a constraint/IO
+            # failure on the ledger table logs and continues rather than rolling back the
+            # already-valid balance credits.
+            ledger_cols = _table_columns(conn, "ledger")
+            ledger_writable = {"ts", "epoch", "miner_id", "delta_i64", "reason"}.issubset(ledger_cols)
+            if not ledger_writable:
+                logging.error(
+                    "[T3.1] ledger schema %s unrecognized — epoch %s reward audit rows "
+                    "omitted (rewards still credited)", sorted(ledger_cols), epoch,
+                )
+
             # Distribute rewards with precision
-            for pk, weight in miners:
+            for _led_i, (pk, weight) in enumerate(miners):
                 # Use Decimal arithmetic to avoid float precision loss
                 amount_decimal = Decimal(0) if Decimal(total_weight) == 0 else total_reward * Decimal(weight) / Decimal(total_weight)
                 amount_i64 = int(amount_decimal * Decimal(ACCOUNT_UNIT))
@@ -3855,10 +3989,44 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
                 if amount_i64 >= 2**63 or amount_nrtc >= 2**63:
                     raise ValueError(f"Reward overflow for miner {pk}: {amount_i64}")
 
-                c.execute(
+                upd = c.execute(
                     "UPDATE balances SET amount_i64 = amount_i64 + ?, balance_rtc = (amount_i64 + ?) / 1000000.0 WHERE miner_id = ?",
                     (amount_i64, amount_i64, pk)
                 )
+
+                # Ledger an audit row ONLY for an actual credit: amount_i64 > 0 AND the
+                # balance row existed (UPDATE mutated exactly one row — miner_id is the
+                # balances PK so rowcount is 0 or 1). Without the rowcount gate, a miner
+                # with no balance row (UPDATE hits 0 rows) would get a +X ledger row with
+                # no matching balance change — the exact ledger≠balance mismatch this fix
+                # exists to prevent. Integer truncation of tiny shares also yields
+                # amount_i64 == 0 (no mutation → no row). Best-effort: a ledger failure
+                # must not roll back the (valid) reward credit.
+                if amount_i64 > 0 and upd.rowcount == 1 and ledger_writable:
+                    # Best-effort audit row, isolated in a SAVEPOINT: on success it
+                    # commits together with the credit (reconciliation intact); on
+                    # failure ROLLBACK TO removes ONLY the failed insert and clears any
+                    # statement/transaction error state, so the outer transaction (this
+                    # and other miners' credits + the settled claim) stays usable and
+                    # commits. A bare try/except is NOT enough — a tx-poisoning error
+                    # (SQLITE_FULL/IOERR) would otherwise corrupt the rest of the loop.
+                    # Per-miner UNIQUE savepoint name so a (theoretical) leaked marker can
+                    # never nest/collide with the next iteration's savepoint.
+                    _sp = f"led_row_{_led_i}"
+                    c.execute(f"SAVEPOINT {_sp}")
+                    try:
+                        _ledger_reward_row(c, ledger_cols, epoch, pk, amount_i64, f"epoch_{epoch}_reward")
+                        c.execute(f"RELEASE {_sp}")
+                    except Exception as _led_err:
+                        try:
+                            c.execute(f"ROLLBACK TO {_sp}")
+                            c.execute(f"RELEASE {_sp}")
+                        except Exception:
+                            pass
+                        logging.error(
+                            "[T3.1] reward ledger row failed for %s epoch %s: %r "
+                            "(reward still credited)", pk, epoch, _led_err,
+                        )
 
                 if UTXO_DUAL_WRITE:
                     if amount_nrtc >= UTXO_DUST_THRESHOLD:
@@ -4013,13 +4181,30 @@ def get_challenge():
     nonce = secrets.token_hex(32)
     expires = int(time.time()) + 300  # 5 minutes
 
+    # T2.1: optionally BIND the challenge to the requesting identity. A miner that
+    # sends its miner_id gets a nonce only IT can consume at /attest/submit; legacy
+    # miners that send no identity get an unbound nonce (backward compatible).
+    body = request.get_json(silent=True)
+    requested_miner = None
+    if isinstance(body, dict):
+        # Extract identity in the SAME order the submit path resolves `miner`
+        # (_submit_attestation_impl: data.get('miner') or data.get('miner_id')) so a
+        # client where miner != miner_id binds to exactly the identity that will be
+        # enforced at consume time — otherwise binding would lock out the rightful owner.
+        requested_miner = _attest_valid_miner(body.get('miner')) or _attest_valid_miner(body.get('miner_id'))
+
     with closing(sqlite3.connect(DB_PATH)) as c:
-        c.execute("INSERT INTO nonces (nonce, expires_at) VALUES (?, ?)", (nonce, expires))
+        attest_ensure_tables(c)  # guarantees the bound_miner column exists
+        c.execute(
+            "INSERT INTO nonces (nonce, expires_at, bound_miner) VALUES (?, ?, ?)",
+            (nonce, expires, requested_miner),
+        )
         c.commit()
 
     return jsonify({
         "nonce": nonce,
         "expires_at": expires,
+        "bound_miner": requested_miner,
         "server_time": int(time.time())
     })
 
@@ -4238,17 +4423,25 @@ def _submit_attestation_impl():
                 "Attestation nonce has already been used",
                 "NONCE_REPLAY",
             ),
+            "nonce_identity_mismatch": (
+                "nonce_identity_mismatch",
+                "Attestation challenge was issued to a different identity; request a "
+                "challenge with this miner_id",
+                "NONCE_IDENTITY_MISMATCH",
+            ),
         }
         error_name, message, code = nonce_messages.get(
             nonce_err,
             ("invalid_nonce", "Attestation nonce is invalid", "INVALID_NONCE"),
         )
+        # 403 for an identity mismatch (authorization), 409 for stale/replayed nonce.
+        http_status = 403 if nonce_err == "nonce_identity_mismatch" else 409
         return jsonify({
             "ok": False,
             "error": error_name,
             "message": message,
             "code": code
-        }), 409
+        }), http_status
     signals = _normalize_attestation_signals(data.get('signals'))
     fingerprint = _attest_mapping(data.get('fingerprint'))  # NEW: Extract fingerprint
 
@@ -4499,13 +4692,12 @@ def _submit_attestation_impl():
         hw_weight = HARDWARE_WEIGHTS.get(family, {}).get(arch_for_weight, HARDWARE_WEIGHTS.get(family, {}).get("default", 1.0))
         miner_id = _attest_valid_miner(data.get("miner_id")) or miner
 
-        with closing(sqlite3.connect(DB_PATH, isolation_level=None)) as enroll_conn:
+        with closing(sqlite3.connect(DB_PATH)) as enroll_conn:
             rotation_eval = evaluate_rotating_fingerprint_checks(
                 enroll_conn,
                 epoch,
                 fingerprint if isinstance(fingerprint, dict) else {},
             )
-            enroll_conn.execute("BEGIN IMMEDIATE")
             if not fingerprint_passed:
                 enroll_weight_units = FAILED_FINGERPRINT_WEIGHT_UNITS
             else:
@@ -4525,13 +4717,18 @@ def _submit_attestation_impl():
             )
             header_pubkey = _valid_ed25519_pubkey_hex(pubkey_hex) or _valid_ed25519_pubkey_hex(miner)
             if header_pubkey:
-                _record_miner_header_key(
-                    enroll_conn,
-                    miner_id,
-                    header_pubkey,
-                    actor="attest_auto_enroll",
-                    reason="attestation auto-enroll",
-                )
+                # Lottery participation and header authorization use the
+                # attested wallet (`miner`). Keep the client-local miner_id as
+                # a compatibility alias, but always register the canonical
+                # chain identity too.
+                for header_miner_id in dict.fromkeys((miner, miner_id)):
+                    _register_header_key(
+                        enroll_conn,
+                        header_miner_id,
+                        header_pubkey,
+                        actor="attest_auto_enroll",
+                        reason="attestation auto-enroll",
+                    )
             enroll_conn.commit()
 
         # Issue #19 temporal consistency only sets a review flag (no hard-fail).
@@ -4813,13 +5010,12 @@ def enroll_epoch():
     # RIP-PoA Phase 2: failed fingerprints are tracked but receive zero rewards.
     fingerprint_failed = check_result.get('fingerprint_failed', False)
 
-    with sqlite3.connect(DB_PATH, isolation_level=None) as c:
+    with sqlite3.connect(DB_PATH) as c:
         rotation_eval = evaluate_rotating_fingerprint_checks(
             c,
             epoch,
             data.get('fingerprint') if isinstance(data.get('fingerprint'), dict) else {},
         )
-        c.execute("BEGIN IMMEDIATE")
         if fingerprint_failed:
             weight_units = FAILED_FINGERPRINT_WEIGHT_UNITS
             weight = epoch_weight_units_to_display(weight_units)
@@ -4850,13 +5046,14 @@ def enroll_epoch():
         # Register a real Ed25519 pubkey for block-header verification when available.
         header_pubkey = _valid_ed25519_pubkey_hex(pubkey_hex) or _valid_ed25519_pubkey_hex(miner_pk)
         if header_pubkey:
-            _record_miner_header_key(
-                c,
-                miner_id,
-                header_pubkey,
-                actor="epoch_enroll",
-                reason="epoch enroll",
-            )
+            for header_miner_id in dict.fromkeys((miner_pk, miner_id)):
+                _register_header_key(
+                    c,
+                    header_miner_id,
+                    header_pubkey,
+                    actor="epoch_enroll",
+                    reason="epoch enroll",
+                )
 
     app.logger.info(
         f"[RIP-309] epoch={epoch} miner={miner_pk[:20]}... nonce={rotation_eval['measurement_nonce'][:16]} "
@@ -4959,10 +5156,260 @@ def lottery_eligibility():
     result['slot'] = current
     return jsonify(result)
 
+def _header_keys_max_per_identity():
+    """Cap on header keys retained per identity — bounds storage and the per-header
+    verify-any cost, and ages out stale/rotated keys. Fail-safe on bad env."""
+    raw = os.environ.get("RC_MAX_HEADER_KEYS_PER_IDENTITY", "")
+    if raw in (None, ""):
+        return 8
+    try:
+        val = int(raw)
+    except (TypeError, ValueError):
+        return 8
+    return val if val >= 1 else 8
+
+
+def _header_key_strict_bootstrap():
+    """Strict header-key bootstrap (T1.1 fix). When on, a NAMED/legacy identity's
+    FIRST header key must be pre-approved in ``miner_header_bootstrap`` (seeded via
+    the admin-gated /miner/headerkey), closing the trust-on-first-use race where any
+    self-signed attestation could grab a never-keyed identity's first key.
+
+    Default OFF for one release so the fleet migrates without a flag-day; flip on
+    (RC_HEADER_KEY_STRICT_BOOTSTRAP=1) once current producers are seeded."""
+    return (os.environ.get("RC_HEADER_KEY_STRICT_BOOTSTRAP", "0").strip().lower()
+            in ("1", "true", "yes", "on"))
+
+
+def _in_bootstrap_allowlist(conn, identity, pubkey):
+    """True if (identity, pubkey) was pre-approved for first-key bootstrap."""
+    try:
+        return conn.execute(
+            "SELECT 1 FROM miner_header_bootstrap WHERE miner_id=? AND pubkey_hex=?",
+            (identity, pubkey),
+        ).fetchone() is not None
+    except Exception as exc:
+        # Fail closed, but surface infra errors (missing table / locked DB) so a
+        # blanket strict-mode denial is not mistaken for a clean auth decision.
+        logging.warning(f"[header-key] bootstrap allowlist lookup failed for {str(identity)[:24]!r}: {exc!r}")
+        return False
+
+
+def _header_key_authorized(conn, identity, pubkey):
+    """Authorize registering ``pubkey`` as a block-header key for ``identity``.
+
+    SECURITY (header-key takeover): ``miner_header_keys`` is the trust anchor for
+    block-header verification — a header is accepted if signed by ANY registered
+    key for the identity. The enroll path's inputs are caller-controlled: an
+    attestation's Ed25519 signature only proves the holder of ``pubkey`` signed
+    ``miner_id|miner|nonce|commitment``; it does NOT prove ``pubkey`` is authorized
+    for the named identity (there is no ``address_from_pubkey(pubkey) == identity``
+    check upstream, the challenge nonce is not miner-bound, and unsigned
+    attestations are accepted). Without this guard a third party can attest as
+    another wallet with their own key and ADD their key to that wallet's valid-key
+    set -> block-header forgery for an identity they do not control.
+
+    Authorization rules:
+      * Self-authenticating identity — the RTC address derives from the pubkey
+        (``address_from_pubkey(pubkey) == identity``) or the identity *is* the raw
+        pubkey: always allowed (only the rightful holder can present a matching key,
+        and key rotation/multi-device for that holder still works).
+      * Named/legacy identity (not derivable from any key, e.g. ``power8-s824-sophia``):
+        first-key BOOTSTRAP is gated by ``_header_key_strict_bootstrap()`` — under
+        strict mode the key must be pre-approved in ``miner_header_bootstrap``
+        (admin-seeded), closing the T1.1 trust-on-first-use takeover race; under the
+        staged-rollout default it keeps legacy first-write-wins. Re-registering an
+        already-registered (identity, pubkey) pair is always idempotent; an attacker
+        can never ADD a new key to an already-established identity.
+    """
+    if not pubkey:
+        return False
+    try:
+        if identity == pubkey or address_from_pubkey(pubkey) == identity:
+            return True
+    except Exception:
+        # Malformed pubkey hex -> not self-authenticating; fall through.
+        pass
+    existing = conn.execute(
+        "SELECT pubkey_hex FROM miner_header_keys WHERE miner_id=?", (identity,)
+    ).fetchall()  # fetchall-ok: bounded-by-schema (capped by _prune_header_keys)
+    if not existing:
+        # Bootstrap the first key for a named identity. Open TOFU here is the
+        # residual T1.1 takeover race (a self-signed attestation grabbing a
+        # never-keyed identity's first key). Under strict mode the first key must
+        # be pre-approved via the admin-gated bootstrap allowlist; otherwise
+        # (staged-rollout default) keep legacy first-write-wins.
+        if not _header_key_strict_bootstrap():
+            return True
+        return _in_bootstrap_allowlist(conn, identity, pubkey)
+    # Existing keys present: allow an idempotent re-register, OR an admin
+    # pre-approved ADDITIONAL key (multi-device / rotation for a named identity,
+    # seeded via the admin-gated /miner/headerkey). An attacker cannot reach the
+    # allowlist, so allowing allowlisted adds does not reopen the takeover.
+    if any(row[0] == pubkey for row in existing):
+        return True
+    return _in_bootstrap_allowlist(conn, identity, pubkey)
+
+
+def _prune_header_keys(conn, miner_id):
+    """Keep only the most-recently-registered keys for an identity (evict oldest by
+    rowid). Bounds verify-any cost and storage, and means a rotated key eventually
+    ages out.
+
+    Eviction is NOT an external attack vector: key registration is authenticated —
+    /miner/headerkey is admin-gated (RC_ADMIN_KEY) and the enroll path requires an
+    owner-valid signature — so a third party cannot register keys for an identity
+    they don't control. The only way to evict is to register >cap keys for an
+    identity you already control (self-inflicted). A wallet legitimately running
+    more than the cap of producing devices should raise RC_MAX_HEADER_KEYS_PER_IDENTITY.
+    NOTE: explicit revocation of a specific compromised key is a separate follow-up;
+    this only bounds accumulation."""
+    conn.execute(
+        "DELETE FROM miner_header_keys WHERE miner_id=? AND rowid NOT IN "
+        "(SELECT rowid FROM miner_header_keys WHERE miner_id=? ORDER BY rowid DESC LIMIT ?)",
+        (miner_id, miner_id, _header_keys_max_per_identity())
+    )
+
+
+def _ensure_miner_header_key_audit_tables(conn):
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS miner_header_key_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            miner_id TEXT NOT NULL,
+            pubkey_hex TEXT NOT NULL,
+            previous_pubkey_hex TEXT,
+            rotated_at INTEGER NOT NULL,
+            rotated_by TEXT NOT NULL,
+            reason TEXT DEFAULT ''
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_miner_header_key_history_miner
+        ON miner_header_key_history(miner_id, rotated_at DESC, id DESC)
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS miner_header_key_audit (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            miner_id TEXT NOT NULL,
+            action TEXT NOT NULL,
+            pubkey_hex TEXT NOT NULL,
+            previous_pubkey_hex TEXT,
+            created_at INTEGER NOT NULL,
+            actor TEXT NOT NULL,
+            reason TEXT DEFAULT ''
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_miner_header_key_audit_miner
+        ON miner_header_key_audit(miner_id, created_at DESC, id DESC)
+    """)
+
+
+def _header_key_audit_reason(reason):
+    if not isinstance(reason, str):
+        return ""
+    return reason.strip()[:240]
+
+
+def _latest_header_key_for_identity(conn, identity):
+    row = conn.execute(
+        "SELECT pubkey_hex FROM miner_header_keys WHERE miner_id=? ORDER BY rowid DESC LIMIT 1",
+        (identity,),
+    ).fetchone()
+    return row[0] if row else None
+
+
+def _record_header_key_audit_event(
+    conn,
+    identity,
+    pubkey,
+    *,
+    action,
+    actor,
+    reason="",
+    previous_pubkey_hex=None,
+    created_at=None,
+    write_history=False,
+):
+    _ensure_miner_header_key_audit_tables(conn)
+    event_ts = int(time.time()) if created_at is None else int(created_at)
+    clean_reason = _header_key_audit_reason(reason)
+    if write_history:
+        conn.execute(
+            """INSERT INTO miner_header_key_history
+               (miner_id, pubkey_hex, previous_pubkey_hex, rotated_at, rotated_by, reason)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (identity, pubkey, previous_pubkey_hex, event_ts, actor, clean_reason),
+        )
+    conn.execute(
+        """INSERT INTO miner_header_key_audit
+           (miner_id, action, pubkey_hex, previous_pubkey_hex, created_at, actor, reason)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (identity, action, pubkey, previous_pubkey_hex, event_ts, actor, clean_reason),
+    )
+
+
+def _register_header_key(conn, identity, pubkey, *, actor="system", reason="", created_at=None):
+    """Authorize + register a block-header key for ``identity``; return True if
+    registered. Single code path for both enroll sites so they cannot drift into
+    asymmetric per-alias state.
+
+    It deliberately does NOT seed the bootstrap allowlist: the allowlist is
+    admin-managed only (via the RC_ADMIN_KEY-gated /miner/headerkey or the
+    tools/seed_header_bootstrap.py helper). Auto-allowlisting every accepted
+    attestation would persist trust-on-first-use keys — including any claimed
+    during the strict-off rollout window — into strict mode, which is exactly the
+    takeover this guard exists to prevent. The deploy procedure is:
+    run default-off, admin-seed the real named producers via /miner/headerkey,
+    then enable RC_HEADER_KEY_STRICT_BOOTSTRAP. A rejected registration is
+    non-fatal (the miner still attests/mines) and is logged so ops can see
+    header-key setup was skipped."""
+    if not pubkey:
+        return False
+    if not _header_key_authorized(conn, identity, pubkey):
+        logging.info(
+            "[header-key] skipped unauthorized registration: identity=%r pubkey=%s... "
+            "(strict_bootstrap=%s)" % (str(identity)[:32], str(pubkey)[:12], _header_key_strict_bootstrap())
+        )
+        return False
+    _ensure_miner_header_key_audit_tables(conn)
+    existing = conn.execute(
+        "SELECT 1 FROM miner_header_keys WHERE miner_id=? AND pubkey_hex=?",
+        (identity, pubkey),
+    ).fetchone()
+    previous_pubkey = _latest_header_key_for_identity(conn, identity)
+    conn.execute(
+        "INSERT INTO miner_header_keys (miner_id, pubkey_hex) VALUES (?, ?) "
+        "ON CONFLICT(miner_id, pubkey_hex) DO NOTHING",
+        (identity, pubkey),
+    )
+    _prune_header_keys(conn, identity)
+    if existing:
+        action = "unchanged"
+        write_history = False
+        previous_for_event = pubkey
+    else:
+        action = "registered" if previous_pubkey is None else "added"
+        write_history = True
+        previous_for_event = previous_pubkey
+    _record_header_key_audit_event(
+        conn,
+        identity,
+        pubkey,
+        action=action,
+        actor=actor,
+        reason=reason,
+        previous_pubkey_hex=previous_for_event,
+        created_at=created_at,
+        write_history=write_history,
+    )
+    return True
+
+
 @app.route('/miner/headerkey', methods=['POST'])
 def miner_set_header_key():
     """Admin-set or update the header-signing ed25519 public key for a miner.
-    Body: {"miner_id":"...","pubkey_hex":"<64 hex chars>","reason":"optional"}
+    Body: {"miner_id":"...","pubkey_hex":"<64 hex chars>"}
     """
     # Simple admin key check
     admin_key = os.getenv("RC_ADMIN_KEY")
@@ -4988,18 +5435,49 @@ def miner_set_header_key():
     if not miner_id or len(pubkey_bytes) != 32:
         return jsonify({"ok":False,"error":"invalid miner_id or pubkey_hex"}), 400
     raw_reason = body.get("reason", "")
-    reason = raw_reason.strip()[:240] if isinstance(raw_reason, str) else ""
-    with sqlite3.connect(DB_PATH) as db:
-        _ensure_miner_header_key_tables(db)
-        db.commit()
+    reason = _header_key_audit_reason(raw_reason)
+    # action=revoke retires a key: removes it from BOTH the trust anchor and the
+    # bootstrap allowlist (without this, an allowlisted key could re-bootstrap
+    # indefinitely after pruning — pruning is a cap, not a retirement mechanism).
+    action = body.get("action") or "register"
+    if isinstance(action, str):
+        action = action.strip().lower()
+    if action not in ("register", "revoke"):
+        # Reject unknown actions rather than defaulting to register — a typo'd
+        # "revoke" must NOT silently add/approve a key.
+        return jsonify({"ok": False, "error": "invalid action (expected 'register' or 'revoke')"}), 400
+    if action == "revoke":
+        with sqlite3.connect(DB_PATH, isolation_level=None) as db:
+            db.execute("BEGIN IMMEDIATE")
+            _ensure_miner_header_key_audit_tables(db)
+            existing = db.execute(
+                "SELECT 1 FROM miner_header_keys WHERE miner_id=? AND pubkey_hex=?",
+                (miner_id, pubkey_hex),
+            ).fetchone()
+            db.execute("DELETE FROM miner_header_keys WHERE miner_id=? AND pubkey_hex=?", (miner_id, pubkey_hex))
+            db.execute("DELETE FROM miner_header_bootstrap WHERE miner_id=? AND pubkey_hex=?", (miner_id, pubkey_hex))
+            _record_header_key_audit_event(
+                db,
+                miner_id,
+                pubkey_hex,
+                action="revoked" if existing else "revoke_missing",
+                actor="admin",
+                reason=reason,
+                previous_pubkey_hex=pubkey_hex if existing else None,
+                write_history=False,
+            )
+            db.commit()
+        return jsonify({"ok":True,"revoked":True,"miner_id":miner_id,"pubkey_hex":pubkey_hex})
+
+    with sqlite3.connect(DB_PATH, isolation_level=None) as db:
         db.execute("BEGIN IMMEDIATE")
-        _record_miner_header_key(
-            db,
-            miner_id,
-            pubkey_hex,
-            actor="admin",
-            reason=reason,
-        )
+        # Composite (miner_id, pubkey_hex) PK: registering a key ADDS it for the
+        # identity (multi-device-per-wallet) rather than overwriting the existing one.
+        # Re-registering the same pair is idempotent.
+        # Admin registration also pre-approves this key for strict-mode first-key
+        # bootstrap (T1.1), so the identity's own attestation then matches.
+        db.execute("INSERT OR IGNORE INTO miner_header_bootstrap(miner_id,pubkey_hex) VALUES(?,?)", (miner_id, pubkey_hex))
+        _register_header_key(db, miner_id, pubkey_hex, actor="admin", reason=reason)
         db.commit()
     return jsonify({"ok":True,"miner_id":miner_id,"pubkey_hex":pubkey_hex})
 
@@ -5045,17 +5523,19 @@ def ingest_signed_header():
     if header_miner and header_miner != miner_id:
         return jsonify({"ok":False,"error":"miner_mismatch"}), 400
 
-    # Resolve public key
-    pubkey_hex = None
+    # Resolve candidate public key(s). A wallet identity may have several enrolled
+    # devices, each with its own header key (composite miner_header_keys PK), so we
+    # collect every registered key and accept the header if its signature matches ANY.
+    candidate_pubkeys = []
     if TESTNET_ALLOW_INLINE_PUBKEY and inline_pk:
         if not TESTNET_ALLOW_MOCK_SIG and len(inline_pk) != 64:
             return jsonify({"ok":False,"error":"bad inline pubkey"}), 400
-        pubkey_hex = inline_pk
+        candidate_pubkeys = [inline_pk]
     else:
         with sqlite3.connect(DB_PATH) as db:
-            row = db.execute("SELECT pubkey_hex FROM miner_header_keys WHERE miner_id=?", (miner_id,)).fetchone()
-            if row: pubkey_hex = row[0]
-    if not pubkey_hex:
+            rows = db.execute("SELECT pubkey_hex FROM miner_header_keys WHERE miner_id=?", (miner_id,)).fetchall()  # fetchall-ok: bounded-by-schema
+            candidate_pubkeys = [r[0] for r in rows if r and r[0]]
+    if not candidate_pubkeys:
         return jsonify({"ok":False,"error":"no pubkey registered for miner"}), 403
 
     # Resolve message bytes
@@ -5074,20 +5554,30 @@ def ingest_signed_header():
 
     # Mock acceptance (TESTNET ONLY)
     accepted = False
+    verified_pubkey_hex = None
     if TESTNET_ALLOW_MOCK_SIG and len(sig_hex) == 128:
         METRICS_SNAPSHOT["rustchain_ingest_mock_accepted_total"] = METRICS_SNAPSHOT.get("rustchain_ingest_mock_accepted_total",0)+1
         accepted = True
+        verified_pubkey_hex = candidate_pubkeys[0]
     else:
         if not HAVE_NACL:
             return jsonify({"ok":False,"error":"ed25519 unavailable on server (install pynacl)"}), 500
-        # real ed25519 verify
+        # real ed25519 verify — accept if the signature matches ANY registered key
+        # for this identity (multi-device-per-wallet).
         try:
             sig = hex_to_bytes(sig_hex)
-            pk  = hex_to_bytes(pubkey_hex)
-            VerifyKey(pk).verify(msg, sig)
-            accepted = True
-        except (BadSignatureError, Exception) as e:
-            logging.warning(f"Signature verification failed: {e}")
+        except Exception:
+            return jsonify({"ok":False,"error":"bad signature hex"}), 400
+        for _cand in candidate_pubkeys:
+            try:
+                VerifyKey(hex_to_bytes(_cand)).verify(msg, sig)
+                accepted = True
+                verified_pubkey_hex = _cand
+                break
+            except Exception:
+                continue
+        if not accepted:
+            logging.warning(f"Signature verification failed for miner {miner_id}: no registered key matched ({len(candidate_pubkeys)} candidate(s))")
             return jsonify({"ok":False,"error":"bad signature"}), 400
 
     # Minimal header validation & chain update
@@ -5141,7 +5631,7 @@ def ingest_signed_header():
     # Update tip + metrics
     with sqlite3.connect(DB_PATH) as db:
         db.execute("INSERT OR REPLACE INTO headers(slot, miner_id, message_hex, signature_hex, pubkey_hex, ts) VALUES(?,?,?,?,?,strftime('%s','now'))",
-                   (slot, miner_id, msg_hex, sig_hex, pubkey_hex))
+                   (slot, miner_id, msg_hex, sig_hex, verified_pubkey_hex))
         db.commit()
 
 
@@ -5293,13 +5783,14 @@ _ADMIN_SESSION_TTL = 3600
 def _get_or_create_admin_session(req):
     now = time.time()
     # Clean expired
-    expired = [k for k, v in _ADMIN_SESSIONS.items() if now - v > 3600]
+    expired = [k for k, v in _ADMIN_SESSIONS.items() if now - v > _ADMIN_SESSION_TTL]
     for k in expired:
         _ADMIN_SESSIONS.pop(k, None)
     # Check existing session
     sid = req.values.get("session_id", "")
     if sid and sid in _ADMIN_SESSIONS:
         _ADMIN_SESSIONS[sid] = now  # refresh TTL
+        req._admin_session_id = sid  # type: ignore[attr-defined]
         return True
     # Check header auth
     if is_admin(req):
@@ -5325,7 +5816,12 @@ def _wallet_review_ui_authorized(req):
         or req.form.get("admin_key")
         or ""
     ).strip()
-    return bool(need and got and hmac.compare_digest(need, got))
+    if need and got and hmac.compare_digest(need, got):
+        sid = secrets.token_hex(16)
+        _ADMIN_SESSIONS[sid] = time.time()
+        req._admin_session_id = sid  # type: ignore[attr-defined]
+        return True
+    return False
 
 
 def get_wallet_review_counts():
@@ -5552,6 +6048,7 @@ def admin_operator_ui():
         return jsonify({"ok": False, "error": "forbidden"}), 403
 
     admin_key = str(request.values.get("admin_key") or "").strip()
+    sid = getattr(request, '_admin_session_id', '')
     counts = get_wallet_review_counts()
     return render_template_string(
         """
@@ -5604,6 +6101,7 @@ def admin_operator_ui():
 </html>
         """,
         admin_key=admin_key,
+        sid=sid,
         counts=counts,
     )
 
@@ -5936,6 +6434,16 @@ def request_withdrawal():
         return jsonify({"error": "amount must be a finite positive number"}), 400
     if amount < 0:
         return jsonify({"error": "amount must be positive"}), 400
+    # Upper bound: no withdrawal can exceed total supply. Also keeps amount*ACCOUNT_UNIT
+    # well under 2**53 (so it's an exactly-representable double and round() can't
+    # overflow) — guards the precision check below against round(inf) / float error.
+    if amount > TOTAL_SUPPLY_RTC:
+        return jsonify({"error": "amount exceeds total supply"}), 400
+    # Amount must be expressible in whole micro-RTC (the ledger unit). Reject finer
+    # precision so the integer debit and the recorded withdrawal amount agree exactly
+    # (otherwise e.g. 1.00000049 would record more than it debits).
+    if abs(amount * ACCOUNT_UNIT - round(amount * ACCOUNT_UNIT)) > 1e-6:
+        return jsonify({"error": "amount precision exceeds micro-RTC (max 6 decimals)"}), 400
 
     if amount < MIN_WITHDRAWAL:
         return jsonify({"error": f"Minimum withdrawal is {MIN_WITHDRAWAL} RTC"}), 400
@@ -5961,14 +6469,19 @@ def request_withdrawal():
                     "used_at": nonce_row[0]
                 }, 400)
 
-            # Check balance
-            row = c.execute("SELECT balance_rtc FROM balances WHERE miner_pk = ?", (miner_pk,)).fetchone()
-            balance = row[0] if row else 0.0
-            total_needed = amount + WITHDRAWAL_FEE
+            # Check balance — schema-tolerant (amount_i64 micro-RTC canonical, legacy
+            # balance_rtc fallback) and compared in INTEGER micro-RTC to avoid float
+            # drift. The old direct `balance_rtc/miner_pk` read returned empty on the
+            # live miner_id schema, falsely rejecting every withdrawal (DoS).
+            balance_cols = _balance_columns(c)
+            amount_i64 = int(round(amount * ACCOUNT_UNIT))
+            fee_i64 = int(round(WITHDRAWAL_FEE * ACCOUNT_UNIT))
+            total_needed_i64 = amount_i64 + fee_i64
+            balance_i64 = _balance_i64_for_wallet(c, miner_pk)
 
-            if balance < total_needed:
+            if balance_i64 < total_needed_i64:
                 withdrawal_failed.inc()
-                return rollback_json({"error": "Insufficient balance", "balance": balance}, 400)
+                return rollback_json({"error": "Insufficient balance", "balance": balance_i64 / ACCOUNT_UNIT}, 400)
 
             # Check daily limit
             today = datetime.now().strftime("%Y-%m-%d")
@@ -6020,30 +6533,18 @@ def request_withdrawal():
                 VALUES (?, ?, ?)
             """, (miner_pk, nonce, int(time.time())))
 
-            # Deduct balance only if the row still has enough funds inside this transaction.
-            debit = c.execute(
-                "UPDATE balances SET balance_rtc = balance_rtc - ? WHERE miner_pk = ? AND balance_rtc >= ?",
-                (total_needed, miner_pk, total_needed)
-            )
-            if debit.rowcount != 1:
+            # Atomic guarded debit — schema-tolerant, integer micro-RTC. Preserves
+            # the rowcount==1 anti-overdraw guard: only debits if funds remain inside
+            # this BEGIN IMMEDIATE transaction.
+            if _debit_wallet_atomic(c, miner_pk, total_needed_i64, balance_cols) != 1:
                 withdrawal_failed.inc()
-                latest = c.execute(
-                    "SELECT balance_rtc FROM balances WHERE miner_pk = ?",
-                    (miner_pk,)
-                ).fetchone()
-                latest_balance = latest[0] if latest else 0.0
+                latest_balance = _balance_i64_for_wallet(c, miner_pk) / ACCOUNT_UNIT
                 return rollback_json({"error": "Insufficient balance", "balance": latest_balance}, 400)
 
-            # RIP-301: Route fee to mining pool (founder_community) instead of burning
+            # RIP-301: Route fee to mining pool (founder_community) instead of burning.
+            # Schema-tolerant credit (ensures row + dual-writes balance_rtc when present).
             fee_urtc = int(WITHDRAWAL_FEE * UNIT)
-            fee_rtc = WITHDRAWAL_FEE
-            # Ensure founder_community row exists before crediting
-            c.execute("INSERT OR IGNORE INTO balances (miner_pk, balance_rtc) VALUES (?, 0)",
-                      ("founder_community",))
-            c.execute(
-                "UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk = ?",
-                (fee_rtc, "founder_community")
-            )
+            _apply_wallet_balance_delta(c, "founder_community", fee_i64, balance_cols)
             c.execute(
                 """INSERT INTO fee_events (source, source_id, miner_pk, fee_rtc, fee_urtc, destination, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?)""",
@@ -6066,12 +6567,13 @@ def request_withdrawal():
                 total_withdrawn = total_withdrawn + ?
             """, (miner_pk, today, amount, amount))
 
+            remaining_balance = _balance_i64_for_wallet(c, miner_pk) / ACCOUNT_UNIT
             c.commit()
         except Exception:
             c.rollback()
             raise
 
-        balance_gauge.labels(miner_pk=miner_pk).set(balance - total_needed)
+        balance_gauge.labels(miner_pk=miner_pk).set(remaining_balance)
         withdrawal_queue_size.inc()
 
     return jsonify({
@@ -6115,11 +6617,10 @@ def api_fee_pool():
                 "fee_rtc": ev[3], "destination": ev[4], "timestamp": ev[5]
             })
 
-        # Community fund balance (where fees go)
-        fund_row = c.execute(
-            "SELECT COALESCE(balance_rtc, 0) FROM balances WHERE miner_pk = 'founder_community'"
-        ).fetchone()
-        fund_balance = fund_row[0] if fund_row else 0.0
+        # Community fund balance (where fees go) — schema-tolerant read so it
+        # reflects the credit (the fee now routes through _apply_wallet_balance_delta,
+        # which writes amount_i64 on the live schema, not just legacy balance_rtc).
+        fund_balance = _balance_i64_for_wallet(c, "founder_community") / ACCOUNT_UNIT
 
     return jsonify({
         "rip": 301,
@@ -6195,9 +6696,9 @@ def withdrawal_history(miner_pk):
                 "tx_hash": row[7]
             })
 
-        # Get balance
-        balance_row = c.execute("SELECT balance_rtc FROM balances WHERE miner_pk = ?", (miner_pk,)).fetchone()
-        balance = balance_row[0] if balance_row else 0.0
+        # Get balance — schema-tolerant (was a hardcoded balance_rtc/miner_pk read
+        # that returned empty on the live miner_id schema).
+        balance = _balance_i64_for_wallet(c, miner_pk) / ACCOUNT_UNIT
 
         return jsonify({
             "miner_pk": miner_pk,
@@ -9010,6 +9511,64 @@ def wallet_transfer_v2():
         conn.close()
 
 
+def _pending_confirm_env_int(name, default):
+    """Parse an int env var without crashing import on a bad value."""
+    raw = os.environ.get(name, "")
+    if raw in (None, ""):
+        return default
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return default
+    # A non-positive override (e.g. "0" or a negative) is a misconfiguration. Fall
+    # back to the default rather than silently clamping the batch size to 1, which
+    # would throttle the confirm scheduler to one transfer per call with no error.
+    return value if value >= 1 else default
+
+
+# Bounded /pending/confirm: a single call confirms at most this many transfers so
+# one run can't process an unbounded batch (the hourly scheduler keeps the queue
+# drained in small, predictable chunks). Configurable, fail-safe on bad env.
+PENDING_CONFIRM_DEFAULT_LIMIT = _pending_confirm_env_int("RC_PENDING_CONFIRM_DEFAULT_LIMIT", 100)
+PENDING_CONFIRM_MAX_LIMIT = _pending_confirm_env_int("RC_PENDING_CONFIRM_MAX_LIMIT", 500)
+
+
+def _pending_confirm_limit(raw_limit=None):
+    """Clamp a requested confirm-batch limit to [1, PENDING_CONFIRM_MAX_LIMIT]."""
+    if raw_limit in (None, ""):
+        raw_limit = PENDING_CONFIRM_DEFAULT_LIMIT
+    try:
+        limit = int(raw_limit)
+    except (TypeError, ValueError):
+        raise ValueError("limit must be an integer")
+    return max(1, min(limit, PENDING_CONFIRM_MAX_LIMIT))
+
+
+def _pending_overdue_stats(c, now):
+    """Read-only: how many pending transfers are past their confirm window, and
+    the oldest one's overdue seconds. Pure observability — never mutates."""
+    try:
+        row = c.execute(
+            """
+            SELECT COUNT(*), COALESCE(MAX(? - confirms_at), 0)
+            FROM pending_ledger
+            WHERE status = 'pending' AND confirms_at <= ?
+            """,
+            (now, now),
+        ).fetchone()
+    except sqlite3.Error as e:
+        # Degrade gracefully so observability never 500s the endpoint, but LOG it:
+        # a locked DB or schema drift on pending_ledger must not masquerade as a
+        # healthy "0 overdue" — monitors that trust these fields would miss a real
+        # backlog. Narrowed from bare Exception so genuine bugs still surface.
+        print(f"[WARN] _pending_overdue_stats DB error (reporting 0 overdue): {e!r}", flush=True)
+        return {"stale_pending_count": 0, "max_confirm_overdue_seconds": 0}
+    return {
+        "stale_pending_count": int(row[0] or 0),
+        "max_confirm_overdue_seconds": max(0, int(row[1] or 0)),
+    }
+
+
 @app.route('/pending/list', methods=['GET'])
 def list_pending():
     """List all pending transfers"""
@@ -9040,7 +9599,8 @@ def list_pending():
                        confirms_at, voided_by, voided_reason, tx_hash
                 FROM pending_ledger WHERE status = ? ORDER BY id DESC
             """, (status_filter,), limit=limit, max_limit=500)
-    
+        overdue_stats = _pending_overdue_stats(db, int(time.time()))
+
     items = []
     for r in rows:
         items.append({
@@ -9057,7 +9617,7 @@ def list_pending():
             "tx_hash": r[10]
         })
     
-    return jsonify({"ok": True, "count": len(items), "pending": items})
+    return jsonify({"ok": True, "count": len(items), "pending": items, **overdue_stats})
 
 
 @app.route('/pending/void', methods=['POST'])
@@ -9153,25 +9713,39 @@ def confirm_pending():
     admin_key = request.headers.get("X-Admin-Key", "")
     if not hmac.compare_digest(admin_key, admin_key_env):
         return jsonify({"error": "Unauthorized"}), 401
-    
+
+    # Bound the batch: accept an optional ?limit=/JSON "limit" (default 100,
+    # max 500) so one call confirms at most `limit` transfers instead of an
+    # unbounded sweep. The hourly scheduler keeps the queue drained in chunks.
+    body = request.get_json(silent=True)
+    raw_limit = request.args.get("limit")
+    if isinstance(body, dict) and body.get("limit") not in (None, ""):
+        raw_limit = body.get("limit")
+    try:
+        limit = _pending_confirm_limit(raw_limit)
+    except ValueError:
+        return jsonify({"ok": False, "error": "limit must be an integer"}), 400
+
     now = int(time.time())
     confirmed_count = 0
     confirmed_ids = []
     errors = []
-    
+
     conn = sqlite3.connect(DB_PATH)
     try:
         c = conn.cursor()
         _ensure_transfer_ledger_table(c)
         balance_cols = _balance_columns(c)
-        
-        # Get all pending transfers ready for confirmation
+        before_stats = _pending_overdue_stats(c, now)
+
+        # Get a bounded batch of pending transfers ready for confirmation
         ready = c.execute("""
             SELECT id, from_miner, to_miner, amount_i64, reason, epoch, tx_hash
-            FROM pending_ledger 
+            FROM pending_ledger
             WHERE status = 'pending' AND confirms_at <= ?
             ORDER BY id ASC
-        """, (now,)).fetchall()
+            LIMIT ?
+        """, (now, limit)).fetchall()  # fetchall-ok: already-paginated
         
         for row in ready:
             pid, from_m, to_m, amount, reason, epoch, tx_hash = row
@@ -9240,22 +9814,28 @@ def confirm_pending():
                     pass
                 print(f"[ERROR] confirm_pending {pid}: {e!r}")
                 errors.append({"id": pid, "error": "internal_error"})
-        
+
+        after_stats = _pending_overdue_stats(c, now)
         conn.commit()
-        
+
         if confirmed_count > 0:
             send_sophiacheck_alert("info", f"Confirmed {confirmed_count} pending transfer(s)", {
                 "confirmed_ids": str(confirmed_ids[:10]),  # First 10
                 "errors": len(errors)
             })
-        
+
         return jsonify({
             "ok": True,
+            "limit": limit,
+            "selected_count": len(ready),
             "confirmed_count": confirmed_count,
             "confirmed_ids": confirmed_ids,
-            "errors": errors if errors else None
+            "errors": errors if errors else None,
+            "stale_pending_count_before": before_stats["stale_pending_count"],
+            "max_confirm_overdue_seconds_before": before_stats["max_confirm_overdue_seconds"],
+            **after_stats,
         })
-    
+
     finally:
         conn.close()
 
@@ -9726,14 +10306,30 @@ def _reserve_governance_nonce(c: sqlite3.Cursor, wallet: str, nonce: str, used_a
 
 
 def _get_active_miner_antiquity_multiplier(c: sqlite3.Cursor, wallet: str):
-    row = c.execute(
-        """
-        SELECT ts_ok, device_family, device_arch
-        FROM miner_attest_recent
-        WHERE miner = ?
-        """,
-        (wallet,),
-    ).fetchone()
+    # fingerprint_passed gates the antiquity BONUS (see below). Read it tolerantly:
+    # the live nodes run a divergent lineage and an older one may predate the column —
+    # an unknown-column error must NOT crash every governance call. If the column is
+    # absent we fall back to the pre-cap behavior (the derive_verified_device arch
+    # downgrade still protects those nodes).
+    fp_col_present = True
+    try:
+        row = c.execute(
+            "SELECT ts_ok, device_family, device_arch, fingerprint_passed "
+            "FROM miner_attest_recent WHERE miner = ?",
+            (wallet,),
+        ).fetchone()
+    except sqlite3.OperationalError as e:
+        # Only the specific "column absent" case falls back. A transient lock / I/O
+        # error must NOT be misread as a missing column (which would silently disable
+        # the bonus cap); re-raise anything else.
+        if "fingerprint_passed" not in str(e) and "no such column" not in str(e).lower():
+            raise
+        fp_col_present = False
+        row = c.execute(
+            "SELECT ts_ok, device_family, device_arch "
+            "FROM miner_attest_recent WHERE miner = ?",
+            (wallet,),
+        ).fetchone()
     if not row or not row[0]:
         return False, 0.0, "miner_not_attested"
 
@@ -9743,11 +10339,26 @@ def _get_active_miner_antiquity_multiplier(c: sqlite3.Cursor, wallet: str):
 
     family = row[1] or "unknown"
     arch = row[2] or "unknown"
-    multiplier = HARDWARE_WEIGHTS.get(family, {}).get(
+    multiplier = float(HARDWARE_WEIGHTS.get(family, {}).get(
         arch,
         HARDWARE_WEIGHTS.get(family, {}).get("default", 1.0),
-    )
-    return True, float(multiplier), "ok"
+    ))
+
+    # T3.2 defense-in-depth: the antiquity BONUS (multiplier > 1.0) is the forgeable
+    # part — only grant it to miners whose hardware fingerprint passed. The stored value
+    # is an INTEGER 1 on live nodes, but coerce explicitly so a stray text "0"/"false"/
+    # NULL can never read truthy and grant a forged bonus. A miner that failed (or never
+    # ran) the 6-check fingerprint keeps base voting weight (capped at 1.0) so liveness
+    # is preserved, but cannot wield a forged vintage tier in governance. The live
+    # G4/G5/POWER8 fleet all attest fingerprint_passed=1, so this never touches honest
+    # vintage hardware; it only neutralizes spoofers the stored device_arch downgrade
+    # may not have caught.
+    if fp_col_present and multiplier > 1.0:
+        fp_raw = row[3] if len(row) > 3 else None
+        fingerprint_passed = str(fp_raw).strip().lower() in ("1", "true", "yes")
+        if not fingerprint_passed:
+            return True, 1.0, "antiquity_bonus_requires_fingerprint"
+    return True, multiplier, "ok"
 
 
 def _refresh_proposal_status(c: sqlite3.Cursor, proposal_row: sqlite3.Row):
@@ -9893,6 +10504,52 @@ def _apply_wallet_balance_delta(
         return
 
     raise RuntimeError("unsupported balances schema for wallet transfer")
+
+
+def _debit_wallet_atomic(c: sqlite3.Cursor, wallet_id: str, amount_i64: int, balance_cols: set) -> int:
+    """Atomically debit ``amount_i64`` micro-RTC iff the wallet holds at least that
+    much; schema-tolerant. Returns the UPDATE rowcount (1 = debited, 0 = insufficient).
+
+    Preserves the anti-overdraw guard (no negative balance) across the known
+    schemas, and does the authoritative comparison in INTEGER micro-RTC — never in
+    float — so rounding cannot permit a 1-uRTC overdraw or wrongly reject a valid
+    withdrawal. Must be called inside the caller's BEGIN IMMEDIATE transaction.
+    """
+    if {"miner_id", "amount_i64"}.issubset(balance_cols):
+        if "balance_rtc" in balance_cols:
+            cur = c.execute(
+                "UPDATE balances SET amount_i64 = amount_i64 - ?, "
+                "balance_rtc = (amount_i64 - ?) / 1000000.0 "
+                "WHERE miner_id = ? AND amount_i64 >= ?",
+                (amount_i64, amount_i64, wallet_id, amount_i64),
+            )
+        else:
+            cur = c.execute(
+                "UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ? AND amount_i64 >= ?",
+                (amount_i64, wallet_id, amount_i64),
+            )
+        return cur.rowcount
+
+    # Legacy float (balance_rtc) schemas: guard with the exact float comparison
+    # `balance_rtc >= delta_rtc`. This NEVER overdraws (balance - delta >= 0). A
+    # rounding guard (CAST(ROUND(balance_rtc*1e6)) >= amount_i64) would round a
+    # sub-micro shortfall UP and debit negative; rejecting a genuine sub-micro
+    # shortfall here is correct, not spurious. The canonical amount_i64 schema above
+    # is integer-exact and has no such dust.
+    delta_rtc = amount_i64 / ACCOUNT_UNIT
+    if {"miner_pk", "balance_rtc"}.issubset(balance_cols):
+        cur = c.execute(
+            "UPDATE balances SET balance_rtc = balance_rtc - ? WHERE miner_pk = ? AND balance_rtc >= ?",
+            (delta_rtc, wallet_id, delta_rtc),
+        )
+        return cur.rowcount
+    if {"miner_id", "balance_rtc"}.issubset(balance_cols):
+        cur = c.execute(
+            "UPDATE balances SET balance_rtc = balance_rtc - ? WHERE miner_id = ? AND balance_rtc >= ?",
+            (delta_rtc, wallet_id, delta_rtc),
+        )
+        return cur.rowcount
+    raise RuntimeError("unsupported balances schema for withdrawal debit")
 
 
 
@@ -10067,10 +10724,13 @@ def wallet_transfer_signed():
         # Use the Atlas pubkey — client may omit public_key for bcn_ wallets
         atlas_pubkey = bcn_info["pubkey_hex"]
         if public_key and public_key != atlas_pubkey:
+            # SECURITY (#7311): Do NOT echo the `atlas_pubkey` back to the caller.
+            # An attacker holding a `bcn_` wallet could otherwise enumerate the
+            # registered Ed25519 public key for any beacon ID. `from_address` /
+            # `beacon_id` is the caller's own input and is safe to echo.
             return jsonify({
                 "error": "Public key does not match Beacon Atlas registration",
-                "beacon_id": from_address,
-                "expected_pubkey_prefix": atlas_pubkey[:16] + "..."
+                "beacon_id": from_address
             }), 400
         public_key = atlas_pubkey  # Use Atlas pubkey for verification
     else:
@@ -10082,10 +10742,13 @@ def wallet_transfer_signed():
                 "message": "Public key is not valid hexadecimal",
             }), 400
         if from_address != expected_address:
+            # SECURITY (#7311): Do NOT echo the derived `expected_address` back to
+            # the caller. Doing so lets an anonymous attacker map any RTC address
+            # to its Ed25519 public key (information disclosure / deanonymization).
+            # `from_address` is the caller's own input and is safe to echo.
             return jsonify({
                 "error": "Public key does not match from_address",
-                "expected": expected_address,
-                "got": from_address
+                "from_address": from_address
             }), 400
     
     nonce = str(nonce_int)
@@ -10227,8 +10890,70 @@ def wallet_transfer_signed():
 BEACON_RATE_WINDOW = 60
 BEACON_RATE_LIMIT  = 60
 
+# T3.5: per-process, per-IP, DB-INDEPENDENT beacon submission backstop. The per-agent
+# DB count below (a) is keyed by agent_id, which an attacker rotates freely to evade,
+# and (b) is wrapped in `except Exception: pass`, so a DB error silently FAILS OPEN —
+# unbounded submissions. This in-memory limiter always runs (no DB dependency), is keyed
+# by client IP, and fails closed. Mirrors _check_governance_vote_rate_limit. NOTE: like
+# that sibling it is per-PROCESS — under a hypothetical multi-worker deployment each
+# worker enforces the cap independently; the node runs single-process today, and the
+# DB per-agent limit remains the cross-process layer. This is a flood backstop, not a
+# distributed ceiling. The default cap is generous (120/min) so shared NAT/proxy egress
+# IPs aren't throttled below the per-agent DB limit; tune via env if needed.
+BEACON_IP_RATE_LIMIT_MAX = int(os.environ.get("RC_BEACON_IP_RATE_LIMIT_MAX", "120"))
+BEACON_IP_RATE_LIMIT_WINDOW = int(os.environ.get("RC_BEACON_IP_RATE_LIMIT_WINDOW_SECONDS", "60"))
+_BEACON_IP_RATE_LIMIT_MAX_KEYS = int(os.environ.get("RC_BEACON_IP_RATE_LIMIT_MAX_KEYS", "8192"))
+_BEACON_IP_RATE_LIMIT_BUCKETS = {}
+_BEACON_IP_RATE_LIMIT_LOCK = Lock()
+
+
+def _check_beacon_rate_limit(client_ip: str, now_ts: Optional[int] = None):
+    """Per-IP, in-memory, fail-closed beacon submission backstop (bounds work before any
+    DB hit or signature verification; cannot be bypassed by a DB error or agent_id
+    rotation)."""
+    if BEACON_IP_RATE_LIMIT_MAX <= 0:
+        return True, 0
+    now_ts = int(time.time()) if now_ts is None else int(now_ts)
+    window = max(1, BEACON_IP_RATE_LIMIT_WINDOW)
+    cutoff = now_ts - window
+    key = client_ip or "unknown"
+    with _BEACON_IP_RATE_LIMIT_LOCK:
+        # Eviction (no background sweeper): when the table grows past the cap, first
+        # drop IP keys whose attempts have all aged out of the window; if a wide *active*
+        # flood keeps it over cap, drop the least-recently-active keys so the table size
+        # — and the per-call scan cost — is HARD-bounded by _MAX_KEYS.
+        if len(_BEACON_IP_RATE_LIMIT_BUCKETS) > _BEACON_IP_RATE_LIMIT_MAX_KEYS:
+            for _stale in [k for k, v in _BEACON_IP_RATE_LIMIT_BUCKETS.items()
+                           if not any(ts > cutoff for ts in v)]:
+                del _BEACON_IP_RATE_LIMIT_BUCKETS[_stale]
+            _overflow = len(_BEACON_IP_RATE_LIMIT_BUCKETS) - _BEACON_IP_RATE_LIMIT_MAX_KEYS
+            if _overflow > 0:
+                for _old in sorted(
+                    _BEACON_IP_RATE_LIMIT_BUCKETS,
+                    key=lambda k: max(_BEACON_IP_RATE_LIMIT_BUCKETS[k] or [0]),
+                )[:_overflow]:
+                    del _BEACON_IP_RATE_LIMIT_BUCKETS[_old]
+        attempts = [ts for ts in _BEACON_IP_RATE_LIMIT_BUCKETS.get(key, []) if ts > cutoff]
+        if len(attempts) >= BEACON_IP_RATE_LIMIT_MAX:
+            _BEACON_IP_RATE_LIMIT_BUCKETS[key] = attempts
+            return False, max(1, window - (now_ts - attempts[0]))
+        attempts.append(now_ts)
+        _BEACON_IP_RATE_LIMIT_BUCKETS[key] = attempts
+        return True, 0
+
+
 @app.route("/beacon/submit", methods=["POST"])
 def beacon_submit():
+    # T3.5: fail-closed per-IP ceiling FIRST — before JSON parse, DB lookup, or sig work.
+    _beacon_allowed, _beacon_retry = _check_beacon_rate_limit(get_client_ip())
+    if not _beacon_allowed:
+        resp = jsonify({
+            "ok": False, "error": "rate_limited", "code": "BEACON_IP_RATE_LIMIT",
+            "limit": BEACON_IP_RATE_LIMIT_MAX, "window_seconds": BEACON_IP_RATE_LIMIT_WINDOW,
+        })
+        resp.status_code = 429
+        resp.headers["Retry-After"] = str(_beacon_retry)
+        return resp
     data = request.get_json(silent=True)
     if not isinstance(data, dict) or not data:
         return jsonify({"ok": False, "error": "invalid_json"}), 400
@@ -10286,6 +11011,59 @@ def beacon_envelopes_list():
     )
     envelopes = get_recent_envelopes(limit=limit, offset=offset, db_path=DB_PATH)
     return jsonify({"ok": True, "count": len(envelopes), "envelopes": envelopes})
+
+
+GOVERNANCE_VOTE_RATE_LIMIT_MAX = int(
+    os.environ.get("RC_GOVERNANCE_VOTE_RATE_LIMIT_MAX", "20")
+)
+GOVERNANCE_VOTE_RATE_LIMIT_WINDOW = int(
+    os.environ.get("RC_GOVERNANCE_VOTE_RATE_LIMIT_WINDOW_SECONDS", "60")
+)
+_GOVERNANCE_VOTE_RATE_LIMIT_BUCKETS = {}
+_GOVERNANCE_VOTE_RATE_LIMIT_LOCK = Lock()
+
+
+def _check_governance_vote_rate_limit(client_ip: str, now_ts: Optional[int] = None):
+    """Bound signature-verification work for public governance vote attempts."""
+    if GOVERNANCE_VOTE_RATE_LIMIT_MAX <= 0:
+        return True, 0
+    now_ts = int(time.time()) if now_ts is None else int(now_ts)
+    window = max(1, GOVERNANCE_VOTE_RATE_LIMIT_WINDOW)
+    cutoff = now_ts - window
+    key = client_ip or "unknown"
+    with _GOVERNANCE_VOTE_RATE_LIMIT_LOCK:
+        attempts = [
+            ts
+            for ts in _GOVERNANCE_VOTE_RATE_LIMIT_BUCKETS.get(key, [])
+            if ts > cutoff
+        ]
+        if len(attempts) >= GOVERNANCE_VOTE_RATE_LIMIT_MAX:
+            _GOVERNANCE_VOTE_RATE_LIMIT_BUCKETS[key] = attempts
+            retry_after = max(1, window - (now_ts - attempts[0]))
+            return False, retry_after
+        attempts.append(now_ts)
+        _GOVERNANCE_VOTE_RATE_LIMIT_BUCKETS[key] = attempts
+        return True, 0
+
+
+@app.before_request
+def _limit_governance_vote_requests():
+    if request.method != "POST" or request.path != "/governance/vote":
+        return None
+    allowed, retry_after = _check_governance_vote_rate_limit(get_client_ip())
+    if allowed:
+        return None
+    response = jsonify({
+        "ok": False,
+        "error": "rate_limited",
+        "code": "GOVERNANCE_VOTE_RATE_LIMIT",
+        "limit": GOVERNANCE_VOTE_RATE_LIMIT_MAX,
+        "window_seconds": GOVERNANCE_VOTE_RATE_LIMIT_WINDOW,
+    })
+    response.status_code = 429
+    response.headers["Retry-After"] = str(retry_after)
+    return response
+
 
 if __name__ == "__main__":
     enforce_mock_signature_runtime_guard()
