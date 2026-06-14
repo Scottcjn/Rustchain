@@ -244,9 +244,9 @@ curl -fsS https://rustchain.org/epoch           # Current epoch
 No API key, no signup — an autonomous agent can read and act on the live network directly:
 
 ```bash
-curl -fsS https://rustchain.org/api/miners                          # who is attesting right now
-curl -fsS https://rustchain.org/epoch                               # current epoch + reward pool
 curl -fsS "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET"  # your own balance + multiplier
+curl -fsS https://rustchain.org/api/tokenomics                         # live RTC reference rate
+curl -fsS https://rustchain.org/payouts.json                           # public payout ledger
 ```
 
 Payments run over the [Beacon](https://github.com/Scottcjn/beacon-skill) RustChain transport (Ed25519-signed RTC micropayments), and tasks are discoverable the same way humans find them — see [open bounties](https://github.com/Scottcjn/rustchain-bounties/issues). Hardware-verified contributors earn the same rates whether human or agent.
