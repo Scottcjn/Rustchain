@@ -8963,8 +8963,18 @@ def api_rewards_epoch(epoch: int):
 @app.route('/wallet/balance', methods=['GET'])
 def api_wallet_balance():
     """Get balance for a specific miner"""
-    miner_id = request.args.get("miner_id", "").strip()
-    address = request.args.get("address", "").strip()
+    raw_miner_id = request.args.get("miner_id")
+    raw_address = request.args.get("address")
+    miner_id = _validated_wallet_query_id(raw_miner_id)
+    address = _validated_wallet_query_id(raw_address)
+    miner_id_supplied = raw_miner_id is not None and raw_miner_id != ""
+    address_supplied = raw_address is not None and raw_address != ""
+
+    if miner_id_supplied and not miner_id:
+        return jsonify({"ok": False, "error": "invalid miner_id"}), 400
+
+    if address_supplied and not address:
+        return jsonify({"ok": False, "error": "invalid miner_id"}), 400
 
     if miner_id and address and miner_id != address:
         return jsonify({
@@ -9002,6 +9012,17 @@ def api_wallet_balance():
 _API_WALLET_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,80}$")
 
 
+def _validated_wallet_query_id(raw_value):
+    """Return a wallet query identifier only if it is already canonical."""
+    if not isinstance(raw_value, str):
+        return ""
+    if raw_value != raw_value.strip():
+        return ""
+    if not _API_WALLET_ID_RE.match(raw_value):
+        return ""
+    return raw_value
+
+
 # NOTE: any future *static* route under /api/wallet/ (e.g. /api/wallet/list)
 # must be declared BEFORE this variable rule or Werkzeug will capture it here.
 @app.route('/api/wallet/<miner_id>', methods=['GET'])
@@ -9016,8 +9037,8 @@ def api_wallet_lookup(miner_id):
     exposes no data that was not already reachable. Malformed ids return 400
     (not a zero balance) so the prefix still distinguishes bad input.
     """
-    miner_id = (miner_id or "").strip()
-    if not _API_WALLET_ID_RE.match(miner_id):
+    miner_id = _validated_wallet_query_id(miner_id)
+    if not miner_id:
         return jsonify({"ok": False, "error": "invalid miner_id"}), 400
     try:
         with sqlite3.connect(DB_PATH) as db:
