@@ -782,6 +782,41 @@ class TestLockLedger:
         
         conn.close()
 
+    def test_negative_limit_clamped_to_min(self, setup_test_db, funded_miner):
+        """get_locks_by_miner and get_pending_unlocks must not treat negative
+        limit as unbounded (SQLite LIMIT -1 = no limit)."""
+        lock_ledger = setup_test_db["lock_ledger"]
+        conn = sqlite3.connect(setup_test_db["db_path"])
+        now = int(time.time())
+
+        # Seed 5 locks, all locked
+        for i in range(5):
+            lock_ledger.create_lock(
+                conn,
+                miner_id=funded_miner,
+                amount_i64=10 * 1000000,
+                lock_type="bridge_deposit",
+                unlock_at=now + 3600 + i,
+            )
+
+        # Negative limit must return at most 1 row, not all 5
+        locks = lock_ledger.get_locks_by_miner(conn, funded_miner, limit=-1)
+        assert len(locks) == 1
+
+        # Also check the pending-unlocks helper with negative limit
+        # Move unlock_at into the past so they become "pending"
+        conn.execute(
+            "UPDATE lock_ledger SET unlock_at = ? WHERE miner_id = ?",
+            (now - 10, funded_miner),
+        )
+        conn.commit()
+
+        pending = lock_ledger.get_pending_unlocks(conn, limit=-1)
+        assert len(pending) == 1
+
+        conn.close()
+
+
 
 class TestLockLedgerRoutes:
     """Test lock ledger route-level validation and helper dispatch."""
