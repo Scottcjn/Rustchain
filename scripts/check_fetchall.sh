@@ -34,9 +34,31 @@ done
 scan_tmp="$(mktemp)"
 baseline_tmp="$(mktemp)"
 unannotated_tmp="$(mktemp)"
+norm_tmp="$(mktemp)"
 new_tmp="$(mktemp)"
 stale_tmp="$(mktemp)"
-trap 'rm -f "$scan_tmp" "$baseline_tmp" "$unannotated_tmp" "$new_tmp" "$stale_tmp"' EXIT
+trap 'rm -f "$scan_tmp" "$baseline_tmp" "$unannotated_tmp" "$norm_tmp" "$new_tmp" "$stale_tmp"' EXIT
+
+# Normalize a "file:lineno:content" hit (or an already-normalized "file:content"
+# baseline entry) to a LINE-NUMBER-INDEPENDENT key "file:content". This is the
+# whole point of the migration baseline: inserting code elsewhere shifts the
+# line numbers of existing .fetchall() sites, and a lineno-keyed baseline then
+# reports them as both "new" and "stale" on every unrelated PR (false red).
+# Keying on file + trimmed source text keeps the guard stable under line drift
+# while still catching genuinely new fetchall patterns (multiplicity preserved,
+# see `sort` not `sort -u` below).
+#
+# KNOWN, ACCEPTED TRADE-OFF: line-independence means location is ignored, so
+# deleting a baselined call and adding BYTE-IDENTICAL source text elsewhere in
+# the SAME file is invisible to the guard. This is inherent — you cannot both
+# ignore line numbers and detect a relocation. The risk is low: identical source
+# is the same already-reviewed materialization pattern, and a brand-new pattern
+# (different text) or an added occurrence (higher count) is still caught. This
+# is strictly preferable to the prior lineno-keyed guard, which false-failed
+# every unrelated PR that merely shifted line numbers.
+normalize_fetchall() {
+    sed -E 's/^([^:]+):[0-9]+:[[:space:]]*/\1:/; s/[[:space:]]+$//'
+}
 
 : > "$scan_tmp"
 : > "$unannotated_tmp"
@@ -74,7 +96,12 @@ else
 fi
 
 if [ -f "$BASELINE_FILE" ]; then
-    grep -vE '^($|#)' "$BASELINE_FILE" | sort -u > "$baseline_tmp"
+    # `|| true`: an empty/all-comment baseline makes grep exit 1, which under
+    # `set -o pipefail` would abort the whole check. Tolerate no-match.
+    # NOTE: `sort` (not `sort -u`) — multiplicity is preserved so that adding
+    # ANOTHER identical-content .fetchall() in a file already in the baseline is
+    # still detected as new (comm pairs duplicates; an extra occurrence surfaces).
+    { grep -vE '^($|#)' "$BASELINE_FILE" || true; } | normalize_fetchall | sort > "$baseline_tmp"
 else
     : > "$baseline_tmp"
 fi
@@ -107,13 +134,18 @@ done < "$scan_tmp"
 
 sort -u "$unannotated_tmp" -o "$unannotated_tmp"
 
+# Line-number-independent keys for comparison + baseline output. `sort` (not
+# `sort -u`) keeps per-call multiplicity so identical-content duplicates are
+# still counted — only the line number is dropped, never the call count.
+normalize_fetchall < "$unannotated_tmp" | sort > "$norm_tmp"
+
 if [ "${1:-}" = "--print-baseline" ]; then
-    cat "$unannotated_tmp"
+    cat "$norm_tmp"
     exit 0
 fi
 
-comm -23 "$unannotated_tmp" "$baseline_tmp" > "$new_tmp"
-comm -13 "$unannotated_tmp" "$baseline_tmp" > "$stale_tmp"
+comm -23 "$norm_tmp" "$baseline_tmp" > "$new_tmp"
+comm -13 "$norm_tmp" "$baseline_tmp" > "$stale_tmp"
 
 if [ -s "$new_tmp" ]; then
     count=$(wc -l < "$new_tmp" | tr -d ' ')
@@ -139,7 +171,7 @@ if [ -s "$stale_tmp" ]; then
     exit 1
 fi
 
-legacy_count=$(wc -l < "$unannotated_tmp" | tr -d ' ')
+legacy_count=$(wc -l < "$norm_tmp" | tr -d ' ')
 echo "OK: no new unannotated .fetchall() calls in node/."
 echo "Legacy baseline count: $legacy_count (issue #6627 migration backlog)."
 exit 0
