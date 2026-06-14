@@ -10,6 +10,7 @@ import requests
 ERGO_NODE = "http://localhost:9053"
 ERGO_API_KEY = os.environ.get("ERGO_API_KEY", "")
 DB_PATH = "/root/rustchain/rustchain_v2.db"
+REQUEST_TIMEOUT = 30
 
 def response_json_object(resp):
     try:
@@ -53,7 +54,10 @@ class RawTxBuilder:
         self.session.headers["Content-Type"] = "application/json"
     
     def get_unspent_box(self, min_value=2000000):
-        resp = self.session.get(ERGO_NODE + "/wallet/boxes/unspent?minConfirmations=0")
+        resp = self.session.get(
+            ERGO_NODE + "/wallet/boxes/unspent?minConfirmations=0",
+            timeout=REQUEST_TIMEOUT,
+        )
         if resp.status_code == 200:
             for b in response_json_list(resp):
                 if not isinstance(b, dict):
@@ -66,7 +70,7 @@ class RawTxBuilder:
         return None
     
     def get_current_height(self):
-        resp = self.session.get(ERGO_NODE + "/info")
+        resp = self.session.get(ERGO_NODE + "/info", timeout=REQUEST_TIMEOUT)
         return response_json_object(resp).get("fullHeight", 0) if resp.status_code == 200 else 0
     
     def get_recent_miners(self, limit=10):
@@ -74,6 +78,7 @@ class RawTxBuilder:
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
         cur.execute("SELECT miner, device_arch, ts_ok FROM miner_attest_recent ORDER BY ts_ok DESC LIMIT ?", (limit,))
+        # fetchall-ok: already-paginated
         miners = [dict(row) for row in cur.fetchall()]
         conn.close()
         return miners
@@ -135,7 +140,11 @@ class RawTxBuilder:
         }
         
         print("Signing...")
-        sign_resp = self.session.post(ERGO_NODE + "/wallet/transaction/sign", json={"tx": unsigned_tx})
+        sign_resp = self.session.post(
+            ERGO_NODE + "/wallet/transaction/sign",
+            json={"tx": unsigned_tx},
+            timeout=REQUEST_TIMEOUT,
+        )
         if sign_resp.status_code != 200:
             return {"success": False, "error": "Sign: " + sign_resp.text[:100]}
         
@@ -149,7 +158,11 @@ class RawTxBuilder:
             print("  Output " + str(i) + ": " + str(out.get("value")))
         
         print("Broadcasting...")
-        send_resp = self.session.post(ERGO_NODE + "/transactions", json=signed_tx)
+        send_resp = self.session.post(
+            ERGO_NODE + "/transactions",
+            json=signed_tx,
+            timeout=REQUEST_TIMEOUT,
+        )
         if send_resp.status_code == 200:
             tx_id = send_resp.json()
             if isinstance(tx_id, dict):
