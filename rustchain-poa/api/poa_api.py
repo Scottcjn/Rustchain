@@ -15,7 +15,23 @@ from validator.validate_genesis import validate_genesis
 
 app = Flask(__name__)
 
-MAX_UPLOAD_BYTES = int(os.environ.get("POA_VALIDATE_MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
+
+def _env_positive_int(name, default):
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    if str(raw).strip() == "":
+        raise ValueError(f"{name} must be a positive integer")
+    try:
+        value = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be a positive integer") from exc
+    if value <= 0:
+        raise ValueError(f"{name} must be a positive integer")
+    return value
+
+
+MAX_UPLOAD_BYTES = _env_positive_int("POA_VALIDATE_MAX_UPLOAD_BYTES", 10 * 1024 * 1024)
 JSON_MIME_TYPES = {"", "application/json", "text/json"}
 
 
