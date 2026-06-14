@@ -13,7 +13,7 @@ node/bcos_routes.py:544:            rows = conn.execute(query, params).fetchall(
 node/beacon_anchor.py:236:        ).fetchall()
 node/beacon_anchor.py:305:        ).fetchall()
 node/beacon_anchor.py:79:        for row in conn.execute("PRAGMA table_info(beacon_envelopes)").fetchall()
-node/beacon_api.py:1212:        rows = db.execute("SELECT * FROM beacon_reputation ORDER BY score DESC").fetchall()
+node/beacon_api.py:1220:        rows = db.execute("SELECT * FROM beacon_reputation ORDER BY score DESC").fetchall()
 node/beacon_api.py:383:    ).fetchall()
 node/beacon_api.py:412:        ).fetchall()
 node/beacon_api.py:678:            ).fetchall()
