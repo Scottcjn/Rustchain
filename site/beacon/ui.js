@@ -133,6 +133,13 @@ function updateHUD() {
   }
 }
 
+function setPanelPath(path) {
+  const prompt = document.createElement('span');
+  prompt.className = 'prompt';
+  prompt.textContent = 'beacon@atlas:~';
+  panelPath.replaceChildren(prompt, document.createTextNode(String(path ?? '')));
+}
+
 // --- Click handling ---
 function onObjectClick(mesh) {
   const data = mesh.userData;
@@ -210,7 +217,7 @@ function selectAgent(agentId) {
   if (pos) lerpCameraTo(pos, 40);
 
   // Panel path
-  panelPath.innerHTML = `<span class="prompt">beacon@atlas:~</span>/agent/${agent.id}`;
+  setPanelPath(`/agent/${agent.id}`);
 
   // Build panel content
   const v = agent.valuation;
@@ -405,7 +412,7 @@ function selectCity(cityId) {
   const center = getCityCenter(cityId);
   if (center) lerpCameraTo(center, 60);
 
-  panelPath.innerHTML = `<span class="prompt">beacon@atlas:~</span>/city/${city.id}`;
+  setPanelPath(`/city/${city.id}`);
 
   let html = '';
   html += `<div class="t-cmd"><span class="dollar">$</span>cat /city/${city.id}</div>`;
@@ -508,7 +515,7 @@ function showContractForm(preselectedFrom) {
     `<option value="${a.id}"${a.id === preselectedFrom ? ' selected' : ''}>${a.name}</option>`
   ).join('');
 
-  panelPath.innerHTML = `<span class="prompt">beacon@atlas:~</span>/contracts/new`;
+  setPanelPath('/contracts/new');
 
   let html = '';
   html += `<div class="t-cmd"><span class="dollar">$</span>initiate_contract --mode=terminal</div>`;
@@ -838,7 +845,7 @@ function renderBountyList(bounties) {
 }
 
 async function showBounties() {
-  panelPath.innerHTML = `<span class="prompt">beacon@atlas:~</span>/bounties`;
+  setPanelPath('/bounties');
 
   // Show loading state
   panelContent.innerHTML = `<div class="t-cmd"><span class="dollar">$</span>beacon contracts --type=bounty --sync=github</div><div style="color:var(--amber);margin:12px 0">Syncing bounty contracts from GitHub...</div>`;
