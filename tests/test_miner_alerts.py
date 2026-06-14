@@ -28,6 +28,56 @@ def miner_alerts_module(monkeypatch):
     return module
 
 
+def test_numeric_env_defaults_survive_malformed_values(monkeypatch):
+    fake_dotenv = types.SimpleNamespace(load_dotenv=lambda: None)
+    monkeypatch.setitem(sys.modules, "dotenv", fake_dotenv)
+    monkeypatch.setenv("POLL_INTERVAL", "not-an-int")
+    monkeypatch.setenv("OFFLINE_THRESHOLD", "")
+    monkeypatch.setenv("LARGE_TRANSFER_THRESHOLD", "not-a-float")
+    monkeypatch.setenv("SMTP_PORT", "bad-port")
+
+    module_path = (
+        Path(__file__).resolve().parents[1]
+        / "tools"
+        / "miner_alerts"
+        / "miner_alerts.py"
+    )
+    spec = importlib.util.spec_from_file_location("miner_alerts_env_defaults", module_path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+
+    assert module.POLL_INTERVAL == 120
+    assert module.OFFLINE_THRESHOLD == 600
+    assert module.LARGE_TRANSFER_THRESHOLD == 10.0
+    assert module.SMTP_PORT == 587
+
+
+def test_numeric_env_valid_values_still_override_defaults(monkeypatch):
+    fake_dotenv = types.SimpleNamespace(load_dotenv=lambda: None)
+    monkeypatch.setitem(sys.modules, "dotenv", fake_dotenv)
+    monkeypatch.setenv("POLL_INTERVAL", "30")
+    monkeypatch.setenv("OFFLINE_THRESHOLD", "90")
+    monkeypatch.setenv("LARGE_TRANSFER_THRESHOLD", "2.5")
+    monkeypatch.setenv("SMTP_PORT", "2525")
+
+    module_path = (
+        Path(__file__).resolve().parents[1]
+        / "tools"
+        / "miner_alerts"
+        / "miner_alerts.py"
+    )
+    spec = importlib.util.spec_from_file_location("miner_alerts_env_valid", module_path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+
+    assert module.POLL_INTERVAL == 30
+    assert module.OFFLINE_THRESHOLD == 90
+    assert module.LARGE_TRANSFER_THRESHOLD == 2.5
+    assert module.SMTP_PORT == 2525
+
+
 def test_alert_db_subscription_lifecycle_and_filters(
     miner_alerts_module,
     tmp_path,
