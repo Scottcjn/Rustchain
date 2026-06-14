@@ -21,7 +21,7 @@
   },
   "escrow": {
     "escrow_authority": "BridgeProgramPDA",
-    "mint_address": "TO_BE_DEPLOYED",
+    "mint_address": null,
     "daily_mint_cap": 100000000000000,
     "per_tx_limit": 10000000000000,
     "total_supply_cap": null

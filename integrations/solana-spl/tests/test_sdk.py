@@ -20,6 +20,7 @@ from sdk import (
     BridgeQuote,
     get_token_info,
     get_bridge_quote,
+    resolve_mint_address,
 )
 
 
@@ -34,12 +35,21 @@ class TestWRtcToken:
         assert "mainnet" in token.rpc_url
         assert token.mint_address == "12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X"
     
-    def test_initialization_devnet(self):
+    def test_initialization_devnet(self, monkeypatch):
         """Test token initialization for devnet."""
+        monkeypatch.setenv("WRTC_MINT_DEVNET", "DevnetMintAddress1234567890123456789012345")
         token = WRtcToken(network="devnet")
         
         assert token.network == "devnet"
         assert "devnet" in token.rpc_url
+        assert token.mint_address == "DevnetMintAddress1234567890123456789012345"
+
+    def test_devnet_requires_configured_mint(self, monkeypatch):
+        """Test devnet does not silently use placeholder mint addresses."""
+        monkeypatch.delenv("WRTC_MINT_DEVNET", raising=False)
+
+        with pytest.raises(ValueError, match="WRTC_MINT_DEVNET"):
+            resolve_mint_address("devnet")
     
     def test_get_token_info(self):
         """Test getting token info."""

@@ -9,19 +9,13 @@
     "bridge_name": "BoTTube"
   },
   "multisig": {
-    "signers": [
-      "TODO_Signer1_Pubkey",
-      "TODO_Signer2_Pubkey",
-      "TODO_Signer3_Pubkey",
-      "TODO_Signer4_Pubkey",
-      "TODO_Signer5_Pubkey"
-    ],
+    "signers": [],
     "threshold": 3,
-    "description": "RustChain wRTC Multi-Sig Governance"
+    "description": "RustChain wRTC Multi-Sig Governance. Populate with signer pubkeys before deployment."
   },
   "escrow": {
     "escrow_authority": "BridgeProgramPDA",
-    "mint_address": "TO_BE_DEPLOYED",
+    "mint_address": null,
     "daily_mint_cap": 100000000000000,
     "per_tx_limit": 10000000000000,
     "total_supply_cap": null

@@ -19,6 +19,7 @@ Usage:
 """
 
 import json
+import os
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass
 from pathlib import Path
@@ -40,13 +41,33 @@ except ImportError:
 # ============================================================================
 
 WRTC_MINT_MAINNET = "12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X"
-WRTC_MINT_DEVNET = "TODO_DEPLOY_ON_DEVNET"
+WRTC_MINT_ENV_VARS = {
+    "devnet": "WRTC_MINT_DEVNET",
+    "testnet": "WRTC_MINT_TESTNET",
+    "localnet": "WRTC_MINT_LOCALNET",
+}
 
 RPC_ENDPOINTS = {
     "mainnet": "https://api.mainnet-beta.solana.com",
     "devnet": "https://api.devnet.solana.com",
     "testnet": "https://api.testnet.solana.com",
+    "localnet": "http://localhost:8899",
 }
+
+
+def resolve_mint_address(network: str) -> str:
+    """Resolve the configured wRTC mint address for a network."""
+    if network == "mainnet" or network not in WRTC_MINT_ENV_VARS:
+        return WRTC_MINT_MAINNET
+
+    env_var = WRTC_MINT_ENV_VARS.get(network)
+    mint_address = os.environ.get(env_var, "").strip() if env_var else ""
+    if not mint_address:
+        raise ValueError(
+            f"wRTC mint address for {network} is not configured. "
+            f"Deploy the SPL mint first or set {env_var}."
+        )
+    return mint_address
 
 # ============================================================================
 # Data Classes
@@ -114,7 +135,7 @@ class WRtcToken:
         """
         self.network = network
         self.rpc_url = RPC_ENDPOINTS.get(network, RPC_ENDPOINTS["mainnet"])
-        self.mint_address = WRTC_MINT_MAINNET if network == "mainnet" else WRTC_MINT_DEVNET
+        self.mint_address = resolve_mint_address(network)
         
         # Static token info
         self.info = TokenInfo(

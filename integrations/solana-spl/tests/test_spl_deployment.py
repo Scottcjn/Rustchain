@@ -355,7 +355,7 @@ class TestIntegrationScenarios:
         
         escrow_config = BridgeEscrowConfig(
             escrow_authority="BridgePDA",
-            mint_address="TODO",
+            mint_address="MintAddress123456789012345678901234567890",
             daily_mint_cap=100_000_000_000_000,
             per_tx_limit=10_000_000_000_000
         )

@@ -368,6 +368,7 @@ class BridgeIntegration:
         self.spl = spl_deployment
         self.lock_events: List[Dict] = []
         self.mint_events: List[Dict] = []
+        self.escrow_account: Optional[str] = None
     
     def verify_rtc_lock(self, rustchain_tx_hash: str, amount: int) -> bool:
         """
@@ -435,8 +436,13 @@ class BridgeIntegration:
     
     def generate_bridge_report(self) -> Dict[str, Any]:
         """Generate bridge status report."""
+        escrow_balance = 0
+        if self.spl.token_client and self.escrow_account:
+            escrow_balance = self.get_escrow_balance(self.escrow_account)
+
         return {
-            "escrow_balance": self.get_escrow_balance("TODO") if self.spl.token_client else 0,
+            "escrow_account": self.escrow_account,
+            "escrow_balance": escrow_balance,
             "pending_locks": len(self.lock_events),
             "completed_mints": len(self.mint_events),
             "status": "operational"
