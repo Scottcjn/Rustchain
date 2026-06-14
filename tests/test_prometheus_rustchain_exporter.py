@@ -2,6 +2,7 @@
 """Unit tests for the simple RustChain Prometheus exporter."""
 
 import importlib.util
+import os
 import sys
 import types
 from pathlib import Path
@@ -53,6 +54,38 @@ def test_numeric_coercion_helpers_use_defaults_for_bad_values():
     assert module._to_int("9") == 9
     assert module._to_int(None, default=4) == 4
     assert module._to_int("bad", default=2) == 2
+
+
+def test_malformed_numeric_env_falls_back_to_defaults_on_import():
+    with patch.dict(
+        os.environ,
+        {
+            "EXPORTER_PORT": "not-a-port",
+            "SCRAPE_INTERVAL": "",
+            "REQUEST_TIMEOUT": "NaN",
+        },
+    ):
+        module = load_module()
+
+    assert module.EXPORTER_PORT == 9100
+    assert module.SCRAPE_INTERVAL == 60
+    assert module.REQUEST_TIMEOUT == 15
+
+
+def test_valid_numeric_env_still_overrides_defaults_on_import():
+    with patch.dict(
+        os.environ,
+        {
+            "EXPORTER_PORT": "9200",
+            "SCRAPE_INTERVAL": "30",
+            "REQUEST_TIMEOUT": "5",
+        },
+    ):
+        module = load_module()
+
+    assert module.EXPORTER_PORT == 9200
+    assert module.SCRAPE_INTERVAL == 30
+    assert module.REQUEST_TIMEOUT == 5
 
 
 def test_fetch_json_returns_payload_and_handles_errors():

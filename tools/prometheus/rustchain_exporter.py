@@ -12,11 +12,22 @@ from urllib.parse import urlsplit, urlunsplit
 import requests
 from prometheus_client import Gauge, start_http_server
 
+
+def _env_int(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if value is None or value.strip() == "":
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
 NODE_URL = os.getenv("NODE_URL", "https://rustchain.org").rstrip("/")
 P2P_NODE_URL = os.getenv("P2P_NODE_URL", "").rstrip("/")
-EXPORTER_PORT = int(os.getenv("EXPORTER_PORT", "9100"))
-SCRAPE_INTERVAL = int(os.getenv("SCRAPE_INTERVAL", "60"))
-REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "15"))
+EXPORTER_PORT = _env_int("EXPORTER_PORT", 9100)
+SCRAPE_INTERVAL = _env_int("SCRAPE_INTERVAL", 60)
+REQUEST_TIMEOUT = _env_int("REQUEST_TIMEOUT", 15)
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
