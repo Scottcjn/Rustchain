@@ -6343,7 +6343,6 @@ def request_withdrawal():
             amount_i64 = int(round(amount * ACCOUNT_UNIT))
             fee_i64 = int(round(WITHDRAWAL_FEE * ACCOUNT_UNIT))
             total_needed_i64 = amount_i64 + fee_i64
-            total_needed = total_needed_i64 / ACCOUNT_UNIT
             balance_i64 = _balance_i64_for_wallet(c, miner_pk)
 
             if balance_i64 < total_needed_i64:
@@ -6434,12 +6433,13 @@ def request_withdrawal():
                 total_withdrawn = total_withdrawn + ?
             """, (miner_pk, today, amount, amount))
 
+            remaining_balance = _balance_i64_for_wallet(c, miner_pk) / ACCOUNT_UNIT
             c.commit()
         except Exception:
             c.rollback()
             raise
 
-        balance_gauge.labels(miner_pk=miner_pk).set(balance - total_needed)
+        balance_gauge.labels(miner_pk=miner_pk).set(remaining_balance)
         withdrawal_queue_size.inc()
 
     return jsonify({
