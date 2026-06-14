@@ -10587,10 +10587,13 @@ def wallet_transfer_signed():
         # Use the Atlas pubkey — client may omit public_key for bcn_ wallets
         atlas_pubkey = bcn_info["pubkey_hex"]
         if public_key and public_key != atlas_pubkey:
+            # SECURITY (#7311): Do NOT echo the `atlas_pubkey` back to the caller.
+            # An attacker holding a `bcn_` wallet could otherwise enumerate the
+            # registered Ed25519 public key for any beacon ID. `from_address` /
+            # `beacon_id` is the caller's own input and is safe to echo.
             return jsonify({
                 "error": "Public key does not match Beacon Atlas registration",
-                "beacon_id": from_address,
-                "expected_pubkey_prefix": atlas_pubkey[:16] + "..."
+                "beacon_id": from_address
             }), 400
         public_key = atlas_pubkey  # Use Atlas pubkey for verification
     else:
@@ -10602,10 +10605,13 @@ def wallet_transfer_signed():
                 "message": "Public key is not valid hexadecimal",
             }), 400
         if from_address != expected_address:
+            # SECURITY (#7311): Do NOT echo the derived `expected_address` back to
+            # the caller. Doing so lets an anonymous attacker map any RTC address
+            # to its Ed25519 public key (information disclosure / deanonymization).
+            # `from_address` is the caller's own input and is safe to echo.
             return jsonify({
                 "error": "Public key does not match from_address",
-                "expected": expected_address,
-                "got": from_address
+                "from_address": from_address
             }), 400
     
     nonce = str(nonce_int)
