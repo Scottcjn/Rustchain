@@ -334,7 +334,7 @@ Start with the [wallet setup guide](docs/WALLET_SETUP.md) if you are not sure wh
 | Option | Use it for | Where |
 |---|---|---|
 | Miner install wallet | Earning mining rewards to a named wallet | `install-miner.sh --wallet YOUR_WALLET` |
-| Browser light client | Loading a wallet and signing transfers locally in the browser | [web/light-client](web/light-client/) |
+| Wallet user guide | Balance checks, safe transfers, and signed-transfer guidance | [docs/WALLET_USER_GUIDE.md](docs/WALLET_USER_GUIDE.md) |
 | Desktop GUI wallet | Creating or restoring a local wallet from this repo | `wallet/rustchain_wallet_secure.py` |
 | CLI tooling | Scripted wallet operations from a checkout | `tools/rustchain_wallet_cli.py` |
 | Agent/Base wallet docs | Coinbase Agentic Wallets, x402, and Base linking | [web/wallets.html](web/wallets.html) |
