@@ -21,6 +21,20 @@ let selectedAgent = null;
 let selectedCity = null;
 let hoveredId = null;
 
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function safeNumber(value, fallback = 0, min = 0, max = Number.MAX_SAFE_INTEGER) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.min(max, Math.max(min, number));
+}
 // -- Reputation cache (loaded from backend) --
 let reputationCache = {};
 let reputationTs = 0;
@@ -205,27 +219,33 @@ function selectAgent(agentId) {
   const gradeColor = isRelay
     ? getProviderColor(agent.provider)
     : GRADE_COLORS[agent.grade];
+  const beatCount = safeNumber(agent.beat_count);
+  const score = safeNumber(agent.score);
+  const maxScore = safeNumber(agent.maxScore, 1, 1);
+  const videos = safeNumber(agent.videos);
+  const totalViews = safeNumber(agent.totalViews);
+  const antiquityMultiplier = safeNumber(agent.antiquity_multiplier, 1);
 
   let html = '';
-  html += `<div class="t-cmd"><span class="dollar">$</span>cat /agent/${agent.id}</div>`;
-  html += `<div><span class="t-label">NAME</span> <span class="t-value">${agent.name}</span></div>`;
+  html += `<div class="t-cmd"><span class="dollar">$</span>cat /agent/${escapeHtml(agent.id)}</div>`;
+  html += `<div><span class="t-label">NAME</span> <span class="t-value">${escapeHtml(agent.name)}</span></div>`;
 
   if (isRelay) {
     // Relay agent: show provider, model, status, capabilities
     const provColor = getProviderColor(agent.provider);
     html += `<div><span class="t-label">TYPE</span> <span class="grade-badge" style="background:${provColor};color:#000;padding:0 6px;font-size:11px">RELAY</span></div>`;
-    html += `<div><span class="t-label">PROVIDER</span> <span class="t-value" style="color:${provColor}">${(agent.provider || 'unknown').toUpperCase()}</span></div>`;
-    html += `<div><span class="t-label">MODEL</span> <span class="t-value">${agent.model_id || '?'}</span></div>`;
-    html += `<div><span class="t-label">STATUS</span> <span class="t-value" style="color:${agent.status === 'active' ? 'var(--green)' : agent.status === 'silent' ? 'var(--amber)' : 'var(--red)'}">${(agent.status || 'unknown').toUpperCase()}</span></div>`;
-    html += `<div><span class="t-label">ROLE</span> <span class="t-value">${agent.role}</span></div>`;
-    html += `<div><span class="t-label">ADDRESS</span> <span class="t-value">${city ? city.name : '?'}, ${region ? region.name : '?'}</span></div>`;
+    html += `<div><span class="t-label">PROVIDER</span> <span class="t-value" style="color:${provColor}">${escapeHtml((agent.provider || 'unknown').toUpperCase())}</span></div>`;
+    html += `<div><span class="t-label">MODEL</span> <span class="t-value">${escapeHtml(agent.model_id || '?')}</span></div>`;
+    html += `<div><span class="t-label">STATUS</span> <span class="t-value" style="color:${agent.status === 'active' ? 'var(--green)' : agent.status === 'silent' ? 'var(--amber)' : 'var(--red)'}">${escapeHtml((agent.status || 'unknown').toUpperCase())}</span></div>`;
+    html += `<div><span class="t-label">ROLE</span> <span class="t-value">${escapeHtml(agent.role)}</span></div>`;
+    html += `<div><span class="t-label">ADDRESS</span> <span class="t-value">${escapeHtml(city ? city.name : '?')}, ${escapeHtml(region ? region.name : '?')}</span></div>`;
 
     if (agent.capabilities && agent.capabilities.length > 0) {
-      html += `<div><span class="t-label">CAPS</span> <span class="t-value">${agent.capabilities.map(c => `[${c}]`).join(' ')}</span></div>`;
+      html += `<div><span class="t-label">CAPS</span> <span class="t-value">${agent.capabilities.map(c => `[${escapeHtml(c)}]`).join(' ')}</span></div>`;
     }
 
-    if (agent.beat_count) {
-      html += `<div><span class="t-label">HEARTBEATS</span> <span class="t-value">${agent.beat_count}</span></div>`;
+    if (beatCount > 0) {
+      html += `<div><span class="t-label">HEARTBEATS</span> <span class="t-value">${beatCount}</span></div>`;
     }
 
     // Relay agents get a simpler valuation section (pending scoring)
@@ -236,11 +256,11 @@ function selectAgent(agentId) {
     html += `</div>`;
   } else {
     // Native agent: original display
-    html += `<div><span class="t-label">BEACON</span> <span class="t-value" style="color: var(--text-dim)">${agent.beacon || agent.relay_agent_id || agent.id}</span></div>`;
-    html += `<div><span class="t-label">ROLE</span> <span class="t-value">${agent.role}</span></div>`;
-    html += `<div><span class="t-label">GRADE</span> <span class="grade-badge grade-${agent.grade}">${agent.grade}</span>`;
-    html += `${renderBar(agent.score, agent.maxScore, gradeColor)} ${agent.score}/${agent.maxScore}</div>`;
-    html += `<div><span class="t-label">ADDRESS</span> <span class="t-value">${city ? city.name : '?'}, ${region ? region.name : '?'}</span></div>`;
+    html += `<div><span class="t-label">BEACON</span> <span class="t-value" style="color: var(--text-dim)">${escapeHtml(agent.beacon || agent.relay_agent_id || agent.id)}</span></div>`;
+    html += `<div><span class="t-label">ROLE</span> <span class="t-value">${escapeHtml(agent.role)}</span></div>`;
+    html += `<div><span class="t-label">GRADE</span> <span class="grade-badge grade-${escapeHtml(agent.grade)}">${escapeHtml(agent.grade)}</span>`;
+    html += `${renderBar(score, maxScore, gradeColor)} ${score}/${maxScore}</div>`;
+    html += `<div><span class="t-label">ADDRESS</span> <span class="t-value">${escapeHtml(city ? city.name : '?')}, ${escapeHtml(region ? region.name : '?')}</span></div>`;
 
     // Valuation breakdown
     html += `<div class="t-section">-- VALUATION BREAKDOWN --</div>`;
@@ -282,10 +302,10 @@ function selectAgent(agentId) {
         ? AGENTS.find(a => a.id === c.to)
         : AGENTS.find(a => a.id === c.from);
       const dir = c.from === agentId ? '->' : '<-';
-      html += `<div class="contract-row ${c.type}">`;
-      html += `<span class="contract-type" style="background:${CONTRACT_STYLES_CSS[c.type]}">[${c.type.toUpperCase().replace('_', ' ')}]</span>`;
-      html += `<span>${dir} ${other ? other.name : '?'}  ${c.amount} ${c.currency}</span>`;
-      html += `<span class="contract-state state-${c.state}">${c.state}</span>`;
+      html += `<div class="contract-row ${escapeHtml(c.type)}">`;
+      html += `<span class="contract-type" style="background:${CONTRACT_STYLES_CSS[c.type]}">[${escapeHtml(c.type.toUpperCase().replace('_', ' '))}]</span>`;
+      html += `<span>${dir} ${escapeHtml(other ? other.name : '?')}  ${escapeHtml(c.amount)} ${escapeHtml(c.currency)}</span>`;
+      html += `<span class="contract-state state-${escapeHtml(c.state)}">${escapeHtml(c.state)}</span>`;
       html += `</div>`;
     }
   }
@@ -304,7 +324,7 @@ function selectAgent(agentId) {
     html += `<div style="display:flex;flex-wrap:wrap;gap:4px;margin:4px 0">`;
     for (const src of agent.sources) {
       const b = SOURCE_BADGE[src] || { label: src, color: '#aaa' };
-      html += `<span style="background:${b.color}22;color:${b.color};border:1px solid ${b.color}44;padding:1px 6px;font-size:10px;border-radius:3px">${b.label}</span>`;
+      html += `<span style="background:${b.color}22;color:${b.color};border:1px solid ${b.color}44;padding:1px 6px;font-size:10px;border-radius:3px">${escapeHtml(b.label)}</span>`;
     }
     if (agent.human) {
       html += `<span style="background:#ffd70022;color:#ffd700;border:1px solid #ffd70044;padding:1px 6px;font-size:10px;border-radius:3px">Human</span>`;
@@ -316,23 +336,23 @@ function selectAgent(agentId) {
   if (agent.bottube) {
     html += `<div class="t-section">-- LINKS --</div>`;
     html += `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0">`;
-    html += `<a href="https://bottube.ai/agent/${agent.bottube}" target="_blank" class="bounty-link">[BoTTube Profile]</a>`;
-    if (agent.videos > 0) {
-      html += `<span style="color:var(--text-dim);font-size:11px;line-height:28px">${agent.videos} videos | ${(agent.totalViews||0).toLocaleString()} views</span>`;
+    html += `<a href="https://bottube.ai/agent/${encodeURIComponent(agent.bottube)}" target="_blank" class="bounty-link">[BoTTube Profile]</a>`;
+    if (videos > 0) {
+      html += `<span style="color:var(--text-dim);font-size:11px;line-height:28px">${videos} videos | ${totalViews.toLocaleString()} views</span>`;
     }
     html += `</div>`;
   }
   if (agent.miner) {
     html += agent.bottube ? '' : `<div class="t-section">-- LINKS --</div>`;
-    html += `<div style="margin:4px 0"><span style="color:#88ff88">[Miner: ${agent.device_arch || 'unknown'}]</span>`;
-    if (agent.antiquity_multiplier && agent.antiquity_multiplier > 1) {
-      html += ` <span style="color:#ffd700">${agent.antiquity_multiplier}x antiquity</span>`;
+    html += `<div style="margin:4px 0"><span style="color:#88ff88">[Miner: ${escapeHtml(agent.device_arch || 'unknown')}]</span>`;
+    if (antiquityMultiplier > 1) {
+      html += ` <span style="color:#ffd700">${antiquityMultiplier}x antiquity</span>`;
     }
     html += `</div>`;
   }
 
   // New contract button
-  html += `<div class="contract-new-btn" data-from="${agentId}" id="new-contract-btn">[+ NEW CONTRACT]</div>`;
+  html += `<div class="contract-new-btn" data-from="${escapeHtml(agentId)}" id="new-contract-btn">[+ NEW CONTRACT]</div>`;
 
   // Calibrations
   const agentCals = CALIBRATIONS.filter(c => c.a === agentId || c.b === agentId);
@@ -342,7 +362,7 @@ function selectAgent(agentId) {
       const otherId = cal.a === agentId ? cal.b : cal.a;
       const other = AGENTS.find(a => a.id === otherId);
       html += `<div class="cal-row">`;
-      html += `<span class="cal-name">${other ? other.name : '?'}</span>`;
+      html += `<span class="cal-name">${escapeHtml(other ? other.name : '?')}</span>`;
       html += `<span class="cal-bar"><span class="cal-fill" style="width:${cal.score * 100}%"></span></span>`;
       html += `<span class="cal-score">${cal.score.toFixed(2)}</span>`;
       html += `</div>`;
@@ -442,7 +462,9 @@ function closePanel() {
 
 // --- Helpers ---
 function renderBar(value, max, color) {
-  const pct = Math.round((value / max) * 100);
+  const safeMax = safeNumber(max, 1, 1);
+  const safeValue = safeNumber(value, 0, 0, safeMax);
+  const pct = Math.min(100, Math.max(0, Math.round((safeValue / safeMax) * 100)));
   return `<span style="display:inline-block;width:80px;height:8px;background:rgba(0,20,0,0.5);border:1px solid var(--border);vertical-align:middle;margin:0 6px"><span style="display:block;height:100%;width:${pct}%;background:${color}"></span></span>`;
 }
 
@@ -589,7 +611,7 @@ async function submitContract() {
       return;
     }
 
-    // Success — add to data, create 3D line, update HUD
+    // Success - add to data, create 3D line, update HUD
     const normalized = addContract(data);
     addContractLine(normalized);
     updateHUD();
