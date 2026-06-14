@@ -118,12 +118,22 @@ async function loadProposals(){
     p.abstain_weight = p.votes_abstain ?? p.abstain_weight;
     const div = document.createElement('div');
     div.className = 'card';
-    div.innerHTML = `<b>#${safeNumber(p.id)} ${escapeHtml(p.title)}</b><br>
-      <span class="muted">${escapeHtml(p.proposer_wallet)} • ${escapeHtml(p.status)}</span><br>
-      ${escapeHtml(p.description)}<br>
-      yes=${safeNumber(p.yes_weight).toFixed(4)}
-      no=${safeNumber(p.no_weight).toFixed(4)}
-      abstain=${safeNumber(p.abstain_weight).toFixed(4)}`;
+    const idEl = document.createElement('b');
+    idEl.textContent = `#${safeNumber(p.id)} ${String(p.title ?? '')}`;
+    const mutedEl = document.createElement('span');
+    mutedEl.className = 'muted';
+    mutedEl.textContent = `${String(p.proposer_wallet ?? '')} • ${String(p.status ?? '')}`;
+    const descEl = document.createElement('div');
+    descEl.textContent = String(p.description ?? '');
+    const tallyEl = document.createElement('div');
+    tallyEl.textContent = `yes=${safeNumber(p.yes_weight).toFixed(4)} no=${safeNumber(p.no_weight).toFixed(4)} abstain=${safeNumber(p.abstain_weight).toFixed(4)}`;
+    div.appendChild(idEl);
+    div.appendChild(document.createElement('br'));
+    div.appendChild(mutedEl);
+    div.appendChild(document.createElement('br'));
+    div.appendChild(descEl);
+    div.appendChild(document.createElement('br'));
+    div.appendChild(tallyEl);
     list.appendChild(div);
   }
 }
