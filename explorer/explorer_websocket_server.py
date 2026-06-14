@@ -16,7 +16,7 @@ Standalone usage:
 
 Integration:
     from explorer_websocket_server import socketio, app, start_explorer_poller
-    socketio.init_app(app, cors_allowed_origins="*", async_mode="threading")
+    socketio.init_app(app, cors_allowed_origins=SOCKETIO_CORS_ORIGINS, async_mode="threading")
     start_explorer_poller()
 
 Author: RustChain Team
@@ -39,6 +39,11 @@ except ModuleNotFoundError:
     from node.tls_config import get_ssl_context
 
 try:
+    from explorer.socketio_cors import parse_socketio_cors_origins
+except ModuleNotFoundError:
+    from socketio_cors import parse_socketio_cors_origins
+
+try:
     from flask_socketio import SocketIO, emit, join_room, leave_room
     HAVE_SOCKETIO = True
 except ImportError:
@@ -52,6 +57,7 @@ API_TIMEOUT = float(os.environ.get('API_TIMEOUT', '8'))
 POLL_INTERVAL = float(os.environ.get('POLL_INTERVAL', '5'))  # seconds between polls
 HEARTBEAT_S = 30  # ping/pong interval for connection health
 MAX_QUEUE = 100  # max buffered events per client (backpressure)
+SOCKETIO_CORS_ORIGINS = parse_socketio_cors_origins(local_port=EXPLORER_PORT)
 
 # SSL context for HTTPS node connections
 CTX = get_ssl_context()
@@ -315,7 +321,7 @@ ws_bp = Blueprint("explorer_ws", __name__)
 
 if HAVE_SOCKETIO:
     socketio = SocketIO(
-        cors_allowed_origins="*",
+        cors_allowed_origins=SOCKETIO_CORS_ORIGINS,
         async_mode="threading",
         ping_timeout=HEARTBEAT_S,
         ping_interval=HEARTBEAT_S,
