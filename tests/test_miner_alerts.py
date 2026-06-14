@@ -53,6 +53,28 @@ def test_numeric_env_defaults_survive_malformed_values(monkeypatch):
     assert module.SMTP_PORT == 587
 
 
+@pytest.mark.parametrize("threshold", ["NaN", "inf", "-inf", "1e309"])
+def test_large_transfer_threshold_rejects_non_finite_values(monkeypatch, threshold):
+    fake_dotenv = types.SimpleNamespace(load_dotenv=lambda: None)
+    monkeypatch.setitem(sys.modules, "dotenv", fake_dotenv)
+    monkeypatch.setenv("LARGE_TRANSFER_THRESHOLD", threshold)
+
+    module_path = (
+        Path(__file__).resolve().parents[1]
+        / "tools"
+        / "miner_alerts"
+        / "miner_alerts.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        f"miner_alerts_threshold_{threshold}", module_path
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+
+    assert module.LARGE_TRANSFER_THRESHOLD == 10.0
+
+
 def test_numeric_env_valid_values_still_override_defaults(monkeypatch):
     fake_dotenv = types.SimpleNamespace(load_dotenv=lambda: None)
     monkeypatch.setitem(sys.modules, "dotenv", fake_dotenv)

@@ -19,6 +19,7 @@ Architecture:
 
 import argparse
 import logging
+import math
 import os
 import smtplib
 import sqlite3
@@ -51,9 +52,10 @@ def _env_float(name: str, default: float) -> float:
     if value is None or value.strip() == "":
         return default
     try:
-        return float(value)
+        parsed = float(value)
     except ValueError:
         return default
+    return parsed if math.isfinite(parsed) else default
 
 
 # ─── Configuration ────────────────────────────────────────────────────────────
