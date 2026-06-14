@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 
@@ -9,16 +10,20 @@ WIZARD_HTML = (
 )
 
 
-def test_remote_node_responses_are_escaped_before_inner_html_rendering():
+def test_remote_node_results_use_text_dom_rendering():
     html = WIZARD_HTML.read_text(encoding="utf-8")
 
-    assert "<pre>${r.text}</pre>" not in html
-    assert "<pre>${JSON.stringify(hit,null,2)}</pre>" not in html
-    assert "<pre>${String(e)}</pre>" not in html
+    assert "document.getElementById('testOut').innerHTML = r.ok" not in html
+    assert "document.getElementById('minerOut').innerHTML = hit" not in html
+    assert "document.getElementById('minerOut').innerHTML = `<span class='pill bad'>" not in html
+    assert not re.search(r"(?:testOut|minerOut)['\"]\)\.innerHTML\s*=", html)
 
-    assert "<pre>${h(r.text)}</pre>" in html
-    assert "<pre>${h(JSON.stringify(hit,null,2))}</pre>" in html
-    assert "<pre>${h(String(e))}</pre>" in html
+    assert "function renderStatusResult(target, statusClass, label, bodyText, helpText)" in html
+    assert "target.replaceChildren(...children);" in html
+    assert "el.textContent = String(text);" in html
+    assert "renderStatusResult(out, 'ok', 'Reachable', r.text);" in html
+    assert "renderStatusResult(out, 'ok', 'Found', JSON.stringify(hit, null, 2));" in html
+    assert "renderStatusResult(document.getElementById('minerOut'), 'bad', 'Check failed', String(e));" in html
 
 
 def test_generated_command_blocks_escape_display_and_copy_attribute():

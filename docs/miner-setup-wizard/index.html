@@ -112,6 +112,25 @@ function commandBlock(cmd){
   return `<pre>${h(cmd)}</pre><div class="copy" data-copy="${h(cmd)}" onclick="copyText(this.dataset.copy)">Copy command</div>`;
 }
 
+function makeEl(tag, className, text){
+  const el = document.createElement(tag);
+  if (className) el.className = className;
+  if (text !== undefined) el.textContent = String(text);
+  return el;
+}
+
+function renderStatusResult(target, statusClass, label, bodyText, helpText){
+  const children = [makeEl('span', `pill ${statusClass}`, label)];
+  if (bodyText !== undefined && bodyText !== '') {
+    children.push(makeEl('pre', '', bodyText));
+  }
+  if (helpText) {
+    children.push(makeEl('p', 'muted', helpText));
+  }
+  target.classList.remove('muted');
+  target.replaceChildren(...children);
+}
+
 function walletAddressFromPub(hex){
   // Browser SHA-256 over public key bytes -> RTC + first 40 hex
   return crypto.subtle.digest('SHA-256', Uint8Array.from(hex.match(/.{2}/g).map(b=>parseInt(b,16))).buffer)
@@ -217,9 +236,18 @@ function renderPanel(){
         const url = document.getElementById('testNodeUrl').value.trim();
         state.nodeUrl = url;
         const r = await testNode(url);
-        document.getElementById('testOut').innerHTML = r.ok
-          ? `<span class='pill ok'>Reachable</span> <pre>${h(r.text)}</pre>`
-          : `<span class='pill bad'>Failed</span> <pre>${h(r.text)}</pre><p class='muted'>If this is a CORS error, test with terminal: curl -sk ${h(url.replace(/\/$/,''))}/health</p>`;
+        const out = document.getElementById('testOut');
+        if (r.ok) {
+          renderStatusResult(out, 'ok', 'Reachable', r.text);
+        } else {
+          renderStatusResult(
+            out,
+            'bad',
+            'Failed',
+            r.text,
+            `If this is a CORS error, test with terminal: curl -sk ${url.replace(/\/$/,'')}/health`
+          );
+        }
       }
     },0);
     return;
@@ -243,11 +271,14 @@ function renderPanel(){
           const data = await r.json();
           const arr = Array.isArray(data)?data:(data.miners||[]);
           const hit = arr.find(x=>JSON.stringify(x).toLowerCase().includes(q));
-          document.getElementById('minerOut').innerHTML = hit
-            ? `<span class='pill ok'>Found</span><pre>${h(JSON.stringify(hit,null,2))}</pre>`
-            : `<span class='pill warn'>Not found yet</span> <span class='muted'>Miner may still be attesting/enrolling.</span>`;
+          const out = document.getElementById('minerOut');
+          if (hit) {
+            renderStatusResult(out, 'ok', 'Found', JSON.stringify(hit, null, 2));
+          } else {
+            renderStatusResult(out, 'warn', 'Not found yet', '', 'Miner may still be attesting/enrolling.');
+          }
         }catch(e){
-          document.getElementById('minerOut').innerHTML = `<span class='pill bad'>Check failed</span><pre>${h(String(e))}</pre>`;
+          renderStatusResult(document.getElementById('minerOut'), 'bad', 'Check failed', String(e));
         }
       }
     },0);
