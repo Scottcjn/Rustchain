@@ -76,14 +76,15 @@ class SubmissionValidator:
             return result
 
         try:
-            img = Image.open(file_path)
-            img.verify()  # Checks image header integrity (fast, no pixel decode)
+            with Image.open(file_path) as img:
+                img.verify()  # Checks image header integrity (fast, no pixel decode)
             # Re-open to get dimensions (verify() invalidates the file handle)
-            img = Image.open(file_path)
-            width, height = img.size
+            with Image.open(file_path) as img:
+                width, height = img.size
+                image_format = img.format
             result["checks"]["width"] = width
             result["checks"]["height"] = height
-            result["checks"]["format"] = img.format
+            result["checks"]["format"] = image_format
 
             # Check resolution
             if width < min_resolution[0] or height < min_resolution[1]:
@@ -94,18 +95,18 @@ class SubmissionValidator:
 
             # Check extension matches format
             ext = os.path.splitext(file_path)[1].lower().lstrip(".")
-            if img.format and ext and ext not in img.format.lower() and ext not in ("jpg", "jpeg"):
+            if image_format and ext and ext not in image_format.lower() and ext not in ("jpg", "jpeg"):
                 # jpg/jpeg are interchangeable
-                if not (ext in ("jpg", "jpeg") and img.format.lower() in ("jpeg", "jpg")):
+                if not (ext in ("jpg", "jpeg") and image_format.lower() in ("jpeg", "jpg")):
                     result["status"] = "WARN"
-                    msg = f"{label} extension .{ext} doesn't match format {img.format}"
+                    msg = f"{label} extension .{ext} doesn't match format {image_format}"
                     result["message"] = (result["message"] + "; " + msg) if result["message"] else msg
                     self.warnings.append(f"{label} extension/format mismatch")
 
             # If we got here with no warnings, PASS
             if result["status"] not in ("WARN",):
                 result["status"] = "PASS"
-                result["message"] = f"{label} validated as real image ({width}x{height}, {img.format})"
+                result["message"] = f"{label} validated as real image ({width}x{height}, {image_format})"
 
         except Exception as e:
             # PIL couldn't identify the file — don't overwrite existing size/format warnings
