@@ -49,8 +49,46 @@ log = logging.getLogger("webhook-dispatcher")
 # Constants & defaults
 # ---------------------------------------------------------------------------
 DEFAULT_NODE_URL = os.getenv("RUSTCHAIN_NODE", "http://localhost:5000")
-DEFAULT_POLL_INTERVAL = int(os.getenv("WEBHOOK_POLL_INTERVAL", "10"))
-DEFAULT_LARGE_TX_THRESHOLD = float(os.getenv("LARGE_TX_THRESHOLD", "100.0"))
+
+
+def _safe_int_env(name: str, default: int) -> int:
+    """Read an integer env var; fall back to `default` on any parse error.
+
+    Module-level `int(os.getenv(...))` crashes the dispatcher at import
+    when the value is set but malformed (e.g. ``WEBHOOK_POLL_INTERVAL=fast``).
+    This wrapper keeps the original default-intent behaviour while degrading
+    safely to the default value on ValueError, TypeError, or empty input.
+    Fixes Issue #7325.
+    """
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        return int(raw)
+    except (ValueError, TypeError):
+        log.warning("Invalid %s=%r; falling back to default %s", name, raw, default)
+        return default
+
+
+def _safe_float_env(name: str, default: float) -> float:
+    """Read a float env var; fall back to `default` on any parse error.
+
+    Module-level `float(os.getenv(...))` crashes the dispatcher at import
+    when the value is set but malformed (e.g. ``LARGE_TX_THRESHOLD=huge``).
+    Fixes Issue #7325.
+    """
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        return float(raw)
+    except (ValueError, TypeError):
+        log.warning("Invalid %s=%r; falling back to default %s", name, raw, default)
+        return default
+
+
+DEFAULT_POLL_INTERVAL = _safe_int_env("WEBHOOK_POLL_INTERVAL", 10)
+DEFAULT_LARGE_TX_THRESHOLD = _safe_float_env("LARGE_TX_THRESHOLD", 100.0)
 DEFAULT_DB_PATH = os.getenv("WEBHOOK_DB", "webhooks.db")
 MAX_ADMIN_BODY_BYTES = 1024 * 1024
 MAX_RETRIES = 5

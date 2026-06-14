@@ -53,10 +53,57 @@ except ImportError:
 # Configuration
 # =============================================================================
 
-BRIDGE_DEFAULT_CONFIRMATIONS = int(os.environ.get("RC_BRIDGE_DEFAULT_CONFIRMATIONS", "12"))
-BRIDGE_MAX_CONFIRMATIONS = int(os.environ.get("RC_BRIDGE_MAX_CONFIRMATIONS", "1000"))
-BRIDGE_LOCK_EXPIRY_SECONDS = int(os.environ.get("RC_BRIDGE_LOCK_EXPIRY_SECONDS", "604800"))  # 7 days
-BRIDGE_MIN_AMOUNT_RTC = float(os.environ.get("RC_BRIDGE_MIN_AMOUNT_RTC", "1.0"))
+
+def _safe_int_env(name: str, default: int) -> int:
+    """Read an integer env var; fall back to `default` on any parse error.
+
+    Module-level `int(os.environ.get(...))` crashes the bridge API at import
+    when the value is set but malformed (e.g. ``RC_BRIDGE_DEFAULT_CONFIRMATIONS=fast``).
+    This wrapper keeps the original default-intent behaviour while degrading
+    safely to the default value on ValueError, TypeError, or empty input.
+    Fixes Issue #7329.
+    """
+    raw = os.environ.get(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        return int(raw)
+    except (ValueError, TypeError):
+        # `logger` is defined further down; fall back to a stderr print
+        # during the very first import if it is not yet available.
+        try:
+            logger.warning("Invalid %s=%r; falling back to default %s", name, raw, default)
+        except NameError:
+            import sys
+            print(f"Invalid {name}={raw!r}; falling back to default {default}", file=sys.stderr)
+        return default
+
+
+def _safe_float_env(name: str, default: float) -> float:
+    """Read a float env var; fall back to `default` on any parse error.
+
+    Module-level `float(os.environ.get(...))` crashes the bridge API at import
+    when the value is set but malformed (e.g. ``RC_BRIDGE_MIN_AMOUNT_RTC=huge``).
+    Fixes Issue #7329.
+    """
+    raw = os.environ.get(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        return float(raw)
+    except (ValueError, TypeError):
+        try:
+            logger.warning("Invalid %s=%r; falling back to default %s", name, raw, default)
+        except NameError:
+            import sys
+            print(f"Invalid {name}={raw!r}; falling back to default {default}", file=sys.stderr)
+        return default
+
+
+BRIDGE_DEFAULT_CONFIRMATIONS = _safe_int_env("RC_BRIDGE_DEFAULT_CONFIRMATIONS", 12)
+BRIDGE_MAX_CONFIRMATIONS = _safe_int_env("RC_BRIDGE_MAX_CONFIRMATIONS", 1000)
+BRIDGE_LOCK_EXPIRY_SECONDS = _safe_int_env("RC_BRIDGE_LOCK_EXPIRY_SECONDS", 604800)  # 7 days
+BRIDGE_MIN_AMOUNT_RTC = _safe_float_env("RC_BRIDGE_MIN_AMOUNT_RTC", 1.0)
 BRIDGE_UNIT = 1000000  # Micro-units per RTC
 DB_TIMEOUT = 5.0  # seconds: timeout for SQLite connection locks
 logger = logging.getLogger(__name__)

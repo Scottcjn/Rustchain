@@ -14,9 +14,36 @@ from prometheus_client import Gauge, start_http_server
 
 NODE_URL = os.getenv("NODE_URL", "https://rustchain.org").rstrip("/")
 P2P_NODE_URL = os.getenv("P2P_NODE_URL", "").rstrip("/")
-EXPORTER_PORT = int(os.getenv("EXPORTER_PORT", "9100"))
-SCRAPE_INTERVAL = int(os.getenv("SCRAPE_INTERVAL", "60"))
-REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "15"))
+
+
+def _safe_int_env(name: str, default: int) -> int:
+    """Read an integer env var; fall back to `default` on any parse error.
+
+    Module-level `int(os.getenv(...))` crashes the exporter at import when
+    the value is set but malformed (e.g. ``EXPORTER_PORT=fast``). This
+    wrapper keeps the original default-intent behaviour while degrading
+    safely to the default value on ValueError, TypeError, or empty input.
+    Fixes Issue #7321.
+    """
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        return int(raw)
+    except (ValueError, TypeError):
+        # `logger` is defined further down; fall back to a stderr print
+        # during the very first import if it is not yet available.
+        try:
+            logger.warning("Invalid %s=%r; falling back to default %s", name, raw, default)
+        except NameError:
+            import sys
+            print(f"Invalid {name}={raw!r}; falling back to default {default}", file=sys.stderr)
+        return default
+
+
+EXPORTER_PORT = _safe_int_env("EXPORTER_PORT", 9100)
+SCRAPE_INTERVAL = _safe_int_env("SCRAPE_INTERVAL", 60)
+REQUEST_TIMEOUT = _safe_int_env("REQUEST_TIMEOUT", 15)
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),

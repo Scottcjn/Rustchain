@@ -18,10 +18,33 @@ logger = logging.getLogger("rustchain.epoch_settler")
 # Configuration — environment variables with defaults
 NODE_URL = os.environ.get("RUSTCHAIN_NODE_URL", "http://localhost:8088")
 DB_PATH = os.environ.get("RUSTCHAIN_DB_PATH", "/root/rustchain/rustchain_v2.db")
+
+
+def _safe_int_env(name: str, default: int) -> int:
+    """Read an integer env var; fall back to `default` on any parse error.
+
+    Module-level `int(os.environ.get(...))` crashes the daemon at import
+    when the value is set but malformed (e.g. ``RUSTCHAIN_SETTLE_INTERVAL=fast``).
+    This wrapper keeps the original default-intent behaviour while degrading
+    safely to the default value on ValueError, TypeError, or empty input.
+    Fixes Issue #7327.
+    """
+    raw = os.environ.get(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        return int(raw)
+    except (ValueError, TypeError):
+        logger.warning(
+            "Invalid %s=%r; falling back to default %s", name, raw, default
+        )
+        return default
+
+
 # Module-level env config — wrap integer casts so bad env values
 # (empty string, non-numeric text) don't crash the daemon at import.
-CHECK_INTERVAL = int(os.environ.get("RUSTCHAIN_SETTLE_INTERVAL", "300") or 300)
-SLOTS_PER_EPOCH = int(os.environ.get("RUSTCHAIN_SLOTS_PER_EPOCH", "144") or 144)
+CHECK_INTERVAL = _safe_int_env("RUSTCHAIN_SETTLE_INTERVAL", 300)
+SLOTS_PER_EPOCH = _safe_int_env("RUSTCHAIN_SLOTS_PER_EPOCH", 144)
 
 
 def get_current_slot():

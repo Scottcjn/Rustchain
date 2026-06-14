@@ -40,16 +40,57 @@ load_dotenv()
 RUSTCHAIN_API = os.getenv("RUSTCHAIN_API", "https://rustchain.org")
 VERIFY_SSL = os.getenv("RUSTCHAIN_VERIFY_SSL", "false").lower() == "true"
 
+
+def _safe_int_env(name: str, default: int) -> int:
+    """Read an integer env var; fall back to `default` on any parse error.
+
+    Module-level `int(os.getenv(...))` crashes the alerts daemon at import
+    when the value is set but malformed (e.g. ``POLL_INTERVAL=fast``).
+    This wrapper keeps the original default-intent behaviour while degrading
+    safely to the default value on ValueError, TypeError, or empty input.
+    Fixes Issue #7323.
+    """
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        return int(raw)
+    except (ValueError, TypeError):
+        logging.warning(
+            "Invalid %s=%r; falling back to default %s", name, raw, default
+        )
+        return default
+
+
+def _safe_float_env(name: str, default: float) -> float:
+    """Read a float env var; fall back to `default` on any parse error.
+
+    Module-level `float(os.getenv(...))` crashes the alerts daemon at import
+    when the value is set but malformed (e.g. ``LARGE_TRANSFER_THRESHOLD=huge``).
+    Fixes Issue #7323.
+    """
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        return float(raw)
+    except (ValueError, TypeError):
+        logging.warning(
+            "Invalid %s=%r; falling back to default %s", name, raw, default
+        )
+        return default
+
+
 # Polling intervals (seconds)
-POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "120"))  # 2 minutes default
-OFFLINE_THRESHOLD = int(os.getenv("OFFLINE_THRESHOLD", "600"))  # 10 min no attestation
+POLL_INTERVAL = _safe_int_env("POLL_INTERVAL", 120)  # 2 minutes default
+OFFLINE_THRESHOLD = _safe_int_env("OFFLINE_THRESHOLD", 600)  # 10 min no attestation
 
 # Large transfer threshold (RTC)
-LARGE_TRANSFER_THRESHOLD = float(os.getenv("LARGE_TRANSFER_THRESHOLD", "10.0"))
+LARGE_TRANSFER_THRESHOLD = _safe_float_env("LARGE_TRANSFER_THRESHOLD", 10.0)
 
 # SMTP configuration
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_PORT = _safe_int_env("SMTP_PORT", 587)
 SMTP_USER = os.getenv("SMTP_USER", "")
 SMTP_PASS = os.getenv("SMTP_PASS", "")
 SMTP_FROM = os.getenv("SMTP_FROM", "")
