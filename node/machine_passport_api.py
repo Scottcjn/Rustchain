@@ -65,6 +65,65 @@ def require_admin():
     return None
 
 
+def _is_admin_request() -> bool:
+    """Non-erroring admin check: True iff a valid admin key is present. Used to
+    decide whether a public GET returns the full record or the redacted view."""
+    admin_key = request.headers.get('X-Admin-Key', '') or request.headers.get('X-API-Key', '')
+    expected = os.environ.get('ADMIN_KEY', '')
+    if not expected or not admin_key:
+        return False
+    return hmac.compare_digest(admin_key.encode('utf-8'), expected.encode('utf-8'))
+
+
+# Machine-passport GETs stay PUBLIC (provenance/showcase data, like the Green
+# Tracker), but the genuinely-sensitive fields are stripped from the public view;
+# an admin-keyed request gets the full record. Sensitive in two ways:
+#   PRIVACY: repair-log technician / free-text notes / cost.
+#   ANTI-SPOOFING: the benchmark signatures ARE the raw hardware fingerprint
+#     (cache-timing profile, SIMD identity, thermal curve, entropy throughput,
+#     compute/bandwidth) — publishing them would hand an attacker the exact
+#     profile to mimic, so they're admin-only. The attestation entropy_score is
+#     a derived summary of the same and is stripped too.
+# Public still sees: name, architecture, year, photos, provenance, restoration
+# story (repair type/description/parts), earnings stats, ownership lineage, and
+# that a benchmark exists (timestamp) — none of which reveals a fingerprint.
+_REPAIR_PRIVATE_FIELDS = ('technician', 'notes', 'cost_rtc')
+_ATTEST_PRIVATE_FIELDS = ('entropy_score',)
+_BENCHMARK_PRIVATE_FIELDS = (
+    'cache_timing_profile', 'simd_identity', 'thermal_curve',
+    'memory_bandwidth', 'compute_score', 'entropy_throughput',
+)
+
+
+def _redact_entries(entries, private_fields):
+    """Return a copy of a list-of-dicts with private fields removed (public view)."""
+    if not isinstance(entries, list):
+        return entries
+    out = []
+    for e in entries:
+        if isinstance(e, dict):
+            out.append({k: v for k, v in e.items() if k not in private_fields})
+        else:
+            out.append(e)
+    return out
+
+
+def _public_passport_full(data):
+    """Redact private fields from a full passport export for the public view."""
+    if not isinstance(data, dict):
+        return data
+    redacted = dict(data)
+    if 'repair_log' in redacted:
+        redacted['repair_log'] = _redact_entries(redacted['repair_log'], _REPAIR_PRIVATE_FIELDS)
+    for key in ('attestations', 'attestation_history'):
+        if key in redacted:
+            redacted[key] = _redact_entries(redacted[key], _ATTEST_PRIVATE_FIELDS)
+    for key in ('benchmarks', 'benchmark_signatures'):
+        if key in redacted:
+            redacted[key] = _redact_entries(redacted[key], _BENCHMARK_PRIVATE_FIELDS)
+    return redacted
+
+
 def get_optional_json_object():
     """Return an optional JSON object body or an error response."""
     data = request.get_json(silent=True)
@@ -121,8 +180,10 @@ def get_passport(machine_id: str):
     """
     ledger = get_ledger()
     data = ledger.export_passport_full(machine_id)
-    
+
     if data:
+        if not _is_admin_request():
+            data = _public_passport_full(data)
         return jsonify({
             'ok': True,
             'passport': data,
@@ -185,11 +246,14 @@ def get_repair_log(machine_id: str):
     
     if not passport:
         return jsonify({'ok': False, 'error': 'passport_not_found'}), 404
-    
+
+    repair_log = ledger.get_repair_log(machine_id)
+    if not _is_admin_request():
+        repair_log = _redact_entries(repair_log, _REPAIR_PRIVATE_FIELDS)
     return jsonify({
         'ok': True,
         'machine_id': machine_id,
-        'repair_log': ledger.get_repair_log(machine_id),
+        'repair_log': repair_log,
     })
 
 
@@ -204,11 +268,14 @@ def get_attestations(machine_id: str):
     
     if not passport:
         return jsonify({'ok': False, 'error': 'passport_not_found'}), 404
-    
+
+    attestations = ledger.get_attestation_history(machine_id)
+    if not _is_admin_request():
+        attestations = _redact_entries(attestations, _ATTEST_PRIVATE_FIELDS)
     return jsonify({
         'ok': True,
         'machine_id': machine_id,
-        'attestations': ledger.get_attestation_history(machine_id),
+        'attestations': attestations,
     })
 
 
@@ -223,11 +290,17 @@ def get_benchmarks(machine_id: str):
     
     if not passport:
         return jsonify({'ok': False, 'error': 'passport_not_found'}), 404
-    
+
+    benchmarks = ledger.get_benchmark_signatures(machine_id)
+    if not _is_admin_request():
+        # The benchmark measurements ARE the raw hardware fingerprint — strip
+        # them from the public view (a timestamped, measurement-less record
+        # remains so the public can see a benchmark exists).
+        benchmarks = _redact_entries(benchmarks, _BENCHMARK_PRIVATE_FIELDS)
     return jsonify({
         'ok': True,
         'machine_id': machine_id,
-        'benchmarks': ledger.get_benchmark_signatures(machine_id),
+        'benchmarks': benchmarks,
     })
 
 
