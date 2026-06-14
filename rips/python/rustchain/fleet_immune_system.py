@@ -1295,12 +1295,12 @@ if __name__ == "__main__":
     print(f"    Without immune: 500 boxes earn {modern_total:.4f} RTC/epoch = {modern_total*365:.1f} RTC/year")
     print(f"    With equal split: 500 boxes earn {modern_pot:.4f} RTC/epoch = {modern_pot*365:.1f} RTC/year")
     hardware_cost = 5_000_000  # $5M
-    rtc_value = 0.10  # $0.10/RTC
+    rtc_value = 0.15  # $0.15/RTC
     annual_no_immune = modern_total * 365 * rtc_value
     annual_equal = modern_pot * 365 * rtc_value
     years_to_roi_no = hardware_cost / annual_no_immune if annual_no_immune > 0 else float('inf')
     years_to_roi_eq = hardware_cost / annual_equal if annual_equal > 0 else float('inf')
-    print(f"    At $0.10/RTC, fleet annual revenue:")
+    print(f"    At $0.15/RTC, fleet annual revenue:")
     print(f"      No immune:   ${annual_no_immune:,.2f}/year → ROI in {years_to_roi_no:,.0f} years")
     print(f"      Equal split: ${annual_equal:,.2f}/year → ROI in {years_to_roi_eq:,.0f} years")
     print(f"    A $5M hardware fleet NEVER pays for itself. Attack neutralized.")

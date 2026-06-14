@@ -288,10 +288,10 @@ wRTC is also available on Base L2:
 
 | Metric | Value |
 |--------|-------|
-| **Reference Price** | $0.10 USD per RTC |
-| **Fully Diluted Value** | $800,000 USD |
+| **Reference Price** | $0.15 USD per RTC |
+| **Fully Diluted Value** | ~$1,258,291 USD |
 | **Circulating Supply** | ~90,568 RTC (contributor payouts + mining) |
-| **Market Cap** | ~$9,057 USD |
+| **Market Cap** | ~$13,585 USD |
 | **Wallet Holders** | **500** (milestone reached March 26, 2026) |
 | **Bounties Paid** | ~27,000 RTC to 1,000+ recipients |
 | **Ledger Entries** | 2,511 on-chain transactions |

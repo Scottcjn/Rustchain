@@ -72,7 +72,7 @@ Epoch: <epoch> | Slot: <slot> | Miners online: <count>
 
 Where:
 - `amount_rtc` = float from Step 1 (default `0.0` if wallet not found)
-- `usd` = `amount_rtc * 0.10` (reference rate: 1 RTC = $0.10 USD)
+- `usd` = `amount_rtc * 0.10` (reference rate: 1 RTC = $0.15 USD)
 - `epoch`, `slot`, `enrolled_miners` = integers from Step 2
 
 ### Error handling

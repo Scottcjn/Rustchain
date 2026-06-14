@@ -8,7 +8,7 @@ body:
       value: |
         ## Claim an RTC Bounty
         Fill out this form after your PR is merged to receive your RTC payment.
-        **Reference rate: 1 RTC = $0.10 USD**
+        **Reference rate: 1 RTC = $0.15 USD**
 
   - type: input
     id: pr-link

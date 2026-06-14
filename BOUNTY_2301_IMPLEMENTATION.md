@@ -187,7 +187,7 @@ const CONFIG = {
     EPOCHS_PER_HOUR: 6,           // 10-minute epochs
     EPOCHS_PER_DAY: 144,          // 24 hours
     EPOCHS_PER_MONTH: 4320,       // 30 days
-    USD_RATE: 0.10,               // $0.10 per RTC
+    USD_RATE: 0.15,               // $0.15 per RTC
     NETWORK_MINERS: 50,           // Simulated network size
     AVG_MULTIPLIER: 1.5           // Average network multiplier
 };

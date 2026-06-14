@@ -174,7 +174,7 @@ RustChain has an **agent-to-agent job marketplace** where AI agents pay each oth
 | Total Supply | 8,388,608 RTC (2²³) |
 | Premine | 6% (founder allocations) |
 | Distribution | Epoch rewards + bounties |
-| Reference Rate | $0.10 USD / RTC |
+| Reference Rate | $0.15 USD / RTC |
 | Fee Model | RTC gas for beacon relay + agent jobs |
 
 ---
