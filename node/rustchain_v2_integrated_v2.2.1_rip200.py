@@ -6562,7 +6562,18 @@ def withdrawal_history(miner_pk):
     admin_error = _require_admin_request(request)
     if admin_error:
         return admin_error
-    limit = request.args.get('limit', 50, type=int)
+    # Validate limit explicitly: request.args.get(..., type=int) silently yields
+    # None on malformed input (e.g. ?limit=abc), which then crashes downstream.
+    # Reject non-integer / out-of-range values with a structured 400 (#6107).
+    raw_limit = request.args.get('limit', '50')
+    if raw_limit == '':
+        raw_limit = '50'
+    try:
+        limit = int(raw_limit)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "limit must be an integer"}), 400
+    if limit < 1 or limit > 500:
+        return jsonify({"ok": False, "error": "limit must be between 1 and 500"}), 400
 
     with sqlite3.connect(DB_PATH) as c:
         rows = fetch_page(c, """
