@@ -138,3 +138,93 @@ def test_power8_miner_run_cmd_uses_argument_list_without_shell(monkeypatch):
 
     assert instance._run_cmd(["nproc"]) == "ok"
     assert calls == [(["nproc"], {"stdout": miner.subprocess.PIPE, "stderr": miner.subprocess.PIPE, "text": True, "timeout": 10})]
+
+
+def test_linux_miner_darwin_macs_use_stable_hardware_ports(monkeypatch):
+    miner = load_module(Path("miners/linux/rustchain_linux_miner.py"), "rustchain_linux_miner_darwin_macs")
+    instance = object.__new__(miner.LocalMiner)
+
+    networksetup_output = """
+Hardware Port: Ethernet
+Device: en0
+Ethernet Address: 1c:f6:4c:52:85:eb
+
+Hardware Port: Ethernet Adapter (en5)
+Device: en5
+Ethernet Address: f2:bb:7b:6b:52:41
+
+Hardware Port: Thunderbolt Bridge
+Device: bridge0
+Ethernet Address: 36:15:75:35:ca:00
+
+Hardware Port: Wi-Fi
+Device: en1
+Ethernet Address: 1c:f6:4c:64:8f:82
+"""
+
+    class Result:
+        stdout = networksetup_output
+
+    def fake_run(args, **kwargs):
+        assert args == ["networksetup", "-listallhardwareports"]
+        return Result()
+
+    monkeypatch.setattr(miner.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(miner.subprocess, "run", fake_run)
+
+    assert instance._get_mac_addresses() == [
+        "1c:f6:4c:52:85:eb",
+        "1c:f6:4c:64:8f:82",
+    ]
+
+
+def test_macos_miner_artifacts_use_stable_hardware_ports():
+    networksetup_output = """
+Hardware Port: Ethernet
+Device: en0
+Ethernet Address: 1c:f6:4c:52:85:eb
+
+Hardware Port: Ethernet Adapter (en5)
+Device: en5
+Ethernet Address: f2:bb:7b:6b:52:41
+
+Hardware Port: Thunderbolt Bridge
+Device: bridge0
+Ethernet Address: 36:15:75:35:ca:00
+
+Hardware Port: Wi-Fi
+Device: en1
+Ethernet Address: 1c:f6:4c:64:8f:82
+"""
+    noisy_ifconfig = """
+en0: flags=8863<UP,BROADCAST> mtu 1500
+    ether 1c:f6:4c:52:85:eb
+bridge0: flags=8863<UP,BROADCAST> mtu 1500
+    ether 36:15:75:35:ca:00
+awdl0: flags=8943<UP,BROADCAST> mtu 1484
+    ether ca:fe:ca:fe:ca:fe
+llw0: flags=8863<UP,BROADCAST> mtu 1500
+    ether de:ad:be:ef:00:01
+en1: flags=8863<UP,BROADCAST> mtu 1500
+    ether 1c:f6:4c:64:8f:82
+"""
+
+    artifacts = [
+        ("miners/macos/rustchain_mac_miner_v2.5.py", "rustchain_mac_miner_v25_stable_macs"),
+        ("miners/macos/rustchain_mac_miner_v2.4.py", "rustchain_mac_miner_v24_stable_macs"),
+        ("miners/macos/intel/rustchain_mac_miner_v2.4.py", "rustchain_mac_miner_intel_v24_stable_macs"),
+    ]
+
+    for path, module_name in artifacts:
+        miner = load_module(Path(path), module_name)
+
+        assert miner._parse_networksetup_macs(networksetup_output) == [
+            "1c:f6:4c:52:85:eb",
+            "1c:f6:4c:64:8f:82",
+        ]
+        assert miner._parse_ifconfig_macs(noisy_ifconfig) == [
+            "1c:f6:4c:52:85:eb",
+            "36:15:75:35:ca:00",
+            "ca:fe:ca:fe:ca:fe",
+        ]
+
