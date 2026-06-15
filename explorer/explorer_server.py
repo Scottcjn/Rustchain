@@ -10,7 +10,7 @@ import json
 import time
 import requests
 from http.server import HTTPServer, SimpleHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import quote, unquote, urlparse
 from datetime import datetime
 
 # Configuration
@@ -18,6 +18,39 @@ EXPLORER_PORT = int(os.environ.get('EXPLORER_PORT', 8080))
 API_BASE = os.environ.get('RUSTCHAIN_API_BASE', 'https://rustchain.org').rstrip('/')
 API_TIMEOUT = float(os.environ.get('API_TIMEOUT', '8'))
 STATIC_DIR = os.path.join(os.path.dirname(__file__), 'static')
+PROXY_ALLOWED_ENDPOINTS = {
+    'health',
+    'epoch',
+    'api/miners',
+    'blocks',
+    'api/transactions',
+    'hall/leaderboard',
+}
+
+
+def validate_proxy_endpoint(endpoint):
+    """Return a safe upstream path for explorer proxy requests, or None."""
+    decoded = unquote(endpoint or '')
+    segments = decoded.split('/')
+    if (
+        not decoded
+        or decoded != endpoint
+        or decoded.startswith('/')
+        or any(segment in ('', '.', '..') for segment in segments)
+        or decoded not in PROXY_ALLOWED_ENDPOINTS
+    ):
+        return None
+    return '/'.join(quote(segment, safe='') for segment in segments)
+
+
+def build_proxy_url(endpoint, query=''):
+    safe_endpoint = validate_proxy_endpoint(endpoint)
+    if safe_endpoint is None:
+        return None
+    url = f"{API_BASE}/{safe_endpoint}"
+    if query:
+        url += f"?{query}"
+    return url
 
 class ExplorerHandler(SimpleHTTPRequestHandler):
     """Custom HTTP handler with API proxy and caching"""
@@ -65,6 +98,11 @@ class ExplorerHandler(SimpleHTTPRequestHandler):
     
     def handle_proxy(self, endpoint, parsed):
         """Proxy requests to RustChain API with caching"""
+        url = build_proxy_url(endpoint, parsed.query)
+        if url is None:
+            self.send_error_json(400, 'Proxy endpoint is not allowed')
+            return
+
         cache_key = f"{endpoint}:{parsed.query}"
         
         # Check cache
@@ -75,10 +113,6 @@ class ExplorerHandler(SimpleHTTPRequestHandler):
         
         # Fetch from API
         try:
-            url = f"{API_BASE}/{endpoint}"
-            if parsed.query:
-                url += f"?{parsed.query}"
-            
             response = requests.get(url, timeout=API_TIMEOUT)
             response.raise_for_status()
             data = response.json()
