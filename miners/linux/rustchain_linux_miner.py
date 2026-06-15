@@ -102,6 +102,17 @@ def _parse_wmic_value(output, key):
     return ""
 
 
+def _parse_ioreg_serial(output):
+    for line in str(output or "").splitlines():
+        if "IOPlatformSerialNumber" not in line:
+            continue
+        _, _, value = line.partition("=")
+        serial = value.strip().strip('"')
+        if serial and serial.lower() != "none":
+            return serial
+    return ""
+
+
 def _linux_miner_platform_warning(system):
     if system in ("Linux", "Darwin"):
         return ""
@@ -213,6 +224,33 @@ def get_linux_serial():
 
     return None
 
+
+def get_macos_serial():
+    """Get hardware serial number for macOS systems."""
+    try:
+        result = subprocess.run(
+            ["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            serial = _parse_ioreg_serial(result.stdout)
+            if serial:
+                return serial
+    except Exception:
+        pass
+
+    return None
+
+
+def get_hardware_serial(system=None):
+    system = system or platform.system()
+    if system == "Darwin":
+        return get_macos_serial()
+    return get_linux_serial()
+
+
 class LocalMiner:
     def __init__(self, wallet=None, wart_address=None, wart_pool=None,
                  bzminer_path=None, manage_bzminer=False, verbose=False, show_payload=False,
@@ -253,7 +291,7 @@ class LocalMiner:
                 manage_bzminer=manage_bzminer,
             )
 
-        self.serial = get_linux_serial()
+        self.serial = get_hardware_serial()
         print("="*70)
         print("RustChain Local Linux Miner")
         print("RIP-PoA Hardware Fingerprint + Serial Binding v2.0")
@@ -408,7 +446,7 @@ class LocalMiner:
             "hostname": socket.gethostname(),
             "family": "x86",
             "arch": "modern",  # Less than 10 years old
-            "serial": get_linux_serial(),  # Hardware serial for v2 binding
+            "serial": get_hardware_serial(system),  # Hardware serial for v2 binding
             "probe_warning": _linux_miner_platform_warning(system)
         }
 
