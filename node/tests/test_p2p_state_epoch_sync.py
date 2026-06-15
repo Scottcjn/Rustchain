@@ -424,6 +424,71 @@ def test_epoch_commit_rejects_tampered_vote_certificate(tmp_path, monkeypatch):
     assert not victim.epoch_crdt.contains(7)
 
 
+def test_epoch_commit_rejects_duplicate_certificate_voter(tmp_path, monkeypatch):
+    monkeypatch.setenv("RC_P2P_SECRET", "a" * 64)
+    make_node = _ed25519_cluster_node_factory(tmp_path, monkeypatch)
+    victim = make_node("victim")
+    peer1 = make_node("peer1")
+    peer2 = make_node("peer2")
+
+    vote_certificate = [
+        _accept_vote(peer1).to_dict(),
+        _accept_vote(peer1).to_dict(),
+        _accept_vote(peer2).to_dict(),
+    ]
+    msg = peer1.create_message(
+        MessageType.EPOCH_COMMIT,
+        {
+            "epoch": 7,
+            "proposal_hash": "proposal-a",
+            "accept_count": 3,
+            "voters": ["peer1", "peer2", "peer3"],
+            "vote_certificate": vote_certificate,
+        },
+        ttl=0,
+    )
+
+    result = victim.handle_message(msg)
+
+    assert result["status"] == "error"
+    assert result["reason"] == "duplicate_certificate_voter"
+    assert not victim.epoch_crdt.contains(7)
+
+
+def test_epoch_commit_rejects_oversized_vote_certificate(tmp_path, monkeypatch):
+    monkeypatch.setenv("RC_P2P_SECRET", "a" * 64)
+    make_node = _ed25519_cluster_node_factory(tmp_path, monkeypatch)
+    victim = make_node("victim")
+    peer1 = make_node("peer1")
+    peer2 = make_node("peer2")
+    peer3 = make_node("peer3")
+
+    vote_certificate = [
+        _accept_vote(peer1).to_dict(),
+        _accept_vote(peer2).to_dict(),
+        _accept_vote(peer3).to_dict(),
+        _accept_vote(peer1).to_dict(),
+        _accept_vote(peer2).to_dict(),
+    ]
+    msg = peer1.create_message(
+        MessageType.EPOCH_COMMIT,
+        {
+            "epoch": 7,
+            "proposal_hash": "proposal-a",
+            "accept_count": 3,
+            "voters": ["peer1", "peer2", "peer3"],
+            "vote_certificate": vote_certificate,
+        },
+        ttl=0,
+    )
+
+    result = victim.handle_message(msg)
+
+    assert result["status"] == "error"
+    assert result["reason"] == "vote_certificate_too_large"
+    assert not victim.epoch_crdt.contains(7)
+
+
 def test_epoch_commit_rejects_without_quorum(tmp_path, monkeypatch):
     monkeypatch.setenv("RC_P2P_SECRET", "a" * 64)
     victim = GossipLayer(

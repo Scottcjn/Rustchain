@@ -897,32 +897,6 @@ class GossipLayer:
         """Verify message signature and freshness."""
         return self._verify_message_signature(msg, check_freshness=True)
 
-    def _has_trusted_ed25519_identity(self, msg: GossipMessage) -> bool:
-        """Return True only when msg has a valid trusted Ed25519 signature."""
-        from p2p_identity import unpack_signature, verify_ed25519
-
-        _hmac_sig, ed25519_sig, _key_version = unpack_signature(msg.signature)
-        if not ed25519_sig:
-            return False
-
-        pubkey = None
-        if self._peer_registry is not None:
-            pubkey = self._peer_registry.get_pubkey(msg.sender_id)
-        if pubkey is None and msg.sender_id == self.node_id and self._keypair is not None:
-            pubkey = self._keypair.pubkey_hex
-        if pubkey is None:
-            return False
-
-        content = self._signed_content(
-            msg.msg_type,
-            msg.sender_id,
-            msg.msg_id,
-            msg.ttl,
-            msg.payload,
-        )
-        message = f"{content}:{msg.timestamp}"
-        return verify_ed25519(pubkey, ed25519_sig, message.encode())
-
     def broadcast(self, msg: GossipMessage, exclude_peer: str = None):
         """Broadcast message to all peers"""
         for peer_id, peer_url in self.peers.items():
@@ -1395,6 +1369,9 @@ class GossipLayer:
         known_nodes: Set[str],
     ) -> Tuple[Optional[Set[str]], Dict[str, GossipMessage], Optional[str]]:
         """Verify signed accept-vote messages attached to an epoch commit."""
+        if len(certificate) > len(known_nodes):
+            return None, {}, "vote_certificate_too_large"
+
         accepted_voters: Set[str] = set()
         verified_messages: Dict[str, GossipMessage] = {}
 
@@ -1408,9 +1385,11 @@ class GossipLayer:
                 return None, {}, "invalid_vote_certificate"
             if vote_msg.sender_id not in known_nodes:
                 return None, {}, "unknown_certificate_voter"
+            if vote_msg.sender_id in accepted_voters:
+                return None, {}, "duplicate_certificate_voter"
             if not self._verify_message_signature(vote_msg, check_freshness=False):
                 return None, {}, "invalid_vote_certificate_signature"
-            if not self._has_trusted_ed25519_identity(vote_msg):
+            if not self._has_trusted_ed25519_identity(vote_msg, check_freshness=False):
                 return None, {}, "certificate_requires_ed25519_identity"
 
             vote_payload = vote_msg.payload if isinstance(vote_msg.payload, dict) else {}
