@@ -7535,8 +7535,12 @@ def api_miners():
         offset = int(raw_offset) if raw_offset not in (None, "") else 0
     except (ValueError, TypeError):
         return jsonify({"ok": False, "error": "offset must be an integer"}), 400
-    limit = min(max(limit, 1), 1000)
-    offset = max(offset, 0)
+    if limit < 1:
+        return jsonify({"ok": False, "error": "limit must be >= 1"}), 400
+    if limit > 1000:
+        return jsonify({"ok": False, "error": "limit must be <= 1000"}), 400
+    if offset < 0:
+        return jsonify({"ok": False, "error": "offset must be >= 0"}), 400
 
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row

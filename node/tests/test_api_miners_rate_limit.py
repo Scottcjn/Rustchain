@@ -95,6 +95,24 @@ class TestApiMinersRateLimit(unittest.TestCase):
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(resp.get_json(), {"ok": False, "error": "limit must be an integer"})
 
+    def test_api_miners_rejects_out_of_range_limits(self):
+        cases = [
+            ("-1", "limit must be >= 1"),
+            ("0", "limit must be >= 1"),
+            ("1001", "limit must be <= 1000"),
+            ("999999999999999", "limit must be <= 1000"),
+        ]
+
+        for index, (value, error) in enumerate(cases):
+            with self.subTest(limit=value):
+                resp = self.client.get(
+                    f"/api/miners?limit={value}",
+                    environ_base={"REMOTE_ADDR": f"203.0.113.{30 + index}"},
+                )
+
+                self.assertEqual(resp.status_code, 400)
+                self.assertEqual(resp.get_json(), {"ok": False, "error": error})
+
     def test_api_miners_rejects_malformed_offset(self):
         resp = self.client.get(
             "/api/miners?offset=abc",
@@ -103,6 +121,15 @@ class TestApiMinersRateLimit(unittest.TestCase):
 
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(resp.get_json(), {"ok": False, "error": "offset must be an integer"})
+
+    def test_api_miners_rejects_negative_offset(self):
+        resp = self.client.get(
+            "/api/miners?offset=-1",
+            environ_base={"REMOTE_ADDR": "203.0.113.34"},
+        )
+
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.get_json(), {"ok": False, "error": "offset must be >= 0"})
 
     def test_api_miners_defaults_empty_pagination_values(self):
         resp = self.client.get(
