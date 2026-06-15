@@ -13,6 +13,7 @@ import sqlite3
 import time
 from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta
+from html import escape as xml_escape
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -528,14 +529,15 @@ def rss_feed():
     feed_items = []
     for row in rows:
         node_name = next((n['name'] for n in NODES if n['id'] == row['node_id']), row['node_id'])
+        incident_type = str(row['incident_type']).replace('_', ' ').title()
         feed_items.append(f'''
     <entry>
-        <title>{row['incident_type'].replace('_', ' ').title()}: {node_name}</title>
+        <title>{xml_escape(incident_type)}: {xml_escape(str(node_name))}</title>
         <link href="https://rustchain.org/status"/>
-        <id>tag:rustchain.org,2026:incident-{row['id']}</id>
-        <published>{row['timestamp']}</published>
-        <updated>{row['timestamp']}</updated>
-        <content type="html">{row['details']}</content>
+        <id>tag:rustchain.org,2026:incident-{xml_escape(str(row['id']))}</id>
+        <published>{xml_escape(str(row['timestamp']))}</published>
+        <updated>{xml_escape(str(row['timestamp']))}</updated>
+        <content type="text">{xml_escape(str(row['details'] or ''))}</content>
     </entry>''')
     
     feed_xml = f'''<?xml version="1.0" encoding="UTF-8"?>
@@ -885,6 +887,7 @@ HTML_TEMPLATE = '''
         // State
         let responseTimeCharts = {};
         let uptimeChart = null;
+        let latestStatusByNode = {};
         
         // Format timestamp
         function formatTime(isoString) {
@@ -894,6 +897,7 @@ HTML_TEMPLATE = '''
         
         // Format duration
         function formatDuration(seconds) {
+            seconds = safeNumber(seconds, 0);
             if (seconds < 60) return `${seconds}s`;
             if (seconds < 3600) return `${Math.round(seconds/60)}m`;
             return `${Math.round(seconds/3600)}h`;
@@ -906,19 +910,36 @@ HTML_TEMPLATE = '''
             })[c]);
         }
 
+        function safeStatus(value) {
+            const status = String(value || '').toLowerCase();
+            return ['up', 'down', 'degraded'].includes(status) ? status : 'down';
+        }
+
+        function safeNumber(value, fallback = 0) {
+            const number = Number(value);
+            return Number.isFinite(number) ? number : fallback;
+        }
+
         // Render node cards
         function renderNodes(nodes) {
             const grid = document.getElementById('nodes-grid');
-            grid.innerHTML = nodes.map(node => `
+            const list = Array.isArray(nodes) ? nodes : [];
+            latestStatusByNode = Object.fromEntries(list.map(node => [node.node_id, safeStatus(node.status)]));
+            grid.innerHTML = list.map(node => {
+                const status = safeStatus(node.status);
+                const responseTime = safeNumber(node.response_time_ms);
+                const activeMiners = safeNumber(node.active_miners);
+                const currentEpoch = safeNumber(node.current_epoch);
+                return `
                 <div class="node-card">
                     <div class="node-header">
                         <span class="node-name">${escapeHtml(node.name)}</span>
-                        <span class="status-badge ${escapeHtml(node.status)}">${escapeHtml(node.status)}</span>
+                        <span class="status-badge ${status}">${escapeHtml(status)}</span>
                     </div>
                     <div class="node-metrics">
                         <div class="metric">
                             <div class="metric-label">Response Time</div>
-                            <div class="metric-value">${node.status === 'up' ? node.response_time_ms.toFixed(0) + ' ms' : 'N/A'}</div>
+                            <div class="metric-value">${status === 'up' ? responseTime.toFixed(0) + ' ms' : 'N/A'}</div>
                         </div>
                         <div class="metric">
                             <div class="metric-label">Version</div>
@@ -930,11 +951,11 @@ HTML_TEMPLATE = '''
                         </div>
                         <div class="metric">
                             <div class="metric-label">Active Miners</div>
-                            <div class="metric-value">${escapeHtml(node.active_miners)}</div>
+                            <div class="metric-value">${escapeHtml(activeMiners)}</div>
                         </div>
                         <div class="metric">
                             <div class="metric-label">Current Epoch</div>
-                            <div class="metric-value">#${escapeHtml(node.current_epoch)}</div>
+                            <div class="metric-value">#${escapeHtml(currentEpoch)}</div>
                         </div>
                         <div class="metric">
                             <div class="metric-label">Location</div>
@@ -943,7 +964,7 @@ HTML_TEMPLATE = '''
                     </div>
                     ${node.error ? `<div class="error-text">Error: ${escapeHtml(node.error)}</div>` : ''}
                 </div>
-            `).join('');
+            `}).join('');
         }
         
         // Update summary
@@ -983,8 +1004,8 @@ HTML_TEMPLATE = '''
                     <div class="incident-item ${isRecovery ? 'recovery' : ''}">
                         <div class="incident-time">${formatTime(incident.timestamp)}</div>
                         <div class="incident-details">
-                            <strong>${isRecovery ? '✅' : '🚨'} ${incident.incident_type.replace('_', ' ').toUpperCase()}</strong><br>
-                            ${nodeName}: ${incident.details}
+                            <strong>${isRecovery ? '✅' : '🚨'} ${escapeHtml(String(incident.incident_type || '').replace('_', ' ').toUpperCase())}</strong><br>
+                            ${escapeHtml(nodeName)}: ${escapeHtml(incident.details)}
                         </div>
                     </div>
                 `;
@@ -1119,24 +1140,26 @@ HTML_TEMPLATE = '''
             const mapDiv = document.getElementById('map');
             
             // Simple node location visualization
-            const locations = NODES.map(node => `
+            const locations = NODES.map(node => {
+                const status = safeStatus(latestStatusByNode[node.id]);
+                return `
                 <div style="
                     position: absolute;
                     left: ${(node.lng + 180) / 360 * 100}%;
                     top: ${(90 - node.lat) / 180 * 100}%;
                     width: 12px;
                     height: 12px;
-                    background: ${current_status[node.id]?.status === 'up' ? '#22c55e' : '#ef4444'};
+                    background: ${status === 'up' ? '#22c55e' : '#ef4444'};
                     border: 2px solid white;
                     border-radius: 50%;
                     cursor: pointer;
                     transition: transform 0.2s;
                 " 
-                title="${node.name}: ${current_status[node.id]?.status || 'unknown'}"
+                title="${escapeHtml(node.name)}: ${escapeHtml(status)}"
                 onmouseover="this.style.transform='scale(1.5)'"
                 onmouseout="this.style.transform='scale(1)'"
                 ></div>
-            `).join('');
+            `}).join('');
             
             mapDiv.innerHTML = `
                 <div style="
