@@ -66,6 +66,33 @@ def _positive_float_field(data, field_name):
     return number, None, None
 
 
+def _validate_string_fields(data, fields, optional=()):
+    """Reject non-string JSON types for specified fields."""
+    for field in fields:
+        if field in data and not isinstance(data[field], str):
+            return jsonify({'error': f'{field} must be a string'}), 400
+    for field in optional:
+        if field in data and data[field] is not None and not isinstance(data[field], str):
+            return jsonify({'error': f'{field} must be a string'}), 400
+    return None
+
+
+def _required_number_field(data, field_name):
+    """Validate a required numeric field, rejecting bools."""
+    value = data.get(field_name)
+    if value is None:
+        return None, jsonify({'error': f'Missing field: {field_name}'}), 400
+    if isinstance(value, bool):
+        return None, jsonify({'error': f'{field_name} must be a number'}), 400
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None, jsonify({'error': f'{field_name} must be a number'}), 400
+    if not math.isfinite(number):
+        return None, jsonify({'error': f'{field_name} must be a finite number'}), 400
+    return number, None, None
+
+
 def _coinbase_addresses_match(left, right):
     """Compare optional EVM-style payment addresses without case sensitivity."""
     return (left or '').strip().casefold() == (right or '').strip().casefold()
@@ -753,21 +780,40 @@ def create_contract():
     """
     try:
         body_bytes = request.get_data(cache=True)
-        data = request.get_json(silent=True)
-        if not isinstance(data, dict):
-            return jsonify({'error': 'Invalid or missing JSON body'}), 400
+        data, body_error, body_status = _json_object_body()
+        if body_error:
+            return body_error, body_status
 
-        # Validate required fields
+        # Validate required fields are present
         required = ['from', 'to', 'type', 'amount', 'term']
         for field in required:
             if field not in data:
                 return jsonify({'error': f'Missing field: {field}'}), 400
 
-        # Validate from_agent is a non-empty string (catches arrays, objects, etc.)
-        from_agent = data['from']
-        if not isinstance(from_agent, str) or not from_agent.strip():
-            return jsonify({'error': 'from: must be a non-empty string'}), 400
-        from_agent = from_agent.strip()
+        # Validate all contract string fields reject non-string JSON types
+        type_error = _validate_string_fields(
+            data, ['from', 'to', 'type', 'term'], optional=['currency']
+        )
+        if type_error:
+            return type_error
+
+        # Parse and validate amount (accepts any finite number, not just positive)
+        amount, amount_error, amount_status = _required_number_field(data, 'amount')
+        if amount_error:
+            return amount_error, amount_status
+
+        # Normalize currency
+        currency_val = str(data.get('currency') or 'RTC').strip().upper()
+        ALLOWED_CURRENCIES = {'RTC', 'ERC', 'ERG', 'USD'}
+        if currency_val not in ALLOWED_CURRENCIES:
+            return jsonify({
+                'error': f'currency: must be one of: {', '.join(sorted(ALLOWED_CURRENCIES))}'
+            }), 400
+
+        from_agent = data['from'].strip()
+        to_agent = data['to'].strip()
+        contract_type_val = data['type'].strip()
+        term_text = data['term'].strip()
 
         # Verify from_agent exists in relay_agents table
         db = get_db()
@@ -787,37 +833,9 @@ def create_contract():
         # Generate contract ID
         contract_id = f"ctr_{int(time.time())}_{hashlib.blake2b(str(time.time()).encode(), digest_size=4).hexdigest()}"
 
-        amount, amount_error, amount_status = _positive_float_field(data, 'amount')
-        if amount_error:
-            return amount_error, amount_status
-
-        # Validate string fields — reject non-string JSON types (lists, dicts)
-        to_val = data.get("to")
-        if not isinstance(to_val, str) or not to_val.strip():
-            return jsonify({"error": "to: must be a non-empty string"}), 400
-        to_agent = to_val.strip()
-
-        type_val = data.get("type")
-        if not isinstance(type_val, str) or not type_val.strip():
-            return jsonify({"error": "type: must be a non-empty string"}), 400
-        contract_type_val = type_val.strip()
-
-        term_val = data.get("term")
-        if not isinstance(term_val, str) or not term_val.strip():
-            return jsonify({"error": "term: must be a non-empty string"}), 400
-        term_text = term_val.strip()
-
-        # Validate currency if provided
-        currency_val = str(data.get('currency', 'RTC')).strip().upper()
-        ALLOWED_CURRENCIES = {'RTC', 'ERC', 'ERG', 'USD'}
-        if currency_val not in ALLOWED_CURRENCIES:
-            return jsonify({
-                'error': f'currency: must be one of: {", ".join(sorted(ALLOWED_CURRENCIES))}'
-            }), 400
-
         contract = {
             'id': contract_id,
-            'from': data['from'],
+            'from': from_agent,
             'to': to_agent,
             'type': contract_type_val,
             'amount': amount,
@@ -828,7 +846,6 @@ def create_contract():
         }
 
         # Store in database
-        db = get_db()
         db.execute(
             """INSERT INTO beacon_contracts
                (id, from_agent, to_agent, type, amount, currency, term, state, created_at)
@@ -854,13 +871,16 @@ def update_contract(contract_id):
     """
     try:
         body_bytes = request.get_data(cache=True)
-        data = request.get_json(silent=True)
-        if not isinstance(data, dict):
-            return jsonify({'error': 'Invalid or missing JSON body'}), 400
+        data, body_error, body_status = _json_object_body()
+        if body_error:
+            return body_error, body_status
         new_state = data.get('state')
 
         if not new_state:
             return jsonify({'error': 'Missing state field'}), 400
+
+        if not isinstance(new_state, str):
+            return jsonify({'error': 'state must be a string'}), 400
 
         valid_states = {'offered', 'active', 'renewed', 'completed', 'breached', 'expired', 'rejected'}
         if new_state not in valid_states:
