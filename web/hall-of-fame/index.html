@@ -233,6 +233,25 @@ function badgeClass(isDeceased){ return isDeceased ? 'badge badge-deceased' : 'b
 
 let allRows = [];
 
+function setLeaderboardMessage(message, opts = {}){
+  const tbody = document.getElementById('leaderTbody');
+  const row = document.createElement('tr');
+  row.className = 'loading-row';
+  const cell = document.createElement('td');
+  cell.colSpan = 9;
+  if(opts.error) cell.className = 'err';
+  if(opts.blink){
+    const cursor = document.createElement('span');
+    cursor.className = 'blinking';
+    cursor.textContent = '█';
+    cell.append(cursor, document.createTextNode(' ' + message));
+  } else {
+    cell.textContent = message;
+  }
+  row.appendChild(cell);
+  tbody.replaceChildren(row);
+}
+
 function buildRow(m, i){
   const fp = m.fingerprint_hash || '';
   const name = esc(m.nickname || (fp ? fp.slice(0,16)+'…' : 'Unknown'));
@@ -275,7 +294,7 @@ async function loadLeaderboard(){
   const limit = document.getElementById('filterLimit').value;
   const deceased = document.getElementById('filterDeceased').value;
   const tbody = document.getElementById('leaderTbody');
-  tbody.innerHTML = '<tr class="loading-row"><td colspan="9"><span class="blinking">█</span> Loading…</td></tr>';
+  setLeaderboardMessage('Loading...', {blink: true});
 
   try {
     let url = API_LEADERBOARD + '?limit=' + limit;
@@ -287,14 +306,14 @@ async function loadLeaderboard(){
     const data = await res.json();
     const machines = data.leaderboard || [];
     if(!machines.length){
-      tbody.innerHTML = '<tr class="loading-row"><td colspan="9" class="err">No machines found.</td></tr>';
+      setLeaderboardMessage('No machines found.', {error: true});
       return;
     }
     allRows = machines.map((m, idx) => buildRow(m, idx+1));
     tbody.innerHTML = allRows.join('');
     filterTable();
   } catch(e){
-    tbody.innerHTML = `<tr class="loading-row"><td colspan="9" class="err">Failed to load: ${esc(e.message)}</td></tr>`;
+    setLeaderboardMessage('Failed to load: ' + (e.message || e), {error: true});
   }
 }
 
