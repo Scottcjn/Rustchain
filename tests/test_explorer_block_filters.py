@@ -34,6 +34,15 @@ def test_block_filter_controls_are_available_in_blocks_view():
         assert heading in html
 
 
+def test_miners_table_render_error_uses_text_content():
+    js = EXPLORER_JS.read_text(encoding="utf-8")
+
+    assert "UI Render Error: ${escapeHtml(e.message)}" not in js
+    assert "function renderMinersTableError(container, message)" in js
+    assert "cell.textContent = `UI Render Error: ${message || 'Unknown error'}`;" in js
+    assert "container.replaceChildren(row);" in js
+
+
 def test_block_filter_logic_handles_requested_filter_fields():
     js = EXPLORER_JS.read_text(encoding="utf-8")
     probe = f"""

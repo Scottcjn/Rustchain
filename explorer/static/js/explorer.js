@@ -474,6 +474,16 @@ function renderEpochStats() {
     `;
 }
 
+function renderMinersTableError(container, message) {
+    const row = document.createElement('tr');
+    const cell = document.createElement('td');
+    cell.colSpan = 7;
+    cell.className = 'error-message';
+    cell.textContent = `UI Render Error: ${message || 'Unknown error'}`;
+    row.appendChild(cell);
+    container.replaceChildren(row);
+}
+
 function renderMinersTable() {
     const container = document.getElementById('miners-tbody');
     if (!container) return;
@@ -528,7 +538,7 @@ function renderMinersTable() {
         }).join('');
     } catch (e) {
         console.error('Render error:', e);
-        container.innerHTML = `<tr><td colspan="7" class="error-message">UI Render Error: ${escapeHtml(e.message)}</td></tr>`;
+        renderMinersTableError(container, e && e.message);
     }
 }
 
