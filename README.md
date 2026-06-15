@@ -577,14 +577,20 @@ launchctl list | grep clawrtc
 <summary><b>Transfer stuck in "pending" state</b></summary>
 
 Check the pending ledger:
-`ash
-curl -fsS "https://rustchain.org/pending/list?miner_id=YOUR_MINER_NAME"
-`
+```bash
+curl -fsS "https://rustchain.org/wallet/history?miner_id=YOUR_MINER_NAME&limit=20"
+```
+
+Node operators can inspect the admin-only pending ledger with:
+
+```bash
+python tools/pending_ops.py --node https://rustchain.org --admin-key "$RC_ADMIN_KEY" list
+```
 
 Transitions require epoch settlement - check current epoch:
-`ash
+```bash
 curl -fsS https://rustchain.org/epoch
-`
+```
 </details>
 
 <details>
