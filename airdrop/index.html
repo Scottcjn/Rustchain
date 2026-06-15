@@ -390,6 +390,30 @@
     step: 1
   };
 
+  function escapeHtml(value) {
+    const div = document.createElement('div');
+    div.textContent = String(value ?? '');
+    return div.innerHTML;
+  }
+
+  function safeNumber(value, fallback = 0) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : fallback;
+  }
+
+  function safeInteger(value, fallback = 0) {
+    const number = Number.parseInt(value, 10);
+    return Number.isFinite(number) ? number : fallback;
+  }
+
+  function shortWallet(value, start = 8, end = 6) {
+    const text = String(value ?? '');
+    if (!text) return '';
+    if (text.length <= start + end) return text;
+    if (end === 0) return `${text.slice(0, start)}...`;
+    return `${text.slice(0, start)}...${text.slice(-end)}`;
+  }
+
   // ==========================================
   // GITHUB OAUTH FLOW (mock for frontend demo)
   // In production: redirect to /api/auth/github
@@ -420,8 +444,8 @@
     state.github = mockUser;
 
     statusBox.className = 'status-box success';
-    statusBox.innerHTML = `✅ Connected as <strong>${mockUser.login}</strong><br>
-      Stars: ${mockUser.stars} repos · PRs: ${mockUser.prs} merged · Account age: ${mockUser.age_days} days`;
+    statusBox.innerHTML = `✅ Connected as <strong>${escapeHtml(mockUser.login)}</strong><br>
+      Stars: ${safeInteger(mockUser.stars)} repos · PRs: ${safeInteger(mockUser.prs)} merged · Account age: ${safeInteger(mockUser.age_days)} days`;
     btn.textContent = '✅ GitHub Connected';
 
     // Unlock step 2
@@ -473,7 +497,7 @@
         method: 'eth_getBalance',
         params: [address, 'latest']
       });
-      const balanceETH = parseInt(balanceHex, 16) / 1e18;
+      const balanceETH = safeNumber(parseInt(balanceHex, 16) / 1e18);
 
       if (balanceETH < 0.01) {
         statusBox.className = 'status-box error';
@@ -483,7 +507,7 @@
 
       state.wallet = { type: 'eth', address, balance: balanceETH, age_days: 30 /* server-verified */ };
       statusBox.className = 'status-box success';
-      statusBox.innerHTML = `✅ Base wallet connected<br>${address.slice(0,6)}...${address.slice(-4)} · ${balanceETH.toFixed(4)} ETH`;
+      statusBox.innerHTML = `✅ Base wallet connected<br>${escapeHtml(shortWallet(address, 6, 4))} · ${balanceETH.toFixed(4)} ETH`;
 
       unlockStep(3);
     } catch (err) {
@@ -522,7 +546,7 @@
         })
       });
       const rpcData = await rpcResp.json();
-      const balanceSOL = (rpcData.result?.value || 0) / 1e9;
+      const balanceSOL = safeNumber((rpcData.result?.value || 0) / 1e9);
 
       if (balanceSOL < 0.1) {
         statusBox.className = 'status-box error';
@@ -532,7 +556,7 @@
 
       state.wallet = { type: 'sol', address: pubkey, balance: balanceSOL, age_days: 30 };
       statusBox.className = 'status-box success';
-      statusBox.innerHTML = `✅ Solana wallet connected<br>${pubkey.slice(0,8)}...${pubkey.slice(-6)} · ${balanceSOL.toFixed(4)} SOL`;
+      statusBox.innerHTML = `✅ Solana wallet connected<br>${escapeHtml(shortWallet(pubkey, 8, 6))} · ${balanceSOL.toFixed(4)} SOL`;
 
       unlockStep(3);
     } catch (err) {
@@ -555,10 +579,13 @@
 
     // Determine tier
     let tier = 'None', baseClaim = 0;
-    if (gh.prs >= 5 || gh.hasBadge) { tier = 'Core'; baseClaim = 200; }
-    else if (gh.prs >= 3) { tier = 'Builder'; baseClaim = 100; }
-    else if (gh.prs >= 1) { tier = 'Contributor'; baseClaim = 50; }
-    else if (gh.stars >= 10) { tier = 'Stargazer'; baseClaim = 25; }
+    const ghStars = safeInteger(gh.stars);
+    const ghPrs = safeInteger(gh.prs);
+    const ghAgeDays = safeInteger(gh.age_days);
+    if (ghPrs >= 5 || gh.hasBadge) { tier = 'Core'; baseClaim = 200; }
+    else if (ghPrs >= 3) { tier = 'Builder'; baseClaim = 100; }
+    else if (ghPrs >= 1) { tier = 'Contributor'; baseClaim = 50; }
+    else if (ghStars >= 10) { tier = 'Stargazer'; baseClaim = 25; }
 
     // Multiplier
     let multiplier = 1.0;
@@ -578,8 +605,8 @@
 
     // Anti-Sybil checks
     const sybilChecks = [
-      { label: 'Wallet age > 7 days', pass: wallet ? wallet.age_days >= 7 : false },
-      { label: 'GitHub account > 30 days', pass: gh ? gh.age_days >= 30 : false },
+      { label: 'Wallet age > 7 days', pass: wallet ? safeInteger(wallet.age_days) >= 7 : false },
+      { label: 'GitHub account > 30 days', pass: gh ? ghAgeDays >= 30 : false },
       { label: 'Minimum wallet balance', pass: wallet ? (wallet.type === 'eth' ? wallet.balance >= 0.01 : wallet.balance >= 0.1) : false },
       { label: 'No previous claim', pass: true /* server-verified */ },
     ];
@@ -587,12 +614,12 @@
     // Render
     document.getElementById('tier-label').textContent = `Tier: ${tier}`;
     document.getElementById('check-rows').innerHTML = `
-      <div class="check-row"><span class="check-icon">${gh.stars >= 10 ? '✅' : '⬜'}</span> ${gh.stars || 0} Scottcjn repos starred</div>
-      <div class="check-row"><span class="check-icon">${gh.prs >= 1 ? '✅' : '⬜'}</span> ${gh.prs || 0} merged PRs</div>
-      <div class="check-row"><span class="check-icon">✅</span> GitHub account age: ${gh.age_days} days</div>
+      <div class="check-row"><span class="check-icon">${ghStars >= 10 ? '✅' : '⬜'}</span> ${ghStars} Scottcjn repos starred</div>
+      <div class="check-row"><span class="check-icon">${ghPrs >= 1 ? '✅' : '⬜'}</span> ${ghPrs} merged PRs</div>
+      <div class="check-row"><span class="check-icon">✅</span> GitHub account age: ${ghAgeDays} days</div>
     `;
     document.getElementById('sybil-rows').innerHTML = sybilChecks.map(c =>
-      `<div class="check-row"><span class="check-icon">${c.pass ? '✅' : '❌'}</span> ${c.label}</div>`
+      `<div class="check-row"><span class="check-icon">${c.pass ? '✅' : '❌'}</span> ${escapeHtml(c.label)}</div>`
     ).join('');
 
     document.getElementById('allocation-display').textContent = `${total} wRTC`;
@@ -634,8 +661,8 @@
 
     out.className = 'status-box success';
     out.innerHTML = `✅ RTC Wallet generated<br>
-      <strong>Name:</strong> ${nameInput}<br>
-      <strong>Address:</strong> <code style="font-size:11px;">${addr}</code><br>
+      <strong>Name:</strong> ${escapeHtml(nameInput)}<br>
+      <strong>Address:</strong> <code style="font-size:11px;">${escapeHtml(addr)}</code><br>
       <span style="color: var(--muted); font-size: 11px;">⚠️ Save this address — it will receive bridged RTC tokens</span>`;
   }
 
@@ -666,11 +693,11 @@
     // For now, show the payload for review
     statusBox.className = 'status-box success';
     statusBox.innerHTML = `✅ Claim submitted successfully!<br><br>
-      <strong>Claim ID:</strong> ${generateClaimId()}<br>
-      <strong>GitHub:</strong> ${payload.github}<br>
-      <strong>Wallet:</strong> ${payload.wallet_address?.slice(0,10)}...<br>
-      <strong>Allocation:</strong> ${payload.allocation} wRTC<br>
-      <strong>Tier:</strong> ${payload.tier}<br><br>
+      <strong>Claim ID:</strong> ${escapeHtml(generateClaimId())}<br>
+      <strong>GitHub:</strong> ${escapeHtml(payload.github || '')}<br>
+      <strong>Wallet:</strong> ${escapeHtml(shortWallet(payload.wallet_address, 10, 0))}<br>
+      <strong>Allocation:</strong> ${safeInteger(payload.allocation)} wRTC<br>
+      <strong>Tier:</strong> ${escapeHtml(payload.tier || '')}<br><br>
       <span style="color: var(--muted); font-size: 12px;">📬 Tokens will be distributed within 24 hours after manual review. Check your wallet.</span>`;
   }
 
