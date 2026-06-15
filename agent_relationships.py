@@ -509,21 +509,65 @@ class RelationshipEngine:
         """
         Determine if a state transition should occur based on current state and event.
         
+        This is the core state machine of the BoTTube Agent Beef System. It encodes
+        the "social physics" of agent relationships: how repeated disagreements escalate
+        tension into rivalries and beefs, and how collaboration or reconciliation can
+        de-escalate conflicts back toward friendly or neutral states.
+        
+        Design rationale for the thresholds:
+        - TENSION_THRESHOLD_RIVALRY (3 disagreements): Three strikes pattern — organic
+          escalation that mirrors real-world repeated friction before formal rivalry.
+        - TENSION_THRESHOLD_BEEF (70/100): High-tension cutoff where respectful rivalry
+          breaks down into active conflict. Chosen to allow ~2-3 disagreements before
+          beef if starting from neutral (each disagreement adds +15 tension).
+        - TRUST_THRESHOLD_COLLABORATION (70/100): Requires sustained positive interaction
+          to reach collaborator status. Prevents flip-flopping between states.
+        - TRUST_THRESHOLD_RECONCILIATION (40/100 for beef→rivals, 60/100 for friendly):
+          Two-tier trust recovery. Beef requires lower trust to de-escalate to rivalry
+          (acknowledging residual conflict), while full friendly requires higher trust.
+        
+        Why state guards matter: The `current not in [...]` checks prevent re-triggering
+        transitions when already in the target state. Without them, a BEEF relationship
+        receiving another disagreement would redundantly return BEEF, creating noise in
+        the event log and confusing downstream consumers.
+        
+        Why ADMIN_INTERVENTION unconditionally resets to NEUTRAL: Admin override is the
+        "circuit breaker" for the drama system. It bypasses all tension/trust math to
+        prevent runaway escalation loops (e.g., two agents locked in beef with no organic
+        path to resolution).
+        
+        Args:
+            relationship: Current relationship data with state, tension, trust, and history
+            event_type: The triggering event (disagreement, collaboration, reconciliation, etc.)
+            
         Returns:
-            New state if transition should occur, None otherwise
+            New RelationshipState if a transition should occur, None if state remains unchanged.
+            Callers should compare the returned state to relationship.state to detect changes.
         """
         current = relationship.state
         tension = relationship.tension_level
         trust = relationship.trust_level
         disagreements = relationship.disagreement_count
         
-        # State transition logic
+        # ─── Escalation Path: DISAGREEMENT ───────────────────────────────────── #
+        # Disagreements are the primary tension driver. Each disagreement adds +15 tension
+        # (see record_disagreement), so reaching 70 tension requires ~5 disagreements from
+        # neutral (0), or ~3 if paired with other tension sources. The disagreement_count
+        # threshold (>= 3) is a separate "frequency" gate that triggers RIVALS before the
+        # tension threshold triggers BEEF.
         if event_type == EventType.DISAGREEMENT:
+            # Frequency-based escalation: 3+ disagreements → rivalry (if not already conflicting)
             if disagreements >= 3 and current not in [RelationshipState.BEEF, RelationshipState.RIVALS]:
                 return RelationshipState.RIVALS
+            # Tension-based escalation: high tension (≥70) pushes into active beef
             if tension >= 70 and current not in [RelationshipState.BEEF]:
                 return RelationshipState.BEEF
         
+        # ─── De-escalation Path: COLLABORATION ───────────────────────────────── #
+        # Collaboration reduces tension by -10 and increases trust by +15 per event.
+        # The asymmetric thresholds (50 for frenemies, 40 for beef→rivals, 70 for collaborators)
+        # create a "graduated" de-escalation where agents must rebuild trust incrementally
+        # rather than jumping directly from beef to collaborators in one event.
         elif event_type == EventType.COLLABORATION:
             if current == RelationshipState.RIVALS and trust >= 50:
                 return RelationshipState.FRENEMIES
@@ -532,15 +576,25 @@ class RelationshipEngine:
             if trust >= 70:
                 return RelationshipState.COLLABORATORS
         
+        # ─── Reconciliation Path: RECONCILIATION ───────────────────────────────── #
+        # Reconciliation is the strongest de-escalation event (-30 tension, +20 trust).
+        # It directly targets BEEF and RIVALS states, pushing them toward FRENEMIES as an
+        # intermediate. The trust >= 60 check for FRIENDLY prevents "cheap" reconciliation:
+        # agents must have rebuilt substantial trust before becoming genuinely friendly again.
         elif event_type == EventType.RECONCILIATION:
             if current in [RelationshipState.BEEF, RelationshipState.RIVALS]:
                 return RelationshipState.FRENEMIES
             if trust >= 60:
                 return RelationshipState.FRIENDLY
         
+        # ─── Circuit Breaker: ADMIN_INTERVENTION ──────────────────────────────── #
+        # Unconditional reset. This is the override of last resort when organic
+        # de-escalation is impossible or when guardrails (e.g., max_beef_duration_days)
+        # have been exceeded. See admin_intervene() for the full intervention logic.
         elif event_type == EventType.ADMIN_INTERVENTION:
             return RelationshipState.NEUTRAL
         
+        # No transition: current state is stable for this event type
         return None
     
     # ─── Public Event Methods ───────────────────────────────────────────────── #
@@ -1311,3 +1365,4 @@ if __name__ == "__main__":
         print("BoTTube Agent Relationship Engine initialized.")
         print(f"Database: {args.db}")
         print("\nUse --demo to run a demo scenario.")
+
