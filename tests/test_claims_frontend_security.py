@@ -1,40 +1,49 @@
 from pathlib import Path
 
 
-def test_claims_page_escapes_api_and_user_fields_before_inner_html():
-    claims_js = Path(__file__).resolve().parents[1] / "web" / "claims" / "claims.js"
-    script = claims_js.read_text(encoding="utf-8")
+CLAIMS_JS = Path(__file__).resolve().parents[1] / "web" / "claims" / "claims.js"
 
-    assert "function escapeHtml(value)" in script
-    assert "function safeCssClass(value)" in script
-    assert "function safeNumber(value, fallback = 0)" in script
-    assert "function safeInteger(value, fallback = 0)" in script
+
+def source():
+    return CLAIMS_JS.read_text(encoding="utf-8")
+
+
+def test_claims_page_renders_dynamic_ui_with_dom_text_nodes():
+    script = source()
 
     safe_patterns = [
-        "${escapeHtml(eligibility.miner_id)}",
-        "${escapeHtml(eligibility.attestation?.device_arch || 'N/A')}",
-        "${escapeHtml(eligibility.wallet_address || 'Not registered')}",
-        "Reason: ${escapeHtml(eligibility.reason || 'Unknown')}",
-        "${escapeHtml(formatCheckName(check))}",
-        'value="${safeInteger(epoch.epoch)}"',
-        'data-reward="${safeInteger(epoch.reward_urtc)}"',
-        "${escapeHtml(minerId)}",
-        "${escapeHtml(walletAddress)}",
-        "${escapeHtml(claim.claim_id)}",
-        'class="status-badge ${safeCssClass(claim.status)}"',
-        "${escapeHtml(claim.status)}",
-        "${escapeHtml(result.claim_id)}",
+        "function textEl(tag, className, text)",
+        "el.textContent = text;",
+        "function summaryRow(label, value, options = {})",
+        "function checkItem(label, passed)",
+        "function resetEpochOptions(label = '-- Select an epoch --')",
+        "function renderSubmitSuccess(result)",
+        "eligibilityResult.replaceChildren(...nodes);",
+        "epochSelect.replaceChildren(...options);",
+        "claimSummary.replaceChildren(",
+        "tbody.replaceChildren(...history.claims.map(claim => {",
+        "box.replaceChildren(",
+        "new Option(`Epoch ${epochNumber} - ${formatRtc(epoch.reward_urtc)} RTC`, String(epochNumber))",
+        "option.dataset.reward = String(safeInteger(epoch.reward_urtc));",
+        "code.style.fontFamily = 'var(--font-mono)';",
     ]
 
     for pattern in safe_patterns:
         assert pattern in script
+
+
+def test_claims_page_has_no_dynamic_inner_html_templates():
+    script = source()
+
+    assert ".innerHTML" not in script
+    assert "insertAdjacentHTML" not in script
+    assert "escapeHtml" not in script
 
     unsafe_patterns = [
         "${eligibility.miner_id}",
         "${eligibility.attestation?.device_arch || 'N/A'}",
         "${eligibility.wallet_address || 'Not registered'}",
         "Reason: ${eligibility.reason || 'Unknown'}",
-        "${check.replace(/_/g, ' ').replace(/\\b\\w/g, l => l.toUpperCase())}",
         'value="${epoch.epoch}"',
         'data-reward="${epoch.reward_urtc}"',
         "${minerId}</span>",
@@ -47,3 +56,13 @@ def test_claims_page_escapes_api_and_user_fields_before_inner_html():
 
     for pattern in unsafe_patterns:
         assert pattern not in script
+
+
+def test_claims_page_keeps_normalization_helpers_for_numbers_and_classes():
+    script = source()
+
+    assert "function safeCssClass(value)" in script
+    assert "function safeNumber(value, fallback = 0)" in script
+    assert "function safeInteger(value, fallback = 0)" in script
+    assert "safeNumber(eligibility.attestation?.antiquity_multiplier, 1).toFixed(2)" in script
+    assert "textEl('span', `status-badge ${safeCssClass(claim.status)}`, claim.status)" in script
