@@ -53,10 +53,23 @@ except ImportError:
 # Configuration
 # =============================================================================
 
-BRIDGE_DEFAULT_CONFIRMATIONS = int(os.environ.get("RC_BRIDGE_DEFAULT_CONFIRMATIONS", "12"))
-BRIDGE_MAX_CONFIRMATIONS = int(os.environ.get("RC_BRIDGE_MAX_CONFIRMATIONS", "1000"))
-BRIDGE_LOCK_EXPIRY_SECONDS = int(os.environ.get("RC_BRIDGE_LOCK_EXPIRY_SECONDS", "604800"))  # 7 days
-BRIDGE_MIN_AMOUNT_RTC = float(os.environ.get("RC_BRIDGE_MIN_AMOUNT_RTC", "1.0"))
+# Parse numeric env defensively so a malformed value (e.g. "abc") doesn't
+# crash the bridge API at import time (#7329).
+def _env_num(name, default, cast):
+    raw = os.environ.get(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        return cast(raw)
+    except (TypeError, ValueError):
+        logging.getLogger(__name__).warning(
+            "Invalid %s=%r — falling back to %r", name, raw, default)
+        return default
+
+BRIDGE_DEFAULT_CONFIRMATIONS = _env_num("RC_BRIDGE_DEFAULT_CONFIRMATIONS", 12, int)
+BRIDGE_MAX_CONFIRMATIONS = _env_num("RC_BRIDGE_MAX_CONFIRMATIONS", 1000, int)
+BRIDGE_LOCK_EXPIRY_SECONDS = _env_num("RC_BRIDGE_LOCK_EXPIRY_SECONDS", 604800, int)  # 7 days
+BRIDGE_MIN_AMOUNT_RTC = _env_num("RC_BRIDGE_MIN_AMOUNT_RTC", 1.0, float)
 BRIDGE_UNIT = 1000000  # Micro-units per RTC
 DB_TIMEOUT = 5.0  # seconds: timeout for SQLite connection locks
 logger = logging.getLogger(__name__)
