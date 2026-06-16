@@ -1812,6 +1812,59 @@ class TestUtxoDB(unittest.TestCase):
                 self.assertEqual(db.mempool_get_block_candidates(), [])
                 self.assertFalse(db.mempool_check_double_spend(box['box_id']))
 
+    def test_mempool_persists_only_normalized_transaction_intent(self):
+        """Caller-controlled extras and proofs must not be stored in mempool."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        box = self.db.get_unspent_for_address('alice')[0]
+
+        ok = self.db.mempool_add({
+            'tx_id': 'normalized-intent',
+            'tx_type': 'transfer',
+            'inputs': [{
+                'box_id': box['box_id'],
+                'spending_proof': 'S' * 100_000,
+                'attacker_note': 'do not persist me',
+            }],
+            'outputs': [{
+                'address': 'bob',
+                'value_nrtc': 90 * UNIT,
+                'ignored_output_field': 'do not persist me',
+            }],
+            'fee_nrtc': 10 * UNIT,
+            'timestamp': 12345,
+            '_allow_minting': True,
+            'garbage': 'X' * 20_000,
+            'nested_spam': {'payload': ['x'] * 1000},
+        })
+
+        self.assertTrue(ok)
+
+        conn = self.db._conn()
+        try:
+            row = conn.execute(
+                "SELECT tx_data_json FROM utxo_mempool WHERE tx_id = ?",
+                ('normalized-intent',),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        stored = json.loads(row['tx_data_json'])
+        self.assertEqual(set(stored), {
+            'tx_id', 'tx_type', 'inputs', 'outputs', 'fee_nrtc',
+            'timestamp',
+        })
+        self.assertEqual(stored['inputs'], [{'box_id': box['box_id']}])
+        self.assertEqual(stored['outputs'], [{
+            'address': 'bob',
+            'value_nrtc': 90 * UNIT,
+            'tokens_json': '[]',
+            'registers_json': '{}',
+        }])
+        self.assertNotIn('_allow_minting', stored)
+        self.assertNotIn('garbage', stored)
+        self.assertNotIn('spending_proof', json.dumps(stored))
+        self.assertLess(len(row['tx_data_json']), 1000)
+
     def test_apply_transaction_rejects_oversized_output_text(self):
         """Direct block application must reject oversized persisted fields."""
         self._apply_coinbase('alice', 100 * UNIT)
