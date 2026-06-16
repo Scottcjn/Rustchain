@@ -4349,14 +4349,18 @@ def _submit_attestation_impl():
     device = _normalize_attestation_device(data.get('device'))
 
     # SECURITY: Verify Ed25519 signature on attestation report if present.
-    # The rustchain-miner signs (miner_id|wallet|nonce|commitment) and includes
-    # signature + public_key at the top level. If both fields are present we
-    # MUST verify — this prevents an MITM from changing the miner (wallet) field
-    # in transit and claiming another miner's hardware rewards (wallet hijack).
-
-    # FIX #5697: Validate that signature and public_key are strings before
-    # calling .strip().lower(). Non-string values (e.g. int, list, bool) used
-    # to crash with AttributeError → 500. Now they return 400 with a clear code.
+    # We accept TWO signing schemes for backward compatibility:
+    #   1. v3 canonical-JSON (current rustchain-miner, GPT-5.4 audit finding #2):
+    #      miner signs canonical_json(attestation_dict) BEFORE adding the
+    #      signature/signature_type fields — covers the full payload including
+    #      device, fingerprint, signals. signature_type='ed25519'.
+    #   2. v2 legacy 4-field MAC: miner signs "miner_id|wallet|nonce|commitment".
+    #      Narrower coverage — wallet hijack protection only.
+    # The canonical-JSON scheme is verified first; legacy is the fallback.
+    #
+    # FIX #5697 (kept from main): validate that signature and public_key are
+    # strings before .strip().lower(). Non-string values (int/list/bool) used to
+    # crash with AttributeError → 500; now they return 400 with a clear code.
     raw_sig = data.get('signature')
     raw_pubkey = data.get('public_key')
     if raw_sig is not None and not isinstance(raw_sig, str):
@@ -4380,9 +4384,55 @@ def _submit_attestation_impl():
     commitment = report.get('commitment') or ''
     if sig_hex and pubkey_hex:
         if HAVE_NACL:
-            sign_message = '{}|{}|{}|{}'.format(miner_id_raw, miner, nonce, commitment)
-            if not verify_rtc_signature(pubkey_hex, sign_message.encode('utf-8'), sig_hex):
-                print(f"[ATTEST/SIG] INVALID SIGNATURE: miner={miner[:20]}... pubkey={pubkey_hex[:16]}...")
+            # Type-guard signature_type too — reject a non-string value with 400,
+            # consistent with the signature/public_key checks above (#5697 class),
+            # rather than silently coercing malformed input.
+            raw_sig_type = data.get('signature_type')
+            if raw_sig_type is not None and not isinstance(raw_sig_type, str):
+                return jsonify({
+                    "ok": False,
+                    "error": "invalid_signature_type_field",
+                    "message": "signature_type must be a string if provided",
+                    "code": "INVALID_SIGNATURE_TYPE_FIELD",
+                }), 400
+            sig_type = (raw_sig_type or '').strip().lower()
+            verified = False
+
+            # Scheme 1: v3 canonical-JSON full-payload signature.
+            # Try when signature_type is 'ed25519' or unspecified (the v3 miner
+            # always sets signature_type='ed25519'; older callers may omit it).
+            # IMPORTANT: the miner adds 'signature', 'public_key', AND
+            # 'signature_type' to the dict AFTER signing (see miner lines
+            # 515-517). All three must be stripped to reproduce the canonical
+            # bytes the miner actually signed.
+            if sig_type in ('ed25519', '', 'canonical_json'):
+                payload_for_sig = {
+                    k: v for k, v in data.items()
+                    if k not in ('signature', 'signature_type', 'public_key')
+                }
+                canonical_msg = json.dumps(
+                    payload_for_sig, sort_keys=True, separators=(',', ':')
+                ).encode('utf-8')
+                if verify_rtc_signature(pubkey_hex, canonical_msg, sig_hex):
+                    verified = True
+
+            # Scheme 2: v2 legacy 4-field MAC (backward compat) — but ONLY for
+            # callers that did NOT explicitly claim the stronger v3 scheme. A
+            # request typed 'ed25519'/'canonical_json' must verify against the
+            # full canonical payload; allowing it to fall through to the narrower
+            # legacy MAC would let a tampered device/fingerprint payload pass on
+            # the weaker check, defeating v3's full-payload protection.
+            if not verified and sig_type not in ('ed25519', 'canonical_json'):
+                legacy_msg = '{}|{}|{}|{}'.format(
+                    miner_id_raw, miner, nonce, commitment
+                ).encode('utf-8')
+                if verify_rtc_signature(pubkey_hex, legacy_msg, sig_hex):
+                    verified = True
+
+            if not verified:
+                print(f"[ATTEST/SIG] INVALID SIGNATURE: miner={miner[:20]}... "
+                      f"pubkey={pubkey_hex[:16]}... sig_type={sig_type!r} "
+                      f"(tried canonical-JSON + legacy MAC)")
                 return jsonify({
                     "ok": False,
                     "error": "invalid_attestation_signature",
