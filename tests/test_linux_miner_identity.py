@@ -37,6 +37,30 @@ def test_linux_miner_source_does_not_hardcode_victus_identity():
     assert "RustChain Local Linux Miner" in source
 
 
+def test_parse_ioreg_serial_extracts_platform_serial():
+    miner = load_miner_module()
+
+    output = '''
+    +-o IOPlatformExpertDevice  <class IOPlatformExpertDevice, id 0x100000100, registered, matched, active, busy 0 (88 ms), retain 42>
+        "IOPlatformSerialNumber" = "C02TESTSERIAL"
+    '''
+
+    assert miner._parse_ioreg_serial(output) == "C02TESTSERIAL"
+
+
+def test_hardware_serial_uses_macos_probe(monkeypatch):
+    miner = load_miner_module()
+
+    monkeypatch.setattr(miner, "get_macos_serial", lambda: "mac-serial")
+    monkeypatch.setattr(
+        miner,
+        "get_linux_serial",
+        lambda: (_ for _ in ()).throw(AssertionError("Darwin should not use Linux serial probes")),
+    )
+
+    assert miner.get_hardware_serial("Darwin") == "mac-serial"
+
+
 def test_local_miner_can_use_ephemeral_keypair_without_persisting(monkeypatch):
     miner = load_miner_module()
     calls = {"ephemeral": 0, "persisted": 0}
@@ -53,7 +77,7 @@ def test_local_miner_can_use_ephemeral_keypair_without_persisting(monkeypatch):
     monkeypatch.setattr(miner, "FINGERPRINT_AVAILABLE", False)
     monkeypatch.setattr(miner, "generate_keypair", generate_ephemeral)
     monkeypatch.setattr(miner, "get_or_create_keypair", persist_key)
-    monkeypatch.setattr(miner, "get_linux_serial", lambda: "test-serial")
+    monkeypatch.setattr(miner, "get_hardware_serial", lambda: "test-serial")
 
     instance = miner.LocalMiner(wallet="RTC-test-wallet", persist_key=False)
 
