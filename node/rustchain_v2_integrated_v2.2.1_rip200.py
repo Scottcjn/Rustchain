@@ -427,11 +427,23 @@ def _validate_fingerprint_metric_shapes(fingerprint):
 
 
 def client_ip_from_request(req) -> str:
-    """Return trusted client IP, honoring proxy headers only for allowlisted peers."""
+    """Return trusted client IP, honoring proxy headers only for allowlisted peers.
+
+    X-Real-IP is honored ONLY when the direct peer (remote_addr) is an allowlisted
+    reverse proxy (RC_TRUSTED_PROXY_IPS, default localhost). The forwarded value is
+    additionally validated as a real IP literal, so a misconfigured proxy that
+    forwards a user-supplied/garbage X-Real-IP cannot turn an arbitrary string into
+    a rate-limit / hardware-binding key.
+
+    OPS NOTE: if nginx terminates on a SEPARATE host from this node, set
+    RC_TRUSTED_PROXY_IPS to that proxy's address — otherwise the gate never opens
+    and every client collapses onto the proxy IP (shared rate-limit / binding key).
+    """
     remote_addr = _normalize_client_ip(getattr(req, "remote_addr", ""))
-    forwarded_ip = _normalize_client_ip(req.headers.get("X-Real-IP", ""))
-    if forwarded_ip and _is_trusted_proxy(remote_addr):
-        return forwarded_ip
+    if _is_trusted_proxy(remote_addr):
+        forwarded_ip = _normalize_client_ip(req.headers.get("X-Real-IP", ""))
+        if _is_valid_ip(forwarded_ip):
+            return forwarded_ip
     return remote_addr
 
 
@@ -809,6 +821,17 @@ def _is_trusted_proxy(remote_addr: str) -> bool:
     except ValueError:
         return False
     return any(parsed_ip in network for network in _trusted_proxy_networks())
+
+
+def _is_valid_ip(value: str) -> bool:
+    """True if value parses as a literal IPv4/IPv6 address."""
+    if not value:
+        return False
+    try:
+        ipaddress.ip_address(value)
+        return True
+    except ValueError:
+        return False
 
 
 def get_client_ip():
