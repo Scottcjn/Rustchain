@@ -33,14 +33,15 @@ def warning(msg): return msg
 def success(msg): return msg
 def error(msg): return msg
 
-# Attempt to import requests; provide instructions if missing
+# Attempt to import requests; provide instructions if missing. Keep import
+# side-effect free so tests can load helper functions on minimal systems.
 try:
     import requests
 except ImportError:
-    print("[ERROR] 'requests' module not found.")
-    print("  Install with: pip3 install requests --user")
-    print("  Or: python3 -m pip install requests --user")
-    sys.exit(1)
+    requests = None
+    REQUESTS_IMPORT_ERROR = "'requests' module not found. Install with: pip3 install requests --user"
+else:
+    REQUESTS_IMPORT_ERROR = None
 
 try:
     from nacl.signing import SigningKey
@@ -179,6 +180,8 @@ class NodeTransport:
     """
 
     def __init__(self, node_url, proxy_url):
+        if requests is None:
+            raise RuntimeError(REQUESTS_IMPORT_ERROR)
         self.node_url = node_url.rstrip("/")
         self.proxy_url = proxy_url.rstrip("/") if proxy_url else None
         self.use_proxy = False
@@ -247,41 +250,28 @@ class NodeTransport:
 
 # ── Hardware Detection ──────────────────────────────────────────────
 
-def get_mac_serial():
-    """Get hardware serial number for macOS systems."""
-    try:
-        result = subprocess.run(
-            ['system_profiler', 'SPHardwareDataType'],
-            capture_output=True, text=True, timeout=10
-        )
-        for line in result.stdout.split('\n'):
-            if 'Serial Number' in line:
-                return line.split(':')[1].strip()
-    except Exception:
-        pass
+def _clean_hardware_identifier(value):
+    value = str(value or "").strip()
+    invalid = {
+        "",
+        "none",
+        "unknown",
+        "not available",
+        "not specified",
+        "to be filled by o.e.m.",
+        "system serial number",
+    }
+    if value.lower() in invalid:
+        return None
+    return value
 
-    try:
-        result = subprocess.run(
-            ['ioreg', '-l'],
-            capture_output=True, text=True, timeout=10
-        )
-        for line in result.stdout.split('\n'):
-            if 'IOPlatformSerialNumber' in line:
-                return line.split('"')[-2]
-    except Exception:
-        pass
 
-    try:
-        result = subprocess.run(
-            ['system_profiler', 'SPHardwareDataType'],
-            capture_output=True, text=True, timeout=10
-        )
-        for line in result.stdout.split('\n'):
-            if 'Hardware UUID' in line:
-                return line.split(':')[1].strip()[:16]
-    except Exception:
-        pass
-
+def _extract_system_profiler_value(output, field):
+    prefix = "{}:".format(field).lower()
+    for line in str(output or "").splitlines():
+        stripped = line.strip()
+        if stripped.lower().startswith(prefix):
+            return _clean_hardware_identifier(stripped.split(":", 1)[1])
     return None
 
 
@@ -339,11 +329,64 @@ def get_mac_addresses():
         pass
 
     return ["00:00:00:00:00:00"]
+def _extract_ioreg_serial(output):
+    for line in str(output or "").splitlines():
+        if 'IOPlatformSerialNumber' not in line:
+            continue
+        match = re.search(r'"IOPlatformSerialNumber"\s*=\s*"([^"]+)"', line)
+        if match:
+            return _clean_hardware_identifier(match.group(1))
+    return None
+
+
+def get_mac_identity():
+    """Return macOS hardware identity with serial and UUID kept distinct."""
+    serial = None
+    hardware_uuid = None
+
+    try:
+        result = subprocess.run(
+            ['system_profiler', 'SPHardwareDataType'],
+            capture_output=True, text=True, timeout=10
+        )
+        serial = _extract_system_profiler_value(result.stdout, "Serial Number")
+        hardware_uuid = _extract_system_profiler_value(result.stdout, "Hardware UUID")
+    except Exception:
+        pass
+
+    if not serial:
+        for args in (
+            ['ioreg', '-d2', '-c', 'IOPlatformExpertDevice'],
+            ['ioreg', '-l'],
+        ):
+            try:
+                result = subprocess.run(
+                    args,
+                    capture_output=True, text=True, timeout=10
+                )
+                serial = _extract_ioreg_serial(result.stdout)
+                if serial:
+                    break
+            except Exception:
+                pass
+
+    return {
+        "serial": serial,
+        "hardware_uuid": hardware_uuid,
+        "serial_present": bool(serial),
+        "serial_source": "serial_number" if serial else ("hardware_uuid_fallback" if hardware_uuid else "missing"),
+    }
+
+
+def get_mac_serial():
+    """Get true Mac hardware serial number, not a UUID fallback."""
+    return get_mac_identity()["serial"]
 
 
 def detect_hardware():
     """Auto-detect Mac hardware architecture."""
     machine = platform.machine().lower()
+    identity = get_mac_identity()
 
     hw_info = {
         "family": "unknown",
@@ -355,7 +398,10 @@ def detect_hardware():
         "hostname": platform.node(),
         "mac": "00:00:00:00:00:00",
         "macs": [],
-        "serial": get_mac_serial()
+        "serial": identity["serial"],
+        "hardware_uuid": identity["hardware_uuid"],
+        "serial_present": identity["serial_present"],
+        "serial_source": identity["serial_source"],
     }
 
     macs = get_mac_addresses()
@@ -521,6 +567,27 @@ def add_binding_entropy_aliases(fingerprint_data):
     return fingerprint_data
 
 
+def attach_serial_binding_status(fingerprint_data, hw_info):
+    """Record whether Serial Binding v2.0 has a true hardware serial."""
+    if not isinstance(fingerprint_data, dict):
+        fingerprint_data = {}
+    checks = fingerprint_data.setdefault("checks", {})
+    serial = _clean_hardware_identifier(hw_info.get("serial"))
+    hardware_uuid = _clean_hardware_identifier(hw_info.get("hardware_uuid"))
+    passed = bool(serial)
+    checks["serial_binding"] = {
+        "passed": passed,
+        "data": {
+            "serial_present": passed,
+            "serial_source": hw_info.get("serial_source") or ("serial_number" if passed else "missing"),
+            "hardware_uuid_fallback_present": bool(hardware_uuid and not serial),
+        },
+    }
+    fingerprint_data["serial_binding_passed"] = passed
+    fingerprint_data["all_passed"] = bool(fingerprint_data.get("all_passed")) and passed
+    return fingerprint_data
+
+
 # ── Miner Class ─────────────────────────────────────────────────────
 
 class MacMiner:
@@ -533,10 +600,11 @@ class MacMiner:
         if miner_id:
             self.miner_id = miner_id
         else:
+            stable_id = self.hw_info.get('serial') or self.hw_info.get('hardware_uuid') or 'unknown'
             hw_hash = hashlib.sha256(
                 "{}-{}".format(
                     self.hw_info['hostname'],
-                    self.hw_info['serial'] or 'unknown'
+                    stable_id
                 ).encode()
             ).hexdigest()[:8]
             arch = self.hw_info['arch'].lower().replace(' ', '_')
@@ -606,14 +674,18 @@ class MacMiner:
         print(info("\n[FINGERPRINT] Running hardware fingerprint checks..."))
         try:
             passed, results = validate_all_checks()
-            self.fingerprint_passed = passed
             self.fingerprint_data = add_binding_entropy_aliases(
                 {"checks": results, "all_passed": passed}
             )
-            if passed:
+            self.fingerprint_data = attach_serial_binding_status(
+                self.fingerprint_data,
+                self.hw_info,
+            )
+            self.fingerprint_passed = bool(self.fingerprint_data.get("all_passed"))
+            if self.fingerprint_passed:
                 print(success("[FINGERPRINT] All checks PASSED - eligible for full rewards"))
             else:
-                failed = [k for k, v in results.items() if not v.get("passed")]
+                failed = [k for k, v in self.fingerprint_data.get("checks", {}).items() if not v.get("passed")]
                 print(warning("[FINGERPRINT] FAILED checks: {}".format(failed)))
                 print(warning("[FINGERPRINT] WARNING: May receive reduced/zero rewards"))
         except Exception as e:
@@ -632,6 +704,8 @@ class MacMiner:
             else "DIRECT ({})".format(self.transport.node_url)
         ))
         print("Serial:      {}".format(self.hw_info.get('serial', 'N/A')))
+        if not self.hw_info.get("serial_present"):
+            print("Serial Bind: missing real serial ({})".format(self.hw_info.get("serial_source", "missing")))
         print("-" * 70)
         print("Hardware:    {} / {}".format(self.hw_info['family'], self.hw_info['arch']))
         print("Model:       {}".format(self.hw_info['model']))
@@ -903,6 +977,10 @@ class MacMiner:
 
 if __name__ == "__main__":
     import argparse
+
+    if requests is None:
+        print("[ERROR] {}".format(REQUESTS_IMPORT_ERROR))
+        sys.exit(1)
 
     parser = argparse.ArgumentParser(description="RustChain Mac Miner v{}".format(MINER_VERSION))
     parser.add_argument("--version", "-v", action="version",
