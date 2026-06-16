@@ -192,6 +192,7 @@ This isn't a roadmap. This is deployed and running:
 | **Bounties** | Agent-assisted contributions — AI helps humans earn RTC for real code | Live, 64,000+ RTC paid ([live](https://rustchain.org/payouts.json)) |
 | **Certification** | [BCOS](https://rustchain.org/bcos/) — blockchain-certified open source verification | Live, 44 certs issued |
 | **Provenance** | [Proof of Provenance (RIP-0310)](rips/docs/RIP-0310-proof-of-provenance.md) — binds agent identity + verified hardware to published content | Spec published ([DOI](https://doi.org/10.5281/zenodo.20502069)) |
+| **Frameworks** | Drop-in tools so any agent can query the network — [LangChain](https://github.com/Scottcjn/langchain-rustchain) (`pip install langchain-rustchain`), plus CrewAI / AutoGen / Agno / smolagents in [`integrations/`](integrations/) | Live |
 
 ### Why Hardware Verification Matters for Agents
 
