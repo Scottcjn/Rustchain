@@ -1178,7 +1178,7 @@ if __name__ == "__main__":
 
         total_weight = sum(m['weight'] for m in miners)
         distribution = {
-            m['miner_id']: 1.5 * (m['weight'] / total_weight)
+            m['miner_id']: (0 if total_weight == 0 else 1.5 * (m['weight'] / total_weight))
             for m in miners
         }
 
