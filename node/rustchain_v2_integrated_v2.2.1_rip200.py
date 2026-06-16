@@ -9497,13 +9497,21 @@ def _pending_overdue_stats(c, now):
 
 @app.route('/pending/list', methods=['GET'])
 def list_pending():
-    """List all pending transfers"""
+    """List pending transfers (Public if filtered by miner_id, else Admin only)"""
+    miner_id = request.args.get('miner_id', '').strip()
     admin_key_env = os.environ.get("RC_ADMIN_KEY", "")
-    if not admin_key_env:
-        return jsonify({"error": "RC_ADMIN_KEY not configured on server", "code": "ADMIN_KEY_UNSET"}), 503
-    admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    if not hmac.compare_digest(admin_key, admin_key_env):
-        return jsonify({"error": "Unauthorized"}), 401
+    
+    is_admin = False
+    if admin_key_env:
+        admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
+        if admin_key and hmac.compare_digest(admin_key, admin_key_env):
+            is_admin = True
+            
+    # If not admin, we MUST have a miner_id to filter by to prevent bulk data leaks
+    if not is_admin and not miner_id:
+        if not admin_key_env:
+            return jsonify({"error": "RC_ADMIN_KEY not configured on server", "code": "ADMIN_KEY_UNSET"}), 503
+        return jsonify({"error": "Unauthorized. Provide miner_id for public check or Admin Key for full list."}), 401
 
     status_filter = request.args.get('status', 'pending')
     try:
@@ -9513,18 +9521,29 @@ def list_pending():
     limit = max(1, min(limit, 500))
     
     with sqlite3.connect(DB_PATH) as db:
-        if status_filter == 'all':
-            rows = fetch_page(db, """
-                SELECT id, ts, from_miner, to_miner, amount_i64, reason, status, 
-                       confirms_at, voided_by, voided_reason, tx_hash
-                FROM pending_ledger ORDER BY id DESC
-            """, limit=limit, max_limit=500)
-        else:
-            rows = fetch_page(db, """
-                SELECT id, ts, from_miner, to_miner, amount_i64, reason, status,
-                       confirms_at, voided_by, voided_reason, tx_hash
-                FROM pending_ledger WHERE status = ? ORDER BY id DESC
-            """, (status_filter,), limit=limit, max_limit=500)
+        query = """
+            SELECT id, ts, from_miner, to_miner, amount_i64, reason, status, 
+                   confirms_at, voided_by, voided_reason, tx_hash
+            FROM pending_ledger
+        """
+        where_clauses = []
+        params = []
+        
+        if status_filter != 'all':
+            where_clauses.append("status = ?")
+            params.append(status_filter)
+            
+        if not is_admin or miner_id:
+            # Non-admins can only see their own; admins see all unless they specifically filter
+            where_clauses.append("(from_miner = ? OR to_miner = ?)")
+            params.extend([miner_id, miner_id])
+            
+        if where_clauses:
+            query += " WHERE " + " AND ".join(where_clauses)
+            
+        query += " ORDER BY id DESC"
+        
+        rows = fetch_page(db, query, tuple(params), limit=limit, max_limit=500)
         overdue_stats = _pending_overdue_stats(db, int(time.time()))
 
     items = []
