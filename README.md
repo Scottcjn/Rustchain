@@ -541,23 +541,23 @@ Please read the [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines and the [Bount
 
 Run the miner with --dry-run first to verify connectivity without submitting work:
 
-`ash
+```bash
 ./clawrtc-miner --dry-run
-`
+```
 
 Check node health:
-`ash
+```bash
 curl -fsS https://rustchain.org/health
-`
+```
 </details>
 
 <details>
 <summary><b>Balance check returns 0 or error</b></summary>
 
 Verify your miner name is correct:
-`ash
+```bash
 curl -fsS "https://rustchain.org/wallet/balance?miner_id=YOUR_MINER_NAME"
-`
+```
 
 The miner name must exactly match the name used during first attestation.
 </details>
@@ -566,29 +566,29 @@ The miner name must exactly match the name used during first attestation.
 <summary><b>Miner service won't start (systemd / launchd)</b></summary>
 
 Linux (systemd):
-`ash
+```bash
 sudo systemctl status clawrtc-miner
 sudo journalctl -u clawrtc-miner --no-pager -n 50
-`
+```
 
 macOS (launchd):
-`ash
+```bash
 launchctl list | grep clawrtc
-`
+```
 </details>
 
 <details>
 <summary><b>Transfer stuck in "pending" state</b></summary>
 
 Check the pending ledger:
-`ash
+```bash
 curl -fsS "https://rustchain.org/pending/list?miner_id=YOUR_MINER_NAME"
-`
-
+```
+</details>
 Transitions require epoch settlement - check current epoch:
-`ash
+```bash
 curl -fsS https://rustchain.org/epoch
-`
+```
 </details>
 
 <details>
