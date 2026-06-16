@@ -187,29 +187,45 @@ def _request_with_network_retry(method, url, action, retries=NETWORK_RETRY_ATTEM
     return None
 
 
-def get_linux_serial():
-    """Get hardware serial number for Linux systems"""
-    # Try various sources
-    serial_sources = [
-        "/sys/class/dmi/id/product_serial",
-        "/sys/class/dmi/id/board_serial",
-        "/sys/class/dmi/id/chassis_serial",
-    ]
-    for path in serial_sources:
+def get_system_serial():
+    """Get hardware serial number (Cross-platform)"""
+    system = sys.platform
+    
+    if system == "darwin":
         try:
-            with open(path, 'r') as f:
-                serial = f.read().strip()
-                if serial and serial not in ['', 'None', 'To Be Filled By O.E.M.', 'Default string']:
-                    return serial
+            # macOS serial number via ioreg
+            out = subprocess.check_output(
+                ["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"], 
+                stderr=subprocess.STDOUT
+            ).decode()
+            for line in out.splitlines():
+                if "IOPlatformSerialNumber" in line:
+                    return line.split("=")[-1].strip().strip('"')
         except:
             pass
+            
+    elif system.startswith("linux"):
+        # Try various Linux sources
+        serial_sources = [
+            "/sys/class/dmi/id/product_serial",
+            "/sys/class/dmi/id/board_serial",
+            "/sys/class/dmi/id/chassis_serial",
+        ]
+        for path in serial_sources:
+            try:
+                with open(path, 'r') as f:
+                    serial = f.read().strip()
+                    if serial and serial not in ['', 'None', 'To Be Filled By O.E.M.', 'Default string']:
+                        return serial
+            except:
+                pass
 
-    # Fallback to machine-id (stable across reboots)
-    try:
-        with open('/etc/machine-id', 'r') as f:
-            return f.read().strip()[:16]  # First 16 chars
-    except:
-        pass
+        # Fallback to machine-id (stable across reboots)
+        try:
+            with open('/etc/machine-id', 'r') as f:
+                return f.read().strip()[:16]  # First 16 chars
+        except:
+            pass
 
     return None
 
@@ -306,7 +322,10 @@ class LocalMiner:
             self.fingerprint_passed = passed
             self.fingerprint_data = {"checks": results, "all_passed": passed}
             if passed:
-                print("[FINGERPRINT] All checks PASSED - eligible for full rewards")
+                if self.hw_info.get("serial"):
+                    print("[FINGERPRINT] All checks PASSED - eligible for full rewards")
+                else:
+                    print("[FINGERPRINT] All checks PASSED - eligible for fingerprint rewards (Serial Binding v2 incomplete)")
             else:
                 failed = [k for k, v in results.items() if not v.get("passed")]
                 print(f"[FINGERPRINT] FAILED checks: {failed}")
@@ -408,7 +427,7 @@ class LocalMiner:
             "hostname": socket.gethostname(),
             "family": "x86",
             "arch": "modern",  # Less than 10 years old
-            "serial": get_linux_serial(),  # Hardware serial for v2 binding
+            "serial": get_system_serial(),  # Hardware serial for v2 binding
             "probe_warning": _linux_miner_platform_warning(system)
         }
 
