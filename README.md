@@ -584,9 +584,15 @@ launchctl list | grep clawrtc
 
 Check the pending ledger:
 ```bash
-curl -fsS "https://rustchain.org/pending/list?miner_id=YOUR_MINER_NAME"
+curl -fsS "https://rustchain.org/wallet/history?miner_id=YOUR_MINER_NAME&limit=20"
 ```
-</details>
+
+Node operators can inspect the admin-only pending ledger with:
+
+```bash
+python tools/pending_ops.py --node https://rustchain.org --admin-key "$RC_ADMIN_KEY" list
+```
+
 Transitions require epoch settlement - check current epoch:
 ```bash
 curl -fsS https://rustchain.org/epoch
