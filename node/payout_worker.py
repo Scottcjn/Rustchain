@@ -194,6 +194,26 @@ class PayoutWorker:
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute("BEGIN IMMEDIATE")
                 try:
+                    claim = conn.execute(
+                        "UPDATE withdrawals "
+                        "SET status = 'processing', error_msg = NULL "
+                        "WHERE withdrawal_id = ? AND status = 'pending'",
+                        (withdrawal_id,),
+                    )
+                    if claim.rowcount != 1:
+                        status_row = conn.execute(
+                            "SELECT status FROM withdrawals WHERE withdrawal_id = ?",
+                            (withdrawal_id,),
+                        ).fetchone()
+                        conn.execute("ROLLBACK")
+                        current_status = status_row[0] if status_row else "missing"
+                        logger.warning(
+                            "Skipping withdrawal %s because it is %s, not pending",
+                            withdrawal_id,
+                            current_status,
+                        )
+                        return False
+
                     # Check sender has sufficient balance
                     row = conn.execute(
                         "SELECT balance FROM accounts WHERE public_key = ?",
@@ -218,12 +238,6 @@ class PayoutWorker:
                     conn.execute(
                         "UPDATE accounts SET balance = balance - ? WHERE public_key = ?",
                         (total_deduction, withdrawal['miner_pk'])
-                    )
-
-                    # Mark as processing
-                    conn.execute(
-                        "UPDATE withdrawals SET status = 'processing' WHERE withdrawal_id = ?",
-                        (withdrawal_id,)
                     )
                     conn.execute("COMMIT")
                 except Exception:
