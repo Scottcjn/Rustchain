@@ -9158,6 +9158,180 @@ def api_wallet_lookup(miner_id):
     })
 
 
+_WALLET_TX_HASH_RE = re.compile(r"^[0-9a-fA-F]{32}$")
+
+
+def _wallet_tx_status_response(tx_hash: str, status: str, block_height=None,
+                               confirmations: int = 0):
+    body = {
+        "ok": True,
+        "tx_hash": tx_hash,
+        "status": status,
+        "confirmations": confirmations,
+        "block_height": block_height,
+    }
+    return jsonify(body)
+
+
+def _wallet_tx_has_table(db, table_name: str) -> bool:
+    try:
+        row = db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            (table_name,),
+        ).fetchone()
+    except sqlite3.Error:
+        return False
+    return row is not None
+
+
+def _wallet_tx_parse_ledger_transfer(row):
+    reason = str(row["reason"] or "")
+    direction, sep, rest = reason.partition(":")
+    if not sep or direction not in ("transfer_in", "transfer_out"):
+        return None
+    counterparty, sep, tx_hash = rest.rpartition(":")
+    if not sep or not counterparty or not _WALLET_TX_HASH_RE.fullmatch(tx_hash):
+        return None
+    delta = int(row["delta_i64"])
+    if direction == "transfer_out" and delta >= 0:
+        return None
+    if direction == "transfer_in" and delta <= 0:
+        return None
+    return {
+        "direction": direction,
+        "wallet": str(row["miner_id"]),
+        "counterparty": counterparty,
+        "amount_i64": abs(delta),
+        "epoch": row["epoch"],
+        "tx_hash": tx_hash.lower(),
+    }
+
+
+def _wallet_tx_verified_ledger_height(db, tx_hash: str):
+    if not _wallet_tx_has_table(db, "ledger"):
+        return None
+
+    rows = db.execute(
+        """
+        SELECT ts, epoch, miner_id, delta_i64, reason
+        FROM ledger
+        WHERE reason LIKE ?
+        ORDER BY ts DESC, rowid DESC
+        LIMIT 8
+        """,
+        (f"%:{tx_hash}",),
+    ).fetchall()
+    parsed = [
+        item for item in (_wallet_tx_parse_ledger_transfer(row) for row in rows)
+        if item and item["tx_hash"] == tx_hash
+    ]
+
+    outs = [item for item in parsed if item["direction"] == "transfer_out"]
+    ins = [item for item in parsed if item["direction"] == "transfer_in"]
+    matches = []
+    for out_row in outs:
+        for in_row in ins:
+            if (
+                out_row["wallet"] == in_row["counterparty"]
+                and out_row["counterparty"] == in_row["wallet"]
+                and out_row["amount_i64"] == in_row["amount_i64"]
+            ):
+                matches.append((out_row, in_row))
+
+    if len(matches) != 1:
+        return None
+
+    out_row, in_row = matches[0]
+    if out_row["epoch"] == in_row["epoch"] and out_row["epoch"] is not None:
+        try:
+            return int(out_row["epoch"])
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _wallet_tx_pending_row_status(db, tx_hash: str):
+    if not _wallet_tx_has_table(db, "pending_ledger"):
+        return None, None
+
+    rows = db.execute(
+        """
+        SELECT id, epoch, status, confirmed_at, created_at, ts
+        FROM pending_ledger
+        WHERE tx_hash = ?
+        ORDER BY COALESCE(confirmed_at, created_at, ts, 0) DESC, id DESC
+        LIMIT 2
+        """,
+        (tx_hash,),
+    ).fetchall()
+    if not rows:
+        return None, None
+    if len(rows) > 1:
+        return "ambiguous", None
+
+    row = rows[0]
+    raw_status = str(row["status"] or "pending").lower()
+    if raw_status == "confirmed":
+        block_height = _wallet_tx_verified_ledger_height(db, tx_hash)
+        if block_height is not None:
+            return "confirmed", block_height
+        return "pending", None
+    if raw_status in {"voided", "failed", "rejected", "cancelled", "expired"}:
+        return "failed", None
+    return "pending", None
+
+
+@app.route('/wallet/tx/<tx_hash>', methods=['GET'])
+def api_wallet_tx_status(tx_hash: str):
+    """Return a status-only transaction lookup for wallet clients.
+
+    The route is intentionally public but does not expose participants, amounts,
+    pending IDs, internal reasons, or void details. A transaction is reported as
+    confirmed only after matching both immutable ledger entries for the hash.
+    """
+    tx_hash = str(tx_hash or "").strip().lower()
+    if not _WALLET_TX_HASH_RE.fullmatch(tx_hash):
+        return jsonify({
+            "ok": False,
+            "error": "tx_hash must be exactly 32 hexadecimal characters",
+        }), 400
+
+    try:
+        with sqlite3.connect(DB_PATH) as db:
+            db.row_factory = sqlite3.Row
+            status, block_height = _wallet_tx_pending_row_status(db, tx_hash)
+            if status == "ambiguous":
+                return jsonify({
+                    "ok": False,
+                    "error": "ambiguous_transaction",
+                }), 409
+            if status:
+                return _wallet_tx_status_response(
+                    tx_hash,
+                    status,
+                    block_height=block_height,
+                    confirmations=1 if status == "confirmed" else 0,
+                )
+
+            block_height = _wallet_tx_verified_ledger_height(db, tx_hash)
+            if block_height is not None:
+                return _wallet_tx_status_response(
+                    tx_hash,
+                    "confirmed",
+                    block_height=block_height,
+                    confirmations=1,
+                )
+    except sqlite3.Error:
+        return jsonify({"ok": False, "error": "transaction_lookup_unavailable"}), 503
+
+    return jsonify({
+        "ok": False,
+        "tx_hash": tx_hash,
+        "status": "not_found",
+        "error": "transaction_not_found",
+    }), 404
+
+
 @app.route('/wallet/history', methods=['GET'])
 def api_wallet_history():
     """Get unified transaction history for a wallet (fixes #775, #886).
