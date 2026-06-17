@@ -316,6 +316,7 @@ def _attest_mapping(value):
 
 
 _ATTEST_MINER_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+_SOLANA_WALLET_RE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")
 _ED25519_PUBKEY_HEX_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 
 
@@ -334,6 +335,12 @@ def _attest_valid_miner(value):
     if text and _ATTEST_MINER_RE.fullmatch(text):
         return text
     return None
+
+
+def _attest_looks_like_solana_wallet(value):
+    """Return True for raw Solana/base58 public keys accidentally used as miner IDs."""
+    text = _attest_text(value)
+    return bool(text and not text.startswith("RTC") and _SOLANA_WALLET_RE.fullmatch(text))
 
 
 def _valid_ed25519_pubkey_hex(value):
@@ -482,6 +489,11 @@ def _validate_attestation_payload_shape(data):
     for field_name in ("miner", "miner_id"):
         if field_name in data and data[field_name] is not None and not isinstance(data[field_name], str):
             return _attest_field_error("INVALID_MINER", f"Field '{field_name}' must be a non-empty string")
+        if field_name in data and _attest_looks_like_solana_wallet(data[field_name]):
+            return _attest_field_error(
+                "INVALID_MINER_WALLET_FORMAT",
+                "Solana-format wallet addresses cannot be used as RustChain miner IDs; create or use a native RTC wallet address",
+            )
         if field_name in data and _attest_text(data[field_name]) and not _attest_valid_miner(data[field_name]):
             return _attest_field_error(
                 "INVALID_MINER",
@@ -4241,6 +4253,14 @@ def get_challenge():
         }), 400
     requested_miner = None
     if isinstance(body, dict):
+        for field_name in ("miner", "miner_id"):
+            if _attest_looks_like_solana_wallet(body.get(field_name)):
+                return jsonify({
+                    "ok": False,
+                    "error": "invalid_miner_wallet_format",
+                    "code": "INVALID_MINER_WALLET_FORMAT",
+                    "message": "Solana-format wallet addresses cannot request RustChain attestation challenges; create or use a native RTC wallet address",
+                }), 400
         # Extract identity in the SAME order the submit path resolves `miner`
         # (_submit_attestation_impl: data.get('miner') or data.get('miner_id')) so a
         # client where miner != miner_id binds to exactly the identity that will be
