@@ -4,8 +4,6 @@
 
 # RustChain
 
-[![Build Status](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml/badge.svg)](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml)
-
 ### DePIN for Vintage Hardware — AI-Augmented Proof of Real Machines
 
 **The blockchain where old hardware outearns new hardware.**
