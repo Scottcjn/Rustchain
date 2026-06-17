@@ -319,21 +319,12 @@ def verify_webhook_signature(
 ) -> bool:
     """
     Verify GitHub webhook signature.
-
-    Args:
-        body: Raw request body
-        signature: Signature from X-Hub-Signature-256 header
-        secret: Webhook secret
-
-    Returns:
-        True if signature is valid
     """
-    if not signature:
+    if not signature or not secret:
+        if not secret:
+            logger.warning("Webhook secret is not configured. Rejecting signature verification to prevent spoofing.")
         return False
 
-    if not secret:
-        logger.warning("No webhook secret configured")
-        return False
 
     # Parse signature
     try:
