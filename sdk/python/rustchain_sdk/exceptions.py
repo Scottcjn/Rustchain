@@ -93,6 +93,14 @@ class TransferError(RustChainError):
 class RPCError(RustChainError):
     """Raised when a generic RPC call fails."""
 
-    def __init__(self, method: str, message: str, details: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self,
+        method: str,
+        message: Optional[str] = None,
+        details: Optional[Dict[str, Any]] = None,
+    ):
+        if message is None:
+            message = method
+            method = "rpc"
         super().__init__(message, details)
         self.method = method
