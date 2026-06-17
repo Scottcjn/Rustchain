@@ -1324,6 +1324,13 @@ TOTAL_SUPPLY_RTC = 8_388_608  # Exactly 2**23 — pure binary, immutable
 TOTAL_SUPPLY_URTC = int(TOTAL_SUPPLY_RTC * 1_000_000)  # 8,388,608,000,000 uRTC
 ACCOUNT_UNIT = 1_000_000  # balances.amount_i64 uses micro-RTC.
 UTXO_UNIT = 100_000_000   # UTXO values use nano-RTC.
+# UNIT is the micro-RTC account unit. Several balance/ledger endpoints reference
+# bare `UNIT`; it was historically imported from rewards_implementation_rip200,
+# but that import is best-effort (HAVE_REWARDS) and is skipped when the rewards
+# module is absent — leaving `UNIT` undefined and 500-ing /wallet/balance and the
+# share/ledger views. Define it here unconditionally so those money-display paths
+# never depend on the optional rewards import. (== ACCOUNT_UNIT == rewards UNIT.)
+UNIT = ACCOUNT_UNIT
 ENFORCE = False  # Start with enforcement off
 CHAIN_ID = os.environ.get("RC_CHAIN_ID", "rustchain-mainnet-v2")  # testnet overrides via env (e.g. rustchain-testnet-v2)
 MIN_WITHDRAWAL = 0.1  # RTC
