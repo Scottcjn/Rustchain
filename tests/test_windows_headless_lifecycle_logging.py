@@ -65,6 +65,16 @@ def test_ready_status_and_headless_format_include_lifecycle_details():
         "message": "Epoch enrollment succeeded",
         "miner_id": "windows_abc123",
     }) == "[enroll] Epoch enrollment succeeded miner_id=windows_abc123"
+    assert module._format_headless_event({
+        "type": "share",
+        "submitted": 3,
+        "accepted": 1,
+        "success": False,
+        "error": "HTTP 403 error=no pubkey registered for miner",
+    }) == (
+        "[share] submitted=3 accepted=1 FAIL "
+        "error=HTTP 403 error=no pubkey registered for miner"
+    )
 
 
 def test_ensure_ready_surfaces_attestation_diagnostics(monkeypatch):

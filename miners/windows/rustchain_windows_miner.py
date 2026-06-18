@@ -328,7 +328,8 @@ class RustChainMiner:
                             "type":      "share",
                             "submitted": self.shares_submitted,
                             "accepted":  self.shares_accepted,
-                            "success":   success
+                            "success":   success,
+                            "error":     "" if success else self.last_header_error,
                         })
                 time.sleep(10)
             except Exception as e:
@@ -725,8 +726,9 @@ class RustChainMiner:
         }
 
     def submit_header(self, payload):
-        """Submit one signed header and remember accepted slots."""
+        """Submit one signed header and remember attempted slots."""
         slot = payload.get("header", {}).get("slot")
+        self._last_submitted_slot = slot
         try:
             response = requests.post(
                 f"{self.node_url}/headers/ingest_signed",
@@ -740,7 +742,6 @@ class RustChainMiner:
                 and bool(result.get("ok"))
             )
             if success:
-                self._last_submitted_slot = slot
                 self.last_header_error = ""
             else:
                 self.last_header_error = self._response_diagnostic(response)
@@ -842,10 +843,13 @@ def _format_headless_event(evt):
     t = evt.get("type")
     if t == "share":
         ok = "OK" if evt.get("success") else "FAIL"
-        return (
+        line = (
             f"[share] submitted={evt.get('submitted')} "
             f"accepted={evt.get('accepted')} {ok}"
         )
+        if not evt.get("success") and evt.get("error"):
+            line = f"{line} error={evt.get('error')}"
+        return line
     if t == "attest":
         return (
             f"[attest] {evt.get('message')} "
