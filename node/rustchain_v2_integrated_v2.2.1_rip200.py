@@ -2272,6 +2272,36 @@ def evaluate_rotating_fingerprint_checks(conn, epoch: int, fingerprint: dict) ->
     }
 
 
+def resolve_enroll_fingerprint(conn, miner_pk: str, data: dict) -> dict:
+    """Pick the fingerprint to feed the per-epoch rotating check at enrollment.
+
+    Prefer the fingerprint in the enroll body; otherwise fall back to the one
+    the miner already submitted at attestation
+    (miner_attest_recent.fingerprint_checks_json, stored as the bare checks
+    map -> rewrapped here as {"checks": ...}). Without this fallback, miners
+    that send the fingerprint only at attestation (the deployed clawrtc /
+    rustchain_linux miners) enroll at active_ratio=0 and collapse to zero
+    weight despite passing attestation seconds earlier. Robust to a missing
+    row, a missing column, and malformed JSON. This is the node-side half of
+    the fix; PR #7489 is the miner-side half.
+    """
+    body_fp = data.get("fingerprint")
+    if isinstance(body_fp, dict):
+        return body_fp
+    try:
+        row = conn.execute(
+            "SELECT fingerprint_checks_json FROM miner_attest_recent WHERE miner = ?",
+            (miner_pk,),
+        ).fetchone()
+        if row and row[0]:
+            checks = json.loads(row[0])
+            if isinstance(checks, dict):
+                return {"checks": checks}
+    except (sqlite3.Error, json.JSONDecodeError, TypeError, ValueError):
+        pass
+    return {}
+
+
 def _claimed_family_and_arch(device: dict) -> tuple:
     """
     Extract the claimed device family and architecture from a device dict.
@@ -5112,7 +5142,10 @@ def enroll_epoch():
         rotation_eval = evaluate_rotating_fingerprint_checks(
             c,
             epoch,
-            data.get('fingerprint') if isinstance(data.get('fingerprint'), dict) else {},
+            # Fall back to the stored attestation fingerprint when the enroll
+            # body omits one, so a signed-but-fingerprint-less enrollment does
+            # not collapse to zero weight under the rotating check.
+            resolve_enroll_fingerprint(c, miner_pk, data),
         )
         if fingerprint_failed:
             weight_units = FAILED_FINGERPRINT_WEIGHT_UNITS
