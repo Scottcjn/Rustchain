@@ -404,7 +404,7 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 - **GitHub Issues：** https://github.com/Scottcjn/Rustchain/issues
 - **Discord：** https://discord.gg/VqVVS2CW9Q
 - **Moltbook：** https://www.moltbook.com/m/rustchain
-- **FAQ：** [FAQ_TROUBLESHOOTING.md](FAQ_TROUBLESHOOTING.md)
+- **FAQ：** [FAQ_TROUBLESHOOTING.md](../FAQ_TROUBLESHOOTING.md)
 
 ---
 
@@ -426,11 +426,11 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 
 ## 后续步骤
 
-- **将 RTC 兑换为 Solana 代币：** [wRTC 指南](wrtc.md)
-- **运行完整节点：** [协议文档](PROTOCOL.md)
-- **深入了解 Proof-of-Antiquity：** [白皮书](WHITEPAPER.md)
+- **将 RTC 兑换为 Solana 代币：** [wRTC 指南](../wrtc.md)
+- **运行完整节点：** [协议文档](../PROTOCOL.md)
+- **深入了解 Proof-of-Antiquity：** [白皮书](RustChain_Whitepaper_zh-CN_v1.0.md)
 - **贡献代码：** [贡献指南](../CONTRIBUTING.md)
-- **API 参考：** [API 教程](API_WALKTHROUGH.md)
+- **API 参考：** [API 教程](API.md)
 
 ---
 
