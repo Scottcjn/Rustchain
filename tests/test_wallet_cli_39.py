@@ -51,8 +51,24 @@ def test_sign_transfer_shape():
     assert tx["from_address"].startswith("RTC")
     assert tx["to_address"].startswith("RTC")
     assert tx["amount_rtc"] == 1.23
+    assert tx["chain_id"] == cli.CHAIN_ID
     assert isinstance(tx["signature"], str) and len(tx["signature"]) > 20
     assert isinstance(tx["public_key"], str) and len(tx["public_key"]) == 64
+
+
+def test_sign_transfer_allows_legacy_no_chain_id():
+    priv = "01" * 32
+    tx = cli._sign_transfer(
+        priv,
+        "RTC" + "a" * 40,
+        "RTC" + "b" * 40,
+        1.23,
+        "m",
+        123,
+        chain_id="",
+    )
+
+    assert "chain_id" not in tx
 
 
 def test_balance_normalization():
