@@ -2284,9 +2284,14 @@ def resolve_enroll_fingerprint(conn, miner_pk: str, data: dict) -> dict:
     weight despite passing attestation seconds earlier. Robust to a missing
     row, a missing column, and malformed JSON. This is the node-side half of
     the fix; PR #7489 is the miner-side half.
+
+    An empty dict in the body ({"fingerprint": {}}) is treated the same as an
+    omitted field: a caller that sends {} carries no usable check data, so we
+    fall through to the stored attestation fingerprint rather than letting the
+    rotating check collapse to active_ratio=0 on empty input.
     """
     body_fp = data.get("fingerprint")
-    if isinstance(body_fp, dict):
+    if isinstance(body_fp, dict) and body_fp:
         return body_fp
     try:
         row = conn.execute(
