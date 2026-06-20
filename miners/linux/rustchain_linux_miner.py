@@ -735,7 +735,14 @@ class LocalMiner:
             "device": {
                 "family": self.hw_info["family"],
                 "arch": self.hw_info["arch"]
-            }
+            },
+            # Include the hardware fingerprint in the enrollment too. The node's
+            # per-epoch rotating-check (evaluate_rotating_fingerprint_checks)
+            # reads the fingerprint from the ENROLL body; without it active_ratio
+            # is 0 and the enrolled weight collapses to 0 even for real hardware
+            # that already passed attestation. (Node aliases simd_identity ->
+            # simd_bias itself, so no client-side rename is needed.)
+            "fingerprint": self.fingerprint_data
         }
 
         # Ed25519-sign the enrollment if we have a keypair AND a fresh epoch.

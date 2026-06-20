@@ -247,14 +247,14 @@ curl -sk https://rustchain.org/api/miners
 
 ## 参考
 
-- **白皮书**: [WHITEPAPER.md](./WHITEPAPER.md)
+- **白皮书**: [RustChain_Whitepaper_zh-CN_v1.0.md](./RustChain_Whitepaper_zh-CN_v1.0.md)
 - **API 文档**: [API.md](./API.md)
-- **协议规范**: [PROTOCOL.md](./PROTOCOL.md)
-- **词汇表**: [GLOSSARY.md](./GLOSSARY.md)
+- **协议规范**: [PROTOCOL.md](../PROTOCOL.md)
+- **词汇表**: [GLOSSARY.md](../GLOSSARY.md)
 
 ---
 
 **下一步**:
-- 阅读 [attestation-flow.md](./attestation-flow.md) 进行矿工集成
-- 查看 [epoch-settlement.md](./epoch-settlement.md) 了解奖励机制
-- 查看 [hardware-fingerprinting.md](./hardware-fingerprinting.md) 了解技术细节
+- 阅读 [attestation-flow.md](../attestation-flow.md) 进行矿工集成
+- 查看 [epoch-settlement.md](../epoch-settlement.md) 了解奖励机制
+- 查看 [hardware-fingerprinting.md](../hardware-fingerprinting.md) 了解技术细节
