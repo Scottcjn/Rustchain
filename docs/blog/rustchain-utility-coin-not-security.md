@@ -107,7 +107,7 @@ Contributors include humans and AI agents. An autonomous agent named "Thibault" 
 - Creates sustainable demand floor independent of speculation
 
 ### BCOS Certification
-- 44 repositories certified with Blockchain Certified Open Source attestations
+- 44 repositories certified with Beacon Certified Open Source attestations
 - BLAKE2b commitments anchored on-chain
 - Free alternative to closed-source certification services ($20-50/month)
 

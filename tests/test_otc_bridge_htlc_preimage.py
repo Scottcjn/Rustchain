@@ -185,7 +185,16 @@ def test_buy_order_defers_htlc_secret_to_matching_seller(tmp_path):
             # .json() must return a serializable dict — the broadcast/escrow path
             # does r.json().get(...) and embeds the result in the response.
             mock_resp = MagicMock(ok=True, status_code=200, text='{"ok": true}')
-            mock_resp.json.return_value = {"ok": True, "status": "broadcast", "job_id": "job-test"}
+            # #6813 crash-safe settlement: an order only finalizes to "completed"
+            # (and reveals the HTLC preimage) when the worker->recipient payout is
+            # CONFIRMED, not merely queued. Mock the node /wallet/transfer reply as
+            # a confirmed payout so this test exercises the happy completion path.
+            # A queued payout (phase "pending"/absent) parks in "payout_pending"
+            # for reconcile_settlements() to promote later.
+            mock_resp.json.return_value = {
+                "ok": True, "status": "broadcast", "job_id": "job-test",
+                "phase": "confirmed",
+            }
             mock_post.return_value = mock_resp
             confirm_response = client.post(
                 f"/api/orders/{order['order_id']}/confirm",

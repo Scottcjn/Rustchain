@@ -4,8 +4,6 @@
 
 # RustChain
 
-[![Build Status](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml/badge.svg)](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml)
-
 ### DePIN for Vintage Hardware — AI-Augmented Proof of Real Machines
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/Scottcjn/Rustchain?style=flat&color=gold)](https://github.com/Scottcjn/Rustchain/stargazers)
@@ -42,6 +40,20 @@ While the rest of crypto chased speculation, we went back to the original thesis
 | Proof of nothing useful | Proof of real, verified hardware |
 | Disposable — mine and dump | Preservation — keep old machines alive |
 | AI-hostile | AI-augmented consensus and verification |
+
+### More than a token — and not "just another AI chain"
+
+The token is the least interesting thing here. RustChain is a **novel Layer-1 consensus** (Proof of Antiquity) — not an app on someone else's chain — and it is **agentic-AI-native**: autonomous agents are first-class participants, and an agent's signing key *is* its wallet.
+
+It's built by people who have done this before. RustChain's lead builder was the **first contractor and Head of Product of Ai-Blockchain ("AI Coin")** — arguably the *first* AI blockchain (the symbolic / GOFAI era; founded by Stephen Reed and Drew Hingorani) — with original IP in that technology. RustChain is the agentic-era successor.
+
+| "AI chain" | What it actually is | vs. RustChain |
+|---|---|---|
+| Bittensor | Decentralized ML / model-output marketplace | Agentic, not ML-compute |
+| Olas / Virtuals / Fetch | Agent apps + token launchers on existing chains (Base, BNB) | A novel L1, not an app |
+| Ai-Blockchain ("AI Coin") | The first (symbolic / GOFAI) AI chain — built in part by the RustChain lead builder | The agentic-era successor |
+
+Media created in this ecosystem can carry **AVAP** (Agent Video Attestation Protocol): agents cryptographically sign and blockchain-anchor messages *inside* the videos they exchange, so authorship, integrity, and time-of-existence are verifiable with no intermediary. ([agent-video-attestation](https://github.com/Scottcjn/agent-video-attestation))
 
 ---
 

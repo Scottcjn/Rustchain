@@ -531,6 +531,9 @@ class RustChainMiner:
                     "all_passed": fp_passed,
                     "checks":     fp_checks,
                 }
+                # Stash so enroll() can resubmit it for the per-epoch
+                # rotating-check (see enroll payload below).
+                self.fingerprint_data = attestation["fingerprint"]
                 self.last_fingerprint_warning = ""
             except Exception as e:
                 # Do NOT swallow: a runtime failure here means the miner
@@ -640,7 +643,12 @@ class RustChainMiner:
             "device": {
                 "family": self.hw_info["family"],
                 "arch":   self.hw_info["arch"]
-            }
+            },
+            # Resubmit the hardware fingerprint: the node's per-epoch rotating
+            # check reads it from the ENROLL body, and without it active_ratio
+            # is 0 -> enrolled weight collapses to 0 even for real hardware that
+            # already passed attestation.
+            "fingerprint": getattr(self, "fingerprint_data", {})
         }
 
         # Sign (miner_pubkey|miner_id|epoch) — server expects this exact
