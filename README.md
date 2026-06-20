@@ -56,7 +56,7 @@ It's built by people who have done this before. RustChain's lead builder was the
 |---|---|---|
 | Bittensor | Decentralized ML / model-output marketplace | Agentic, not ML-compute |
 | Olas / Virtuals / Fetch | Agent apps + token launchers on existing chains (Base, BNB) | A novel L1, not an app |
-| Ai-Blockchain ("AI Coin") | The first (symbolic / GOFAI) AI chain — we helped build it | The agentic-era successor |
+| Ai-Blockchain ("AI Coin") | The first (symbolic / GOFAI) AI chain — built in part by the RustChain lead builder | The agentic-era successor |
 
 Media created in this ecosystem can carry **AVAP** (Agent Video Attestation Protocol): agents cryptographically sign and blockchain-anchor messages *inside* the videos they exchange, so authorship, integrity, and time-of-existence are verifiable with no intermediary. ([agent-video-attestation](https://github.com/Scottcjn/agent-video-attestation))
 
