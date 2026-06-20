@@ -53,6 +53,7 @@ try:
         DUST_THRESHOLD as UTXO_DUST_THRESHOLD,
         MAX_OUTPUTS as UTXO_MAX_OUTPUTS,
         UtxoDB,
+        coin_select as utxo_coin_select,
     )
     HAVE_UTXO = True
 except ImportError:
@@ -9767,6 +9768,86 @@ def void_pending():
         conn.close()
 
 
+def _consume_migrated_utxo_for_confirm(c, from_m, to_m, amount_i64):
+    """Spend the sender's migrated UTXO box(es) when an account-model transfer
+    is confirmed, routing value to the recipient.
+
+    Without this, /pending/confirm debits the sender's *account* balance but
+    leaves their migrated UTXO box unspent, so the sender can double-spend the
+    box after confirmation (fund-loss vector -- RustChain #7499).
+
+    Runs on the caller's cursor/connection so it shares the open transaction
+    and savepoint: a failure here rolls back the account debit/credit too,
+    keeping the account and UTXO models atomic. No-op for pure account wallets
+    (no unspent boxes), so behavior for non-migrated miners is unchanged.
+    Gated only on HAVE_UTXO, not UTXO_DUAL_WRITE: a migrated box must be
+    consumed whenever it exists, regardless of dual-write configuration.
+    """
+    conn = c.connection  # share the open BEGIN/savepoint -- single write lock
+    # If this DB has no UTXO model, there is nothing to consume (pure account DB).
+    if not c.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='utxo_boxes'"
+    ).fetchone():
+        return
+    # All reads/writes go through the SHARED connection. Opening a second
+    # connection here would deadlock against this open write transaction
+    # (e.g. under concurrent confirm workers). apply_transaction reads boxes
+    # by column name, so set a Row factory for the duration; confirm_pending's
+    # own queries use positional tuples, so restore it afterward.
+    from db_helpers import fetch_page  # bounded read (issue #6627); excluded from fetchall guard
+    prev_row_factory = conn.row_factory
+    conn.row_factory = sqlite3.Row
+    try:
+        # Largest-value-first within a bounded page so the page carries the most
+        # coverage; coin_select re-sorts internally. 1000 boxes is far above any
+        # realistic migrated wallet (genesis migration seeds one box per wallet).
+        boxes = [
+            dict(r)
+            for r in fetch_page(
+                conn,
+                "SELECT box_id, value_nrtc FROM utxo_boxes "
+                "WHERE owner_address = ? AND spent_at IS NULL "
+                "ORDER BY value_nrtc DESC, box_id ASC",
+                (from_m,),
+                limit=1000,
+            )
+        ]
+        if not boxes:
+            return  # not a migrated wallet -- nothing to consume
+        # Account balances are micro-RTC; UTXO values are nano-RTC (scale = 100).
+        target_nrtc = int(amount_i64) * (UTXO_UNIT // ACCOUNT_UNIT)
+        selected, change_nrtc = utxo_coin_select(boxes, target_nrtc)
+        if not selected:
+            # Sender's UTXO side is underfunded vs the account debit -- the two
+            # models diverged (pre-existing inconsistency). Fail SAFE: raising
+            # rolls back this row's savepoint, so the row stays pending and is
+            # retried next cycle and reported in the response `errors[]` -- the
+            # account is NOT debited while leaving the box spendable.
+            raise RuntimeError(f"utxo_underfunded_for_confirm:{from_m}")
+        outputs = [{"address": to_m, "value_nrtc": target_nrtc}]
+        if change_nrtc > 0:
+            outputs.append({"address": from_m, "value_nrtc": change_nrtc})
+        selected_total = sum(int(u["value_nrtc"]) for u in selected)
+        # Sub-DUST_THRESHOLD remainder is absorbed as fee (change_nrtc==0), the
+        # same dust policy coin_select/utxo_endpoints already apply on the signed
+        # UTXO transfer path -- not a new value-burn for confirm.
+        fee_nrtc = selected_total - target_nrtc - change_nrtc
+        tx = {
+            "tx_type": "transfer",
+            "inputs": [
+                {"box_id": u["box_id"], "spending_proof": "account_confirm_authorized"}
+                for u in selected
+            ],
+            "outputs": outputs,
+            "fee_nrtc": max(0, fee_nrtc),
+            "timestamp": int(time.time()),
+        }
+        if not UtxoDB(DB_PATH).apply_transaction(tx, current_slot(), conn=conn):
+            raise RuntimeError(f"utxo_confirm_apply_failed:{from_m}")
+    finally:
+        conn.row_factory = prev_row_factory
+
+
 @app.route('/pending/confirm', methods=['POST'])
 def confirm_pending():
     """Worker: Confirm pending transfers that have passed the delay period"""
@@ -9845,7 +9926,13 @@ def confirm_pending():
                 # Execute the actual transfer
                 _apply_wallet_balance_delta(c, from_m, -amount, balance_cols)
                 _apply_wallet_balance_delta(c, to_m, amount, balance_cols)
-                
+
+                # Consume the sender's migrated UTXO box(es) so the account debit
+                # cannot be double-spent via the still-unspent box (RustChain #7499).
+                # No-op for pure account wallets; runs inside this savepoint.
+                if HAVE_UTXO:
+                    _consume_migrated_utxo_for_confirm(c, from_m, to_m, amount)
+
                 # Log to IMMUTABLE ledger (the real chain!)
                 c.execute("""
                     INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason)
