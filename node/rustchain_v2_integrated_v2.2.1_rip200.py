@@ -9634,7 +9634,7 @@ def _mirror_pending_confirm_to_utxo(conn, from_miner, to_miner, amount_i64, epoc
                WHERE owner_address = ? AND spent_at IS NULL
                ORDER BY value_nrtc ASC, box_id ASC""",
             (from_miner,),
-        ).fetchall()
+        )
     ]
     if not sender_utxos:
         return
