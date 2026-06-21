@@ -53,11 +53,13 @@ try:
         DUST_THRESHOLD as UTXO_DUST_THRESHOLD,
         MAX_OUTPUTS as UTXO_MAX_OUTPUTS,
         UtxoDB,
+        coin_select as utxo_coin_select,
     )
     HAVE_UTXO = True
 except ImportError:
     UTXO_DUST_THRESHOLD = 1_000
     UTXO_MAX_OUTPUTS = 100
+    utxo_coin_select = None
     HAVE_UTXO = False
     if UTXO_DUAL_WRITE:
         print("[WARN] utxo_db.py not found but UTXO_DUAL_WRITE=1 — disabling")
@@ -9588,6 +9590,93 @@ def _pending_confirm_limit(raw_limit=None):
     return max(1, min(limit, PENDING_CONFIRM_MAX_LIMIT))
 
 
+def _mirror_pending_confirm_to_utxo(conn, from_miner, to_miner, amount_i64, epoch, tx_hash, now):
+    """Move migrated UTXO funds when an account pending transfer confirms.
+
+    Pending ledger confirmations debit the account model. After genesis
+    migration, the sender may also have spendable UTXO boxes representing the
+    same balance. Leaving those boxes untouched lets the same funds be spent a
+    second time through the UTXO path.
+
+    Pre-migration wallets with no UTXO boxes are left alone. If UTXO boxes exist
+    but cannot cover the amount, fail the confirmation instead of committing a
+    cross-model divergence.
+    """
+    if not HAVE_UTXO or utxo_coin_select is None:
+        return
+    if amount_i64 <= 0:
+        return
+
+    amount_nrtc = int(amount_i64) * (UTXO_UNIT // ACCOUNT_UNIT)
+    utxo_db = UtxoDB(DB_PATH)
+    utxo_db.init_tables(conn=conn)
+    sender_utxos = [
+        {
+            "box_id": row[0],
+            "value_nrtc": row[1],
+            "proposition": row[2],
+            "owner_address": row[3],
+            "creation_height": row[4],
+            "transaction_id": row[5],
+            "output_index": row[6],
+            "tokens_json": row[7],
+            "registers_json": row[8],
+            "created_at": row[9],
+            "spent_at": row[10],
+            "spent_by_tx": row[11],
+        }
+        for row in conn.execute(
+            """SELECT box_id, value_nrtc, proposition, owner_address,
+                      creation_height, transaction_id, output_index,
+                      tokens_json, registers_json, created_at, spent_at,
+                      spent_by_tx
+               FROM utxo_boxes
+               WHERE owner_address = ? AND spent_at IS NULL
+               ORDER BY value_nrtc ASC, box_id ASC""",
+            (from_miner,),
+        ).fetchall()
+    ]
+    if not sender_utxos:
+        return
+
+    selected, change_nrtc = utxo_coin_select(sender_utxos, amount_nrtc)
+    if not selected:
+        raise RuntimeError("insufficient UTXO balance for pending confirmation mirror")
+
+    outputs = [{"address": to_miner, "value_nrtc": amount_nrtc}]
+    if change_nrtc > 0:
+        outputs.append({"address": from_miner, "value_nrtc": change_nrtc})
+
+    try:
+        block_height = int(epoch)
+    except (TypeError, ValueError):
+        block_height = int(now)
+    if block_height < 0:
+        block_height = int(now)
+
+    fee_nrtc = sum(box["value_nrtc"] for box in selected) - amount_nrtc - change_nrtc
+    ok = utxo_db.apply_transaction(
+        {
+            "tx_type": "transfer",
+            "inputs": [
+                {
+                    "box_id": box["box_id"],
+                    "spending_proof": f"pending_ledger:{tx_hash or ''}",
+                }
+                for box in selected
+            ],
+            "outputs": outputs,
+            "fee_nrtc": fee_nrtc,
+            "timestamp": int(now),
+        },
+        block_height=block_height,
+        conn=conn,
+    )
+    if not ok:
+        raise RuntimeError("UTXO mirror transaction failed for pending confirmation")
+
+
+
 def _pending_overdue_stats(c, now):
     """Read-only: how many pending transfers are past their confirm window, and
     the oldest one's overdue seconds. Pure observability — never mutates."""
@@ -9795,6 +9884,7 @@ def confirm_pending():
     errors = []
 
     conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
     try:
         c = conn.cursor()
         _ensure_transfer_ledger_table(c)
@@ -9842,6 +9932,12 @@ def confirm_pending():
                     c.execute(f"RELEASE SAVEPOINT {savepoint}")
                     continue
                 
+                # Mirror the same movement in the UTXO model before committing
+                # the account debit. If the sender has migrated UTXO boxes and
+                # they cannot be consumed/moved, abort this pending confirmation
+                # so the account and UTXO ledgers do not diverge.
+                _mirror_pending_confirm_to_utxo(conn, from_m, to_m, amount, epoch, tx_hash, now)
+
                 # Execute the actual transfer
                 _apply_wallet_balance_delta(c, from_m, -amount, balance_cols)
                 _apply_wallet_balance_delta(c, to_m, amount, balance_cols)
