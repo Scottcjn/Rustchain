@@ -153,9 +153,9 @@ curl -fsS "https://rustchain.org/wallet/balance?miner_id=eafc6f14eab6d5c5362fe65
 
 ### `GET /wallet/history`
 
-Read recent transfer history for a wallet. This is a public, wallet-scoped view
-over the pending transfer ledger and includes pending, confirmed, and voided
-transfers. Returns an empty array for wallets with no history.
+Read unified history for a wallet from the confirmed ledger, epoch rewards, and
+pending transfer ledger. Results from all three sources are sorted together by
+timestamp before pagination is applied.
 
 Canonical query parameter is `miner_id`. The endpoint also accepts `address`
 as a compatibility alias for older callers.
@@ -171,10 +171,47 @@ curl -fsS "https://rustchain.org/wallet/history?miner_id=eafc6f14eab6d5c5362fe65
 | `miner_id` | string | Yes* | Wallet identifier (canonical) |
 | `address` | string | Yes* | Backward-compatible alias for `miner_id` |
 | `limit` | integer | No | Max records (1-200, default: 50) |
+| `offset` | integer | No | Records to skip (0-9800, default: 0) |
 
-*Either `miner_id` or `address` is required.
+*Either `miner_id` or `address` is required. If both are provided, they must match.
 
-**Response:**
+**Current response (unified contract from #908/#997):**
+```json
+{
+  "ok": true,
+  "miner_id": "aliceRTC",
+  "transactions": [
+    {
+      "type": "transfer_in",
+      "amount": 1.25,
+      "epoch": null,
+      "timestamp": 1772848800,
+      "tx_hash": "6df5d4d25b6deef8f0b2e0fa726cecf1",
+      "status": "pending",
+      "from": "bobRTC"
+    },
+    {
+      "type": "reward",
+      "amount": 0.75,
+      "epoch": 424,
+      "timestamp": 0,
+      "tx_hash": null
+    }
+  ],
+  "total": 2
+}
+```
+
+Each transaction contains `type`, `amount`, `epoch`, `timestamp`, and
+`tx_hash`. Transfer entries also include `from` or `to`; pending transfers
+include `status`. Confirmed ledger entries may include `reason`. Unknown
+wallets return the same envelope with `transactions: []` and `total: 0`.
+
+<details>
+<summary>Legacy flat-array response (before #997; migration reference only)</summary>
+
+The fields below are not returned by the current unified endpoint.
+
 ```json
 [
   {
@@ -271,6 +308,8 @@ curl -fsS "https://rustchain.org/wallet/history?miner_id=eafc6f14eab6d5c5362fe65
 | `memo` | string | Signed-transfer memo when present |
 | `confirmed_at` | integer | Confirmation timestamp when confirmed |
 | `confirms_at` | integer | Scheduled confirmation time for pending transfers |
+
+</details>
 
 ### `POST /wallet/transfer/signed`
 
@@ -461,8 +500,8 @@ resp = requests.get(
     "https://rustchain.org/wallet/history",
     params={"miner_id": miner_id, "limit": 10},
 )
-for tx in resp.json().get("transfers", []):
-    print(f"{tx['txid'][:12]}... | {tx['direction']} | {tx['amount_rtc']} RTC")
+for tx in resp.json().get("transactions", []):
+    print(f"{tx['type']} | {tx['amount']} RTC | {tx.get('tx_hash')}")
 ```
 
 ### Submit Attestation (Authenticated)

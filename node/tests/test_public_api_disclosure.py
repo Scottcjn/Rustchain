@@ -14,7 +14,7 @@ ADMIN_KEY = "0123456789abcdef0123456789abcdef"
 class TestPublicApiDisclosure(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls._tmp = tempfile.TemporaryDirectory()
+        cls._tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         cls._prev_db_path = os.environ.get("RUSTCHAIN_DB_PATH")
         cls._prev_admin_key = os.environ.get("RC_ADMIN_KEY")
         os.environ["RUSTCHAIN_DB_PATH"] = os.path.join(cls._tmp.name, "import.db")
@@ -202,75 +202,46 @@ class TestPublicApiDisclosure(unittest.TestCase):
             },
         )
 
-    def test_wallet_history_public_formats_pending_confirmed_and_failed_rows(self):
+    def test_wallet_history_public_uses_unified_response_contract(self):
         with patch.object(self.mod.sqlite3, "connect") as mock_connect:
             mock_conn = mock_connect.return_value.__enter__.return_value
-            mock_conn.execute.return_value.fetchall.return_value = [
-                (
-                    12,
-                    1700001000,
-                    "alice",
-                    "bob",
-                    2500000,
-                    "signed_transfer:coffee",
-                    "pending",
-                    1700001000,
-                    1700087400,
-                    None,
-                    "tx_pending",
-                    None,
-                ),
-                (
-                    11,
-                    1700000000,
-                    "carol",
-                    "alice",
-                    1250000,
-                    "signed_transfer:thanks",
-                    "confirmed",
-                    1700000000,
-                    1700086400,
-                    1700086500,
-                    "tx_confirmed",
-                    None,
-                ),
-                (
-                    10,
-                    1699999000,
-                    "alice",
-                    "mallory",
-                    500000,
-                    "manual_review",
-                    "voided",
-                    1699999000,
-                    1700085400,
-                    None,
-                    "tx_failed",
-                    "admin_void",
-                ),
-            ]
+
+            def execute(sql, _params):
+                result = MagicMock()
+                if "FROM ledger" in sql:
+                    result.fetchall.return_value = [
+                        (1700000000, 11, "alice", 1250000, "transfer_in:carol:tx_confirmed")
+                    ]
+                elif "FROM epoch_rewards" in sql:
+                    result.fetchall.return_value = []
+                elif "FROM pending_ledger" in sql:
+                    result.fetchall.return_value = [
+                        (
+                            1700001000,
+                            "alice",
+                            "bob",
+                            2500000,
+                            "coffee",
+                            "pending",
+                            "tx_pending",
+                            1700001000,
+                        )
+                    ]
+                return result
+
+            mock_conn.execute.side_effect = execute
 
             resp = self.client.get("/wallet/history?miner_id=alice&limit=3")
             self.assertEqual(resp.status_code, 200)
             body = resp.get_json()
 
-            self.assertEqual(len(body), 3)
-            self.assertEqual(body[0]["tx_id"], "tx_pending")
-            self.assertEqual(body[0]["direction"], "sent")
-            self.assertEqual(body[0]["counterparty"], "bob")
-            self.assertEqual(body[0]["memo"], "coffee")
-            self.assertEqual(body[0]["status"], "pending")
-            self.assertEqual(body[0]["amount_i64"], 2500000)
-
-            self.assertEqual(body[1]["direction"], "received")
-            self.assertEqual(body[1]["counterparty"], "carol")
-            self.assertEqual(body[1]["status"], "confirmed")
-            self.assertEqual(body[1]["confirmations"], 1)
-            self.assertEqual(body[1]["memo"], "thanks")
-
-            self.assertEqual(body[2]["status"], "failed")
-            self.assertEqual(body[2]["raw_status"], "voided")
-            self.assertEqual(body[2]["status_reason"], "admin_void")
+            self.assertEqual(body["ok"], True)
+            self.assertEqual(body["miner_id"], "alice")
+            self.assertEqual(body["total"], 2)
+            self.assertEqual(body["transactions"][0]["status"], "pending")
+            self.assertEqual(body["transactions"][0]["to"], "bob")
+            self.assertEqual(body["transactions"][1]["type"], "transfer_in")
+            self.assertEqual(body["transactions"][1]["from"], "carol")
 
     def test_wallet_history_public_accepts_address_alias(self):
         with patch.object(self.mod.sqlite3, "connect") as mock_connect:
@@ -279,7 +250,10 @@ class TestPublicApiDisclosure(unittest.TestCase):
 
             resp = self.client.get("/wallet/history?address=alice")
             self.assertEqual(resp.status_code, 200)
-            self.assertEqual(resp.get_json(), [])
+            self.assertEqual(
+                resp.get_json(),
+                {"ok": True, "miner_id": "alice", "transactions": [], "total": 0},
+            )
 
     def test_wallet_history_requires_identifier(self):
         resp = self.client.get("/wallet/history")

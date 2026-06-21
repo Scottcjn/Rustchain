@@ -216,10 +216,9 @@ curl -sk "https://rustchain.org/wallet/balance?miner_id=scott"
 
 #### GET /wallet/history
 
-Read recent transfer history for a wallet. This endpoint is public but always
-scoped to a single wallet and only returns entries where that wallet is either
-the sender or recipient. Returns an empty array for wallets with no history
-(non-existent wallets do not produce an error).
+Read unified history for a wallet from the confirmed ledger, epoch rewards, and
+pending transfer ledger. The endpoint is public and wallet-scoped. Results from
+all sources are sorted together before pagination.
 
 ```bash
 curl -sk "https://rustchain.org/wallet/history?miner_id=scott&limit=10"
@@ -231,10 +230,47 @@ curl -sk "https://rustchain.org/wallet/history?miner_id=scott&limit=10"
 | `miner_id` | string | Yes* | Wallet identifier (canonical parameter) |
 | `address` | string | Yes* | Backward-compatible alias for `miner_id` |
 | `limit` | integer | No | Max records to return, clamped to `1..200` (default: 50) |
+| `offset` | integer | No | Records to skip, clamped to `0..9800` (default: 0) |
 
 *Either `miner_id` or `address` is required. If both are provided, they must match.
 
-**Response**:
+**Current Response**:
+```json
+{
+  "ok": true,
+  "miner_id": "scott",
+  "transactions": [
+    {
+      "type": "transfer_out",
+      "amount": 1.25,
+      "epoch": 424,
+      "timestamp": 1771187406,
+      "tx_hash": "6df5d4d25b6deef8f0b2e0fa726cecf1",
+      "reason": "transfer_out:friend:6df5d4d25b6deef8f0b2e0fa726cecf1",
+      "to": "friend"
+    },
+    {
+      "type": "reward",
+      "amount": 0.75,
+      "epoch": 423,
+      "timestamp": 0,
+      "tx_hash": null
+    }
+  ],
+  "total": 2
+}
+```
+
+Every transaction contains `type`, `amount`, `epoch`, `timestamp`, and
+`tx_hash`. Transfer entries also include `from` or `to`; pending transfers
+include `status`. Confirmed ledger entries may include `reason`. Unknown
+wallets return the same envelope with an empty transaction array.
+
+<details>
+<summary>Legacy flat-array response (before #997; migration reference only)</summary>
+
+The fields below are not returned by the current unified endpoint.
+
 ```json
 [
   {
@@ -320,6 +356,8 @@ curl -sk "https://rustchain.org/wallet/history?miner_id=scott&limit=10"
 - Empty array `[]` is returned for wallets with no history (not an error)
 - Non-existent wallets return empty array (no WALLET_NOT_FOUND error)
 
+</details>
+
 **Error Responses**:
 
 Missing identifier:
@@ -350,7 +388,8 @@ Invalid limit:
 - Default limit: 50 records
 - Minimum limit: 1 (values < 1 are clamped)
 - Maximum limit: 200 (values > 200 are clamped)
-- Invalid limit values (non-integer) return 400 error
+- Offset is clamped to `0..9800`
+- Invalid limit or offset values (non-integer) return 400 error
 
 ---
 
