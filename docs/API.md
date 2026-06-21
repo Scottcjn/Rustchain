@@ -153,12 +153,20 @@ curl -fsS "https://rustchain.org/wallet/balance?miner_id=eafc6f14eab6d5c5362fe65
 
 ### `GET /wallet/history`
 
-Read recent transfer history for a wallet. This is a public, wallet-scoped view
-over the pending transfer ledger and includes pending, confirmed, and voided
-transfers. Returns an empty array for wallets with no history.
+Read recent transaction history for a wallet. This is a public, wallet-scoped
+view that merges three on-disk sources into a single, time-sorted feed
+(unified contract, issues #908 / #997):
+
+- **`ledger`** — settled transfers and other ledger movements
+- **`epoch_rewards`** — mining payouts (joined to `epoch_state`)
+- **`pending_ledger`** — in-flight (not-yet-confirmed) transfers
 
 Canonical query parameter is `miner_id`. The endpoint also accepts `address`
 as a compatibility alias for older callers.
+
+> **Note:** earlier revisions of this page described a flat top-level array with
+> `tx_id` / `direction` / `counterparty` fields. The live node returns the
+> envelope documented below; update any client that still parses a bare array.
 
 **Request:**
 ```bash
@@ -171,106 +179,81 @@ curl -fsS "https://rustchain.org/wallet/history?miner_id=eafc6f14eab6d5c5362fe65
 | `miner_id` | string | Yes* | Wallet identifier (canonical) |
 | `address` | string | Yes* | Backward-compatible alias for `miner_id` |
 | `limit` | integer | No | Max records (1-200, default: 50) |
+| `offset` | integer | No | Records to skip (0-9800, default: 0) |
 
 *Either `miner_id` or `address` is required.
 
 **Response:**
+
+The endpoint returns an **envelope**, not a bare array:
+
 ```json
-[
-  {
-    "tx_id": "6df5d4d25b6deef8f0b2e0fa726cecf1",
-    "tx_hash": "6df5d4d25b6deef8f0b2e0fa726cecf1",
-    "from_addr": "aliceRTC",
-    "to_addr": "bobRTC",
-    "amount": 1.25,
-    "amount_i64": 1250000,
-    "amount_rtc": 1.25,
-    "timestamp": 1772848800,
-    "created_at": 1772848800,
-    "confirmed_at": null,
-    "confirms_at": 1772935200,
-    "status": "pending",
-    "raw_status": "pending",
-    "status_reason": null,
-    "confirmations": 0,
-    "direction": "sent",
-    "counterparty": "bobRTC",
-    "reason": "signed_transfer:payment",
-    "memo": "payment"
-  },
-  {
-    "tx_id": "abc123def456...",
-    "tx_hash": "abc123def456...",
-    "from_addr": "carolRTC",
-    "to_addr": "aliceRTC",
-    "amount": 5.0,
-    "amount_i64": 5000000,
-    "amount_rtc": 5.0,
-    "timestamp": 1772762400,
-    "created_at": 1772762400,
-    "confirmed_at": 1772848800,
-    "confirms_at": 1772848800,
-    "status": "confirmed",
-    "raw_status": "confirmed",
-    "status_reason": null,
-    "confirmations": 1,
-    "direction": "received",
-    "counterparty": "carolRTC",
-    "reason": null,
-    "memo": null
-  }
-]
+{
+  "ok": true,
+  "miner_id": "aliceRTC",
+  "transactions": [
+    {
+      "type": "transfer_out",
+      "amount": 1.25,
+      "epoch": 842,
+      "timestamp": 1772848800,
+      "tx_hash": "6df5d4d25b6deef8f0b2e0fa726cecf1",
+      "reason": "transfer_out:bobRTC:6df5d4d2...",
+      "to": "bobRTC"
+    },
+    {
+      "type": "transfer_in",
+      "amount": 5.0,
+      "epoch": null,
+      "timestamp": 1772762400,
+      "tx_hash": "pending-tx-abc",
+      "status": "pending",
+      "from": "carolRTC"
+    },
+    {
+      "type": "reward",
+      "amount": 0.5,
+      "epoch": 840,
+      "timestamp": 0,
+      "tx_hash": null
+    }
+  ],
+  "total": 3
+}
 ```
 
+**Envelope fields:**
 | Field | Type | Description |
 |-------|------|-------------|
-| `tx_id` | string | Transaction hash, or `pending_{id}` for pending |
-| `tx_hash` | string | Same as `tx_id` (alias) |
-| `from_addr` | string | Sender wallet address |
-| `to_addr` | string | Recipient wallet address |
+| `ok` | bool | Always `true` on success |
+| `miner_id` | string | The resolved wallet identifier |
+| `transactions` | array | Unified transactions, newest first (by `timestamp`) |
+| `total` | integer | Count of merged transactions in the response (bounded by `offset+limit`) |
+
+**Transaction object** — the present fields depend on `type`:
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | string | `transfer_in`, `transfer_out`, `ledger`, or `reward` |
 | `amount` | float | Amount in RTC (human-readable) |
-| `amount_i64` | integer | Amount in micro-RTC (6 decimals) |
-| `amount_rtc` | float | Same as `amount` (alias) |
-| `timestamp` | integer | Transfer creation Unix timestamp |
-| `created_at` | integer | Same as `timestamp` (alias) |
-| `confirmed_at` | integer\|null | Confirmation timestamp (null if pending) |
-| `confirms_at` | integer\|null | Scheduled confirmation time |
-| `status` | string | `pending`, `confirmed`, or `failed` |
-| `raw_status` | string | Raw DB status (`pending`, `confirmed`, `voided`) |
-| `status_reason` | string\|null | Reason for failure/void |
-| `confirmations` | integer | 1 if confirmed, 0 otherwise |
-| `direction` | string | `sent` or `received` (relative to queried wallet) |
-| `counterparty` | string | Other wallet in the transfer |
-| `reason` | string\|null | Raw reason field from ledger |
-| `memo` | string\|null | Extracted memo from `signed_transfer:` prefix |
+| `epoch` | integer\|null | Settlement epoch; `null` for pending transfers |
+| `timestamp` | integer | Unix time of the entry; `0` for `reward` rows (epoch-bound, untimed) |
+| `tx_hash` | string\|null | Transfer hash; `null` for generic `ledger` and `reward` rows |
+| `reason` | string | Raw ledger reason (present on ledger-sourced rows) |
+| `from` | string | Counterparty sender (`transfer_in` only) |
+| `to` | string | Counterparty recipient (`transfer_out` only) |
+| `status` | string | Present on **pending** transfers only (e.g. `pending`) |
 
 **Notes:**
-- Transactions ordered by `created_at DESC, id DESC` (newest first)
-- `memo` extracted from `reason` when it starts with `signed_transfer:`
-- Pending transfers use `pending_{id}` as `tx_id` until confirmed
-- Empty array `[]` returned for wallets with no history
-- Status normalized: `pending`→`pending`, `confirmed`→`confirmed`, others→`failed`
+- Results are merged from `ledger`, `epoch_rewards`, and `pending_ledger`, then sorted by `timestamp` descending (newest first).
+- `transfer_in` / `transfer_out` carry the counterparty in `from` / `to` respectively; generic `ledger` and `reward` rows carry neither.
+- A `status` field appears only on pending (non-confirmed) transfers; settled `ledger` rows omit it. Pending rows already marked `confirmed` are not duplicated here — they surface via the settled `ledger`.
+- `reward` rows have `timestamp: 0` and `tx_hash: null`.
+- An empty wallet returns `{"ok": true, "miner_id": "<id>", "transactions": [], "total": 0}`.
 
 **Pagination:**
-- Default limit: 50 records
-- Clamped to range 1-200
-- Invalid limit (non-integer) returns 400 error
-```
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `tx_id` | string | Transaction hash, or a stable pending fallback ID |
-| `from_addr` | string | Sender wallet address |
-| `to_addr` | string | Recipient wallet address |
-| `amount` | float | Amount transferred in RTC |
-| `amount_i64` | integer | Amount in micro-RTC |
-| `timestamp` | integer | Transfer creation timestamp |
-| `status` | string | `pending`, `confirmed`, or `failed` |
-| `direction` | string | `sent` or `received`, relative to the requested wallet |
-| `counterparty` | string | The other wallet in the transfer |
-| `memo` | string | Signed-transfer memo when present |
-| `confirmed_at` | integer | Confirmation timestamp when confirmed |
-| `confirms_at` | integer | Scheduled confirmation time for pending transfers |
+- Default limit: 50 records; clamped to the range 1-200.
+- `offset` defaults to 0 and is clamped to 0-9800.
+- A non-integer `limit` or `offset` returns a `400` error.
 
 ### `POST /wallet/transfer/signed`
 
@@ -461,8 +444,9 @@ resp = requests.get(
     "https://rustchain.org/wallet/history",
     params={"miner_id": miner_id, "limit": 10},
 )
-for tx in resp.json().get("transfers", []):
-    print(f"{tx['txid'][:12]}... | {tx['direction']} | {tx['amount_rtc']} RTC")
+for tx in resp.json().get("transactions", []):
+    counterparty = tx.get("from") or tx.get("to") or "-"
+    print(f"{(tx.get('tx_hash') or '')[:12]:12} | {tx['type']:13} | {tx['amount']} RTC | {counterparty}")
 ```
 
 ### Submit Attestation (Authenticated)

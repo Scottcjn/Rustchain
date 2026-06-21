@@ -216,10 +216,10 @@ curl -sk "https://rustchain.org/wallet/balance?miner_id=scott"
 
 #### GET /wallet/history
 
-Read recent transfer history for a wallet. This endpoint is public but always
-scoped to a single wallet and only returns entries where that wallet is either
-the sender or recipient. Returns an empty array for wallets with no history
-(non-existent wallets do not produce an error).
+Read recent transaction history for a wallet. This endpoint is public but always
+scoped to a single wallet. It merges three on-disk sources — settled `ledger`
+transfers, `epoch_rewards` mining payouts, and in-flight `pending_ledger`
+transfers — into one time-sorted feed (unified contract, issues #908 / #997).
 
 ```bash
 curl -sk "https://rustchain.org/wallet/history?miner_id=scott&limit=10"
@@ -231,94 +231,78 @@ curl -sk "https://rustchain.org/wallet/history?miner_id=scott&limit=10"
 | `miner_id` | string | Yes* | Wallet identifier (canonical parameter) |
 | `address` | string | Yes* | Backward-compatible alias for `miner_id` |
 | `limit` | integer | No | Max records to return, clamped to `1..200` (default: 50) |
+| `offset` | integer | No | Records to skip, clamped to `0..9800` (default: 0) |
 
 *Either `miner_id` or `address` is required. If both are provided, they must match.
 
 **Response**:
+
+The endpoint returns an **envelope**, not a bare array. (Earlier revisions of
+this page documented a flat array with `tx_id`/`direction`/`counterparty`; update
+any client that still parses a top-level list.)
+
 ```json
-[
-  {
-    "tx_id": "6df5d4d25b6deef8f0b2e0fa726cecf1",
-    "tx_hash": "6df5d4d25b6deef8f0b2e0fa726cecf1",
-    "from_addr": "scott",
-    "to_addr": "friend",
-    "amount": 1.25,
-    "amount_i64": 1250000,
-    "amount_rtc": 1.25,
-    "timestamp": 1771187406,
-    "created_at": 1771187406,
-    "confirmed_at": 1771191006,
-    "confirms_at": 1771191006,
-    "status": "pending",
-    "raw_status": "pending",
-    "status_reason": null,
-    "confirmations": 0,
-    "direction": "sent",
-    "counterparty": "friend",
-    "reason": "signed_transfer:payment",
-    "memo": "payment"
-  },
-  {
-    "tx_id": "pending_42",
-    "tx_hash": "pending_42",
-    "from_addr": "alice",
-    "to_addr": "scott",
-    "amount": 5.0,
-    "amount_i64": 5000000,
-    "amount_rtc": 5.0,
-    "timestamp": 1771180000,
-    "created_at": 1771180000,
-    "confirmed_at": null,
-    "confirms_at": 1771266400,
-    "status": "confirmed",
-    "raw_status": "confirmed",
-    "status_reason": null,
-    "confirmations": 1,
-    "direction": "received",
-    "counterparty": "alice",
-    "reason": null,
-    "memo": null
-  }
-]
+{
+  "ok": true,
+  "miner_id": "scott",
+  "transactions": [
+    {
+      "type": "transfer_out",
+      "amount": 1.25,
+      "epoch": 842,
+      "timestamp": 1771187406,
+      "tx_hash": "6df5d4d25b6deef8f0b2e0fa726cecf1",
+      "reason": "transfer_out:friend:6df5d4d2...",
+      "to": "friend"
+    },
+    {
+      "type": "transfer_in",
+      "amount": 5.0,
+      "epoch": null,
+      "timestamp": 1771180000,
+      "tx_hash": "pending-tx-abc",
+      "status": "pending",
+      "from": "alice"
+    },
+    {
+      "type": "reward",
+      "amount": 0.5,
+      "epoch": 840,
+      "timestamp": 0,
+      "tx_hash": null
+    }
+  ],
+  "total": 3
+}
 ```
 
-**Response Fields**:
+**Envelope Fields**:
 | Field | Type | Description |
 |-------|------|-------------|
-| `tx_id` | string | Transaction hash, or `pending_{id}` for pending transfers |
-| `tx_hash` | string | Same as `tx_id` (alias for compatibility) |
-| `from_addr` | string | Sender wallet address |
-| `to_addr` | string | Recipient wallet address |
-| `amount` | float | Amount transferred in RTC (human-readable) |
-| `amount_i64` | integer | Amount in micro-RTC (6 decimals) |
-| `amount_rtc` | float | Same as `amount` (alias for compatibility) |
-| `timestamp` | integer | Transfer creation Unix timestamp |
-| `created_at` | integer | Same as `timestamp` (alias for clarity) |
-| `confirmed_at` | integer\|null | Unix timestamp when confirmed (null if pending) |
-| `confirms_at` | integer\|null | Scheduled confirmation time for pending transfers |
-| `status` | string | Normalized status: `pending`, `confirmed`, or `failed` |
-| `raw_status` | string | Raw database status: `pending`, `confirmed`, `voided`, etc. |
-| `status_reason` | string\|null | Reason for failure/void (if applicable) |
-| `confirmations` | integer | Number of confirmations (1 if confirmed, 0 otherwise) |
-| `direction` | string | `sent` or `received`, relative to the queried wallet |
-| `counterparty` | string | The other wallet in the transfer |
-| `reason` | string\|null | Raw reason field from ledger |
-| `memo` | string\|null | Extracted memo from `signed_transfer:` reason prefix |
+| `ok` | bool | Always `true` on success |
+| `miner_id` | string | The resolved wallet identifier |
+| `transactions` | array | Unified transactions, newest first (by `timestamp`) |
+| `total` | integer | Count of merged transactions in the response (bounded by `offset+limit`) |
 
-**Status Normalization**:
-| Raw Status | Public Status | Description |
-|------------|---------------|-------------|
-| `pending` | `pending` | Awaiting 24-hour confirmation window |
-| `confirmed` | `confirmed` | Fully confirmed and settled |
-| `voided` | `failed` | Voided by admin or system |
-| Any other | `failed` | Any other non-confirmed state |
+**Transaction Fields** (present fields depend on `type`):
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | string | `transfer_in`, `transfer_out`, `ledger`, or `reward` |
+| `amount` | float | Amount in RTC (human-readable) |
+| `epoch` | integer\|null | Settlement epoch; `null` for pending transfers |
+| `timestamp` | integer | Unix time of the entry; `0` for `reward` rows (epoch-bound, untimed) |
+| `tx_hash` | string\|null | Transfer hash; `null` for generic `ledger` and `reward` rows |
+| `reason` | string | Raw ledger reason (ledger-sourced rows only) |
+| `from` | string | Counterparty sender (`transfer_in` only) |
+| `to` | string | Counterparty recipient (`transfer_out` only) |
+| `status` | string | Present on **pending** transfers only (e.g. `pending`) |
 
 **Notes**:
-- Transactions are ordered by `created_at DESC, id DESC` (newest first)
-- `memo` is extracted from `reason` field when it starts with `signed_transfer:`
-- Pending transfers use `pending_{id}` as `tx_id` until confirmed
-- Empty array `[]` is returned for wallets with no history (not an error)
-- Non-existent wallets return empty array (no WALLET_NOT_FOUND error)
+- Results merge `ledger`, `epoch_rewards`, and `pending_ledger`, sorted by `timestamp` descending (newest first).
+- `transfer_in`/`transfer_out` carry the counterparty in `from`/`to`; generic `ledger` and `reward` rows carry neither.
+- A `status` field appears only on pending (non-confirmed) transfers; settled `ledger` rows omit it. Pending rows already marked `confirmed` are not duplicated here — they surface via the settled `ledger`.
+- `reward` rows have `timestamp: 0` and `tx_hash: null`.
+- An empty wallet returns `{"ok": true, "miner_id": "<id>", "transactions": [], "total": 0}`.
 
 **Error Responses**:
 

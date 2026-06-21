@@ -1,35 +1,111 @@
 """
-Tests for GET /wallet/history endpoint (Issue #908)
+Tests for GET /wallet/history endpoint (Issues #908, #997).
 
-Tests cover:
-- Success cases with various transaction states
-- Empty history for valid/invalid wallets
-- Invalid wallet parameter handling
-- Pagination behavior (clamping, defaults, edge cases)
-- Response format validation
+These tests assert the **unified live contract** that the merged implementation
+actually serves, instead of the older flat-array transaction shape that the live
+node no longer returns (see #7513).
+
+The endpoint returns an envelope::
+
+    {
+        "ok": true,
+        "miner_id": "<id>",
+        "transactions": [ <unified tx>, ... ],   # newest-first by timestamp
+        "total": <int>
+    }
+
+and merges three on-disk sources into one time-sorted list:
+
+* ``ledger``        — settled transfers / generic ledger movements
+* ``epoch_rewards`` — mining payouts (joined to ``epoch_state``)
+* ``pending_ledger``— in-flight (non-confirmed) transfers
+
+Rather than mocking ``sqlite3`` (which is fragile now that the route issues one
+query per source table), these tests seed a real temporary SQLite database with
+the exact columns the route reads, then exercise the live route — a small
+"live-contract smoke test" so the route, docs and tests cannot drift apart again.
 """
 
 import importlib.util
 import os
+import sqlite3
 import sys
 import tempfile
 import unittest
-from unittest.mock import MagicMock, patch
 
 NODE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 MODULE_PATH = os.path.join(NODE_DIR, "rustchain_v2_integrated_v2.2.1_rip200.py")
 ADMIN_KEY = "0123456789abcdef0123456789abcdef"
 
 
+def _init_history_schema(db_path):
+    """(Re)create the minimal set of tables the /wallet/history route reads.
+
+    The column lists mirror the live ``CREATE TABLE`` statements in the node so
+    the seeded rows flow through the production SQL untouched.
+    """
+    con = sqlite3.connect(db_path)
+    try:
+        con.executescript(
+            """
+            DROP TABLE IF EXISTS ledger;
+            DROP TABLE IF EXISTS epoch_rewards;
+            DROP TABLE IF EXISTS epoch_state;
+            DROP TABLE IF EXISTS pending_ledger;
+
+            CREATE TABLE ledger (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts INTEGER NOT NULL,
+                epoch INTEGER NOT NULL,
+                miner_id TEXT NOT NULL,
+                delta_i64 INTEGER NOT NULL,
+                reason TEXT
+            );
+
+            CREATE TABLE epoch_rewards (
+                epoch INTEGER,
+                miner_id TEXT,
+                share_i64 INTEGER
+            );
+
+            CREATE TABLE epoch_state (
+                epoch INTEGER PRIMARY KEY,
+                accepted_blocks INTEGER DEFAULT 0
+            );
+
+            CREATE TABLE pending_ledger (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts INTEGER NOT NULL,
+                epoch INTEGER NOT NULL,
+                from_miner TEXT NOT NULL,
+                to_miner TEXT NOT NULL,
+                amount_i64 INTEGER NOT NULL,
+                reason TEXT,
+                status TEXT DEFAULT 'pending',
+                created_at INTEGER NOT NULL,
+                confirms_at INTEGER NOT NULL,
+                tx_hash TEXT,
+                voided_by TEXT,
+                voided_reason TEXT,
+                confirmed_at INTEGER
+            );
+            """
+        )
+        con.commit()
+    finally:
+        con.close()
+
+
 class TestWalletHistoryEndpoint(unittest.TestCase):
-    """Comprehensive tests for /wallet/history endpoint"""
+    """Comprehensive tests for the unified /wallet/history contract."""
 
     @classmethod
     def setUpClass(cls):
         cls._tmp = tempfile.TemporaryDirectory()
+        cls._db_path = os.path.join(cls._tmp.name, "test.db")
         cls._prev_db_path = os.environ.get("RUSTCHAIN_DB_PATH")
         cls._prev_admin_key = os.environ.get("RC_ADMIN_KEY")
-        os.environ["RUSTCHAIN_DB_PATH"] = os.path.join(cls._tmp.name, "test.db")
+        os.environ["RUSTCHAIN_DB_PATH"] = cls._db_path
         os.environ["RC_ADMIN_KEY"] = ADMIN_KEY
 
         if NODE_DIR not in sys.path:
@@ -40,7 +116,10 @@ class TestWalletHistoryEndpoint(unittest.TestCase):
         )
         cls.mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(cls.mod)
+        # Route reads module-level DB_PATH captured at import; pin it to our temp DB.
+        cls.mod.DB_PATH = cls._db_path
         cls.client = cls.mod.app.test_client()
+        cls.UNIT = cls.mod.UNIT
 
     @classmethod
     def tearDownClass(cls):
@@ -54,485 +133,263 @@ class TestWalletHistoryEndpoint(unittest.TestCase):
             os.environ["RC_ADMIN_KEY"] = cls._prev_admin_key
         cls._tmp.cleanup()
 
-    # ==================== Success Cases ====================
+    def setUp(self):
+        # Fresh, empty tables for every test → full isolation.
+        _init_history_schema(self._db_path)
 
-    def test_wallet_history_success_sent_transaction(self):
-        """Test history returns sent transaction correctly formatted"""
-        with patch.object(self.mod.sqlite3, "connect") as mock_connect:
-            mock_conn = mock_connect.return_value.__enter__.return_value
-            mock_conn.execute.return_value.fetchall.return_value = [
-                (
-                    1,
-                    1700000000,
-                    "alice",
-                    "bob",
-                    5000000,  # 5 RTC in micro-units
-                    "signed_transfer:payment",
-                    "confirmed",
-                    1700000000,
-                    1700086400,
-                    1700086500,
-                    "tx_hash_abc123",
-                    None,
-                )
-            ]
+    # ---- seed helpers ----------------------------------------------------
 
-            resp = self.client.get("/wallet/history?miner_id=alice")
-            self.assertEqual(resp.status_code, 200)
-            body = resp.get_json()
+    def _con(self):
+        return sqlite3.connect(self._db_path)
 
-            self.assertEqual(len(body), 1)
-            tx = body[0]
-            self.assertEqual(tx["tx_id"], "tx_hash_abc123")
-            self.assertEqual(tx["tx_hash"], "tx_hash_abc123")
-            self.assertEqual(tx["from_addr"], "alice")
-            self.assertEqual(tx["to_addr"], "bob")
-            self.assertEqual(tx["amount"], 5.0)
-            self.assertEqual(tx["amount_i64"], 5000000)
-            self.assertEqual(tx["amount_rtc"], 5.0)
-            self.assertEqual(tx["direction"], "sent")
-            self.assertEqual(tx["counterparty"], "bob")
-            self.assertEqual(tx["status"], "confirmed")
-            self.assertEqual(tx["confirmations"], 1)
-            self.assertEqual(tx["memo"], "payment")
-            self.assertEqual(tx["confirmed_at"], 1700086500)
-            self.assertEqual(tx["confirms_at"], 1700086400)
+    def _add_ledger(self, ts, miner_id, delta_i64, reason, epoch=10):
+        con = self._con()
+        con.execute(
+            "INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason) VALUES (?,?,?,?,?)",
+            (ts, epoch, miner_id, delta_i64, reason),
+        )
+        con.commit()
+        con.close()
 
-    def test_wallet_history_success_received_transaction(self):
-        """Test history returns received transaction with correct direction"""
-        with patch.object(self.mod.sqlite3, "connect") as mock_connect:
-            mock_conn = mock_connect.return_value.__enter__.return_value
-            mock_conn.execute.return_value.fetchall.return_value = [
-                (
-                    2,
-                    1700001000,
-                    "carol",
-                    "alice",
-                    2500000,
-                    "signed_transfer:refund",
-                    "pending",
-                    1700001000,
-                    1700087400,
-                    None,
-                    None,
-                    None,
-                )
-            ]
+    def _add_reward(self, epoch, miner_id, share_i64, accepted_blocks=None):
+        con = self._con()
+        con.execute(
+            "INSERT INTO epoch_rewards (epoch, miner_id, share_i64) VALUES (?,?,?)",
+            (epoch, miner_id, share_i64),
+        )
+        if accepted_blocks is not None:
+            con.execute(
+                "INSERT OR REPLACE INTO epoch_state (epoch, accepted_blocks) VALUES (?,?)",
+                (epoch, accepted_blocks),
+            )
+        con.commit()
+        con.close()
 
-            resp = self.client.get("/wallet/history?miner_id=alice")
-            self.assertEqual(resp.status_code, 200)
-            body = resp.get_json()
+    def _add_pending(self, ts, from_m, to_m, amount_i64, reason, status,
+                     tx_hash=None, created_at=None, epoch=10):
+        con = self._con()
+        con.execute(
+            """INSERT INTO pending_ledger
+               (ts, epoch, from_miner, to_miner, amount_i64, reason, status,
+                created_at, confirms_at, tx_hash)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (ts, epoch, from_m, to_m, amount_i64, reason, status,
+             created_at if created_at is not None else ts, ts + 86400, tx_hash),
+        )
+        con.commit()
+        con.close()
 
-            self.assertEqual(len(body), 1)
-            tx = body[0]
-            self.assertEqual(tx["direction"], "received")
-            self.assertEqual(tx["counterparty"], "carol")
-            self.assertEqual(tx["status"], "pending")
-            self.assertEqual(tx["confirmations"], 0)
-            self.assertEqual(tx["memo"], "refund")
-            self.assertIsNone(tx["confirmed_at"])
-            self.assertEqual(tx["confirms_at"], 1700087400)
+    def _get(self, query):
+        resp = self.client.get(query)
+        return resp, resp.get_json()
 
-    def test_wallet_history_success_failed_transaction(self):
-        """Test history returns failed/voided transaction correctly"""
-        with patch.object(self.mod.sqlite3, "connect") as mock_connect:
-            mock_conn = mock_connect.return_value.__enter__.return_value
-            mock_conn.execute.return_value.fetchall.return_value = [
-                (
-                    3,
-                    1700002000,
-                    "alice",
-                    "mallory",
-                    1000000,
-                    "manual_review",
-                    "voided",
-                    1700002000,
-                    1700088400,
-                    None,
-                    "tx_voided",
-                    "suspicious_activity",
-                )
-            ]
+    # ==================== Envelope shape ====================
 
-            resp = self.client.get("/wallet/history?miner_id=alice")
-            self.assertEqual(resp.status_code, 200)
-            body = resp.get_json()
+    def test_response_is_unified_envelope(self):
+        """Response is the {ok, miner_id, transactions, total} envelope, not a flat array."""
+        self._add_ledger(1700000000, "alice", 5_000_000, "transfer_out:bob:tx_abc")
+        resp, body = self._get("/wallet/history?miner_id=alice")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIsInstance(body, dict)
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["miner_id"], "alice")
+        self.assertIsInstance(body["transactions"], list)
+        self.assertEqual(body["total"], 1)
 
-            tx = body[0]
-            self.assertEqual(tx["status"], "failed")
-            self.assertEqual(tx["raw_status"], "voided")
-            self.assertEqual(tx["status_reason"], "suspicious_activity")
-            self.assertEqual(tx["confirmations"], 0)
+    # ==================== Per-type transaction formatting ====================
 
-    def test_wallet_history_success_pending_without_tx_hash(self):
-        """Test pending transaction uses pending_ID as tx_id"""
-        with patch.object(self.mod.sqlite3, "connect") as mock_connect:
-            mock_conn = mock_connect.return_value.__enter__.return_value
-            mock_conn.execute.return_value.fetchall.return_value = [
-                (
-                    42,
-                    1700003000,
-                    "alice",
-                    "bob",
-                    500000,
-                    None,
-                    "pending",
-                    1700003000,
-                    1700089400,
-                    None,
-                    None,  # No tx_hash for pending
-                    None,
-                )
-            ]
+    def test_ledger_transfer_out(self):
+        self._add_ledger(1700000000, "alice", 5_000_000, "transfer_out:bob:tx_abc", epoch=12)
+        _, body = self._get("/wallet/history?miner_id=alice")
+        tx = body["transactions"][0]
+        self.assertEqual(tx["type"], "transfer_out")
+        self.assertEqual(tx["amount"], 5_000_000 / self.UNIT)
+        self.assertEqual(tx["epoch"], 12)
+        self.assertEqual(tx["timestamp"], 1700000000)
+        self.assertEqual(tx["tx_hash"], "tx_abc")
+        self.assertEqual(tx["to"], "bob")
+        self.assertNotIn("from", tx)
 
-            resp = self.client.get("/wallet/history?miner_id=alice")
-            self.assertEqual(resp.status_code, 200)
-            body = resp.get_json()
+    def test_ledger_transfer_in(self):
+        self._add_ledger(1700001000, "alice", 2_500_000, "transfer_in:carol:tx_def")
+        _, body = self._get("/wallet/history?miner_id=alice")
+        tx = body["transactions"][0]
+        self.assertEqual(tx["type"], "transfer_in")
+        self.assertEqual(tx["amount"], 2.5)
+        self.assertEqual(tx["tx_hash"], "tx_def")
+        self.assertEqual(tx["from"], "carol")
+        self.assertNotIn("to", tx)
 
-            tx = body[0]
-            self.assertEqual(tx["tx_id"], "pending_42")
-            self.assertEqual(tx["tx_hash"], "pending_42")
+    def test_ledger_generic_entry(self):
+        """A ledger row whose reason is not a transfer maps to the generic 'ledger' type."""
+        self._add_ledger(1700002000, "alice", 1_000_000, "epoch_reward_settlement")
+        _, body = self._get("/wallet/history?miner_id=alice")
+        tx = body["transactions"][0]
+        self.assertEqual(tx["type"], "ledger")
+        self.assertIsNone(tx["tx_hash"])
+        self.assertEqual(tx["reason"], "epoch_reward_settlement")
+        self.assertNotIn("from", tx)
+        self.assertNotIn("to", tx)
 
-    def test_wallet_history_success_without_memo(self):
-        """Test transaction without memo returns None"""
-        with patch.object(self.mod.sqlite3, "connect") as mock_connect:
-            mock_conn = mock_connect.return_value.__enter__.return_value
-            mock_conn.execute.return_value.fetchall.return_value = [
-                (
-                    5,
-                    1700004000,
-                    "alice",
-                    "bob",
-                    100000,
-                    None,  # No reason/memo
-                    "confirmed",
-                    1700004000,
-                    1700090400,
-                    1700090500,
-                    "tx_nomemo",
-                    None,
-                )
-            ]
+    def test_reward_entry(self):
+        self._add_reward(epoch=7, miner_id="alice", share_i64=3_000_000, accepted_blocks=4)
+        _, body = self._get("/wallet/history?miner_id=alice")
+        tx = body["transactions"][0]
+        self.assertEqual(tx["type"], "reward")
+        self.assertEqual(tx["amount"], 3.0)
+        self.assertEqual(tx["epoch"], 7)
+        self.assertEqual(tx["timestamp"], 0)
+        self.assertIsNone(tx["tx_hash"])
 
-            resp = self.client.get("/wallet/history?miner_id=alice")
-            body = resp.get_json()
-            self.assertIsNone(body[0]["memo"])
+    def test_pending_transfer_carries_status(self):
+        """Pending (non-confirmed) rows surface a status field; ledger rows do not."""
+        self._add_pending(1700003000, "alice", "bob", 750_000, "signed_transfer:coffee",
+                          "pending", tx_hash="tx_pending")
+        _, body = self._get("/wallet/history?miner_id=alice")
+        tx = body["transactions"][0]
+        self.assertEqual(tx["type"], "transfer_out")
+        self.assertEqual(tx["status"], "pending")
+        self.assertEqual(tx["amount"], 0.75)
+        self.assertIsNone(tx["epoch"])  # pending entries are not yet epoch-bound
+        self.assertEqual(tx["tx_hash"], "tx_pending")
+        self.assertEqual(tx["to"], "bob")
 
-    def test_wallet_history_success_multiple_transactions_ordering(self):
-        """Test transactions are ordered by created_at DESC, id DESC"""
-        with patch.object(self.mod.sqlite3, "connect") as mock_connect:
-            mock_conn = mock_connect.return_value.__enter__.return_value
-            mock_conn.execute.return_value.fetchall.return_value = [
-                (3, 1700003000, "alice", "bob", 300000, None, "confirmed", 1700003000, 1700089400, 1700089500, "tx3", None),
-                (2, 1700002000, "carol", "alice", 200000, None, "confirmed", 1700002000, 1700088400, 1700088500, "tx2", None),
-                (1, 1700001000, "alice", "dave", 100000, None, "confirmed", 1700001000, 1700087400, 1700087500, "tx1", None),
-            ]
+    def test_pending_confirmed_is_excluded(self):
+        """A pending row already marked confirmed is captured by ledger, not duplicated here."""
+        self._add_pending(1700004000, "alice", "bob", 100_000, None, "confirmed",
+                          tx_hash="tx_conf")
+        _, body = self._get("/wallet/history?miner_id=alice")
+        self.assertEqual(body["total"], 0)
+        self.assertEqual(body["transactions"], [])
 
-            resp = self.client.get("/wallet/history?miner_id=alice")
-            body = resp.get_json()
+    def test_unified_fields_present_per_type(self):
+        """Every transaction type exposes the documented unified field set."""
+        common = {"type", "amount", "epoch", "timestamp", "tx_hash"}
+        self._add_ledger(1700000000, "alice", 5_000_000, "transfer_out:bob:tx1")
+        self._add_reward(epoch=3, miner_id="alice", share_i64=1_000_000)
+        self._add_pending(1700005000, "carol", "alice", 250_000, None, "pending",
+                          tx_hash="tx2")
+        _, body = self._get("/wallet/history?miner_id=alice")
+        self.assertEqual(body["total"], 3)
+        for tx in body["transactions"]:
+            self.assertTrue(common.issubset(tx.keys()),
+                            f"missing unified fields in {tx}")
 
-            self.assertEqual(len(body), 3)
-            # Should be ordered by created_at DESC
-            self.assertEqual(body[0]["tx_id"], "tx3")
-            self.assertEqual(body[1]["tx_id"], "tx2")
-            self.assertEqual(body[2]["tx_id"], "tx1")
+    # ==================== Merging & ordering ====================
 
-    # ==================== Empty History Cases ====================
+    def test_sources_merge_and_sort_newest_first(self):
+        self._add_ledger(1700000000, "alice", 1_000_000, "transfer_out:bob:old")
+        self._add_ledger(1700009000, "alice", 1_000_000, "transfer_in:carol:new")
+        self._add_pending(1700005000, "alice", "dave", 1_000_000, None, "pending",
+                          tx_hash="mid")
+        _, body = self._get("/wallet/history?miner_id=alice")
+        ts = [t["timestamp"] for t in body["transactions"]]
+        self.assertEqual(ts, sorted(ts, reverse=True))
+        self.assertEqual(body["transactions"][0]["tx_hash"], "new")
+        self.assertEqual(body["total"], 3)
 
-    def test_wallet_history_empty_no_transactions(self):
-        """Test empty array returned for wallet with no history"""
-        with patch.object(self.mod.sqlite3, "connect") as mock_connect:
-            mock_conn = mock_connect.return_value.__enter__.return_value
-            mock_conn.execute.return_value.fetchall.return_value = []
+    # ==================== Empty history ====================
 
-            resp = self.client.get("/wallet/history?miner_id=newbie")
-            self.assertEqual(resp.status_code, 200)
-            body = resp.get_json()
-            self.assertEqual(body, [])
+    def test_empty_history_returns_envelope_with_empty_list(self):
+        resp, body = self._get("/wallet/history?miner_id=newbie")
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["transactions"], [])
+        self.assertEqual(body["total"], 0)
 
-    def test_wallet_history_empty_nonexistent_wallet(self):
-        """Test empty array returned for non-existent wallet (not error)"""
-        with patch.object(self.mod.sqlite3, "connect") as mock_connect:
-            mock_conn = mock_connect.return_value.__enter__.return_value
-            mock_conn.execute.return_value.fetchall.return_value = []
+    # ==================== Identifier validation (unchanged contract) ====================
 
-            resp = self.client.get("/wallet/history?miner_id=does_not_exist")
-            self.assertEqual(resp.status_code, 200)
-            self.assertEqual(resp.get_json(), [])
-
-    # ==================== Invalid Wallet Parameter Cases ====================
-
-    def test_wallet_history_missing_identifier(self):
-        """Test error when neither miner_id nor address provided"""
+    def test_missing_identifier(self):
         resp = self.client.get("/wallet/history")
         self.assertEqual(resp.status_code, 400)
-        self.assertEqual(
-            resp.get_json(),
-            {"ok": False, "error": "miner_id or address required"},
-        )
+        self.assertEqual(resp.get_json(), {"ok": False, "error": "miner_id or address required"})
 
-    def test_wallet_history_empty_miner_id(self):
-        """Test error when miner_id is empty string"""
+    def test_empty_miner_id(self):
         resp = self.client.get("/wallet/history?miner_id=")
         self.assertEqual(resp.status_code, 400)
-        self.assertEqual(
-            resp.get_json(),
-            {"ok": False, "error": "miner_id or address required"},
-        )
+        self.assertEqual(resp.get_json(), {"ok": False, "error": "miner_id or address required"})
 
-    def test_wallet_history_conflicting_identifiers(self):
-        """Test error when miner_id and address don't match"""
+    def test_conflicting_identifiers(self):
         resp = self.client.get("/wallet/history?miner_id=alice&address=bob")
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(
             resp.get_json(),
-            {
-                "ok": False,
-                "error": "miner_id and address must match when both are provided",
-            },
+            {"ok": False, "error": "miner_id and address must match when both are provided"},
         )
 
-    # ==================== Pagination Behavior Cases ====================
+    def test_address_alias_resolves_to_miner_id(self):
+        self._add_ledger(1700000000, "alice", 1_000_000, "transfer_out:bob:tx1")
+        resp, body = self._get("/wallet/history?address=alice")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(body["miner_id"], "alice")
+        self.assertEqual(body["total"], 1)
 
-    def test_wallet_history_pagination_default_limit(self):
-        """Test default limit of 50 is applied"""
-        with patch.object(self.mod.sqlite3, "connect") as mock_connect:
-            mock_conn = mock_connect.return_value.__enter__.return_value
-            mock_conn.execute.return_value.fetchall.return_value = []
+    def test_matching_identifiers_accepted(self):
+        resp = self.client.get("/wallet/history?miner_id=alice&address=alice")
+        self.assertEqual(resp.status_code, 200)
 
-            resp = self.client.get("/wallet/history?miner_id=alice")
-            self.assertEqual(resp.status_code, 200)
+    # ==================== Pagination ====================
 
-            # Verify query used limit=50
-            call_args = mock_conn.execute.call_args
-            query = call_args[0][0]
-            params = call_args[0][1]
-            self.assertIn("LIMIT ?", query)
-            self.assertEqual(params[-1], 50)  # Last param is limit
+    def _seed_n_ledger(self, n, miner_id="alice"):
+        con = self._con()
+        con.executemany(
+            "INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason) VALUES (?,?,?,?,?)",
+            [(1700000000 + i, 10, miner_id, 1_000_000, f"transfer_out:bob:tx{i}") for i in range(n)],
+        )
+        con.commit()
+        con.close()
 
-    def test_wallet_history_pagination_custom_limit(self):
-        """Test custom limit is respected"""
-        with patch.object(self.mod.sqlite3, "connect") as mock_connect:
-            mock_conn = mock_connect.return_value.__enter__.return_value
-            mock_conn.execute.return_value.fetchall.return_value = []
+    def test_default_limit_is_50(self):
+        # Note: the route fetches at most ``offset+limit`` rows per source table,
+        # so ``total`` reflects the capped fetch (50) rather than the 60 seeded.
+        self._seed_n_ledger(60)
+        _, body = self._get("/wallet/history?miner_id=alice")
+        self.assertEqual(len(body["transactions"]), 50)
+        self.assertEqual(body["total"], 50)
 
-            resp = self.client.get("/wallet/history?miner_id=alice&limit=10")
-            self.assertEqual(resp.status_code, 200)
+    def test_custom_limit_respected(self):
+        self._seed_n_ledger(10)
+        _, body = self._get("/wallet/history?miner_id=alice&limit=3")
+        self.assertEqual(len(body["transactions"]), 3)
 
-            call_args = mock_conn.execute.call_args
-            params = call_args[0][1]
-            self.assertEqual(params[-1], 10)
+    def test_limit_clamped_to_minimum(self):
+        self._seed_n_ledger(5)
+        _, body = self._get("/wallet/history?miner_id=alice&limit=0")
+        self.assertEqual(len(body["transactions"]), 1)
 
-    def test_wallet_history_pagination_limit_clamped_to_minimum(self):
-        """Test limit=0 is clamped to 1"""
-        with patch.object(self.mod.sqlite3, "connect") as mock_connect:
-            mock_conn = mock_connect.return_value.__enter__.return_value
-            mock_conn.execute.return_value.fetchall.return_value = []
+    def test_limit_negative_clamped(self):
+        self._seed_n_ledger(5)
+        _, body = self._get("/wallet/history?miner_id=alice&limit=-100")
+        self.assertEqual(len(body["transactions"]), 1)
 
-            resp = self.client.get("/wallet/history?miner_id=alice&limit=0")
-            self.assertEqual(resp.status_code, 200)
+    def test_limit_clamped_to_maximum(self):
+        self._seed_n_ledger(201)
+        _, body = self._get("/wallet/history?miner_id=alice&limit=1000")
+        self.assertEqual(len(body["transactions"]), 200)
 
-            call_args = mock_conn.execute.call_args
-            params = call_args[0][1]
-            self.assertEqual(params[-1], 1)  # Clamped to minimum
+    def test_offset_paginates(self):
+        self._seed_n_ledger(5)
+        _, body_all = self._get("/wallet/history?miner_id=alice&limit=5")
+        _, body_off = self._get("/wallet/history?miner_id=alice&limit=2&offset=2")
+        self.assertEqual(
+            [t["tx_hash"] for t in body_off["transactions"]],
+            [t["tx_hash"] for t in body_all["transactions"][2:4]],
+        )
 
-    def test_wallet_history_pagination_limit_negative_clamped(self):
-        """Test negative limit is clamped to 1"""
-        with patch.object(self.mod.sqlite3, "connect") as mock_connect:
-            mock_conn = mock_connect.return_value.__enter__.return_value
-            mock_conn.execute.return_value.fetchall.return_value = []
-
-            resp = self.client.get("/wallet/history?miner_id=alice&limit=-100")
-            self.assertEqual(resp.status_code, 200)
-
-            call_args = mock_conn.execute.call_args
-            params = call_args[0][1]
-            self.assertEqual(params[-1], 1)  # Clamped to minimum
-
-    def test_wallet_history_pagination_limit_clamped_to_maximum(self):
-        """Test limit > 200 is clamped to 200"""
-        with patch.object(self.mod.sqlite3, "connect") as mock_connect:
-            mock_conn = mock_connect.return_value.__enter__.return_value
-            mock_conn.execute.return_value.fetchall.return_value = []
-
-            resp = self.client.get("/wallet/history?miner_id=alice&limit=1000")
-            self.assertEqual(resp.status_code, 200)
-
-            call_args = mock_conn.execute.call_args
-            params = call_args[0][1]
-            self.assertEqual(params[-1], 200)  # Clamped to maximum
-
-    def test_wallet_history_pagination_limit_exactly_200(self):
-        """Test limit=200 is accepted"""
-        with patch.object(self.mod.sqlite3, "connect") as mock_connect:
-            mock_conn = mock_connect.return_value.__enter__.return_value
-            mock_conn.execute.return_value.fetchall.return_value = []
-
-            resp = self.client.get("/wallet/history?miner_id=alice&limit=200")
-            self.assertEqual(resp.status_code, 200)
-
-            call_args = mock_conn.execute.call_args
-            params = call_args[0][1]
-            self.assertEqual(params[-1], 200)
-
-    def test_wallet_history_pagination_limit_exactly_1(self):
-        """Test limit=1 is accepted"""
-        with patch.object(self.mod.sqlite3, "connect") as mock_connect:
-            mock_conn = mock_connect.return_value.__enter__.return_value
-            mock_conn.execute.return_value.fetchall.return_value = []
-
-            resp = self.client.get("/wallet/history?miner_id=alice&limit=1")
-            self.assertEqual(resp.status_code, 200)
-
-            call_args = mock_conn.execute.call_args
-            params = call_args[0][1]
-            self.assertEqual(params[-1], 1)
-
-    def test_wallet_history_pagination_invalid_limit_string(self):
-        """Test invalid limit string returns error"""
+    def test_invalid_limit_string(self):
         resp = self.client.get("/wallet/history?miner_id=alice&limit=abc")
         self.assertEqual(resp.status_code, 400)
-        self.assertEqual(
-            resp.get_json(),
-            {"ok": False, "error": "limit must be an integer"},
-        )
+        self.assertEqual(resp.get_json(), {"ok": False, "error": "limit must be an integer"})
 
-    def test_wallet_history_pagination_invalid_limit_float(self):
-        """Test float limit returns error"""
+    def test_invalid_limit_float(self):
         resp = self.client.get("/wallet/history?miner_id=alice&limit=10.5")
         self.assertEqual(resp.status_code, 400)
-        self.assertEqual(
-            resp.get_json(),
-            {"ok": False, "error": "limit must be an integer"},
-        )
+        self.assertEqual(resp.get_json(), {"ok": False, "error": "limit must be an integer"})
 
-    def test_wallet_history_pagination_empty_limit_uses_default(self):
-        """Test empty limit parameter uses default"""
-        with patch.object(self.mod.sqlite3, "connect") as mock_connect:
-            mock_conn = mock_connect.return_value.__enter__.return_value
-            mock_conn.execute.return_value.fetchall.return_value = []
-
-            resp = self.client.get("/wallet/history?miner_id=alice&limit=")
-            self.assertEqual(resp.status_code, 200)
-
-            call_args = mock_conn.execute.call_args
-            params = call_args[0][1]
-            self.assertEqual(params[-1], 50)  # Default
-
-    # ==================== Address Alias Cases ====================
-
-    def test_wallet_history_address_alias_works(self):
-        """Test address parameter works as alias for miner_id"""
-        with patch.object(self.mod.sqlite3, "connect") as mock_connect:
-            mock_conn = mock_connect.return_value.__enter__.return_value
-            mock_conn.execute.return_value.fetchall.return_value = []
-
-            resp = self.client.get("/wallet/history?address=alice")
-            self.assertEqual(resp.status_code, 200)
-
-            call_args = mock_conn.execute.call_args
-            params = call_args[0][1]
-            self.assertEqual(params[0], "alice")
-            self.assertEqual(params[1], "alice")
-
-    def test_wallet_history_matching_identifiers_accepted(self):
-        """Test same miner_id and address is accepted"""
-        with patch.object(self.mod.sqlite3, "connect") as mock_connect:
-            mock_conn = mock_connect.return_value.__enter__.return_value
-            mock_conn.execute.return_value.fetchall.return_value = []
-
-            resp = self.client.get("/wallet/history?miner_id=alice&address=alice")
-            self.assertEqual(resp.status_code, 200)
-
-    # ==================== Response Schema Validation ====================
-
-    def test_wallet_history_response_contains_required_fields(self):
-        """Test response contains all required fields per OpenAPI spec"""
-        with patch.object(self.mod.sqlite3, "connect") as mock_connect:
-            mock_conn = mock_connect.return_value.__enter__.return_value
-            mock_conn.execute.return_value.fetchall.return_value = [
-                (
-                    1,
-                    1700000000,
-                    "alice",
-                    "bob",
-                    1000000,
-                    "signed_transfer:test",
-                    "confirmed",
-                    1700000000,
-                    1700086400,
-                    1700086500,
-                    "tx123",
-                    None,
-                )
-            ]
-
-            resp = self.client.get("/wallet/history?miner_id=alice")
-            body = resp.get_json()
-
-            required_fields = [
-                "tx_id", "from_addr", "to_addr", "amount",
-                "timestamp", "status", "direction", "counterparty"
-            ]
-            optional_fields = [
-                "amount_i64", "amount_rtc", "memo", "confirmed_at",
-                "confirms_at", "raw_status", "status_reason", "confirmations"
-            ]
-
-            tx = body[0]
-            for field in required_fields:
-                self.assertIn(field, tx, f"Required field '{field}' missing")
-
-            for field in optional_fields:
-                self.assertIn(field, tx, f"Optional field '{field}' missing")
-
-    def test_wallet_history_status_enum_values(self):
-        """Test status field only contains valid enum values"""
-        valid_statuses = {"pending", "confirmed", "failed"}
-
-        test_cases = [
-            ("pending", "pending"),
-            ("confirmed", "confirmed"),
-            ("voided", "failed"),
-            ("rejected", "failed"),
-            ("unknown_status", "failed"),
-        ]
-
-        for raw_status, expected_public_status in test_cases:
-            with patch.object(self.mod.sqlite3, "connect") as mock_connect:
-                mock_conn = mock_connect.return_value.__enter__.return_value
-                mock_conn.execute.return_value.fetchall.return_value = [
-                    (1, 1700000000, "alice", "bob", 1000000, None, raw_status,
-                     1700000000, 1700086400, None, "tx", None)
-                ]
-
-                resp = self.client.get("/wallet/history?miner_id=alice")
-                body = resp.get_json()
-                self.assertIn(body[0]["status"], valid_statuses)
-                self.assertEqual(body[0]["status"], expected_public_status)
-
-    def test_wallet_history_direction_enum_values(self):
-        """Test direction field only contains valid enum values"""
-        valid_directions = {"sent", "received"}
-
-        with patch.object(self.mod.sqlite3, "connect") as mock_connect:
-            mock_conn = mock_connect.return_value.__enter__.return_value
-
-            # Test sent
-            mock_conn.execute.return_value.fetchall.return_value = [
-                (1, 1700000000, "alice", "bob", 1000000, None, "confirmed",
-                 1700000000, 1700086400, 1700086500, "tx", None)
-            ]
-            resp = self.client.get("/wallet/history?miner_id=alice")
-            self.assertIn(resp.get_json()[0]["direction"], valid_directions)
-
-            # Test received
-            mock_conn.execute.return_value.fetchall.return_value = [
-                (1, 1700000000, "bob", "alice", 1000000, None, "confirmed",
-                 1700000000, 1700086400, 1700086500, "tx", None)
-            ]
-            resp = self.client.get("/wallet/history?miner_id=alice")
-            self.assertIn(resp.get_json()[0]["direction"], valid_directions)
+    def test_invalid_offset_string(self):
+        resp = self.client.get("/wallet/history?miner_id=alice&offset=xyz")
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.get_json(), {"ok": False, "error": "offset must be an integer"})
 
 
 if __name__ == "__main__":

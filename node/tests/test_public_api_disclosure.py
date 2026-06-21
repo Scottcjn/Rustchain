@@ -1,7 +1,9 @@
 import importlib.util
 import os
+import sqlite3
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -11,13 +13,66 @@ MODULE_PATH = os.path.join(NODE_DIR, "rustchain_v2_integrated_v2.2.1_rip200.py")
 ADMIN_KEY = "0123456789abcdef0123456789abcdef"
 
 
+def _init_disclosure_schema(db_path):
+    """(Re)create the tables read by the live /api/miners and /wallet/history routes.
+
+    Columns mirror the node's own ``CREATE TABLE`` statements so seeded rows flow
+    through the production SQL unchanged — a live-contract check rather than a mock.
+    """
+    con = sqlite3.connect(db_path)
+    try:
+        con.executescript(
+            """
+            DROP TABLE IF EXISTS miner_attest_recent;
+            DROP TABLE IF EXISTS miner_attest_history;
+            DROP TABLE IF EXISTS ledger;
+
+            CREATE TABLE miner_attest_recent(
+                miner TEXT PRIMARY KEY,
+                ts_ok INTEGER NOT NULL,
+                device_family TEXT,
+                device_arch TEXT,
+                entropy_score REAL DEFAULT 0.0,
+                fingerprint_passed INTEGER DEFAULT 0,
+                source_ip TEXT,
+                warthog_bonus REAL DEFAULT 1.0,
+                signing_pubkey TEXT,
+                fingerprint_checks_json TEXT DEFAULT '{}'
+            );
+
+            CREATE TABLE miner_attest_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                miner TEXT NOT NULL,
+                ts_ok INTEGER NOT NULL,
+                device_family TEXT,
+                device_arch TEXT,
+                entropy_score REAL DEFAULT 0.0,
+                fingerprint_passed INTEGER DEFAULT 0
+            );
+
+            CREATE TABLE ledger (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts INTEGER NOT NULL,
+                epoch INTEGER NOT NULL,
+                miner_id TEXT NOT NULL,
+                delta_i64 INTEGER NOT NULL,
+                reason TEXT
+            );
+            """
+        )
+        con.commit()
+    finally:
+        con.close()
+
+
 class TestPublicApiDisclosure(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls._tmp = tempfile.TemporaryDirectory()
+        cls._db_path = os.path.join(cls._tmp.name, "import.db")
         cls._prev_db_path = os.environ.get("RUSTCHAIN_DB_PATH")
         cls._prev_admin_key = os.environ.get("RC_ADMIN_KEY")
-        os.environ["RUSTCHAIN_DB_PATH"] = os.path.join(cls._tmp.name, "import.db")
+        os.environ["RUSTCHAIN_DB_PATH"] = cls._db_path
         os.environ["RC_ADMIN_KEY"] = ADMIN_KEY
 
         if NODE_DIR not in sys.path:
@@ -26,6 +81,9 @@ class TestPublicApiDisclosure(unittest.TestCase):
         spec = importlib.util.spec_from_file_location("rustchain_integrated_public_api_test", MODULE_PATH)
         cls.mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(cls.mod)
+        # Pin the route's module-level DB_PATH to our temp DB for real-DB tests.
+        # (Mock-based tests below patch sqlite3.connect and are unaffected.)
+        cls.mod.DB_PATH = cls._db_path
         cls.client = cls.mod.app.test_client()
 
     @classmethod
@@ -71,65 +129,55 @@ class TestPublicApiDisclosure(unittest.TestCase):
             self.assertEqual(body["epoch_pot"], self.mod.PER_EPOCH_RTC)
             self.assertEqual(body["enrolled_miners"], 10)
 
+    def _seed_powerpc_miner(self, miner="addr1", last_ts=None, first_ts=None):
+        """Seed one PowerPC G4 attestation (recent + history) into the temp DB."""
+        _init_disclosure_schema(self._db_path)
+        now = int(time.time())
+        last_ts = now if last_ts is None else last_ts
+        first_ts = (now - 100000) if first_ts is None else first_ts
+        con = sqlite3.connect(self._db_path)
+        con.execute(
+            """INSERT INTO miner_attest_recent
+               (miner, ts_ok, device_family, device_arch, entropy_score)
+               VALUES (?,?,?,?,?)""",
+            (miner, last_ts, "PowerPC", "G4", 0.95),
+        )
+        con.execute(
+            """INSERT INTO miner_attest_history
+               (miner, ts_ok, device_family, device_arch, entropy_score)
+               VALUES (?,?,?,?,?)""",
+            (miner, first_ts, "PowerPC", "G4", 0.95),
+        )
+        con.commit()
+        con.close()
+        return now
+
     def test_miners_public_response_exposes_records(self):
-        with patch.object(self.mod.sqlite3, "connect") as mock_connect:
-            mock_conn = mock_connect.return_value.__enter__.return_value
-            mock_cursor = mock_conn.cursor.return_value
+        """/api/miners returns the paginated {miners, pagination} envelope with HW classification."""
+        self._seed_powerpc_miner()
+        resp = self.client.get("/api/miners")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.get_json()
 
-            row = {
-                "miner": "addr1",
-                "ts_ok": 1700000000,
-                "device_family": "PowerPC",
-                "device_arch": "G4",
-                "entropy_score": 0.95,
-            }
-
-            miners_query = MagicMock()
-            miners_query.fetchall.return_value = [row]
-
-            first_attest_query = MagicMock()
-            first_attest_query.fetchone.return_value = [1699990000]
-
-            mock_cursor.execute.side_effect = [miners_query, first_attest_query]
-
-            resp = self.client.get("/api/miners")
-            self.assertEqual(resp.status_code, 200)
-            body = resp.get_json()
-
-            self.assertEqual(len(body), 1)
-            self.assertEqual(body[0]["miner"], "addr1")
-            self.assertEqual(body[0]["hardware_type"], "PowerPC G4 (Vintage)")
-            self.assertEqual(body[0]["antiquity_multiplier"], 2.5)
+        self.assertIn("miners", body)
+        self.assertIn("pagination", body)
+        self.assertEqual(len(body["miners"]), 1)
+        m = body["miners"][0]
+        self.assertEqual(m["miner"], "addr1")
+        self.assertEqual(m["hardware_type"], "PowerPC G4 (Vintage)")
+        self.assertEqual(m["antiquity_multiplier"], 2.5)
 
     def test_miners_admin_receives_full_records(self):
-        with patch.object(self.mod.sqlite3, "connect") as mock_connect:
-            mock_conn = mock_connect.return_value.__enter__.return_value
-            mock_cursor = mock_conn.cursor.return_value
+        self._seed_powerpc_miner()
+        resp = self.client.get("/api/miners", headers={"X-Admin-Key": ADMIN_KEY})
+        self.assertEqual(resp.status_code, 200)
+        body = resp.get_json()
 
-            row = {
-                "miner": "addr1",
-                "ts_ok": 1700000000,
-                "device_family": "PowerPC",
-                "device_arch": "G4",
-                "entropy_score": 0.95,
-            }
-
-            miners_query = MagicMock()
-            miners_query.fetchall.return_value = [row]
-
-            first_attest_query = MagicMock()
-            first_attest_query.fetchone.return_value = [1699990000]
-
-            mock_cursor.execute.side_effect = [miners_query, first_attest_query]
-
-            resp = self.client.get("/api/miners", headers={"X-Admin-Key": ADMIN_KEY})
-            self.assertEqual(resp.status_code, 200)
-            body = resp.get_json()
-
-            self.assertEqual(len(body), 1)
-            self.assertEqual(body[0]["miner"], "addr1")
-            self.assertEqual(body[0]["hardware_type"], "PowerPC G4 (Vintage)")
-            self.assertEqual(body[0]["antiquity_multiplier"], 2.5)
+        self.assertEqual(len(body["miners"]), 1)
+        m = body["miners"][0]
+        self.assertEqual(m["miner"], "addr1")
+        self.assertEqual(m["hardware_type"], "PowerPC G4 (Vintage)")
+        self.assertEqual(m["antiquity_multiplier"], 2.5)
 
     def test_wallet_balance_public_receives_value(self):
         with patch.object(self.mod.sqlite3, "connect") as mock_connect:
@@ -202,84 +250,72 @@ class TestPublicApiDisclosure(unittest.TestCase):
             },
         )
 
-    def test_wallet_history_public_formats_pending_confirmed_and_failed_rows(self):
-        with patch.object(self.mod.sqlite3, "connect") as mock_connect:
-            mock_conn = mock_connect.return_value.__enter__.return_value
-            mock_conn.execute.return_value.fetchall.return_value = [
-                (
-                    12,
-                    1700001000,
-                    "alice",
-                    "bob",
-                    2500000,
-                    "signed_transfer:coffee",
-                    "pending",
-                    1700001000,
-                    1700087400,
-                    None,
-                    "tx_pending",
-                    None,
-                ),
-                (
-                    11,
-                    1700000000,
-                    "carol",
-                    "alice",
-                    1250000,
-                    "signed_transfer:thanks",
-                    "confirmed",
-                    1700000000,
-                    1700086400,
-                    1700086500,
-                    "tx_confirmed",
-                    None,
-                ),
-                (
-                    10,
-                    1699999000,
-                    "alice",
-                    "mallory",
-                    500000,
-                    "manual_review",
-                    "voided",
-                    1699999000,
-                    1700085400,
-                    None,
-                    "tx_failed",
-                    "admin_void",
-                ),
-            ]
+    def test_wallet_history_public_formats_unified_transaction_types(self):
+        """The public envelope formats settled (ledger) and pending rows per the unified contract."""
+        _init_disclosure_schema(self._db_path)
+        con = sqlite3.connect(self._db_path)
+        con.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS pending_ledger (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts INTEGER NOT NULL,
+                epoch INTEGER NOT NULL,
+                from_miner TEXT NOT NULL,
+                to_miner TEXT NOT NULL,
+                amount_i64 INTEGER NOT NULL,
+                reason TEXT,
+                status TEXT DEFAULT 'pending',
+                created_at INTEGER NOT NULL,
+                confirms_at INTEGER NOT NULL,
+                tx_hash TEXT
+            );
+            """
+        )
+        # Settled outbound transfer (ledger table)
+        con.execute(
+            "INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason) VALUES (?,?,?,?,?)",
+            (1700000000, 9, "alice", 1_250_000, "transfer_out:bob:tx_settled"),
+        )
+        # Pending inbound transfer (pending_ledger table)
+        con.execute(
+            """INSERT INTO pending_ledger
+               (ts, epoch, from_miner, to_miner, amount_i64, reason, status,
+                created_at, confirms_at, tx_hash)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (1700001000, 9, "carol", "alice", 2_500_000, "signed_transfer:coffee",
+             "pending", 1700001000, 1700087400, "tx_pending"),
+        )
+        con.commit()
+        con.close()
 
-            resp = self.client.get("/wallet/history?miner_id=alice&limit=3")
-            self.assertEqual(resp.status_code, 200)
-            body = resp.get_json()
+        resp = self.client.get("/wallet/history?miner_id=alice&limit=10")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.get_json()
 
-            self.assertEqual(len(body), 3)
-            self.assertEqual(body[0]["tx_id"], "tx_pending")
-            self.assertEqual(body[0]["direction"], "sent")
-            self.assertEqual(body[0]["counterparty"], "bob")
-            self.assertEqual(body[0]["memo"], "coffee")
-            self.assertEqual(body[0]["status"], "pending")
-            self.assertEqual(body[0]["amount_i64"], 2500000)
+        self.assertIsInstance(body, dict)
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["miner_id"], "alice")
+        txs = body["transactions"]
+        self.assertEqual(body["total"], 2)
 
-            self.assertEqual(body[1]["direction"], "received")
-            self.assertEqual(body[1]["counterparty"], "carol")
-            self.assertEqual(body[1]["status"], "confirmed")
-            self.assertEqual(body[1]["confirmations"], 1)
-            self.assertEqual(body[1]["memo"], "thanks")
+        pending = next(t for t in txs if t.get("status") == "pending")
+        self.assertEqual(pending["type"], "transfer_in")
+        self.assertEqual(pending["from"], "carol")
+        self.assertEqual(pending["tx_hash"], "tx_pending")
 
-            self.assertEqual(body[2]["status"], "failed")
-            self.assertEqual(body[2]["raw_status"], "voided")
-            self.assertEqual(body[2]["status_reason"], "admin_void")
+        settled = next(t for t in txs if t["tx_hash"] == "tx_settled")
+        self.assertEqual(settled["type"], "transfer_out")
+        self.assertEqual(settled["to"], "bob")
+        self.assertNotIn("status", settled)  # settled ledger rows carry no status field
 
     def test_wallet_history_public_accepts_address_alias(self):
-        with patch.object(self.mod.sqlite3, "connect") as mock_connect:
-            mock_conn = mock_connect.return_value.__enter__.return_value
-            mock_conn.execute.return_value.fetchall.return_value = []
-
-            resp = self.client.get("/wallet/history?address=alice")
-            self.assertEqual(resp.status_code, 200)
-            self.assertEqual(resp.get_json(), [])
+        _init_disclosure_schema(self._db_path)
+        resp = self.client.get("/wallet/history?address=alice")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.get_json()
+        self.assertEqual(body["miner_id"], "alice")
+        self.assertEqual(body["transactions"], [])
+        self.assertEqual(body["total"], 0)
 
     def test_wallet_history_requires_identifier(self):
         resp = self.client.get("/wallet/history")
