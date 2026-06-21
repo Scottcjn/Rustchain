@@ -89,6 +89,36 @@ class TestPendingConfirmUtxoOwnership(unittest.TestCase):
                 os.environ[key] = value
         self._tmp.cleanup()
 
+    def _seed_pending_transfer(self, sender, recipient, amount_rtc, *, tx_hash):
+        now = int(time.time())
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO pending_ledger
+                (ts, epoch, from_miner, to_miner, amount_i64, reason,
+                 status, created_at, confirms_at, tx_hash)
+                VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+                """,
+                (
+                    now - 10,
+                    1,
+                    sender,
+                    recipient,
+                    amount_rtc * ACCOUNT_UNIT,
+                    "signed_transfer:cross-model-regression",
+                    now - 10,
+                    now - 1,
+                    tx_hash,
+                ),
+            )
+
+    def _confirm_ready_pending(self):
+        return self.mod.app.test_client().post(
+            "/pending/confirm",
+            json={"limit": 1},
+            headers={"X-Admin-Key": ADMIN_KEY},
+        )
+
     def test_pending_confirm_consumes_or_moves_matching_migrated_utxo(self):
         """Account confirmation must not leave the sender's migrated UTXO spendable."""
         from utxo_db import UNIT, UtxoDB
@@ -97,7 +127,6 @@ class TestPendingConfirmUtxoOwnership(unittest.TestCase):
         account_recipient = "bob"
         utxo_recipient = "carol"
         amount_rtc = 100
-        amount_i64 = amount_rtc * ACCOUNT_UNIT
 
         _seed_account_balance(self.db_path, sender, amount_rtc)
         _seed_account_balance(self.db_path, account_recipient, 0)
@@ -121,33 +150,13 @@ class TestPendingConfirmUtxoOwnership(unittest.TestCase):
         )
         self.assertEqual(utxo.get_balance(sender), amount_rtc * UNIT)
 
-        now = int(time.time())
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute(
-                """
-                INSERT INTO pending_ledger
-                (ts, epoch, from_miner, to_miner, amount_i64, reason,
-                 status, created_at, confirms_at, tx_hash)
-                VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
-                """,
-                (
-                    now - 10,
-                    1,
-                    sender,
-                    account_recipient,
-                    amount_i64,
-                    "signed_transfer:cross-model-regression",
-                    now - 10,
-                    now - 1,
-                    "acct-confirm-cross-model",
-                ),
-            )
-
-        response = self.mod.app.test_client().post(
-            "/pending/confirm",
-            json={"limit": 1},
-            headers={"X-Admin-Key": ADMIN_KEY},
+        self._seed_pending_transfer(
+            sender,
+            account_recipient,
+            amount_rtc,
+            tx_hash="acct-confirm-cross-model",
         )
+        response = self._confirm_ready_pending()
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         self.assertEqual(response.get_json()["confirmed_count"], 1)
         self.assertEqual(_account_balance_rtc(self.db_path, sender), 0)
@@ -182,6 +191,88 @@ class TestPendingConfirmUtxoOwnership(unittest.TestCase):
                 f"stale_spend_ok={stale_spend_ok}"
             ),
         )
+
+    def test_pending_confirm_preserves_utxo_change_for_partial_mirror(self):
+        """Partial account confirmations must mirror recipient output and sender change."""
+        from utxo_db import UNIT, UtxoDB
+
+        sender = "alice"
+        recipient = "bob"
+        account_rtc = 100
+        transfer_rtc = 40
+
+        _seed_account_balance(self.db_path, sender, account_rtc)
+        _seed_account_balance(self.db_path, recipient, 0)
+
+        utxo = UtxoDB(self.db_path)
+        utxo.init_tables()
+        self.assertTrue(
+            utxo.apply_transaction(
+                {
+                    "tx_type": "mining_reward",
+                    "_allow_minting": True,
+                    "inputs": [],
+                    "outputs": [{"address": sender, "value_nrtc": account_rtc * UNIT}],
+                    "fee_nrtc": 0,
+                    "timestamp": 1,
+                },
+                block_height=1,
+            )
+        )
+
+        self._seed_pending_transfer(sender, recipient, transfer_rtc, tx_hash="partial-mirror")
+        response = self._confirm_ready_pending()
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["confirmed_count"], 1)
+        self.assertEqual(_account_balance_rtc(self.db_path, sender), account_rtc - transfer_rtc)
+        self.assertEqual(_account_balance_rtc(self.db_path, recipient), transfer_rtc)
+        self.assertEqual(utxo.get_balance(sender), (account_rtc - transfer_rtc) * UNIT)
+        self.assertEqual(utxo.get_balance(recipient), transfer_rtc * UNIT)
+
+    def test_pending_confirm_rolls_back_when_migrated_utxo_cannot_cover_amount(self):
+        """Do not debit the account model if migrated UTXO state cannot mirror it."""
+        from utxo_db import UNIT, UtxoDB
+
+        sender = "alice"
+        recipient = "bob"
+        account_rtc = 100
+        utxo_rtc = 50
+
+        _seed_account_balance(self.db_path, sender, account_rtc)
+        _seed_account_balance(self.db_path, recipient, 0)
+
+        utxo = UtxoDB(self.db_path)
+        utxo.init_tables()
+        self.assertTrue(
+            utxo.apply_transaction(
+                {
+                    "tx_type": "mining_reward",
+                    "_allow_minting": True,
+                    "inputs": [],
+                    "outputs": [{"address": sender, "value_nrtc": utxo_rtc * UNIT}],
+                    "fee_nrtc": 0,
+                    "timestamp": 1,
+                },
+                block_height=1,
+            )
+        )
+
+        self._seed_pending_transfer(sender, recipient, account_rtc, tx_hash="insufficient-utxo")
+        response = self._confirm_ready_pending()
+        body = response.get_json()
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(body["confirmed_count"], 0)
+        self.assertEqual(body["errors"], [{"id": 1, "error": "internal_error"}])
+        self.assertEqual(_account_balance_rtc(self.db_path, sender), account_rtc)
+        self.assertEqual(_account_balance_rtc(self.db_path, recipient), 0)
+        self.assertEqual(utxo.get_balance(sender), utxo_rtc * UNIT)
+        self.assertEqual(utxo.get_balance(recipient), 0)
+
+        with sqlite3.connect(self.db_path) as conn:
+            status = conn.execute("SELECT status FROM pending_ledger WHERE id = 1").fetchone()[0]
+        self.assertEqual(status, "pending")
 
 
 if __name__ == "__main__":
