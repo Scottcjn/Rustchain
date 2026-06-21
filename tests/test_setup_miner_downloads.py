@@ -1,10 +1,12 @@
 import hashlib
+import re
 from pathlib import Path
 
 import setup_miner
 
 
 ROOT = Path(__file__).resolve().parents[1]
+WINDOWS_BOOTSTRAP = ROOT / "miners" / "windows" / "rustchain_miner_setup.bat"
 
 
 def test_setup_miner_pins_current_miner_artifacts():
@@ -17,6 +19,14 @@ def test_setup_miner_pins_current_miner_artifacts():
     for platform, artifact in setup_miner.MINER_ARTIFACTS.items():
         assert artifact["url"].startswith("https://raw.githubusercontent.com/Scottcjn/Rustchain/main/")
         assert artifact["sha256"] == hashlib.sha256(expected_files[platform].read_bytes()).hexdigest()
+
+
+def test_windows_bootstrap_pins_current_miner_script():
+    content = WINDOWS_BOOTSTRAP.read_text(encoding="utf-8")
+    match = re.search(r'^set "MINER_SHA256=([0-9a-fA-F]{64})"$', content, re.MULTILINE)
+    assert match is not None
+    expected = hashlib.sha256((ROOT / "miners" / "windows" / "rustchain_windows_miner.py").read_bytes()).hexdigest()
+    assert match.group(1).lower() == expected
 
 
 def test_setup_miner_pins_current_macos_artifact():

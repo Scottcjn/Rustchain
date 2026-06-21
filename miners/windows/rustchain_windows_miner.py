@@ -728,7 +728,8 @@ class RustChainMiner:
     def submit_header(self, payload):
         """Submit one signed header and remember attempted slots."""
         slot = payload.get("header", {}).get("slot")
-        self._last_submitted_slot = slot
+        if slot is not None:
+            self._last_submitted_slot = slot
         try:
             response = requests.post(
                 f"{self.node_url}/headers/ingest_signed",
