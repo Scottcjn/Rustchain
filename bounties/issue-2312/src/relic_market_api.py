@@ -103,6 +103,14 @@ class Reservation:
     def to_dict(self) -> Dict:
         return asdict(self)
 
+    def to_public_dict(self) -> Dict:
+        """Return reservation data excluding sensitive access credentials.
+        Public view — safe for any caller without leaking secrets."""
+        d = asdict(self)
+        d.pop("ssh_credentials", None)
+        d.pop("api_key", None)
+        return d
+
 
 @dataclass
 class ProvenanceReceipt:
@@ -785,7 +793,7 @@ class MCPIntegration:
             reservation = self.reservation_manager.get_reservation(arguments["reservation_id"])
             if not reservation:
                 return {"error": "Reservation not found"}
-            return {"reservation": reservation.to_dict()}
+            return {"reservation": reservation.to_public_dict()}
         
         elif tool_name == "get_receipt":
             receipt = self.reservation_manager.get_receipt(arguments["session_id"])
@@ -866,14 +874,21 @@ class BeaconIntegration:
         }
     
     def _handle_cancel(self, payload: Dict) -> Dict:
-        """Handle cancellation request"""
+        """Handle cancellation request (requires agent_id proof of ownership)"""
         reservation_id = payload.get("reservation_id")
         if not reservation_id:
             return {"error": "Missing reservation_id"}
         
+        agent_id = payload.get("agent_id")
+        if not agent_id:
+            return {"error": "Missing agent_id"}
+        
         reservation = self.reservation_manager.get_reservation(reservation_id)
         if not reservation:
             return {"status": "error", "message": "Reservation not found"}
+        
+        if reservation.agent_id != agent_id:
+            return {"status": "error", "message": "Forbidden: agent does not own this reservation"}
         
         # Refund escrow
         self.reservation_manager.escrow.refund(reservation_id)
@@ -882,10 +897,21 @@ class BeaconIntegration:
         return {"status": "cancelled", "refund_status": "processed"}
     
     def _handle_start(self, payload: Dict) -> Dict:
-        """Handle session start request"""
+        """Handle session start request (requires agent_id proof of ownership)"""
         reservation_id = payload.get("reservation_id")
         if not reservation_id:
             return {"error": "Missing reservation_id"}
+        
+        agent_id = payload.get("agent_id")
+        if not agent_id:
+            return {"error": "Missing agent_id"}
+        
+        reservation = self.reservation_manager.get_reservation(reservation_id)
+        if not reservation:
+            return {"status": "error", "message": "Reservation not found"}
+        
+        if reservation.agent_id != agent_id:
+            return {"status": "error", "message": "Forbidden: agent does not own this reservation"}
         
         error = self.reservation_manager.start_session(reservation_id)
         if error:
@@ -900,10 +926,19 @@ class BeaconIntegration:
         }
     
     def _handle_complete(self, payload: Dict) -> Dict:
-        """Handle session completion"""
-        required = ["reservation_id", "compute_hash", "hardware_attestation"]
+        """Handle session completion (requires agent_id proof of ownership)"""
+        required = ["reservation_id", "agent_id", "compute_hash", "hardware_attestation"]
         if not all(k in payload for k in required):
             return {"error": "Missing required fields", "required": required}
+        
+        agent_id = payload["agent_id"]
+        
+        reservation = self.reservation_manager.get_reservation(payload["reservation_id"])
+        if not reservation:
+            return {"status": "error", "message": "Reservation not found"}
+        
+        if reservation.agent_id != agent_id:
+            return {"status": "error", "message": "Forbidden: agent does not own this reservation"}
         
         receipt, error = self.reservation_manager.complete_session(
             reservation_id=payload["reservation_id"],
@@ -930,7 +965,7 @@ class BeaconIntegration:
         if not reservation:
             return {"status": "error", "message": "Reservation not found"}
         
-        return {"reservation": reservation.to_dict()}
+        return {"reservation": reservation.to_public_dict()}
     
     def _handle_receipt_request(self, payload: Dict) -> Dict:
         """Handle receipt query"""
@@ -1079,28 +1114,43 @@ def reserve_machine():
     
     return jsonify({
         "ok": True,
-        "reservation": reservation.to_dict(),
-        "message": "Reservation confirmed. Access credentials provided."
+        "reservation": reservation.to_public_dict(),
+        "message": "Reservation confirmed. Start the session to receive access credentials."
     }), 201
 
 
 @app.route('/relic/reservation/<reservation_id>', methods=['GET'])
 def get_reservation(reservation_id: str):
-    """Get reservation details"""
+    """Get reservation details (public view — no credentials exposed)"""
     reservation = reservation_manager.get_reservation(reservation_id)
     if not reservation:
         return jsonify({"error": "Reservation not found"}), 404
     
-    return jsonify({"reservation": reservation.to_dict()})
+    return jsonify({"reservation": reservation.to_public_dict()})
 
 
 @app.route('/relic/reservation/<reservation_id>/start', methods=['POST'])
 def start_reservation_session(reservation_id: str):
-    """Start a reservation session"""
+    """Start a reservation session (requires agent_id proof of ownership)"""
+    data, error = _json_object_body()
+    if error:
+        return error
+
+    agent_id, error = _required_string_field(data, "agent_id")
+    if error:
+        return error
+
+    reservation = reservation_manager.get_reservation(reservation_id)
+    if not reservation:
+        return jsonify({"error": "Reservation not found"}), 404
+
+    if reservation.agent_id != agent_id:
+        return jsonify({"error": "Forbidden: agent does not own this reservation"}), 403
+
     error = reservation_manager.start_session(reservation_id)
     if error:
         return jsonify({"error": error}), 400
-    
+
     reservation = reservation_manager.get_reservation(reservation_id)
     return jsonify({
         "ok": True,
@@ -1113,26 +1163,69 @@ def start_reservation_session(reservation_id: str):
     })
 
 
-@app.route('/relic/reservation/<reservation_id>/complete', methods=['POST'])
-def complete_reservation_session(reservation_id: str):
-    """Complete session and get provenance receipt"""
+@app.route('/relic/reservation/<reservation_id>/cancel', methods=['POST'])
+def cancel_reservation(reservation_id: str):
+    """Cancel a reservation (requires agent_id proof of ownership)"""
     data, error = _json_object_body()
     if error:
         return error
-    
+
+    agent_id, error = _required_string_field(data, "agent_id")
+    if error:
+        return error
+
+    reservation = reservation_manager.get_reservation(reservation_id)
+    if not reservation:
+        return jsonify({"error": "Reservation not found"}), 404
+
+    if reservation.agent_id != agent_id:
+        return jsonify({"error": "Forbidden: agent does not own this reservation"}), 403
+
+    if reservation.status not in (ReservationStatus.CONFIRMED.value, ReservationStatus.PENDING.value):
+        return jsonify({"error": f"Cannot cancel reservation in status: {reservation.status}"}), 400
+
+    # Refund escrow
+    reservation_manager.escrow.refund(reservation_id)
+    reservation.status = ReservationStatus.CANCELLED.value
+
+    return jsonify({
+        "ok": True,
+        "status": "cancelled",
+        "refund_status": "processed"
+    })
+
+
+@app.route('/relic/reservation/<reservation_id>/complete', methods=['POST'])
+def complete_reservation_session(reservation_id: str):
+    """Complete session and get provenance receipt (requires agent_id proof of ownership)"""
+    data, error = _json_object_body()
+    if error:
+        return error
+
+    agent_id, error = _required_string_field(data, "agent_id")
+    if error:
+        return error
+
+    reservation = reservation_manager.get_reservation(reservation_id)
+    if not reservation:
+        return jsonify({"error": "Reservation not found"}), 404
+
+    if reservation.agent_id != agent_id:
+        return jsonify({"error": "Forbidden: agent does not own this reservation"}), 403
+
     required = ["compute_hash", "hardware_attestation"]
     if not all(k in data for k in required):
         return jsonify({"error": "Missing required fields", "required": required}), 400
-    
+
     receipt, error = reservation_manager.complete_session(
         reservation_id=reservation_id,
         compute_hash=data["compute_hash"],
         hardware_attestation=data["hardware_attestation"]
     )
-    
+
     if error:
         return jsonify({"error": error}), 400
-    
+
     return jsonify({
         "ok": True,
         "receipt": receipt.to_dict(),
@@ -1188,11 +1281,11 @@ def get_leaderboard():
 
 @app.route('/relic/agent/<agent_id>/reservations', methods=['GET'])
 def get_agent_reservations(agent_id: str):
-    """Get all reservations for an agent"""
+    """Get all reservations for an agent (public view — no credentials exposed)"""
     reservations = reservation_manager.get_agent_reservations(agent_id)
     return jsonify({
         "agent_id": agent_id,
-        "reservations": [r.to_dict() for r in reservations],
+        "reservations": [r.to_public_dict() for r in reservations],
         "count": len(reservations)
     })
 
