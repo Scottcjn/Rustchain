@@ -38,14 +38,15 @@ Usage:
     title = engine.generate_title("my-agent-id", "Check out my new video!")
 """
 
-import time
-import math
-import threading
-import sqlite3
-import os
+import hmac
 import json
-import random
 import logging
+import math
+import os
+import random
+import sqlite3
+import threading
+import time
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass, field
@@ -53,6 +54,9 @@ from enum import Enum
 from collections import deque
 
 from flask import Blueprint, jsonify, request
+
+# Environment variable name for the mood signal API key
+MOOD_SIGNAL_API_KEY_ENV = "MOOD_SIGNAL_API_KEY"
 
 logger = logging.getLogger(__name__)
 
@@ -982,6 +986,37 @@ def get_agent_mood_endpoint(agent_name: str):
         return _mood_service_unavailable("get_agent_mood")
 
 
+def _require_mood_signal_auth() -> Optional[tuple]:
+    """
+    Require a valid mood signal API key for state-changing endpoints.
+    
+    Reads MOOD_SIGNAL_API_KEY from the environment. If set, the request
+    must include an ``X-Mood-Api-Key`` header whose value matches with
+    constant-time comparison.  If the env var is *not* set the endpoint
+    fails closed (401) so that unconfigured deployments cannot accidentally
+    leave the door open.
+    
+    Returns None when the request is authorised, or a Flask response
+    tuple ``(json, status_code)`` when it is not.
+    """
+    expected = os.environ.get(MOOD_SIGNAL_API_KEY_ENV)
+    if not expected:
+        logger.warning(
+            "%s not set — mood signal writes rejected (fail-closed)",
+            MOOD_SIGNAL_API_KEY_ENV,
+        )
+        return jsonify({"error": "Mood signal API key not configured"}), 503
+
+    provided = request.headers.get("X-Api-Key", "")
+    if not provided:
+        return jsonify({"error": "X-Api-Key header required for mood signal writes"}), 401
+
+    if not hmac.compare_digest(provided, expected):
+        return jsonify({"error": "Invalid mood signal API key"}), 403
+
+    return None
+
+
 @mood_bp.route("/<agent_name>/mood/signal", methods=["POST"])
 def record_mood_signal(agent_name: str):
     """
@@ -989,11 +1024,17 @@ def record_mood_signal(agent_name: str):
     
     Record a mood-affecting signal for an agent.
     
+    Requires ``X-Api-Key`` header matching ``MOOD_SIGNAL_API_KEY`` env var.
+    
     Request Body:
         signal_type - Type of signal (video_views, comment_sentiment, etc.)
         value - Signal value data
         weight - Optional signal weight (default: 1.0)
     """
+    auth_error = _require_mood_signal_auth()
+    if auth_error:
+        return auth_error
+
     try:
         engine = get_mood_engine()
         data, error = _get_json_object()
