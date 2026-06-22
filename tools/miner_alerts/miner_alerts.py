@@ -41,15 +41,31 @@ RUSTCHAIN_API = os.getenv("RUSTCHAIN_API", "https://rustchain.org")
 VERIFY_SSL = os.getenv("RUSTCHAIN_VERIFY_SSL", "false").lower() == "true"
 
 # Polling intervals (seconds)
-POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "120"))  # 2 minutes default
-OFFLINE_THRESHOLD = int(os.getenv("OFFLINE_THRESHOLD", "600"))  # 10 min no attestation
+def _safe_int(val: str, default: int) -> int:
+    """Cast *val* to int, returning *default* on malformed input."""
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        return default
+
+
+def _safe_float(val: str, default: float) -> float:
+    """Cast *val* to float, returning *default* on malformed input."""
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return default
+
+
+POLL_INTERVAL = _safe_int(os.getenv("POLL_INTERVAL", "120"), 120)  # 2 minutes default
+OFFLINE_THRESHOLD = _safe_int(os.getenv("OFFLINE_THRESHOLD", "600"), 600)  # 10 min no attestation
 
 # Large transfer threshold (RTC)
-LARGE_TRANSFER_THRESHOLD = float(os.getenv("LARGE_TRANSFER_THRESHOLD", "10.0"))
+LARGE_TRANSFER_THRESHOLD = _safe_float(os.getenv("LARGE_TRANSFER_THRESHOLD", "10.0"), 10.0)
 
 # SMTP configuration
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_PORT = _safe_int(os.getenv("SMTP_PORT", "587"), 587)
 SMTP_USER = os.getenv("SMTP_USER", "")
 SMTP_PASS = os.getenv("SMTP_PASS", "")
 SMTP_FROM = os.getenv("SMTP_FROM", "")
