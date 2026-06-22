@@ -739,19 +739,36 @@
 
         img.onerror = () => {
           // For demo purposes, show a placeholder if endpoint is unavailable
-          previewArea.innerHTML = `
-            <div style="text-align: left;">
-              <p style="color: var(--term-orange); margin-bottom: 10px;">
-                ⚠ Preview endpoint unavailable (expected in static mode)
-              </p>
-              <p style="color: var(--term-dim);">
-                Badge URL: <span style="color: var(--term-blue);">${url}</span>
-              </p>
-              <p style="color: var(--term-dim); margin-top: 10px;">
-                In production, this will fetch the badge from the BCOS API.
-              </p>
-            </div>
-          `;
+          // Build DOM safely to prevent XSS
+          previewArea.innerHTML = '';
+
+          const container = document.createElement('div');
+          container.style.textAlign = 'left';
+
+          const warningP = document.createElement('p');
+          warningP.style.color = 'var(--term-orange)';
+          warningP.style.marginBottom = '10px';
+          warningP.textContent = '⚠ Preview endpoint unavailable (expected in static mode)';
+          container.appendChild(warningP);
+
+          const urlP = document.createElement('p');
+          urlP.style.color = 'var(--term-dim)';
+          urlP.appendChild(document.createTextNode('Badge URL: '));
+
+          const urlSpan = document.createElement('span');
+          urlSpan.style.color = 'var(--term-blue)';
+          urlSpan.textContent = url;
+          urlP.appendChild(urlSpan);
+
+          container.appendChild(urlP);
+
+          const infoP = document.createElement('p');
+          infoP.style.color = 'var(--term-dim)';
+          infoP.style.marginTop = '10px';
+          infoP.textContent = 'In production, this will fetch the badge from the BCOS API.';
+          container.appendChild(infoP);
+
+          previewArea.appendChild(container);
           resolve(); // Don't reject, just show placeholder
         };
 
