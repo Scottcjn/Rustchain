@@ -993,7 +993,7 @@ def _require_mood_signal_auth() -> Optional[tuple]:
     Reads MOOD_SIGNAL_API_KEY from the environment. If set, the request
     must include an ``X-Mood-Api-Key`` header whose value matches with
     constant-time comparison.  If the env var is *not* set the endpoint
-    fails closed (401) so that unconfigured deployments cannot accidentally
+    fails closed (503) so that unconfigured deployments cannot accidentally
     leave the door open.
     
     Returns None when the request is authorised, or a Flask response
