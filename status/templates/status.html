@@ -82,6 +82,13 @@ function escapeHtml(value) {
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
 }
+// Whitelist of CSS class fragments safe to interpolate from server-side data.
+// Any class not in this set is dropped so an attacker cannot break out of the
+// attribute via a crafted node name, status string, or event label.
+const ALLOWED_STATUS_CLASSES = new Set(['up', 'down', 'recovered', 'unknown']);
+function safeClass(value, fallback = '') {
+  return ALLOWED_STATUS_CLASSES.has(String(value)) ? String(value) : fallback;
+}
 async function refresh() {
   try {
     const [statusRes, incRes, uptimeRes] = await Promise.all([
@@ -106,31 +113,58 @@ async function refresh() {
       const nid = node.name.toLowerCase().replace(/\s+/g, '-').replace('node-','node-');
       const nodeId = Object.keys(uptime).find(k => uptime[k].name === node.name) || '';
       const u = uptime[nodeId] || {};
+      const statusClass = safeClass(node.up ? 'up' : 'down');
       const card = document.createElement('div');
       card.className = 'node-card';
-      card.innerHTML = `
-        <div class="node-header">
-          <span class="node-name">${escapeHtml(node.name)}</span>
-          <span class="status-badge ${node.up?'up':'down'}">${node.up?'Operational':'Down'}</span>
-        </div>
-        <div class="node-stats">
-          <div><span class="stat-label">Location</span><br><span class="stat-value">${escapeHtml(node.location || '—')}</span></div>
-          <div><span class="stat-label">Response</span><br><span class="stat-value">${escapeHtml(node.response_ms || 0)}ms</span></div>
-          <div><span class="stat-label">Miners</span><br><span class="stat-value">${escapeHtml(node.active_miners || '—')}</span></div>
-          <div><span class="stat-label">Epoch</span><br><span class="stat-value">${escapeHtml(node.current_epoch || '—')}</span></div>
-          <div><span class="stat-label">Version</span><br><span class="stat-value">${escapeHtml(node.version || '—')}</span></div>
-          <div><span class="stat-label">Uptime</span><br><span class="stat-value">${escapeHtml(formatUptime(node.uptime))}</span></div>
-        </div>
-        <div class="uptime-pct">${u.uptime_pct!==undefined?escapeHtml(u.uptime_pct+'% uptime (24h)'):'—'}</div>
-        <div class="uptime-bar" id="bar-${nodeId}"></div>
-      `;
+      // Build the static skeleton with safe DOM methods, then escape dynamic text.
+      const header = document.createElement('div');
+      header.className = 'node-header';
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'node-name';
+      nameSpan.textContent = node.name ?? '';
+      const badge = document.createElement('span');
+      badge.className = `status-badge ${statusClass}`;
+      badge.textContent = node.up ? 'Operational' : 'Down';
+      header.append(nameSpan, badge);
+
+      const stats = document.createElement('div');
+      stats.className = 'node-stats';
+      const mkStat = (label, value) => {
+        const wrap = document.createElement('div');
+        const lbl = document.createElement('span');
+        lbl.className = 'stat-label';
+        lbl.textContent = label;
+        const val = document.createElement('span');
+        val.className = 'stat-value';
+        val.textContent = value;
+        wrap.append(lbl, document.createElement('br'), val);
+        return wrap;
+      };
+      stats.append(
+        mkStat('Location', node.location || '—'),
+        mkStat('Response', `${node.response_ms || 0}ms`),
+        mkStat('Miners', String(node.active_miners || '—')),
+        mkStat('Epoch', String(node.current_epoch || '—')),
+        mkStat('Version', String(node.version || '—')),
+        mkStat('Uptime', formatUptime(node.uptime))
+      );
+
+      const uptimePct = document.createElement('div');
+      uptimePct.className = 'uptime-pct';
+      uptimePct.textContent = u.uptime_pct !== undefined ? `${u.uptime_pct}% uptime (24h)` : '—';
+
+      const bar = document.createElement('div');
+      bar.className = 'uptime-bar';
+      bar.id = `bar-${nodeId}`;
+
+      card.append(header, stats, uptimePct, bar);
       container.appendChild(card);
       // Load history for uptime bar
       if (nodeId) {
         fetch('/api/history/'+nodeId).then(r=>r.json()).then(hist=>{
-          const bar = document.getElementById('bar-'+nodeId);
-          if(!bar) return;
-          // Show last 48 ticks (every 30 min summary)
+          const barEl = document.getElementById('bar-'+nodeId);
+          if(!barEl) return;
+          // Show last 48 ticks (every 30 min summary) — class names whitelisted.
           const buckets = [];
           const step = Math.max(1, Math.floor(hist.length/48));
           for(let i=0;i<hist.length;i+=step){
@@ -138,22 +172,43 @@ async function refresh() {
             const anyDown = slice.some(h=>!h.up);
             buckets.push(anyDown?'down':'up');
           }
-          bar.innerHTML = buckets.map(s=>`<div class="tick ${s}"></div>`).join('');
+          barEl.replaceChildren(...buckets.map(s => {
+            const tick = document.createElement('div');
+            tick.className = `tick ${safeClass(s)}`;
+            return tick;
+          }));
         });
       }
     }
     // Incidents
     const incEl = document.getElementById('incidents');
+    incEl.replaceChildren();
     if(incidents.length===0){
-      incEl.innerHTML='<div class="empty">No incidents recorded</div>';
+      const empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = 'No incidents recorded';
+      incEl.appendChild(empty);
     } else {
-      incEl.innerHTML=incidents.slice(0,20).map(i=>`
-        <div class="incident">
-          <span><span class="event-${i.event === 'down' ? 'down' : i.event === 'recovered' ? 'recovered' : 'unknown'}">${i.event==='down'?'🔴':'🟢'} ${escapeHtml(i.node)} — ${escapeHtml(i.event)}</span>
-          ${i.detail?' · '+escapeHtml(i.detail):''}</span>
-          <span class="time">${escapeHtml(formatTime(i.time))}</span>
-        </div>
-      `).join('');
+      for (const i of incidents.slice(0,20)) {
+        const eventClass = safeClass(
+          i.event === 'down' ? 'down' : i.event === 'recovered' ? 'recovered' : 'unknown'
+        );
+        const row = document.createElement('div');
+        row.className = 'incident';
+        const left = document.createElement('span');
+        const evt = document.createElement('span');
+        evt.className = `event-${eventClass}`;
+        evt.textContent = `${i.event==='down'?'🔴':'🟢'} ${i.node ?? ''} — ${i.event ?? ''}`;
+        left.append(evt);
+        if (i.detail) {
+          left.append(document.createTextNode(` · ${i.detail}`));
+        }
+        const timeSpan = document.createElement('span');
+        timeSpan.className = 'time';
+        timeSpan.textContent = formatTime(i.time);
+        row.append(left, timeSpan);
+        incEl.appendChild(row);
+      }
     }
   } catch(e) { console.error('Refresh failed:', e); }
 }

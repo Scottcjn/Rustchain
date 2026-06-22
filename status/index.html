@@ -552,8 +552,18 @@
       }
     }
 
+    // Whitelist of allowed status values; anything else collapses to "unknown"
+    // so we never interpolate untrusted strings into class attributes.
+    const STATUS_WHITELIST = new Set(["online", "offline", "degraded", "blocked", "unknown"]);
+
+    function safeClass(value, fallback = "") {
+      return STATUS_WHITELIST.has(value) ? value : fallback;
+    }
+
     function renderNodes(results) {
-      $("node-list").innerHTML = results.map((result) => {
+      const list = $("node-list");
+      list.replaceChildren();
+      for (const result of results) {
         const status = getOnlineStatus(result);
         const health = result.health || {};
         const epoch = result.epoch || {};
@@ -566,26 +576,55 @@
           ? `${Math.floor(Number(uptime) / 3600)}h ${Math.floor((Number(uptime) % 3600) / 60)}m`
           : "unknown";
 
-        return `
-          <article class="node-card">
-            <div class="node-head">
-              <div>
-                <div class="node-title">${result.node.name}</div>
-                <div class="node-sub">${result.node.location}<br>${result.node.origin}</div>
-              </div>
-              <span class="badge ${status === "online" ? "ok" : status === "offline" ? "bad" : status === "blocked" ? "blocked" : ""}">${status}</span>
-            </div>
-            <div class="kv">
-              <div><span>Response</span><strong>${result.responseMs ? `${result.responseMs} ms` : "--"}</strong></div>
-              <div><span>Version</span><strong>${escapeHtml(version)}</strong></div>
-              <div><span>Miners</span><strong>${minerCount || "--"}</strong></div>
-              <div><span>Epoch</span><strong>${epoch.epoch ?? health.epoch ?? "--"}</strong></div>
-              <div><span>Slot</span><strong>${epoch.slot ?? "--"}</strong></div>
-              <div><span>Uptime</span><strong>${uptimeLabel}</strong></div>
-            </div>
-          </article>
-        `;
-      }).join("");
+        // Build with safe DOM construction — never innerHTML for untrusted fields.
+        const card = document.createElement("article");
+        card.className = "node-card";
+
+        const head = document.createElement("div");
+        head.className = "node-head";
+
+        const headInfo = document.createElement("div");
+        const title = document.createElement("div");
+        title.className = "node-title";
+        title.textContent = result.node.name ?? "";
+        const sub = document.createElement("div");
+        sub.className = "node-sub";
+        const loc = document.createElement("span");
+        loc.textContent = result.node.location ?? "";
+        sub.append(loc, document.createElement("br"));
+        const originSpan = document.createElement("span");
+        originSpan.textContent = result.node.origin ?? "";
+        sub.appendChild(originSpan);
+        headInfo.append(title, sub);
+
+        const badge = document.createElement("span");
+        badge.className = `badge ${safeClass(status === "online" ? "ok" : status === "offline" ? "bad" : status === "blocked" ? "blocked" : "", status === "online" ? "ok" : status === "offline" ? "bad" : "")}`;
+        badge.textContent = status;
+        head.append(headInfo, badge);
+
+        const kv = document.createElement("div");
+        kv.className = "kv";
+        const mkRow = (label, value) => {
+          const row = document.createElement("div");
+          const lbl = document.createElement("span");
+          lbl.textContent = label;
+          const strong = document.createElement("strong");
+          strong.textContent = value;
+          row.append(lbl, strong);
+          return row;
+        };
+        kv.append(
+          mkRow("Response", result.responseMs ? `${result.responseMs} ms` : "--"),
+          mkRow("Version", version),
+          mkRow("Miners", String(minerCount || "--")),
+          mkRow("Epoch", String(epoch.epoch ?? health.epoch ?? "--")),
+          mkRow("Slot", String(epoch.slot ?? "--")),
+          mkRow("Uptime", uptimeLabel)
+        );
+
+        card.append(head, kv);
+        list.appendChild(card);
+      }
     }
 
     function renderSummary(results, primaryMiners, primaryEpoch) {
@@ -632,30 +671,52 @@
 
       const rows = [...counts.entries()].sort((a, b) => b[1] - a[1]);
       const total = miners.length || 0;
+      const target = $("arch-breakdown");
+      target.replaceChildren();
       if (!rows.length) {
-        $("arch-breakdown").innerHTML = `<div class="muted">Miner architecture data is unavailable.</div>`;
+        const muted = document.createElement("div");
+        muted.className = "muted";
+        muted.textContent = "Miner architecture data is unavailable.";
+        target.appendChild(muted);
         return;
       }
 
-      $("arch-breakdown").innerHTML = rows.map(([arch, count]) => {
+      for (const [arch, count] of rows) {
         const pct = total ? Math.round((count / total) * 100) : 0;
-        return `
-          <div class="arch-row">
-            <strong>${escapeHtml(arch)}</strong>
-            <div class="track"><div class="fill" style="width:${pct}%"></div></div>
-            <span class="muted">${count}</span>
-          </div>
-        `;
-      }).join("");
+        const row = document.createElement("div");
+        row.className = "arch-row";
+        const archStrong = document.createElement("strong");
+        archStrong.textContent = arch;
+        const track = document.createElement("div");
+        track.className = "track";
+        const fill = document.createElement("div");
+        fill.className = "fill";
+        fill.style.width = `${pct}%`;
+        track.appendChild(fill);
+        const mutedCount = document.createElement("span");
+        mutedCount.className = "muted";
+        mutedCount.textContent = String(count);
+        row.append(archStrong, track, mutedCount);
+        target.appendChild(row);
+      }
     }
 
     function renderLog(results) {
-      $("fetch-log").innerHTML = results.map((result) => {
+      const target = $("fetch-log");
+      target.replaceChildren();
+      const ALLOWED = new Set(["online", "offline", "blocked", "amber"]);
+      for (const result of results) {
         const status = getOnlineStatus(result);
         const cls = status === "online" ? "green" : status === "offline" ? "red" : status === "blocked" ? "" : "amber";
         const msg = result.error || `health ok in ${result.responseMs} ms`;
-        return `<div class="log-item"><strong class="${cls}">${result.node.name}</strong>: ${escapeHtml(msg)}</div>`;
-      }).join("");
+        const item = document.createElement("div");
+        item.className = "log-item";
+        const strong = document.createElement("strong");
+        strong.className = ALLOWED.has(cls) ? cls : "";
+        strong.textContent = result.node.name ?? "";
+        item.append(strong, document.createTextNode(`: ${msg}`));
+        target.appendChild(item);
+      }
     }
 
     function escapeHtml(value) {
