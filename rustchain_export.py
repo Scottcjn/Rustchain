@@ -297,16 +297,35 @@ DEFAULT_HEADERS = {
 }
 
 
+_FORMULA_LEADING = frozenset(("=", "+", "-", "@"))
+
+
+def _sanitize_csv_value(value: Any) -> str:
+    """Neutralize spreadsheet formula-leading text values."""
+    if not isinstance(value, str):
+        return value
+    stripped = value.strip()
+    if stripped and stripped[0] in _FORMULA_LEADING:
+        return "'" + value
+    # Also catch tab/control-prefixed variants
+    for ch in ("\t", "\r", "\n", "\x00", "\x1b"):
+        if ch in stripped:
+            return "'" + value
+    return value
+
+
 def write_csv(path: Path, rows: list[dict[str, Any]], default_headers: list[str] | None = None) -> None:
     if rows:
         fieldnames = sorted({key for row in rows for key in row.keys()})
     else:
         fieldnames = sorted(default_headers) if default_headers else []
+    # Sanitize formula-leading values
+    sanitized = [{k: _sanitize_csv_value(v) for k, v in row.items()} for row in rows]
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         if fieldnames:
             writer.writeheader()
-        writer.writerows(rows)
+        writer.writerows(sanitized)
 
 
 def write_json(path: Path, rows: list[dict[str, Any]]) -> None:
