@@ -45,12 +45,28 @@ logging.basicConfig(
 )
 log = logging.getLogger("webhook-dispatcher")
 
+
+def _safe_int(val: str, default: int) -> int:
+    """Cast *val* to int, returning *default* on malformed input."""
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        return default
+
+
+def _safe_float(val: str, default: float) -> float:
+    """Cast *val* to float, returning *default* on malformed input."""
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return default
+
 # ---------------------------------------------------------------------------
 # Constants & defaults
 # ---------------------------------------------------------------------------
 DEFAULT_NODE_URL = os.getenv("RUSTCHAIN_NODE", "http://localhost:5000")
-DEFAULT_POLL_INTERVAL = int(os.getenv("WEBHOOK_POLL_INTERVAL", "10"))
-DEFAULT_LARGE_TX_THRESHOLD = float(os.getenv("LARGE_TX_THRESHOLD", "100.0"))
+DEFAULT_POLL_INTERVAL = _safe_int(os.getenv("WEBHOOK_POLL_INTERVAL", "10"), 10)
+DEFAULT_LARGE_TX_THRESHOLD = _safe_float(os.getenv("LARGE_TX_THRESHOLD", "100.0"), 100.0)
 DEFAULT_DB_PATH = os.getenv("WEBHOOK_DB", "webhooks.db")
 MAX_ADMIN_BODY_BYTES = 1024 * 1024
 MAX_RETRIES = 5
