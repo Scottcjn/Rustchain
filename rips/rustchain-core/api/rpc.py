@@ -45,6 +45,7 @@ RPC_PUBLIC_METHODS = frozenset({
     "getProposal",
     "getNodeInfo",
     "getPeers",
+    "getNetwork",
     "getEntropyProfile",
 })
 
@@ -203,6 +204,7 @@ class RustChainApi:
         # Node methods
         self.rpc.register("getNodeInfo", self._get_node_info)
         self.rpc.register("getPeers", self._get_peers)
+        self.rpc.register("getNetwork", self._get_network)
         self.rpc.register("getEntropyProfile", self._get_entropy_profile)
 
     # =========================================================================
@@ -324,6 +326,21 @@ class RustChainApi:
     def _get_peers(self, params: Dict[str, Any]) -> list:
         """Get connected peers"""
         return self.node.get_peers()
+
+    def _get_network(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Combined network status: node info + peer count + peer list.
+
+        Maps to the public `/api/network` endpoint documented in
+        `docs/API_REFERENCE.md` and consumed by operator monitoring scripts
+        in `docs/NODE_OPERATOR_GUIDE.md`. Closes #7109.
+        """
+        node_info = self._get_node_info(params)
+        peers = self._get_peers(params)
+        return {
+            **node_info,
+            "peer_count": len(peers) if isinstance(peers, list) else 0,
+            "peers": peers,
+        }
 
     def _get_entropy_profile(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Get node's entropy profile"""
@@ -487,6 +504,7 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
         routes = {
             "/api/stats": ("getStats", {}),
             "/api/node/info": ("getNodeInfo", {}),
+            "/api/network": ("getNetwork", {}),
             "/api/peers": ("getPeers", {}),
             "/api/proposals": ("getProposals", {}),
             "/api/entropy": ("getEntropyProfile", {}),
