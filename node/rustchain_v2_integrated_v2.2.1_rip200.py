@@ -9398,16 +9398,19 @@ def api_wallet_tx_lookup(tx_hash):
             })
 
         # --- Immutable ledger (confirmed transfers) ---
+        # Escape SQL LIKE wildcards so a tx_hash containing '%' or '_'
+        # cannot match unrelated rows.
+        escaped = tx_hash.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         try:
             row = db.execute(
                 """
                 SELECT ts, epoch, miner_id, delta_i64, reason
                 FROM ledger
-                WHERE reason LIKE ?
+                WHERE reason LIKE ? ESCAPE '\\'
                 ORDER BY ts DESC
                 LIMIT 1
                 """,
-                (f"%:{tx_hash}",),
+                (f"%:{escaped}",),
             ).fetchone()
         except Exception:
             row = None
