@@ -122,6 +122,12 @@ Open questions we invite review on:
 4. `founder_community` debits reusing the existing 1-year-unlock guard.
 5. Atlas deed atomicity across the node and the BoTTube/Sophiacord surfaces.
 
+Reference note: `rips/reference/rip0301_atlas_deed_atomicity.py` models question
+5 as a deterministic event builder. It requires settled RTC receipts from the
+node, BoTTube, and Sophiacord surfaces before any Atlas owner map changes, and
+its tests cover split-brain receipts, partial surface updates, tip-credit
+settlement attempts, and owner-mismatch rollback.
+
 ## 9. What this deliberately does NOT do
 
 - No second tradeable token.
