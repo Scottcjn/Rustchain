@@ -44,6 +44,30 @@ def load_module():
     return module
 
 
+def test_malformed_numeric_env_uses_safe_defaults(monkeypatch):
+    monkeypatch.setenv("EXPORTER_PORT", "not-a-port")
+    monkeypatch.setenv("SCRAPE_INTERVAL", "not-an-interval")
+    monkeypatch.setenv("REQUEST_TIMEOUT", "not-a-timeout")
+
+    module = load_module()
+
+    assert module.EXPORTER_PORT == 9100
+    assert module.SCRAPE_INTERVAL == 60
+    assert module.REQUEST_TIMEOUT == 15
+
+
+def test_numeric_env_overrides_are_preserved(monkeypatch):
+    monkeypatch.setenv("EXPORTER_PORT", "9200")
+    monkeypatch.setenv("SCRAPE_INTERVAL", "30")
+    monkeypatch.setenv("REQUEST_TIMEOUT", "7")
+
+    module = load_module()
+
+    assert module.EXPORTER_PORT == 9200
+    assert module.SCRAPE_INTERVAL == 30
+    assert module.REQUEST_TIMEOUT == 7
+
+
 def test_numeric_coercion_helpers_use_defaults_for_bad_values():
     module = load_module()
 
