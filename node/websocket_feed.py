@@ -41,11 +41,34 @@ except ImportError:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
+def _env_int(name: str, default: int) -> int:
+    raw_value = os.environ.get(name)
+    if raw_value is None:
+        return default
+    try:
+        return int(raw_value)
+    except (TypeError, ValueError):
+        logger.warning("Invalid %s=%r; using default %s", name, raw_value, default)
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    raw_value = os.environ.get(name)
+    if raw_value is None:
+        return default
+    try:
+        return float(raw_value)
+    except (TypeError, ValueError):
+        logger.warning("Invalid %s=%r; using default %s", name, raw_value, default)
+        return default
+
+
 # Configuration
-WS_PORT = int(os.environ.get('WEBSOCKET_PORT', 8765))
+WS_PORT = _env_int('WEBSOCKET_PORT', 8765)
 API_BASE = os.environ.get('RUSTCHAIN_API_BASE', 'http://localhost:8088')
-POLL_INTERVAL = float(os.environ.get('WS_POLL_INTERVAL', '3'))
-MAX_EVENTS = int(os.environ.get('WS_MAX_EVENTS', '100'))
+POLL_INTERVAL = _env_float('WS_POLL_INTERVAL', 3.0)
+MAX_EVENTS = _env_int('WS_MAX_EVENTS', 100)
 JSON_RPC_VERSION = '2.0'
 MINING_STATS_SUBSCRIPTION = 'mining_stats'
 BLOCK_SUBSCRIPTION = 'blocks'
