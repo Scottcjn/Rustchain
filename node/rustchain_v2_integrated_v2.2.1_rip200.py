@@ -11118,11 +11118,23 @@ def beacon_submit():
     data = request.get_json(silent=True)
     if not isinstance(data, dict) or not data:
         return jsonify({"ok": False, "error": "invalid_json"}), 400
-    agent_id = data.get("agent_id", "")
-    kind = data.get("kind", "")
-    nonce = data.get("nonce", "")
-    sig = data.get("sig", "")
-    pubkey = data.get("pubkey", "")
+    fields = {}
+    for field_name in ("agent_id", "kind", "nonce", "sig", "pubkey"):
+        raw_value = data.get(field_name, "")
+        if raw_value is None:
+            fields[field_name] = ""
+            continue
+        if not isinstance(raw_value, str):
+            return jsonify({
+                "ok": False,
+                "error": f"invalid_field_type:{field_name}",
+            }), 400
+        fields[field_name] = raw_value.strip()
+    agent_id = fields["agent_id"]
+    kind = fields["kind"]
+    nonce = fields["nonce"]
+    sig = fields["sig"]
+    pubkey = fields["pubkey"]
     if not all([agent_id, kind, nonce, sig, pubkey]):
         return jsonify({"ok": False, "error": "missing_fields"}), 400
     if kind not in VALID_KINDS:
