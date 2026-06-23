@@ -85,6 +85,15 @@ class TestAgentIdFromPubkey:
 # ---------------------------------------------------------------------------
 
 class TestInitIdentityTables:
+    def test_invalid_ttl_env_falls_back_to_default(self, monkeypatch):
+        import importlib
+        from node import beacon_identity as bi
+
+        monkeypatch.setenv("BEACON_KEY_TTL", "not-an-int")
+        reloaded = importlib.reload(bi)
+
+        assert reloaded.DEFAULT_KEY_TTL == 30 * 24 * 60 * 60
+
     def test_creates_tables_without_error(self, db_path):
         import beacon_identity as bi
         bi.init_identity_tables(db_path)  # should not raise
