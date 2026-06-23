@@ -5531,6 +5531,15 @@ def ingest_signed_header():
     if header_miner and header_miner != miner_id:
         return jsonify({"ok":False,"error":"miner_mismatch"}), 400
 
+    canonical_msg = None
+    if header:
+        try:
+            canonical_msg = canonical_header_bytes(header)
+        except Exception:
+            return jsonify({"ok":False,"error":"bad header for canonicalization"}), 400
+        if msg_hex and msg_hex != bytes_to_hex(canonical_msg):
+            return jsonify({"ok":False,"error":"message_header_mismatch"}), 400
+
     # Resolve candidate public key(s). A wallet identity may have several enrolled
     # devices, each with its own header key (composite miner_header_keys PK), so we
     # collect every registered key and accept the header if its signature matches ANY.
@@ -5554,10 +5563,7 @@ def ingest_signed_header():
             return jsonify({"ok":False,"error":"bad message hex"}), 400
     else:
         # build canonical message from header
-        try:
-            msg = canonical_header_bytes(header)
-        except Exception:
-            return jsonify({"ok":False,"error":"bad header for canonicalization"}), 400
+        msg = canonical_msg if canonical_msg is not None else canonical_header_bytes(header)
         msg_hex = bytes_to_hex(msg)
 
     # Mock acceptance (TESTNET ONLY)
