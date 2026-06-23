@@ -48,6 +48,36 @@ def test_private_host_uses_upnp_when_available(monkeypatch):
     assert p2p_init.resolve_advertised_url("192.168.1.20", 8099) == "http://203.0.113.7:8099"
 
 
+def test_malformed_upnp_delay_env_falls_back(monkeypatch):
+    class FakeUPnP:
+        discoverdelay = None
+
+        def discover(self):
+            assert self.discoverdelay == 200
+            return 1
+
+        def selectigd(self):
+            return None
+
+        def externalipaddress(self):
+            return "203.0.113.8"
+
+        def addportmapping(self, external_port, proto, local_ip, local_port, desc, remote):
+            return True
+
+    monkeypatch.delenv("RC_P2P_EXTERNAL_URL", raising=False)
+    monkeypatch.setenv("RC_P2P_UPNP_DISCOVER_DELAY_MS", "not-an-int")
+    monkeypatch.setitem(sys.modules, "miniupnpc", types.SimpleNamespace(UPnP=FakeUPnP))
+
+    assert p2p_init.resolve_advertised_url("192.168.1.20", 8099) == "http://203.0.113.8:8099"
+
+
+def test_malformed_p2p_port_env_falls_back(monkeypatch):
+    monkeypatch.setenv("RC_P2P_PORT", "not-an-int")
+
+    assert p2p_init._env_int("RC_P2P_PORT", 8099) == 8099
+
+
 def test_peer_announce_adds_signed_public_peer(tmp_path):
     db_path = tmp_path / "p2p.db"
     receiver = gossip.GossipLayer("node-a", {}, db_path=str(db_path))
