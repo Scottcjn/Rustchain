@@ -1165,7 +1165,7 @@ class UtxoDB:
             input_total = 0
             for inp in inputs:
                 row = conn.execute(
-                    "SELECT value_nrtc FROM utxo_boxes WHERE box_id = ?",
+                    "SELECT value_nrtc FROM utxo_boxes WHERE box_id = ? AND spent_at IS NULL",
                     (inp['box_id'],),
                 ).fetchone()
                 if row:
@@ -1384,6 +1384,7 @@ class UtxoDB:
                     if (
                         input_set & selected_data_inputs
                         or data_input_set & selected_spend_inputs
+                        or input_set & selected_spend_inputs
                     ):
                         continue
 
@@ -1498,6 +1499,13 @@ def coin_select(utxos: List[dict], target_nrtc: int
             return [], 0
 
     change = total - target_nrtc
+    if len(selected) > MAX_INPUTS:
+        selected = selected[:MAX_INPUTS]
+        total = sum(u['value_nrtc'] for u in selected)
+        if total < target_nrtc:
+            return [], 0
+        change = total - target_nrtc
+
     if change < DUST_THRESHOLD:
         change = 0  # absorb dust into fee
 

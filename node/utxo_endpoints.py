@@ -587,6 +587,12 @@ def utxo_transfer():
     absorbed_fee_nrtc = selected_total_nrtc - amount_nrtc - fee_nrtc - change_nrtc
     if absorbed_fee_nrtc < 0:
         return jsonify({'error': 'UTXO coin selection underfunded transaction'}), 500
+    if absorbed_fee_nrtc > 0 and fee_nrtc == 0:
+        return jsonify({
+            'error': 'Dust change absorption is not authorized for zero-fee transactions. Please adjust the transfer amount or consolidate UTXOs.',
+            'code': 'UNAUTHORIZED_FEE_ABSORPTION',
+            'absorbed_fee_nrtc': absorbed_fee_nrtc,
+        }), 400
     effective_fee_nrtc = fee_nrtc + absorbed_fee_nrtc
 
     # Build and apply UTXO transaction
@@ -605,6 +611,11 @@ def utxo_transfer():
     try:
         conn.execute("BEGIN IMMEDIATE")
 
+        ok = _utxo_db.apply_transaction(tx, block_height, conn=conn)
+        if not ok:
+            conn.rollback()
+            return jsonify({'error': 'UTXO transaction failed (race condition or validation)'}), 500
+
         if not _reserve_transfer_nonce(conn, from_address, nonce):
             conn.rollback()
             return jsonify({
@@ -612,11 +623,6 @@ def utxo_transfer():
                 'code': 'REPLAY_DETECTED',
                 'nonce': str(nonce),
             }), 400
-
-        ok = _utxo_db.apply_transaction(tx, block_height, conn=conn)
-        if not ok:
-            conn.rollback()
-            return jsonify({'error': 'UTXO transaction failed (race condition or validation)'}), 500
 
         conn.commit()
     except Exception:

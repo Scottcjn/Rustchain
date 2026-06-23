@@ -291,8 +291,26 @@ class TestUtxoEndpoints(unittest.TestCase):
         self.assertEqual(data['change_rtc'], 9.0)
 
     def test_transfer_records_absorbed_dust_as_fee(self):
+        # Zero-fee transfers with dust absorption must be rejected
         sender = 'RTC_test_aabbccdd'
         self._seed_coinbase(sender, 100 * UNIT + 500)
+
+        r = self.client.post('/utxo/transfer', json={
+            'from_address': sender,
+            'to_address': 'bob',
+            'amount_rtc': 100.0,
+            'public_key': 'aabbccdd' * 8,
+            'signature': 'sig' * 22,
+            'nonce': int(time.time() * 1000),
+        })
+        data = r.get_json()
+        self.assertEqual(r.status_code, 400, data)
+        self.assertEqual(data['code'], 'UNAUTHORIZED_FEE_ABSORPTION')
+        self.assertEqual(data['absorbed_fee_nrtc'], 500)
+
+    def test_transfer_records_no_absorbed_dust_at_zero_fee(self):
+        sender = 'RTC_test_aabbccdd'
+        self._seed_coinbase(sender, 100 * UNIT)
 
         r = self.client.post('/utxo/transfer', json={
             'from_address': sender,
@@ -306,23 +324,14 @@ class TestUtxoEndpoints(unittest.TestCase):
         self.assertEqual(r.status_code, 200, data)
         self.assertTrue(data['ok'])
         self.assertEqual(data['change_nrtc'], 0)
-        self.assertEqual(data['fee_nrtc'], 500)
-        self.assertEqual(data['fee_rtc'], self._rtc_float(500))
+        self.assertEqual(data['fee_nrtc'], 0)
+        self.assertEqual(data['fee_rtc'], 0.0)
         self.assertEqual(data['requested_fee_nrtc'], 0)
         self.assertEqual(data['requested_fee_rtc'], 0.0)
-        self.assertEqual(data['absorbed_fee_nrtc'], 500)
-        self.assertEqual(data['absorbed_fee_rtc'], self._rtc_float(500))
+        self.assertEqual(data['absorbed_fee_nrtc'], 0)
+        self.assertEqual(data['absorbed_fee_rtc'], 0.0)
         self.assertEqual(self.utxo_db.get_balance(sender), 0)
         self.assertEqual(self.utxo_db.get_balance('bob'), 100 * UNIT)
-
-        conn = self.utxo_db._conn()
-        try:
-            row = conn.execute(
-                "SELECT fee_nrtc FROM utxo_transactions WHERE tx_type = 'transfer'"
-            ).fetchone()
-            self.assertEqual(row['fee_nrtc'], 500)
-        finally:
-            conn.close()
 
     def test_transfer_reports_requested_fee_plus_absorbed_dust(self):
         sender = 'RTC_test_aabbccdd'
