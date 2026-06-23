@@ -24,8 +24,20 @@ from typing import Any, Dict, List, Optional, Tuple
 
 log = logging.getLogger("beacon.identity")
 
+
+def _env_int(name: str, default: int) -> int:
+    raw_value = os.environ.get(name)
+    if raw_value is None:
+        return default
+    try:
+        return int(raw_value)
+    except (TypeError, ValueError):
+        log.warning("Invalid %s=%r; using default %s", name, raw_value, default)
+        return default
+
+
 # Default key TTL: 30 days in seconds
-DEFAULT_KEY_TTL: int = int(os.environ.get("BEACON_KEY_TTL", str(30 * 24 * 60 * 60)))
+DEFAULT_KEY_TTL: int = _env_int("BEACON_KEY_TTL", 30 * 24 * 60 * 60)
 
 DB_PATH: str = os.environ.get("BEACON_DB_PATH", "/root/rustchain/rustchain_v2.db")
 
