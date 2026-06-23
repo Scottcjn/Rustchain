@@ -9352,6 +9352,98 @@ def api_wallet_history():
         "total": total,
     })
 
+@app.route('/wallet/tx/<tx_hash>', methods=['GET'])
+def api_wallet_tx_lookup(tx_hash):
+    """Look up a single transaction by hash.
+
+    Searches ``pending_ledger`` (in-flight) and ``ledger`` (immutable) for a
+    row matching the given ``tx_hash``.  Returns a bounded JSON response that
+    matches the mobile-wallet ``TransactionResponse`` schema.
+    """
+    tx_hash = (tx_hash or "").strip()
+    if not tx_hash:
+        return jsonify({"ok": False, "error": "tx_hash required"}), 400
+
+    with sqlite3.connect(DB_PATH) as db:
+        # --- Pending ledger (in-flight) ---
+        try:
+            row = db.execute(
+                """
+                SELECT ts, from_miner, to_miner, amount_i64, reason,
+                       status, tx_hash, COALESCE(created_at, ts) as created
+                FROM pending_ledger
+                WHERE tx_hash = ?
+                LIMIT 1
+                """,
+                (tx_hash,),
+            ).fetchone()
+        except Exception:
+            row = None
+
+        if row:
+            ts, from_m, to_m, amt, reason, status, _tx, created = row
+            is_transfer_out = from_m is not None
+            return jsonify({
+                "ok": True,
+                "tx_hash": _tx,
+                "status": status or "pending",
+                "verified": False,
+                "confirmations": 0,
+                "block_height": None,
+                "amount": abs(int(amt)) / UNIT if amt else 0,
+                "from": from_m if is_transfer_out else None,
+                "to": to_m if is_transfer_out else from_m,
+                "timestamp": int(created or ts or 0),
+                "reason": reason or None,
+            })
+
+        # --- Immutable ledger (confirmed transfers) ---
+        # Escape SQL LIKE wildcards so a tx_hash containing '%' or '_'
+        # cannot match unrelated rows.
+        escaped = tx_hash.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        try:
+            row = db.execute(
+                """
+                SELECT ts, epoch, miner_id, delta_i64, reason
+                FROM ledger
+                WHERE reason LIKE ? ESCAPE '\\'
+                ORDER BY ts DESC
+                LIMIT 1
+                """,
+                (f"%:{escaped}",),
+            ).fetchone()
+        except Exception:
+            row = None
+
+        if row:
+            ts, epoch, _mid, delta_i64, reason = row
+            reason_str = str(reason or "")
+            tx_type = "unknown"
+            if reason_str.startswith("transfer_in:"):
+                tx_type = "transfer_in"
+            elif reason_str.startswith("transfer_out:"):
+                tx_type = "transfer_out"
+            return jsonify({
+                "ok": True,
+                "tx_hash": tx_hash,
+                "status": "confirmed",
+                "verified": True,
+                "confirmations": 1,
+                "block_height": int(epoch) if epoch else None,
+                "amount": abs(int(delta_i64)) / UNIT if delta_i64 else 0,
+                "timestamp": int(ts) if ts else 0,
+                "type": tx_type,
+                "reason": reason_str,
+            })
+
+    return jsonify({
+        "ok": False,
+        "tx_hash": tx_hash,
+        "status": "not_found",
+        "message": "transaction not found",
+    }), 404
+
+
 # =============================================================================
 # 2-PHASE COMMIT PENDING LEDGER SYSTEM
 # Added 2026-02-03 - Security fix for transfer logging
