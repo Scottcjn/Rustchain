@@ -128,5 +128,45 @@ class TestStaticDeploy(unittest.TestCase):
         self.assertIn("</html>", html)
 
 
+class TestTxTableSafety(unittest.TestCase):
+    """Regression tests for #7129: tx table must not use innerHTML for untrusted fields."""
+
+    @classmethod
+    def setUpClass(cls):
+        with open(os.path.join(HERE, "bridge_dashboard.js"), encoding="utf-8") as f:
+            cls.js = f.read()
+
+    def _updateTxTableBody(self):
+        m = re.search(r"function updateTxTable\([^)]*\)\s*\{", self.js)
+        self.assertIsNotNone(m, "updateTxTable function must exist")
+        start = m.end()
+        depth = 1
+        i = start
+        while i < len(self.js) and depth > 0:
+            ch = self.js[i]
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+            i += 1
+        return self.js[start : i - 1]
+
+    def test_no_innerHTML_for_tx_rows(self):
+        """updateTxTable must not write untrusted bridge tx fields through innerHTML."""
+        body = self._updateTxTableBody()
+        self.assertNotIn(".innerHTML", body, "updateTxTable must not assign innerHTML")
+
+    def test_uses_textContent_for_untrusted_fields(self):
+        body = self._updateTxTableBody()
+        self.assertIn("textContent", body)
+        self.assertIn("createElement", body)
+
+    def test_handles_missing_or_non_string_tx(self):
+        """The fixed helper must not crash on tx.tx that is not a string."""
+        body = self._updateTxTableBody()
+        # Should guard against non-string tx values (slice would crash).
+        self.assertIn("String(tx.tx)", body)
+
+
 if __name__ == "__main__":
     unittest.main()
