@@ -50,11 +50,6 @@ node/gpu_render_endpoints.py:cols = {row[1] for row in db.execute("PRAGMA table_
 node/gpu_render_protocol.py:).fetchall()
 node/gpu_render_protocol.py:cols = {row[1] for row in conn.execute("PRAGMA table_info(render_escrow)").fetchall()}
 node/gpu_render_protocol.py:rows = conn.execute(query, params).fetchall()
-node/hall_of_rust.py:for r in c.fetchall()
-node/hall_of_rust.py:for r in c.fetchall()
-node/hall_of_rust.py:for row in c.fetchall():
-node/hall_of_rust.py:for row in c.fetchall():
-node/hall_of_rust.py:rows = c.fetchall()
 node/hall_of_rust.py:rows = c.fetchall()
 node/hardware_binding_v2.py:for row in c.fetchall():
 node/hardware_fingerprint_replay.py:collisions = c.fetchall()
