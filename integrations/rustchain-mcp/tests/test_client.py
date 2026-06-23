@@ -5,6 +5,7 @@ RustChain MCP - Client Tests
 Unit tests for RustChainClient with mocked HTTP responses.
 """
 
+import importlib
 import os
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -14,6 +15,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
+    import rustchain_mcp.client as client_module
     from rustchain_mcp.client import RustChainClient
     from rustchain_mcp.schemas import (
         APIError,
@@ -24,6 +26,7 @@ try:
         WalletBalance,
     )
 except ImportError:
+    import client as client_module
     from client import RustChainClient
     from schemas import (
         APIError,
@@ -33,6 +36,26 @@ except ImportError:
         QueryResult,
         WalletBalance,
     )
+
+
+def test_malformed_numeric_env_uses_safe_defaults(monkeypatch):
+    monkeypatch.setenv("RUSTCHAIN_TIMEOUT", "not-a-timeout")
+    monkeypatch.setenv("RUSTCHAIN_RETRY", "bad-retry")
+
+    module = importlib.reload(client_module)
+
+    assert module.REQUEST_TIMEOUT == 30
+    assert module.RETRY_COUNT == 2
+
+
+def test_numeric_env_overrides_are_preserved(monkeypatch):
+    monkeypatch.setenv("RUSTCHAIN_TIMEOUT", "12")
+    monkeypatch.setenv("RUSTCHAIN_RETRY", "4")
+
+    module = importlib.reload(client_module)
+
+    assert module.REQUEST_TIMEOUT == 12
+    assert module.RETRY_COUNT == 4
 
 
 class AsyncContextManager:
