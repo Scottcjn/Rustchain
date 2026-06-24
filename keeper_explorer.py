@@ -24,6 +24,7 @@ import requests
 from flask import Flask, request, jsonify, render_template_string, send_from_directory
 from flask_cors import CORS
 from datetime import datetime
+from urllib.parse import quote, unquote
 
 # Configuration
 NODE_API = os.environ.get("RUSTCHAIN_NODE_API", "http://localhost:8000")
@@ -31,6 +32,77 @@ FAUCET_DB = "faucet_service/faucet.db"
 PORT = 8095
 WALLET_ADDRESS_RE = re.compile(r"^[A-Za-z0-9._:-]{3,128}$")
 logger = logging.getLogger(__name__)
+
+# Read-only allowlist for the keeper explorer proxy (Issue #4904).
+# Only these upstream paths may be reached through /api/proxy/. Any other path
+# is rejected before requests.get is ever called, closing the unauthenticated
+# SSRF vector that previously exposed internal node admin endpoints.
+PROXY_ALLOWED_ENDPOINTS = frozenset({
+    "health",
+    "epoch",
+    "api/miners",
+    "blocks",
+    "api/transactions",
+    "hall/leaderboard",
+})
+
+# Upstream response headers that must never be forwarded through the proxy.
+# These can leak internal server version, internal IPs, cookies, or routing
+# information that callers have no business seeing.
+_PROXY_STRIPPED_HEADERS = frozenset({
+    "server",
+    "x-powered-by",
+    "x-aspnet-version",
+    "x-aspnetmvc-version",
+    "x-internal-ip",
+    "x-internal-host",
+    "x-real-ip",
+    "x-forwarded-for",
+    "x-forwarded-host",
+    "x-forwarded-proto",
+    "x-forwarded-server",
+    "set-cookie",
+    "x-cache",
+    "via",
+    "x-amz-cf-id",
+    "x-amz-request-id",
+    "strict-transport-security",
+})
+
+
+def validate_proxy_endpoint(endpoint):
+    """Return a safe upstream path for keeper explorer proxy requests, or None.
+
+    Rejects empty values, leading slashes, dot-segments, URL-encoding tricks,
+    and anything outside ``PROXY_ALLOWED_ENDPOINTS``. Mirrors the
+    ``explorer_server.validate_proxy_endpoint`` contract so the same allowed
+    surfaces govern both proxy entry points.
+    """
+    if not isinstance(endpoint, str):
+        return None
+    decoded = unquote(endpoint or "")
+    segments = decoded.split("/")
+    if (
+        not decoded
+        or decoded != endpoint
+        or decoded.startswith("/")
+        or any(segment in ("", ".", "..") for segment in segments)
+        or decoded not in PROXY_ALLOWED_ENDPOINTS
+    ):
+        return None
+    return "/".join(quote(segment, safe="") for segment in segments)
+
+
+def _safe_proxy_headers(upstream_headers):
+    """Filter upstream response headers to a safe allowlist of content types."""
+    safe = []
+    for header_name, header_value in upstream_headers:
+        if not header_name:
+            continue
+        if header_name.lower() in _PROXY_STRIPPED_HEADERS:
+            continue
+        safe.append((header_name, header_value))
+    return safe
 
 app = Flask(__name__)
 CORS(app)
@@ -104,18 +176,36 @@ def home():
 
 @app.route('/api/proxy/<path:path>')
 def proxy_api(path):
-    """Proxy requests to the RustChain node."""
+    """Proxy read-only requests to the RustChain node.
+
+    Closes the unauthenticated SSRF vector reported in Issue #4904 by
+    restricting the upstream path to ``PROXY_ALLOWED_ENDPOINTS`` and
+    stripping headers that leak internal server information. Any path
+    outside the allowlist returns 403 without ever calling ``requests.get``,
+    so internal admin endpoints, internal hostnames, and arbitrary
+    schemes/URLs cannot be reached through this surface.
+    """
+    safe_endpoint = validate_proxy_endpoint(path)
+    if safe_endpoint is None:
+        return jsonify({"error": "Proxy path not allowed"}), 403
+
+    safe_query = []
+    for raw_key, raw_value in request.args.lists():
+        if not raw_key or not all(ch.isalnum() or ch in "-_." for ch in raw_key):
+            return jsonify({"error": "Proxy path not allowed"}), 403
+        safe_query.append((raw_key, raw_value))
+
     try:
-        url = f"{NODE_API}/{path}"
-        # Keep query parameters
-        if request.query_string:
-            url += f"?{request.query_string.decode('utf-8')}"
-            
-        resp = requests.get(url, timeout=5)
-        return (resp.content, resp.status_code, resp.headers.items())
+        resp = requests.get(
+            f"{NODE_API}/{safe_endpoint}",
+            params=safe_query or None,
+            timeout=5,
+        )
     except Exception:
         logger.exception("Keeper explorer proxy request failed")
         return jsonify({"error": "Node connection failed"}), 502
+
+    return (resp.content, resp.status_code, _safe_proxy_headers(resp.headers.items()))
 
 @app.route('/api/faucet/drip', methods=['POST'])
 def faucet_drip():

@@ -96,8 +96,16 @@ def test_proxy_hides_internal_connection_errors(tmp_path, monkeypatch):
 
     monkeypatch.setattr(keeper.requests, "get", fail_request)
 
+    # Issue #4904: paths outside the allowlist short-circuit with 403 and
+    # never call requests.get, so no internal connection error can leak.
     response = keeper.app.test_client().get("/api/proxy/blocks/latest")
+    assert response.status_code == 403
+    assert response.get_json() == {"error": "Proxy path not allowed"}
+    assert internal_error not in response.get_data(as_text=True)
 
+    # An allowlisted path that does reach requests.get returns the sanitized
+    # 502 response and does not surface the internal connection detail.
+    response = keeper.app.test_client().get("/api/proxy/blocks")
     assert response.status_code == 502
     body = response.get_json()
     assert body == {"error": "Node connection failed"}
