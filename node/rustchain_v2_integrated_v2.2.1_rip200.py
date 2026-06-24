@@ -1386,21 +1386,24 @@ def normalize_epoch_weight_units(raw_weight) -> int:
 
 def ensure_epoch_enroll_integer_weights(conn: sqlite3.Connection):
     """Migrate legacy REAL epoch weights to fixed-point INTEGER storage."""
-    columns = conn.execute("PRAGMA table_info(epoch_enroll)").fetchall()
+    columns = conn.execute("PRAGMA table_info(epoch_enroll)").fetchall()  # fetchall-ok: pragma-result
     weight_column = next((col for col in columns if col[1] == "weight"), None)
     if not weight_column:
         return
     if str(weight_column[2]).upper() == "INTEGER":
         return
 
-    rows = conn.execute("SELECT epoch, miner_pk, weight FROM epoch_enroll").fetchall()
     conn.execute("ALTER TABLE epoch_enroll RENAME TO epoch_enroll_legacy_real")
     conn.execute(
         "CREATE TABLE epoch_enroll (epoch INTEGER, miner_pk TEXT, weight INTEGER, PRIMARY KEY (epoch, miner_pk))"
     )
+    legacy_rows = conn.execute("SELECT epoch, miner_pk, weight FROM epoch_enroll_legacy_real")
     conn.executemany(
         "INSERT OR REPLACE INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)",
-        [(epoch, miner_pk, epoch_weight_to_units(weight)) for epoch, miner_pk, weight in rows],
+        (
+            (epoch, miner_pk, epoch_weight_to_units(weight))
+            for epoch, miner_pk, weight in legacy_rows
+        ),
     )
     conn.execute("DROP TABLE epoch_enroll_legacy_real")
 
@@ -8305,6 +8308,7 @@ def _pending_ledger_explorer_transactions(db, limit):
         LIMIT ?
         """,
         (limit,),
+    # fetchall-ok: already-paginated
     ).fetchall()
 
     transactions = []
@@ -8338,6 +8342,7 @@ def _ledger_explorer_transactions(db, limit):
             LIMIT ?
             """,
             (limit,),
+        # fetchall-ok: already-paginated
         ).fetchall()
         return [
             {

@@ -146,12 +146,10 @@ node/rustchain_v2_integrated_v2.2.1_rip200.py:).fetchall():
 node/rustchain_v2_integrated_v2.2.1_rip200.py:WHERE active=1 ORDER BY signer_id""").fetchall()
 node/rustchain_v2_integrated_v2.2.1_rip200.py:_epoch_state_cols = {row[1] for row in c.execute("PRAGMA table_info(epoch_state)").fetchall()}
 node/rustchain_v2_integrated_v2.2.1_rip200.py:cols = {r[1] for r in cur.execute("PRAGMA table_info(balances)").fetchall()}
-node/rustchain_v2_integrated_v2.2.1_rip200.py:columns = conn.execute("PRAGMA table_info(epoch_enroll)").fetchall()
 node/rustchain_v2_integrated_v2.2.1_rip200.py:for r in c.execute("PRAGMA table_info(balances)").fetchall():
 node/rustchain_v2_integrated_v2.2.1_rip200.py:for row in c.fetchall():
 node/rustchain_v2_integrated_v2.2.1_rip200.py:return {row[1] for row in c.execute("PRAGMA table_info(balances)").fetchall()}
 node/rustchain_v2_integrated_v2.2.1_rip200.py:return {row[1] for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()}
-node/rustchain_v2_integrated_v2.2.1_rip200.py:rows = conn.execute("SELECT epoch, miner_pk, weight FROM epoch_enroll").fetchall()
 node/rustchain_v2_integrated_v2.2.1_rip200.py:rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
 node/rustchain_x402.py:columns = {row[1] for row in conn.execute("PRAGMA table_info(balances)").fetchall()}
 node/rustchain_x402.py:existing = {row[1] for row in cursor.fetchall()}
