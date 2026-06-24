@@ -58,6 +58,20 @@ def client(app):
     return app.test_client()
 
 
+def test_forward_timeouts_fall_back_on_malformed_env(monkeypatch):
+    monkeypatch.setenv("SOPHIA_GOVERNOR_INBOX_FORWARD_CONNECT_TIMEOUT_SEC", "not-a-float")
+    monkeypatch.setenv("SOPHIA_GOVERNOR_INBOX_FORWARD_READ_TIMEOUT_SEC", "also-bad")
+
+    assert sophia_governor_inbox._forward_timeouts() == (4.0, 90.0)
+
+
+def test_forward_timeouts_clamp_low_values(monkeypatch):
+    monkeypatch.setenv("SOPHIA_GOVERNOR_INBOX_FORWARD_CONNECT_TIMEOUT_SEC", "0.1")
+    monkeypatch.setenv("SOPHIA_GOVERNOR_INBOX_FORWARD_READ_TIMEOUT_SEC", "1.5")
+
+    assert sophia_governor_inbox._forward_timeouts() == (1.0, 5.0)
+
+
 def _sample_envelope():
     return {
         "event_id": 42,
