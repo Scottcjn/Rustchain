@@ -54,6 +54,27 @@ class TestBoTTubeClientInit:
         client = BoTTubeClient(base_url="https://bottube.ai/")
         assert client.base_url == "https://bottube.ai"
 
+    def test_insecure_tls_requires_explicit_acknowledgement(self):
+        """Disabling TLS verification requires a second explicit opt-in."""
+        with pytest.raises(ValueError, match="allow_insecure_tls=True"):
+            BoTTubeClient(verify_ssl=False)
+
+    def test_insecure_tls_acknowledgement_builds_unverified_context(self):
+        """Self-signed/local endpoints can still opt into insecure TLS deliberately."""
+        client = BoTTubeClient(verify_ssl=False, allow_insecure_tls=True)
+
+        assert client.verify_ssl is False
+        assert client.allow_insecure_tls is True
+        assert client._ctx is not None
+
+    def test_default_tls_uses_platform_verification(self):
+        """Default clients keep urllib's platform TLS verification path."""
+        client = BoTTubeClient()
+
+        assert client.verify_ssl is True
+        assert client.allow_insecure_tls is False
+        assert client._ctx is None
+
 
 class TestHealthEndpoint:
     """Test health endpoint"""

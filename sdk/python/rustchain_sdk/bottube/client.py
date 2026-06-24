@@ -39,6 +39,7 @@ class BoTTubeClient:
         api_key: Optional[str] = None,
         base_url: str = DEFAULT_BASE_URL,
         verify_ssl: bool = True,
+        allow_insecure_tls: bool = False,
         timeout: int = 30,
         retry_count: int = 3,
         retry_delay: float = 1.0
@@ -50,6 +51,7 @@ class BoTTubeClient:
             api_key: BoTTube API key (optional for public endpoints)
             base_url: Base URL of the BoTTube API
             verify_ssl: Enable SSL verification
+            allow_insecure_tls: Explicitly allow verify_ssl=False for local/self-signed endpoints
             timeout: Request timeout in seconds
             retry_count: Number of retries on failure
             retry_delay: Delay between retries (seconds)
@@ -57,14 +59,18 @@ class BoTTubeClient:
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.verify_ssl = verify_ssl
+        self.allow_insecure_tls = allow_insecure_tls
         self.timeout = timeout
         self.retry_count = retry_count
         self.retry_delay = retry_delay
 
         if not verify_ssl:
-            self._ctx = ssl.create_default_context()
-            self._ctx.check_hostname = False
-            self._ctx.verify_mode = ssl.CERT_NONE
+            if not allow_insecure_tls:
+                raise ValueError(
+                    "verify_ssl=False disables certificate validation and requires "
+                    "allow_insecure_tls=True"
+                )
+            self._ctx = ssl._create_unverified_context()
         else:
             self._ctx = None
 
