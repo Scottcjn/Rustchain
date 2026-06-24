@@ -1022,6 +1022,13 @@ class BFTConsensus:
 # FLASK ROUTES FOR BFT
 # ============================================================================
 
+def _load_bft_secret(cli_secret: Optional[str] = None) -> str:
+    secret = (cli_secret or os.environ.get("RUSTCHAIN_BFT_SECRET") or "").strip()
+    if not secret:
+        raise ValueError("BFT shared secret must be provided via --secret or RUSTCHAIN_BFT_SECRET")
+    return secret
+
+
 def create_bft_routes(app, bft: BFTConsensus):
     """Add BFT consensus routes to Flask app"""
     from flask import request, jsonify
@@ -1144,16 +1151,26 @@ def create_bft_routes(app, bft: BFTConsensus):
 # ============================================================================
 
 if __name__ == "__main__":
+    import argparse
     import sys
 
     print("=" * 60)
     print("RustChain BFT Consensus Module - RIP-0202")
     print("=" * 60)
 
-    # Test with mock data
-    node_id = sys.argv[1] if len(sys.argv) > 1 else "node-131"
-    db_path = "/tmp/bft_test.db"
-    secret_key = "rustchain_bft_testnet_key_2025"
+    parser = argparse.ArgumentParser(description="RustChain BFT Consensus Module - RIP-0202")
+    parser.add_argument("node_id", nargs="?", default="node-131")
+    parser.add_argument("--db-path", default="/tmp/bft_test.db")
+    parser.add_argument("--secret", help="Shared BFT HMAC secret; defaults to RUSTCHAIN_BFT_SECRET")
+    args = parser.parse_args()
+
+    node_id = args.node_id
+    db_path = args.db_path
+    try:
+        secret_key = _load_bft_secret(args.secret)
+    except ValueError as exc:
+        print(f"[BFT] {exc}", file=sys.stderr)
+        sys.exit(2)
 
     bft = BFTConsensus(node_id, db_path, secret_key)
 
