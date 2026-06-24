@@ -43,8 +43,16 @@ RUSTCHAIN_VERIFY_SSL = os.getenv("RUSTCHAIN_VERIFY_SSL", "false").lower() == "tr
 # Telegram bot configuration
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 
+
+def _int_env(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
 # Rate limiting (requests per minute per user)
-RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "10"))
+RATE_LIMIT_PER_MINUTE = _int_env("RATE_LIMIT_PER_MINUTE", 10)
 
 # Logging configuration
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
