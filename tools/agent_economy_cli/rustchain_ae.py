@@ -10,12 +10,15 @@ import urllib.request
 import urllib.error
 
 BASE_URL = "https://50.28.86.131"
-VERIFY_SSL = False
+VERIFY_SSL = True
 
-# Disable SSL verification
-SSL_CTX = ssl.create_default_context()
-SSL_CTX.check_hostname = False
-SSL_CTX.verify_mode = ssl.CERT_NONE
+SSL_CTX = None
+
+
+def create_ssl_context(verify_ssl=True):
+    if verify_ssl:
+        return None
+    return ssl._create_unverified_context()
 
 
 def _decode_json_object(raw):
@@ -113,9 +116,15 @@ def cmd_stats(args):
         print(f"Error: {e}")
 
 def main():
+    global VERIFY_SSL, SSL_CTX
     parser = argparse.ArgumentParser(
         prog='rustchain-ae',
         description='RustChain Agent Economy CLI (RIP-302)'
+    )
+    parser.add_argument(
+        '--insecure-tls',
+        action='store_true',
+        help='disable TLS certificate verification for local/self-signed nodes',
     )
     sub = parser.add_subparsers(dest='command', help='Command')
 
@@ -164,6 +173,8 @@ def main():
     p_stats.set_defaults(func=cmd_stats)
 
     args = parser.parse_args()
+    VERIFY_SSL = not args.insecure_tls
+    SSL_CTX = create_ssl_context(VERIFY_SSL)
     if not args.command:
         parser.print_help()
         sys.exit(1)
