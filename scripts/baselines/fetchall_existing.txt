@@ -141,6 +141,8 @@ node/rustchain_v2_integrated_v2.2.1_rip200.py:).fetchall()
 node/rustchain_v2_integrated_v2.2.1_rip200.py:).fetchall()
 node/rustchain_v2_integrated_v2.2.1_rip200.py:).fetchall()
 node/rustchain_v2_integrated_v2.2.1_rip200.py:).fetchall()
+node/rustchain_v2_integrated_v2.2.1_rip200.py:).fetchall()
+node/rustchain_v2_integrated_v2.2.1_rip200.py:).fetchall()
 node/rustchain_v2_integrated_v2.2.1_rip200.py:).fetchall():
 node/rustchain_v2_integrated_v2.2.1_rip200.py:).fetchall():
 node/rustchain_v2_integrated_v2.2.1_rip200.py:WHERE active=1 ORDER BY signer_id""").fetchall()
