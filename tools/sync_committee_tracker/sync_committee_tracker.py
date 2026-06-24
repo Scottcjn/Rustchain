@@ -22,10 +22,19 @@ from typing import Any
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
+
+def _safe_int(val: str | None, default: int) -> int:
+    """Cast *val* to int, returning *default* on malformed input."""
+    try:
+        return int(val)
+    except (TypeError, ValueError):
+        return default
+
+
 DEFAULT_NODE_URL = os.getenv("RUSTCHAIN_NODE_URL", "https://rustchain.org").rstrip("/")
 DEFAULT_DB_PATH = Path(os.getenv("SYNC_COMMITTEE_DB", "sync_committee_history.db"))
-DEFAULT_COMMITTEE_SIZE = int(os.getenv("SYNC_COMMITTEE_SIZE", "8"))
-DEFAULT_ROTATION_EPOCHS = int(os.getenv("SYNC_COMMITTEE_ROTATION_EPOCHS", "1"))
+DEFAULT_COMMITTEE_SIZE = _safe_int(os.getenv("SYNC_COMMITTEE_SIZE", "8"), 8)
+DEFAULT_ROTATION_EPOCHS = _safe_int(os.getenv("SYNC_COMMITTEE_ROTATION_EPOCHS", "1"), 1)
 
 
 @dataclass(frozen=True)

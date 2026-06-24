@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: MIT
 """Tests for the sync committee rotation tracker."""
 
+import importlib.util
+import sys
 from pathlib import Path
 
 from tools.sync_committee_tracker.sync_committee_tracker import (
@@ -10,6 +12,35 @@ from tools.sync_committee_tracker.sync_committee_tracker import (
     render_metrics,
     select_committee,
 )
+
+
+TRACKER_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "tools"
+    / "sync_committee_tracker"
+    / "sync_committee_tracker.py"
+)
+
+
+def load_tracker_module(name: str):
+    spec = importlib.util.spec_from_file_location(name, TRACKER_PATH)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop(name, None)
+    return module
+
+
+def test_malformed_env_defaults_do_not_crash_import(monkeypatch):
+    monkeypatch.setenv("SYNC_COMMITTEE_SIZE", "not-an-int")
+    monkeypatch.setenv("SYNC_COMMITTEE_ROTATION_EPOCHS", "")
+
+    module = load_tracker_module("sync_committee_tracker_malformed_env")
+
+    assert module.DEFAULT_COMMITTEE_SIZE == 8
+    assert module.DEFAULT_ROTATION_EPOCHS == 1
 
 
 def test_normalize_miners_accepts_common_payload_shapes():
