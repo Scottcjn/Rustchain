@@ -5,6 +5,19 @@ import shutil
 import ssl
 import urllib.request
 
+def _env_bool(name, default=False):
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+def _ssl_context(insecure_tls=False):
+    ctx = ssl.create_default_context()
+    if insecure_tls:
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+    return ctx
+
 def check(name, condition):
     status = "PASS" if condition else "FAIL"
     print(f"  [{status}] {name}")
@@ -22,9 +35,7 @@ def preflight():
         disk_ok = False
     ok &= check("Disk > 1GB free", disk_ok)
     try:
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
+        ctx = _ssl_context(_env_bool("RUSTCHAIN_MINER_CHECKLIST_INSECURE_TLS"))
         urllib.request.urlopen("https://rustchain.org/health", timeout=5, context=ctx)
         ok &= check("Node reachable", True)
     except Exception:
