@@ -228,6 +228,21 @@ class TestWebSocketConfiguration(unittest.TestCase):
         self.assertEqual(POLL_INTERVAL, 10)
         self.assertEqual(NODE_URL, 'https://test.node.com')
 
+    @patch.dict(os.environ, {
+        'EXPLORER_PORT': 'not-a-port',
+        'API_TIMEOUT': 'not-a-timeout',
+        'POLL_INTERVAL': 'not-an-interval',
+    })
+    def test_malformed_numeric_env_falls_back_to_defaults(self):
+        """Malformed numeric env should not crash module import."""
+        import importlib
+        import explorer_websocket_server
+        importlib.reload(explorer_websocket_server)
+
+        self.assertEqual(explorer_websocket_server.EXPLORER_PORT, 8080)
+        self.assertEqual(explorer_websocket_server.API_TIMEOUT, 8)
+        self.assertEqual(explorer_websocket_server.POLL_INTERVAL, 5)
+
 
 class TestAPIEndpoints(unittest.TestCase):
     """Tests for HTTP API endpoints"""

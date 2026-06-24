@@ -50,11 +50,25 @@ except ImportError:
     HAVE_SOCKETIO = False
     print("Warning: flask-socketio not installed. Run: pip install flask-socketio")
 
+def _env_int(name, default):
+    try:
+        return int(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _env_float(name, default):
+    try:
+        return float(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
 # ─── Configuration ─────────────────────────────────────────────────────────── #
-EXPLORER_PORT = int(os.environ.get('EXPLORER_PORT', 8080))
+EXPLORER_PORT = _env_int('EXPLORER_PORT', 8080)
 NODE_URL = os.environ.get('RUSTCHAIN_NODE_URL', os.environ.get('RUSTCHAIN_API_BASE', 'https://rustchain.org'))
-API_TIMEOUT = float(os.environ.get('API_TIMEOUT', '8'))
-POLL_INTERVAL = float(os.environ.get('POLL_INTERVAL', '5'))  # seconds between polls
+API_TIMEOUT = _env_float('API_TIMEOUT', 8)
+POLL_INTERVAL = _env_float('POLL_INTERVAL', 5)  # seconds between polls
 HEARTBEAT_S = 30  # ping/pong interval for connection health
 MAX_QUEUE = 100  # max buffered events per client (backpressure)
 SOCKETIO_CORS_ORIGINS = parse_socketio_cors_origins(local_port=EXPLORER_PORT)
