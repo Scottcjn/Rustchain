@@ -8,6 +8,7 @@ import html
 import hmac
 import math
 import os
+import ssl
 import time
 import hashlib
 import sqlite3
@@ -36,6 +37,14 @@ contract_store = []
 
 # Chat session store
 chat_sessions = {}
+
+
+def github_sync_ssl_context(disable_verify=None):
+    if disable_verify is None:
+        disable_verify = os.environ.get('RC_DISABLE_SSL_VERIFY', '0')
+    if str(disable_verify) == '1':
+        return ssl._create_unverified_context()
+    return None
 
 
 def _json_object_body():
@@ -982,8 +991,6 @@ def sync_bounties():
     try:
         import hmac
         import urllib.request
-        import ssl
-
         admin_key = os.environ.get("RC_ADMIN_KEY", "")
         if not admin_key:
             return jsonify({'error': 'RC_ADMIN_KEY not configured — endpoint disabled'}), 503
@@ -1001,12 +1008,10 @@ def sync_bounties():
         all_bounties = []
 
         # SSL verification: enabled by default, set RC_DISABLE_SSL_VERIFY=1 to skip
-        ctx = ssl.create_default_context()
+        ctx = github_sync_ssl_context()
         if os.environ.get('RC_DISABLE_SSL_VERIFY', '0') == '1':
             import logging
             logging.warning('[beacon_api] SSL verification disabled via RC_DISABLE_SSL_VERIFY — not recommended for production')
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
 
         for repo in repos:
             try:
