@@ -73,7 +73,7 @@ def get_miner_info(miner_id: str) -> Optional[Dict[str, Any]]:
 
 
 def get_miners_list() -> List[Dict[str, Any]]:
-    """Get list of all active miners. Handles legacy and paginated responses."""
+    """Get list of all active miners."""
     try:
         response = requests.get(
             f"{RUSTCHAIN_API}/api/miners",
@@ -81,14 +81,7 @@ def get_miners_list() -> List[Dict[str, Any]]:
             timeout=10
         )
         response.raise_for_status()
-        data = response.json()
-        # Unwrap paginated envelope: {"miners": [...], "pagination": {...}}
-        if isinstance(data, dict):
-            return data.get("miners", data.get("data", []))
-        # Legacy: top-level JSON array
-        if isinstance(data, list):
-            return data
-        return []
+        return response.json()  # type: ignore[no-any-return]
     except Exception as e:
         print(f"Error getting miners list: {e}")
         return []
@@ -269,10 +262,7 @@ def main() -> None:
             miners_list = get_miners_list()
             miner_data: Optional[Dict[str, Any]] = None
             for m in miners_list:
-                if not isinstance(m, dict):
-                    continue
-                m_id = m.get('miner') or m.get('miner_id') or m.get('id') or m.get('wallet') or ''
-                if m_id == miner_id:
+                if m.get('miner') == miner_id:
                     miner_data = m
                     break
 
