@@ -297,17 +297,13 @@ DEFAULT_HEADERS = {
 }
 
 
-def _sanitize_csv_value(value: Any) -> Any:
-    """Neutralize spreadsheet formula injection in CSV cell values.
+def _sanitize_csv_cell(value: Any) -> Any:
+    """Neutralize spreadsheet formula injection in CSV output cells.
 
-    Only string cells are affected. When the first non-whitespace character is a
-    formula trigger (=, +, -, @) or the value leads with a tab or carriage
-    return, it is prefixed with a single quote so spreadsheet software treats it
-    as text. Non-string values and JSON/JSONL output are left untouched.
+    Values beginning with =, +, -, @, tab, carriage return, or newline are
+    prefixed with a single quote so spreadsheet applications treat them as text.
     """
-    if not isinstance(value, str):
-        return value
-    if value[:1] in ("\t", "\r") or value.lstrip()[:1] in ("=", "+", "-", "@"):
+    if isinstance(value, str) and value and value[0] in "=+-\t\r\n@":
         return "'" + value
     return value
 
@@ -317,14 +313,13 @@ def write_csv(path: Path, rows: list[dict[str, Any]], default_headers: list[str]
         fieldnames = sorted({key for row in rows for key in row.keys()})
     else:
         fieldnames = sorted(default_headers) if default_headers else []
-    safe_rows = [
-        {key: _sanitize_csv_value(value) for key, value in row.items()} for row in rows
-    ]
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         if fieldnames:
             writer.writeheader()
-        writer.writerows(safe_rows)
+        writer.writerows(
+            {k: _sanitize_csv_cell(v) for k, v in row.items()} for row in rows
+        )
 
 
 def write_json(path: Path, rows: list[dict[str, Any]]) -> None:
