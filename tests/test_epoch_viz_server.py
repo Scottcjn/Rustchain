@@ -80,9 +80,16 @@ def test_proxy_request_writes_json_response(monkeypatch):
 
     assert handler.responses == [200]
     assert ("Content-Type", "application/json") in handler.headers
-    assert ("Access-Control-Allow-Origin", "*") in handler.headers
+    assert ("Access-Control-Allow-Origin", "http://localhost:8888") in handler.headers
     assert handler.wfile.getvalue() == b'{"ok":true}'
     assert opened == [(f"{module.NODE_URL}/epoch", 15, contexts[0])]
+
+
+def test_epoch_viz_cors_origin_can_be_overridden(monkeypatch):
+    module = load_server()
+    monkeypatch.setenv("EPOCH_VIZ_CORS_ORIGIN", "https://viz.example")
+
+    assert module.cors_origin() == "https://viz.example"
 
 
 def test_proxy_request_reports_url_errors(monkeypatch):
