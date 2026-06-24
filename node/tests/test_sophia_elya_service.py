@@ -15,6 +15,17 @@ def test_elya_register_requires_json_object():
     assert resp.get_json()["error"] == "json_object_required"
 
 
+def test_elya_register_requires_json_content_type():
+    resp = _client().post(
+        "/api/register",
+        data='{"system_id":"miner-a","fingerprint":{"cpu":"g4"}}',
+        content_type="text/plain",
+    )
+
+    assert resp.status_code == 415
+    assert resp.get_json()["error"] == "content_type_json_required"
+
+
 def test_elya_epoch_enroll_rejects_invalid_nested_shapes():
     client = _client()
 

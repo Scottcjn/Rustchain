@@ -441,7 +441,9 @@ def balance(miner_pk):
 
 
 def _json_object_body():
-    data = request.get_json(force=True, silent=True)
+    if not request.is_json:
+        return None, (jsonify({"error": "content_type_json_required"}), 415)
+    data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return None, (jsonify({"error": "json_object_required"}), 400)
     return data, None
