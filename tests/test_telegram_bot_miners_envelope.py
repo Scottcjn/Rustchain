@@ -63,6 +63,30 @@ def load_bot_module(monkeypatch):
     return module
 
 
+def test_malformed_alert_env_falls_back_to_defaults(monkeypatch):
+    monkeypatch.setenv("PRICE_ALERT_INTERVAL", "soon")
+    monkeypatch.setenv("MINER_ALERT_INTERVAL", "often")
+    monkeypatch.setenv("PRICE_CHANGE_THRESHOLD", "large")
+
+    module = load_bot_module(monkeypatch)
+
+    assert module.PRICE_ALERT_INTERVAL == 120
+    assert module.MINER_ALERT_INTERVAL == 60
+    assert module.PRICE_CHANGE_THRESHOLD == 5.0
+
+
+def test_valid_alert_env_is_used(monkeypatch):
+    monkeypatch.setenv("PRICE_ALERT_INTERVAL", "300")
+    monkeypatch.setenv("MINER_ALERT_INTERVAL", "45")
+    monkeypatch.setenv("PRICE_CHANGE_THRESHOLD", "2.5")
+
+    module = load_bot_module(monkeypatch)
+
+    assert module.PRICE_ALERT_INTERVAL == 300
+    assert module.MINER_ALERT_INTERVAL == 45
+    assert module.PRICE_CHANGE_THRESHOLD == 2.5
+
+
 def test_cmd_miners_renders_paginated_api_envelope(monkeypatch):
     module = load_bot_module(monkeypatch)
 

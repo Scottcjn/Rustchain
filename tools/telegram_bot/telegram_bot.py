@@ -71,10 +71,25 @@ RAYDIUM_SWAP_URL = (
     f"{WRTC_MINT}"
 )
 
+
+def _int_env(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _float_env(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
 # Alert config
-PRICE_ALERT_INTERVAL = int(os.getenv("PRICE_ALERT_INTERVAL", "120"))   # seconds
-MINER_ALERT_INTERVAL = int(os.getenv("MINER_ALERT_INTERVAL", "60"))    # seconds
-PRICE_CHANGE_THRESHOLD = float(os.getenv("PRICE_CHANGE_THRESHOLD", "5.0"))  # percent
+PRICE_ALERT_INTERVAL = _int_env("PRICE_ALERT_INTERVAL", 120)   # seconds
+MINER_ALERT_INTERVAL = _int_env("MINER_ALERT_INTERVAL", 60)    # seconds
+PRICE_CHANGE_THRESHOLD = _float_env("PRICE_CHANGE_THRESHOLD", 5.0)  # percent
 HTTP_HEADERS = {
     "Accept": "application/json",
     "User-Agent": "RustChain-Telegram-Bot/1.0 (+https://github.com/Scottcjn/Rustchain)",
