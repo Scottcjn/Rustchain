@@ -163,5 +163,60 @@ class ExtractPkcs8Tests(unittest.TestCase):
         self.assertEqual(module._extract_pkcs8_ed25519_seed(der), seed)
 
 
+class NodeTransportTLSTests(unittest.TestCase):
+    def test_transport_verifies_tls_by_default(self):
+        module = load_miner_module()
+        calls = []
+
+        class Response:
+            status_code = 200
+
+        def fake_get(url, **kwargs):
+            calls.append(("get", url, kwargs))
+            return Response()
+
+        def fake_post(url, **kwargs):
+            calls.append(("post", url, kwargs))
+            return Response()
+
+        original_get = module.requests.get
+        original_post = module.requests.post
+        module.requests.get = fake_get
+        module.requests.post = fake_post
+        try:
+            transport = module.NodeTransport("https://node.example", None)
+            transport.get("/health")
+            transport.post("/attest", json={})
+        finally:
+            module.requests.get = original_get
+            module.requests.post = original_post
+
+        self.assertEqual(calls[0][2]["verify"], True)
+        self.assertEqual(calls[1][2]["verify"], True)
+        self.assertEqual(calls[2][2]["verify"], True)
+
+    def test_transport_insecure_tls_is_explicit(self):
+        module = load_miner_module()
+        calls = []
+
+        class Response:
+            status_code = 200
+
+        def fake_get(url, **kwargs):
+            calls.append(("get", url, kwargs))
+            return Response()
+
+        original_get = module.requests.get
+        module.requests.get = fake_get
+        try:
+            transport = module.NodeTransport("https://node.example", None, insecure_tls=True)
+            transport.get("/health")
+        finally:
+            module.requests.get = original_get
+
+        self.assertEqual(calls[0][2]["verify"], False)
+        self.assertEqual(calls[1][2]["verify"], False)
+
+
 if __name__ == "__main__":
     unittest.main()

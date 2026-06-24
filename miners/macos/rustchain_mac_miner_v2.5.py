@@ -73,6 +73,13 @@ LOTTERY_CHECK_INTERVAL = 10
 ATTESTATION_TTL = 580  # Re-attest 20s before expiry
 
 
+def _env_bool(name, default=False):
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
 def _rtc_address_from_public_key(public_key_hex):
     return "RTC" + hashlib.sha256(bytes.fromhex(public_key_hex)).hexdigest()[:40]
 
@@ -178,24 +185,24 @@ class NodeTransport:
     Tiger/Leopard), falls back to the HTTP proxy on the NAS.
     """
 
-    def __init__(self, node_url, proxy_url):
+    def __init__(self, node_url, proxy_url, insecure_tls=False):
         self.node_url = node_url.rstrip("/")
         self.proxy_url = proxy_url.rstrip("/") if proxy_url else None
+        self.verify_tls = not insecure_tls
         self.use_proxy = False
         self._probe_transport()
 
     def _probe_transport(self):
         """Test if we can reach the node directly via HTTPS.
 
-        Use verify=False consistently with all subsequent API calls
-        (self.get/self.post). The probe's only job is to detect whether
-        direct connectivity works — TLS verification is handled by the
-        proxy tunnel or pinned cert when present.
+        The probe's only job is to detect whether direct connectivity works.
+        TLS verification is enabled by default and can be disabled only by
+        explicit legacy/operator configuration.
         """
         try:
             r = requests.get(
                 self.node_url + "/health",
-                timeout=10, verify=False
+                timeout=10, verify=self.verify_tls
             )
             if r.status_code == 200:
                 print(success("[TRANSPORT] Direct HTTPS to node: OK"))
@@ -220,8 +227,7 @@ class NodeTransport:
             except Exception as e:
                 print(warning("[TRANSPORT] Proxy {} also failed: {}".format(self.proxy_url, e)))
 
-        # Last resort: try direct without verify (may work on some old systems)
-        print(warning("[TRANSPORT] Falling back to direct HTTPS with TLS verification"))
+        print(warning("[TRANSPORT] Falling back to direct HTTPS"))
         self.use_proxy = False
 
     @property
@@ -233,14 +239,14 @@ class NodeTransport:
     def get(self, path, **kwargs):
         """GET request through whichever transport works."""
         kwargs.setdefault("timeout", 15)
-        kwargs.setdefault("verify", False)
+        kwargs.setdefault("verify", self.verify_tls)
         url = self.base_url + path
         return requests.get(url, **kwargs)
 
     def post(self, path, **kwargs):
         """POST request through whichever transport works."""
         kwargs.setdefault("timeout", 15)
-        kwargs.setdefault("verify", False)
+        kwargs.setdefault("verify", self.verify_tls)
         url = self.base_url + path
         return requests.post(url, **kwargs)
 
@@ -524,7 +530,7 @@ def add_binding_entropy_aliases(fingerprint_data):
 # ── Miner Class ─────────────────────────────────────────────────────
 
 class MacMiner:
-    def __init__(self, miner_id=None, wallet=None, node_url=None, proxy_url=None, wallet_file=None):
+    def __init__(self, miner_id=None, wallet=None, node_url=None, proxy_url=None, wallet_file=None, insecure_tls=None):
         self.hw_info = detect_hardware()
         self.fingerprint_data = {}
         self.fingerprint_passed = False
@@ -566,7 +572,8 @@ class MacMiner:
         # Set up transport (HTTPS direct or HTTP proxy)
         self.transport = NodeTransport(
             node_url or NODE_URL,
-            proxy_url or PROXY_URL
+            proxy_url or PROXY_URL,
+            insecure_tls=_env_bool("RUSTCHAIN_INSECURE_TLS") if insecure_tls is None else insecure_tls,
         )
 
         self.attestation_valid_until = 0
@@ -915,6 +922,8 @@ if __name__ == "__main__":
                         help="HTTP proxy URL for legacy Macs (default: {})".format(PROXY_URL))
     parser.add_argument("--no-proxy", action="store_true",
                         help="Disable proxy fallback (HTTPS only)")
+    parser.add_argument("--insecure-tls", action="store_true",
+                        help="Disable TLS verification for legacy/self-signed node setups")
     args = parser.parse_args()
 
     node = args.node
@@ -926,6 +935,7 @@ if __name__ == "__main__":
         wallet_file=args.wallet_file,
         node_url=node,
         proxy_url=proxy,
+        insecure_tls=args.insecure_tls,
     )
     signal.signal(signal.SIGTERM, miner.request_shutdown)
     signal.signal(signal.SIGINT, miner.request_shutdown)
