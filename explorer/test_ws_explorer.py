@@ -1,10 +1,45 @@
 # SPDX-License-Identifier: MIT
 """Unit tests for RustChain Explorer WebSocket Feed (Bounty #2295)."""
 
+import importlib.util
 import json
+import sys
+import threading
 import pytest
+from pathlib import Path
 from unittest.mock import patch, MagicMock
 from ws_explorer_server import app, socketio, state, fetch_api, poll_and_broadcast
+
+
+MODULE_PATH = Path(__file__).with_name("ws_explorer_server.py")
+
+
+class _NoopThread:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def start(self):
+        pass
+
+
+def load_ws_explorer_module(monkeypatch):
+    module_name = "test_ws_explorer_server_env_module"
+    monkeypatch.setattr(threading, "Thread", _NoopThread)
+    sys.path.insert(0, str(MODULE_PATH.parent))
+    try:
+        spec = importlib.util.spec_from_file_location(module_name, MODULE_PATH)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        try:
+            spec.loader.exec_module(module)
+        finally:
+            sys.modules.pop(module_name, None)
+    finally:
+        try:
+            sys.path.remove(str(MODULE_PATH.parent))
+        except ValueError:
+            pass
+    return module
 
 
 @pytest.fixture
@@ -51,6 +86,30 @@ class TestFetchAPI:
         with patch("ws_explorer_server.requests.get", return_value=mock_resp):
             result = fetch_api("/health")
         assert result is None
+
+
+class TestNumericEnv:
+    def test_malformed_numeric_env_falls_back(self, monkeypatch):
+        monkeypatch.setenv("API_TIMEOUT", "not-a-timeout")
+        monkeypatch.setenv("WS_POLL_INTERVAL", "not-an-interval")
+        monkeypatch.setenv("WS_EXPLORER_PORT", "not-a-port")
+
+        module = load_ws_explorer_module(monkeypatch)
+
+        assert module.API_TIMEOUT == 8.0
+        assert module.POLL_INTERVAL == 10.0
+        assert module.PORT == 8060
+
+    def test_valid_numeric_env_is_preserved(self, monkeypatch):
+        monkeypatch.setenv("API_TIMEOUT", "2.5")
+        monkeypatch.setenv("WS_POLL_INTERVAL", "0.75")
+        monkeypatch.setenv("WS_EXPLORER_PORT", "9002")
+
+        module = load_ws_explorer_module(monkeypatch)
+
+        assert module.API_TIMEOUT == 2.5
+        assert module.POLL_INTERVAL == 0.75
+        assert module.PORT == 9002
 
 
 class TestHTTPRoutes:

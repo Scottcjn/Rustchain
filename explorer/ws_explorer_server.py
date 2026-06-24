@@ -23,10 +23,26 @@ except ModuleNotFoundError:
     from socketio_cors import parse_socketio_cors_origins
 
 # ── Configuration ─────────────────────────────────────────────────
+
+
+def _float_env(name, default):
+    try:
+        return float(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _int_env(name, default):
+    try:
+        return int(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
 API_BASE = os.environ.get("RUSTCHAIN_API_BASE", "https://rustchain.org").rstrip("/")
-API_TIMEOUT = float(os.environ.get("API_TIMEOUT", "8"))
-POLL_INTERVAL = float(os.environ.get("WS_POLL_INTERVAL", "10"))
-PORT = int(os.environ.get("WS_EXPLORER_PORT", "8060"))
+API_TIMEOUT = _float_env("API_TIMEOUT", 8.0)
+POLL_INTERVAL = _float_env("WS_POLL_INTERVAL", 10.0)
+PORT = _int_env("WS_EXPLORER_PORT", 8060)
 SOCKETIO_CORS_ORIGINS = parse_socketio_cors_origins(local_port=PORT)
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
