@@ -28,19 +28,18 @@ DEFAULT_NODE = "https://rustchain.org"
 ATTEST_ENDPOINT = "/attest/submit"
 
 
-def create_ssl_context():
-    """Create SSL context that accepts self-signed certs."""
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-    return ctx
+def create_ssl_context(verify_tls: bool = True):
+    """Create an SSL context, preserving platform verification by default."""
+    if verify_tls:
+        return None
+    return ssl._create_unverified_context()
 
 
-def forward_attestation(node_url: str, payload: dict) -> dict:
+def forward_attestation(node_url: str, payload: dict, *, verify_tls: bool = True) -> dict:
     """Forward attestation payload to RustChain node."""
     url = f"{node_url}{ATTEST_ENDPOINT}"
     data = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-    ctx = create_ssl_context()
+    ctx = create_ssl_context(verify_tls)
 
     req = urllib.request.Request(
         url,
@@ -87,6 +86,11 @@ def main():
     parser.add_argument("--node", default=DEFAULT_NODE, help="RustChain node URL")
     parser.add_argument("--serial", default=None, help="Serial port (e.g., /dev/ttyUSB0)")
     parser.add_argument("--baud", type=int, default=9600, help="Serial baud rate")
+    parser.add_argument(
+        "--insecure-tls",
+        action="store_true",
+        help="disable TLS certificate verification for local/self-signed nodes",
+    )
     args = parser.parse_args()
 
     print(f"[RELAY] RustChain Floppy Miner Relay v1.0")
@@ -109,7 +113,7 @@ def main():
         count += 1
         print(f"[RELAY] #{count} Forwarding attestation from {payload.get('miner', '?')}")
 
-        result = forward_attestation(args.node, payload)
+        result = forward_attestation(args.node, payload, verify_tls=not args.insecure_tls)
         status = "OK" if result.get("ok") else "FAIL"
         print(f"[RELAY] #{count} Result: {status} — {result.get('message', result.get('error', ''))}")
 
