@@ -103,13 +103,20 @@ class Reservation:
     def to_dict(self) -> Dict:
         return asdict(self)
 
+    # Explicit allowlist of fields safe for public responses.
+    # A denylist silently leaks any future sensitive field additions.
+    _PUBLIC_FIELDS = frozenset({
+        "reservation_id", "machine_id", "agent_id",
+        "start_time", "end_time", "duration_hours",
+        "total_cost_rtc", "status", "escrow_tx_hash",
+        "created_at", "access_granted_at", "completed_at",
+    })
+
     def to_public_dict(self) -> Dict:
-        """Return reservation data excluding sensitive access credentials.
+        """Return reservation data with only whitelisted public fields.
         Public view — safe for any caller without leaking secrets."""
         d = asdict(self)
-        d.pop("ssh_credentials", None)
-        d.pop("api_key", None)
-        return d
+        return {k: v for k, v in d.items() if k in self._PUBLIC_FIELDS}
 
 
 @dataclass
