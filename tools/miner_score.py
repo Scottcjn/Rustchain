@@ -9,10 +9,23 @@ import urllib.request
 NODE = os.environ.get("RUSTCHAIN_NODE", "https://rustchain.org")
 
 
-def api(p):
+def _env_bool(name, default=False):
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _ssl_context(insecure_tls=False):
     ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
+    if insecure_tls:
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+    return ctx
+
+
+def api(p):
+    ctx = _ssl_context(_env_bool("RUSTCHAIN_MINER_SCORE_INSECURE_TLS"))
     try:
         with urllib.request.urlopen(f"{NODE}{p}", timeout=10, context=ctx) as response:
             return json.loads(response.read())
