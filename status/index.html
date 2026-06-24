@@ -554,7 +554,7 @@
 
     // Whitelist of allowed status values; anything else collapses to "unknown"
     // so we never interpolate untrusted strings into class attributes.
-    const STATUS_WHITELIST = new Set(["online", "offline", "degraded", "blocked", "unknown"]);
+    const STATUS_WHITELIST = new Set(["online", "offline", "degraded", "blocked", "unknown", "ok", "bad"]);
 
     function safeClass(value, fallback = "") {
       return STATUS_WHITELIST.has(value) ? value : fallback;
