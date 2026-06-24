@@ -58,6 +58,30 @@ class TestBotConfig(unittest.TestCase):
             self.assertEqual(config.schedule_day, "friday")
             self.assertEqual(config.log_level, "DEBUG")
 
+    def test_malformed_numeric_env_falls_back_to_defaults(self):
+        """Malformed numeric env should not crash config loading."""
+        with patch.dict(
+            os.environ,
+            {
+                "RUSTCHAIN_API_TIMEOUT": "not-a-timeout",
+                "BOTTUBE_API_TIMEOUT": "not-a-timeout",
+                "SMTP_PORT": "not-a-port",
+                "DIGEST_TOP_N": "not-a-count",
+                "DIGEST_TOP_VIDEOS": "not-a-count",
+                "SCHEDULE_HOUR": "not-an-hour",
+                "SCHEDULE_MINUTE": "not-a-minute",
+            },
+        ):
+            config = BotConfig.from_env()
+
+        self.assertEqual(config.api_timeout, 15.0)
+        self.assertEqual(config.bottube_api_timeout, 10.0)
+        self.assertEqual(config.smtp_port, 587)
+        self.assertEqual(config.digest_top_n, 10)
+        self.assertEqual(config.digest_top_videos, 5)
+        self.assertEqual(config.schedule_hour, 9)
+        self.assertEqual(config.schedule_minute, 0)
+
     def test_config_validation_valid(self):
         """Test validation with valid configuration."""
         config = BotConfig(dry_run=True)  # Dry run skips delivery validation
