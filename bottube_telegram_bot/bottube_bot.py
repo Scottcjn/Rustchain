@@ -59,15 +59,23 @@ BOTTUBE_API_KEY = os.getenv("BOTTUBE_API_KEY", "")
 # Telegram bot configuration
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 
+
+def _int_env(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
 # Rate limiting (requests per minute per user)
-RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "10"))
+RATE_LIMIT_PER_MINUTE = _int_env("RATE_LIMIT_PER_MINUTE", 10)
 
 # Logging configuration
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
 # Pagination
-VIDEOS_PER_PAGE = int(os.getenv("VIDEOS_PER_PAGE", "10"))
+VIDEOS_PER_PAGE = _int_env("VIDEOS_PER_PAGE", 10)
 
 # =============================================================================
 # Logging Setup
