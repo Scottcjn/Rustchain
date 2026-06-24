@@ -8,6 +8,7 @@ ERGO_API_KEY = os.environ.get("ERGO_API_KEY", "")
 ERGO_WALLET_PASSWORD = os.environ.get("ERGO_WALLET_PASSWORD", "")
 DB_PATH = "/root/rustchain/rustchain_v2.db"
 ANCHOR_VALUE = 1000000  # 0.001 ERG min box size
+REQUEST_TIMEOUT = 10
 
 class ErgoMinerAnchor:
     def __init__(self):
@@ -18,7 +19,7 @@ class ErgoMinerAnchor:
     
     def unlock_wallet(self, password=None):
         """Unlock wallet if needed."""
-        status_resp = self.session.get(ERGO_NODE + "/wallet/status")
+        status_resp = self.session.get(ERGO_NODE + "/wallet/status", timeout=REQUEST_TIMEOUT)
         if status_resp.status_code != 200:
             return False
         status = status_resp.json()
@@ -26,7 +27,11 @@ class ErgoMinerAnchor:
             pwd = password if password is not None else ERGO_WALLET_PASSWORD
             if not pwd:
                 return False
-            unlock_resp = self.session.post(ERGO_NODE + "/wallet/unlock", json={"pass": pwd})
+            unlock_resp = self.session.post(
+                ERGO_NODE + "/wallet/unlock",
+                json={"pass": pwd},
+                timeout=REQUEST_TIMEOUT,
+            )
             return unlock_resp.status_code == 200
         return True
     
@@ -62,7 +67,10 @@ class ErgoMinerAnchor:
         rc_slot = self.get_rc_slot()
         
         # Get UTXO
-        boxes = self.session.get(ERGO_NODE + "/wallet/boxes/unspent?minConfirmations=1").json()
+        boxes = self.session.get(
+            ERGO_NODE + "/wallet/boxes/unspent?minConfirmations=1",
+            timeout=REQUEST_TIMEOUT,
+        ).json()
         input_box = None
         for b in boxes:
             box = b.get("box", {})
@@ -73,8 +81,14 @@ class ErgoMinerAnchor:
         if not input_box:
             return {"success": False, "error": "No UTXO"}
         
-        box_bytes = self.session.get(ERGO_NODE + "/utxo/byIdBinary/" + input_box["boxId"]).json().get("bytes")
-        height = self.session.get(ERGO_NODE + "/info").json().get("fullHeight", 0)
+        box_bytes = self.session.get(
+            ERGO_NODE + "/utxo/byIdBinary/" + input_box["boxId"],
+            timeout=REQUEST_TIMEOUT,
+        ).json().get("bytes")
+        height = self.session.get(
+            ERGO_NODE + "/info",
+            timeout=REQUEST_TIMEOUT,
+        ).json().get("fullHeight", 0)
         
         input_val = input_box["value"]
         change_val = input_val - ANCHOR_VALUE  # Zero fee
@@ -110,7 +124,8 @@ class ErgoMinerAnchor:
         
         # Sign
         sign_resp = self.session.post(ERGO_NODE + "/wallet/transaction/sign",
-            json={"tx": unsigned_tx, "inputsRaw": [box_bytes], "dataInputsRaw": []})
+            json={"tx": unsigned_tx, "inputsRaw": [box_bytes], "dataInputsRaw": []},
+            timeout=REQUEST_TIMEOUT)
         
         if sign_resp.status_code != 200:
             return {"success": False, "error": "Sign failed: " + sign_resp.text[:100]}
@@ -118,7 +133,11 @@ class ErgoMinerAnchor:
         signed = sign_resp.json()
         
         # Broadcast
-        send_resp = self.session.post(ERGO_NODE + "/transactions", json=signed)
+        send_resp = self.session.post(
+            ERGO_NODE + "/transactions",
+            json=signed,
+            timeout=REQUEST_TIMEOUT,
+        )
         
         if send_resp.status_code == 200:
             tx_id = send_resp.json()
