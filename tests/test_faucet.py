@@ -30,6 +30,18 @@ def test_limit_for_identity_tiers(github_username, account_age_days, expected_li
     assert faucet._limit_for_identity(github_username, account_age_days) == expected_limit
 
 
+def test_int_env_falls_back_on_malformed_port(monkeypatch):
+    monkeypatch.setenv("PORT", "not-a-port")
+
+    assert faucet._int_env("PORT", 8090) == 8090
+
+
+def test_int_env_accepts_valid_port(monkeypatch):
+    monkeypatch.setenv("PORT", "9091")
+
+    assert faucet._int_env("PORT", 8090) == 9091
+
+
 def test_faucet_page(app):
     c = app.test_client()
     r = c.get("/faucet")
