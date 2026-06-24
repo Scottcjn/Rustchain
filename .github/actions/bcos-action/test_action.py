@@ -189,6 +189,7 @@ class TestGitHubComment(unittest.TestCase):
         
         self.assertTrue(result)
         mock_urlopen.assert_called_once()
+        self.assertEqual(mock_urlopen.call_args.kwargs["timeout"], 30)
 
     @patch('main.urlopen')
     def test_post_comment_links_to_in_repo_action_source(self, mock_urlopen):
@@ -258,6 +259,8 @@ class TestRustChainAnchoring(unittest.TestCase):
         )
         
         self.assertTrue(result)
+        mock_urlopen.assert_called_once()
+        self.assertEqual(mock_urlopen.call_args.kwargs["timeout"], 30)
 
 
 class TestGitHubOutput(unittest.TestCase):
