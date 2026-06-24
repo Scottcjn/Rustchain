@@ -146,3 +146,11 @@ def test_miners_command_uses_paginated_total_and_miner_id_fallback(monkeypatch):
     assert "Arch: G4" in embed.fields[0]["value"]
     assert embed.fields[1]["name"] == "bob"
     assert embed.footer == "Showing 2 of 37 miners | https://rustchain.org"
+
+
+def test_module_import_falls_back_on_malformed_timeout(monkeypatch):
+    monkeypatch.setenv("API_TIMEOUT", "not-a-float")
+
+    module = load_bot_module(monkeypatch)
+
+    assert module.API_TIMEOUT == 10.0

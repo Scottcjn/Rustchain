@@ -8,6 +8,14 @@ import os
 from dataclasses import dataclass
 
 
+def _safe_float(val: str | None, default: float) -> float:
+    """Cast *val* to float, returning *default* on malformed input."""
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return default
+
+
 @dataclass
 class BotConfig:
     """Bot configuration loaded from environment variables."""
@@ -36,7 +44,7 @@ class BotConfig:
             rustchain_node_url=os.getenv(
                 "RUSTCHAIN_NODE_URL", "https://rustchain.org"
             ),
-            api_timeout=float(os.getenv("RUSTCHAIN_API_TIMEOUT", "10.0")),
+            api_timeout=_safe_float(os.getenv("RUSTCHAIN_API_TIMEOUT", "10.0"), 10.0),
             prefix=os.getenv("BOT_PREFIX", "!"),
             owner_id=os.getenv("BOT_OWNER_ID", ""),
             log_level=os.getenv("LOG_LEVEL", "INFO"),

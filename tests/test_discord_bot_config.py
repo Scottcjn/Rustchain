@@ -58,6 +58,15 @@ def test_from_env_loads_custom_values(monkeypatch):
     assert config.log_level == "DEBUG"
 
 
+def test_from_env_falls_back_on_malformed_timeout(monkeypatch):
+    module = load_config_module()
+    monkeypatch.setenv("RUSTCHAIN_API_TIMEOUT", "not-a-float")
+
+    config = module.BotConfig.from_env()
+
+    assert config.api_timeout == 10.0
+
+
 def test_validate_reports_required_and_timeout_errors():
     module = load_config_module()
     config = module.BotConfig(

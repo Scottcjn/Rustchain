@@ -42,7 +42,17 @@ log = logging.getLogger("rustchain-bot")
 
 RUSTCHAIN_URL = os.getenv("RUSTCHAIN_NODE_URL", "https://rustchain.org").rstrip("/")
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN", "")
-API_TIMEOUT = float(os.getenv("API_TIMEOUT", "10"))
+
+
+def _safe_float(val: str | None, default: float) -> float:
+    """Cast *val* to float, returning *default* on malformed input."""
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return default
+
+
+API_TIMEOUT = _safe_float(os.getenv("API_TIMEOUT", "10"), 10.0)
 
 
 def _format_uptime(value) -> str:
