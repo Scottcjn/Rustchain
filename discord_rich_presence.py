@@ -259,11 +259,19 @@ def main() -> None:
     try:
         while True:
             # Get miner info from list to find hardware type
+            # API can return paginated envelope {miners:[...], pagination:{}} or a flat list
             miners_list = get_miners_list()
-            miner_data: Optional[Dict[str, Any]] = None
-            for m in miners_list:
-                if m.get('miner') == miner_id:
-                    miner_data = m
+            raw_list = miners_list.get("miners", miners_list) if isinstance(miners_list, dict) else miners_list
+            miner_data = None
+            for m in raw_list:
+                if not isinstance(m, dict):
+                    continue
+                # Normalize miner-id lookup across common field aliases
+                for field in ("miner", "miner_id", "id", "name", "wallet"):
+                    if m.get(field) == miner_id:
+                        miner_data = m
+                        break
+                if miner_data:
                     break
 
             if not miner_data:
