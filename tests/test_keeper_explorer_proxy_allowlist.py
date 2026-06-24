@@ -49,7 +49,7 @@ def _load_keeper_explorer(workdir=None):
     flask_cors.CORS = lambda *args, **kwargs: None
     sys.modules["flask_cors"] = flask_cors
 
-    old_cwd = None
+    old_cwd = os.getcwd()
     try:
         if workdir:
             os.chdir(workdir)
@@ -62,7 +62,7 @@ def _load_keeper_explorer(workdir=None):
         finally:
             sys.modules.pop(module_name, None)
     finally:
-        if old_cwd is not None and workdir is not None:
+        if workdir is not None:
             os.chdir(old_cwd)
     if workdir_obj is not None:
         workdir_obj.cleanup()
