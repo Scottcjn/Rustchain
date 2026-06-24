@@ -14,6 +14,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import signal
 import ssl
 import sys
@@ -46,21 +47,29 @@ SLOTS_PER_EPOCH = 43200  # default assumption; overridden if API provides it
 # HTTP helpers
 # ---------------------------------------------------------------------------
 
-def _ssl_ctx() -> ssl.SSLContext:
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _ssl_ctx(insecure_tls: bool = False) -> ssl.SSLContext:
     ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
+    if insecure_tls:
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
     return ctx
 
 
-def fetch_json(url: str, timeout: int = 8) -> Optional[Any]:
+def fetch_json(url: str, timeout: int = 8, insecure_tls: bool = False) -> Optional[Any]:
     """GET a URL and return parsed JSON, or None on failure."""
     try:
         req = Request(url, headers={
             "Accept": "application/json",
             "User-Agent": "rustchain-tui-dashboard/1.0",
         })
-        with urlopen(req, timeout=timeout, context=_ssl_ctx()) as resp:
+        with urlopen(req, timeout=timeout, context=_ssl_ctx(insecure_tls)) as resp:
             body = resp.read(2 * 1024 * 1024).decode("utf-8", errors="replace")
             return json.loads(body)
     except Exception:
@@ -73,8 +82,9 @@ def fetch_json(url: str, timeout: int = 8) -> Optional[Any]:
 class RustChainData:
     """Aggregates data from various RustChain API endpoints."""
 
-    def __init__(self, base_url: str):
+    def __init__(self, base_url: str, insecure_tls: bool = False):
         self.base = base_url.rstrip("/")
+        self.insecure_tls = insecure_tls
         self.health: Dict[str, Any] = {}
         self.epoch: Dict[str, Any] = {}
         self.miners: List[Dict[str, Any]] = []
@@ -89,10 +99,10 @@ class RustChainData:
     def refresh(self) -> None:
         t0 = time.time()
 
-        self.health = fetch_json(f"{self.base}/health") or {}
-        self.epoch = fetch_json(f"{self.base}/epoch") or {}
+        self.health = fetch_json(f"{self.base}/health", insecure_tls=self.insecure_tls) or {}
+        self.epoch = fetch_json(f"{self.base}/epoch", insecure_tls=self.insecure_tls) or {}
 
-        miners_raw = fetch_json(f"{self.base}/api/miners")
+        miners_raw = fetch_json(f"{self.base}/api/miners", insecure_tls=self.insecure_tls)
         if isinstance(miners_raw, list):
             self.miners = miners_raw
             self.miner_total = len(miners_raw)
@@ -109,7 +119,7 @@ class RustChainData:
             self.miners = []
             self.miner_total = 0
 
-        tip = fetch_json(f"{self.base}/headers/tip") or {}
+        tip = fetch_json(f"{self.base}/headers/tip", insecure_tls=self.insecure_tls) or {}
         if tip and tip != self.tip:
             self.block_history.insert(0, {
                 "height": tip.get("height", tip.get("block_height", "?")),
@@ -120,7 +130,10 @@ class RustChainData:
             self.block_history = self.block_history[:20]
         self.tip = tip
 
-        self.proposer_calendar = fetch_json(f"{self.base}/epoch/proposer-duty-calendar?lookahead=8&history_limit=6") or {}
+        self.proposer_calendar = fetch_json(
+            f"{self.base}/epoch/proposer-duty-calendar?lookahead=8&history_limit=6",
+            insecure_tls=self.insecure_tls,
+        ) or {}
         self.price = self._fetch_price()
         self.latency_ms = (time.time() - t0) * 1000
         self.last_refresh = datetime.now(timezone.utc)
@@ -128,7 +141,7 @@ class RustChainData:
     def _fetch_price(self) -> Dict[str, Any]:
         try:
             url = f"https://api.dexscreener.com/latest/dex/tokens/{WRTC_MINT}"
-            data = fetch_json(url)
+            data = fetch_json(url, insecure_tls=self.insecure_tls)
             if data and "pairs" in data and len(data["pairs"]) > 0:
                 pair = data["pairs"][0]
                 return {
@@ -427,10 +440,15 @@ def main() -> None:
                         help="RustChain node URL (default: %(default)s)")
     parser.add_argument("--interval", type=int, default=5,
                         help="Refresh interval in seconds (default: 5)")
+    parser.add_argument("--insecure-tls", action="store_true",
+                        help="Disable TLS certificate verification for self-signed development nodes")
     args = parser.parse_args()
 
     console = Console()
-    data = RustChainData(args.url)
+    data = RustChainData(
+        args.url,
+        insecure_tls=args.insecure_tls or _env_bool("RUSTCHAIN_TUI_INSECURE_TLS"),
+    )
 
     # Graceful shutdown
     def handle_signal(sig, frame):
