@@ -42,11 +42,33 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 
 RUSTCHAIN_NODE_URL = os.getenv("RUSTCHAIN_NODE_URL", "https://rustchain.org")
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-RATE_LIMIT_SECONDS = int(os.getenv("RATE_LIMIT_SECONDS", "5"))
-REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "15"))
+
+
+def _int_env(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        logging.getLogger("rustchain_bot_2869").warning(
+            "invalid %s=%r; using default %s", name, os.getenv(name), default
+        )
+        return default
+
+
+def _float_env(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        logging.getLogger("rustchain_bot_2869").warning(
+            "invalid %s=%r; using default %s", name, os.getenv(name), default
+        )
+        return default
+
+
+RATE_LIMIT_SECONDS = _int_env("RATE_LIMIT_SECONDS", 5)
+REQUEST_TIMEOUT = _int_env("REQUEST_TIMEOUT", 15)
 
 # Reference price fallback (USD)
-RTC_PRICE_USD_FALLBACK = float(os.getenv("RTC_PRICE_USD", "0.10"))
+RTC_PRICE_USD_FALLBACK = _float_env("RTC_PRICE_USD", 0.10)
 
 logging.basicConfig(
     level=logging.INFO,
