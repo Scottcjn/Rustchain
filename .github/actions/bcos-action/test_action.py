@@ -229,6 +229,7 @@ class TestGitHubComment(unittest.TestCase):
         body = json.loads(request.data.decode("utf-8"))["body"]
         self.assertIn(BCOS_ACTION_URL, body)
         self.assertNotIn(DEAD_BCOS_ACTION_URL, body)
+        self.assertEqual(mock_urlopen.call_args.kwargs["timeout"], 30)
 
 
 class TestRustChainAnchoring(unittest.TestCase):

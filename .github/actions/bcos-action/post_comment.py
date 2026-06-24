@@ -11,6 +11,8 @@ import base64
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
+HTTP_TIMEOUT_SECONDS = 30
+
 
 def main():
     """Post a PR comment with the BCOS scan results."""
@@ -112,7 +114,7 @@ def main():
     )
     
     try:
-        response = urlopen(req)
+        response = urlopen(req, timeout=HTTP_TIMEOUT_SECONDS)
         print(f"✅ Comment posted successfully: {response.status}")
     except HTTPError as e:
         error_body = e.read().decode() if e.fp else ""
