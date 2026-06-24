@@ -23,6 +23,7 @@ from main import (
     anchor_to_rustchain,
     set_github_output
 )
+import anchor as anchor_script
 import post_comment as post_comment_script
 
 
@@ -258,6 +259,29 @@ class TestRustChainAnchoring(unittest.TestCase):
         )
         
         self.assertTrue(result)
+
+    @patch('anchor.urlopen')
+    def test_standalone_anchor_uses_bounded_timeout(self, mock_urlopen):
+        """The standalone anchor script should bound its RustChain API call."""
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps({
+            "tx_hash": "0x123abc",
+            "block_number": 12345,
+        }).encode()
+        mock_urlopen.return_value = mock_response
+
+        with patch.dict(os.environ, {
+            "INPUT_NODE_URL": "https://rustchain.org",
+            "CERT_ID": "BCOS-test123",
+            "COMMITMENT": "hash123",
+            "REPO": "test/repo",
+            "PR_NUMBER": "42",
+            "MERGED_COMMIT": "abc123",
+        }):
+            anchor_script.main()
+
+        mock_urlopen.assert_called_once()
+        self.assertEqual(mock_urlopen.call_args.kwargs["timeout"], 30)
 
 
 class TestGitHubOutput(unittest.TestCase):
