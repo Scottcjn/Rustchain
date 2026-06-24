@@ -35,8 +35,22 @@ TEMPLATES_DIR = BASE_DIR / 'templates'
 DATA_DIR = BASE_DIR / 'data'
 DATA_DIR.mkdir(exist_ok=True)
 
+
+def _safe_int(value, default: int) -> int:
+    """Cast *value* to int, returning *default* on malformed input."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _env_int(name: str, default: int) -> int:
+    """Read an integer environment variable with a safe default fallback."""
+    return _safe_int(os.environ.get(name, default), default)
+
+
 DB_PATH = DATA_DIR / 'health_history.db'
-POLLING_INTERVAL = int(os.environ.get('POLLING_INTERVAL', 60))  # 60 seconds
+POLLING_INTERVAL = _env_int('POLLING_INTERVAL', 60)  # 60 seconds
 HISTORY_RETENTION_HOURS = 24
 
 # Node configuration from issue #2300
@@ -1244,7 +1258,7 @@ def main():
     poll_nodes()
     
     # Start Flask server
-    port = int(os.environ.get('PORT', 5000))
+    port = _env_int('PORT', 5000)
     logger.info(f"Starting web server on port {port}")
     
     app.run(host='0.0.0.0', port=port, debug=False, threaded=True)

@@ -3,6 +3,7 @@
 Tests for RustChain Multi-Node Health Dashboard
 Issue #2300
 """
+import importlib.util
 import json
 import os
 import sqlite3
@@ -28,6 +29,30 @@ from server import (
     cleanup_old_data,
     HISTORY_RETENTION_HOURS
 )
+
+
+SERVER_PATH = Path(__file__).parent / 'server.py'
+
+
+def load_dashboard_module(name: str):
+    spec = importlib.util.spec_from_file_location(name, SERVER_PATH)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop(name, None)
+    return module
+
+
+def test_malformed_numeric_env_defaults_do_not_crash_import(monkeypatch):
+    monkeypatch.setenv('POLLING_INTERVAL', 'not-an-int')
+    monkeypatch.setenv('PORT', '')
+
+    module = load_dashboard_module('health_dashboard_malformed_env')
+
+    assert module.POLLING_INTERVAL == 60
+    assert module._env_int('PORT', 5000) == 5000
 
 
 class TestNodeStatus(unittest.TestCase):
