@@ -5,10 +5,35 @@ Tests for WebSocket server, real-time client, and dashboard functionality
 """
 
 import unittest
+import importlib.util
 import json
+import sys
 import time
+from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 from io import BytesIO
+
+
+MODULE_PATH = Path(__file__).with_name("realtime_server.py")
+
+
+def load_realtime_server_module():
+    module_name = "test_realtime_server_env_module"
+    sys.path.insert(0, str(MODULE_PATH.parent))
+    try:
+        spec = importlib.util.spec_from_file_location(module_name, MODULE_PATH)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        try:
+            spec.loader.exec_module(module)
+        finally:
+            sys.modules.pop(module_name, None)
+    finally:
+        try:
+            sys.path.remove(str(MODULE_PATH.parent))
+        except ValueError:
+            pass
+    return module
 
 
 class TestRealtimeServer(unittest.TestCase):
@@ -50,6 +75,30 @@ class TestRealtimeServer(unittest.TestCase):
         self.assertIn('active_connections', state.metrics)
         self.assertIn('messages_sent', state.metrics)
         self.assertIn('polls_executed', state.metrics)
+
+    def test_malformed_numeric_env_falls_back(self):
+        with patch.dict('os.environ', {
+            'EXPLORER_PORT': 'not-a-port',
+            'API_TIMEOUT': 'not-a-timeout',
+            'POLL_INTERVAL': 'not-an-interval',
+        }):
+            module = load_realtime_server_module()
+
+        self.assertEqual(module.EXPLORER_PORT, 8080)
+        self.assertEqual(module.API_TIMEOUT, 8.0)
+        self.assertEqual(module.POLL_INTERVAL, 5.0)
+
+    def test_valid_numeric_env_is_preserved(self):
+        with patch.dict('os.environ', {
+            'EXPLORER_PORT': '9010',
+            'API_TIMEOUT': '2.25',
+            'POLL_INTERVAL': '0.5',
+        }):
+            module = load_realtime_server_module()
+
+        self.assertEqual(module.EXPLORER_PORT, 9010)
+        self.assertEqual(module.API_TIMEOUT, 2.25)
+        self.assertEqual(module.POLL_INTERVAL, 0.5)
         
     def test_explorer_state_metrics_defaults(self):
         """Test ExplorerState metrics have correct default values"""
