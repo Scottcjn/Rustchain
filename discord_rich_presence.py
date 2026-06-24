@@ -84,7 +84,10 @@ def get_miners_list() -> List[Dict[str, Any]]:
         data = response.json()
         # Unwrap paginated envelope: {"miners": [...], "pagination": {...}}
         if isinstance(data, dict):
-            return data.get("miners", data.get("data", []))
+            unwrapped = data.get("miners", data.get("data", []))
+            if isinstance(unwrapped, list):
+                return unwrapped
+            return []
         # Legacy: top-level JSON array
         if isinstance(data, list):
             return data
