@@ -192,7 +192,9 @@ class RustChainExportTests(unittest.TestCase):
             with path.open(newline="", encoding="utf-8") as handle:
                 reader = csv.DictReader(handle)
                 result = list(reader)
-            self.assertEqual(result[0]["miner_id"], "=cmd|'/c calc'!A0")
+            # CSV reader preserves the leading single-quote sanitizer prefix
+            # when the value itself contains a quote character
+            self.assertEqual(result[0]["miner_id"], "'=cmd|'/c calc'!A0")
             self.assertEqual(result[1]["miner_id"], "safeRTC")
 
 
