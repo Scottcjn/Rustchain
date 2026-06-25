@@ -53,6 +53,11 @@ elif _tls_verify_env in ("false", "0", "no"):
 else:
     TLS_VERIFY = True                 # Default: full CA verification
 
+# CORS origin restriction: comma-separated allowed origins.
+# Defaults to the official bridge domain; set "*" to restore permissive (NOT recommended).
+_cors_origins_env = os.environ.get("CORS_ORIGINS", "https://bridge.rustchain.io").strip()
+CORS_ORIGINS = None if _cors_origins_env == "*" else [o.strip() for o in _cors_origins_env.split(",") if o.strip()]
+
 ESCROW_WALLET = "otc_bridge_escrow"
 ORDER_TTL_DEFAULT = 7 * 86400       # 7 days
 ORDER_TTL_MAX = 30 * 86400          # 30 days
@@ -73,7 +78,7 @@ log = logging.getLogger("otc_bridge")
 logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__, static_folder="static")
-CORS(app)
+CORS(app, origins=CORS_ORIGINS)
 
 
 # ---------------------------------------------------------------------------
