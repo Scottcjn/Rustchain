@@ -46,11 +46,18 @@ except ImportError:
 RUSTCHAIN_API = "https://rustchain.org"
 WALLET_DIR = Path.home() / ".rustchain"
 CONFIG_FILE = WALLET_DIR / "config.json"
+COMMAND_TIMEOUT_SECONDS = 10
 
 # TLS verification: pinned cert or system CA bundle
 _CERT_PATH = str(WALLET_DIR / "node_cert.pem")
 TLS_VERIFY = _CERT_PATH if os.path.exists(_CERT_PATH) else True
 WALLET_FILE = WALLET_DIR / "wallet.json"
+
+
+def _check_output_with_timeout(cmd, **kwargs):
+    kwargs.setdefault("timeout", COMMAND_TIMEOUT_SECONDS)
+    return subprocess.check_output(cmd, **kwargs)
+
 
 class RustChainWallet:
     """Windows wallet for RustChain"""
@@ -151,7 +158,7 @@ def _windows_fingerprint_checks():
     flags = []
     creation_flag = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     try:
-        out = subprocess.check_output(
+        out = _check_output_with_timeout(
             ["wmic", "cpu", "get", "Name,Description,Caption"],
             stderr=subprocess.DEVNULL, creationflags=creation_flag
         ).decode("utf-8", "ignore")
@@ -248,7 +255,7 @@ def _windows_fingerprint_checks():
     vm_indicators = []
     # WMI-based VM detection
     try:
-        out = subprocess.check_output(
+        out = _check_output_with_timeout(
             ["wmic", "computersystem", "get", "Model,Manufacturer"],
             stderr=subprocess.DEVNULL, creationflags=creation_flag
         ).decode("utf-8", "ignore").lower()
@@ -263,7 +270,7 @@ def _windows_fingerprint_checks():
         pass
     # BIOS vendor check
     try:
-        out = subprocess.check_output(
+        out = _check_output_with_timeout(
             ["wmic", "bios", "get", "Manufacturer,SMBIOSBIOSVersion"],
             stderr=subprocess.DEVNULL, creationflags=creation_flag
         ).decode("utf-8", "ignore").lower()
@@ -428,7 +435,7 @@ class RustChainMiner:
 
         creation_flag = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         try:
-            output = subprocess.check_output(
+            output = _check_output_with_timeout(
                 ["getmac", "/fo", "csv", "/nh"],
                 stderr=subprocess.DEVNULL,
                 creationflags=creation_flag
