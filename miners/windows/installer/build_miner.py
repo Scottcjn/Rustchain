@@ -21,6 +21,7 @@ SRC_DIR = PROJECT_DIR / "src"
 ENTRY_POINT = SRC_DIR / "rustchain_windows_miner.py"
 ICON_FILE = PROJECT_DIR / "assets" / "rustchain.ico"
 DIST_DIR = PROJECT_DIR / "dist"
+BUILD_TIMEOUT_SECONDS = 900
 
 
 def build():
@@ -88,7 +89,11 @@ def build():
     print("-" * 60)
 
     # Run PyInstaller
-    result = subprocess.run(cmd, cwd=str(PROJECT_DIR))
+    try:
+        result = subprocess.run(cmd, cwd=str(PROJECT_DIR), timeout=BUILD_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        print(f"  ERROR: PyInstaller build timed out after {BUILD_TIMEOUT_SECONDS} seconds!")
+        sys.exit(1)
 
     if result.returncode == 0:
         exe_path = DIST_DIR / "RustChainMiner.exe"
