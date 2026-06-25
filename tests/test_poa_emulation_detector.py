@@ -18,12 +18,14 @@ def load_emulation_detector():
 
 def test_detect_emulation_flags_linux_virtualization(monkeypatch):
     module = load_emulation_detector()
+    calls = []
     monkeypatch.setattr(module.platform, "system", lambda: "Linux")
-    monkeypatch.setattr(
-        module.subprocess,
-        "check_output",
-        lambda command: b"docker\n",
-    )
+
+    def fake_check_output(command, **kwargs):
+        calls.append((command, kwargs))
+        return b"docker\n"
+
+    monkeypatch.setattr(module.subprocess, "check_output", fake_check_output)
 
     result = module.detect_emulation()
 
@@ -32,6 +34,12 @@ def test_detect_emulation_flags_linux_virtualization(monkeypatch):
         "score": 50,
         "likely_emulated": True,
     }
+    assert calls == [
+        (
+            ["systemd-detect-virt"],
+            {"stderr": module.subprocess.DEVNULL, "timeout": module.EMULATION_COMMAND_TIMEOUT},
+        )
+    ]
 
 
 def test_detect_emulation_treats_none_as_physical_linux(monkeypatch):
@@ -40,7 +48,7 @@ def test_detect_emulation_treats_none_as_physical_linux(monkeypatch):
     monkeypatch.setattr(
         module.subprocess,
         "check_output",
-        lambda command: b"none\n",
+        lambda command, **kwargs: b"none\n",
     )
 
     assert module.detect_emulation() == {
@@ -54,7 +62,7 @@ def test_detect_emulation_ignores_failed_detection_command(monkeypatch):
     module = load_emulation_detector()
     monkeypatch.setattr(module.platform, "system", lambda: "Linux")
 
-    def raise_error(command):
+    def raise_error(command, **kwargs):
         raise CalledProcessError(returncode=1, cmd=command)
 
     monkeypatch.setattr(module.subprocess, "check_output", raise_error)
@@ -70,7 +78,7 @@ def test_detect_emulation_skips_virtualization_command_off_linux(monkeypatch):
     module = load_emulation_detector()
     monkeypatch.setattr(module.platform, "system", lambda: "Darwin")
 
-    def fail_if_called(command):
+    def fail_if_called(command, **kwargs):
         raise AssertionError(f"unexpected command: {command}")
 
     monkeypatch.setattr(module.subprocess, "check_output", fail_if_called)
