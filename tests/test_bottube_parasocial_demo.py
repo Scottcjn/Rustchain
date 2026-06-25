@@ -92,8 +92,19 @@ def test_script_main_prints_rankings_and_cleans_temp_db(monkeypatch, capsys) -> 
     temp_db = "/tmp/bottube_parasocial_demo_test.db"
     removed_paths: list[str] = []
 
+    class FakeNamedTemporaryFile:
+        name = temp_db
+
+        def close(self) -> None:
+            pass
+
+    def fake_named_temporary_file(*, suffix: str, delete: bool) -> FakeNamedTemporaryFile:
+        assert suffix == ".db"
+        assert delete is False
+        return FakeNamedTemporaryFile()
+
     monkeypatch.setitem(sys.modules, "bottube_parasocial", fake_module)
-    monkeypatch.setattr(tempfile, "mktemp", lambda suffix="": temp_db)
+    monkeypatch.setattr(tempfile, "NamedTemporaryFile", fake_named_temporary_file)
     monkeypatch.setattr(os, "unlink", removed_paths.append)
 
     runpy.run_path(str(script_path), run_name="__main__")
