@@ -14,6 +14,8 @@ import winreg
 import uuid
 from typing import Dict, List, Optional, Tuple
 
+COMMAND_TIMEOUT_SECONDS = 10
+
 def check_clock_drift(samples: int = 200) -> Tuple[bool, Dict]:
     """Check 1: Clock-Skew & Oscillator Drift"""
     intervals = []
@@ -107,9 +109,10 @@ def check_simd_identity() -> Tuple[bool, Dict]:
         cpu_info = subprocess.check_output(
             ["wmic", "cpu", "get", "Caption"],
             stderr=subprocess.DEVNULL,
-            creationflags=subprocess.CREATE_NO_WINDOW
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            timeout=COMMAND_TIMEOUT_SECONDS,
         ).decode().strip()
-    except:
+    except Exception:
         cpu_info = platform.processor()
 
     has_sse = "sse" in cpu_info.lower() or "intel" in cpu_info.lower() or "amd" in cpu_info.lower()
