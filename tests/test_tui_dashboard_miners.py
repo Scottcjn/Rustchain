@@ -22,7 +22,13 @@ def test_refresh_uses_paginated_miners_total_and_rows(monkeypatch):
         "https://node.example/headers/tip": {},
     }
 
-    monkeypatch.setattr(tui_dashboard, "fetch_json", lambda url, timeout=8: responses.get(url))
+    calls = []
+
+    def fake_fetch_json(url, timeout=8, insecure_tls=False):
+        calls.append((url, timeout, insecure_tls))
+        return responses.get(url)
+
+    monkeypatch.setattr(tui_dashboard, "fetch_json", fake_fetch_json)
     data = tui_dashboard.RustChainData("https://node.example")
     data._fetch_price = lambda: {}
 
@@ -30,6 +36,8 @@ def test_refresh_uses_paginated_miners_total_and_rows(monkeypatch):
 
     assert data.miners == [{"miner": "alice"}, {"miner_id": "bob"}]
     assert data.miner_total == 42
+    assert calls
+    assert all(call[2] is False for call in calls)
 
 
 def test_miners_panel_title_uses_api_total_and_miner_fallback():
