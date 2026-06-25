@@ -1,5 +1,16 @@
 import platform, subprocess, re, json, hashlib, os
 
+HARDWARE_COMMAND_TIMEOUT = 10
+
+
+def _check_output(command):
+    return subprocess.check_output(
+        command,
+        stderr=subprocess.DEVNULL,
+        timeout=HARDWARE_COMMAND_TIMEOUT,
+    )
+
+
 def detect_unique_hardware_signature():
     """
     Generate a cryptographic fingerprint of the physical hardware.
@@ -29,7 +40,7 @@ def detect_unique_hardware_signature():
             # macOS: Use system_profiler to get Hardware UUID
             # This UUID is burned into the Mac's logic board at manufacture time
             # and persists across OS reinstalls, making it ideal for hardware binding
-            output = subprocess.check_output(['system_profiler', 'SPHardwareDataType']).decode()
+            output = _check_output(['system_profiler', 'SPHardwareDataType']).decode()
             hw_uuid = re.search(r'Hardware UUID: (.*)', output)
             if hw_uuid:
                 unique_markers['hardware_uuid'] = hw_uuid.group(1).strip()
@@ -40,8 +51,8 @@ def detect_unique_hardware_signature():
             # - Motherboard serial alone can be spoofed in VMs
             # - CPU ID alone changes if the CPU is replaced
             # - Together they create a strong hardware binding
-            mb_serial = subprocess.check_output(['wmic', 'baseboard', 'get', 'serialnumber']).decode().strip().split('\n')[1].strip()
-            cpu_id = subprocess.check_output(['wmic', 'cpu', 'get', 'processorid']).decode().strip().split('\n')[1].strip()
+            mb_serial = _check_output(['wmic', 'baseboard', 'get', 'serialnumber']).decode().strip().split('\n')[1].strip()
+            cpu_id = _check_output(['wmic', 'cpu', 'get', 'processorid']).decode().strip().split('\n')[1].strip()
             unique_markers['mb_serial'] = mb_serial
             unique_markers['cpu_id'] = cpu_id
 
@@ -53,7 +64,7 @@ def detect_unique_hardware_signature():
             # - Multiple markers increase fingerprint uniqueness
             for tag in ['system-serial-number', 'bios-version', 'baseboard-product-name']:
                 try:
-                    out = subprocess.check_output(['dmidecode', '-s', tag]).decode().strip()
+                    out = _check_output(['dmidecode', '-s', tag]).decode().strip()
                     unique_markers[tag] = out
                 except:
                     # dmidecode requires root on some systems, or the field may not exist
