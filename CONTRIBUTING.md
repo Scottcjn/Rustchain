@@ -86,6 +86,9 @@ cd Rustchain
 # Verify you are in the expected checkout
 test -f CONTRIBUTING.md && test -f pyproject.toml && test -f requirements.txt
 
+# Optional: diagnose local clone/worktree corruption before reusing an old checkout
+python scripts/git_repo_doctor.py --repo-path .
+
 # Python environment
 python3 -m venv .venv && source .venv/bin/activate
 python -m pip install --upgrade pip
