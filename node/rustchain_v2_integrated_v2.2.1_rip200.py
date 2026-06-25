@@ -3075,7 +3075,7 @@ def _get_streak_bonus(miner: str) -> float:
             rows = conn.execute(
                 "SELECT ts_ok FROM miner_attest_history WHERE miner = ? ORDER BY ts_ok DESC LIMIT 1000",
                 (miner,)
-            ).fetchall()
+            ).fetchall()  # fetchall-ok: already-paginated
             
             if not rows:
                 return 0.0
@@ -7895,7 +7895,7 @@ def _attestation_pool_snapshot(now_ts: Optional[int] = None) -> dict:
                 LIMIT 20
                 """,
                 (active_cutoff,),
-            ).fetchall()
+            ).fetchall()  # fetchall-ok: already-paginated
             snapshot["by_device_arch"] = [
                 {"device_arch": r["device_arch"], "active_miners": int(r["miners"] or 0)}
                 for r in arch_rows
