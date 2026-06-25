@@ -16,6 +16,7 @@ CACHE_TTL           – response cache lifetime in seconds (default: 15)
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import threading
 import time
@@ -25,14 +26,33 @@ import requests
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
+logger = logging.getLogger(__name__)
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 
+
+def _safe_int_env(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        logger.warning("Invalid %s env value; using default %s", name, default)
+        return default
+
+
+def _safe_float_env(name: str, default: float) -> float:
+    try:
+        return float(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        logger.warning("Invalid %s env value; using default %s", name, default)
+        return default
+
+
 NODE_URL = os.environ.get("RUSTCHAIN_NODE_URL", "http://localhost:5000").rstrip("/")
-EXPLORER_PORT = int(os.environ.get("EXPLORER_PORT", "6100"))
-CACHE_TTL = int(os.environ.get("CACHE_TTL", "15"))
-REQUEST_TIMEOUT = float(os.environ.get("REQUEST_TIMEOUT", "10"))
+EXPLORER_PORT = _safe_int_env("EXPLORER_PORT", 6100)
+CACHE_TTL = _safe_int_env("CACHE_TTL", 15)
+REQUEST_TIMEOUT = _safe_float_env("REQUEST_TIMEOUT", 10.0)
 
 app = Flask(__name__)
 CORS(app)
