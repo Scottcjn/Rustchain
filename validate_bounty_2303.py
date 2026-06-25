@@ -23,6 +23,7 @@ import urllib.error
 # Configuration
 BASE_URL = os.environ.get("DASHBOARD_TEST_URL", "http://localhost:8096")
 TEST_TIMEOUT = 30  # seconds
+PYTEST_TIMEOUT = 120  # seconds
 
 def print_header(text):
     print("\n" + "=" * 60)
@@ -176,7 +177,8 @@ def run_tests():
     result = subprocess.run(
         [sys.executable, "-m", "pytest", "bridge/test_dashboard_api.py", "-v", "--tb=short"],
         capture_output=True,
-        text=True
+        text=True,
+        timeout=PYTEST_TIMEOUT,
     )
     
     passed = result.returncode == 0
