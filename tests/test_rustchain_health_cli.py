@@ -90,10 +90,10 @@ def test_collect_strips_trailing_slash_and_calls_all_checks():
 
     assert snapshot["node"] == "https://node"
     assert snapshot["checked_at"] == "2026-05-14T04:59:00Z"
-    health.assert_called_once_with("https://node", 4)
-    epoch.assert_called_once_with("https://node", 4)
-    miners.assert_called_once_with("https://node", 4)
-    tip.assert_called_once_with("https://node", 4)
+    health.assert_called_once_with("https://node", 4, False)
+    epoch.assert_called_once_with("https://node", 4, False)
+    miners.assert_called_once_with("https://node", 4, False)
+    tip.assert_called_once_with("https://node", 4, False)
 
 
 def test_render_reports_operational_and_issue_states():

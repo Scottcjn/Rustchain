@@ -64,7 +64,11 @@ def test_fetch_parses_json_and_sets_headers(rustchain_health_module, monkeypatch
         calls.append((request, timeout, context))
         return response
 
-    monkeypatch.setattr(rustchain_health_module, "_ssl_ctx", lambda: ssl_context)
+    monkeypatch.setattr(
+        rustchain_health_module,
+        "_ssl_ctx",
+        lambda insecure_tls=False: ssl_context,
+    )
     monkeypatch.setattr(rustchain_health_module, "urlopen", fake_urlopen)
     monkeypatch.setattr(rustchain_health_module.time, "time", lambda: next(times))
 
@@ -94,7 +98,11 @@ def test_fetch_returns_text_and_error_payloads(rustchain_health_module, monkeypa
         assert context == "ssl-context"
         return FakeHTTPResponse(b" node online \n")
 
-    monkeypatch.setattr(rustchain_health_module, "_ssl_ctx", lambda: "ssl-context")
+    monkeypatch.setattr(
+        rustchain_health_module,
+        "_ssl_ctx",
+        lambda insecure_tls=False: "ssl-context",
+    )
     monkeypatch.setattr(rustchain_health_module, "urlopen", fake_text_urlopen)
     monkeypatch.setattr(rustchain_health_module.time, "time", lambda: next(times))
 
@@ -155,8 +163,8 @@ def test_check_helpers_shape_endpoint_responses(rustchain_health_module, monkeyp
     }
     calls = []
 
-    def fake_fetch(url, timeout):
-        calls.append((url, timeout))
+    def fake_fetch(url, timeout, insecure_tls=False):
+        calls.append((url, timeout, insecure_tls))
         return responses[url]
 
     monkeypatch.setattr(rustchain_health_module, "fetch", fake_fetch)
@@ -191,10 +199,10 @@ def test_check_helpers_shape_endpoint_responses(rustchain_health_module, monkeyp
         "timestamp": "2026-05-13T00:00:00Z",
     }
     assert calls == [
-        ("https://node.example/health", 5),
-        ("https://node.example/epoch", 5),
-        ("https://node.example/api/miners", 5),
-        ("https://node.example/headers/tip", 5),
+        ("https://node.example/health", 5, False),
+        ("https://node.example/epoch", 5, False),
+        ("https://node.example/api/miners", 5, False),
+        ("https://node.example/headers/tip", 5, False),
     ]
 
 
@@ -204,7 +212,7 @@ def test_check_miners_accepts_items_envelope(rustchain_health_module, monkeypatc
     monkeypatch.setattr(
         rustchain_health_module,
         "fetch",
-        lambda _url, _timeout: (True, {"items": miner_rows}, 7.0),
+        lambda _url, _timeout, insecure_tls=False: (True, {"items": miner_rows}, 7.0),
     )
 
     result = rustchain_health_module.check_miners("https://node.example", 5)
@@ -230,7 +238,7 @@ def test_check_helpers_handle_raw_dict_and_error_edges(
         "https://node.example/headers/tip": (False, "tip timeout", 40.0),
     }
 
-    def fake_fetch(url, _timeout):
+    def fake_fetch(url, _timeout, insecure_tls=False):
         return responses[url]
 
     monkeypatch.setattr(rustchain_health_module, "fetch", fake_fetch)
@@ -263,8 +271,8 @@ def test_collect_strips_base_url_and_uses_checks(rustchain_health_module, monkey
     calls = []
 
     def fake_check(name):
-        def _check(base, timeout):
-            calls.append((name, base, timeout))
+        def _check(base, timeout, insecure_tls=False):
+            calls.append((name, base, timeout, insecure_tls))
             return {"name": name}
 
         return _check
@@ -291,10 +299,10 @@ def test_collect_strips_base_url_and_uses_checks(rustchain_health_module, monkey
         "tip": {"name": "tip"},
     }
     assert calls == [
-        ("health", "https://node.example", 6),
-        ("epoch", "https://node.example", 6),
-        ("miners", "https://node.example", 6),
-        ("tip", "https://node.example", 6),
+        ("health", "https://node.example", 6, False),
+        ("epoch", "https://node.example", 6, False),
+        ("miners", "https://node.example", 6, False),
+        ("tip", "https://node.example", 6, False),
     ]
 
 
