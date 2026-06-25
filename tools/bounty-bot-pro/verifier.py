@@ -16,6 +16,7 @@ CONFIG = {
     "org": "Scottcjn",
     "repos": ["Rustchain", "rustchain-bounties", "bottube"],
     "miner_node_url": "https://50.28.86.131",
+    "article_check_timeout": 10,
     "star_reward": 1.0,
     "follow_reward": 1.0,
     "star_king_bonus": 25.0,
@@ -116,7 +117,11 @@ class BountyVerifier:
         
         if article_url:
             # Mock content fetch
-            article_status = "✅ Live" if requests.head(article_url).status_code == 200 else "❌ Broken"
+            article_status = (
+                "✅ Live"
+                if requests.head(article_url, timeout=CONFIG["article_check_timeout"]).status_code == 200
+                else "❌ Broken"
+            )
             report += f"| Article link | {article_status} |\n"
             
         report += f"\n**Suggested payout**: **{payout} RTC**\n"
