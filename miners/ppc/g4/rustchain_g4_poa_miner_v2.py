@@ -19,12 +19,18 @@ NODE_URL = os.environ.get("RUSTCHAIN_NODE", "https://rustchain.org")
 ATTESTATION_TTL = 600  # 10 minutes - must re-attest before this
 LOTTERY_CHECK_INTERVAL = 10  # Check every 10 seconds
 ATTESTATION_INTERVAL = 300  # Re-attest every 5 minutes
+COMMAND_TIMEOUT_SECONDS = 10
 
 # G4 CPU timing profile from PoA spec
 # ~8500 µs per 10k SHA256 operations
 G4_TIMING_MEAN = 8500
 G4_TIMING_VARIANCE_MIN = 200
 G4_TIMING_VARIANCE_MAX = 800
+
+
+def _run_with_timeout(cmd, **kwargs):
+    kwargs.setdefault("timeout", COMMAND_TIMEOUT_SECONDS)
+    return subprocess.run(cmd, **kwargs)
 
 
 def get_system_entropy(size=64):
@@ -93,14 +99,14 @@ def get_mac_addresses():
     macs = []
     try:
         if platform.system() == "Darwin":
-            result = subprocess.run(["ifconfig"], capture_output=True, text=True)
+            result = _run_with_timeout(["ifconfig"], capture_output=True, text=True)
             for line in result.stdout.split('\n'):
                 if 'ether' in line:
                     mac = line.split('ether')[1].strip().split()[0]
                     if mac and mac != "00:00:00:00:00:00":
                         macs.append(mac)
         elif platform.system() == "Linux":
-            result = subprocess.run(["ip", "link"], capture_output=True, text=True)
+            result = _run_with_timeout(["ip", "link"], capture_output=True, text=True)
             for line in result.stdout.split('\n'):
                 if 'link/ether' in line:
                     mac = line.split('link/ether')[1].strip().split()[0]
