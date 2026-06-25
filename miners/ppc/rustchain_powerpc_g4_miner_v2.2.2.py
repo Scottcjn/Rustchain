@@ -9,6 +9,12 @@ from datetime import datetime
 NODE_URL = "https://rustchain.org"
 BLOCK_TIME = 600  # 10 minutes
 LOTTERY_CHECK_INTERVAL = 10  # Check every 10 seconds
+COMMAND_TIMEOUT_SECONDS = 10
+
+
+def _check_output_with_timeout(cmd, **kwargs):
+    kwargs.setdefault("timeout", COMMAND_TIMEOUT_SECONDS)
+    return subprocess.check_output(cmd, **kwargs)
 
 class G4Miner:
     def __init__(self, miner_id="dual-g4-125", wallet=None):
@@ -278,7 +284,7 @@ class G4Miner:
         }
 
         try:
-            hw_raw = subprocess.check_output(
+            hw_raw = _check_output_with_timeout(
                 ["system_profiler", "SPHardwareDataType"],
                 stderr=subprocess.DEVNULL
             ).decode("utf-8", "ignore")
@@ -304,7 +310,7 @@ class G4Miner:
     def _get_mac_addresses(self):
         macs = []
         try:
-            output = subprocess.check_output(
+            output = _check_output_with_timeout(
                 ["/sbin/ifconfig", "-a"],
                 stderr=subprocess.DEVNULL
             ).decode("utf-8", "ignore").splitlines()
