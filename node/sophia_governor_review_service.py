@@ -76,6 +76,13 @@ def _safe_json_dumps(value: Any) -> str:
     return json.dumps(value, sort_keys=True, default=str)
 
 
+def _int_env(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
 def _text_excerpt(text: Any, limit: int = 800) -> str:
     if text is None:
         return ""
@@ -783,7 +790,7 @@ def queue_scott_notification():
 
 def main():
     init_db()
-    port = int(os.getenv("SOPHIA_GOVERNOR_REVIEW_PORT", "8091"))
+    port = _int_env("SOPHIA_GOVERNOR_REVIEW_PORT", 8091)
     host = os.getenv("SOPHIA_GOVERNOR_REVIEW_HOST", "0.0.0.0")
     app.run(host=host, port=port, debug=False)
 
