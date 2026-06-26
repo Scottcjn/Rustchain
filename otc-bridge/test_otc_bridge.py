@@ -40,6 +40,14 @@ class OTCBridgeTestCase(unittest.TestCase):
             except PermissionError:
                 pass
 
+    def test_int_env_falls_back_on_malformed_port(self):
+        with patch.dict(os.environ, {"OTC_PORT": "not-an-int"}):
+            self.assertEqual(otc_bridge._int_env("OTC_PORT", 5580), 5580)
+
+    def test_int_env_accepts_valid_port(self):
+        with patch.dict(os.environ, {"OTC_PORT": "5599"}):
+            self.assertEqual(otc_bridge._int_env("OTC_PORT", 5580), 5599)
+
     def signed_create_order_payload(self, payload):
         private_key = Ed25519PrivateKey.generate()
         public_key_hex = private_key.public_key().public_bytes(
