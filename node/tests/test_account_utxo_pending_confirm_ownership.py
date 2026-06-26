@@ -14,6 +14,7 @@ NODE_DIR = Path(__file__).resolve().parents[1]
 MODULE_PATH = NODE_DIR / "rustchain_v2_integrated_v2.2.1_rip200.py"
 ADMIN_KEY = "0123456789abcdef0123456789abcdef"
 ACCOUNT_UNIT = 1_000_000
+MIGRATION_REGISTER = '{"R4": "account_migration_mirror"}'
 
 
 def _load_node_module(db_path: str):
@@ -140,7 +141,7 @@ class TestPendingConfirmUtxoOwnership(unittest.TestCase):
                     "_allow_minting": True,
                     "inputs": [],
                     "outputs": [
-                        {"address": sender, "value_nrtc": amount_rtc * UNIT},
+                        {"address": sender, "value_nrtc": amount_rtc * UNIT, "registers_json": MIGRATION_REGISTER},
                     ],
                     "fee_nrtc": 0,
                     "timestamp": 1,
@@ -212,7 +213,7 @@ class TestPendingConfirmUtxoOwnership(unittest.TestCase):
                     "tx_type": "mining_reward",
                     "_allow_minting": True,
                     "inputs": [],
-                    "outputs": [{"address": sender, "value_nrtc": account_rtc * UNIT}],
+                    "outputs": [{"address": sender, "value_nrtc": account_rtc * UNIT, "registers_json": MIGRATION_REGISTER}],
                     "fee_nrtc": 0,
                     "timestamp": 1,
                 },
@@ -250,7 +251,7 @@ class TestPendingConfirmUtxoOwnership(unittest.TestCase):
                     "tx_type": "mining_reward",
                     "_allow_minting": True,
                     "inputs": [],
-                    "outputs": [{"address": sender, "value_nrtc": utxo_rtc * UNIT}],
+                    "outputs": [{"address": sender, "value_nrtc": utxo_rtc * UNIT, "registers_json": MIGRATION_REGISTER}],
                     "fee_nrtc": 0,
                     "timestamp": 1,
                 },
@@ -273,6 +274,47 @@ class TestPendingConfirmUtxoOwnership(unittest.TestCase):
         with sqlite3.connect(self.db_path) as conn:
             status = conn.execute("SELECT status FROM pending_ledger WHERE id = 1").fetchone()[0]
         self.assertEqual(status, "pending")
+
+    def test_pending_confirm_ignores_non_migrated_utxos_for_mixed_wallet(self):
+        """A normal UTXO must not make a valid account confirmation fail."""
+        from utxo_db import UNIT, UtxoDB
+
+        sender = "alice"
+        recipient = "bob"
+        account_rtc = 100
+        transfer_rtc = 80
+        independent_utxo_rtc = 10
+
+        _seed_account_balance(self.db_path, sender, account_rtc)
+        _seed_account_balance(self.db_path, recipient, 0)
+
+        utxo = UtxoDB(self.db_path)
+        utxo.init_tables()
+        self.assertTrue(
+            utxo.apply_transaction(
+                {
+                    "tx_type": "mining_reward",
+                    "_allow_minting": True,
+                    "inputs": [],
+                    "outputs": [
+                        {"address": sender, "value_nrtc": independent_utxo_rtc * UNIT},
+                    ],
+                    "fee_nrtc": 0,
+                    "timestamp": 1,
+                },
+                block_height=1,
+            )
+        )
+
+        self._seed_pending_transfer(sender, recipient, transfer_rtc, tx_hash="mixed-wallet")
+        response = self._confirm_ready_pending()
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["confirmed_count"], 1)
+        self.assertEqual(_account_balance_rtc(self.db_path, sender), account_rtc - transfer_rtc)
+        self.assertEqual(_account_balance_rtc(self.db_path, recipient), transfer_rtc)
+        self.assertEqual(utxo.get_balance(sender), independent_utxo_rtc * UNIT)
+        self.assertEqual(utxo.get_balance(recipient), 0)
 
 
 if __name__ == "__main__":

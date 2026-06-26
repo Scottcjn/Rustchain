@@ -9598,9 +9598,10 @@ def _mirror_pending_confirm_to_utxo(conn, from_miner, to_miner, amount_i64, epoc
     same balance. Leaving those boxes untouched lets the same funds be spent a
     second time through the UTXO path.
 
-    Pre-migration wallets with no UTXO boxes are left alone. If UTXO boxes exist
-    but cannot cover the amount, fail the confirmation instead of committing a
-    cross-model divergence.
+    Pre-migration wallets with no migrated UTXO boxes are left alone. Non-migrated
+    UTXOs are not account-model mirror state and must not block a valid account
+    confirmation. If migrated mirror boxes exist but cannot cover the amount,
+    fail the confirmation instead of committing a cross-model divergence.
     """
     if not HAVE_UTXO or utxo_coin_select is None:
         return
@@ -9610,6 +9611,7 @@ def _mirror_pending_confirm_to_utxo(conn, from_miner, to_miner, amount_i64, epoc
     amount_nrtc = int(amount_i64) * (UTXO_UNIT // ACCOUNT_UNIT)
     utxo_db = UtxoDB(DB_PATH)
     utxo_db.init_tables(conn=conn)
+    migration_register = json.dumps({'R4': 'account_migration_mirror'}, sort_keys=True)
     sender_utxos = [
         {
             "box_id": row[0],
@@ -9626,13 +9628,19 @@ def _mirror_pending_confirm_to_utxo(conn, from_miner, to_miner, amount_i64, epoc
             "spent_by_tx": row[11],
         }
         for row in conn.execute(
-            """SELECT box_id, value_nrtc, proposition, owner_address,
-                      creation_height, transaction_id, output_index,
-                      tokens_json, registers_json, created_at, spent_at,
-                      spent_by_tx
-               FROM utxo_boxes
-               WHERE owner_address = ? AND spent_at IS NULL
-               ORDER BY value_nrtc ASC, box_id ASC""",
+            """SELECT b.box_id, b.value_nrtc, b.proposition, b.owner_address,
+                      b.creation_height, b.transaction_id, b.output_index,
+                      b.tokens_json, b.registers_json, b.created_at, b.spent_at,
+                      b.spent_by_tx
+               FROM utxo_boxes AS b
+               LEFT JOIN utxo_transactions AS t ON t.tx_id = b.transaction_id
+               WHERE b.owner_address = ?
+                 AND b.spent_at IS NULL
+                 AND (
+                   t.tx_type = 'genesis'
+                   OR json_extract(b.registers_json, '$.R4') IN ('genesis', 'account_migration_mirror')
+                 )
+               ORDER BY b.value_nrtc ASC, b.box_id ASC""",
             (from_miner,),
         )
     ]
@@ -9643,9 +9651,17 @@ def _mirror_pending_confirm_to_utxo(conn, from_miner, to_miner, amount_i64, epoc
     if not selected:
         raise RuntimeError("insufficient UTXO balance for pending confirmation mirror")
 
-    outputs = [{"address": to_miner, "value_nrtc": amount_nrtc}]
+    outputs = [{
+        "address": to_miner,
+        "value_nrtc": amount_nrtc,
+        "registers_json": migration_register,
+    }]
     if change_nrtc > 0:
-        outputs.append({"address": from_miner, "value_nrtc": change_nrtc})
+        outputs.append({
+            "address": from_miner,
+            "value_nrtc": change_nrtc,
+            "registers_json": migration_register,
+        })
 
     try:
         block_height = int(epoch)
