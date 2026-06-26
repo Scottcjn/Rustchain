@@ -33,12 +33,12 @@ class MockResponse:
         return self._data
 
 
-def client_for_response(data) -> RustChainClient:
+def client_for_response(data, *, verify_tls: bool = True) -> RustChainClient:
     response = MockResponse(data)
     session = MagicMock()
     session.request = MagicMock(return_value=AsyncContextManager(response))
 
-    client = RustChainClient(node_url="https://node.example")
+    client = RustChainClient(node_url="https://node.example", verify_tls=verify_tls)
     client._session = session
     client._owns_session = False
     return client
@@ -62,6 +62,36 @@ def test_numeric_env_overrides_are_preserved(monkeypatch):
 
     assert module.REQUEST_TIMEOUT == 12
     assert module.RETRY_COUNT == 4
+
+
+@pytest.mark.asyncio
+async def test_node_requests_verify_tls_by_default():
+    client = client_for_response({"miners": []})
+
+    await client.miners()
+
+    assert client._session.request.call_args.kwargs["ssl"] is True
+
+
+@pytest.mark.asyncio
+async def test_node_requests_allow_explicit_tls_opt_out():
+    client = client_for_response({"miners": []}, verify_tls=False)
+
+    await client.miners()
+
+    assert client._session.request.call_args.kwargs["ssl"] is False
+
+
+@pytest.mark.asyncio
+async def test_github_bounty_fetch_verifies_tls_by_default():
+    response = MockResponse([])
+    session = MagicMock()
+    session.get = MagicMock(return_value=AsyncContextManager(response))
+    client = RustChainClient(node_url="https://node.example", session=session)
+
+    await client._fetch_bounties_from_github()
+
+    assert session.get.call_args.kwargs["ssl"] is True
 
 
 @pytest.mark.asyncio
