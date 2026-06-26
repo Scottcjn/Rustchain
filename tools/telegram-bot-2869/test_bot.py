@@ -20,6 +20,35 @@ import time
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+
+# ---------------------------------------------------------------------------
+# Test Configuration Parsing
+# ---------------------------------------------------------------------------
+
+class TestConfigParsing(unittest.TestCase):
+    def setUp(self):
+        sys.path.insert(0, ".")
+        from bot import _float_env, _int_env
+        self._float_env = _float_env
+        self._int_env = _int_env
+
+    @patch.dict("os.environ", {"RATE_LIMIT_SECONDS": "not-an-int"})
+    def test_int_env_falls_back_on_malformed_value(self):
+        self.assertEqual(self._int_env("RATE_LIMIT_SECONDS", 5), 5)
+
+    @patch.dict("os.environ", {"REQUEST_TIMEOUT": "21"})
+    def test_int_env_accepts_valid_value(self):
+        self.assertEqual(self._int_env("REQUEST_TIMEOUT", 15), 21)
+
+    @patch.dict("os.environ", {"RTC_PRICE_USD": "not-a-float"})
+    def test_float_env_falls_back_on_malformed_value(self):
+        self.assertEqual(self._float_env("RTC_PRICE_USD", 0.10), 0.10)
+
+    @patch.dict("os.environ", {"RTC_PRICE_USD": "0.25"})
+    def test_float_env_accepts_valid_value(self):
+        self.assertEqual(self._float_env("RTC_PRICE_USD", 0.10), 0.25)
+
+
 # ---------------------------------------------------------------------------
 # Test Rate Limiter
 # ---------------------------------------------------------------------------
