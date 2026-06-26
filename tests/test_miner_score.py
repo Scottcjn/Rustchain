@@ -104,7 +104,7 @@ def test_api_uses_configured_node_timeout_and_ssl_context(monkeypatch):
 
     class DummyContext:
         check_hostname = True
-        verify_mode = None
+        verify_mode = miner_score.ssl.CERT_REQUIRED
 
     class DummyResponse:
         closed = False
@@ -135,8 +135,8 @@ def test_api_uses_configured_node_timeout_and_ssl_context(monkeypatch):
 
     assert miner_score.api("/api/miners") == {"miners": []}
     assert calls == [(("https://node.example/api/miners",), {"timeout": 10, "context": contexts[0]})]
-    assert contexts[0].check_hostname is False
-    assert contexts[0].verify_mode == miner_score.ssl.CERT_NONE
+    assert contexts[0].check_hostname is True
+    assert contexts[0].verify_mode == miner_score.ssl.CERT_REQUIRED
     assert responses[0].closed is True
 
 
