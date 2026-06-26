@@ -63,6 +63,28 @@ def client(app):
     return app.test_client()
 
 
+def test_numeric_env_helpers_fall_back_on_malformed_values(monkeypatch):
+    monkeypatch.setenv("SOPHIA_GOVERNOR_TRANSFER_WARNING_RTC", "not-a-float")
+    monkeypatch.setenv("SOPHIA_GOVERNOR_TRANSFER_CRITICAL_RTC", "also-bad")
+    monkeypatch.setenv("SOPHIA_GOVERNOR_MAX_RECENT", "not-an-int")
+    monkeypatch.setenv("SOPHIA_GOVERNOR_PHONE_HOME_CONNECT_TIMEOUT_SEC", "bad-connect")
+    monkeypatch.setenv("SOPHIA_GOVERNOR_PHONE_HOME_READ_TIMEOUT_SEC", "bad-read")
+
+    assert sophia_governor._transfer_warning_rtc() == 1000.0
+    assert sophia_governor._transfer_critical_rtc() == 10000.0
+    assert sophia_governor._max_recent_rows() == 50
+    assert sophia_governor._phone_home_timeouts() == (4.0, 120.0)
+
+
+def test_numeric_env_helpers_clamp_bounds(monkeypatch):
+    monkeypatch.setenv("SOPHIA_GOVERNOR_MAX_RECENT", "500")
+    monkeypatch.setenv("SOPHIA_GOVERNOR_PHONE_HOME_CONNECT_TIMEOUT_SEC", "0.1")
+    monkeypatch.setenv("SOPHIA_GOVERNOR_PHONE_HOME_READ_TIMEOUT_SEC", "1.5")
+
+    assert sophia_governor._max_recent_rows() == 200
+    assert sophia_governor._phone_home_timeouts() == (1.0, 5.0)
+
+
 def test_low_risk_governance_stays_local(tmp_db):
     result = review_rustchain_event(
         event_type="governance_proposal",
