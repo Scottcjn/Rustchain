@@ -18,6 +18,11 @@ EXPLORER_PORT = int(os.environ.get('EXPLORER_PORT', 8080))
 API_BASE = os.environ.get('RUSTCHAIN_API_BASE', 'https://rustchain.org').rstrip('/')
 API_TIMEOUT = float(os.environ.get('API_TIMEOUT', '8'))
 STATIC_DIR = os.path.join(os.path.dirname(__file__), 'static')
+CORS_ALLOWED_ORIGINS = {
+    origin.strip()
+    for origin in os.environ.get('EXPLORER_CORS_ORIGINS', '').split(',')
+    if origin.strip()
+}
 PROXY_ALLOWED_ENDPOINTS = {
     'health',
     'epoch',
@@ -51,6 +56,14 @@ def build_proxy_url(endpoint, query=''):
     if query:
         url += f"?{query}"
     return url
+
+
+def cors_origin_for_request(headers):
+    """Return the configured CORS origin to echo for this request, if any."""
+    origin = headers.get('Origin')
+    if origin and origin in CORS_ALLOWED_ORIGINS:
+        return origin
+    return None
 
 class ExplorerHandler(SimpleHTTPRequestHandler):
     """Custom HTTP handler with API proxy and caching"""
@@ -135,9 +148,12 @@ class ExplorerHandler(SimpleHTTPRequestHandler):
         """Send JSON response"""
         self.send_response(status)
         self.send_header('Content-Type', 'application/json')
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        cors_origin = cors_origin_for_request(self.headers)
+        if cors_origin:
+            self.send_header('Access-Control-Allow-Origin', cors_origin)
+            self.send_header('Access-Control-Allow-Methods', 'GET, OPTIONS')
+            self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+            self.send_header('Vary', 'Origin')
         if headers:
             for key, value in headers.items():
                 self.send_header(key, value)
@@ -156,10 +172,13 @@ class ExplorerHandler(SimpleHTTPRequestHandler):
     def do_OPTIONS(self):
         """Handle CORS preflight"""
         self.send_response(200)
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
-        self.send_header('Access-Control-Max-Age', '86400')
+        cors_origin = cors_origin_for_request(self.headers)
+        if cors_origin:
+            self.send_header('Access-Control-Allow-Origin', cors_origin)
+            self.send_header('Access-Control-Allow-Methods', 'GET, OPTIONS')
+            self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+            self.send_header('Access-Control-Max-Age', '86400')
+            self.send_header('Vary', 'Origin')
         self.end_headers()
     
     def log_message(self, format, *args):
