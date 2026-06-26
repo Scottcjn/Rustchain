@@ -653,6 +653,16 @@ class TestBridgeRequestValidation:
         assert resp.status_code == 400
         assert resp.get_json()["error"] == "JSON object body is required"
 
+    def test_lock_rejects_json_text_without_json_content_type(self, client):
+        resp = client.post(
+            "/bridge/lock",
+            data='{"sender_wallet":"test-miner"}',
+            content_type="text/plain",
+        )
+
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "JSON object body is required"
+
     def test_lock_rejects_non_string_fields(self, client):
         resp = client.post("/bridge/lock", json={
             "sender_wallet": ["test-miner"],
