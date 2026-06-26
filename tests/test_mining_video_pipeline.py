@@ -58,7 +58,7 @@ def test_fetch_miners_accepts_enveloped_miner_payload(monkeypatch):
     assert calls == [
         (
             "https://50.28.86.131/api/miners",
-            {"verify": False, "timeout": 30},
+            {"verify": True, "timeout": 30},
         )
     ]
     assert len(miners) == 1
@@ -68,10 +68,17 @@ def test_fetch_miners_accepts_enveloped_miner_payload(monkeypatch):
 
 
 def test_fetch_miners_ignores_malformed_envelope_rows(monkeypatch):
+    calls = []
+
+    def fake_get(url, **kwargs):
+        calls.append((url, kwargs))
+        return FakeResponse({"miners": [None, "bad"]})
+
     monkeypatch.setattr(
         mining_video_pipeline.requests,
         "get",
-        lambda *_args, **_kwargs: FakeResponse({"miners": [None, "bad"]}),
+        fake_get,
     )
 
     assert mining_video_pipeline.fetch_miners() == []
+    assert calls[0][1]["verify"] is True
