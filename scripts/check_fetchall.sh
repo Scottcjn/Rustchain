@@ -145,7 +145,11 @@ if [ "${1:-}" = "--print-baseline" ]; then
 fi
 
 comm -23 "$norm_tmp" "$baseline_tmp" > "$new_tmp"
-comm -13 "$norm_tmp" "$baseline_tmp" > "$stale_tmp"
+# Stale detection is set-based. The new-hit comparison above intentionally
+# preserves multiplicity to catch added duplicate call patterns, but stale
+# duplicate counts can drift between scanners when multiple legacy calls share
+# the same normalized line-only key such as "file:).fetchall()".
+comm -13 <(sort -u "$norm_tmp") <(sort -u "$baseline_tmp") > "$stale_tmp"
 
 if [ -s "$new_tmp" ]; then
     count=$(wc -l < "$new_tmp" | tr -d ' ')
