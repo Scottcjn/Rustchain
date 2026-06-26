@@ -16,6 +16,8 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
+HTTP_TIMEOUT_SECONDS = 30
+
 
 def load_bcos_engine():
     """Load the BCOS engine module from the Rustchain repo."""
@@ -250,7 +252,7 @@ def post_github_comment(repo: str, pr_number: str, report: dict, token: str) -> 
     )
     
     try:
-        response = urlopen(req)
+        response = urlopen(req, timeout=HTTP_TIMEOUT_SECONDS)
         print(f"✅ Comment posted successfully: {response.status}")
         return True
     except HTTPError as e:
@@ -283,7 +285,7 @@ def anchor_to_rustchain(node_url: str, report: dict, repo: str,
     )
     
     try:
-        response = urlopen(req)
+        response = urlopen(req, timeout=HTTP_TIMEOUT_SECONDS)
         result = json.loads(response.read().decode("utf-8"))
         print(f"✅ Attestation anchored successfully!")
         print(f"Transaction: {result.get('tx_hash', 'N/A')}")
