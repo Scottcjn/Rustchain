@@ -220,7 +220,7 @@ def _sweep_expired_locks(conn, now: int):
 
 def _json_object_body():
     """Return the parsed JSON body only when it is an object."""
-    data = request.get_json(force=True, silent=True)
+    data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return None, (jsonify({"error": "JSON object body is required"}), 400)
     return data, None
