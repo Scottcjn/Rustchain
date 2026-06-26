@@ -6,12 +6,19 @@ Serves static files and proxies API requests to bypass CORS
 
 import http.server
 import json
+import os
 import urllib.request
 import urllib.error
 from pathlib import Path
 
 NODE_URL = "https://50.28.86.131"
 PORT = 8888
+DEFAULT_CORS_ORIGIN = f"http://localhost:{PORT}"
+
+
+def cors_origin():
+    """Return the single origin allowed to read the local proxy."""
+    return os.environ.get("EPOCH_VIZ_CORS_ORIGIN", DEFAULT_CORS_ORIGIN).strip() or DEFAULT_CORS_ORIGIN
 
 class ProxyHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
@@ -40,7 +47,7 @@ class ProxyHandler(http.server.SimpleHTTPRequestHandler):
                 
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
-                self.send_header('Access-Control-Allow-Origin', '*')
+                self.send_header('Access-Control-Allow-Origin', cors_origin())
                 self.end_headers()
                 self.wfile.write(data)
         except urllib.error.URLError as e:
@@ -51,7 +58,7 @@ class ProxyHandler(http.server.SimpleHTTPRequestHandler):
     
     def end_headers(self):
         # Add CORS headers to all responses
-        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Origin', cors_origin())
         super().end_headers()
 
 if __name__ == '__main__':
