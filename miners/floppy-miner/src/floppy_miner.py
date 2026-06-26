@@ -133,7 +133,13 @@ def attestation_to_bytes(payload: dict) -> bytes:
 
 # ── Network ──────────────────────────────────────────────────────
 
-def submit_attestation(node_url: str, payload: dict) -> dict:
+def create_ssl_context(verify_tls: bool = True):
+    if verify_tls:
+        return None
+    return ssl._create_unverified_context()
+
+
+def submit_attestation(node_url: str, payload: dict, *, verify_tls: bool = True) -> dict:
     """Submit attestation to RustChain node.
     
     Uses urllib (no dependencies) with TLS.
@@ -145,10 +151,7 @@ def submit_attestation(node_url: str, payload: dict) -> dict:
     url = f"{node_url}{ATTEST_ENDPOINT}"
     data = attestation_to_bytes(payload)
     
-    # Allow self-signed certs for local nodes
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
+    ctx = create_ssl_context(verify_tls)
     
     req = urllib.request.Request(
         url,
@@ -167,15 +170,13 @@ def submit_attestation(node_url: str, payload: dict) -> dict:
         return {"ok": False, "error": str(e)}
 
 
-def get_epoch(node_url: str) -> dict:
+def get_epoch(node_url: str, *, verify_tls: bool = True) -> dict:
     """Fetch current epoch info."""
     if not HAS_URLLIB:
         return {"epoch": "?"}
     
     url = f"{node_url}{EPOCH_ENDPOINT}"
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
+    ctx = create_ssl_context(verify_tls)
     
     try:
         req = urllib.request.Request(url)
@@ -237,6 +238,8 @@ def main():
                         help="Single attestation then exit")
     parser.add_argument("--interval", type=int, default=ATTEST_INTERVAL,
                         help="Seconds between attestations")
+    parser.add_argument("--insecure-tls", action="store_true",
+                        help="disable TLS certificate verification for local/self-signed nodes")
     args = parser.parse_args()
 
     # Boot screen
@@ -255,7 +258,7 @@ def main():
 
     # Get epoch
     if not args.simulate:
-        epoch_info = get_epoch(args.node)
+        epoch_info = get_epoch(args.node, verify_tls=not args.insecure_tls)
         epoch = epoch_info.get("epoch", "?")
     else:
         epoch = random.randint(1, 100)
@@ -284,7 +287,7 @@ def main():
             output_serial(payload)
             result = {"ok": True, "message": "Sent to relay"}
         else:
-            result = submit_attestation(args.node, payload)
+            result = submit_attestation(args.node, payload, verify_tls=not args.insecure_tls)
         
         # Display result
         status = "OK" if result.get("ok") else "FAIL"
