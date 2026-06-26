@@ -30,8 +30,24 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 
 RUSTCHAIN_API = os.getenv("RUSTCHAIN_API_URL", "https://rustchain.org")
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-RATE_LIMIT_RPM = int(os.getenv("RATE_LIMIT_PER_MINUTE", "10"))
-RTC_PRICE_USD = float(os.getenv("RTC_PRICE_USD", "0.10"))
+
+
+def _int_env(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _float_env(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+RATE_LIMIT_RPM = _int_env("RATE_LIMIT_PER_MINUTE", 10)
+RTC_PRICE_USD = _float_env("RTC_PRICE_USD", 0.10)
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO").upper(),
