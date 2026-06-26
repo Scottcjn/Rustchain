@@ -3,8 +3,23 @@
 import os, requests
 from flask import Flask, jsonify, render_template_string, request
 
+
+def _int_env(name, default):
+    try:
+        return int(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _float_env(name, default):
+    try:
+        return float(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
 API_BASE = os.environ.get('RUSTCHAIN_API_BASE', 'https://rustchain.org').rstrip('/')
-TIMEOUT = float(os.environ.get('RUSTCHAIN_API_TIMEOUT', '8'))
+TIMEOUT = _float_env('RUSTCHAIN_API_TIMEOUT', 8.0)
 
 app = Flask(__name__)
 
@@ -86,4 +101,4 @@ def dashboard():
     })
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT','8787')))
+    app.run(host='0.0.0.0', port=_int_env('PORT', 8787))
