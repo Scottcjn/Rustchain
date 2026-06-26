@@ -150,6 +150,28 @@ def test_submit_deduplicates_rejected_slot_and_records_diagnostic(monkeypatch):
     assert miner.last_header_error == "HTTP 403 error=no pubkey registered for miner"
 
 
+def test_submit_request_failure_keeps_slot_retryable(monkeypatch):
+    module = load_miner_module()
+    miner = make_miner(module)
+    miner._last_submitted_slot = 41
+    payload = {
+        "miner_id": "RTCwallet",
+        "header": {"slot": 44, "miner": "RTCwallet", "timestamp": 1234},
+        "message": "00",
+        "signature": "cd" * 64,
+        "pubkey": "ab" * 32,
+    }
+
+    def fake_post(url, **kwargs):
+        raise module.requests.exceptions.Timeout("timed out")
+
+    monkeypatch.setattr(module.requests, "post", fake_post)
+
+    assert miner.submit_header(payload) is False
+    assert miner._last_submitted_slot == 41
+    assert miner.last_header_error == "header request failed: timed out"
+
+
 def test_submit_without_slot_does_not_clear_last_submitted_slot(monkeypatch):
     module = load_miner_module()
     miner = make_miner(module)
