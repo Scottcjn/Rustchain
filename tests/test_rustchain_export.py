@@ -156,6 +156,43 @@ class RustChainExportTests(unittest.TestCase):
         self.assertEqual(exporter.balance_amount_rtc({"balance_urtc": 999_999}), 0.999999)
         self.assertEqual(exporter.balance_amount_rtc({"balance_rtc": 0.5}), 0.5)
 
+    def test_csv_export_neutralizes_formula_injection(self):
+        rows = [
+            {
+                "miner_id": "=cmd|'/c calc'!A0",
+                "device_arch": "+SUM(A1:A2)",
+                "hardware_type": "-2+3",
+                "reason": "@SUM(1)",
+                "tabbed": "\tlead",
+                "safe": "PowerPC G4",
+                "amount": 1.25,
+                "none_field": None,
+                "empty_field": "",
+                "already_quoted": "'safe",
+            }
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            csv_path = Path(tmp) / "rows.csv"
+            exporter.write_csv(csv_path, rows)
+            with csv_path.open(newline="", encoding="utf-8") as handle:
+                out = list(csv.DictReader(handle))[0]
+            self.assertEqual(out["miner_id"], "'=cmd|'/c calc'!A0")
+            self.assertEqual(out["device_arch"], "'+SUM(A1:A2)")
+            self.assertEqual(out["hardware_type"], "'-2+3")
+            self.assertEqual(out["reason"], "'@SUM(1)")
+            self.assertEqual(out["tabbed"], "'\tlead")
+            self.assertEqual(out["safe"], "PowerPC G4")
+            self.assertEqual(out["amount"], "1.25")
+            self.assertEqual(out["none_field"], "")
+            self.assertEqual(out["empty_field"], "")
+            self.assertEqual(out["already_quoted"], "'safe")
+
+            json_path = Path(tmp) / "rows.json"
+            exporter.write_json(json_path, rows)
+            loaded = json.loads(json_path.read_text(encoding="utf-8"))
+            self.assertEqual(loaded[0]["miner_id"], "=cmd|'/c calc'!A0")
+            self.assertEqual(loaded[0]["device_arch"], "+SUM(A1:A2)")
+
 
 if __name__ == "__main__":
     unittest.main()
