@@ -107,6 +107,12 @@ export class StakingValidationError extends StakingError {
  * Minimal Ed25519 verification using the Web Crypto API.
  * Falls back gracefully if SubtleCrypto is unavailable (logs warning, returns false).
  */
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const buf = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buf).set(bytes);
+  return buf;
+}
+
 async function verifyEd25519(
   message: Uint8Array,
   signature: Uint8Array,
@@ -120,12 +126,17 @@ async function verifyEd25519(
   try {
     const key = await crypto.subtle.importKey(
       "raw",
-      rawKey,
+      toArrayBuffer(rawKey),
       { name: "Ed25519" },
       false,
       ["verify"],
     );
-    return await crypto.subtle.verify("Ed25519", key, signature, message);
+    return await crypto.subtle.verify(
+      "Ed25519",
+      key,
+      toArrayBuffer(signature),
+      toArrayBuffer(message),
+    );
   } catch (err) {
     // Some runtimes (e.g. older Node, Bun, Deno compat modes)
     // don't expose Ed25519 via SubtleCrypto yet.

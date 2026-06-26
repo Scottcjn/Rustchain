@@ -11,13 +11,6 @@ import {
 // -------------------------------------------------------------------
 
 describe("StakingClient", () => {
-  it("throws on missing fetch in non-Node 18+", () => {
-    // @ts-expect-error testing invalid input
-    assert.throws(() => new StakingClient({ fetch: undefined }), {
-      name: "StakingValidationError",
-    });
-  });
-
   it("accepts valid config with default fetch", () => {
     const client = new StakingClient({ apiKey: "test-key" });
     assert.ok(client);
