@@ -12,6 +12,7 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
 logger = logging.getLogger("bcos-action")
+HTTP_TIMEOUT_SECONDS = 30
 
 
 def main():
@@ -56,7 +57,7 @@ def main():
     )
     
     try:
-        response = urlopen(req)
+        response = urlopen(req, timeout=HTTP_TIMEOUT_SECONDS)
         result = json.loads(response.read().decode('utf-8'))
         logger.info("Attestation anchored successfully!")
         logger.info("Transaction: %s", result.get("tx_hash", "N/A"))
