@@ -286,9 +286,15 @@ DASHBOARD_HTML = """
                     resultDiv.style.display = 'block';
                 })
                 .catch(err => {
-                    err = escapeHtml(err.message || err);
-                    document.getElementById('search-result').innerHTML = `<h3>❌ Error</h3><p>${err}</p>`;
-                    document.getElementById('search-result').style.display = 'block';
+                    const resultDiv = document.getElementById('search-result');
+                    resultDiv.replaceChildren();
+                    const errorHeading = document.createElement('h3');
+                    errorHeading.textContent = '❌ Error';
+                    const errorMsg = document.createElement('p');
+                    errorMsg.textContent = err && err.message ? err.message : String(err || '');
+                    resultDiv.appendChild(errorHeading);
+                    resultDiv.appendChild(errorMsg);
+                    resultDiv.style.display = 'block';
                 });
         }
 

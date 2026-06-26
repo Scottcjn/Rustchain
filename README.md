@@ -12,17 +12,19 @@
 [![CI](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml/badge.svg)](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/Scottcjn/Rustchain?style=flat&color=gold)](https://github.com/Scottcjn/Rustchain/stargazers)
-[![Nodes](https://img.shields.io/badge/Nodes-5%20Active-brightgreen)](https://rustchain.org/explorer/)
-[![DePIN](https://img.shields.io/badge/DePIN-Vintage%20Hardware-8B4513)](https://rustchain.org)
+[![Nodes](https://img.shields.io/badge/Nodes-5%20Active-brightgreen)](https://Rustchain.org/explorer/)
+[![DePIN](https://img.shields.io/badge/DePIN-Vintage%20Hardware-8B4513)](https://Rustchain.org)
 [![Proof of Antiquity](https://img.shields.io/badge/Consensus-Proof%20of%20Antiquity-DAA520)](docs/WHITEPAPER.md)
 [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.19442753-blue)](https://doi.org/10.5281/zenodo.19442753)
 
 A PowerBook G4 from 2003 earns **2.5x** more than a modern Threadripper.
 A Power Mac G5 earns **2.0x**. A 486 with rusty serial ports earns the most respect of all.
 
+> ⭐ **Help us reach 512 stars** — the 2⁹ binary milestone (our supply is 2²³). If Proof-of-Antiquity is your kind of weird, [a star](https://github.com/Scottcjn/Rustchain/stargazers) helps more old machines get found. [Why 512?](https://github.com/Scottcjn/Rustchain/issues/7540)
+
 [Explorer](https://rustchain.org/explorer/) · [Machines Preserved](https://rustchain.org/preserved.html) · [Install Miner](#quickstart) · [Beginner Guide](docs/QUICKSTART.md) · [Hardware Requirements](docs/HARDWARE_REQUIREMENTS.md) · [Manifesto](https://rustchain.org/manifesto.html) · [Whitepaper](docs/WHITEPAPER.md) · [Hire Us](CONSULTING.md)
 
-Languages: [English](README.md) · [简体中文](docs/zh-CN/README.md) · [繁體中文](README_ZH-TW.md) · [Español](README_ES.md) · [Deutsch](README_DE.md) · [日本語](README_JA.md) · [Русский](README_RU.md) · [Tiếng Việt](README.vi.md) · [Português (BR)](README.pt-BR.md) · [हिन्दी](README_HI.md) · [Italiano](docs/it-IT/README.md) · [한국어](docs/ko-KR/README.md) · [中文 API 快速参考](docs/zh-CN/API.md)
+Languages: [English](README.md) · [简体中文](docs/zh-CN/README.md) · [简体中文 (根目录)](README_ZH.md) · [繁體中文](README_ZH-TW.md) · [Español](README_ES.md) · [Deutsch](README_DE.md) · [日本語](README_JA.md) · [Русский](README_RU.md) · [Tiếng Việt](README.vi.md) · [Português (BR)](README.pt-BR.md) · [हिन्दी](README_HI.md) · [Italiano](docs/it-IT/README.md) · [한국어](docs/ko-KR/README.md) · [中文 API 快速参考](docs/zh-CN/API.md)
 
 </div>
 

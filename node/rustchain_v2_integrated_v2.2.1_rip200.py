@@ -318,6 +318,7 @@ def _attest_mapping(value):
 
 
 _ATTEST_MINER_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+_SOLANA_WALLET_RE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")
 _ED25519_PUBKEY_HEX_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 
 
@@ -336,6 +337,12 @@ def _attest_valid_miner(value):
     if text and _ATTEST_MINER_RE.fullmatch(text):
         return text
     return None
+
+
+def _attest_looks_like_solana_wallet(value):
+    """Return True for raw Solana/base58 public keys accidentally used as miner IDs."""
+    text = _attest_text(value)
+    return bool(text and not text.startswith("RTC") and _SOLANA_WALLET_RE.fullmatch(text))
 
 
 def _valid_ed25519_pubkey_hex(value):
@@ -484,6 +491,11 @@ def _validate_attestation_payload_shape(data):
     for field_name in ("miner", "miner_id"):
         if field_name in data and data[field_name] is not None and not isinstance(data[field_name], str):
             return _attest_field_error("INVALID_MINER", f"Field '{field_name}' must be a non-empty string")
+        if field_name in data and _attest_looks_like_solana_wallet(data[field_name]):
+            return _attest_field_error(
+                "INVALID_MINER_WALLET_FORMAT",
+                "Solana-format wallet addresses cannot be used as RustChain miner IDs; create or use a native RTC wallet address",
+            )
         if field_name in data and _attest_text(data[field_name]) and not _attest_valid_miner(data[field_name]):
             return _attest_field_error(
                 "INVALID_MINER",
@@ -4278,6 +4290,14 @@ def get_challenge():
         }), 400
     requested_miner = None
     if isinstance(body, dict):
+        for field_name in ("miner", "miner_id"):
+            if _attest_looks_like_solana_wallet(body.get(field_name)):
+                return jsonify({
+                    "ok": False,
+                    "error": "invalid_miner_wallet_format",
+                    "code": "INVALID_MINER_WALLET_FORMAT",
+                    "message": "Solana-format wallet addresses cannot request RustChain attestation challenges; create or use a native RTC wallet address",
+                }), 400
         # Extract identity in the SAME order the submit path resolves `miner`
         # (_submit_attestation_impl: data.get('miner') or data.get('miner_id')) so a
         # client where miner != miner_id binds to exactly the identity that will be
@@ -5533,6 +5553,15 @@ def ingest_signed_header():
     if header_miner and header_miner != miner_id:
         return jsonify({"ok":False,"error":"miner_mismatch"}), 400
 
+    canonical_msg = None
+    if header:
+        try:
+            canonical_msg = canonical_header_bytes(header)
+        except Exception:
+            return jsonify({"ok":False,"error":"bad header for canonicalization"}), 400
+        if msg_hex and msg_hex != bytes_to_hex(canonical_msg):
+            return jsonify({"ok":False,"error":"message_header_mismatch"}), 400
+
     # Resolve candidate public key(s). A wallet identity may have several enrolled
     # devices, each with its own header key (composite miner_header_keys PK), so we
     # collect every registered key and accept the header if its signature matches ANY.
@@ -5556,10 +5585,7 @@ def ingest_signed_header():
             return jsonify({"ok":False,"error":"bad message hex"}), 400
     else:
         # build canonical message from header
-        try:
-            msg = canonical_header_bytes(header)
-        except Exception:
-            return jsonify({"ok":False,"error":"bad header for canonicalization"}), 400
+        msg = canonical_msg if canonical_msg is not None else canonical_header_bytes(header)
         msg_hex = bytes_to_hex(msg)
 
     # Mock acceptance (TESTNET ONLY)
@@ -9198,6 +9224,180 @@ def api_wallet_lookup(miner_id):
     })
 
 
+_WALLET_TX_HASH_RE = re.compile(r"^[0-9a-fA-F]{32}$")
+
+
+def _wallet_tx_status_response(tx_hash: str, status: str, block_height=None,
+                               confirmations: int = 0):
+    body = {
+        "ok": True,
+        "tx_hash": tx_hash,
+        "status": status,
+        "confirmations": confirmations,
+        "block_height": block_height,
+    }
+    return jsonify(body)
+
+
+def _wallet_tx_has_table(db, table_name: str) -> bool:
+    try:
+        row = db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            (table_name,),
+        ).fetchone()
+    except sqlite3.Error:
+        return False
+    return row is not None
+
+
+def _wallet_tx_parse_ledger_transfer(row):
+    reason = str(row["reason"] or "")
+    direction, sep, rest = reason.partition(":")
+    if not sep or direction not in ("transfer_in", "transfer_out"):
+        return None
+    counterparty, sep, tx_hash = rest.rpartition(":")
+    if not sep or not counterparty or not _WALLET_TX_HASH_RE.fullmatch(tx_hash):
+        return None
+    delta = int(row["delta_i64"])
+    if direction == "transfer_out" and delta >= 0:
+        return None
+    if direction == "transfer_in" and delta <= 0:
+        return None
+    return {
+        "direction": direction,
+        "wallet": str(row["miner_id"]),
+        "counterparty": counterparty,
+        "amount_i64": abs(delta),
+        "epoch": row["epoch"],
+        "tx_hash": tx_hash.lower(),
+    }
+
+
+def _wallet_tx_verified_ledger_height(db, tx_hash: str):
+    if not _wallet_tx_has_table(db, "ledger"):
+        return None
+
+    rows = db.execute(
+        """
+        SELECT ts, epoch, miner_id, delta_i64, reason
+        FROM ledger
+        WHERE reason LIKE ?
+        ORDER BY ts DESC, rowid DESC
+        LIMIT 8
+        """,
+        (f"%:{tx_hash}",),
+    ).fetchall()
+    parsed = [
+        item for item in (_wallet_tx_parse_ledger_transfer(row) for row in rows)
+        if item and item["tx_hash"] == tx_hash
+    ]
+
+    outs = [item for item in parsed if item["direction"] == "transfer_out"]
+    ins = [item for item in parsed if item["direction"] == "transfer_in"]
+    matches = []
+    for out_row in outs:
+        for in_row in ins:
+            if (
+                out_row["wallet"] == in_row["counterparty"]
+                and out_row["counterparty"] == in_row["wallet"]
+                and out_row["amount_i64"] == in_row["amount_i64"]
+            ):
+                matches.append((out_row, in_row))
+
+    if len(matches) != 1:
+        return None
+
+    out_row, in_row = matches[0]
+    if out_row["epoch"] == in_row["epoch"] and out_row["epoch"] is not None:
+        try:
+            return int(out_row["epoch"])
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _wallet_tx_pending_row_status(db, tx_hash: str):
+    if not _wallet_tx_has_table(db, "pending_ledger"):
+        return None, None
+
+    rows = db.execute(
+        """
+        SELECT id, epoch, status, confirmed_at, created_at, ts
+        FROM pending_ledger
+        WHERE tx_hash = ?
+        ORDER BY COALESCE(confirmed_at, created_at, ts, 0) DESC, id DESC
+        LIMIT 2
+        """,
+        (tx_hash,),
+    ).fetchall()
+    if not rows:
+        return None, None
+    if len(rows) > 1:
+        return "ambiguous", None
+
+    row = rows[0]
+    raw_status = str(row["status"] or "pending").lower()
+    if raw_status == "confirmed":
+        block_height = _wallet_tx_verified_ledger_height(db, tx_hash)
+        if block_height is not None:
+            return "confirmed", block_height
+        return "pending", None
+    if raw_status in {"voided", "failed", "rejected", "cancelled", "expired"}:
+        return "failed", None
+    return "pending", None
+
+
+@app.route('/wallet/tx/<tx_hash>', methods=['GET'])
+def api_wallet_tx_status(tx_hash: str):
+    """Return a status-only transaction lookup for wallet clients.
+
+    The route is intentionally public but does not expose participants, amounts,
+    pending IDs, internal reasons, or void details. A transaction is reported as
+    confirmed only after matching both immutable ledger entries for the hash.
+    """
+    tx_hash = str(tx_hash or "").strip().lower()
+    if not _WALLET_TX_HASH_RE.fullmatch(tx_hash):
+        return jsonify({
+            "ok": False,
+            "error": "tx_hash must be exactly 32 hexadecimal characters",
+        }), 400
+
+    try:
+        with sqlite3.connect(DB_PATH) as db:
+            db.row_factory = sqlite3.Row
+            status, block_height = _wallet_tx_pending_row_status(db, tx_hash)
+            if status == "ambiguous":
+                return jsonify({
+                    "ok": False,
+                    "error": "ambiguous_transaction",
+                }), 409
+            if status:
+                return _wallet_tx_status_response(
+                    tx_hash,
+                    status,
+                    block_height=block_height,
+                    confirmations=1 if status == "confirmed" else 0,
+                )
+
+            block_height = _wallet_tx_verified_ledger_height(db, tx_hash)
+            if block_height is not None:
+                return _wallet_tx_status_response(
+                    tx_hash,
+                    "confirmed",
+                    block_height=block_height,
+                    confirmations=1,
+                )
+    except sqlite3.Error:
+        return jsonify({"ok": False, "error": "transaction_lookup_unavailable"}), 503
+
+    return jsonify({
+        "ok": False,
+        "tx_hash": tx_hash,
+        "status": "not_found",
+        "error": "transaction_not_found",
+    }), 404
+
+
 @app.route('/wallet/history', methods=['GET'])
 def api_wallet_history():
     """Get unified transaction history for a wallet (fixes #775, #886).
@@ -9353,6 +9553,98 @@ def api_wallet_history():
         "transactions": page,
         "total": total,
     })
+
+@app.route('/wallet/tx/<tx_hash>', methods=['GET'])
+def api_wallet_tx_lookup(tx_hash):
+    """Look up a single transaction by hash.
+
+    Searches ``pending_ledger`` (in-flight) and ``ledger`` (immutable) for a
+    row matching the given ``tx_hash``.  Returns a bounded JSON response that
+    matches the mobile-wallet ``TransactionResponse`` schema.
+    """
+    tx_hash = (tx_hash or "").strip()
+    if not tx_hash:
+        return jsonify({"ok": False, "error": "tx_hash required"}), 400
+
+    with sqlite3.connect(DB_PATH) as db:
+        # --- Pending ledger (in-flight) ---
+        try:
+            row = db.execute(
+                """
+                SELECT ts, from_miner, to_miner, amount_i64, reason,
+                       status, tx_hash, COALESCE(created_at, ts) as created
+                FROM pending_ledger
+                WHERE tx_hash = ?
+                LIMIT 1
+                """,
+                (tx_hash,),
+            ).fetchone()
+        except Exception:
+            row = None
+
+        if row:
+            ts, from_m, to_m, amt, reason, status, _tx, created = row
+            is_transfer_out = from_m is not None
+            return jsonify({
+                "ok": True,
+                "tx_hash": _tx,
+                "status": status or "pending",
+                "verified": False,
+                "confirmations": 0,
+                "block_height": None,
+                "amount": abs(int(amt)) / UNIT if amt else 0,
+                "from": from_m if is_transfer_out else None,
+                "to": to_m if is_transfer_out else from_m,
+                "timestamp": int(created or ts or 0),
+                "reason": reason or None,
+            })
+
+        # --- Immutable ledger (confirmed transfers) ---
+        # Escape SQL LIKE wildcards so a tx_hash containing '%' or '_'
+        # cannot match unrelated rows.
+        escaped = tx_hash.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        try:
+            row = db.execute(
+                """
+                SELECT ts, epoch, miner_id, delta_i64, reason
+                FROM ledger
+                WHERE reason LIKE ? ESCAPE '\\'
+                ORDER BY ts DESC
+                LIMIT 1
+                """,
+                (f"%:{escaped}",),
+            ).fetchone()
+        except Exception:
+            row = None
+
+        if row:
+            ts, epoch, _mid, delta_i64, reason = row
+            reason_str = str(reason or "")
+            tx_type = "unknown"
+            if reason_str.startswith("transfer_in:"):
+                tx_type = "transfer_in"
+            elif reason_str.startswith("transfer_out:"):
+                tx_type = "transfer_out"
+            return jsonify({
+                "ok": True,
+                "tx_hash": tx_hash,
+                "status": "confirmed",
+                "verified": True,
+                "confirmations": 1,
+                "block_height": int(epoch) if epoch else None,
+                "amount": abs(int(delta_i64)) / UNIT if delta_i64 else 0,
+                "timestamp": int(ts) if ts else 0,
+                "type": tx_type,
+                "reason": reason_str,
+            })
+
+    return jsonify({
+        "ok": False,
+        "tx_hash": tx_hash,
+        "status": "not_found",
+        "message": "transaction not found",
+    }), 404
+
 
 # =============================================================================
 # 2-PHASE COMMIT PENDING LEDGER SYSTEM
@@ -11132,11 +11424,23 @@ def beacon_submit():
     data = request.get_json(silent=True)
     if not isinstance(data, dict) or not data:
         return jsonify({"ok": False, "error": "invalid_json"}), 400
-    agent_id = data.get("agent_id", "")
-    kind = data.get("kind", "")
-    nonce = data.get("nonce", "")
-    sig = data.get("sig", "")
-    pubkey = data.get("pubkey", "")
+    fields = {}
+    for field_name in ("agent_id", "kind", "nonce", "sig", "pubkey"):
+        raw_value = data.get(field_name, "")
+        if raw_value is None:
+            fields[field_name] = ""
+            continue
+        if not isinstance(raw_value, str):
+            return jsonify({
+                "ok": False,
+                "error": f"invalid_field_type:{field_name}",
+            }), 400
+        fields[field_name] = raw_value.strip()
+    agent_id = fields["agent_id"]
+    kind = fields["kind"]
+    nonce = fields["nonce"]
+    sig = fields["sig"]
+    pubkey = fields["pubkey"]
     if not all([agent_id, kind, nonce, sig, pubkey]):
         return jsonify({"ok": False, "error": "missing_fields"}), 400
     if kind not in VALID_KINDS:

@@ -29,6 +29,17 @@ def _env_flag(name, default=False):
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _env_int(name, default):
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        print(f"[P2P] Invalid {name}={value!r}; using default {default}")
+        return default
+
+
 def _is_private_host(host):
     try:
         return ipaddress.ip_address(host).is_private
@@ -54,7 +65,7 @@ def _discover_upnp_external_url(local_ip, local_port):
 
     try:
         upnp = miniupnpc.UPnP()
-        upnp.discoverdelay = int(os.environ.get("RC_P2P_UPNP_DISCOVER_DELAY_MS", "200"))
+        upnp.discoverdelay = _env_int("RC_P2P_UPNP_DISCOVER_DELAY_MS", 200)
         if upnp.discover() <= 0:
             return None
         upnp.selectigd()
@@ -141,7 +152,7 @@ def init_p2p(app, db_path, node_id=None):
     if my_ips:
         local_ip = next((ip for ip in my_ips if "." in ip and not ip.startswith("127.")), None)
 
-    p2p_port = int(os.environ.get("RC_P2P_PORT", "8099"))
+    p2p_port = _env_int("RC_P2P_PORT", 8099)
     advertised_url = resolve_advertised_url(local_ip or "127.0.0.1", p2p_port)
 
     for k, v in PEER_NODES.items():

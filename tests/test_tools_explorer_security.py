@@ -51,8 +51,9 @@ def test_filter_options_are_built_with_option_nodes():
     assert "`<option value=\"${c}\">${c}</option>`" not in html
 
 
-def test_error_card_escapes_exception_message():
+def test_error_card_uses_dom_nodes_not_inner_html():
     html = source()
 
-    assert "${safeText(err.message || err)}" in html
-    assert "${String(err.message || err)}" not in html
+    assert "function renderErrorCard(message)" in html
+    assert "innerHTML = `<div class=\"card\"><div class=\"label\">Error</div><div class=\"value\">${safeText(err.message || err)}</div></div>`" not in html
+    assert "document.getElementById(\"topCards\").innerHTML = `<div class=\"card\"><div class=\"label\">Error</div>" not in html
