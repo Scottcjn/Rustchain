@@ -14,8 +14,17 @@ logger = logging.getLogger('rustchain-exporter')
 
 # Configuration
 RUSTCHAIN_NODE = os.environ.get('RUSTCHAIN_NODE', 'https://rustchain.org')
-EXPORTER_PORT = int(os.environ.get('EXPORTER_PORT', 9100))
-SCRAPE_INTERVAL = int(os.environ.get('SCRAPE_INTERVAL', 30))  # seconds
+
+
+def _int_env(name, default):
+    try:
+        return int(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
+EXPORTER_PORT = _int_env('EXPORTER_PORT', 9100)
+SCRAPE_INTERVAL = _int_env('SCRAPE_INTERVAL', 30)  # seconds
 TLS_VERIFY = os.environ.get('TLS_VERIFY', 'true').lower() in ('true', '1', 'yes')
 TLS_CA_BUNDLE = os.environ.get('TLS_CA_BUNDLE', None)  # Optional CA cert path
 
