@@ -65,13 +65,21 @@ def status_dot(ok: bool) -> str:
 
 # ── HTTP helpers ────────────────────────────────────────────────────────────
 
-def _ssl_ctx() -> ssl.SSLContext:
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _ssl_ctx(insecure_tls: bool = False) -> ssl.SSLContext:
     ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
+    if insecure_tls:
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
     return ctx
 
-def fetch(url: str, timeout: int = 8) -> Tuple[bool, Any, float]:
+def fetch(url: str, timeout: int = 8, insecure_tls: bool = False) -> Tuple[bool, Any, float]:
     """GET *url*, return (ok, parsed_json_or_None, latency_ms)."""
     t0 = time.time()
     try:
@@ -79,7 +87,7 @@ def fetch(url: str, timeout: int = 8) -> Tuple[bool, Any, float]:
             "Accept": "application/json",
             "User-Agent": "rustchain-health-cli/1.0",
         })
-        with urlopen(req, timeout=timeout, context=_ssl_ctx()) as resp:
+        with urlopen(req, timeout=timeout, context=_ssl_ctx(insecure_tls)) as resp:
             body = resp.read(2 * 1024 * 1024).decode("utf-8", errors="replace")
             latency = (time.time() - t0) * 1000
             try:
@@ -92,8 +100,8 @@ def fetch(url: str, timeout: int = 8) -> Tuple[bool, Any, float]:
 
 # ── individual checks ──────────────────────────────────────────────────────
 
-def check_health(base: str, timeout: int) -> Dict[str, Any]:
-    ok, data, ms = fetch(f"{base}/health", timeout)
+def check_health(base: str, timeout: int, insecure_tls: bool = False) -> Dict[str, Any]:
+    ok, data, ms = fetch(f"{base}/health", timeout, insecure_tls)
     result: Dict[str, Any] = {"reachable": ok, "latency_ms": round(ms, 1)}
     if ok and isinstance(data, dict):
         result["ok"] = data.get("ok", False)
@@ -109,8 +117,8 @@ def check_health(base: str, timeout: int) -> Dict[str, Any]:
         result["error"] = str(data)
     return result
 
-def check_epoch(base: str, timeout: int) -> Dict[str, Any]:
-    ok, data, ms = fetch(f"{base}/epoch", timeout)
+def check_epoch(base: str, timeout: int, insecure_tls: bool = False) -> Dict[str, Any]:
+    ok, data, ms = fetch(f"{base}/epoch", timeout, insecure_tls)
     result: Dict[str, Any] = {"reachable": ok, "latency_ms": round(ms, 1)}
     if ok and isinstance(data, dict):
         result["epoch"] = data.get("epoch")
@@ -125,8 +133,8 @@ def check_epoch(base: str, timeout: int) -> Dict[str, Any]:
         result["error"] = str(data)
     return result
 
-def check_miners(base: str, timeout: int) -> Dict[str, Any]:
-    ok, data, ms = fetch(f"{base}/api/miners", timeout)
+def check_miners(base: str, timeout: int, insecure_tls: bool = False) -> Dict[str, Any]:
+    ok, data, ms = fetch(f"{base}/api/miners", timeout, insecure_tls)
     result: Dict[str, Any] = {"reachable": ok, "latency_ms": round(ms, 1)}
     if ok and isinstance(data, list):
         result["miner_count"] = len(data)
@@ -141,8 +149,8 @@ def check_miners(base: str, timeout: int) -> Dict[str, Any]:
         result["error"] = str(data) if not ok else None
     return result
 
-def check_tip(base: str, timeout: int) -> Dict[str, Any]:
-    ok, data, ms = fetch(f"{base}/headers/tip", timeout)
+def check_tip(base: str, timeout: int, insecure_tls: bool = False) -> Dict[str, Any]:
+    ok, data, ms = fetch(f"{base}/headers/tip", timeout, insecure_tls)
     result: Dict[str, Any] = {"reachable": ok, "latency_ms": round(ms, 1)}
     if ok and isinstance(data, dict):
         result["height"] = data.get("height", data.get("block_height"))
@@ -156,15 +164,15 @@ def check_tip(base: str, timeout: int) -> Dict[str, Any]:
 
 # ── aggregator ──────────────────────────────────────────────────────────────
 
-def collect(base_url: str, timeout: int = 8) -> Dict[str, Any]:
+def collect(base_url: str, timeout: int = 8, insecure_tls: bool = False) -> Dict[str, Any]:
     base = base_url.rstrip("/")
     return {
         "node": base,
         "checked_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "health": check_health(base, timeout),
-        "epoch": check_epoch(base, timeout),
-        "miners": check_miners(base, timeout),
-        "tip": check_tip(base, timeout),
+        "health": check_health(base, timeout, insecure_tls),
+        "epoch": check_epoch(base, timeout, insecure_tls),
+        "miners": check_miners(base, timeout, insecure_tls),
+        "tip": check_tip(base, timeout, insecure_tls),
     }
 
 # ── pretty printer ──────────────────────────────────────────────────────────
@@ -330,6 +338,11 @@ examples:
         action="store_true",
         help="Disable colored output",
     )
+    p.add_argument(
+        "--insecure-tls",
+        action="store_true",
+        help="Disable TLS certificate verification for self-signed development nodes",
+    )
     return p
 
 
@@ -347,9 +360,10 @@ def main() -> int:
 
     if args.no_color:
         _COLOR = False
+    insecure_tls = args.insecure_tls or _env_bool("RUSTCHAIN_HEALTH_INSECURE_TLS")
 
     def run_once() -> int:
-        snapshot = collect(args.url, timeout=args.timeout)
+        snapshot = collect(args.url, timeout=args.timeout, insecure_tls=insecure_tls)
         if args.json_output:
             print(json.dumps(snapshot, indent=2))
         else:
