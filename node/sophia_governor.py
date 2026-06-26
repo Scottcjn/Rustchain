@@ -119,6 +119,20 @@ def _env_truthy(name: str, default: str = "false") -> bool:
     return str(os.getenv(name, default)).strip().lower() in TRUE_VALUES
 
 
+def _int_env(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _float_env(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
 def _governor_llm_mode() -> str:
     return str(os.getenv("SOPHIA_GOVERNOR_ENABLE_LLM", "auto")).strip().lower()
 
@@ -133,15 +147,15 @@ def _llm_enabled() -> bool:
 
 
 def _transfer_warning_rtc() -> float:
-    return float(os.getenv("SOPHIA_GOVERNOR_TRANSFER_WARNING_RTC", "1000"))
+    return _float_env("SOPHIA_GOVERNOR_TRANSFER_WARNING_RTC", 1000.0)
 
 
 def _transfer_critical_rtc() -> float:
-    return float(os.getenv("SOPHIA_GOVERNOR_TRANSFER_CRITICAL_RTC", "10000"))
+    return _float_env("SOPHIA_GOVERNOR_TRANSFER_CRITICAL_RTC", 10000.0)
 
 
 def _max_recent_rows() -> int:
-    return max(1, min(int(os.getenv("SOPHIA_GOVERNOR_MAX_RECENT", "50")), 200))
+    return max(1, min(_int_env("SOPHIA_GOVERNOR_MAX_RECENT", 50), 200))
 
 
 def _parse_recent_limit(value: Any, default: int = 20) -> int:
@@ -174,8 +188,8 @@ def _phone_home_targets() -> list[str]:
 
 
 def _phone_home_timeouts() -> tuple[float, float]:
-    connect_timeout = float(os.getenv("SOPHIA_GOVERNOR_PHONE_HOME_CONNECT_TIMEOUT_SEC", "4"))
-    read_timeout = float(os.getenv("SOPHIA_GOVERNOR_PHONE_HOME_READ_TIMEOUT_SEC", "120"))
+    connect_timeout = _float_env("SOPHIA_GOVERNOR_PHONE_HOME_CONNECT_TIMEOUT_SEC", 4.0)
+    read_timeout = _float_env("SOPHIA_GOVERNOR_PHONE_HOME_READ_TIMEOUT_SEC", 120.0)
     return max(1.0, connect_timeout), max(5.0, read_timeout)
 
 
