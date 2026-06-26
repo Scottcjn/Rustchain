@@ -265,15 +265,18 @@ class TestPendingConfirmUtxoOwnership(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         self.assertEqual(body["confirmed_count"], 0)
-        self.assertEqual(body["errors"], [{"id": 1, "error": "internal_error"}])
+        self.assertEqual(body["errors"], [{"id": 1, "error": "utxo_mirror_failed"}])
         self.assertEqual(_account_balance_rtc(self.db_path, sender), account_rtc)
         self.assertEqual(_account_balance_rtc(self.db_path, recipient), 0)
         self.assertEqual(utxo.get_balance(sender), utxo_rtc * UNIT)
         self.assertEqual(utxo.get_balance(recipient), 0)
 
         with sqlite3.connect(self.db_path) as conn:
-            status = conn.execute("SELECT status FROM pending_ledger WHERE id = 1").fetchone()[0]
-        self.assertEqual(status, "pending")
+            status, reason = conn.execute(
+                "SELECT status, voided_reason FROM pending_ledger WHERE id = 1"
+            ).fetchone()
+        self.assertEqual(status, "failed")
+        self.assertEqual(reason, "utxo_mirror_failed")
 
     def test_pending_confirm_ignores_non_migrated_utxos_for_mixed_wallet(self):
         """A normal UTXO must not make a valid account confirmation fail."""
@@ -314,6 +317,49 @@ class TestPendingConfirmUtxoOwnership(unittest.TestCase):
         self.assertEqual(_account_balance_rtc(self.db_path, sender), account_rtc - transfer_rtc)
         self.assertEqual(_account_balance_rtc(self.db_path, recipient), transfer_rtc)
         self.assertEqual(utxo.get_balance(sender), independent_utxo_rtc * UNIT)
+        self.assertEqual(utxo.get_balance(recipient), 0)
+
+    def test_pending_confirm_ignores_unmarked_legacy_genesis_utxos(self):
+        """Legacy genesis rows without the migration register are not mirror state."""
+        from utxo_db import UNIT, UtxoDB
+
+        sender = "alice"
+        recipient = "bob"
+        account_rtc = 100
+        transfer_rtc = 80
+        legacy_genesis_rtc = 10
+
+        _seed_account_balance(self.db_path, sender, account_rtc)
+        _seed_account_balance(self.db_path, recipient, 0)
+
+        utxo = UtxoDB(self.db_path)
+        utxo.init_tables()
+        self.assertTrue(
+            utxo.apply_transaction(
+                {
+                    "tx_type": "mining_reward",
+                    "_allow_minting": True,
+                    "inputs": [],
+                    "outputs": [
+                        {"address": sender, "value_nrtc": legacy_genesis_rtc * UNIT},
+                    ],
+                    "fee_nrtc": 0,
+                    "timestamp": 1,
+                },
+                block_height=1,
+            )
+        )
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("UPDATE utxo_transactions SET tx_type = 'genesis'")
+
+        self._seed_pending_transfer(sender, recipient, transfer_rtc, tx_hash="legacy-genesis-unmarked")
+        response = self._confirm_ready_pending()
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["confirmed_count"], 1)
+        self.assertEqual(_account_balance_rtc(self.db_path, sender), account_rtc - transfer_rtc)
+        self.assertEqual(_account_balance_rtc(self.db_path, recipient), transfer_rtc)
+        self.assertEqual(utxo.get_balance(sender), legacy_genesis_rtc * UNIT)
         self.assertEqual(utxo.get_balance(recipient), 0)
 
 

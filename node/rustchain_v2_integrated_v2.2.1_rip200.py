@@ -9871,6 +9871,10 @@ PENDING_CONFIRM_DEFAULT_LIMIT = _pending_confirm_env_int("RC_PENDING_CONFIRM_DEF
 PENDING_CONFIRM_MAX_LIMIT = _pending_confirm_env_int("RC_PENDING_CONFIRM_MAX_LIMIT", 500)
 
 
+class PendingConfirmUtxoMirrorError(RuntimeError):
+    """Raised when a pending confirmation cannot be mirrored into UTXO state."""
+
+
 def _pending_confirm_limit(raw_limit=None):
     """Clamp a requested confirm-batch limit to [1, PENDING_CONFIRM_MAX_LIMIT]."""
     if raw_limit in (None, ""):
@@ -9899,89 +9903,79 @@ def _mirror_pending_confirm_to_utxo(conn, from_miner, to_miner, amount_i64, epoc
         return
     if amount_i64 <= 0:
         return
+    if not conn.in_transaction:
+        raise PendingConfirmUtxoMirrorError("pending confirmation mirror requires an active DB transaction")
 
     amount_nrtc = int(amount_i64) * (UTXO_UNIT // ACCOUNT_UNIT)
+    old_row_factory = conn.row_factory
+    conn.row_factory = sqlite3.Row
     utxo_db = UtxoDB(DB_PATH)
-    utxo_db.init_tables(conn=conn)
-    migration_register = json.dumps({'R4': 'account_migration_mirror'}, sort_keys=True)
-    sender_utxos = [
-        {
-            "box_id": row[0],
-            "value_nrtc": row[1],
-            "proposition": row[2],
-            "owner_address": row[3],
-            "creation_height": row[4],
-            "transaction_id": row[5],
-            "output_index": row[6],
-            "tokens_json": row[7],
-            "registers_json": row[8],
-            "created_at": row[9],
-            "spent_at": row[10],
-            "spent_by_tx": row[11],
-        }
-        for row in conn.execute(
-            """SELECT b.box_id, b.value_nrtc, b.proposition, b.owner_address,
-                      b.creation_height, b.transaction_id, b.output_index,
-                      b.tokens_json, b.registers_json, b.created_at, b.spent_at,
-                      b.spent_by_tx
-               FROM utxo_boxes AS b
-               LEFT JOIN utxo_transactions AS t ON t.tx_id = b.transaction_id
-               WHERE b.owner_address = ?
-                 AND b.spent_at IS NULL
-                 AND (
-                   t.tx_type = 'genesis'
-                   OR json_extract(b.registers_json, '$.R4') IN ('genesis', 'account_migration_mirror')
-                 )
-               ORDER BY b.value_nrtc ASC, b.box_id ASC""",
-            (from_miner,),
-        )
-    ]
-    if not sender_utxos:
-        return
-
-    selected, change_nrtc = utxo_coin_select(sender_utxos, amount_nrtc)
-    if not selected:
-        raise RuntimeError("insufficient UTXO balance for pending confirmation mirror")
-
-    outputs = [{
-        "address": to_miner,
-        "value_nrtc": amount_nrtc,
-        "registers_json": migration_register,
-    }]
-    if change_nrtc > 0:
-        outputs.append({
-            "address": from_miner,
-            "value_nrtc": change_nrtc,
-            "registers_json": migration_register,
-        })
-
     try:
-        block_height = int(epoch)
-    except (TypeError, ValueError):
-        block_height = int(now)
-    if block_height < 0:
-        block_height = int(now)
+        utxo_db.init_tables(conn=conn)
+        migration_register = json.dumps({'R4': 'account_migration_mirror'}, sort_keys=True)
+        sender_utxos = [
+            dict(row)
+            for row in conn.execute(
+                """SELECT b.box_id, b.value_nrtc, b.proposition, b.owner_address,
+                          b.creation_height, b.transaction_id, b.output_index,
+                          b.tokens_json, b.registers_json, b.created_at, b.spent_at,
+                          b.spent_by_tx
+                   FROM utxo_boxes AS b
+                   WHERE b.owner_address = ?
+                     AND b.spent_at IS NULL
+                     AND json_extract(b.registers_json, '$.R4') IN ('genesis', 'account_migration_mirror')
+                   ORDER BY b.value_nrtc ASC, b.box_id ASC""",
+                (from_miner,),
+            )
+        ]
+        if not sender_utxos:
+            return
 
-    fee_nrtc = sum(box["value_nrtc"] for box in selected) - amount_nrtc - change_nrtc
-    ok = utxo_db.apply_transaction(
-        {
-            "tx_type": "transfer",
-            "inputs": [
-                {
-                    "box_id": box["box_id"],
-                    "spending_proof": f"pending_ledger:{tx_hash or ''}",
-                }
-                for box in selected
-            ],
-            "outputs": outputs,
-            "fee_nrtc": fee_nrtc,
-            "timestamp": int(now),
-        },
-        block_height=block_height,
-        conn=conn,
-    )
+        selected, change_nrtc = utxo_coin_select(sender_utxos, amount_nrtc)
+        if not selected:
+            raise PendingConfirmUtxoMirrorError("insufficient UTXO balance for pending confirmation mirror")
+
+        outputs = [{
+            "address": to_miner,
+            "value_nrtc": amount_nrtc,
+            "registers_json": migration_register,
+        }]
+        if change_nrtc > 0:
+            outputs.append({
+                "address": from_miner,
+                "value_nrtc": change_nrtc,
+                "registers_json": migration_register,
+            })
+
+        try:
+            block_height = int(epoch)
+        except (TypeError, ValueError):
+            block_height = int(now)
+        if block_height < 0:
+            block_height = int(now)
+
+        fee_nrtc = sum(box["value_nrtc"] for box in selected) - amount_nrtc - change_nrtc
+        ok = utxo_db.apply_transaction(
+            {
+                "tx_type": "transfer",
+                "inputs": [
+                    {
+                        "box_id": box["box_id"],
+                        "spending_proof": f"pending_ledger:{tx_hash or ''}",
+                    }
+                    for box in selected
+                ],
+                "outputs": outputs,
+                "fee_nrtc": fee_nrtc,
+                "timestamp": int(now),
+            },
+            block_height=block_height,
+            conn=conn,
+        )
+    finally:
+        conn.row_factory = old_row_factory
     if not ok:
-        raise RuntimeError("UTXO mirror transaction failed for pending confirmation")
+        raise PendingConfirmUtxoMirrorError("UTXO mirror transaction failed for pending confirmation")
 
 
 
@@ -10192,7 +10186,6 @@ def confirm_pending():
     errors = []
 
     conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
     try:
         c = conn.cursor()
         _ensure_transfer_ledger_table(c)
@@ -10273,6 +10266,19 @@ def confirm_pending():
                 confirmed_count += 1
                 confirmed_ids.append(pid)
                 
+            except PendingConfirmUtxoMirrorError as e:
+                try:
+                    c.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+                    c.execute(f"RELEASE SAVEPOINT {savepoint}")
+                    c.execute("""
+                        UPDATE pending_ledger
+                        SET status = 'failed', voided_by = 'system', voided_reason = ?
+                        WHERE id = ? AND status = 'pending'
+                    """, ("utxo_mirror_failed", pid))
+                except Exception:
+                    pass
+                print(f"[ERROR] confirm_pending {pid}: {e!r}")
+                errors.append({"id": pid, "error": "utxo_mirror_failed"})
             except Exception as e:
                 try:
                     c.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
