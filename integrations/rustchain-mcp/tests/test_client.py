@@ -118,6 +118,46 @@ class TestRustChainClient:
             assert health.is_healthy is True
             assert health.version == "1.0.0"
 
+
+    @pytest.mark.asyncio
+    async def test_requests_verify_tls_by_default(self):
+        """Test request path keeps TLS verification enabled by default."""
+        mock_response = MockResponse({"status": "ok", "timestamp": 1234567890, "service": "test-api"})
+
+        with patch("aiohttp.ClientSession") as MockSession:
+            mock_session = MagicMock()
+            mock_session.request = MagicMock(return_value=AsyncContextManager(mock_response))
+            mock_session.close = AsyncMock()
+            MockSession.return_value = mock_session
+
+            client = RustChainClient(base_url="https://test.example.com")
+            client._session = mock_session
+            client._owns_session = False
+
+            await client.health()
+
+            assert mock_session.request.call_args.kwargs["ssl"] is True
+
+    @pytest.mark.asyncio
+    async def test_requests_allow_explicit_tls_opt_out(self):
+        """Test self-signed endpoints require an explicit TLS opt-out."""
+        mock_response = MockResponse({"status": "ok", "timestamp": 1234567890, "service": "test-api"})
+
+        with patch("aiohttp.ClientSession") as MockSession:
+            mock_session = MagicMock()
+            mock_session.request = MagicMock(return_value=AsyncContextManager(mock_response))
+            mock_session.close = AsyncMock()
+            MockSession.return_value = mock_session
+
+            client = RustChainClient(base_url="https://test.example.com", verify_tls=False)
+            client._session = mock_session
+            client._owns_session = False
+
+            await client.health()
+
+            assert mock_session.request.call_args.kwargs["ssl"] is False
+
+
     @pytest.mark.asyncio
     async def test_health_error(self):
         """Test health check error."""
