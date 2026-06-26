@@ -48,7 +48,7 @@ def base_env():
 
 
 def paged_comments(comments):
-    def fake_get(url, headers=None, params=None):
+    def fake_get(url, headers=None, params=None, timeout=None):
         page = (params or {}).get("page", 1)
         return FakeResponse(comments if page == 1 else [])
 
@@ -101,7 +101,7 @@ def test_confirmation_comment_failure_retries_with_same_idempotency_key():
     accepted_transfers = {}
     comment_attempts = []
 
-    def fake_get(url, headers=None, params=None):
+    def fake_get(url, headers=None, params=None, timeout=None):
         page = (params or {}).get("page", 1)
         return FakeResponse(persisted_comments if page == 1 else [])
 
@@ -148,7 +148,7 @@ def test_started_marker_does_not_block_retry_after_transfer_connection_failure()
     transfer_calls = []
     comment_posts = []
 
-    def fake_get(url, headers=None, params=None):
+    def fake_get(url, headers=None, params=None, timeout=None):
         page = (params or {}).get("page", 1)
         return FakeResponse(persisted_comments if page == 1 else [])
 
@@ -189,7 +189,7 @@ def test_manual_transfer_notice_does_not_block_later_auto_pay():
     transfer_calls = []
     comment_posts = []
 
-    def fake_get(url, headers=None, params=None):
+    def fake_get(url, headers=None, params=None, timeout=None):
         page = (params or {}).get("page", 1)
         return FakeResponse(persisted_comments if page == 1 else [])
 
@@ -259,3 +259,39 @@ def test_legacy_manual_transfer_notice_does_not_block_later_auto_pay():
 
     assert len(transfer_calls) == 1
     assert any("RTC-AutoPay-Confirmed" in body for body in comment_posts)
+
+
+def test_github_comment_api_calls_use_timeout():
+    auto_pay = load_auto_pay()
+    get_calls = []
+    post_calls = []
+
+    def fake_get(url, headers=None, params=None, timeout=None):
+        get_calls.append((url, params, timeout))
+        return FakeResponse([])
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        post_calls.append((url, json, timeout))
+        return FakeResponse({"id": 999})
+
+    with patch.dict(os.environ, base_env(), clear=True):
+        auto_pay.requests.get = fake_get
+        auto_pay.requests.post = fake_post
+
+        assert auto_pay.fetch_pr_comments("Scottcjn/Rustchain", "123") == []
+        auto_pay.post_comment("Scottcjn/Rustchain", "123", "paid")
+
+    assert get_calls == [
+        (
+            "https://api.github.com/repos/Scottcjn/Rustchain/issues/123/comments",
+            {"per_page": 100, "page": 1},
+            auto_pay.GITHUB_REQUEST_TIMEOUT_SECONDS,
+        )
+    ]
+    assert post_calls == [
+        (
+            "https://api.github.com/repos/Scottcjn/Rustchain/issues/123/comments",
+            {"body": "paid"},
+            auto_pay.GITHUB_REQUEST_TIMEOUT_SECONDS,
+        )
+    ]

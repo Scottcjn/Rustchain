@@ -501,11 +501,14 @@ def _heuristic_review(event_type: str, payload: dict[str, Any]) -> dict[str, Any
         amount_rtc, amount_invalid = _pending_transfer_amount_rtc(payload)
         reason_text = str(payload.get("reason", "")).lower()
         if amount_invalid:
-            risk_level = "medium"
-            route = ROUTE_LOCAL_THEN_PHONE_HOME
-            stance = "watch"
+            risk_level = "critical"
+            route = ROUTE_IMMEDIATE_PHONE_HOME
+            stance = "hold"
             signals.append("invalid_transfer_amount")
-            recommended_actions.append("review malformed transfer amount")
+            recommended_actions.extend([
+                "retain transfer in pending state",
+                "page bigger Sophia agents immediately",
+            ])
         if amount_rtc >= _transfer_critical_rtc():
             risk_level = "critical"
             route = ROUTE_IMMEDIATE_PHONE_HOME
@@ -907,7 +910,7 @@ def get_recent_governor_events(db_path: str | None = None, limit: int = 20) -> l
             LIMIT ?
             """,
             (limit,),
-        ).fetchall()
+        ).fetchall()  # fetchall-ok: already-paginated
 
     events = []
     for row in rows:
@@ -948,7 +951,7 @@ def get_governor_status(db_path: str | None = None) -> dict[str, Any]:
             FROM sophia_governor_events
             GROUP BY risk_level
             """
-        ).fetchall()
+        ).fetchall()  # fetchall-ok: bounded-by-schema
 
     return {
         "service": "sophia-rustchain-governor",

@@ -54,7 +54,7 @@ New to RustChain? Get 10 RTC for your **first merged PR** — even for small imp
 | Major | 75-100 RTC | SDK, CLI tools, CI pipeline, Windows installer |
 | Critical | 100-150 RTC | Security audits, protocol work, bridges |
 
-**Reference rate: 1 RTC = $0.10 USD**
+**Reference rate: 1 RTC = $0.15 USD**
 
 ## What Gets Merged
 
@@ -187,7 +187,7 @@ Only `@Scottcjn` (or a clearly labeled project automation account speaking on hi
 Don't just code — mine! Install the miner and earn RTC while you contribute:
 
 ```bash
-pip install clawrtc
+python3 -m pip install clawrtc
 clawrtc mine --wallet YOUR_NAME
 ```
 
@@ -213,3 +213,31 @@ When reviewing PRs or preparing your own:
 - [ ] Tests added/updated for changes
 - [ ] Documentation updated if needed
 - [ ] No unrelated changes in the PR
+
+
+---
+
+## Editing miner files (avoid the red `test` check)
+
+Four miner artifacts are pinned by SHA256 in `miners/checksums.sha256` and verified by
+`tests/test_install_miner_checksums.py`. If you edit any of them, regenerate the manifest
+in the same commit or the `test` CI check goes red (`AssertionError`, while the other
+3000+ tests pass):
+
+- `miners/linux/rustchain_linux_miner.py`
+- `miners/linux/fingerprint_checks.py`
+- `miners/macos/rustchain_mac_miner_v2.4.py`
+- `miners/macos/rustchain_mac_miner_v2.5.py`
+
+**One command:**
+```bash
+./scripts/regenerate_miner_checksums.sh
+```
+
+**Or enable the pre-commit hook once** (auto-regenerates + re-stages when you commit a miner file):
+```bash
+git config core.hooksPath .githooks
+```
+
+A red checksum `test` means the manifest is stale — it is **not** a code bug, and it does
+**not** indicate `tests/test_p2p_mtls_gate.py` or any global gate (that test passes).

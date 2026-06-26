@@ -3,10 +3,12 @@ RustChain Client
 
 Main client for interacting with RustChain node API.
 """
+# SPDX-License-Identifier: Apache-2.0
 
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 import requests
 import json
+import time
 from rustchain.exceptions import (
     RustChainError,
     ConnectionError,
@@ -32,10 +34,14 @@ class RustChainClient:
         base_url: str,
         verify_ssl: bool = True,
         timeout: int = 30,
+        retry_count: int = 3,
+        retry_backoff: float = 0.5,
     ):
         self.base_url = base_url.rstrip("/")
         self.verify_ssl = verify_ssl
         self.timeout = timeout
+        self.retry_count = max(1, retry_count)
+        self.retry_backoff = max(0.0, retry_backoff)
 
         # Initialize session for connection pooling
         self.session = requests.Session()
@@ -48,7 +54,7 @@ class RustChainClient:
         params: Dict = None,
         data: Dict = None,
         json_payload: Dict = None,
-    ) -> Dict:
+    ) -> Any:
         """
         Make HTTP request to RustChain node.
 
@@ -69,46 +75,62 @@ class RustChainClient:
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
         headers = {"Content-Type": "application/json"}
 
-        try:
-            response = self.session.request(
-                method=method,
-                url=url,
-                params=params,
-                data=data,
-                json=json_payload,
-                headers=headers,
-                timeout=self.timeout,
-                allow_redirects=False,
-            )
-
-            if 300 <= response.status_code < 400:
-                location = response.headers.get("Location", "")
-                raise APIError(
-                    f"API redirected: HTTP {response.status_code} to {location}",
-                    status_code=response.status_code,
+        last_error: Optional[Exception] = None
+        for attempt in range(self.retry_count):
+            try:
+                response = self.session.request(
+                    method=method,
+                    url=url,
+                    params=params,
+                    data=data,
+                    json=json_payload,
+                    headers=headers,
+                    timeout=self.timeout,
+                    allow_redirects=False,
                 )
 
-            # Check for HTTP errors
-            try:
-                response.raise_for_status()
-            except requests.HTTPError as e:
-                raise APIError(
-                    f"HTTP {response.status_code}: {e}",
-                    status_code=response.status_code,
-                ) from e
+                if 300 <= response.status_code < 400:
+                    location = response.headers.get("Location", "")
+                    raise APIError(
+                        f"API redirected: HTTP {response.status_code} to {location}",
+                        status_code=response.status_code,
+                    )
 
-            # Parse JSON response
-            try:
-                return response.json()
-            except json.JSONDecodeError:
-                return {"raw_response": response.text}
+                if response.status_code in (429, 500, 502, 503, 504) and attempt < self.retry_count - 1:
+                    self._sleep_before_retry(attempt)
+                    continue
 
-        except requests.exceptions.ConnectionError as e:
-            raise ConnectionError(f"Failed to connect to {url}: {e}") from e
-        except requests.exceptions.Timeout as e:
-            raise ConnectionError(f"Request timeout to {url}: {e}") from e
-        except requests.exceptions.RequestException as e:
-            raise ConnectionError(f"Request failed: {e}") from e
+                # Check for HTTP errors
+                try:
+                    response.raise_for_status()
+                except requests.HTTPError as e:
+                    raise APIError(
+                        f"HTTP {response.status_code}: {e}",
+                        status_code=response.status_code,
+                    ) from e
+
+                # Parse JSON response
+                try:
+                    return response.json()
+                except json.JSONDecodeError:
+                    return {"raw_response": response.text}
+
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+                last_error = e
+                if attempt < self.retry_count - 1:
+                    self._sleep_before_retry(attempt)
+                    continue
+                if isinstance(e, requests.exceptions.Timeout):
+                    raise ConnectionError(f"Request timeout to {url}: {e}") from e
+                raise ConnectionError(f"Failed to connect to {url}: {e}") from e
+            except requests.exceptions.RequestException as e:
+                raise ConnectionError(f"Request failed: {e}") from e
+
+        raise ConnectionError(f"Request failed after {self.retry_count} attempts: {last_error}")
+
+    def _sleep_before_retry(self, attempt: int) -> None:
+        if self.retry_backoff > 0:
+            time.sleep(self.retry_backoff * (2 ** attempt))
 
     def _request_object(
         self,
@@ -234,6 +256,31 @@ class RustChainClient:
             raise ValidationError("miner_id must be a non-empty string")
 
         return self._request_object("GET", "/wallet/balance", params={"miner_id": miner_id})
+
+    def check_eligibility(self, miner_id: str) -> Dict[str, Any]:
+        """
+        Check current epoch mining eligibility for a miner.
+
+        Args:
+            miner_id: Miner wallet address or miner identifier
+
+        Returns:
+            Dict with eligibility information from `/lottery/eligibility`.
+
+        Raises:
+            ConnectionError: If connection fails
+            APIError: If API returns error
+            ValidationError: If miner_id is invalid
+
+        Example:
+            >>> client = RustChainClient("https://rustchain.org")
+            >>> eligibility = client.check_eligibility("wallet_address")
+            >>> print(eligibility["eligible"])
+        """
+        if not miner_id or not isinstance(miner_id, str):
+            raise ValidationError("miner_id must be a non-empty string")
+
+        return self._request_object("GET", "/lottery/eligibility", params={"miner_id": miner_id})
 
     def transfer(
         self,

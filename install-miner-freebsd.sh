@@ -19,7 +19,7 @@ if [ "${DRY_RUN}" = "--dry-run" ] || [ "${DRY_RUN}" = "--show-payload" ]; then
     echo "[DRY-RUN] Actions that would be taken:"
     echo "  1. Install Python 3.11+ and dependencies via pkg"
     echo "  2. Create rustchain user and group"
-    echo "  3. Download miner client to /opt/rustchain/"
+    echo "  3. Download + SHA-256 verify miner client (+ fingerprint/crypto helpers) to /opt/rustchain/"
     echo "  4. Create FreeBSD rc.d service unit"
     echo "  5. Start miner service"
     echo ""
@@ -67,9 +67,10 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
-# Install dependencies
+# Install dependencies (pkg is PEP-668 safe and avoids building PyNaCl from
+# source; py311-pynacl enables Ed25519 attestation signing).
 echo "[1/5] Installing dependencies..."
-pkg install -y python3 py311-pip py311-setuptools curl
+pkg install -y python3 py311-pip py311-setuptools py311-requests py311-pynacl curl
 
 # Create rustchain user
 echo "[2/5] Creating rustchain user..."
@@ -82,11 +83,45 @@ mkdir -p /var/log/rustchain
 chown rustchain:rustchain /opt/rustchain
 chown rustchain:rustchain /var/log/rustchain
 
-# Download miner client
-echo "[3/5] Downloading miner client..."
+# Download + verify miner client
+echo "[3/5] Downloading + checksum-verifying miner client..."
 cd /opt/rustchain
-curl -fsSL "https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/rustchain_miner.py" -o rustchain_miner.py
-pip3 install requests
+REPO_BASE="https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners"
+# FreeBSD runs the Python ("linux") miner. Fetch it plus its fingerprint and
+# Ed25519 signing helpers so attestations are SIGNED (unsigned = spam-tier).
+curl -fsSL "${REPO_BASE}/linux/rustchain_linux_miner.py" -o rustchain_miner.py
+curl -fsSL "${REPO_BASE}/linux/fingerprint_checks.py"    -o fingerprint_checks.py
+curl -fsSL "${REPO_BASE}/linux/miner_crypto.py"          -o miner_crypto.py
+
+# Verify-before-trust: SHA-256 against the published manifest (FreeBSD sha256 -q).
+curl -fsSL "${REPO_BASE}/checksums.sha256" -o sums
+verify_sum() {
+    _file="$1"; _path="$2"
+    _want="$(awk -v p="${_path}" '$2 == p { print $1 }' sums)"
+    _got="$(sha256 -q "${_file}")"
+    if [ -z "${_want}" ] || [ "${_got}" != "${_want}" ]; then
+        echo "ERROR: checksum verification failed for ${_file} (${_path})"
+        echo "  expected: ${_want:-<missing from manifest>}"
+        echo "  actual:   ${_got}"
+        exit 1
+    fi
+    echo "  verified ${_file}"
+}
+verify_sum rustchain_miner.py    linux/rustchain_linux_miner.py
+verify_sum fingerprint_checks.py linux/fingerprint_checks.py
+verify_sum miner_crypto.py       linux/miner_crypto.py
+rm -f sums
+chown rustchain:rustchain rustchain_miner.py fingerprint_checks.py miner_crypto.py
+
+# Wrapper sets cwd (so miner_crypto/fingerprint imports + key/log files resolve
+# under /opt/rustchain) and passes the wallet. rc.subr can't carry quoted args.
+cat > /opt/rustchain/start-miner.sh <<EOF
+#!/bin/sh
+cd /opt/rustchain
+exec /usr/local/bin/python3 /opt/rustchain/rustchain_miner.py --wallet "${WALLET_NAME}"
+EOF
+chmod +x /opt/rustchain/start-miner.sh
+chown rustchain:rustchain /opt/rustchain/start-miner.sh
 
 # Create configuration
 cat > /opt/rustchain/config.env << EOF
@@ -121,7 +156,7 @@ load_rc_config $name
 
 pidfile="/var/run/rustchain_miner.pid"
 command="/usr/sbin/daemon"
-command_args="-f -p ${pidfile} -u rustchain /usr/local/bin/python3 /opt/rustchain/rustchain_miner.py"
+command_args="-f -p ${pidfile} -u rustchain /opt/rustchain/start-miner.sh"
 
 run_rc_command "$1"
 RCSCRIPT

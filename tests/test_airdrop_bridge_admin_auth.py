@@ -17,9 +17,15 @@ def _make_client(tmp_path):
     return app.test_client(), db_path
 
 
-def _create_pending_lock(client):
+def _create_pending_lock(client, admin_key=None):
+    # Bridge lock creation is admin-gated (see require_admin_key in
+    # create_bridge_lock); callers that expect a successful 200 must supply
+    # the matching X-Admin-Key. Validation-error tests POST directly without a
+    # key because field validation runs before the auth check.
+    headers = {"X-Admin-Key": admin_key} if admin_key else {}
     response = client.post(
         "/api/bridge/lock",
+        headers=headers,
         json={
             "from_address": "solana-source",
             "to_address": "base-destination",
@@ -42,8 +48,8 @@ def _lock_status(db_path, lock_id):
 
 def test_bridge_confirm_requires_admin_key(tmp_path, monkeypatch):
     client, db_path = _make_client(tmp_path)
-    lock_id = _create_pending_lock(client)
     monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
+    lock_id = _create_pending_lock(client, "expected-admin")
 
     response = client.post(
         f"/api/bridge/lock/{lock_id}/confirm",
@@ -57,8 +63,8 @@ def test_bridge_confirm_requires_admin_key(tmp_path, monkeypatch):
 
 def test_bridge_release_requires_admin_key(tmp_path, monkeypatch):
     client, db_path = _make_client(tmp_path)
-    lock_id = _create_pending_lock(client)
     monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
+    lock_id = _create_pending_lock(client, "expected-admin")
 
     authorized = client.post(
         f"/api/bridge/lock/{lock_id}/confirm",
@@ -79,8 +85,8 @@ def test_bridge_release_requires_admin_key(tmp_path, monkeypatch):
 
 def test_bridge_confirm_and_release_accept_valid_admin_key(tmp_path, monkeypatch):
     client, db_path = _make_client(tmp_path)
-    lock_id = _create_pending_lock(client)
     monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
+    lock_id = _create_pending_lock(client, "expected-admin")
 
     confirmed = client.post(
         f"/api/bridge/lock/{lock_id}/confirm",
@@ -100,6 +106,59 @@ def test_bridge_confirm_and_release_accept_valid_admin_key(tmp_path, monkeypatch
         "real-source-tx",
         "real-dest-tx",
     )
+
+
+def test_bridge_lock_status_public_redacts_addresses_and_tx_ids(tmp_path, monkeypatch):
+    client, _db_path = _make_client(tmp_path)
+    monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
+    lock_id = _create_pending_lock(client, "expected-admin")
+
+    confirmed = client.post(
+        f"/api/bridge/lock/{lock_id}/confirm",
+        headers={"X-Admin-Key": "expected-admin"},
+        json={"source_tx": "real-source-tx"},
+    )
+    assert confirmed.status_code == 200
+
+    response = client.get(f"/api/bridge/lock/{lock_id}")
+
+    assert response.status_code == 200
+    lock = response.get_json()["lock"]
+    assert lock["lock_id"] == lock_id
+    assert lock["status"] == "locked"
+    assert lock["from_chain"] == "solana"
+    assert lock["to_chain"] == "base"
+    assert lock["amount_uwrtc"] == 1_000_000
+    assert "timestamp_iso" in lock
+    assert "from_address" not in lock
+    assert "to_address" not in lock
+    assert "source_tx" not in lock
+    assert "dest_tx" not in lock
+
+
+def test_bridge_lock_status_admin_includes_full_lock_fields(tmp_path, monkeypatch):
+    client, _db_path = _make_client(tmp_path)
+    monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
+    lock_id = _create_pending_lock(client, "expected-admin")
+
+    confirmed = client.post(
+        f"/api/bridge/lock/{lock_id}/confirm",
+        headers={"X-Admin-Key": "expected-admin"},
+        json={"source_tx": "real-source-tx"},
+    )
+    assert confirmed.status_code == 200
+
+    response = client.get(
+        f"/api/bridge/lock/{lock_id}",
+        headers={"X-Admin-Key": "expected-admin"},
+    )
+
+    assert response.status_code == 200
+    lock = response.get_json()["lock"]
+    assert lock["from_address"] == "solana-source"
+    assert lock["to_address"] == "base-destination"
+    assert lock["source_tx"] == "real-source-tx"
+    assert lock["dest_tx"] is None
 
 
 @pytest.mark.parametrize(

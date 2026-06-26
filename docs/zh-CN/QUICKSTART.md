@@ -6,7 +6,7 @@
 
 ## 什么是 RustChain？
 
-RustChain 是一个奖励你让老电脑继续"活着"的区块链。与比特币奖励最快机器不同，RustChain 奖励的是*最老*的机器。一台 2003 年的 PowerBook G4 赚取的 RTC 是全新游戏 PC 的 2.5 倍。代币叫做 **RTC**（RustChain Token），具有真实价值——1 RTC 约合 $0.10 USD。超过 260 名贡献者已通过挖矿和代码赏金赚取了 25,000+ RTC。
+RustChain 是一个奖励你让老电脑继续"活着"的区块链。与比特币奖励最快机器不同，RustChain 奖励的是*最老*的机器。一台 2003 年的 PowerBook G4 赚取的 RTC 是全新游戏 PC 的 2.5 倍。代币叫做 **RTC**（RustChain Token），具有真实价值——1 RTC 约合 $0.15 USD。超过 260 名贡献者已通过挖矿和代码赏金赚取了 25,000+ RTC。
 
 ---
 
@@ -404,7 +404,7 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 - **GitHub Issues：** https://github.com/Scottcjn/Rustchain/issues
 - **Discord：** https://discord.gg/VqVVS2CW9Q
 - **Moltbook：** https://www.moltbook.com/m/rustchain
-- **FAQ：** [FAQ_TROUBLESHOOTING.md](FAQ_TROUBLESHOOTING.md)
+- **FAQ：** [FAQ_TROUBLESHOOTING.md](../FAQ_TROUBLESHOOTING.md)
 
 ---
 
@@ -412,7 +412,7 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 
 | 术语 | 含义 |
 |------|------|
-| **RTC** | RustChain Token——你通过挖矿赚取的加密货币。1 RTC 约合 $0.10 USD。 |
+| **RTC** | RustChain Token——你通过挖矿赚取的加密货币。1 RTC 约合 $0.15 USD。 |
 | **Epoch** | 10 分钟的时间窗口。每个 epoch 结束时，1.5 RTC 分配给所有活跃矿机。 |
 | **Attestation（证明）** | 你的矿机通过运行 6 项指纹检查来证明其硬件真实性的过程。 |
 | **Antiquity Multiplier（古董乘数）** | 基于硬件年龄的奖励加成。更老的 CPU 获得更高的乘数。 |
@@ -426,11 +426,11 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 
 ## 后续步骤
 
-- **将 RTC 兑换为 Solana 代币：** [wRTC 指南](wrtc.md)
-- **运行完整节点：** [协议文档](PROTOCOL.md)
-- **深入了解 Proof-of-Antiquity：** [白皮书](WHITEPAPER.md)
+- **将 RTC 兑换为 Solana 代币：** [wRTC 指南](../wrtc.md)
+- **运行完整节点：** [协议文档](../PROTOCOL.md)
+- **深入了解 Proof-of-Antiquity：** [白皮书](RustChain_Whitepaper_zh-CN_v1.0.md)
 - **贡献代码：** [贡献指南](../CONTRIBUTING.md)
-- **API 参考：** [API 教程](API_WALKTHROUGH.md)
+- **API 参考：** [API 教程](API.md)
 
 ---
 

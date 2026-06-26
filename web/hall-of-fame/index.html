@@ -271,11 +271,28 @@ function filterTable(){
   rows.forEach(r=>{ r.style.display = r.dataset.search.includes(q) ? '' : 'none'; });
 }
 
+// Build a single full-width status row with DOM APIs (no innerHTML), so the
+// loading/empty/error messages never flow through an HTML parser sink (#7174).
+function setLeaderboardMessage(tbody, text, cls, withCursor){
+  tbody.replaceChildren();
+  const tr = document.createElement('tr'); tr.className = 'loading-row';
+  const td = document.createElement('td'); td.colSpan = 9;
+  if(cls) td.className = cls;
+  if(withCursor){
+    const cur = document.createElement('span'); cur.className = 'blinking'; cur.textContent = '█';
+    td.appendChild(cur);
+    td.appendChild(document.createTextNode(' ' + text));
+  } else {
+    td.textContent = text;   // textContent => the value is never parsed as HTML
+  }
+  tr.appendChild(td); tbody.appendChild(tr);
+}
+
 async function loadLeaderboard(){
   const limit = document.getElementById('filterLimit').value;
   const deceased = document.getElementById('filterDeceased').value;
   const tbody = document.getElementById('leaderTbody');
-  tbody.innerHTML = '<tr class="loading-row"><td colspan="9"><span class="blinking">█</span> Loading…</td></tr>';
+  setLeaderboardMessage(tbody, 'Loading…', null, true);
 
   try {
     let url = API_LEADERBOARD + '?limit=' + limit;
@@ -287,14 +304,14 @@ async function loadLeaderboard(){
     const data = await res.json();
     const machines = data.leaderboard || [];
     if(!machines.length){
-      tbody.innerHTML = '<tr class="loading-row"><td colspan="9" class="err">No machines found.</td></tr>';
+      setLeaderboardMessage(tbody, 'No machines found.', 'err');
       return;
     }
     allRows = machines.map((m, idx) => buildRow(m, idx+1));
     tbody.innerHTML = allRows.join('');
     filterTable();
   } catch(e){
-    tbody.innerHTML = `<tr class="loading-row"><td colspan="9" class="err">Failed to load: ${esc(e.message)}</td></tr>`;
+    setLeaderboardMessage(tbody, "Failed to load: " + e.message, "err");
   }
 }
 

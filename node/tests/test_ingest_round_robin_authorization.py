@@ -155,11 +155,11 @@ class TestIngestRoundRobinAuthorization(unittest.TestCase):
             "miner_id": miner_id,
             "header": header,
             "signature": signature,
-        }
+        }, pubkey_hex
 
     def test_non_producer_cannot_submit_signed_header_for_slot(self):
         self._prepare_consensus_state(slot=101)
-        payload = self._signed_header_payload("attacker", slot=101)
+        payload, _ = self._signed_header_payload("attacker", slot=101)
 
         with self.mod.app.test_client() as client:
             response = client.post("/headers/ingest_signed", json=payload)
@@ -172,13 +172,57 @@ class TestIngestRoundRobinAuthorization(unittest.TestCase):
 
     def test_designated_producer_can_submit_signed_header_for_slot(self):
         self._prepare_consensus_state(slot=100)
-        payload = self._signed_header_payload("attacker", slot=100)
+        payload, expected_pubkey = self._signed_header_payload("attacker", slot=100)
+        with sqlite3.connect(self.mod.DB_PATH) as conn:
+            conn.execute(
+                "INSERT INTO miner_header_keys(miner_id, pubkey_hex) VALUES (?, ?)",
+                ("attacker", "00" * 32),
+            )
+            conn.commit()
 
         with self.mod.app.test_client() as client:
             response = client.post("/headers/ingest_signed", json=payload)
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.get_json()["ok"])
+        with sqlite3.connect(self.mod.DB_PATH) as conn:
+            stored_pubkey = conn.execute(
+                "SELECT pubkey_hex FROM headers WHERE slot = ?",
+                (100,),
+            ).fetchone()[0]
+        self.assertEqual(stored_pubkey, expected_pubkey)
+
+    def test_supplied_message_must_match_submitted_header(self):
+        self._prepare_consensus_state(slot=100)
+        signing_key = nacl.signing.SigningKey.generate()
+        pubkey_hex = signing_key.verify_key.encode().hex()
+        header = {"slot": 100, "miner": "attacker", "timestamp": int(time.time())}
+        signed_message = b"not-the-submitted-header"
+        payload = {
+            "miner_id": "attacker",
+            "header": header,
+            "message": signed_message.hex(),
+            "signature": signing_key.sign(signed_message).signature.hex(),
+        }
+
+        with sqlite3.connect(self.mod.DB_PATH) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO miner_header_keys(miner_id, pubkey_hex) VALUES (?, ?)",
+                ("attacker", pubkey_hex),
+            )
+            conn.commit()
+
+        with self.mod.app.test_client() as client:
+            response = client.post("/headers/ingest_signed", json=payload)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["error"], "message_header_mismatch")
+        with sqlite3.connect(self.mod.DB_PATH) as conn:
+            stored = conn.execute(
+                "SELECT 1 FROM headers WHERE slot = ?",
+                (100,),
+            ).fetchone()
+        self.assertIsNone(stored)
 
 
 if __name__ == "__main__":

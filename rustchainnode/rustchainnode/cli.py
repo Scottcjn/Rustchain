@@ -13,6 +13,8 @@ Usage:
 Author: NOX Ventures (noxxxxybot-sketch)
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import os
@@ -37,7 +39,10 @@ TESTNET_NODE_URL = "http://localhost:8099"
 
 def _load_config() -> dict:
     if CONFIG_FILE.exists():
-        return json.loads(CONFIG_FILE.read_text())
+        try:
+            return json.loads(CONFIG_FILE.read_text())
+        except (OSError, json.JSONDecodeError):
+            return {}
     return {}
 
 

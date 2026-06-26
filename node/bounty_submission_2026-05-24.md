@@ -19,7 +19,7 @@ A targeted security audit of the RustChain UTXO mempool and transaction applicat
 | A3 | LOW-MED | `tx_data_json` stores full caller dict with no field/size validation — storage/response bloat | 10-25 |
 | A4 | LOW | TOCTOU: `mempool_add` + `apply_transaction` both claim same box — stale mempool entries | 5-15 |
 
-**Total estimate:** 65-140 RTC ($6.50-$14.00 at $0.10/RTC)
+**Total estimate:** 65-140 RTC ($6.50-$14.00 at $0.15/RTC)
 
 PoC tests are included in `node/test_utxo_no_max_inputs_poc.py`, `node/test_utxo_no_max_inputs_apply_poc.py`, `node/test_utxo_mempool_garbage_injection_poc.py`, and `node/test_utxo_mempool_apply_toctou_poc.py`.
 

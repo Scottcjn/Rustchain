@@ -34,8 +34,18 @@ logger = logging.getLogger(__name__)
 
 # Defaults — node URL is configurable, defaulting to the live node
 DEFAULT_NODE_URL = os.getenv("RUSTCHAIN_NODE_URL", "https://50.28.86.131")
-REQUEST_TIMEOUT = int(os.getenv("RUSTCHAIN_TIMEOUT", "30"))
-RETRY_COUNT = int(os.getenv("RUSTCHAIN_RETRY", "2"))
+
+
+def _safe_int_env(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        logger.warning("Invalid %s env value; using default %s", name, default)
+        return default
+
+
+REQUEST_TIMEOUT = _safe_int_env("RUSTCHAIN_TIMEOUT", 30)
+RETRY_COUNT = _safe_int_env("RUSTCHAIN_RETRY", 2)
 
 # GitHub bounties repo — used as the authoritative source for open bounties
 # because the node does not expose a native /api/bounties endpoint.

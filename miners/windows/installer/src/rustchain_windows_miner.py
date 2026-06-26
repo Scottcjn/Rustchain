@@ -586,7 +586,12 @@ class RustChainMiner:
     def check_eligibility(self):
         """Check if eligible to mine"""
         try:
-            response = requests.get(f"{RUSTCHAIN_API}/lottery/eligibility?miner_id={self.miner_id}", verify=TLS_VERIFY)
+            response = requests.get(
+                f"{self.node_url}/lottery/eligibility",
+                params={"miner_id": self.miner_id},
+                timeout=10,
+                verify=TLS_VERIFY,
+            )
             if response.ok:
                 data = response.json()
                 return data.get("eligible", False)
@@ -611,7 +616,12 @@ class RustChainMiner:
     def submit_header(self, header):
         """Submit mining header"""
         try:
-            response = requests.post(f"{RUSTCHAIN_API}/headers/ingest_signed", json=header, timeout=5, verify=TLS_VERIFY)
+            response = requests.post(
+                f"{self.node_url}/headers/ingest_signed",
+                json=header,
+                timeout=5,
+                verify=TLS_VERIFY,
+            )
             return response.status_code == 200
         except:
             return False

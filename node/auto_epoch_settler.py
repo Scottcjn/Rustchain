@@ -19,9 +19,22 @@ logger = logging.getLogger("rustchain.epoch_settler")
 NODE_URL = os.environ.get("RUSTCHAIN_NODE_URL", "http://localhost:8088")
 DB_PATH = os.environ.get("RUSTCHAIN_DB_PATH", "/root/rustchain/rustchain_v2.db")
 # Module-level env config — wrap integer casts so bad env values
-# (empty string, non-numeric text) don't crash the daemon at import.
-CHECK_INTERVAL = int(os.environ.get("RUSTCHAIN_SETTLE_INTERVAL", "300") or 300)
-SLOTS_PER_EPOCH = int(os.environ.get("RUSTCHAIN_SLOTS_PER_EPOCH", "144") or 144)
+# (empty string OR non-numeric text like "abc") don't crash the daemon at
+# import time (#7327). `int(x or default)` only catches empty strings; a
+# malformed value still raises ValueError, so parse defensively.
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        logging.getLogger("rustchain.epoch_settler").warning(
+            "Invalid %s=%r — falling back to %d", name, raw, default)
+        return default
+
+CHECK_INTERVAL = _env_int("RUSTCHAIN_SETTLE_INTERVAL", 300)
+SLOTS_PER_EPOCH = _env_int("RUSTCHAIN_SLOTS_PER_EPOCH", 144)
 
 
 def get_current_slot():

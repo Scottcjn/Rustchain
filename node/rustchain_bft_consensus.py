@@ -29,6 +29,7 @@ from dataclasses import dataclass, asdict
 from enum import Enum
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 import requests
+import os
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [BFT] %(message)s')
@@ -1037,6 +1038,20 @@ def create_bft_routes(app, bft: BFTConsensus):
     def _internal_error_response(message: str, status_code: int):
         return jsonify({'error': message}), status_code
 
+    def _require_admin_key():
+        """Require admin key for sensitive BFT admin endpoints."""
+        required = os.environ.get("RC_ADMIN_KEY", "").strip()
+        if not required:
+            return jsonify({"ok": False, "error": "admin_key_not_configured"}), 503
+        provided = (
+            request.headers.get("X-Admin-Key")
+            or request.headers.get("X-API-Key")
+            or ""
+        ).strip()
+        if not hmac.compare_digest(provided, required):
+            return jsonify({"ok": False, "error": "unauthorized"}), 401
+        return None
+
     @app.route('/bft/status', methods=['GET'])
     def bft_status():
         """Get BFT consensus status"""
@@ -1110,6 +1125,10 @@ def create_bft_routes(app, bft: BFTConsensus):
             if not isinstance(distribution, dict):
                 return jsonify({'error': 'distribution must be an object'}), 400
 
+            auth_err = _require_admin_key()
+            if auth_err:
+                return auth_err
+
             msg = bft.propose_epoch_settlement(epoch, miners, distribution)
             if msg:
                 return jsonify({'status': 'proposed', 'digest': msg.digest})
@@ -1159,7 +1178,7 @@ if __name__ == "__main__":
 
         total_weight = sum(m['weight'] for m in miners)
         distribution = {
-            m['miner_id']: 1.5 * (m['weight'] / total_weight)
+            m['miner_id']: (0 if total_weight == 0 else 1.5 * (m['weight'] / total_weight))
             for m in miners
         }
 

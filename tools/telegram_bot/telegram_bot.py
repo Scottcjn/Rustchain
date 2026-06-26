@@ -20,6 +20,8 @@ Improvements over prior version:
   - All three bonus features implemented
 """
 
+from __future__ import annotations
+
 import os
 import asyncio
 import logging

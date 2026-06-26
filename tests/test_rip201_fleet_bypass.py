@@ -326,6 +326,52 @@ def test_client_ip_from_request_accepts_x_real_ip_from_trusted_proxy(attest_clie
     assert row == ("198.51.100.99",)
 
 
+def test_client_ip_from_request_rejects_invalid_x_real_ip_from_trusted_proxy(attest_client, monkeypatch):
+    # A trusted proxy that forwards a non-IP X-Real-IP (proxy misconfig / appended
+    # client-supplied value) must NOT let an arbitrary string become the client-IP
+    # key for rate-limiting / hardware binding; fall back to the real remote_addr.
+    client, db_path = attest_client
+    monkeypatch.setenv("RC_TRUSTED_PROXY_IPS", "127.0.0.1/32,::1/128")
+    payload = _attach_live_challenge(client, {
+        "miner": "proxy-demo-2",
+        "device": {
+            "device_family": "x86",
+            "device_arch": "default",
+            "arch": "default",
+            "cores": 8,
+            "cpu": "Intel Xeon",
+            "serial_number": "SERIAL-004",
+        },
+        "signals": {
+            "hostname": "proxied-box-b",
+            "macs": ["AA:BB:CC:DD:EE:04"],
+        },
+        "report": {
+            "nonce": "nonce-004",
+            "commitment": "commitment-004",
+        },
+        "fingerprint": _minimal_valid_fingerprint(0.08),
+    })
+
+    response = client.post(
+        "/attest/submit",
+        json=payload,
+        headers={"X-Real-IP": "not-an-ip-address"},
+        environ_base={"REMOTE_ADDR": "127.0.0.1"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["ok"] is True
+
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT source_ip FROM miner_attest_recent WHERE miner = ?",
+            (payload["miner"],),
+        ).fetchone()
+
+    assert row == ("127.0.0.1",)
+
+
 def test_same_subnet_and_shared_fingerprint_get_flagged():
     db = sqlite3.connect(":memory:")
     fleet_mod.ensure_schema(db)

@@ -6,7 +6,7 @@ With RIP-PoA Hardware Fingerprint Attestation + Serial Binding v2.0
 import warnings
 # warnings.filterwarnings('ignore', message='Unverified HTTPS request')  # No longer needed — TLS verification enabled
 
-import os, sys, json, time, hashlib, uuid, math, requests, socket, subprocess, platform, statistics, re
+import os, sys, json, time, hashlib, uuid, math, requests, socket, subprocess, platform, statistics, re, logging
 from datetime import datetime
 
 # ── Ed25519 signing (GPT-5.4 audit finding #2) ──
@@ -17,10 +17,22 @@ from datetime import datetime
 # Without signing, miner falls back to legacy sha512 / unsigned — server
 # accepts with WARNING but offers no wallet-hijack protection.
 try:
-    from miner_crypto import get_or_create_keypair, sign_payload  # noqa: F401
+    from miner_crypto import generate_keypair, get_or_create_keypair, sign_payload  # noqa: F401
     CRYPTO_AVAILABLE = True
 except ImportError:
     CRYPTO_AVAILABLE = False
+    generate_keypair = get_or_create_keypair = sign_payload = None
+
+# Shared pipe-message builder (PR #6839 review)
+try:
+    from miners.signing_helpers import build_pipe_sign_message
+    _SIGNING_HELPERS = True
+except ImportError:
+    try:
+        from signing_helpers import build_pipe_sign_message
+        _SIGNING_HELPERS = True
+    except ImportError:
+        _SIGNING_HELPERS = False
 
 # Import fingerprint checks
 try:
@@ -87,6 +99,17 @@ def _parse_wmic_value(output, key):
         line = line.strip()
         if line.lower().startswith(prefix.lower()):
             return line[len(prefix):].strip()
+    return ""
+
+
+def _parse_ioreg_serial(output):
+    for line in str(output or "").splitlines():
+        if "IOPlatformSerialNumber" not in line:
+            continue
+        _, _, value = line.partition("=")
+        serial = value.strip().strip('"')
+        if serial and serial.lower() != "none":
+            return serial
     return ""
 
 
@@ -201,9 +224,37 @@ def get_linux_serial():
 
     return None
 
+
+def get_macos_serial():
+    """Get hardware serial number for macOS systems."""
+    try:
+        result = subprocess.run(
+            ["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            serial = _parse_ioreg_serial(result.stdout)
+            if serial:
+                return serial
+    except Exception:
+        pass
+
+    return None
+
+
+def get_hardware_serial(system=None):
+    system = system or platform.system()
+    if system == "Darwin":
+        return get_macos_serial()
+    return get_linux_serial()
+
+
 class LocalMiner:
     def __init__(self, wallet=None, wart_address=None, wart_pool=None,
-                 bzminer_path=None, manage_bzminer=False, verbose=False, show_payload=False):
+                 bzminer_path=None, manage_bzminer=False, verbose=False, show_payload=False,
+                 persist_key=True):
         self.node_url = NODE_URL
         self.wallet = wallet or self._gen_wallet()
         self.hw_info = {}
@@ -219,7 +270,12 @@ class LocalMiner:
         self.keypair = {}
         self.public_key = ""
         if CRYPTO_AVAILABLE:
-            self.keypair = get_or_create_keypair()
+            if persist_key:
+                self.keypair = get_or_create_keypair()
+            else:
+                self.keypair = generate_keypair()
+                if verbose:
+                    print("[CRYPTO] Using ephemeral keypair for dry-run; not saving miner_key.json")
             self.public_key = self.keypair.get("public_key", "")
         self.fingerprint_passed = False
         self.verbose = verbose
@@ -235,7 +291,7 @@ class LocalMiner:
                 manage_bzminer=manage_bzminer,
             )
 
-        self.serial = get_linux_serial()
+        self.serial = get_hardware_serial()
         print("="*70)
         print("RustChain Local Linux Miner")
         print("RIP-PoA Hardware Fingerprint + Serial Binding v2.0")
@@ -315,6 +371,29 @@ class LocalMiner:
     def _get_mac_addresses(self):
         """Return list of real MAC addresses present on the system."""
         macs = []
+        if platform.system() == "Darwin":
+            try:
+                output = subprocess.run(
+                    ["networksetup", "-listallhardwareports"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    text=True,
+                    timeout=5,
+                ).stdout.splitlines()
+                current_port = ""
+                stable_ports = {"ethernet", "wi-fi", "wifi"}
+                for line in output:
+                    if line.startswith("Hardware Port:"):
+                        current_port = line.split(":", 1)[1].strip().lower()
+                    elif line.startswith("Ethernet Address:") and current_port in stable_ports:
+                        mac = line.split(":", 1)[1].strip().lower()
+                        if mac and mac != "00:00:00:00:00:00" and mac not in macs:
+                            macs.append(mac)
+                if macs:
+                    return macs[:3]
+            except Exception:
+                pass
+
         # Try `ip -o link`
         try:
             output = subprocess.run(
@@ -347,12 +426,12 @@ class LocalMiner:
                     m = re.search(r"(?:ether|HWaddr)\s+([0-9a-f:]{17})", line, re.IGNORECASE)
                     if m:
                         mac = m.group(1).lower()
-                        if mac != "00:00:00:00:00:00":
+                        if mac != "00:00:00:00:00:00" and mac not in macs:
                             macs.append(mac)
             except Exception:
                 pass
 
-        return macs or ["00:00:00:00:00:01"]
+        return (macs[:3] if macs else ["00:00:00:00:00:01"])
 
     def _collect_entropy(self, cycles: int = 48, inner_loop: int = 25000):
         """
@@ -390,7 +469,7 @@ class LocalMiner:
             "hostname": socket.gethostname(),
             "family": "x86",
             "arch": "modern",  # Less than 10 years old
-            "serial": get_linux_serial(),  # Hardware serial for v2 binding
+            "serial": get_hardware_serial(system),  # Hardware serial for v2 binding
             "probe_warning": _linux_miner_platform_warning(system)
         }
 
@@ -546,22 +625,32 @@ class LocalMiner:
             "warthog": self.warthog.collect_proof() if self.warthog else None
         }
 
-        # ── Ed25519 signature (GPT-5.4 audit finding #2) ──
-        # Sign canonical JSON of the full attestation BEFORE adding signature
-        # fields. Server (PR #6426) strips signature/public_key/signature_type
-        # before re-canonicalizing for verification.
+        # ── Ed25519 signature ──
+        # Sign the pipe-delimited message that the node verifier reconstructs
+        # (miner_id|miner|nonce|commitment). Previous code signed the canonical
+        # JSON of the full attestation, but the server verifies the pipe-string,
+        # causing every signed attestation to fail with INVALID_SIGNATURE.
+        # See issue #6798.
         if CRYPTO_AVAILABLE and self.keypair:
             try:
-                payload_bytes = json.dumps(
-                    attestation, sort_keys=True, separators=(",", ":")
-                ).encode()
+                if _SIGNING_HELPERS:
+                    sign_msg = build_pipe_sign_message(attestation)
+                else:
+                    sign_msg = "{}|{}|{}|{}".format(
+                        attestation["miner_id"],
+                        attestation["miner"],
+                        attestation["nonce"],
+                        attestation["report"]["commitment"],
+                    ).encode("utf-8")
                 attestation["signature"] = sign_payload(
-                    payload_bytes, self.keypair["private_key"]
+                    sign_msg, self.keypair["private_key"]
                 )
                 attestation["public_key"] = self.public_key
                 attestation["signature_type"] = "ed25519"
-            except Exception:
-                pass  # Fall through unsigned; server accepts with warning
+            except Exception as exc:
+                logging.warning(
+                    "attestation signing failed; falling through unsigned: %s", exc
+                )
 
         try:
             resp = self._post(
@@ -646,7 +735,14 @@ class LocalMiner:
             "device": {
                 "family": self.hw_info["family"],
                 "arch": self.hw_info["arch"]
-            }
+            },
+            # Include the hardware fingerprint in the enrollment too. The node's
+            # per-epoch rotating-check (evaluate_rotating_fingerprint_checks)
+            # reads the fingerprint from the ENROLL body; without it active_ratio
+            # is 0 and the enrolled weight collapses to 0 even for real hardware
+            # that already passed attestation. (Node aliases simd_identity ->
+            # simd_bias itself, so no client-side rename is needed.)
+            "fingerprint": self.fingerprint_data
         }
 
         # Ed25519-sign the enrollment if we have a keypair AND a fresh epoch.
@@ -841,7 +937,7 @@ class LocalMiner:
             self.check_balance()
             return 0
 
-if __name__ == "__main__":
+def main(argv=None):
     import argparse
     parser = argparse.ArgumentParser(description="RustChain Miner with optional Warthog dual-mining")
     parser.add_argument("--version", "-v", action="version", version="RustChain Miner v2.2.1-rip200")
@@ -858,7 +954,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--verbose", action="store_true", help="Enable verbose output showing API endpoints, headers, and response details")
     parser.add_argument("--show-payload", action="store_true", help="Show request payload in dry-run mode")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     miner = LocalMiner(
         wallet=args.wallet,
@@ -866,12 +962,17 @@ if __name__ == "__main__":
         wart_pool=args.wart_pool,
         bzminer_path=args.bzminer_path,
         manage_bzminer=args.manage_bzminer,
-            verbose=args.verbose,
-            show_payload=args.show_payload,
+        verbose=args.verbose,
+        show_payload=args.show_payload,
+        persist_key=not args.dry_run,
     )
     if args.dry_run:
         result = miner.dry_run()
     else:
         result = miner.mine()
 
-    sys.exit(0 if result in (None, True) else int(result))
+    return 0 if result in (None, True) else int(result)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

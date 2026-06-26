@@ -9,7 +9,7 @@ A Telegram bot that checks RustChain wallet balances, miner status, and epoch in
 | `/balance <wallet>` | Check RTC balance |
 | `/miners` | List active miners |
 | `/epoch` | Current epoch info |
-| `/price` | Show RTC reference rate ($0.10) |
+| `/price` | Show RTC reference rate ($0.15) |
 | `/help` | Show commands |
 
 ## Setup

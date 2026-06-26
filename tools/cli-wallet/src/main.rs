@@ -78,8 +78,11 @@ struct Transaction {
 
 #[derive(Serialize, Deserialize, Debug)]
 struct BalanceResponse {
-    address: String,
-    balance: u64,
+    address: Option<String>,
+    miner_id: Option<String>,
+    balance: Option<f64>,
+    amount_i64: Option<i64>,
+    amount_rtc: Option<f64>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -91,12 +94,20 @@ struct TransactionResponse {
 
 impl Wallet {
     fn new() -> Result<Self> {
-        use secp256k1::{Secp256k1, SecretKey};
         use rand::rngs::OsRng;
-        
+        use rand::RngCore;
+        use secp256k1::{PublicKey, Secp256k1, SecretKey};
+
         let secp = Secp256k1::new();
         let mut rng = OsRng;
-        let (secret_key, public_key) = secp.generate_keypair(&mut rng);
+        let secret_key = loop {
+            let mut secret_bytes = [0u8; 32];
+            rng.fill_bytes(&mut secret_bytes);
+            if let Ok(secret_key) = SecretKey::from_slice(&secret_bytes) {
+                break secret_key;
+            }
+        };
+        let public_key = PublicKey::from_secret_key(&secp, &secret_key);
         
         let private_key = hex::encode(secret_key.as_ref());
         let public_key_bytes = public_key.serialize();
@@ -155,24 +166,41 @@ fn validate_address(address: &str) -> bool {
     addr_part.len() == 40 && addr_part.chars().all(|c| c.is_ascii_hexdigit())
 }
 
-async fn get_balance(node_url: &str, address: &str) -> Result<u64> {
+impl BalanceResponse {
+    fn balance_rtc(&self) -> Option<f64> {
+        self.amount_rtc
+            .or_else(|| self.amount_i64.map(|amount| amount as f64 / 1_000_000.0))
+            .or(self.balance)
+    }
+}
+
+fn balance_url(node_url: &str, address: &str) -> Result<reqwest::Url> {
+    let base = node_url.trim_end_matches('/');
+    let mut url = reqwest::Url::parse(&format!("{}/wallet/balance", base))?;
+    url.query_pairs_mut().append_pair("miner_id", address);
+    Ok(url)
+}
+
+async fn get_balance(node_url: &str, address: &str) -> Result<f64> {
     let client = reqwest::Client::new();
-    let url = format!("{}/api/balance/{}", node_url, address);
+    let url = balance_url(node_url, address)?;
     
-    match client.get(&url).send().await {
+    match client.get(url).send().await {
         Ok(response) => {
             if response.status().is_success() {
                 let balance_response: BalanceResponse = response.json().await?;
-                Ok(balance_response.balance)
+                balance_response
+                    .balance_rtc()
+                    .ok_or_else(|| anyhow!("Balance response missing amount_rtc/amount_i64"))
             } else {
                 // If API doesn't exist, return mock balance
                 println!("Note: Using mock balance (node API not available)");
-                Ok(1000) // Mock balance
+                Ok(1000.0) // Mock balance
             }
         }
         Err(_) => {
             println!("Note: Using mock balance (node not reachable)");
-            Ok(1000) // Mock balance when node is not available
+            Ok(1000.0) // Mock balance when node is not available
         }
     }
 }
@@ -196,32 +224,27 @@ async fn send_transaction(
     let signature = wallet.sign_transaction(&transaction)?;
     let mut signed_transaction = transaction;
     signed_transaction.signature = signature;
-    
+
     let client = reqwest::Client::new();
-    let url = format!("{}/api/transaction", node_url);
+    let url = format!("{}/api/transaction", node_url.trim_end_matches('/'));
     
-    match client.post(&url).json(&signed_transaction).send().await {
-        Ok(response) => {
-            if response.status().is_success() {
-                let tx_response: TransactionResponse = response.json().await?;
-                if tx_response.success {
-                    Ok(tx_response.transaction_id.unwrap_or_else(|| "unknown".to_string()))
-                } else {
-                    Err(anyhow!("Transaction failed: {}", tx_response.message))
-                }
-            } else {
-                // Mock successful transaction when API is not available
-                println!("Note: Mock transaction (node API not available)");
-                let tx_id = hex::encode(&signed_transaction.signature[0..8]);
-                Ok(tx_id)
-            }
-        }
-        Err(_) => {
-            // Mock successful transaction when node is not reachable
-            println!("Note: Mock transaction (node not reachable)");
-            let tx_id = hex::encode(&signed_transaction.signature[0..8]);
-            Ok(tx_id)
-        }
+    let response = client
+        .post(&url)
+        .json(&signed_transaction)
+        .send()
+        .await
+        .map_err(|err| anyhow!("Transaction submission failed: {}", err))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        return Err(anyhow!("Transaction endpoint returned HTTP {}", status));
+    }
+
+    let tx_response: TransactionResponse = response.json().await?;
+    if tx_response.success {
+        Ok(tx_response.transaction_id.unwrap_or_else(|| "unknown".to_string()))
+    } else {
+        Err(anyhow!("Transaction failed: {}", tx_response.message))
     }
 }
 
@@ -244,7 +267,7 @@ async fn main() -> Result<()> {
             println!("Checking balance for: {}", wallet_data.address);
             
             let balance = get_balance(node, &wallet_data.address).await?;
-            println!("💰 Balance: {} RTC", balance);
+            println!("💰 Balance: {:.6} RTC", balance);
         }
         
         Some(Commands::Send { wallet, to, amount, node }) => {
@@ -257,9 +280,9 @@ async fn main() -> Result<()> {
             
             // Check balance first
             let balance = get_balance(node, &wallet_data.address).await?;
-            if balance < *amount {
+            if balance < *amount as f64 {
                 return Err(anyhow!(
-                    "Insufficient balance. Available: {} RTC, Required: {} RTC",
+                    "Insufficient balance. Available: {:.6} RTC, Required: {} RTC",
                     balance,
                     amount
                 ));
@@ -317,6 +340,46 @@ mod tests {
         assert!(validate_address(&wallet.address));
         assert!(!wallet.private_key.is_empty());
         assert!(!wallet.public_key.is_empty());
+    }
+
+    #[test]
+    fn test_balance_url_uses_current_wallet_endpoint() {
+        let url = balance_url(
+            "https://rustchain.org/",
+            "RTC0123456789abcdef0123456789abcdef01234567",
+        )
+        .unwrap();
+
+        assert_eq!(
+            url.as_str(),
+            "https://rustchain.org/wallet/balance?miner_id=RTC0123456789abcdef0123456789abcdef01234567"
+        );
+    }
+
+    #[test]
+    fn test_balance_response_parses_current_schema() {
+        let response: BalanceResponse = serde_json::from_str(
+            r#"{"amount_i64":118357193,"amount_rtc":118.357193,"miner_id":"alice"}"#,
+        )
+        .unwrap();
+
+        assert_eq!(response.balance_rtc(), Some(118.357193));
+    }
+
+    #[test]
+    fn test_balance_response_falls_back_to_micro_units() {
+        let response: BalanceResponse =
+            serde_json::from_str(r#"{"amount_i64":1250000,"miner_id":"alice"}"#).unwrap();
+
+        assert_eq!(response.balance_rtc(), Some(1.25));
+    }
+
+    #[test]
+    fn test_balance_response_keeps_legacy_balance_compatible() {
+        let response: BalanceResponse =
+            serde_json::from_str(r#"{"address":"alice","balance":42}"#).unwrap();
+
+        assert_eq!(response.balance_rtc(), Some(42.0));
     }
     
     #[tokio::test]

@@ -311,4 +311,4 @@ The Base adapter parses ETH balances into `u64`. Since `u64::MAX` ≈ 18.44 ETH,
 ---
 
 *All findings verified via manual code review against commit HEAD of https://github.com/Scottcjn/Rustchain.*
-*Reference rate: 1 RTC = $0.10 USD*
+*Reference rate: 1 RTC = $0.15 USD*

@@ -20,6 +20,11 @@ logger = logging.getLogger(__name__)
 
 DB_PATH = os.environ.get("RUSTCHAIN_DB", "rustchain.db")
 MICRO_RTC_PER_RTC = Decimal("1000000")
+TERMINAL_STATUSES = {"confirmed", "voided"}
+
+
+class LedgerStateError(Exception):
+    """Raised when a payout ledger status transition is not allowed."""
 
 PAYOUT_LEDGER_COLUMNS = [
     ("id", "TEXT"),
@@ -194,12 +199,17 @@ def ledger_update_status(record_id, new_status, tx_hash="", notes=""):
         raise ValueError(f"Invalid status: {new_status}. Must be one of {valid}")
     now = int(time.time())
     with sqlite3.connect(DB_PATH) as conn:
-        conn.execute(
+        cursor = conn.execute(
             "UPDATE payout_ledger SET status=?, tx_hash=?, notes=?, updated_at=? WHERE id=?",
             (new_status, tx_hash or "", notes or "", now, record_id),
         )
+        updated = cursor.rowcount > 0
         conn.commit()
+    if not updated:
+        logger.info("Ledger %s status update skipped: record not found", record_id)
+        return False
     logger.info("Ledger %s → %s", record_id, new_status)
+    return True
 
 
 def ledger_summary():
@@ -217,6 +227,47 @@ def ledger_summary():
         }
         for r in rows
     }
+
+
+def _ledger_update_status_terminal_guarded(record_id, new_status, tx_hash="", notes=""):
+    """Move a record to a new status without rewriting terminal ledger rows."""
+    valid = {"queued", "pending", "confirmed", "voided"}
+    if new_status not in valid:
+        raise ValueError(f"Invalid status: {new_status}. Must be one of {valid}")
+    now = int(time.time())
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        current = conn.execute(
+            "SELECT status FROM payout_ledger WHERE id=?",
+            (record_id,),
+        ).fetchone()
+        if not current:
+            conn.execute("ROLLBACK")
+            logger.info("Ledger %s status update skipped: record not found", record_id)
+            return False
+        if current[0] in TERMINAL_STATUSES:
+            if current[0] != new_status:
+                conn.execute("ROLLBACK")
+                raise LedgerStateError(
+                    f"cannot change terminal payout status from {current[0]} to {new_status}"
+                )
+            conn.execute("COMMIT")
+            logger.info("Ledger %s already terminal %s; status update skipped", record_id, new_status)
+            return True
+        cursor = conn.execute(
+            "UPDATE payout_ledger SET status=?, tx_hash=?, notes=?, updated_at=? WHERE id=?",
+            (new_status, tx_hash or "", notes or "", now, record_id),
+        )
+        updated = cursor.rowcount > 0
+        conn.commit()
+    if not updated:
+        logger.info("Ledger %s status update skipped: record not found", record_id)
+        return False
+    logger.info("Ledger %s → %s", record_id, new_status)
+    return True
+
+
+ledger_update_status = _ledger_update_status_terminal_guarded
 
 
 def _require_admin_key():
@@ -242,6 +293,10 @@ def _json_object_body():
 # ── Flask route registration ───────────────────────────────────
 def register_ledger_routes(app):
     """Register /ledger/* routes on the given Flask app."""
+
+    @app.errorhandler(LedgerStateError)
+    def _handle_ledger_state_error(error):
+        return jsonify({"error": str(error)}), 409
 
     @app.route("/ledger")
     def ledger_page():
@@ -316,13 +371,15 @@ def register_ledger_routes(app):
         if not new_status:
             return jsonify({"error": "missing status"}), 400
         try:
-            ledger_update_status(
+            updated = ledger_update_status(
                 record_id, new_status,
                 tx_hash=data.get("tx_hash", ""),
                 notes=data.get("notes", ""),
             )
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
+        if not updated:
+            return jsonify({"error": "not found"}), 404
         return jsonify({"id": record_id, "status": new_status})
 
     @app.route("/api/ledger/summary", methods=["GET"])

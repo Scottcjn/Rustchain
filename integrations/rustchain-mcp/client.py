@@ -39,8 +39,18 @@ logger = logging.getLogger(__name__)
 # Default configuration
 RUSTCHAIN_API_BASE = os.getenv("RUSTCHAIN_API_BASE", "https://50.28.86.131")
 RUSTCHAIN_NODE_URL = os.getenv("RUSTCHAIN_NODE_URL", "https://50.28.86.131:5000")
-REQUEST_TIMEOUT = int(os.getenv("RUSTCHAIN_TIMEOUT", "30"))
-RETRY_COUNT = int(os.getenv("RUSTCHAIN_RETRY", "2"))
+
+
+def _safe_int_env(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        logger.warning("Invalid %s env value; using default %s", name, default)
+        return default
+
+
+REQUEST_TIMEOUT = _safe_int_env("RUSTCHAIN_TIMEOUT", 30)
+RETRY_COUNT = _safe_int_env("RUSTCHAIN_RETRY", 2)
 
 
 class RustChainClient:

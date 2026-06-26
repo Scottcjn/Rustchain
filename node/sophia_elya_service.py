@@ -65,6 +65,17 @@ def _ensure_balance_micro_schema(conn):
         return
 
     by_name = {row[1]: row for row in columns}
+
+    # SAFETY GUARD: never rebuild the CONSENSUS balances ledger. The RustChain node
+    # keys `balances` by `miner_id` with the canonical micro-RTC amount in `amount_i64`
+    # (plus miner_pk / coinbase_address). This Sophia helper only manages its own
+    # 2-column (miner_pk, balance_rtc) micro-schema. If `DB_PATH` ever resolves to the
+    # shared consensus DB (it is a relative "./rustchain_v2.db"), the rebuild below
+    # would DROP miner_id / amount_i64 / coinbase_address and WIPE every balance.
+    # If we see the consensus money columns, leave the table completely untouched.
+    if "amount_i64" in by_name or "coinbase_address" in by_name:
+        return
+
     balance_column = by_name.get("balance_rtc")
     if balance_column and "INT" in (balance_column[2] or "").upper():
         return
@@ -332,6 +343,42 @@ def get_epoch():
         "settled": settled,
         "settled_ts": settled_ts,
         "epoch_pot": PER_BLOCK_RTC * blocks
+    })
+
+
+@app.get("/epoch/history")
+def get_epoch_history():
+    """Get recent epoch history (last 50 epochs)"""
+    now_slot = int(time.time() // BLOCK_TIME)
+    current_epoch = slot_to_epoch(now_slot)
+    min_epoch = max(0, current_epoch - 50)
+
+    with sqlite3.connect(DB_PATH) as c:
+        rows = c.execute("""
+            SELECT e.epoch, e.accepted_blocks, e.finalized,
+                   COALESCE(COUNT(en.miner_pk), 0) as enrolled_miners,
+                   COALESCE(SUM(en.weight), 0) as total_weight
+            FROM epoch_state e
+            LEFT JOIN epoch_enroll en ON en.epoch = e.epoch
+            WHERE e.epoch >= ?
+            GROUP BY e.epoch
+            ORDER BY e.epoch DESC
+        """, (min_epoch,)).fetchall()  # fetchall-ok: bounded-by-schema (WHERE e.epoch >= current_epoch-50 caps rows ~51)
+
+    return jsonify({
+        "epochs": [
+            {
+                "epoch": int(r[0]),
+                "accepted_blocks": int(r[1]),
+                "finalized": bool(r[2]),
+                "enrolled_miners": int(r[3]),
+                "total_weight": float(r[4]),
+                "epoch_pot": PER_BLOCK_RTC * int(r[1])
+            }
+            for r in rows
+        ],
+        "current_epoch": current_epoch,
+        "count": len(rows)
     })
 
 @app.post("/epoch/enroll")

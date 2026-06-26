@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from node.ergo_raw_tx import RawTxBuilder, encode_coll_byte, encode_int_reg
+from node.ergo_raw_tx import REQUEST_TIMEOUT, RawTxBuilder, encode_coll_byte, encode_int_reg
 
 
 class FakeResponse:
@@ -22,11 +22,15 @@ class FakeSession:
         self.headers = {}
         self.get_response = get_response
         self.post_responses = list(post_responses or [])
+        self.get_calls = []
+        self.post_calls = []
 
-    def get(self, *_args, **_kwargs):
+    def get(self, *args, **kwargs):
+        self.get_calls.append((args, kwargs))
         return self.get_response
 
-    def post(self, *_args, **_kwargs):
+    def post(self, *args, **kwargs):
+        self.post_calls.append((args, kwargs))
         return self.post_responses.pop(0)
 
 
@@ -116,6 +120,7 @@ def test_get_unspent_box_skips_malformed_entries():
     )
 
     assert builder.get_unspent_box() == valid_box
+    assert builder.session.get_calls[0][1]["timeout"] == REQUEST_TIMEOUT
 
 
 def test_get_current_height_defaults_for_non_object_json():
@@ -123,6 +128,7 @@ def test_get_current_height_defaults_for_non_object_json():
     builder.session = FakeSession(get_response=FakeResponse(["not", "an", "object"]))
 
     assert builder.get_current_height() == 0
+    assert builder.session.get_calls[0][1]["timeout"] == REQUEST_TIMEOUT
 
 
 def test_anchor_miners_rejects_non_object_signed_transaction(monkeypatch):
@@ -143,3 +149,4 @@ def test_anchor_miners_rejects_non_object_signed_transaction(monkeypatch):
     monkeypatch.setattr(builder, "get_current_height", lambda: 100)
 
     assert builder.anchor_miners() == {"success": False, "error": "Sign: invalid response"}
+    assert builder.session.post_calls[0][1]["timeout"] == REQUEST_TIMEOUT

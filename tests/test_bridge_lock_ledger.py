@@ -782,6 +782,41 @@ class TestLockLedger:
         
         conn.close()
 
+    def test_negative_limit_clamped_to_min(self, setup_test_db, funded_miner):
+        """get_locks_by_miner and get_pending_unlocks must not treat negative
+        limit as unbounded (SQLite LIMIT -1 = no limit)."""
+        lock_ledger = setup_test_db["lock_ledger"]
+        conn = sqlite3.connect(setup_test_db["db_path"])
+        now = int(time.time())
+
+        # Seed 5 locks, all locked
+        for i in range(5):
+            lock_ledger.create_lock(
+                conn,
+                miner_id=funded_miner,
+                amount_i64=10 * 1000000,
+                lock_type="bridge_deposit",
+                unlock_at=now + 3600 + i,
+            )
+
+        # Negative limit must return at most 1 row, not all 5
+        locks = lock_ledger.get_locks_by_miner(conn, funded_miner, limit=-1)
+        assert len(locks) == 1
+
+        # Also check the pending-unlocks helper with negative limit
+        # Move unlock_at into the past so they become "pending"
+        conn.execute(
+            "UPDATE lock_ledger SET unlock_at = ? WHERE miner_id = ?",
+            (now - 10, funded_miner),
+        )
+        conn.commit()
+
+        pending = lock_ledger.get_pending_unlocks(conn, limit=-1)
+        assert len(pending) == 1
+
+        conn.close()
+
+
 
 class TestLockLedgerRoutes:
     """Test lock ledger route-level validation and helper dispatch."""
@@ -1161,6 +1196,66 @@ class TestIntegration:
         assert len(locks) == 1
         assert locks[0].status == "released"
         
+        conn.close()
+
+    def test_stale_void_cannot_overwrite_completed_withdraw(
+        self, setup_test_db, monkeypatch
+    ):
+        """A stale admin void must not overwrite a completed withdraw."""
+        bridge_api = setup_test_db["bridge_api"]
+        conn = sqlite3.connect(setup_test_db["db_path"])
+
+        req = bridge_api.BridgeTransferRequest(
+            direction="withdraw",
+            source_chain="solana",
+            dest_chain="rustchain",
+            source_address="4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXq",
+            dest_address="RTCwithdrawdest",
+            amount_rtc=10.0,
+        )
+        success, result = bridge_api.create_bridge_transfer(conn, req)
+        assert success is True
+        tx_hash = result["tx_hash"]
+
+        stale_transfer = bridge_api.get_bridge_transfer_by_hash(conn, tx_hash)
+        success, result = bridge_api.update_external_confirmation(
+            conn,
+            tx_hash,
+            external_tx_hash="solana_tx_complete",
+            confirmations=12,
+            required_confirmations=12,
+        )
+        assert success is True
+        assert result["status"] == "completed"
+
+        original_get_bridge_transfer_by_hash = bridge_api.get_bridge_transfer_by_hash
+
+        def stale_once(_conn, current_tx_hash):
+            if current_tx_hash == tx_hash:
+                return stale_transfer
+            return original_get_bridge_transfer_by_hash(_conn, current_tx_hash)
+
+        monkeypatch.setattr(bridge_api, "get_bridge_transfer_by_hash", stale_once)
+
+        success, result = bridge_api.void_bridge_transfer(
+            conn,
+            tx_hash,
+            reason="late_admin_void",
+            voided_by="admin",
+        )
+
+        assert success is False
+        assert result["error"] == "Cannot void transfer with status 'completed'"
+
+        transfer = original_get_bridge_transfer_by_hash(conn, tx_hash)
+        assert transfer["status"] == "completed"
+        assert transfer["voided_by"] is None
+        balance_i64 = conn.execute(
+            "SELECT amount_i64 FROM balances WHERE miner_id = ?",
+            ("RTCwithdrawdest",),
+        ).fetchone()[0]
+        assert balance_i64 == 10 * bridge_api.BRIDGE_UNIT
+
         conn.close()
 
 

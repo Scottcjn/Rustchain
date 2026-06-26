@@ -12,6 +12,14 @@ sys.path.insert(0, '/app/node')
 # Import the Flask app from rustchain_dashboard
 from rustchain_dashboard import app
 
+
+def _safe_int_env(name, default):
+    try:
+        return int(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
 # Add health check endpoint
 @app.route('/health')
 def health_check():
@@ -43,5 +51,5 @@ def health_check():
 
 if __name__ == '__main__':
     # Run the app
-    port = int(os.environ.get('PORT', 8099))
+    port = _safe_int_env('PORT', 8099)
     app.run(host='0.0.0.0', port=port, debug=False)

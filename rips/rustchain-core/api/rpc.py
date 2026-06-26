@@ -17,7 +17,7 @@ import json
 import os
 import time
 from dataclasses import dataclass
-from typing import Dict, Any, Optional, Callable, Set
+from typing import Dict, Any, Optional, Callable, Tuple
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 import threading
@@ -27,6 +27,11 @@ ALLOWED_ORIGINS_ENV = "RUSTCHAIN_API_ALLOWED_ORIGINS"
 CSRF_TOKEN_ENV = "RUSTCHAIN_API_CSRF_TOKEN"
 CSRF_HEADER = "X-RustChain-CSRF-Token"
 LEGACY_CSRF_HEADER = "X-CSRF-Token"
+RATE_LIMIT_PER_MINUTE_ENV = "RUSTCHAIN_API_RATE_LIMIT_PER_MINUTE"
+RATE_LIMIT_BURST_ENV = "RUSTCHAIN_API_RATE_LIMIT_BURST"
+API_KEY_ENV = "RUSTCHAIN_API_KEY"
+API_KEY_HEADER = "X-RustChain-API-Key"
+API_KEY_RATE_LIMIT_PER_MINUTE_ENV = "RUSTCHAIN_API_KEY_RATE_LIMIT_PER_MINUTE"
 
 RPC_PUBLIC_METHODS = frozenset({
     "getStats",
@@ -40,6 +45,7 @@ RPC_PUBLIC_METHODS = frozenset({
     "getProposal",
     "getNodeInfo",
     "getPeers",
+    "getNetwork",
     "getEntropyProfile",
 })
 
@@ -67,6 +73,61 @@ class ApiResponse:
             "error": self.error,
             "timestamp": self.timestamp,
         })
+
+
+# =============================================================================
+# Rate Limiting
+# =============================================================================
+
+class SlidingWindowRateLimiter:
+    """Thread-safe per-client sliding-window rate limiter."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._requests: Dict[Tuple[str, str], list[float]] = {}
+        self._last_sweep = 0.0
+
+    def _sweep_expired_locked(self, cutoff: float):
+        expired_keys = []
+        for key, timestamps in self._requests.items():
+            active_timestamps = [timestamp for timestamp in timestamps if timestamp > cutoff]
+            if active_timestamps:
+                self._requests[key] = active_timestamps
+            else:
+                expired_keys.append(key)
+
+        for key in expired_keys:
+            del self._requests[key]
+
+    def check(self, client_id: str, limit: int, window_seconds: int = 60) -> tuple[bool, int]:
+        now = time.monotonic()
+        cutoff = now - window_seconds
+        key = (client_id, str(limit))
+
+        with self._lock:
+            if now - self._last_sweep >= window_seconds:
+                self._sweep_expired_locked(cutoff)
+                self._last_sweep = now
+
+            timestamps = [
+                timestamp
+                for timestamp in self._requests.get(key, [])
+                if timestamp > cutoff
+            ]
+
+            if len(timestamps) >= limit:
+                retry_after = max(1, int(window_seconds - (now - timestamps[0])) + 1)
+                self._requests[key] = timestamps
+                return False, retry_after
+
+            timestamps.append(now)
+            self._requests[key] = timestamps
+            return True, 0
+
+    def reset(self):
+        with self._lock:
+            self._requests.clear()
+            self._last_sweep = 0.0
 
 
 # =============================================================================
@@ -143,6 +204,7 @@ class RustChainApi:
         # Node methods
         self.rpc.register("getNodeInfo", self._get_node_info)
         self.rpc.register("getPeers", self._get_peers)
+        self.rpc.register("getNetwork", self._get_network)
         self.rpc.register("getEntropyProfile", self._get_entropy_profile)
 
     # =========================================================================
@@ -265,6 +327,21 @@ class RustChainApi:
         """Get connected peers"""
         return self.node.get_peers()
 
+    def _get_network(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Combined network status: node info + peer count + peer list.
+
+        Maps to the public `/api/network` endpoint documented in
+        `docs/API_REFERENCE.md` and consumed by operator monitoring scripts
+        in `docs/NODE_OPERATOR_GUIDE.md`. Closes #7109.
+        """
+        node_info = self._get_node_info(params)
+        peers = self._get_peers(params)
+        return {
+            **node_info,
+            "peer_count": len(peers) if isinstance(peers, list) else 0,
+            "peers": peers,
+        }
+
     def _get_entropy_profile(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Get node's entropy profile"""
         return self.node.get_entropy_profile()
@@ -278,6 +355,7 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
     """HTTP request handler for API"""
 
     api: RustChainApi = None  # Set by server
+    rate_limiter = SlidingWindowRateLimiter()
     MUTATING_RPC_METHODS = {"submitProof", "createProposal", "vote"}
     MUTATING_REST_PATHS = {
         "/api/mine",
@@ -294,6 +372,62 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
     def _configured_csrf_token() -> str:
         return os.getenv(CSRF_TOKEN_ENV, "").strip()
 
+    @staticmethod
+    def _configured_rate_limit() -> int:
+        raw = os.getenv(RATE_LIMIT_PER_MINUTE_ENV, "60").strip()
+        try:
+            return max(1, int(raw))
+        except ValueError:
+            return 60
+
+    @staticmethod
+    def _configured_burst_limit() -> int:
+        raw = os.getenv(RATE_LIMIT_BURST_ENV, "20").strip()
+        try:
+            return max(0, int(raw))
+        except ValueError:
+            return 20
+
+    @staticmethod
+    def _configured_api_key_rate_limit() -> int:
+        raw = os.getenv(API_KEY_RATE_LIMIT_PER_MINUTE_ENV, "600").strip()
+        try:
+            return max(1, int(raw))
+        except ValueError:
+            return 600
+
+    def _client_rate_limit_id(self) -> str:
+        host = self.client_address[0] if getattr(self, "client_address", None) else "unknown"
+        return f"ip:{host}"
+
+    def _request_rate_limit(self) -> int:
+        configured_key = os.getenv(API_KEY_ENV, "").strip()
+        provided_key = self.headers.get(API_KEY_HEADER, "").strip()
+        if configured_key and provided_key and hmac.compare_digest(provided_key, configured_key):
+            return self._configured_api_key_rate_limit()
+
+        return self._configured_rate_limit() + self._configured_burst_limit()
+
+    def _rate_limit_error(self) -> Optional[int]:
+        allowed, retry_after = self.rate_limiter.check(
+            self._client_rate_limit_id(),
+            self._request_rate_limit(),
+        )
+        if allowed:
+            return None
+        return retry_after
+
+    def _reject_rate_limited(self, retry_after: int):
+        self._send_response(
+            ApiResponse(
+                success=False,
+                error="rate_limited",
+                data={"retry_after_seconds": retry_after},
+            ),
+            status_code=429,
+            extra_headers={"Retry-After": str(retry_after)},
+        )
+
     def _is_allowed_origin(self, origin: Optional[str]) -> bool:
         """Check whether a request Origin is explicitly allowed."""
         return bool(origin and origin in self._allowed_cors_origins())
@@ -306,7 +440,7 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
             self.send_header("Vary", "Origin")
             self.send_header(
                 "Access-Control-Allow-Headers",
-                f"Content-Type, {CSRF_HEADER}, {LEGACY_CSRF_HEADER}",
+                f"Content-Type, {CSRF_HEADER}, {LEGACY_CSRF_HEADER}, {API_KEY_HEADER}",
             )
             self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 
@@ -324,6 +458,11 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         """Handle GET requests"""
+        retry_after = self._rate_limit_error()
+        if retry_after:
+            self._reject_rate_limited(retry_after)
+            return
+
         parsed = urlparse(self.path)
         path = parsed.path
         params = {k: v[0] for k, v in parse_qs(parsed.query).items()}
@@ -333,6 +472,11 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         """Handle POST requests"""
+        retry_after = self._rate_limit_error()
+        if retry_after:
+            self._reject_rate_limited(retry_after)
+            return
+
         content_length = int(self.headers.get('Content-Length', 0))
         body = self.rfile.read(content_length).decode()
 
@@ -360,6 +504,7 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
         routes = {
             "/api/stats": ("getStats", {}),
             "/api/node/info": ("getNodeInfo", {}),
+            "/api/network": ("getNetwork", {}),
             "/api/peers": ("getPeers", {}),
             "/api/proposals": ("getProposals", {}),
             "/api/entropy": ("getEntropyProfile", {}),
@@ -441,10 +586,17 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
 
         return None
 
-    def _send_response(self, response: ApiResponse, status_code: Optional[int] = None):
+    def _send_response(
+        self,
+        response: ApiResponse,
+        status_code: Optional[int] = None,
+        extra_headers: Optional[Dict[str, str]] = None,
+    ):
         """Send HTTP response"""
         self.send_response(status_code or (200 if response.success else 400))
         self.send_header("Content-Type", "application/json")
+        for name, value in (extra_headers or {}).items():
+            self.send_header(name, value)
         self._send_cors_headers()
         self.end_headers()
         self.wfile.write(response.to_json().encode())

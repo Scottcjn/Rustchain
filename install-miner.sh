@@ -119,21 +119,48 @@ download_miner() {
         cd "$INSTALL_DIR"
     fi
     case "$PLATFORM" in
-        macos) FILE="macos/rustchain_mac_miner_v2.5.py" ;;
-        rpi|linux) FILE="linux/rustchain_linux_miner.py" ;;
-        *) FILE="linux/rustchain_linux_miner.py" ;;
+        macos)
+            FILE="macos/rustchain_mac_miner_v2.5.py"
+            FINGERPRINT_FILE="macos/fingerprint_checks.py"
+            REQUIREMENTS_FILE="macos/requirements-miner.txt"
+            CRYPTO_FILE=""
+            ;;
+        rpi|linux)
+            FILE="linux/rustchain_linux_miner.py"
+            FINGERPRINT_FILE="linux/fingerprint_checks.py"
+            REQUIREMENTS_FILE="linux/requirements-miner.txt"
+            CRYPTO_FILE="linux/miner_crypto.py"
+            ;;
+        *)
+            FILE="linux/rustchain_linux_miner.py"
+            FINGERPRINT_FILE="linux/fingerprint_checks.py"
+            REQUIREMENTS_FILE="linux/requirements-miner.txt"
+            CRYPTO_FILE="linux/miner_crypto.py"
+            ;;
     esac
     
     echo -e "${CYAN}[*] Downloading miner...${NC}"
     run_cmd curl -sSL "$REPO_BASE/$FILE" -o rustchain_miner.py
-    run_cmd curl -sSL "$REPO_BASE/linux/fingerprint_checks.py" -o fingerprint_checks.py
-    
+    run_cmd curl -sSL "$REPO_BASE/$FINGERPRINT_FILE" -o fingerprint_checks.py
+    run_cmd curl -sSL "$REPO_BASE/$REQUIREMENTS_FILE" -o requirements-miner.txt
+    # miner_crypto.py + PyNaCl enable attestation signing; without it the miner
+    # falls through unsigned and earns spam-tier rewards. Fetch it where used.
+    if [ -n "$CRYPTO_FILE" ]; then
+        run_cmd curl -sSL "$REPO_BASE/$CRYPTO_FILE" -o miner_crypto.py
+    fi
+
     if [ "$SKIP_CHECKSUM" != true ] && [ "$DRY_RUN" != true ]; then
         curl -fsSL "$CHECKSUM_URL" -o sums
         MINER_SUM=$(checksum_for "$FILE")
-        FINGERPRINT_SUM=$(checksum_for "linux/fingerprint_checks.py")
+        FINGERPRINT_SUM=$(checksum_for "$FINGERPRINT_FILE")
+        REQUIREMENTS_SUM=$(checksum_for "$REQUIREMENTS_FILE")
         verify_sum "rustchain_miner.py" "$MINER_SUM"
         verify_sum "fingerprint_checks.py" "$FINGERPRINT_SUM"
+        verify_sum "requirements-miner.txt" "$REQUIREMENTS_SUM"
+        if [ -n "$CRYPTO_FILE" ]; then
+            CRYPTO_SUM=$(checksum_for "$CRYPTO_FILE")
+            verify_sum "miner_crypto.py" "$CRYPTO_SUM"
+        fi
         rm -f sums
     fi
 }
@@ -143,7 +170,13 @@ download_miner
 # Dependencies
 echo -e "${YELLOW}[*] Setting up virtual environment...${NC}"
 run_cmd "$PYTHON_BIN" -m venv "$VENV_DIR"
-run_cmd "$VENV_DIR/bin/pip" install requests -q
+# Install the full miner requirement set (requests + PyNaCl) so attestation
+# signing works; fall back to bare requests if the file is unavailable.
+if [ -f requirements-miner.txt ]; then
+    run_cmd "$VENV_DIR/bin/pip" install -r requirements-miner.txt -q
+else
+    run_cmd "$VENV_DIR/bin/pip" install requests -q
+fi
 
 # Wallet
 if [ -n "$WALLET_ARG" ]; then WALLET="$WALLET_ARG"

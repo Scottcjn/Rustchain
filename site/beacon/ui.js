@@ -21,10 +21,46 @@ let selectedAgent = null;
 let selectedCity = null;
 let hoveredId = null;
 
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function safeNumber(value, fallback = 0, min = 0, max = Number.MAX_SAFE_INTEGER) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.min(max, Math.max(min, number));
+}
 // -- Reputation cache (loaded from backend) --
 let reputationCache = {};
 let reputationTs = 0;
 const REP_CACHE_TTL = 60 * 1000; // 1 min
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[ch]));
+}
+
+function safeGithubUrl(value) {
+  try {
+    const url = new URL(String(value ?? ''));
+    const host = url.hostname.toLowerCase();
+    if (url.protocol !== 'https:') return '';
+    if (host !== 'github.com' && !host.endsWith('.github.com')) return '';
+    return url.href;
+  } catch {
+    return '';
+  }
+}
 
 function mergeReputationRecord(existing, incoming) {
   if (!existing) return incoming;
@@ -119,6 +155,13 @@ function updateHUD() {
   }
 }
 
+function setPanelPath(path) {
+  const prompt = document.createElement('span');
+  prompt.className = 'prompt';
+  prompt.textContent = 'beacon@atlas:~';
+  panelPath.replaceChildren(prompt, document.createTextNode(String(path ?? '')));
+}
+
 // --- Click handling ---
 function onObjectClick(mesh) {
   const data = mesh.userData;
@@ -196,7 +239,7 @@ function selectAgent(agentId) {
   if (pos) lerpCameraTo(pos, 40);
 
   // Panel path
-  panelPath.innerHTML = `<span class="prompt">beacon@atlas:~</span>/agent/${agent.id}`;
+  setPanelPath(`/agent/${agent.id}`);
 
   // Build panel content
   const v = agent.valuation;
@@ -205,27 +248,33 @@ function selectAgent(agentId) {
   const gradeColor = isRelay
     ? getProviderColor(agent.provider)
     : GRADE_COLORS[agent.grade];
+  const beatCount = safeNumber(agent.beat_count);
+  const score = safeNumber(agent.score);
+  const maxScore = safeNumber(agent.maxScore, 1, 1);
+  const videos = safeNumber(agent.videos);
+  const totalViews = safeNumber(agent.totalViews);
+  const antiquityMultiplier = safeNumber(agent.antiquity_multiplier, 1);
 
   let html = '';
-  html += `<div class="t-cmd"><span class="dollar">$</span>cat /agent/${agent.id}</div>`;
-  html += `<div><span class="t-label">NAME</span> <span class="t-value">${agent.name}</span></div>`;
+  html += `<div class="t-cmd"><span class="dollar">$</span>cat /agent/${escapeHtml(agent.id)}</div>`;
+  html += `<div><span class="t-label">NAME</span> <span class="t-value">${escapeHtml(agent.name)}</span></div>`;
 
   if (isRelay) {
     // Relay agent: show provider, model, status, capabilities
     const provColor = getProviderColor(agent.provider);
     html += `<div><span class="t-label">TYPE</span> <span class="grade-badge" style="background:${provColor};color:#000;padding:0 6px;font-size:11px">RELAY</span></div>`;
-    html += `<div><span class="t-label">PROVIDER</span> <span class="t-value" style="color:${provColor}">${(agent.provider || 'unknown').toUpperCase()}</span></div>`;
-    html += `<div><span class="t-label">MODEL</span> <span class="t-value">${agent.model_id || '?'}</span></div>`;
-    html += `<div><span class="t-label">STATUS</span> <span class="t-value" style="color:${agent.status === 'active' ? 'var(--green)' : agent.status === 'silent' ? 'var(--amber)' : 'var(--red)'}">${(agent.status || 'unknown').toUpperCase()}</span></div>`;
-    html += `<div><span class="t-label">ROLE</span> <span class="t-value">${agent.role}</span></div>`;
-    html += `<div><span class="t-label">ADDRESS</span> <span class="t-value">${city ? city.name : '?'}, ${region ? region.name : '?'}</span></div>`;
+    html += `<div><span class="t-label">PROVIDER</span> <span class="t-value" style="color:${provColor}">${escapeHtml((agent.provider || 'unknown').toUpperCase())}</span></div>`;
+    html += `<div><span class="t-label">MODEL</span> <span class="t-value">${escapeHtml(agent.model_id || '?')}</span></div>`;
+    html += `<div><span class="t-label">STATUS</span> <span class="t-value" style="color:${agent.status === 'active' ? 'var(--green)' : agent.status === 'silent' ? 'var(--amber)' : 'var(--red)'}">${escapeHtml((agent.status || 'unknown').toUpperCase())}</span></div>`;
+    html += `<div><span class="t-label">ROLE</span> <span class="t-value">${escapeHtml(agent.role)}</span></div>`;
+    html += `<div><span class="t-label">ADDRESS</span> <span class="t-value">${escapeHtml(city ? city.name : '?')}, ${escapeHtml(region ? region.name : '?')}</span></div>`;
 
     if (agent.capabilities && agent.capabilities.length > 0) {
-      html += `<div><span class="t-label">CAPS</span> <span class="t-value">${agent.capabilities.map(c => `[${c}]`).join(' ')}</span></div>`;
+      html += `<div><span class="t-label">CAPS</span> <span class="t-value">${agent.capabilities.map(c => `[${escapeHtml(c)}]`).join(' ')}</span></div>`;
     }
 
-    if (agent.beat_count) {
-      html += `<div><span class="t-label">HEARTBEATS</span> <span class="t-value">${agent.beat_count}</span></div>`;
+    if (beatCount > 0) {
+      html += `<div><span class="t-label">HEARTBEATS</span> <span class="t-value">${beatCount}</span></div>`;
     }
 
     // Relay agents get a simpler valuation section (pending scoring)
@@ -236,11 +285,11 @@ function selectAgent(agentId) {
     html += `</div>`;
   } else {
     // Native agent: original display
-    html += `<div><span class="t-label">BEACON</span> <span class="t-value" style="color: var(--text-dim)">${agent.beacon || agent.relay_agent_id || agent.id}</span></div>`;
-    html += `<div><span class="t-label">ROLE</span> <span class="t-value">${agent.role}</span></div>`;
-    html += `<div><span class="t-label">GRADE</span> <span class="grade-badge grade-${agent.grade}">${agent.grade}</span>`;
-    html += `${renderBar(agent.score, agent.maxScore, gradeColor)} ${agent.score}/${agent.maxScore}</div>`;
-    html += `<div><span class="t-label">ADDRESS</span> <span class="t-value">${city ? city.name : '?'}, ${region ? region.name : '?'}</span></div>`;
+    html += `<div><span class="t-label">BEACON</span> <span class="t-value" style="color: var(--text-dim)">${escapeHtml(agent.beacon || agent.relay_agent_id || agent.id)}</span></div>`;
+    html += `<div><span class="t-label">ROLE</span> <span class="t-value">${escapeHtml(agent.role)}</span></div>`;
+    html += `<div><span class="t-label">GRADE</span> <span class="grade-badge grade-${escapeHtml(agent.grade)}">${escapeHtml(agent.grade)}</span>`;
+    html += `${renderBar(score, maxScore, gradeColor)} ${score}/${maxScore}</div>`;
+    html += `<div><span class="t-label">ADDRESS</span> <span class="t-value">${escapeHtml(city ? city.name : '?')}, ${escapeHtml(region ? region.name : '?')}</span></div>`;
 
     // Valuation breakdown
     html += `<div class="t-section">-- VALUATION BREAKDOWN --</div>`;
@@ -282,10 +331,10 @@ function selectAgent(agentId) {
         ? AGENTS.find(a => a.id === c.to)
         : AGENTS.find(a => a.id === c.from);
       const dir = c.from === agentId ? '->' : '<-';
-      html += `<div class="contract-row ${c.type}">`;
-      html += `<span class="contract-type" style="background:${CONTRACT_STYLES_CSS[c.type]}">[${c.type.toUpperCase().replace('_', ' ')}]</span>`;
-      html += `<span>${dir} ${other ? other.name : '?'}  ${c.amount} ${c.currency}</span>`;
-      html += `<span class="contract-state state-${c.state}">${c.state}</span>`;
+      html += `<div class="contract-row ${escapeHtml(c.type)}">`;
+      html += `<span class="contract-type" style="background:${CONTRACT_STYLES_CSS[c.type]}">[${escapeHtml(c.type.toUpperCase().replace('_', ' '))}]</span>`;
+      html += `<span>${dir} ${escapeHtml(other ? other.name : '?')}  ${escapeHtml(c.amount)} ${escapeHtml(c.currency)}</span>`;
+      html += `<span class="contract-state state-${escapeHtml(c.state)}">${escapeHtml(c.state)}</span>`;
       html += `</div>`;
     }
   }
@@ -304,7 +353,7 @@ function selectAgent(agentId) {
     html += `<div style="display:flex;flex-wrap:wrap;gap:4px;margin:4px 0">`;
     for (const src of agent.sources) {
       const b = SOURCE_BADGE[src] || { label: src, color: '#aaa' };
-      html += `<span style="background:${b.color}22;color:${b.color};border:1px solid ${b.color}44;padding:1px 6px;font-size:10px;border-radius:3px">${b.label}</span>`;
+      html += `<span style="background:${b.color}22;color:${b.color};border:1px solid ${b.color}44;padding:1px 6px;font-size:10px;border-radius:3px">${escapeHtml(b.label)}</span>`;
     }
     if (agent.human) {
       html += `<span style="background:#ffd70022;color:#ffd700;border:1px solid #ffd70044;padding:1px 6px;font-size:10px;border-radius:3px">Human</span>`;
@@ -316,23 +365,23 @@ function selectAgent(agentId) {
   if (agent.bottube) {
     html += `<div class="t-section">-- LINKS --</div>`;
     html += `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0">`;
-    html += `<a href="https://bottube.ai/agent/${agent.bottube}" target="_blank" class="bounty-link">[BoTTube Profile]</a>`;
-    if (agent.videos > 0) {
-      html += `<span style="color:var(--text-dim);font-size:11px;line-height:28px">${agent.videos} videos | ${(agent.totalViews||0).toLocaleString()} views</span>`;
+    html += `<a href="https://bottube.ai/agent/${encodeURIComponent(agent.bottube)}" target="_blank" class="bounty-link">[BoTTube Profile]</a>`;
+    if (videos > 0) {
+      html += `<span style="color:var(--text-dim);font-size:11px;line-height:28px">${videos} videos | ${totalViews.toLocaleString()} views</span>`;
     }
     html += `</div>`;
   }
   if (agent.miner) {
     html += agent.bottube ? '' : `<div class="t-section">-- LINKS --</div>`;
-    html += `<div style="margin:4px 0"><span style="color:#88ff88">[Miner: ${agent.device_arch || 'unknown'}]</span>`;
-    if (agent.antiquity_multiplier && agent.antiquity_multiplier > 1) {
-      html += ` <span style="color:#ffd700">${agent.antiquity_multiplier}x antiquity</span>`;
+    html += `<div style="margin:4px 0"><span style="color:#88ff88">[Miner: ${escapeHtml(agent.device_arch || 'unknown')}]</span>`;
+    if (antiquityMultiplier > 1) {
+      html += ` <span style="color:#ffd700">${antiquityMultiplier}x antiquity</span>`;
     }
     html += `</div>`;
   }
 
   // New contract button
-  html += `<div class="contract-new-btn" data-from="${agentId}" id="new-contract-btn">[+ NEW CONTRACT]</div>`;
+  html += `<div class="contract-new-btn" data-from="${escapeHtml(agentId)}" id="new-contract-btn">[+ NEW CONTRACT]</div>`;
 
   // Calibrations
   const agentCals = CALIBRATIONS.filter(c => c.a === agentId || c.b === agentId);
@@ -342,7 +391,7 @@ function selectAgent(agentId) {
       const otherId = cal.a === agentId ? cal.b : cal.a;
       const other = AGENTS.find(a => a.id === otherId);
       html += `<div class="cal-row">`;
-      html += `<span class="cal-name">${other ? other.name : '?'}</span>`;
+      html += `<span class="cal-name">${escapeHtml(other ? other.name : '?')}</span>`;
       html += `<span class="cal-bar"><span class="cal-fill" style="width:${cal.score * 100}%"></span></span>`;
       html += `<span class="cal-score">${cal.score.toFixed(2)}</span>`;
       html += `</div>`;
@@ -385,7 +434,7 @@ function selectCity(cityId) {
   const center = getCityCenter(cityId);
   if (center) lerpCameraTo(center, 60);
 
-  panelPath.innerHTML = `<span class="prompt">beacon@atlas:~</span>/city/${city.id}`;
+  setPanelPath(`/city/${city.id}`);
 
   let html = '';
   html += `<div class="t-cmd"><span class="dollar">$</span>cat /city/${city.id}</div>`;
@@ -442,7 +491,9 @@ function closePanel() {
 
 // --- Helpers ---
 function renderBar(value, max, color) {
-  const pct = Math.round((value / max) * 100);
+  const safeMax = safeNumber(max, 1, 1);
+  const safeValue = safeNumber(value, 0, 0, safeMax);
+  const pct = Math.min(100, Math.max(0, Math.round((safeValue / safeMax) * 100)));
   return `<span style="display:inline-block;width:80px;height:8px;background:rgba(0,20,0,0.5);border:1px solid var(--border);vertical-align:middle;margin:0 6px"><span style="display:block;height:100%;width:${pct}%;background:${color}"></span></span>`;
 }
 
@@ -486,7 +537,7 @@ function showContractForm(preselectedFrom) {
     `<option value="${a.id}"${a.id === preselectedFrom ? ' selected' : ''}>${a.name}</option>`
   ).join('');
 
-  panelPath.innerHTML = `<span class="prompt">beacon@atlas:~</span>/contracts/new`;
+  setPanelPath('/contracts/new');
 
   let html = '';
   html += `<div class="t-cmd"><span class="dollar">$</span>initiate_contract --mode=terminal</div>`;
@@ -589,7 +640,7 @@ async function submitContract() {
       return;
     }
 
-    // Success — add to data, create 3D line, update HUD
+    // Success - add to data, create 3D line, update HUD
     const normalized = addContract(data);
     addContractLine(normalized);
     updateHUD();
@@ -762,17 +813,17 @@ function renderBountyList(bounties) {
 
   // Open bounties
   for (const b of open.slice(0, 20)) {
-    const safeUrl = (b.url || '').replace(/'/g, '%27');
+    const safeUrl = safeGithubUrl(b.url);
     html += `<div class="bounty-card">`;
     html += `<div style="display:flex;justify-content:space-between;align-items:center">`;
-    html += `<span style="color:var(--green);font-weight:600;font-size:13px">${b.title}</span>`;
-    html += `<span style="color:#ffd700;font-size:12px;font-weight:600;white-space:nowrap;margin-left:8px">${b.reward}</span>`;
+    html += `<span style="color:var(--green);font-weight:600;font-size:13px">${escapeHtml(b.title)}</span>`;
+    html += `<span style="color:#ffd700;font-size:12px;font-weight:600;white-space:nowrap;margin-left:8px">${escapeHtml(b.reward)}</span>`;
     html += `</div>`;
     html += `<div style="display:flex;gap:8px;font-size:11px;margin-top:4px;align-items:center">`;
-    html += `<span style="color:${DIFF_COLORS[b.difficulty] || DIFF_COLORS.ANY}">[${b.difficulty}]</span>`;
-    html += `<span style="color:var(--text-dim)">${b.repo} ${b.ghNum || b.id}</span>`;
+    html += `<span style="color:${DIFF_COLORS[b.difficulty] || DIFF_COLORS.ANY}">[${escapeHtml(b.difficulty)}]</span>`;
+    html += `<span style="color:var(--text-dim)">${escapeHtml(b.repo)} ${escapeHtml(b.ghNum || b.id)}</span>`;
     if (safeUrl) {
-      html += `<a href="${safeUrl}" target="_blank" class="bounty-link" style="font-size:10px;padding:1px 6px">[GitHub]</a>`;
+      html += `<a href="${escapeHtml(safeUrl)}" target="_blank" class="bounty-link" style="font-size:10px;padding:1px 6px">[GitHub]</a>`;
     }
     html += `</div>`;
     html += `</div>`;
@@ -786,12 +837,13 @@ function renderBountyList(bounties) {
     html += `<div class="t-section">-- CLAIMED (${claimed.length}) --</div>`;
     for (const b of claimed) {
       const agent = AGENTS.find(a => a.id === b.claimant);
+      const claimantName = agent ? agent.name : b.claimant;
       html += `<div class="bounty-card" style="border-left-color:var(--amber)">`;
       html += `<div style="display:flex;justify-content:space-between">`;
-      html += `<span style="color:var(--amber);font-size:13px">${b.title}</span>`;
-      html += `<span style="color:#ffd700;font-size:12px">${b.reward}</span>`;
+      html += `<span style="color:var(--amber);font-size:13px">${escapeHtml(b.title)}</span>`;
+      html += `<span style="color:#ffd700;font-size:12px">${escapeHtml(b.reward)}</span>`;
       html += `</div>`;
-      html += `<div style="font-size:11px;color:var(--amber);margin-top:3px">Claimed by: ${agent ? agent.name : b.claimant}</div>`;
+      html += `<div style="font-size:11px;color:var(--amber);margin-top:3px">Claimed by: ${escapeHtml(claimantName || 'unknown')}</div>`;
       html += `</div>`;
     }
   }
@@ -801,13 +853,14 @@ function renderBountyList(bounties) {
     html += `<div class="t-section">-- COMPLETED (${completed.length}) --</div>`;
     for (const b of completed) {
       const agent = AGENTS.find(a => a.id === b.completed_by);
+      const completerName = agent ? agent.name : b.completed_by;
       const repGain = 10 + (b.reward_rtc || 0) * 0.1;
       html += `<div class="bounty-card" style="border-left-color:#8888ff;opacity:0.7">`;
       html += `<div style="display:flex;justify-content:space-between">`;
-      html += `<span style="color:#8888ff;font-size:13px">${b.title}</span>`;
-      html += `<span style="color:#ffd700;font-size:12px">${b.reward}</span>`;
+      html += `<span style="color:#8888ff;font-size:13px">${escapeHtml(b.title)}</span>`;
+      html += `<span style="color:#ffd700;font-size:12px">${escapeHtml(b.reward)}</span>`;
       html += `</div>`;
-      html += `<div style="font-size:11px;color:#8888ff;margin-top:3px">Completed by: ${agent ? agent.name : b.completed_by} (+${repGain.toFixed(0)} rep)</div>`;
+      html += `<div style="font-size:11px;color:#8888ff;margin-top:3px">Completed by: ${escapeHtml(completerName || 'unknown')} (+${repGain.toFixed(0)} rep)</div>`;
       html += `</div>`;
     }
   }
@@ -816,7 +869,7 @@ function renderBountyList(bounties) {
 }
 
 async function showBounties() {
-  panelPath.innerHTML = `<span class="prompt">beacon@atlas:~</span>/bounties`;
+  setPanelPath('/bounties');
 
   // Show loading state
   panelContent.innerHTML = `<div class="t-cmd"><span class="dollar">$</span>beacon contracts --type=bounty --sync=github</div><div style="color:var(--amber);margin:12px 0">Syncing bounty contracts from GitHub...</div>`;
@@ -829,20 +882,23 @@ async function showBounties() {
 
   // Reputation Leaderboard
   const repEntries = Object.values(reputationCache)
-    .filter(r => r.score > 0)
-    .sort((a, b) => b.score - a.score)
+    .filter(r => Number(r.score) > 0)
+    .sort((a, b) => Number(b.score || 0) - Number(a.score || 0))
     .slice(0, 10);
   if (repEntries.length > 0) {
     html += `<div class="t-section">-- REPUTATION LEADERBOARD --</div>`;
     for (let i = 0; i < repEntries.length; i++) {
       const r = repEntries[i];
       const agent = AGENTS.find(a => a.id === r.agent_id);
-      const name = agent ? agent.name : r.agent_id;
+      const leaderboardAgentId = String(r.agent_id ?? '');
+      const name = agent ? agent.name : leaderboardAgentId;
+      const rawScore = Number(r.score || 0);
+      const score = Number.isFinite(rawScore) ? rawScore : 0;
       const medal = i === 0 ? '1st' : i === 1 ? '2nd' : i === 2 ? '3rd' : `${i+1}th`;
       const color = i === 0 ? '#ffd700' : i === 1 ? '#c0c0c0' : i === 2 ? '#cd7f32' : 'var(--text-dim)';
-      html += `<div style="display:flex;justify-content:space-between;font-size:12px;margin:2px 0;cursor:pointer" data-leaderboard-agent="${r.agent_id}">`;
-      html += `<span><span style="color:${color};width:28px;display:inline-block">${medal}</span> ${name}</span>`;
-      html += `<span style="color:${color}">${r.score} rep</span>`;
+      html += `<div style="display:flex;justify-content:space-between;font-size:12px;margin:2px 0;cursor:pointer" data-leaderboard-agent="${escapeHtml(leaderboardAgentId)}">`;
+      html += `<span><span style="color:${color};width:28px;display:inline-block">${medal}</span> ${escapeHtml(name)}</span>`;
+      html += `<span style="color:${color}">${score} rep</span>`;
       html += `</div>`;
     }
   }

@@ -313,3 +313,81 @@ def test_fetch_helpers_parse_success_and_errors(miner_alerts_module, monkeypatch
     )
     assert miner_alerts_module.fetch_miners() == []
     assert miner_alerts_module.fetch_balance("miner-a") is None
+
+
+# Regression tests for issue #7323: env-var casts must not crash at import time.
+@pytest.fixture()
+def miner_alerts_safe_module(tmp_path, monkeypatch):
+    """Load a fresh copy of miner_alerts with the given env-var state.
+
+    The script lives at ``tools/miner_alerts/miner_alerts.py`` without an
+    ``__init__`` file, so we load it via ``spec_from_file_location`` (the same
+    pattern used by the ``miner_alerts_module`` fixture above).
+    """
+    fake_dotenv = types.SimpleNamespace(load_dotenv=lambda: None)
+    monkeypatch.setitem(sys.modules, "dotenv", fake_dotenv)
+
+    module_path = (
+        Path(__file__).resolve().parents[1]
+        / "tools"
+        / "miner_alerts"
+        / "miner_alerts.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "miner_alerts_for_safe_tests", module_path
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_safe_int_falls_back_on_malformed_input(miner_alerts_safe_module):
+    safe_int = miner_alerts_safe_module._safe_int
+
+    assert safe_int("123", 999) == 123
+    assert safe_int("-7", 999) == -7
+    assert safe_int("", 999) == 999
+    assert safe_int(None, 999) == 999
+    assert safe_int("not-a-number", 999) == 999
+    # int() rejects non-integer numeric strings — fall back to default.
+    assert safe_int("12.5", 999) == 999
+
+
+def test_safe_float_falls_back_on_malformed_input(miner_alerts_safe_module):
+    safe_float = miner_alerts_safe_module._safe_float
+
+    assert safe_float("10.0", 99.0) == 10.0
+    assert safe_float("-2.5", 99.0) == -2.5
+    assert safe_float("", 99.0) == 99.0
+    assert safe_float(None, 99.0) == 99.0
+    assert safe_float("banana", 99.0) == 99.0
+
+
+def test_module_imports_with_malformed_numeric_env_vars(
+    monkeypatch,
+):
+    """Issue #7323: misconfigured numeric env vars must not crash import."""
+    monkeypatch.setenv("POLL_INTERVAL", "two-minutes")
+    monkeypatch.setenv("OFFLINE_THRESHOLD", "")
+    monkeypatch.setenv("LARGE_TRANSFER_THRESHOLD", "high")
+    monkeypatch.setenv("SMTP_PORT", "  ")
+
+    module_path = (
+        Path(__file__).resolve().parents[1]
+        / "tools"
+        / "miner_alerts"
+        / "miner_alerts.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "miner_alerts_safe_import_7323", module_path
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    # The import must succeed even when env values are malformed.
+    spec.loader.exec_module(module)
+
+    assert module.POLL_INTERVAL == 120
+    assert module.OFFLINE_THRESHOLD == 600
+    assert module.LARGE_TRANSFER_THRESHOLD == 10.0
+    assert module.SMTP_PORT == 587

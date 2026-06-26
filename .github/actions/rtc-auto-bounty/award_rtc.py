@@ -56,11 +56,41 @@ VPS_PORT = 8099
 #   wallet: RTCxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 #   Wallet: RTCxxxx...
 #   wallet: my-github-username
+#   payout wallet: RTCxxxx...
+#   payout address if accepted: RTCxxxx...
+#   RTC wallet: RTCxxxx...
 #   .rtc-wallet: RTCxxxx...
 _WALLET_RE = re.compile(
-    r"(?:^|\n)\s*(?:wallet|\.rtc-wallet)\s*:\s*(\S+)\s*(?:\n|$)",
-    re.IGNORECASE,
+    r"""(?:^|\n)\s*
+        (?:
+            wallet
+            | \.rtc-wallet
+            | payout\s+wallet
+            | payout\s+address(?:\s+if\s+accepted)?
+            | rtc\s+wallet
+        )
+        \s*:\s*(\S+)\s*(?:\n|$)
+    """,
+    re.IGNORECASE | re.VERBOSE,
 )
+
+# Lazy-pay directive: a GitHub username / miner ID instead of an RTC address.
+#   miner ID: github:alice
+#   miner ID for payout if accepted: lazy-pay-bob
+#   miner_id: carol
+_MINER_ID_RE = re.compile(
+    r"""(?:^|\n)\s*
+        miner[_\s]+id(?:\s+for\s+payout(?:\s+if\s+accepted)?)?
+        \s*:\s*(\S+)\s*(?:\n|$)
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+# Last-resort contextual scan: an RTC address on a line that mentions one of
+# these labels. Distinct from the anchored validation regex (_RTC_ADDRESS_RE)
+# below — this one is unanchored so it can locate an address mid-line.
+_RTC_ADDRESS_SCAN_RE = re.compile(r"\bRTC[0-9a-fA-F]{40}\b")
+_RTC_CONTEXT_LABELS = ("payout", "wallet", "address")
 
 # Payment-amount override in the PR body (owner can specify a custom amount).
 #   bounty: 100 RTC
@@ -192,11 +222,40 @@ class Config:
 # ---------------------------------------------------------------------------
 
 
+def _clean_wallet_candidate(value: str) -> str:
+    """Strip surrounding whitespace, trailing sentence punctuation, and markdown
+    backticks from a captured directive value."""
+    return value.strip().rstrip(",.;").strip("`")
+
+
 def resolve_wallet_from_pr_body(pr_body: str) -> Optional[str]:
-    """Extract wallet address from a ``wallet: <addr>`` directive in the PR body."""
+    """Extract a recipient (RTC wallet or lazy-pay miner ID) from a PR body.
+
+    Resolution stages, in precedence order:
+      1. An explicit ``wallet:`` / ``payout wallet:`` / ``payout address:`` /
+         ``rtc wallet:`` / ``.rtc-wallet:`` directive.
+      2. A lazy-pay ``miner ID:`` directive (GitHub username / miner ID).
+      3. A last-resort contextual scan: an RTC address on a line that mentions
+         a payout/wallet/address label.
+
+    Every candidate returned here is still gated by ``validate_recipient``
+    before any transfer, so a malformed match cannot misroute funds.
+    """
     match = _WALLET_RE.search(pr_body)
     if match:
-        return match.group(1).strip().rstrip(",")
+        return _clean_wallet_candidate(match.group(1))
+
+    match = _MINER_ID_RE.search(pr_body)
+    if match:
+        return _clean_wallet_candidate(match.group(1))
+
+    for line in pr_body.splitlines():
+        lowered = line.lower()
+        if not any(label in lowered for label in _RTC_CONTEXT_LABELS):
+            continue
+        rtc_match = _RTC_ADDRESS_SCAN_RE.search(line)
+        if rtc_match:
+            return rtc_match.group(0)
     return None
 
 
@@ -231,17 +290,42 @@ def resolve_wallet(pr_body: str, repo_path: str) -> Optional[str]:
 
 
 def distinct_wallet_directives(pr_body: str) -> list:
-    """Return the distinct ``wallet:`` directive values found in the PR body.
+    """Return the distinct recipient candidates found across *all* resolution
+    stages that ``resolve_wallet_from_pr_body`` considers — explicit ``wallet:``
+    directives, lazy-pay ``miner ID:`` directives, and the contextual RTC scan.
 
-    Used to fail closed when a body contains multiple *conflicting* recipient
-    directives (an attacker appending a second directive should not silently
-    win or lose — it requires manual review).
+    Used to fail closed when a body declares multiple *conflicting* recipients
+    (an attacker appending a second directive should not silently win or lose —
+    it requires manual review). The conflict guard must cover every stage the
+    resolver can return from, otherwise a second directive of a different *type*
+    (e.g. a ``miner ID:`` added under a ``wallet:``) would slip past it.
+
+    Candidates are de-duplicated by value, so a single directive that two stages
+    both see (e.g. ``payout wallet: RTC…`` matched by both the wallet regex and
+    the contextual scan) does not register as a false conflict.
     """
-    seen = []
-    for raw in _WALLET_RE.findall(pr_body or ""):
-        value = raw.strip().rstrip(",")
+    body = pr_body or ""
+    seen: list = []
+
+    def _add(value: str) -> None:
         if value and value not in seen:
             seen.append(value)
+
+    for raw in _WALLET_RE.findall(body):
+        _add(_clean_wallet_candidate(raw))
+    for raw in _MINER_ID_RE.findall(body):
+        _add(_clean_wallet_candidate(raw))
+
+    # The contextual RTC scan is a last-resort fallback in resolution; mirror
+    # that precedence here so an incidental RTC address mentioned in prose
+    # (on a line that happens to contain "wallet"/"address"/"payout") does not
+    # trigger a spurious conflict when an explicit directive already exists.
+    if not seen:
+        for line in body.splitlines():
+            if any(label in line.lower() for label in _RTC_CONTEXT_LABELS):
+                rtc_match = _RTC_ADDRESS_SCAN_RE.search(line)
+                if rtc_match:
+                    _add(rtc_match.group(0))
     return seen
 
 

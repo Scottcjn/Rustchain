@@ -162,14 +162,34 @@ function updateHealth(data) {
 
 function updateTxTable(id, txs) {
   const tbody = document.getElementById(id);
-  tbody.innerHTML = txs.map(tx => `
-    <tr>
-      <td>${timeAgo(tx.time)}</td>
-      <td class="amount">${fmt(tx.amount)} ${tx.type === "wrap" ? "RTC" : "wRTC"}</td>
-      <td class="mono">${tx.wallet}</td>
-      <td class="mono">${tx.tx.slice(0, 8)}…</td>
-    </tr>
-  `).join("");
+  // Avoid innerHTML for attacker-controlled fields (tx.wallet, tx.tx).
+  // Use textContent / DOM nodes so untrusted bridge transaction text can never
+  // inject HTML or scripts into the dashboard.
+  while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+  for (const tx of txs) {
+    const tr = document.createElement("tr");
+
+    const tdTime = document.createElement("td");
+    tdTime.textContent = timeAgo(tx.time);
+    tr.appendChild(tdTime);
+
+    const tdAmount = document.createElement("td");
+    tdAmount.className = "amount";
+    tdAmount.textContent = `${fmt(tx.amount)} ${tx.type === "wrap" ? "RTC" : "wRTC"}`;
+    tr.appendChild(tdAmount);
+
+    const tdWallet = document.createElement("td");
+    tdWallet.className = "mono";
+    tdWallet.textContent = tx.wallet;
+    tr.appendChild(tdWallet);
+
+    const tdTx = document.createElement("td");
+    tdTx.className = "mono";
+    tdTx.textContent = `${String(tx.tx).slice(0, 8)}…`;
+    tr.appendChild(tdTx);
+
+    tbody.appendChild(tr);
+  }
 }
 
 function updateChart(history) {

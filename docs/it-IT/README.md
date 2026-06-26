@@ -93,7 +93,7 @@ Ogni contribuzione guadagna token RTC. Sfoglia i [bounties aperti](https://githu
 | Major | 75-100 RTC | Fix sicurezza, consenso |
 | Critico | 100-150 RTC | Vulnerabilità, protocollo |
 
-**1 RTC ≈ $0.10 USD**
+**1 RTC ≈ $0.15 USD**
 
 ---
 

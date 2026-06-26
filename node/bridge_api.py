@@ -53,10 +53,23 @@ except ImportError:
 # Configuration
 # =============================================================================
 
-BRIDGE_DEFAULT_CONFIRMATIONS = int(os.environ.get("RC_BRIDGE_DEFAULT_CONFIRMATIONS", "12"))
-BRIDGE_MAX_CONFIRMATIONS = int(os.environ.get("RC_BRIDGE_MAX_CONFIRMATIONS", "1000"))
-BRIDGE_LOCK_EXPIRY_SECONDS = int(os.environ.get("RC_BRIDGE_LOCK_EXPIRY_SECONDS", "604800"))  # 7 days
-BRIDGE_MIN_AMOUNT_RTC = float(os.environ.get("RC_BRIDGE_MIN_AMOUNT_RTC", "1.0"))
+# Parse numeric env defensively so a malformed value (e.g. "abc") doesn't
+# crash the bridge API at import time (#7329).
+def _env_num(name, default, cast):
+    raw = os.environ.get(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        return cast(raw)
+    except (TypeError, ValueError):
+        logging.getLogger(__name__).warning(
+            "Invalid %s=%r — falling back to %r", name, raw, default)
+        return default
+
+BRIDGE_DEFAULT_CONFIRMATIONS = _env_num("RC_BRIDGE_DEFAULT_CONFIRMATIONS", 12, int)
+BRIDGE_MAX_CONFIRMATIONS = _env_num("RC_BRIDGE_MAX_CONFIRMATIONS", 1000, int)
+BRIDGE_LOCK_EXPIRY_SECONDS = _env_num("RC_BRIDGE_LOCK_EXPIRY_SECONDS", 604800, int)  # 7 days
+BRIDGE_MIN_AMOUNT_RTC = _env_num("RC_BRIDGE_MIN_AMOUNT_RTC", 1.0, float)
 BRIDGE_UNIT = 1000000  # Micro-units per RTC
 DB_TIMEOUT = 5.0  # seconds: timeout for SQLite connection locks
 logger = logging.getLogger(__name__)
@@ -268,8 +281,28 @@ def validate_chain_address_format(chain: str, address: str) -> Tuple[bool, str]:
             return False, "Invalid Base address length"
         if not all(char in "0123456789abcdefABCDEF" for char in address[2:]):
             return False, "Invalid Base address hex"
-    
+
+    elif chain == "ethereum":
+        # Ethereum addresses: 0x + 40 hex chars (same format as Base/L2).
+        # Without this branch, "ethereum" fell through to `return True` and
+        # accepted any non-empty string as a payout address (#6629).
+        if not address.startswith("0x"):
+            return False, "Ethereum addresses must start with '0x'"
+        if len(address) != 42:
+            return False, "Invalid Ethereum address length"
+        if not all(char in "0123456789abcdefABCDEF" for char in address[2:]):
+            return False, "Invalid Ethereum address hex"
+
     return True, ""
+
+
+def validate_bridge_route_address(
+    chain: str, address: str, *, rustchain_source_is_miner: bool = False
+) -> Tuple[bool, str]:
+    """Validate a bridge route address without conflating miner IDs and wallets."""
+    if chain == "rustchain" and rustchain_source_is_miner:
+        return validate_miner_id_format(address)
+    return validate_chain_address_format(chain, address)
 
 
 # =============================================================================
@@ -590,21 +623,26 @@ def void_bridge_transfer(
 ) -> Tuple[bool, Dict[str, Any]]:
     """Void a bridge transfer and release associated lock."""
     cursor = db_conn.cursor()
-    
-    # Find the transfer
-    transfer = get_bridge_transfer_by_hash(db_conn, tx_hash)
-    if not transfer:
-        return False, {"error": "Bridge transfer not found"}
-    
-    if transfer["status"] not in ("pending", "locked", "confirming"):
-        return False, {
-            "error": f"Cannot void transfer with status '{transfer['status']}'",
-            "hint": "Only pending/locked/confirming transfers can be voided"
-        }
-    
     now = int(time.time())
     
     try:
+        cursor.execute("BEGIN IMMEDIATE")
+
+        # Find the transfer while holding the write lock. The guarded UPDATE
+        # below is still authoritative so a stale pre-transaction snapshot
+        # cannot overwrite a completed/failed/voided transfer.
+        transfer = get_bridge_transfer_by_hash(db_conn, tx_hash)
+        if not transfer:
+            db_conn.rollback()
+            return False, {"error": "Bridge transfer not found"}
+
+        if transfer["status"] not in ("pending", "locked", "confirming"):
+            db_conn.rollback()
+            return False, {
+                "error": f"Cannot void transfer with status '{transfer['status']}'",
+                "hint": "Only pending/locked/confirming transfers can be voided"
+            }
+
         # Update bridge transfer
         cursor.execute("""
             UPDATE bridge_transfers
@@ -613,7 +651,21 @@ def void_bridge_transfer(
                 voided_reason = ?,
                 updated_at = ?
             WHERE tx_hash = ?
+              AND status IN ('pending', 'locked', 'confirming')
         """, (voided_by, reason, now, tx_hash))
+
+        if cursor.rowcount != 1:
+            current = cursor.execute(
+                "SELECT status FROM bridge_transfers WHERE tx_hash = ?",
+                (tx_hash,),
+            ).fetchone()
+            db_conn.rollback()
+            if not current:
+                return False, {"error": "Bridge transfer not found"}
+            return False, {
+                "error": f"Cannot void transfer with status '{current[0]}'",
+                "hint": "Only pending/locked/confirming transfers can be voided",
+            }
         
         # Release associated lock
         cursor.execute("""
@@ -801,28 +853,36 @@ def register_bridge_routes(app):
         if not validation.ok:
             return jsonify({"error": validation.error}), 400
         details = validation.details or {}
-        
+
+        # Deposits lock balances keyed by RustChain miner_id. Require operator
+        # authorization before any address-format response can mask auth state
+        # or leak validation behavior for another miner's balance.
+        admin_key = request.headers.get("X-Admin-Key", "")
+        expected_admin_key = os.environ.get("RC_ADMIN_KEY", "")
+        admin_initiated = bool(expected_admin_key) and hmac.compare_digest(admin_key, expected_admin_key)
+        if details["direction"] == "deposit":
+            if not expected_admin_key:
+                return jsonify({"error": "RC_ADMIN_KEY not configured"}), 503
+            if not admin_initiated:
+                return jsonify({"error": "unauthorized"}), 401
+
         # Validate address formats
         for chain, addr in [
             (details["source_chain"], details["source_address"]),
             (details["dest_chain"], details["dest_address"])
         ]:
-            valid, msg = validate_chain_address_format(chain, addr)
+            valid, msg = validate_bridge_route_address(
+                chain,
+                addr,
+                rustchain_source_is_miner=(
+                    details["direction"] == "deposit"
+                    and chain == details["source_chain"]
+                    and chain == "rustchain"
+                ),
+            )
             if not valid:
                 return jsonify({"error": f"Invalid {chain} address: {msg}"}), 400
-        
-        # Check admin initiation (bypasses balance check)
-        admin_key = request.headers.get("X-Admin-Key", "")
-        expected_admin_key = os.environ.get("RC_ADMIN_KEY", "")
-        admin_initiated = bool(expected_admin_key) and hmac.compare_digest(admin_key, expected_admin_key)
-        if details["direction"] == "deposit":
-            # Deposits create balance locks by source_address; require operator
-            # authorization until a wallet-owner signature flow exists.
-            if not expected_admin_key:
-                return jsonify({"error": "RC_ADMIN_KEY not configured"}), 503
-            if not admin_initiated:
-                return jsonify({"error": "unauthorized"}), 401
-        
+
         # Create bridge transfer
         req = BridgeTransferRequest(
             direction=details["direction"],

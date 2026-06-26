@@ -900,3 +900,109 @@ if __name__ == '__main__':
     else:
         print("\n❌ Some tests failed")
         sys.exit(1)
+
+
+class TestPassportPublicRedaction(unittest.TestCase):
+    """Passport GETs stay public but redact private fields without an admin key."""
+
+    def setUp(self):
+        from flask import Flask
+        import machine_passport_api
+        from machine_passport_api import machine_passport_bp
+
+        self._prev_admin_key = os.environ.get('ADMIN_KEY')
+        os.environ.pop('ADMIN_KEY', None)
+
+        self.app = Flask(__name__)
+        self.app.config['TESTING'] = True
+        self.app.register_blueprint(machine_passport_bp)
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.db')
+        tmp.close()
+        machine_passport_api.PASSPORT_DB_PATH = tmp.name
+        machine_passport_api._ledger = None
+        self.client = self.app.test_client()
+        self.mp_api = machine_passport_api
+
+        ledger = machine_passport_api.get_ledger()
+        ledger.create_passport(MachinePassport(
+            machine_id='redact_test', name='Old Faithful', owner_miner_id='miner-1',
+            manufacture_year=2001, architecture='pentium4'))
+        ledger.add_repair_entry(
+            machine_id='redact_test', repair_date=1, repair_type='recap',
+            description='replaced caps', technician='Tech Shop',
+            cost_rtc=50_000_000, notes='private internal note')
+        ledger.add_attestation(
+            machine_id='redact_test', attestation_ts=1, epoch=5,
+            total_rtc_earned=1_000_000, benchmark_hash='abc', entropy_score=0.91)
+        ledger.add_benchmark(
+            machine_id='redact_test', benchmark_ts=1,
+            cache_timing_profile='L1:3ns L2:9ns', simd_identity='altivec-bias-7',
+            thermal_curve='cold:40 warm:62', memory_bandwidth=2.5,
+            compute_score=88.0, entropy_throughput=1.3)
+
+    def tearDown(self):
+        if os.path.exists(self.mp_api.PASSPORT_DB_PATH):
+            os.unlink(self.mp_api.PASSPORT_DB_PATH)
+        self.mp_api._ledger = None
+        if self._prev_admin_key is None:
+            os.environ.pop('ADMIN_KEY', None)
+        else:
+            os.environ['ADMIN_KEY'] = self._prev_admin_key
+
+    def _admin(self):
+        os.environ['ADMIN_KEY'] = 'k'
+        return {'X-Admin-Key': 'k'}
+
+    def test_repair_log_public_redacts_private_fields(self):
+        entry = json.loads(self.client.get('/api/machine-passport/redact_test/repair-log').data)['repair_log'][0]
+        for f in ('technician', 'notes', 'cost_rtc'):
+            self.assertNotIn(f, entry)
+        self.assertIn('description', entry)  # showcase field stays
+
+    def test_repair_log_admin_sees_full(self):
+        entry = json.loads(self.client.get('/api/machine-passport/redact_test/repair-log',
+                                            headers=self._admin()).data)['repair_log'][0]
+        self.assertEqual(entry['technician'], 'Tech Shop')
+        self.assertEqual(entry['cost_rtc'], 50_000_000)
+
+    def test_attestations_public_redacts_entropy(self):
+        a = json.loads(self.client.get('/api/machine-passport/redact_test/attestations').data)['attestations'][0]
+        self.assertNotIn('entropy_score', a)
+        self.assertIn('benchmark_hash', a)  # hash stays public
+
+    def test_attestations_admin_sees_entropy(self):
+        a = json.loads(self.client.get('/api/machine-passport/redact_test/attestations',
+                                       headers=self._admin()).data)['attestations'][0]
+        self.assertEqual(a['entropy_score'], 0.91)
+
+    def test_listing_stays_public(self):
+        resp = self.client.get('/api/machine-passport')
+        self.assertEqual(resp.status_code, 200)  # NOT 401 — keep-public preserved
+        self.assertEqual(json.loads(resp.data)['count'], 1)
+
+    def test_benchmarks_public_strips_fingerprint(self):
+        b = json.loads(self.client.get('/api/machine-passport/redact_test/benchmarks').data)['benchmarks'][0]
+        for f in ('cache_timing_profile', 'simd_identity', 'thermal_curve',
+                  'memory_bandwidth', 'compute_score', 'entropy_throughput'):
+            self.assertNotIn(f, b)  # raw fingerprint must not leak publicly
+        self.assertIn('benchmark_ts', b)  # existence/timestamp stays public
+
+    def test_benchmarks_admin_sees_fingerprint(self):
+        b = json.loads(self.client.get('/api/machine-passport/redact_test/benchmarks',
+                                       headers=self._admin()).data)['benchmarks'][0]
+        self.assertEqual(b['cache_timing_profile'], 'L1:3ns L2:9ns')
+        self.assertEqual(b['simd_identity'], 'altivec-bias-7')
+
+    def test_full_export_public_redacts_all_sensitive(self):
+        p = json.loads(self.client.get('/api/machine-passport/redact_test').data)['passport']
+        self.assertNotIn('technician', p['repair_log'][0])
+        self.assertNotIn('entropy_score', p['attestation_history'][0])
+        self.assertNotIn('cache_timing_profile', p['benchmark_signatures'][0])
+
+    def test_full_export_admin_sees_all(self):
+        p = json.loads(self.client.get('/api/machine-passport/redact_test',
+                                       headers=self._admin()).data)['passport']
+        self.assertEqual(p['repair_log'][0]['technician'], 'Tech Shop')
+        self.assertEqual(p['benchmark_signatures'][0]['simd_identity'], 'altivec-bias-7')
+
+

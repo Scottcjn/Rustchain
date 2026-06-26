@@ -79,3 +79,39 @@ def test_bft_propose_rejects_invalid_collection_fields():
     assert miners_resp.get_json()["error"] == "miners must be a list"
     assert distribution_resp.status_code == 400
     assert distribution_resp.get_json()["error"] == "distribution must be an object"
+
+
+def test_bft_propose_requires_admin_key(monkeypatch):
+    """Unauthenticated request must be rejected with 401."""
+    monkeypatch.setenv("RC_ADMIN_KEY", "test-secret-key")
+    resp = _client().post(
+        "/bft/propose",
+        json={"epoch": 1, "miners": [], "distribution": {}},
+    )
+    assert resp.status_code == 401
+    assert resp.get_json()["error"] == "unauthorized"
+
+
+def test_bft_propose_requires_correct_admin_key(monkeypatch):
+    """Request with wrong key must be rejected with 401."""
+    monkeypatch.setenv("RC_ADMIN_KEY", "correct-key")
+    resp = _client().post(
+        "/bft/propose",
+        json={"epoch": 1, "miners": [], "distribution": {}},
+        headers={"X-Admin-Key": "wrong-key"},
+    )
+    assert resp.status_code == 401
+    assert resp.get_json()["error"] == "unauthorized"
+
+
+def test_bft_propose_accepts_valid_admin_key(monkeypatch):
+    """Request with correct key must pass validation and reach business logic."""
+    monkeypatch.setenv("RC_ADMIN_KEY", "correct-key")
+    resp = _client().post(
+        "/bft/propose",
+        json={"epoch": 1, "miners": [], "distribution": {}},
+        headers={"X-Admin-Key": "correct-key"},
+    )
+    # _FakeBft.propose_epoch_settlement returns None → "not_leader_or_already_committed"
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "not_leader_or_already_committed"

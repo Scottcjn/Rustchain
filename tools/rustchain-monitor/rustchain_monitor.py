@@ -126,6 +126,9 @@ def print_miners(data):
         print(f"   ... and {len(miners)-10} more")
 
 def print_epoch(data):
+    if not isinstance(data, dict):
+        print(f"⚠ Unexpected epoch response: {data}")
+        return
     if "error" in data:
         print(f"❌ Failed to fetch epoch: {data['error']}")
         return

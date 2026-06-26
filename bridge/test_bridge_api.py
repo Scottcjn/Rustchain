@@ -975,5 +975,34 @@ class TestStatsEndpoint:
         assert "base" in data["by_chain"]
 
 
+class TestBridgeAutoSweepExpiry:
+    def test_auto_sweep_expired_locks(self, client):
+        lock_id = "lock_expired_test_999"
+        now = int(time.time())
+        expires_at = now - 3600
+        
+        with bridge_api.get_db() as conn:
+            conn.execute(
+                "INSERT INTO bridge_locks (lock_id, sender_wallet, amount_rtc, target_chain, target_wallet, state, tx_hash, created_at, updated_at, expires_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (lock_id, "expired-sender", 10_000_000, "solana", "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU", STATE_CONFIRMED, "tx-expired-999", now - 4000, now - 4000, expires_at)
+            )
+            conn.commit()
+            
+        with bridge_api.get_db() as conn:
+            row = conn.execute("SELECT state FROM bridge_locks WHERE lock_id = ?", (lock_id,)).fetchone()
+            assert row["state"] == STATE_CONFIRMED
+            
+        resp = client.get("/bridge/stats")
+        assert resp.status_code == 200
+        
+        with bridge_api.get_db() as conn:
+            row = conn.execute("SELECT state FROM bridge_locks WHERE lock_id = ?", (lock_id,)).fetchone()
+            assert row["state"] == "failed"
+            
+            event = conn.execute("SELECT event_type FROM bridge_events WHERE lock_id = ? AND event_type = ?", (lock_id, "failed")).fetchone()
+            assert event is not None
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

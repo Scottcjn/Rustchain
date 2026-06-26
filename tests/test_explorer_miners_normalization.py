@@ -143,3 +143,87 @@ console.log(JSON.stringify({{
     assert "&lt;img" in data["blocksHtml"]
     assert "&lt;img" in data["txHtml"]
     assert "0 miners" in data["blocksHtml"]
+
+
+def test_explorer_escapes_health_epoch_and_miner_rendering():
+    assert "function safeNumber(value, fallback = 0)" in JS
+    assert "${state.health ? `v${escapeHtml(state.health.version || '2.2.1')}` : ''}" in JS
+    assert "const slot = safeNumber(epoch.slot, 0);" in JS
+    assert "const blocksPerEpoch = Math.max(safeNumber(epoch.blocks_per_epoch, 144), 1);" in JS
+    assert "Math.max(0, Math.min(100, (slot / blocksPerEpoch) * 100))" in JS
+    assert "${escapeHtml(shortenAddress(minerId))}" in JS
+    assert "${escapeHtml(shortenAddress(miner.miner_id || 'unknown'))}" in JS
+
+    assert "v${state.health.version || '2.2.1'}" not in JS
+    assert "const progress = ((epoch.slot || 0) / (epoch.blocks_per_epoch || 144)) * 100;" not in JS
+    assert '>${shortenAddress(minerId)}</td>' not in JS
+    assert '>${shortenAddress(miner.miner_id || \'unknown\')}</td>' not in JS
+
+
+def test_explorer_rendering_escapes_api_controlled_values():
+    probe = f"""
+const vm = require('vm');
+const script = {json.dumps(JS)};
+const elements = {{}};
+const element = () => ({{
+  innerHTML: '',
+  addEventListener() {{}},
+  dataset: {{}},
+}});
+const context = {{
+  window: {{ EXPLORER_API_BASE: 'https://example.test' }},
+  document: {{
+    addEventListener() {{}},
+    getElementById(id) {{
+      if (!elements[id]) elements[id] = element();
+      return elements[id];
+    }},
+    querySelectorAll() {{ return []; }},
+  }},
+  setInterval() {{}},
+  setTimeout() {{ return 1; }},
+  clearTimeout() {{}},
+  AbortController: class {{ constructor() {{ this.signal = {{}}; }} abort() {{}} }},
+  fetch: async () => ({{ ok: true, json: async () => ({{}}) }}),
+  console: {{ error() {{}}, warn() {{}}, log() {{}} }},
+}};
+vm.createContext(context);
+vm.runInContext(script, context);
+const payload = '<img src=x onerror=alert(1)>';
+context.payload = payload;
+vm.runInContext(`
+state.loading.health = false;
+state.loading.epoch = false;
+state.loading.miners = false;
+state.health = {{ status: 'ok', version: payload }};
+state.epoch = {{ epoch: 1, pot: 2, slot: payload, blocks_per_epoch: payload }};
+state.miners = [{{ miner_id: payload, device_arch: payload, multiplier: 1, balance: 0 }}];
+state.searchQuery = 'img';
+renderStatusBar();
+renderEpochStats();
+renderMinersTable();
+renderSearchResults();
+`, context);
+console.log(JSON.stringify({{
+  status: elements['status-bar-content'].innerHTML,
+  epoch: elements['epoch-stats'].innerHTML,
+  miners: elements['miners-tbody'].innerHTML,
+  search: elements['search-results'].innerHTML,
+}}));
+"""
+    result = subprocess.run(
+        ["node", "-e", probe],
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    rendered = json.loads(result.stdout)
+
+    assert "<img" not in rendered["status"]
+    assert "<img" not in rendered["miners"]
+    assert "<img" not in rendered["search"]
+    assert "&lt;img" in rendered["status"]
+    assert "&lt;img" in rendered["miners"]
+    assert "&lt;img" in rendered["search"]
+    assert "NaN%" not in rendered["epoch"]
+    assert "Infinity%" not in rendered["epoch"]

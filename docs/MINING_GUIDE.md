@@ -50,7 +50,7 @@ VMs (VMware, VirtualBox, QEMU, WSL) are detected and receive **1 billionth** of 
 | Modern x86_64 | **0.8x** | MODERN |
 | Modern ARM NAS/SBC | **0.0005x** | PENALTY |
 
-**1 RTC ≈ $0.10 USD** · Every 10 minutes, 1.5 RTC is split among all active miners.
+**1 RTC ≈ $0.15 USD** · Every 10 minutes, 1.5 RTC is split among all active miners.
 
 ---
 

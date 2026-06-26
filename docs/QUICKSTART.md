@@ -9,7 +9,7 @@ A step-by-step guide for first-time users. Every command is copy-paste ready.
 RustChain is a blockchain that rewards you for keeping old computers alive. Instead of
 rewarding the fastest machine (like Bitcoin), RustChain rewards the *oldest* machine.
 A PowerBook G4 from 2003 earns 2.5x more than a brand-new gaming PC. The token is called
-**RTC** (RustChain Token), and it has real value -- 1 RTC is roughly $0.10 USD. Over 260
+**RTC** (RustChain Token), and it has real value -- 1 RTC is roughly $0.15 USD. Over 260
 contributors have earned 25,000+ RTC through mining and code bounties.
 
 ---
@@ -49,9 +49,13 @@ python3 --version
 
 Then run the RustChain installer command above.
 
-On Windows, use the Windows miner installer instead of the Bash one-liner. See
-`miners/windows/installer/README.md` and run `miners/windows/rustchain_miner_setup.bat`
-from the Windows miner bundle.
+On Windows, choose one of these installer paths instead of the Bash one-liner:
+
+- **Quick bootstrap (recommended for most users):** run
+  `miners/windows/rustchain_miner_setup.bat` from the Windows miner bundle. This
+  self-bootstrapping script downloads Python if needed and installs the miner directly.
+- **Build a custom installer (for developers):** follow
+  `miners/windows/installer/README.md` to build a `.exe` installer with Inno Setup 6.
 
 **What this does:**
 
@@ -441,7 +445,7 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 
 | Term | Meaning |
 |------|---------|
-| **RTC** | RustChain Token -- the cryptocurrency you earn by mining. 1 RTC is roughly $0.10 USD. |
+| **RTC** | RustChain Token -- the cryptocurrency you earn by mining. 1 RTC is roughly $0.15 USD. |
 | **Epoch** | A 10-minute window. At the end of each epoch, 1.5 RTC is distributed to all active miners. |
 | **Attestation** | The process where your miner proves its hardware is real by running 6 fingerprint checks. |
 | **Antiquity Multiplier** | A bonus based on how old your hardware is. Older CPUs get higher multipliers. |

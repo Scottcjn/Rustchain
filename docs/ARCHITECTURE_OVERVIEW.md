@@ -33,7 +33,7 @@ RustChain is a **Proof-of-Antiquity** blockchain that rewards real vintage hardw
 - **Epoch Duration:** ~24 hours
 - **Native Token:** RTC
 - **Anchor Chain:** Ergo (for cross-chain bridge)
-- **Reference Rate:** 1 RTC = $0.10 USD
+- **Reference Rate:** 1 RTC = $0.15 USD
 
 ### Live Network
 - **Node Health:** `curl -sk https://50.28.86.131/health`
@@ -317,7 +317,7 @@ graph LR
 | **Symbol** | RTC |
 | **Total Supply** | 8.3M |
 | **Distribution** | Mining rewards (100%) |
-| **Reference Rate** | 1 RTC = $0.10 USD |
+| **Reference Rate** | 1 RTC = $0.15 USD |
 
 ### Distribution Model
 - **100% to miners** — no pre-mine, no team allocation, no VC
@@ -395,15 +395,15 @@ Vintage mining is the core innovation of RustChain. By rewarding old hardware mo
 
 ## Related Documentation
 
-- [Protocol Specification](docs/PROTOCOL.md) — Detailed RIP-200 protocol spec
-- [Quick Start](docs/QUICKSTART.md) — Get mining in 5 minutes
-- [API Reference](docs/API_REFERENCE.md) — Complete REST API docs
-- [Miner Setup Guide](docs/INSTALLATION_WALKTHROUGH.md) — Detailed installation guide
-- [Console Mining Setup](docs/CONSOLE_MINING_SETUP.md) — Mining via console
-- [Hardware Fingerprinting](docs/hardware-fingerprinting.md) — Deep dive into fingerprint checks
-- [Bridge API](docs/bridge-api.md) — Cross-chain bridge endpoints
-- [Wallet Setup](docs/WALLET_SETUP.md) — Configure your wallet
-- [Contributing](docs/CONTRIBUTING.md) — How to contribute to RustChain
+- [Protocol Specification](PROTOCOL.md) — Detailed RIP-200 protocol spec
+- [Quick Start](QUICKSTART.md) — Get mining in 5 minutes
+- [API Reference](API_REFERENCE.md) — Complete REST API docs
+- [Miner Setup Guide](INSTALLATION_WALKTHROUGH.md) — Detailed installation guide
+- [Console Mining Setup](CONSOLE_MINING_SETUP.md) — Mining via console
+- [Hardware Fingerprinting](hardware-fingerprinting.md) — Deep dive into fingerprint checks
+- [Bridge API](bridge-api.md) — Cross-chain bridge endpoints
+- [Wallet Setup](WALLET_SETUP.md) — Configure your wallet
+- [Contributing](CONTRIBUTING.md) — How to contribute to RustChain
 
 ---
 

@@ -5,6 +5,7 @@ import requests
 
 LISTEN_PORT = 8585
 FORWARD_URL = "http://127.0.0.1:5000/validate"  # Your PoA REST API
+REQUEST_TIMEOUT = 10
 
 def handle_client(conn, addr):
     print(f"[+] Connection from {addr}")
@@ -18,7 +19,13 @@ def handle_client(conn, addr):
             print("[~] Parsed JSON:")
             print(json.dumps(payload, indent=2))
 
-            r = requests.post(FORWARD_URL, json=payload)
+            try:
+                r = requests.post(FORWARD_URL, json=payload, timeout=REQUEST_TIMEOUT)
+            except requests.RequestException as exc:
+                print(f"[!] REST API forward failed: {exc}")
+                conn.sendall(b"PoA forward failed.\n")
+                return
+
             print(f"[✓] Forwarded to REST API. Status: {r.status_code}")
             conn.sendall(f"PoA received. Status: {r.status_code}\n".encode())
         except json.JSONDecodeError:

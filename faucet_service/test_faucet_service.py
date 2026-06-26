@@ -37,6 +37,9 @@ from faucet_service import (
     init_database,
     create_app,
     get_client_ip,
+    _ensure_column,
+    _event_claim_idempotency_key,
+    _perform_faucet_transfer,
     DEFAULT_CONFIG
 )
 
@@ -384,6 +387,8 @@ class TestDatabase(unittest.TestCase):
         
         self.assertIn('drip_requests', tables)
         self.assertIn('faucet_stats', tables)
+        self.assertIn('event_claim_codes', tables)
+        self.assertIn('event_claims', tables)
         
         # Check indexes exist
         c.execute("SELECT name FROM sqlite_master WHERE type='index'")
@@ -391,8 +396,82 @@ class TestDatabase(unittest.TestCase):
         
         self.assertTrue(any('idx_drip_wallet' in idx for idx in indexes))
         self.assertTrue(any('idx_drip_ip' in idx for idx in indexes))
+        self.assertTrue(any('idx_event_claims_wallet' in idx for idx in indexes))
         
         conn.close()
+
+    def test_event_claim_codes_schema(self):
+        """Test event code table supports one-time faucet claims."""
+        init_database(self.temp_db.name)
+
+        conn = sqlite3.connect(self.temp_db.name)
+        try:
+            c = conn.cursor()
+            c.execute('''
+                INSERT INTO event_claim_codes (code, amount, expires_at, created_at)
+                VALUES (?, ?, ?, ?)
+            ''', (
+                'EVENT-test-code',
+                0.5,
+                (datetime.now() + timedelta(days=1)).isoformat(),
+                datetime.now().isoformat(),
+            ))
+            conn.commit()
+
+            c.execute('SELECT amount, claimed_at FROM event_claim_codes WHERE code = ?', ('EVENT-test-code',))
+            amount, claimed_at = c.fetchone()
+            self.assertEqual(amount, 0.5)
+            self.assertIsNone(claimed_at)
+        finally:
+            conn.close()
+
+    def test_init_database_migrates_existing_drip_request_columns(self):
+        """Existing faucet databases gain event-claim status/tx columns."""
+        conn = sqlite3.connect(self.temp_db.name)
+        try:
+            conn.execute('''
+                CREATE TABLE drip_requests (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    wallet TEXT NOT NULL,
+                    ip_address TEXT NOT NULL,
+                    amount REAL NOT NULL,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            conn.commit()
+        finally:
+            conn.close()
+
+        init_database(self.temp_db.name)
+
+        conn = sqlite3.connect(self.temp_db.name)
+        try:
+            columns = {
+                row[1]
+                for row in conn.execute('PRAGMA table_info(drip_requests)').fetchall()
+            }
+            self.assertIn('status', columns)
+            self.assertIn('tx_hash', columns)
+        finally:
+            conn.close()
+
+    def test_ensure_column_tolerates_duplicate_column_race(self):
+        """Concurrent startup migrations can lose the PRAGMA/ALTER race safely."""
+        class RaceCursor:
+            def __init__(self):
+                self.calls = []
+
+            def execute(self, sql):
+                self.calls.append(sql)
+                if sql.startswith('ALTER TABLE'):
+                    raise sqlite3.OperationalError('duplicate column name: status')
+
+            def fetchall(self):
+                return []
+
+        cursor = RaceCursor()
+        _ensure_column(cursor, 'drip_requests', 'status', "TEXT DEFAULT 'completed'")
+        self.assertEqual(len(cursor.calls), 2)
     
     def test_insert_drip_request(self):
         """Test inserting drip request."""
@@ -431,6 +510,8 @@ class TestFlaskApp(unittest.TestCase):
         self.config['server']['debug'] = False
         self.config['monitoring']['health_enabled'] = True
         self.config['monitoring']['metrics_enabled'] = False
+        self.config['event_codes']['enabled'] = True
+        self.config['event_codes']['admin_token'] = 'test-admin-token'
         # Clear allowlist for testing
         self.config['validation']['allowlist'] = []
         
@@ -579,6 +660,532 @@ class TestFlaskApp(unittest.TestCase):
         data = json.loads(response.data)
         self.assertEqual(data['status'], 'healthy')
         self.assertIn('timestamp', data)
+
+    def test_event_code_creation_requires_admin_token(self):
+        """Event organizers cannot mint claim codes without admin auth."""
+        expires_at = (datetime.now() + timedelta(days=1)).isoformat()
+
+        response = self.client.post('/faucet/event-codes',
+                                    json={'count': 1, 'expires_at': expires_at},
+                                    content_type='application/json')
+
+        self.assertEqual(response.status_code, 401)
+        data = json.loads(response.data)
+        self.assertFalse(data['ok'])
+        self.assertEqual(data['error'], 'Unauthorized')
+
+    def test_event_code_creation_rejects_non_finite_or_excessive_amount(self):
+        """Event code amounts must be finite and bounded."""
+        expires_at = (datetime.now() + timedelta(days=1)).isoformat()
+
+        for amount in (float('nan'), float('inf'), 1.5):
+            with self.subTest(amount=amount):
+                response = self.client.post(
+                    '/faucet/event-codes',
+                    json={'count': 1, 'amount': amount, 'expires_at': expires_at},
+                    headers={'X-Faucet-Admin-Token': 'test-admin-token'},
+                    content_type='application/json',
+                )
+
+                self.assertEqual(response.status_code, 400)
+                data = json.loads(response.data)
+                self.assertFalse(data['ok'])
+
+    def test_event_code_creation_retries_generated_code_collisions(self):
+        """Rare token collisions should not turn an admin batch into a 500."""
+        expires_at = (datetime.now() + timedelta(days=1)).isoformat()
+        conn = sqlite3.connect(self.temp_db.name)
+        try:
+            conn.execute('''
+                INSERT INTO event_claim_codes (code, amount, expires_at, created_at)
+                VALUES (?, ?, ?, ?)
+            ''', (
+                'MEETUP-collision',
+                0.5,
+                expires_at,
+                datetime.now().isoformat(),
+            ))
+            conn.commit()
+        finally:
+            conn.close()
+
+        with patch('faucet_service.secrets.token_urlsafe', side_effect=['collision', 'new-one', 'new-two']):
+            response = self.client.post(
+                '/faucet/event-codes',
+                json={'count': 2, 'amount': 0.5, 'expires_at': expires_at, 'prefix': 'MEETUP'},
+                headers={'X-Faucet-Admin-Token': 'test-admin-token'},
+                content_type='application/json',
+            )
+
+        self.assertEqual(response.status_code, 201)
+        data = json.loads(response.data)
+        self.assertEqual(data['codes'], ['MEETUP-new-one', 'MEETUP-new-two'])
+
+    def test_event_code_claim_respects_disabled_kill_switch(self):
+        """Disabling event codes blocks redemption as well as creation."""
+        self.config['event_codes']['enabled'] = False
+        app = create_app(self.config)
+        client = app.test_client()
+
+        response = client.post(
+            '/faucet/event-claim',
+            json={
+                'code': 'EVENT-disabled',
+                'wallet': 'RTCe4fbe4c9085b8b2ed3f1228504de66799025f6ce',
+            },
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 404)
+        data = json.loads(response.data)
+        self.assertFalse(data['ok'])
+        self.assertEqual(data['error'], 'Event codes disabled')
+
+    def test_event_code_create_and_claim_once(self):
+        """Created event codes can be claimed once by a valid wallet."""
+        expires_at = (datetime.now() + timedelta(days=1)).isoformat()
+        create_response = self.client.post(
+            '/faucet/event-codes',
+            json={'count': 1, 'amount': 0.75, 'expires_at': expires_at, 'prefix': 'MEETUP'},
+            headers={'X-Faucet-Admin-Token': 'test-admin-token'},
+            content_type='application/json',
+        )
+
+        self.assertEqual(create_response.status_code, 201)
+        created = json.loads(create_response.data)
+        self.assertTrue(created['ok'])
+        self.assertEqual(created['amount'], 0.75)
+        self.assertEqual(len(created['codes']), 1)
+        self.assertTrue(created['codes'][0].startswith('MEETUP-'))
+
+        claim_response = self.client.post(
+            '/faucet/event-claim',
+            json={
+                'code': created['codes'][0],
+                'wallet': 'RTCe4fbe4c9085b8b2ed3f1228504de66799025f6ce',
+            },
+            content_type='application/json',
+        )
+
+        self.assertEqual(claim_response.status_code, 200)
+        claimed = json.loads(claim_response.data)
+        self.assertTrue(claimed['ok'])
+        self.assertEqual(claimed['amount'], 0.75)
+        self.assertEqual(claimed['tx_hash'], None)
+
+        duplicate_response = self.client.post(
+            '/faucet/event-claim',
+            json={
+                'code': created['codes'][0],
+                'wallet': 'RTCe4fbe4c9085b8b2ed3f1228504de66799025f6ce',
+            },
+            content_type='application/json',
+        )
+
+        self.assertEqual(duplicate_response.status_code, 409)
+        duplicate = json.loads(duplicate_response.data)
+        self.assertFalse(duplicate['ok'])
+        self.assertEqual(duplicate['error'], 'Event code already claimed')
+
+        conn = sqlite3.connect(self.temp_db.name)
+        try:
+            c = conn.cursor()
+            c.execute('SELECT COUNT(*), MAX(status) FROM event_claims WHERE wallet = ?', (
+                'RTCe4fbe4c9085b8b2ed3f1228504de66799025f6ce',
+            ))
+            count, status = c.fetchone()
+            self.assertEqual(count, 1)
+            self.assertEqual(status, 'completed')
+        finally:
+            conn.close()
+
+    def test_event_code_claim_allows_retry_after_transfer_failure(self):
+        """A failed transfer releases the code so a participant can retry."""
+        conn = sqlite3.connect(self.temp_db.name)
+        try:
+            conn.execute('''
+                INSERT INTO event_claim_codes (code, amount, expires_at, created_at)
+                VALUES (?, ?, ?, ?)
+            ''', (
+                'EVENT-transfer-fails',
+                0.5,
+                (datetime.now() + timedelta(days=1)).isoformat(),
+                datetime.now().isoformat(),
+            ))
+            conn.commit()
+        finally:
+            conn.close()
+
+        with patch('faucet_service._perform_faucet_transfer', side_effect=[RuntimeError('node down'), 'tx-retry']) as transfer:
+            response = self.client.post(
+                '/faucet/event-claim',
+                json={
+                    'code': 'EVENT-transfer-fails',
+                    'wallet': 'RTCe4fbe4c9085b8b2ed3f1228504de66799025f6ce',
+                },
+                content_type='application/json',
+            )
+            retry = self.client.post(
+                '/faucet/event-claim',
+                json={
+                    'code': 'EVENT-transfer-fails',
+                    'wallet': 'RTCe4fbe4c9085b8b2ed3f1228504de66799025f6ce',
+                },
+                content_type='application/json',
+            )
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(retry.status_code, 200)
+        self.assertEqual(transfer.call_count, 2)
+        data = json.loads(retry.data)
+        self.assertTrue(data['ok'])
+        self.assertEqual(data['tx_hash'], 'tx-retry')
+
+        conn = sqlite3.connect(self.temp_db.name)
+        try:
+            c = conn.cursor()
+            c.execute('''
+                SELECT claimed_wallet, claimed_at, tx_hash
+                FROM event_claim_codes
+                WHERE code = ?
+            ''', ('EVENT-transfer-fails',))
+            claimed_wallet, claimed_at, tx_hash = c.fetchone()
+            self.assertEqual(claimed_wallet, 'RTCe4fbe4c9085b8b2ed3f1228504de66799025f6ce')
+            self.assertIsNotNone(claimed_at)
+            self.assertEqual(tx_hash, 'tx-retry')
+            statuses = [
+                row[0]
+                for row in c.execute('''
+                    SELECT status FROM event_claims
+                    WHERE code = ? ORDER BY id
+                ''', ('EVENT-transfer-fails',)).fetchall()
+            ]
+            self.assertEqual(statuses, ['transfer_failed', 'completed'])
+        finally:
+            conn.close()
+
+    def test_event_code_claim_locks_code_before_transfer_finalization(self):
+        """A post-transfer DB error must not make an event code reusable."""
+        conn = sqlite3.connect(self.temp_db.name)
+        try:
+            conn.execute('''
+                INSERT INTO event_claim_codes (code, amount, expires_at, created_at)
+                VALUES (?, ?, ?, ?)
+            ''', (
+                'EVENT-durable',
+                0.5,
+                (datetime.now() + timedelta(days=1)).isoformat(),
+                datetime.now().isoformat(),
+            ))
+            conn.commit()
+        finally:
+            conn.close()
+
+        real_connect = sqlite3.connect
+        state = {'transfer_started': False, 'fail_tx_hash_update': True, 'transfer_calls': 0}
+
+        class CursorWrapper:
+            def __init__(self, cursor):
+                self.cursor = cursor
+
+            def execute(self, sql, params=()):
+                if (
+                    state['fail_tx_hash_update']
+                    and 'UPDATE event_claim_codes' in sql
+                    and 'SET tx_hash' in sql
+                ):
+                    state['fail_tx_hash_update'] = False
+                    raise sqlite3.OperationalError('simulated finalization failure')
+                return self.cursor.execute(sql, params)
+
+            def __getattr__(self, name):
+                return getattr(self.cursor, name)
+
+        class ConnectionWrapper:
+            def __init__(self, conn):
+                self.conn = conn
+
+            def cursor(self):
+                return CursorWrapper(self.conn.cursor())
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, _exc, _tb):
+                if exc_type:
+                    self.conn.rollback()
+                else:
+                    self.conn.commit()
+                self.conn.close()
+                return False
+
+            def __getattr__(self, name):
+                return getattr(self.conn, name)
+
+        def connect_with_finalization_failure(*args, **kwargs):
+            conn = real_connect(*args, **kwargs)
+            if state['transfer_started']:
+                return ConnectionWrapper(conn)
+            return conn
+
+        def fake_transfer(_config, _logger, _wallet, _amount, **_kwargs):
+            state['transfer_started'] = True
+            state['transfer_calls'] += 1
+            return 'tx-success-before-db-error'
+
+        with patch('faucet_service.sqlite3.connect', side_effect=connect_with_finalization_failure), \
+             patch('faucet_service._perform_faucet_transfer', side_effect=fake_transfer):
+            first_response = self.client.post(
+                '/faucet/event-claim',
+                json={
+                    'code': 'EVENT-durable',
+                    'wallet': 'RTCe4fbe4c9085b8b2ed3f1228504de66799025f6ce',
+                },
+                content_type='application/json',
+            )
+            retry_response = self.client.post(
+                '/faucet/event-claim',
+                json={
+                    'code': 'EVENT-durable',
+                    'wallet': 'RTCe4fbe4c9085b8b2ed3f1228504de66799025f6ce',
+                },
+                content_type='application/json',
+            )
+
+        self.assertEqual(first_response.status_code, 500)
+        self.assertEqual(retry_response.status_code, 409)
+        self.assertEqual(state['transfer_calls'], 1)
+
+        conn = sqlite3.connect(self.temp_db.name)
+        try:
+            claimed_at, tx_hash = conn.execute('''
+                SELECT claimed_at, tx_hash FROM event_claim_codes WHERE code = ?
+            ''', ('EVENT-durable',)).fetchone()
+            status = conn.execute('''
+                SELECT status FROM event_claims WHERE wallet = ?
+            ''', ('RTCe4fbe4c9085b8b2ed3f1228504de66799025f6ce',)).fetchone()[0]
+        finally:
+            conn.close()
+
+        self.assertIsNotNone(claimed_at)
+        self.assertIsNone(tx_hash)
+        self.assertEqual(status, 'transfer_started')
+
+    def test_event_code_claim_releases_stale_pre_transfer_reservation(self):
+        """A crash before transfer start leaves a stale reservation that can retry."""
+        old_time = (datetime.now() - timedelta(minutes=10)).isoformat()
+        conn = sqlite3.connect(self.temp_db.name)
+        try:
+            conn.execute('''
+                INSERT INTO event_claim_codes
+                    (code, amount, expires_at, created_at, claimed_wallet, claimed_ip, claimed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                'EVENT-stale-reserved',
+                0.5,
+                (datetime.now() + timedelta(days=1)).isoformat(),
+                old_time,
+                'RTCe4fbe4c9085b8b2ed3f1228504de66799025f6ce',
+                '127.0.0.1',
+                old_time,
+            ))
+            conn.execute('''
+                INSERT INTO event_claims
+                    (code, wallet, ip_address, amount, status, tx_hash, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                'EVENT-stale-reserved',
+                'RTCe4fbe4c9085b8b2ed3f1228504de66799025f6ce',
+                '127.0.0.1',
+                0.5,
+                'reserved',
+                None,
+                old_time,
+                old_time,
+            ))
+            conn.commit()
+        finally:
+            conn.close()
+
+        with patch('faucet_service._perform_faucet_transfer', return_value='tx-after-stale-release') as transfer:
+            response = self.client.post(
+                '/faucet/event-claim',
+                json={
+                    'code': 'EVENT-stale-reserved',
+                    'wallet': 'RTCe4fbe4c9085b8b2ed3f1228504de66799025f6ce',
+                },
+                content_type='application/json',
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(transfer.call_count, 1)
+
+        conn = sqlite3.connect(self.temp_db.name)
+        try:
+            statuses = [
+                row[0]
+                for row in conn.execute('''
+                    SELECT status FROM event_claims
+                    WHERE code = ? ORDER BY id
+                ''', ('EVENT-stale-reserved',)).fetchall()
+            ]
+            claimed_at, tx_hash = conn.execute('''
+                SELECT claimed_at, tx_hash FROM event_claim_codes
+                WHERE code = ?
+            ''', ('EVENT-stale-reserved',)).fetchone()
+        finally:
+            conn.close()
+
+        self.assertEqual(statuses, ['released_stale_reservation', 'completed'])
+        self.assertIsNotNone(claimed_at)
+        self.assertEqual(tx_hash, 'tx-after-stale-release')
+
+    def test_event_code_claim_keeps_fresh_reservation_locked(self):
+        """Fresh reservations are not released into duplicate transfer attempts."""
+        now = datetime.now().isoformat()
+        conn = sqlite3.connect(self.temp_db.name)
+        try:
+            conn.execute('''
+                INSERT INTO event_claim_codes
+                    (code, amount, expires_at, created_at, claimed_wallet, claimed_ip, claimed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                'EVENT-fresh-reserved',
+                0.5,
+                (datetime.now() + timedelta(days=1)).isoformat(),
+                now,
+                'RTCe4fbe4c9085b8b2ed3f1228504de66799025f6ce',
+                '127.0.0.1',
+                now,
+            ))
+            conn.execute('''
+                INSERT INTO event_claims
+                    (code, wallet, ip_address, amount, status, tx_hash, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                'EVENT-fresh-reserved',
+                'RTCe4fbe4c9085b8b2ed3f1228504de66799025f6ce',
+                '127.0.0.1',
+                0.5,
+                'reserved',
+                None,
+                now,
+                now,
+            ))
+            conn.commit()
+        finally:
+            conn.close()
+
+        with patch('faucet_service._perform_faucet_transfer') as transfer:
+            response = self.client.post(
+                '/faucet/event-claim',
+                json={
+                    'code': 'EVENT-fresh-reserved',
+                    'wallet': 'RTCe4fbe4c9085b8b2ed3f1228504de66799025f6ce',
+                },
+                content_type='application/json',
+            )
+
+        self.assertEqual(response.status_code, 409)
+        transfer.assert_not_called()
+
+    def test_event_claim_transfer_uses_node_idempotency_key(self):
+        """Real event payouts use stable node-side idempotency keys."""
+        self.config['distribution']['mock_mode'] = False
+        self.config['distribution']['admin_key'] = 'test-admin-key'
+        expected_key = _event_claim_idempotency_key('EVENT-idempotent')
+
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {'ok': True, 'tx_hash': 'tx-idempotent'}
+
+        with patch('faucet_service.requests.post', return_value=response) as post:
+            tx_hash = _perform_faucet_transfer(
+                self.config,
+                self.app.logger,
+                'RTCe4fbe4c9085b8b2ed3f1228504de66799025f6ce',
+                0.5,
+                idempotency_key=expected_key,
+                reason='event_claim:EVENT-idempotent',
+            )
+
+        self.assertEqual(tx_hash, 'tx-idempotent')
+        post.assert_called_once()
+        payload = post.call_args.kwargs['json']
+        self.assertEqual(payload['idempotency_key'], expected_key)
+        self.assertEqual(payload['reason'], 'event_claim:EVENT-idempotent')
+        self.assertEqual(payload['amount_rtc'], 0.5)
+
+    def test_event_claims_do_not_affect_drip_rate_limit_or_status(self):
+        """Event claims use their own ledger and do not skew normal faucet stats."""
+        conn = sqlite3.connect(self.temp_db.name)
+        try:
+            conn.execute('''
+                INSERT INTO event_claim_codes (code, amount, expires_at, created_at)
+                VALUES (?, ?, ?, ?)
+            ''', (
+                'EVENT-isolated',
+                0.5,
+                (datetime.now() + timedelta(days=1)).isoformat(),
+                datetime.now().isoformat(),
+            ))
+            conn.commit()
+        finally:
+            conn.close()
+
+        wallet = 'RTCe4fbe4c9085b8b2ed3f1228504de66799025f6ce'
+        claim_response = self.client.post(
+            '/faucet/event-claim',
+            json={'code': 'EVENT-isolated', 'wallet': wallet},
+            content_type='application/json',
+        )
+        self.assertEqual(claim_response.status_code, 200)
+
+        status_response = self.client.get('/faucet/status')
+        self.assertEqual(status_response.status_code, 200)
+        stats = json.loads(status_response.data)['statistics']
+        self.assertEqual(stats['total_drips'], 0)
+        self.assertEqual(stats['total_amount'], 0)
+        self.assertEqual(stats['unique_wallets'], 0)
+        self.assertEqual(stats['unique_ips'], 0)
+
+        drip_response = self.client.post(
+            '/faucet/drip',
+            json={'wallet': wallet},
+            content_type='application/json',
+        )
+        self.assertEqual(drip_response.status_code, 200)
+
+    def test_event_code_claim_rejects_expired_code(self):
+        """Expired event codes are not claimable."""
+        conn = sqlite3.connect(self.temp_db.name)
+        try:
+            conn.execute('''
+                INSERT INTO event_claim_codes (code, amount, expires_at, created_at)
+                VALUES (?, ?, ?, ?)
+            ''', (
+                'EVENT-expired',
+                0.5,
+                (datetime.now() - timedelta(seconds=1)).isoformat(),
+                (datetime.now() - timedelta(days=1)).isoformat(),
+            ))
+            conn.commit()
+        finally:
+            conn.close()
+
+        response = self.client.post(
+            '/faucet/event-claim',
+            json={
+                'code': 'EVENT-expired',
+                'wallet': 'RTCe4fbe4c9085b8b2ed3f1228504de66799025f6ce',
+            },
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 410)
+        data = json.loads(response.data)
+        self.assertFalse(data['ok'])
+        self.assertEqual(data['error'], 'Event code expired')
 
     def test_metrics_endpoint_uses_configured_database(self):
         """Test metrics endpoint reads from the configured database path."""

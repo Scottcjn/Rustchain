@@ -318,7 +318,7 @@ cp -r ~/.rustchain/wallet.backup.* ~/.rustchain/wallet
 pip uninstall clawrtc
 
 # 4. 安装 v1.0.0
-pip install clawrtc==1.0.0
+python3 -m pip install clawrtc==1.0.0
 
 # 5. 恢复配置
 cp config.backup ~/.rustchain/config.yaml

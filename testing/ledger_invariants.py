@@ -164,6 +164,12 @@ class SimulatedLedger:
             return epoch
 
         total_mult = sum(m.antiquity_multiplier for m in active)
+        if total_mult <= 0:
+            epoch = Epoch(epoch_num=epoch_num, miners=active,
+                          rewards={}, settled=True)
+            self.epochs.append(epoch)
+            return epoch
+
         rewards: Dict[str, int] = {}
         distributed = 0
 

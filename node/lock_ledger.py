@@ -475,7 +475,7 @@ def get_locks_by_miner(
         params.append(status_filter)
 
     query += " ORDER BY id DESC LIMIT ?"
-    params.append(min(limit, 500))
+    params.append(max(1, min(limit, 500)))
 
     rows = cursor.execute(query, params).fetchall()
 
@@ -533,7 +533,7 @@ def get_pending_unlocks(
         params.append(before_timestamp)
 
     query += " ORDER BY unlock_at ASC LIMIT ?"
-    params.append(min(limit, 500))
+    params.append(max(1, min(limit, 500)))
 
     rows = cursor.execute(query, params).fetchall()
 

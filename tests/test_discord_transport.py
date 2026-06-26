@@ -38,6 +38,20 @@ sys.modules["flame_beacon"] = flame_beacon
 _spec.loader.exec_module(flame_beacon)
 
 
+def _load_flame_beacon_with_env(env):
+    module_name = "flame_beacon_env_defaults_under_test"
+    sys.modules.pop(module_name, None)
+    spec = importlib.util.spec_from_file_location(module_name, _FLAME_BEACON_PATH)
+    module = importlib.util.module_from_spec(spec)
+    delete_keys = [key for key, value in env.items() if value is None]
+    patch_values = {key: value for key, value in env.items() if value is not None}
+    with patch.dict(os.environ, patch_values, clear=False):
+        for key in delete_keys:
+            os.environ.pop(key, None)
+        spec.loader.exec_module(module)
+    return module
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -70,6 +84,59 @@ def _mock_response(status_code: int, body=None, headers=None):
         resp.text = str(body)
         resp.json.side_effect = ValueError("not json")
     return resp
+
+
+# ---------------------------------------------------------------------------
+# Configuration defaults
+# ---------------------------------------------------------------------------
+
+class TestConfigDefaults(unittest.TestCase):
+
+    def test_missing_numeric_env_uses_defaults(self):
+        module = _load_flame_beacon_with_env({
+            "FLAME_MAX_RETRIES": None,
+            "FLAME_RETRY_BASE_DELAY": None,
+            "FLAME_RETRY_MAX_DELAY": None,
+            "FLAME_LISTENER_POLL": None,
+            "FLAME_WATCHER_INTERVAL": None,
+        })
+
+        self.assertEqual(module.MAX_RETRIES, 5)
+        self.assertEqual(module.RETRY_BASE_DELAY, 1.0)
+        self.assertEqual(module.RETRY_MAX_DELAY, 60.0)
+        self.assertEqual(module.LISTENER_POLL_INTERVAL, 15.0)
+        self.assertEqual(module.WATCHER_INTERVAL, 6.0)
+
+    def test_malformed_numeric_env_fails_closed(self):
+        with self.assertRaisesRegex(ValueError, "FLAME_MAX_RETRIES"):
+            _load_flame_beacon_with_env({"FLAME_MAX_RETRIES": "oops"})
+
+        with self.assertRaisesRegex(ValueError, "FLAME_RETRY_BASE_DELAY"):
+            _load_flame_beacon_with_env({"FLAME_RETRY_BASE_DELAY": "nan"})
+
+        with self.assertRaisesRegex(ValueError, "FLAME_RETRY_MAX_DELAY"):
+            _load_flame_beacon_with_env({"FLAME_RETRY_MAX_DELAY": "-1"})
+
+        with self.assertRaisesRegex(ValueError, "FLAME_LISTENER_POLL"):
+            _load_flame_beacon_with_env({"FLAME_LISTENER_POLL": ""})
+
+        with self.assertRaisesRegex(ValueError, "FLAME_WATCHER_INTERVAL"):
+            _load_flame_beacon_with_env({"FLAME_WATCHER_INTERVAL": "0"})
+
+    def test_valid_numeric_env_overrides_are_preserved(self):
+        module = _load_flame_beacon_with_env({
+            "FLAME_MAX_RETRIES": "7",
+            "FLAME_RETRY_BASE_DELAY": "0.25",
+            "FLAME_RETRY_MAX_DELAY": "9.5",
+            "FLAME_LISTENER_POLL": "2.5",
+            "FLAME_WATCHER_INTERVAL": "3.25",
+        })
+
+        self.assertEqual(module.MAX_RETRIES, 7)
+        self.assertEqual(module.RETRY_BASE_DELAY, 0.25)
+        self.assertEqual(module.RETRY_MAX_DELAY, 9.5)
+        self.assertEqual(module.LISTENER_POLL_INTERVAL, 2.5)
+        self.assertEqual(module.WATCHER_INTERVAL, 3.25)
 
 
 # ---------------------------------------------------------------------------

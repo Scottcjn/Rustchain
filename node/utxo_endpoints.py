@@ -17,7 +17,6 @@ Endpoints:
 """
 
 import json
-import logging
 import sqlite3
 import time
 from decimal import Decimal, InvalidOperation
@@ -35,6 +34,13 @@ from utxo_db import (
 # represent absurd amounts. Total RTC supply is bounded; cap at 2^53 RTC
 # which is far above any realistic balance and well within int64.
 _MAX_RTC_AMOUNT = Decimal(2) ** 53
+
+# Bound public address queries so fragmented wallets cannot force unbounded responses.
+_BOXES_DEFAULT_LIMIT = 100
+_BOXES_MAX_LIMIT = 500
+# Cursor values are bound to SQLite's signed 64-bit integer range; values past it
+# would raise OverflowError at parameter binding (a 500) instead of a clean 400.
+_INT64_MAX = (1 << 63) - 1
 
 
 def _parse_rtc_amount(raw) -> Decimal:
@@ -142,7 +148,7 @@ def _ensure_signed_float_preserves_nrtc(amount: Decimal, nrtc: int,
 # This MUST match the multiplier used in rustchain_v2_integrated_v2.2.1_rip200.py
 # (e.g. line 2370: amount_i64 = int(amount_decimal * Decimal(1000000))).
 ACCOUNT_UNIT = 1_000_000  # 1 RTC = 1,000,000 uRTC (6 decimals)
-LEGACY_SIGNATURE_CUTOFF_TS = 1782864000  # 2026-07-01T00:00:00Z
+UTXO_SIGNATURE_DOMAIN = "rustchain-utxo-transfer-v1"
 
 
 def _decimal_to_account_i64(amount: Decimal, field_name: str) -> int:
@@ -297,24 +303,59 @@ def register_utxo_blueprint(app, utxo_db: UtxoDB, db_path: str,
 
 @utxo_bp.route('/balance/<address>')
 def utxo_balance(address):
-    """Get UTXO-derived balance for an address."""
+    """Get UTXO-derived balance and count for an address."""
     balance_nrtc = _utxo_db.get_balance(address)
-    boxes = _utxo_db.get_unspent_for_address(address)
+    utxo_count = _utxo_db.count_unspent_for_address(address)
     return jsonify({
         'address': address,
         'balance_nrtc': balance_nrtc,
         'balance_rtc': balance_nrtc / UNIT,
-        'utxo_count': len(boxes),
+        'utxo_count': utxo_count,
     })
 
 
 @utxo_bp.route('/boxes/<address>')
 def utxo_boxes(address):
-    """Get all unspent boxes for an address."""
-    boxes = _utxo_db.get_unspent_for_address(address)
+    """Get a bounded keyset-paginated page of unspent boxes."""
+    try:
+        limit = int(request.args.get('limit', _BOXES_DEFAULT_LIMIT))
+        after_value = request.args.get('after_value_nrtc')
+        after_value = int(after_value) if after_value is not None else None
+    except (TypeError, ValueError):
+        return jsonify({'error': 'limit and after_value_nrtc must be integers'}), 400
+    after_box_id = request.args.get('after_box_id')
+    if limit < 1 or limit > _BOXES_MAX_LIMIT:
+        return jsonify({
+            'error': f'limit must be between 1 and {_BOXES_MAX_LIMIT}',
+        }), 400
+    if (after_value is None) != (after_box_id is None) or (
+        after_value is not None and (
+            after_value < 0 or after_value > _INT64_MAX or not after_box_id
+        )
+    ):
+        return jsonify({
+            'error': 'after_value_nrtc and after_box_id must form a valid cursor',
+        }), 400
+
+    rows = _utxo_db.get_unspent_for_address(
+        address, limit=limit + 1, after_value_nrtc=after_value,
+        after_box_id=after_box_id,
+    )
+    has_more = len(rows) > limit
+    boxes = rows[:limit]
+    next_cursor = None
+    if has_more:
+        last = boxes[-1]
+        next_cursor = {
+            'after_value_nrtc': last['value_nrtc'],
+            'after_box_id': last['box_id'],
+        }
     return jsonify({
         'address': address,
         'count': len(boxes),
+        'limit': limit,
+        'has_more': has_more,
+        'next_cursor': next_cursor,
         'boxes': [
             {
                 'box_id': b['box_id'],
@@ -562,8 +603,11 @@ def utxo_transfer():
 
     # Reconstruct signed message.
     # FIX(#2202): Include fee in signed data to prevent MITM fee manipulation.
-    # Backward-compatible: try new format (with fee) first, fall back to legacy
-    # (without fee) with a deprecation warning. Remove fallback after 2026-07-01.
+    # UTXO transfers must be domain-separated from account-model
+    # /wallet/transfer/signed payloads. The account endpoint places accepted
+    # transfers into a delayed pending window, while this endpoint settles UTXO
+    # state immediately. Accepting the account-shaped message here lets a valid
+    # wallet signature be substituted onto the immediate-settlement path.
     #
     # FIX(#2867 M2 follow-up): the M2 fix parses amount as Decimal internally
     # for precision-safe int conversion, but Decimal isn't JSON-serializable.
@@ -572,9 +616,10 @@ def utxo_transfer():
     amount_for_sig = float(amount_rtc)
     fee_for_sig = float(fee_rtc)
     signature_verified = False
-    used_legacy_signature = False
+    legacy_wallet_signature_seen = False
     for nonce_for_sig in _nonce_signature_forms(data.get('nonce'), nonce_int):
         tx_data_v2 = {
+            'domain': UTXO_SIGNATURE_DOMAIN,
             'from': from_address,
             'to': to_address,
             'amount': amount_for_sig,
@@ -596,28 +641,16 @@ def utxo_transfer():
         }
         message_legacy = json.dumps(tx_data_legacy, sort_keys=True, separators=(',', ':')).encode()
         if _verify_sig_fn(public_key, message_legacy, signature):
-            signature_verified = True
-            used_legacy_signature = True
-            break
+            legacy_wallet_signature_seen = True
 
     if not signature_verified:
+        if legacy_wallet_signature_seen:
+            return jsonify({
+                'error': 'UTXO transfer signature must include UTXO domain',
+                'code': 'UTXO_SIGNATURE_DOMAIN_REQUIRED',
+                'domain': UTXO_SIGNATURE_DOMAIN,
+            }), 401
         return jsonify({'error': 'Invalid Ed25519 signature'}), 401
-    if used_legacy_signature:
-        if fee_nrtc != 0:
-            return jsonify({
-                'error': 'Legacy signature format cannot authorize nonzero fee',
-                'code': 'LEGACY_SIGNATURE_FEE_UNBOUND',
-            }), 401
-        if int(time.time()) >= LEGACY_SIGNATURE_CUTOFF_TS:
-            return jsonify({
-                'error': 'Legacy signature format expired. Upgrade client to sign fee_rtc.',
-                'code': 'LEGACY_SIGNATURE_EXPIRED',
-            }), 401
-        logging.warning(
-            "[UTXO/SIG] DEPRECATED: signature without fee accepted for %s... "
-            "Upgrade client to include fee in signed message.",
-            from_address[:20],
-        )
 
     # --- UTXO transaction ---------------------------------------------------
 

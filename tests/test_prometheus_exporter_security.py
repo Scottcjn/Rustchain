@@ -28,6 +28,26 @@ def load_exporter(monkeypatch, *, auth=None, host=None):
     return module
 
 
+def test_malformed_numeric_env_uses_safe_defaults(monkeypatch):
+    monkeypatch.setenv("PROMETHEUS_EXPORTER_PORT", "not-a-port")
+    monkeypatch.setenv("SCRAPE_INTERVAL", "bad-interval")
+
+    exporter = load_exporter(monkeypatch)
+
+    assert exporter.EXPORTER_PORT == 9100
+    assert exporter.SCRAPE_INTERVAL == 15
+
+
+def test_numeric_env_overrides_are_preserved(monkeypatch):
+    monkeypatch.setenv("PROMETHEUS_EXPORTER_PORT", "9200")
+    monkeypatch.setenv("SCRAPE_INTERVAL", "30")
+
+    exporter = load_exporter(monkeypatch)
+
+    assert exporter.EXPORTER_PORT == 9200
+    assert exporter.SCRAPE_INTERVAL == 30
+
+
 def test_metrics_update_ignores_private_key_payload(monkeypatch):
     exporter = load_exporter(monkeypatch)
 

@@ -153,6 +153,24 @@ def test_ledger_status_update_rejects_non_object_json_before_mutation(tmp_path, 
     assert record["tx_hash"] == ""
 
 
+def test_ledger_status_update_reports_missing_record(tmp_path, monkeypatch):
+    client, db_path = _make_client(tmp_path, monkeypatch)
+    payout_ledger.init_payout_ledger_tables()
+
+    response = client.patch(
+        "/api/ledger/missing-record/status",
+        headers={"X-Admin-Key": ADMIN_KEY},
+        json={"status": "confirmed", "tx_hash": "tx-missing"},
+    )
+
+    assert response.status_code == 404
+    assert response.get_json() == {"error": "not found"}
+    assert payout_ledger.ledger_get("missing-record") is None
+    with sqlite3.connect(db_path) as conn:
+        count = conn.execute("SELECT COUNT(*) FROM payout_ledger").fetchone()[0]
+    assert count == 0
+
+
 def test_admin_key_allows_create_read_summary_and_status_update(tmp_path, monkeypatch):
     client, _db_path = _make_client(tmp_path, monkeypatch)
     headers = {"X-Admin-Key": ADMIN_KEY}
@@ -176,3 +194,31 @@ def test_admin_key_allows_create_read_summary_and_status_update(tmp_path, monkey
     assert page.status_code == 200
     assert update.status_code == 200
     assert payout_ledger.ledger_get(record_id)["status"] == "confirmed"
+
+
+def test_ledger_status_update_rejects_terminal_overwrite(tmp_path, monkeypatch):
+    client, _db_path = _make_client(tmp_path, monkeypatch)
+    headers = {"X-Admin-Key": ADMIN_KEY}
+    payout_ledger.init_payout_ledger_tables()
+    record_id = payout_ledger.ledger_create("bug-1", "alice", 25)
+    payout_ledger.ledger_update_status(record_id, "confirmed", tx_hash="tx-1")
+
+    same_status = client.patch(
+        f"/api/ledger/{record_id}/status",
+        headers=headers,
+        json={"status": "confirmed"},
+    )
+    response = client.patch(
+        f"/api/ledger/{record_id}/status",
+        headers=headers,
+        json={"status": "voided", "notes": "late correction"},
+    )
+
+    record = payout_ledger.ledger_get(record_id)
+    assert same_status.status_code == 200
+    assert response.status_code == 409
+    assert response.get_json() == {
+        "error": "cannot change terminal payout status from confirmed to voided"
+    }
+    assert record["status"] == "confirmed"
+    assert record["tx_hash"] == "tx-1"

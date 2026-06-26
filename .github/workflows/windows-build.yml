@@ -23,6 +23,10 @@ jobs:
         shell: pwsh
         run: |
           choco install innosetup --no-progress --yes
+
+      - name: Verify bootstrap checksums
+        run: |
+          python miners/windows/check_bootstrap_hashes.py
           
       - name: Install Dependencies
         run: |

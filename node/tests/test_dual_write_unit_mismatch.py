@@ -24,7 +24,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from flask import Flask
 
 from utxo_db import MAX_COINBASE_OUTPUT_NRTC, UtxoDB, UNIT
-from utxo_endpoints import register_utxo_blueprint, ACCOUNT_UNIT
+from utxo_endpoints import (
+    ACCOUNT_UNIT,
+    UTXO_SIGNATURE_DOMAIN,
+    register_utxo_blueprint,
+)
 
 
 # Mock crypto functions for testing
@@ -38,6 +42,94 @@ def mock_addr_from_pk(pubkey_hex):
 
 def mock_current_slot():
     return 100
+
+
+class TestUtxoSignatureDomain(unittest.TestCase):
+    """UTXO transfers must not accept account-transfer signatures."""
+
+    def setUp(self):
+        self.tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+        self.tmp.close()
+        self.db_path = self.tmp.name
+        self.utxo_db = UtxoDB(self.db_path)
+        self.utxo_db.init_tables()
+
+    def tearDown(self):
+        os.unlink(self.db_path)
+
+    def _seed_coinbase(self, address, value_nrtc, height=1):
+        ok = self.utxo_db.apply_transaction({
+            'tx_type': 'mining_reward',
+            'inputs': [],
+            'outputs': [{'address': address, 'value_nrtc': value_nrtc}],
+            'timestamp': int(time.time()),
+            '_allow_minting': True,
+        }, block_height=height)
+        self.assertTrue(ok, "Coinbase fixture should seed UTXO balance")
+
+    def _client_with_verifier(self, verifier):
+        app = Flask(__name__)
+        app.config['TESTING'] = True
+        register_utxo_blueprint(
+            app, self.utxo_db, self.db_path,
+            verify_sig_fn=verifier,
+            addr_from_pk_fn=mock_addr_from_pk,
+            current_slot_fn=mock_current_slot,
+            dual_write=False,
+        )
+        return app.test_client()
+
+    def _payload(self, nonce=123):
+        return {
+            'from_address': 'RTC_test_aabbccdd',
+            'to_address': 'RTC_test_eeffgghh',
+            'amount_rtc': 10.0,
+            'public_key': 'aabbccdd' * 8,
+            'signature': 'sig' * 22,
+            'nonce': nonce,
+        }
+
+    def test_account_transfer_signature_rejected_on_utxo_endpoint(self):
+        """An account-model signed payload must not settle immediately as UTXO."""
+        sender = 'RTC_test_aabbccdd'
+        self._seed_coinbase(sender, 100 * UNIT)
+
+        def account_style_verifier(pubkey_hex, message, sig_hex):
+            signed = json.loads(message.decode())
+            return (
+                signed.get('from') == sender
+                and signed.get('to') == 'RTC_test_eeffgghh'
+                and signed.get('amount') == 10.0
+                and signed.get('memo') == ''
+                and signed.get('nonce') == 123
+                and 'domain' not in signed
+            )
+
+        client = self._client_with_verifier(account_style_verifier)
+        response = client.post('/utxo/transfer', json=self._payload())
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(
+            response.get_json()['code'],
+            'UTXO_SIGNATURE_DOMAIN_REQUIRED',
+        )
+        self.assertEqual(self.utxo_db.get_balance(sender), 100 * UNIT)
+
+    def test_utxo_domain_signature_still_authorizes_transfer(self):
+        sender = 'RTC_test_aabbccdd'
+        recipient = 'RTC_test_eeffgghh'
+        self._seed_coinbase(sender, 100 * UNIT)
+
+        def utxo_domain_verifier(pubkey_hex, message, sig_hex):
+            signed = json.loads(message.decode())
+            return signed.get('domain') == UTXO_SIGNATURE_DOMAIN
+
+        client = self._client_with_verifier(utxo_domain_verifier)
+        response = client.post('/utxo/transfer', json=self._payload())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()['ok'])
+        self.assertEqual(self.utxo_db.get_balance(recipient), 10 * UNIT)
 
 
 class TestDualWriteUnitCorrectness(unittest.TestCase):
@@ -215,16 +307,28 @@ class TestDualWriteUnitCorrectness(unittest.TestCase):
         self.assertNotEqual(recipient_i64, 1_000_000)
 
     def test_dual_write_large_amount_no_overflow(self):
-        """Transferring 1_000_000 RTC should write 1_000_000_000_000 uRTC."""
+        """A large transfer must write the correct large i64 to the shadow row.
+
+        Amount note / invariant: a single ``/utxo/transfer`` can be funded by at
+        most ``MAX_INPUTS`` (100) UTXOs, and coinbase outputs are capped at
+        ``MAX_COINBASE_OUTPUT_NRTC`` (150 RTC). A coinbase-only sender therefore
+        cannot move more than 100 * 150 = 15,000 RTC in one transfer, so the
+        original 1_000_000 RTC amount is structurally unreachable through this
+        endpoint path (it needs ~6,667 inputs and is rejected before settling).
+        The full 1_000_000 RTC i64-overflow magnitude is covered directly at the
+        conversion boundary by ``test_account_i64_no_overflow_at_one_million_rtc``
+        below; this case exercises a large end-to-end transfer near the feasible
+        ceiling.
+        """
         sender = 'RTC_test_aabbccdd'
         recipient = 'RTC_test_eeffgghh'
-        self._seed_coinbase(sender, 2_000_000 * UNIT)
+        self._seed_coinbase(sender, 20_000 * UNIT)
 
         # Seed shadow balance so dual-write can proceed
         conn = sqlite3.connect(self.db_path)
         conn.execute(
             "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?)",
-            (sender, int(2_000_000.0 * ACCOUNT_UNIT)),
+            (sender, int(20_000.0 * ACCOUNT_UNIT)),
         )
         conn.commit()
         conn.close()
@@ -232,15 +336,31 @@ class TestDualWriteUnitCorrectness(unittest.TestCase):
         self.client.post('/utxo/transfer', json={
             'from_address': sender,
             'to_address': recipient,
-            'amount_rtc': 1_000_000.0,
+            'amount_rtc': 10_000.0,
             'public_key': 'aabbccdd' * 8,
             'signature': 'sig' * 22,
             'nonce': int(time.time() * 1000),
         })
 
         recipient_i64 = self._get_account_balance_i64(recipient)
-        expected_i64 = int(1_000_000.0 * ACCOUNT_UNIT)  # 1_000_000_000_000
+        expected_i64 = int(10_000.0 * ACCOUNT_UNIT)  # 10_000_000_000
         self.assertEqual(recipient_i64, expected_i64)
+
+    def test_account_i64_no_overflow_at_one_million_rtc(self):
+        """Restore 1_000_000 RTC i64-overflow coverage at the conversion boundary.
+
+        This is the exact helper the dual-write path uses to mirror UTXO amounts
+        into the 6-decimal account shadow row. It is not bounded by MAX_INPUTS, so
+        it can assert the full 1_000_000 RTC magnitude (1_000_000_000_000 uRTC)
+        converts exactly, stays positive, and remains far below the int64 ceiling.
+        """
+        from decimal import Decimal
+        from utxo_endpoints import _decimal_to_account_i64
+
+        result = _decimal_to_account_i64(Decimal('1000000'), 'amount_rtc')
+        self.assertEqual(result, 1_000_000_000_000)
+        self.assertGreater(result, 0)
+        self.assertLess(result, 2 ** 63 - 1)
 
     # -- Integrity endpoint tests --------------------------------------------
 

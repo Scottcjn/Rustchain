@@ -90,7 +90,7 @@ const EPOCHS_PER_HOUR = 6;        // 6 epochs per hour (10 min each)
 const EPOCHS_PER_DAY = 144;       // 144 epochs per day
 const EPOCHS_PER_WEEK = 1008;     // 1008 epochs per week
 const EPOCHS_PER_MONTH = 4320;    // 4320 epochs per month
-const USD_RATE = 0.10;            // $0.10 per RTC reference rate
+const USD_RATE = 0.15;            // $0.15 per RTC reference rate
 ```
 
 ## Files

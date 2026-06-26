@@ -26,7 +26,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 # Configuration
 # ---------------------------------------------------------------------------
 RUSTCHAIN_BASE = "https://rustchain.org"
-RTC_USD_RATE = 0.10  # Reference rate per bounty spec
+RTC_USD_RATE = 0.15  # Reference rate per bounty spec
 RATE_LIMIT_SECONDS = 5  # 1 request per 5s per user
 
 # ---------------------------------------------------------------------------

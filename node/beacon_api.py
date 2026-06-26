@@ -1121,14 +1121,14 @@ def claim_bounty(bounty_id):
             return field_error, status
 
         db = get_db()
-        db.execute(
+        now = int(time.time())
+        cursor = db.execute(
             "UPDATE beacon_bounties SET state = 'claimed', claimant_agent = ?, updated_at = ? WHERE id = ?",
-            (agent_id, int(time.time()), bounty_id)
+            (agent_id, now, bounty_id)
         )
-
-        db = get_db()
-        if db.total_changes == 0:
+        if cursor.rowcount == 0:
             return jsonify({'error': 'Bounty not found'}), 404
+        db.commit()
 
         return jsonify({'ok': True, 'bounty_id': bounty_id, 'claimant': agent_id})
 
@@ -1166,24 +1166,32 @@ def complete_bounty(bounty_id):
             return jsonify({'error': 'Bounty not found'}), 404
         if bounty['state'] == 'completed':
             return jsonify({'error': 'Bounty already completed'}), 409
+        if bounty['state'] != 'claimed':
+            return jsonify({'error': 'Bounty must be claimed before completion'}), 409
+        claimant_agent = bounty['claimant_agent']
+        if claimant_agent and claimant_agent != agent_id:
+            return jsonify({'error': 'Bounty completion must match claimant_agent'}), 409
 
-        db.execute(
-            "UPDATE beacon_bounties SET state = 'completed', completed_by = ?, updated_at = ? WHERE id = ?",
-            (agent_id, int(time.time()), bounty_id)
+        now = int(time.time())
+        cursor = db.execute(
+            "UPDATE beacon_bounties SET state = 'completed', completed_by = ?, updated_at = ? "
+            "WHERE id = ? AND state = 'claimed' AND (claimant_agent IS NULL OR claimant_agent = ?)",
+            (agent_id, now, bounty_id, agent_id)
         )
-        db.commit()
+        if cursor.rowcount == 0:
+            return jsonify({'error': 'Bounty state changed; retry completion'}), 409
 
         # Update agent reputation
         rep = db.execute("SELECT * FROM beacon_reputation WHERE agent_id = ?", (agent_id,)).fetchone()
         if rep:
             db.execute(
                 "UPDATE beacon_reputation SET bounties_completed = bounties_completed + 1, score = score + 10, last_updated = ? WHERE agent_id = ?",
-                (int(time.time()), agent_id)
+                (now, agent_id)
             )
         else:
             db.execute(
                 "INSERT INTO beacon_reputation (agent_id, bounties_completed, score, last_updated) VALUES (?, 1, 10, ?)",
-                (agent_id, int(time.time()))
+                (agent_id, now)
             )
         db.commit()
 

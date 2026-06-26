@@ -132,6 +132,27 @@ def test_fetch_page_rejects_sql_with_mixed_case_limit(conn):
         fetch_page(conn, "SELECT id FROM widgets LiMiT ?", limit=10)
 
 
+def test_fetch_page_allows_limit_inside_subquery(conn):
+    rows = fetch_page(
+        conn,
+        "SELECT id FROM widgets "
+        "WHERE id = (SELECT id FROM widgets ORDER BY id LIMIT 1)",
+        limit=10,
+    )
+    assert [r["id"] for r in rows] == [0]
+
+
+def test_fetch_page_ignores_limit_in_string_literal_and_comment(conn):
+    rows = fetch_page(
+        conn,
+        "SELECT id FROM widgets "
+        "WHERE name != 'literal LIMIT 1' -- comment LIMIT 2\n"
+        "ORDER BY id",
+        limit=2,
+    )
+    assert [r["id"] for r in rows] == [0, 1]
+
+
 def test_fetch_page_strips_trailing_semicolon(conn):
     # SQLite tolerates trailing semicolons but the LIMIT/OFFSET append needs
     # to land before any semicolon — verify the helper handles that.

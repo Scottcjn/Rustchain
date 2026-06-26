@@ -25,6 +25,15 @@ class ForkChoiceBlock:
     miner: str = ""
 
 
+REORG_ALERT_THRESHOLDS = {
+    "frequency": 3,
+    "max_depth": 6,
+    "duration_seconds": 900,
+}
+
+REORG_DURATION_BUCKETS = (60, 300, 900)
+
+
 FORK_CHOICE_HTML = """
 <!doctype html>
 <html>
@@ -127,6 +136,12 @@ def build_fork_choice_graph(blocks: Iterable[Dict]) -> Dict:
 
     fork_points = [block_hash for block_hash, child_hashes in children.items() if len(child_hashes) > 1]
     canonical_height = canonical_head.height if canonical_head else 0
+    reorg_metrics = _reorg_resistance_metrics(
+        normalized,
+        children,
+        canonical_hashes,
+        fork_points,
+    )
 
     return {
         "nodes": nodes,
@@ -142,6 +157,7 @@ def build_fork_choice_graph(blocks: Iterable[Dict]) -> Dict:
             "heads": len(heads),
             "max_depth": max((block.height for block in normalized), default=0),
             "canonical_height": canonical_height,
+            **reorg_metrics,
         },
     }
 
@@ -188,6 +204,115 @@ def _fork_history(blocks: List[ForkChoiceBlock], fork_points: List[str]) -> List
         if block:
             history.append(asdict(block))
     return sorted(history, key=lambda item: (item["height"], item["block_hash"]))
+
+
+def _reorg_resistance_metrics(
+    blocks: List[ForkChoiceBlock],
+    children: Dict[str, List[str]],
+    canonical_hashes: set,
+    fork_points: List[str],
+) -> Dict:
+    by_hash = {block.block_hash: block for block in blocks}
+    durations = []
+    max_reorg_depth = 0
+    reorg_events = []
+
+    for fork_hash in sorted(fork_points):
+        fork_block = by_hash.get(fork_hash)
+        if not fork_block:
+            continue
+
+        fork_max_depth = 0
+        fork_max_duration = 0
+        abandoned_heads = []
+
+        for child_hash in children.get(fork_hash, []):
+            if child_hash in canonical_hashes:
+                continue
+
+            descendant_hashes = _descendant_hashes(child_hash, children)
+            branch_hashes = [child_hash, *descendant_hashes]
+            abandoned_hashes = [hash_ for hash_ in branch_hashes if hash_ not in canonical_hashes]
+            if not abandoned_hashes:
+                continue
+
+            abandoned_blocks = [by_hash[hash_] for hash_ in abandoned_hashes if hash_ in by_hash]
+            if not abandoned_blocks:
+                continue
+
+            branch_depth = max(block.height for block in abandoned_blocks) - fork_block.height
+            branch_duration = max(
+                max(block.timestamp - fork_block.timestamp, 0)
+                for block in abandoned_blocks
+            )
+            branch_heads = [
+                block.block_hash
+                for block in abandoned_blocks
+                if not any(child in abandoned_hashes for child in children.get(block.block_hash, []))
+            ]
+
+            fork_max_depth = max(fork_max_depth, branch_depth)
+            fork_max_duration = max(fork_max_duration, branch_duration)
+            abandoned_heads.extend(sorted(branch_heads))
+
+        if fork_max_depth:
+            durations.append(fork_max_duration)
+            max_reorg_depth = max(max_reorg_depth, fork_max_depth)
+            reorg_events.append({
+                "fork_point": fork_hash,
+                "height": fork_block.height,
+                "max_depth": fork_max_depth,
+                "duration_seconds": fork_max_duration,
+                "abandoned_heads": sorted(abandoned_heads),
+            })
+
+    max_duration = max(durations, default=0)
+
+    return {
+        "reorg_frequency_counter": len(reorg_events),
+        "max_reorg_depth": max_reorg_depth,
+        "reorg_duration_histogram": _duration_histogram(durations),
+        "reorg_alert_thresholds": dict(REORG_ALERT_THRESHOLDS),
+        "reorg_alerts": {
+            "frequency": len(reorg_events) >= REORG_ALERT_THRESHOLDS["frequency"],
+            "max_depth": max_reorg_depth >= REORG_ALERT_THRESHOLDS["max_depth"],
+            "duration_seconds": max_duration >= REORG_ALERT_THRESHOLDS["duration_seconds"],
+        },
+        "reorg_events": reorg_events,
+    }
+
+
+def _descendant_hashes(root_hash: str, children: Dict[str, List[str]]) -> List[str]:
+    descendants = []
+    visited = {root_hash}
+    stack = list(children.get(root_hash, []))
+    while stack:
+        block_hash = stack.pop()
+        if block_hash in visited:
+            continue
+        visited.add(block_hash)
+        descendants.append(block_hash)
+        stack.extend(children.get(block_hash, []))
+    return descendants
+
+
+def _duration_histogram(durations: List[int]) -> Dict[str, int]:
+    histogram = {
+        "le_60": 0,
+        "le_300": 0,
+        "le_900": 0,
+        "gt_900": 0,
+    }
+    for duration in durations:
+        if duration <= REORG_DURATION_BUCKETS[0]:
+            histogram["le_60"] += 1
+        elif duration <= REORG_DURATION_BUCKETS[1]:
+            histogram["le_300"] += 1
+        elif duration <= REORG_DURATION_BUCKETS[2]:
+            histogram["le_900"] += 1
+        else:
+            histogram["gt_900"] += 1
+    return histogram
 
 
 def _to_int(value, default: int = 0) -> int:

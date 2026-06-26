@@ -4,6 +4,7 @@
 
 import json
 import logging
+import math
 import os
 import time
 from datetime import datetime, timezone
@@ -21,6 +22,36 @@ logging.basicConfig(
 )
 logger = logging.getLogger("flame_beacon")
 
+
+def _env_positive_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    if str(raw).strip() == "":
+        raise ValueError(f"{name} must be a positive integer")
+    try:
+        value = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be a positive integer") from exc
+    if value <= 0:
+        raise ValueError(f"{name} must be a positive integer")
+    return value
+
+
+def _env_positive_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    if str(raw).strip() == "":
+        raise ValueError(f"{name} must be a positive finite number")
+    try:
+        value = float(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be a positive finite number") from exc
+    if not math.isfinite(value) or value <= 0:
+        raise ValueError(f"{name} must be a positive finite number")
+    return value
+
 # ---------------------------------------------------------------------------
 # Configuration (override via environment variables)
 # ---------------------------------------------------------------------------
@@ -33,15 +64,15 @@ DISCORD_CHANNEL_ID: str = os.environ.get("DISCORD_CHANNEL_ID", "")
 JSON_HISTORY_FILE: str = os.environ.get("FLAME_HISTORY_FILE", "flame_history.json")
 
 # Retry / back-off knobs
-MAX_RETRIES: int = int(os.environ.get("FLAME_MAX_RETRIES", "5"))
-RETRY_BASE_DELAY: float = float(os.environ.get("FLAME_RETRY_BASE_DELAY", "1.0"))  # seconds
-RETRY_MAX_DELAY: float = float(os.environ.get("FLAME_RETRY_MAX_DELAY", "60.0"))  # seconds
+MAX_RETRIES: int = _env_positive_int("FLAME_MAX_RETRIES", 5)
+RETRY_BASE_DELAY: float = _env_positive_float("FLAME_RETRY_BASE_DELAY", 1.0)  # seconds
+RETRY_MAX_DELAY: float = _env_positive_float("FLAME_RETRY_MAX_DELAY", 60.0)  # seconds
 
 # Listener poll interval (seconds)
-LISTENER_POLL_INTERVAL: float = float(os.environ.get("FLAME_LISTENER_POLL", "15.0"))
+LISTENER_POLL_INTERVAL: float = _env_positive_float("FLAME_LISTENER_POLL", 15.0)
 
 # Watcher sleep between file scans (seconds)
-WATCHER_INTERVAL: float = float(os.environ.get("FLAME_WATCHER_INTERVAL", "6.0"))
+WATCHER_INTERVAL: float = _env_positive_float("FLAME_WATCHER_INTERVAL", 6.0)
 
 
 # ---------------------------------------------------------------------------

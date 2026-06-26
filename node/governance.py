@@ -438,15 +438,22 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
                         return jsonify({
                             "error": f"Insufficient balance: proposal fee is {PROPOSAL_FEE_RTC} RTC"
                         }), 402
-                    _deduct_proposal_fee(conn, miner_id, PROPOSAL_FEE_RTC)
 
-                # Anti-spam: max active proposals per miner
+                # Anti-spam: max active proposals per miner. Enforced BEFORE the
+                # fee debit (a read before any write) so a maxed-out miner is NOT
+                # charged for a rejected proposal — the 429 return commits nothing
+                # and balance is preserved (#7344).
                 active_count = conn.execute(
                     "SELECT COUNT(*) FROM governance_proposals WHERE proposed_by = ? AND status = ?",
                     (miner_id, STATUS_ACTIVE)
                 ).fetchone()[0]
                 if active_count >= MAX_PROPOSALS_PER_MINER:
                     return jsonify({"error": f"Max {MAX_PROPOSALS_PER_MINER} active proposals per miner"}), 429
+
+                # Charge the fee only after every rejection path is ruled out, so
+                # an accepted proposal still pays and a rejection never burns balance.
+                if table_check:
+                    _deduct_proposal_fee(conn, miner_id, PROPOSAL_FEE_RTC)
 
                 # Build proposal data for Sophia evaluation
                 proposal_data = {
@@ -529,6 +536,20 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
         err = _admin_key_required()
         if err:
             return err
+
+        # Bounded vote pagination (#7346): the admin proposal-detail route used to
+        # load every governance_votes row for a proposal in one response. Slice it.
+        try:
+            votes_limit = int(request.args.get("votes_limit", 500))
+        except (TypeError, ValueError):
+            return jsonify({"error": "votes_limit must be an integer"}), 400
+        try:
+            votes_offset = int(request.args.get("votes_offset", 0))
+        except (TypeError, ValueError):
+            return jsonify({"error": "votes_offset must be an integer"}), 400
+        votes_limit = max(1, min(votes_limit, 500))
+        votes_offset = max(0, votes_offset)
+
         _settle_expired_proposals(db_path)
         try:
             with sqlite3.connect(db_path) as conn:
@@ -539,10 +560,14 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
                 if not proposal:
                     return jsonify({"error": "proposal not found"}), 404
 
+                votes_total = conn.execute(
+                    "SELECT COUNT(*) FROM governance_votes WHERE proposal_id = ?",
+                    (proposal_id,)
+                ).fetchone()[0]
                 votes = conn.execute(
                     "SELECT miner_id, vote, weight, voted_at FROM governance_votes "
-                    "WHERE proposal_id = ? ORDER BY voted_at DESC",
-                    (proposal_id,)
+                    "WHERE proposal_id = ? ORDER BY voted_at DESC LIMIT ? OFFSET ?",
+                    (proposal_id, votes_limit, votes_offset)
                 ).fetchall()
 
         except Exception as e:
@@ -552,6 +577,9 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
         now = int(time.time())
         p = dict(proposal)
         p["votes"] = [dict(v) for v in votes]
+        p["votes_total"] = votes_total
+        p["votes_limit"] = votes_limit
+        p["votes_offset"] = votes_offset
         p["time_remaining_seconds"] = max(0, p["expires_at"] - now)
         return jsonify(p), 200
 
