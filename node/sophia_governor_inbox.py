@@ -106,6 +106,13 @@ def _env_truthy(name: str, default: str = "false") -> bool:
     return str(os.getenv(name, default)).strip().lower() in TRUE_VALUES
 
 
+def _float_env(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
 def _text_excerpt(text: Any, limit: int = 600) -> str:
     if text is None:
         return ""
@@ -190,8 +197,8 @@ def _auto_forward_enabled() -> bool:
 
 
 def _forward_timeouts() -> tuple[float, float]:
-    connect_timeout = float(os.getenv("SOPHIA_GOVERNOR_INBOX_FORWARD_CONNECT_TIMEOUT_SEC", "4"))
-    read_timeout = float(os.getenv("SOPHIA_GOVERNOR_INBOX_FORWARD_READ_TIMEOUT_SEC", "90"))
+    connect_timeout = _float_env("SOPHIA_GOVERNOR_INBOX_FORWARD_CONNECT_TIMEOUT_SEC", 4.0)
+    read_timeout = _float_env("SOPHIA_GOVERNOR_INBOX_FORWARD_READ_TIMEOUT_SEC", 90.0)
     return max(1.0, connect_timeout), max(5.0, read_timeout)
 
 
