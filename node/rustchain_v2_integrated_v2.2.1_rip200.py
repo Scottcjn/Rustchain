@@ -9286,7 +9286,7 @@ def _wallet_tx_verified_ledger_height(db, tx_hash: str):
         LIMIT 8
         """,
         (f"%:{tx_hash}",),
-    ).fetchall()
+    ).fetchall()  # fetchall-ok: already-paginated
     parsed = [
         item for item in (_wallet_tx_parse_ledger_transfer(row) for row in rows)
         if item and item["tx_hash"] == tx_hash
@@ -9329,7 +9329,7 @@ def _wallet_tx_pending_row_status(db, tx_hash: str):
         LIMIT 2
         """,
         (tx_hash,),
-    ).fetchall()
+    ).fetchall()  # fetchall-ok: already-paginated
     if not rows:
         return None, None
     if len(rows) > 1:
