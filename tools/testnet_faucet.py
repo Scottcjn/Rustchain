@@ -46,6 +46,13 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _int_env(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
 def init_db(path: str) -> None:
     conn = sqlite3.connect(path)
     try:
@@ -267,4 +274,4 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
 
 if __name__ == "__main__":
     app = create_app()
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "8090")))
+    app.run(host="0.0.0.0", port=_int_env("PORT", 8090))
