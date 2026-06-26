@@ -247,6 +247,35 @@ def test_gpu_protocol_routes_reject_non_object_json(tmp_path, monkeypatch, path)
     assert response.get_json() == {"error": "JSON object required"}
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/gpu/attest",
+        "/render/escrow",
+        "/voice/escrow",
+        "/llm/escrow",
+        "/render/release",
+        "/voice/release",
+        "/llm/release",
+        "/render/refund",
+        "/render/pricing/check",
+    ],
+)
+def test_gpu_protocol_routes_reject_json_text_without_json_content_type(
+    tmp_path, monkeypatch, path
+):
+    client = _route_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        path,
+        data='{"unexpected":"object"}',
+        content_type="text/plain",
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "JSON object required"}
+
+
 def test_gpu_protocol_escrow_rejects_structured_wallet(tmp_path, monkeypatch):
     client = _route_client(tmp_path, monkeypatch)
 
