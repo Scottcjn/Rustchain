@@ -2178,5 +2178,5 @@ def _start_reconciler_once():
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("OTC_PORT", 5580))
+    port = _int_env("OTC_PORT", 5580)
     app.run(host="0.0.0.0", port=port, debug=False)
