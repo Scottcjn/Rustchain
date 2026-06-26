@@ -54,6 +54,18 @@ def _payload():
     }
 
 
+def test_review_port_env_falls_back_on_malformed_value(monkeypatch):
+    monkeypatch.setenv("SOPHIA_GOVERNOR_REVIEW_PORT", "not-an-int")
+
+    assert review_service._int_env("SOPHIA_GOVERNOR_REVIEW_PORT", 8091) == 8091
+
+
+def test_review_port_env_accepts_valid_value(monkeypatch):
+    monkeypatch.setenv("SOPHIA_GOVERNOR_REVIEW_PORT", "8092")
+
+    assert review_service._int_env("SOPHIA_GOVERNOR_REVIEW_PORT", 8091) == 8092
+
+
 def test_review_requires_auth(client):
     response = client.post("/review", json=_payload())
     assert response.status_code == 401
