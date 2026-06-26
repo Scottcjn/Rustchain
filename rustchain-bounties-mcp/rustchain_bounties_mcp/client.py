@@ -63,11 +63,13 @@ class RustChainClient:
         timeout: int = REQUEST_TIMEOUT,
         retry_count: int = RETRY_COUNT,
         session: Optional[aiohttp.ClientSession] = None,
+        verify_tls: bool = True,
     ):
         self.node_url = (node_url or DEFAULT_NODE_URL).rstrip("/")
         self.timeout = timeout
         self.retry_count = retry_count
         self._session = session
+        self.verify_tls = verify_tls
         self._owns_session = session is None
 
     async def __aenter__(self) -> "RustChainClient":
@@ -98,7 +100,7 @@ class RustChainClient:
         params: Optional[dict[str, Any]] = None,
         json_data: Optional[dict[str, Any]] = None,
     ) -> Any:
-        """HTTP request with retry and self-signed-cert handling."""
+        """HTTP request with retry handling."""
         await self._ensure_session()
         url = f"{self.node_url}{path}"
         last_err: Optional[Exception] = None
@@ -106,7 +108,7 @@ class RustChainClient:
         for attempt in range(self.retry_count + 1):
             try:
                 async with self._session.request(
-                    method, url, params=params, json=json_data, ssl=False,
+                    method, url, params=params, json=json_data, ssl=self.verify_tls,
                 ) as resp:
                     body = await resp.json()
                     if resp.status >= 400:
@@ -282,7 +284,7 @@ class RustChainClient:
         headers = {"Accept": "application/vnd.github.v3+json", "User-Agent": "RustChain-Bounties-MCP/0.1"}
 
         try:
-            async with self._session.get(url, params=params, headers=headers, ssl=False) as resp:
+            async with self._session.get(url, params=params, headers=headers, ssl=self.verify_tls) as resp:
                 if resp.status >= 400:
                     body = await resp.text()
                     logger.warning("GitHub API returned %d: %s", resp.status, body[:200])
