@@ -51,6 +51,18 @@ FRAMES_DIR = "/tmp/rustchain_video_frames"
 WIDTH, HEIGHT = 1280, 720
 FPS = 15
 
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _verify_tls(insecure_tls: bool = False) -> bool:
+    return not (insecure_tls or _env_bool("RUSTCHAIN_VIDEO_PIPELINE_INSECURE_TLS"))
+
+
 # === Architecture Visual Styles ===
 # Each architecture gets unique colors, themes, and visual elements
 ARCH_STYLES = {
@@ -142,9 +154,9 @@ class MinerData:
 
 # === Data Fetching ===
 
-def fetch_miners() -> list[MinerData]:
+def fetch_miners(*, insecure_tls: bool = False) -> list[MinerData]:
     """Fetch active miners from RustChain API."""
-    resp = requests.get(f"{RUSTCHAIN_API}/api/miners", verify=False, timeout=30)
+    resp = requests.get(f"{RUSTCHAIN_API}/api/miners", verify=_verify_tls(insecure_tls), timeout=30)
     resp.raise_for_status()
     payload = resp.json()
     if isinstance(payload, dict):
@@ -156,9 +168,9 @@ def fetch_miners() -> list[MinerData]:
     return [MinerData.from_api(m) for m in rows if isinstance(m, dict)]
 
 
-def fetch_epoch() -> dict:
+def fetch_epoch(*, insecure_tls: bool = False) -> dict:
     """Fetch current epoch info."""
-    resp = requests.get(f"{RUSTCHAIN_API}/epoch", verify=False, timeout=30)
+    resp = requests.get(f"{RUSTCHAIN_API}/epoch", verify=_verify_tls(insecure_tls), timeout=30)
     resp.raise_for_status()
     return resp.json()
 
@@ -508,19 +520,24 @@ def main():
     parser.add_argument("--count", type=int, default=10, help="Number of videos to generate")
     parser.add_argument("--miner", type=str, help="Generate video for specific miner ID")
     parser.add_argument("--list", action="store_true", help="List active miners")
+    parser.add_argument(
+        "--insecure-tls",
+        action="store_true",
+        help="Disable TLS certificate verification for self-signed development nodes",
+    )
     args = parser.parse_args()
 
     if args.list:
-        miners = fetch_miners()
-        epoch = fetch_epoch()
+        miners = fetch_miners(insecure_tls=args.insecure_tls)
+        epoch = fetch_epoch(insecure_tls=args.insecure_tls)
         print(f"Epoch {epoch['epoch']} | Slot {epoch['slot']} | {epoch['enrolled_miners']} miners")
         for m in miners:
             print(f"  {m.miner_id[:30]:30s} | {m.hardware_type:25s} | mult={m.antiquity_multiplier}")
         return
 
     if args.generate or args.full or args.miner:
-        miners = fetch_miners()
-        epoch = fetch_epoch()
+        miners = fetch_miners(insecure_tls=args.insecure_tls)
+        epoch = fetch_epoch(insecure_tls=args.insecure_tls)
 
         if args.miner:
             miner = next((m for m in miners if args.miner in m.miner_id), None)
@@ -544,7 +561,7 @@ def main():
         if not videos:
             print(f"No videos found in {OUTPUT_DIR}")
             return
-        epoch = fetch_epoch()
+        epoch = fetch_epoch(insecure_tls=args.insecure_tls)
         generated = [(str(v), MinerData(
             miner_id=v.stem, device_arch="", device_family="",
             hardware_type=v.stem.split("_")[1].replace("_", " ") if "_" in v.stem else "Unknown",
