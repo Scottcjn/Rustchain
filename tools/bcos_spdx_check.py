@@ -37,10 +37,22 @@ CODE_EXTS = {
 }
 
 SPDX_RE = re.compile(r"SPDX-License-Identifier:\s*[A-Za-z0-9.\-+]+")
+GIT_COMMAND_TIMEOUT_SECONDS = 30
 
 
 def _run(cmd: List[str]) -> str:
-    p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        p = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=GIT_COMMAND_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"command timed out after {GIT_COMMAND_TIMEOUT_SECONDS}s: {' '.join(cmd)}"
+        ) from exc
     if p.returncode != 0:
         raise RuntimeError(f"command failed ({p.returncode}): {' '.join(cmd)}\n{p.stderr.strip()}")
     return p.stdout
