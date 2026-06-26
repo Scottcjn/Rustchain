@@ -516,8 +516,11 @@ def register_routes(app):
     protocol = GPURenderProtocol()
 
     def _json_object_body():
-        data = request.get_json(force=True, silent=True)
+        raw_body = request.get_data(cache=True, as_text=True)
+        data = request.get_json(silent=True)
         if data is None:
+            if raw_body.strip():
+                return None, (jsonify({"error": "JSON object required"}), 400)
             return {}, None
         if not isinstance(data, dict):
             return None, (jsonify({"error": "JSON object required"}), 400)
