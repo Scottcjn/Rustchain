@@ -1548,7 +1548,7 @@ if not _ANCHOR_ROUTES_REGISTERED:
                 SELECT * FROM ergo_anchors
                 ORDER BY rustchain_height DESC
                 LIMIT ? OFFSET ?
-            """, (limit, offset)).fetchall()
+            """, (limit, offset)).fetchall()  # fetchall-ok: already-paginated
 
         return jsonify({
             "count": len(rows),
@@ -3075,7 +3075,7 @@ def _get_streak_bonus(miner: str) -> float:
             rows = conn.execute(
                 "SELECT ts_ok FROM miner_attest_history WHERE miner = ? ORDER BY ts_ok DESC LIMIT 1000",
                 (miner,)
-            ).fetchall()
+            ).fetchall()  # fetchall-ok: already-paginated
             
             if not rows:
                 return 0.0
