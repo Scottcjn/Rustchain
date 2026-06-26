@@ -33,6 +33,39 @@ def test_top_lines_returns_empty_list_for_missing_file(tmp_path):
     assert bcos_spdx_check._top_lines(tmp_path / "missing.py") == []
 
 
+def test_run_bounds_git_command_timeout(monkeypatch):
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append((cmd, kwargs))
+
+        class Result:
+            returncode = 0
+            stdout = "ok\n"
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr(bcos_spdx_check.subprocess, "run", fake_run)
+
+    assert bcos_spdx_check._run(["git", "status"]) == "ok\n"
+    assert calls[0][1]["timeout"] == bcos_spdx_check.GIT_COMMAND_TIMEOUT_SECONDS
+
+
+def test_run_reports_timeout(monkeypatch):
+    def fake_run(cmd, **kwargs):
+        raise bcos_spdx_check.subprocess.TimeoutExpired(cmd, kwargs["timeout"])
+
+    monkeypatch.setattr(bcos_spdx_check.subprocess, "run", fake_run)
+
+    try:
+        bcos_spdx_check._run(["git", "status"])
+    except RuntimeError as exc:
+        assert "command timed out after 30s: git status" in str(exc)
+    else:
+        raise AssertionError("expected timeout RuntimeError")
+
+
 def test_git_diff_name_status_parses_valid_rows(monkeypatch):
     def fake_run(cmd):
         assert cmd == ["git", "diff", "--name-status", "origin/main...HEAD"]
