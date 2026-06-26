@@ -41,6 +41,14 @@ HISTORY_MAX = 200              # Max historical data points
 REFRESH_SECONDS = 30           # Data refresh interval
 SIMULATE = os.getenv("SIMULATE", "0") == "1"
 
+
+def _int_env(name, default):
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        print(f"⚠️  Invalid {name}={os.getenv(name)!r}; using default {default}")
+        return default
+
 # ── Data Store ─────────────────────────────────────────────
 _fork_store = {
     "health": None,
@@ -311,7 +319,7 @@ def main():
 
     # Start Flask server
     app = create_app()
-    port = int(os.getenv("PORT", 8765))
+    port = _int_env("PORT", 8765)
     print(f"🚀 RustChain Fork Choice Visualizer API")
     print(f"   Listening on http://0.0.0.0:{port}")
     print(f"   Dashboard: http://localhost:{port}/")
