@@ -63,6 +63,7 @@ class RustChainClient:
         timeout: int = REQUEST_TIMEOUT,
         retry_count: int = RETRY_COUNT,
         session: Optional[aiohttp.ClientSession] = None,
+        verify_tls: bool = True,
     ):
         """
         Initialize RustChain client.
@@ -73,12 +74,14 @@ class RustChainClient:
             timeout: Request timeout in seconds
             retry_count: Number of retries on failure
             session: Optional existing aiohttp session
+            verify_tls: Verify TLS certificates by default; set False only for explicit self-signed test endpoints.
         """
         self.base_url = (base_url or RUSTCHAIN_API_BASE).rstrip("/")
         self.node_url = (node_url or RUSTCHAIN_NODE_URL).rstrip("/")
         self.timeout = timeout
         self.retry_count = retry_count
         self._session = session
+        self.verify_tls = verify_tls
         self._owns_session = session is None
 
     async def __aenter__(self) -> "RustChainClient":
@@ -141,7 +144,7 @@ class RustChainClient:
                     url,
                     params=params,
                     json=json_data,
-                    ssl=False,  # Self-signed cert
+                    ssl=self.verify_tls,
                 ) as resp:
                     if resp.status >= 400:
                         error_body = await resp.json()
