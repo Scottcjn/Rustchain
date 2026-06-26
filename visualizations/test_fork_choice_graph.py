@@ -39,3 +39,15 @@ def test_api_dashboard_defaults_health_to_object_when_not_refreshed():
 
     assert response.status_code == 200
     assert response.get_json()["health"] == {"ok": False}
+
+
+def test_int_env_falls_back_on_malformed_port(monkeypatch):
+    monkeypatch.setenv("PORT", "not-an-int")
+
+    assert fork_choice_graph._int_env("PORT", 8765) == 8765
+
+
+def test_int_env_accepts_valid_port(monkeypatch):
+    monkeypatch.setenv("PORT", "9876")
+
+    assert fork_choice_graph._int_env("PORT", 8765) == 9876
