@@ -42,6 +42,50 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+TRUSTED_WEBSOCKET_ORIGINS = (
+    "https://rustchain.org",
+    "https://www.rustchain.org",
+)
+
+
+def default_websocket_cors_origins(local_port: int | str | None = None) -> List[str]:
+    origins = list(TRUSTED_WEBSOCKET_ORIGINS)
+    if local_port is not None:
+        origins.extend(
+            [
+                f"http://localhost:{local_port}",
+                f"http://127.0.0.1:{local_port}",
+            ]
+        )
+    return origins
+
+
+def parse_websocket_cors_origins(
+    raw_value: str | None = None,
+    *,
+    local_port: int | str | None = None,
+) -> List[str]:
+    if raw_value is None:
+        raw_value = os.environ.get("WEBSOCKET_CORS_ORIGINS")
+
+    if raw_value is None or not raw_value.strip():
+        return default_websocket_cors_origins(local_port)
+
+    origins: List[str] = []
+    for item in raw_value.split(","):
+        origin = item.strip()
+        if not origin:
+            continue
+        if origin == "*":
+            raise ValueError("WEBSOCKET_CORS_ORIGINS must not include '*'")
+        if origin not in origins:
+            origins.append(origin)
+
+    if not origins:
+        return default_websocket_cors_origins(local_port)
+    return origins
+
+
 def _env_int(name: str, default: int) -> int:
     raw_value = os.environ.get(name)
     if raw_value is None:
@@ -69,6 +113,7 @@ WS_PORT = _env_int('WEBSOCKET_PORT', 8765)
 API_BASE = os.environ.get('RUSTCHAIN_API_BASE', 'http://localhost:8088')
 POLL_INTERVAL = _env_float('WS_POLL_INTERVAL', 3.0)
 MAX_EVENTS = _env_int('WS_MAX_EVENTS', 100)
+WEBSOCKET_CORS_ORIGINS = parse_websocket_cors_origins(local_port=WS_PORT)
 JSON_RPC_VERSION = '2.0'
 MINING_STATS_SUBSCRIPTION = 'mining_stats'
 BLOCK_SUBSCRIPTION = 'blocks'
@@ -234,7 +279,7 @@ class WebSocketFeed:
         self.app = app
         self.socketio = SocketIO(
             app, 
-            cors_allowed_origins="*",
+            cors_allowed_origins=WEBSOCKET_CORS_ORIGINS,
             async_mode='threading',
             ping_timeout=60,
             ping_interval=25,
