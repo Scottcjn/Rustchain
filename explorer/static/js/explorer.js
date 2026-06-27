@@ -458,12 +458,12 @@ function renderEpochStats() {
     container.innerHTML = `
         <div class="card">
             <div class="card-title">Current Epoch</div>
-            <div class="card-value text-accent">#${escapeHtml(formatNumber(epoch.epoch, 0))}</div>
+            <div class="card-value text-accent">#${formatNumber(epoch.epoch, 0)}</div>
             <div class="card-label">Epoch Number</div>
         </div>
         <div class="card">
             <div class="card-title">Epoch Pot</div>
-            <div class="card-value text-success">${escapeHtml(formatNumber(epoch.pot))} RTC</div>
+            <div class="card-value text-success">${formatNumber(epoch.pot)} RTC</div>
             <div class="card-label">Reward Pool</div>
         </div>
         <div class="card">
@@ -473,7 +473,7 @@ function renderEpochStats() {
         </div>
         <div class="card">
             <div class="card-title">Progress</div>
-            <div class="card-value">${escapeHtml(formatNumber(slot, 0))}/${escapeHtml(formatNumber(blocksPerEpoch, 0))}</div>
+            <div class="card-value">${formatNumber(slot, 0)}/${formatNumber(blocksPerEpoch, 0)}</div>
             <div class="progress-bar">
                 <div class="progress-fill" style="width: ${escapeHtml(progress)}%"></div>
             </div>
@@ -657,7 +657,7 @@ function renderTransactionsTable() {
             <td class="mono">${escapeHtml(tx.type || 'transfer')}</td>
             <td class="mono" title="${escapeHtml(tx.from)}">${escapeHtml(shortenAddress(tx.from || '0x'))}</td>
             <td class="mono" title="${escapeHtml(tx.to)}">${escapeHtml(shortenAddress(tx.to || '0x'))}</td>
-            <td class="text-success">${escapeHtml(formatNumber(tx.amount || 0, 6))} RTC</td>
+            <td class="text-success">${formatNumber(tx.amount || 0, 6)} RTC</td>
             <td class="mono">${escapeHtml(formatRelativeTime(tx.timestamp))}</td>
         </tr>
     `).join('');
@@ -800,8 +800,8 @@ function renderSearchResults() {
                                 <td class="mono" title="${escapeHtml(miner.miner_id)}">${escapeHtml(shortenAddress(miner.miner_id || 'unknown'))}</td>
                                 <td><span class="badge ${escapeHtml(badgeClass)}">${escapeHtml(miner.device_arch || 'Unknown')}</span></td>
                                 <td><span class="badge badge-${escapeHtml(tier)}">${escapeHtml(tier.toUpperCase())}</span></td>
-                                <td class="text-accent">${escapeHtml(formatNumber(miner.multiplier || 1.0, 2))}x</td>
-                                <td class="text-success">${escapeHtml(formatNumber(miner.balance || 0, 6))} RTC</td>
+                                <td class="text-accent">${formatNumber(miner.multiplier || 1.0, 2)}x</td>
+                                <td class="text-success">${formatNumber(miner.balance || 0, 6)} RTC</td>
                             </tr>
                         `;
                     }).join('')}
