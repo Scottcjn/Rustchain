@@ -751,14 +751,7 @@
     </main>
 
     <!-- Socket.IO Library -->
-    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js" integrity="sha384-m3LF8gDLW1fSq1kMaKFMjOjGLDhN9fT9pMjJd85K0hHjJ0mzyMzBkRlqYHr6fL1l" crossorigin="anonymous">
-function escapeHtml(value) {
-  const div = document.createElement('div');
-  div.textContent = value == null ? '' : String(value);
-  return div.innerHTML;
-}
-
-</script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js" integrity="sha384-m3LF8gDLW1fSq1kMaKFMjOjGLDhN9fT9pMjJd85K0hHjJ0mzyMzBkRlqYHr6fL1l" crossorigin="anonymous"></script>
 
     <script>
         // Configuration
@@ -1196,25 +1189,25 @@ function escapeHtml(value) {
                 const overviewTable = document.getElementById('miners-table');
                 overviewTable.innerHTML = minerList.slice(0, 10).map(miner => `
                     <tr>
-                        <td><strong>${escapeHtml(esc(miner.miner_id || 'Unknown'))}</strong></td>
-                        <td><span class="arch-badge">${escapeHtml(esc(miner.architecture || miner.device_arch || 'Unknown'))}</span></td>
-                        <td><span class="multiplier">x${escapeHtml(esc(miner.multiplier || miner.antiquity_multiplier || '1.0'))}</span></td>
+                        <td><strong>${esc(miner.miner_id || 'Unknown')}</strong></td>
+                        <td><span class="arch-badge">${esc(miner.architecture || miner.device_arch || 'Unknown')}</span></td>
+                        <td><span class="multiplier">x${esc(miner.multiplier || miner.antiquity_multiplier || '1.0')}</span></td>
                         <td><span class="badge badge-success">Online</span></td>
-                        <td>${escapeHtml(esc(formatTime(miner.last_attestation || miner.last_seen)))}</td>
-                        <td>${escapeHtml(esc(formatNumber(miner.earnings || miner.total_earned, 2)))} RTC</td>
+                        <td>${esc(formatTime(miner.last_attestation || miner.last_seen))}</td>
+                        <td>${esc(formatNumber(miner.earnings || miner.total_earned, 2))} RTC</td>
                     </tr>
                 `).join('');
 
                 const allMinersTable = document.getElementById('all-miners-table');
                 allMinersTable.innerHTML = minerList.map(miner => `
                     <tr>
-                        <td><strong>${escapeHtml(esc(miner.miner_id || 'Unknown'))}</strong></td>
-                        <td><span class="arch-badge">${escapeHtml(esc(miner.architecture || miner.device_arch || 'Unknown'))}</span></td>
-                        <td><span class="multiplier">x${escapeHtml(esc(miner.multiplier || miner.antiquity_multiplier || '1.0'))}</span></td>
+                        <td><strong>${esc(miner.miner_id || 'Unknown')}</strong></td>
+                        <td><span class="arch-badge">${esc(miner.architecture || miner.device_arch || 'Unknown')}</span></td>
+                        <td><span class="multiplier">x${esc(miner.multiplier || miner.antiquity_multiplier || '1.0')}</span></td>
                         <td><span class="badge badge-success">Online</span></td>
-                        <td>${escapeHtml(esc(formatTime(miner.last_attestation || miner.last_seen)))}</td>
-                        <td><code>${escapeHtml(esc(miner.wallet || miner.wallet_address || 'N/A'))}</code></td>
-                        <td>${escapeHtml(esc(formatNumber(miner.earnings || miner.total_earned, 2)))} RTC</td>
+                        <td>${esc(formatTime(miner.last_attestation || miner.last_seen))}</td>
+                        <td><code>${esc(miner.wallet || miner.wallet_address || 'N/A')}</code></td>
+                        <td>${esc(formatNumber(miner.earnings || miner.total_earned, 2))} RTC</td>
                     </tr>
                 `).join('');
             }
@@ -1246,11 +1239,11 @@ function escapeHtml(value) {
                 const table = document.getElementById('blocks-table');
                 table.innerHTML = blocks.slice(0, 20).map(block => `
                     <tr>
-                        <td><strong>${escapeHtml(esc(block.height || 'N/A'))}</strong></td>
-                        <td><code>${escapeHtml(esc((block.hash || '').substring(0, 16)))}...</code></td>
-                        <td>${escapeHtml(esc(formatTime(block.timestamp)))}</td>
-                        <td>${escapeHtml(esc(block.miners_count || 0))}</td>
-                        <td>${escapeHtml(esc(formatNumber(block.reward, 4)))} RTC</td>
+                        <td><strong>${esc(block.height || 'N/A')}</strong></td>
+                        <td><code>${esc((block.hash || '').substring(0, 16))}...</code></td>
+                        <td>${esc(formatTime(block.timestamp))}</td>
+                        <td>${esc(block.miners_count || 0)}</td>
+                        <td>${esc(formatNumber(block.reward, 4))} RTC</td>
                     </tr>
                 `).join('');
             }
