@@ -4,7 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>RustChain Fork Choice Graph — Visualizer</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js">
+function escapeHtml(value) {
+  const div = document.createElement('div');
+  div.textContent = value == null ? '' : String(value);
+  return div.innerHTML;
+}
+
+</script>
 <script src="https://d3js.org/d3.v7.min.js"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -359,7 +366,7 @@ function renderForkTree() {
   
   const forks = state.forks;
   if (!forks.length) {
-    svg.innerHTML = `<text x="${width/2}" y="${height/2}" text-anchor="middle" fill="#666" font-size="14">No fork data available</text>`;
+    svg.innerHTML = `<text x="${escapeHtml(width/2)}" y="${escapeHtml(height/2)}" text-anchor="middle" fill="#666" font-size="14">No fork data available</text>`;
     return;
   }
   
@@ -519,17 +526,17 @@ function renderForkTable() {
   
   tbody.innerHTML = forks.map(f => `
     <tr style="border-bottom:1px solid #1a1a1a;">
-      <td style="padding:6px 8px;color:#FFD700;">${f.slot}</td>
-      <td style="padding:6px 8px;color:#ccc;">${f.id}</td>
-      <td style="padding:6px 8px;color:#666;">${f.parentSlot}</td>
-      <td style="padding:6px 8px;text-align:right;color:#FF6B35;">${f.weight}</td>
-      <td style="padding:6px 8px;text-align:right;">${f.validators}</td>
+      <td style="padding:6px 8px;color:#FFD700;">${escapeHtml(f.slot)}</td>
+      <td style="padding:6px 8px;color:#ccc;">${escapeHtml(f.id)}</td>
+      <td style="padding:6px 8px;color:#666;">${escapeHtml(f.parentSlot)}</td>
+      <td style="padding:6px 8px;text-align:right;color:#FF6B35;">${escapeHtml(f.weight)}</td>
+      <td style="padding:6px 8px;text-align:right;">${escapeHtml(f.validators)}</td>
       <td style="padding:6px 8px;text-align:center;">
         <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.65rem;
-          background:${f.status === 'canonical' ? '#2a4a2a' : (f.status === 'active' ? '#4a2a1a' : '#2a2a2a')};
-          color:${f.status === 'canonical' ? '#00ff88' : (f.status === 'active' ? '#FF6B35' : '#666')};
-          border:1px solid ${f.status === 'canonical' ? '#004400' : (f.status === 'active' ? '#4a2a1a' : '#333')};">
-          ${f.status === 'canonical' ? '✓ Canonical' : (f.status === 'active' ? '⟳ Active' : '✗ Abandoned')}
+          background:${escapeHtml(f.status === 'canonical' ? '#2a4a2a' : (f.status === 'active' ? '#4a2a1a' : '#2a2a2a'))};
+          color:${escapeHtml(f.status === 'canonical' ? '#00ff88' : (f.status === 'active' ? '#FF6B35' : '#666'))};
+          border:1px solid ${escapeHtml(f.status === 'canonical' ? '#004400' : (f.status === 'active' ? '#4a2a1a' : '#333'))};">
+          ${escapeHtml(f.status === 'canonical' ? '✓ Canonical' : (f.status === 'active' ? '⟳ Active' : '✗ Abandoned'))}
         </span>
       </td>
     </tr>
