@@ -470,6 +470,13 @@
     </footer>
 
     <script>
+function escapeHtml(value) {
+  const div = document.createElement('div');
+  div.textContent = value == null ? '' : String(value);
+  return div.innerHTML;
+}
+
+
         // Configuration
         const CONFIG = {
             API_BASE: window.location.origin,
@@ -637,25 +644,25 @@
 
             wrapTable.innerHTML = wrapTxs.length > 0 ? wrapTxs.map(tx => `
                 <tr>
-                    <td>${formatRelativeTime(tx.created_at)}</td>
-                    <td style="font-family:monospace;color:var(--accent-cyan);">${truncateAddress(tx.lock_id, 8)}</td>
-                    <td>${formatNumber(tx.amount_rtc)}</td>
-                    <td>${truncateAddress(tx.sender_wallet)}</td>
-                    <td>${truncateAddress(tx.target_wallet, 4)}</td>
-                    <td><span class="tx-status ${tx.state === 'complete' ? 'confirmed' : 'pending'}">● ${tx.state}</span></td>
-                    <td><a href="${getSolanaExplorerUrl(tx.release_tx || tx.tx_hash)}" class="tx-hash" target="_blank">${truncateTxHash(tx.release_tx || tx.tx_hash)}</a></td>
+                    <td>${escapeHtml(formatRelativeTime(tx.created_at))}</td>
+                    <td style="font-family:monospace;color:var(--accent-cyan);">${escapeHtml(truncateAddress(tx.lock_id, 8))}</td>
+                    <td>${escapeHtml(formatNumber(tx.amount_rtc))}</td>
+                    <td>${escapeHtml(truncateAddress(tx.sender_wallet))}</td>
+                    <td>${escapeHtml(truncateAddress(tx.target_wallet, 4))}</td>
+                    <td><span class="tx-status ${escapeHtml(tx.state === 'complete' ? 'confirmed' : 'pending')}">● ${escapeHtml(tx.state)}</span></td>
+                    <td><a href="${escapeHtml(getSolanaExplorerUrl(tx.release_tx || tx.tx_hash))}" class="tx-hash" target="_blank">${escapeHtml(truncateTxHash(tx.release_tx || tx.tx_hash))}</a></td>
                 </tr>
             `).join('') : '<tr><td colspan="7" style="text-align:center;padding:40px;">No wrap transactions yet</td></tr>';
 
             unwrapTable.innerHTML = unwrapTxs.length > 0 ? unwrapTxs.map(tx => `
                 <tr>
-                    <td>${formatRelativeTime(tx.updated_at || tx.created_at)}</td>
-                    <td style="font-family:monospace;color:var(--accent-purple);">${truncateAddress(tx.lock_id, 8)}</td>
-                    <td>${formatNumber(tx.amount_rtc)}</td>
-                    <td>${truncateAddress(tx.sender_wallet)}</td>
-                    <td>${truncateAddress(tx.target_wallet, 4)}</td>
-                    <td><span class="tx-status ${tx.state === 'complete' ? 'confirmed' : 'pending'}">● ${tx.state}</span></td>
-                    <td><a href="${getSolanaExplorerUrl(tx.release_tx || tx.tx_hash)}" class="tx-hash" target="_blank">${truncateTxHash(tx.release_tx || tx.tx_hash)}</a></td>
+                    <td>${escapeHtml(formatRelativeTime(tx.updated_at || tx.created_at))}</td>
+                    <td style="font-family:monospace;color:var(--accent-purple);">${escapeHtml(truncateAddress(tx.lock_id, 8))}</td>
+                    <td>${escapeHtml(formatNumber(tx.amount_rtc))}</td>
+                    <td>${escapeHtml(truncateAddress(tx.sender_wallet))}</td>
+                    <td>${escapeHtml(truncateAddress(tx.target_wallet, 4))}</td>
+                    <td><span class="tx-status ${escapeHtml(tx.state === 'complete' ? 'confirmed' : 'pending')}">● ${escapeHtml(tx.state)}</span></td>
+                    <td><a href="${escapeHtml(getSolanaExplorerUrl(tx.release_tx || tx.tx_hash))}" class="tx-hash" target="_blank">${escapeHtml(truncateTxHash(tx.release_tx || tx.tx_hash))}</a></td>
                 </tr>
             `).join('') : '<tr><td colspan="7" style="text-align:center;padding:40px;">No unwrap transactions yet</td></tr>';
         }
@@ -691,13 +698,13 @@
             const areaPoints = `${padding},${height - padding} ${points} ${width - padding},${height - padding}`;
 
             chartContainer.innerHTML = `
-                <svg width="100%" height="100%" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
+                <svg width="100%" height="100%" viewBox="0 0 ${escapeHtml(width)} ${escapeHtml(height)}" preserveAspectRatio="xMidYMid meet">
                     <!-- Grid lines -->
-                    <line x1="${padding}" y1="${height/2}" x2="${width-padding}" y2="${height/2}" stroke="rgba(255,255,255,0.1)" stroke-dasharray="4"/>
+                    <line x1="${escapeHtml(padding)}" y1="${escapeHtml(height/2)}" x2="${escapeHtml(width-padding)}" y2="${escapeHtml(height/2)}" stroke="rgba(255,255,255,0.1)" stroke-dasharray="4"/>
                     <!-- Area fill -->
-                    <polygon points="${areaPoints}" fill="rgba(0,212,255,0.1)"/>
+                    <polygon points="${escapeHtml(areaPoints)}" fill="rgba(0,212,255,0.1)"/>
                     <!-- Line -->
-                    <polyline points="${points}" fill="none" stroke="url(#gradient)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <polyline points="${escapeHtml(points)}" fill="none" stroke="url(#gradient)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                     <!-- Gradient definition -->
                     <defs>
                         <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="0%">
@@ -706,8 +713,8 @@
                         </linearGradient>
                     </defs>
                     <!-- Price labels -->
-                    <text x="${padding}" y="${padding}" fill="rgba(255,255,255,0.6)" font-size="12">${formatNumber(maxPrice, 6)}</text>
-                    <text x="${padding}" y="${height-padding}" fill="rgba(255,255,255,0.6)" font-size="12">${formatNumber(minPrice, 6)}</text>
+                    <text x="${escapeHtml(padding)}" y="${escapeHtml(padding)}" fill="rgba(255,255,255,0.6)" font-size="12">${escapeHtml(formatNumber(maxPrice, 6))}</text>
+                    <text x="${escapeHtml(padding)}" y="${escapeHtml(height-padding)}" fill="rgba(255,255,255,0.6)" font-size="12">${escapeHtml(formatNumber(minPrice, 6))}</text>
                 </svg>
             `;
         }
