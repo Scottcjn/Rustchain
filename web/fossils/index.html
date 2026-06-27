@@ -4,7 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>The Fossil Record — RustChain Attestation Archaeology</title>
-<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="https://d3js.org/d3.v7.min.js">
+function escapeHtml(value) {
+  const div = document.createElement('div');
+  div.textContent = value == null ? '' : String(value);
+  return div.innerHTML;
+}
+
+</script>
 <style>
   :root {
     --bg: #0a0a0a; --fg: #c8b88a; --dim: #665e4a; --amber: #b8860b;
@@ -175,7 +182,7 @@ ARCHS.forEach(a => {
   const div = document.createElement('label');
   div.className = 'filter-arch';
   div.id = `fa-${a.key}`;
-  div.innerHTML = `<input type="checkbox" checked data-arch="${a.key}"><div class="legend-swatch" style="background:${a.color}"></div>${a.label}`;
+  div.innerHTML = `<input type="checkbox" checked data-arch="${escapeHtml(a.key)}"><div class="legend-swatch" style="background:${escapeHtml(a.color)}"></div>${escapeHtml(a.label)}`;
   div.querySelector('input').addEventListener('change', e => {
     e.target.checked ? activeArchs.add(e.target.dataset.arch) : activeArchs.delete(e.target.dataset.arch);
     updateFilterUI();
@@ -197,7 +204,7 @@ ARCHS.forEach(a => {
   const div = document.createElement('div');
   div.className = 'legend-item';
   div.id = `li-${a.key}`;
-  div.innerHTML = `<div class="legend-swatch" style="background:${a.color}"></div>${a.label}<span class="legend-count">(${total.toLocaleString()})</span>`;
+  div.innerHTML = `<div class="legend-swatch" style="background:${escapeHtml(a.color)}"></div>${escapeHtml(a.label)}<span class="legend-count">(${escapeHtml(total.toLocaleString())})</span>`;
   div.addEventListener('click', () => {
     const cb = filterPanel.querySelector(`input[data-arch="${a.key}"]`);
     if (cb) cb.click();
@@ -207,7 +214,7 @@ ARCHS.forEach(a => {
 
 // Stats
 const totalAtt = rawData.reduce((s,r) => s + archKeys.reduce((ss,k) => ss+(r[k]||0),0), 0);
-document.getElementById('stats').innerHTML = `<span>${rawData.length}</span> epochs &middot; <span>${totalAtt.toLocaleString()}</span> attestations &middot; <span>${archKeys.length}</span> architecture families &middot; click legend to filter`;
+document.getElementById('stats').innerHTML = `<span>${escapeHtml(rawData.length)}</span> epochs &middot; <span>${escapeHtml(totalAtt.toLocaleString())}</span> attestations &middot; <span>${escapeHtml(archKeys.length)}</span> architecture families &middot; click legend to filter`;
 
 const modeDescs = {
   stacked: 'Stacked Area &mdash; each band = active miners per arch, oldest at bottom',
@@ -279,13 +286,13 @@ function render(mode) {
       tip.style.display = 'block';
       tip.style.left = Math.min(event.pageX+14, window.innerWidth-330) + 'px';
       tip.style.top  = Math.max(event.pageY-80, 10) + 'px';
-      tip.innerHTML = `<div class="tip-arch" style="color:${archColor[d.key]}">${archLabel[d.key]}</div>
-        <div class="tip-row"><span class="tip-label">Epoch</span><span class="tip-value">${clamped}</span></div>
-        <div class="tip-row"><span class="tip-label">Active miners</span><span class="tip-value">${count}</span></div>
-        <div class="tip-row"><span class="tip-label">Share</span><span class="tip-value">${pct}%</span></div>
-        <div class="tip-row"><span class="tip-label">Total this epoch</span><span class="tip-value">${total}</span></div>
-        <div class="tip-row"><span class="tip-label">RTC mined</span><span class="tip-value">${row.totalRTC.toFixed(2)}</span></div>
-        <div class="tip-row"><span class="tip-label">Era</span><span class="tip-value">${clamped<50?'Genesis':clamped<100?'Expansion':clamped<200?'Consolidation':'Modern'}</span></div>${minerHtml}`;
+      tip.innerHTML = `<div class="tip-arch" style="color:${escapeHtml(archColor[d.key])}">${escapeHtml(archLabel[d.key])}</div>
+        <div class="tip-row"><span class="tip-label">Epoch</span><span class="tip-value">${escapeHtml(clamped)}</span></div>
+        <div class="tip-row"><span class="tip-label">Active miners</span><span class="tip-value">${escapeHtml(count)}</span></div>
+        <div class="tip-row"><span class="tip-label">Share</span><span class="tip-value">${escapeHtml(pct)}%</span></div>
+        <div class="tip-row"><span class="tip-label">Total this epoch</span><span class="tip-value">${escapeHtml(total)}</span></div>
+        <div class="tip-row"><span class="tip-label">RTC mined</span><span class="tip-value">${escapeHtml(row.totalRTC.toFixed(2))}</span></div>
+        <div class="tip-row"><span class="tip-label">Era</span><span class="tip-value">${escapeHtml(clamped<50?'Genesis':clamped<100?'Expansion':clamped<200?'Consolidation':'Modern')}</span></div>${escapeHtml(minerHtml)}`;
       d3.select(this).attr('opacity', 1);
       const ei = document.getElementById('epoch-info');
       ei.style.display = 'block';
