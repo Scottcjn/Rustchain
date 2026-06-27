@@ -8305,7 +8305,7 @@ def _pending_ledger_explorer_transactions(db, limit):
         LIMIT ?
         """,
         (limit,),
-    ).fetchall()
+    ).fetchall()  # fetchall-ok: already-paginated
 
     transactions = []
     for row in rows:
@@ -8369,7 +8369,7 @@ def _ledger_explorer_transactions(db, limit):
         LIMIT ?
         """,
         (limit,),
-    ).fetchall()
+    ).fetchall()  # fetchall-ok: already-paginated
     transactions = []
     for row in rows:
         amount_i64 = int(row["delta_i64"])
