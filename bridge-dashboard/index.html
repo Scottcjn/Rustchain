@@ -646,7 +646,7 @@ function escapeHtml(value) {
                 <tr>
                     <td>${escapeHtml(formatRelativeTime(tx.created_at))}</td>
                     <td style="font-family:monospace;color:var(--accent-cyan);">${escapeHtml(truncateAddress(tx.lock_id, 8))}</td>
-                    <td>${escapeHtml(formatNumber(tx.amount_rtc))}</td>
+                    <td>${formatNumber(tx.amount_rtc)}</td>
                     <td>${escapeHtml(truncateAddress(tx.sender_wallet))}</td>
                     <td>${escapeHtml(truncateAddress(tx.target_wallet, 4))}</td>
                     <td><span class="tx-status ${escapeHtml(tx.state === 'complete' ? 'confirmed' : 'pending')}">● ${escapeHtml(tx.state)}</span></td>
@@ -658,7 +658,7 @@ function escapeHtml(value) {
                 <tr>
                     <td>${escapeHtml(formatRelativeTime(tx.updated_at || tx.created_at))}</td>
                     <td style="font-family:monospace;color:var(--accent-purple);">${escapeHtml(truncateAddress(tx.lock_id, 8))}</td>
-                    <td>${escapeHtml(formatNumber(tx.amount_rtc))}</td>
+                    <td>${formatNumber(tx.amount_rtc)}</td>
                     <td>${escapeHtml(truncateAddress(tx.sender_wallet))}</td>
                     <td>${escapeHtml(truncateAddress(tx.target_wallet, 4))}</td>
                     <td><span class="tx-status ${escapeHtml(tx.state === 'complete' ? 'confirmed' : 'pending')}">● ${escapeHtml(tx.state)}</span></td>
@@ -713,8 +713,8 @@ function escapeHtml(value) {
                         </linearGradient>
                     </defs>
                     <!-- Price labels -->
-                    <text x="${escapeHtml(padding)}" y="${escapeHtml(padding)}" fill="rgba(255,255,255,0.6)" font-size="12">${escapeHtml(formatNumber(maxPrice, 6))}</text>
-                    <text x="${escapeHtml(padding)}" y="${escapeHtml(height-padding)}" fill="rgba(255,255,255,0.6)" font-size="12">${escapeHtml(formatNumber(minPrice, 6))}</text>
+                    <text x="${escapeHtml(padding)}" y="${escapeHtml(padding)}" fill="rgba(255,255,255,0.6)" font-size="12">${formatNumber(maxPrice, 6)}</text>
+                    <text x="${escapeHtml(padding)}" y="${escapeHtml(height-padding)}" fill="rgba(255,255,255,0.6)" font-size="12">${formatNumber(minPrice, 6)}</text>
                 </svg>
             `;
         }
