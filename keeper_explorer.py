@@ -104,10 +104,27 @@ def home():
 
 @app.route('/api/proxy/<path:path>')
 def proxy_api(path):
-    """Proxy requests to the RustChain node."""
+    """Proxy requests to the RustChain node with path validation."""
+    # Whitelist of allowed API paths to prevent SSRF and internal access
+    ALLOWED_PATHS = {
+        "api/miners",
+        "api/nodes",
+        "api/stats",
+        "epoch",
+        "health",
+        "wallet/balance",
+        "wallet/history"
+    }
+    
+    # Basic path normalization
+    normalized_path = path.strip("/")
+    
+    # Check if the path starts with any allowed prefix
+    if not any(normalized_path.startswith(p) for p in ALLOWED_PATHS):
+        return jsonify({"error": "Access to this endpoint is forbidden via proxy"}), 403
+    
     try:
-        url = f"{NODE_API}/{path}"
-        # Keep query parameters
+        url = f"{NODE_API}/{normalized_path}"
         if request.query_string:
             url += f"?{request.query_string.decode('utf-8')}"
             
