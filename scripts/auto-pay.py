@@ -22,6 +22,7 @@ Environment variables (set by the GitHub Action):
 import hashlib
 import os
 import re
+import subprocess
 import sys
 from datetime import datetime, timezone
 
@@ -52,6 +53,7 @@ PAYMENT_STARTED_MARKER = "RTC-AutoPay-Started"
 MANUAL_PAYMENT_MARKER = "RTC-AutoPay-Manual-Required"
 TRUSTED_BOT_LOGINS = {"github-actions[bot]"}
 STARTED_LOCK_TTL_SECONDS = 10 * 60
+LOCK_REF_PREFIX = "refs/heads/rtc-autopay-locks"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -106,6 +108,73 @@ def post_comment(repo: str, pr_number: str, body: str) -> None:
     )
     resp.raise_for_status()
     print(f"Posted confirmation comment on PR #{pr_number}")
+
+
+def resolve_lock_sha() -> str:
+    """Return an existing commit SHA to attach the GitHub lock ref to."""
+    sha = os.environ.get("GITHUB_SHA", "").strip()
+    if re.fullmatch(r"[0-9a-fA-F]{40}", sha):
+        return sha
+
+    try:
+        sha = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except (OSError, subprocess.CalledProcessError):
+        sha = ""
+
+    if re.fullmatch(r"[0-9a-fA-F]{40}", sha):
+        return sha
+
+    print("::error::Unable to resolve a commit SHA for the auto-pay lock ref")
+    sys.exit(1)
+
+
+def lock_ref_name(pr_number: str, payment_key: str) -> str:
+    """Build a deterministic per-claim Git ref name used as the mutex."""
+    return f"{LOCK_REF_PREFIX}/pr-{pr_number}/{payment_key}"
+
+
+def acquire_payment_lock(repo: str, pr_number: str, payment_key: str) -> bool:
+    """Atomically create a per-payment Git ref.
+
+    GitHub's create-ref endpoint is conditional: it succeeds for exactly one
+    concurrent caller and returns 422 once the ref already exists. This is a
+    real mutex, unlike checking for a marker comment before posting one.
+    """
+    ref = lock_ref_name(pr_number, payment_key)
+    url = f"{GITHUB_API}/repos/{repo}/git/refs"
+    resp = requests.post(
+        url,
+        headers=gh_headers(),
+        json={"ref": ref, "sha": resolve_lock_sha()},
+        timeout=GITHUB_REQUEST_TIMEOUT_SECONDS,
+    )
+    if resp.status_code == 422:
+        print(f"Payment already in progress (lock ref exists: {ref}). Skipping.")
+        return False
+    resp.raise_for_status()
+    print(f"Acquired payment lock ref: {ref}")
+    return True
+
+
+def release_payment_lock(repo: str, pr_number: str, payment_key: str) -> None:
+    """Best-effort unlock for failures before a transfer is accepted."""
+    ref_path = lock_ref_name(pr_number, payment_key).removeprefix("refs/")
+    url = f"{GITHUB_API}/repos/{repo}/git/refs/{ref_path}"
+    try:
+        resp = requests.delete(
+            url,
+            headers=gh_headers(),
+            timeout=GITHUB_REQUEST_TIMEOUT_SECONDS,
+        )
+        if resp.status_code not in (204, 404):
+            resp.raise_for_status()
+        print(f"Released payment lock ref: refs/{ref_path}")
+    except requests.exceptions.RequestException as e:
+        print(f"::warning::Failed to release payment lock ref refs/{ref_path}: {e}")
 
 
 def transfer_rtc(vps_host: str, admin_key: str, to_wallet: str,
@@ -290,6 +359,9 @@ def main() -> None:
         print(f"Manual transfer notice posted for {payment_amount} RTC to {to_wallet}")
         return
 
+    if not acquire_payment_lock(repo, pr_number, payment_key):
+        return
+
     started_body = (
         f"**RTC Auto-Pay Started**\n\n"
         f"Preparing to pay **{payment_amount} RTC** to `{to_wallet}`.\n\n"
@@ -302,12 +374,15 @@ def main() -> None:
     try:
         result = transfer_rtc(vps_host, admin_key, to_wallet, payment_amount, memo, payment_key)
     except requests.exceptions.ConnectionError as e:
+        release_payment_lock(repo, pr_number, payment_key)
         print(f"::error::Cannot reach VPS at {vps_host}:{VPS_PORT} — {e}")
         sys.exit(1)
     except requests.exceptions.HTTPError as e:
+        release_payment_lock(repo, pr_number, payment_key)
         print(f"::error::VPS returned error: {e.response.status_code} — {e.response.text}")
         sys.exit(1)
     except requests.exceptions.Timeout:
+        release_payment_lock(repo, pr_number, payment_key)
         print("::error::VPS request timed out after 30s")
         sys.exit(1)
 
@@ -317,6 +392,7 @@ def main() -> None:
 
     if not ok:
         print(f"::error::Transfer failed: {error}")
+        release_payment_lock(repo, pr_number, payment_key)
         # Post failure notice so humans know
         fail_body = (
             f"**RTC Auto-Pay Failed**\n\n"

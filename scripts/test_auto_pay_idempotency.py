@@ -45,6 +45,7 @@ def base_env():
         "RTC_VPS_HOST": "127.0.0.1",
         "RTC_ADMIN_KEY": "redacted-admin-key",
         "REPO_OWNER": "Scottcjn",
+        "GITHUB_SHA": "0123456789abcdef0123456789abcdef01234567",
     }
 
 
@@ -79,6 +80,8 @@ def test_untrusted_confirmation_marker_does_not_suppress_owner_payment():
 
     def fake_post(url, headers=None, json=None, timeout=None):
         assert json is not None
+        if url.endswith("/git/refs"):
+            return FakeResponse({"ref": json["ref"]}, status_code=201)
         if url.endswith("/wallet/transfer"):
             transfer_calls.append(json)
             return FakeResponse({"ok": True, "pending_id": "p1"})
@@ -109,6 +112,8 @@ def test_confirmation_comment_failure_retries_with_same_idempotency_key():
 
     def fake_post(url, headers=None, json=None, timeout=None):
         assert json is not None
+        if url.endswith("/git/refs"):
+            return FakeResponse({"ref": json["ref"]}, status_code=201)
         if url.endswith("/wallet/transfer"):
             transfer_calls.append(json)
             key = json["idempotency_key"]
@@ -157,6 +162,8 @@ def test_started_marker_does_not_block_retry_after_transfer_connection_failure()
 
     def fake_post(url, headers=None, json=None, timeout=None):
         assert json is not None
+        if url.endswith("/git/refs"):
+            return FakeResponse({"ref": json["ref"]}, status_code=201)
         if url.endswith("/wallet/transfer"):
             transfer_calls.append(json)
             if len(transfer_calls) == 1:
@@ -211,6 +218,8 @@ def test_fresh_started_marker_blocks_concurrent_transfer_attempt():
 
     def fake_post(url, headers=None, json=None, timeout=None):
         assert json is not None
+        if url.endswith("/git/refs"):
+            return FakeResponse({"ref": json["ref"]}, status_code=201)
         if url.endswith("/wallet/transfer"):
             transfer_calls.append(json)
             return FakeResponse({"ok": True, "pending_id": "p1"})
@@ -224,6 +233,43 @@ def test_fresh_started_marker_blocks_concurrent_transfer_attempt():
 
     assert transfer_calls == []
     assert comment_posts == []
+
+
+def test_atomic_lock_ref_blocks_two_runs_from_same_initial_comment_set():
+    auto_pay = load_auto_pay()
+    comments = [owner_payment_comment()]
+    created_refs = set()
+    transfer_calls = []
+    comment_posts = []
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        assert json is not None
+        if url.endswith("/git/refs"):
+            ref = json["ref"]
+            if ref in created_refs:
+                return FakeResponse({"message": "Reference already exists"}, status_code=422)
+            created_refs.add(ref)
+            return FakeResponse({"ref": ref}, status_code=201)
+        if url.endswith("/wallet/transfer"):
+            transfer_calls.append(json)
+            return FakeResponse({"ok": True, "pending_id": "p1"})
+        comment_posts.append(json["body"])
+        return FakeResponse({"id": 999})
+
+    with patch.dict(os.environ, base_env(), clear=True):
+        auto_pay.requests.get = paged_comments(comments)
+        auto_pay.requests.post = fake_post
+
+        # Both invocations observe the same initial comments. The second one is
+        # stopped only by the atomic Git ref create, which mirrors the real
+        # concurrent workflow race that comment pre-seeding did not exercise.
+        auto_pay.main()
+        auto_pay.main()
+
+    assert len(created_refs) == 1
+    assert len(transfer_calls) == 1
+    assert len([body for body in comment_posts if "RTC-AutoPay-Started" in body]) == 1
+    assert len([body for body in comment_posts if "RTC-AutoPay-Confirmed" in body]) == 1
 
 
 def test_stale_started_marker_does_not_block_retry():
@@ -251,6 +297,8 @@ def test_stale_started_marker_does_not_block_retry():
 
     def fake_post(url, headers=None, json=None, timeout=None):
         assert json is not None
+        if url.endswith("/git/refs"):
+            return FakeResponse({"ref": json["ref"]}, status_code=201)
         if url.endswith("/wallet/transfer"):
             transfer_calls.append(json)
             return FakeResponse({"ok": True, "pending_id": "p1"})
@@ -278,6 +326,8 @@ def test_manual_transfer_notice_does_not_block_later_auto_pay():
 
     def fake_post(url, headers=None, json=None, timeout=None):
         assert json is not None
+        if url.endswith("/git/refs"):
+            return FakeResponse({"ref": json["ref"]}, status_code=201)
         if url.endswith("/wallet/transfer"):
             transfer_calls.append(json)
             return FakeResponse({"ok": True, "pending_id": "p1"})
@@ -331,6 +381,8 @@ def test_legacy_manual_transfer_notice_does_not_block_later_auto_pay():
 
     def fake_post(url, headers=None, json=None, timeout=None):
         assert json is not None
+        if url.endswith("/git/refs"):
+            return FakeResponse({"ref": json["ref"]}, status_code=201)
         if url.endswith("/wallet/transfer"):
             transfer_calls.append(json)
             return FakeResponse({"ok": True, "pending_id": "p1"})
