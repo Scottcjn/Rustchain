@@ -1,3 +1,9 @@
+function escapeHtml(value) {
+  const div = document.createElement('div');
+  div.textContent = value == null ? '' : String(value);
+  return div.innerHTML;
+}
+
 // ============================================================
 // BEACON ATLAS - Advertise / Get Listed Panel
 // Two tiers: Crypto Payment Listing & Agent Integration
@@ -129,15 +135,15 @@ export function openAdvertisePanel() {
 
     card.innerHTML = `
       <div style="text-align:center;margin-bottom:12px;">
-        <div style="font-size:32px;margin-bottom:4px;">${tier.icon}</div>
-        <div style="color:${tier.color};font-size:15px;font-weight:600;letter-spacing:1px;">
-          ${tier.title}
+        <div style="font-size:32px;margin-bottom:4px;">${escapeHtml(tier.icon)}</div>
+        <div style="color:${escapeHtml(tier.color)};font-size:15px;font-weight:600;letter-spacing:1px;">
+          ${escapeHtml(tier.title)}
         </div>
-        <div style="color:#88ff88;font-size:11px;margin-top:2px;">${tier.subtitle}</div>
+        <div style="color:#88ff88;font-size:11px;margin-top:2px;">${escapeHtml(tier.subtitle)}</div>
       </div>
 
       <div style="margin-bottom:12px;">
-        <div style="color:${tier.color};font-size:11px;font-weight:600;margin-bottom:6px;letter-spacing:1px;">
+        <div style="color:${escapeHtml(tier.color)};font-size:11px;font-weight:600;margin-bottom:6px;letter-spacing:1px;">
           REQUIREMENTS
         </div>
         ${tier.requirements.map(r => `
