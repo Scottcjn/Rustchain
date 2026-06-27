@@ -206,7 +206,7 @@
                     <td>${escapeHtml(tx.sender_wallet)}</td>
                     <td style="color:white; font-weight:bold">${escapeHtml(safeNumber(tx.amount_rtc))}</td>
                     <td><span style="color:var(--solana)">${escapeHtml(targetChain.toUpperCase())}</span></td>
-                    <td><span class="state-tag ${escapeHtml(state)}">${escapeHtml(state.toUpperCase())}</span></td>
+                    <td><span class="state-tag ${state}">${escapeHtml(state.toUpperCase())}</span></td>
                 `;
                 body.appendChild(row);
             });
