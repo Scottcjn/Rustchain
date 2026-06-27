@@ -179,7 +179,7 @@ function safeScore(v){
 
   const t=data.attestation_timeline_30d||[];
   document.getElementById('timelineCard').style.display='block';
-  document.getElementById('timeline').innerHTML=t.length?t.map(x=>`<tr><td>${esc(x.date||'—')}</td><td>${escapeHtml(safeInt(x.attestations??x.samples??0))}</td><td>${escapeHtml(safeScore(x.rust_score??m.rust_score??'—'))}</td></tr>`).join(''):'<tr><td colspan="3">No recent attestation activity</td></tr>';
+  document.getElementById('timeline').innerHTML=t.length?t.map(x=>`<tr><td>${esc(x.date||'—')}</td><td>${safeInt(x.attestations??x.samples??0)}</td><td>${safeScore(x.rust_score??m.rust_score??'—')}</td></tr>`).join(''):'<tr><td colspan="3">No recent attestation activity</td></tr>';
 
   const r=data.reward_participation||{};
   document.getElementById('rewardCard').style.display='block';
