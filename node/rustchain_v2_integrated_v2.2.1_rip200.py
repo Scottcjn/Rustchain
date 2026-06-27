@@ -7454,6 +7454,37 @@ def get_stats():
     })
 
 
+@app.route('/network/info', methods=['GET'])
+def get_network_info():
+    """Get network information for wallet clients"""
+    # Get current block height safely
+    block_height = 0
+    try:
+        with sqlite3.connect(DB_PATH) as db:
+            row = db.execute("SELECT MAX(height) FROM blocks").fetchone()
+            block_height = row[0] if (row and row[0] is not None) else 0
+    except Exception:
+        pass
+
+    # Get peer count safely
+    peer_count = 0
+    try:
+        if 'peer_manager' in globals() and peer_manager is not None:
+            stats = peer_manager.get_network_stats()
+            peer_count = stats.get('active_peers', 0)
+    except Exception:
+        pass
+
+    return jsonify({
+        "chain_id": CHAIN_ID,
+        "network": "testnet" if "testnet" in CHAIN_ID.lower() else "mainnet",
+        "block_height": block_height,
+        "peer_count": peer_count,
+        "min_fee": 1000,
+        "version": "2.2.1-security-hardened"
+    })
+
+
 # ---------- RIP-0200b: Deflationary Bounty Decay ----------
 # Half-life model: bounty multiplier = 0.5^(total_paid / HALF_LIFE)
 # As more RTC is paid from community fund, bounties shrink automatically.
