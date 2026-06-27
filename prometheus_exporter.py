@@ -19,9 +19,19 @@ EXPORTER_HOST = os.getenv(
     'PROMETHEUS_EXPORTER_HOST',
     '0.0.0.0' if os.getenv('RUSTCHAIN_AUTH') else '127.0.0.1'
 )
-EXPORTER_PORT = int(os.getenv('PROMETHEUS_EXPORTER_PORT', '9100'))
-SCRAPE_INTERVAL = int(os.getenv('SCRAPE_INTERVAL', '15'))
 DB_PATH = os.getenv('DB_PATH', 'rustchain.db')
+
+
+def _safe_int_env(name, default):
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        logger.warning("Invalid %s env value; using default %s", name, default)
+        return default
+
+
+EXPORTER_PORT = _safe_int_env('PROMETHEUS_EXPORTER_PORT', 9100)
+SCRAPE_INTERVAL = _safe_int_env('SCRAPE_INTERVAL', 15)
 
 # Metrics storage
 METRIC_DEFAULTS = {
