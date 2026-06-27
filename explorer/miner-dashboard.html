@@ -384,17 +384,17 @@
             if (Array.isArray(rewards) && rewards.length > 0) {
                 rewardsBody.innerHTML = rewards.slice(0, 20).map(r => `
                     <tr>
-                        <td>${safeText(r.epoch ?? r.block)}</td>
-                        <td style="color:var(--green);">+${safeText(r.amount ?? r.reward ?? r.value, '?')} RTC</td>
-                        <td><span class="badge badge-green">${safeText(r.type || 'mining')}</span></td>
-                        <td>${safeText(timeAgo(r.timestamp || r.time || r.created_at))}</td>
+                        <td>${escapeHtml(safeText(r.epoch ?? r.block))}</td>
+                        <td style="color:var(--green);">+${escapeHtml(safeText(r.amount ?? r.reward ?? r.value, '?'))} RTC</td>
+                        <td><span class="badge badge-green">${escapeHtml(safeText(r.type || 'mining'))}</span></td>
+                        <td>${escapeHtml(safeText(timeAgo(r.timestamp || r.time || r.created_at)))}</td>
                     </tr>
                 `).join('');
             } else {
                 const epochSummary = epoch.number ?? epoch.id ?? JSON.stringify(epoch).substring(0, 50);
                 rewardsBody.innerHTML = `
                     <tr><td colspan="4" style="text-align:center;color:var(--text-dim);">
-                        No reward data yet. Current epoch: ${safeText(epochSummary)}
+                        No reward data yet. Current epoch: ${escapeHtml(safeText(epochSummary))}
                     </td></tr>`;
             }
         } else {
@@ -407,8 +407,8 @@
             activityBody.innerHTML = `
                 <tr>
                     <td><span class="badge badge-green">Chain Tip</span></td>
-                    <td>Block ${safeText(activityData.height ?? activityData.block_height)}</td>
-                    <td>${safeText(timeAgo(activityData.timestamp))}</td>
+                    <td>Block ${escapeHtml(safeText(activityData.height ?? activityData.block_height))}</td>
+                    <td>${escapeHtml(safeText(timeAgo(activityData.timestamp)))}</td>
                 </tr>`;
         } else {
             activityBody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--text-dim);">No recent activity</td></tr>';
@@ -420,10 +420,10 @@
         if (withdrawals.length > 0) {
             wBody.innerHTML = withdrawals.slice(0, 10).map(w => `
                 <tr>
-                    <td style="font-size:0.75rem;">${safeText(String(w.withdrawal_id || w.id || '--').substring(0, 12))}...</td>
-                    <td>${safeText(w.amount, '?')} RTC</td>
-                    <td><span class="badge ${w.status === 'completed' ? 'badge-green' : w.status === 'pending' ? 'badge-yellow' : 'badge-red'}">${escapeHtml(w.status || 'unknown')}</span></td>
-                    <td>${safeText(timeAgo(w.requested_at || w.created_at || w.timestamp))}</td>
+                    <td style="font-size:0.75rem;">${escapeHtml(safeText(String(w.withdrawal_id || w.id || '--').substring(0, 12)))}...</td>
+                    <td>${escapeHtml(safeText(w.amount, '?'))} RTC</td>
+                    <td><span class="badge ${escapeHtml(w.status === 'completed' ? 'badge-green' : w.status === 'pending' ? 'badge-yellow' : 'badge-red')}">${escapeHtml(w.status || 'unknown')}</span></td>
+                    <td>${escapeHtml(safeText(timeAgo(w.requested_at || w.created_at || w.timestamp)))}</td>
                 </tr>
             `).join('');
         } else {
