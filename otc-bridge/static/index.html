@@ -860,8 +860,8 @@
         const normalizedSide = safeSide(side);
         const action = normalizedSide === 'sell' ? 'buy' : 'sell';
         document.getElementById('match-details').innerHTML =
-            `You will <strong>${escapeHtml(action)}</strong> <strong>${escapeHtml(formatNumber(amount, 2))} RTC</strong> at ` +
-            `<strong>${escapeHtml(formatNumber(price, 4))} ${escapeHtml(quote)}/RTC</strong> (total: ${escapeHtml(formatNumber(amount * price, 4))} ${escapeHtml(quote)}).<br/>` +
+            `You will <strong>${escapeHtml(action)}</strong> <strong>${formatNumber(amount, 2)} RTC</strong> at ` +
+            `<strong>${formatNumber(price, 4)} ${escapeHtml(quote)}/RTC</strong> (total: ${formatNumber(amount * price, 4)} ${escapeHtml(quote)}).<br/>` +
             `Counterparty: ${escapeHtml(maker)}` +
             (normalizedSide === 'buy' ? '<br/><em style="color:var(--gold);">Your RTC will be locked in escrow.</em>' : '');
 
