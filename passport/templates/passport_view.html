@@ -80,7 +80,7 @@ async function load() {
     <div class="passport-header">
       <div class="machine-name">${escapeHtml(p.name || 'Unnamed Machine')}</div>
       <div class="machine-id">${escapeHtml(p.machine_id || '')}</div>
-      <div class="tier-badge tier-${safeTier(p.tier)}">${escapeHtml(p.tier || 'modern')} &middot; ${escapeHtml(p.hardware_age || 0)} years old</div>
+      <div class="tier-badge tier-${escapeHtml(safeTier(p.tier))}">${escapeHtml(p.tier || 'modern')} &middot; ${escapeHtml(p.hardware_age || 0)} years old</div>
     </div>
 
     <div class="section">
@@ -107,7 +107,7 @@ async function load() {
         <div class="repair-entry">
           <div class="repair-date">${escapeHtml(r.date || '')}</div>
           <div class="repair-desc">${escapeHtml(r.description || '')}</div>
-          ${r.parts && r.parts.length ? `<div style="font-size:0.8em;color:var(--muted)">Parts: ${formatParts(r.parts)}</div>` : ''}
+          ${r.parts && r.parts.length ? `<div style="font-size:0.8em;color:var(--muted)">Parts: ${escapeHtml(formatParts(r.parts))}</div>` : ''}
         </div>
       `).join('') : '<div class="empty">No repairs logged yet</div>'}
     </div>
