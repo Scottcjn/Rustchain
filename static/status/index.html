@@ -194,14 +194,14 @@
 
                 card.innerHTML = `
                     <div class="node-name">
-                        <span class="status-dot ${status}"></span>
+                        <span class="status-dot ${escapeHtml(status)}"></span>
                         ${escapeHtml(node.name)}
                     </div>
                     <div class="location">${escapeHtml(node.location)}</div>
                     
                     <div class="stat-row">
                         <span class="stat-label">STATUS</span>
-                        <span style="color: ${statusColor}">${escapeHtml(status.toUpperCase())}</span>
+                        <span style="color: ${escapeHtml(statusColor)}">${escapeHtml(status.toUpperCase())}</span>
                     </div>
                     <div class="stat-row">
                         <span class="stat-label">LATENCY</span>
@@ -220,7 +220,7 @@
                         <span>${escapeHtml(safeNumber(node.miners, 0))}</span>
                     </div>
                     
-                    ${uptimeHtml}
+                    ${escapeHtml(uptimeHtml)}
                 `;
                 grid.appendChild(card);
             });
