@@ -279,6 +279,23 @@ class TestExplorerApiRoutes(unittest.TestCase):
         self.assertEqual(body["min_fee"], 1000)
         self.assertEqual(body["version"], "2.2.1-security-hardened")
 
+    def test_network_info_endpoint_missing_table(self):
+        import tempfile
+        import os
+        fd, db_path = tempfile.mkstemp()
+        os.close(fd)
+        try:
+            old_db_path = self.mod.DB_PATH
+            self.mod.DB_PATH = db_path
+            resp = self.client.get("/network/info")
+            self.assertEqual(resp.status_code, 200)
+            body = resp.get_json()
+            self.assertEqual(body["block_height"], 0)
+        finally:
+            self.mod.DB_PATH = old_db_path
+            if os.path.exists(db_path):
+                os.remove(db_path)
+
 
 if __name__ == "__main__":
     unittest.main()

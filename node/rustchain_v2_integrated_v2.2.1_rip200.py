@@ -7457,10 +7457,14 @@ def get_stats():
 @app.route('/network/info', methods=['GET'])
 def get_network_info():
     """Get network information for wallet clients"""
-    with sqlite3.connect(DB_PATH) as db:
-        # Get current block height
-        row = db.execute("SELECT MAX(height) FROM blocks").fetchone()
-        block_height = row[0] if (row and row[0] is not None) else 0
+    # Get current block height safely
+    block_height = 0
+    try:
+        with sqlite3.connect(DB_PATH) as db:
+            row = db.execute("SELECT MAX(height) FROM blocks").fetchone()
+            block_height = row[0] if (row and row[0] is not None) else 0
+    except Exception:
+        pass
 
     # Get peer count safely
     peer_count = 0
