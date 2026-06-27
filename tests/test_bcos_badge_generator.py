@@ -792,6 +792,13 @@ class TestEdgeCases(unittest.TestCase):
         # Should still generate, using L1 config
         self.assertIn('<svg', svg)
 
+    def test_xss_injection_in_repo_name_escaped(self):
+        """Test that XSS payloads in repo name are XML/HTML escaped in the SVG."""
+        payload = 'test/repo<script>alert(1)</script>"'
+        svg = generate_badge_svg(repo_name=payload, tier='L1')
+        self.assertNotIn('<script>', svg)
+        self.assertIn('test/repo&lt;script&gt;alert(1)&lt;/script&gt;&quot;', svg)
+
 
 if __name__ == '__main__':
     unittest.main()
