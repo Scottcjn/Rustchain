@@ -151,7 +151,7 @@ function updateHUD() {
     if (humans) parts.push(`${humans}H`);
     let agentStr = `${AGENTS.length}`;
     if (parts.length) agentStr += ` (${parts.join('+')})`;
-    el.innerHTML = `AGENTS: <span>${agentStr}</span> | CITIES: <span>${CITIES.length}</span> | CONTRACTS: <span>${CONTRACTS.length}</span>`;
+    el.innerHTML = `AGENTS: <span>${escapeHtml(agentStr)}</span> | CITIES: <span>${escapeHtml(CITIES.length)}</span> | CONTRACTS: <span>${escapeHtml(CONTRACTS.length)}</span>`;
   }
 }
 
