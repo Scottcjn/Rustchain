@@ -193,6 +193,13 @@
     </div>
 
     <script>
+function escapeHtml(value) {
+  const div = document.createElement('div');
+  div.textContent = value == null ? '' : String(value);
+  return div.innerHTML;
+}
+
+
         const API_MINERS = 'https://rustchain.org/api/miners';
         const REF_RATE = 0.10;
         const EPOCHS_PER_DAY = (24 * 60) / 10;
@@ -260,9 +267,9 @@
                 
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
-                    <td>${count} miners</td>
-                    <td>${eVal.toFixed(2)} RTC</td>
-                    <td style="color:var(--primary)">$${(eVal * 30.42 * REF_RATE).toFixed(2)}</td>
+                    <td>${escapeHtml(count)} miners</td>
+                    <td>${escapeHtml(eVal.toFixed(2))} RTC</td>
+                    <td style="color:var(--primary)">$${escapeHtml((eVal * 30.42 * REF_RATE).toFixed(2))}</td>
                 `;
                 tbody.appendChild(tr);
             });
