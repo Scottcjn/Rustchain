@@ -30,6 +30,7 @@ import hashlib
 import json
 import os
 import re
+import html
 import secrets
 import sqlite3
 import sys
@@ -306,6 +307,11 @@ def generate_badge_svg(
     if len(display_name) > 25:
         display_name = display_name[:22] + '...'
 
+    # XML-escape dynamic inputs to prevent injection issues (XSS)
+    escaped_repo_name = html.escape(repo_name)
+    escaped_display_name = html.escape(display_name)
+    escaped_tier = html.escape(tier)
+
     # QR code section (optional)
     qr_section = ''
     qr_width = 0
@@ -332,9 +338,9 @@ def generate_badge_svg(
     score_fill = int(trust_score / 100 * score_bar_width)
     score_color = '#4c1' if trust_score >= 80 else '#f59e0b' if trust_score >= 60 else '#ef4444'
 
-    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" role="img" aria-label="BCOS {tier} Certified: {repo_name}">
+    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" role="img" aria-label="BCOS {escaped_tier} Certified: {escaped_repo_name}">
   <defs>
-    <linearGradient id="bcos_grad_{tier}" x1="0%" y1="0%" x2="100%" y2="0%">
+    <linearGradient id="bcos_grad_{escaped_tier}" x1="0%" y1="0%" x2="100%" y2="0%">
       <stop offset="0%" style="stop-color:{config['color_start']};stop-opacity:1" />
       <stop offset="100%" style="stop-color:{config['color_end']};stop-opacity:1" />
     </linearGradient>
@@ -344,21 +350,21 @@ def generate_badge_svg(
   </defs>
 
   <!-- Background -->
-  <rect width="{width}" height="{height}" fill="url(#bcos_grad_{tier})" rx="3"/>
+  <rect width="{width}" height="{height}" fill="url(#bcos_grad_{escaped_tier})" rx="3"/>
 
   <!-- BCOS label -->
   <text x="8" y="16" font-family="{BADGE_CONFIG['font_family']}" font-size="{BADGE_CONFIG['font_size']}" font-weight="bold" fill="white">BCOS</text>
 
   <!-- Tier badge -->
   <rect x="48" y="4" width="24" height="14" rx="2" fill="white" fill-opacity="0.25"/>
-  <text x="60" y="15" font-family="{BADGE_CONFIG['font_family']}" font-size="9" font-weight="bold" fill="white">{tier}</text>
+  <text x="60" y="15" font-family="{BADGE_CONFIG['font_family']}" font-size="9" font-weight="bold" fill="white">{escaped_tier}</text>
 
   <!-- Trust score indicator -->
   <rect x="78" y="8" width="{score_bar_width}" height="6" rx="2" fill="white" fill-opacity="0.2"/>
   <rect x="79" y="9" width="{score_fill}" height="4" rx="1" fill="{score_color}"/>
 
   <!-- Repo name -->
-  <text x="125" y="16" font-family="{BADGE_CONFIG['font_family']}" font-size="9" fill="white" opacity="0.9">{display_name}</text>
+  <text x="125" y="16" font-family="{BADGE_CONFIG['font_family']}" font-size="9" fill="white" opacity="0.9">{escaped_display_name}</text>
 
   {qr_section}
 </svg>'''
@@ -1085,24 +1091,60 @@ MAIN_TEMPLATE = '''
                 .then(data => {
                     const resultDiv = document.getElementById('verifyResult');
                     resultDiv.classList.remove('hidden');
+                    resultDiv.innerHTML = ''; // Clear old content
 
                     if (data.valid) {
-                        resultDiv.innerHTML = `
-                            <div class="alert alert-success">
-                                <strong>✅ Valid Certificate</strong><br>
-                                <strong>Repo:</strong> ${data.data.repo_name}<br>
-                                <strong>Tier:</strong> ${data.data.tier}<br>
-                                <strong>Trust Score:</strong> ${data.data.trust_score}/100<br>
-                                ${data.data.reviewer ? '<strong>Reviewer:</strong> ' + data.data.reviewer : ''}
-                            </div>
-                        `;
+                        const alertDiv = document.createElement('div');
+                        alertDiv.className = 'alert alert-success';
+
+                        const title = document.createElement('strong');
+                        title.textContent = '✅ Valid Certificate';
+                        alertDiv.appendChild(title);
+                        alertDiv.appendChild(document.createElement('br'));
+
+                        const repoLabel = document.createElement('strong');
+                        repoLabel.textContent = 'Repo: ';
+                        const repoValue = document.createTextNode(data.data.repo_name);
+                        alertDiv.appendChild(repoLabel);
+                        alertDiv.appendChild(repoValue);
+                        alertDiv.appendChild(document.createElement('br'));
+
+                        const tierLabel = document.createElement('strong');
+                        tierLabel.textContent = 'Tier: ';
+                        const tierValue = document.createTextNode(data.data.tier);
+                        alertDiv.appendChild(tierLabel);
+                        alertDiv.appendChild(tierValue);
+                        alertDiv.appendChild(document.createElement('br'));
+
+                        const scoreLabel = document.createElement('strong');
+                        scoreLabel.textContent = 'Trust Score: ';
+                        const scoreValue = document.createTextNode(data.data.trust_score + '/100');
+                        alertDiv.appendChild(scoreLabel);
+                        alertDiv.appendChild(scoreValue);
+
+                        if (data.data.reviewer) {
+                            alertDiv.appendChild(document.createElement('br'));
+                            const revLabel = document.createElement('strong');
+                            revLabel.textContent = 'Reviewer: ';
+                            const revValue = document.createTextNode(data.data.reviewer);
+                            alertDiv.appendChild(revLabel);
+                            alertDiv.appendChild(revValue);
+                        }
+
+                        resultDiv.appendChild(alertDiv);
                     } else {
-                        resultDiv.innerHTML = `
-                            <div class="alert alert-error">
-                                <strong>❌ Invalid Certificate</strong><br>
-                                This certificate ID was not found in our database.
-                            </div>
-                        `;
+                        const alertDiv = document.createElement('div');
+                        alertDiv.className = 'alert alert-error';
+
+                        const title = document.createElement('strong');
+                        title.textContent = '❌ Invalid Certificate';
+                        alertDiv.appendChild(title);
+                        alertDiv.appendChild(document.createElement('br'));
+
+                        const text = document.createTextNode('This certificate ID was not found in our database.');
+                        alertDiv.appendChild(text);
+
+                        resultDiv.appendChild(alertDiv);
                     }
                 });
         });
