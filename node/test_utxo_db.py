@@ -18,7 +18,7 @@ from utxo_db import (
     UtxoDB, coin_select, compute_box_id, address_to_proposition,
     proposition_to_address, UNIT, DUST_THRESHOLD, MAX_COINBASE_OUTPUT_NRTC,
     MAX_OUTPUTS, MAX_DATA_INPUTS, MAX_SQLITE_INT64, MAX_UTXO_ADDRESS_BYTES,
-    MAX_UTXO_METADATA_BYTES, MAX_MEMPOOL_TX_ID_BYTES,
+    MAX_UTXO_METADATA_BYTES, MAX_UTXO_JSON_DEPTH, MAX_MEMPOOL_TX_ID_BYTES,
 )
 
 
@@ -1811,6 +1811,63 @@ class TestUtxoDB(unittest.TestCase):
                 self.assertFalse(ok)
                 self.assertEqual(db.mempool_get_block_candidates(), [])
                 self.assertFalse(db.mempool_check_double_spend(box['box_id']))
+
+    def test_mempool_rejects_deeply_nested_json_without_locking_input(self):
+        """Reject JSON-bomb output metadata before storing tx_data_json.
+
+        Each payload fits comfortably under MAX_UTXO_METADATA_BYTES yet nests
+        far past MAX_UTXO_JSON_DEPTH, so it would survive the byte check but
+        crash recursive downstream consumers (copy.deepcopy, pure-Python json
+        scanner, etc.) with RecursionError — a remote DoS on block validation.
+        """
+        depth = MAX_UTXO_JSON_DEPTH + 50
+        list_bomb = '[' * depth + ']' * depth          # valid, deeply nested list
+        dict_bomb = '{"a":' * depth + '1' + '}' * depth  # valid, deeply nested object
+        self.assertLessEqual(len(list_bomb), MAX_UTXO_METADATA_BYTES)
+        self.assertLessEqual(len(dict_bomb), MAX_UTXO_METADATA_BYTES)
+
+        cases = [
+            {'address': 'bob', 'value_nrtc': 100 * UNIT, 'tokens_json': list_bomb},
+            {'address': 'bob', 'value_nrtc': 100 * UNIT, 'registers_json': dict_bomb},
+            # bracket inside a string literal must NOT count toward depth:
+            {'address': 'bob', 'value_nrtc': 100 * UNIT,
+             'tokens_json': json.dumps(['[' * depth])},
+        ]
+
+        for idx, output in enumerate(cases):
+            with self.subTest(output=output):
+                db = UtxoDB(self.tmp.name)
+                self.assertTrue(db.apply_transaction({
+                    'tx_type': 'mining_reward',
+                    'inputs': [],
+                    'outputs': [
+                        {'address': f'alice_deep_{idx}',
+                         'value_nrtc': 100 * UNIT}
+                    ],
+                    'fee_nrtc': 0,
+                    'timestamp': int(time.time()) + 100 + idx,
+                    '_allow_minting': True,
+                }, block_height=idx + 1))
+                box = db.get_unspent_for_address(f'alice_deep_{idx}')[0]
+
+                ok = db.mempool_add({
+                    'tx_id': f'jsonbomb{idx}',
+                    'tx_type': 'transfer',
+                    'inputs': [{'box_id': box['box_id']}],
+                    'outputs': [output],
+                    'fee_nrtc': 0,
+                })
+
+                # Case 2 (brackets only inside a string literal) is a
+                # legitimately shallow payload and MUST be accepted; the two
+                # bombs must be rejected without locking the input.
+                if idx == 2:
+                    self.assertTrue(ok)
+                else:
+                    self.assertFalse(ok)
+                    self.assertEqual(db.mempool_get_block_candidates(), [])
+                    self.assertFalse(
+                        db.mempool_check_double_spend(box['box_id']))
 
     def test_apply_transaction_rejects_oversized_output_text(self):
         """Direct block application must reject oversized persisted fields."""
