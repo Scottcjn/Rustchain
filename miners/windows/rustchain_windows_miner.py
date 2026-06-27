@@ -726,7 +726,7 @@ class RustChainMiner:
         }
 
     def submit_header(self, payload):
-        """Submit one signed header and remember attempted slots."""
+        """Submit one signed header and remember accepted slots."""
         slot = payload.get("header", {}).get("slot")
         try:
             response = requests.post(
@@ -740,9 +740,9 @@ class RustChainMiner:
                 and isinstance(result, dict)
                 and bool(result.get("ok"))
             )
-            if slot is not None:
-                self._last_submitted_slot = slot
             if success:
+                if slot is not None:
+                    self._last_submitted_slot = slot
                 self.last_header_error = ""
             else:
                 self.last_header_error = self._response_diagnostic(response)

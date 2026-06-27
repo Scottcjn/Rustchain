@@ -126,9 +126,10 @@ def test_submit_uses_configured_node_and_deduplicates_accepted_slot(monkeypatch)
     }
 
 
-def test_submit_deduplicates_rejected_slot_and_records_diagnostic(monkeypatch):
+def test_submit_rejected_slot_records_diagnostic_without_advancing_slot(monkeypatch):
     module = load_miner_module()
     miner = make_miner(module)
+    miner._last_submitted_slot = 41
     payload = {
         "miner_id": "RTCwallet",
         "header": {"slot": 43, "miner": "RTCwallet", "timestamp": 1234},
@@ -146,7 +147,7 @@ def test_submit_deduplicates_rejected_slot_and_records_diagnostic(monkeypatch):
     monkeypatch.setattr(module.requests, "post", fake_post)
 
     assert miner.submit_header(payload) is False
-    assert miner._last_submitted_slot == 43
+    assert miner._last_submitted_slot == 41
     assert miner.last_header_error == "HTTP 403 error=no pubkey registered for miner"
 
 
