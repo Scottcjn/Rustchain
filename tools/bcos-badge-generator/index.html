@@ -739,19 +739,32 @@
 
         img.onerror = () => {
           // For demo purposes, show a placeholder if endpoint is unavailable
-          previewArea.innerHTML = `
-            <div style="text-align: left;">
-              <p style="color: var(--term-orange); margin-bottom: 10px;">
-                ⚠ Preview endpoint unavailable (expected in static mode)
-              </p>
-              <p style="color: var(--term-dim);">
-                Badge URL: <span style="color: var(--term-blue);">${url}</span>
-              </p>
-              <p style="color: var(--term-dim); margin-top: 10px;">
-                In production, this will fetch the badge from the BCOS API.
-              </p>
-            </div>
-          `;
+          previewArea.innerHTML = '';
+          const container = document.createElement('div');
+          container.style.textAlign = 'left';
+
+          const warnPara = document.createElement('p');
+          warnPara.style.color = 'var(--term-orange)';
+          warnPara.style.marginBottom = '10px';
+          warnPara.textContent = '⚠ Preview endpoint unavailable (expected in static mode)';
+          container.appendChild(warnPara);
+
+          const urlPara = document.createElement('p');
+          urlPara.style.color = 'var(--term-dim)';
+          urlPara.appendChild(document.createTextNode('Badge URL: '));
+          const urlSpan = document.createElement('span');
+          urlSpan.style.color = 'var(--term-blue)';
+          urlSpan.textContent = url;
+          urlPara.appendChild(urlSpan);
+          container.appendChild(urlPara);
+
+          const notePara = document.createElement('p');
+          notePara.style.color = 'var(--term-dim)';
+          notePara.style.marginTop = '10px';
+          notePara.textContent = 'In production, this will fetch the badge from the BCOS API.';
+          container.appendChild(notePara);
+
+          previewArea.appendChild(container);
           resolve(); // Don't reject, just show placeholder
         };
 
@@ -808,7 +821,11 @@
       currentStyle = 'flat';
       styleBtns.forEach(b => b.classList.remove('active'));
       styleBtns[0].classList.add('active');
-      previewArea.innerHTML = '<span class="preview-placeholder">Enter a Certificate ID and click "Generate Preview" to see your badge</span>';
+      previewArea.innerHTML = '';
+      const span = document.createElement('span');
+      span.className = 'preview-placeholder';
+      span.textContent = 'Enter a Certificate ID and click "Generate Preview" to see your badge';
+      previewArea.appendChild(span);
       outputSection.classList.add('hidden');
       statusMessage.classList.add('hidden');
       inputType.value = 'cert_id';

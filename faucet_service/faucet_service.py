@@ -1611,22 +1611,41 @@ HTML_TEMPLATE = """
                 result.className = 'result show ' + (data.ok ? 'success' : 'error');
                 
                 if (data.ok) {
-                    result.innerHTML = `
-                        <strong>✅ Success!</strong><br>
-                        Sent ${data.amount} RTC to ${wallet.substring(0, 10)}...${wallet.substring(wallet.length - 8)}<br>
-                        ${data.next_available ? `<small>Next available: ${new Date(data.next_available).toLocaleString()}</small>` : ''}
-                    `;
+                    result.innerHTML = '';
+                    const strong = document.createElement('strong');
+                    strong.textContent = '✅ Success!';
+                    result.appendChild(strong);
+                    result.appendChild(document.createElement('br'));
+                    const msg = document.createTextNode(`Sent ${data.amount} RTC to ${wallet.substring(0, 10)}...${wallet.substring(wallet.length - 8)}`);
+                    result.appendChild(msg);
+                    if (data.next_available) {
+                        result.appendChild(document.createElement('br'));
+                        const small = document.createElement('small');
+                        small.textContent = `Next available: ${new Date(data.next_available).toLocaleString()}`;
+                        result.appendChild(small);
+                    }
                     walletInput.value = '';
                     loadStats();
                 } else {
-                    result.innerHTML = `
-                        <strong>❌ ${data.error}</strong><br>
-                        ${data.next_available ? `<small>Next available: ${new Date(data.next_available).toLocaleString()}</small>` : ''}
-                    `;
+                    result.innerHTML = '';
+                    const strong = document.createElement('strong');
+                    strong.textContent = `❌ ${data.error}`;
+                    result.appendChild(strong);
+                    if (data.next_available) {
+                        result.appendChild(document.createElement('br'));
+                        const small = document.createElement('small');
+                        small.textContent = `Next available: ${new Date(data.next_available).toLocaleString()}`;
+                        result.appendChild(small);
+                    }
                 }
             } catch (err) {
                 result.className = 'result show error';
-                result.innerHTML = `<strong>❌ Error:</strong> ${err.message}`;
+                result.innerHTML = '';
+                const strong = document.createElement('strong');
+                strong.textContent = '❌ Error: ';
+                result.appendChild(strong);
+                const msg = document.createTextNode(err.message);
+                result.appendChild(msg);
             }
 
             submitBtn.disabled = false;
