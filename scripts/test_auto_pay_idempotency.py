@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 import importlib.util
 import os
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -77,6 +78,7 @@ def test_untrusted_confirmation_marker_does_not_suppress_owner_payment():
     comment_posts = []
 
     def fake_post(url, headers=None, json=None, timeout=None):
+        assert json is not None
         if url.endswith("/wallet/transfer"):
             transfer_calls.append(json)
             return FakeResponse({"ok": True, "pending_id": "p1"})
@@ -106,6 +108,7 @@ def test_confirmation_comment_failure_retries_with_same_idempotency_key():
         return FakeResponse(persisted_comments if page == 1 else [])
 
     def fake_post(url, headers=None, json=None, timeout=None):
+        assert json is not None
         if url.endswith("/wallet/transfer"):
             transfer_calls.append(json)
             key = json["idempotency_key"]
@@ -153,6 +156,7 @@ def test_started_marker_does_not_block_retry_after_transfer_connection_failure()
         return FakeResponse(persisted_comments if page == 1 else [])
 
     def fake_post(url, headers=None, json=None, timeout=None):
+        assert json is not None
         if url.endswith("/wallet/transfer"):
             transfer_calls.append(json)
             if len(transfer_calls) == 1:
@@ -183,6 +187,85 @@ def test_started_marker_does_not_block_retry_after_transfer_connection_failure()
     assert any("RTC-AutoPay-Confirmed" in body for body in comment_posts)
 
 
+def test_fresh_started_marker_blocks_concurrent_transfer_attempt():
+    auto_pay = load_auto_pay()
+    payment = owner_payment_comment()
+    payment_key = auto_pay.build_payment_key(
+        "Scottcjn/Rustchain",
+        "123",
+        payment["id"],
+        75.0,
+        "contributor",
+    )
+    comments = [
+        payment,
+        {
+            "id": 202,
+            "user": {"login": "github-actions[bot]"},
+            "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "body": f"<!-- RTC-AutoPay-Started payment_key={payment_key} payment_comment_id=101 -->",
+        },
+    ]
+    transfer_calls = []
+    comment_posts = []
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        assert json is not None
+        if url.endswith("/wallet/transfer"):
+            transfer_calls.append(json)
+            return FakeResponse({"ok": True, "pending_id": "p1"})
+        comment_posts.append(json["body"])
+        return FakeResponse({"id": 999})
+
+    with patch.dict(os.environ, base_env(), clear=True):
+        auto_pay.requests.get = paged_comments(comments)
+        auto_pay.requests.post = fake_post
+        auto_pay.main()
+
+    assert transfer_calls == []
+    assert comment_posts == []
+
+
+def test_stale_started_marker_does_not_block_retry():
+    auto_pay = load_auto_pay()
+    payment = owner_payment_comment()
+    payment_key = auto_pay.build_payment_key(
+        "Scottcjn/Rustchain",
+        "123",
+        payment["id"],
+        75.0,
+        "contributor",
+    )
+    stale_time = datetime.now(timezone.utc) - timedelta(seconds=auto_pay.STARTED_LOCK_TTL_SECONDS + 1)
+    comments = [
+        payment,
+        {
+            "id": 202,
+            "user": {"login": "github-actions[bot]"},
+            "created_at": stale_time.isoformat().replace("+00:00", "Z"),
+            "body": f"<!-- RTC-AutoPay-Started payment_key={payment_key} payment_comment_id=101 -->",
+        },
+    ]
+    transfer_calls = []
+    comment_posts = []
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        assert json is not None
+        if url.endswith("/wallet/transfer"):
+            transfer_calls.append(json)
+            return FakeResponse({"ok": True, "pending_id": "p1"})
+        comment_posts.append(json["body"])
+        return FakeResponse({"id": 999})
+
+    with patch.dict(os.environ, base_env(), clear=True):
+        auto_pay.requests.get = paged_comments(comments)
+        auto_pay.requests.post = fake_post
+        auto_pay.main()
+
+    assert len(transfer_calls) == 1
+    assert any("RTC-AutoPay-Confirmed" in body for body in comment_posts)
+
+
 def test_manual_transfer_notice_does_not_block_later_auto_pay():
     auto_pay = load_auto_pay()
     persisted_comments = [owner_payment_comment()]
@@ -194,6 +277,7 @@ def test_manual_transfer_notice_does_not_block_later_auto_pay():
         return FakeResponse(persisted_comments if page == 1 else [])
 
     def fake_post(url, headers=None, json=None, timeout=None):
+        assert json is not None
         if url.endswith("/wallet/transfer"):
             transfer_calls.append(json)
             return FakeResponse({"ok": True, "pending_id": "p1"})
@@ -246,6 +330,7 @@ def test_legacy_manual_transfer_notice_does_not_block_later_auto_pay():
     comment_posts = []
 
     def fake_post(url, headers=None, json=None, timeout=None):
+        assert json is not None
         if url.endswith("/wallet/transfer"):
             transfer_calls.append(json)
             return FakeResponse({"ok": True, "pending_id": "p1"})

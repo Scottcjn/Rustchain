@@ -23,6 +23,7 @@ import hashlib
 import os
 import re
 import sys
+from datetime import datetime, timezone
 
 import requests
 
@@ -50,6 +51,7 @@ ALREADY_PAID_MARKER = "RTC-AutoPay-Confirmed"
 PAYMENT_STARTED_MARKER = "RTC-AutoPay-Started"
 MANUAL_PAYMENT_MARKER = "RTC-AutoPay-Manual-Required"
 TRUSTED_BOT_LOGINS = {"github-actions[bot]"}
+STARTED_LOCK_TTL_SECONDS = 10 * 60
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -132,6 +134,31 @@ def trusted_marker_author(comment: dict, repo_owner: str) -> bool:
     return author == repo_owner.lower() or author in TRUSTED_BOT_LOGINS
 
 
+def trusted_started_marker_is_fresh(comment: dict, now: datetime | None = None) -> bool:
+    """Return True when a started marker is recent enough to act as a lock.
+
+    GitHub issue comments carry a server-side ``created_at`` timestamp.  Treat
+    only fresh started comments as in-progress locks so a second workflow run
+    cannot race past the first one and submit a duplicate transfer.  Missing or
+    malformed timestamps are ignored instead of becoming permanent locks, which
+    preserves recovery from old comments and simplified test fixtures.
+    """
+    created_at = comment.get("created_at")
+    if not created_at:
+        return False
+
+    try:
+        created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return False
+
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+
+    current = now or datetime.now(timezone.utc)
+    return 0 <= (current - created).total_seconds() <= STARTED_LOCK_TTL_SECONDS
+
+
 def build_payment_key(repo: str, pr_number: str, payment_comment_id: object,
                       amount: float, to_wallet: str) -> str:
     """Build a stable key for a specific owner payment directive."""
@@ -141,11 +168,17 @@ def build_payment_key(repo: str, pr_number: str, payment_comment_id: object,
 
 def find_existing_payment_marker(comments: list, repo_owner: str,
                                  payment_key: str) -> str:
-    """Find a trusted final payment marker for this payment key."""
+    """Find a trusted final or fresh in-progress payment marker for this key."""
     for c in comments:
         if not trusted_marker_author(c, repo_owner):
             continue
         body = c.get("body") or ""
+        if (
+            PAYMENT_STARTED_MARKER in body
+            and f"payment_key={payment_key}" in body
+            and trusted_started_marker_is_fresh(c)
+        ):
+            return PAYMENT_STARTED_MARKER
         if ALREADY_PAID_MARKER not in body:
             continue
         if f"{ALREADY_PAID_MARKER}:MANUAL" in body:
