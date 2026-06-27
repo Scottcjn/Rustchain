@@ -1,3 +1,9 @@
+function escapeHtml(value) {
+  const div = document.createElement('div');
+  div.textContent = value == null ? '' : String(value);
+  return div.innerHTML;
+}
+
 /**
  * RustChain Explorer - Real-time Dashboard
  * Main application logic with WebSocket support
@@ -392,12 +398,12 @@ class DashboardApp {
         }
 
         tbody.innerHTML = sortedMiners.map((miner, index) => `
-            <tr class="${miner.isNew ? 'new' : ''}">
-                <td>${index + 1}</td>
-                <td class="mono">${this.escapeHtml(this.shortenAddress(miner.miner_id || miner.miner || 'unknown'))}</td>
-                <td><span class="badge badge-${this.getArchitectureTier(miner.device_arch)}">${this.escapeHtml(miner.device_arch || 'Unknown')}</span></td>
-                <td class="text-accent">${this.escapeHtml(miner.score || 0)}</td>
-                <td>${this.escapeHtml(this.formatNumber(miner.multiplier || 1, 2))}x</td>
+            <tr class="${escapeHtml(miner.isNew ? 'new' : '')}">
+                <td>${escapeHtml(index + 1)}</td>
+                <td class="mono">${escapeHtml(this.escapeHtml(this.shortenAddress(miner.miner_id || miner.miner || 'unknown')))}</td>
+                <td><span class="badge badge-${escapeHtml(this.getArchitectureTier(miner.device_arch))}">${escapeHtml(this.escapeHtml(miner.device_arch || 'Unknown'))}</span></td>
+                <td class="text-accent">${escapeHtml(this.escapeHtml(miner.score || 0))}</td>
+                <td>${escapeHtml(this.escapeHtml(this.formatNumber(miner.multiplier || 1, 2)))}x</td>
                 <td><span class="badge badge-active">● ACTIVE</span></td>
             </tr>
         `).join('');
@@ -443,15 +449,15 @@ class DashboardApp {
         }
 
         container.innerHTML = blocks.map(block => `
-            <div class="activity-item ${block.isNew ? 'new' : ''}">
+            <div class="activity-item ${escapeHtml(block.isNew ? 'new' : '')}">
                 <div class="activity-icon">📦</div>
                 <div class="activity-content">
-                    <div class="activity-title">Block #${this.escapeHtml(block.height || 0)}</div>
-                    <div class="activity-subtitle mono">${this.escapeHtml(this.shortenHash(block.hash || '0x'))}</div>
+                    <div class="activity-title">Block #${escapeHtml(this.escapeHtml(block.height || 0))}</div>
+                    <div class="activity-subtitle mono">${escapeHtml(this.escapeHtml(this.shortenHash(block.hash || '0x')))}</div>
                 </div>
                 <div class="activity-meta">
-                    <div class="activity-time">${this.formatRelativeTime(block.timestamp)}</div>
-                    <div class="activity-value">${this.escapeHtml(block.miners_count || 0)} miners</div>
+                    <div class="activity-time">${escapeHtml(this.formatRelativeTime(block.timestamp))}</div>
+                    <div class="activity-value">${escapeHtml(this.escapeHtml(block.miners_count || 0))} miners</div>
                 </div>
             </div>
         `).join('');
@@ -476,15 +482,15 @@ class DashboardApp {
         }
 
         container.innerHTML = txs.map(tx => `
-            <div class="activity-item ${tx.isNew ? 'new' : ''}">
+            <div class="activity-item ${escapeHtml(tx.isNew ? 'new' : '')}">
                 <div class="activity-icon">💸</div>
                 <div class="activity-content">
-                    <div class="activity-title">${this.escapeHtml(String(tx.type || 'transfer').toUpperCase())}</div>
-                    <div class="activity-subtitle mono">${this.escapeHtml(this.shortenAddress(tx.from || '0x'))} → ${this.escapeHtml(this.shortenAddress(tx.to || '0x'))}</div>
+                    <div class="activity-title">${escapeHtml(this.escapeHtml(String(tx.type || 'transfer').toUpperCase()))}</div>
+                    <div class="activity-subtitle mono">${escapeHtml(this.escapeHtml(this.shortenAddress(tx.from || '0x')))} → ${escapeHtml(this.escapeHtml(this.shortenAddress(tx.to || '0x')))}</div>
                 </div>
                 <div class="activity-meta">
-                    <div class="activity-time">${this.formatRelativeTime(tx.timestamp)}</div>
-                    <div class="activity-value">${this.escapeHtml(this.formatNumber(tx.amount || 0))} RTC</div>
+                    <div class="activity-time">${escapeHtml(this.formatRelativeTime(tx.timestamp))}</div>
+                    <div class="activity-value">${escapeHtml(this.escapeHtml(this.formatNumber(tx.amount || 0)))} RTC</div>
                 </div>
             </div>
         `).join('');
@@ -522,12 +528,12 @@ class DashboardApp {
         // Update legend
         legendEl.innerHTML = data.map(item => `
             <div class="hardware-legend-item">
-                <div class="hardware-legend-color" style="background: ${item.color}"></div>
+                <div class="hardware-legend-color" style="background: ${escapeHtml(item.color)}"></div>
                 <div class="hardware-legend-info">
-                    <div class="hardware-legend-label">${this.escapeHtml(item.label)}</div>
-                    <div class="hardware-legend-value">${this.escapeHtml(item.percent)}%</div>
+                    <div class="hardware-legend-label">${escapeHtml(this.escapeHtml(item.label))}</div>
+                    <div class="hardware-legend-value">${escapeHtml(this.escapeHtml(item.percent))}%</div>
                 </div>
-                <div class="hardware-legend-count">${this.escapeHtml(item.value)}</div>
+                <div class="hardware-legend-count">${escapeHtml(this.escapeHtml(item.value))}</div>
             </div>
         `).join('');
     }
