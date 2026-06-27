@@ -670,12 +670,19 @@ def settle_epoch_with_anti_double_mining(
         db.execute("BEGIN IMMEDIATE")
 
     try:
-        # Check if already settled
-        st = db.execute("SELECT settled FROM epoch_state WHERE epoch=?", (epoch,)).fetchone()
-        if st and int(st[0]) == 1:
-            if own_conn:
-                db.rollback()
-            return {"ok": True, "epoch": epoch, "already_settled": True}
+        # Atomic check-and-set for settlement
+        # We use an UPDATE that only succeeds if settled is currently 0.
+        # This prevents the race condition.
+        res = db.execute("UPDATE epoch_state SET settled = 1, settled_ts = ? WHERE epoch = ? AND settled = 0", (int(time.time()), epoch))
+        if res.rowcount == 0:
+            # If no row was updated, it was either already settled or doesn't exist
+            st = db.execute("SELECT settled FROM epoch_state WHERE epoch=?", (epoch,)).fetchone()
+            if st and int(st[0]) == 1:
+                if own_conn:
+                    db.rollback()
+                return {"ok": True, "epoch": epoch, "already_settled": True}
+            # If it doesn't exist, we can proceed to create it (handled by the later INSERT)
+
 
         # Calculate rewards with anti-double-mining.
         # When we share the caller's connection we must NOT open a separate one.
@@ -855,8 +862,13 @@ def _calculate_anti_double_mining_rewards_conn(
                     "SELECT warthog_bonus FROM miner_attest_recent WHERE miner=?",
                     (miner_id,)
                 ).fetchone()
-                if wart_row and wart_row[0] and wart_row[0] > 1.0:
-                    weight *= wart_row[0]
+                # Apply capped warthog bonus (MAX = 2.0) to prevent reward inflation
+                if wart_row and wart_row[0]:
+                    bonus = float(wart_row[0])
+                    if 1.0 < bonus <= 2.0:
+                        weight *= bonus
+                    elif bonus > 2.0:
+                        weight *= 2.0
             except Exception:
                 pass
 
