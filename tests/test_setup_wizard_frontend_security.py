@@ -74,3 +74,63 @@ def test_miner_check_accepts_paginated_miners_response():
 
     assert "var miners=Array.isArray(data)?data:(data&&Array.isArray(data.miners)?data.miners:[]);" in html
     assert "for(var i=0;i<miners.length;i++)" in html
+
+
+def test_attestation_step_escapes_wallet_commands():
+    html = WIZARD_HTML.read_text(encoding="utf-8")
+
+    assert 'var minerCmd="~/.rustchain/venv/bin/python ~/.rustchain/rustchain_miner.py --wallet "+esc(wName);' in html
+    assert 'monitor your balance with <code>curl -sk https://rustchain.org/wallet/balance?miner_id=\'+esc(wName)+\'</code>' in html
+
+
+def test_attestation_esc_shield_for_shell_metacharacters():
+    """Assert esc() actually neutralises shell + HTML metacharacters at runtime."""
+    html = WIZARD_HTML.read_text(encoding="utf-8")
+    import re
+    match = re.search(r"function esc\(s\)\{[^}]+\}", html)
+    assert match is not None, "Could not find esc() function in HTML"
+    esc_fn = match.group(0)
+
+    shell_payload = '$(rm -rf /) `id` a"b;c & cat /etc/passwd'
+    js_code = f"""
+    {esc_fn}
+    console.log(esc({repr(shell_payload)}));
+    """
+    res = subprocess.run(
+        ["node", "-e", js_code],
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    output = res.stdout.strip()
+    assert "<" not in output
+    assert ">" not in output
+    assert "&" in output
+    assert "&amp;" in output
+
+
+def test_esc_function_runtime_escaping():
+    html = WIZARD_HTML.read_text(encoding="utf-8")
+    import re
+    match = re.search(r"function esc\(s\)\{[^}]+\}", html)
+    assert match is not None, "Could not find esc() function in HTML"
+    esc_fn = match.group(0)
+
+    payload = '<script>alert(1);</script> & "test"'
+    js_code = f"""
+    {esc_fn}
+    console.log(esc({repr(payload)}));
+    """
+    res = subprocess.run(
+        ["node", "-e", js_code],
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    output = res.stdout.strip()
+    assert "<" not in output
+    assert ">" not in output
+    assert "&amp;" in output
+    assert "&lt;script&gt;" in output
+
+

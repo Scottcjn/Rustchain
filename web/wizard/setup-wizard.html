@@ -161,7 +161,7 @@ function testAttestation(){
 }
 function renderAttest(el){
   var wName=S.walletName||"YOUR_WALLET_NAME";
-  var minerCmd="~/.rustchain/venv/bin/python ~/.rustchain/rustchain_miner.py --wallet "+wName;
+  var minerCmd="~/.rustchain/venv/bin/python ~/.rustchain/rustchain_miner.py --wallet "+esc(wName);
   var minersCmd="curl -sk https://rustchain.org/api/miners";
   el.innerHTML=
     '<div class="card"><h2>&#127776; Step 7 &mdash; First Attestation</h2><p>Start your miner and verify it appears on the RustChain network.</p></div>'+
@@ -176,7 +176,7 @@ function renderAttest(el){
     '<div id="minerResult" style="margin-top:10px"></div></div>'+
     '<div class="card"><h3>&#128640; Congratulations!</h3><div class="hero"><div class="ic">&#127881;</div><h2>You are now a RustChain Miner!</h2><p>Your hardware is contributing to the Proof-of-Antiquity network.<br/>Earn RTC tokens as your vintage hardware proves its age and authenticity.<br/><br/>Keep your miner running to accumulate attestations and rewards.</p></div>'+
     '<div class="sm"><div class="rw"><span class="lb">Wallet</span><span class="vl">'+esc(wName)+'</span></div><div class="rw"><span class="lb">Network</span><span class="vl">RustChain (https://rustchain.org)</span></div><div class="rw"><span class="lb">Bounty</span><span class="vl">50 RTC</span></div></div>'+
-    '<div class="ib"><strong>Next steps:</strong> Bookmark this wizard, monitor your balance with <code>curl -sk https://rustchain.org/wallet/balance?miner_id='+wName+'</code>, and join the Discord for help.</div></div>'+
+    '<div class="ib"><strong>Next steps:</strong> Bookmark this wizard, monitor your balance with <code>curl -sk https://rustchain.org/wallet/balance?miner_id='+esc(wName)+'</code>, and join the Discord for help.</div></div>'+
     '<div class="br"><button class="bs" onclick="go(5)">&larr; Back</button><button class="bp" onclick="go(6)">I\'m Mining! &#10003;</button></div>';
 }
 function checkMiner(){
