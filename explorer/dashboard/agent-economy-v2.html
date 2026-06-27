@@ -679,19 +679,19 @@ function escapeHtml(value) {
                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; font-size:13px;">
                     <div>
                         <div style="color:var(--text3);">Open Jobs</div>
-                        <div style="font-size:20px; font-weight:700;">${escapeHtml(esc(safeNumber(s.open_jobs)))}</div>
+                        <div style="font-size:20px; font-weight:700;">${esc(safeNumber(s.open_jobs))}</div>
                     </div>
                     <div>
                         <div style="color:var(--text3);">Completed</div>
-                        <div style="font-size:20px; font-weight:700; color:var(--green);">${escapeHtml(esc(safeNumber(s.completed_jobs)))}</div>
+                        <div style="font-size:20px; font-weight:700; color:var(--green);">${esc(safeNumber(s.completed_jobs))}</div>
                     </div>
                     <div>
                         <div style="color:var(--text3);">Total Volume</div>
-                        <div style="font-size:20px; font-weight:700; color:var(--gold);">${escapeHtml(esc(safeNumber(s.total_rtc_volume).toFixed(0)))} RTC</div>
+                        <div style="font-size:20px; font-weight:700; color:var(--gold);">${esc(safeNumber(s.total_rtc_volume).toFixed(0))} RTC</div>
                     </div>
                     <div>
                         <div style="color:var(--text3);">Platform Fees</div>
-                        <div style="font-size:20px; font-weight:700; color:var(--purple);">${escapeHtml(esc(safeNumber(s.total_fees_collected).toFixed(1)))} RTC</div>
+                        <div style="font-size:20px; font-weight:700; color:var(--purple);">${esc(safeNumber(s.total_fees_collected).toFixed(1))} RTC</div>
                     </div>
                 </div>
             `;
@@ -713,15 +713,15 @@ function escapeHtml(value) {
                 <div style="display:flex; justify-content:space-between; align-items:center;
                             padding:8px 0; border-bottom:1px solid var(--border);">
                     <div>
-                        <div style="font-weight:600; font-size:13px;">${escapeHtml(esc(j.title))}</div>
+                        <div style="font-weight:600; font-size:13px;">${esc(j.title)}</div>
                         <div style="font-size:11px; color:var(--text3);">
-                            ${escapeHtml(esc(j.job_id))} &bull; ${escapeHtml(esc(j.poster_wallet))}
+                            ${esc(j.job_id)} &bull; ${esc(j.poster_wallet)}
                         </div>
                     </div>
                     <div style="text-align:right;">
-                        <span class="badge badge-${escapeHtml(safeStatus(j.status))}">${escapeHtml(esc(safeStatus(j.status)))}</span>
+                        <span class="badge badge-${escapeHtml(safeStatus(j.status))}">${esc(safeStatus(j.status))}</span>
                         <div style="color:var(--gold); font-family:monospace; font-size:14px; font-weight:600;">
-                            ${escapeHtml(esc(safeNumber(j.reward_rtc).toFixed(1)))} RTC
+                            ${esc(safeNumber(j.reward_rtc).toFixed(1))} RTC
                         </div>
                     </div>
                 </div>
@@ -840,7 +840,7 @@ function escapeHtml(value) {
                     <div>
                         <div style="color:var(--text3); font-size:12px;">Fee Rate</div>
                         <div style="font-size:20px; font-weight:700; font-family:monospace;">
-                            ${escapeHtml(esc(s.platform_fee_rate))}
+                            ${esc(s.platform_fee_rate)}
                         </div>
                     </div>
                     <div>
