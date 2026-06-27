@@ -442,8 +442,8 @@
       ];
       document.getElementById("topCards").innerHTML = cards.map((c) => `
         <div class="card">
-          <div class="label">${safeText(c.label)}</div>
-          <div class="value">${safeText(c.value)}</div>
+          <div class="label">${escapeHtml(safeText(c.label))}</div>
+          <div class="value">${escapeHtml(safeText(c.value))}</div>
         </div>
       `).join("");
     }
@@ -491,8 +491,8 @@
       ];
       document.getElementById("agentCards").innerHTML = cards.map((c) => `
         <div class="card">
-          <div class="label">${safeText(c.label)}</div>
-          <div class="value">${safeText(c.value)}</div>
+          <div class="label">${escapeHtml(safeText(c.label))}</div>
+          <div class="value">${escapeHtml(safeText(c.value))}</div>
         </div>
       `).join("");
     }
@@ -511,8 +511,8 @@
         ["Completed", counts.completed],
       ].map(([k, v]) => `
         <div class="node">
-          <div class="k">${k}</div>
-          <div class="v">${v}</div>
+          <div class="k">${escapeHtml(k)}</div>
+          <div class="v">${escapeHtml(v)}</div>
         </div>
       `).join("");
     }
@@ -535,12 +535,12 @@
       const tbody = document.getElementById("jobRows");
       tbody.innerHTML = rows.map((job) => `
         <tr>
-          <td class="mono">${safeText(job.job_id)}</td>
-          <td>${safeText(job.category || "other")}</td>
+          <td class="mono">${escapeHtml(safeText(job.job_id))}</td>
+          <td>${escapeHtml(safeText(job.category || "other"))}</td>
           <td>${Number(job.reward_rtc || 0).toFixed(2)}</td>
-          <td><span class="chip ${String(job.status || "").toLowerCase() === "completed" ? "ok" : "warn"}">${safeText(job.status || "unknown")}</span></td>
-          <td class="mono">${safeText(job.poster_wallet)}</td>
-          <td class="mono">${safeText(job.updated_at || job.created_at)}</td>
+          <td><span class="chip ${String(job.status || "").toLowerCase() === "completed" ? "ok" : "warn"}">${escapeHtml(safeText(job.status || "unknown"))}</span></td>
+          <td class="mono">${escapeHtml(safeText(job.poster_wallet))}</td>
+          <td class="mono">${escapeHtml(safeText(job.updated_at || job.created_at))}</td>
         </tr>
       `).join("");
       document.getElementById("jobsEmpty").style.display = rows.length ? "none" : "block";
@@ -557,13 +557,13 @@
       document.getElementById("repEmpty").style.display = "none";
       rows.innerHTML = `
         <tr>
-          <td class="mono">${safeText(rep.wallet_id)}</td>
-          <td>${safeText(rep.trust_score)}</td>
-          <td>${safeText(rep.trust_level)}</td>
-          <td>${safeText(rep.jobs_posted ?? 0)}</td>
-          <td>${safeText(rep.jobs_completed_as_poster ?? 0)}</td>
+          <td class="mono">${escapeHtml(safeText(rep.wallet_id))}</td>
+          <td>${escapeHtml(safeText(rep.trust_score))}</td>
+          <td>${escapeHtml(safeText(rep.trust_level))}</td>
+          <td>${escapeHtml(safeText(rep.jobs_posted ?? 0))}</td>
+          <td>${escapeHtml(safeText(rep.jobs_completed_as_poster ?? 0))}</td>
           <td>${Number(rep.total_rtc_paid || 0).toFixed(2)}</td>
-          <td class="mono">${safeText(rep.last_active)}</td>
+          <td class="mono">${escapeHtml(safeText(rep.last_active))}</td>
         </tr>
       `;
     }
@@ -589,20 +589,20 @@
       ];
       document.getElementById("mempoolCards").innerHTML = cards.map((c) => `
         <div class="card">
-          <div class="label">${safeText(c.label)}</div>
-          <div class="value">${safeText(c.value)}</div>
+          <div class="label">${escapeHtml(safeText(c.label))}</div>
+          <div class="value">${escapeHtml(safeText(c.value))}</div>
         </div>
       `).join("");
 
       document.getElementById("mempoolRows").innerHTML = txs.map((tx) => `
         <tr>
-          <td class="mono">${safeText(tx.tx_id || "-")}</td>
-          <td>${safeText(tx.tx_type || "unknown")}</td>
-          <td>${safeText(tx.input_count ?? 0)}</td>
-          <td>${safeText(tx.output_count ?? 0)}</td>
+          <td class="mono">${escapeHtml(safeText(tx.tx_id || "-"))}</td>
+          <td>${escapeHtml(safeText(tx.tx_type || "unknown"))}</td>
+          <td>${escapeHtml(safeText(tx.input_count ?? 0))}</td>
+          <td>${escapeHtml(safeText(tx.output_count ?? 0))}</td>
           <td>${Number(tx.fee_rtc || 0).toFixed(6)}</td>
-          <td class="mono">${tx.age_seconds == null ? "-" : `${safeText(tx.age_seconds)}s`}</td>
-          <td class="mono">${tx.expires_in_seconds == null ? "-" : `${safeText(tx.expires_in_seconds)}s`}</td>
+          <td class="mono">${tx.age_seconds == null ? "-" : `${escapeHtml(safeText(tx.age_seconds))}s`}</td>
+          <td class="mono">${tx.expires_in_seconds == null ? "-" : `${escapeHtml(safeText(tx.expires_in_seconds))}s`}</td>
         </tr>
       `).join("");
       document.getElementById("mempoolEmpty").style.display = txs.length ? "none" : "block";
