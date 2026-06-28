@@ -323,7 +323,7 @@ def rust_leaderboard():
             LIMIT ?
         """, (limit,))
         
-        rows = c.fetchall()
+        rows = c.fetchall()  # fetchall-ok: already-paginated (LIMIT ?)
         conn.close()
         
         leaderboard = []
@@ -580,7 +580,7 @@ def api_hall_of_fame_leaderboard():
             """,
             params + [limit],
         )
-        rows = c.fetchall()
+        rows = c.fetchall()  # fetchall-ok: already-paginated (LIMIT ?)
         conn.close()
 
         leaderboard = []
@@ -660,7 +660,7 @@ def api_hall_of_fame_machine():
                     'rust_score': machine.get('rust_score'),
                     'samples': int(r['attestations'] or 0),
                 }
-                for r in c.fetchall()
+                for r in c.fetchall()  # fetchall-ok: bounded-by-time-range (GROUP BY day)
             ]
         elif _table_exists(c, 'rust_score_history'):
             c.execute(
@@ -682,7 +682,7 @@ def api_hall_of_fame_machine():
                     'samples': int(r['samples'] or 0),
                     'attestations': int(r['samples'] or 0),
                 }
-                for r in c.fetchall()
+                for r in c.fetchall()  # fetchall-ok: bounded-by-time-range (GROUP BY day)
             ]
 
         # Reward participation (best-effort) from enrollments + pending ledger credits.
@@ -960,7 +960,7 @@ def fleet_breakdown():
         """)
         
         breakdown = []
-        for row in c.fetchall():
+        for row in c.fetchall():  # fetchall-ok: bounded-by-schema (GROUP BY device_arch, finite set)
             breakdown.append({
                 'architecture': row[0],
                 'count': row[1],
@@ -1003,7 +1003,7 @@ def hall_timeline():
         """)
         
         timeline = []
-        for row in c.fetchall():
+        for row in c.fetchall():  # fetchall-ok: already-paginated (LIMIT 30)
             timeline.append({
                 'date': row[0],
                 'machines_joined': row[1],
