@@ -567,12 +567,16 @@ class TestMoodBlueprintJsonValidation(unittest.TestCase):
         app.config["DB_PATH"] = self.temp_db.name
         app.register_blueprint(mood_bp)
         self.client = app.test_client()
+        # Set API key for auth tests
+        os.environ["MOOD_SIGNAL_API_KEY"] = "test-api-key-12345"
 
     def tearDown(self):
         try:
             os.unlink(self.temp_db.name)
         except Exception:
             pass
+        # Clean up environment variable
+        os.environ.pop("MOOD_SIGNAL_API_KEY", None)
 
     def test_write_endpoints_reject_non_object_json(self):
         endpoints = [
@@ -583,7 +587,8 @@ class TestMoodBlueprintJsonValidation(unittest.TestCase):
 
         for endpoint in endpoints:
             with self.subTest(endpoint=endpoint):
-                response = self.client.post(endpoint, json=["not", "an", "object"])
+                headers = {"X-Api-Key": "test-api-key-12345"} if "signal" in endpoint else {}
+                response = self.client.post(endpoint, json=["not", "an", "object"], headers=headers)
 
                 self.assertEqual(response.status_code, 400)
                 self.assertEqual(
@@ -600,10 +605,12 @@ class TestMoodBlueprintJsonValidation(unittest.TestCase):
 
         for endpoint in endpoints:
             with self.subTest(endpoint=endpoint):
+                headers = {"X-Api-Key": "test-api-key-12345"} if "signal" in endpoint else {}
                 response = self.client.post(
                     endpoint,
                     data="{",
                     content_type="application/json",
+                    headers=headers,
                 )
 
                 self.assertEqual(response.status_code, 400)
@@ -620,7 +627,8 @@ class TestMoodBlueprintJsonValidation(unittest.TestCase):
 
         for endpoint in endpoints:
             with self.subTest(endpoint=endpoint):
-                response = self.client.post(endpoint)
+                headers = {"X-Api-Key": "test-api-key-12345"} if "signal" in endpoint else {}
+                response = self.client.post(endpoint, headers=headers)
 
                 self.assertEqual(response.status_code, 400)
                 self.assertEqual(
@@ -657,7 +665,7 @@ class TestMoodBlueprintJsonValidation(unittest.TestCase):
             (
                 "post",
                 "/api/v1/agents/test-agent/mood/signal",
-                {"json": {"signal_type": "video_views", "value": {"views": 1}}},
+                {"json": {"signal_type": "video_views", "value": {"views": 1}}, "headers": {"X-Api-Key": "test-api-key-12345"}},
             ),
             (
                 "post",
