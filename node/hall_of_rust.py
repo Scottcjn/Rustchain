@@ -660,7 +660,7 @@ def api_hall_of_fame_machine():
                     'rust_score': machine.get('rust_score'),
                     'samples': int(r['attestations'] or 0),
                 }
-                for r in c.fetchall()  # fetchall-ok: bounded-by-time-range (GROUP BY day)
+                for r in c.fetchall()  # fetchall-ok: bounded-by-schema (GROUP BY day, time-range scoped)
             ]
         elif _table_exists(c, 'rust_score_history'):
             c.execute(
@@ -682,7 +682,7 @@ def api_hall_of_fame_machine():
                     'samples': int(r['samples'] or 0),
                     'attestations': int(r['samples'] or 0),
                 }
-                for r in c.fetchall()  # fetchall-ok: bounded-by-time-range (GROUP BY day)
+                for r in c.fetchall()  # fetchall-ok: bounded-by-schema (GROUP BY day, time-range scoped)
             ]
 
         # Reward participation (best-effort) from enrollments + pending ledger credits.
