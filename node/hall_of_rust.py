@@ -777,7 +777,7 @@ def api_hall_of_fame():
             ORDER BY rust_score DESC
             LIMIT 10
         """)
-        ancient_iron = [dict(row) for row in c.fetchall()]
+        ancient_iron = [dict(row) for row in c.fetchall()]  # fetchall-ok: already-paginated
 
         # Categories - Exotic Arch (Top 10 arch by count)
         c.execute("""
@@ -793,7 +793,7 @@ def api_hall_of_fame():
             LIMIT 10
         """)
         exotic_arch = []
-        for r in c.fetchall():
+        for r in c.fetchall():  # fetchall-ok: already-paginated
             exotic_arch.append({
                 'device_arch': r['device_arch'],
                 'machine_count': r['machine_count'],
