@@ -94,6 +94,37 @@ function h(value){
     .replace(/'/g,'&#39;');
 }
 
+/**
+ * Creates a status pill span + optional preformatted text block via DOM API.
+ * No innerHTML on caller-supplied text — prevents node-response XSS (#7191).
+ * @param {'ok'|'bad'|'warn'} pillClass - CSS class for the pill.
+ * @param {string} pillText - Text label inside the pill.
+ * @param {string} [preText] - Optional text to show in a <pre> block.
+ * @param {string} [noteText] - Optional muted note below the pre block.
+ * @returns {DocumentFragment}
+ */
+function makePillFragment(pillClass, pillText, preText, noteText){
+  const frag = document.createDocumentFragment();
+  const pill = document.createElement('span');
+  pill.className = 'pill ' + pillClass;
+  pill.textContent = pillText;
+  frag.appendChild(pill);
+  if(preText !== undefined){
+    const spacer = document.createTextNode(' ');
+    frag.appendChild(spacer);
+    const pre = document.createElement('pre');
+    pre.textContent = preText;
+    frag.appendChild(pre);
+  }
+  if(noteText){
+    const note = document.createElement('p');
+    note.className = 'muted';
+    note.textContent = noteText;
+    frag.appendChild(note);
+  }
+  return frag;
+}
+
 function detectPlatform(){
   const ua=navigator.userAgent.toLowerCase();
   state.platform = ua.includes('mac')?'macOS':ua.includes('win')?'Windows':ua.includes('linux')?'Linux':'Unknown';
@@ -213,13 +244,19 @@ function renderPanel(){
       <div id='testOut' class='check muted'>No test run yet.</div>
       <div class='row'><button class='btn' onclick="markDone('connect')">Done</button></div>`;
     setTimeout(()=>{
-      document.getElementById('testBtn').onclick = async ()=>{
+        document.getElementById('testBtn').onclick = async ()=>{
         const url = document.getElementById('testNodeUrl').value.trim();
         state.nodeUrl = url;
         const r = await testNode(url);
-        document.getElementById('testOut').innerHTML = r.ok
-          ? `<span class='pill ok'>Reachable</span> <pre>${h(r.text)}</pre>`
-          : `<span class='pill bad'>Failed</span> <pre>${h(r.text)}</pre><p class='muted'>If this is a CORS error, test with terminal: curl -sk ${h(url.replace(/\/$/,''))}/health</p>`;
+        // Render via DOM API — no innerHTML on node response text (issue #7191)
+        const testOut = document.getElementById('testOut');
+        testOut.textContent = '';
+        if(r.ok){
+          testOut.appendChild(makePillFragment('ok','Reachable', r.text));
+        } else {
+          const curlNote = `If this is a CORS error, test with terminal: curl -sk ${url.replace(/\/$/,'')}/health`;
+          testOut.appendChild(makePillFragment('bad','Failed', r.text, curlNote));
+        }
       }
     },0);
     return;
@@ -239,15 +276,34 @@ function renderPanel(){
       document.getElementById('checkMinerBtn').onclick = async ()=>{
         const q = document.getElementById('minerLookup').value.trim().toLowerCase();
         try{
-          const r = await fetch(state.nodeUrl.replace(/\/$/,'') + '/api/miners',{cache:'no-store'});
+          const r = await fetch(state.nodeUrl.replace(/\/$/, '') + '/api/miners',{cache:'no-store'});
           const data = await r.json();
           const arr = Array.isArray(data)?data:(data.miners||[]);
           const hit = arr.find(x=>JSON.stringify(x).toLowerCase().includes(q));
-          document.getElementById('minerOut').innerHTML = hit
-            ? `<span class='pill ok'>Found</span><pre>${h(JSON.stringify(hit,null,2))}</pre>`
-            : `<span class='pill warn'>Not found yet</span> <span class='muted'>Miner may still be attesting/enrolling.</span>`;
+          // Render via DOM API — no innerHTML on API response data (issue #7191)
+          const minerOut = document.getElementById('minerOut');
+          minerOut.textContent = '';
+          if(hit){
+            minerOut.appendChild(makePillFragment('ok','Found', JSON.stringify(hit,null,2)));
+          } else {
+            const frag = document.createDocumentFragment();
+            const warnPill = document.createElement('span');
+            warnPill.className = 'pill warn';
+            warnPill.textContent = 'Not found yet';
+            frag.appendChild(warnPill);
+            const spacer = document.createTextNode(' ');
+            frag.appendChild(spacer);
+            const note = document.createElement('span');
+            note.className = 'muted';
+            note.textContent = 'Miner may still be attesting/enrolling.';
+            frag.appendChild(note);
+            minerOut.appendChild(frag);
+          }
         }catch(e){
-          document.getElementById('minerOut').innerHTML = `<span class='pill bad'>Check failed</span><pre>${h(String(e))}</pre>`;
+          // Render error via DOM API — no innerHTML on exception text (issue #7191)
+          const minerOut = document.getElementById('minerOut');
+          minerOut.textContent = '';
+          minerOut.appendChild(makePillFragment('bad','Check failed', String(e)));
         }
       }
     },0);
