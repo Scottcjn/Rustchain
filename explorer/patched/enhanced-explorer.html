@@ -556,10 +556,10 @@
                     <tr>
                         <td><strong>${escapeHtml(miner.miner_id || 'Unknown')}</strong></td>
                         <td><span class="arch-badge">${escapeHtml(miner.architecture || miner.device_arch || 'Unknown')}</span></td>
-                        <td><span class="multiplier">x${miner.multiplier || miner.antiquity_multiplier || '1.0'}</span></td>
+                        <td><span class="multiplier">x${escapeHtml(miner.multiplier || miner.antiquity_multiplier || '1.0')}</span></td>
                         <td><span class="badge badge-success">Online</span></td>
-                        <td>${formatTime(miner.last_attestation || miner.last_seen)}</td>
-                        <td>${(miner.earnings || miner.total_earned || 0).toFixed(2)} RTC</td>
+                        <td>${escapeHtml(formatTime(miner.last_attestation || miner.last_seen))}</td>
+                        <td>${escapeHtml((miner.earnings || miner.total_earned || 0).toFixed(2))} RTC</td>
                     </tr>
                 `).join('');
 
@@ -569,11 +569,11 @@
                     <tr>
                         <td><strong>${escapeHtml(miner.miner_id || 'Unknown')}</strong></td>
                         <td><span class="arch-badge">${escapeHtml(miner.architecture || miner.device_arch || 'Unknown')}</span></td>
-                        <td><span class="multiplier">x${miner.multiplier || miner.antiquity_multiplier || '1.0'}</span></td>
+                        <td><span class="multiplier">x${escapeHtml(miner.multiplier || miner.antiquity_multiplier || '1.0')}</span></td>
                         <td><span class="badge badge-success">Online</span></td>
-                        <td>${formatTime(miner.last_attestation || miner.last_seen)}</td>
+                        <td>${escapeHtml(formatTime(miner.last_attestation || miner.last_seen))}</td>
                         <td><code>${escapeHtml(miner.wallet || miner.wallet_address || 'N/A')}</code></td>
-                        <td>${(miner.earnings || miner.total_earned || 0).toFixed(2)} RTC</td>
+                        <td>${escapeHtml((miner.earnings || miner.total_earned || 0).toFixed(2))} RTC</td>
                     </tr>
                 `).join('');
             }
@@ -603,9 +603,9 @@
                         <td><code>${escapeHtml(tx.hash || tx.tx_hash || 'N/A')}</code></td>
                         <td><code>${escapeHtml(tx.from || 'N/A')}</code></td>
                         <td><code>${escapeHtml(tx.to || 'N/A')}</code></td>
-                        <td>${(tx.amount / 1000000 || 0).toFixed(2)} RTC</td>
-                        <td>${(tx.fee / 1000000 || 0).toFixed(4)} RTC</td>
-                        <td>${formatTime(tx.timestamp)}</td>
+                        <td>${escapeHtml((tx.amount / 1000000 || 0).toFixed(2))} RTC</td>
+                        <td>${escapeHtml((tx.fee / 1000000 || 0).toFixed(4))} RTC</td>
+                        <td>${escapeHtml(formatTime(tx.timestamp))}</td>
                         <td><span class="badge badge-success">Confirmed</span></td>
                     </tr>
                 `).join('');

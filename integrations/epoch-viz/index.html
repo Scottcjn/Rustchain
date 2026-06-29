@@ -334,6 +334,13 @@
     </div>
     
     <script>
+function escapeHtml(value) {
+  const div = document.createElement('div');
+  div.textContent = value == null ? '' : String(value);
+  return div.innerHTML;
+}
+
+
         // Configuration
         // Use relative paths (server proxies to RustChain node)
         // Or set NODE_URL to 'https://50.28.86.131' for direct access (may have CORS issues)
@@ -481,13 +488,13 @@
             const maxWeight = Math.max(modernWeight, vintageWeight, 1);
             
             container.innerHTML = `
-                <div class="weight-bar" style="height: ${(modernWeight / maxWeight) * 150}px;">
-                    <span class="weight-value">${modernWeight.toFixed(1)}x</span>
-                    <span class="weight-label">Modern (${modernCount})</span>
+                <div class="weight-bar" style="height: ${escapeHtml((modernWeight / maxWeight) * 150)}px;">
+                    <span class="weight-value">${escapeHtml(modernWeight.toFixed(1))}x</span>
+                    <span class="weight-label">Modern (${escapeHtml(modernCount)})</span>
                 </div>
-                <div class="weight-bar vintage" style="height: ${(vintageWeight / maxWeight) * 150}px;">
-                    <span class="weight-value">${vintageWeight.toFixed(1)}x</span>
-                    <span class="weight-label">Vintage (${vintageCount})</span>
+                <div class="weight-bar vintage" style="height: ${escapeHtml((vintageWeight / maxWeight) * 150)}px;">
+                    <span class="weight-value">${escapeHtml(vintageWeight.toFixed(1))}x</span>
+                    <span class="weight-label">Vintage (${escapeHtml(vintageCount)})</span>
                 </div>
             `;
         }

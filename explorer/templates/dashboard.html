@@ -358,7 +358,7 @@
             }
             tbody.innerHTML = blockList.map(block => `
                 <tr>
-                    <td><a href="/block/${encodeURIComponent(String(block.hash || ''))}" class="text-decoration-none">${escapeHtml(block.height)}</a></td>
+                    <td><a href="/block/${escapeHtml(encodeURIComponent(String(block.hash || '')))}" class="text-decoration-none">${escapeHtml(block.height)}</a></td>
                     <td><code class="text-muted">${escapeHtml(String(block.hash || '').substring(0, 16))}...</code></td>
                     <td>${escapeHtml(block.tx_count)}</td>
                     <td>${escapeHtml(block.miner)}</td>

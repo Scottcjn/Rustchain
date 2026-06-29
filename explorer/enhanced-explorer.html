@@ -528,6 +528,13 @@
     </main>
 
     <script>
+function escapeHtml(value) {
+  const div = document.createElement('div');
+  div.textContent = value == null ? '' : String(value);
+  return div.innerHTML;
+}
+
+
         const API_BASE = window.location.origin;
         
         function switchView(viewName) {
@@ -635,7 +642,7 @@
                         <td><code>${esc(tx.to || 'N/A')}</code></td>
                         <td>${formatNumber(safeNumber(tx.amount) / 1000000, 2)} RTC</td>
                         <td>${formatNumber(safeNumber(tx.fee) / 1000000, 4)} RTC</td>
-                        <td>${formatTime(tx.timestamp)}</td>
+                        <td>${escapeHtml(formatTime(tx.timestamp))}</td>
                         <td><span class="badge badge-success">Confirmed</span></td>
                     </tr>
                 `).join('');

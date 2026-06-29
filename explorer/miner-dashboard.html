@@ -422,7 +422,7 @@
                 <tr>
                     <td style="font-size:0.75rem;">${safeText(String(w.withdrawal_id || w.id || '--').substring(0, 12))}...</td>
                     <td>${safeText(w.amount, '?')} RTC</td>
-                    <td><span class="badge ${w.status === 'completed' ? 'badge-green' : w.status === 'pending' ? 'badge-yellow' : 'badge-red'}">${escapeHtml(w.status || 'unknown')}</span></td>
+                    <td><span class="badge ${escapeHtml(w.status === 'completed' ? 'badge-green' : w.status === 'pending' ? 'badge-yellow' : 'badge-red')}">${escapeHtml(w.status || 'unknown')}</span></td>
                     <td>${safeText(timeAgo(w.requested_at || w.created_at || w.timestamp))}</td>
                 </tr>
             `).join('');
