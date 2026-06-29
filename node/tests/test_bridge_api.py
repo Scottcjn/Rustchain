@@ -407,7 +407,11 @@ class TestCheckMinerBalance:
         assert has is False
         assert avail == 100
 
-    def test_pending_debits_subtracted(self, db):
+    def test_balance_is_raw_under_debit_on_lock(self, db):
+        # Debit-on-lock: deposits are hard-debited from amount_i64 at CREATE, so
+        # check_miner_balance no longer subtracts pending deposits (that would
+        # double-count). The raw amount_i64 IS the available balance; a separate
+        # pending row left around does not reduce it again.
         db.execute("INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?)",
                    ("RTCtest", 1000))
         db.execute("""INSERT INTO bridge_transfers
@@ -420,8 +424,8 @@ class TestCheckMinerBalance:
         db.commit()
         has, avail, pending = ba.check_miner_balance(db, "RTCtest", 300)
         assert has is True, f"avail={avail} should be >= 300"
-        assert avail == 400  # 1000 - 600
-        assert pending == 600
+        assert avail == 1000  # raw balance; locks already left amount_i64 at create
+        assert pending == 0
 
 
 # ══════════════════════════════════════════════════════════════════════

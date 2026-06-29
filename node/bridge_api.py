@@ -335,20 +335,13 @@ def check_miner_balance(db_conn: sqlite3.Connection, miner_id: str, amount_i64: 
         (miner_id,)
     ).fetchone()
     total_balance = row[0] if row else 0
-    
-    # Get pending bridge debits (locked but not yet confirmed/voided)
-    pending_row = cursor.execute("""
-        SELECT COALESCE(SUM(amount_i64), 0) 
-        FROM bridge_transfers 
-        WHERE source_address = ? 
-          AND direction = 'deposit'
-          AND status IN ('pending', 'locked', 'confirming')
-    """, (miner_id,)).fetchone()
-    pending_debits = pending_row[0] if pending_row else 0
-    
-    available = total_balance - pending_debits
-    
-    return available >= amount_i64, available, pending_debits
+
+    # Debit-on-lock model: when a deposit is created the source is debited
+    # immediately (see create_bridge_transfer), so locked funds have already
+    # left amount_i64. The raw balance therefore IS the available balance —
+    # subtracting pending deposits again would double-count. Returned
+    # pending_debits is kept at 0 for the legacy tuple shape.
+    return total_balance >= amount_i64, total_balance, 0
 
 
 def create_bridge_transfer(
@@ -384,22 +377,32 @@ def create_bridge_transfer(
         unlock_at = now + (6 * 600)  # 6 slots = 1 hour
     
     try:
-        # FIX(#5236): Acquire IMMEDIATE transaction before balance check to
-        # prevent TOCTOU race between check_miner_balance() and the INSERT.
-        if request.direction == "deposit" and not admin_initiated:
+        # Debit-on-lock: a deposit moves RTC out of RustChain, so the source is
+        # hard-debited at create time (not merely reserved). Because the locked
+        # funds leave amount_i64 immediately, every other debit gate (withdrawal,
+        # governance, transfers) self-enforces against the lock with no change of
+        # its own. The guarded UPDATE runs inside BEGIN IMMEDIATE so the
+        # check-and-debit is atomic (no TOCTOU) and can never go negative.
+        if request.direction == "deposit":
             cursor.execute("BEGIN IMMEDIATE")
-            has_balance, available, pending = check_miner_balance(
-                db_conn, 
-                request.source_address, 
-                amount_i64
+            cursor.execute(
+                "UPDATE balances SET amount_i64 = amount_i64 - ? "
+                "WHERE miner_id = ? AND amount_i64 >= ?",
+                (amount_i64, request.source_address, amount_i64),
             )
-            if not has_balance:
+            if cursor.rowcount != 1:
+                # No balance row, or insufficient funds — cannot hard-lock funds
+                # that do not exist on the RustChain ledger.
+                bal_row = cursor.execute(
+                    "SELECT amount_i64 FROM balances WHERE miner_id = ?",
+                    (request.source_address,),
+                ).fetchone()
                 db_conn.rollback()
+                available = bal_row[0] if bal_row else 0
                 return False, {
                     "error": "Insufficient available balance",
                     "available_rtc": available / BRIDGE_UNIT,
-                    "pending_debits_rtc": pending / BRIDGE_UNIT,
-                    "requested_rtc": request.amount_rtc
+                    "requested_rtc": request.amount_rtc,
                 }
         
         # Insert bridge transfer
@@ -411,8 +414,8 @@ def create_bridge_transfer(
                 bridge_type, bridge_fee_i64,
                 status, lock_epoch,
                 created_at, updated_at, expires_at,
-                tx_hash, memo
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                tx_hash, memo, source_debited
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             request.direction,
             request.source_chain,
@@ -429,7 +432,8 @@ def create_bridge_transfer(
             now,
             unlock_at,
             tx_hash,
-            request.memo
+            request.memo,
+            1 if request.direction == "deposit" else 0,  # source hard-debited above
         ))
         
         bridge_id = cursor.lastrowid
@@ -499,7 +503,7 @@ def get_bridge_transfer_by_hash(
             status, lock_epoch,
             created_at, updated_at, expires_at, completed_at,
             tx_hash, voided_by, voided_reason, failure_reason,
-            memo
+            memo, source_debited
         FROM bridge_transfers
         WHERE tx_hash = ?
     """, (tx_hash,)).fetchone()
@@ -530,7 +534,8 @@ def get_bridge_transfer_by_hash(
         "voided_by": row[20],
         "voided_reason": row[21],
         "failure_reason": row[22],
-        "memo": row[23]
+        "memo": row[23],
+        "source_debited": row[24],
     }
 
 
@@ -676,7 +681,24 @@ def void_bridge_transfer(
             WHERE bridge_transfer_id = ?
               AND status = 'locked'
         """, (now, voided_by, transfer["id"]))
-        
+
+        # Refund a hard-debited deposit. Under debit-on-lock the source was
+        # debited at create, so cancelling must return the funds. Withdraws never
+        # debit the source; source_debited guards against a double refund.
+        if transfer["direction"] == "deposit" and transfer.get("source_debited"):
+            cursor.execute(
+                "INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)",
+                (transfer["source_address"],),
+            )
+            cursor.execute(
+                "UPDATE balances SET amount_i64 = amount_i64 + ? WHERE miner_id = ?",
+                (transfer["amount_i64"], transfer["source_address"]),
+            )
+            cursor.execute(
+                "UPDATE bridge_transfers SET source_debited = 0 WHERE id = ?",
+                (transfer["id"],),
+            )
+
         db_conn.commit()
         
         return True, {
@@ -800,6 +822,8 @@ def update_external_confirmation(
                   AND status = 'locked'
             """, (now, external_tx_hash, transfer["id"]))
             if transfer["direction"] == "withdraw":
+                # Inbound: RTC enters RustChain. Credit the destination wallet
+                # (dest_address is a RustChain miner_id for withdraws).
                 cursor.execute(
                     "INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)",
                     (transfer["dest_address"],),
@@ -808,7 +832,30 @@ def update_external_confirmation(
                     "UPDATE balances SET amount_i64 = amount_i64 + ? WHERE miner_id = ?",
                     (transfer["amount_i64"], transfer["dest_address"]),
                 )
-        
+            elif transfer["direction"] == "deposit" and not transfer.get("source_debited"):
+                # Safety net: a deposit that was NOT hard-debited at create — a
+                # legacy reservation-model row the migration could not settle
+                # (source drained at migration time). Debit fail-closed NOW so
+                # completion can never let funds leave externally while remaining
+                # spendable on the RustChain ledger (the inflation case).
+                cursor.execute(
+                    "UPDATE balances SET amount_i64 = amount_i64 - ? "
+                    "WHERE miner_id = ? AND amount_i64 >= ?",
+                    (transfer["amount_i64"], transfer["source_address"], transfer["amount_i64"]),
+                )
+                if cursor.rowcount != 1:
+                    db_conn.rollback()
+                    return False, {
+                        "error": "Cannot complete deposit: source lacks funds to settle",
+                        "source_address": transfer["source_address"],
+                    }
+                cursor.execute(
+                    "UPDATE bridge_transfers SET source_debited = 1 WHERE id = ?",
+                    (transfer["id"],),
+                )
+            # Deposit with source_debited=1: already debited at create under the
+            # debit-on-lock model — completion makes no further balance change.
+
         db_conn.commit()
         
         return True, {
@@ -1107,12 +1154,77 @@ def init_bridge_schema(cursor):
             failure_reason TEXT,
 
             -- Optional memo
-            memo TEXT
+            memo TEXT,
+
+            -- Debit-on-lock: 1 once the source wallet has been hard-debited for
+            -- this transfer (deposits only). Guards refunds and the migration.
+            source_debited INTEGER NOT NULL DEFAULT 0
         )
     """)
-    
+
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_bridge_status ON bridge_transfers(status)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_bridge_source ON bridge_transfers(source_address)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_bridge_dest ON bridge_transfers(dest_address)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_bridge_lock_epoch ON bridge_transfers(lock_epoch)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_bridge_tx_hash ON bridge_transfers(tx_hash)")
+
+    # Existing DBs predate source_debited — add it idempotently, then run the
+    # one-time debit-on-lock migration for any deposit still active under the
+    # old reservation model.
+    try:
+        cursor.execute(
+            "ALTER TABLE bridge_transfers "
+            "ADD COLUMN source_debited INTEGER NOT NULL DEFAULT 0"
+        )
+    except sqlite3.OperationalError as exc:
+        # Only swallow the idempotent "already exists" case; re-raise anything
+        # else (malformed table, locked DB) so schema problems fail fast rather
+        # than letting the migration run against an unexpected schema.
+        if "duplicate column" not in str(exc).lower():
+            raise
+    migrate_deposits_to_hard_locks(cursor)
+
+
+def migrate_deposits_to_hard_locks(cursor):
+    """One-time, idempotent migration from the reservation model to debit-on-lock.
+
+    Any deposit created under the prior reservation model was never debited from
+    its source. Hard-debit each still-active deposit (pending/locked/confirming)
+    exactly once and mark source_debited=1 so re-running is a no-op. A deposit
+    whose source can no longer cover the debit (already drained under the old
+    model) is left at source_debited=0 and logged for manual review rather than
+    minting a negative balance.
+    """
+    try:
+        rows = cursor.execute("""
+            SELECT id, source_address, amount_i64
+            FROM bridge_transfers
+            WHERE direction = 'deposit'
+              AND status IN ('pending', 'locked', 'confirming')
+              AND source_debited = 0
+        """).fetchall()
+    except sqlite3.OperationalError as exc:
+        # Expected only when bridge_transfers/balances aren't created yet in this
+        # init ordering. Log it so a genuine schema error can't hide here and
+        # silently leave legacy deposits un-migrated (which the completion safety
+        # net would then have to catch).
+        logger.warning("debit-on-lock migration skipped (schema not ready?): %s", exc)
+        return
+
+    for row_id, source, amount in rows:
+        cursor.execute(
+            "UPDATE balances SET amount_i64 = amount_i64 - ? "
+            "WHERE miner_id = ? AND amount_i64 >= ?",
+            (amount, source, amount),
+        )
+        if cursor.rowcount == 1:
+            cursor.execute(
+                "UPDATE bridge_transfers SET source_debited = 1 WHERE id = ?",
+                (row_id,),
+            )
+        else:
+            logger.warning(
+                "debit-on-lock migration: deposit %s source %s lacks funds to "
+                "hard-lock %s micro-RTC; left source_debited=0 for manual review",
+                row_id, source, amount,
+            )
