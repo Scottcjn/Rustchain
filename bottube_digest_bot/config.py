@@ -8,6 +8,22 @@ import os
 from dataclasses import dataclass
 from typing import List, Optional
 
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name, str(default))
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return default
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name, str(default))
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return default
+
+
 
 @dataclass
 class BotConfig:
@@ -76,23 +92,23 @@ class BotConfig:
             rustchain_node_url=os.getenv(
                 "RUSTCHAIN_NODE_URL", "https://50.28.86.131"
             ),
-            api_timeout=float(os.getenv("RUSTCHAIN_API_TIMEOUT", "15.0")),
+            api_timeout=_env_float("RUSTCHAIN_API_TIMEOUT", 15.0),
             verify_ssl=os.getenv("RUSTCHAIN_VERIFY_SSL", "false").lower() == "true",
             bottube_url=os.getenv("BOTTUBE_URL", "https://bottube.ai"),
-            bottube_api_timeout=float(os.getenv("BOTTUBE_API_TIMEOUT", "10.0")),
+            bottube_api_timeout=_env_float("BOTTUBE_API_TIMEOUT", 10.0),
             discord_webhook_url=os.getenv("DISCORD_WEBHOOK_URL", ""),
             discord_bot_token=os.getenv("DISCORD_BOT_TOKEN", ""),
             discord_channel_id=os.getenv("DISCORD_CHANNEL_ID", ""),
             telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN", ""),
             telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID", ""),
             smtp_host=os.getenv("SMTP_HOST", ""),
-            smtp_port=int(os.getenv("SMTP_PORT", "587")),
+            smtp_port=_env_int("SMTP_PORT", 587),
             smtp_user=os.getenv("SMTP_USER", ""),
             smtp_password=os.getenv("SMTP_PASSWORD", ""),
             smtp_from=os.getenv("SMTP_FROM", ""),
             digest_recipients=recipients,
-            digest_top_n=int(os.getenv("DIGEST_TOP_N", "10")),
-            digest_top_videos=int(os.getenv("DIGEST_TOP_VIDEOS", "5")),
+            digest_top_n=_env_int("DIGEST_TOP_N", 10),
+            digest_top_videos=_env_int("DIGEST_TOP_VIDEOS", 5),
             include_epoch_summary=os.getenv("INCLUDE_EPOCH_SUMMARY", "true").lower()
             != "false",
             include_miner_stats=os.getenv("INCLUDE_MINER_STATS", "true").lower()
@@ -103,8 +119,8 @@ class BotConfig:
             != "false",
             schedule_mode=os.getenv("SCHEDULE_MODE", "weekly"),
             schedule_day=os.getenv("SCHEDULE_DAY", "monday"),
-            schedule_hour=int(os.getenv("SCHEDULE_HOUR", "9")),
-            schedule_minute=int(os.getenv("SCHEDULE_MINUTE", "0")),
+            schedule_hour=_env_int("SCHEDULE_HOUR", 9),
+            schedule_minute=_env_int("SCHEDULE_MINUTE", 0),
             log_level=os.getenv("LOG_LEVEL", "INFO"),
             log_file=os.getenv("LOG_FILE", ""),
             dry_run=os.getenv("DRY_RUN", "false").lower() == "true",
